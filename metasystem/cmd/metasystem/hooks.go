@@ -13,6 +13,10 @@ import (
 // runHooksCheck structurally verifies a selected host's live lifecycle
 // settings. The historical two-positional-argument form remains Claude.
 func runHooksCheck(args []string) int {
+	return runHooksCheckWithResolver(args, stateroot.ResolveLayout)
+}
+
+func runHooksCheckWithResolver(args []string, resolveLayout func(string) (stateroot.Layout, error)) int {
 	flags := flag.NewFlagSet("hooks check", flag.ContinueOnError)
 	runtime := flags.String("runtime", "", "runtime whose live lifecycle settings to verify (default: claude)")
 	if flags.Parse(args) != nil {
@@ -35,7 +39,7 @@ func runHooksCheck(args []string) int {
 		fmt.Fprintf(os.Stderr, "no host hook configuration declared for %s\n", *runtime)
 		return 1
 	}
-	layout, err := stateroot.ResolveLayout(rest[0])
+	layout, err := resolveLayout(rest[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

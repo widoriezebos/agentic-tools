@@ -191,22 +191,20 @@ func runRerunFixture(t *testing.T, groupID, packageName, testSource string, envi
 func runRerunFixtureWithFiles(t *testing.T, groupID, packageName string, files map[string]string, environment map[string]string) GroupResult {
 	t.Helper()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "metasystem", "go.mod"), []byte("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.22\n"), 0o644)
-	for name, source := range files {
-		writeTestResultFile(t, filepath.Join(root, "metasystem", "internal", packageName, name), []byte(source), 0o644)
+	sources := map[string]testSnapshotEntry{
+		"metasystem/go.mod": testSnapshotFile("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.22\n", 0o644),
 	}
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	for name, source := range files {
+		sources["metasystem/internal/"+packageName+"/"+name] = testSnapshotFile(source, 0o644)
+	}
+	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("1", 40), sources, 1)
+	tree := snapshot.tree
 	group := testpolicy.Group{ID: groupID, Kind: "unit", Adapter: "go", CWD: "metasystem",
 		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/" + packageName + "/**"},
 		Tools:       []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"rerun"}, Platforms: []string{"any"}, TargetMS: 60000,
 		Packages: []string{"internal/" + packageName}, Tests: []byte(`"all"`), Env: environment}
 	return runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, InstallationPrefix: "metasystem", CandidateTree: tree,
-		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: filepath.Join(root, "logs"),
-		loadOptions: []loadSampleOption{withScriptedLoad(hostload.Sample{Load1m: 7.5, Load5m: 6.5, Load15m: 5.5, Cores: 8, Available: true}, 1, true)}}, group)
+		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false"), LogRoot: filepath.Join(root, "logs"),
+		loadOptions: []loadSampleOption{withScriptedLoad(hostload.Sample{Load1m: 7.5, Load5m: 6.5, Load15m: 5.5, Cores: 8, Available: true}, 1, true)}, openCandidate: snapshot.open}, group)
 }

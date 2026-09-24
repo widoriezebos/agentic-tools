@@ -169,14 +169,46 @@ func TestAssembleUnitsKeepsBranchAndChainMembersInJoinOrder(t *testing.T) {
 			}
 		})
 	}
+	t.Run("two_chain_patches", func(t *testing.T) {
+		makeChain := func(chain, path, body string) Unit {
+			branchGit(t, bed.root, "switch", "-q", "--detach", bed.base)
+			branchWrite(t, bed.root, path, body+"\n")
+			branchGit(t, bed.root, "add", path)
+			branchGit(t, bed.root, "commit", "-qm", chain)
+			commit := branchGit(t, bed.root, "rev-parse", "HEAD")
+			patch := branchGit(t, bed.root, "diff", "--binary", "--full-index", bed.base, commit)
+			branchWrite(t, bed.root, "artifacts/agents/landing-batches/chains/"+chain+"/diff.patch", patch+"\n")
+			return Unit{GoalID: "goal-" + chain, Chain: chain}
+		}
+		one := makeChain("chain-one", "metasystem/chain-one.txt", "chain one")
+		two := makeChain("chain-two", "metasystem/chain-two.txt", "chain two")
+		prefixes, err := assembleUnits(bed.root, baseTree, []Unit{one, two})
+		if err != nil || len(prefixes) != 2 {
+			t.Fatalf("two chain prefixes=%v err=%v", prefixes, err)
+		}
+		if got := branchGit(t, bed.root, "show", prefixes[1]+":metasystem/chain-one.txt"); got != "chain one" {
+			t.Fatalf("first chain bytes=%q", got)
+		}
+		if got := branchGit(t, bed.root, "show", prefixes[1]+":metasystem/chain-two.txt"); got != "chain two" {
+			t.Fatalf("second chain bytes=%q", got)
+		}
+	})
 }
 
 func TestBatchBranchReaderRefusesReaderRecord(t *testing.T) {
-	bed := newGoalBranchBed(t)
-	tip := buildGoalBranch(t, bed, "goal-a", []string{"1", "2", "3"}, 1)
-	_, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tip, GoalID: "goal-a", Last: true})
-	if err == nil || !strings.HasPrefix(err.Error(), "BATCH_JOIN_UNREAD:") {
-		t.Fatalf("reader-record join=%v", err)
+	readerRecord := goalbranch.Attestation{Source: goalbranch.AttestationSource{Kind: "reader-record"}}
+	err := requireCriticRootSource("2", readerRecord)
+	refusal, ok := err.(*boundaryRefusal)
+	if !ok {
+		t.Fatalf("reader-record refusal type = %T, error = %v", err, err)
+	}
+	if refusal.Code != "BATCH_JOIN_UNREAD" || refusal.Detail != "build 2 was read outside a critic-root job" ||
+		refusal.Error() != "BATCH_JOIN_UNREAD: build 2 was read outside a critic-root job" {
+		t.Fatalf("reader-record refusal = %+v", refusal)
+	}
+	criticRoot := goalbranch.Attestation{Source: goalbranch.AttestationSource{Kind: "critic-root"}}
+	if err := requireCriticRootSource("2", criticRoot); err != nil {
+		t.Fatalf("critic-root refusal = %v", err)
 	}
 }
 
@@ -337,23 +369,13 @@ func TestBatchBranchMemberRefusesMovedTrunk(t *testing.T) {
 }
 
 func TestBatchSealBranchDeletionUsesParentPackage(t *testing.T) {
-	bed := newGoalBranchBed(t)
-	branchGit(t, bed.root, "switch", "--quiet", "--detach", bed.base)
-	must(t, os.Remove(filepath.Join(bed.root, "metasystem", "gone", "value.go")))
-	branchGit(t, bed.root, "add", "-u", "metasystem/gone/value.go")
-	commit, err := goalbranch.CommitStaged(goalbranch.CommitRequest{
-		Repo: bed.root, Remote: bed.root, EndpointTip: bed.base, GoalID: "goal-a", Unit: "delete-package",
-		OpID: "build-goal-a-delete-package", Kind: goalbranch.Unit, CheckClaim: func() error { return nil },
-	})
-	must(t, err)
-	tip := branchCriticRead(t, bed, "goal-a", "delete-package", commit, "critic-goal-a-delete-package", false)
-	member, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tip, GoalID: "goal-a", Last: true})
-	must(t, err)
-	sealedTree, err := AssembleBranchMembers(bed.root, branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}"), []BranchMember{member})
-	must(t, err)
-	patch, err := BranchMemberPatch(bed.root, member)
-	must(t, err)
-	packages, err := changedGoPackages(bed.root, sealedTree[0], patchGateChanges(patch))
+	patch := []byte("diff --git a/metasystem/gone/value.go b/metasystem/gone/value.go\n" +
+		"deleted file mode 100644\n--- a/metasystem/gone/value.go\n+++ /dev/null\n")
+	changes := patchGateChanges(patch)
+	if change, ok := changes["metasystem/gone/value.go"]; len(changes) != 1 || !ok || !change.Deleted || change.BaseAbsent {
+		t.Fatalf("deletion patch changes=%v", changes)
+	}
+	packages, err := changedGoPackages("", testCommit(1001), changes)
 	if err != nil || !slices.Contains(packages, "./...") || slices.Contains(packages, "./gone") {
 		t.Fatalf("deletion package selection=%v packages=%v", err, packages)
 	}
@@ -371,50 +393,37 @@ func TestBatchBranchAllowsOnlyOneMemberPerGoal(t *testing.T) {
 }
 
 func TestBatchGoalEjectionRebuildsLeasedLandingBranch(t *testing.T) {
-	bed := newGoalBranchBed(t)
-	tipA := buildGoalBranch(t, bed, "goal-a", []string{"1", "2"}, -1)
-	memberA, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipA, GoalID: "goal-a", Last: true})
-	must(t, err)
-	tipB := buildGoalBranch(t, bed, "goal-b", []string{"1"}, -1)
-	memberB, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipB, GoalID: "goal-b", Last: true})
-	must(t, err)
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	branchGit(t, filepath.Dir(origin), "init", "-q", "--bare", origin)
-	branchGit(t, bed.root, "remote", "add", "origin", origin)
-	branchGit(t, bed.root, "push", "-q", "origin", "main")
+	base, prefixA, prefixB := testCommit(1001), testCommit(1002), testCommit(1003)
+	oldTip, newTip := testCommit(1004), testCommit(1005)
 	claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
-	unitA := BindBranchMember(Unit{GoalID: "goal-a", Chain: tipA, Claim: claim, State: UnitJoined, ChangedPaths: []string{"metasystem/a-1.txt"}, AuthorName: "Approver A", AuthorEmail: "a@example.invalid"}, memberA)
-	unitB := BindBranchMember(Unit{GoalID: "goal-b", Chain: tipB, Claim: claim, State: UnitJoined, ChangedPaths: []string{"metasystem/b-1.txt"}, AuthorName: "Approver B", AuthorEmail: "b@example.invalid"}, memberB)
-	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
-	oldTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, "", "owner", []Unit{unitA, unitB})
-	must(t, err)
-	prefixes, err := assembleUnits(bed.root, baseTree, []Unit{unitA, unitB})
-	must(t, err)
-	record := Record{Schema: 1, BatchID: testBatchID, TipTree: prefixes[len(prefixes)-1], State: StateDiagnosing, Units: []Unit{unitA, unitB},
-		Proof: &Proof{Status: "failed", AttemptID: "tip-red"}, Landing: &LandingProgress{Base: baseTree, BranchTip: oldTip},
-		batchRecordFields: batchRecordFields{BaseTree: baseTree, PrefixTrees: prefixes}}
-	store := NewStore(bed.root, nil)
+	unitA := Unit{GoalID: "goal-a", Chain: testCommit(1006), BranchTip: testCommit(1006), Claim: claim, State: UnitJoined,
+		ChangedPaths: []string{"metasystem/a-1.txt"}, Builds: []BranchBuild{{Commit: testCommit(1008)}}}
+	unitB := Unit{GoalID: "goal-b", Chain: testCommit(1007), BranchTip: testCommit(1007), Claim: claim, State: UnitJoined,
+		ChangedPaths: []string{"metasystem/b-1.txt"}, Builds: []BranchBuild{{Commit: testCommit(1009)}}}
+	store := NewStore(t.TempDir(), nil)
+	strictReassembly(t, &store,
+		expectedAssembly(base, []string{"goal-b"}, []string{unitB.Chain}, []string{testCommit(1010)}),
+		expectedReassembly{kind: "rebuild", batchID: testBatchID, base: base, leaseTip: oldTip, actor: "owner",
+			goals: []string{"goal-b"}, chains: []string{unitB.Chain}, tip: newTip})
+	record := Record{Schema: 1, BatchID: testBatchID, TipTree: prefixB, State: StateDiagnosing, Units: []Unit{unitA, unitB},
+		Proof: &Proof{Status: "failed", AttemptID: "tip-red"}, Landing: &LandingProgress{Base: base, BranchTip: oldTip},
+		batchRecordFields: batchRecordFields{BaseTree: base, PrefixTrees: []string{prefixA, prefixB}}}
 	must(t, store.Create(record))
-	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group", InputManifest: []string{"metasystem/a-1.txt"}}}, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+	requests := 0
+	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group", InputManifest: []string{"metasystem/a-1.txt"}}}, "", time.Unix(2, 0), RedSeams{Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
+		requests++
+		if request.Tree != base || request.GoalID != "goal-b" || !slices.Equal(request.Groups, []string{"group"}) || request.Claim != claim || !request.NeverReuse {
+			t.Fatalf("base diagnostic request=%+v", request)
+		}
 		return DiagnosticResult{AttemptID: "base-green"}, nil
 	}}))
 	updated := load(t, store)
-	newTip := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID)
-	if newTip == oldTip || updated.Landing == nil || updated.Landing.BranchTip != newTip || updated.Units[0].State != UnitReturnPending ||
-		!slices.Equal([]string{updated.Units[1].GoalID}, []string{"goal-b"}) {
+	if requests != 1 || updated.State != StateOpen || updated.TipTree != testCommit(1010) ||
+		!slices.Equal(updated.PrefixTrees, []string{testCommit(1010)}) || updated.Landing == nil ||
+		updated.Landing.BranchTip != newTip || updated.Landing.Base != base || updated.Units[0].State != UnitReturnPending ||
+		updated.Units[0].Outcome != UnitEjected || updated.Units[1].State != UnitJoined || updated.Units[1].GoalID != "goal-b" ||
+		len(updated.History) == 0 || updated.History[len(updated.History)-1].To != StateOpen {
 		t.Fatalf("old=%s new=%s record=%+v", oldTip, newTip, updated)
-	}
-	if got := branchGit(t, origin, "show", newTip+":metasystem/a-1.txt"); got != "base" {
-		t.Fatalf("ejected goal-a bytes remain on rebuilt landing branch: %q", got)
-	}
-	if got := branchGit(t, origin, "show", newTip+":metasystem/b-1.txt"); got != "goal-b/1" {
-		t.Fatalf("survivor bytes=%q", got)
-	}
-	must(t, DeleteLandingBranch(bed.root, testBatchID, newTip))
-	republished, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, newTip, "owner", []Unit{unitB})
-	must(t, err)
-	if got := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID); got != republished {
-		t.Fatalf("republished tip=%s, want %s", got, republished)
 	}
 }
 
@@ -507,81 +516,53 @@ func TestReassembleSurvivorsKeepsChainOnlyAndMixedBatches(t *testing.T) {
 			name = "chain and branch"
 		}
 		t.Run(name, func(t *testing.T) {
-			bed := newGoalBranchBed(t)
-			tipA := buildGoalBranch(t, bed, "goal-a", []string{"1"}, -1)
-			memberA, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipA, GoalID: "goal-a", Last: true})
-			must(t, err)
-			tipB := buildGoalBranch(t, bed, "goal-b", []string{"1"}, -1)
-			memberB, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipB, GoalID: "goal-b", Last: true})
-			must(t, err)
-
-			makeChain := func(goalID, chain, path, body string) Unit {
-				branchGit(t, bed.root, "switch", "-q", "--detach", bed.base)
-				branchWrite(t, bed.root, path, body)
-				branchGit(t, bed.root, "add", path)
-				branchGit(t, bed.root, "commit", "-qm", chain)
-				commit := branchGit(t, bed.root, "rev-parse", "HEAD")
-				patch := branchGit(t, bed.root, "diff", "--binary", "--full-index", bed.base, commit)
-				branchWrite(t, bed.root, "artifacts/agents/landing-batches/chains/"+chain+"/diff.patch", patch+"\n")
-				return Unit{GoalID: goalID, Chain: chain, State: UnitJoined}
-			}
-			chainOne := makeChain("goal-chain-one", "chain-one", "metasystem/chain-one.txt", "chain one\n")
-			chainTwo := makeChain("goal-chain-two", "chain-two", "metasystem/chain-two.txt", "chain two\n")
-
-			origin := filepath.Join(t.TempDir(), "origin.git")
-			branchGit(t, filepath.Dir(origin), "init", "-q", "--bare", origin)
-			branchGit(t, bed.root, "remote", "add", "origin", origin)
-			branchGit(t, bed.root, "push", "-q", "origin", bed.base+":refs/heads/main")
+			base, prefixA, prefixOne, oldTip := testCommit(1101), testCommit(1102), testCommit(1103), testCommit(1104)
+			prefixTwo, survivorOne, survivorTwo, newTip := testCommit(1105), testCommit(1106), testCommit(1107), testCommit(1108)
 			claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
-			unitA := BindBranchMember(Unit{GoalID: "goal-a", Chain: tipA, Claim: claim, State: UnitJoined,
-				AuthorName: "Approver A", AuthorEmail: "a@example.invalid"}, memberA)
-			unitB := BindBranchMember(Unit{GoalID: "goal-b", Chain: tipB, Claim: claim, State: UnitJoined,
-				AuthorName: "Approver B", AuthorEmail: "b@example.invalid"}, memberB)
-			chainOne.Claim, chainTwo.Claim = claim, claim
+			unitA := Unit{GoalID: "goal-a", Chain: testCommit(1109), BranchTip: testCommit(1109), Claim: claim, State: UnitJoined,
+				Builds: []BranchBuild{{Commit: testCommit(1111)}}}
+			chainOne := Unit{GoalID: "goal-chain-one", Chain: "chain-one", Claim: claim, State: UnitJoined}
+			chainTwo := Unit{GoalID: "goal-chain-two", Chain: "chain-two", Claim: claim, State: UnitJoined}
+			unitB := Unit{GoalID: "goal-b", Chain: testCommit(1110), BranchTip: testCommit(1110), Claim: claim, State: UnitJoined,
+				Builds: []BranchBuild{{Commit: testCommit(1112)}}}
 			units := []Unit{unitA, chainOne, chainTwo}
-			branchUnits := []Unit{unitA}
+			expected := []expectedReassembly{
+				expectedAssembly(base, []string{"goal-chain-one", "goal-chain-two"}, []string{"chain-one", "chain-two"}, []string{survivorOne, survivorTwo}),
+				{kind: "delete", batchID: testBatchID, leaseTip: oldTip},
+			}
 			if mixed {
 				units = []Unit{unitA, chainOne, unitB}
-				branchUnits = []Unit{unitA, unitB}
+				expected = []expectedReassembly{
+					expectedAssembly(base, []string{"goal-chain-one", "goal-b"}, []string{"chain-one", unitB.Chain}, []string{survivorOne, survivorTwo}),
+					{kind: "rebuild", batchID: testBatchID, base: base, leaseTip: oldTip, actor: "owner",
+						goals: []string{"goal-chain-one", "goal-b"}, chains: []string{"chain-one", unitB.Chain}, tip: newTip},
+				}
 			}
-			baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
-			oldTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, "", "owner", branchUnits)
-			must(t, err)
-			prefixes, err := assembleUnits(bed.root, baseTree, units)
-			must(t, err)
-			record := Record{Schema: 1, BatchID: testBatchID, TipTree: prefixes[len(prefixes)-1], State: StateOpen, Units: units,
-				Landing:           &LandingProgress{Base: baseTree, BranchTip: oldTip},
-				batchRecordFields: batchRecordFields{BaseTree: baseTree, PrefixTrees: prefixes}}
-			store := NewStore(bed.root, nil)
+			store := NewStore(t.TempDir(), nil)
+			strictReassembly(t, &store, expected...)
+			record := Record{Schema: 1, BatchID: testBatchID, TipTree: prefixTwo, State: StateOpen, Units: units,
+				Landing:           &LandingProgress{Base: base, BranchTip: oldTip},
+				batchRecordFields: batchRecordFields{BaseTree: base, PrefixTrees: []string{prefixA, prefixOne, prefixTwo}}}
 			must(t, store.Create(record))
 			must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "fixture ejection", "owner", time.Unix(2, 0)))
 			must(t, ReassembleSurvivors(store, testBatchID, "owner", time.Unix(3, 0)))
 
 			updated := load(t, store)
-			if updated.State != StateOpen || len(updated.PrefixTrees) != 2 || updated.Units[1].GoalID != "goal-chain-one" {
+			if updated.State != StateOpen || updated.BaseTree != base || updated.TipTree != survivorTwo ||
+				!slices.Equal(updated.PrefixTrees, []string{survivorOne, survivorTwo}) ||
+				updated.Units[0].State != UnitReturnPending || updated.Units[0].Outcome != UnitEjected ||
+				updated.Units[1].State != UnitJoined || updated.Units[1].GoalID != "goal-chain-one" ||
+				len(updated.History) < 2 || updated.History[len(updated.History)-1].To != StateOpen {
 				t.Fatalf("reassembled record=%+v", updated)
 			}
-			if got := branchGit(t, bed.root, "show", updated.TipTree+":metasystem/chain-one.txt"); got != "chain one" {
-				t.Fatalf("first chain bytes=%q", got)
-			}
 			if mixed {
-				if updated.Units[2].GoalID != "goal-b" || updated.Landing == nil || updated.Landing.BranchTip == oldTip {
+				if updated.Units[2].GoalID != "goal-b" || updated.Units[2].State != UnitJoined ||
+					updated.Landing == nil || updated.Landing.Base != base || updated.Landing.BranchTip != newTip || newTip == oldTip {
 					t.Fatalf("mixed survivor order or branch=%+v", updated)
 				}
-				if got := branchGit(t, bed.root, "show", updated.TipTree+":metasystem/b-1.txt"); got != "goal-b/1" {
-					t.Fatalf("branch survivor bytes=%q", got)
-				}
-				remoteTip := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID)
-				if remoteTip != updated.Landing.BranchTip || branchGit(t, origin, "show", remoteTip+":metasystem/a-1.txt") != "base" ||
-					branchGit(t, origin, "show", remoteTip+":metasystem/b-1.txt") != "goal-b/1" {
-					t.Fatalf("rebuilt landing branch=%s record=%+v", remoteTip, updated.Landing)
-				}
 			} else {
-				if updated.Units[2].GoalID != "goal-chain-two" || updated.Landing != nil {
+				if updated.Units[2].GoalID != "goal-chain-two" || updated.Units[2].State != UnitJoined || updated.Landing != nil {
 					t.Fatalf("chain survivor order or landing=%+v", updated)
-				}
-				if got := branchGit(t, bed.root, "show", updated.TipTree+":metasystem/chain-two.txt"); got != "chain two" {
-					t.Fatalf("second chain bytes=%q", got)
 				}
 			}
 		})

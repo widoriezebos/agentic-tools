@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
@@ -185,7 +183,8 @@ func TestFindingDigestUsesStableRoleIdentity(t *testing.T) {
 }
 
 func TestClaimedGoalWithoutStructuredBudgetIsDead(t *testing.T) {
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+	now := time.Now()
+	root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{
 		"hungry-goal": {
 			Id: "hungry-goal", State: goal.StateClaimed, Intent: "Keep work bounded", Origin: goal.OriginMain,
 			NextStep: "Finish whenever it is ready.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
@@ -193,7 +192,7 @@ func TestClaimedGoalWithoutStructuredBudgetIsDead(t *testing.T) {
 			History: bedHistory("hungry-goal", "claim"),
 		},
 	})
-	role := checkClaimedGoalBudgets(root, time.Now())
+	role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "BUDGET_MISSING record=plans/goals/hungry-goal.md") ||
 		!strings.Contains(role.Remedy, "goal set-budget --root . --id hungry-goal") {
 		t.Fatalf("the budgetless claimed goal and its current remedy must be named: %+v", role)
@@ -234,35 +233,35 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 	}
 
 	t.Run("equal epochs", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
-		writeHealthLease(t, root, "coordinator", 1)
-		role := checkStopCapabilityEpoch(root, now)
+		bed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()}, nil)
+		writeHealthLease(t, bed.root, "coordinator", 1)
+		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "bounded-goal epoch=1") {
 			t.Fatalf("equal epochs = %+v", role)
 		}
 	})
 
 	t.Run("no claimed goal", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", nil)
-		writeHealthLease(t, root, "coordinator", 5)
-		role := checkStopCapabilityEpoch(root, now)
+		bed := newRoleHealthProjectionBed(t, now, nil, nil)
+		writeHealthLease(t, bed.root, "coordinator", 5)
+		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "no claimed goal") {
 			t.Fatalf("no claimed goal = %+v", role)
 		}
 	})
 
 	t.Run("no lease holder", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
-		role := checkStopCapabilityEpoch(root, now)
+		bed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()}, nil)
+		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "no live lease holder") {
 			t.Fatalf("no holder = %+v", role)
 		}
 	})
 
 	t.Run("same lineage divergence", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
-		writeHealthLease(t, root, "coordinator", 5)
-		role := checkStopCapabilityEpoch(root, now)
+		bed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()}, nil)
+		writeHealthLease(t, bed.root, "coordinator", 5)
+		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "bounded-goal") ||
 			!strings.Contains(role.Reason, "claim epoch 1") || !strings.Contains(role.Reason, "claim epoch 5") ||
 			!strings.Contains(role.Remedy, "metasystem goal restamp --id bounded-goal") ||
@@ -272,9 +271,9 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 	})
 
 	t.Run("foreign lineage divergence", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
-		writeHealthLease(t, root, "replacement-lineage", 5)
-		role := checkStopCapabilityEpoch(root, now)
+		bed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()}, nil)
+		writeHealthLease(t, bed.root, "replacement-lineage", 5)
+		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "coordinator") ||
 			!strings.Contains(role.Reason, "replacement-lineage") ||
 			role.Remedy != "release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem goal handover" {
@@ -283,35 +282,40 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 	})
 
 	t.Run("unreadable goal store", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
-		path := filepath.Join(root, "plans", "goals", "bounded-goal.md")
+		bed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()}, nil)
+		path := filepath.Join(bed.root, "plans", "goals", "bounded-goal.md")
 		if err := os.WriteFile(path, []byte("not a goal record\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		for _, args := range [][]string{{"add", "plans/goals/bounded-goal.md"}, {"commit", "-q", "-m", "corrupt accepted goal"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-			command := exec.Command("git", append([]string{"-C", root}, args...)...)
-			command.Env = gittree.ScrubbedEnviron()
-			if output, err := command.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v\n%s", args, err, output)
-			}
+		projection, projectionErr := bed.project()
+		if projectionErr == nil {
+			t.Fatal("corrupt accepted goal unexpectedly projected")
 		}
-		writeHealthLease(t, root, "coordinator", 5)
-		role := checkStopCapabilityEpoch(root, now)
+
+		writeHealthLease(t, bed.root, "coordinator", 5)
+		machineReads := 0
+		role := checkStopCapabilityEpochFromProjection(bed.root, now, projection, projectionErr, func(string) (string, error) {
+			machineReads++
+			return "bed-m1", nil
+		})
+		if machineReads != 0 {
+			t.Fatalf("machine read after projection failure: %d", machineReads)
+		}
 		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "goal store is unreadable") {
 			t.Fatalf("unreadable store = %+v", role)
 		}
 	})
 
 	t.Run("unreadable lease", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
-		path := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
+		bed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()}, nil)
+		path := filepath.Join(bed.root, "artifacts", "agents", "mains", "worktree-lease.json")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		role := checkStopCapabilityEpoch(root, now)
+		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "checkout lease is unreadable") {
 			t.Fatalf("unreadable lease = %+v", role)
 		}
@@ -359,18 +363,19 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
 
 	t.Run("within budget", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		writeHealthJob(t, root, "design-one", `{"jobId":"design-one","operationId":"design-one","role":"design-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
 		writeHealthJob(t, root, "code-one", `{"jobId":"code-one","operationId":"code-one","role":"code-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
-		role := checkClaimedGoalBudgets(root, now)
+		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "designCritiques=1/2 codeCritiques=1/2") {
 			t.Fatalf("known structured budget was not judged: %+v", role)
 		}
 	})
 
 	t.Run("elapsed admission closed", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-		role := checkClaimedGoalBudgets(root, time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC))
+		caseNow := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+		root, projection, projectionErr := budgetHealthProjectionBed(t, caseNow, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		role := checkClaimedGoalBudgetsFromProjection(root, caseNow, projection, true, projectionErr, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "ADMISSION_CLOSED_ELAPSED") ||
 			!strings.Contains(role.Reason, "breachLimit=6h0m0s") || strings.Contains(role.Remedy, "steward tick") {
 			t.Fatalf("the elapsed grace band was not healthy closed-admission evidence: %+v", role)
@@ -378,8 +383,9 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("elapsed breach", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-		role := checkClaimedGoalBudgets(root, time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC))
+		caseNow := time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC)
+		root, projection, projectionErr := budgetHealthProjectionBed(t, caseNow, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		role := checkClaimedGoalBudgetsFromProjection(root, caseNow, projection, true, projectionErr, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "ELAPSED_BREACH") ||
 			!strings.Contains(role.Remedy, "steward tick") {
 			t.Fatalf("the grace boundary was not typed breach-stop evidence: %+v", role)
@@ -387,10 +393,10 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("breach", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		writeHealthJob(t, root, "one", `{"jobId":"one","operationId":"reserve-one","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"running"}`)
 		writeHealthJob(t, root, "two", `{"jobId":"two","operationId":"reserve-two","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"pending"}`)
-		role := checkClaimedGoalBudgets(root, now)
+		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "reservedJobMinutesLimit") ||
 			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "steward tick") {
 			t.Fatalf("structured breaches did not route to breach-stop healing: %+v", role)
@@ -398,9 +404,9 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("budget unknown", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		writeHealthJob(t, root, "revisionless", `{"jobId":"revisionless","operationId":"reserve-one","goalId":"bounded-goal","capMin":20,"status":"running"}`)
-		role := checkClaimedGoalBudgets(root, now)
+		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
 		if role.Status != HealthDead || !role.NoAutomaticRemedy ||
 			!strings.Contains(role.Reason, "BUDGET_UNKNOWN") ||
@@ -414,13 +420,40 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 func TestSTR4R1RepeatedExceptionAppetiteSignal(t *testing.T) {
 	file := structuredHealthGoal()
 	file.BudgetExceptions = 2
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
-	role := checkClaimedGoalBudgets(root, time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file})
+	role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 	if role.Status != HealthAlive || !strings.Contains(role.Reason, "riskUnanswered=1") ||
 		!strings.Contains(role.Reason, "exceptions=2") ||
 		!strings.HasSuffix(role.Reason, "repeated exception: defect signal") {
 		t.Fatalf("two budget exceptions did not become the repeated-exception defect signal: %+v", role)
 	}
+}
+
+type carryHistoryRepository struct {
+	goal.Repository
+	t      *testing.T
+	word   string
+	anchor string
+	calls  int
+}
+
+func (r *carryHistoryRepository) CommitWithTrailer(revision, key, value string) (string, error) {
+	r.t.Helper()
+	switch r.calls {
+	case 0:
+		if revision == "refs/heads/main" && key == "Goal-Transaction" && value == r.word {
+			r.calls++
+			return r.anchor, nil
+		}
+	case 1:
+		if revision == r.anchor+"..refs/heads/main" && key == "Carry" && value == r.word {
+			r.calls++
+			return "", nil
+		}
+	}
+	r.t.Fatalf("unexpected carry history query %d: revision=%q key=%q value=%q", r.calls+1, revision, key, value)
+	return "", nil
 }
 
 func TestHCL08FleetLine(t *testing.T) {
@@ -439,29 +472,14 @@ func TestHCL08FleetLine(t *testing.T) {
 		goal.HistoryLine{At: now.Add(-20 * time.Minute).Format(time.RFC3339), Opid: "01K4J000000000000000000004-bed-m1-00000006", Verb: "carrying", Actor: "bed-m1+coordinator", Targets: []string{file.Id}, ApprovedRef: word, Reason: "open workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40) + " expires=" + now.Add(time.Hour).Format(time.RFC3339) + " by=human:Wido", Keep: -1},
 	)
 	file.ReviewObligations = append(file.ReviewObligations, goal.ReviewObligation{Finding: "carried:" + strings.Repeat("f", 40), Chain: goal.HumanCarriedChain, Artifact: "commit:" + strings.Repeat("f", 40), Test: "pending", State: "open"})
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{file.Id: file})
-	command := exec.Command("git", "-C", root, "read-tree", "HEAD")
-	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("restore fixture index: %v: %s", err, output)
-	}
-	command = exec.Command("git", "-C", root, "commit", "--amend", "-q", "-m", "converted bed\n\nGoal-Transaction: "+word)
-	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("amend carry anchor: %v: %s", err, output)
-	}
-	command = exec.Command("git", "-C", root, "update-ref", goal.AcceptedRef, "HEAD")
-	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("advance accepted ref: %v: %s", err, output)
-	}
-	if !goal.NewWorld(root) {
-		command = exec.Command("git", "-C", root, "ls-tree", "-r", "HEAD")
-		command.Env = gittree.ScrubbedEnviron()
-		output, _ := command.CombinedOutput()
-		t.Fatalf("carried counter fixture lost its accepted ledger; tree: %s", output)
-	}
-	role := checkClaimedGoalBudgets(root, now)
+	root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{file.Id: file})
+	repository := &carryHistoryRepository{t: t, word: word, anchor: strings.Repeat("1", 40)}
+	t.Cleanup(func() {
+		if repository.calls != 2 {
+			t.Errorf("carry history used %d of 2 declared queries", repository.calls)
+		}
+	})
+	role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, repository)
 	if role.Status != HealthAlive || !strings.Contains(role.Reason, "carried=2") || !strings.Contains(role.Reason, "CARRIED today=2 open=1 inflight=1 debt=1") {
 		t.Fatalf("carried fleet and appetite lines changed: %+v", role)
 	}
@@ -475,7 +493,7 @@ func TestBreachStopHealthHealsBeforeNotifyAndEscalatesIndeterminate(t *testing.T
 		StopID: "stop-bounded-goal-r2-f1", Revision: 2, Epoch: 1, CapabilityGeneration: 2,
 		ClosedAt: now.Add(-time.Minute).Format(time.RFC3339), Reason: goal.StopReasonElapsedLimit,
 	}
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file})
 	stamp := now.Format(time.RFC3339)
 	batch := goal.StopBatch{
 		StopID: file.StopFence.StopID, GoalID: file.Id, GoalRevision: 2, FenceEpoch: 1,
@@ -492,7 +510,7 @@ func TestBreachStopHealthHealsBeforeNotifyAndEscalatesIndeterminate(t *testing.T
 		[]byte("metasystem.budget.elapsed-grace-percent=broken\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if role := checkClaimedGoalBudgets(root, now); role.Status != HealthAlive ||
+	if role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil); role.Status != HealthAlive ||
 		!strings.Contains(role.Reason, "BREACH_STOP_COMPLETE") ||
 		!strings.Contains(role.Reason, "ELAPSED_BREACH used=6h0m1s limit=6h0m0s grace=50") {
 		t.Fatalf("complete machinery stop must be health-alive history: %+v", role)
@@ -502,11 +520,11 @@ func TestBreachStopHealthHealsBeforeNotifyAndEscalatesIndeterminate(t *testing.T
 	batch.CompletedAt = ""
 	batch.Failure = "custody cannot be proven"
 	// COMPLETE is absorbing, so use a second root for the failure episode.
-	failureRoot := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	failureRoot, failureProjection, failureProjectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file})
 	if err := goal.WriteStopBatch(failureRoot, batch); err != nil {
 		t.Fatal(err)
 	}
-	role := checkClaimedGoalBudgets(failureRoot, now)
+	role := checkClaimedGoalBudgetsFromProjection(failureRoot, now, failureProjection, true, failureProjectionErr, nil)
 	verdict := applyHealthObservation(failureRoot, HealthObservationState{}, []RoleVerdict{role}, now)
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "INDETERMINATE") ||
 		!verdict.ShouldAlert || verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
@@ -563,7 +581,7 @@ func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
 		StopID: "stop-z-indeterminate-r2-f1", Revision: 2, Epoch: 1, CapabilityGeneration: 2,
 		ClosedAt: now.Add(-time.Minute).Format(time.RFC3339), Reason: goal.StopReasonElapsedLimit,
 	}
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+	root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{
 		breach.Id: breach, indeterminate.Id: indeterminate,
 	})
 	writeHealthJob(t, root, "over-limit", `{"jobId":"over-limit","operationId":"reserve-over-limit","goalId":"a-breach","goalRevision":2,"capMin":80,"status":"running"}`)
@@ -577,7 +595,7 @@ func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
 	if err := goal.WriteStopBatch(root, batch); err != nil {
 		t.Fatal(err)
 	}
-	role := checkClaimedGoalBudgets(root, now)
+	role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 	verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
 	if !strings.Contains(role.Reason, "a-breach revision=2 BREACH") ||
 		!strings.Contains(role.Reason, "z-indeterminate revision=2 BREACH_STOP_INDETERMINATE") ||
@@ -599,8 +617,8 @@ func TestClaimedGoalMissingOrMalformedBudgetNamesSetBudget(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			file := structuredHealthGoal()
 			file.Budget = test.budget
-			root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
-			role := checkClaimedGoalBudgets(root, now)
+			root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file})
+			role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 			if role.Status != HealthDead || !strings.Contains(role.Reason, "bounded-goal") ||
 				!strings.Contains(role.Remedy, "goal set-budget") {
 				t.Fatalf("%s tuple did not produce the typed remedy: %+v", test.name, role)

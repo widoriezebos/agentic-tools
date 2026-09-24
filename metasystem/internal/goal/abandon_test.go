@@ -22,41 +22,47 @@ func configureAbandonFloorTest(t *testing.T, stamp string) {
 	}
 }
 
-func recordAbandonFloorTest(t *testing.T, root, ulid string) {
+func recordAbandonFloorTestForEndpoint(t *testing.T, endpoint Endpoint, ulid string) {
 	t.Helper()
-	req := verbReq(root, ulid, "mac-a")
+	req := verbReqFor(endpoint, ulid, "mac-a")
 	req.Actor.Human = "Wido"
 	commit := strings.Repeat("a", 40)
-	if result, err := EngineFloor(req, commit, goalHumanProof(t, root, req.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := EngineFloor(req, commit, goalHumanProof(t, endpoint.Root, req.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("engine floor: %+v %v", result, err)
 	}
 }
 
+func abandonLandingReqFor(endpoint Endpoint, ulid, machine string, at time.Time) VerbRequest {
+	req := verbReqFor(endpoint, ulid, machine)
+	req.Now = at
+	return req
+}
+
 func TestAbandonOfALandReadyClaimClearsTheLandingBinding(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X00000000000000000M000")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000M000")
 
 	t0 := time.Date(2026, 9, 13, 8, 0, 0, 0, time.UTC)
-	if result, err := Open(landingReq(root, "01J5X00000000000000000M010", "mac-a", t0), "land-ready-abandon", "Abandon work in the landing slot.", OriginHuman, "Enter landing."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(abandonLandingReqFor(endpoint, "01J5X00000000000000000M010", "mac-a", t0), "land-ready-abandon", "Abandon work in the landing slot.", OriginHuman, "Enter landing."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	if result, err := claimApprovedForTest(t, landingReq(root, "01J5X00000000000000000M020", "mac-a", t0.Add(time.Minute)), "land-ready-abandon", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, abandonLandingReqFor(endpoint, "01J5X00000000000000000M020", "mac-a", t0.Add(time.Minute)), "land-ready-abandon", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
 	}
-	if result, err := LandReady(landingReq(root, "01J5X00000000000000000M030", "mac-a", t0.Add(2*time.Minute)), "land-ready-abandon"); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := LandReady(abandonLandingReqFor(endpoint, "01J5X00000000000000000M030", "mac-a", t0.Add(2*time.Minute)), "land-ready-abandon"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("land-ready: %+v %v", result, err)
 	}
 
-	req := landingReq(root, "01J5X00000000000000000M040", "mac-a", t0.Add(3*time.Minute))
+	req := abandonLandingReqFor(endpoint, "01J5X00000000000000000M040", "mac-a", t0.Add(3*time.Minute))
 	req.Actor.Human = "Wido"
 	result, err := Abandon(req, "land-ready-abandon", AbandonSpec{Because: "the landing is no longer wanted"}, goalHumanProof(t, root, req.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon land-ready claim: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,32 +86,32 @@ func TestAbandonRepairsBlockerParksForCarriedWaivedAndAlso(t *testing.T) {
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, root := oneClone(t)
-			seedLedger(t, root)
+			endpoint, _ := fakeGoalEndpoint(t)
+			root := endpoint.Root
 			configureAbandonFloorTest(t, strings.Repeat("a", 40))
-			recordAbandonFloorTest(t, root, fmt.Sprintf("01J5X00000000000000000P0%d0", index))
-			if result, err := Open(verbReq(root, fmt.Sprintf("01J5X00000000000000000P1%d0", index), "mac-a"), "dependent", "Wait for a blocker.", OriginHuman, "Resume after the blocker."); err != nil || result.Outcome != OutcomeConfirmed {
+			recordAbandonFloorTestForEndpoint(t, endpoint, fmt.Sprintf("01J5X00000000000000000P0%d0", index))
+			if result, err := Open(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000P1%d0", index), "mac-a"), "dependent", "Wait for a blocker.", OriginHuman, "Resume after the blocker."); err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("open dependent: %+v %v", result, err)
 			}
 			risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "abandon blocker park fixture"}
-			blockerReq := verbReq(root, fmt.Sprintf("01J5X00000000000000000P2%d0", index), "mac-a")
+			blockerReq := verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000P2%d0", index), "mac-a")
 			blockerReq.Actor.Human = "Wido"
 			if result, err := OpenRisked(blockerReq, "blocker", "Block the dependent.", OriginHuman, "Resolve the blocker.", []string{"dependent"}, nil, risk, 0, "", nil, goalHumanProof(t, root, blockerReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("open blocker: %+v %v", result, err)
 			}
 			if test.want == "carried" {
-				if result, err := Open(verbReq(root, fmt.Sprintf("01J5X00000000000000000P3%d0", index), "mac-a"), "successor", "Carry the dependency.", OriginHuman, "Resolve the successor."); err != nil || result.Outcome != OutcomeConfirmed {
+				if result, err := Open(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000P3%d0", index), "mac-a"), "successor", "Carry the dependency.", OriginHuman, "Resolve the successor."); err != nil || result.Outcome != OutcomeConfirmed {
 					t.Fatalf("open successor: %+v %v", result, err)
 				}
 			}
 
-			req := verbReq(root, fmt.Sprintf("01J5X00000000000000000P4%d0", index), "mac-a")
+			req := verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000P4%d0", index), "mac-a")
 			req.Actor.Human = "Wido"
 			result, err := Abandon(req, "blocker", test.spec, goalHumanProof(t, root, req.Now))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("abandon: %+v %v", result, err)
 			}
-			tree, err := loadTree(root, result.Tip)
+			tree, err := loadTreeFor(endpoint, result.Tip)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -134,16 +140,16 @@ func TestAbandonRepairsBlockerParksForCarriedWaivedAndAlso(t *testing.T) {
 
 func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X00000000000000000Q000")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000Q000")
 
-	if result, err := Open(verbReq(root, "01J5X00000000000000000Q010", "mac-a"), "dependent", "Wait for both blockers.", OriginHuman, "Resume when both are resolved."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000Q010", "mac-a"), "dependent", "Wait for both blockers.", OriginHuman, "Resume when both are resolved."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open dependent: %+v %v", result, err)
 	}
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "abandon blocker park fixture"}
-	person := verbReq(root, "01J5X00000000000000000Q020", "mac-a")
+	person := verbReqFor(endpoint, "01J5X00000000000000000Q020", "mac-a")
 	person.Actor.Human = "Wido"
 	if result, err := OpenRisked(person, "done-blocker", "Finish the first blocker.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, goalHumanProof(t, root, person.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open first blocker: %+v %v", result, err)
@@ -152,7 +158,7 @@ func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.
 	if result, err := OpenRisked(person, "waived-blocker", "Remove the second blocker.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, goalHumanProof(t, root, person.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open second blocker: %+v %v", result, err)
 	}
-	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000Q040", "mac-a"), "done-blocker", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000Q040", "mac-a"), "done-blocker", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim first blocker: %+v %v", result, err)
 	}
 	person.Ulid = "01J5X00000000000000000Q050"
@@ -160,7 +166,7 @@ func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.
 	if err != nil || done.Outcome != OutcomeConfirmed {
 		t.Fatalf("finish first blocker: %+v %v", done, err)
 	}
-	tree, err := loadTree(root, done.Tip)
+	tree, err := loadTreeFor(endpoint, done.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +183,7 @@ func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon waived blocker: %+v %v", result, err)
 	}
-	tree, err = loadTree(root, result.Tip)
+	tree, err = loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,21 +195,21 @@ func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.
 
 func TestAbandonCarryDoesNotMoveAWaivedParkToTheSuccessor(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X00000000000000000Q100")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000Q100")
 
-	if result, err := Open(verbReq(root, "01J5X00000000000000000Q110", "mac-a"), "dependent", "Wait for a blocker.", OriginHuman, "Resume when the dependency is waived."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000Q110", "mac-a"), "dependent", "Wait for a blocker.", OriginHuman, "Resume when the dependency is waived."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open dependent: %+v %v", result, err)
 	}
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "abandon blocker park fixture"}
-	person := verbReq(root, "01J5X00000000000000000Q120", "mac-a")
+	person := verbReqFor(endpoint, "01J5X00000000000000000Q120", "mac-a")
 	person.Actor.Human = "Wido"
 	if result, err := OpenRisked(person, "blocker", "Block the dependent.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, goalHumanProof(t, root, person.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open blocker: %+v %v", result, err)
 	}
-	if result, err := Open(verbReq(root, "01J5X00000000000000000Q130", "mac-a"), "successor", "Carry unwaived dependencies.", OriginHuman, "Resolve the successor."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000Q130", "mac-a"), "successor", "Carry unwaived dependencies.", OriginHuman, "Resolve the successor."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open successor: %+v %v", result, err)
 	}
 
@@ -216,7 +222,7 @@ func TestAbandonCarryDoesNotMoveAWaivedParkToTheSuccessor(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon carried and waived blocker: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,11 +237,9 @@ func TestAbandonCarryDoesNotMoveAWaivedParkToTheSuccessor(t *testing.T) {
 
 func TestAbandonRefusalsStartWithAuthorityReasonAndArgumentGrammar(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	req := verbReq(root, "01J5X000000000000000000A00", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	req := verbReqFor(endpoint, "01J5X000000000000000000A00", "mac-a")
 	if _, err := Abandon(req, "goal-a", AbandonSpec{Because: "reason"}, nil); err == nil || err.Error() != "abandon is a human act and names its human (--by)" {
 		t.Fatalf("authority name must refuse first: %v", err)
 	}
@@ -254,42 +258,42 @@ func TestAbandonRefusalsStartWithAuthorityReasonAndArgumentGrammar(t *testing.T)
 
 func TestAbandonCarriedRepointsEveryDependent(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
 
-	floorReq := verbReq(root, "01J5X000000000000000000A10", "mac-a")
+	floorReq := verbReqFor(endpoint, "01J5X000000000000000000A10", "mac-a")
 	floorReq.Actor.Human = "Wido"
 	if result, err := EngineFloor(floorReq, strings.Repeat("a", 40), goalHumanProof(t, root, floorReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("engine-floor: %+v %v", result, err)
 	}
 	for index, id := range []string{"blocker", "dependent", "dependent-two", "successor"} {
-		if result, err := Open(verbReq(root, "01J5X000000000000000000B0"+string(rune('0'+index)), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, "01J5X000000000000000000B0"+string(rune('0'+index)), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
 	edge := []string{"blocker"}
 	for index, dependent := range []string{"dependent", "dependent-two"} {
-		if result, err := Edit(verbReq(root, fmt.Sprintf("01J5X000000000000000000B1%d", index), "mac-a"), dependent, EditFields{Blocked: &edge}); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Edit(verbReqFor(endpoint, fmt.Sprintf("01J5X000000000000000000B1%d", index), "mac-a"), dependent, EditFields{Blocked: &edge}); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("block %s: %+v %v", dependent, result, err)
 		}
-		approveGoalForTest(t, verbReq(root, fmt.Sprintf("01J5X000000000000000000B4%d", index), "mac-a"), dependent, testBudget())
+		approveGoalForTest(t, verbReqFor(endpoint, fmt.Sprintf("01J5X000000000000000000B4%d", index), "mac-a"), dependent, testBudget())
 	}
 
-	abandonReq := verbReq(root, "01J5X000000000000000000B20", "mac-a")
+	abandonReq := verbReqFor(endpoint, "01J5X000000000000000000B20", "mac-a")
 	abandonReq.Actor.Human = "Wido"
 	result, err := Abandon(abandonReq, "blocker", AbandonSpec{Because: "superseded"}, goalHumanProof(t, root, abandonReq.Now))
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by blocker") {
 		t.Fatalf("uncovered dependent must refuse: %+v %v", result, err)
 	}
 
-	abandonReq = verbReq(root, "01J5X000000000000000000B30", "mac-a")
+	abandonReq = verbReqFor(endpoint, "01J5X000000000000000000B30", "mac-a")
 	abandonReq.Actor.Human = "Wido"
 	result, err = Abandon(abandonReq, "blocker", AbandonSpec{Because: "superseded", Carried: "successor"}, goalHumanProof(t, root, abandonReq.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("carried abandon: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +315,7 @@ func TestAbandonCarriedRepointsEveryDependent(t *testing.T) {
 	if abandoned.Abandoned.Carried != "successor" || abandonLine.Carried != "successor" {
 		t.Fatalf("successor was not retained in the record and event: record=%+v event=%+v", abandoned.Abandoned, abandonLine)
 	}
-	projection, err := Project(endpointFor(root), false, abandonReq.Now)
+	projection, err := Project(endpoint, false, abandonReq.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,22 +330,22 @@ func TestAbandonCarriedRepointsEveryDependent(t *testing.T) {
 
 func TestAbandonRefusesUncoveredLiveDependents(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	for index, id := range []string{"blocker", "dependent-one", "dependent-two"} {
-		if result, err := Open(verbReq(root, []string{"01J5X0000000000000000000A1", "01J5X0000000000000000000A2", "01J5X0000000000000000000A3"}[index], "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, []string{"01J5X0000000000000000000A1", "01J5X0000000000000000000A2", "01J5X0000000000000000000A3"}[index], "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
 	for index, id := range []string{"dependent-one", "dependent-two"} {
 		blocked := []string{"blocker"}
-		if result, err := Edit(verbReq(root, fmt.Sprintf("01J5X00000000000000000H1%d0", index), "mac-a"), id, EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Edit(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000H1%d0", index), "mac-a"), id, EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("block %s: %+v %v", id, result, err)
 		}
 	}
-	req := verbReq(root, "01J5X00000000000000000H200", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000H200", "mac-a")
 	req.Actor.Human = "Wido"
 	result, err := Abandon(req, "blocker", AbandonSpec{Because: "superseded"}, goalHumanProof(t, root, req.Now))
 	if err != nil || result.Outcome != OutcomeRejected {
@@ -352,7 +356,7 @@ func TestAbandonRefusesUncoveredLiveDependents(t *testing.T) {
 			t.Fatalf("refusal omitted %s: %s", id, result.Detail)
 		}
 	}
-	tree, loadErr := loadTree(root, result.Tip)
+	tree, loadErr := loadTreeFor(endpoint, result.Tip)
 	if loadErr != nil || tree.Live["blocker"] == nil || tree.Abandoned["blocker"] != nil {
 		t.Fatalf("uncovered-dependent refusal changed the ledger: live=%v abandoned=%v err=%v", sortedGoalIds(tree.Live), sortedGoalIds(tree.Abandoned), loadErr)
 	}
@@ -360,26 +364,26 @@ func TestAbandonRefusesUncoveredLiveDependents(t *testing.T) {
 
 func TestAbandonWaiveRemovesTheEdgeWithARecordedReason(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	for index, id := range []string{"blocker", "dependent", "bystander", "unrelated"} {
-		if result, err := Open(verbReq(root, fmt.Sprintf("01J5X00000000000000000V0%d0", index), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000V0%d0", index), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
 	blocked := []string{"blocker", "bystander"}
-	if result, err := Edit(verbReq(root, "01J5X00000000000000000V100", "mac-a"), "dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000V100", "mac-a"), "dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("block dependent: %+v %v", result, err)
 	}
-	req := verbReq(root, "01J5X00000000000000000V200", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000V200", "mac-a")
 	req.Actor.Human = "Wido"
 	result, err := Abandon(req, "blocker", AbandonSpec{Because: "obsolete", Waive: []string{"dependent=the blocker no longer matters"}}, goalHumanProof(t, root, req.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("waived abandon: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,10 +396,10 @@ func TestAbandonWaiveRemovesTheEdgeWithARecordedReason(t *testing.T) {
 		t.Fatalf("waive reason was not retained: %+v", line)
 	}
 
-	if result, err := Open(verbReq(root, "01J5X00000000000000000V300", "mac-a"), "isolated", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000V300", "mac-a"), "isolated", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open isolated: %+v %v", result, err)
 	}
-	badReq := verbReq(root, "01J5X00000000000000000V310", "mac-a")
+	badReq := verbReqFor(endpoint, "01J5X00000000000000000V310", "mac-a")
 	badReq.Actor.Human = "Wido"
 	if result, err := Abandon(badReq, "isolated", AbandonSpec{Because: "obsolete", Waive: []string{"unrelated=not its dependent"}}, goalHumanProof(t, root, badReq.Now)); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not a live dependent") {
 		t.Fatalf("waiving a non-dependent must refuse: %+v %v", result, err)
@@ -404,11 +408,9 @@ func TestAbandonWaiveRemovesTheEdgeWithARecordedReason(t *testing.T) {
 
 func TestAbandonWaiveRefusesBlankAndDuplicateReasons(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	req := verbReq(root, "01J5X00000000000000000W000", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	req := verbReqFor(endpoint, "01J5X00000000000000000W000", "mac-a")
 	req.Actor.Human = "Wido"
 	proof := goalHumanProof(t, root, req.Now)
 	tests := []struct {
@@ -441,11 +443,9 @@ func TestAbandonWaiveRefusesBlankAndDuplicateReasons(t *testing.T) {
 
 func TestAbandonRefusalsAreOrderedInputFirst(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	req := verbReq(root, "01J5X00000000000000000W100", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	req := verbReqFor(endpoint, "01J5X00000000000000000W100", "mac-a")
 	defect := AbandonSpec{Because: " ", Waive: []string{"broken"}}
 	if _, err := Abandon(req, "primary", defect, nil); err == nil || err.Error() != "abandon is a human act and names its human (--by)" {
 		t.Fatalf("refusal 1 must win: %v", err)
@@ -463,12 +463,12 @@ func TestAbandonRefusalsAreOrderedInputFirst(t *testing.T) {
 		t.Fatalf("refusal 3 must win: %v", err)
 	}
 
-	_, orderedRoot := oneClone(t)
-	seedLedger(t, orderedRoot)
-	if result, err := Open(verbReq(orderedRoot, "01J5X00000000000000000W110", "mac-a"), "primary", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	orderedEndpoint, _ := fakeGoalEndpoint(t)
+	orderedRoot := orderedEndpoint.Root
+	if result, err := Open(verbReqFor(orderedEndpoint, "01J5X00000000000000000W110", "mac-a"), "primary", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open floor-order fixture: %+v %v", result, err)
 	}
-	projection, err := Project(endpointFor(orderedRoot), false, time.Now())
+	projection, err := Project(orderedEndpoint, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +484,7 @@ func TestAbandonRefusalsAreOrderedInputFirst(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jobDir, "ordered-job.json"), []byte(`{"jobId":"ordered-job","goalId":"primary","status":"running"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	orderedReq := verbReq(orderedRoot, "01J5X00000000000000000W120", "mac-a")
+	orderedReq := verbReqFor(orderedEndpoint, "01J5X00000000000000000W120", "mac-a")
 	orderedReq.Actor.Human = "Wido"
 	_, err = Abandon(orderedReq, "primary", AbandonSpec{Because: "reason"}, goalHumanProof(t, orderedRoot, orderedReq.Now))
 	if err == nil || !strings.Contains(err.Error(), "ledger has no record that the fleet runs it") || strings.Contains(err.Error(), "LOCK_BUSY") || strings.Contains(err.Error(), "ordered-job") {
@@ -494,11 +494,9 @@ func TestAbandonRefusalsAreOrderedInputFirst(t *testing.T) {
 
 func TestAbandonRefusesWithoutProofOrAReason(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	req := verbReq(root, "01J5X00000000000000000W200", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	req := verbReqFor(endpoint, "01J5X00000000000000000W200", "mac-a")
 	if _, err := Abandon(req, "primary", AbandonSpec{Because: "reason"}, nil); err == nil || !strings.Contains(err.Error(), "--by") {
 		t.Fatalf("missing human: %v", err)
 	}
@@ -523,24 +521,24 @@ func TestAbandonRefusesWithoutProofOrAReason(t *testing.T) {
 
 func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	for index, id := range []string{"primary", "child", "grandchild", "outsider"} {
-		if result, err := Open(verbReq(root, fmt.Sprintf("01J5X00000000000000000X0%d0", index), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000X0%d0", index), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
 	childBlocked := []string{"primary"}
 	grandchildBlocked := []string{"child"}
-	if result, err := Edit(verbReq(root, "01J5X00000000000000000X100", "mac-a"), "child", EditFields{Blocked: &childBlocked}); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000X100", "mac-a"), "child", EditFields{Blocked: &childBlocked}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("wire child: %+v %v", result, err)
 	}
-	if result, err := Edit(verbReq(root, "01J5X00000000000000000X110", "mac-a"), "grandchild", EditFields{Blocked: &grandchildBlocked}); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000X110", "mac-a"), "grandchild", EditFields{Blocked: &grandchildBlocked}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("wire grandchild: %+v %v", result, err)
 	}
-	req := verbReq(root, "01J5X00000000000000000X200", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000X200", "mac-a")
 	req.Actor.Human = "Wido"
 	result, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete", Also: []string{"child"}}, goalHumanProof(t, root, req.Now))
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "grandchild") {
@@ -555,11 +553,11 @@ func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tip, err := CaptureTip(endpointFor(root), "missing-also-projection")
+	tip, err := CaptureTip(endpoint, "missing-also-projection")
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectedTree, err := loadTree(root, tip)
+	projectedTree, err := loadTreeFor(endpoint, tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +583,7 @@ func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("named cascade: %+v %v", result, err)
 	}
-	tree, _ := loadTree(root, result.Tip)
+	tree, _ := loadTreeFor(endpoint, result.Tip)
 	for _, id := range []string{"primary", "child", "grandchild"} {
 		if tree.Abandoned[id] == nil {
 			t.Fatalf("%s was not abandoned in the cascade", id)
@@ -595,26 +593,26 @@ func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
 
 func TestAbandonToleratesItsOwnUnfinishedPrerequisites(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	for index, id := range []string{"unfinished", "primary"} {
-		if result, err := Open(verbReq(root, fmt.Sprintf("01J5X00000000000000000Y0%d0", index), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000Y0%d0", index), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
 	blocked := []string{"unfinished"}
-	if result, err := Edit(verbReq(root, "01J5X00000000000000000Y100", "mac-a"), "primary", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000Y100", "mac-a"), "primary", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("wire prerequisite: %+v %v", result, err)
 	}
-	req := verbReq(root, "01J5X00000000000000000Y200", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000Y200", "mac-a")
 	req.Actor.Human = "Wido"
 	result, err := Abandon(req, "primary", AbandonSpec{Because: "not worth waiting"}, goalHumanProof(t, root, req.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("unfinished prerequisite blocked abandon: %+v %v", result, err)
 	}
-	tree, _ := loadTree(root, result.Tip)
+	tree, _ := loadTreeFor(endpoint, result.Tip)
 	if tree.Live["unfinished"] == nil || tree.Abandoned["primary"] == nil {
 		t.Fatalf("prerequisite or abandonment moved incorrectly: live=%v abandoned=%v", sortedGoalIds(tree.Live), sortedGoalIds(tree.Abandoned))
 	}
@@ -622,19 +620,19 @@ func TestAbandonToleratesItsOwnUnfinishedPrerequisites(t *testing.T) {
 
 func TestAbandonRefusesWithoutTheFleetFloor(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if result, err := Open(verbReq(root, "01J5X00000000000000000Z000", "mac-a"), "primary", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000Z000", "mac-a"), "primary", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	req := verbReq(root, "01J5X00000000000000000Z100", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000Z100", "mac-a")
 	req.Actor.Human = "Wido"
 	proof := goalHumanProof(t, root, req.Now)
 	req.ConfigureAbandon(func() string { return strings.Repeat("a", 40) }, func(string, string, string) (bool, error) { return true, nil }, func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil })
 	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "ledger has no record that the fleet runs it") {
 		t.Fatalf("missing floor: %v", err)
 	}
-	floorReq := verbReq(root, "01J5X00000000000000000Z110", "mac-a")
+	floorReq := verbReqFor(endpoint, "01J5X00000000000000000Z110", "mac-a")
 	floorReq.Actor.Human = "Wido"
 	if result, err := EngineFloor(floorReq, strings.Repeat("b", 40), goalHumanProof(t, root, floorReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("engine floor: %+v %v", result, err)
@@ -676,27 +674,27 @@ func TestAbandonRefusesWithoutTheFleetFloor(t *testing.T) {
 
 func TestAbandonCompactsTheDepartedPriorityLikeDone(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	for index, id := range []string{"rank-a", "rank-b", "rank-c"} {
-		if result, err := Open(verbReq(root, fmt.Sprintf("01J5X00000000000000001A0%d0", index), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000001A0%d0", index), "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
-		priorityReq := verbReq(root, fmt.Sprintf("01J5X00000000000000001A1%d0", index), "mac-a")
+		priorityReq := verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000001A1%d0", index), "mac-a")
 		priorityReq.Actor.Human = "Wido"
 		if result, err := SetPriority(priorityReq, id, 1, nil, goalHumanProof(t, root, priorityReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("rank %s: %+v %v", id, result, err)
 		}
 	}
-	req := verbReq(root, "01J5X00000000000000001A200", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000001A200", "mac-a")
 	req.Actor.Human = "Wido"
 	result, err := Abandon(req, "rank-b", AbandonSpec{Because: "obsolete"}, goalHumanProof(t, root, req.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon ranked goal: %+v %v", result, err)
 	}
-	tree, _ := loadTree(root, result.Tip)
+	tree, _ := loadTreeFor(endpoint, result.Tip)
 	if tree.Abandoned["rank-b"].Priority != 1 || tree.Abandoned["rank-b"].Sequence != 2 || tree.Live["rank-c"].Sequence != 2 {
 		t.Fatalf("historical rank or compaction wrong: abandoned=%d:%d survivor=%d:%d", tree.Abandoned["rank-b"].Priority, tree.Abandoned["rank-b"].Sequence, tree.Live["rank-c"].Priority, tree.Live["rank-c"].Sequence)
 	}
@@ -711,44 +709,30 @@ func TestAbandonLocksEveryGoalInTheSetAndRefusesAnyRecordChange(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
-		competitor func(root string) (string, error)
+		competitor func(Endpoint) (string, error)
 		changedID  string
-		admitD     bool
 	}{
 		{
-			name: "the unclaimed dependent is claimed",
-			competitor: func(root string) (string, error) {
-				clear := []string{}
-				if result, err := Edit(verbReq(root, "01J5X000000000000000001D35", "mac-b"), "lock-dependent", EditFields{Blocked: &clear}); err != nil || result.Outcome != OutcomeConfirmed {
-					return "", fmt.Errorf("clear dependent blocker: %+v %v", result, err)
-				}
-				result, err := Claim(verbReq(root, "01J5X000000000000000001D40", "mac-b"), "lock-dependent")
-				return "lock-dependent", publishMustConfirm("claim dependent", result, err)
-			},
-			changedID: "lock-dependent",
-			admitD:    true,
-		},
-		{
 			name: "the primary claim moves",
-			competitor: func(root string) (string, error) {
-				release := verbReq(root, "01J5X000000000000000001D50", "mac-b")
+			competitor: func(endpoint Endpoint) (string, error) {
+				release := verbReqFor(endpoint, "01J5X000000000000000001D50", "mac-b")
 				release.Actor.Human = "Wido"
-				release.Authority = goalHumanProof(t, root, release.Now)
+				release.Authority = goalHumanProof(t, endpoint.Root, release.Now)
 				if result, err := Release(release, "lock-primary"); err != nil || result.Outcome != OutcomeConfirmed {
 					return "", fmt.Errorf("release primary: %+v %v", result, err)
 				}
-				result, err := Claim(verbReq(root, "01J5X000000000000000001D60", "mac-b"), "lock-primary")
+				result, err := Claim(verbReqFor(endpoint, "01J5X000000000000000001D60", "mac-b"), "lock-primary")
 				return "lock-primary", publishMustConfirm("move primary claim", result, err)
 			},
 			changedID: "lock-primary",
 		},
 		{
 			name: "the primary record is edited without moving its claim",
-			competitor: func(root string) (string, error) {
+			competitor: func(endpoint Endpoint) (string, error) {
 				next := "competitor edit"
-				edit := verbReq(root, "01J5X000000000000000001D70", "mac-b")
+				edit := verbReqFor(endpoint, "01J5X000000000000000001D70", "mac-b")
 				edit.Actor.Human = "Wido"
-				edit.Authority = goalHumanProof(t, root, edit.Now)
+				edit.Authority = goalHumanProof(t, endpoint.Root, edit.Now)
 				result, err := Edit(edit, "lock-primary", EditFields{NextStep: &next})
 				return "lock-primary", publishMustConfirm("edit primary", result, err)
 			},
@@ -756,8 +740,8 @@ func TestAbandonLocksEveryGoalInTheSetAndRefusesAnyRecordChange(t *testing.T) {
 		},
 		{
 			name: "a benign advancement changes neither record",
-			competitor: func(root string) (string, error) {
-				result, err := Open(verbReq(root, "01J5X000000000000000001D80", "mac-b"), "benign-other", "intent", "main", "next")
+			competitor: func(endpoint Endpoint) (string, error) {
+				result, err := Open(verbReqFor(endpoint, "01J5X000000000000000001D80", "mac-b"), "benign-other", "intent", "main", "next")
 				return "", publishMustConfirm("open benign goal", result, err)
 			},
 		},
@@ -765,108 +749,128 @@ func TestAbandonLocksEveryGoalInTheSetAndRefusesAnyRecordChange(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, root, competitor := twoClones(t)
-			seedLedger(t, root)
-			configureAbandonFloorTest(t, strings.Repeat("a", 40))
-			recordAbandonFloorTest(t, root, "01J5X000000000000000001D00")
-			risk := RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises tier-three goal admission."}
-			for index, id := range []string{"lock-primary", "lock-dependent"} {
-				result, err := Open(verbReq(root, []string{"01J5X000000000000000001D10", "01J5X000000000000000001D20"}[index], "mac-a"), id, "intent", "main", "next")
-				if err != nil || result.Outcome != OutcomeConfirmed {
-					t.Fatalf("open %s: %+v %v", id, result, err)
-				}
-				if result, err := Edit(verbReq(root, []string{"01J5X000000000000000001D15", "01J5X000000000000000001D25"}[index], "mac-a"), id, EditFields{Risk: &risk}); err != nil || result.Outcome != OutcomeConfirmed {
-					t.Fatalf("answer %s risk: %+v %v", id, result, err)
-				}
-			}
-			blocked := []string{"lock-primary"}
-			if result, err := Edit(verbReq(root, "01J5X000000000000000001D30", "mac-a"), "lock-dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
-				t.Fatalf("wire dependent: %+v %v", result, err)
-			}
-			approveGoalForTest(t, verbReq(root, "01J5X000000000000000001E10", "mac-a"), "lock-primary", testBudget())
-			approveGoalForTest(t, verbReq(root, "01J5X000000000000000001E20", "mac-a"), "lock-dependent", testBudget())
-			if result, err := Claim(verbReq(root, "01J5X000000000000000001E30", "mac-a"), "lock-primary"); err != nil || result.Outcome != OutcomeConfirmed {
-				t.Fatalf("claim primary: %+v %v", result, err)
-			}
-			projection, err := Project(endpointFor(root), false, time.Now())
-			if err != nil {
-				t.Fatal(err)
-			}
-			recordRevisions := map[string]uint64{}
-			lockRevisions := map[string]uint64{}
-			for _, id := range []string{"lock-primary", "lock-dependent"} {
-				file := projection.Tree.Live[id]
-				recordRevisions[id] = file.Revision
-				lockRevisions[id] = file.Revision
-				if file.Claimed != nil {
-					lockRevisions[id] = file.Claimed.Revision
-				}
-			}
-
-			injected := false
-			beforePush := func(attempt int) error {
-				if injected {
-					return nil
-				}
-				injected = true
-				for _, id := range []string{"lock-primary", "lock-dependent"} {
-					lock, lockErr := goalrevision.Acquire(root, id, lockRevisions[id], "competitor-probe")
-					if lockErr == nil {
-						_ = lock.Release()
-						return fmt.Errorf("concurrent acquire unexpectedly passed for %s", id)
-					}
-					if !strings.Contains(lockErr.Error(), "LOCK_BUSY") {
-						return fmt.Errorf("concurrent acquire for %s did not name LOCK_BUSY: %w", id, lockErr)
-					}
-				}
-				changedID, competitorErr := test.competitor(competitor)
-				if competitorErr != nil {
-					return competitorErr
-				}
-				if changedID != test.changedID {
-					return fmt.Errorf("competitor changed %q, want %q", changedID, test.changedID)
-				}
-				if test.admitD {
-					competitorProjection, projectErr := Project(endpointFor(competitor), false, time.Now())
-					if projectErr != nil {
-						return projectErr
-					}
-					claim := competitorProjection.Tree.Live["lock-dependent"].Claimed
-					admissionNow, parseErr := time.Parse(time.RFC3339, claim.At)
-					if parseErr != nil {
-						return parseErr
-					}
-					if admissionErr := runGoalRevisionAdmissionCLI(competitor, "lock-dependent", claim.Revision, admissionNow); admissionErr != nil {
-						return admissionErr
-					}
-				}
-				return nil
-			}
-			req := verbReq(root, "01J5X000000000000000001E40", "mac-a")
-			req.abandon.beforePush = beforePush
-			req.Actor.Human = "Wido"
-			result, err := Abandon(req, "lock-primary", AbandonSpec{Because: "superseded", Also: []string{"lock-dependent"}}, goalHumanProof(t, root, req.Now))
-			if err != nil {
-				t.Fatalf("abandon: %+v %v", result, err)
-			}
-			if test.changedID == "" {
-				if result.Outcome != OutcomeConfirmed {
-					t.Fatalf("unchanged records did not survive the compare: %+v", result)
-				}
-			} else {
-				want := fmt.Sprintf("goal %s changed under abandon's lock (revision %d is now ", test.changedID, recordRevisions[test.changedID])
-				if result.Outcome != OutcomeRejected || !strings.HasPrefix(result.Detail, want) || !strings.HasSuffix(result.Detail, "); re-read and retry") {
-					t.Fatalf("record change did not refuse by goal and revisions: %+v, want prefix %q", result, want)
-				}
-			}
-			for _, id := range []string{"lock-primary", "lock-dependent"} {
-				lock, lockErr := goalrevision.Acquire(root, id, lockRevisions[id], "released-probe")
-				if lockErr != nil {
-					t.Fatalf("abandon did not release %s's lock: %v", id, lockErr)
-				}
-				_ = lock.Release()
-			}
+			endpoint, competitor := fakeGoalEndpointPair(t)
+			runAbandonLockScenario(t, endpoint, competitor, test.competitor, test.changedID, false)
 		})
+	}
+}
+
+func TestAbandonLocksDependentDuringPublicCommandAdmission(t *testing.T) {
+	t.Parallel()
+	_, root, competitorRoot := twoClones(t)
+	seedLedger(t, root)
+	endpoint, competitor := endpointFor(root), endpointFor(competitorRoot)
+	runAbandonLockScenario(t, endpoint, competitor, func(endpoint Endpoint) (string, error) {
+		clear := []string{}
+		if result, err := Edit(verbReqFor(endpoint, "01J5X000000000000000001D35", "mac-b"), "lock-dependent", EditFields{Blocked: &clear}); err != nil || result.Outcome != OutcomeConfirmed {
+			return "", fmt.Errorf("clear dependent blocker: %+v %v", result, err)
+		}
+		result, err := Claim(verbReqFor(endpoint, "01J5X000000000000000001D40", "mac-b"), "lock-dependent")
+		return "lock-dependent", publishMustConfirm("claim dependent", result, err)
+	}, "lock-dependent", true)
+}
+
+func runAbandonLockScenario(t *testing.T, endpoint, competitor Endpoint, compete func(Endpoint) (string, error), changedID string, admitDependent bool) {
+	t.Helper()
+	root := endpoint.Root
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X000000000000000001D00")
+	risk := RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises tier-three goal admission."}
+	for index, id := range []string{"lock-primary", "lock-dependent"} {
+		result, err := Open(verbReqFor(endpoint, []string{"01J5X000000000000000001D10", "01J5X000000000000000001D20"}[index], "mac-a"), id, "intent", "main", "next")
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+		if result, err := Edit(verbReqFor(endpoint, []string{"01J5X000000000000000001D15", "01J5X000000000000000001D25"}[index], "mac-a"), id, EditFields{Risk: &risk}); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("answer %s risk: %+v %v", id, result, err)
+		}
+	}
+	blocked := []string{"lock-primary"}
+	if result, err := Edit(verbReqFor(endpoint, "01J5X000000000000000001D30", "mac-a"), "lock-dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("wire dependent: %+v %v", result, err)
+	}
+	approveGoalForTest(t, verbReqFor(endpoint, "01J5X000000000000000001E10", "mac-a"), "lock-primary", testBudget())
+	approveGoalForTest(t, verbReqFor(endpoint, "01J5X000000000000000001E20", "mac-a"), "lock-dependent", testBudget())
+	if result, err := Claim(verbReqFor(endpoint, "01J5X000000000000000001E30", "mac-a"), "lock-primary"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim primary: %+v %v", result, err)
+	}
+	projection, err := Project(endpoint, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordRevisions := map[string]uint64{}
+	lockRevisions := map[string]uint64{}
+	for _, id := range []string{"lock-primary", "lock-dependent"} {
+		file := projection.Tree.Live[id]
+		recordRevisions[id] = file.Revision
+		lockRevisions[id] = file.Revision
+		if file.Claimed != nil {
+			lockRevisions[id] = file.Claimed.Revision
+		}
+	}
+
+	injected := false
+	beforePush := func(attempt int) error {
+		if injected {
+			return nil
+		}
+		injected = true
+		for _, id := range []string{"lock-primary", "lock-dependent"} {
+			lock, lockErr := goalrevision.Acquire(root, id, lockRevisions[id], "competitor-probe")
+			if lockErr == nil {
+				_ = lock.Release()
+				return fmt.Errorf("concurrent acquire unexpectedly passed for %s", id)
+			}
+			if !strings.Contains(lockErr.Error(), "LOCK_BUSY") {
+				return fmt.Errorf("concurrent acquire for %s did not name LOCK_BUSY: %w", id, lockErr)
+			}
+		}
+		actualChangedID, competitorErr := compete(competitor)
+		if competitorErr != nil {
+			return competitorErr
+		}
+		if actualChangedID != changedID {
+			return fmt.Errorf("competitor changed %q, want %q", actualChangedID, changedID)
+		}
+		if admitDependent {
+			competitorProjection, projectErr := Project(competitor, false, time.Now())
+			if projectErr != nil {
+				return projectErr
+			}
+			claim := competitorProjection.Tree.Live["lock-dependent"].Claimed
+			admissionNow, parseErr := time.Parse(time.RFC3339, claim.At)
+			if parseErr != nil {
+				return parseErr
+			}
+			if admissionErr := runGoalRevisionAdmissionCLI(competitor.Root, "lock-dependent", claim.Revision, admissionNow); admissionErr != nil {
+				return admissionErr
+			}
+		}
+		return nil
+	}
+	req := verbReqFor(endpoint, "01J5X000000000000000001E40", "mac-a")
+	req.abandon.beforePush = beforePush
+	req.Actor.Human = "Wido"
+	result, err := Abandon(req, "lock-primary", AbandonSpec{Because: "superseded", Also: []string{"lock-dependent"}}, goalHumanProof(t, root, req.Now))
+	if err != nil {
+		t.Fatalf("abandon: %+v %v", result, err)
+	}
+	if changedID == "" {
+		if result.Outcome != OutcomeConfirmed {
+			t.Fatalf("unchanged records did not survive the compare: %+v", result)
+		}
+	} else {
+		want := fmt.Sprintf("goal %s changed under abandon's lock (revision %d is now ", changedID, recordRevisions[changedID])
+		if result.Outcome != OutcomeRejected || !strings.HasPrefix(result.Detail, want) || !strings.HasSuffix(result.Detail, "); re-read and retry") {
+			t.Fatalf("record change did not refuse by goal and revisions: %+v, want prefix %q", result, want)
+		}
+	}
+	for _, id := range []string{"lock-primary", "lock-dependent"} {
+		lock, lockErr := goalrevision.Acquire(root, id, lockRevisions[id], "released-probe")
+		if lockErr != nil {
+			t.Fatalf("abandon did not release %s's lock: %v", id, lockErr)
+		}
+		_ = lock.Release()
 	}
 }
 

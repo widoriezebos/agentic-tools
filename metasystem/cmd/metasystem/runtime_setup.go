@@ -9,10 +9,15 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 func runRuntimeSetup(args []string) int {
+	return runRuntimeSetupWithResolver(args, stateroot.ResolveLayout)
+}
+
+func runRuntimeSetupWithResolver(args []string, resolve func(string) (stateroot.Layout, error)) int {
 	flags := flag.NewFlagSet("runtime setup", flag.ContinueOnError)
 	repo := pathFlag(flags, "repo", "", "repository root or a path inside the target installation")
 	runtimeCSV := flags.String("runtimes", "", "comma-separated adoptable hosts (default: all)")
@@ -39,7 +44,7 @@ func runRuntimeSetup(args []string) int {
 		}
 		selected = strings.Split(*runtimeCSV, ",")
 	}
-	result, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: *repo, Runtimes: selected, CopySkills: *copySkills, Check: *check})
+	result, err := hostsetup.SetupWithResolver(hostsetup.Options{RepositoryPath: *repo, Runtimes: selected, CopySkills: *copySkills, Check: *check}, resolve)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

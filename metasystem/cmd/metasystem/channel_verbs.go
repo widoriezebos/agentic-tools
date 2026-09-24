@@ -21,7 +21,14 @@ import (
 )
 
 func channelIdentity(root string) (string, string, error) {
-	m, err := goal.ResolveMachine(root)
+	return channelIdentityWithMachine(root, nil)
+}
+
+func channelIdentityWithMachine(root string, resolveMachine func(string) (string, error)) (string, string, error) {
+	if resolveMachine == nil {
+		resolveMachine = goal.ResolveMachine
+	}
+	m, err := resolveMachine(root)
 	if err != nil {
 		return "", "", err
 	}
@@ -47,6 +54,10 @@ func channelPollContext(root string) (context.Context, context.CancelFunc, error
 }
 
 func runChannelStatus(args []string) int {
+	return runChannelStatusWithInputs(args, nil, nil, nil)
+}
+
+func runChannelStatusWithInputs(args []string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), landingLog func(string, time.Time) ([]byte, error)) int {
 	f := flag.NewFlagSet("channel status", flag.ContinueOnError)
 	root := pathFlag(f, "root", ".", "repository root")
 	post := f.Bool("post", false, "post now")
@@ -58,11 +69,27 @@ func runChannelStatus(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	machine, err := goal.ResolveMachine(*root)
+	if resolveMachine == nil {
+		resolveMachine = goal.ResolveMachine
+	}
+	machine, err := resolveMachine(*root)
 	if err != nil {
 		machine = "this machine"
 	}
-	text, approvalGoal, err := channel.ComposeStatusReport(channel.ReportConfig{RepoRoot: *root, Machine: machine, Now: now})
+	config := channel.ReportConfig{RepoRoot: *root, Machine: machine, Now: now}
+	var text, approvalGoal string
+	var endpoint goal.Endpoint
+	if resolveEndpoint == nil && landingLog == nil {
+		text, approvalGoal, err = channel.ComposeStatusReport(config)
+	} else {
+		var resolveErr error
+		endpoint, resolveErr = resolveEndpoint(*root)
+		if resolveErr != nil {
+			fmt.Fprintln(os.Stderr, resolveErr)
+			return 1
+		}
+		text, approvalGoal, err = channel.ComposeStatusReportAtEndpoint(config, endpoint, landingLog)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -93,7 +120,13 @@ func runChannelStatus(args []string) int {
 			fmt.Fprintln(os.Stderr, e)
 			return 1
 		}
-		brainState := brain.Read(*root, goal.ExistingLedgerIdentity(*root))
+		ledgerIdentity := ""
+		if resolveEndpoint == nil {
+			ledgerIdentity = goal.ExistingLedgerIdentity(*root)
+		} else {
+			ledgerIdentity = goal.ExistingLedgerIdentityAtEndpoint(endpoint)
+		}
+		brainState := brain.Read(*root, ledgerIdentity)
 		if brainState.State == brain.Declared {
 			postedAt := now.UTC()
 			if e = brain.WriteStatus(*root, *brainState.Record, postedAt); e != nil {
@@ -219,6 +252,10 @@ func channelQuestionFlags(name string, args []string) (string, string, bool) {
 var channelWaitCommand = runWaitWithPoll
 
 func runChannelWait(args []string) int {
+	return runChannelWaitWithMachine(args, nil)
+}
+
+func runChannelWaitWithMachine(args []string, resolveMachine func(string) (string, error)) int {
 	f := flag.NewFlagSet("channel wait", flag.ContinueOnError)
 	root := pathFlag(f, "root", ".", "repository root")
 	id := f.String("question", "", "question id")
@@ -275,7 +312,7 @@ func runChannelWait(args []string) int {
 		fmt.Fprintln(os.Stderr, "channel wait requires a configured channel provider")
 		return 1
 	}
-	machine, lineage, err := channelIdentity(*root)
+	machine, lineage, err := channelIdentityWithMachine(*root, resolveMachine)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

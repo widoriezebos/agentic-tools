@@ -784,11 +784,12 @@ func witnessIdentityReleased(ref Ref) (bool, string) {
 			refState = Dead
 		}
 	}
-	// A zombie has exited; only its parent owns the reap. Linux does not
-	// report that reap to a process that is not the parent.
-	released := fixtureCustodianIdentityReleased(exact, state, err, ref)
-	return released, fmt.Sprintf("pid=%d exact-state=%s ref-state=%s same=%t zombie=%t probe=%v",
-		ref.Pid, state, refState, SameIdentity(exact, ref), exact.Zombie, err)
+	// A zombie or exiting process is terminal; only its parent owns the reap.
+	// Linux does not report that reap to a process that is not the parent.
+	released := fixtureCustodianIdentityReleased(exact, state, err, ref) ||
+		err == nil && state == Alive && SameIdentity(exact, ref) && exact.Exiting
+	return released, fmt.Sprintf("pid=%d exact-state=%s ref-state=%s same=%t zombie=%t exiting=%t probe=%v",
+		ref.Pid, state, refState, SameIdentity(exact, ref), exact.Zombie, exact.Exiting, err)
 }
 
 func waitWitnessDead(t *testing.T, dir string, death witnessDeath) {

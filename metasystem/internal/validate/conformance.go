@@ -36,17 +36,19 @@ var conformanceJobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 const delegateReceiptRefusalCode = "DELEGATE_RECEIPT_REFUSED"
 
 type conformanceRun struct {
-	root          string
-	job           string
-	record        map[string]any
-	workspace     string
-	baseSha       string
-	roundText     string
-	rootJob       string
-	installPrefix string
-	boundaryBase  string
-	targetSha     string
-	criticRoot    string
+	root            string
+	job             string
+	record          map[string]any
+	workspace       string
+	baseSha         string
+	roundText       string
+	rootJob         string
+	installPrefix   string
+	boundaryBase    string
+	targetSha       string
+	criticRoot      string
+	rawSource       func(gittree.RawRequest) gittree.RawResult
+	resolveEndpoint func(string) (goal.Endpoint, error)
 
 	out  []string
 	errs []string
@@ -75,6 +77,21 @@ func (r *conformanceRun) git(dir string, env []string, args ...string) (string, 
 }
 
 func (r *conformanceRun) gitBytes(dir string, env []string, args ...string) ([]byte, error) {
+	if r.rawSource != nil {
+		result := r.rawSource(gittree.RawRequest{
+			Args: append([]string{"-C", dir}, args...), Dir: dir,
+			Env:       gittree.ScrubbedEnviron(env...),
+			Timeout:   boundedexec.Timeout(filepath.Join(dir, "metasystem.conf"), boundedexec.Local),
+			Operation: "git " + strings.Join(args, " "),
+		})
+		if result.Err != nil {
+			return result.Stdout, result.Err
+		}
+		if result.ExitCode != 0 {
+			return result.Stdout, fmt.Errorf("exit status %d", result.ExitCode)
+		}
+		return result.Stdout, nil
+	}
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	cmd.Env = gittree.ScrubbedEnviron(env...)
 	var stdout bytes.Buffer
@@ -103,8 +120,15 @@ func (r *conformanceRun) installationPath(path string) string {
 
 func (r *conformanceRun) classifyWaiverPaths(classes *pathclass.Manifest, repositoryPaths []string) ([]waiverPath, error) {
 	paths := make([]waiverPath, 0, len(repositoryPaths))
+	owner := stateroot.OwnerForInstallation
+	if r.rawSource != nil {
+		resolver := stateroot.NewResolver(func(path string) (string, error) {
+			return r.workspaceAt(path).TopLevel()
+		}, os.Executable)
+		owner = resolver.OwnerForInstallation
+	}
 	for _, repositoryPath := range repositoryPaths {
-		ownership, modeText, err := stateroot.OwnerForInstallation(r.root, repositoryPath)
+		ownership, modeText, err := owner(r.root, repositoryPath)
 		if err != nil {
 			return nil, fmt.Errorf("classify waiver path %s: %w", repositoryPath, err)
 		}
@@ -210,7 +234,14 @@ func Conformance(root, stage, job string) (out, errs []string, code int) {
 // ConformanceWithOptions implements conformance including the explicit
 // recertification stage and merge proof reference.
 func ConformanceWithOptions(root, stage, job string, options ConformanceOptions) (out, errs []string, code int) {
-	r := &conformanceRun{root: root, job: job}
+	return conformanceWithRaw(root, stage, job, options, nil, nil)
+}
+
+func conformanceWithRaw(root, stage, job string, options ConformanceOptions, raw func(gittree.RawRequest) gittree.RawResult, endpoint func(string) (goal.Endpoint, error)) (out, errs []string, code int) {
+	r := &conformanceRun{root: root, job: job, rawSource: raw, resolveEndpoint: endpoint}
+	if raw != nil && stage == "recertify" {
+		return r.fail("conformance failure: raw source does not cover recertification production")
+	}
 	recordPath := filepath.Join(root, "artifacts", "agents", "jobs", job+".json")
 	if _, err := os.Stat(recordPath); err != nil {
 		return r.fail("conformance failure: unknown job: " + job)
@@ -246,7 +277,7 @@ func ConformanceWithOptions(root, stage, job string, options ConformanceOptions)
 		return r.fail("conformance failure: implementer branch has no merge-base with the current target")
 	}
 	r.boundaryBase = boundaryBase
-	prefix, err := projectInstallPrefix(root)
+	prefix, err := r.installationPrefix()
 	if err != nil {
 		return r.fail("conformance failure: cannot derive the mission project's repository prefix")
 	}
@@ -259,6 +290,31 @@ func ConformanceWithOptions(root, stage, job string, options ConformanceOptions)
 		return r.recertify(options.TestCommand)
 	}
 	return r.mergeStage(recordPath, options.Recertification)
+}
+
+func (r *conformanceRun) installationPrefix() (string, error) {
+	if r.rawSource == nil {
+		return projectInstallPrefix(r.root)
+	}
+	out, err := r.gitBytes(r.root, nil, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", fmt.Errorf("rev-parse --show-prefix: %w", err)
+	}
+	return strings.TrimSuffix(strings.TrimSuffix(string(out), "\n"), "/"), nil
+}
+
+func (r *conformanceRun) workspaceAt(dir string) gittree.Workspace {
+	return gittree.Workspace{Dir: dir, RawSource: r.rawSource}
+}
+
+func (r *conformanceRun) goalEndpoint() (goal.Endpoint, error) {
+	if r.resolveEndpoint != nil {
+		return r.resolveEndpoint(r.root)
+	}
+	if r.rawSource != nil {
+		return goal.Endpoint{}, fmt.Errorf("raw repository endpoint is undeclared")
+	}
+	return goal.ResolveEndpoint(r.root)
 }
 
 // projectInstallPrefix derives the mission project's path under its git
@@ -306,7 +362,7 @@ func (r *conformanceRun) projectDeclaration(item string) (string, string) {
 // live in that same space or authorization could never match a nested
 // mission's named points.
 func (r *conformanceRun) projectWorkspace() gittree.Workspace {
-	return gittree.Workspace{Dir: filepath.Join(r.workspace, r.installPrefix)}
+	return r.workspaceAt(filepath.Join(r.workspace, r.installPrefix))
 }
 
 // refuseOutsideProjectChanges fences the project scoping at the whole
@@ -319,7 +375,7 @@ func (r *conformanceRun) refuseOutsideProjectChanges(repoTree string) []string {
 	if r.installPrefix == "" {
 		return nil
 	}
-	topWorkspace := gittree.Workspace{Dir: r.workspace}
+	topWorkspace := r.workspaceAt(r.workspace)
 	baseTree, err := topWorkspace.TreeOf(r.boundaryBase)
 	if err != nil {
 		return []string{"cannot resolve the repository-level boundary base tree"}
@@ -377,7 +433,7 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 	if err != nil {
 		return fail("conformance failure: could not snapshot the implementer worktree")
 	}
-	repoSnapshot, err := (gittree.Workspace{Dir: r.workspace}).Snapshot("HEAD")
+	repoSnapshot, err := r.workspaceAt(r.workspace).Snapshot("HEAD")
 	if err != nil {
 		return fail("conformance failure: could not snapshot the implementer worktree")
 	}
@@ -407,16 +463,10 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 		return r.out, r.errs, 1
 	}
 
-	review := map[string]string{
-		"diffArtifact":   filepath.Base(diffFile),
-		"implementerJob": r.job,
-		"reviewedTree":   reviewedTree,
-	}
-	encoded, err := json.MarshalIndent(review, "", "  ")
+	reviewBytes, err := encodeConformanceReview(diffFile, r.job, reviewedTree)
 	if err != nil {
 		return fail(fmt.Sprintf("conformance failure: %v", err))
 	}
-	reviewBytes := append(encoded, '\n')
 	if reviewExists {
 		existingDiff, diffErr := os.ReadFile(diffFile)
 		if diffErr == nil && bytes.Equal(existingReview, reviewBytes) && bytes.Equal(existingDiff, diff) {
@@ -433,6 +483,19 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 	}
 	r.out = append(r.out, "reviewedTree="+reviewedTree, "diffArtifact="+diffFile)
 	return r.out, r.errs, 0
+}
+
+func encodeConformanceReview(diffFile, job, reviewedTree string) ([]byte, error) {
+	review := map[string]string{
+		"diffArtifact":   filepath.Base(diffFile),
+		"implementerJob": job,
+		"reviewedTree":   reviewedTree,
+	}
+	encoded, err := json.MarshalIndent(review, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(encoded, '\n'), nil
 }
 
 func (r *conformanceRun) configGet(key, def string) string {
@@ -456,7 +519,7 @@ func (r *conformanceRun) mergeStage(recordPath, recertification string) ([]strin
 	if err != nil {
 		return r.fail("conformance failure: implementer branch has no final committed tree")
 	}
-	repoFinal, err := (gittree.Workspace{Dir: r.workspace}).HeadTree()
+	repoFinal, err := r.workspaceAt(r.workspace).HeadTree()
 	if err != nil {
 		return r.fail("conformance failure: implementer branch has no final committed tree")
 	}
@@ -520,14 +583,14 @@ func (r *conformanceRun) mergeStage(recordPath, recertification string) ([]strin
 }
 
 func (r *conformanceRun) mergeRecertified(recordPath, recertification string) ([]string, []string, int) {
-	verified, err := VerifyRecertification(r.root, r.rootJob, recertification)
+	verified, err := verifyRecertificationWithRaw(r.root, r.rootJob, recertification, r.rawSource, r.resolveEndpoint)
 	if err != nil {
 		return r.fail("conformance failure: " + err.Error())
 	}
 	if verified.Record.CertifiedImplementerJob != r.job {
 		return r.fail(fmt.Sprintf("conformance failure: recertification names implementer job %s; invoke merge conformance with that exact job", quoted(verified.Record.CertifiedImplementerJob)))
 	}
-	integrationHead, err := (gittree.Workspace{Dir: r.root}).ResolveCommit("HEAD")
+	integrationHead, err := r.workspaceAt(r.root).ResolveCommit("HEAD")
 	if err != nil || integrationHead != verified.Record.TargetCommit {
 		return r.fail("conformance failure: chain-recertification-target-moved")
 	}
@@ -536,7 +599,7 @@ func (r *conformanceRun) mergeRecertified(recordPath, recertification string) ([
 	if err != nil || projectSnapshot != verified.Record.MergedTree {
 		return r.fail("conformance failure: chain-recertification-source-changed: final source worktree is not the exact materialized merged tree")
 	}
-	topSnapshot, err := (gittree.Workspace{Dir: r.workspace}).SnapshotSeeded(verified.Record.TargetCommit, verified.Record.MergedWholeTree, nil)
+	topSnapshot, err := r.workspaceAt(r.workspace).SnapshotSeeded(verified.Record.TargetCommit, verified.Record.MergedWholeTree, nil)
 	if err != nil || topSnapshot != verified.Record.MergedWholeTree {
 		return r.fail("conformance failure: chain-recertification-source-changed: whole source worktree differs from the recertified result")
 	}
@@ -1267,7 +1330,7 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 				}
 				if status == "deferred" || status == "accepted-risk" {
 					goalID, _ := criticRoot["goalId"].(string)
-					endpoint, endpointErr := goal.ResolveEndpoint(r.root)
+					endpoint, endpointErr := r.goalEndpoint()
 					var projection goal.Projection
 					var projectionErr error
 					if endpointErr == nil {

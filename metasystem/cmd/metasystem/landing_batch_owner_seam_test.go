@@ -39,18 +39,20 @@ func TestBatchOwnerLaunchUsesNestedControlRoot(t *testing.T) {
 }
 
 func TestBatchLedgerOwnerDefaultRefusesUnbound(t *testing.T) {
-	isolateGlobalGitConfig(t)
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
-	owner, err := productionBatchLedgerOwner(root)
+	facts := batchConfigFacts(root, false, false)
+	owner, err := productionBatchLedgerOwnerWithConfig(root, facts.config)
+	facts.assertConsumed(t, false)
 	if err == nil || owner != nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
 		t.Fatalf("unbound batch ledger owner=(%T, %v), want missing machine enrollment refusal", owner, err)
 	}
 }
 
 func TestBatchLedgerOwnerUsesLandingIdentity(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	owner, err := productionBatchLedgerOwner(root)
+	root := t.TempDir()
+	facts := batchConfigFacts(root, true, false)
+	owner, err := productionBatchLedgerOwnerWithConfig(root, facts.config)
+	facts.assertConsumed(t, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,12 +63,9 @@ func TestBatchLedgerOwnerUsesLandingIdentity(t *testing.T) {
 	if ledgerOwner.actor.Machine != "mac-cli" || ledgerOwner.actor.Lineage != landingOwnerLineage {
 		t.Fatalf("batch ledger owner actor=%+v, want mac-cli+%s", ledgerOwner.actor, landingOwnerLineage)
 	}
-}
-
-func isolateGlobalGitConfig(t *testing.T) {
-	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if ledgerOwner.endpoint.Root != root || ledgerOwner.endpoint.Remote != "local" || ledgerOwner.endpoint.Branch != "refs/heads/main" {
+		t.Fatalf("batch ledger owner endpoint=%+v, want landing local main endpoint", ledgerOwner.endpoint)
+	}
 }
 
 func TestResolveExplicitBatchLandingRejectsInvalidRoots(t *testing.T) {
@@ -93,6 +92,7 @@ func TestResolveExplicitBatchLandingRejectsInvalidRoots(t *testing.T) {
 func TestBatchOwnerWiringBound(t *testing.T) {
 	if os.Getenv("GO_WANT_BATCH_OWNER_SIGNAL_HELPER") != "" {
 		root := os.Getenv("BATCH_OWNER_TEST_ROOT")
+		facts := batchConfigFacts(root, true, true)
 		batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error { return nil }
 		batchOwnerAcquire = func(string) (batchOwnerLease, error) {
 			return batchOwnerLease{root: root, pid: int64(os.Getpid()), epoch: 1}, nil
@@ -125,11 +125,11 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 			})
 		}
 		seat := os.Getenv("BATCH_OWNER_TEST_SEAT")
-		os.Exit(runBatchOwner([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--interval", "1m"}))
+		code := runBatchOwnerWithSource([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--interval", "1m"}, facts.source())
+		facts.assertConsumed(t, true)
+		os.Exit(code)
 	}
-	root := syncedClaimedGoalFixture(t)
-	seat := t.TempDir()
-	goalSyncMutationGit(t, seat, "init", "-q")
+	seat, root := batchFileOnlyRoots(t)
 	command := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerWiringBound$")
 	command.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_SIGNAL_HELPER=1", "BATCH_OWNER_TEST_ROOT="+root,
 		"BATCH_OWNER_TEST_SEAT="+seat, "METASYSTEM_GOAL_NOW=2026-09-17T10:00:00Z")
@@ -160,11 +160,8 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("maximum wait advances with the daemon clock", func(t *testing.T) {
-		seat, landing := t.TempDir(), t.TempDir()
-		goalSyncMutationGit(t, landing, "init", "-q", "-b", "main")
-		if err := os.WriteFile(filepath.Join(seat, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		seat, landing := batchFileOnlyRoots(t)
+		facts := &batchRawFacts{root: landing}
 		joined := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 		boot := joined.Add(30 * time.Second)
 		t.Setenv("METASYSTEM_GOAL_NOW", boot.Format(time.RFC3339Nano))
@@ -172,8 +169,9 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 		previous := cadenceProductionClock
 		cadenceProductionClock = func() time.Time { return current }
 		t.Cleanup(func() { cadenceProductionClock = previous })
-		settings, _, err := parseBatchOwner([]string{"--root", seat, "--landing-root", landing,
-			"--max-wait", "1m", "--interval", "1m"}, "owner", cadenceProductionClock)
+		settings, _, err := parseBatchOwnerWithSource([]string{"--root", seat, "--landing-root", landing,
+			"--max-wait", "1m", "--interval", "1m"}, "owner", cadenceProductionClock, facts.source())
+		facts.assertConsumed(t, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -189,7 +187,6 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 
 func TestBatchOwnerManualAcquireCleansFailedAnnouncement(t *testing.T) {
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q")
 	original := batchOwnerAnnounce
 	t.Cleanup(func() { batchOwnerAnnounce = original })
 	batchOwnerAnnounce = func(root, session string, pid, start, startTicks int64, bootID, tag, runtime, lineage string) (string, error) {
@@ -208,7 +205,6 @@ func TestBatchOwnerManualAcquireCleansFailedAnnouncement(t *testing.T) {
 
 func TestBatchOwnerReleaseDoesNotRecreateRemovedRoot(t *testing.T) {
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q")
 	held, err := acquireBatchOwner(root)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +247,6 @@ func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q")
 	startHolder := func(mode string) (*exec.Cmd, io.WriteCloser, *bufio.Scanner) {
 		t.Helper()
 		command := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder$")
@@ -332,9 +327,8 @@ func TestBatchOwnerRetirementErrorsReachEveryCaller(t *testing.T) {
 		run  func(*testing.T) (int, string)
 	}{
 		{name: "manual owner", run: func(t *testing.T) (int, string) {
-			root := syncedClaimedGoalFixture(t)
-			seat := t.TempDir()
-			goalSyncMutationGit(t, seat, "init", "-q")
+			seat, root := batchFileOnlyRoots(t)
+			facts := batchConfigFacts(root, true, true)
 			originalAcquire, originalConstruct, originalRequire, originalRetire := batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerRetire
 			t.Cleanup(func() {
 				batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerRetire = originalAcquire, originalConstruct, originalRequire, originalRetire
@@ -348,14 +342,14 @@ func TestBatchOwnerRetirementErrorsReachEveryCaller(t *testing.T) {
 			batchOwnerRequire = func(batchOwnerLease) error { return errors.New("stop owner loop") }
 			batchOwnerRetire = func(string, string, int64, int64) error { return retireErr }
 			code, _, stderr := captureCommandOutput(t, false, true, func() int {
-				return runBatchOwner([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--interval", "1m"})
+				return runBatchOwnerWithSource([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--interval", "1m"}, facts.source())
 			})
+			facts.assertConsumed(t, true)
 			return code, stderr
 		}},
 		{name: "manual tick", run: func(t *testing.T) (int, string) {
-			root := syncedClaimedGoalFixture(t)
-			seat := t.TempDir()
-			goalSyncMutationGit(t, seat, "init", "-q")
+			seat, root := batchFileOnlyRoots(t)
+			facts := batchConfigFacts(root, true, true)
 			originalAcquire, originalConstruct, originalRequire, originalTick, originalRetire := batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerTick, batchOwnerRetire
 			t.Cleanup(func() {
 				batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerTick, batchOwnerRetire = originalAcquire, originalConstruct, originalRequire, originalTick, originalRetire
@@ -370,8 +364,9 @@ func TestBatchOwnerRetirementErrorsReachEveryCaller(t *testing.T) {
 			batchOwnerTick = func(*batch.Owner, string) error { return nil }
 			batchOwnerRetire = func(string, string, int64, int64) error { return retireErr }
 			code, _, stderr := captureCommandOutput(t, false, true, func() int {
-				return runBatchTick([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba98"})
+				return runBatchTickWithSource([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba98"}, facts.source())
 			})
+			facts.assertConsumed(t, true)
 			return code, stderr
 		}},
 		{name: "supervised release", run: func(t *testing.T) (int, string) {
@@ -392,9 +387,8 @@ func TestBatchOwnerRetirementErrorsReachEveryCaller(t *testing.T) {
 }
 
 func TestBatchTickStopsBeforePassAfterLeaseLoss(t *testing.T) {
-	landingRoot := syncedClaimedGoalFixture(t)
-	seatRoot := t.TempDir()
-	goalSyncMutationGit(t, seatRoot, "init", "-q")
+	seatRoot, landingRoot := batchFileOnlyRoots(t)
+	facts := batchConfigFacts(landingRoot, true, true)
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-17T10:00:00Z")
 	originalAcquire, originalRequire, originalTick := batchOwnerAcquire, batchOwnerRequire, batchOwnerTick
 	t.Cleanup(func() {
@@ -409,7 +403,8 @@ func TestBatchTickStopsBeforePassAfterLeaseLoss(t *testing.T) {
 		acted = true
 		return nil
 	}
-	code := runBatchTick([]string{"--root", seatRoot, "--landing-root", landingRoot, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba99"})
+	code := runBatchTickWithSource([]string{"--root", seatRoot, "--landing-root", landingRoot, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba99"}, facts.source())
+	facts.assertConsumed(t, true)
 	if code != 1 {
 		t.Fatalf("tick after lease loss returned code %d, want refusal code 1", code)
 	}
@@ -419,23 +414,23 @@ func TestBatchTickStopsBeforePassAfterLeaseLoss(t *testing.T) {
 }
 
 func TestBatchCommandsResolveInputsBeforeAnnouncement(t *testing.T) {
-	commands := map[string]func(string, string) int{
-		"owner": func(seat, landing string) int {
-			return runBatchOwner([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--interval", "1m"})
+	commands := map[string]func(string, string, *batchOwnerSource) int{
+		"owner": func(seat, landing string, source *batchOwnerSource) int {
+			return runBatchOwnerWithSource([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--interval", "1m"}, source)
 		},
-		"tick": func(seat, landing string) int {
-			return runBatchTick([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba98"})
+		"tick": func(seat, landing string, source *batchOwnerSource) int {
+			return runBatchTickWithSource([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba98"}, source)
 		},
 	}
 	for name, run := range commands {
 		t.Run(name, func(t *testing.T) {
-			landingRoot := syncedClaimedGoalFixture(t)
-			goalSyncMutationGit(t, landingRoot, "config", "--unset", "metasystem.goal.machine")
-			seatRoot := t.TempDir()
-			goalSyncMutationGit(t, seatRoot, "init", "-q")
+			seatRoot, landingRoot := batchFileOnlyRoots(t)
+			facts := batchConfigFacts(landingRoot, false, true)
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-17T10:00:00Z")
-			if code := run(seatRoot, landingRoot); code != 1 {
-				t.Fatalf("%s setup failure returned code %d, want 1", name, code)
+			code, _, stderr := captureCommandOutput(t, false, true, func() int { return run(seatRoot, landingRoot, facts.source()) })
+			facts.assertConsumed(t, true)
+			if code != 1 || !strings.Contains(stderr, "no machine nickname is enrolled") {
+				t.Fatalf("%s setup failure returned code %d stderr %q, want enrollment refusal", name, code, stderr)
 			}
 			if announcements := lease.AnnouncementsFor(landingRoot, int64(os.Getpid())); len(announcements) != 0 {
 				t.Fatalf("%s setup failure announced %d times before inputs resolved", name, len(announcements))
@@ -450,7 +445,6 @@ func TestBatchCommandsResolveInputsBeforeAnnouncement(t *testing.T) {
 func TestBatchOwnerManualProofAndEnvironmentFailuresReleaseAnnouncement(t *testing.T) {
 	t.Run("holder proof", func(t *testing.T) {
 		root := t.TempDir()
-		goalSyncMutationGit(t, root, "init", "-q")
 		mains := filepath.Join(root, "artifacts", "agents", "mains")
 		if err := os.MkdirAll(mains, 0o755); err != nil {
 			t.Fatal(err)
@@ -468,7 +462,6 @@ func TestBatchOwnerManualProofAndEnvironmentFailuresReleaseAnnouncement(t *testi
 
 	t.Run("environment", func(t *testing.T) {
 		root := t.TempDir()
-		goalSyncMutationGit(t, root, "init", "-q")
 		original := batchOwnerSetenv
 		t.Cleanup(func() { batchOwnerSetenv = original })
 		batchOwnerSetenv = func(string, string) error { return errors.New("injected environment failure") }
@@ -485,30 +478,39 @@ func TestBatchCommandsReleaseAfterConstructionFailure(t *testing.T) {
 	original := batchOwnerConstruct
 	t.Cleanup(func() { batchOwnerConstruct = original })
 	constructions := 0
-	batchOwnerConstruct = func(config.BatchLanding, batchOwnerLease, productionBatchOwnerInputs, func() time.Time) (*batch.Owner, error) {
+	activeConstructions := 0
+	batchOwnerConstruct = func(settings config.BatchLanding, held batchOwnerLease, _ productionBatchOwnerInputs, _ func() time.Time) (*batch.Owner, error) {
 		constructions++
+		if len(lease.AnnouncementsFor(settings.Root, held.pid)) == 1 {
+			activeConstructions++
+		}
 		return nil, errors.New("injected construction failure")
 	}
-	commands := map[string]func(string, string) int{
-		"owner": func(seat, landing string) int {
-			return runBatchOwner([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--interval", "1m"})
+	commands := map[string]func(string, string, *batchOwnerSource) int{
+		"owner": func(seat, landing string, source *batchOwnerSource) int {
+			return runBatchOwnerWithSource([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--interval", "1m"}, source)
 		},
-		"tick": func(seat, landing string) int {
-			return runBatchTick([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba97"})
+		"tick": func(seat, landing string, source *batchOwnerSource) int {
+			return runBatchTickWithSource([]string{"--root", seat, "--landing-root", landing, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba97"}, source)
 		},
 	}
 	for name, run := range commands {
 		t.Run(name, func(t *testing.T) {
-			landingRoot := syncedClaimedGoalFixture(t)
-			seatRoot := t.TempDir()
-			goalSyncMutationGit(t, seatRoot, "init", "-q")
+			seatRoot, landingRoot := batchFileOnlyRoots(t)
+			facts := batchConfigFacts(landingRoot, true, true)
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-17T10:00:00Z")
 			before := constructions
-			if code := run(seatRoot, landingRoot); code != 1 {
+			beforeActive := activeConstructions
+			code := run(seatRoot, landingRoot, facts.source())
+			facts.assertConsumed(t, true)
+			if code != 1 {
 				t.Fatalf("%s construction failure returned code %d, want 1", name, code)
 			}
 			if constructions != before+1 {
 				t.Fatalf("%s made %d construction attempts, want one injected failure", name, constructions-before)
+			}
+			if activeConstructions != beforeActive+1 {
+				t.Fatalf("%s construction did not observe its active announcement", name)
 			}
 			if announcements := lease.AnnouncementsFor(landingRoot, int64(os.Getpid())); len(announcements) != 0 {
 				t.Fatalf("%s construction failure leaked %d announcements", name, len(announcements))

@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -8,11 +9,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -48,7 +54,7 @@ func buildWallRepo(t *testing.T) string {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	run("init", "-q")
+	run("init", "-q", "-b", "main")
 	writeText(t, filepath.Join(root, ".gitignore"), "artifacts/\n")
 	writeText(t, filepath.Join(root, "main.go"), "package main\n")
 	writeText(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=fake\n")
@@ -115,21 +121,13 @@ func wallAuthorization(t *testing.T, root, missionID, baseTree, reviewedTree str
 	return digest
 }
 
-func snapshotTree(t *testing.T, root string) string {
-	t.Helper()
-	tree, err := gittree.Workspace{Dir: root}.Snapshot("HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return tree
-}
-
 func TestWallPassesUntouchedWorkspace(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	// Machine metadata under artifacts/ is outside the projection.
-	writeText(t, filepath.Join(root, "artifacts", "agents", "x.json"), "{}\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed := newWallPolicyBed(t)
+	pre := "pre"
+	// Machine metadata exists on disk while the declared projection stays at pre.
+	writeText(t, filepath.Join(bed.root, "artifacts", "agents", "x.json"), "{}\n")
+	bed.facts.expectSnapshot(pre, pre)
+	inspection, err := bed.inspect(pre, wallState(), nil, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,13 +137,16 @@ func TestWallPassesUntouchedWorkspace(t *testing.T) {
 }
 
 func TestWallPassesConsumedAuthorizedPatch(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	post := snapshotTree(t, root)
-	digest := wallAuthorization(t, root, "demo", pre, post, nil)
+	bed := newWallPolicyBed(t)
+	pre, post := "pre", "post"
+	patch := wallPolicyPatch("main.go reviewed")
+	digest := bed.authorization(pre, post, []string{"main.go"}, patch, true, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, post)
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectSnapshot(post, post)
+	inspection, err := bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,23 +162,30 @@ func TestWallPassesConsumedAuthorizedPatch(t *testing.T) {
 }
 
 func TestWallRefusesUndeclaredHostBytes(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main // host-authored drift\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed := newWallPolicyBed(t)
+	pre, post := "pre", "host-post"
+	bed.facts.expectSnapshot(pre, post)
+	bed.facts.expectChanged(pre, post, []string{"main.go"})
+	inspection, err := bed.inspect(pre, wallState(), nil, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(inspection.Violation, "undeclared host-authored change: main.go") {
 		t.Fatalf("undeclared drift must violate: %+v", inspection)
 	}
+	if !inspection.UndeclaredOnly {
+		t.Fatalf("undeclared drift must be classified for recovery: %+v", inspection)
+	}
 }
 
 func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "docs", "note.md"), "design note\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
+	bed := newWallPolicyBed(t)
+	pre, artifactPost := "pre", "artifact-post"
+	writeText(t, filepath.Join(bed.root, "docs", "note.md"), "design note\n")
+	bed.facts.expectSnapshot(pre, artifactPost)
+	bed.facts.expectEntries(artifactPost, []string{"docs", "docs/note.md"}, map[string]gittree.Entry{"docs/note.md": wallPolicyFile})
+	bed.facts.expectChanged(pre, artifactPost, []string{"docs/note.md"})
+	inspection, err := bed.inspect(pre, wallState(), nil, map[string]bool{"docs/note.md": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,12 +195,19 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 
 	// The same path under a consumed authorization refuses:
 	// a declared artifact never overwrites reviewed bytes.
-	writeText(t, filepath.Join(root, "docs", "note.md"), "reviewed bytes\n")
-	reviewed := snapshotTree(t, root)
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
-	writeText(t, filepath.Join(root, "docs", "note.md"), "host overwrote the review\n")
+	writeText(t, filepath.Join(bed.root, "docs", "note.md"), "reviewed bytes\n")
+	reviewed, hostPost := "reviewed", "host-post"
+	patch := wallPolicyPatch("docs/note.md reviewed")
+	digest := bed.authorization(pre, reviewed, []string{"docs/note.md"}, patch, true, nil)
+	writeText(t, filepath.Join(bed.root, "docs", "note.md"), "host overwrote the review\n")
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, reviewed)
+	bed.facts.expectEntries(reviewed, []string{"docs/note.md"}, map[string]gittree.Entry{"docs/note.md": wallPolicyFile})
+	bed.facts.expectEntries(reviewed, []string{"docs/note.md"}, map[string]gittree.Entry{"docs/note.md": wallPolicyFile})
+	bed.facts.expectSnapshot(reviewed, hostPost)
+	bed.facts.expectEntries(hostPost, []string{"docs", "docs/note.md"}, map[string]gittree.Entry{"docs/note.md": wallPolicyOtherFile})
+	bed.facts.expectChanged(reviewed, hostPost, []string{"docs/note.md"})
+	inspection, err = bed.inspect(pre, wallState(), certified, map[string]bool{"docs/note.md": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,40 +217,36 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 }
 
 func TestWallRefusesOverlappingAuthorizations(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main // round two\n")
-	post := snapshotTree(t, root)
-	first := wallAuthorization(t, root, "demo", pre, post, nil)
-	second := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["jobId"] = "job-w2" })
+	bed := newWallPolicyBed(t)
+	pre, post := "pre", "post"
+	patch := wallPolicyPatch("main.go overlapping")
+	first := bed.authorization(pre, post, []string{"main.go"}, patch, true, nil)
+	second := bed.authorization(pre, post, []string{"main.go"}, patch, true, func(r map[string]any) { r["jobId"] = "job-w2" })
 	certified := []map[string]any{
 		{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": first},
 		{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": second},
 	}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, post)
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	inspection, err := bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(inspection.Violation, "overlap on main.go") {
 		t.Fatalf("overlapping consumptions must violate: %+v", inspection)
 	}
+	if !strings.Contains(inspection.Violation, first[:12]) || !strings.Contains(inspection.Violation, second[:12]) {
+		t.Fatalf("overlap must name both authorizations: %+v", inspection)
+	}
 }
 
 func TestWallRefusesMissingPatchBytes(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	record := map[string]any{"jobId": "job-w", "rootJob": "job-w", "mission": "demo",
-		"baseTree": pre, "reviewedTree": pre,
-		"baseSequencePoint": map[string]any{"sequence": 0, "segment": 0},
-		"changedPaths":      []any{"main.go"}, "supersedes": []any{}}
-	digest, derr := validate.AuthorizationRecordDigest(record)
-	if derr != nil {
-		t.Fatal(derr)
-	}
-	record["authorizationDigest"] = digest
-	writeJSONFile(t, filepath.Join(missionDirPath(root, "demo"), "authorizations", digest+".json"), record)
+	bed := newWallPolicyBed(t)
+	pre := "pre"
+	digest := bed.authorization(pre, pre, []string{"main.go"}, wallPolicyPatch("missing"), false, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	inspection, err := bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,8 +289,15 @@ func TestHostArtifactDeclarationGrammar(t *testing.T) {
 // bed driving a conclude path must have opened its turn like the runner
 // does — through the state's compare-and-write.
 func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
+	openFixtureTurnWithSource(t, root, statePath, turnID, cycle, gittree.Workspace{Dir: root},
+		func(state, ledger, name string) error { return mission.AnchorNamed(state, root, ledger, name, "", "") })
+}
+
+func openFixtureTurnWithSource(t *testing.T, root, statePath, turnID string, cycle int, workspace wallWorkspace, anchor func(string, string, string) error) {
 	t.Helper()
-	tree, err := wallSnapshot(gittree.Workspace{Dir: root}, filepath.Base(filepath.Dir(statePath)))
+	missionID := filepath.Base(filepath.Dir(statePath))
+	ledgerPath := filepath.Join(filepath.Dir(statePath), "ledger.md")
+	tree, err := wallSnapshotWithWorkspace(workspace, missionID)
 	if err != nil {
 		t.Fatalf("open fixture turn: %v", err)
 	}
@@ -293,8 +311,6 @@ func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
 	}
 	taint, _ := doc["workspaceTaint"].(map[string]any)
 	segment, _ := jsonInt(taint["segment"])
-	missionID := filepath.Base(filepath.Dir(statePath))
-	workspace := gittree.Workspace{Dir: root}
 	head, _, herr := workspace.HeadCommit()
 	if herr != nil {
 		t.Fatalf("open fixture turn: %v", herr)
@@ -331,16 +347,15 @@ func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
 	if err := mission.WriteState(statePath, source, hash); err != nil {
 		t.Fatalf("open fixture turn: %v", err)
 	}
-	// Production anchors the admitted baseline at init and a real state
-	// anchor at every write; the bed mirrors that so the ref fence sees
-	// the runner refs it requires.
+	// The native fixture anchors after its state write. A raw fixture that
+	// requires pre-open facts installs them before calling this helper.
 	if baseline, _ := readJSONDoc(statePath); baseline != nil {
 		if b0, _ := baseline["initialBaseline"].(string); b0 != "" {
 			_ = workspace.Anchor(missionID, b0)
 		}
 	}
 	_ = workspace.Anchor(missionID, tree)
-	if err := mission.AnchorNamed(statePath, root, filepath.Join(filepath.Dir(statePath), "ledger.md"), "fixture", "", ""); err != nil {
+	if err := anchor(statePath, ledgerPath, "fixture"); err != nil {
 		t.Fatalf("open fixture turn cannot anchor: %v", err)
 	}
 }
@@ -361,74 +376,12 @@ func seedWallEvidence(t *testing.T, root, mission, turnID string) {
 			}})
 }
 
-// The resume binding order: an unfinished open turn is
-// inspected BEFORE healing or any new baseline. Drift parks with taint at
-// resume; a clean workspace closes the unaccepted turn's marker so a
-// fresh turn can open.
-func TestResumeInspectsOpenTurnFirst(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-dead", 1)
-	if err := engine.anchor(statePath, filepath.Join(engine.missionDir(), "ledger.md"), "crash-seed"); err != nil {
-		t.Fatal(err)
-	}
-	os.MkdirAll(filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead"), 0o755)
-	writeJSONFile(t, filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead", "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-dead", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
-
-	// Crash shape with host-authored drift: resume must park on the wall.
-	writeText(t, filepath.Join(engine.Root, "solo.go"), "package solo\n")
-	if _, _, _, rerr := engine.resumeState(); rerr == nil ||
-		!strings.Contains(rerr.Error(), "failed the wall at resume") {
-		t.Fatalf("drifted crash must park at resume: %v", rerr)
-	}
-	state := readTestDoc(t, statePath)
-	if state["parkReason"] != "wall-violation" {
-		t.Fatalf("park reason: %v", state["parkReason"])
-	}
-	taint, _ := state["workspaceTaint"].(map[string]any)
-	if entries, _ := taint["entries"].([]any); len(entries) != 1 {
-		t.Fatalf("taint: %v", taint)
-	}
-}
-
-func TestResumeClosesCleanUnacceptedTurn(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-dead", 1)
-	if err := engine.anchor(statePath, filepath.Join(engine.missionDir(), "ledger.md"), "crash-seed"); err != nil {
-		t.Fatal(err)
-	}
-	os.MkdirAll(filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead"), 0o755)
-	writeJSONFile(t, filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead", "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-dead", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
-
-	_, _, state, err := engine.resumeState()
-	if err != nil {
-		t.Fatalf("a clean crashed turn must resume: %v", err)
-	}
-	if state["openTurn"] != nil {
-		t.Fatalf("the unaccepted turn's marker must close: %v", state["openTurn"])
-	}
-}
-
 // The staleness predicate: an authorization based on an
 // older E-point refuses when intervening accepted changes touch its
 // paths, and consumes cleanly when they are disjoint.
 func TestWallStalenessPredicate(t *testing.T) {
-	root := wallRepo(t)
-	writeText(t, filepath.Join(root, "other.txt"), "delegate target\n")
-	base := snapshotTree(t, root) // E(k): the older accepted point
-	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
-	pre := snapshotTree(t, root) // E(j): intervening delta is main.go alone
+	bed := newWallPolicyBed(t)
+	base, pre := "base", "pre" // E(k) and E(j): the intervening delta is main.go alone
 
 	// The intervening acceptance took the expected tree from base to pre.
 	state := map[string]any{"turnLog": []any{map[string]any{
@@ -439,12 +392,11 @@ func TestWallStalenessPredicate(t *testing.T) {
 	}}}
 
 	// Overlapping: based at E(k), touching main.go, which changed since.
-	writeText(t, filepath.Join(root, "main.go"), "package main // reviewed on the old base\n")
-	overlapping := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
-	stale := wallAuthorization(t, root, "demo", base, overlapping, nil)
+	overlapping := "overlapping-reviewed"
+	stale := bed.authorization(base, overlapping, []string{"main.go"}, wallPolicyPatch("stale main.go"), true, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": stale}}
-	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(base, pre, []string{"main.go"})
+	inspection, err := bed.inspect(pre, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,15 +407,18 @@ func TestWallStalenessPredicate(t *testing.T) {
 	// Disjoint: a delegate on the SAME old base touched only other.txt —
 	// its reviewed tree is base + that edit alone, so the intervening
 	// main.go change is disjoint and the authorization stays consumable.
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	writeText(t, filepath.Join(root, "other.txt"), "reviewed delegate work\n")
-	disjointTree := snapshotTree(t, root)
-	disjoint := wallAuthorization(t, root, "demo", base, disjointTree, nil)
+	disjointTree := "disjoint-reviewed"
+	patch := wallPolicyPatch("disjoint other.txt")
+	disjoint := bed.authorization(base, disjointTree, []string{"other.txt"}, patch, true, nil)
 	// The concluding workspace: the intervening change plus the reviewed
 	// delegate bytes — exactly expected + the consumed patch.
-	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": disjoint}}
-	inspection, err = inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(base, pre, []string{"main.go"})
+	bed.facts.expectApply(pre, patch, "applied")
+	bed.facts.expectEntries(disjointTree, []string{"other.txt"}, map[string]gittree.Entry{"other.txt": wallPolicyFile})
+	bed.facts.expectEntries("applied", []string{"other.txt"}, map[string]gittree.Entry{"other.txt": wallPolicyFile})
+	bed.facts.expectSnapshot("applied", "applied")
+	inspection, err = bed.inspect(pre, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,15 +431,17 @@ func TestWallStalenessPredicate(t *testing.T) {
 // reviewed tree the patch does not produce, and swapped patch bytes
 // beside an intact record, both violate.
 func TestWallRefusesTamperedAuthorization(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	post := snapshotTree(t, root)
+	bed := newWallPolicyBed(t)
+	pre, post := "pre", "post"
+	patch := wallPolicyPatch("reviewed main.go")
 	// A SELF-DIGESTED forgery — reviewedTree claims a tree the patch does
 	// not produce — authenticates fine and dies on object-id equality.
-	forged := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["reviewedTree"] = pre })
+	forged := bed.authorization(pre, post, []string{"main.go"}, patch, true, func(r map[string]any) { r["reviewedTree"] = pre })
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": forged}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, post)
+	bed.facts.expectEntries(pre, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyOtherFile})
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	inspection, err := bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,10 +450,10 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	}
 
 	// Swapped patch bytes beside an intact record die on the patchDigest.
-	honest := wallAuthorization(t, root, "demo", pre, post, nil)
-	writeText(t, filepath.Join(missionDirPath(root, "demo"), "authorizations", honest+".patch"), "not the issued bytes\n")
+	honest := bed.authorization(pre, post, []string{"main.go"}, patch, true, nil)
+	writeText(t, filepath.Join(missionDirPath(bed.root, "demo"), "authorizations", honest+".patch"), "not the issued bytes\n")
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": honest}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	inspection, err = bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,10 +462,10 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	}
 
 	// A post-mint field rewrite dies on record authentication itself.
-	rewritten := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["jobId"] = "job-w3" })
-	patchRecord(t, root, "demo", rewritten, map[string]any{"changedPaths": []any{"free-pass.go"}})
+	rewritten := bed.authorization(pre, post, []string{"main.go"}, patch, true, func(r map[string]any) { r["jobId"] = "job-w3" })
+	patchRecord(t, bed.root, "demo", rewritten, map[string]any{"changedPaths": []any{"free-pass.go"}})
 	certified = []map[string]any{{"jobId": "job-w3", "verdict": "accepted", "authorizationDigest": rewritten}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	inspection, err = bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -578,18 +535,10 @@ func patchRecord(t *testing.T, root, missionID, digest string, fields map[string
 // the turn-by-turn union still names it — an old authorization touching
 // it refuses instead of landing bytes whose review context is gone.
 func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
-	root := wallRepo(t)
-	base := snapshotTree(t, root) // E0
-	writeText(t, filepath.Join(root, "main.go"), "package main // changed in turn one\n")
-	writeText(t, filepath.Join(root, "helper.txt"), "kept\n")
-	mid := snapshotTree(t, root) // E1: main.go and helper.txt changed
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	preJ := snapshotTree(t, root) // E2: main.go reverted; endpoint diff hides it
-
-	writeText(t, filepath.Join(root, "main.go"), "package main // reviewed on E0\n")
-	reviewed := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	digest := wallAuthorization(t, root, "demo", base, reviewed, nil)
+	bed := newWallPolicyBed(t)
+	base, mid, preJ := "base", "mid", "pre-j" // E0, E1, E2: main.go reverted at E2
+	reviewed := "reviewed"
+	digest := bed.authorization(base, reviewed, []string{"main.go"}, wallPolicyPatch("old main.go"), true, nil)
 
 	state := map[string]any{"turnLog": []any{
 		map[string]any{"turnId": "demo-t1", "consumedAuthorizations": []any{},
@@ -602,7 +551,8 @@ func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
 				"sequencePoint": map[string]any{"sequence": 2, "segment": 0}}},
 	}}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", preJ, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(base, mid, []string{"helper.txt", "main.go"})
+	inspection, err := bed.inspect(preJ, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,16 +561,18 @@ func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
 	}
 }
 
-// A declared artifact path beneath a symlinked ancestor
-// refuses: the write escaped the repository, so the tree shows nothing.
+// A declared artifact path beneath a symlinked ancestor refuses because
+// following that path would leave the repository.
 func TestWallRefusesSymlinkedArtifactAncestry(t *testing.T) {
-	root := wallRepo(t)
+	bed := newWallPolicyBed(t)
 	outside := t.TempDir()
-	if err := os.Symlink(outside, filepath.Join(root, "docs")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(bed.root, "docs")); err != nil {
 		t.Fatal(err)
 	}
-	pre := snapshotTree(t, root)
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
+	pre := "pre"
+	bed.facts.expectSnapshot(pre, pre)
+	bed.facts.expectEntries(pre, []string{"docs", "docs/note.md"}, map[string]gittree.Entry{"docs": wallPolicySymlink})
+	inspection, err := bed.inspect(pre, wallState(), nil, map[string]bool{"docs/note.md": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -633,19 +585,25 @@ func TestWallRefusesSymlinkedArtifactAncestry(t *testing.T) {
 // turn's cycle is already booked, so the violation ramp must not append
 // it twice — the taint and park still land.
 func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
+	t.Parallel()
+	engine, statePath, ledgerPath, _, reads, workspace, gitLog := resumeFileBedCore(t, true, false)
+	trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, strings.Repeat("c", 40))
+	root := engine.Root
+	trace.verify(trace.tip)
+	trace.begin()
+	if _, _, err := mission.VerifyStateWithRawAnchorOperations(trace.raw(), statePath, root, ledgerPath); err != nil {
+		t.Fatalf("initial anchor: %v", err)
 	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-dead", 1)
-	// The crash happened AFTER the ledger append: reserve and book cycle
-	// 1 and align the state's ledger count, exactly the ledger-ahead shape.
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
+	trace.done()
+	// The crash happened after both the append and the state count write.
 	if err := mission.ReserveCycle(engine.Root, engine.Mission); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := mission.AppendCycle(ledgerPath, 1, "no-progress", strings.Repeat("a", 40), "score=0", ""); err != nil {
+		t.Fatal(err)
+	}
+	appended, err := os.ReadFile(ledgerPath)
+	if err != nil {
 		t.Fatal(err)
 	}
 	doc, _ := readJSONDoc(statePath)
@@ -659,18 +617,61 @@ func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
 	if err := mission.WriteState(statePath, source, hash); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.anchor(statePath, ledgerPath, "crash-seed"); err != nil {
+	seed := trace.fact(string(appended), trace.tip, strings.Repeat("d", 40))
+	trace.publication(seed, "crash-seed")
+	trace.begin()
+	if err := mission.AnchorNamedWithRawAnchorOperations(trace.raw(), statePath, root, ledgerPath, "crash-seed", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead"), 0o755)
-	writeJSONFile(t, filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead", "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-dead", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
-
-	writeText(t, filepath.Join(engine.Root, "solo.go"), "package solo\n")
+	trace.done()
+	trace.install(engine)
+	workspace.expected = []string{
+		"HistorySteeringFiles", "HeadCommit", "TreeOf", "FilterTree", "SymbolicHead", "RefMap",
+		"WorktreeCensus", "StagedTree", "FilterTree", "Prefix", "SnapshotSeeded", "FilterTree",
+		"ChangedPaths",
+		"HistorySteeringFiles", "HeadCommit", "TreeOf", "FilterTree", "SymbolicHead", "RefMap",
+		"WorktreeCensus", "StagedTree", "FilterTree", "Prefix", "SnapshotSeeded", "FilterTree",
+		"Anchor", "ChangedPaths",
+	}
+	workspace.expectedAnchors = []string{strings.Repeat("a", 40)}
+	workspace.beforeDecision = func() {
+		if readTestDoc(t, statePath)["openTurn"] == nil {
+			t.Fatal("turn closed before the wall decision")
+		}
+		_, _, cycles, err := mission.ParseLedger(ledgerPath)
+		if err != nil || len(cycles) != 1 {
+			t.Fatalf("ledger before wall: %d cycles, %v", len(cycles), err)
+		}
+	}
+	reads.git = append(reads.git,
+		wallGitReply{root: root, args: []string{"rev-parse", "--verify", "--quiet", "HEAD^{commit}"}, stdout: strings.Repeat("c", 40)},
+		wallGitReply{root: root, args: []string{"-C", root, "rev-parse", "main"}, stdout: strings.Repeat("c", 40) + "\n"})
+	engine.anchorFn = func(gotState, gotLedger, identity string) error {
+		if gotState != statePath || gotLedger != ledgerPath || identity != "alpha-t1-dead" {
+			t.Fatalf("park anchor arguments: %q %q %q", gotState, gotLedger, identity)
+		}
+		trace.done()
+		park := trace.fact(string(appended), trace.tip, "")
+		trace.publication(park, identity)
+		trace.begin()
+		return mission.AnchorNamedWithRawAnchorOperations(trace.raw(), gotState, root, gotLedger, identity, "", "")
+	}
+	writeText(t, filepath.Join(root, "solo.go"), "package solo\n")
+	trace.verify(seed)
+	trace.begin()
 	if _, _, _, rerr := engine.resumeState(); rerr == nil ||
 		!strings.Contains(rerr.Error(), "failed the wall at resume") {
 		t.Fatalf("ledger-ahead drift must still park at resume: %v", rerr)
+	}
+	trace.done()
+	trace.verify(trace.tip)
+	trace.begin()
+	if _, _, err := mission.VerifyStateWithRawAnchorOperations(trace.raw(), statePath, root, ledgerPath); err != nil {
+		t.Fatalf("park anchor: %v", err)
+	}
+	trace.done()
+	if !reflect.DeepEqual(workspace.anchored, []string{strings.Repeat("a", 40)}) {
+		t.Fatalf("workspace anchor effects: %v", workspace.anchored)
 	}
 	state := readTestDoc(t, statePath)
 	if state["parkReason"] != "wall-violation" {
@@ -681,9 +682,53 @@ func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("the taint must land despite the booked cycle: %v", taint)
 	}
-	if reason, _ := entries[0].(map[string]any)["reason"].(string); !strings.Contains(reason, "solo.go") {
-		t.Fatalf("the taint must name the host drift, not runner bookkeeping: %v", reason)
+	entry, ok := entries[0].(map[string]any)
+	if !ok || entry["turnId"] != "alpha-t1-dead" || entry["resolution"] != nil {
+		t.Fatalf("unresolved original-turn taint: %v", entries[0])
 	}
+	if reason, _ := entry["reason"].(string); !strings.Contains(reason, "solo.go") {
+		t.Fatalf("the taint must name the host drift: %v", reason)
+	}
+	wall := readTestDoc(t, filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead", "wall.json"))
+	if wall["verdict"] != "violated" || !reflect.DeepEqual(wall["unaccounted"], []any{"solo.go"}) {
+		t.Fatalf("wall evidence: %v", wall)
+	}
+	if violation, _ := wall["violation"].(string); !strings.Contains(violation, "solo.go") {
+		t.Fatalf("wall violation: %v", wall["violation"])
+	}
+	asks, err := filepath.Glob(filepath.Join(asksDirPath(root, engine.Mission), "*.json"))
+	if err != nil || len(asks) != 1 {
+		t.Fatalf("wall asks: %v, %v", asks, err)
+	}
+	ask := readTestDoc(t, asks[0])
+	askID, ok := ask["askId"].(string)
+	entryID, entryOK := jsonInt(entry["taintId"])
+	askTaintID, askOK := jsonInt(ask["taintId"])
+	if !ok || askID == "" || filepath.Base(asks[0]) != askID+".json" ||
+		ask["reasonClass"] != "wall-violation" || ask["answeredAt"] != nil ||
+		!entryOK || !askOK || entryID != askTaintID ||
+		!reflect.DeepEqual(state["waitingList"], []any{askID}) {
+		t.Fatalf("ask/taint/waiting-list binding: ask=%v taint=%v waiting=%v", ask, entry, state["waitingList"])
+	}
+	turn := readTestDoc(t, filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead", "turn.json"))
+	if turn["status"] != "failed" || turn["outcome"] != "wall-violation" || turn["error"] != "wall-violation" {
+		t.Fatalf("original turn outcome: %v", turn)
+	}
+	if detail, _ := turn["detail"].(string); !strings.Contains(detail, "solo.go") {
+		t.Fatalf("original turn detail: %v", turn["detail"])
+	}
+	if got, err := os.ReadFile(ledgerPath); err != nil || !reflect.DeepEqual(got, appended) {
+		t.Fatalf("resume changed appended ledger bytes: %v", err)
+	}
+	if _, _, cycles, err := mission.ParseLedger(ledgerPath); err != nil || len(cycles) != 1 {
+		t.Fatalf("resume duplicated the cycle: %d cycles, %v", len(cycles), err)
+	}
+	if workspace.beforeDecision != nil {
+		t.Fatal("drift wall decision did not run")
+	}
+	workspace.done()
+	reads.done()
+	assertNoGitInvocations(t, gitLog)
 }
 
 // A CLEAN ledger-ahead crash resumes without taint:
@@ -691,16 +736,23 @@ func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
 // legitimate shape the guard tolerates at resume, and the filtered tree
 // identity never sees it.
 func TestResumeCleanLedgerAheadHeals(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
+	t.Parallel()
+	engine, statePath, ledgerPath, _, reads, workspace, gitLog := resumeFileBedCore(t, false, false)
+	root := engine.Root
+	trace := newThreeAnchorTrace(t, root, statePath, ledgerPath, strings.Repeat("c", 40))
+	trace.verify(trace.tip)
+	trace.begin()
+	if _, _, err := mission.VerifyStateWithRawAnchorOperations(trace.raw(), statePath, root, ledgerPath); err != nil {
+		t.Fatalf("initial anchor: %v", err)
+	}
+	trace.done()
+	seed := trace.fact(trace.tip.ledger, trace.tip, strings.Repeat("d", 40))
+	trace.publication(seed, "crash-seed")
+	trace.begin()
+	if err := mission.AnchorNamedWithRawAnchorOperations(trace.raw(), statePath, root, ledgerPath, "crash-seed", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-dead", 1)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := engine.anchor(statePath, ledgerPath, "crash-seed"); err != nil {
-		t.Fatal(err)
-	}
+	trace.done()
 	// The TRUE production crash window: the runner RESERVED
 	// cycle 1, opened the turn, appended its block, then died before the
 	// state write — reservation and the open marker answer for the block.
@@ -710,15 +762,71 @@ func TestResumeCleanLedgerAheadHeals(t *testing.T) {
 	if _, err := mission.AppendCycle(ledgerPath, 1, "no-progress", strings.Repeat("a", 40), "score=0", ""); err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead"), 0o755)
-	writeJSONFile(t, filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead", "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-dead", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
+	appended, err := os.ReadFile(ledgerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	continuity := trace.install(engine)
+	baseRaw := continuity.raw
+	var healed *threeAnchorFact
+	continuity.raw.GitOutput = func(gotRoot string, args ...string) (string, error) {
+		if reflect.DeepEqual(args, []string{"branch", "--show-current"}) {
+			trace.done()
+			healed = trace.fact(string(appended), trace.tip, "")
+			trace.publication(healed, "")
+			trace.begin()
+		}
+		return baseRaw.GitOutput(gotRoot, args...)
+	}
+	workspace.expected = []string{
+		"HistorySteeringFiles", "HeadCommit", "TreeOf", "FilterTree", "SymbolicHead", "RefMap",
+		"WorktreeCensus", "StagedTree", "FilterTree", "Prefix", "SnapshotSeeded", "FilterTree",
+		"Prefix", "TopLevel",
+		"HistorySteeringFiles", "HeadCommit", "TreeOf", "FilterTree", "SymbolicHead", "RefMap",
+		"WorktreeCensus", "StagedTree", "FilterTree", "Prefix", "SnapshotSeeded", "FilterTree",
+	}
+	workspace.beforeDecision = func() {
+		if readTestDoc(t, statePath)["openTurn"] == nil {
+			t.Fatal("turn closed before the wall decision")
+		}
+		_, _, cycles, err := mission.ParseLedger(ledgerPath)
+		if err != nil || len(cycles) != 1 {
+			t.Fatalf("ledger before wall: %d cycles, %v", len(cycles), err)
+		}
+	}
+	reads.blobs = 3
+	for i := 0; i < 2; i++ {
+		reads.auth++
+		reads.git = append(reads.git, wallGitReply{root: root, args: []string{"cat-file", "-t", strings.Repeat("b", 40)}, stdout: "tree\n"})
+	}
+	reads.git = append(reads.git, wallGitReply{root: root, args: []string{"update-ref", "-d", mission.MissionRefNamespace(engine.Mission) + "turn-open-head"}})
+	engine.preAnchorHook = func() {
+		trace.done()
+		if healed == nil || trace.tip != healed {
+			t.Fatal("reconciliation did not publish the healed ledger")
+		}
+		closed := trace.fact(string(appended), trace.tip, "")
+		trace.tipReads(trace.tip)
+		trace.publication(closed, "alpha-t1-dead")
+		trace.verify(closed)
+		trace.begin()
+	}
 
+	trace.lag(seed)
+	trace.output("", "merge-base", "--is-ancestor", seed.commit, trace.ref)
+	trace.treeReads(seed)
+	trace.begin()
 	_, _, state, rerr := engine.resumeState()
 	if rerr != nil {
 		t.Fatalf("a clean ledger-ahead crash must resume: %v", rerr)
 	}
+	trace.done()
+	trace.verify(trace.tip)
+	trace.begin()
+	if _, _, err := mission.VerifyStateWithRawAnchorOperations(trace.raw(), statePath, root, ledgerPath); err != nil {
+		t.Fatalf("closed anchor: %v", err)
+	}
+	trace.done()
 	if state["openTurn"] != nil {
 		t.Fatalf("the unaccepted marker must close: %v", state["openTurn"])
 	}
@@ -726,12 +834,50 @@ func TestResumeCleanLedgerAheadHeals(t *testing.T) {
 	if entries, _ := taint["entries"].([]any); len(entries) != 0 {
 		t.Fatalf("a clean crash must not taint: %v", taint)
 	}
+	if got, err := os.ReadFile(ledgerPath); err != nil || !reflect.DeepEqual(got, appended) {
+		t.Fatalf("resume changed appended ledger bytes: %v", err)
+	}
+	if _, _, cycles, err := mission.ParseLedger(ledgerPath); err != nil || len(cycles) != 1 {
+		t.Fatalf("resume duplicated the cycle: %d cycles, %v", len(cycles), err)
+	}
+	if workspace.beforeDecision != nil {
+		t.Fatal("clean wall decision did not run")
+	}
+	workspace.done()
+	reads.done()
+	assertNoGitInvocations(t, gitLog)
 }
 
-// The filtered identity is append-stable: tracked
-// ledger appends between snapshots never change the wall's trees, so
-// E(i+1) == pre(i+1) holds exactly across turn boundaries.
+// The wall snapshot wrapper excludes the mission ledger from each raw
+// workspace snapshot. Distinct raw trees can therefore share one wall tree.
 func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
+	ledger := missionLedgerRel("demo")
+	workspace := &strictBaselineWorkspace{t: t, queries: []baselineQuery{
+		{method: "Snapshot", tree: "HEAD", result: "raw-before"},
+		{method: "FilterTree", tree: "raw-before", paths: []string{ledger}, result: "projected"},
+		{method: "Snapshot", tree: "HEAD", result: "raw-after"},
+		{method: "FilterTree", tree: "raw-after", paths: []string{ledger}, result: "projected"},
+	}}
+	before, err := wallSnapshotWithWorkspace(workspace, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := wallSnapshotWithWorkspace(workspace, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Fatalf("a ledger append changed the wall's identity: %s vs %s", before, after)
+	}
+	if len(workspace.queries) != 0 {
+		t.Fatalf("unconsumed workspace queries: %+v", workspace.queries)
+	}
+}
+
+// A tracked ledger append changes the real raw workspace snapshot while
+// the physical filter keeps the mission's wall identity stable.
+func TestGitAdapterWallIdentityExcludesLedgerAppends(t *testing.T) {
+	t.Parallel()
 	root := wallRepo(t)
 	rel := missionLedgerRel("demo")
 	writeText(t, filepath.Join(root, rel), "# ledger\n")
@@ -747,17 +893,28 @@ func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
 	run("add", "-f", "--", rel)
 	run("commit", "-qm", "anchor")
 	workspace := gittree.Workspace{Dir: root}
+	rawBefore, err := workspace.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
 	before, err := wallSnapshot(workspace, "demo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeText(t, filepath.Join(root, rel), "# ledger\n\n## Cycle 1\nappended\n")
+	rawAfter, err := workspace.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
 	after, err := wallSnapshot(workspace, "demo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if before != after {
 		t.Fatalf("a ledger append changed the wall's identity: %s vs %s", before, after)
+	}
+	if rawBefore == rawAfter {
+		t.Fatalf("a tracked ledger append did not change the raw snapshot: %s", rawBefore)
 	}
 }
 
@@ -769,21 +926,19 @@ func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
 // delta refuses, and one disjoint from it consumes — the old blanket
 // segment fence refused work the resolution never touched.
 func TestWallResolutionDeltaStalenessOverlap(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	reviewed := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	digest := bed.authorization(pre, reviewed, []string{"main.go"}, wallPolicyPatch("main.go before resolution"), true, nil)
 
 	// The adopted disputed tree TOUCHES main.go — the very path the
 	// delayed authorization changes.
-	writeText(t, filepath.Join(root, "main.go"), "package main\n// disputed\n")
-	adopted := snapshotTree(t, root)
+	adopted := "adopted"
 
 	state := resolvedFixtureState(pre, adopted)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(pre, pre, []string{})
+	bed.facts.expectChanged(pre, adopted, []string{"main.go"})
+	inspection, err := bed.inspect(adopted, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,22 +948,24 @@ func TestWallResolutionDeltaStalenessOverlap(t *testing.T) {
 }
 
 func TestWallResolutionDeltaStalenessDisjoint(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	reviewed := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	patch := wallPolicyPatch("main.go disjoint resolution")
+	digest := bed.authorization(pre, reviewed, []string{"main.go"}, patch, true, nil)
 
 	// The adopted tree touches ONLY notes.md; the delayed main.go
 	// authorization is disjoint from the ruling and stays fresh.
-	writeText(t, filepath.Join(root, "notes.md"), "adopted by ruling\n")
-	adopted := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
+	adopted := "adopted"
 
 	state := resolvedFixtureState(pre, adopted)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(pre, pre, []string{})
+	bed.facts.expectChanged(pre, adopted, []string{"notes.md"})
+	bed.facts.expectApply(adopted, patch, "applied")
+	bed.facts.expectEntries(reviewed, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries("applied", []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectSnapshot("applied", "applied")
+	inspection, err := bed.inspect(adopted, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -825,21 +982,22 @@ func TestWallResolutionDeltaStalenessDisjoint(t *testing.T) {
 // resolution's previousTree — a delayed {0,0} authorization disjoint
 // from the ruling's delta still names its base and consumes.
 func TestWallFirstTurnResolutionKeepsE0(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	reviewed := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	patch := wallPolicyPatch("main.go first-turn resolution")
+	digest := bed.authorization(pre, reviewed, []string{"main.go"}, patch, true, nil)
 
-	writeText(t, filepath.Join(root, "notes.md"), "adopted by ruling\n")
-	adopted := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
+	adopted := "adopted"
 
 	state := resolvedFixtureState(pre, adopted)
 	state["turnLog"] = []any{}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(pre, adopted, []string{"notes.md"})
+	bed.facts.expectApply(adopted, patch, "applied")
+	bed.facts.expectEntries(reviewed, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries("applied", []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectSnapshot("applied", "applied")
+	inspection, err := bed.inspect(adopted, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -878,49 +1036,24 @@ func resolvedFixtureState(pre, adopted string) map[string]any {
 // even one that commits its edit on the mission branch to become "the
 // last commit touching the path" — violates.
 func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
+	bed := newVerificationFileBed(t)
+	original, err := os.ReadFile(bed.ledger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-live", 1)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := engine.anchor(statePath, ledgerPath, "open"); err != nil {
-		t.Fatal(err)
-	}
-	turnDir := filepath.Join(engine.missionDir(), "turns", "alpha-t1-live")
-	os.MkdirAll(turnDir, 0o755)
-	writeJSONFile(t, filepath.Join(turnDir, "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-live", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
+	writeText(t, bed.ledger, string(original)+"- Stop-loss reset: ask=forged\n")
+	bed.wantLedger = []byte(string(original) + "- Stop-loss reset: ask=forged\n")
+	bed.expectLedgerTruth()
+	bed.expectPark()
 
-	// The host injects a vocal stop-loss reset line and commits its own
-	// alteration on the branch, hoping to become the guard's baseline.
-	tampered, err := os.ReadFile(ledgerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeText(t, ledgerPath, string(tampered)+"- Stop-loss reset: ask=forged\n")
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", engine.Root}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=h", "GIT_AUTHOR_EMAIL=h@h",
-			"GIT_COMMITTER_NAME=h", "GIT_COMMITTER_EMAIL=h@h")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("laundering git %v must succeed for the proof: %v\n%s", args, err, out)
-		}
-	}
-	run("add", "-f", "--", "artifacts/agents/missions/alpha/ledger.md")
-	run("commit", "-qm", "host launders its ledger edit")
-
-	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, false, nil)
+	_, final, violated, err := bed.e.wallGate(bed.state, bed.ledger, "alpha-t1-live", bed.turnDir, 1, nil, false, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !violated {
 		t.Fatalf("a mid-turn ledger edit must violate: %v", final)
 	}
-	state := readTestDoc(t, statePath)
+	state := readTestDoc(t, bed.state)
 	if state["parkReason"] != "wall-violation" {
 		t.Fatalf("park reason: %v", state["parkReason"])
 	}
@@ -932,6 +1065,7 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 	if reason, _ := entries[0].(map[string]any)["reason"].(string); !strings.Contains(reason, "ledger") {
 		t.Fatalf("the taint must name the ledger: %v", reason)
 	}
+	bed.checkAnchors(1)
 }
 
 // Answering a superseded ask refuses BY NAME toward its
@@ -939,11 +1073,8 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 // coincidental later refusal, so the bed is a real provisioned mission
 // and the stderr text is captured.
 func TestAnswerRefusesSupersededAsk(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	if _, err := seedCrashedMissionState(t, engine); err != nil {
-		t.Fatal(err)
-	}
-	writeJSONFile(t, filepath.Join(asksDirPath(engine.Root, engine.Mission), "ask-1-1.json"),
+	bed := newVerificationFileBed(t)
+	writeJSONFile(t, filepath.Join(asksDirPath(bed.e.Root, bed.e.Mission), "ask-1-1.json"),
 		map[string]any{"askId": "ask-1-1", "streamId": "build", "reasonClass": "reserved-decision",
 			"question": "old wording", "answeredAt": nil, "supersededBy": "ask-2-1"})
 
@@ -953,7 +1084,7 @@ func TestAnswerRefusesSupersededAsk(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stderr = wr
-	code := engine.Answer("ask-1-1", "approve: too late")
+	code := bed.e.Answer("ask-1-1", "approve: too late")
 	wr.Close()
 	os.Stderr = saved
 	captured, _ := io.ReadAll(read)
@@ -964,6 +1095,7 @@ func TestAnswerRefusesSupersededAsk(t *testing.T) {
 	if !strings.Contains(string(captured), "superseded; answer ask-2-1 instead") {
 		t.Fatalf("the refusal must name the successor: %q", captured)
 	}
+	bed.checkAnchors(0)
 }
 
 // The two typed resolutions, end to end from a host-authored-product
@@ -971,11 +1103,13 @@ func TestAnswerRefusesSupersededAsk(t *testing.T) {
 // bed classifies HUMAN (a test process has no recognized ancestry), which
 // is exactly the human-reserved gate's happy path.
 func TestResolveTaintRestore(t *testing.T) {
+	denyResumedHostGit(t)
 	// Pin lifted 2026-08-30 (timing slice 3): the same-second collapse
 	// no longer reproduces at scale 50 after the wind-down kill-through
 	// landed — proven by three consecutive compressed runs and the full
 	// package at scale 50.
-	engine := parkedSoloBuildMission(t)
+	bed := newResumedHostBed(t, 5)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
@@ -997,6 +1131,7 @@ func TestResolveTaintRestore(t *testing.T) {
 	}
 
 	// Restore refuses while the drift is still on disk.
+	bed.snapshot(recoveryPost)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code == 0 {
 		t.Fatal("restore must refuse while the workspace still differs from the safe tree")
 	}
@@ -1004,6 +1139,7 @@ func TestResolveTaintRestore(t *testing.T) {
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, true, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("restore must succeed once the workspace equals the safe tree: %d", code)
 	}
@@ -1040,7 +1176,11 @@ func TestResolveTaintRestore(t *testing.T) {
 	// and the wall parks it as a SECOND taint under the same segment.
 	// That is the full lifecycle: stop, resolve, reopen, re-protect.
 	signal := filepath.Join(t.TempDir(), "resume.json")
-	engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-r", signal)
+	bed.expectResumedHost()
+	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-r", signal); code != 0 {
+		t.Fatalf("resumed park exit = %d", code)
+	}
+	assertResumedHostRepeat(t, bed, signal)
 	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
 	if len(turns) < 2 {
 		t.Fatalf("the resolved mission must open a fresh turn: %v", turns)
@@ -1065,9 +1205,9 @@ func TestResolveTaintRestore(t *testing.T) {
 // parked with the violated turn's marker intact; the last resolution
 // unparks.
 func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 
@@ -1097,21 +1237,12 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 	if _, err := engine.writeState(statePath, proposed); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.anchor(statePath, ledgerPath, "fixture-second-taint"); err != nil {
-		t.Fatal(err)
-	}
-	// Anchoring reclaimed the checkout as MAIN; the human resolves from
-	// their own shell, so clear the dead run's announcement again.
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
+	bed.recordAnchor()
 
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, false, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("the first resolution must succeed: %d", code)
 	}
@@ -1135,15 +1266,7 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 		t.Fatal("the first resolution must NOT answer the sibling taint's ask")
 	}
 
-	// The first resolution's anchor announced THIS process as MAIN; a
-	// real second ruling is a fresh shell process, so clear it again.
-	announcements, _ = filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
-
+	bed.expectResolve(recoveryPre, false, true, false)
 	if code := engine.ResolveTaint(2, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
 		[]string{"authorship of the second drift"}); code != 0 {
 		t.Fatalf("the last resolution must succeed: %d", code)
@@ -1169,9 +1292,9 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 // the ledger sits outside the tree projection restore proves against;
 // adoption — which re-baselines the anchored truth — is the lawful path.
 func TestResolveTaintLedgerDomainRefusesRestore(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 
@@ -1184,22 +1307,31 @@ func TestResolveTaintLedgerDomainRefusesRestore(t *testing.T) {
 	if _, err := engine.writeState(statePath, proposed); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.anchor(statePath, ledgerPath, "fixture-ledger-taint"); err != nil {
+	pristine, err := os.ReadFile(bed.ledger)
+	if err != nil {
 		t.Fatal(err)
 	}
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
+	disputed := string(pristine) + "\n"
+	writeText(t, bed.ledger, disputed)
+	if _, _, _, err := mission.ParseLedger(bed.ledger); err != nil {
+		t.Fatalf("disputed ledger must remain parseable: %v", err)
+	}
+	bed.recordAnchor()
+	if bed.anchorSHA != sha256Hex(disputed) || bed.anchorSHA == sha256Hex(string(pristine)) {
+		t.Fatal("parked ledger anchor must bind distinct parseable disputed bytes")
 	}
 
+	bed.snapshot(recoveryPost)
 	if code := engine.ResolveTaint(2, "restore", preTree, "Wido", "put it back", nil); code != 3 {
 		t.Fatalf("restore of a ledger-domain taint must refuse: %d", code)
 	}
+	bed.expectResolve(recoveryPost, false, false, true)
 	if code := engine.ResolveTaint(2, "adopt-disputed-tree", "", "Wido", "re-baselining the ledger",
 		[]string{"ledger narrative integrity for turn alpha-t1-ledger"}); code != 0 {
 		t.Fatalf("adoption must close a ledger-domain taint: %d", code)
+	}
+	if bed.anchorSHA != sha256Hex(disputed) || string(bed.anchored) != disputed {
+		t.Fatal("adoption anchor must bind the disputed ledger bytes")
 	}
 }
 
@@ -1208,7 +1340,8 @@ func TestResolveTaintLedgerDomainRefusesRestore(t *testing.T) {
 // re-running resolve-taint, which answers from the RECORDED ruling; an
 // ask without a parseable bound taint id is never touched.
 func TestResolveTaintTailCompletion(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
@@ -1228,6 +1361,7 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, true, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("restore must succeed: %d", code)
 	}
@@ -1241,14 +1375,9 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 	crashed["answeredAt"] = nil
 	crashed["answer"] = nil
 	writeJSONFile(t, asks[0], crashed)
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
 	// The retry may name ANY variant/args — the tail completes from the
 	// RECORDED resolution, never from this call.
+	bed.nextIdentity = "Someone Else"
 	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Someone Else", "different args", []string{"x"}); code != 0 {
 		t.Fatalf("the tail completion must succeed: %d", code)
 	}
@@ -1266,19 +1395,90 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 // E-continuity at reservation: drift landing
 // between a resolution and the next turn parks as a NEW wall violation
 // instead of becoming the silently grandfathered baseline.
-func TestReservationParksOnDriftAfterResolution(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
-	statePath := filepath.Join(engine.missionDir(), "state.json")
+type reservationDriftFacts struct {
+	*orphanWallReads
+	projection string
+	snapshots  int
+	filters    int
+	changes    int
+}
 
-	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
-		[]string{"authorship of solo.go"}); code != 0 {
-		t.Fatalf("adoption must succeed: %d", code)
+func (f *reservationDriftFacts) liveProjection() string {
+	f.t.Helper()
+	root := f.b.e.Root
+	solo, err := os.ReadFile(filepath.Join(root, "solo.go"))
+	if err != nil || string(solo) != resolutionSolo {
+		f.t.Fatalf("reservation solo.go bytes = %q, %v", solo, err)
 	}
+	drift, err := os.ReadFile(filepath.Join(root, "drift.txt"))
+	if err != nil || string(drift) != "unruled bytes\n" {
+		f.t.Fatalf("reservation drift.txt bytes = %q, %v", drift, err)
+	}
+	blob := func(data []byte) [sha1.Size]byte {
+		return sha1.Sum(append([]byte(fmt.Sprintf("blob %d\x00", len(data))), data...))
+	}
+	driftBlob, soloBlob := blob(drift), blob(solo)
+	tree := append([]byte("100644 drift.txt\x00"), driftBlob[:]...)
+	tree = append(tree, []byte("100644 solo.go\x00")...)
+	tree = append(tree, soloBlob[:]...)
+	sum := sha1.Sum(append([]byte(fmt.Sprintf("tree %d\x00", len(tree))), tree...))
+	return fmt.Sprintf("%x", sum)
+}
+
+func (f *reservationDriftFacts) Snapshot(base string) (string, error) {
+	f.next("Snapshot", base)
+	f.snapshots++
+	return f.liveProjection(), nil
+}
+
+func (f *reservationDriftFacts) FilterTree(tree string, paths []string) (string, error) {
+	f.next("FilterTree", tree, paths)
+	f.filters++
+	if tree != f.liveProjection() {
+		f.t.Fatalf("filtered tree %q is not the live projection", tree)
+	}
+	return tree, nil
+}
+
+func (f *reservationDriftFacts) ChangedPaths(from, to string) ([]string, error) {
+	f.next("ChangedPaths", from, to)
+	f.changes++
+	if from != recoveryPost || to != f.liveProjection() {
+		f.t.Fatalf("changed-path trees %q -> %q do not describe reservation drift", from, to)
+	}
+	return []string{"drift.txt"}, nil
+}
+
+func TestReservationParksOnDriftAfterResolution(t *testing.T) {
+	bed, continuity, reads := newOrphanResumeBedWithReservation(t, true)
+	engine := bed.e
+	statePath := filepath.Join(engine.missionDir(), "state.json")
 	// Out-of-band drift AFTER the ruling, BEFORE the next reservation.
 	writeText(t, filepath.Join(engine.Root, "drift.txt"), "unruled bytes\n")
+	facts := &reservationDriftFacts{orphanWallReads: reads}
+	facts.projection = facts.liveProjection()
+	if facts.projection == recoveryPost {
+		t.Fatal("physical drift did not change the filtered projection")
+	}
+	engine.wallWorkspaceFactory = func(root string) wallWorkspace {
+		if root != engine.Root {
+			t.Fatalf("reservation workspace root %q", root)
+		}
+		return facts
+	}
+	bed.nextIdentity = ""
+	reads.add("Snapshot", nil, "HEAD")
+	reads.add("FilterTree", nil, facts.projection, []string{missionLedgerRel(engine.Mission)})
+	reads.add("Anchor", nil, engine.Mission, facts.projection)
+	reads.add("ChangedPaths", nil, recoveryPost, facts.projection)
 
 	signal := filepath.Join(t.TempDir(), "resume.json")
-	engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-d", signal)
+	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-d", signal); code != 0 {
+		t.Fatalf("reservation drift resume failed: %d", code)
+	}
+	if facts.snapshots != 1 || facts.filters != 1 || facts.changes != 1 {
+		t.Fatalf("reservation projection calls: snapshot=%d filter=%d changed=%d", facts.snapshots, facts.filters, facts.changes)
+	}
 
 	final := readTestDoc(t, statePath)
 	if final["parkReason"] != "wall-violation" {
@@ -1303,6 +1503,12 @@ func TestReservationParksOnDriftAfterResolution(t *testing.T) {
 	if v, _ := evidence["violation"].(string); !strings.Contains(v, "workspace drifted between turns") {
 		t.Fatalf("the drift park must record wall evidence: %v", evidence)
 	}
+	if evidence["preTree"] != facts.projection || evidence["postTree"] != facts.projection || evidence["expectedTree"] != recoveryPost {
+		t.Fatalf("the wall evidence must carry the observed and adopted projections: %v", evidence)
+	}
+	if paths, ok := evidence["unaccounted"].([]any); !ok || len(paths) != 1 || paths[0] != "drift.txt" {
+		t.Fatalf("the wall evidence must name the changed live path: %v", evidence)
+	}
 	// ...and booked NO ledger block: the reserved
 	// cycle heals as a lost turn, so every crash window reconciles.
 	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
@@ -1312,11 +1518,24 @@ func TestReservationParksOnDriftAfterResolution(t *testing.T) {
 	}
 	stateLedger, _ := final["ledger"].(map[string]any)
 	stateCycles, _ := jsonInt(stateLedger["cycles"])
-	if int64(len(cycles)) != stateCycles {
+	if len(cycles) != 0 || int64(len(cycles)) != stateCycles {
 		t.Fatalf("the reservation park must not book the ledger: ledger=%d state=%d", len(cycles), stateCycles)
 	}
-	if _, _, err := mission.VerifyStateWithAnchor(statePath, engine.Root, ledgerPath); err != nil {
+	for _, key := range []string{"ref", "log", "ancestry", "blob", "tree", "parents"} {
+		continuity.remaining[key]++
+	}
+	if _, _, err := mission.VerifyStateWithRawAnchorOperations(continuity.raw, statePath, engine.Root, ledgerPath); err != nil {
 		t.Fatalf("the parked position must verify with its anchor: %v", err)
+	}
+	assertOrphanResume(t, bed, turnID)
+	turn := readTestDoc(t, filepath.Join(engine.missionDir(), "turns", turnID, "turn.json"))
+	if turn["status"] != "failed" || turn["outcome"] != "wall-violation" || turn["pid"] != nil {
+		t.Fatalf("reservation must stop before launching a host: %v", turn)
+	}
+	for _, name := range []string{"host.log", "raw.out", "result.json", "return.json"} {
+		if _, err := os.Stat(filepath.Join(engine.missionDir(), "turns", turnID, name)); !os.IsNotExist(err) {
+			t.Fatalf("host artifact %s exists or cannot be inspected: %v", name, err)
+		}
 	}
 }
 
@@ -1324,24 +1543,39 @@ func TestReservationParksOnDriftAfterResolution(t *testing.T) {
 // resolution: tamper between the park and the ruling fails the anchor-verified
 // entry, and reconciliation refuses to bless it.
 func TestResolveTaintRefusesLedgerDrift(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
+	continuity := newDriftAnchorContinuity(t, bed)
+	savedHash, savedSHA, savedLedger, pins := bed.anchorHash, bed.anchorSHA, string(bed.anchored), bed.pins
 
 	tampered, err := os.ReadFile(ledgerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeText(t, ledgerPath, string(tampered)+"- Stop-loss reset: ask=forged-mid-resolution\n")
+	if _, _, _, err := mission.ParseLedger(ledgerPath); err != nil {
+		t.Fatalf("the forged append must remain parseable for anchor verification: %v", err)
+	}
 
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
-	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring", nil); code == 0 {
-		t.Fatal("a resolution over drifted ledger bytes must refuse")
+	live, err := os.ReadFile(ledgerPath)
+	if err != nil || string(live) != string(tampered)+"- Stop-loss reset: ask=forged-mid-resolution\n" {
+		t.Fatalf("forged ledger append missing before resolution: %q, %v", live, err)
 	}
+	t.Log("forged ledger append is present before ResolveTaint")
+	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring", nil); code != 3 {
+		t.Fatalf("a resolution over drifted ledger bytes must refuse with code 3, got %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(engine.Root, "solo.go")); !os.IsNotExist(err) {
+		t.Fatalf("safe-tree restoration did not remove solo.go: %v", err)
+	}
+	assertDriftRefused(t, bed, continuity, savedHash, savedSHA, savedLedger, pins)
 }
 
 // The runner repairs a resolution's crash tail at
@@ -1349,7 +1583,9 @@ func TestResolveTaintRefusesLedgerDrift(t *testing.T) {
 // the recorded ruling, and the NEXT violation books its own bound ask —
 // a stale tail never suppresses or strands it.
 func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	denyResumedHostGit(t)
+	bed := newResumedHostBed(t, 3)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
@@ -1361,6 +1597,7 @@ func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, true, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("restore must succeed: %d", code)
 	}
@@ -1373,7 +1610,11 @@ func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
 	// Resume: the runner repairs the tail, then the still-offending
 	// solo-build host violates again — and taint 2 must get its OWN ask.
 	signal := filepath.Join(t.TempDir(), "resume.json")
-	engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-t", signal)
+	bed.expectResumedHost()
+	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-t", signal); code != 0 {
+		t.Fatalf("resumed park exit = %d", code)
+	}
+	assertResumedHostRepeat(t, bed, signal)
 
 	repaired := readTestDoc(t, asks[0])
 	answer, _ := repaired["answer"].(string)
@@ -1401,17 +1642,506 @@ func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
 	}
 }
 
+func denyResumedHostGit(t *testing.T) {
+	t.Helper()
+	log := filepath.Join(t.TempDir(), "denied-git.log")
+	bin := t.TempDir()
+	if err := writeHostCycleFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nprintf 'denied git: %s\\n' \"$*\" >> \"$METASYSTEM_TEST_GIT_DENIED_LOG\"\nexit 97\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_TEST_GIT_DENIED_LOG", log)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GOFLAGS", strings.TrimSpace(os.Getenv("GOFLAGS")+" -buildvcs=false"))
+	t.Cleanup(func() { assertNoGitInvocations(t, log) })
+}
+
+func seedRecoveredResumedHostTurn(b *recoveryFileBed) {
+	b.t.Helper()
+	const prior = "alpha-t1-recovered"
+	state := readTestDoc(b.t, b.state)
+	state["openTurn"] = map[string]any{
+		"turnId": prior, "cycle": 1, "preTree": recoveryPre,
+		"sequence": int64(0), "segment": int64(0), "openedAt": "2026-08-18T00:00:00Z",
+		"headCommit": recoveryHead, "headTree": recoveryPre, "topTree": nil,
+		"refMap": mission.RecordableRefMap(map[string]string{"refs/heads/main": recoveryHead}, b.e.Mission), "topStaged": nil,
+	}
+	if _, err := b.e.writeState(b.state, state); err != nil {
+		b.t.Fatalf("open earlier recovered turn: %v", err)
+	}
+	checkRecoveredResumedHostLedger(b, 0)
+	writeText(b.t, filepath.Join(b.e.Root, "solo.go"), resolutionSolo)
+	if err := os.Remove(filepath.Join(b.e.Root, "solo.go")); err != nil {
+		b.t.Fatal(err)
+	}
+	state = readTestDoc(b.t, b.state)
+	sequence, _, err := mission.VerifyStateShape(b.state)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	wall := map[string]any{
+		"verdict": "passed", "preTree": recoveryPre, "expectedTree": recoveryPre,
+		"postTree": recoveryPre, "orderedDigests": []any{},
+		"sequencePoint":  map[string]any{"sequence": sequence + 1, "segment": int64(0)},
+		"headCommitPost": recoveryHead, "refMapPost": map[string]any{"refs/heads/main": recoveryHead},
+		"stagedTreePost": recoveryPre, "topTreePost": nil, "topStagedPost": nil,
+		"worktreeCensusPost": mission.WorktreeCensusDoc(resolutionCensus(b.e.Root)), "capturedAt": "2026-08-18T00:01:00Z",
+		"recovered": map[string]any{"violation": "undeclared host-authored change: solo.go", "restoredPaths": []any{"solo.go"}, "restoredAt": "2026-08-18T00:00:30Z"},
+	}
+	state["turnLog"] = append(state["turnLog"].([]any), map[string]any{
+		"turnId": prior, "cycle": 1, "outcome": "completed", "detail": "host return accepted",
+		"sessionId": nil, "measurement": nil, "accepted": []any{}, "rejected": []any{},
+		"certified": []any{}, "factsForLedger": []any{}, "gaps": []any{},
+		"wall": wall, "consumedAuthorizations": []any{}, "gatePassed": false,
+	})
+	if _, err := mission.AppendCycle(b.ledger, 1, "no-progress", recoveryHead, "score=0", "no"); err != nil {
+		b.t.Fatal(err)
+	}
+	state["ledger"].(map[string]any)["cycles"] = 1
+	state["fences"].(map[string]any)["cycles"] = 1
+	if _, err := b.e.writeState(b.state, state); err != nil {
+		b.t.Fatalf("accept earlier recovered turn: %v", err)
+	}
+	checkRecoveredResumedHostLedger(b, 1)
+	fences := readTestDoc(b.t, b.e.fencesPath())
+	fences["cycles"] = 1
+	writeJSONFile(b.t, b.e.fencesPath(), fences)
+	state = readTestDoc(b.t, b.state)
+	state["turnLog"] = append(state["turnLog"].([]any), map[string]any{
+		"turnId": prior, "kind": mission.WallVerificationKind, "capturedAt": "2026-08-18T00:02:00Z", "verdict": "clean",
+	})
+	state["openTurn"] = nil
+	if _, err := b.e.writeState(b.state, state); err != nil {
+		b.t.Fatalf("verify earlier recovered turn: %v", err)
+	}
+	checkRecoveredResumedHostLedger(b, 1)
+	writeJSONFile(b.t, filepath.Join(b.e.missionDir(), "turns", prior, "turn.json"), map[string]any{
+		"missionId": b.e.Mission, "turnId": prior, "cycle": 1, "runtime": "fake", "model": "fixture", "status": "completed",
+	})
+	priorLog := readTestDoc(b.t, b.state)["turnLog"].([]any)
+	if len(priorLog) != 2 {
+		b.t.Fatalf("earlier turn needs one acceptance and its verification: %v", priorLog)
+	}
+	accepted := priorLog[0].(map[string]any)
+	verified := priorLog[1].(map[string]any)
+	cycle, cycleOK := jsonInt(accepted["cycle"])
+	if accepted["outcome"] != "completed" ||
+		accepted["detail"] != "host return accepted" || !cycleOK || cycle != 1 ||
+		accepted["wall"].(map[string]any)["recovered"] == nil ||
+		verified["kind"] != mission.WallVerificationKind || verified["turnId"] != prior ||
+		!missionHasRecoveredAcceptance(readTestDoc(b.t, b.state)) {
+		b.t.Fatalf("earlier turn differs from the full-cycle recovered acceptance and verification: %v", priorLog)
+	}
+}
+
+func checkRecoveredResumedHostLedger(b *recoveryFileBed, want int) {
+	b.t.Helper()
+	if _, _, err := mission.VerifyStateShape(b.state); err != nil {
+		b.t.Fatal(err)
+	}
+	_, _, cycles, err := mission.ParseLedger(b.ledger)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	state := readTestDoc(b.t, b.state)
+	booked, _ := jsonInt(state["ledger"].(map[string]any)["cycles"])
+	spent, _ := jsonInt(state["fences"].(map[string]any)["cycles"])
+	if len(cycles) != want || booked != int64(want) || spent != int64(want) {
+		b.t.Fatalf("earlier turn cycle counts: ledger=%d state=%d fences=%d, want %d", len(cycles), booked, spent, want)
+	}
+}
+
+func assertResumedHostRepeat(t *testing.T, b *resolutionFileBed, signal string) {
+	t.Helper()
+	started := readTestDoc(t, signal)
+	turnID, _ := started["turnId"].(string)
+	state := readTestDoc(t, b.state)
+	entries := state["workspaceTaint"].(map[string]any)["entries"].([]any)
+	if len(entries) != 2 {
+		t.Fatalf("resumed turn must book exactly a second taint: %v", entries)
+	}
+	second := entries[1].(map[string]any)
+	turns, _ := filepath.Glob(filepath.Join(b.e.missionDir(), "turns", "*", "turn.json"))
+	if len(turns) != 3 || started["verified"] != true || started["error"] != nil ||
+		turnID == "" || second["turnId"] != turnID || second["resolution"] != nil {
+		t.Fatalf("first resumed host turn must own the second unresolved taint: signal=%v turns=%v taint=%v", started, turns, second)
+	}
+	dir := filepath.Join(b.e.missionDir(), "turns", turnID)
+	turn := readTestDoc(t, filepath.Join(dir, "turn.json"))
+	wall := readTestDoc(t, filepath.Join(dir, "wall.json"))
+	note, _ := wall["recovery"].(string)
+	product, err := os.ReadFile(filepath.Join(b.e.Root, "solo.go"))
+	if err != nil || string(product) != resolutionSolo || turn["outcome"] != "wall-violation" ||
+		wall["verdict"] != "violated" || !strings.Contains(note, "repeat offense") {
+		t.Fatalf("resumed host product and repeat wall evidence: turn=%v wall=%v solo.go=%q err=%v", turn, wall, product, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "raw.out")); err != nil {
+		t.Fatalf("resumed host output artifact: %v", err)
+	}
+}
+
+func newResumedHostBed(t *testing.T, anchorReads int) *resolutionFileBed {
+	t.Helper()
+	b := newResolutionFileBedBeforeOpen(t, seedRecoveredResumedHostTurn)
+	e := b.e
+	root := e.Root
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &hostCycleSource{t: t, root: canonicalRoot, contractPath: filepath.Join(canonicalRoot, "plans", "mission-alpha.contract.md"), files: map[string][]byte{}}
+	source.files["scripts/gate.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n")
+	source.files["truth/reference.txt"] = []byte("certified truth\n")
+	source.files["scripts/agents/arm-supervision.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nif [[ ${1:-} == fingerprint ]]; then printf 'fixture-fingerprint\\n'; exit 0; fi\nprintf 'up outcome=armed authority=writer\\n'\n")
+	rules, err := os.ReadFile(filepath.Join("..", "..", "docs", "project-rules.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source.files["docs/project-rules.md"] = rules
+	for path, data := range source.files {
+		mode := os.FileMode(0o644)
+		if strings.HasSuffix(path, ".sh") {
+			mode = 0o755
+		}
+		if err := writeHostCycleFile(filepath.Join(root, path), data, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeText(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=fake\nrole.default.runtime=fake\n")
+	document := strings.Replace(fixtureContract,
+		"stream.primary=Reach the acceptance score.",
+		"stream.solo=Do solo. FAKEHOST:solo-build", 1)
+	if document == fixtureContract {
+		t.Fatal("host marker insertion failed")
+	}
+	if err := writeHostCycleFile(e.contractPath(), []byte(document), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.contractSource = source.source()
+	sha, err := contract.SealWithSource(e.contractPath(), e.contractSource)
+	if err != nil {
+		t.Fatalf("seal resumed host contract: %v", err)
+	}
+	file, err := os.OpenFile(e.contractPath(), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString("\nApproval: name=Fixture Human; date=2026-08-12; contract-sha256=" + sha + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	source.signed, err = os.ReadFile(e.contractPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeText(t, e.approvedContractPath(), string(source.signed))
+	approvedSHA := sha256.Sum256(source.signed)
+	fences := readTestDoc(t, e.fencesPath())
+	fences["schemaVersion"] = 1
+	fences["missionId"] = e.Mission
+	fences["startedAt"] = time.Now().UTC().Format(time.RFC3339)
+	fences["reservations"] = map[string]any{}
+	fences["approvedContractSha256"] = fmt.Sprintf("%x", approvedSHA)
+	writeJSONFile(t, e.fencesPath(), fences)
+	equipFullCycleFiles(t, e)
+	goals := &hostCycleGoals{t: t}
+	e.goalSource = &mission.GoalSource{Endpoint: goal.Endpoint{
+		Root: root, Remote: "origin", Branch: "refs/heads/main", Repository: goals,
+	}, Machine: "fixture-machine"}
+	manifest := resumedHostManifest(t, root)
+	if manifest["solo.go"] == "" {
+		t.Fatal("parked solo.go is absent")
+	}
+	safe := make(map[string]string, len(manifest)-1)
+	for path, value := range manifest {
+		if path != "solo.go" {
+			safe[path] = value
+		}
+	}
+	workspace := &resumedHostWorkspace{resolutionFacts: b.facts, safe: safe, disputed: manifest}
+	e.wallWorkspaceFactory = func(got string) wallWorkspace {
+		if got != root {
+			t.Fatalf("workspace root %q", got)
+		}
+		return workspace
+	}
+	c := &orphanContinuity{t: t, b: b, reads: map[string]int{}, remaining: map[string]int{
+		"ref": anchorReads, "log": anchorReads, "ancestry": anchorReads, "blob": anchorReads, "tree": anchorReads, "parents": anchorReads,
+	}}
+	c.saveAnchor()
+	c.raw = mission.RawAnchorOperations{
+		GitOutput: func(got string, args ...string) (string, error) { return c.git(got, args...), nil },
+		GitTry:    func(got string, args ...string) (string, int) { return c.git(got, args...), 0 },
+		GitStdinOutput: func(got string, data []byte, args ...string) (string, error) {
+			t.Fatalf("unexpected anchor Git write %q %q (%d bytes)", got, args, len(data))
+			return "", nil
+		},
+		GitEnvOutput: func(got string, env []string, args ...string) (string, error) {
+			t.Fatalf("unexpected anchor Git write %q %q %q", got, env, args)
+			return "", nil
+		},
+	}
+	e.continuityFacts = c
+	reads := &resumedHostReads{resolutionFacts: b.facts, c: c}
+	e.wallReadFacts = reads
+	e.pinnedAnchorEffect = func(state, ledger, identity, hash, sha string) error {
+		if err := b.pin(state, ledger, identity, hash, sha); err != nil {
+			return err
+		}
+		c.saveAnchor()
+		return nil
+	}
+	e.anchorFn = func(state, ledger, identity string) error {
+		if state != b.state || ledger != b.ledger || identity == "" {
+			t.Fatalf("unexpected resumed state anchor %q %q %q", state, ledger, identity)
+		}
+		written := readTestDoc(t, state)
+		sequence, hash, err := mission.VerifyStateShape(state)
+		if err != nil || sequence < 1 || hash == c.anchor.hash {
+			t.Fatalf("unadvanced state anchor %q: %v", hash, err)
+		}
+		_, _, cycles, err := mission.ParseLedger(ledger)
+		if err != nil {
+			return err
+		}
+		booked, ok := jsonInt(written["ledger"].(map[string]any)["cycles"])
+		if !ok || booked != int64(len(cycles)) {
+			t.Fatalf("state/ledger cycle pin: %d, %d", booked, len(cycles))
+		}
+		b.recordAnchor()
+		c.saveAnchor()
+		c.anchorWrites++
+		return nil
+	}
+	t.Cleanup(func() {
+		source.done()
+		if goals.captures != 1 || goals.accepted != 1 {
+			t.Errorf("goal reads: captures=%d accepted=%d", goals.captures, goals.accepted)
+		}
+		if workspace.openAnchors != 1 {
+			t.Errorf("open commit anchors = %d", workspace.openAnchors)
+		}
+		for key, left := range c.remaining {
+			if left != 0 {
+				t.Errorf("unused %s anchor reads = %d (used %d)", key, left, c.reads[key])
+			}
+		}
+	})
+	return b
+}
+
+type resumedHostReads struct {
+	*resolutionFacts
+	c      *orphanContinuity
+	resume bool
+}
+
+func (b *resolutionFileBed) expectResumedHost() {
+	b.e.wallReadFacts.(*resumedHostReads).resume = true
+	f := b.facts
+	root := b.e.Root
+	ledgerPaths := []string{missionLedgerRel(b.e.Mission)}
+	f.add("Git", scopePolicyGit{stdout: "true\n", code: 0}, root, []string{"config", "--local", "--type=bool", "--get", "core.fileMode"})
+	f.add("Snapshot", recoveryPre, "HEAD")
+	f.add("FilterTree", recoveryPre, recoveryPre, ledgerPaths)
+	f.add("Anchor", nil, b.e.Mission, recoveryPre)
+	f.add("HistorySteeringFiles", []string{})
+	f.add("HeadCommit", scopePolicyHead{oid: recoveryHead})
+	f.add("TreeOf", recoveryPre, recoveryHead)
+	f.add("FilterTree", recoveryPre, recoveryPre, ledgerPaths)
+	f.add("SymbolicHead", scopePolicyBranch{ref: "refs/heads/main"})
+	f.add("RefMap", map[string]string{"refs/heads/main": recoveryHead, mission.MissionRefNamespace(b.e.Mission) + "state-anchors": recoveryHead})
+	f.add("WorktreeCensus", resolutionCensus(root))
+	f.add("StagedTree", recoveryPre)
+	f.add("FilterTree", recoveryPre, recoveryPre, ledgerPaths)
+	f.add("Prefix", "")
+	f.add("Prefix", "")
+	f.add("LedgerBlobOID", nil, root, b.ledger)
+	f.add("LedgerBlobOID", nil, root, b.ledger)
+	f.add("Git", scopePolicyGit{code: 1}, root, []string{"cat-file", "-e", recoveryPre})
+	f.add("AuthenticateLedger", nil, root, b.ledger)
+	f.add("TopLevel", root)
+	f.add("AnchorCommit", nil, b.e.Mission, "turn-open-head", recoveryHead)
+	f.add("TreeOf", recoveryPre, recoveryHead)
+	f.add("FilterTree", recoveryPre, recoveryPre, ledgerPaths)
+	f.add("LedgerTruth", nil, root, b.ledger)
+	b.expectResumedHostCapture()
+	f.add("ChangedPaths", []string{"solo.go"}, recoveryPre, recoveryPost)
+	b.expectResumedHostCapture()
+	f.add("Anchor", nil, b.e.Mission, recoveryPost)
+	f.add("ChangedPaths", []string{"solo.go"}, recoveryPre, recoveryPost)
+	f.add("Git", scopePolicyGit{stdout: recoveryHead + "\n", code: 0}, root, []string{"rev-parse", "--verify", "--quiet", "HEAD^{commit}"})
+	f.add("Git", scopePolicyGit{stdout: recoveryHead + "\n", code: 0}, root, []string{"-C", root, "rev-parse", "main"})
+}
+
+func (b *resolutionFileBed) expectResumedHostCapture() {
+	f := b.facts
+	ledgerPaths := []string{missionLedgerRel(b.e.Mission)}
+	f.add("HistorySteeringFiles", []string{})
+	f.add("HeadCommit", scopePolicyHead{oid: recoveryHead})
+	f.add("TreeOf", recoveryPre, recoveryHead)
+	f.add("FilterTree", recoveryPre, recoveryPre, ledgerPaths)
+	f.add("SymbolicHead", scopePolicyBranch{ref: "refs/heads/main"})
+	f.add("RefMap", f.refs())
+	f.add("WorktreeCensus", resolutionCensus(b.e.Root))
+	f.add("StagedTree", recoveryPre)
+	f.add("FilterTree", recoveryPre, recoveryPre, ledgerPaths)
+	f.add("Prefix", "")
+	f.add("SnapshotSeeded", recoveryPost, recoveryHead, recoveryPre, []string{})
+	f.add("FilterTree", recoveryPost, recoveryPost, ledgerPaths)
+}
+
+func (f *resumedHostReads) Git(root string, args ...string) (string, string, int) {
+	r := f.next("Git", root, args)
+	v := r.value.(scopePolicyGit)
+	return v.stdout, v.stderr, v.code
+}
+
+func (f *resumedHostReads) LedgerTruth(root string, state map[string]any, path string) (string, string, error) {
+	if f.resume {
+		f.next("LedgerTruth", root, path)
+	} else {
+		f.next("LedgerTruth", root, state, path)
+	}
+	if root != f.bed.e.Root || path != f.bed.ledger || !reflect.DeepEqual(state, f.stateDoc()) {
+		f.t.Fatalf("undeclared ledger truth %q %q", root, path)
+	}
+	current, err := os.ReadFile(path)
+	return f.c.anchor.ledger, string(current), err
+}
+
+func (f *resumedHostReads) LedgerBlobOID(root string, state map[string]any, path string) (string, error) {
+	if !f.resume {
+		return f.resolutionFacts.LedgerBlobOID(root, state, path)
+	}
+	f.next("LedgerBlobOID", root, path)
+	if root != f.bed.e.Root || path != f.bed.ledger || !reflect.DeepEqual(state, f.stateDoc()) {
+		f.t.Fatalf("ledger blob query does not name the written state")
+	}
+	return "", mission.ErrNoAnchor
+}
+
+func (f *resumedHostReads) AuthenticateLedger(root string, state map[string]any, path string) error {
+	if !f.resume {
+		return f.resolutionFacts.AuthenticateLedger(root, state, path)
+	}
+	f.next("AuthenticateLedger", root, path)
+	if root != f.bed.e.Root || path != f.bed.ledger || !reflect.DeepEqual(state, f.stateDoc()) {
+		f.t.Fatalf("ledger authentication does not name the written state")
+	}
+	current, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if string(current) != f.c.anchor.ledger {
+		return fmt.Errorf("ledger differs from independently saved anchor")
+	}
+	return nil
+}
+
+type resumedHostWorkspace struct {
+	*resolutionFacts
+	safe, disputed map[string]string
+	openAnchors    int
+}
+
+func resumedHostManifest(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if entry.IsDir() {
+			if rel == ".git" || rel == "artifacts" || rel == "bin" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if rel == "metasystem.conf" {
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("unexpected projection object %s", rel)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		files[rel] = fmt.Sprintf("%#o:%x", info.Mode().Perm(), sha256.Sum256(data))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+func (f *resumedHostWorkspace) observedTree() string {
+	f.t.Helper()
+	actual := resumedHostManifest(f.t, f.bed.e.Root)
+	if reflect.DeepEqual(actual, f.safe) {
+		return recoveryPre
+	}
+	if reflect.DeepEqual(actual, f.disputed) {
+		return recoveryPost
+	}
+	f.t.Fatalf("unaccounted projection files: actual=%v safe=%v disputed=%v", actual, f.safe, f.disputed)
+	return ""
+}
+
+func (f *resumedHostWorkspace) Snapshot(base string) (string, error) {
+	r := f.next("Snapshot", base)
+	if tree := f.observedTree(); tree != r.value.(string) {
+		f.t.Fatalf("physical snapshot %s, declared %s", tree, r.value)
+	}
+	return r.value.(string), r.err
+}
+
+func (f *resumedHostWorkspace) SnapshotSeeded(seed, expected string, paths []string) (string, error) {
+	r := f.next("SnapshotSeeded", seed, expected, paths)
+	if tree := f.observedTree(); tree != r.value.(string) {
+		f.t.Fatalf("physical seeded snapshot %s, declared %s", tree, r.value)
+	}
+	return r.value.(string), r.err
+}
+
+func (f *resumedHostWorkspace) ChangedPaths(from, to string) ([]string, error) {
+	r := f.next("ChangedPaths", from, to)
+	if from != recoveryPre || to != recoveryPost || f.observedTree() != recoveryPost {
+		f.t.Fatalf("changed paths are not the physical solo.go write: %s -> %s", from, to)
+	}
+	return append([]string(nil), r.value.([]string)...), r.err
+}
+
+func (f *resumedHostWorkspace) AnchorCommit(missionID, name, commit string) error {
+	f.next("AnchorCommit", missionID, name, commit)
+	if missionID != f.bed.e.Mission || name != "turn-open-head" || commit != recoveryHead {
+		f.t.Fatalf("unexpected open commit anchor %s %s %s", missionID, name, commit)
+	}
+	f.openAnchors++
+	return nil
+}
+
 // Violated evidence with NO marker and NO taint — the reservation
 // park's evidence-to-park crash
 // window — re-executes the park at the next reservation, even when
 // the workspace was cleaned up in between.
 func TestReservationReparksOrphanedEvidence(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed, _, _ := newOrphanResumeBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
-		[]string{"authorship of solo.go"}); code != 0 {
-		t.Fatalf("adoption must succeed: %d", code)
-	}
+	bed.nextIdentity = "alpha-t9-orphan"
 	// The crash artifact: violated evidence for a turn no ledger knows.
 	orphanDir := filepath.Join(engine.missionDir(), "turns", "alpha-t9-orphan")
 	if err := os.MkdirAll(orphanDir, 0o755); err != nil {
@@ -1426,7 +2156,9 @@ func TestReservationReparksOrphanedEvidence(t *testing.T) {
 	writeJSONFile(t, filepath.Join(orphanDir, "wall.json"), evidence.document())
 
 	signal := filepath.Join(t.TempDir(), "resume.json")
-	engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-o", signal)
+	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-o", signal); code != 0 {
+		t.Fatalf("orphan resume failed: %d", code)
+	}
 
 	final := readTestDoc(t, statePath)
 	if final["parkReason"] != "wall-violation" {
@@ -1443,12 +2175,11 @@ func TestReservationReparksOrphanedEvidence(t *testing.T) {
 	if last["resolution"] != nil {
 		t.Fatal("the re-parked taint must be unresolved")
 	}
+	assertOrphanResume(t, bed, "alpha-t9-orphan")
 }
 
-// Both typed resolutions through the REAL human
-// entrypoint: the wrapper resolves the bed root from
-// its own location and forwards to the bed's binary — this is the
-// invocation a human actually types, wrapper to binary to engine.
+// The freshly compiled command handles both typed resolutions and publishes
+// each fixture's state anchor through native Git.
 func TestResolveTaintThroughWrapper(t *testing.T) {
 	restoreBed := parkedSoloBuildMission(t)
 	statePath := filepath.Join(restoreBed.missionDir(), "state.json")
@@ -1470,6 +2201,10 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the wrapper restore must succeed: %v\n%s", err, out)
 	}
+	if _, _, err := mission.VerifyStateWithAnchor(statePath, restoreBed.Root,
+		filepath.Join(restoreBed.missionDir(), "ledger.md")); err != nil {
+		t.Fatalf("the restore must publish a verifiable state anchor: %v", err)
+	}
 	after := readTestDoc(t, statePath)
 	if after["parkReason"] != nil || unresolvedTaint(after) != "" {
 		t.Fatalf("the wrapper restore must unpark and lift the STOP: %v", after["parkReason"])
@@ -1482,6 +2217,10 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 		"--waives", "authorship of solo.go")
 	if err != nil {
 		t.Fatalf("the wrapper adoption must succeed: %v\n%s", err, out)
+	}
+	if _, _, err := mission.VerifyStateWithAnchor(adoptState, adoptBed.Root,
+		filepath.Join(adoptBed.missionDir(), "ledger.md")); err != nil {
+		t.Fatalf("the adoption must publish a verifiable state anchor: %v", err)
 	}
 	adopted := readTestDoc(t, adoptState)
 	entry := adopted["workspaceTaint"].(map[string]any)["entries"].([]any)[0].(map[string]any)
@@ -1502,12 +2241,10 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 // reservation-time sweep — ONLY the resume-time sweep can turn the
 // orphaned evidence into a taint before the fence buries it.
 func TestResumeSweepOutranksTheCycleFence(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed, _, _ := newOrphanResumeBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
-		[]string{"authorship of solo.go"}); code != 0 {
-		t.Fatalf("adoption must succeed: %d", code)
-	}
+	bed.nextIdentity = "alpha-t8-lastcycle"
 	// Orphaned violated evidence, crash artifact shape.
 	orphanDir := filepath.Join(engine.missionDir(), "turns", "alpha-t8-lastcycle")
 	if err := os.MkdirAll(orphanDir, 0o755); err != nil {
@@ -1537,7 +2274,9 @@ func TestResumeSweepOutranksTheCycleFence(t *testing.T) {
 	writeJSONFile(t, engine.fencesPath(), fences)
 
 	signal := filepath.Join(t.TempDir(), "resume.json")
-	engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-f", signal)
+	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-f", signal); code != 0 {
+		t.Fatalf("final-cycle orphan resume failed: %d", code)
+	}
 
 	final := readTestDoc(t, statePath)
 	if final["parkReason"] != "wall-violation" {
@@ -1548,6 +2287,7 @@ func TestResumeSweepOutranksTheCycleFence(t *testing.T) {
 	if reason, _ := last["reason"].(string); !strings.Contains(reason, "final-cycle orphan") {
 		t.Fatalf("the orphaned violation must be the booked taint: %v", reason)
 	}
+	assertOrphanResume(t, bed, "alpha-t8-lastcycle")
 }
 
 // EVERY unparsable-ledger tamper shape resolves through ONE
@@ -1574,11 +2314,60 @@ func TestUnparsableLedgerTamperResolvesAfterRestoration(t *testing.T) {
 	}
 	for name, tamper := range shapes {
 		t.Run(name, func(t *testing.T) {
-			var pristineBytes string
-			engine, statePath, ledgerPath, taintID := ledgerTamperPark(t, func(pristine string) string {
-				pristineBytes = pristine
-				return tamper(pristine)
-			})
+			bed := newRecoveryFileBed(t)
+			engine, statePath, ledgerPath := bed.e, bed.state, bed.ledger
+			writeText(t, filepath.Join(engine.Root, "metasystem.conf"), "metasystem.runtimes=fake\n")
+			trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, "")
+			trace.install(engine)
+			anchorAttempts := 0
+			engine.anchorFn = func(state, ledger, identity string) error {
+				anchorAttempts++
+				err := mission.AnchorNamedWithRawAnchorOperations(trace.raw(), state, engine.Root, ledger, identity, "", "")
+				if err == nil || !strings.Contains(err.Error(), "unparsable") {
+					t.Fatalf("the real park anchor writer must refuse malformed ledger bytes: %v", err)
+				}
+				return err
+			}
+			// The open turn has a saved anchor. Verify that position through
+			// the actual raw reader before changing the ledger bytes.
+			initial := trace.tip
+			trace.verify(initial)
+			trace.begin()
+			initialSequence, _, err := engine.continuity().VerifyStateWithAnchor(statePath, engine.Root, ledgerPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			trace.done()
+			pristineBytes, err := os.ReadFile(ledgerPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeText(t, ledgerPath, tamper(string(pristineBytes)))
+			bed.facts.ledgerGuard()
+			bed.facts.add("Git", scopePolicyGit{stdout: recoveryHead + "\n", code: 0}, engine.Root,
+				[]string{"rev-parse", "--verify", "--quiet", "HEAD^{commit}"})
+			bed.facts.add("Git", scopePolicyGit{stdout: recoveryHead + "\n", code: 0}, engine.Root,
+				[]string{"-C", engine.Root, "rev-parse", "main"})
+			_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", bed.turnDir, 1, nil, false, false, nil)
+			if err != nil || !violated {
+				t.Fatalf("unparsable ledger must park: violated=%v err=%v state=%v", violated, err, final)
+			}
+			parked := readTestDoc(t, statePath)
+			if parked["parkReason"] != "wall-violation" || unresolvedTaint(parked) == "" {
+				t.Fatalf("wall gate did not persist the ledger taint: %v", parked)
+			}
+			parkedIntegrity := parked["integrity"].(map[string]any)
+			parkedHash := parkedIntegrity["hash"].(string)
+			parkedSequence, _ := jsonInt(parkedIntegrity["sequence"])
+			if parkedSequence != initialSequence+1 || anchorAttempts != 1 {
+				t.Fatalf("park must leave exactly one deferred anchor step: sequence=%d initial=%d attempts=%d", parkedSequence, initialSequence, anchorAttempts)
+			}
+			entries := parked["workspaceTaint"].(map[string]any)["entries"].([]any)
+			taintID, _ := jsonInt(entries[len(entries)-1].(map[string]any)["taintId"])
+			if trace.tip != initial {
+				t.Fatal("unparsable park advanced the saved anchor")
+			}
+			stageHumanShell(t)
 			if code := engine.ResolveTaint(taintID, "adopt-disputed-tree", "", "Wido", "ruling on the tamper",
 				[]string{"ledger narrative integrity"}); code != 3 {
 				t.Fatalf("resolution over unparsable bytes must refuse: %d", code)
@@ -1587,25 +2376,69 @@ func TestUnparsableLedgerTamperResolvesAfterRestoration(t *testing.T) {
 			// taint STOP refuses on a raw read BEFORE any reconciliation
 			// can write, so the anchor gap stays exactly one step.
 			signal := filepath.Join(t.TempDir(), "resume.json")
-			engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-u", signal)
+			if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-u", signal); code != 3 {
+				t.Fatalf("tainted resume must refuse before reconcile: %d", code)
+			}
 			midState := readTestDoc(t, statePath)
 			midIntegrity, _ := midState["integrity"].(map[string]any)
 			if midState["parkReason"] != "wall-violation" {
 				t.Fatalf("an intervening resume must not repark the taint: %v", midState["parkReason"])
 			}
-			if hash, _ := midIntegrity["hash"].(string); hash == "" {
-				t.Fatal("state must stay readable after the refused resume")
+			if hash, _ := midIntegrity["hash"].(string); hash != parkedHash || trace.tip != initial {
+				t.Fatalf("refused resume moved state or saved anchor: %q / %q", hash, trace.tip.hash)
 			}
-			writeText(t, ledgerPath, pristineBytes)
+			writeText(t, ledgerPath, string(pristineBytes))
+			// The restored bytes permit the real one-step reconcile to
+			// publish the parked state before adoption writes its ruling.
+			healed := trace.fact(string(pristineBytes), initial, "")
+			trace.tipReads(initial) // The entry verification sees the gap.
+			trace.tipReads(initial)
+			trace.lag(initial)
+			trace.publication(healed, "")
+			trace.verify(healed)
+			trace.begin()
+			engine.pinnedAnchorEffect = func(state, ledger, identity, hash, sha string) error {
+				trace.done()
+				if hash == "" || sha != sha256Hex(string(pristineBytes)) || trace.tip != healed {
+					t.Fatalf("resolution pin did not follow the healed anchor: %q %q", hash, sha)
+				}
+				resolved := trace.fact(string(pristineBytes), healed, "")
+				if resolved.hash != hash || resolved.sha != sha {
+					t.Fatalf("resolution bytes differ from the proposed pin: %q %q", resolved.hash, resolved.sha)
+				}
+				trace.publication(resolved, identity)
+				trace.begin()
+				return mission.AnchorNamedWithRawAnchorOperations(trace.raw(), state, engine.Root, ledger, identity, hash, sha)
+			}
+			resolution := &resolutionFileBed{recoveryFileBed: bed}
+			resolution.facts = &resolutionFacts{bed.facts}
+			engine.wallWorkspaceFactory = func(root string) wallWorkspace {
+				if root != engine.Root {
+					t.Fatalf("resolution workspace root %q", root)
+				}
+				return resolution.facts
+			}
+			engine.wallReadFacts = resolution.facts
+			resolution.expectResolve(recoveryPre, false, true, true)
 			if code := engine.ResolveTaint(taintID, "adopt-disputed-tree", "", "Wido", "ruling on the tamper",
 				[]string{"ledger narrative integrity"}); code != 0 {
 				t.Fatalf("resolution after byte restoration must succeed: %d", code)
 			}
+			trace.done()
+			resolved := readTestDoc(t, statePath)
+			if unresolvedTaint(resolved) != "" || resolved["status"] != "running" {
+				t.Fatalf("adoption did not reopen the mission: %v", resolved)
+			}
+			trace.verify(trace.tip)
+			trace.begin()
+			if _, _, err := engine.continuity().VerifyStateWithAnchor(statePath, engine.Root, ledgerPath); err != nil {
+				t.Fatalf("resolved position is not anchored: %v", err)
+			}
+			trace.done()
 			// The resolved mission is DRIVEABLE: its ledger parses.
 			if _, _, _, err := mission.ParseLedger(ledgerPath); err != nil {
 				t.Fatalf("the resolved mission must stay readable: %v", err)
 			}
-			_ = statePath
 		})
 	}
 }
@@ -1615,18 +2448,23 @@ func TestUnparsableLedgerTamperResolvesAfterRestoration(t *testing.T) {
 // reverted to a post-write reread would pin the moved bytes and anchor
 // them successfully, failing this test.
 func TestTailAnchorRefusesMovedLedger(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
-	statePath := filepath.Join(engine.missionDir(), "state.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
+	bed := newResolutionFileBed(t)
+	engine, statePath, ledgerPath := bed.e, bed.state, bed.ledger
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, true, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("restore must succeed: %d", code)
 	}
+	trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, "")
+	trace.install(engine)
 	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	if len(asks) != 1 {
+		t.Fatalf("wall asks = %v", asks)
+	}
 	crashed := deepCopyDoc(readTestDoc(t, asks[0]))
 	crashed["answeredAt"] = nil
 	crashed["answer"] = nil
@@ -1642,8 +2480,19 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	engine.preAnchorHook = func() {
 		writeText(t, ledgerPath, string(pristine)+"\n")
 	}
+	trace.verify(trace.tip)
+	trace.tipReads(trace.tip)
+	trace.output(trace.branch+"\n", "branch", "--show-current")
+	trace.begin()
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "tail retry", nil); code == 0 {
 		t.Fatal("the tail anchor must refuse ledger bytes moved past the verified pin")
+	}
+	trace.done()
+	if ask := readTestDoc(t, asks[0]); ask["answeredAt"] == nil {
+		t.Fatalf("the resolution tail did not answer its ask: %v", ask)
+	}
+	if waiting := readTestDoc(t, statePath)["waitingList"].([]any); len(waiting) != 0 {
+		t.Fatalf("the resolution tail did not clear its waiting list: %v", waiting)
 	}
 	// The refused anchor left the tail DURABLE (asks answered, waiting
 	// list written) with the anchor one lawful step behind. The NATURAL
@@ -1654,9 +2503,12 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	beforeRetry := readTestDoc(t, statePath)
 	beforeIntegrity, _ := beforeRetry["integrity"].(map[string]any)
 	beforeHash, _ := beforeIntegrity["hash"].(string)
-	if code, _ := mission.Reconcile(statePath, engine.Root, ledgerPath); code == 0 {
+	trace.movedRetry(trace.tip)
+	trace.begin()
+	if code, _ := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath); code == 0 {
 		t.Fatal("reconciliation over moved bytes must refuse")
 	}
+	trace.done()
 	afterRetry := readTestDoc(t, statePath)
 	afterIntegrity, _ := afterRetry["integrity"].(map[string]any)
 	if afterHash, _ := afterIntegrity["hash"].(string); afterHash != beforeHash {
@@ -1675,9 +2527,13 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	}
 	savedStderr := os.Stderr
 	os.Stderr = stderrW
+	trace.tipReads(trace.tip)
+	trace.movedRetry(trace.tip)
+	trace.begin()
 	code := engine.ResolveTaint(1, "restore", preTree, "Wido", "retry over moved bytes", nil)
 	os.Stderr = savedStderr
 	stderrW.Close()
+	trace.done()
 	captured, _ := io.ReadAll(stderrR)
 	if code == 0 {
 		t.Fatal("resolve over moved bytes must refuse")
@@ -1688,27 +2544,42 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	// Restoring the bytes lets reconciliation bridge it — the same heal
 	// every crash window uses.
 	writeText(t, ledgerPath, string(pristine))
-	if code, rerr := mission.Reconcile(statePath, engine.Root, ledgerPath); rerr != nil || code != 0 {
+	healed := trace.fact(string(pristine), trace.tip, "")
+	trace.tipReads(trace.tip)
+	trace.lag(trace.tip)
+	trace.publication(healed, "")
+	trace.begin()
+	if code, rerr := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath); rerr != nil || code != 0 {
 		t.Fatalf("reconciliation must heal the refused-anchor tail: code=%d err=%v", code, rerr)
 	}
+	trace.done()
+	trace.verify(healed)
+	trace.begin()
 	if _, err := engine.verifyState(statePath, true); err != nil {
 		t.Fatalf("the healed mission must verify clean: %v", err)
 	}
+	trace.done()
 }
 
 // The RESUME CLOSE-MARKER call site faces the same moved-bytes window
 // and must refuse rather than rebind.
 func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
+	engine, statePath, ledgerPath, _, reads, workspace, gitLog := resumeFileBed(t, false)
+	trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, strings.Repeat("d", 40))
+	trace.install(engine)
+	workspace.expected = []string{
+		"HistorySteeringFiles", "HeadCommit", "TreeOf", "FilterTree", "SymbolicHead", "RefMap",
+		"WorktreeCensus", "StagedTree", "FilterTree", "Prefix", "SnapshotSeeded", "FilterTree",
+		"Prefix", "TopLevel",
+		"HistorySteeringFiles", "HeadCommit", "TreeOf", "FilterTree", "SymbolicHead", "RefMap",
+		"WorktreeCensus", "StagedTree", "FilterTree", "Prefix", "SnapshotSeeded", "FilterTree",
 	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-clean", 1)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := engine.anchor(statePath, ledgerPath, "open"); err != nil {
-		t.Fatal(err)
+	reads.blobs = 3
+	for i := 0; i < 2; i++ {
+		reads.auth++
+		reads.git = append(reads.git, wallGitReply{root: engine.Root, args: []string{"cat-file", "-t", recoveryPre}, stdout: "tree\n"})
 	}
+	reads.git = append(reads.git, wallGitReply{root: engine.Root, args: []string{"update-ref", "-d", mission.MissionRefNamespace(engine.Mission) + "turn-open-head"}})
 	pristine, err := os.ReadFile(ledgerPath)
 	if err != nil {
 		t.Fatal(err)
@@ -1716,9 +2587,22 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	engine.preAnchorHook = func() {
 		writeText(t, ledgerPath, string(pristine)+"\n")
 	}
+	// The close marker must route through the pinned anchor effect.
+	engine.anchorFn = nil
+	trace.verify(trace.tip)   // Reconciliation before the wall decision.
+	trace.tipReads(trace.tip) // The close pin reads the saved tip.
+	trace.output(trace.branch+"\n", "branch", "--show-current")
+	trace.begin()
 	if _, _, _, rerr := engine.resumeState(); rerr == nil {
 		t.Fatal("the close-marker anchor must refuse ledger bytes moved past the verified pin")
 	}
+	trace.done()
+	if workspace.beforeDecision != nil {
+		t.Fatal("the clean wall decision did not run")
+	}
+	workspace.done()
+	reads.done()
+	assertNoGitInvocations(t, gitLog)
 	// The natural retry with bytes still moved refuses WITHOUT widening;
 	// restoration heals.
 	engine.preAnchorHook = nil
@@ -1726,30 +2610,91 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	before := readTestDoc(t, statePathClean)
 	beforeIntegrity, _ := before["integrity"].(map[string]any)
 	beforeHash, _ := beforeIntegrity["hash"].(string)
-	if code, _ := mission.Reconcile(statePathClean, engine.Root, ledgerPath); code == 0 {
+	if before["openTurn"] != nil || beforeHash == trace.tip.hash {
+		t.Fatal("close marker did not retire with a new durable state")
+	}
+	trace.movedRetry(trace.tip)
+	trace.begin()
+	if code, _ := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePathClean, engine.Root, ledgerPath); code == 0 {
 		t.Fatal("reconciliation over moved bytes must refuse")
 	}
+	trace.done()
 	after := readTestDoc(t, statePathClean)
 	afterIntegrity, _ := after["integrity"].(map[string]any)
 	if afterHash, _ := afterIntegrity["hash"].(string); afterHash != beforeHash {
 		t.Fatal("the refusal must not write — the gap must stay one step")
 	}
 	writeText(t, ledgerPath, string(pristine))
-	if code, rerr := mission.Reconcile(statePathClean, engine.Root, ledgerPath); rerr != nil || code != 0 {
+	healed := trace.fact(string(pristine), trace.tip, "")
+	trace.tipReads(trace.tip)
+	trace.lag(trace.tip)
+	trace.publication(healed, "")
+	trace.begin()
+	if code, rerr := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePathClean, engine.Root, ledgerPath); rerr != nil || code != 0 {
 		t.Fatalf("restoration must heal the close-marker gap: code=%d err=%v", code, rerr)
 	}
+	trace.done()
+	trace.verify(healed)
+	trace.begin()
+	if _, err := engine.verifyState(statePathClean, true); err != nil {
+		t.Fatalf("healed close marker must verify: %v", err)
+	}
+	trace.done()
 }
 
-// The pin ORIGIN is distinguishing: when the live
-// ledger bytes have moved past the anchored truth, the verified pin is
-// the TIP's sha — a reverted post-write reread would return the moved
-// bytes' sha and this test would fail.
+type tipPinContinuity struct {
+	*resolutionFileBed
+	raw mission.RawAnchorOperations
+}
+
+func (c *tipPinContinuity) LedgerPin(root, missionID string) (string, error) {
+	if root != c.e.Root || missionID != c.e.Mission {
+		c.t.Fatalf("ledger pin arguments = %q %q", root, missionID)
+	}
+	return mission.AnchoredLedgerSHAWithRawAnchorOperations(c.raw, root, missionID)
+}
+
+func (c *tipPinContinuity) VerifyStateWithAnchor(state, root, ledger string) (int64, string, error) {
+	c.t.Fatalf("unexpected VerifyStateWithAnchor(%q, %q, %q)", state, root, ledger)
+	return 0, "", nil
+}
+
+// The saved anchor tip stays fixed when the live ledger gains a newline.
 func TestVerifiedLedgerPinIsTheAnchorTip(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
+	bed := newResolutionFileBed(t)
+	owner := &orphanContinuity{t: t, b: bed, reads: make(map[string]int),
+		remaining: map[string]int{"ref": 2, "log": 2}}
+	owner.saveAnchor()
+	anchorSHA := sha256Hex(string(bed.anchored))
+	owner.raw = mission.RawAnchorOperations{
+		GitOutput: func(root string, args ...string) (string, error) {
+			return owner.git(root, args...), nil
+		},
+		GitTry: func(root string, args ...string) (string, int) {
+			t.Fatalf("unexpected anchor Git try %q %q", root, args)
+			return "", 1
+		},
+		GitStdinOutput: func(root string, data []byte, args ...string) (string, error) {
+			t.Fatalf("unexpected anchor Git write %q %q", root, args)
+			return "", nil
+		},
+		GitEnvOutput: func(root string, env []string, args ...string) (string, error) {
+			t.Fatalf("unexpected anchor Git env write %q %q", root, args)
+			return "", nil
+		},
+	}
+	bed.e.continuityFacts = &tipPinContinuity{resolutionFileBed: bed, raw: owner.raw}
+	engine := bed.e
+	ledgerPath := bed.ledger
 	tipSHA, err := engine.verifiedLedgerPin()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if tipSHA != anchorSHA {
+		t.Fatalf("the tip pin must equal the saved anchor ledger: %s vs %s", tipSHA, anchorSHA)
+	}
+	if owner.reads["ref"] != 1 || owner.reads["log"] != 1 {
+		t.Fatalf("anchor reads before append: %v", owner.reads)
 	}
 	moved, err := os.ReadFile(ledgerPath)
 	if err != nil {
@@ -1767,104 +2712,63 @@ func TestVerifiedLedgerPinIsTheAnchorTip(t *testing.T) {
 	if pin == movedSHA {
 		t.Fatal("the pin must never be the moved live bytes")
 	}
-}
-
-// ledgerTamperPark drives a mid-turn ledger tamper through the wall gate
-// and returns the parked bed with the booked taint id.
-func ledgerTamperPark(t *testing.T, tamper func(string) string) (*Engine, string, string, int64) {
-	t.Helper()
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
+	if owner.reads["ref"] != 2 || owner.reads["log"] != 2 ||
+		owner.remaining["ref"] != 0 || owner.remaining["log"] != 0 {
+		t.Fatalf("anchor reads after append: %v, remaining: %v", owner.reads, owner.remaining)
 	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-live", 1)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := engine.anchor(statePath, ledgerPath, "open"); err != nil {
-		t.Fatal(err)
-	}
-	turnDir := filepath.Join(engine.missionDir(), "turns", "alpha-t1-live")
-	os.MkdirAll(turnDir, 0o755)
-	writeJSONFile(t, filepath.Join(turnDir, "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-live", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
-	pristine, err := os.ReadFile(ledgerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeText(t, ledgerPath, tamper(string(pristine)))
-
-	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !violated {
-		t.Fatalf("the ledger tamper must violate: %v", final)
-	}
-	state := readTestDoc(t, statePath)
-	if unresolvedTaint(state) == "" {
-		t.Fatal("the violation must be a recorded, resolvable taint")
-	}
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
-	stageHumanShell(t)
-	entries, _ := state["workspaceTaint"].(map[string]any)["entries"].([]any)
-	lastEntry, _ := entries[len(entries)-1].(map[string]any)
-	taintID, _ := jsonInt(lastEntry["taintId"])
-	return engine, statePath, ledgerPath, taintID
 }
 
 // The resolution's crash window: state written,
 // anchor missing. The reconciliation anchor-lag heal recovers it without
 // human surgery.
 func TestResolveTaintCrashHealsAtReconcile(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
-	statePath := filepath.Join(engine.missionDir(), "state.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
+	bed := newResolutionFileBed(t)
+	engine, statePath, ledgerPath := bed.e, bed.state, bed.ledger
+	trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, "")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, true, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("restore must succeed: %d", code)
 	}
-
-	// Simulate the crash between the state write and the anchor: rewind
-	// the runner-owned anchor ref to its parent, leaving state exactly
-	// one write ahead.
-	ref := "refs/metasystem/missions/" + engine.Mission + "/state-anchors"
-	rev := exec.Command("git", "-C", engine.Root, "rev-parse", ref+"^")
-	parent, err := rev.Output()
-	if err != nil {
-		t.Fatalf("the resolution anchor must have a parent: %v", err)
+	if got := readTestDoc(t, statePath)["integrity"].(map[string]any)["previousHash"]; got != trace.tip.hash {
+		t.Fatalf("crash parent hash = %v, want saved tip %s", got, trace.tip.hash)
 	}
-	rewind := exec.Command("git", "-C", engine.Root, "update-ref", ref, strings.TrimSpace(string(parent)))
-	if out, err := rewind.CombinedOutput(); err != nil {
-		t.Fatalf("rewind: %v\n%s", err, out)
-	}
-
-	code, err := mission.Reconcile(statePath, engine.Root, ledgerPath)
+	trace.install(engine)
+	healed := trace.fact(trace.tip.ledger, trace.tip, "")
+	trace.tipReads(trace.tip)
+	trace.lag(trace.tip)
+	trace.publication(healed, "")
+	trace.begin()
+	code, err := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath)
 	if err != nil || code != 0 {
 		t.Fatalf("the anchor-lag heal must recover the resolution write: code=%d err=%v", code, err)
 	}
-	if _, err := engine.verifyState(statePath, false); err != nil {
+	trace.done()
+	if healed.commit == healed.parent.commit || trace.tip != healed {
+		t.Fatal("healed anchor did not advance the saved parent tip")
+	}
+	trace.verify(healed)
+	trace.begin()
+	if _, err := engine.verifyState(statePath, true); err != nil {
 		t.Fatalf("the healed mission must verify clean: %v", err)
 	}
+	trace.done()
 }
 
 func TestResolveTaintAdoptDisputedTree(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 
 	// Adoption without named waived claims refuses.
 	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the work", nil); code == 0 {
 		t.Fatal("adoption must name the waived attribution claims")
 	}
+	bed.expectResolve(recoveryPost, false, true, false)
 	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
 		[]string{"authorship of solo.go"}); code != 0 {
 		t.Fatal("adoption with named claims must succeed")
@@ -1878,7 +2782,8 @@ func TestResolveTaintAdoptDisputedTree(t *testing.T) {
 	}
 	adopted, _ := resolution["treeId"].(string)
 	// The adopted tree IS the observed workspace — solo.go included.
-	workspaceNow, err := wallSnapshot(gittree.Workspace{Dir: engine.Root}, engine.Mission)
+	bed.snapshot(recoveryPost)
+	workspaceNow, err := wallSnapshotWithWorkspace(engine.wallWorkspace(engine.Root), engine.Mission)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1965,11 +2870,10 @@ func stageHumanShell(t *testing.T) {
 // The tree-equation positive after a resolution: FRESH work issued at the new
 // segment consumes cleanly — the fence blocks only the old segment.
 func TestWallConsumesFreshWorkAfterResolution(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc Fresh() {}\n")
-	reviewed := snapshotTree(t, root)
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, func(r map[string]any) {
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	patch := wallPolicyPatch("fresh main.go")
+	digest := bed.authorization(pre, reviewed, []string{"main.go"}, patch, true, func(r map[string]any) {
 		r["baseSequencePoint"] = map[string]any{"sequence": 1, "segment": 1}
 	})
 	state := map[string]any{
@@ -1984,7 +2888,11 @@ func TestWallConsumesFreshWorkAfterResolution(t *testing.T) {
 		}},
 	}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, reviewed)
+	bed.facts.expectEntries(reviewed, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries(reviewed, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectSnapshot(reviewed, reviewed)
+	inspection, err := bed.inspect(pre, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2006,11 +2914,249 @@ func testAdmissionOrigins() map[string]any {
 	}
 }
 
-// legacySnapshot is the HEAD-seeded projection the tree-equation tests
-// exercise rule 7 with; the seeded-projection behavior has its own
-// engine-level tests.
-func legacySnapshot(root, missionID string) func(string) (string, error) {
-	return func(string) (string, error) {
-		return wallSnapshot(gittree.Workspace{Dir: root}, missionID)
+// A fact copies the committed position before a later state or ledger write.
+type threeAnchorFact struct {
+	hash, sha, ledger, commit, blob, tree, message string
+	parent                                         *threeAnchorFact
+}
+
+type threeAnchorTrace struct {
+	t                                                *testing.T
+	root, state, ledger, rel, ref, branch, missionID string
+	tip, pending                                     *threeAnchorFact
+	queued                                           []testgit.Expectation
+	stub                                             *testgit.Stub
+	wantCalls                                        int
+	indexDirs                                        map[string]bool
+}
+
+func newThreeAnchorTrace(t *testing.T, root, state, ledger string, commit string) *threeAnchorTrace {
+	t.Helper()
+	rel, err := filepath.Rel(root, ledger)
+	if err != nil {
+		t.Fatal(err)
 	}
+	doc := readTestDoc(t, state)
+	missionID := doc["missionId"].(string)
+	b := &threeAnchorTrace{t: t, root: root, state: state, ledger: ledger,
+		rel: filepath.ToSlash(rel), ref: mission.MissionRefNamespace(missionID) + "state-anchors",
+		branch: doc["branch"].(string), missionID: missionID, indexDirs: make(map[string]bool)}
+	data, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.tip = b.fact(string(data), nil, commit)
+	return b
+}
+
+func (b *threeAnchorTrace) fact(ledger string, parent *threeAnchorFact, commit string) *threeAnchorFact {
+	b.t.Helper()
+	doc := readTestDoc(b.t, b.state)
+	hash := doc["integrity"].(map[string]any)["hash"].(string)
+	sha := sha256Hex(ledger)
+	if commit == "" {
+		sum := sha256.Sum256([]byte(hash + ":" + sha))
+		commit = fmt.Sprintf("%x", sum[:20])
+	}
+	blobSum := sha1.Sum([]byte(fmt.Sprintf("blob %d\x00%s", len(ledger), ledger)))
+	blob := fmt.Sprintf("%x", blobSum)
+	treeSum := sha256.Sum256([]byte("tree:" + blob))
+	cycle, ok := jsonInt(doc["ledger"].(map[string]any)["cycles"])
+	if !ok {
+		b.t.Fatal("state has no ledger cycle")
+	}
+	message := fmt.Sprintf("mission(%s): anchor cycle %d\n\nMission-Id: %s\nMission-State-Hash: %s\nMission-Ledger-SHA256: %s\nMission-Ledger-Path: %s\nMission-Cycle: %d\n\n", b.missionID, cycle, b.missionID, hash, sha, b.rel, cycle)
+	return &threeAnchorFact{hash: hash, sha: sha, ledger: ledger, commit: commit,
+		blob: blob, tree: fmt.Sprintf("%x", treeSum[:20]), message: message, parent: parent}
+}
+
+func (b *threeAnchorTrace) output(value string, args ...string) {
+	b.queued = append(b.queued, testgit.Expectation{Call: testgit.Call{Dir: b.root, Args: args},
+		Result: testgit.Result{Stdout: []byte(value)}})
+}
+
+func (b *threeAnchorTrace) tipReads(f *threeAnchorFact) {
+	b.output(b.ref+"\n", "for-each-ref", "--format=%(refname)", b.ref)
+	b.output(f.commit+"\x1f"+f.message, "log", "-1", "--format=%H%x1f%B", b.ref)
+}
+
+func (b *threeAnchorTrace) treeReads(f *threeAnchorFact) {
+	listing := func(x *threeAnchorFact) string {
+		return "100644 blob " + x.blob + "\t" + b.rel + "\x00"
+	}
+	b.output(listing(f), "ls-tree", "-r", "--full-tree", "-z", f.commit)
+	parents := f.commit
+	if f.parent != nil {
+		parents += " " + f.parent.commit
+	}
+	b.output(parents+"\n", "rev-list", "--parents", "-n", "1", f.commit)
+	if f.parent != nil {
+		b.output(listing(f.parent), "ls-tree", "-r", "--full-tree", "-z", f.parent.commit)
+	}
+}
+
+func (b *threeAnchorTrace) verify(f *threeAnchorFact) {
+	b.tipReads(f)
+	b.output("", "merge-base", "--is-ancestor", f.commit, b.ref)
+	b.output(f.ledger, "show", f.commit+":"+b.rel)
+	b.treeReads(f)
+}
+
+func (b *threeAnchorTrace) lag(f *threeAnchorFact) {
+	b.tipReads(f)
+	b.output(f.ledger, "show", f.commit+":"+b.rel)
+}
+
+func (b *threeAnchorTrace) movedRetry(f *threeAnchorFact) {
+	b.tipReads(f) // The state hash disagrees before ancestry or tree reads.
+	b.lag(f)
+	b.output(".git\n", "rev-parse", "--git-dir")
+	b.lag(f) // The disputed-ledger probe checks the saved committed blob.
+}
+
+func (b *threeAnchorTrace) index(value string, args ...string) {
+	b.queued = append(b.queued, testgit.Expectation{
+		Call: testgit.Call{Dir: b.root, Args: args}, Result: testgit.Result{Stdout: []byte(value)},
+		Check: func(call testgit.Call) error {
+			if len(call.Env) != 1 || len(call.Stdin) != 0 || !strings.HasPrefix(call.Env[0], "GIT_INDEX_FILE=") {
+				return fmt.Errorf("index env/stdin: %q %q", call.Env, call.Stdin)
+			}
+			path := strings.TrimPrefix(call.Env[0], "GIT_INDEX_FILE=")
+			dir := filepath.Dir(path)
+			if filepath.Base(path) != "index" || !strings.HasPrefix(filepath.Base(dir), "metasystem-anchor.") || filepath.Dir(dir) != os.TempDir() {
+				return fmt.Errorf("index path: %q", path)
+			}
+			if _, err := os.Stat(dir); err != nil {
+				return err
+			}
+			if len(b.indexDirs) == 0 {
+				b.indexDirs[dir] = true
+			} else if !b.indexDirs[dir] || len(b.indexDirs) != 1 {
+				return fmt.Errorf("index path changed: %q", path)
+			}
+			return nil
+		},
+	})
+}
+
+func (b *threeAnchorTrace) publication(next *threeAnchorFact, identity string) {
+	b.t.Helper()
+	if next.parent != b.tip || b.pending != nil {
+		b.t.Fatal("publication has no matching saved parent")
+	}
+	b.indexDirs = make(map[string]bool)
+	b.pending = next
+	b.output(b.branch+"\n", "branch", "--show-current")
+	b.tipReads(b.tip)
+	b.queued = append(b.queued, testgit.Expectation{
+		Call:   testgit.Call{Dir: b.root, Args: []string{"hash-object", "-w", "--no-filters", "--stdin"}, Stdin: []byte(next.ledger)},
+		Result: testgit.Result{Stdout: []byte(next.blob + "\n")},
+	})
+	b.index("", "read-tree", "--empty")
+	b.index("", "update-index", "--add", "--cacheinfo", "100644,"+next.blob+","+b.rel)
+	b.index(next.tree+"\n", "write-tree")
+	b.output(b.tip.commit+"\n", "rev-parse", "--verify", b.ref)
+	message := strings.TrimSuffix(next.message, "\n\n")
+	if identity == "" {
+		identity = "metasystem"
+	}
+	b.queued = append(b.queued, testgit.Expectation{
+		Call: testgit.Call{Dir: b.root, Args: []string{"commit-tree", next.tree, "-m", message, "-p", b.tip.commit},
+			Env: []string{"GIT_AUTHOR_NAME=" + identity, "GIT_AUTHOR_EMAIL=" + identity + "@example.invalid",
+				"GIT_COMMITTER_NAME=metasystem", "GIT_COMMITTER_EMAIL=metasystem@example.invalid"}},
+		Result: testgit.Result{Stdout: []byte(next.commit + "\n")},
+	})
+	b.output("", "update-ref", b.ref, next.commit, b.tip.commit)
+}
+
+func (b *threeAnchorTrace) begin() {
+	b.t.Helper()
+	if b.stub != nil {
+		b.done()
+	}
+	b.wantCalls = len(b.queued)
+	b.stub = testgit.New(b.t, b.queued...)
+	b.queued = nil
+}
+
+func (b *threeAnchorTrace) done() {
+	b.t.Helper()
+	if b.stub == nil || len(b.stub.Calls()) != b.wantCalls || b.pending != nil {
+		b.t.Fatalf("raw anchor calls: got %d, want %d, pending publication %v", len(b.stub.Calls()), b.wantCalls, b.pending != nil)
+	}
+	b.stub = nil
+}
+
+func (b *threeAnchorTrace) raw() mission.RawAnchorOperations {
+	run := func(call testgit.Call) testgit.Result {
+		b.t.Helper()
+		if b.stub == nil {
+			b.t.Fatal("anchor call outside declared transcript")
+		}
+		result := b.stub.Run(call)
+		if result.Err == nil && len(call.Args) == 4 && call.Args[0] == "update-ref" && b.pending != nil {
+			b.tip = b.pending
+			b.pending = nil
+		}
+		return result
+	}
+	return mission.RawAnchorOperations{
+		GitOutput: func(root string, args ...string) (string, error) {
+			r := run(testgit.Call{Dir: root, Args: args})
+			return string(r.Stdout), r.Err
+		},
+		GitTry: func(root string, args ...string) (string, int) {
+			r := run(testgit.Call{Dir: root, Args: args})
+			if r.Err != nil {
+				return string(r.Stdout), -1
+			}
+			return string(r.Stdout), 0
+		},
+		GitStdinOutput: func(root string, data []byte, args ...string) (string, error) {
+			r := run(testgit.Call{Dir: root, Args: args, Stdin: data})
+			return string(r.Stdout), r.Err
+		},
+		GitEnvOutput: func(root string, env []string, args ...string) (string, error) {
+			r := run(testgit.Call{Dir: root, Args: args, Env: env})
+			return string(r.Stdout), r.Err
+		},
+	}
+}
+
+type threeAnchorContinuity struct {
+	b   *threeAnchorTrace
+	raw mission.RawAnchorOperations
+}
+
+func (c *threeAnchorContinuity) paths(state, root, ledger string) {
+	if state != c.b.state || root != c.b.root || ledger != c.b.ledger {
+		c.b.t.Fatalf("continuity paths: %q %q %q", state, root, ledger)
+	}
+}
+func (c *threeAnchorContinuity) Reconcile(state, root, ledger string) (int, error) {
+	c.paths(state, root, ledger)
+	return mission.ReconcileWithRawAnchorOperations(c.raw, state, root, ledger)
+}
+func (c *threeAnchorContinuity) VerifyStateWithAnchor(state, root, ledger string) (int64, string, error) {
+	c.paths(state, root, ledger)
+	return mission.VerifyStateWithRawAnchorOperations(c.raw, state, root, ledger)
+}
+func (c *threeAnchorContinuity) LedgerPin(root, missionID string) (string, error) {
+	if root != c.b.root || missionID != c.b.missionID {
+		c.b.t.Fatalf("ledger pin: %q %q", root, missionID)
+	}
+	return mission.AnchoredLedgerSHAWithRawAnchorOperations(c.raw, root, missionID)
+}
+
+func (b *threeAnchorTrace) install(e *Engine) *threeAnchorContinuity {
+	raw := b.raw()
+	c := &threeAnchorContinuity{b: b, raw: raw}
+	e.continuityFacts = c
+	e.pinnedAnchorEffect = func(state, ledger, identity, hash, sha string) error {
+		if state != b.state || ledger != b.ledger {
+			b.t.Fatalf("pinned paths: %q %q", state, ledger)
+		}
+		return mission.AnchorNamedWithRawAnchorOperations(raw, state, b.root, ledger, identity, hash, sha)
+	}
+	return c
 }

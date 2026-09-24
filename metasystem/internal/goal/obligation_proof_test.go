@@ -29,8 +29,9 @@ func TestReviewObligationFixtureRoundTrip(t *testing.T) {
 }
 func TestFixtureObligationLifecycle(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "review-proof")
-	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SP01", "mac-a")
+	endpoint := obligationAuthorityLocalEndpoint(t, "review-proof")
+	root := endpoint.Root
+	req := verbReqFor(endpoint, "01J5X00000000000000000SP01", "mac-a")
 	obligation := ReviewObligation{Finding: "F-1", Chain: "design-critic", Artifact: "a.go", Test: "prove: group:a", Fixture: "group:section/a"}
 	if result, err := DeferFindings(req, "review-proof", []ReviewObligation{obligation}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("defer fixture obligation: %+v %v", result, err)

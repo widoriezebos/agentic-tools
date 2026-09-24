@@ -27,9 +27,10 @@ import (
 
 // Endpoint is the resolved synchronization endpoint.
 type Endpoint struct {
-	Root                   string // repository worktree root
-	Remote                 string // goal.sync-remote; "local" is single-machine mode
-	Branch                 string // goal.sync-branch, fully qualified
+	Root                   string     // repository worktree root
+	Remote                 string     // goal.sync-remote; "local" is single-machine mode
+	Branch                 string     // goal.sync-branch, fully qualified
+	Repository             Repository // optional committed-state owner; nil uses Git
 	commandEnv             []string
 	captureTimers          attentionTimerSource
 	carriedCounselorAppend func(string, string, HistoryLine, time.Time) error
@@ -59,11 +60,22 @@ const DefaultPublishDeadline = 60 * time.Second
 // goal.sync-branch (default refs/heads/main) from the repository's
 // git configuration.
 func ResolveEndpoint(root string) (Endpoint, error) {
+	return ResolveEndpointWithConfig(root, func(root, key string) (string, error) {
+		return gitIn(root, "config", "--get", key)
+	})
+}
+
+// ResolveEndpointWithConfig applies endpoint defaults to raw config values.
+func ResolveEndpointWithConfig(root string, lookup func(string, string) (string, error)) (Endpoint, error) {
+	return resolveEndpointWithConfig(root, lookup)
+}
+
+func resolveEndpointWithConfig(root string, lookup func(string, string) (string, error)) (Endpoint, error) {
 	e := Endpoint{Root: root, Remote: "origin", Branch: "refs/heads/main"}
-	if out, err := gitIn(root, "config", "--get", "goal.sync-remote"); err == nil && strings.TrimSpace(out) != "" {
+	if out, err := lookup(root, "goal.sync-remote"); err == nil && strings.TrimSpace(out) != "" {
 		e.Remote = strings.TrimSpace(out)
 	}
-	if out, err := gitIn(root, "config", "--get", "goal.sync-branch"); err == nil && strings.TrimSpace(out) != "" {
+	if out, err := lookup(root, "goal.sync-branch"); err == nil && strings.TrimSpace(out) != "" {
 		e.Branch = strings.TrimSpace(out)
 	}
 	if !strings.HasPrefix(e.Branch, "refs/") {
@@ -117,6 +129,9 @@ func goalGitWithEnvironment(root string, environment, extraEnv []string, args ..
 // shared ref under each other) and returns the captured tip oid.
 // Single-machine mode reads the dedicated local ledger branch.
 func CaptureTip(e Endpoint, opid string) (string, error) {
+	if e.Repository != nil {
+		return e.Repository.Capture(opid)
+	}
 	if e.LocalMode() {
 		out, err := goalGit(e.Root, nil, "rev-parse", "--verify", LocalLedgerBranch)
 		if err != nil {
@@ -180,6 +195,8 @@ func acceptedTipForGates(root string) (string, bool, error) {
 				} else if !os.IsNotExist(lstatErr) {
 					return "", false, fmt.Errorf("the accepted ref's file cannot be proven absent: %v", lstatErr)
 				}
+			} else {
+				return "", false, fmt.Errorf("the accepted ref's file cannot be probed: %w", pathErr)
 			}
 			return "", false, nil
 		}
@@ -196,6 +213,14 @@ func acceptedTipForGates(root string) (string, bool, error) {
 // that cannot answer must never read as "pre-migration, skip
 // validation".
 func tipCarriesLedger(e Endpoint, tip string) (bool, error) {
+	if e.Repository != nil {
+		files, err := readCommitFiles(e, tip, goalsPrefix+"backlog.md")
+		if err != nil {
+			return false, fmt.Errorf("the tip's ledger presence cannot be proven: %w", err)
+		}
+		_, present := files[goalsPrefix+"backlog.md"]
+		return present, nil
+	}
 	out, err := gitIn(e.Root, "ls-tree", "--name-only", tip, "--", goalsPrefix+"backlog.md")
 	if err != nil {
 		return false, fmt.Errorf("the tip's ledger presence cannot be proven: %w", err)
@@ -216,14 +241,18 @@ func SyncModeGate(e Endpoint, tip string) error {
 	if !hasLedger {
 		return nil
 	}
-	content, err := gitIn(e.Root, "cat-file", "-p", tip+":./"+goalsPrefix+"backlog.md")
+	files, err := readCommitFiles(e, tip, goalsPrefix+"backlog.md")
 	if err != nil {
 		// The ledger provably exists; a root that cannot be read
 		// gates CLOSED — reporting "already current" over an
 		// unreadable world is the exact skip this gate forbids.
 		return fmt.Errorf("the tip's root record cannot be read for the sync-mode gate: %v", err)
 	}
-	record, problems := ParseRoot([]byte(content))
+	content, present := files[goalsPrefix+"backlog.md"]
+	if !present {
+		return fmt.Errorf("the tip's root record disappeared during the sync-mode gate")
+	}
+	record, problems := ParseRoot(content)
 	if record == nil || len(problems) != 0 {
 		return fmt.Errorf("the tip's root record does not parse; the sync mode cannot be gated: %v", problems)
 	}
@@ -250,6 +279,9 @@ type Change struct {
 // Goal-Transaction trailer. The commit is stored under the
 // operation's temporary ref and returned.
 func BuildCommit(e Endpoint, opid, tip string, changes []Change, message string) (string, error) {
+	if e.Repository != nil {
+		return e.Repository.Build(opid, tip, changes, message)
+	}
 	if len(changes) == 0 {
 		return "", fmt.Errorf("a transaction mutates at least one path")
 	}
@@ -363,6 +395,9 @@ func classifyPushFailure(output string) CASOutcome { return ClassifyPushFailure(
 // the protocol), update-ref with the old-value assertion in local
 // mode.
 func PublishCAS(e Endpoint, tip, commit string) (CASOutcome, error) {
+	if e.Repository != nil {
+		return e.Repository.Publish(tip, commit)
+	}
 	if e.LocalMode() {
 		if _, err := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", LocalLedgerBranch); err != nil {
 			// The first publication CREATES the branch, and creation
@@ -395,6 +430,9 @@ func PublishCAS(e Endpoint, tip, commit string) (CASOutcome, error) {
 // even when the touched file later moved or died, the commit trailer
 // resolves the predicate.
 func TrailerPresent(e Endpoint, tip, opid string) (bool, error) {
+	if e.Repository != nil {
+		return e.Repository.TrailerPresent(tip, opid)
+	}
 	out, err := goalGit(e.Root, nil, "log", "--format=%(trailers:key=Goal-Transaction,valueonly)", tip)
 	if err != nil {
 		return false, err
@@ -420,28 +458,42 @@ func AdvanceAccepted(root, newTip string) error {
 // descend retries the CAS. The ref can never move backward through
 // this path.
 func advanceAcceptedForward(root, newTip string) error {
+	return advanceAcceptedFor(Endpoint{Root: root}, newTip)
+}
+
+func advanceAcceptedFor(e Endpoint, newTip string) error {
 	for attempt := 0; attempt < 5; attempt++ {
-		old, err := goalGit(root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
+		oldTip, present, err := e.repository().Accepted()
 		if err != nil {
+			return err
+		}
+		if !present {
 			// Creation IS the compare: the empty old-value
 			// refuses a concurrent creator, so a later bootstrap can
 			// never replace a descendant with its ancestor.
-			if _, createErr := goalGit(root, nil, "update-ref", AcceptedRef, newTip, ""); createErr == nil {
+			if createErr := e.repository().AcceptedCAS("", newTip); createErr == nil {
 				return nil
 			}
 			continue
 		}
-		oldTip := strings.TrimSpace(old)
 		// Already at or PAST the new tip: forward means done.
-		if _, ancErr := goalGit(root, nil, "merge-base", "--is-ancestor", newTip, oldTip); ancErr == nil {
+		past, ancErr := e.repository().IsAncestor(newTip, oldTip)
+		if ancErr != nil {
+			return ancErr
+		}
+		if past {
 			return nil
 		}
 		// The new tip must descend from the current value, or this
 		// pass has a stale world and someone else owns the move.
-		if _, ancErr := goalGit(root, nil, "merge-base", "--is-ancestor", oldTip, newTip); ancErr != nil {
+		descends, ancErr := e.repository().IsAncestor(oldTip, newTip)
+		if ancErr != nil {
+			return ancErr
+		}
+		if !descends {
 			return fmt.Errorf("the accepted ref at %s and the tip %s have diverged; the read-side validator owns this move", short(oldTip), short(newTip))
 		}
-		if _, err := goalGit(root, nil, "update-ref", AcceptedRef, newTip, oldTip); err == nil {
+		if err := e.repository().AcceptedCAS(oldTip, newTip); err == nil {
 			return nil
 		}
 	}
@@ -451,6 +503,10 @@ func advanceAcceptedForward(root, newTip string) error {
 // CleanupRefs deletes the operation's temporary refs at its
 // terminal phase.
 func CleanupRefs(e Endpoint, opid string) {
+	if e.Repository != nil {
+		_ = e.Repository.Release(opid)
+		return
+	}
 	_, _ = goalGit(e.Root, nil, "update-ref", "-d", fetchRefFor(opid))
 	_, _ = goalGit(e.Root, nil, "update-ref", "-d", txnRefFor(opid))
 }
@@ -667,14 +723,14 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		// refused here exactly as the read side refuses it — a
 		// mutation must never build on a world this clone would not
 		// accept.
-		acceptedTip, hasAccepted, accErr := acceptedTipForGates(e.Root)
+		acceptedTip, hasAccepted, accErr := e.repository().Accepted()
 		if accErr != nil {
 			_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "accepted ref unreadable: "+accErr.Error())
 			CleanupRefs(e, req.Opid)
 			return PublishResult{}, accErr
 		}
 		if hasAccepted {
-			if gateErr := AcceptanceGates(e.Root, acceptedTip, tip); gateErr != nil {
+			if gateErr := acceptanceGatesFor(e, acceptedTip, tip); gateErr != nil {
 				_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "acceptance gates refused: "+gateErr.Error())
 				CleanupRefs(e, req.Opid)
 				return PublishResult{}, gateErr
@@ -698,7 +754,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			return PublishResult{}, ledgerErr
 		}
 		if hasLedger {
-			if valErr := ValidateCommit(e.Root, tip); valErr != nil {
+			if valErr := validateCommitFor(e, tip); valErr != nil {
 				_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "captured tip refused: "+valErr.Error())
 				CleanupRefs(e, req.Opid)
 				return PublishResult{}, fmt.Errorf("the captured tip does not validate; follow the ledger repair process: restore a valid canonical tree, then after any rewind run metasystem goal repair --accept-remote --by <human> --root <checkout> on each affected clone: %w", valErr)
@@ -721,7 +777,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		if err := RecordSteps(e.Root, req.Opid, "", commit); err != nil {
 			return PublishResult{}, err
 		}
-		if err := validateLegacyArchiveReadOnly(e.Root, tip, commit); err != nil {
+		if err := validateLegacyArchiveFor(e, tip, commit); err != nil {
 			_ = MarkTerminal(e.Root, req.Opid, OutcomeRejected, "legacy archive write refused: "+err.Error())
 			CleanupRefs(e, req.Opid)
 			return PublishResult{Outcome: OutcomeRejected, Tip: tip, Commit: commit, Detail: err.Error()}, nil
@@ -783,11 +839,11 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			// onto a stranger's unvalidated descendant.
 			advanceTarget := newTip
 			if newTip != commit {
-				if valErr := ValidateCommit(e.Root, newTip); valErr != nil {
+				if valErr := validateCommitFor(e, newTip); valErr != nil {
 					advanceTarget = commit
 				}
 			}
-			if err := advanceAcceptedForward(e.Root, advanceTarget); err != nil {
+			if err := advanceAcceptedFor(e, advanceTarget); err != nil {
 				return PublishResult{Outcome: OutcomeConfirmed, Tip: newTip, Commit: commit,
 					Detail: "confirmed; accepted ref did not advance: " + err.Error()}, nil
 			}

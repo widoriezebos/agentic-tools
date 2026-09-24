@@ -3,10 +3,55 @@
 An adopted application declares its own tests in `testing.json`, selected by
 `testing.contract=testing.json` in `metasystem.conf`. The engine plans, runs,
 retains, and verifies those tests. The application can use any language: a
-`command` group runs its `argv`, then checks its exit status and declared JUnit
-XML test identities. The application command or its framework adapter must
-produce the report. Go package and test discovery applies only to `go` groups;
-other languages declare their source and dependency paths themselves.
+`command` group runs its `argv`. With `format: exit-status`, an acceptance
+`unit` or `integration` group succeeds only when that native command exits
+zero. The application author must supply a command that runs the intended
+tests. Exit-status evidence cannot inspect the command's semantics or guarantee
+that its test framework discovers a nonempty suite; it proves only that the
+configured command completed successfully. A command that emits JUnit XML can
+instead declare its reports and expected test identities. Go package and test
+discovery applies only to `go` groups; other languages declare their inputs
+themselves.
+
+This complete schema 2 example runs an application's ordinary full test
+command. Save it as `testing.json`:
+
+<!-- full-suite-command-contract -->
+```json
+{
+  "schemaVersion": 2,
+  "projectRisk": {"severity": 1, "exposure": 1, "reversibility": "revert", "detection": "immediate", "recovery": "bounded"},
+  "fallback": "other",
+  "surfaces": [
+    {"id": "application", "paths": ["src/**", "package.json", "package-lock.json", "testing.json"], "dependsOn": [], "standard": ["application-tests"], "deep": [], "critical": []},
+    {"id": "other", "paths": [], "dependsOn": [], "standard": ["application-tests"], "deep": [], "critical": []}
+  ],
+  "groups": [
+    {
+      "id": "application-tests", "kind": "unit", "adapter": "command", "cwd": ".",
+      "phase": "acceptance", "environmentMode": "inherit",
+      "resources": {"class": "heavy"}, "freshness": "reusable",
+      "inputs": ["*", "*/**"], "outputs": [],
+      "tools": [{"id": "npm", "executable": "npm", "versionArgs": ["--version"]}],
+      "obligations": [], "platforms": ["any"], "targetMs": 120000,
+      "argv": ["npm", "test"], "format": "exit-status"
+    }
+  ],
+  "always": {"canary": [], "standard": ["application-tests"]},
+  "unknown": ["application-tests"], "cadence": []
+}
+```
+
+The two input patterns bind every tracked project path: `*` covers root files
+and `*/**` covers paths below root directories. Bare `**` and an empty input
+list are unsupported. This is stable full-suite setup, not a per-file test map.
+The execution identity still requires exact source, tool, external-input, and
+environment matches. With `environmentMode: inherit`, the inherited environment
+is part of that identity. Declare known external files explicitly; the engine
+does not infer arbitrary dynamic or remote dependencies from source. No JUnit
+output is declared here, so evidence contains one native command result and no
+fabricated expected, observed, missing, or unexpected testcase census. A
+nonzero native exit fails the group.
 
 This complete schema 2 example uses a shell check in place of an application
 test command. In an enrolled application's root, put `ready` on one line in

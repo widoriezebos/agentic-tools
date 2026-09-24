@@ -415,26 +415,95 @@ func TestComposeRolePacketCommandEnforcesPacketCap(t *testing.T) {
 }
 
 func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContext(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "breach-stop capable admission fixture", func(file *goal.GoalFile) {
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	root, reads := repository.root, repository.reads()
+	commandNow := repository.commandNow(now)
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 		file.Risk = nil
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
 	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
 	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
-	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
 	if refusalCode != 9 || strings.TrimSpace(refusal) != want {
 		t.Fatalf("unanswered-risk command did not refuse: code=%d output=%q", refusalCode, refusal)
 	}
-	amendSyncedGoalFixture(t, root, "answer admission risk", func(file *goal.GoalFile) {
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Risk = &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
 	if admittedCode != 0 || strings.TrimSpace(output) != "" {
 		t.Fatalf("answered-risk command was not admitted: code=%d output=%q", admittedCode, output)
+	}
+}
+
+// An abandoned breach-stopped goal cannot enter command budget admission.
+func TestGoalRevisionAdmissionCommandRefusesAbandonedBreachStoppedGoalBeforeBudget(t *testing.T) {
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	root, reads := repository.root, repository.reads()
+	commandNow := repository.commandNow(now)
+	file := repository.goalFile(t, "standing-validation")
+	closedAt := "2026-08-30T08:07:00Z"
+	abandonedAt := "2026-08-30T08:08:00Z"
+	stopID := "stop-standing-validation-r2-f1"
+	file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1, FenceEpoch: 1}
+	file.StopFence = &goal.StopFence{StopID: stopID, Revision: 2, Epoch: 1, CapabilityGeneration: 2, ClosedAt: closedAt, Reason: goal.StopReasonElapsedLimit}
+	file.History = append(file.History, goal.HistoryLine{
+		At: closedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAC", "mac-cli", "m1"),
+		Verb: "breach-stop", Actor: "mac-cli+m1", Targets: []string{file.Id}, Keep: -1,
+	})
+	displaced := "mac-cli+m1@" + file.Claimed.At
+	abandonOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAD", "mac-cli", "m1")
+	reason := "The stopped work will not resume."
+	file.State = goal.StateAbandoned
+	file.Claimed = nil
+	file.Revision = 5
+	file.Abandoned = &goal.AbandonRecord{By: "human:Wido", At: abandonedAt, Revision: 5, Opid: abandonOpid, Displaced: displaced, StopID: stopID, Because: reason}
+	file.History = append(file.History, goal.HistoryLine{
+		At: abandonedAt, Opid: abandonOpid, Verb: "abandon", Actor: "human:Wido",
+		Targets: []string{file.Id}, Displaced: displaced, StopID: stopID, Keep: -1, Reason: reason,
+	})
+	opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAE", "mac-cli", "m1")
+	parent, err := repository.Capture(opid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := repository.Build(opid, parent, []goal.Change{
+		{Path: "plans/goals/standing-validation.md", Delete: true},
+		{Path: "records/goals/standing-validation.md", Content: goal.RenderFile(file)},
+	}, "abandoned breach-stopped admission fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit == parent {
+		t.Fatal("archive did not create a distinct accepted tree")
+	}
+	if outcome, err := repository.Publish(parent, commit); err != nil || outcome != goal.CASLanded {
+		t.Fatalf("publish archived goal: outcome=%v err=%v", outcome, err)
+	}
+	if err := repository.AcceptedCAS(parent, commit); err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := reads.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		t.Fatalf("accepted abandoned fixture is invalid: %v", err)
+	}
+	archived := projection.Tree.Abandoned[file.Id]
+	if projection.Tree.Live[file.Id] != nil || archived == nil || archived.State != goal.StateAbandoned || archived.Claimed != nil || archived.StopCapability == nil || archived.StopFence == nil || archived.StopFence.StopID != stopID || archived.Abandoned == nil || archived.Abandoned.StopID != stopID {
+		t.Fatalf("accepted ledger does not contain the abandoned stopped goal: %+v", archived)
+	}
+	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1", "--destructive-reach", "MECHANICAL"}
+	output, code := captureStderr(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
+	if code == 0 || !strings.Contains(output, "not a claimed accepted goal") || strings.Contains(output, "BUDGET_") {
+		t.Fatalf("abandoned goal reached budget admission: code=%d output=%q", code, output)
 	}
 }
 
@@ -477,8 +546,11 @@ func testStopProofCancelCommandKeepsFrozenInstantFixtureOnly(t *testing.T) {
 }
 
 func TestGoalRevisionAdmissionCommandRefusesExhaustedCodeCriticClass(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "critic class admission fixture", func(file *goal.GoalFile) {
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	root, reads := repository.root, repository.reads()
+	commandNow := repository.commandNow(now)
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 		file.Budget.AttemptLimit = 20
 		file.Budget.ReservedJobMinutesLimit = 1000
@@ -497,39 +569,32 @@ func TestGoalRevisionAdmissionCommandRefusesExhaustedCodeCriticClass(t *testing.
 			"reviewChainCounted": true,
 		})
 	}
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
 	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1", "--role", "code-critic", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
-	refusal, code := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	refusal, code := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
 	if code != 9 || !strings.Contains(refusal, "codeCritiques=2/2") {
 		t.Fatalf("command did not refuse the exhausted code-critic class: code=%d stdout=%q", code, refusal)
 	}
 }
 
 func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n"), 0o644); err != nil {
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	repository, _ := proofAdmissionExtensionFixture(t)
+	root, reads := repository.root, repository.reads()
+	config := []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n")
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), config, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	amendSyncedGoalFixture(t, root, "budget extension command fixture", func(file *goal.GoalFile) {
-		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
-		file.Budget.AttemptLimit = 1
-		file.Budget.ReservedJobMinutesLimit = 10000
-		file.Budget.ActiveJobLimit = 10
-		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
-	})
-	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	receipt := fmt.Sprintf("%d|%s|RECEIPT|type=implement|outcome=shipped|goal=standing-validation|note=fixture\n",
 		now.Add(-time.Hour).Unix(), now.Add(-time.Hour).Format(time.RFC3339))
-	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
+	repository.seed(map[string][]byte{"metasystem/metasystem.conf": config, "metasystem/memory/receipts.log": []byte(receipt)})
+	if got := string(repository.rawFile(t, "metasystem/memory/receipts.log")); got != receipt {
+		t.Fatalf("accepted receipt = %q, want %q", got, receipt)
+	}
+	inputs := repository.extendBudgetInputs(t)
+	beforeTip, _, err := repository.Accepted()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "memory", "receipts.log"), []byte(receipt), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	goalSyncMutationGit(t, root, "add", "memory/receipts.log", "metasystem.conf")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "extension receipt")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	if err := os.MkdirAll(jobs, 0o755); err != nil {
 		t.Fatal(err)
@@ -539,10 +604,9 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:20:00Z", "endedAt": "2026-08-30T08:21:00Z",
 		"pid": 4242,
 	})
-	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1",
 		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL", "--format", "json"}
-	output, code := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	output, code := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, repository.commandNow(now)) })
 	if code != 9 {
 		t.Fatalf("JSON offer command exit=%d output=%s", code, output)
 	}
@@ -566,59 +630,81 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 	extendArgs := []string{"--root", root, "--id", "standing-validation", "--revision", "2", "--proposed-cap", "1",
 		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
-	extended, extendCode := captureStdout(t, func() int { return runGoalExtendBudget(extendArgs) })
+	extended, extendCode := captureStdout(t, func() int {
+		return runGoalExtendBudgetWithInputs(extendArgs, repository.commandNow(now), inputs, reads)
+	})
 	if extendCode != 0 || !strings.Contains(extended, `"outcome":"confirmed"`) {
 		t.Fatalf("extend-budget command did not replay and apply the offer: code=%d output=%s", extendCode, extended)
 	}
-	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
-	record := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	tip, _, err := repository.Accepted()
+	if err != nil || tip == beforeTip {
+		t.Fatalf("accepted tip did not advance: before=%s after=%s err=%v", beforeTip, tip, err)
+	}
+	record := string(repository.rawFile(t, "metasystem/plans/goals/standing-validation.md"))
 	if !strings.Contains(record, "- BudgetExtension: ") || !strings.Contains(record, "attemptLimit=1->2") {
 		t.Fatalf("extend-budget command did not persist its marker: %s", record)
+	}
+	if strings.Count(record, "- BudgetExtension: ") != 1 {
+		t.Fatalf("extend-budget command wrote multiple markers: %s", record)
 	}
 
 	writeTemp(t, jobs, "spent-again.json", map[string]any{
 		"jobId": "spent-again", "operationId": "spent-again", "goalId": "standing-validation", "goalRevision": 2,
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:30:00Z", "endedAt": "2026-08-30T08:31:00Z",
 	})
-	second, secondCode := captureStderr(t, func() int { return runGoalExtendBudget(extendArgs) })
+	second, secondCode := captureStderr(t, func() int {
+		return runGoalExtendBudgetWithInputs(extendArgs, repository.commandNow(now), inputs, reads)
+	})
 	if secondCode != 1 || !strings.Contains(second, "extended once at 2026-08-30T09:00:00Z") {
 		t.Fatalf("second extend-budget command did not name its marker: code=%d output=%s", secondCode, second)
+	}
+	secondTip, _, err := repository.Accepted()
+	if err != nil || secondTip != tip || string(repository.rawFile(t, "metasystem/plans/goals/standing-validation.md")) != record {
+		t.Fatalf("once-only refusal changed the accepted goal: before=%s after=%s err=%v", tip, secondTip, err)
 	}
 }
 
 func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	baseArgs := func(root string) []string {
 		return []string{"--root", root, "--id", "standing-validation", "--revision", "2", "--proposed-cap", "1",
 			"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
 	}
 	t.Run("zero proposed cap", func(t *testing.T) {
-		root := syncedClaimedGoalFixture(t)
+		repository := newProofAdmissionRepositoryFixture(t, now, false)
+		root := repository.root
 		args := baseArgs(root)
 		for index := range args {
 			if args[index] == "--proposed-cap" {
 				args[index+1] = "0"
 			}
 		}
-		output, code := captureStderr(t, func() int { return runGoalExtendBudget(args) })
+		output, code := captureStderr(t, func() int {
+			return runGoalExtendBudgetWithInputs(args, repository.commandNow(now), repository.extendBudgetInputs(t), repository.reads())
+		})
 		if code != 2 || !strings.Contains(output, "positive --proposed-cap") {
 			t.Fatalf("zero-cap extension refusal: code=%d output=%s", code, output)
 		}
 	})
 	t.Run("admitted", func(t *testing.T) {
-		root := syncedClaimedGoalFixture(t)
-		amendSyncedGoalFixture(t, root, "admitted extension refusal", func(file *goal.GoalFile) {
+		repository := newProofAdmissionRepositoryFixture(t, now, false)
+		root := repository.root
+		repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 		})
-		t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
-		output, code := captureStderr(t, func() int { return runGoalExtendBudget(baseArgs(root)) })
+		inputs := repository.extendBudgetInputs(t)
+		output, code := captureStderr(t, func() int {
+			return runGoalExtendBudgetWithInputs(baseArgs(root), repository.commandNow(now), inputs, repository.reads())
+		})
 		if code != 1 || !strings.Contains(output, "is admitted; there is no budget refusal to extend") {
 			t.Fatalf("admitted seam refusal: code=%d output=%s", code, output)
 		}
 	})
 	t.Run("active job", func(t *testing.T) {
-		root := syncedClaimedGoalFixture(t)
-		amendSyncedGoalFixture(t, root, "active job extension refusal", func(file *goal.GoalFile) {
+		repository := newProofAdmissionRepositoryFixture(t, now, false)
+		root := repository.root
+		repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 			file.Budget.AttemptLimit = 20
 			file.Budget.ReservedJobMinutesLimit = 10000
@@ -633,21 +719,26 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 			"jobId": "active", "operationId": "active", "goalId": "standing-validation", "goalRevision": 2,
 			"capMin": 1, "status": "running",
 		})
-		t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
-		output, code := captureStderr(t, func() int { return runGoalExtendBudget(baseArgs(root)) })
+		inputs := repository.extendBudgetInputs(t)
+		output, code := captureStderr(t, func() int {
+			return runGoalExtendBudgetWithInputs(baseArgs(root), repository.commandNow(now), inputs, repository.reads())
+		})
 		if code != 1 || !strings.Contains(output, "activeJobLimit") || !strings.Contains(output, "no consumption-earned budget extension offer") {
 			t.Fatalf("active-job seam refusal: code=%d output=%s", code, output)
 		}
 	})
 	t.Run("live stop", func(t *testing.T) {
-		root := syncedClaimedGoalFixture(t)
-		amendSyncedGoalFixture(t, root, "live stop extension refusal", func(file *goal.GoalFile) {
+		repository := newProofAdmissionRepositoryFixture(t, now, false)
+		root := repository.root
+		repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 			file.Budget.ElapsedLimit = "1h"
 			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 		})
-		t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T10:00:00Z")
-		output, code := captureStderr(t, func() int { return runGoalExtendBudget(baseArgs(root)) })
+		inputs := repository.extendBudgetInputs(t)
+		output, code := captureStderr(t, func() int {
+			return runGoalExtendBudgetWithInputs(baseArgs(root), repository.commandNow(now.Add(time.Hour)), inputs, repository.reads())
+		})
 		if code != 1 || !strings.Contains(output, "names a live stop, not an extendable exhaustion") {
 			t.Fatalf("live-stop seam refusal: code=%d output=%s", code, output)
 		}

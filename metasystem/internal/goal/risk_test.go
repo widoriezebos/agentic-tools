@@ -10,29 +10,32 @@ import (
 	"time"
 )
 
-func riskLocalRoot(t *testing.T, seedID string) string {
+func riskLocalEndpoint(t *testing.T) Endpoint {
 	t.Helper()
-	root := obligationAuthorityLocalRoot(t, seedID)
-	obligationAuthorityGit(t, root, "rm", "-q", "plans/goals/"+seedID+".md")
-	obligationAuthorityGit(t, root, "commit", "-qm", "remove local fixture seed")
-	obligationAuthorityGit(t, root, "update-ref", LocalLedgerBranch, "HEAD")
-	obligationAuthorityGit(t, root, "update-ref", AcceptedRef, "HEAD")
-	return root
+	endpoint, client := fakeGoalEndpoint(t)
+	rootRecord := &RootRecord{
+		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: SyncLocal, Revision: 1,
+	}
+	seed := client.store.commits[client.store.canonical]
+	seed.files = vTree(rootRecord, nil, nil)
+	client.store.commits[client.store.canonical] = seed
+	endpoint.Remote = SyncLocal
+	if err := os.WriteFile(filepath.Join(endpoint.Root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return endpoint
 }
 
 func TestSTR4R1RaiseTransaction(t *testing.T) {
 	t.Parallel()
-	root := riskLocalRoot(t, "raise-bed")
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	endpoint := riskLocalEndpoint(t)
 	low := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "landed precedent"}
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
-	opened := obligationAuthorityVerbReq(root, "01J5X00000000000000000RA00", "mac-a")
-	if result, err := OpenRisked(asPerson(t, root, opened), "risk-raise", "Raise rigor without erasing control state.", OriginHuman, "Exercise the raise.", nil, nil, low, 0, "", &budget, nil); err != nil || result.Outcome != OutcomeConfirmed {
+	opened := verbReqFor(endpoint, "01J5X00000000000000000RA00", "mac-a")
+	if result, err := OpenRisked(asPerson(t, endpoint.Root, opened), "risk-raise", "Raise rigor without erasing control state.", OriginHuman, "Exercise the raise.", nil, nil, low, 0, "", &budget, nil); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open risk-scored goal: %+v %v", result, err)
 	}
-	proof := testHumanAuthority(t, root, opened.Now)
+	proof := testHumanAuthority(t, endpoint.Root, opened.Now)
 	approve := opened
 	approve.Actor.Human = "Wido"
 	approve.Ulid = "01J5X00000000000000000RA10"
@@ -54,16 +57,16 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	if result, err := SetObligation(obligationReq, "risk-raise", testGovernedObligation(ObligationDraft), proof); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("set governed obligation: %+v %v", result, err)
 	}
-	beforeStop, err := Project(obligationAuthorityEndpoint(root), true, obligationReq.Now)
+	beforeStop, err := Project(endpoint, true, obligationReq.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	capability := *beforeStop.Tree.Live["risk-raise"].StopCapability
-	stop := CloseStopRequest{VerbRequest: VerbRequest{Endpoint: obligationAuthorityEndpoint(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X00000000000000000RA40", Now: opened.Now.Add(4 * time.Minute), ClaimEpoch: 9}, GoalID: "risk-raise", StopID: "stop-risk-raise-r1-f1", Reason: StopReasonElapsedLimit, Capability: capability}
+	stop := CloseStopRequest{VerbRequest: VerbRequest{Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X00000000000000000RA40", Now: opened.Now.Add(4 * time.Minute), ClaimEpoch: 9}, GoalID: "risk-raise", StopID: "stop-risk-raise-r1-f1", Reason: StopReasonElapsedLimit, Capability: capability}
 	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("close launch fence: %+v %v", result, err)
 	}
-	stoppedProjection, err := Project(obligationAuthorityEndpoint(root), true, stop.Now)
+	stoppedProjection, err := Project(endpoint, true, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +95,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("raise risk transaction: %+v %v", result, err)
 	}
-	afterTree, err := loadTree(root, result.Tip)
+	afterTree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,8 +147,8 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	}
 
 	preserveLow := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine but conservatively tiered"}
-	preserveOpen := obligationAuthorityVerbReq(root, "01J5X00000000000000000RA70", "mac-b")
-	if opened, err := OpenRisked(asPerson(t, root, preserveOpen), "preserve-override", "Preserve an existing override.", OriginHuman, "Raise derivation.", nil, nil, preserveLow, 3, "standing full review", &budget, nil); err != nil || opened.Outcome != OutcomeConfirmed {
+	preserveOpen := verbReqFor(endpoint, "01J5X00000000000000000RA70", "mac-b")
+	if opened, err := OpenRisked(asPerson(t, endpoint.Root, preserveOpen), "preserve-override", "Preserve an existing override.", OriginHuman, "Raise derivation.", nil, nil, preserveLow, 3, "standing full review", &budget, nil); err != nil || opened.Outcome != OutcomeConfirmed {
 		t.Fatalf("open preserved override: %+v %v", opened, err)
 	}
 	preserveApprove := preserveOpen
@@ -170,7 +173,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	if err != nil || preservedResult.Outcome != OutcomeConfirmed {
 		t.Fatalf("raise with omitted tier: %+v %v", preservedResult, err)
 	}
-	preservedTree, err := loadTree(root, preservedResult.Tip)
+	preservedTree, err := loadTreeFor(endpoint, preservedResult.Tip)
 	if err != nil || preservedTree.Live["preserve-override"].Tier != 3 {
 		t.Fatalf("raise with omitted tier lost the standing override: %+v %v", preservedTree.Live["preserve-override"], err)
 	}
@@ -178,7 +181,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 
 func TestSTR4R1FourDowngradesRefused(t *testing.T) {
 	t.Parallel()
-	root := riskLocalRoot(t, "downgrade-bed")
+	endpoint := riskLocalEndpoint(t)
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	type downgrade struct {
 		id      string
@@ -205,21 +208,21 @@ func TestSTR4R1FourDowngradesRefused(t *testing.T) {
 	}
 	openULIDs := []string{"01J5X00000000000000000DB00", "01J5X00000000000000000DB10", "01J5X00000000000000000DB20", "01J5X00000000000000000DB30"}
 	for index, test := range cases {
-		req := obligationAuthorityVerbReq(root, openULIDs[index], "mac-a")
-		if result, err := OpenRisked(asPerson(t, root, req), test.id, "Exercise "+test.id+".", OriginHuman, "Edit it.", nil, nil, test.initial, test.tier, test.why, &budget, nil); err != nil || result.Outcome != OutcomeConfirmed {
+		req := verbReqFor(endpoint, openULIDs[index], "mac-a")
+		if result, err := OpenRisked(asPerson(t, endpoint.Root, req), test.id, "Exercise "+test.id+".", OriginHuman, "Edit it.", nil, nil, test.initial, test.tier, test.why, &budget, nil); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", test.id, result, err)
 		}
 	}
-	proof := testHumanAuthority(t, root, obligationAuthorityVerbReq(root, openULIDs[0], "mac-a").Now)
+	proof := testHumanAuthority(t, endpoint.Root, verbReqFor(endpoint, openULIDs[0], "mac-a").Now)
 	pairULIDs := []string{"01J5X00000000000000000DC00", "01J5X00000000000000000DC10", "01J5X00000000000000000DC20", "01J5X00000000000000000DC30"}
 	humanULIDs := []string{"01J5X00000000000000000DD00", "01J5X00000000000000000DD10", "01J5X00000000000000000DD20", "01J5X00000000000000000DD30"}
 	for index, test := range cases {
-		pair := obligationAuthorityVerbReq(root, pairULIDs[index], "mac-a")
+		pair := verbReqFor(endpoint, pairULIDs[index], "mac-a")
 		if result, err := Edit(pair, test.id, test.fields()); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "human act") {
 			t.Errorf("pair downgrade %s = %+v %v", test.id, result, err)
 			continue
 		}
-		human := obligationAuthorityVerbReq(root, humanULIDs[index], "mac-a")
+		human := verbReqFor(endpoint, humanULIDs[index], "mac-a")
 		human.Actor.Human = "Wido"
 		fields := test.fields()
 		fields.Proof = proof
@@ -228,7 +231,7 @@ func TestSTR4R1FourDowngradesRefused(t *testing.T) {
 			t.Errorf("human downgrade %s = %+v %v", test.id, result, err)
 			continue
 		}
-		tree, err := loadTree(root, result.Tip)
+		tree, err := loadTreeFor(endpoint, result.Tip)
 		if err != nil || !test.check(tree.Live[test.id]) {
 			t.Errorf("human downgrade %s did not land: goal=%+v err=%v", test.id, tree.Live[test.id], err)
 		}
@@ -237,15 +240,15 @@ func TestSTR4R1FourDowngradesRefused(t *testing.T) {
 
 func TestRiskOverridesAboveAndBelow(t *testing.T) {
 	t.Parallel()
-	root := riskLocalRoot(t, "override-bed")
+	endpoint := riskLocalEndpoint(t)
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	low := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
-	pair := obligationAuthorityVerbReq(root, "01J5X00000000000000000RB00", "mac-a")
-	result, err := OpenRisked(asPerson(t, root, pair), "override-above", "Record a conservative override.", OriginHuman, "Review it.", nil, nil, low, 2, "independent review requested", &budget, nil)
+	pair := verbReqFor(endpoint, "01J5X00000000000000000RB00", "mac-a")
+	result, err := OpenRisked(asPerson(t, endpoint.Root, pair), "override-above", "Record a conservative override.", OriginHuman, "Review it.", nil, nil, low, 2, "independent review requested", &budget, nil)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("pair override above: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil || !strings.Contains(tree.Live["override-above"].History[0].Reason, "TierOverride: derived=1 set=2 why=independent review requested") {
 		t.Fatalf("pair override above was not recorded: %+v %v", tree.Live["override-above"], err)
 	}
@@ -253,20 +256,20 @@ func TestRiskOverridesAboveAndBelow(t *testing.T) {
 	// A pair's open reaches the tier gate only as a lawful seat open, so it
 	// names the goal it holds; what refuses it there is the tier below its
 	// own derivation, which is a person's to record and not a pair's.
-	if result, err := claimApprovedForTest(t, obligationAuthorityVerbReq(root, "01J5X00000000000000000RB05", "mac-a"), "override-above", budget); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000RB05", "mac-a"), "override-above", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim the goal the pair holds: %+v %v", result, err)
 	}
-	if _, err := OpenRisked(obligationAuthorityVerbReq(root, "01J5X00000000000000000RB10", "mac-a"), "override-below-pair", "Refuse an unsafe override.", OriginHuman, "Refuse it.", []string{"override-above"}, nil, high, 2, "pair asks lower", &budget, nil); err == nil || !strings.Contains(err.Error(), "human act") {
+	if _, err := OpenRisked(verbReqFor(endpoint, "01J5X00000000000000000RB10", "mac-a"), "override-below-pair", "Refuse an unsafe override.", OriginHuman, "Refuse it.", []string{"override-above"}, nil, high, 2, "pair asks lower", &budget, nil); err == nil || !strings.Contains(err.Error(), "human act") {
 		t.Fatalf("pair override below = %v", err)
 	}
-	human := obligationAuthorityVerbReq(root, "01J5X00000000000000000RB20", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000RB20", "mac-a")
 	human.Actor.Human = "Wido"
-	proof := testHumanAuthority(t, root, human.Now)
-	result, err = OpenRisked(asPerson(t, root, human), "override-below-human", "Record the human override.", OriginHuman, "Proceed under human authority.", nil, nil, high, 2, "human accepts narrower rigor", &budget, proof)
+	proof := testHumanAuthority(t, endpoint.Root, human.Now)
+	result, err = OpenRisked(human, "override-below-human", "Record the human override.", OriginHuman, "Proceed under human authority.", nil, nil, high, 2, "human accepts narrower rigor", &budget, proof)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("human override below: %+v %v", result, err)
 	}
-	tree, err = loadTree(root, result.Tip)
+	tree, err = loadTreeFor(endpoint, result.Tip)
 	if err != nil || !strings.Contains(tree.Live["override-below-human"].History[0].Reason, "TierOverride: derived=3 set=2 why=human accepts narrower rigor") {
 		t.Fatalf("human override below = %+v %v", tree.Live["override-below-human"], err)
 	}
@@ -274,40 +277,40 @@ func TestRiskOverridesAboveAndBelow(t *testing.T) {
 
 func TestSTR4R1FiveMemberExceptions(t *testing.T) {
 	t.Parallel()
-	root := riskLocalRoot(t, "exception-bed")
+	endpoint := riskLocalEndpoint(t)
 	low := RiskRecord{Severity: 3, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "severe"}
 	box := Budget{ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3}
-	opened := obligationAuthorityVerbReq(root, "01J5X00000000000000000EX00", "mac-a")
-	if result, err := OpenRisked(asPerson(t, root, opened), "budget-exceptions", "Count every over-box member.", OriginHuman, "Raise two members.", nil, nil, low, 0, "", &box, nil); err != nil || result.Outcome != OutcomeConfirmed {
+	opened := verbReqFor(endpoint, "01J5X00000000000000000EX00", "mac-a")
+	if result, err := OpenRisked(asPerson(t, endpoint.Root, opened), "budget-exceptions", "Count every over-box member.", OriginHuman, "Raise two members.", nil, nil, low, 0, "", &box, nil); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	if result, err := claimApprovedForTest(t, obligationAuthorityVerbReq(root, "01J5X00000000000000000EX10", "mac-a"), "budget-exceptions", box); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000EX10", "mac-a"), "budget-exceptions", box); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
 	}
 	equal := box
 	equal.ElapsedLimit = "1d"
-	if result, err := setBudgetApprovedForTest(t, obligationAuthorityVerbReq(root, "01J5X00000000000000000EX20", "mac-a"), "budget-exceptions", equal); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := setBudgetApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000EX20", "mac-a"), "budget-exceptions", equal); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("equal elapsed duration: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, acceptedTip(t, root))
+	tree, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil || tree.Live["budget-exceptions"].BudgetExceptions != 0 {
 		t.Fatalf("equal one-day and eight-hour limits counted as an exception: %+v %v", tree.Live["budget-exceptions"], err)
 	}
 	elapsed := box
 	elapsed.ElapsedLimit = "1d2h"
-	if result, err := setBudgetApprovedForTest(t, obligationAuthorityVerbReq(root, "01J5X00000000000000000EX25", "mac-a"), "budget-exceptions", elapsed); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := setBudgetApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000EX25", "mac-a"), "budget-exceptions", elapsed); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("over elapsed duration: %+v %v", result, err)
 	}
-	tree, err = loadTree(root, acceptedTip(t, root))
+	tree, err = loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil || tree.Live["budget-exceptions"].BudgetExceptions != 1 {
 		t.Fatalf("one-day-two-hour exception count = %+v %v", tree.Live["budget-exceptions"], err)
 	}
 	active := box
 	active.ActiveJobLimit = 2
-	if result, err := setBudgetApprovedForTest(t, obligationAuthorityVerbReq(root, "01J5X00000000000000000EX30", "mac-a"), "budget-exceptions", active); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := setBudgetApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000EX30", "mac-a"), "budget-exceptions", active); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("active-job exception: %+v %v", result, err)
 	}
-	tree, err = loadTree(root, acceptedTip(t, root))
+	tree, err = loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil || tree.Live["budget-exceptions"].BudgetExceptions != 2 {
 		t.Fatalf("active-job exception count = %+v %v", tree.Live["budget-exceptions"], err)
 	}
@@ -384,8 +387,8 @@ func TestSTR4R1SweepBackfill(t *testing.T) {
 		t.Fatalf("bare tier row refusal = %v", err)
 	}
 
-	root := obligationAuthorityLocalRoot(t, "sweep-confirm")
-	path := filepath.Join(root, "plans", "goals", "sweep-confirm.md")
+	endpoint := obligationAuthorityLocalEndpoint(t, "sweep-confirm")
+	path := filepath.Join(endpoint.Root, "plans", "goals", "sweep-confirm.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -395,24 +398,22 @@ func TestSTR4R1SweepBackfill(t *testing.T) {
 		t.Fatalf("parse confirmation fixture: %v", problems)
 	}
 	file.Tier = 3
-	if err := os.WriteFile(path, RenderFile(file), 0o644); err != nil {
+	rendered := RenderFile(file)
+	if err := os.WriteFile(path, rendered, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	obligationAuthorityGit(t, root, "add", "plans/goals/sweep-confirm.md")
-	obligationAuthorityGit(t, root, "commit", "-qm", "tiered sweep fixture")
-	obligationAuthorityGit(t, root, "update-ref", LocalLedgerBranch, "HEAD")
-	obligationAuthorityGit(t, root, "update-ref", AcceptedRef, "HEAD")
-	confirmedListing, err := PreviewClassificationSweep(obligationAuthorityEndpoint(root), []byte("sweep-confirm 1,1,1,1 cautious incumbent\n"), time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC))
+	publishGoalFixturesForEndpoint(t, endpoint, file)
+	confirmedListing, err := PreviewClassificationSweep(endpoint, []byte("sweep-confirm 1,1,1,1 cautious incumbent\n"), time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC))
 	if err != nil || len(confirmedListing.Proposals) != 1 {
 		t.Fatalf("preview confirmation fixture: %+v %v", confirmedListing, err)
 	}
-	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SW00", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000SW00", "mac-a")
 	req.Actor.Human = "Wido"
 	result, err := ClassifyTier(req, confirmedListing.Proposals[0], true)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("confirm classification: %+v %v", result, err)
 	}
-	written, err := loadTree(root, result.Tip)
+	written, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil || written.Live["sweep-confirm"].Tier != 3 || written.Live["sweep-confirm"].Risk == nil || written.Live["sweep-confirm"].Risk.DerivedTier() != 1 {
 		t.Fatalf("confirm lowered the incumbent tier in written state: goal=%+v err=%v", written.Live["sweep-confirm"], err)
 	}
@@ -442,15 +443,15 @@ func TestRiskRecordRendersAboveTierAndRoundTrips(t *testing.T) {
 // everyday edit, not the exception.
 func TestRestatedAnswersNeverLowerARecordedTier(t *testing.T) {
 	t.Parallel()
-	root := riskLocalRoot(t, "restate-bed")
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
+	endpoint := riskLocalEndpoint(t)
+	if err := os.WriteFile(filepath.Join(endpoint.Root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	exposed := RiskRecord{Severity: 1, Novelty: 1, Exposure: 3, Accumulation: 1, Basis: "wide but routine"}
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
-	seat := obligationAuthorityVerbReq(root, "01J5X00000000000000000RT00", "mac-a")
+	seat := verbReqFor(endpoint, "01J5X00000000000000000RT00", "mac-a")
 	// The old formula's tier 3 is recorded as an override above derivation 1.
-	if res, err := OpenRisked(asPerson(t, root, seat), "wide", "Wide but routine.", OriginHuman, "Edit it.", nil, nil, exposed, 3, "the earlier formula", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(asPerson(t, endpoint.Root, seat), "wide", "Wide but routine.", OriginHuman, "Edit it.", nil, nil, exposed, 3, "the earlier formula", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	reworded := exposed
@@ -461,7 +462,7 @@ func TestRestatedAnswersNeverLowerARecordedTier(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a re-stated basis is not a lowering: %+v %v", res, err)
 	}
-	tree, err := loadTree(root, res.Tip)
+	tree, err := loadTreeFor(endpoint, res.Tip)
 	if err != nil || tree.Live["wide"].Tier != 3 || tree.Live["wide"].Risk.Basis != reworded.Basis {
 		t.Fatalf("the recorded tier stands and the basis moved: %+v %v", tree.Live["wide"], err)
 	}
@@ -472,7 +473,7 @@ func TestRestatedAnswersNeverLowerARecordedTier(t *testing.T) {
 	if res, err := Edit(raise, "wide", EditFields{Risk: &lifted}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a raised answer below the recorded tier is not a lowering: %+v %v", res, err)
 	}
-	if tree, err = loadTree(root, res.Tip); err != nil || tree.Live["wide"].Tier != 3 {
+	if tree, err = loadTreeFor(endpoint, res.Tip); err != nil || tree.Live["wide"].Tier != 3 {
 		t.Fatalf("the recorded tier still stands: %+v %v", tree.Live["wide"], err)
 	}
 	one := uint8(1)
@@ -484,13 +485,13 @@ func TestRestatedAnswersNeverLowerARecordedTier(t *testing.T) {
 	human := seat
 	human.Ulid = "01J5X00000000000000000RT40"
 	human.Actor.Human = "Wido"
-	proof := testHumanAuthority(t, root, human.Now)
+	proof := testHumanAuthority(t, endpoint.Root, human.Now)
 	two := uint8(2)
 	res, err = Edit(human, "wide", EditFields{Risk: &lifted, Tier: &two, Why: "the formula changed", Proof: proof})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the human lowers the recorded tier with unchanged answers: %+v %v", res, err)
 	}
-	if tree, err = loadTree(root, res.Tip); err != nil || tree.Live["wide"].Tier != 2 {
+	if tree, err = loadTreeFor(endpoint, res.Tip); err != nil || tree.Live["wide"].Tier != 2 {
 		t.Fatalf("the lowered tier is recorded: %+v %v", tree.Live["wide"], err)
 	}
 }

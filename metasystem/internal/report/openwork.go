@@ -27,11 +27,15 @@ import (
 // the structured fields plans/README.md mandates, so its answer is the same
 // under any runtime or none.
 func OpenWork(root string) []string {
+	return openWorkReportWithReads(root, defaultScanGoalReads())
+}
+
+func openWorkReportWithReads(root string, reads scanGoalReads) []string {
 	root = resolveRepo(root)
 	if info, err := os.Stat(filepath.Join(root, "plans")); err != nil || !info.IsDir() {
 		return nil
 	}
-	return append(stalePlans(root), openWork(root)...)
+	return append(stalePlansWithReads(root, reads), openWorkWithReads(root, reads)...)
 }
 
 // now and grace are the time source and chain grace window, overridable in tests.
@@ -59,8 +63,8 @@ var (
 	brainInFlightStatus = map[string]bool{"pending-setup": true, "pending": true, "running": true}
 )
 
-func inFlightStatuses(root string) map[string]bool {
-	state := brain.Read(root, goal.ExistingLedgerIdentity(root))
+func inFlightStatusesWithReads(root string, reads scanGoalReads) map[string]bool {
+	state := brain.Read(root, reads.existingLedgerIdentity(root))
 	if state.State == brain.Declared || state.State == brain.Corrupt {
 		return brainInFlightStatus
 	}
@@ -129,10 +133,10 @@ func readJobRecords(root string) []map[string]any {
 	return records
 }
 
-func jobsInFlight(root string) int {
+func jobsInFlightWithReads(root string, reads scanGoalReads) int {
 	count := 0
 	records := readJobRecords(root)
-	statuses := inFlightStatuses(root)
+	statuses := inFlightStatusesWithReads(root, reads)
 	for _, record := range records {
 		if status, _ := record["status"].(string); statuses[status] {
 			count++
@@ -322,8 +326,8 @@ func MarkOpenWorkSeen(root string, items []goal.Item, at time.Time) ([]goal.Item
 	return marked, warning, nil
 }
 
-func stalePlans(root string) []string {
-	return stalePlansWithStatuses(root, inFlightStatuses(root))
+func stalePlansWithReads(root string, reads scanGoalReads) []string {
+	return stalePlansWithStatuses(root, inFlightStatusesWithReads(root, reads))
 }
 
 func stalePlansWithStatuses(root string, statuses map[string]bool) []string {
@@ -422,8 +426,8 @@ func stalePlansWithStatuses(root string, statuses map[string]bool) []string {
 	return lines
 }
 
-func openWork(root string) []string {
-	if jobsInFlight(root) > 0 {
+func openWorkWithReads(root string, reads scanGoalReads) []string {
+	if jobsInFlightWithReads(root, reads) > 0 {
 		return nil
 	}
 	var lines []string

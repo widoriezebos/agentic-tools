@@ -119,6 +119,9 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 			t.Run(kind, func(t *testing.T) {
 				t.Parallel()
 				fixture := newPendingWaitVerdictFixture(t, kind, true)
+				if kind == "landing" {
+					fixture.expectLedgerObservation(t, 1, fixture.row, metarun.SourceObservation{Pending: true, Incarnation: fixture.row.Target})
+				}
 				fixture.row.OpenWorkSignature = ""
 				fixture.writeRow(t)
 				seedPendingWaitIdleCounter(t, fixture, 2)
@@ -141,6 +144,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 			t.Run(kind, func(t *testing.T) {
 				t.Parallel()
 				fixture := newPendingWaitVerdictFixture(t, kind, true)
+				fixture.expectLedgerObservation(t, 1, fixture.row, metarun.SourceObservation{Pending: true, Incarnation: fixture.row.Target})
 				fixture.row.OpenWorkSignature = ""
 				fixture.row.ClaimableGoals = []metarun.ClaimableGoal{{ID: "ready-after-wait", Revision: 2}}
 				fixture.writeRow(t)
@@ -312,18 +316,21 @@ func TestPriorityIdleProjection(t *testing.T) {
 	ranked.Priority, ranked.Sequence = 1, 1
 	pinned := budgetedQueuedGoal("a-local-pin-second", "2026-08-23T00:00:01Z")
 	pinned.Priority, pinned.Sequence, pinned.Pinned = 1, 2, "bed-m1"
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, client, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		ranked.Id: ranked,
 		pinned.Id: pinned,
 	})
-	if info, err := os.Stat(filepath.Join(root, ".git")); err != nil || !info.IsDir() {
-		t.Fatalf("priority idle fixture repository disappeared: root=%q info=%v err=%v", root, info, err)
+	root := store.Root
+	tip, present, err := client.Accepted()
+	if err != nil || !present || tip == "" {
+		t.Fatalf("priority idle fixture lacks its accepted tree: tip=%q present=%t err=%v", tip, present, err)
 	}
-	if _, err := gitIn(root, "rev-parse", "--verify", AcceptedRef); err != nil {
-		t.Fatalf("priority idle fixture lacks its accepted tree: %v", err)
+	tree, err := loadTreeFor(endpoint, tip)
+	if err != nil || tree.Live[ranked.Id] == nil || tree.Live[pinned.Id] == nil {
+		t.Fatalf("priority idle fixture accepted tree lacks the ranked or pinned goal: tree=%+v err=%v", tree, err)
 	}
 
-	work, err := ReadClaimableBudgetedWork(root, time.Now())
+	work, err := readClaimableBudgetedWork(root, time.Now(), store.Prober, store.projectionDeps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +340,7 @@ func TestPriorityIdleProjection(t *testing.T) {
 	if got := idleBacklogNames(work); !strings.HasPrefix(got, "z-ranked-first, a-local-pin-second") {
 		t.Fatalf("the idle diagnostic promoted the local pin: %q", got)
 	}
-	if first, digest := (&Store{Root: root}).queuedFrontier(); first != "z-ranked-first" || digest == "" {
+	if first, digest := store.queuedFrontier(); first != "z-ranked-first" || digest == "" {
 		t.Fatalf("the queued diagnostic did not filter the ordered traversal: first=%q digest=%q", first, digest)
 	}
 	reordered := work
@@ -343,14 +350,11 @@ func TestPriorityIdleProjection(t *testing.T) {
 	}
 
 	var prepared IdleEscalationEvent
-	store := &Store{
-		Root: root,
-		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
-			prepared = event
-			return "intent-priority-head", nil
-		},
-		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-priority-head", nil },
+	store.PrepareIdleContinuation = func(event IdleEscalationEvent) (string, error) {
+		prepared = event
+		return "intent-priority-head", nil
 	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-priority-head", nil }
 	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
 	for stop := 1; stop <= 3; stop++ {
 		verdict, verdictErr := store.TurnVerdict(ScanResult{}, "priority-idle", "", "main-1", options)
@@ -365,20 +369,20 @@ func TestPriorityIdleProjection(t *testing.T) {
 
 func TestNextAndIdleRefusalIgnoreAnAbandonedGoal(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	mustGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	dependencies := projectionDependencies{source: &projectionSource{endpoint: endpoint, machine: "bed-m1"}}
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
-	if result, err := Open(verbReq(root, "01J5X00000000000000000J000", "bed-m1"), "only-work", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000J000", "bed-m1"), "only-work", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	approveReq := verbReq(root, "01J5X00000000000000000J010", "bed-m1")
+	approveReq := verbReqFor(endpoint, "01J5X00000000000000000J010", "bed-m1")
 	approveReq.Actor.Human = "Wido"
 	if result, err := Approve(approveReq, []string{"only-work"}, nil, goalHumanProof(t, root, approveReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("approve: %+v %v", result, err)
 	}
-	work, err := ReadClaimableBudgetedWork(root, time.Now())
+	work, err := readClaimableBudgetedWork(root, time.Now(), identity.KernelProber{}, dependencies)
 	if err != nil || len(work.Claimable) != 1 || work.Claimable[0] != "only-work" {
 		t.Fatalf("approved control was not idle backlog: work=%+v err=%v", work, err)
 	}
@@ -388,17 +392,17 @@ func TestNextAndIdleRefusalIgnoreAnAbandonedGoal(t *testing.T) {
 		t.Fatalf("control did not produce an idle refusal: %+v", control)
 	}
 
-	abandonReq := verbReq(root, "01J5X00000000000000000J020", "bed-m1")
+	abandonReq := verbReqFor(endpoint, "01J5X00000000000000000J020", "bed-m1")
 	abandonReq.Actor.Human = "Wido"
 	result, err := Abandon(abandonReq, "only-work", AbandonSpec{Because: "cancelled"}, goalHumanProof(t, root, abandonReq.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon: %+v %v", result, err)
 	}
-	work, err = ReadClaimableBudgetedWork(root, time.Now())
+	work, err = readClaimableBudgetedWork(root, time.Now(), identity.KernelProber{}, dependencies)
 	if err != nil || len(work.Claimable) != 0 || work.Queued != 0 {
 		t.Fatalf("abandoned work remained claimable or queued: work=%+v err=%v", work, err)
 	}
-	projection, err := Project(endpointFor(root), false, time.Now())
+	projection, err := Project(endpoint, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,9 +425,10 @@ func TestRefusedBacklogIsReportedWithoutBlocking(t *testing.T) {
 	refused := budgetedQueuedGoal("refused-backlog", "2026-08-23T00:00:00Z")
 	refused.Budget.ReservedJobMinutesLimit = 2400
 	refused.Priority, refused.Sequence = 1, 1
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{refused.Id: refused})
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{refused.Id: refused})
+	root := store.Root
 
-	work, err := ReadClaimableBudgetedWork(root, time.Now())
+	work, err := readClaimableBudgetedWork(root, time.Now(), store.Prober, store.projectionDeps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,16 +450,13 @@ func TestRefusedBacklogIsReportedWithoutBlocking(t *testing.T) {
 	}
 
 	prepared, recorded := 0, 0
-	store := &Store{
-		Root: root,
-		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
-			prepared++
-			return "unexpected-refused-intent", nil
-		},
-		RecordIdleIncident: func(IdleEscalationEvent) (string, error) {
-			recorded++
-			return "unexpected-refused-incident", nil
-		},
+	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) {
+		prepared++
+		return "unexpected-refused-intent", nil
+	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) {
+		recorded++
+		return "unexpected-refused-incident", nil
 	}
 	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
 	for stop := 1; stop <= 3; stop++ {
@@ -473,32 +475,29 @@ func TestRefusedBacklogIsReportedWithoutBlocking(t *testing.T) {
 
 func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	if !NewWorld(root) {
-		t.Fatal("serving bed did not create a converted world")
+	if converted, err := store.projectionWorld(); err != nil || !converted {
+		t.Fatalf("serving fixture did not create a converted world: converted=%t err=%v", converted, err)
 	}
 	var prepared, recorded IdleEscalationEvent
 	alarmRaised := false
-	store := &Store{
-		Root: root,
-		ClaimIdleGoal: func(IdleEscalationEvent) error {
-			t.Fatal("TurnVerdict crossed the external goal Claim boundary")
-			return nil
-		},
-		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
-			prepared = event
-			return "intent-seat-idle", nil
-		},
-		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
-			recorded = event
-			return "alert-seat-idle", nil
-		},
-		RaiseIdleAlarm: func(IdleEscalationEvent) error {
-			alarmRaised = true
-			return nil
-		},
+	store.ClaimIdleGoal = func(IdleEscalationEvent) error {
+		t.Fatal("TurnVerdict crossed the external goal Claim boundary")
+		return nil
+	}
+	store.PrepareIdleContinuation = func(event IdleEscalationEvent) (string, error) {
+		prepared = event
+		return "intent-seat-idle", nil
+	}
+	store.RecordIdleIncident = func(event IdleEscalationEvent) (string, error) {
+		recorded = event
+		return "alert-seat-idle", nil
+	}
+	store.RaiseIdleAlarm = func(IdleEscalationEvent) error {
+		alarmRaised = true
+		return nil
 	}
 	options := TurnVerdictOptions{
 		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
@@ -537,10 +536,6 @@ func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *
 	if alarmRaised {
 		t.Fatal("a successful steward handoff raised the human idle alarm")
 	}
-	endpoint, err := ResolveEndpoint(root)
-	if err != nil {
-		t.Fatal(err)
-	}
 	projection, err := Project(endpoint, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -558,23 +553,20 @@ func TestIdleBacklogContinuesThisMachinesHeldClaimWithoutAnotherClaim(t *testing
 	held.Claimed = &ClaimRecord{
 		Machine: "bed-m1", Lineage: "seat-lineage", At: "2026-08-23T01:00:00Z", Revision: 2,
 	}
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"held":    held,
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	var prepared IdleEscalationEvent
-	store := &Store{
-		Root: root,
-		ClaimIdleGoal: func(IdleEscalationEvent) error {
-			t.Fatal("TurnVerdict tried to claim while this machine already held a goal")
-			return nil
-		},
-		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
-			prepared = event
-			return "intent-held", nil
-		},
-		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-held", nil },
+	store.ClaimIdleGoal = func(IdleEscalationEvent) error {
+		t.Fatal("TurnVerdict tried to claim while this machine already held a goal")
+		return nil
 	}
+	store.PrepareIdleContinuation = func(event IdleEscalationEvent) (string, error) {
+		prepared = event
+		return "intent-held", nil
+	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-held", nil }
 	options := TurnVerdictOptions{
 		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
 	}
@@ -604,19 +596,16 @@ func TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord(t *testing.T) {
 	waitsForHuman.Priority, waitsForHuman.Sequence = 1, 1
 	ready := budgetedQueuedGoal("ready-for-work", "2026-08-23T00:00:01Z")
 	ready.Priority, ready.Sequence = 1, 2
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		waitsForHuman.Id: waitsForHuman,
 		ready.Id:         ready,
 	})
 	var prepared IdleEscalationEvent
-	store := &Store{
-		Root: root,
-		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
-			prepared = event
-			return "intent-ready", nil
-		},
-		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-ready", nil },
+	store.PrepareIdleContinuation = func(event IdleEscalationEvent) (string, error) {
+		prepared = event
+		return "intent-ready", nil
 	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-ready", nil }
 	options := TurnVerdictOptions{
 		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
 	}
@@ -628,10 +617,6 @@ func TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord(t *testing.T) {
 	}
 	if prepared.GoalID != ready.Id || !prepared.ClaimNeeded {
 		t.Fatalf("the continuation did not skip the human-waiting work: %+v", prepared)
-	}
-	endpoint, err := ResolveEndpoint(root)
-	if err != nil {
-		t.Fatal(err)
 	}
 	projection, err := Project(endpoint, false, time.Now())
 	if err != nil {
@@ -652,20 +637,17 @@ func TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord(t *testing.
 		Machine: "bed-m1", Lineage: "seat-lineage", At: "2026-08-23T01:00:00Z", Revision: 2,
 	}
 	ready := budgetedQueuedGoal("ready-after-held", "2026-08-23T00:00:00Z")
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		held.Id:  held,
 		ready.Id: ready,
 	})
 	prepared := false
-	store := &Store{
-		Root: root,
-		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
-			prepared = true
-			return "unexpected-intent", nil
-		},
-		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-held-human", nil },
-		RaiseIdleAlarm:     func(IdleEscalationEvent) error { return nil },
+	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) {
+		prepared = true
+		return "unexpected-intent", nil
 	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-held-human", nil }
+	store.RaiseIdleAlarm = func(IdleEscalationEvent) error { return nil }
 	options := TurnVerdictOptions{
 		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
 	}
@@ -680,10 +662,6 @@ func TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord(t *testing.
 	if prepared || third.ShouldBlock || third.BlockSource != nil ||
 		!strings.Contains(third.Display, "held goal waits on a human word") {
 		t.Fatalf("the held human-waiting work was handed off: prepared=%t verdict=%+v", prepared, third)
-	}
-	endpoint, err := ResolveEndpoint(root)
-	if err != nil {
-		t.Fatal(err)
 	}
 	projection, err := Project(endpoint, false, time.Now())
 	if err != nil {
@@ -704,24 +682,21 @@ func TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation(t *testing.T
 	first.NextStep = "QUESTION TO THE HUMAN: which option should proceed?"
 	second := budgetedQueuedGoal("second-human-wait", "2026-08-23T00:00:01Z")
 	second.NextStep = "PARK REQUESTED until approval arrives"
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		first.Id:  first,
 		second.Id: second,
 	})
 	prepared := false
 	var incident IdleEscalationEvent
-	store := &Store{
-		Root: root,
-		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
-			prepared = true
-			return "unexpected-intent", nil
-		},
-		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
-			incident = event
-			return "alert-all-human", nil
-		},
-		RaiseIdleAlarm: func(IdleEscalationEvent) error { return nil },
+	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) {
+		prepared = true
+		return "unexpected-intent", nil
 	}
+	store.RecordIdleIncident = func(event IdleEscalationEvent) (string, error) {
+		incident = event
+		return "alert-all-human", nil
+	}
+	store.RaiseIdleAlarm = func(IdleEscalationEvent) error { return nil }
 	options := TurnVerdictOptions{
 		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
 	}
@@ -738,10 +713,6 @@ func TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation(t *testing.T
 		!strings.Contains(third.Display, "every ready goal waits on a human word") {
 		t.Fatalf("the all-human-waiting backlog changed the bounded verdict: prepared=%t incident=%+v verdict=%+v", prepared, incident, third)
 	}
-	endpoint, err := ResolveEndpoint(root)
-	if err != nil {
-		t.Fatal(err)
-	}
 	projection, err := Project(endpoint, false, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -754,19 +725,17 @@ func TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation(t *testing.T
 func TestMismatchedSessionStopMarkerDoesNotGateIdleEscalation(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	prepared := 0
-	store := &Store{
-		Root: root, Now: func() time.Time { return now },
-		Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}},
-		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
-			prepared++
-			return "intent-mismatch", nil
-		},
-		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-mismatch", nil },
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
+	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) {
+		prepared++
+		return "intent-mismatch", nil
 	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-mismatch", nil }
 	sessionStopFixture(t, store, "marker-mismatch", "other-main", 7)
 	options := TurnVerdictOptions{
 		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
@@ -788,20 +757,17 @@ func TestMismatchedSessionStopMarkerDoesNotGateIdleEscalation(t *testing.T) {
 
 func TestIdleEscalationPreservesAnIndependentOpenWorkBlock(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	var prepared, incident IdleEscalationEvent
-	store := &Store{
-		Root: root,
-		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
-			prepared = event
-			return "intent-open-work", nil
-		},
-		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
-			incident = event
-			return "alert-open-work", nil
-		},
+	store.PrepareIdleContinuation = func(event IdleEscalationEvent) (string, error) {
+		prepared = event
+		return "intent-open-work", nil
+	}
+	store.RecordIdleIncident = func(event IdleEscalationEvent) (string, error) {
+		incident = event
+		return "alert-open-work", nil
 	}
 	options := TurnVerdictOptions{
 		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
@@ -828,10 +794,11 @@ func TestIdleEscalationPreservesAnIndependentOpenWorkBlock(t *testing.T) {
 
 func TestIdleBacklogDigestChangeResetsTheRefusalCount(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root}
+	root := store.Root
+
 	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
 	first, err := store.TurnVerdict(ScanResult{}, "digest-reset", "", "main-1", options)
 	if err != nil || !first.ShouldBlock || !strings.Contains(first.Display, "refusal 1 of 3") {
@@ -850,20 +817,17 @@ func TestIdleBacklogFailedIntentStillEndsAndNamesTheFailure(t *testing.T) {
 	t.Parallel()
 	waiting := budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z")
 	waiting.Pinned = "bed-m1"
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{"waiting": waiting})
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{"waiting": waiting})
 	prepared := false
 	alarmRaised := false
-	store := &Store{
-		Root: root,
-		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
-			prepared = true
-			return "", errors.New("intent store unavailable")
-		},
-		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-refused", nil },
-		RaiseIdleAlarm: func(IdleEscalationEvent) error {
-			alarmRaised = true
-			return nil
-		},
+	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) {
+		prepared = true
+		return "", errors.New("intent store unavailable")
+	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-refused", nil }
+	store.RaiseIdleAlarm = func(IdleEscalationEvent) error {
+		alarmRaised = true
+		return nil
 	}
 	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m2", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
 	for stop := 1; stop <= 2; stop++ {
@@ -890,16 +854,13 @@ func TestIdleBacklogFailedIntentStillEndsAndNamesTheFailure(t *testing.T) {
 
 func TestStopHookActivePreservesTheIdleCountWhenDigestReadIsUnavailable(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	var incident IdleEscalationEvent
-	store := &Store{
-		Root: root,
-		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
-			incident = event
-			return "alert-unavailable", nil
-		},
+	store.RecordIdleIncident = func(event IdleEscalationEvent) (string, error) {
+		incident = event
+		return "alert-unavailable", nil
 	}
 	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
 	first, err := store.TurnVerdict(ScanResult{}, "unavailable-repeat", "", "main-1", options)
@@ -928,26 +889,23 @@ func TestStopHookActivePreservesTheIdleCountWhenDigestReadIsUnavailable(t *testi
 
 func TestThreeUnreadableLedgerStopsRecordIncidentRaiseAlarmAndEnd(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	var incident IdleEscalationEvent
 	prepared := false
 	alarmRaised := false
-	store := &Store{
-		Root: root,
-		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
-			prepared = true
-			return "unexpected", nil
-		},
-		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
-			incident = event
-			return "alert-unreadable", nil
-		},
-		RaiseIdleAlarm: func(IdleEscalationEvent) error {
-			alarmRaised = true
-			return nil
-		},
+	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) {
+		prepared = true
+		return "unexpected", nil
+	}
+	store.RecordIdleIncident = func(event IdleEscalationEvent) (string, error) {
+		incident = event
+		return "alert-unreadable", nil
+	}
+	store.RaiseIdleAlarm = func(IdleEscalationEvent) error {
+		alarmRaised = true
+		return nil
 	}
 	store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{}, errors.New("canonical ledger unreadable")
@@ -976,11 +934,12 @@ func TestThreeUnreadableLedgerStopsRecordIncidentRaiseAlarmAndEnd(t *testing.T) 
 
 func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
+	root := store.Root
 	t.Run("fetch failure", func(t *testing.T) {
-		store := &Store{Root: root}
+
 		fetchStarted := make(chan struct{})
 		releaseFetch := make(chan struct{})
 		released := false
@@ -1001,7 +960,7 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 		}
 		answered := make(chan verdictAnswer, 1)
 		go func() {
-			verdict, err := store.TurnVerdict(ScanResult{}, "fetch-failure", "", "main-1")
+			verdict, err := store.TurnVerdict(ScanResult{}, "fetch-failure", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 			answered <- verdictAnswer{verdict: verdict, err: err}
 		}()
 		<-fetchStarted
@@ -1024,7 +983,7 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 	})
 
 	t.Run("fetch timeout", func(t *testing.T) {
-		store := &Store{Root: root}
+
 		deadline := make(chan time.Time)
 		releaseFetch := make(chan struct{})
 		t.Cleanup(func() { close(releaseFetch) })
@@ -1040,7 +999,7 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 			close(fetched)
 			return AdvanceResult{}, nil
 		}
-		verdict, err := store.TurnVerdict(ScanResult{}, "fetch-timeout", "", "main-1")
+		verdict, err := store.TurnVerdict(ScanResult{}, "fetch-timeout", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 		select {
 		case <-fetched:
 			t.Fatal("the bounded fetch did not release the verdict before the fetch returned")
@@ -1054,13 +1013,21 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 
 func TestMissingAcceptedGoalTreeReferenceBlocksAsUncertainty(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, client, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	if _, err := gitIn(root, "update-ref", "-d", AcceptedRef); err != nil {
+	root := store.Root
+	client.accepted = ""
+	legacyRoot := filepath.Join(root, goalsPrefix, "backlog.md")
+	if err := os.MkdirAll(filepath.Dir(legacyRoot), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "missing-accepted", "", "main-1")
+	if err := os.WriteFile(legacyRoot, RenderRoot(&RootRecord{
+		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: SyncLocal, Revision: 1,
+	}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verdict, err := store.TurnVerdict(ScanResult{}, "missing-accepted", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "uncertainty" ||
 		!strings.Contains(verdict.Display, "accepted reference") {
 		t.Fatalf("a missing accepted canonical tree fell back to a quiet legacy world: %+v %v", verdict, err)
@@ -1069,12 +1036,13 @@ func TestMissingAcceptedGoalTreeReferenceBlocksAsUncertainty(t *testing.T) {
 
 func TestUnreadableTurnVerdictStateAllowsAsInfrastructure(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", nil)
+	store, _, _ := fakeServingFixture(t, "bed-m1", nil)
+	root := store.Root
 	writeIdleJSON(t, filepath.Join(root, "artifacts", "agents", "turn-verdict-state.json"), map[string]any{
 		"schemaVersion": 2,
 		"sessions":      map[string]any{},
 	})
-	verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "unreadable-state", "", "main-1")
+	verdict, err := store.TurnVerdict(ScanResult{}, "unreadable-state", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	// The old assertion was the goal's DONE condition reversed: infrastructure no longer blocks.
 	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || verdict.LedgerStatus != "degraded" ||
 		!strings.Contains(verdict.Display, "turn verdict state") {
@@ -1100,9 +1068,10 @@ func TestMissingTemplateStateRootAllowsAsInfrastructure(t *testing.T) {
 
 func TestTemplateCheckoutTurnVerdictUsesTheMetasystemStateRoot(t *testing.T) {
 	t.Parallel()
-	standalone := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
+	standalone := store.Root
 	outer := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
 		t.Fatal(err)
@@ -1117,7 +1086,16 @@ func TestTemplateCheckoutTurnVerdictUsesTheMetasystemStateRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(stateRoot, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	verdict, err := (&Store{Root: outer}).TurnVerdict(ScanResult{}, "template-root", "", "main-1")
+	resolved, err := ResolveStateRoot(outer)
+	if err != nil || resolved != stateRoot {
+		t.Fatalf("template state root resolved to %q, want %q: %v", resolved, stateRoot, err)
+	}
+	source := *store.projectionDeps.source
+	source.endpoint = endpoint
+	source.endpoint.Root = resolved
+	store.projectionDeps.source = &source
+	store.Root = outer
+	verdict, err := store.TurnVerdict(ScanResult{}, "template-root", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "idle-backlog" ||
 		!strings.Contains(verdict.Display, "waiting") {
 		t.Fatalf("the template turn verdict did not see the metasystem backlog state: %+v %v", verdict, err)
@@ -1157,12 +1135,14 @@ func sessionStopFixture(t *testing.T, store *Store, session, main string, epoch 
 func TestValidSessionStopBypassesHangingFetchAndSpendsExactlyOnce(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{
 		41: {Pid: 41, StartedAt: time.Unix(100, 0)},
-	}}
+	}
 	marker := sessionStopFixture(t, store, "human-local-only", "main-1", 7)
 
 	remoteStarted := make(chan struct{}, 1)
@@ -1171,7 +1151,7 @@ func TestValidSessionStopBypassesHangingFetchAndSpendsExactlyOnce(t *testing.T) 
 		return AdvanceResult{}, errors.New("canonical remote unavailable")
 	}
 
-	first, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	first, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || first.ShouldBlock || !strings.Contains(first.Display, "authorized once") {
 		t.Fatalf("the attended human marker must authorize a quiet stop without the remote: %+v %v", first, err)
 	}
@@ -1194,7 +1174,7 @@ func TestValidSessionStopBypassesHangingFetchAndSpendsExactlyOnce(t *testing.T) 
 	store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{}, errors.New("canonical remote unavailable after the one human stop")
 	}
-	second, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	second, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !second.ShouldBlock || second.BlockSource == nil || *second.BlockSource != "uncertainty" ||
 		strings.Contains(second.Display, "authorized once") {
 		t.Fatalf("the spent marker authorized a second stop: %+v %v", second, err)
@@ -1208,12 +1188,14 @@ func TestValidSessionStopBypassesHangingFetchAndSpendsExactlyOnce(t *testing.T) 
 func TestFetchDeadlineLeavesNewlyValidSessionStopUnspent(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{
 		41: {Pid: 41, StartedAt: time.Unix(100, 0)},
-	}}
+	}
 	marker := sessionStopFixture(t, store, "deadline-unspent", "main-1", 7)
 	markerPath := sessionStopPath(root, marker.SessionId)
 	markerBytes, err := os.ReadFile(markerPath)
@@ -1242,7 +1224,7 @@ func TestFetchDeadlineLeavesNewlyValidSessionStopUnspent(t *testing.T) {
 		close(releaseRemote)
 	})
 
-	aborted, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	aborted, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !aborted.ShouldBlock || aborted.BlockSource == nil || *aborted.BlockSource != "uncertainty" ||
 		!strings.Contains(aborted.Display, "timed out") || strings.Contains(aborted.Display, "authorized once") {
 		t.Fatalf("the fetch-deadline turn did not fail closed: %+v %v", aborted, err)
@@ -1259,7 +1241,7 @@ func TestFetchDeadlineLeavesNewlyValidSessionStopUnspent(t *testing.T) {
 		t.Fatalf("the deadline-aborted turn changed the consumed registry: %v", err)
 	}
 
-	retried, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	retried, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || retried.ShouldBlock || !strings.Contains(retried.Display, "authorized once") {
 		t.Fatalf("the unspent marker did not authorize the next completed human stop: %+v %v", retried, err)
 	}
@@ -1268,19 +1250,21 @@ func TestFetchDeadlineLeavesNewlyValidSessionStopUnspent(t *testing.T) {
 func TestBlockedHumanVerdictLeavesValidSessionStopUnspent(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{
 		41: {Pid: 41, StartedAt: time.Unix(100, 0)},
-	}}
+	}
 	marker := sessionStopFixture(t, store, "blocked-human", "main-1", 7)
 	writeIdleJSON(t, filepath.Join(root, "artifacts", "agents", "turn-verdict-state.json"), map[string]any{
 		"schemaVersion": 2,
 		"sessions":      map[string]any{},
 	})
 
-	blocked, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	blocked, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || blocked.ShouldBlock || blocked.Class != "infrastructure" ||
 		!strings.Contains(blocked.Display, "turn verdict state") || strings.Contains(blocked.Display, "authorized once") {
 		t.Fatalf("the incomplete local verdict did not preserve authority while allowing infrastructure: %+v %v", blocked, err)
@@ -1295,10 +1279,11 @@ func TestBlockedHumanVerdictLeavesValidSessionStopUnspent(t *testing.T) {
 
 func TestSessionStopLibraryAndConsumerRequireHumanClassificationProof(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root}
+	root := store.Root
+
 	writeIdleJSON(t, sessionStopLeasePath(root), map[string]any{
 		"holderMainId": "main-1", "pid": 41, "pidStartedAt": 100, "claimEpoch": 7,
 	})
@@ -1317,7 +1302,7 @@ func TestSessionStopLibraryAndConsumerRequireHumanClassificationProof(t *testing
 		By: "Agent", WrittenAt: "2026-09-02T10:00:00Z", ExpiresAt: "2026-09-02T18:00:00Z",
 		Human: SessionStopProcessRef{Pid: 42, PidStartedAt: 200},
 	})
-	verdict, err := store.TurnVerdict(ScanResult{}, "agent-library", "", "main-1")
+	verdict, err := store.TurnVerdict(ScanResult{}, "agent-library", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	// The old block assertion was the goal's DONE condition reversed; no invalid proof invents authority.
 	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" ||
 		!strings.Contains(verdict.Display, "human-classification proof") {
@@ -1333,10 +1318,11 @@ func TestSessionStopLibraryAndConsumerRequireHumanClassificationProof(t *testing
 
 func TestIdleRefusalSurvivesALostCounter(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z")})
-	store := &Store{Root: root}
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z")})
+	root := store.Root
+
 	store.verdictDeps.stateWriter = func(string, []byte) error { return errors.New("fixture verdict-state write failure") }
-	verdict, err := store.TurnVerdict(ScanResult{}, "lost-counter", "", "main-1")
+	verdict, err := store.TurnVerdict(ScanResult{}, "lost-counter", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !verdict.ShouldBlock || verdict.Class != "idle-with-backlog" || verdict.CountSpent ||
 		!strings.Contains(verdict.Display, "IDLE WITH BACKLOG") || !strings.Contains(verdict.Display, "count could not be spent") {
 		t.Fatalf("idle refusal did not survive its lost counter: %+v %v", verdict, err)
@@ -1354,12 +1340,13 @@ func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	t.Run("marker read failure", func(t *testing.T) {
 		t.Parallel()
-		root := servingBed(t, "bed-m1", nil)
+		store, _, _ := fakeServingFixture(t, "bed-m1", nil)
+		root := store.Root
 		path := sessionStopPath(root, "read-failure")
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "read-failure", "", "main-1")
+		verdict, err := store.TurnVerdict(ScanResult{}, "read-failure", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 		if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || !strings.Contains(verdict.Display, "marker unreadable") {
 			t.Fatalf("marker read failure did not allow without authority: %+v %v", verdict, err)
 		}
@@ -1373,13 +1360,15 @@ func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
 
 	t.Run("consume failure", func(t *testing.T) {
 		t.Parallel()
-		root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 			"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 		})
-		store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
+		root := store.Root
+		store.Now = func() time.Time { return now }
+		store.Prober = idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
 		marker := sessionStopFixture(t, store, "consume-failure", "main-1", 7)
 		store.registryWriter = func(string, string, string) (bool, error) { return false, errors.New("fixture consume failure") }
-		verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+		verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 		if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || !strings.Contains(verdict.Display, "consume failure") {
 			t.Fatalf("consume failure did not allow as infrastructure: %+v %v", verdict, err)
 		}
@@ -1402,16 +1391,18 @@ func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
 func TestSessionStopLostAuthorizationKeepsDecidedVerdict(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
 	marker := sessionStopFixture(t, store, "lost-authorization", "main-1", 7)
 	store.verdictDeps.consumeSessionStop = func(*Store, string, string) (SessionStop, bool, string, error) {
 		return marker, false, "SESSION STOP authorization expired before this stop", nil
 	}
 
-	verdict, err := store.TurnVerdict(ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}, marker.SessionId, "", marker.HolderMainId)
+	verdict, err := store.TurnVerdict(ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
 		!strings.Contains(verdict.Display, "authorization expired") || strings.Contains(verdict.Display, "authorized once") {
 		t.Fatalf("lost authorization discarded the decided refusal: %+v %v", verdict, err)
@@ -1424,15 +1415,17 @@ func TestSessionStopLostAuthorizationKeepsDecidedVerdict(t *testing.T) {
 func TestSessionStopConsumeErrorKeepsDecidedBlock(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
 	marker := sessionStopFixture(t, store, "consume-error-decided", "main-1", 7)
 	store.registryWriter = func(string, string, string) (bool, error) { return false, errors.New("fixture consume failure") }
 	openWork := ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}
 
-	verdict, err := store.TurnVerdict(openWork, marker.SessionId, "", marker.HolderMainId)
+	verdict, err := store.TurnVerdict(openWork, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
 		!strings.Contains(verdict.Display, "consume failure") || !strings.Contains(verdict.Display, "remains blocking") ||
 		strings.Contains(verdict.Display, "authorized once") {
@@ -1446,11 +1439,11 @@ func TestSessionStopConsumeErrorKeepsDecidedBlock(t *testing.T) {
 	}
 
 	store.registryWriter = nil
-	quiet, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	quiet, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || quiet.ShouldBlock || !strings.Contains(quiet.Display, "authorized once") {
 		t.Fatalf("the unspent authorization did not cover the next quiet stop once: %+v %v", quiet, err)
 	}
-	spent, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	spent, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !spent.ShouldBlock || strings.Contains(spent.Display, "authorized once") {
 		t.Fatalf("one authorization covered two stops: %+v %v", spent, err)
 	}
@@ -1465,10 +1458,12 @@ func TestSessionStopConsumeWithUnknownDurabilityIsSpent(t *testing.T) {
 	)
 
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
 	marker := sessionStopFixture(t, store, "durability-unknown", "main-1", 7)
 	store.registryWriter = func(path, content, root string) (bool, error) {
 		if _, err := atomicfile.WriteText(path, content, root); err != nil {
@@ -1478,7 +1473,7 @@ func TestSessionStopConsumeWithUnknownDurabilityIsSpent(t *testing.T) {
 	}
 	openWork := ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}
 
-	verdict, err := store.TurnVerdict(openWork, marker.SessionId, "", marker.HolderMainId)
+	verdict, err := store.TurnVerdict(openWork, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "authorized once") ||
 		!strings.Contains(verdict.Display, "durability is unknown") || strings.Contains(verdict.Display, "stays unspent") {
 		t.Fatalf("a consumption of unknown durability was not reported as spent: %+v %v", verdict, err)
@@ -1487,7 +1482,7 @@ func TestSessionStopConsumeWithUnknownDurabilityIsSpent(t *testing.T) {
 		t.Fatalf("the spent marker was left in place: %v", err)
 	}
 	store.registryWriter = nil
-	spent, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	spent, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !spent.ShouldBlock || strings.Contains(spent.Display, "authorized once") {
 		t.Fatalf("a spent authorization covered a second stop: %+v %v", spent, err)
 	}
@@ -1496,26 +1491,28 @@ func TestSessionStopConsumeWithUnknownDurabilityIsSpent(t *testing.T) {
 func TestSessionStopIsHolderBoundSingleUseAndConsumedAcrossQuietTurns(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{
 		41: {Pid: 41, StartedAt: time.Unix(100, 0)},
-	}}
+	}
 	marker := sessionStopFixture(t, store, "session-a", "main-1", 7)
 	markerBytes, err := os.ReadFile(sessionStopPath(root, marker.SessionId))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	authorized, err := store.TurnVerdict(ScanResult{}, "session-a", "", "main-1")
+	authorized, err := store.TurnVerdict(ScanResult{}, "session-a", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || authorized.ShouldBlock || !strings.Contains(authorized.Display, "authorized once") {
 		t.Fatalf("the attended human marker must authorize one quiet stop: %+v %v", authorized, err)
 	}
 	if err := os.WriteFile(sessionStopPath(root, marker.SessionId), markerBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := store.TurnVerdict(ScanResult{}, "session-a", "", "main-1")
+	replayed, err := store.TurnVerdict(ScanResult{}, "session-a", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !replayed.ShouldBlock || !strings.Contains(replayed.Display, "cannot replay") {
 		t.Fatalf("restored marker bytes must remain consumed: %+v %v", replayed, err)
 	}
@@ -1525,13 +1522,16 @@ func TestSessionStopIsHolderBoundSingleUseAndConsumedAcrossQuietTurns(t *testing
 	writeIdleJSON(t, sessionStopLeasePath(root), map[string]any{
 		"holderMainId": "main-2", "pid": 41, "pidStartedAt": 100, "claimEpoch": 8,
 	})
-	holderChanged, err := store.TurnVerdict(ScanResult{}, "session-b", "", "main-2")
+	holderChanged, err := store.TurnVerdict(ScanResult{}, "session-b", "", "main-2", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !holderChanged.ShouldBlock || !strings.Contains(holderChanged.Display, "SESSION STOP authorization") {
 		t.Fatalf("a holder change must invalidate the old authorization: %+v %v", holderChanged, err)
 	}
 
-	quietRoot := servingBed(t, "bed-m1", nil)
-	quietStore := &Store{Root: quietRoot, Now: func() time.Time { return now }, Prober: store.Prober}
+	quietStore, _, _ := fakeServingFixture(t, "bed-m1", nil)
+
+	quietRoot := quietStore.Root
+	quietStore.Now = func() time.Time { return now }
+	quietStore.Prober = store.Prober
 	quietMarker := sessionStopFixture(t, quietStore, "session-quiet", "main-1", 9)
 	quietBytes, _ := os.ReadFile(sessionStopPath(quietRoot, quietMarker.SessionId))
 	if verdict, err := quietStore.TurnVerdict(ScanResult{}, "session-quiet", "", "main-1"); err != nil || verdict.ShouldBlock {
@@ -1574,15 +1574,17 @@ func TestSessionStopConsumeOnUseSurvivesAbsentOrFailedSessionEnd(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			root := servingBed(t, "bed-m1", map[string]*GoalFile{
+			store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 				"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 			})
-			store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
+			root := store.Root
+			store.Now = func() time.Time { return now }
+			store.Prober = idleFixtureProber{
 				41: {Pid: 41, StartedAt: time.Unix(100, 0)},
-			}}
+			}
 			marker := sessionStopFixture(t, store, "same-live-session", "main-1", 7)
 
-			first, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+			first, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 			if err != nil || first.ShouldBlock || !strings.Contains(first.Display, "authorized once") {
 				t.Fatalf("one attended marker must authorize the first quiet stop: %+v %v", first, err)
 			}
@@ -1600,7 +1602,7 @@ func TestSessionStopConsumeOnUseSurvivesAbsentOrFailedSessionEnd(t *testing.T) {
 			if test.sessionEnd != nil {
 				test.sessionEnd(t, store, marker)
 			}
-			second, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+			second, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 			if err != nil || !second.ShouldBlock || second.BlockSource == nil || *second.BlockSource != "idle-backlog" ||
 				strings.Contains(second.Display, "authorized once") {
 				t.Fatalf("the same live session stopped twice without a fresh human marker: %+v %v", second, err)
@@ -1612,19 +1614,21 @@ func TestSessionStopConsumeOnUseSurvivesAbsentOrFailedSessionEnd(t *testing.T) {
 func TestSessionStopConsumeErrorAllowsWithoutAuthorization(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{
 		41: {Pid: 41, StartedAt: time.Unix(100, 0)},
-	}}
+	}
 	marker := sessionStopFixture(t, store, "consume-error", "main-1", 7)
 	writeIdleJSON(t, sessionStopRegistryPath(root), map[string]any{
 		"schemaVersion": 1,
 		"consumed":      "unreadable as a consumed registry",
 	})
 
-	verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId, TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" ||
 		!strings.Contains(verdict.Display, "consumed registry unreadable") || strings.Contains(verdict.Display, "authorized once") {
 		t.Fatalf("an uncertain consume path did not allow without authorization: %+v %v", verdict, err)
@@ -1637,12 +1641,14 @@ func TestSessionStopConsumeErrorAllowsWithoutAuthorization(t *testing.T) {
 func TestSessionStopCannotCrossASessionEndWithoutAStopHook(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{
 		41: {Pid: 41, StartedAt: time.Unix(100, 0)},
-	}}
+	}
 	marker := sessionStopFixture(t, store, "session-ended", "main-1", 7)
 	announcement := filepath.Join(root, "artifacts", "agents", "mains", "session-ended-41.json")
 	if err := os.Remove(announcement); err != nil {
@@ -1653,7 +1659,7 @@ func TestSessionStopCannotCrossASessionEndWithoutAStopHook(t *testing.T) {
 		"pgid": 41, "runtime": "claude", "instanceTag": "fixture-session-restarted",
 		"commandHash": strings.Repeat("a", 64), "announcedAt": "2026-09-02T10:00:30Z",
 	})
-	verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", "main-1")
+	verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !verdict.ShouldBlock || !strings.Contains(verdict.Display, "earlier session lifecycle") {
 		t.Fatalf("a marker surviving SessionEnd authorized a later lifecycle: %+v %v", verdict, err)
 	}
@@ -1662,12 +1668,14 @@ func TestSessionStopCannotCrossASessionEndWithoutAStopHook(t *testing.T) {
 func TestSessionEndDurablySpendsUnusedStopAuthorizationBeforeAnnouncementRetirement(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
+	root := store.Root
+	store.Now = func() time.Time { return now }
+	store.Prober = idleFixtureProber{
 		41: {Pid: 41, StartedAt: time.Unix(100, 0)},
-	}}
+	}
 	marker := sessionStopFixture(t, store, "session-retirement-failed", "main-1", 7)
 	markerPath := sessionStopPath(root, marker.SessionId)
 	markerBytes, err := os.ReadFile(markerPath)
@@ -1689,7 +1697,7 @@ func TestSessionEndDurablySpendsUnusedStopAuthorizationBeforeAnnouncementRetirem
 	if err := os.WriteFile(markerPath, markerBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", "main-1")
+	verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if err != nil || !verdict.ShouldBlock || !strings.Contains(verdict.Display, "cannot replay") {
 		t.Fatalf("a marker restored after SessionEnd authorized a later stop: %+v %v", verdict, err)
 	}
@@ -1697,22 +1705,23 @@ func TestSessionEndDurablySpendsUnusedStopAuthorizationBeforeAnnouncementRetirem
 
 func TestClaudeTurnExitRequiresDelegateWorkNotMerelyALiveSeat(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
+	root := store.Root
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	writeIdleJSON(t, filepath.Join(jobs, "delegate.json"), map[string]any{
 		"jobId": "delegate", "status": "running", "pid": 99, "pidStartedAt": 1,
 	})
-	store := &Store{Root: root, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
-	stale, _ := store.TurnVerdict(ScanResult{}, "stale-job", "", "main-1")
+	store.Prober = idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
+	stale, _ := store.TurnVerdict(ScanResult{}, "stale-job", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if !stale.ShouldBlock {
 		t.Fatalf("a stale running record must not suppress the block: %+v", stale)
 	}
 	writeIdleJSON(t, filepath.Join(jobs, "delegate.json"), map[string]any{
 		"jobId": "delegate", "status": "running", "pid": 41, "pidStartedAt": 100,
 	})
-	live, _ := store.TurnVerdict(ScanResult{}, "live-job", "", "main-1")
+	live, _ := store.TurnVerdict(ScanResult{}, "live-job", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if live.ShouldBlock {
 		t.Fatalf("a running job joined to its live process is in flight: %+v", live)
 	}
@@ -1720,12 +1729,12 @@ func TestClaudeTurnExitRequiresDelegateWorkNotMerelyALiveSeat(t *testing.T) {
 		"jobId": "delegate", "status": "pending-setup",
 		"creatorLiveness": map[string]any{"pid": 41, "pidStartedAt": 100},
 	})
-	pendingSetup, _ := store.TurnVerdict(ScanResult{}, "pending-setup", "", "main-1")
+	pendingSetup, _ := store.TurnVerdict(ScanResult{}, "pending-setup", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if pendingSetup.ShouldBlock {
 		t.Fatalf("pending-setup with a live creator is in flight for both owners: %+v", pendingSetup)
 	}
 
-	claimRoot := servingBed(t, "bed-m1", map[string]*GoalFile{
+	claimStore, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 		"claimed": {
 			Id: "claimed", State: StateClaimed, Intent: "Joined claim", Origin: OriginMain,
@@ -1733,8 +1742,10 @@ func TestClaudeTurnExitRequiresDelegateWorkNotMerelyALiveSeat(t *testing.T) {
 			Claimed: &ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 		},
 	})
-	claimStore := &Store{Root: claimRoot, Prober: installIdleLiveClaim(t, claimRoot, "coordinator")}
-	liveClaim, _ := claimStore.TurnVerdict(ScanResult{}, "live-claim", "", "main-1")
+
+	claimRoot := claimStore.Root
+	claimStore.Prober = installIdleLiveClaim(t, claimRoot, "coordinator")
+	liveClaim, _ := claimStore.TurnVerdict(ScanResult{}, "live-claim", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}})
 	if !liveClaim.ShouldBlock || liveClaim.BlockSource == nil || *liveClaim.BlockSource != "idle-backlog" {
 		t.Fatalf("the Claude turn exit treated its still-live seat as active work on the claim: %+v", liveClaim)
 	}

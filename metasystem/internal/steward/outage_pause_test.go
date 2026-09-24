@@ -8,7 +8,6 @@ package steward
 
 import (
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -23,19 +22,44 @@ func markOutage(t *testing.T, root string, now time.Time) {
 	}
 }
 
+// outageTickN persists the decision evidence and renders the real narration
+// for each observation. The fixture supplies declared goal and mark facts.
+func outageTickN(bed *decisionTickRepository, cfg TickConfig, census WorkerCensus, n int) TickResult {
+	bed.t.Helper()
+	reads := 0
+	readMachine := func(root string) (string, error) {
+		if root != bed.root || reads >= n {
+			bed.t.Fatalf("unexpected narration machine read: root=%q reads=%d of %d", root, reads, n)
+		}
+		reads++
+		return "bed-m1", nil
+	}
+	var result TickResult
+	for i := 0; i < n; i++ {
+		result = bed.tickN(cfg, census, 1)
+		narrateWithMachineReader(bed.root, result, cfg, readMachine)
+	}
+	if reads != n {
+		bed.t.Fatalf("narration machine reads: consumed %d of %d", reads, n)
+	}
+	return result
+}
+
 // A standing outage freezes TicksSinceAdvance; clearing the mark lets
 // the clock age again from where it stopped. The narration says why.
 func TestProviderOutagePausesTheAging(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	t.Parallel()
+	bed := newDecisionTickRepository(t)
+	root := bed.root
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	now := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 	cfg := TickConfig{StaleTicks: 2, Now: now}
-	r := tickN(t, root, cfg, census, 2)
+	r := outageTickN(bed, cfg, census, 2)
 	if r.Evidence.TicksSinceAdvance != 1 {
 		t.Fatalf("the second quiet tick ages to 1: %+v", r.Evidence)
 	}
 	markOutage(t, root, now)
-	r = tickN(t, root, cfg, census, 3)
+	r = outageTickN(bed, cfg, census, 3)
 	if r.Evidence.TicksSinceAdvance != 1 {
 		t.Fatalf("the clock must pause during a standing outage: %+v", r.Evidence)
 	}
@@ -50,7 +74,7 @@ func TestProviderOutagePausesTheAging(t *testing.T) {
 	if err := outage.Clear(root); err != nil {
 		t.Fatal(err)
 	}
-	r = tickN(t, root, cfg, census, 1)
+	r = outageTickN(bed, cfg, census, 1)
 	if r.Evidence.TicksSinceAdvance != 2 || r.ProviderOutage {
 		t.Fatalf("a cleared outage resumes the aging where it stopped: %+v", r)
 	}
@@ -62,20 +86,16 @@ func TestProviderOutagePausesTheAging(t *testing.T) {
 // The pause never eats progress: a commit during the outage resets the
 // clock exactly as it would on a clear day.
 func TestProgressStillResetsDuringOutage(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	t.Parallel()
+	bed := newDecisionTickRepository(t)
+	root := bed.root
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	now := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 	cfg := TickConfig{StaleTicks: 5, Now: now}
-	tickN(t, root, cfg, census, 2)
+	outageTickN(bed, cfg, census, 2)
 	markOutage(t, root, now)
-	cmd := exec.Command("git", "-C", root, "commit", "-q", "--allow-empty", "-m", "progress")
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
-		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("progress commit: %v\n%s", err, out)
-	}
-	r := tickN(t, root, cfg, census, 1)
+	bed.declareProgress()
+	r := outageTickN(bed, cfg, census, 1)
 	if r.Evidence.TicksSinceAdvance != 0 {
 		t.Fatalf("progress during an outage still resets: %+v", r.Evidence)
 	}
@@ -114,12 +134,14 @@ func TestOutageHoldsRevival(t *testing.T) {
 // standing outage decides notify, and the same world revives once the
 // mark clears.
 func TestTickHoldsRevivalDuringOutage(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	t.Parallel()
+	bed := newDecisionTickRepository(t)
+	root := bed.root
 	census := fakeCensus{workers: Workers{CensusComplete: true}}
 	now := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 	cfg := TickConfig{StaleTicks: 3, Now: now}
 	markOutage(t, root, now)
-	r := tickN(t, root, cfg, census, 1)
+	r := outageTickN(bed, cfg, census, 1)
 	if r.Decision.Verdict != VerdictStalledDead || r.Decision.Action != ActRevive {
 		if r.Decision.Action != ActNotify ||
 			!strings.Contains(r.Decision.Reason, "holding revival") {
@@ -131,7 +153,7 @@ func TestTickHoldsRevivalDuringOutage(t *testing.T) {
 	if err := outage.Clear(root); err != nil {
 		t.Fatal(err)
 	}
-	r = tickN(t, root, cfg, census, 1)
+	r = outageTickN(bed, cfg, census, 1)
 	if r.Decision.Action != ActRevive {
 		t.Fatalf("clearing the mark releases the revival: %+v", r.Decision)
 	}
@@ -175,14 +197,16 @@ func TestLongOutageNoticingReachesTheHuman(t *testing.T) {
 // mark carries the noticing into the narration (the queue side rides
 // ReachTheHuman's own pinned mechanics).
 func TestTickCarriesTheLongOutageNoticing(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	t.Parallel()
+	bed := newDecisionTickRepository(t)
+	root := bed.root
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	if _, err := outage.Record(root, "overloaded", "API Error: 529", "test",
 		now.Add(-15*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	tickN(t, root, TickConfig{StaleTicks: 5, Now: now}, census, 1)
+	outageTickN(bed, TickConfig{StaleTicks: 5, Now: now}, census, 1)
 	narration, err := os.ReadFile(NarrationPath(root))
 	if err != nil || !strings.Contains(string(narration), "provider has been overloaded for") {
 		t.Fatalf("the narration must carry the long-outage noticing: %v\n%s", err, narration)

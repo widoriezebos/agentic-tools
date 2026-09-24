@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -142,80 +143,84 @@ func gitStateInventory(t *testing.T, repo string) map[string]string {
 	return inventory
 }
 
-// Refusals: a detached worktree, a worktree on main, and a bare-named
-// branch all refuse root derivation by name.
+// Metadata errors and branch guards refuse root derivation before any grant.
 func TestWorktreeGitRootRefusals(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "repo")
-	os.MkdirAll(repo, 0o755)
-	git := func(workdir string, args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", workdir}, args...)...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v %s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-	git(repo, "init", "-q", "-b", "main")
-	os.WriteFile(filepath.Join(repo, "f.txt"), []byte("base\n"), 0o644)
-	git(repo, "add", ".")
-	git(repo, "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "base")
-
-	bare := filepath.Join(dir, "wt-bare")
-	git(repo, "worktree", "add", "-q", "-b", "topic", bare)
-	if _, err := worktreeGitWriteRoots(bare); err == nil || !strings.Contains(err.Error(), "agent/ branch") {
-		t.Fatalf("bare-named branch must refuse: %v", err)
+	worktree := filepath.Join(dir, "wt")
+	common := filepath.Join(dir, ".git")
+	gitDir := filepath.Join(common, "worktrees", "wt")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
 	}
 
-	detached := filepath.Join(dir, "wt-detached")
-	git(repo, "worktree", "add", "-q", "--detach", detached)
-	if _, err := worktreeGitWriteRoots(detached); err == nil || !strings.Contains(err.Error(), "own branch") {
-		t.Fatalf("detached worktree must refuse: %v", err)
+	for _, tc := range []struct{ name, branch, reason string }{
+		{"bare branch", "topic", "agent/ branch"},
+		{"main branch", "main", "agent/ branch"},
+		{"detached", "", "own branch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			facts := worktreeFacts(t, worktree, gitDir, common, tc.branch)
+			if _, err := worktreeGitWriteRootsWithMetadata(worktree, facts); err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("branch %q must refuse: %v", tc.branch, err)
+			}
+		})
 	}
-
-	if _, err := worktreeGitWriteRoots(filepath.Join(dir, "absent")); err == nil {
-		t.Fatal("nonexistent worktree must refuse")
+	for _, tc := range []struct{ name, kind, reason string }{
+		{"git dir", "git-dir", "worktree git dir unreadable"},
+		{"common dir", "common-dir", "worktree common git dir unreadable"},
+		{"branch", "branch", "own branch"},
+	} {
+		t.Run(tc.name+" read failure", func(t *testing.T) {
+			reads := []gitFactRead{{kind: "git-dir", workspace: worktree, value: gitDir}, {kind: "common-dir", workspace: worktree, value: common}, {kind: "branch", workspace: worktree, value: "agent/j"}}
+			for i := range reads {
+				if reads[i].kind == tc.kind {
+					reads[i].err = fmt.Errorf("declared read failure")
+					reads = reads[:i+1]
+					break
+				}
+			}
+			if _, err := worktreeGitWriteRootsWithMetadata(worktree, declaredGitFacts(t, reads...)); err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("%s error must refuse: %v", tc.kind, err)
+			}
+		})
+	}
+	absent := filepath.Join(dir, "absent")
+	if _, err := worktreeGitWriteRootsWithMetadata(absent, declaredGitFacts(t, gitFactRead{kind: "git-dir", workspace: absent, err: fmt.Errorf("missing worktree")})); err == nil || !strings.Contains(err.Error(), "worktree git dir unreadable") {
+		t.Fatalf("nonexistent worktree must refuse at metadata read: %v", err)
 	}
 }
 
-// The negative guards prove themselves — a reftable
-// repository refuses by name, and a reflog namespace that cannot be
-// created fails the expansion closed instead of losing a delegate cycle.
+// Filesystem guards still operate on real directories and refuse invalid layouts.
 func TestWorktreeGitRootNegativeGuards(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "repo")
-	os.MkdirAll(repo, 0o755)
-	git := func(workdir string, args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", workdir}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v %s", args, err, out)
-		}
-	}
-	git(repo, "init", "-q", "-b", "main")
-	os.WriteFile(filepath.Join(repo, "f.txt"), []byte("base\n"), 0o644)
-	git(repo, "add", ".")
-	git(repo, "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "base")
 	worktree := filepath.Join(dir, "wt")
-	git(repo, "worktree", "add", "-q", "-b", "agent/j", worktree)
-
-	// A reftable marker refuses by name.
-	os.MkdirAll(filepath.Join(repo, ".git", "reftable"), 0o755)
-	if _, err := worktreeGitWriteRoots(worktree); err == nil || !strings.Contains(err.Error(), "reftable") {
-		t.Fatalf("reftable repository not refused: %v", err)
-	}
-	os.RemoveAll(filepath.Join(repo, ".git", "reftable"))
-
-	// An uncreatable reflog namespace fails closed.
-	logs := filepath.Join(repo, ".git", "logs")
-	os.MkdirAll(logs, 0o755)
-	os.RemoveAll(filepath.Join(logs, "refs"))
-	if err := os.Chmod(logs, 0o555); err != nil {
+	common := filepath.Join(dir, ".git")
+	gitDir := filepath.Join(common, "worktrees", "wt")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(logs, 0o755)
-	if _, err := worktreeGitWriteRoots(worktree); err == nil || !strings.Contains(err.Error(), "reflog namespace") {
+	if err := os.MkdirAll(filepath.Join(common, "reftable"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worktreeGitWriteRootsWithMetadata(worktree, declaredGitFacts(t,
+		gitFactRead{kind: "git-dir", workspace: worktree, value: gitDir},
+		gitFactRead{kind: "common-dir", workspace: worktree, value: common},
+	)); err == nil || !strings.Contains(err.Error(), "reftable") {
+		t.Fatalf("reftable repository not refused: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(common, "reftable")); err != nil {
+		t.Fatal(err)
+	}
+
+	// A file in the namespace path makes MkdirAll fail on every test UID.
+	logs := filepath.Join(common, "logs", "refs")
+	if err := os.MkdirAll(filepath.Dir(logs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(logs, []byte("blocked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := worktreeGitWriteRootsWithMetadata(worktree, worktreeFacts(t, worktree, gitDir, common, "agent/j")); err == nil || !strings.Contains(err.Error(), "reflog namespace") {
 		t.Fatalf("uncreatable reflog namespace did not fail closed: %v", err)
 	}
 }

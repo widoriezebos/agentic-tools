@@ -82,10 +82,14 @@ func CheckCommitAccess(goalID string, check func() error) error {
 // linked worktree and a plain clone already on the goal branch are the two
 // places where the commit verb may install its new tip.
 func CheckCommitCheckout(repo, goalID string, linked bool) error {
+	return CheckCommitCheckoutWithHeadRef(repo, goalID, linked, func(repo string) ([]byte, error) { return gitOutput(repo, "symbolic-ref", "-q", "HEAD") })
+}
+
+func CheckCommitCheckoutWithHeadRef(repo, goalID string, linked bool, headRef func(string) ([]byte, error)) error {
 	if linked {
 		return nil
 	}
-	currentOut, _ := gitOutput(repo, "symbolic-ref", "-q", "HEAD")
+	currentOut, _ := headRef(repo)
 	if strings.TrimSpace(string(currentOut)) == goalBranchRef(goalID) {
 		return nil
 	}
@@ -142,6 +146,10 @@ func gitInputEnv(repo string, env []string, input []byte, args ...string) ([]byt
 }
 
 func inspectCommitBranch(req CommitRequest) (commitBranchState, error) {
+	return gitCommitRepository().inspectCommitBranch(req)
+}
+
+func (r commitRepository) inspectCommitBranch(req CommitRequest) (commitBranchState, error) {
 	if req.Transport == nil {
 		req.Transport = GitPushTransport{}
 	}
@@ -150,12 +158,12 @@ func inspectCommitBranch(req CommitRequest) (commitBranchState, error) {
 	}
 	state := commitBranchState{}
 	var err error
-	state.localTip, state.localPresent, err = localBranchTip(req.Repo, goalBranchRef(req.GoalID))
+	state.localTip, state.localPresent, err = r.facts.Tip(req.Repo, goalBranchRef(req.GoalID))
 	if err != nil {
 		return state, err
 	}
 	if state.localPresent {
-		if _, err := ValidateRange(req.Repo, req.EndpointTip, state.localTip, req.GoalID); err != nil {
+		if _, err := r.facts.Range(req.Repo, req.EndpointTip, state.localTip, req.GoalID); err != nil {
 			return state, err
 		}
 	}
@@ -165,20 +173,21 @@ func inspectCommitBranch(req CommitRequest) (commitBranchState, error) {
 		return state, err
 	}
 	if state.remotePresent {
-		if err := fetchAndValidate(req.Repo, req.Remote, req.EndpointTip, req.GoalID, req.OpID, remoteTip, req.Transport); err != nil {
+		if err := fetchAndValidateWith(req.Repo, req.Remote, req.EndpointTip, req.GoalID, req.OpID, remoteTip, req.Transport,
+			fetchValidationDependencies{validateRange: r.facts.Range, clearRef: r.effects.ClearFetch}); err != nil {
 			return state, err
 		}
 	}
 	if !state.localPresent && !state.remotePresent {
-		headOut, err := gitOutput(req.Repo, "rev-parse", "HEAD^{commit}")
+		head, err := r.facts.Head(req.Repo)
 		if err != nil {
 			return state, err
 		}
-		if strings.TrimSpace(string(headOut)) != req.EndpointTip {
+		if head != req.EndpointTip {
 			return state, operationRefusal(RangeCode, "the first commit must start at endpoint tip %s", req.EndpointTip)
 		}
 	}
-	state.originTip, _, err = localBranchTip(req.Repo, originTipRef(req.GoalID))
+	state.originTip, _, err = r.facts.Tip(req.Repo, originTipRef(req.GoalID))
 	if err != nil {
 		return state, err
 	}
@@ -193,7 +202,7 @@ func inspectCommitBranch(req CommitRequest) (commitBranchState, error) {
 		state.baseTip, state.originTip = state.localTip, remoteTip
 		return state, nil
 	case state.remotePresent:
-		remoteBuiltOnLocal, err := ancestor(req.Repo, state.localTip, remoteTip)
+		remoteBuiltOnLocal, err := r.facts.Ancestor(req.Repo, state.localTip, remoteTip)
 		if err != nil {
 			return state, err
 		}
@@ -201,7 +210,7 @@ func inspectCommitBranch(req CommitRequest) (commitBranchState, error) {
 			state.baseTip, state.originTip, state.adopt = remoteTip, remoteTip, true
 			return state, nil
 		}
-		builtOnRemote, err := ancestor(req.Repo, remoteTip, state.localTip)
+		builtOnRemote, err := r.facts.Ancestor(req.Repo, remoteTip, state.localTip)
 		if err != nil {
 			return state, err
 		}
@@ -300,22 +309,26 @@ func validateCommitPaths(kind Kind, paths []string, goalID string) error {
 	return nil
 }
 
-func commitPrepared(req CommitRequest, subjectCommit string) (string, error) {
+func commitStaged(req CommitRequest, r commitRepository) (string, error) {
+	return commitStagedSubject(req, "", r)
+}
+
+func commitStagedSubject(req CommitRequest, subjectCommit string, r commitRepository) (string, error) {
 	if err := CheckCommitAccess(req.GoalID, req.CheckClaim); err != nil {
 		return "", err
 	}
-	state, err := inspectCommitBranch(req)
+	state, err := r.inspectCommitBranch(req)
 	if err != nil {
 		return "", err
 	}
-	return commitPreparedState(req, subjectCommit, state)
+	return r.commitPreparedState(req, subjectCommit, state)
 }
 
-func commitPreparedState(req CommitRequest, subjectCommit string, state commitBranchState) (string, error) {
+func (r commitRepository) commitPreparedState(req CommitRequest, subjectCommit string, state commitBranchState) (string, error) {
 	if req.Amend {
-		return amendUnit(req, state)
+		return r.amendUnit(req, state)
 	}
-	paths, err := stagedPaths(req.Repo)
+	paths, err := r.facts.Staged(req.Repo)
 	if err != nil {
 		return "", err
 	}
@@ -329,13 +342,24 @@ func commitPreparedState(req CommitRequest, subjectCommit string, state commitBr
 	if err != nil {
 		return "", err
 	}
-	return commitStagedOnto(req, state, subject, trailer)
+	return r.commitStagedOnto(req, state, subject, trailer)
 }
 
-func CommitStaged(req CommitRequest) (string, error) { return commitPrepared(req, "") }
+func CommitStaged(req CommitRequest) (string, error) { return commitStaged(req, gitCommitRepository()) }
+
+func CommitStagedWithInputs(req CommitRequest, facts CommitFacts, effects CommitEffects) (string, error) {
+	if !facts.complete() || !effects.complete() {
+		return "", fmt.Errorf("commit facts and effects must be complete")
+	}
+	return commitStaged(req, commitRepository{facts: facts, effects: effects})
+}
 
 func adoptionCheckoutClean(req CommitRequest, state commitBranchState, allowed []string) error {
-	unstaged, err := gitOutput(req.Repo, "diff", "--name-only", "-z")
+	return gitCommitRepository().adoptionCheckoutClean(req, state, allowed)
+}
+
+func (r commitRepository) adoptionCheckoutClean(req CommitRequest, state commitBranchState, allowed []string) error {
+	unstaged, err := r.facts.Unstaged(req.Repo)
 	if err != nil {
 		return err
 	}
@@ -343,8 +367,8 @@ func adoptionCheckoutClean(req CommitRequest, state commitBranchState, allowed [
 	for _, path := range allowed {
 		allowedSet[path] = true
 	}
-	for _, item := range bytes.Split(unstaged, []byte{0}) {
-		if len(item) != 0 && !allowedSet[string(item)] {
+	for _, item := range unstaged {
+		if !allowedSet[item] {
 			return operationRefusal(StaleCode, "local tip %s cannot adopt remote tip %s while the checkout has unstaged tracked changes", state.localTip, state.baseTip)
 		}
 	}
@@ -352,28 +376,26 @@ func adoptionCheckoutClean(req CommitRequest, state commitBranchState, allowed [
 }
 
 func buildCommitOnto(req CommitRequest, state commitBranchState, subject, trailer string, patch []byte) (string, error) {
-	scratch, err := os.MkdirTemp("", "goal-branch-adopt-*")
+	return gitCommitRepository().buildCommitOnto(req, state, subject, trailer, patch)
+}
+
+func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchState, subject, trailer string, patch []byte) (string, error) {
+	worktree, close, err := r.effects.Open(req.Repo, state.baseTip, false)
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(scratch)
-	worktree := filepath.Join(scratch, "worktree")
-	if _, err := gitOutput(req.Repo, "worktree", "add", "--quiet", "--detach", worktree, state.baseTip); err != nil {
-		return "", err
-	}
-	defer func() { _, _ = gitOutput(req.Repo, "worktree", "remove", "--force", worktree) }()
-	if _, err := gitInput(worktree, patch, "apply", "--index", "--3way", "-"); err != nil {
+	defer close()
+	if err := r.effects.Apply(worktree, patch); err != nil {
 		return "", operationRefusal(StaleCode, "the staged change does not apply to remote tip %s: %v", state.baseTip, err)
 	}
-	if _, err := gitOutput(worktree, "commit", "--quiet", "-m", subject, "-m", trailer); err != nil {
+	if err := r.effects.Commit(worktree, subject, trailer, false); err != nil {
 		return "", err
 	}
-	newTipOut, err := gitOutput(worktree, "rev-parse", "HEAD^{commit}")
+	newTip, err := r.facts.Head(worktree)
 	if err != nil {
 		return "", err
 	}
-	newTip := strings.TrimSpace(string(newTipOut))
-	if _, err := ValidateRange(worktree, req.EndpointTip, newTip, req.GoalID); err != nil {
+	if _, err := r.facts.Range(worktree, req.EndpointTip, newTip, req.GoalID); err != nil {
 		return "", err
 	}
 	if err := checkClaim(req.CheckClaim); err != nil {
@@ -382,56 +404,37 @@ func buildCommitOnto(req CommitRequest, state commitBranchState, subject, traile
 	return newTip, nil
 }
 
-func nulNames(data []byte) map[string]bool {
-	names := map[string]bool{}
-	for _, item := range bytes.Split(data, []byte{0}) {
-		if len(item) != 0 {
-			names[string(item)] = true
-		}
-	}
-	return names
-}
-
-func checkoutInstallPreflight(req CommitRequest, newTip string) (string, string, error) {
-	indexTreeOut, err := gitOutput(req.Repo, "write-tree")
+func (r commitRepository) checkoutInstallPreflight(req CommitRequest, newTip string) (string, string, error) {
+	indexTree, err := r.facts.Index(req.Repo)
 	if err != nil {
 		return "", "", err
 	}
-	indexTree := strings.TrimSpace(string(indexTreeOut))
-	unstagedOut, err := gitOutput(req.Repo, "diff", "--name-only", "-z")
+	unstaged, err := r.facts.Unstaged(req.Repo)
 	if err != nil {
 		return "", "", err
 	}
-	tipChangesOut, err := gitOutput(req.Repo, "diff", "--name-only", "-z", "--no-renames", indexTree, newTip)
+	tipChanges, err := r.facts.Changes(req.Repo, indexTree, newTip)
 	if err != nil {
 		return "", "", err
 	}
-	unstaged := nulNames(unstagedOut)
-	for path := range nulNames(tipChangesOut) {
-		if unstaged[path] {
+	unstagedSet := make(map[string]bool, len(unstaged))
+	for _, path := range unstaged {
+		unstagedSet[path] = true
+	}
+	for _, path := range tipChanges {
+		if unstagedSet[path] {
 			return "", "", operationRefusal(StaleCode, "installing goal branch tip %s would overwrite unstaged tracked path %s", newTip, path)
 		}
 	}
-	currentOut, _ := gitOutput(req.Repo, "symbolic-ref", "-q", "HEAD")
-	current := strings.TrimSpace(string(currentOut))
+	current := r.facts.HeadRef(req.Repo)
 	if current != goalBranchRef(req.GoalID) {
-		worktreesOut, err := gitOutput(req.Repo, "worktree", "list", "--porcelain")
+		worktrees, err := r.facts.Worktrees(req.Repo)
 		if err != nil {
 			return "", "", err
 		}
-		for _, record := range strings.Split(strings.TrimSpace(string(worktreesOut)), "\n\n") {
-			lines := strings.Split(record, "\n")
-			path, branch := "", ""
-			for _, line := range lines {
-				if strings.HasPrefix(line, "worktree ") {
-					path = strings.TrimPrefix(line, "worktree ")
-				}
-				if strings.HasPrefix(line, "branch ") {
-					branch = strings.TrimPrefix(line, "branch ")
-				}
-			}
-			if branch == goalBranchRef(req.GoalID) {
-				return "", "", operationRefusal(StaleCode, "goal branch %s is already checked out at %s", req.GoalID, path)
+		for _, worktree := range worktrees {
+			if worktree.Branch == goalBranchRef(req.GoalID) {
+				return "", "", operationRefusal(StaleCode, "goal branch %s is already checked out at %s", req.GoalID, worktree.Path)
 			}
 		}
 	}
@@ -448,31 +451,34 @@ func restoreHead(repo, ref, commit string) error {
 }
 
 func installCommitOnto(req CommitRequest, state commitBranchState, newTip string) error {
-	current, indexTree, err := checkoutInstallPreflight(req, newTip)
+	return gitCommitRepository().installCommitOnto(req, state, newTip)
+}
+
+func (r commitRepository) installCommitOnto(req CommitRequest, state commitBranchState, newTip string) error {
+	current, indexTree, err := r.checkoutInstallPreflight(req, newTip)
 	if err != nil {
 		return err
 	}
-	currentCommitOut, err := gitOutput(req.Repo, "rev-parse", "HEAD^{commit}")
+	currentCommit, err := r.facts.Head(req.Repo)
 	if err != nil {
 		return err
 	}
-	currentCommit := strings.TrimSpace(string(currentCommitOut))
-	if _, err := gitOutput(req.Repo, "read-tree", "-m", "-u", indexTree, newTip); err != nil {
+	if err := r.effects.Checkout(req.Repo, indexTree, newTip); err != nil {
 		return operationRefusal(StaleCode, "installing goal branch tip %s failed: %v", newTip, err)
 	}
 	rollbackCheckout := func(cause error) error {
-		if _, rollbackErr := gitOutput(req.Repo, "read-tree", "-m", "-u", newTip, indexTree); rollbackErr != nil {
+		if rollbackErr := r.effects.Checkout(req.Repo, newTip, indexTree); rollbackErr != nil {
 			return operationRefusal(StaleCode, "%v; checkout rollback failed: %v", cause, rollbackErr)
 		}
 		return cause
 	}
 	if current != goalBranchRef(req.GoalID) {
-		if _, err := gitOutput(req.Repo, "symbolic-ref", "HEAD", goalBranchRef(req.GoalID)); err != nil {
+		if err := r.effects.Attach(req.Repo, goalBranchRef(req.GoalID)); err != nil {
 			return rollbackCheckout(err)
 		}
 	}
-	if err := updateBranchAndOrigin(req.Repo, req.GoalID, state.localTip, newTip, state.originTip); err != nil {
-		if headErr := restoreHead(req.Repo, current, currentCommit); headErr != nil {
+	if err := r.effects.Publish(req.Repo, req.GoalID, state.localTip, newTip, state.originTip); err != nil {
+		if headErr := r.effects.Restore(req.Repo, current, currentCommit); headErr != nil {
 			return fmt.Errorf("%v; HEAD rollback failed: %w", err, headErr)
 		}
 		return rollbackCheckout(err)
@@ -480,21 +486,21 @@ func installCommitOnto(req CommitRequest, state commitBranchState, newTip string
 	return nil
 }
 
-func commitStagedOnto(req CommitRequest, state commitBranchState, subject, trailer string) (string, error) {
+func (r commitRepository) commitStagedOnto(req CommitRequest, state commitBranchState, subject, trailer string) (string, error) {
 	if state.adopt {
-		if err := adoptionCheckoutClean(req, state, nil); err != nil {
+		if err := r.adoptionCheckoutClean(req, state, nil); err != nil {
 			return "", err
 		}
 	}
-	patch, err := gitOutput(req.Repo, "diff", "--cached", "--binary", "--full-index")
+	patch, err := r.facts.Patch(req.Repo)
 	if err != nil {
 		return "", err
 	}
-	newTip, err := buildCommitOnto(req, state, subject, trailer, patch)
+	newTip, err := r.buildCommitOnto(req, state, subject, trailer, patch)
 	if err != nil {
 		return "", err
 	}
-	if err := installCommitOnto(req, state, newTip); err != nil {
+	if err := r.installCommitOnto(req, state, newTip); err != nil {
 		return "", err
 	}
 	return newTip, nil
@@ -521,14 +527,14 @@ func treeWithoutPaths(repo, tree string, paths []string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-func amendUnit(req CommitRequest, state commitBranchState) (string, error) {
+func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) (string, error) {
 	units, unitsErr := requestUnits(req)
 	if req.Kind != Unit || unitsErr != nil || len(units) == 0 {
 		return "", fmt.Errorf("--amend needs --kind unit and one or more unit names")
 	}
 	list := unitList(units)
 	previous := state.baseTip
-	paths, err := stagedPaths(req.Repo)
+	paths, err := r.facts.Staged(req.Repo)
 	if err != nil {
 		return "", err
 	}
@@ -540,7 +546,7 @@ func amendUnit(req CommitRequest, state commitBranchState) (string, error) {
 			return "", operationRefusal(RangeCode, "path %s has class %s, which kind unit does not allow", path, class)
 		}
 	}
-	commits, err := ValidateRange(req.Repo, req.EndpointTip, previous, req.GoalID)
+	commits, err := r.facts.Range(req.Repo, req.EndpointTip, previous, req.GoalID)
 	if err != nil {
 		return "", err
 	}
@@ -556,47 +562,41 @@ func amendUnit(req CommitRequest, state commitBranchState) (string, error) {
 	if target == "" {
 		return "", operationRefusal(RangeCode, "goal branch has no build %s to amend", list)
 	}
-	patch, err := gitOutput(req.Repo, "diff", "--cached", "--binary", "--full-index")
+	patch, err := r.facts.Patch(req.Repo)
 	if err != nil {
 		return "", err
 	}
-	indexTreeOut, err := gitOutput(req.Repo, "write-tree")
+	wantedTree, err := r.facts.Index(req.Repo)
 	if err != nil {
 		return "", err
 	}
-	wantedTree := strings.TrimSpace(string(indexTreeOut))
-	suffixOut, err := gitOutput(req.Repo, "rev-list", "--first-parent", "--reverse", target+".."+previous)
+	suffix, err := r.facts.Suffix(req.Repo, target, previous)
 	if err != nil {
 		return "", err
 	}
-	scratch, err := os.MkdirTemp("", "goal-branch-amend-*")
+	worktree, close, err := r.effects.Open(req.Repo, target, true)
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(scratch)
-	worktree := filepath.Join(scratch, "worktree")
-	if _, err := gitOutput(req.Repo, "worktree", "add", "--quiet", "--detach", worktree, target); err != nil {
-		return "", err
-	}
-	defer func() { _, _ = gitOutput(req.Repo, "worktree", "remove", "--force", worktree) }()
-	if _, err := gitInput(worktree, patch, "apply", "--index", "--3way", "-"); err != nil {
+	defer close()
+	if err := r.effects.Apply(worktree, patch); err != nil {
 		return "", operationRefusal(RangeCode, "the staged fix does not apply to build %s: %v", list, err)
 	}
 	subject, trailer, err := commitMessage(req, "")
 	if err != nil {
 		return "", err
 	}
-	if _, err := gitOutput(worktree, "commit", "--quiet", "--amend", "-m", subject, "-m", trailer); err != nil {
+	if err := r.effects.Commit(worktree, subject, trailer, true); err != nil {
 		return "", err
 	}
 	var skippedPaths []string
-	for _, commit := range strings.Fields(string(suffixOut)) {
-		info, err := KindOf(worktree, commit, req.GoalID)
+	for _, commit := range suffix {
+		info, err := r.facts.Kind(worktree, commit, req.GoalID)
 		if err != nil {
 			return "", err
 		}
 		if info.Kind == Read && info.CommitID == target {
-			entries, err := RawEntries(worktree, commit)
+			entries, err := r.facts.Entries(worktree, commit)
 			if err != nil {
 				return "", err
 			}
@@ -605,35 +605,34 @@ func amendUnit(req CommitRequest, state commitBranchState) (string, error) {
 			}
 			continue
 		}
-		if _, err := gitOutput(worktree, "cherry-pick", "--quiet", commit); err != nil {
+		if err := r.effects.Replay(worktree, commit); err != nil {
 			return "", operationRefusal(RangeCode, "commit %s does not replay after amending build %s: %v", commit, list, err)
 		}
 	}
-	newTipOut, err := gitOutput(worktree, "rev-parse", "HEAD^{commit}")
+	newTip, err := r.facts.Head(worktree)
 	if err != nil {
 		return "", err
 	}
-	newTip := strings.TrimSpace(string(newTipOut))
-	newTreeOut, err := gitOutput(worktree, "rev-parse", "HEAD^{tree}")
+	newTree, err := r.facts.Tree(worktree)
 	if err != nil {
 		return "", err
 	}
 	if !state.adopt {
-		wantedTree, err = treeWithoutPaths(req.Repo, wantedTree, skippedPaths)
+		wantedTree, err = r.effects.WithoutPaths(req.Repo, wantedTree, skippedPaths)
 		if err != nil {
 			return "", err
 		}
-		if strings.TrimSpace(string(newTreeOut)) != wantedTree {
+		if newTree != wantedTree {
 			return "", operationRefusal(RangeCode, "the replayed branch does not equal the staged tree")
 		}
 	}
-	if _, err := ValidateRange(worktree, req.EndpointTip, newTip, req.GoalID); err != nil {
+	if _, err := r.facts.Range(worktree, req.EndpointTip, newTip, req.GoalID); err != nil {
 		return "", err
 	}
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return "", err
 	}
-	if err := installCommitOnto(req, state, newTip); err != nil {
+	if err := r.installCommitOnto(req, state, newTip); err != nil {
 		return "", err
 	}
 	return newTip, nil

@@ -100,23 +100,49 @@ func concludeForEdges(t *testing.T, root, ulidClaim, ulidDone, id string) Publis
 	return result
 }
 
+func personReqForEdges(endpoint Endpoint, ulid, machine string) VerbRequest {
+	request := verbReqFor(endpoint, ulid, machine)
+	request.Actor.Human = "Wido"
+	return request
+}
+
+func liveGoalForEdgesAtEndpoint(t *testing.T, endpoint Endpoint, ulid, id, origin string) {
+	t.Helper()
+	if result, err := Open(verbReqFor(endpoint, ulid, "mac-a"), id, "Work called "+id+".", origin, "Do "+id+"."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open %s: %+v %v", id, result, err)
+	}
+}
+
+func concludeForEdgesAtEndpoint(t *testing.T, endpoint Endpoint, ulidClaim, ulidDone, id string) PublishResult {
+	t.Helper()
+	budget := testBudget()
+	if result, err := claimApprovedForTest(t, verbReqFor(endpoint, ulidClaim, "mac-a"), id, budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim %s: %+v %v", id, result, err)
+	}
+	result, err := Done(verbReqFor(endpoint, ulidDone, "mac-a"), id, "Finished "+id+".")
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("done %s: %+v %v", id, result, err)
+	}
+	return result
+}
+
 // An open names every goal it unblocks, and each of them parks in the one
 // publish with the new goal recorded as its blocker.
 func TestOpenBlocksSeveralGoalsInOnePublish(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
 	budget := testBudget()
-	liveGoalForEdges(t, root, "01J5X00000000000000000BK00", "holds-one", OriginHuman)
-	liveGoalForEdges(t, root, "01J5X00000000000000000BK01", "holds-two", OriginHuman)
+	liveGoalForEdgesAtEndpoint(t, endpoint, "01J5X00000000000000000BK00", "holds-one", OriginHuman)
+	liveGoalForEdgesAtEndpoint(t, endpoint, "01J5X00000000000000000BK01", "holds-two", OriginHuman)
 
-	result, err := OpenRisked(personReq(root, "01J5X00000000000000000BK02", "mac-a"), "one-fix",
+	request := personReqForEdges(endpoint, "01J5X00000000000000000BK02", "mac-a")
+	result, err := OpenRisked(request, "one-fix",
 		"The defect both goals wait for.", OriginHuman, "Fix it.",
-		[]string{"holds-one,holds-two"}, nil, edgeRisk(), 0, "", &budget, personProof(t, root))
+		[]string{"holds-one,holds-two"}, nil, edgeRisk(), 0, "", &budget, sessionProofForTest(t, endpoint.Root, request.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --blocks two goals: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,19 +226,19 @@ func TestOpenBlocksRefusesAFencedTargetAndPublishesNothing(t *testing.T) {
 // returns only when the last of them is done.
 func TestOpenBlockedByManyParksAtOnceAndReturnsWhenTheLastIsDone(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
 	budget := testBudget()
-	liveGoalForEdges(t, root, "01J5X00000000000000000BB00", "dep-a", OriginMain)
-	liveGoalForEdges(t, root, "01J5X00000000000000000BB01", "dep-b", OriginMain)
+	liveGoalForEdgesAtEndpoint(t, endpoint, "01J5X00000000000000000BB00", "dep-a", OriginMain)
+	liveGoalForEdgesAtEndpoint(t, endpoint, "01J5X00000000000000000BB01", "dep-b", OriginMain)
 
-	result, err := OpenRisked(personReq(root, "01J5X00000000000000000BB02", "mac-a"), "waiter",
+	request := personReqForEdges(endpoint, "01J5X00000000000000000BB02", "mac-a")
+	result, err := OpenRisked(request, "waiter",
 		"Work that waits for two.", OriginHuman, "Wait.",
-		nil, []string{"dep-a", "dep-b"}, edgeRisk(), 0, "", &budget, personProof(t, root))
+		nil, []string{"dep-a", "dep-b"}, edgeRisk(), 0, "", &budget, sessionProofForTest(t, endpoint.Root, request.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --blocked-by two goals: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,16 +252,16 @@ func TestOpenBlockedByManyParksAtOnceAndReturnsWhenTheLastIsDone(t *testing.T) {
 	}
 	assertFilesParse(t, tree)
 
-	first := concludeForEdges(t, root, "01J5X00000000000000000BB03", "01J5X00000000000000000BB04", "dep-a")
-	tree, err = loadTree(root, first.Tip)
+	first := concludeForEdgesAtEndpoint(t, endpoint, "01J5X00000000000000000BB03", "01J5X00000000000000000BB04", "dep-a")
+	tree, err = loadTreeFor(endpoint, first.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if held := tree.Live["waiter"]; held.State != StateParked {
 		t.Fatalf("one blocker of two did not lift the park, and must not: %s", held.State)
 	}
-	second := concludeForEdges(t, root, "01J5X00000000000000000BB05", "01J5X00000000000000000BB06", "dep-b")
-	tree, err = loadTree(root, second.Tip)
+	second := concludeForEdgesAtEndpoint(t, endpoint, "01J5X00000000000000000BB05", "01J5X00000000000000000BB06", "dep-b")
+	tree, err = loadTreeFor(endpoint, second.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1002,29 +1028,28 @@ func TestAnOpensParkNamesOnlyTheBlockersThatAreNotDone(t *testing.T) {
 // its dependencies and not whichever one the old argument carried (S37-09).
 func TestRecoveryReplaysAnOpenCarryingBothLists(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
-	liveGoalForEdges(t, root, "01J5X00000000000000000BJ00", "held-by-n", OriginHuman)
-	liveGoalForEdges(t, root, "01J5X00000000000000000BJ01", "needed-by-n", OriginMain)
+	endpoint, _ := fakeGoalEndpoint(t)
+	liveGoalForEdgesAtEndpoint(t, endpoint, "01J5X00000000000000000BJ00", "held-by-n", OriginHuman)
+	liveGoalForEdgesAtEndpoint(t, endpoint, "01J5X00000000000000000BJ01", "needed-by-n", OriginMain)
 	// The stranded open is the seat's own, so it names the goal that seat
 	// holds: recovery replays the actor the entry carries and the seat rule
 	// is judged again, exactly as it was live.
-	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000BJ03", "mac-a"), "held-by-n", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000BJ03", "mac-a"), "held-by-n", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("the seat claims the goal its blocker will name: %+v %v", result, err)
 	}
 
 	opid := Opid("01J5X00000000000000000BJ02", "mac-a", "lin-1")
-	strandEntry(t, root, opid, PhaseCreated, Intent{
+	strandEntry(t, endpoint.Root, opid, PhaseCreated, Intent{
 		Verb: "open", Targets: []string{"n", "held-by-n", "needed-by-n"},
 		Args: map[string]string{
 			"intent": "The dead owner's blocker.", "origin": "main", "next": "Finish it.",
 			"blocks": "held-by-n", "blockedBy": "needed-by-n",
 		},
 	})
-	if _, err := Recover(endpointFor(root)); err != nil {
+	if _, err := Recover(endpoint); err != nil {
 		t.Fatal(err)
 	}
-	projection, err := Project(endpointFor(root), true, time.Now())
+	projection, err := Project(endpoint, true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

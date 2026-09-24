@@ -149,6 +149,35 @@ type contractDoc struct {
 	values   map[string]string
 	sealed   map[string]string
 	approval []string
+	source   *Source
+}
+
+// Source supplies raw repository facts and checkout effects for one contract invocation.
+// A supplied source must cover every raw operation, including repository resolution.
+type Source struct {
+	Repository func(string) (string, error)
+	Output     func(string, ...string) (string, error)
+	Try        func(string, ...string) (string, int)
+	Fetch      func(string) (string, error)
+}
+
+func (d *contractDoc) gitOutput(repo string, args ...string) (string, error) {
+	if d.source != nil {
+		return d.source.Output(repo, args...)
+	}
+	return gitOutput(repo, args...)
+}
+
+func (d *contractDoc) gitTry(repo string, args ...string) (string, int) {
+	if d.source != nil {
+		return d.source.Try(repo, args...)
+	}
+	return gitTry(repo, args...)
+}
+
+func (d *contractDoc) gitTrim(repo string, args ...string) (string, error) {
+	out, err := d.gitOutput(repo, args...)
+	return strings.TrimSpace(out), err
 }
 
 // contractSealField is one generated seal key and its value, kept in the order
@@ -162,7 +191,11 @@ type contractSealField struct {
 // resolved path so a caller can report exactly which file it accepted, plus
 // calibration warnings that never refuse the contract.
 func Validate(path string) (string, []string, error) {
-	doc, _, _, err := contractLoad(path)
+	return contractValidateWithRepository(path, contractRepositoryFor)
+}
+
+func contractValidateWithRepository(path string, repository func(string) (string, error)) (string, []string, error) {
+	doc, _, _, err := contractLoadWithRepository(path, repository)
 	if err != nil {
 		return "", nil, err
 	}
@@ -211,7 +244,22 @@ func (d *contractDoc) calibrationWarnings() []string {
 // Seal measures the reproducible baseline and writes the generated
 // mission-seal block, returning the digest a human signs.
 func Seal(path string) (string, error) {
-	doc, repo, projectRoot, err := contractLoad(path)
+	return contractSealWithRepository(path, contractRepositoryFor)
+}
+
+func SealWithSource(path string, source *Source) (string, error) {
+	if err := checkSource(source); err != nil {
+		return "", err
+	}
+	return contractSealWithSource(path, source.Repository, source)
+}
+
+func contractSealWithRepository(path string, repository func(string) (string, error)) (string, error) {
+	return contractSealWithSource(path, repository, nil)
+}
+
+func contractSealWithSource(path string, repository func(string) (string, error), source *Source) (string, error) {
+	doc, repo, projectRoot, err := contractLoadWithSource(path, repository, source)
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +270,22 @@ func Seal(path string) (string, error) {
 // mission id and the sha256 of the approved raw bytes, and — when an output
 // path is given — atomically records those exact bytes there.
 func Preflight(path, verifiedBytesOutput string) (missionID, rawSHA string, err error) {
-	doc, repo, projectRoot, err := contractLoad(path)
+	return contractPreflightWithRepository(path, verifiedBytesOutput, contractRepositoryFor)
+}
+
+func PreflightWithSource(path, verifiedBytesOutput string, source *Source) (string, string, error) {
+	if err := checkSource(source); err != nil {
+		return "", "", err
+	}
+	return contractPreflightWithSource(path, verifiedBytesOutput, source.Repository, source)
+}
+
+func contractPreflightWithRepository(path, verifiedBytesOutput string, repository func(string) (string, error)) (missionID, rawSHA string, err error) {
+	return contractPreflightWithSource(path, verifiedBytesOutput, repository, nil)
+}
+
+func contractPreflightWithSource(path, verifiedBytesOutput string, repository func(string) (string, error), source *Source) (missionID, rawSHA string, err error) {
+	doc, repo, projectRoot, err := contractLoadWithSource(path, repository, source)
 	if err != nil {
 		return "", "", err
 	}
@@ -242,15 +305,18 @@ func Preflight(path, verifiedBytesOutput string) (missionID, rawSHA string, err 
 	return id, rawSHA, nil
 }
 
-// contractLoad resolves the path, parses the contract, locates its repository
-// and project root, and type-checks it — the shared preamble every verb runs.
-func contractLoad(path string) (*contractDoc, string, string, error) {
+func contractLoadWithRepository(path string, repository func(string) (string, error)) (*contractDoc, string, string, error) {
+	return contractLoadWithSource(path, repository, nil)
+}
+
+func contractLoadWithSource(path string, repository func(string) (string, error), source *Source) (*contractDoc, string, string, error) {
 	resolved := resolvePath(path)
 	doc, err := contractRead(resolved)
 	if err != nil {
 		return nil, "", "", err
 	}
-	repo, err := contractRepositoryFor(resolved)
+	doc.source = source
+	repo, err := repository(resolved)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -259,6 +325,13 @@ func contractLoad(path string) (*contractDoc, string, string, error) {
 		return nil, "", "", err
 	}
 	return doc, repo, projectRoot, nil
+}
+
+func checkSource(source *Source) error {
+	if source == nil || source.Repository == nil || source.Output == nil || source.Try == nil || source.Fetch == nil {
+		return stateErr("contract repository source is incomplete")
+	}
+	return nil
 }
 
 // contractRead decodes a contract and splits it into its authored block, its
@@ -737,15 +810,9 @@ func (d *contractDoc) hash() string {
 
 // --- git-backed instrument freezing ---
 
-// contractGitTrim runs a git command and returns its trimmed stdout.
-func contractGitTrim(repo string, args ...string) (string, error) {
-	out, err := gitOutput(repo, args...)
-	return strings.TrimSpace(out), err
-}
-
 // contractTreePaths lists every path recorded at a ref.
-func contractTreePaths(repo, ref string) ([]string, error) {
-	out, err := gitOutput(repo, "ls-tree", "-r", "--name-only", "-z", ref)
+func (d *contractDoc) contractTreePaths(repo, ref string) ([]string, error) {
+	out, err := d.gitOutput(repo, "ls-tree", "-r", "--name-only", "-z", ref)
 	if err != nil {
 		return nil, err
 	}
@@ -761,8 +828,8 @@ func contractTreePaths(repo, ref string) ([]string, error) {
 // contractExpandPaths resolves project-relative globs against the tree at ref,
 // returning the sorted repository-relative paths they select. A glob that
 // matches nothing is an error, so an instrument set can never silently shrink.
-func contractExpandPaths(repo, projectRoot, ref string, globs []string, label string) ([]string, error) {
-	candidates, err := contractTreePaths(repo, ref)
+func (d *contractDoc) contractExpandPaths(repo, projectRoot, ref string, globs []string, label string) ([]string, error) {
+	candidates, err := d.contractTreePaths(repo, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -855,10 +922,10 @@ func contractGlobRegex(pattern string) (*regexp.Regexp, error) {
 
 // contractManifestHash folds each path and its content digest into one hash,
 // binding a set of files at a ref to a single value.
-func contractManifestHash(repo, ref string, paths []string) (string, error) {
+func (d *contractDoc) contractManifestHash(repo, ref string, paths []string) (string, error) {
 	digest := sha256.New()
 	for _, path := range paths {
-		content, err := gitOutput(repo, "show", ref+":"+path)
+		content, err := d.gitOutput(repo, "show", ref+":"+path)
 		if err != nil {
 			return "", err
 		}
@@ -973,7 +1040,7 @@ func (d *contractDoc) runGate(repo, projectRoot, candidateSHA, gateRef string) (
 func (d *contractDoc) candidateBranch(repo string) (string, error) {
 	branch := d.sealed["candidate.branch"]
 	if branch == "" {
-		current, err := contractGitTrim(repo, "branch", "--show-current")
+		current, err := d.gitTrim(repo, "branch", "--show-current")
 		if err != nil {
 			return "", err
 		}
@@ -1015,7 +1082,7 @@ func (d *contractDoc) gatePaths(repo, projectRoot, gateRef string) ([]string, er
 	if err != nil {
 		return nil, err
 	}
-	return contractExpandPaths(repo, projectRoot, gateRef, globs, "gate.paths")
+	return d.contractExpandPaths(repo, projectRoot, gateRef, globs, "gate.paths")
 }
 
 func (d *contractDoc) truthPaths(repo, projectRoot, gateRef string) ([]string, error) {
@@ -1023,7 +1090,7 @@ func (d *contractDoc) truthPaths(repo, projectRoot, gateRef string) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	return contractExpandPaths(repo, projectRoot, gateRef, globs, "truth.paths")
+	return d.contractExpandPaths(repo, projectRoot, gateRef, globs, "truth.paths")
 }
 
 // expectedSeal recomputes the deterministic seal fields — frozen instruments,
@@ -1031,7 +1098,7 @@ func (d *contractDoc) truthPaths(repo, projectRoot, gateRef string) ([]string, e
 // they are assembled.
 func (d *contractDoc) expectedSeal(repo, projectRoot string, runBaseline bool) ([]contractSealField, error) {
 	values := d.values
-	gateRef, err := contractGitTrim(repo, "rev-parse", values["gate.ref"]+"^{commit}")
+	gateRef, err := d.gitTrim(repo, "rev-parse", values["gate.ref"]+"^{commit}")
 	if err != nil {
 		return nil, err
 	}
@@ -1047,11 +1114,11 @@ func (d *contractDoc) expectedSeal(repo, projectRoot string, runBaseline bool) (
 	if err != nil {
 		return nil, err
 	}
-	gateIntegrity, err := contractManifestHash(repo, gateRef, gatePaths)
+	gateIntegrity, err := d.contractManifestHash(repo, gateRef, gatePaths)
 	if err != nil {
 		return nil, err
 	}
-	truthIntegrity, err := contractManifestHash(repo, gateRef, truthPaths)
+	truthIntegrity, err := d.contractManifestHash(repo, gateRef, truthPaths)
 	if err != nil {
 		return nil, err
 	}
@@ -1292,6 +1359,35 @@ func (d *contractDoc) verifyApproval() error {
 // present verbatim on the origin default branch — a launch can only trust what
 // the shared remote agrees to.
 func (d *contractDoc) verifyOrigin(repo string) error {
+	detail, err := d.fetchOrigin(repo)
+	if err != nil {
+		if strings.TrimSpace(detail) == "" {
+			detail = err.Error()
+		}
+		return stateErr("preflight refused: origin fetch failed: %s", strings.TrimSpace(detail))
+	}
+	remoteHead, err := d.gitTrim(repo, "symbolic-ref", "refs/remotes/origin/HEAD")
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(remoteHead, "refs/remotes/origin/") {
+		return stateErr("preflight refused: origin default branch is not declared")
+	}
+	relative, err := relUnderRepo(d.path, repo)
+	if err != nil {
+		return err
+	}
+	published, code := d.gitTry(repo, "show", remoteHead+":"+relative)
+	if code != 0 || published != string(d.rawBytes) {
+		return stateErr("preflight refused: signed contract bytes are absent from fetched origin default branch")
+	}
+	return nil
+}
+
+func (d *contractDoc) fetchOrigin(repo string) (string, error) {
+	if d.source != nil {
+		return d.source.Fetch(repo)
+	}
 	// The fetch is a direct auto-maintenance trigger: the gc pins keep a
 	// detached maintenance process from writing objects while later wall
 	// captures compare (WSS I11-10).
@@ -1304,28 +1400,9 @@ func (d *contractDoc) verifyOrigin(repo string) error {
 	// preflight, never hang the mission that is waiting on it.
 	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Network)
 	if err := boundedexec.Run(fetch, limit, "preflight origin fetch"); err != nil {
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			detail = err.Error()
-		}
-		return stateErr("preflight refused: origin fetch failed: %s", detail)
+		return stderr.String(), err
 	}
-	remoteHead, err := contractGitTrim(repo, "symbolic-ref", "refs/remotes/origin/HEAD")
-	if err != nil {
-		return err
-	}
-	if !strings.HasPrefix(remoteHead, "refs/remotes/origin/") {
-		return stateErr("preflight refused: origin default branch is not declared")
-	}
-	relative, err := relUnderRepo(d.path, repo)
-	if err != nil {
-		return err
-	}
-	published, code := gitTry(repo, "show", remoteHead+":"+relative)
-	if code != 0 || published != string(d.rawBytes) {
-		return stateErr("preflight refused: signed contract bytes are absent from fetched origin default branch")
-	}
-	return nil
+	return "", nil
 }
 
 // verifyLease reserves and immediately releases the mission lease directory,

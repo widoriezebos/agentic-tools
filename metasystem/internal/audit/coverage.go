@@ -48,22 +48,58 @@ func ReadCoverageBaseline(path string) (*CoverageBaseline, error) {
 	return &baseline, nil
 }
 
-var coverageLineRe = regexp.MustCompile(`^(ok|---)?\s*(\S+)\s.*coverage:\s+([0-9.]+)% of statements`)
+var coverageLineRe = regexp.MustCompile(`^ok\s+(\S+)\s+\S+\s+coverage:\s+([0-9]+(?:\.[0-9]+)?)% of statements$`)
+
+type coverageEvent struct {
+	Action  string `json:"Action"`
+	Package string `json:"Package"`
+	Test    string `json:"Test"`
+	Output  string `json:"Output"`
+}
+
+func parseCoverageEvent(line string) (coverageEvent, bool) {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal([]byte(line), &raw) != nil || len(raw) != 4 {
+		return coverageEvent{}, false
+	}
+	for _, key := range []string{"Action", "Package", "Test", "Output"} {
+		if _, present := raw[key]; !present {
+			return coverageEvent{}, false
+		}
+	}
+	var event coverageEvent
+	if json.Unmarshal([]byte(line), &event) != nil || event.Action != "output" || event.Package == "" || event.Test != "" {
+		return coverageEvent{}, false
+	}
+	return event, true
+}
 
 // ParseCoverage extracts per-package coverage from `go test -cover` output,
 // stripping the module prefix so packages match the baseline's keys.
 func ParseCoverage(output, modulePrefix string) map[string]float64 {
 	results := map[string]float64{}
 	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if strings.HasPrefix(line, "{") {
+			event, valid := parseCoverageEvent(line)
+			if !valid {
+				continue
+			}
+			match := coverageLineRe.FindStringSubmatch(strings.TrimSuffix(event.Output, "\n"))
+			if match == nil || match[1] != event.Package {
+				continue
+			}
+			line = strings.TrimSuffix(event.Output, "\n")
+		}
 		match := coverageLineRe.FindStringSubmatch(line)
 		if match == nil {
 			continue
 		}
-		pct, err := strconv.ParseFloat(match[3], 64)
+		pct, err := strconv.ParseFloat(match[2], 64)
 		if err != nil {
 			continue
 		}
-		pkg := strings.TrimPrefix(match[2], modulePrefix)
+		pkg := strings.TrimPrefix(match[1], modulePrefix)
 		results[pkg] = pct
 	}
 	return results

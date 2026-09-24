@@ -44,7 +44,9 @@ func reapFixtureSurvivors(prober identity.Prober, processes []census.Process, si
 }
 
 func fixtureSurvivorOwnedByAttempt(prober identity.Prober, survivor identity.FixtureSurvivor, ownership fixtureAttemptOwnership) bool {
-	if survivor.Key.Owner == ownership.owner {
+	survivorOwner, survivorOwnerErr := identity.EncodeRef(survivor.Key.Owner)
+	attemptOwner, attemptOwnerErr := identity.EncodeRef(ownership.owner)
+	if survivorOwnerErr == nil && attemptOwnerErr == nil && survivorOwner == attemptOwner {
 		return true
 	}
 	exact, state, err := prober.Probe(survivor.Ref.Pid)

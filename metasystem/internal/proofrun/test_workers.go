@@ -34,15 +34,9 @@ func withTestWorkerPool(ctx context.Context, workers int) context.Context {
 // never retains a partial grant while waiting. The returned release owns that
 // grant and is safe to call more than once.
 func acquireTestWorkers(ctx context.Context, workers int) (release func(), err error) {
-	pool, ok := ctx.Value(testWorkerPoolContextKey{}).(*testWorkerPool)
-	if !ok || pool == nil {
-		return nil, fmt.Errorf("test worker pool is absent from context")
-	}
-	if workers < 1 {
-		return nil, fmt.Errorf("test worker request must be positive: %d", workers)
-	}
-	if workers > pool.capacity {
-		return nil, fmt.Errorf("test worker request %d exceeds pool capacity %d", workers, pool.capacity)
+	pool, err := testWorkerPoolForRequest(ctx, workers)
+	if err != nil {
+		return nil, err
 	}
 
 	pool.mu.Lock()
@@ -71,7 +65,57 @@ func acquireTestWorkers(ctx context.Context, workers int) (release func(), err e
 	}
 	pool.available -= workers
 	pool.mu.Unlock()
+	return testWorkerRelease(pool, workers), nil
+}
 
+// tryAcquireTestWorkers reserves the complete request when it fits now. A
+// failed attempt registers one pending request and returns the pool change
+// that makes retrying useful. The caller owns stopWaiting until it either
+// retries or abandons the request.
+func tryAcquireTestWorkers(ctx context.Context, workers int) (release func(), changed <-chan struct{}, stopWaiting func(), acquired bool, err error) {
+	pool, err := testWorkerPoolForRequest(ctx, workers)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	pool.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		pool.mu.Unlock()
+		return nil, nil, nil, false, err
+	}
+	if pool.available >= workers {
+		pool.available -= workers
+		pool.mu.Unlock()
+		return testWorkerRelease(pool, workers), nil, nil, true, nil
+	}
+	changed = pool.changed
+	pool.waiters++
+	pool.mu.Unlock()
+	var once sync.Once
+	stopWaiting = func() {
+		once.Do(func() {
+			pool.mu.Lock()
+			pool.waiters--
+			pool.mu.Unlock()
+		})
+	}
+	return nil, changed, stopWaiting, false, nil
+}
+
+func testWorkerPoolForRequest(ctx context.Context, workers int) (*testWorkerPool, error) {
+	pool, ok := ctx.Value(testWorkerPoolContextKey{}).(*testWorkerPool)
+	if !ok || pool == nil {
+		return nil, fmt.Errorf("test worker pool is absent from context")
+	}
+	if workers < 1 {
+		return nil, fmt.Errorf("test worker request must be positive: %d", workers)
+	}
+	if workers > pool.capacity {
+		return nil, fmt.Errorf("test worker request %d exceeds pool capacity %d", workers, pool.capacity)
+	}
+	return pool, nil
+}
+
+func testWorkerRelease(pool *testWorkerPool, workers int) func() {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
@@ -81,5 +125,5 @@ func acquireTestWorkers(ctx context.Context, workers int) (release func(), err e
 			pool.changed = make(chan struct{})
 			pool.mu.Unlock()
 		})
-	}, nil
+	}
 }

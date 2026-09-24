@@ -13,13 +13,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-func seedClaimLaunchGoal(t *testing.T, root string) {
+func seedClaimLaunchGoalFiles(t *testing.T, root string) {
 	t.Helper()
-	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
-	goalSyncMutationGit(t, root, "config", "user.name", "fixture")
-	goalSyncMutationGit(t, root, "config", "user.email", "fixture@example.invalid")
-	goalSyncMutationGit(t, root, "config", "goal.sync-remote", "local")
-	goalSyncMutationGit(t, root, "config", "goal.sync-branch", goal.LocalLedgerBranch)
 	if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -43,10 +38,6 @@ func seedClaimLaunchGoal(t *testing.T, root string) {
 	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "goal-a.md"), goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goalSyncMutationGit(t, root, "add", "plans/goals")
-	goalSyncMutationGit(t, root, "commit", "-qm", "seed goal ledger")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 }
 
 func setClaimLaunchCapability(t *testing.T, root string, mode dispatchcore.DispatchMode) {
@@ -61,8 +52,29 @@ func setClaimLaunchCapability(t *testing.T, root string, mode dispatchcore.Dispa
 }
 
 func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
-	root := t.TempDir()
-	seedClaimLaunchGoal(t, root)
+	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), false)
+	root := repository.root
+	seedClaimLaunchGoalFiles(t, root)
+	backlog, err := os.ReadFile(filepath.Join(root, "plans", "goals", "backlog.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goalFile, err := os.ReadFile(filepath.Join(root, "plans", "goals", "goal-a.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.seed(map[string][]byte{
+		"metasystem/plans/goals/backlog.md": backlog,
+		"metasystem/plans/goals/goal-a.md":  goalFile,
+	})
+	reads := repository.reads()
+	jobPath := filepath.Join(root, "artifacts", "agents", "jobs", "claim-cli.json")
+	if repository.goalFile(t, "goal-a").Sliced != nil {
+		t.Fatal("goal-a was sliced before claim launch")
+	}
+	if _, err := os.Stat(jobPath); !os.IsNotExist(err) {
+		t.Fatalf("reservation exists before slice publication: %v", err)
+	}
 	product := filepath.Join(root, "artifacts", "agents", "worktrees", "claim-cli")
 	if err := os.MkdirAll(product, 0o755); err != nil {
 		t.Fatal(err)
@@ -102,7 +114,7 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 		"--occupancy-preparation", preparation,
 	}
 	setClaimLaunchCapability(t, root, dispatchcore.DispatchModeFresh)
-	out, code := captureStdout(t, func() int { return runDispatchClaimLaunch(args) })
+	out, code := captureStdout(t, func() int { return runDispatchClaimLaunchWithGoalReads(args, &reads) })
 	if code != 0 {
 		t.Fatalf("claim-launch exit=%d output=%q", code, out)
 	}
@@ -116,7 +128,10 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 	if result.Outcome != "WON" || result.Evidence["fingerprint"] == "" || result.Evidence["launchCapability"] == "" {
 		t.Fatalf("claim-launch result = %+v", result)
 	}
-	created, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", "claim-cli.json"))
+	if repository.goalFile(t, "goal-a").Sliced == nil {
+		t.Fatal("claim launch did not publish slice-start before its reservation")
+	}
+	created, err := os.ReadFile(jobPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,14 +148,6 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 	}
 	if record["operationId"] != "claim-cli" || record["goalRevision"] != float64(3) || record["goalTier"] != float64(2) || record["machineId"] != "m-test" {
 		t.Fatalf("setup-comparable provenance = operationId:%v goalRevision:%v machineId:%v", record["operationId"], record["goalRevision"], record["machineId"])
-	}
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	projection, err := goal.Project(endpoint, false, time.Now().UTC())
-	if err != nil || projection.Tree.Live["goal-a"].Sliced == nil {
-		t.Fatalf("claim launch did not publish slice-start before its reservation: %+v %v", projection.Tree.Live["goal-a"], err)
 	}
 	roots, ok := record["productRoots"].([]any)
 	canonicalProduct, err := filepath.EvalSymlinks(product)
@@ -159,7 +166,7 @@ func TestClaimLaunchVerbEmitsMachineReadableOutcome(t *testing.T) {
 		}
 	}
 	setClaimLaunchCapability(t, root, dispatchcore.DispatchModeFresh)
-	out, code = captureStdout(t, func() int { return runDispatchClaimLaunch(mismatch) })
+	out, code = captureStdout(t, func() int { return runDispatchClaimLaunchWithGoalReads(mismatch, &reads) })
 	if code != 1 {
 		t.Fatalf("mismatch exit=%d output=%q", code, out)
 	}

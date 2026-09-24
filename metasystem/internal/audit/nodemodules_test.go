@@ -19,7 +19,9 @@ func TestDiscoverStopSurfaceFilesSkipsDependencyTrees(t *testing.T) {
 		"internal/ui/web/_app/node_modules/poison/node_modules/deeper/serial_test.go": "package poison\n",
 	}, false)
 
-	files, err := discoverStopSurfaceFiles(fixture.root)
+	fixture.repository.expect("CandidateInventory", fixture.root, "")
+	files, err := discoverStopSurfaceFilesWithInventory(fixture.root, fixture.repository.candidateInventory)
+	fixture.repository.assertConsumed()
 	testutil.Require(t, "discover error", err, nil)
 	testutil.Expect(t, "discovered", files, []stopSurfaceFile{
 		{Kind: "go", Path: "internal/ui/web/_app/src/kept_test.go"},

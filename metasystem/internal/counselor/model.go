@@ -10,8 +10,9 @@ import (
 
 // Options identifies the checkout whose current durable records form a brief.
 type Options struct {
-	Root string
-	Now  func() time.Time
+	Root    string
+	Now     func() time.Time
+	sources *rawSourceBundle
 }
 
 func (o Options) now() time.Time {

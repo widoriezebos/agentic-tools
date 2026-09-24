@@ -65,7 +65,11 @@ func missionRootBase(argv string) string {
 // answers for the whole machine, so another checkout's mission could
 // swing this checkout's sentence.
 func RunningWorkClause(repo string) string {
-	scan := Scan(repo)
+	return runningWorkClauseWithReads(repo, defaultScanGoalReads())
+}
+
+func runningWorkClauseWithReads(repo string, reads scanGoalReads) string {
+	scan, _ := scanWithCompletionWithReads(repo, reads)
 	var details, missions []string
 	gates := false
 	seen := map[string]bool{}

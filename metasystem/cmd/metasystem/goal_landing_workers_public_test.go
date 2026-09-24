@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +15,9 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -21,12 +25,15 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 const (
-	publicApplicationInstalledBinary = "METASYSTEM_PUBLIC_APPLICATION_INSTALLED_BINARY"
-	publicApplicationInstalledDigest = "METASYSTEM_PUBLIC_APPLICATION_INSTALLED_SHA256"
+	publicApplicationInstalledBinary  = "METASYSTEM_PUBLIC_APPLICATION_INSTALLED_BINARY"
+	publicApplicationInstalledDigest  = "METASYSTEM_PUBLIC_APPLICATION_INSTALLED_SHA256"
+	publicApplicationOrdinaryIsolated = "METASYSTEM_PUBLIC_APPLICATION_ORDINARY_ISOLATED"
+	publicApplicationOrdinaryResult   = "METASYSTEM_PUBLIC_APPLICATION_ORDINARY_RESULT"
 )
 
 type publicApplicationRun struct {
@@ -44,50 +51,367 @@ type publicApplicationRun struct {
 	attemptID  string
 	nativeLog  string
 	wantDigest string
+	nativeCWD  string
+}
+
+// The process boundary keeps Git denial local while the parallel parent and
+// other command tests use their own subprocess environments.
+func testOrdinaryPublicApplicationCancellation(t *testing.T) {
+	if os.Getenv(publicApplicationOrdinaryIsolated) != "1" {
+		deny, err := filepath.Abs(filepath.Join("..", "..", "internal", "testgit", "testdata", "deny-bin"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		log := filepath.Join(t.TempDir(), "git-denied.log")
+		if err := os.WriteFile(log, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		resultPath := filepath.Join(t.TempDir(), "ordinary-result.json")
+		command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestCommandApplicationWorkerAllowancePublicDelivery/OrdinaryCancellationBridge$", "-test.v")
+		command.Env = append(os.Environ(), "PATH="+deny+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"METASYSTEM_TEST_GIT_DENIED_LOG="+log, publicApplicationOrdinaryIsolated+"=1", publicApplicationOrdinaryResult+"="+resultPath)
+		output, runErr := command.CombinedOutput()
+		denied, readErr := os.ReadFile(log)
+		if readErr != nil && !os.IsNotExist(readErr) {
+			t.Fatal(readErr)
+		}
+		data, resultErr := os.ReadFile(resultPath)
+		if runErr != nil || len(denied) != 0 || resultErr != nil {
+			t.Fatalf("ordinary cancellation isolation exit=%v denial-log=%q result-read=%v output=%s", runErr, denied, resultErr, output)
+		}
+		var result proofrun.TestResult
+		if err := json.Unmarshal(data, &result); err != nil || proofrun.ValidateTestResult(result) != nil || result.Delivery.Sufficient {
+			t.Fatalf("ordinary cancellation JSON is not valid insufficient evidence: err=%v result=%+v", err, result)
+		}
+		t.Logf("ORDINARY_CANCELLATION_BRIDGE subprocess-exit=0 denial-log=%q result-json=%s\n%s", denied, data, output)
+		return
+	}
+	testOrdinaryPublicApplicationCancellationIsolated(t)
+}
+
+func testOrdinaryPublicApplicationCancellationIsolated(t *testing.T) {
+	denialLog := os.Getenv("METASYSTEM_TEST_GIT_DENIED_LOG")
+	if denialLog == "" || os.Getenv(publicApplicationOrdinaryResult) == "" {
+		t.Fatal("ordinary cancellation has no isolated Git denial or result path")
+	}
+	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), true)
+	root := repository.root
+	state := t.TempDir()
+	readyPath := filepath.Join(state, "public-ready.fifo")
+	internalReady := filepath.Join(state, "internal-ready.fifo")
+	release := filepath.Join(state, "public-release.fifo")
+	for _, path := range []string{readyPath, internalReady, release,
+		filepath.Join(state, "release-1.fifo"), filepath.Join(state, "release-2.fifo")} {
+		if err := syscall.Mkfifo(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ready, err := os.OpenFile(readyPath, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ready.Close()
+	internal, err := os.OpenFile(internalReady, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer internal.Close()
+	releasePipe, err := os.OpenFile(release, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releasePipe.Close()
+
+	workers := 2
+	contract := testpolicy.Contract{SchemaVersion: testpolicy.ExecutionContractSchemaVersion,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces: []testpolicy.Surface{{ID: "application", Paths: []string{"metasystem/app/**", "metasystem/scripts/check.sh", "metasystem/testing.json"},
+			Standard: []string{"application-workers"}, Critical: []string{"application-workers-observed"}}},
+		Groups: []testpolicy.Group{{ID: "application-workers", Phase: "acceptance", EnvironmentMode: "inherit", Kind: "component", Adapter: "command", CWD: "metasystem",
+			Inputs: []string{"metasystem/app/worker-mode.txt", "metasystem/scripts/check.sh"}, Outputs: []string{"metasystem/reports-workers"},
+			Tools:       []testpolicy.Tool{{ID: "shell", Executable: "sh", VersionArgs: []string{"-c", "printf public-application-shell"}}},
+			Obligations: []string{"application-workers-observed"}, Platforms: []string{"any"}, TargetMS: 1000,
+			Resources: testpolicy.GroupResources{Workers: new(int)},
+			Env: map[string]string{"PUBLIC_APPLICATION_STATE": state, "PUBLIC_APPLICATION_INTERNAL_READY": internalReady,
+				"PUBLIC_APPLICATION_READY": readyPath, "PUBLIC_APPLICATION_RELEASE": release,
+				"PUBLIC_APPLICATION_NATIVE_COUNTER": filepath.Join(state, "native.log"),
+				"PUBLIC_APPLICATION_NATIVE_CWD":     filepath.Join(state, "native.cwd")},
+			Argv: []string{"sh", "scripts/check.sh", "app/worker-mode.txt", "reports-workers"}, Reports: []string{"metasystem/reports-workers"}, Format: "junit-xml",
+			ExpectedTests: []testpolicy.ExpectedTest{{Report: "metasystem/reports-workers/result.xml", Classname: "public-application", Name: "allowance"}}}},
+		Always:  testpolicy.Always{Canary: []string{"application-workers"}, Standard: []string{"application-workers"}},
+		Unknown: []string{"application-workers"}, Cadence: []string{"application-workers"}}
+	data, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(filepath.Join(root, "testing.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := testpolicy.Load(filepath.Join(root, "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := testpolicy.Select(parsed, testpolicy.SelectionRequest{ChangedPaths: []string{"metasystem/app/worker-mode.txt"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
+	if err != nil || len(plan.SelectedGroups) != 1 || plan.SelectedGroups[0] != "application-workers" {
+		t.Fatalf("ordinary public plan=%+v err=%v", plan, err)
+	}
+
+	candidate := newOrdinaryCandidateFixture(t, ordinaryCandidateFixtureOptions{externalDenialLog: denialLog, tracked: []byte("ordinary candidate\n")})
+	candidate.root, candidate.installation = root, root
+	candidate.writeFiles()
+	openCandidate := func(projectRoot, tree string) (proofrun.CandidateWorkspace, error) {
+		if projectRoot != root || tree != ordinaryProjectTree {
+			return nil, fmt.Errorf("candidate opener root=%q tree=%q", projectRoot, tree)
+		}
+		candidate.prepareDetached(tree)
+		for _, file := range []struct {
+			path, body string
+			mode       os.FileMode
+		}{
+			{"app/worker-mode.txt", "cancel\n", 0o644}, {"scripts/check.sh", publicApplicationWorkerScript, 0o755},
+		} {
+			path := filepath.Join(candidate.detachedRoot, "metasystem", file.path)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return nil, err
+			}
+			if err := testexec.WriteFile(path, []byte(file.body), file.mode); err != nil {
+				return nil, err
+			}
+		}
+		candidate.queueBed(tree)
+		return candidate.openBed(projectRoot, tree)
+	}
+	proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "testing", nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, CandidateTree: ordinaryProjectTree,
+		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
+		Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
+	if err != nil || decision.Disposition != proofrun.DispositionExecuted {
+		t.Fatalf("ordinary proof admission=%+v err=%v", decision, err)
+	}
+	request := proofrun.TestRunRequest{ControlRoot: root, ProjectRoot: root, CandidateTree: ordinaryProjectTree,
+		BaseCommit: ordinaryBaseCommit, PolicyBaseCommit: ordinaryBaseCommit, Contract: parsed, Plan: plan,
+		AttemptID: attempt.AttemptID, Environment: gittree.ScrubbedEnviron(), LogRoot: filepath.Join(root, "artifacts", "ordinary-public-logs"),
+		ContractDigest: bytesSHA256(data), BaseContractDigest: bytesSHA256(data),
+		PolicyEngineDigest: candidate.policyDigest, CandidateEngineDigest: candidate.policyDigest,
+		CandidateEngineBuildIdentity: ordinaryEngineTree, BehaviorPolicyDigest: strings.Repeat("b", 64),
+		Workers: workers, AdmissionMaximum: proofAdmissionFixtureMax}
+	request.WithCandidateOpener(openCandidate)
+	ids, prepared, launches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ComponentIdentities, request.PreparedGroups, request.PreparationLaunches = ids, prepared, launches
+	resultPath := os.Getenv(publicApplicationOrdinaryResult)
+	type outcome struct {
+		result proofrun.TestResult
+		status int
+		err    error
+	}
+	runnerDone := make(chan outcome, 1)
+	runnerFinished := make(chan struct{})
+	var retained *proofrun.TestResult
+	reads := repository.reads()
+	_, _, launch := terminalCommitFixtureAt(t, root, attempt)
+	terminalRelease := filepath.Join(state, "terminal-release.fifo")
+	if err := syscall.Mkfifo(terminalRelease, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	terminalPipe, err := os.OpenFile(terminalRelease, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer terminalPipe.Close()
+	terminalDone := make(chan struct {
+		status int
+		output string
+	}, 1)
+	go func() {
+		commit := testingTerminalCommitWithReads(resultPath, &retained, &reads)
+		status, output := launch([]string{"sh", "-c", "IFS= read -r signal < \"$1\"; exit 1", "ordinary-terminal", terminalRelease}, func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+			<-runnerFinished
+			return commit(completion, receipt)
+		})
+		terminalDone <- struct {
+			status int
+			output string
+		}{status, output}
+	}()
+	workerContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go cancelOnRecordedIntent(workerContext, cancel, root, attempt.AttemptID)
+	go func() {
+		result, status, runErr := proofrun.RunTestPlan(workerContext, request)
+		if validationErr := proofrun.ValidateTestResult(result); validationErr == nil {
+			if writeErr := writePrivateJSON(resultPath, result); writeErr != nil {
+				runErr = errors.Join(runErr, writeErr)
+			}
+		} else {
+			runErr = errors.Join(runErr, validationErr)
+		}
+		runnerDone <- outcome{result, status, runErr}
+		close(runnerFinished)
+	}()
+
+	readyByte := make(chan error, 1)
+	go func() {
+		one := make([]byte, 1)
+		_, readErr := io.ReadFull(ready, one)
+		if readErr == nil && one[0] != 'x' {
+			readErr = fmt.Errorf("readiness byte %q", one)
+		}
+		readyByte <- readErr
+	}()
+	select {
+	case err := <-readyByte:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(60 * time.Second):
+		t.Fatal("ordinary public command did not become ready")
+	}
+	children := publicApplicationChildren(t, state, workers)
+	launcherDeadline := time.After(10 * time.Second)
+	for {
+		liveAttempt, readErr := proofrun.ReadAttempt(root, attempt.AttemptID)
+		if readErr == nil && len(liveAttempt.ProcessKeys) != 0 {
+			record, recordErr := proofrun.ReadProcessRecord(root, liveAttempt.ProcessKeys[0])
+			if recordErr == nil && record.Status == proofrun.StatusRunning {
+				break
+			}
+			readErr = recordErr
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-launcherDeadline:
+			t.Fatalf("proof launcher did not start: attempt=%+v err=%v", liveAttempt, readErr)
+		}
+	}
+	if active := activePublicApplicationAttempt(t, root, ordinaryProjectTree); active != attempt.AttemptID {
+		t.Fatalf("ready worker attempt=%s admitted=%s", active, attempt.AttemptID)
+	}
+	if err := proofrun.RequestCancellation(root, attempt.AttemptID, "ordinary public application cancellation"); err != nil {
+		t.Fatal(err)
+	}
+	var finished outcome
+	select {
+	case finished = <-runnerDone:
+	case <-time.After(60 * time.Second):
+		t.Fatal("ordinary public cancellation was not observed by the runner")
+	}
+	if finished.status == 0 || finished.result.Delivery.Sufficient || len(finished.result.Groups) != 1 || finished.result.Groups[0].Status != "cancelled" || !finished.result.Groups[0].NativeLaunched {
+		t.Fatalf("ordinary cancelled result status=%d err=%v result=%+v", finished.status, finished.err, finished.result)
+	}
+	if err := proofrun.ValidateTestResult(finished.result); err != nil {
+		t.Fatalf("ordinary cancelled result invalid: %v", err)
+	}
+	if _, err := terminalPipe.Write([]byte("x\n")); err != nil {
+		t.Fatal(err)
+	}
+	for _, child := range children {
+		exact, state, err := (identity.KernelProber{}).Probe(child.Pid)
+		if err != nil || state == identity.Alive && identity.SameIdentity(exact, child) && !exact.Zombie {
+			t.Fatalf("cancelled child remains executable: ref=%+v exact=%+v state=%s err=%v", child, exact, state, err)
+		}
+	}
+	terminal := <-terminalDone
+	if terminal.status == 0 || retained == nil || retained.AttemptID != attempt.AttemptID {
+		t.Fatalf("ordinary terminal did not retain the cancelled worker result: status=%d output=%s retained=%+v", terminal.status, terminal.output, retained)
+	}
+	stored, err := proofrun.ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal == nil || stored.Terminal.Result != proofrun.TerminalCancelled || stored.TestResult == nil || len(proofrun.CommittedDeliveryReceipt(stored)) != 0 {
+		t.Fatalf("ordinary cancelled attempt committed delivery: %+v err=%v", stored, err)
+	}
+	candidate.assertDrained()
+	t.Logf("ORDINARY_CANCELLATION worker-status=%d launcher-status=%d workers=%d attempt=%s result-json=%s", finished.status, terminal.status, workers, attempt.AttemptID, resultPath)
 }
 
 func TestCommandApplicationWorkerAllowancePublicDelivery(t *testing.T) {
 	t.Parallel()
 
-	fixtures := []struct {
-		label   string
-		fixture *portableProofFixture
-	}{{label: "current-source-private-authority", fixture: newPortableProofFixture(t)}}
-	installed, digest := os.Getenv(publicApplicationInstalledBinary), os.Getenv(publicApplicationInstalledDigest)
-	if installed != "" || digest != "" {
-		if installed == "" || digest == "" {
-			t.Fatalf("installed replay requires both %s and %s", publicApplicationInstalledBinary, publicApplicationInstalledDigest)
+	t.Run("OrdinaryCancellationBridge", testOrdinaryPublicApplicationCancellation)
+	t.Run("NativeGitCommittedCandidateDelivery", func(t *testing.T) {
+		fixture := newPortableProofFixture(t)
+		preparePublicApplicationWorkerBase(t, fixture)
+		observed := runPublicApplicationPhase(t, fixture, "committed-candidate-workers-2", "green", 2, false, true)
+		requirePublicApplicationGreen(t, fixture, observed)
+		controlRoot, err := canonicalProofRoot(fixture.root)
+		if err != nil {
+			t.Fatal(err)
 		}
-		fixtures = append(fixtures, struct {
-			label   string
-			fixture *portableProofFixture
-		}{label: "exact-installed-binary-private-synthetic-authority", fixture: newInstalledPublicApplicationFixture(t, installed, digest)})
-	} else {
+		attemptPath, err := proofrun.AttemptPath(controlRoot, observed.attemptID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		beforeAttempt, err := os.ReadFile(attemptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		beforeAttempts, err := proofrun.ReadAttempts(controlRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		beforeBuilds, beforeNative := fixture.counts()
+		forecast, err := forecastTestingSelection(fixture.root, costSelection{
+			ID: "tip:" + observed.tree, Kind: "tip", Tree: observed.tree, GoalID: "portable",
+			Requirements: []string{"application-workers"}}, 2)
+		if err != nil || len(forecast.Groups) != 1 || forecast.Groups[0].GroupID != "application-workers" ||
+			forecast.Groups[0].Status != "reusable" || !forecast.Groups[0].IdentityKnown || forecast.Groups[0].Reason != "" {
+			t.Fatalf("committed public result forecast=%+v err=%v", forecast, err)
+		}
+		afterBuilds, afterNative := fixture.counts()
+		afterAttempts, err := proofrun.ReadAttempts(controlRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		afterAttempt, err := os.ReadFile(attemptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if afterBuilds != beforeBuilds || !maps.Equal(afterNative, beforeNative) ||
+			len(afterAttempts) != len(beforeAttempts) || !bytes.Equal(afterAttempt, beforeAttempt) {
+			t.Fatalf("forecast changed retained proof: builds=%d/%d native=%v/%v attempts=%d/%d bytes-equal=%t",
+				beforeBuilds, afterBuilds, beforeNative, afterNative, len(beforeAttempts), len(afterAttempts), bytes.Equal(beforeAttempt, afterAttempt))
+		}
+		t.Logf("PUBLIC_APPLICATION_FORECAST status=%s identityKnown=%t reason=%q builds=%d native=%v attempts=%d retainedBytes=%d",
+			forecast.Groups[0].Status, forecast.Groups[0].IdentityKnown, forecast.Groups[0].Reason,
+			beforeBuilds, beforeNative, len(beforeAttempts), len(beforeAttempt))
+	})
+	installed, digest := os.Getenv(publicApplicationInstalledBinary), os.Getenv(publicApplicationInstalledDigest)
+	if installed == "" && digest == "" {
 		t.Logf("INSTALLED_PUBLIC_APPLICATION_REPLAY enabled=false inputs=%s,%s", publicApplicationInstalledBinary, publicApplicationInstalledDigest)
+		return
 	}
-
-	for _, specimen := range fixtures {
-		t.Run(specimen.label, func(t *testing.T) {
-			fixture := specimen.fixture
-			preparePublicApplicationWorkerBase(t, fixture)
-
-			for _, workers := range []int{1, 2, 3} {
-				observed := runPublicApplicationPhase(t, fixture, fmt.Sprintf("green-workers-%d", workers), "green", workers, false)
-				requirePublicApplicationGreen(t, fixture, observed)
-			}
-
-			red := runPublicApplicationPhase(t, fixture, "retained-red-workers-2", "red", 2, false)
-			requirePublicApplicationRed(t, fixture, red)
-			repaired := runPublicApplicationPhase(t, fixture, "repaired-red-workers-2", "repaired", 2, false)
-			requirePublicApplicationGreen(t, fixture, repaired)
-
-			cancelled := runPublicApplicationPhase(t, fixture, "cancel-drain-workers-2-via-request-api", "cancel", 2, true)
-			requirePublicApplicationCancelled(t, fixture, cancelled)
-
-			recovered := runPublicApplicationPhase(t, fixture, "green-after-cancel-workers-2", "recovered", 2, false)
-			requirePublicApplicationGreen(t, fixture, recovered)
-		})
+	if installed == "" || digest == "" {
+		t.Fatalf("installed replay requires both %s and %s", publicApplicationInstalledBinary, publicApplicationInstalledDigest)
 	}
+	t.Run("exact-installed-binary-private-synthetic-authority", func(t *testing.T) {
+		fixture := newInstalledPublicApplicationFixture(t, installed, digest)
+		preparePublicApplicationWorkerBase(t, fixture)
+
+		for _, workers := range []int{1, 2, 3} {
+			observed := runPublicApplicationPhase(t, fixture, fmt.Sprintf("green-workers-%d", workers), "green", workers, false, false)
+			requirePublicApplicationGreen(t, fixture, observed)
+		}
+
+		red := runPublicApplicationPhase(t, fixture, "retained-red-workers-2", "red", 2, false, false)
+		requirePublicApplicationRed(t, fixture, red)
+		repaired := runPublicApplicationPhase(t, fixture, "repaired-red-workers-2", "repaired", 2, false, false)
+		requirePublicApplicationGreen(t, fixture, repaired)
+
+		cancelled := runPublicApplicationPhase(t, fixture, "cancel-drain-workers-2-via-request-api", "cancel", 2, true, false)
+		requirePublicApplicationCancelled(t, fixture, cancelled)
+
+		recovered := runPublicApplicationPhase(t, fixture, "green-after-cancel-workers-2", "recovered", 2, false, false)
+		requirePublicApplicationGreen(t, fixture, recovered)
+	})
 }
 
 func preparePublicApplicationWorkerBase(t *testing.T, fixture *portableProofFixture) {
@@ -116,6 +440,7 @@ func preparePublicApplicationWorkerBase(t *testing.T, fixture *portableProofFixt
 			Tools:       []testpolicy.Tool{{ID: "shell", Executable: "sh", VersionArgs: []string{"-c", "printf public-application-shell"}}},
 			Obligations: []string{"application-workers-observed"}, Platforms: []string{"any"}, TargetMS: 1000,
 			Resources: testpolicy.GroupResources{Workers: &wholeAllowance},
+			Env:       map[string]string{"PUBLIC_APPLICATION_NATIVE_COUNTER": fixture.nativeCounter},
 			Argv:      []string{"sh", "scripts/check.sh", "app/worker-mode.txt", "reports-workers"}, Reports: []string{reportRoot}, Format: "junit-xml",
 			ExpectedTests: []testpolicy.ExpectedTest{{Report: filepath.ToSlash(filepath.Join(reportRoot, "result.xml")), Classname: "public-application", Name: "allowance"}}}},
 		Always:  testpolicy.Always{Canary: []string{"application-workers"}, Standard: []string{"application-workers"}},
@@ -138,7 +463,7 @@ func preparePublicApplicationWorkerBase(t *testing.T, fixture *portableProofFixt
 	}
 }
 
-func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, label, mode string, configuredWorkers int, cancel bool) publicApplicationRun {
+func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, label, mode string, configuredWorkers int, cancel, mutateLive bool) publicApplicationRun {
 	t.Helper()
 	state := t.TempDir()
 	internalReady := filepath.Join(state, "internal-ready.fifo")
@@ -165,6 +490,8 @@ func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, labe
 	fixture.contract.Groups[0].Env = map[string]string{
 		"PUBLIC_APPLICATION_STATE": state, "PUBLIC_APPLICATION_INTERNAL_READY": internalReady,
 		"PUBLIC_APPLICATION_READY": publicReady, "PUBLIC_APPLICATION_RELEASE": publicRelease,
+		"PUBLIC_APPLICATION_NATIVE_COUNTER": fixture.nativeCounter,
+		"PUBLIC_APPLICATION_NATIVE_CWD":     fixture.nativeCounter + ".cwd",
 	}
 	fixture.writeContract()
 	tree := fixture.commit(label)
@@ -173,6 +500,40 @@ func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, labe
 	if planStatus != 0 || !strings.Contains(planOutput, "groups=application-workers") {
 		t.Fatalf("%s public plan status=%d output=%s", label, planStatus, planOutput)
 	}
+	resultPath := filepath.Join(t.TempDir(), label+".json")
+	runArgs := append(append([]string{"test", "run"}, baseArgs...), "--force-groups", "--result", resultPath)
+	if mutateLive {
+		controlRoot, err := canonicalProofRoot(fixture.root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		beforeAttempts, err := proofrun.ReadAttempts(controlRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		beforeBuilds, beforeNative := fixture.counts()
+		fixture.write("scripts/check.sh", "#!/bin/sh\nexit 9\n", 0o755)
+		fixture.write("app/worker-mode.txt", "red\n", 0o644)
+		refusalStatus, refusalOutput := fixture.command(runArgs...)
+		afterBuilds, afterNative := fixture.counts()
+		afterAttempts, err := proofrun.ReadAttempts(controlRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if refusalStatus != 1 || !strings.Contains(refusalOutput, "delivery candidate differs from relevant working-tree inputs") ||
+			afterBuilds != beforeBuilds || !maps.Equal(afterNative, beforeNative) || len(afterAttempts) != len(beforeAttempts) {
+			t.Fatalf("%s dirty delivery exit=%d output=%s builds=%d/%d native=%v/%v attempts=%d/%d", label,
+				refusalStatus, refusalOutput, beforeBuilds, afterBuilds, beforeNative, afterNative, len(beforeAttempts), len(afterAttempts))
+		}
+		if _, err := os.Stat(resultPath); !os.IsNotExist(err) {
+			t.Fatalf("%s dirty delivery produced a result: %v", label, err)
+		}
+		t.Logf("PUBLIC_APPLICATION_PARITY_REFUSAL exit=%d output=%q builds=%d native=%v attempts=%d", refusalStatus,
+			strings.TrimSpace(refusalOutput), beforeBuilds, beforeNative, len(beforeAttempts))
+		fixture.write("scripts/check.sh", publicApplicationWorkerScript, 0o755)
+		fixture.write("app/worker-mode.txt", mode+"\n", 0o644)
+	}
+	beforeGreenBuilds, beforeGreenNative := fixture.counts()
 
 	internalReadyOwner, err := os.OpenFile(internalReady, os.O_RDWR, 0o600)
 	if err != nil {
@@ -190,9 +551,16 @@ func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, labe
 	}
 	defer releasePipe.Close()
 
-	resultPath := filepath.Join(t.TempDir(), label+".json")
-	runArgs := append(append([]string{"test", "run"}, baseArgs...), "--force-groups", "--result", resultPath)
 	command := fixture.proofCommand.command(fixture.commandEnvironment(), fixture.engine, runArgs...)
+	if mutateLive {
+		// Fake-runtime fixtures use a finite process table for suite custody.
+		// Exact native child identities are checked directly after the run.
+		processTable := filepath.Join(state, "processes.json")
+		if err := testexec.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		command.Env = append(command.Env, "METASYSTEM_CENSUS_PROCESS_FILE="+processTable)
+	}
 	command.Dir = fixture.root
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var output bytes.Buffer
@@ -228,6 +596,29 @@ func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, labe
 	}
 
 	observed := publicApplicationRun{label: label, configured: configuredWorkers, workers: workers, tree: tree, resultPath: resultPath, wantDigest: fixture.installedDigest}
+	if mutateLive {
+		cwdBytes, err := os.ReadFile(fixture.nativeCounter + ".cwd")
+		if err != nil {
+			t.Fatalf("%s native cwd: %v", label, err)
+		}
+		observed.nativeCWD = strings.TrimSpace(string(cwdBytes))
+		liveRoot, err := filepath.EvalSymlinks(fixture.root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !filepath.IsAbs(observed.nativeCWD) || observed.nativeCWD == liveRoot {
+			t.Fatalf("%s native cwd=%q live root=%q", label, observed.nativeCWD, liveRoot)
+		}
+		for _, path := range []string{"scripts/check.sh", "app/worker-mode.txt"} {
+			committed := fixture.gitBytes("show", tree+":"+path)
+			actual, err := os.ReadFile(filepath.Join(observed.nativeCWD, path))
+			if err != nil || !bytes.Equal(actual, committed) {
+				t.Fatalf("%s detached %s differs from committed candidate: read=%v actual=%q committed=%q", label, path, err, actual, committed)
+			}
+		}
+		t.Logf("PUBLIC_APPLICATION_DETACHED_CWD cwd=%q live=%q committedTree=%s scriptBytes=%d inputBytes=%d", observed.nativeCWD,
+			liveRoot, tree, len(fixture.gitBytes("show", tree+":scripts/check.sh")), len(fixture.gitBytes("show", tree+":app/worker-mode.txt")))
+	}
 	observed.children = publicApplicationChildren(t, state, workers)
 	observed.processes = len(observed.children)
 	maximum, err := os.ReadFile(filepath.Join(state, "maximum"))
@@ -281,6 +672,20 @@ func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, labe
 		t.Fatalf("%s result read: %v; output=%s", label, err, observed.output)
 	}
 	observed.nativeLog = publicApplicationNativeLog(resultPath)
+	if mutateLive {
+		for _, child := range observed.children {
+			exact, state, err := (identity.KernelProber{}).Probe(child.Pid)
+			if err != nil || state == identity.Alive && identity.SameIdentity(exact, child) && !exact.Zombie {
+				t.Fatalf("%s retained executable native child: ref=%+v exact=%+v state=%s err=%v", label, child, exact, state, err)
+			}
+		}
+		afterGreenBuilds, afterGreenNative := fixture.counts()
+		if afterGreenBuilds != beforeGreenBuilds+1 || afterGreenNative["application-workers"] != beforeGreenNative["application-workers"]+1 {
+			t.Fatalf("%s green launched unexpected build/native work: builds=%d/%d native=%v/%v", label,
+				beforeGreenBuilds, afterGreenBuilds, beforeGreenNative, afterGreenNative)
+		}
+		t.Logf("PUBLIC_APPLICATION_GREEN_WORK builds=%d native=%v attempt=%s", afterGreenBuilds, afterGreenNative, observed.attemptID)
+	}
 	cancellationMethod := "none"
 	if cancel {
 		cancellationMethod = "production-request-api"
@@ -576,6 +981,10 @@ report=$2
 : "${PUBLIC_APPLICATION_INTERNAL_READY:?}"
 : "${PUBLIC_APPLICATION_READY:?}"
 : "${PUBLIC_APPLICATION_RELEASE:?}"
+: "${PUBLIC_APPLICATION_NATIVE_COUNTER:?}"
+: "${PUBLIC_APPLICATION_NATIVE_CWD:?}"
+printf 'application-workers\n' >>"$PUBLIC_APPLICATION_NATIVE_COUNTER"
+pwd -P >"$PUBLIC_APPLICATION_NATIVE_CWD"
 mode=$(cat "$input")
 i=0
 pids=

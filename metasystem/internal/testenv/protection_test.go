@@ -284,7 +284,7 @@ func TestTestEnvironmentStandardInventoryMatchesPackageTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	declared, err := declaredTestEnvironmentStandardTests(filepath.Join(root, "testing.json"))
+	all, declared, err := declaredTestEnvironmentStandardTests(filepath.Join(root, "testing.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,6 +299,9 @@ func TestTestEnvironmentStandardInventoryMatchesPackageTests(t *testing.T) {
 
 	const optIn = "TestPackageWalkExternalCheckout"
 	observed := packageTests.testFunctionNames()
+	if all {
+		declared = observed
+	}
 	observedSet := make(map[string]bool, len(observed))
 	for _, name := range observed {
 		observedSet[name] = true
@@ -322,7 +325,7 @@ func TestTestEnvironmentStandardInventoryMatchesPackageTests(t *testing.T) {
 	if !observedSet[optIn] {
 		t.Errorf("opt-in test %s is absent from the package", optIn)
 	}
-	if declaredSet[optIn] {
+	if !all && declaredSet[optIn] {
 		t.Errorf("opt-in test %s is listed in test-environment-standard", optIn)
 	}
 	if len(absentFromGroup) != 0 || len(absentFromPackage) != 0 {
@@ -330,11 +333,15 @@ func TestTestEnvironmentStandardInventoryMatchesPackageTests(t *testing.T) {
 	}
 }
 
-func declaredTestEnvironmentStandardTests(path string) ([]string, error) {
+func declaredTestEnvironmentStandardTests(path string) (bool, []string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return false, nil, err
 	}
+	return decodeTestEnvironmentStandardTests(data, path)
+}
+
+func decodeTestEnvironmentStandardTests(data []byte, source string) (bool, []string, error) {
 	var contract struct {
 		Groups []struct {
 			ID    string          `json:"id"`
@@ -342,20 +349,107 @@ func declaredTestEnvironmentStandardTests(path string) ([]string, error) {
 		} `json:"groups"`
 	}
 	if err := json.Unmarshal(data, &contract); err != nil {
-		return nil, err
+		return false, nil, fmt.Errorf("decode %s: %w", source, err)
 	}
 	for _, group := range contract.Groups {
 		if group.ID != "test-environment-standard" {
 			continue
 		}
-		var names []string
-		if err := json.Unmarshal(group.Tests, &names); err != nil {
-			return nil, fmt.Errorf("test-environment-standard tests: %w", err)
-		}
-		sort.Strings(names)
-		return names, nil
+		return decodeTestEnvironmentStandardSelector(group.Tests)
 	}
-	return nil, fmt.Errorf("test-environment-standard is absent from %s", path)
+	return false, nil, fmt.Errorf("test-environment-standard is absent from %s", source)
+}
+
+func decodeTestEnvironmentStandardSelector(raw json.RawMessage) (bool, []string, error) {
+	selector := strings.TrimSpace(string(raw))
+	if selector == "" {
+		return false, nil, fmt.Errorf("test-environment-standard tests selector is missing")
+	}
+	if selector == "null" {
+		return false, nil, fmt.Errorf("test-environment-standard tests selector is malformed")
+	}
+	if selector[0] == '"' {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return false, nil, fmt.Errorf("test-environment-standard tests selector is malformed")
+		}
+		if value != "all" {
+			return false, nil, fmt.Errorf("test-environment-standard tests selector has invalid value %q", value)
+		}
+		return true, nil, nil
+	}
+	if selector[0] != '[' {
+		return false, nil, fmt.Errorf("test-environment-standard tests selector has invalid type")
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return false, nil, fmt.Errorf("test-environment-standard tests selector is malformed")
+	}
+	if len(entries) == 0 {
+		return false, nil, fmt.Errorf("test-environment-standard tests selector has invalid value: named list is empty")
+	}
+	names := make([]string, 0, len(entries))
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		var name string
+		if err := json.Unmarshal(entry, &name); err != nil || name == "" || seen[name] {
+			return false, nil, fmt.Errorf("test-environment-standard test names must be nonempty strings without duplicates")
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return false, names, nil
+}
+
+func TestDeclaredTestEnvironmentStandardTests(t *testing.T) {
+	t.Parallel()
+
+	valid := []struct {
+		name      string
+		fixture   string
+		wantAll   bool
+		wantNames []string
+	}{
+		{name: "named", fixture: `{"groups":[{"id":"test-environment-standard","tests":["TestZulu","TestAlpha"]}]}`, wantNames: []string{"TestAlpha", "TestZulu"}},
+		{name: "all", fixture: `{"groups":[{"id":"test-environment-standard","tests":"all"}]}`, wantAll: true},
+	}
+	for _, test := range valid {
+		t.Run(test.name, func(t *testing.T) {
+			all, names, err := decodeTestEnvironmentStandardTests([]byte(test.fixture), "fixture")
+			if err != nil || all != test.wantAll || !slices.Equal(names, test.wantNames) {
+				t.Fatalf("all=%t names=%v err=%v; want all=%t names=%v", all, names, err, test.wantAll, test.wantNames)
+			}
+		})
+	}
+
+	errors := []struct {
+		name    string
+		fixture string
+		want    string
+	}{
+		{name: "missing group", fixture: `{"groups":[]}`, want: "test-environment-standard is absent from fixture"},
+		{name: "missing selector", fixture: `{"groups":[{"id":"test-environment-standard"}]}`, want: "test-environment-standard tests selector is missing"},
+		{name: "malformed selector", fixture: `{"groups":[{"id":"test-environment-standard","tests":null}]}`, want: "test-environment-standard tests selector is malformed"},
+		{name: "invalid selector type", fixture: `{"groups":[{"id":"test-environment-standard","tests":{}}]}`, want: "test-environment-standard tests selector has invalid type"},
+		{name: "invalid selector value", fixture: `{"groups":[{"id":"test-environment-standard","tests":"named"}]}`, want: `test-environment-standard tests selector has invalid value "named"`},
+		{name: "empty named list", fixture: `{"groups":[{"id":"test-environment-standard","tests":[]}]}`, want: "test-environment-standard tests selector has invalid value: named list is empty"},
+		{name: "non-string name", fixture: `{"groups":[{"id":"test-environment-standard","tests":[17]}]}`, want: "test-environment-standard test names must be nonempty strings without duplicates"},
+		{name: "empty name", fixture: `{"groups":[{"id":"test-environment-standard","tests":[""]}]}`, want: "test-environment-standard test names must be nonempty strings without duplicates"},
+		{name: "duplicate name", fixture: `{"groups":[{"id":"test-environment-standard","tests":["TestOne","TestOne"]}]}`, want: "test-environment-standard test names must be nonempty strings without duplicates"},
+	}
+	for _, test := range errors {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, err := decodeTestEnvironmentStandardTests([]byte(test.fixture), "fixture")
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("err=%v, want %q", err, test.want)
+			}
+		})
+	}
+
+	if _, _, err := decodeTestEnvironmentStandardSelector(json.RawMessage(`[`)); err == nil || err.Error() != "test-environment-standard tests selector is malformed" {
+		t.Fatalf("malformed selector err=%v", err)
+	}
 }
 
 func (group *packageTests) testFunctionNames() []string {

@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -47,17 +46,15 @@ var requiredRepositoryStopSurfaceAssertions = []struct {
 }
 
 type stopSurfaceFixture struct {
-	t    *testing.T
-	root string
+	t          *testing.T
+	root       string
+	repository *stopSurfaceFake
 }
 
 func newStopSurfaceFixture(t *testing.T, files []stopSurfaceFile, contents map[string]string, includeList bool) *stopSurfaceFixture {
 	t.Helper()
 	fixture := &stopSurfaceFixture{t: t, root: t.TempDir()}
-	fixture.git("init", "-q", "-b", "main")
-	fixture.git("config", "--local", "user.name", "Stop Surface Fixture")
-	fixture.git("config", "--local", "user.email", "stop-surface@invalid")
-	fixture.git("config", "--local", "commit.gpgsign", "false")
+	fixture.repository = newStopSurfaceFake(t, fixture.root)
 	fixture.write("go.mod", "module fixture\n\ngo 1.25\n")
 	for path, content := range contents {
 		fixture.write(path, content)
@@ -87,6 +84,7 @@ func (f *stopSurfaceFixture) write(path, content string) {
 	if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
 		f.t.Fatal(err)
 	}
+	f.repository.own(path)
 }
 
 func (f *stopSurfaceFixture) writeGoal(id, state string, permitStopSurfaceMoves bool, extraFields ...string) {
@@ -109,22 +107,9 @@ func (f *stopSurfaceFixture) writeGoal(id, state string, permitStopSurfaceMoves 
 	f.write("plans/goals/"+id+".md", body.String()+fmt.Sprintf("Integrity: sha256=%x\n", digest))
 }
 
-func (f *stopSurfaceFixture) git(args ...string) string {
-	f.t.Helper()
-	command := exec.Command("git", append([]string{"-C", f.root}, args...)...)
-	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
-	output, err := command.CombinedOutput()
-	if err != nil {
-		f.t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
-	}
-	return strings.TrimSpace(string(output))
-}
-
 func (f *stopSurfaceFixture) commit(message string) string {
 	f.t.Helper()
-	f.git("add", "-A")
-	f.git("commit", "-q", "-m", message)
-	return f.git("rev-parse", "HEAD")
+	return f.repository.freeze(f.root)
 }
 
 func (f *stopSurfaceFixture) audit(options StopSurfaceOptions) StopSurfaceResult {
@@ -132,7 +117,9 @@ func (f *stopSurfaceFixture) audit(options StopSurfaceOptions) StopSurfaceResult
 	if options.GoalRecord == nil {
 		options.GoalRecord = stopSurfaceGoalReaderStub
 	}
-	result, err := AuditStopDecisionSurface(f.root, options)
+	f.repository.expectInspection(f.root, options, true)
+	result, err := auditStopDecisionSurface(f.root, options, f.repository.dependencies())
+	f.repository.assertConsumed()
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -275,6 +262,9 @@ func TestStopSurfaceDiscoversAssertionsOutsideTheOldList(t *testing.T) {
 	}
 }
 
+// TestStopSurfaceUsesGitCandidateInventoryInNestedInstallation checks real
+// ls-files treatment of tracked ignored paths, untracked paths, and generated
+// ignored files below a nested installation.
 func TestStopSurfaceUsesGitCandidateInventoryInNestedInstallation(t *testing.T) {
 	t.Parallel()
 	repository := t.TempDir()
@@ -282,7 +272,7 @@ func TestStopSurfaceUsesGitCandidateInventoryInNestedInstallation(t *testing.T) 
 	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	fixture := &stopSurfaceFixture{t: t, root: installation}
+	fixture := &gitStopSurfaceFixture{t: t, root: installation}
 	fixture.git("init", "-q", "-b", "main", repository)
 	fixture.git("config", "--local", "user.name", "Stop Surface Fixture")
 	fixture.git("config", "--local", "user.email", "stop-surface@invalid")
@@ -648,7 +638,7 @@ func TestStopSurfaceRefusesUnpermittedGoalAtDeclarationAndAudit(t *testing.T) {
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("unrelated", "queued", false)
-		_, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "unrelated", "policy")
+		_, err := fixture.declareDecision(stopSurfaceTestOptions(), "unrelated", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
 	})
 	t.Run("audit acceptance", func(t *testing.T) {
@@ -663,7 +653,7 @@ func TestStopSurfaceRefusesDummyGoalRecordAtDeclarationAndAudit(t *testing.T) {
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
 		fixture.write("plans/goals/move-stop.md", "# Move Stop\n")
-		_, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
+		_, err := fixture.declareDecision(stopSurfaceTestOptions(), "move-stop", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
 	})
 	t.Run("audit acceptance", func(t *testing.T) {
@@ -678,7 +668,7 @@ func TestStopSurfaceRefusesMovesWithoutGoalRecordReader(t *testing.T) {
 	t.Parallel()
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
-		_, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", "policy")
+		_, err := fixture.declareDecision(StopSurfaceOptions{}, "move-stop", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
 		if !strings.Contains(err.Error(), "no goal record reader") {
 			t.Fatalf("nil-reader declaration refusal = %v", err)
@@ -687,7 +677,7 @@ func TestStopSurfaceRefusesMovesWithoutGoalRecordReader(t *testing.T) {
 	t.Run("audit acceptance", func(t *testing.T) {
 		fixture, removed := stopSurfaceRemovedAssertionFixture(t)
 		fixture.declare("move-stop", "policy", []StopSurfaceLine{removed})
-		result, err := AuditStopDecisionSurface(fixture.root, StopSurfaceOptions{})
+		result, err := fixture.auditDecision(StopSurfaceOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -703,7 +693,7 @@ func TestStopSurfaceRefusesGoalRecordWithParseProblems(t *testing.T) {
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("move-stop", "queued", true, "Unknown: malformed")
-		_, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
+		_, err := fixture.declareDecision(stopSurfaceTestOptions(), "move-stop", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
 		if !strings.Contains(err.Error(), `unknown field "Unknown"`) {
 			t.Fatalf("parse-problem declaration refusal = %v", err)
@@ -723,7 +713,7 @@ func TestStopSurfaceRefusesGoalRecordWithParseProblems(t *testing.T) {
 
 func TestStopSurfaceAdmitsPermittedOpenGoal(t *testing.T) {
 	fixture, _ := stopSurfaceRemovedAssertionFixture(t)
-	path, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
+	path, err := fixture.declareDecision(stopSurfaceTestOptions(), "move-stop", "policy")
 	if err != nil || !strings.Contains(path, "move-stop-") {
 		t.Fatalf("declaration = %q, %v", path, err)
 	}
@@ -738,7 +728,7 @@ func TestStopSurfaceAdmitsPermittedGoalWithRepeatedRecordFields(t *testing.T) {
 	fixture.writeGoal("move-stop", "queued", true,
 		"AcceptedRisk: finding=first chain=review by=human:fixture opid=first",
 		"AcceptedRisk: finding=second chain=review by=human:fixture opid=second")
-	path, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
+	path, err := fixture.declareDecision(stopSurfaceTestOptions(), "move-stop", "policy")
 	if err != nil || !strings.Contains(path, "move-stop-") {
 		t.Fatalf("declaration with repeated goal fields = %q, %v", path, err)
 	}
@@ -751,7 +741,7 @@ func TestStopSurfaceRefusesPermittedDoneGoalAtDeclarationAndAudit(t *testing.T) 
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("move-stop", "done", true)
-		_, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
+		_, err := fixture.declareDecision(stopSurfaceTestOptions(), "move-stop", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
 	})
 	t.Run("audit acceptance", func(t *testing.T) {
@@ -853,7 +843,7 @@ func TestStopSurfaceResolvesItsBase(t *testing.T) {
 		fixture := newStopSurfaceFixture(t, []stopSurfaceFile{{Kind: "go", Path: "a_test.go"}}, map[string]string{
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
-		base := fixture.git("rev-parse", "HEAD")
+		base := fixture.repository.head
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: false}\n"))
 		fixture.commit("inversion")
 		result := fixture.audit(stopSurfaceTestOptionsWithBase(base))
@@ -866,12 +856,13 @@ func TestStopSurfaceResolvesItsBase(t *testing.T) {
 		fixture := newStopSurfaceFixture(t, []stopSurfaceFile{{Kind: "go", Path: "a_test.go"}}, map[string]string{
 			"a_test.go": goStopSurfaceFixture("fixture", ""),
 		}, true)
-		base := fixture.git("rev-parse", "HEAD")
-		fixture.git("update-ref", "refs/remotes/origin/main", base)
+		base := fixture.repository.head
+		fixture.repository.setOriginMain(base)
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", "first := Verdict{ShouldBlock: true}\n"))
 		fixture.commit("first branch commit")
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", "first := Verdict{ShouldBlock: true}\nsecond := Verdict{BlockSource: source}\n"))
 		fixture.commit("second branch commit")
+		fixture.repository.setMergeBase(fixture.repository.head, base, base)
 		result := fixture.audit(stopSurfaceTestOptions())
 		if result.Base != base || result.Refused() || len(result.Added) != 2 {
 			t.Fatalf("merge-base result = %+v", result)
@@ -882,7 +873,8 @@ func TestStopSurfaceResolvesItsBase(t *testing.T) {
 		fixture := newStopSurfaceFixture(t, []stopSurfaceFile{{Kind: "go", Path: "a_test.go"}}, map[string]string{
 			"a_test.go": goStopSurfaceFixture("fixture", "first := Verdict{ShouldBlock: true}\n"),
 		}, true)
-		head := fixture.git("rev-parse", "HEAD")
+		head := fixture.repository.head
+		fixture.repository.withoutOriginMain()
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", "first := Verdict{ShouldBlock: true}\nsecond := Verdict{BlockSource: source}\n"))
 		result := fixture.audit(stopSurfaceTestOptions())
 		if result.Base != head || result.Refused() || len(result.Added) != 1 {
@@ -897,7 +889,7 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", ""))
-		path, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "the policy changed")
+		path, err := fixture.declareDecision(stopSurfaceTestOptions(), "move-stop", "the policy changed")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -914,7 +906,7 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 		fixture := newStopSurfaceFixture(t, []stopSurfaceFile{{Kind: "go", Path: "a_test.go"}}, map[string]string{
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
-		if _, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy"); err == nil {
+		if _, err := fixture.declareDecision(stopSurfaceTestOptions(), "move-stop", "policy"); err == nil {
 			t.Fatal("declaration passed without a removal")
 		}
 	})
@@ -924,7 +916,7 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", ""))
-		if _, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "missing-goal", "policy"); err == nil {
+		if _, err := fixture.declareDecision(stopSurfaceTestOptions(), "missing-goal", "policy"); err == nil {
 			t.Fatal("declaration passed without a ledger goal")
 		}
 	})
@@ -934,7 +926,7 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", ""))
-		if _, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", ""); err == nil {
+		if _, err := fixture.declareDecision(stopSurfaceTestOptions(), "move-stop", ""); err == nil {
 			t.Fatal("declaration passed with an empty reason")
 		}
 	})
@@ -967,9 +959,39 @@ func TestGoGateRunsTheStopDecisionSurfaceCheck(t *testing.T) {
 	}
 }
 
+// TestStopSurfaceListOfThisRepositoryIsSound checks source-tree coverage of the
+// required production assertions and fixture beds in this repository.
 func TestStopSurfaceListOfThisRepositoryIsSound(t *testing.T) {
 	root := filepath.Join("..", "..")
-	files, err := discoverStopSurfaceFiles(root)
+	files, err := discoverStopSurfaceFilesWithInventory(root, func(requestedRoot string) ([]byte, error) {
+		if requestedRoot != root {
+			return nil, fmt.Errorf("inventory root %q, want %q", requestedRoot, root)
+		}
+		var paths strings.Builder
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() && (path == filepath.Join(root, ".git") || path == filepath.Join(root, "artifacts")) {
+				return filepath.SkipDir
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if !info.Mode().IsRegular() {
+				return nil
+			}
+			relative, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			paths.WriteString(filepath.ToSlash(relative))
+			paths.WriteByte(0)
+			return nil
+		})
+		return []byte(paths.String()), err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

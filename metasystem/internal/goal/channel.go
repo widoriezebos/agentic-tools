@@ -137,6 +137,25 @@ type channelInboundAtPath struct {
 // ValidateChannelTree reads the committed channel ledger and applies every
 // at-rest refusal. A commit without the directory has no channel problems.
 func ValidateChannelTree(root, commit string) []Problem {
+	return validateChannelTreeFor(Endpoint{Root: root}, commit)
+}
+
+func validateChannelTreeFor(e Endpoint, commit string) []Problem {
+	if e.Repository != nil {
+		files, err := readCommitFiles(e, commit, ChannelPrefix)
+		if err != nil {
+			return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed channel tree: %v", err))}
+		}
+		if len(files) == 0 {
+			return nil
+		}
+		goalFiles, err := readCommitGoals(e, commit)
+		if err != nil {
+			return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed goal tree: %v", err))}
+		}
+		return validateChannelFiles(files, goalFiles)
+	}
+	root := e.Root
 	out, err := gitIn(root, "ls-tree", "-r", "--name-only", commit, "--", ChannelPrefix)
 	if err != nil {
 		return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot list the committed channel tree: %v", err))}
@@ -158,6 +177,19 @@ func ValidateChannelTree(root, commit string) []Problem {
 	goalFiles, err := ReadCommitGoals(root, commit)
 	if err != nil {
 		return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed goal tree: %v", err))}
+	}
+	return validateChannelFiles(files, goalFiles)
+}
+
+func validateChannelFiles(allFiles, goalFiles map[string][]byte) []Problem {
+	files := make(map[string][]byte)
+	for path, data := range allFiles {
+		if strings.HasPrefix(path, ChannelPrefix) {
+			files[path] = data
+		}
+	}
+	if len(files) == 0 {
+		return nil
 	}
 	goalIDs := channelGoalIDs(goalFiles)
 
@@ -948,21 +980,35 @@ func formatChannelTuple(t ChannelTuple) string {
 
 // ChannelInboxMutate applies the create-once rule for one inbox record path.
 func ChannelInboxMutate(e Endpoint, tip, recordPath string, content []byte) ([]Change, error) {
-	listing, err := gitIn(e.Root, "ls-tree", "--name-only", tip, "--", recordPath)
-	if err != nil {
-		return nil, err
-	}
-	if listing == "" {
-		return []Change{{Path: recordPath, Content: content}}, nil
-	}
-	blob, err := gitIn(e.Root, "show", tip+":"+recordPath)
-	if err != nil {
-		return nil, err
+	var blob []byte
+	if e.Repository != nil {
+		files, err := readCommitFiles(e, tip, recordPath)
+		if err != nil {
+			return nil, err
+		}
+		var present bool
+		blob, present = files[recordPath]
+		if !present {
+			return []Change{{Path: recordPath, Content: content}}, nil
+		}
+	} else {
+		listing, err := gitIn(e.Root, "ls-tree", "--name-only", tip, "--", recordPath)
+		if err != nil {
+			return nil, err
+		}
+		if listing == "" {
+			return []Change{{Path: recordPath, Content: content}}, nil
+		}
+		stored, err := gitIn(e.Root, "show", tip+":"+recordPath)
+		if err != nil {
+			return nil, err
+		}
+		blob = []byte(stored)
 	}
 	var record struct {
 		Opid string `json:"opid"`
 	}
-	if err := json.Unmarshal([]byte(blob), &record); err != nil {
+	if err := json.Unmarshal(blob, &record); err != nil {
 		return nil, fmt.Errorf("read inbox record opid: %w", err)
 	}
 	applied, err := TrailerPresent(e, tip, record.Opid)

@@ -11,18 +11,25 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
 
-type recordingGit struct {
-	index, objects string
-	diff           []byte
-	calls          [][]string
-	envs           [][]string
+type stubGit struct {
+	once     sync.Once
+	stub     *testgit.Stub
+	makeStub func() *testgit.Stub
+}
+
+func (git *stubGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
+	git.once.Do(func() { git.stub = git.makeStub() })
+	result := git.stub.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
+	return result.Stdout, result.Err
 }
 
 type recordingOSGit struct {
@@ -35,23 +42,6 @@ func (git *recordingOSGit) Run(directory string, environment []string, args ...s
 	git.calls = append(git.calls, append([]string(nil), args...))
 	git.envs = append(git.envs, append([]string(nil), environment...))
 	return git.runner.Run(directory, environment, args...)
-}
-
-func (git *recordingGit) Run(directory string, env []string, args ...string) ([]byte, error) {
-	git.calls, git.envs = append(git.calls, append([]string(nil), args...)), append(git.envs, append([]string(nil), env...))
-	if args[0] == "symbolic-ref" || args[0] == "rev-parse" && len(args) > 1 && args[1] == "--verify" {
-		return (OSGitRunner{}).Run(directory, env, args...)
-	}
-	if args[0] == "rev-parse" && args[len(args)-1] == "index" {
-		return []byte(git.index + "\n"), nil
-	}
-	if args[0] == "rev-parse" {
-		return []byte(git.objects + "\n"), nil
-	}
-	if args[0] == "diff" {
-		return git.diff, nil
-	}
-	return nil, nil
 }
 
 type completingStarter struct {
@@ -104,17 +94,16 @@ type unitFixture struct {
 	runner   *UnitRunner
 	manager  *Manager
 	starter  *completingStarter
-	git      *recordingGit
+	git      *stubGit
 	plan     string
 	worktree string
 }
 
-func newUnitFixture(t *testing.T, diff string) unitFixture {
+func baseUnitFixture(t *testing.T) unitFixture {
 	t.Helper()
 	root := t.TempDir()
 	worktree := filepath.Join(root, "work")
 	os.MkdirAll(worktree, 0o700)
-	initializeGoalRepository(t, worktree, "goal")
 	brief := filepath.Join(root, "build.md")
 	read := filepath.Join(root, "read.md")
 	page := filepath.Join(root, "units.md")
@@ -133,12 +122,109 @@ func newUnitFixture(t *testing.T, diff string) unitFixture {
 	m.Settings.WaitCapSeconds = 2
 	starter := &completingStarter{m: m}
 	m.Supervisor = starter
+	return unitFixture{runner: &UnitRunner{Manager: m, Root: filepath.Join(root, "unit")}, manager: m, starter: starter, plan: plan, worktree: worktree}
+}
+
+func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
+	t.Helper()
+	fixture := baseUnitFixture(t)
+	root := filepath.Dir(fixture.worktree)
 	index := filepath.Join(root, "source-index")
 	os.WriteFile(index, []byte("index"), 0o600)
 	objects := filepath.Join(root, "objects")
 	os.MkdirAll(objects, 0o700)
-	git := &recordingGit{index: index, objects: objects, diff: []byte(diff)}
-	return unitFixture{runner: &UnitRunner{Manager: m, Git: git, Root: filepath.Join(root, "unit")}, manager: m, starter: starter, git: git, plan: plan, worktree: worktree}
+	defaultEvents := events == nil
+	if defaultEvents {
+		events = []string{"branch", "round"}
+	}
+	var expected []testgit.Expectation
+	add := func(dir string, output string, check func(testgit.Call) error, args ...string) {
+		expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: dir, Args: args}, Result: testgit.Result{Stdout: []byte(output)}, Check: check})
+	}
+	for _, event := range events {
+		switch event {
+		case "branch":
+			add(fixture.worktree, "goal/goal\n", nil, "symbolic-ref", "--short", "HEAD")
+		case "main":
+			add(fixture.worktree, "main\n", nil, "symbolic-ref", "--short", "HEAD")
+		case "detached":
+			expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: fixture.worktree, Args: []string{"symbolic-ref", "--short", "HEAD"}}, Result: testgit.Result{Err: errors.New("detached HEAD")}})
+			add(fixture.worktree, "head\n", nil, "rev-parse", "--verify", "HEAD")
+		case "round":
+			for range 2 {
+				check := isolatedGitEnvironment(fixture.worktree, objects, true)
+				add(fixture.worktree, fixture.worktree+"\n", nil, "rev-parse", "--show-toplevel")
+				add(fixture.worktree, "head\n", nil, "rev-parse", "HEAD")
+				add(fixture.worktree, "refs/heads/goal/goal head\n", nil, "for-each-ref", "--format=%(refname) %(objectname)")
+				add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+				add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+				add(fixture.worktree, "", check, "ls-files", "-v", "--stage", "-z", "--full-name", "--", ".")
+				add(fixture.worktree, "", check, "ls-files", "-t", "--stage", "-z", "--full-name", "--", ".")
+				add(fixture.worktree, "", check, "diff-index", "--cached", "--raw", "-z", "--ita-invisible-in-index", "HEAD", "--", ".")
+				add(fixture.worktree, "", check, "ls-files", "--resolve-undo", "-z", "--full-name", "--", ".")
+				add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
+				add(fixture.worktree, "", check, "diff", "--cached", "--raw", "HEAD", "--", ".")
+			}
+			check := isolatedGitEnvironment(fixture.worktree, objects, false)
+			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
+			add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "base", "--", ".")
+		default:
+			t.Fatalf("unknown Git fixture event %q", event)
+		}
+	}
+	fixture.git = &stubGit{makeStub: func() *testgit.Stub {
+		if defaultEvents && fixture.starter.failKind == "build" {
+			return testgit.New(t, expected[:1]...)
+		}
+		return testgit.New(t, expected...)
+	}}
+	fixture.runner.Git = fixture.git
+	return fixture
+}
+
+func isolatedGitEnvironment(worktree, alternate string, optionalLocks bool) func(testgit.Call) error {
+	var owner string
+	return func(call testgit.Call) error {
+		if len(call.Stdin) != 0 {
+			return fmt.Errorf("Git stdin must be empty: %q", call.Stdin)
+		}
+		count := 3
+		if optionalLocks {
+			count++
+		}
+		if len(call.Env) != count {
+			return fmt.Errorf("Git environment has %d entries, want %d: %q", len(call.Env), count, call.Env)
+		}
+		index := strings.TrimPrefix(call.Env[0], "GIT_INDEX_FILE=")
+		objects := strings.TrimPrefix(call.Env[1], "GIT_OBJECT_DIRECTORY=")
+		if index == call.Env[0] || objects == call.Env[1] || !filepath.IsAbs(index) || !filepath.IsAbs(objects) || filepath.Base(index) != "index" || filepath.Base(objects) != "objects" {
+			return fmt.Errorf("invalid isolated Git paths: %q", call.Env)
+		}
+		currentOwner := filepath.Dir(index)
+		if filepath.Dir(objects) != currentOwner || currentOwner == worktree || strings.HasPrefix(currentOwner, worktree+string(os.PathSeparator)) || !strings.HasPrefix(filepath.Base(currentOwner), "metasystem-unit-") {
+			return fmt.Errorf("index and objects must share a private temporary owner: %q", call.Env)
+		}
+		if owner == "" {
+			owner = currentOwner
+		} else if owner != currentOwner {
+			return fmt.Errorf("isolated Git owner changed: %q to %q", owner, currentOwner)
+		}
+		if info, err := os.Stat(index); err != nil || info.IsDir() {
+			return fmt.Errorf("private index missing: %q: %v", index, err)
+		}
+		if info, err := os.Stat(objects); err != nil || !info.IsDir() {
+			return fmt.Errorf("private objects missing: %q: %v", objects, err)
+		}
+		if call.Env[2] != "GIT_ALTERNATE_OBJECT_DIRECTORIES="+alternate {
+			return fmt.Errorf("alternate objects mismatch: %q", call.Env[2])
+		}
+		if optionalLocks && call.Env[3] != "GIT_OPTIONAL_LOCKS=0" {
+			return fmt.Errorf("optional locks mismatch: %q", call.Env[3])
+		}
+		return nil
+	}
 }
 
 func TestUnitRunStartsOnGoalBranch(t *testing.T) {
@@ -152,8 +238,7 @@ func TestUnitRunStartsOnGoalBranch(t *testing.T) {
 
 func TestUnitRunRefusesMainBranch(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "")
-	runGit(t, fixture.worktree, "branch", "-m", "main")
+	fixture := newUnitFixture(t, "", "main")
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	want := "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED worktree=\"" + fixture.worktree + "\" branch=\"main\" required=\"goal/goal\""
 	if err == nil || err.Error() != want {
@@ -173,9 +258,7 @@ func TestUnitRunRefusesMainBranch(t *testing.T) {
 
 func TestUnitRunRefusesDetachedHead(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "")
-	head := strings.TrimSpace(runGit(t, fixture.worktree, "rev-parse", "HEAD"))
-	runGit(t, fixture.worktree, "update-ref", "--no-deref", "HEAD", head)
+	fixture := newUnitFixture(t, "", "detached")
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err == nil || !strings.Contains(err.Error(), "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED") || !strings.Contains(err.Error(), `branch="detached HEAD"`) || !strings.Contains(err.Error(), `required="goal/goal"`) {
 		t.Fatalf("error=%v", err)
@@ -183,7 +266,7 @@ func TestUnitRunRefusesDetachedHead(t *testing.T) {
 }
 
 func TestPlanRefusesWhatItCannotRun(t *testing.T) {
-	fixture := newUnitFixture(t, "")
+	fixture := newUnitFixture(t, "", []string{}...)
 	data, _ := os.ReadFile(fixture.plan)
 	for name, mutation := range map[string]func(map[string]any){
 		"unknown":        func(value map[string]any) { value["surprise"] = true },
@@ -228,7 +311,7 @@ func TestRunRecordNamesEveryStep(t *testing.T) {
 }
 
 func TestRunStopsAtTheCapAndResumeContinues(t *testing.T) {
-	fixture := newUnitFixture(t, "")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round")
 	fixture.starter.holdKind = "build"
 	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil || !result.Capped || result.Step != "build" {
@@ -253,7 +336,11 @@ func TestProofRunsBeforeTheRead(t *testing.T) {
 func TestEveryOutcomeEndsAtAwaitingJudgement(t *testing.T) {
 	for _, row := range []struct{ fail, want string }{{"build", "build-failed"}, {"read", "read-failed"}, {"proof", "proof-red"}, {"", "green"}} {
 		t.Run(row.want, func(t *testing.T) {
-			fixture := newUnitFixture(t, "")
+			events := []string{"branch", "round"}
+			if row.want == "build-failed" {
+				events = []string{"branch"}
+			}
+			fixture := newUnitFixture(t, "", events...)
 			fixture.starter.failKind = row.fail
 			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 			if err != nil || result.Record.State != "awaiting-judgement" || result.Record.Rounds[0].Outcome != row.want {
@@ -277,7 +364,7 @@ func TestEveryOutcomeEndsAtAwaitingJudgement(t *testing.T) {
 }
 
 func TestRefusedBuildLeavesNoRunRecord(t *testing.T) {
-	fixture := newUnitFixture(t, "")
+	fixture := newUnitFixture(t, "", "branch")
 	fixture.manager.Settings.BuildLinesCap = 1
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	entries, _ := os.ReadDir(fixture.runner.Root)
@@ -287,7 +374,7 @@ func TestRefusedBuildLeavesNoRunRecord(t *testing.T) {
 }
 
 func TestResumeAfterAKillStartsNoSecondLaunch(t *testing.T) {
-	fixture := newUnitFixture(t, "")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round")
 	fixture.runner.AfterWrite = func(record UnitRunRecord) error {
 		for _, step := range record.Rounds[0].Steps {
 			if step.State == StepStarting {
@@ -451,7 +538,7 @@ func TestSplitReadsSharingAReportWaitForPriorCollection(t *testing.T) {
 }
 
 func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
-	fixture := newUnitFixture(t, "")
+	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round")
 	output := filepath.Join(t.TempDir(), "read.out")
 	os.WriteFile(output, []byte("done"), 0o600)
 	fixture.starter.readOutput = output
@@ -477,7 +564,7 @@ func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
 }
 
 func TestFollowUpRefusedUnlessAwaitingJudgement(t *testing.T) {
-	fixture := newUnitFixture(t, "")
+	fixture := newUnitFixture(t, "", "branch", "branch")
 	fixture.starter.holdKind = "build"
 	result, _ := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	follow := filepath.Join(t.TempDir(), "follow")
@@ -493,7 +580,7 @@ func TestFollowUpRefusedUnlessAwaitingJudgement(t *testing.T) {
 }
 
 func TestFollowUpStartsTheNextRoundOnTheSameWorktree(t *testing.T) {
-	fixture := newUnitFixture(t, "")
+	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round")
 	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
 		t.Fatal(err)
@@ -718,7 +805,7 @@ func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
 
 func newGitUnitFixture(t *testing.T) (unitFixture, string) {
 	t.Helper()
-	fixture := newUnitFixture(t, "")
+	fixture := baseUnitFixture(t)
 	repo := t.TempDir()
 	initializeGoalRepository(t, repo, "goal")
 	writeFile(t, filepath.Join(repo, "tracked"), "original\n")

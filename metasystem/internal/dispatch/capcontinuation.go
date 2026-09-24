@@ -27,6 +27,10 @@ const capContinuationListBytes = 8 * 1024
 // parent that is not an implementer round in timeout with budget-cap, and a
 // missing worktree.
 func CapContinuationText(parentRecordPath, worktree string) (string, error) {
+	return capContinuationText(parentRecordPath, worktree, gitWorktreePosture{})
+}
+
+func capContinuationText(parentRecordPath, worktree string, posture worktreePosture) (string, error) {
 	record, err := readObject(parentRecordPath)
 	if err != nil {
 		return "", fmt.Errorf("cannot read the parent record: %w", err)
@@ -46,11 +50,11 @@ func CapContinuationText(parentRecordPath, worktree string) (string, error) {
 	if info, statErr := os.Stat(worktree); statErr != nil || !info.IsDir() {
 		return "", fmt.Errorf("the chain's worktree %s is missing; nothing is left to continue, use a fresh dispatch", worktree)
 	}
-	head, err := gitOutput(worktree, "rev-parse", "HEAD")
+	head, err := posture.Head(worktree)
 	if err != nil {
 		return "", fmt.Errorf("the chain's worktree %s has no readable head: %w", worktree, err)
 	}
-	dirty, err := followUpDirtyPaths(worktree)
+	dirty, err := followUpDirtyPaths(worktree, posture)
 	if err != nil {
 		return "", err
 	}

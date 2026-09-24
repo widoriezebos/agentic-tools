@@ -1,32 +1,79 @@
 package batch
 
 import (
+	"bytes"
+	"crypto/sha1"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
 func TestBatchLedgerReadersHonorNestedModuleRoot(t *testing.T) {
 	t.Parallel()
 	repository := t.TempDir()
 	module := filepath.Join(repository, "metasystem")
+	ledgerPath := filepath.Join(module, "plans", "goals", "goal-a.md")
+	ledgerBytes := goalBed("goal-a")
 	must(t, os.MkdirAll(filepath.Join(module, "plans", "goals"), 0o755))
-	must(t, os.WriteFile(filepath.Join(module, "plans", "goals", "goal-a.md"), goalBed("goal-a"), 0o644))
-	bedGit(t, repository, "init", "-q", "-b", "main")
-	bedGit(t, repository, "config", "user.name", "Fixture")
-	bedGit(t, repository, "config", "user.email", "fixture@example.invalid")
-	bedGit(t, repository, "add", ".")
-	bedGit(t, repository, "commit", "-qm", "seed nested ledger")
-	tree := bedGit(t, repository, "rev-parse", "HEAD^{tree}")
-	claim, err := ReadClaimAt(module, tree, testBatchID, "goal-a")
+	must(t, os.WriteFile(ledgerPath, ledgerBytes, 0o644))
+	tree := strings.Repeat("a", 40)
+	blobHeader := []byte(fmt.Sprintf("blob %d\x00", len(ledgerBytes)))
+	blob := sha1.Sum(append(blobHeader, ledgerBytes...))
+	blobID := fmt.Sprintf("%x", blob)
+	const goalPath = "metasystem/plans/goals/goal-a.md"
+	answers := []struct {
+		args   []string
+		stdout []byte
+	}{
+		{[]string{"rev-parse", "--show-prefix"}, []byte("metasystem/\n")},
+		{[]string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", goalPath}, []byte(fmt.Sprintf("100644 blob %s\t%s\x00", blobID, goalPath))},
+		{[]string{"cat-file", "blob", blobID}, ledgerBytes},
+	}
+	prefix := append([]string{"-C", module}, []string{
+		"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false",
+	}...)
+	calls := 0
+	workspace := gittree.Workspace{Dir: module, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		t.Helper()
+		live, err := os.ReadFile(ledgerPath)
+		if err != nil || !bytes.Equal(live, ledgerBytes) {
+			t.Fatalf("nested ledger bytes changed: %q, %v", live, err)
+		}
+		if calls >= 2*len(answers) {
+			t.Fatalf("unexpected extra raw request: %+v", request)
+		}
+		want := answers[calls%len(answers)]
+		if request.Dir != module || request.Stdin != nil || !slices.Equal(request.Env, gittree.ScrubbedEnviron()) ||
+			!slices.Equal(request.Args, append(slices.Clone(prefix), want.args...)) || request.Operation != "git "+strings.Join(want.args, " ") {
+			t.Fatalf("raw request %d = %+v, want %q", calls, request, want.args)
+		}
+		calls++
+		return gittree.RawResult{Stdout: bytes.Clone(want.stdout)}
+	}}
+	claim, err := claimAtWithReader(ModuleRoot(module), tree, testBatchID, "goal-a", func(root, readTree, goalID string) ([]byte, bool, error) {
+		if root != module || readTree != tree || goalID != "goal-a" {
+			t.Fatalf("claim reader requested (%q, %q, %q)", root, readTree, goalID)
+		}
+		return readCommittedGoalWithWorkspace(workspace, readTree, goalID)
+	})
 	if err != nil || claim.Machine != "seat" || claim.Lineage != "goal-a" || claim.Revision != 2 || claim.AccountingRevision != 1 {
 		t.Fatalf("nested claim=%+v error=%v", claim, err)
 	}
-	ledger, err := ReadReturnLedgerGoal(module, tree, "goal-a")
+	ledger, err := readReturnLedgerGoalWithWorkspace(workspace, tree, "goal-a")
 	if err != nil || !ledger.Claimed || ledger.Machine != "landing" || ledger.Batch != testBatchID {
 		t.Fatalf("nested return ledger=%+v error=%v", ledger, err)
+	}
+	if calls != 2*len(answers) {
+		t.Fatalf("raw calls = %d, want %d", calls, 2*len(answers))
 	}
 }
 

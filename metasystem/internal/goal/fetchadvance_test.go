@@ -1,8 +1,7 @@
 package goal
 
 import (
-	"os"
-	"path/filepath"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -26,27 +25,40 @@ func publishGoal(t *testing.T, root, opid, id string, extra []*GoalFile) Publish
 	return res
 }
 
+func publishGoalAtEndpoint(t *testing.T, e Endpoint, opid, id string, extra []*GoalFile) PublishResult {
+	t.Helper()
+	files := vTree(vRoot(), append([]*GoalFile{vGoal(id, StateQueued)}, extra...), nil)
+	changes := make([]Change, 0, len(files))
+	for path, content := range files {
+		changes = append(changes, Change{Path: path, Content: content})
+	}
+	res, err := Publish(e, PublishRequest{
+		Opid: opid, Machine: "mac-" + id, Lineage: "l1",
+		Intent: testIntentFor("open"), Message: "goal open " + id,
+		Mutate: func(string) ([]Change, error) { return changes, nil },
+	})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("fixture publish %s: %+v %v", id, res, err)
+	}
+	return res
+}
+
 func TestTwoClonesConvergeByFetchAlone(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
+	a, b := fakeGoalEndpointPair(t)
 
 	// Different-goal mutations from two clones both publish;
 	// each machine observes the other via goal fetch — a read-side
 	// advance with no own mutation needed — and the projections
 	// converge.
-	publishGoal(t, a, "op-alpha", "alpha", nil)
-	// B's publish rebuilds on A's tip through the ordinary benign
-	// retry, carrying both goals forward.
+	publishGoalAtEndpoint(t, a, "op-alpha", "alpha", nil)
+	// B publishes on A's canonical tip, carrying both goals forward.
 	filesB := vTree(vRoot(), []*GoalFile{vGoal("beta", StateQueued)}, nil)
-	resB, err := Publish(endpointFor(b), PublishRequest{
+	resB, err := Publish(b, PublishRequest{
 		Opid: "op-beta", Machine: "mac-b", Lineage: "l1",
 		Intent: testIntentFor("open"), Message: "goal open beta",
-		Mutate: func(tip string) ([]Change, error) {
-			changes := []Change{{Path: goalsPrefix + "beta.md", Content: filesB[goalsPrefix+"beta.md"]}}
-			if _, catErr := gitIn(b, "cat-file", "-p", tip+":"+goalsPrefix+"backlog.md"); catErr != nil {
-				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: filesB[goalsPrefix+"backlog.md"]})
-			}
-			return changes, nil
+		Mutate: func(string) ([]Change, error) {
+			return []Change{{Path: goalsPrefix + "beta.md", Content: filesB[goalsPrefix+"beta.md"]}}, nil
 		},
 	})
 	if err != nil || resB.Outcome != OutcomeConfirmed {
@@ -54,11 +66,11 @@ func TestTwoClonesConvergeByFetchAlone(t *testing.T) {
 	}
 
 	// A advances by FETCH ONLY and sees both goals.
-	resA, err := FetchAdvance(endpointFor(a))
+	resA, err := FetchAdvance(a)
 	if err != nil || !resA.Advanced {
 		t.Fatalf("A's read-side advance: %+v %v", resA, err)
 	}
-	filesAtA, err := ReadCommitGoals(a, resA.Tip)
+	filesAtA, err := readCommitGoals(a, resA.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +80,7 @@ func TestTwoClonesConvergeByFetchAlone(t *testing.T) {
 		}
 	}
 	// B advances too; the projections converge on the same tip.
-	resB2, err := FetchAdvance(endpointFor(b))
+	resB2, err := FetchAdvance(b)
 	if err != nil {
 		t.Fatalf("B's read-side advance: %v", err)
 	}
@@ -79,68 +91,87 @@ func TestTwoClonesConvergeByFetchAlone(t *testing.T) {
 
 func TestRewoundBranchRefusesUntilRepair(t *testing.T) {
 	t.Parallel()
-	origin, a, _ := twoClones(t)
-	seedTip := mustGit(t, origin, "rev-parse", "refs/heads/main")
-	publishGoal(t, a, "op-r", "goal-r", nil)
-	if _, err := FetchAdvance(endpointFor(a)); err != nil {
+	a, _ := fakeGoalEndpointPair(t)
+	client := a.Repository.(*fakeGoalRepository)
+	seedTip := canonicalTipForTransactionTest(t, a)
+	publishGoalAtEndpoint(t, a, "op-r", "goal-r", nil)
+	if _, err := FetchAdvance(a); err != nil {
 		t.Fatal(err)
 	}
-	before := mustGit(t, a, "rev-parse", AcceptedRef)
+	before := acceptedTipForEndpoint(t, a)
 
 	// Branch surgery rewinds the canonical branch behind the
 	// accepted tip.
-	mustGit(t, origin, "update-ref", "refs/heads/main", seedTip)
-	_, err := FetchAdvance(endpointFor(a))
+	client.store.mu.Lock()
+	client.store.canonical = seedTip
+	client.store.mu.Unlock()
+	_, err := FetchAdvance(a)
 	if err == nil || !strings.Contains(err.Error(), "rewound") || !strings.Contains(err.Error(), "repair --accept-remote") {
 		t.Fatalf("a rewind refuses by name and points at the deliberate path: %v", err)
 	}
-	if after := mustGit(t, a, "rev-parse", AcceptedRef); after != before {
+	if after := acceptedTipForEndpoint(t, a); after != before {
 		t.Fatalf("the projection stays pinned: %s vs %s", after, before)
 	}
 }
 
 func TestTornTipRefusesNamingFileAndRule(t *testing.T) {
 	t.Parallel()
-	origin, a, b := twoClones(t)
-	publishGoal(t, a, "op-t", "goal-t", nil)
-	if _, err := FetchAdvance(endpointFor(a)); err != nil {
+	a, b := fakeGoalEndpointPair(t)
+	publishGoalAtEndpoint(t, a, "op-t", "goal-t", nil)
+	if _, err := FetchAdvance(a); err != nil {
 		t.Fatal(err)
 	}
-	before := mustGit(t, a, "rev-parse", AcceptedRef)
+	before := acceptedTipForEndpoint(t, a)
 
 	// A hand edit lands on the canonical branch without a recomputed
 	// digest — the exact accidental-edit shape the guard exists for.
-	mustGit(t, b, "fetch", "-q", "origin", "main")
-	mustGit(t, b, "checkout", "-q", "-B", "tamper", "origin/main")
+	files, err := b.Repository.Files(before, goalsPrefix+"goal-t.md")
+	if err != nil {
+		t.Fatal(err)
+	}
 	torn := strings.Replace(
-		mustGit(t, b, "cat-file", "-p", "origin/main:"+goalsPrefix+"goal-t.md"),
+		string(files[goalsPrefix+"goal-t.md"]),
 		"Do the thing", "hand-edited without a digest", 1)
-	writeInWorktree(t, b, goalsPrefix+"goal-t.md", torn+"\n")
-	mustGit(t, b, "add", goalsPrefix+"goal-t.md")
-	mustGit(t, b, "commit", "-qm", "tamper")
-	mustGit(t, b, "push", "-q", "origin", "tamper:main")
-	_ = origin
+	commit, err := b.Repository.Build("tamper", before, []Change{{Path: goalsPrefix + "goal-t.md", Content: []byte(torn)}}, "tamper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := b.Repository.Publish(before, commit); err != nil || outcome != CASLanded {
+		t.Fatalf("torn tip setup: %s %v", outcome, err)
+	}
 
-	_, err := FetchAdvance(endpointFor(a))
+	_, err = FetchAdvance(a)
 	if err == nil || !strings.Contains(err.Error(), "goal-t.md") || !strings.Contains(err.Error(), "Integrity") {
 		t.Fatalf("the refusal names the file and the rule: %v", err)
 	}
-	if after := mustGit(t, a, "rev-parse", AcceptedRef); after != before {
+	if after := acceptedTipForEndpoint(t, a); after != before {
 		t.Fatalf("the projection stays at the accepted tree: %s vs %s", after, before)
 	}
 }
 
 func TestForeignLedgerRefusesByName(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	publishGoal(t, a, "op-f", "goal-f", nil)
-	if _, err := FetchAdvance(endpointFor(a)); err != nil {
+	a, c := fakeGoalEndpointPair(t)
+	seedTip := canonicalTipForTransactionTest(t, a)
+	publishGoalAtEndpoint(t, a, "op-f", "goal-f", nil)
+	if _, err := FetchAdvance(a); err != nil {
 		t.Fatal(err)
 	}
+	before := acceptedTipForEndpoint(t, a)
 
-	// A second, unrelated ledger world: same directory shapes, a
-	// different adoption identity.
-	foreignOrigin, c, _ := twoClones(t)
+	// A second root in the same store is disconnected from A's accepted
+	// commit, which remains readable while the canonical tip changes.
+	client := a.Repository.(*fakeGoalRepository)
+	foreignClient := c.Repository.(*fakeGoalRepository)
+	client.store.mu.Lock()
+	client.store.serial++
+	foreignSeedTip := fmt.Sprintf("%040x", client.store.serial)
+	client.store.commits[foreignSeedTip] = fakeGoalCommit{
+		parent: "", files: map[string][]byte{}, at: client.store.commits[seedTip].at,
+	}
+	client.store.canonical = foreignSeedTip
+	foreignClient.accepted = ""
+	client.store.mu.Unlock()
 	foreignRoot := vRoot()
 	foreignRoot.Identity = "01J5XFFFFFFFFFFFFFFFFFFFFF"
 	foreignFiles := vTree(foreignRoot, []*GoalFile{vGoal("foreign", StateQueued)}, nil)
@@ -148,7 +179,7 @@ func TestForeignLedgerRefusesByName(t *testing.T) {
 	for p, content := range foreignFiles {
 		changes = append(changes, Change{Path: p, Content: content})
 	}
-	res, err := Publish(endpointFor(c), PublishRequest{
+	res, err := Publish(c, PublishRequest{
 		Opid: "op-foreign", Machine: "mac-c", Lineage: "l1",
 		Intent: testIntentFor("open"), Message: "goal open foreign",
 		Mutate: func(tip string) ([]Change, error) { return changes, nil },
@@ -156,46 +187,47 @@ func TestForeignLedgerRefusesByName(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("foreign world publish: %+v %v", res, err)
 	}
+	if descendant, err := client.IsAncestor(before, res.Tip); err != nil || descendant {
+		t.Fatalf("foreign canonical history must be disconnected from A's accepted tip: descendant=%t err=%v", descendant, err)
+	}
+	if descendant, err := client.IsAncestor(seedTip, res.Tip); err != nil || descendant {
+		t.Fatalf("foreign canonical history must be disconnected from A's original seed: descendant=%t err=%v", descendant, err)
+	}
+	acceptedFiles, err := client.Files(before, goalsPrefix+"goal-f.md")
+	if err != nil || len(acceptedFiles[goalsPrefix+"goal-f.md"]) == 0 {
+		t.Fatalf("A's accepted commit must remain readable: files=%v err=%v", acceptedFiles, err)
+	}
 
-	// Re-pointing A's config at the foreign remote must not let the
-	// fetch silently select another ledger.
-	mustGit(t, a, "remote", "set-url", "origin", foreignOrigin)
-	_, err = FetchAdvance(endpointFor(a))
+	_, err = FetchAdvance(a)
 	if err == nil || !strings.Contains(err.Error(), "foreign ledger") {
 		t.Fatalf("a foreign ledger refuses by name: %v", err)
 	}
-}
-
-// writeInWorktree writes one file inside a clone's worktree.
-func writeInWorktree(t *testing.T, root, rel, content string) {
-	t.Helper()
-	path := filepath.Join(root, rel)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
+	if after := acceptedTipForEndpoint(t, a); after != before {
+		t.Fatalf("the foreign ledger moved A's accepted tip: %s vs %s", after, before)
 	}
 }
 
 func TestMutationsRunTheAcceptanceGates(t *testing.T) {
 	t.Parallel()
-	origin, a, _ := twoClones(t)
-	publishGoal(t, a, "op-gate", "gated", nil)
-	if _, err := FetchAdvance(endpointFor(a)); err != nil {
+	a, _ := fakeGoalEndpointPair(t)
+	client := a.Repository.(*fakeGoalRepository)
+	seed := canonicalTipForTransactionTest(t, a)
+	publishGoalAtEndpoint(t, a, "op-gate", "gated", nil)
+	if _, err := FetchAdvance(a); err != nil {
 		t.Fatal(err)
 	}
-	seed := mustGit(t, origin, "rev-list", "--max-parents=0", "refs/heads/main")
 	// Branch surgery rewinds the canonical branch; a MUTATION must
 	// refuse exactly as the read side does — never build on a world
 	// this clone would not accept (F5).
-	mustGit(t, origin, "update-ref", "refs/heads/main", seed)
-	_, err := Open(verbReq(a, "01J5X00000000000000000G000", "mac-a"), "onto-rewind", "Must refuse.", "main", "No.")
+	client.store.mu.Lock()
+	client.store.canonical = seed
+	client.store.mu.Unlock()
+	_, err := Open(verbReqFor(a, "01J5X00000000000000000G000", "mac-a"), "onto-rewind", "Must refuse.", "main", "No.")
 	if err == nil || !strings.Contains(err.Error(), "rewound") {
 		t.Fatalf("a mutation onto a rewound branch refuses by name: %v", err)
 	}
 	// The journal closed the attempt honestly.
-	entry, readErr := ReadEntry(a, Opid("01J5X00000000000000000G000", "mac-a", "lin-1"))
+	entry, readErr := ReadEntry(a.Root, Opid("01J5X00000000000000000G000", "mac-a", "lin-1"))
 	if readErr != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeAbandoned {
 		t.Fatalf("the refused mutation abandons its entry: %+v %v", entry, readErr)
 	}

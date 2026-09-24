@@ -1395,6 +1395,7 @@ take_fixture_receipt() { # engine, checkout, output log
 
 if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   clock_checkout=${METASYSTEM_RECEIPT_CLOCK_FIXTURE_ROOT:?}
+  clock_tree=${METASYSTEM_RECEIPT_CLOCK_TREE:?}
   clock_cap_min=${METASYSTEM_RECEIPT_CLOCK_CAP_MIN:?}
   clock_test_executable=${METASYSTEM_RECEIPT_CLOCK_TEST_EXECUTABLE:?}
   clock_ready=${METASYSTEM_RECEIPT_CLOCK_READY:?}
@@ -1411,7 +1412,12 @@ if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   printf '{}\n' >"$clock_identity"
   printf '[]\n' >"$clock_processes"
   prepare_receipt_environment "$clock_identity" "$clock_registry" "$clock_checkout"
-  receipt_environment+=("METASYSTEM_CENSUS_PROCESS_FILE=$clock_processes")
+  receipt_environment+=(
+    "METASYSTEM_CENSUS_PROCESS_FILE=$clock_processes"
+    "GO_WANT_PROOF_COMMAND_FIXTURE_CHILD=${GO_WANT_PROOF_COMMAND_FIXTURE_CHILD:?}"
+    "GO_PROOF_COMMAND_FIXTURE_SNAPSHOT=${GO_PROOF_COMMAND_FIXTURE_SNAPSHOT:?}"
+    "GO_PROOF_COMMAND_FIXTURE_TEMP_ROOT=${GO_PROOF_COMMAND_FIXTURE_TEMP_ROOT:?}"
+  )
   echo "land receipt-clock-boundary fixture: shell clock=$fixture_receipt_now cap-min=$clock_cap_min"
   clock_fixture_start=$(receipt_env_run "$source_engine" proc started-at --pid "$$")
   receipt_env_run env METASYSTEM_OWNER_LINEAGE=m1 "$source_engine" lease announce \
@@ -1421,7 +1427,6 @@ if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   printf -v clock_child_command \
     'GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD=shell-boundary METASYSTEM_WAIT_BINARY=%q %q -test.run=^TestLandingReceiptShellCallerCarriesAuthorizedClock$ -test.count=1 -- --receipt-clock-private-child %q %q %q' \
     "$source_engine" "$clock_test_executable" "$clock_observed" "$clock_ready" "$clock_release"
-  clock_tree=$(git -C "$clock_checkout" write-tree)
   set +e
   receipt_checkout_env_run "$clock_checkout" env METASYSTEM_OWNER_LINEAGE=m1 \
     "$source_engine" landing test-receipt --root "$clock_checkout" \
@@ -1584,6 +1589,7 @@ LEDGER
   git -C "$leg_seed" add -f bin/metasystem
   git -C "$leg_seed" commit -qm seed
   git init -q --bare "$leg_remote"
+  git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" remote add origin "$leg_remote"
   git -C "$leg_seed" push -q -u origin main
   git clone -q "$leg_remote" "$leg_local"
@@ -1669,7 +1675,13 @@ assert_land_brain_refusal() { # root, expected, command...
 }
 
 prepare_abandonment_landing_leg() { # name
-  local name=$1 saved_config engine_status engine_stamp engine_commit source_top
+  local name=$1 saved_config engine_status engine_stamp engine_commit source_top source_status source_stamp
+  source_status=$("$source_engine" supervise status --repo "$root") || exit $?
+  source_stamp=$("$source_engine" json get --value "$source_status" --field engineBuild) || exit $?
+  if [[ ! $source_stamp =~ ^[0-9a-f]{40}$ && ! $source_stamp =~ ^dev-[0-9a-f]{40}-dirty$ ]]; then
+    source_engine=$tmp/abandonment-source-engine
+    env -u METASYSTEM_BUILD_STAMP bash "$root/scripts/agents/go-build.sh" --out "$source_engine" || exit $?
+  fi
   make_brain_source_leg "$name"
   engine_status=$("$source_engine" supervise status --repo "$leg_local")
   engine_stamp=$("$source_engine" json get --value "$engine_status" --field engineBuild)

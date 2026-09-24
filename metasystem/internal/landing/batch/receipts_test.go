@@ -27,14 +27,14 @@ func TestPrefixReceiptPlainJSONCompatibility(t *testing.T) {
 	}
 }
 
-func prefixReceiptBed(t *testing.T) (assemblyBed, Store) {
+func prefixReceiptBed(t *testing.T) (policyBed, Store) {
 	t.Helper()
-	bed := assemblyFixture(t)
-	prefixes, err := assembleUnits(bed.root, bed.base, bed.record.Units)
-	must(t, err)
+	bed := policyFixture(t)
+	prefixes := []string{testCommit(201), testCommit(202)}
 	bed.record.State, bed.record.PrefixTrees, bed.record.TipTree = StateLanding, prefixes, prefixes[len(prefixes)-1]
 	bed.record.Proof = &Proof{Status: "green", AttemptID: "tip-attempt", SelectedGroups: []string{"same", "different"}}
 	store := NewStore(bed.root, nil)
+	strictReassembly(t, &store)
 	must(t, store.Create(bed.record))
 	return bed, store
 }
@@ -65,7 +65,8 @@ func TestPrefixReceiptsReuseByIdentity(t *testing.T) {
 }
 
 func TestPrefixRevisionMoveReturnsForRevision(t *testing.T) {
-	_, store := prefixReceiptBed(t)
+	bed, store := prefixReceiptBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{testCommit(203)}))
 	err := ComposePrefixReceipts(store, testBatchID, "owner", time.Unix(3, 0), PrefixReceiptSeams{Execute: func(string, string, []string) (PrefixRunResult, error) {
 		return PrefixRunResult{}, &PrefixRevisionRefusal{Reason: "GOAL_REVISION_MOVED: goal-a changed after seal"}
 	}})
@@ -94,7 +95,8 @@ func TestPrefixAdmissionRefusalDoesNotWithdrawCapacity(t *testing.T) {
 }
 
 func TestPrefixBudgetRefusalWithdrawsMember(t *testing.T) {
-	_, store := prefixReceiptBed(t)
+	bed, store := prefixReceiptBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{testCommit(203)}))
 	if err := ComposePrefixReceipts(store, testBatchID, "owner", time.Unix(3, 0), PrefixReceiptSeams{Execute: func(string, string, []string) (PrefixRunResult, error) {
 		return PrefixRunResult{}, &PrefixBudgetRefusal{Reason: "BATCH_MEMBER_BUDGET_REFUSED: no diagnostic headroom"}
 	}}); err != nil {
@@ -107,7 +109,8 @@ func TestPrefixBudgetRefusalWithdrawsMember(t *testing.T) {
 }
 
 func TestPrefixRedEjectsItsUnit(t *testing.T) {
-	_, store := prefixReceiptBed(t)
+	bed, store := prefixReceiptBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{testCommit(203)}))
 	red := []RedGroup{{ID: "different", InputManifest: []string{"a.go"}}}
 	err := ComposePrefixReceipts(store, testBatchID, "owner", time.Unix(3, 0), PrefixReceiptSeams{Execute: func(string, string, []string) (PrefixRunResult, error) {
 		return PrefixRunResult{AttemptID: "prefix-red", Red: red}, nil
@@ -144,7 +147,7 @@ func TestPrefixRedPersistenceFailureIsReturned(t *testing.T) {
 }
 
 func TestBatchMemberRecordReceiptAndNextCarryIdentity(t *testing.T) {
-	bed := assemblyFixture(t)
+	bed := policyFixture(t)
 	member := BranchMember{GoalID: "goal-a", Tip: "branch-tip", Builds: []BranchBuild{
 		{Units: []string{"8", "9"}, Commit: "commit-89"},
 		{Units: []string{"10a", "10b"}, Commit: "commit-10"},
@@ -155,6 +158,7 @@ func TestBatchMemberRecordReceiptAndNextCarryIdentity(t *testing.T) {
 	bed.record.TipTree = "prefix-b"
 	bed.record.Proof = &Proof{Status: "green", AttemptID: "tip", SelectedGroups: []string{"group"}}
 	store := NewStore(bed.root, nil)
+	strictReassembly(t, &store)
 	must(t, store.Create(bed.record))
 	must(t, ComposePrefixReceipts(store, testBatchID, "owner", time.Unix(3, 0), PrefixReceiptSeams{Execute: func(string, string, []string) (PrefixRunResult, error) {
 		return PrefixRunResult{AttemptID: "prefix"}, nil

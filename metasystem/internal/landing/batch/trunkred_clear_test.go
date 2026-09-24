@@ -71,9 +71,9 @@ func addHeldGroup(t *testing.T, store Store, ledger *clearingLedger, id string) 
 	return ref
 }
 
-func heldReopenBed(t *testing.T) (assemblyBed, Store, *clearingLedger) {
+func heldReopenBed(t *testing.T, expected ...expectedReassembly) (policyBed, Store, *clearingLedger) {
 	t.Helper()
-	bed := assemblyFixture(t)
+	bed := policyFixture(t)
 	group := RedGroup{ID: "group", Status: "failed"}
 	ref := EntryRef{ID: TrunkRedID(group), Group: group.ID}
 	bed.record.State = StateHeldTrunkRed
@@ -82,6 +82,7 @@ func heldReopenBed(t *testing.T) (assemblyBed, Store, *clearingLedger) {
 		Entries: []EntryRef{ref}}
 	ledger := &clearingLedger{open: []OpenEntry{{ID: ref.ID, Group: ref.Group, Holds: []string{testBatchID}, LastBaseCommit: "base-commit"}}}
 	store := NewStore(bed.root, nil).WithLedgerOwner(ledger)
+	strictReassembly(t, &store, expected...)
 	must(t, store.Create(bed.record))
 	return bed, store, ledger
 }
@@ -89,7 +90,8 @@ func heldReopenBed(t *testing.T) (assemblyBed, Store, *clearingLedger) {
 func TestReopenClearsOnGreenDescendantOnly(t *testing.T) {
 	now := time.Unix(10, 0)
 	t.Run("green descendant clears then reopens", func(t *testing.T) {
-		bed, store, ledger := heldReopenBed(t)
+		bed, store, ledger := heldReopenBed(t,
+			expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"reopen-a", "reopen-ab"}))
 		requestSeen := DiagnosticRequest{}
 		seams := trunkRedClearSeams{
 			run: func(request DiagnosticRequest, _ Claim) (DiagnosticResult, error) {
@@ -103,13 +105,15 @@ func TestReopenClearsOnGreenDescendantOnly(t *testing.T) {
 		}
 		must(t, reopenHeldAfterDiagnostic(store, testBatchID, bed.moved, "next-commit", "owner", now, seams))
 		record := load(t, store)
-		if record.State != StateOpen || record.BaseTree != bed.moved || len(ledger.cleared) != 1 || ledger.cleared[0].green.AttemptID != "green" ||
+		if record.State != StateOpen || record.BaseTree != bed.moved || !slices.Equal(record.PrefixTrees, []string{"reopen-a", "reopen-ab"}) ||
+			len(ledger.cleared) != 1 || ledger.cleared[0].green.AttemptID != "green" ||
 			ledger.cleared[0].green.BaseCommit != "next-commit" || !requestSeen.NeverReuse || !slices.Equal(requestSeen.Groups, []string{"group"}) {
 			t.Fatalf("record=%+v clears=%+v request=%+v", record, ledger.cleared, requestSeen)
 		}
 	})
 	t.Run("green same commit stays held", func(t *testing.T) {
-		bed, store, ledger := heldReopenBed(t)
+		bed, store, ledger := heldReopenBed(t,
+			expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"same-a", "same-ab"}))
 		seams := trunkRedClearSeams{run: func(DiagnosticRequest, Claim) (DiagnosticResult, error) {
 			return DiagnosticResult{AttemptID: "green"}, nil
 		},
@@ -138,7 +142,9 @@ func TestReopenClearsOnGreenDescendantOnly(t *testing.T) {
 func TestReopenRetriesPartialClearAndSkipsClosedEntries(t *testing.T) {
 	now := time.Unix(10, 0)
 	t.Run("partial clear converges", func(t *testing.T) {
-		bed, store, ledger := heldReopenBed(t)
+		bed, store, ledger := heldReopenBed(t,
+			expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"first-a", "first-ab"}),
+			expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"retry-a", "retry-ab"}))
 		second := addHeldGroup(t, store, ledger, "second")
 		ledger.clearErrors = map[string][]error{second.ID: {fmt.Errorf("publish pending")}}
 		mints := 0
@@ -156,12 +162,14 @@ func TestReopenRetriesPartialClearAndSkipsClosedEntries(t *testing.T) {
 			t.Fatalf("after partial clear record=%+v clears=%+v", record, ledger.cleared)
 		}
 		must(t, reopenHeldAfterDiagnostic(store, testBatchID, bed.moved, "next-commit", "owner", now, seams))
-		if record := load(t, store); record.State != StateOpen || len(ledger.cleared) != 2 || ledger.cleared[1].ref.ID != second.ID {
+		if record := load(t, store); record.State != StateOpen || !slices.Equal(record.PrefixTrees, []string{"retry-a", "retry-ab"}) ||
+			len(ledger.cleared) != 2 || ledger.cleared[1].ref.ID != second.ID {
 			t.Fatalf("after retry record=%+v clears=%+v", record, ledger.cleared)
 		}
 	})
 	t.Run("entry closed elsewhere does not block reopen", func(t *testing.T) {
-		bed, store, ledger := heldReopenBed(t)
+		bed, store, ledger := heldReopenBed(t,
+			expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"closed-a", "closed-ab"}))
 		ledger.open = nil
 		seams := trunkRedClearSeams{
 			run: func(DiagnosticRequest, Claim) (DiagnosticResult, error) {
@@ -171,12 +179,13 @@ func TestReopenRetriesPartialClearAndSkipsClosedEntries(t *testing.T) {
 			descendsFrom: func(string, string) (bool, error) { t.Fatal("closed entry asked for ancestry"); return false, nil },
 		}
 		must(t, reopenHeldAfterDiagnostic(store, testBatchID, bed.moved, "next-commit", "owner", now, seams))
-		if record := load(t, store); record.State != StateOpen || len(ledger.cleared) != 0 {
+		if record := load(t, store); record.State != StateOpen || !slices.Equal(record.PrefixTrees, []string{"closed-a", "closed-ab"}) || len(ledger.cleared) != 0 {
 			t.Fatalf("record=%+v clears=%+v", record, ledger.cleared)
 		}
 	})
 	t.Run("concurrent close refusal does not block reopen", func(t *testing.T) {
-		bed, store, ledger := heldReopenBed(t)
+		bed, store, ledger := heldReopenBed(t,
+			expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"raced-a", "raced-ab"}))
 		ref := load(t, store).TrunkRed.Entries[0]
 		ledger.clearErrors = map[string][]error{ref.ID: {&TrunkRedRecordFailed{Outcome: "rejected", Evidence: fmt.Sprintf("TRUNK_RED_CLOSED: entry %s is closed", ref.ID)}}}
 		seams := trunkRedClearSeams{
@@ -187,7 +196,7 @@ func TestReopenRetriesPartialClearAndSkipsClosedEntries(t *testing.T) {
 			descendsFrom: func(string, string) (bool, error) { return true, nil },
 		}
 		must(t, reopenHeldAfterDiagnostic(store, testBatchID, bed.moved, "next-commit", "owner", now, seams))
-		if record := load(t, store); record.State != StateOpen || len(ledger.cleared) != 0 {
+		if record := load(t, store); record.State != StateOpen || !slices.Equal(record.PrefixTrees, []string{"raced-a", "raced-ab"}) || len(ledger.cleared) != 0 {
 			t.Fatalf("record=%+v clears=%+v", record, ledger.cleared)
 		}
 	})
@@ -258,7 +267,9 @@ func TestRedDiagnosticRecordsDespiteUnclearablePassedEntry(t *testing.T) {
 }
 
 func TestGreenDiagnosticDiscoveryErrorWithholdsReopenUntilRetry(t *testing.T) {
-	bed, store, ledger := heldReopenBed(t)
+	bed, store, ledger := heldReopenBed(t,
+		expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"first-a", "first-ab"}),
+		expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"retry-a", "retry-ab"}))
 	discovered := OpenEntry{ID: "discovered", Group: "extra", Holds: []string{testBatchID}, LastBaseCommit: "base-commit"}
 	ledger.open = append(ledger.open, discovered)
 	ledger.openErrors = []error{os.ErrPermission, nil}
@@ -276,13 +287,19 @@ func TestGreenDiagnosticDiscoveryErrorWithholdsReopenUntilRetry(t *testing.T) {
 		t.Fatalf("discovery failure reopened batch: %+v", record)
 	}
 	must(t, reopenHeldAfterDiagnostic(store, testBatchID, bed.moved, "next-commit", "owner", time.Unix(11, 0), seams))
-	if record := load(t, store); record.State != StateOpen || len(ledger.open) != 0 || len(ledger.cleared) != 2 {
+	if record := load(t, store); record.State != StateOpen || !slices.Equal(record.PrefixTrees, []string{"retry-a", "retry-ab"}) ||
+		len(ledger.open) != 0 || len(ledger.cleared) != 2 {
 		t.Fatalf("retry did not clear recorded and discovered entries: record=%+v ledger=%+v", record, ledger)
 	}
 }
 
 func TestReopenDiscoversEveryLedgerEntryHeldByBatch(t *testing.T) {
-	bed, store, ledger := heldReopenBed(t)
+	const thirdTree = "third-tree"
+	bed, store, ledger := heldReopenBed(t,
+		expectedAssembly(thirdTree, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"third-a", "third-ab"}))
+	if thirdTree == bed.base || thirdTree == bed.moved {
+		t.Fatal("third tree must differ from both existing trees")
+	}
 	oldRef := load(t, store).TrunkRed.Entries[0]
 	diagnosticCalls := 0
 	requests := []DiagnosticRequest{}
@@ -305,17 +322,13 @@ func TestReopenDiscoversEveryLedgerEntryHeldByBatch(t *testing.T) {
 		t.Fatalf("changed failure identity reused entry %s", oldRef.ID)
 	}
 	ledger.open = append(ledger.open, OpenEntry{ID: newRef.ID, Group: newRef.Group, Holds: []string{testBatchID}, LastBaseCommit: "next-commit"})
-	must(t, os.WriteFile(bed.root+"/trunk", []byte("third\n"), 0o644))
-	bedGit(t, bed.root, "add", "trunk")
-	bedGit(t, bed.root, "commit", "-m", "third")
-	thirdTree := bedGit(t, bed.root, "rev-parse", "HEAD^{tree}")
-
 	must(t, reopenHeldAfterDiagnostic(store, testBatchID, thirdTree, "third-commit", "owner", time.Unix(11, 0), seams))
 	cleared := []string{}
 	for _, clear := range ledger.cleared {
 		cleared = append(cleared, clear.ref.ID)
 	}
-	if record := load(t, store); record.State != StateOpen || !slices.Contains(cleared, oldRef.ID) || !slices.Contains(cleared, newRef.ID) ||
+	if record := load(t, store); record.State != StateOpen || record.BaseTree != thirdTree || !slices.Equal(record.PrefixTrees, []string{"third-a", "third-ab"}) ||
+		!slices.Contains(cleared, oldRef.ID) || !slices.Contains(cleared, newRef.ID) ||
 		len(cleared) != 2 || len(requests) != 2 || !slices.Equal(requests[1].Groups, []string{"group"}) {
 		t.Fatalf("record=%+v clears=%v requests=%+v", record, cleared, requests)
 	}

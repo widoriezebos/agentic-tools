@@ -42,6 +42,27 @@ type productionBatchOwnerInputs struct {
 	queueDir    string
 }
 
+// batchOwnerSource supplies raw command inputs for a single invocation.
+type batchOwnerSource struct {
+	commandNow func(string) (time.Time, error)
+	landingGit func(string, []string, []string) ([]byte, error)
+	goalConfig func(string, string) (string, error)
+}
+
+func (source *batchOwnerSource) validate() error {
+	if source != nil && (source.commandNow == nil || source.landingGit == nil || source.goalConfig == nil) {
+		return fmt.Errorf("batch owner raw input source is incomplete")
+	}
+	return nil
+}
+
+func (source *batchOwnerSource) now(root string) (time.Time, error) {
+	if source == nil {
+		return goalCommandNow(root)
+	}
+	return source.commandNow(root)
+}
+
 type batchOwnerEnsureSeams struct {
 	inspect func(string) (int64, identity.Liveness, error)
 	wake    func(int64) error
@@ -225,8 +246,21 @@ func (held batchOwnerLease) retire() error {
 }
 
 func resolveBatchOwnerSettings(seatRoot, landingRoot string, maxWait time.Duration, now func() time.Time) (config.BatchLanding, error) {
+	return resolveBatchOwnerSettingsWithSource(seatRoot, landingRoot, maxWait, now, nil)
+}
+
+func resolveBatchOwnerSettingsWithSource(seatRoot, landingRoot string, maxWait time.Duration, now func() time.Time, source *batchOwnerSource) (config.BatchLanding, error) {
+	if err := source.validate(); err != nil {
+		return config.BatchLanding{}, err
+	}
 	if landingRoot != "" {
+		if source != nil {
+			return config.ResolveExplicitBatchLandingWithRunner(landingRoot, seatRoot, maxWait, now, source.landingGit)
+		}
 		return config.ResolveExplicitBatchLanding(landingRoot, seatRoot, maxWait, now)
+	}
+	if source != nil {
+		return config.BatchLanding{}, fmt.Errorf("batch owner raw inputs require an explicit landing root")
 	}
 	return config.ResolveBatchLanding(filepath.Join(seatRoot, "metasystem.conf"), seatRoot, now)
 }
@@ -418,12 +452,27 @@ func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 }
 
 func resolveProductionBatchOwnerInputs(root string) (productionBatchOwnerInputs, error) {
+	return resolveProductionBatchOwnerInputsWithSource(root, nil)
+}
+
+func resolveProductionBatchOwnerInputsWithSource(root string, source *batchOwnerSource) (productionBatchOwnerInputs, error) {
+	if err := source.validate(); err != nil {
+		return productionBatchOwnerInputs{}, err
+	}
 	controlRoot := batch.ModuleRoot(root)
-	ledgerOwner, err := productionTrunkRedLedgerOwner(controlRoot)
+	resolveOwner := productionTrunkRedLedgerOwner
+	resolveMachine := goal.ResolveMachine
+	if source != nil {
+		resolveOwner = func(root string) (batch.LedgerOwner, error) {
+			return productionBatchLedgerOwnerWithConfig(root, source.goalConfig)
+		}
+		resolveMachine = func(root string) (string, error) { return goal.ResolveMachineWithConfig(root, source.goalConfig) }
+	}
+	ledgerOwner, err := resolveOwner(controlRoot)
 	if err != nil {
 		return productionBatchOwnerInputs{}, err
 	}
-	machine, err := goal.ResolveMachine(controlRoot)
+	machine, err := resolveMachine(controlRoot)
 	if err != nil {
 		return productionBatchOwnerInputs{}, err
 	}
@@ -546,7 +595,7 @@ func batchOwnerSignals() (<-chan struct{}, <-chan struct{}, func()) {
 	}
 }
 
-func parseBatchOwner(args []string, verb string, clock func() time.Time) (config.BatchLanding, time.Duration, error) {
+func parseBatchOwnerWithSource(args []string, verb string, clock func() time.Time, source *batchOwnerSource) (config.BatchLanding, time.Duration, error) {
 	flags := flag.NewFlagSet("landing batch "+verb, flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
@@ -555,21 +604,28 @@ func parseBatchOwner(args []string, verb string, clock func() time.Time) (config
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *interval <= 0 {
 		return config.BatchLanding{}, 0, fmt.Errorf("usage: metasystem landing batch %s --root ROOT [--landing-root ROOT --max-wait DURATION]", verb)
 	}
-	if _, err := goalCommandNow(*root); err != nil {
+	if err := source.validate(); err != nil {
 		return config.BatchLanding{}, 0, err
 	}
-	settings, err := resolveBatchOwnerSettings(*root, *landingRoot, *maxWait, clock)
+	if _, err := source.now(*root); err != nil {
+		return config.BatchLanding{}, 0, err
+	}
+	settings, err := resolveBatchOwnerSettingsWithSource(*root, *landingRoot, *maxWait, clock, source)
 	return settings, *interval, err
 }
 
 func runBatchOwner(args []string) (code int) {
+	return runBatchOwnerWithSource(args, nil)
+}
+
+func runBatchOwnerWithSource(args []string, source *batchOwnerSource) (code int) {
 	clock := cadenceProductionClock
-	settings, interval, err := parseBatchOwner(args, "owner", clock)
+	settings, interval, err := parseBatchOwnerWithSource(args, "owner", clock, source)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	inputs, err := resolveProductionBatchOwnerInputs(settings.Root)
+	inputs, err := resolveProductionBatchOwnerInputsWithSource(settings.Root, source)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -636,6 +692,10 @@ func runBatchOwnerPass(owner *batch.Owner, held batchOwnerLease, root string, cl
 }
 
 func runBatchTick(args []string) (code int) {
+	return runBatchTickWithSource(args, nil)
+}
+
+func runBatchTickWithSource(args []string, source *batchOwnerSource) (code int) {
 	flags := flag.NewFlagSet("landing batch tick", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
@@ -645,17 +705,21 @@ func runBatchTick(args []string) (code int) {
 		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch tick --root ROOT --batch ULID")
 		return 2
 	}
-	now, err := goalCommandNow(*root)
+	if err := source.validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	now, err := source.now(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	settings, err := resolveBatchOwnerSettings(*root, *landingRoot, *maxWait, func() time.Time { return now })
+	settings, err := resolveBatchOwnerSettingsWithSource(*root, *landingRoot, *maxWait, func() time.Time { return now }, source)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	inputs, err := resolveProductionBatchOwnerInputs(settings.Root)
+	inputs, err := resolveProductionBatchOwnerInputsWithSource(settings.Root, source)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

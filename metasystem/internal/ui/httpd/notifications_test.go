@@ -330,8 +330,13 @@ func TestTheStreamBeatsWithAComment(t *testing.T) {
 	stream.line(t)
 	stream.line(t)
 	for {
-		if strings.HasPrefix(stream.line(t), ": ") {
-			return
+		select {
+		case line := <-stream.lines:
+			if strings.HasPrefix(line, ": ") {
+				return
+			}
+		case err := <-stream.problems:
+			t.Fatalf("the stream ended: %v", err)
 		}
 	}
 }

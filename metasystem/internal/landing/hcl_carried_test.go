@@ -12,7 +12,30 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
+
+func carriedFixtureMessage(word string) []byte {
+	return []byte(strings.Join([]string{
+		"carried fixture", "", "Carry: " + word, "Carried-By: human:Wido",
+		"Carried-Tree: workspace=" + strings.Repeat("1", 40) + " project=" + strings.Repeat("2", 40),
+		"Carried-Past: missing-declaration", "Carried-Battery: green",
+		"Carried-Judge: base tree=" + strings.Repeat("3", 40) + " sha256=" + strings.Repeat("4", 64),
+		"Carried-Ledger: " + strings.Repeat("5", 40),
+		"Landing-Provenance: carried opid=" + word, "",
+	}, "\n"))
+}
+
+func strictCarriedFixtureMessage(t *testing.T, root, commit string, message []byte) func(string, string) ([]byte, error) {
+	t.Helper()
+	return func(gotRoot, gotCommit string) ([]byte, error) {
+		t.Helper()
+		if gotRoot != root || gotCommit != commit {
+			t.Fatalf("commit message requested for root=%q commit=%q; want root=%q commit=%q", gotRoot, gotCommit, root, commit)
+		}
+		return append([]byte(nil), message...), nil
+	}
+}
 
 func TestHCL37EvaluatorUnavailablePrecedesUnneeded(t *testing.T) {
 	ordinaryPass := Observation{Verdict: "pass"}
@@ -38,8 +61,20 @@ func TestHCL37EvaluatorUnavailablePrecedesUnneeded(t *testing.T) {
 }
 
 func TestHCL51CarriedCounselorAppendBelongsToItsRow(t *testing.T) {
+	policyFacts := func(c *observationCase) observationFacts {
+		resolver := stateroot.NewResolver(func(path string) (string, error) {
+			if path != c.fixture.root {
+				c.fixture.t.Fatalf("unexpected repository-top lookup %q", path)
+			}
+			return c.fixture.repository, nil
+		}, func() (string, error) {
+			c.fixture.t.Fatal("owner resolver requested executable path")
+			return "", fmt.Errorf("unexpected executable lookup")
+		})
+		return observationFacts{reader: c, installation: c.fixture.root, ownerForInstallation: resolver.OwnerForInstallation}
+	}
 	t.Run("carried landing register", func(t *testing.T) {
-		fixture := newObserveFixture(t)
+		fixture := newRepositoryObservationFixture(t)
 		ref := "01ARZ3NDEKTSV4RRFFQ69G5FAY-seat-a-1a2b3c4d"
 		row := goal.HistoryLine{
 			At: "2026-09-11T10:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-seat-a-1a2b3c4d",
@@ -57,34 +92,34 @@ func TestHCL51CarriedCounselorAppendBelongsToItsRow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		fixture.write("records/counselor/carried-landings.jsonl", string(encoded)+"\n")
+		const path = "records/counselor/carried-landings.jsonl"
+		appended := string(encoded) + "\n"
+		caseOne := fixture.comparison(observeTreeB, "", path)
+		caseOne.declare(path, nil, &appended)
 		tree := &goal.TreeGoals{Root: &goal.RootRecord{FormatVersion: "2"}, Live: map[string]*goal.GoalFile{"g": {Id: "g", History: []goal.HistoryLine{row}}}, Done: map[string]*goal.GoalFile{}}
-		params := ObserveParams{RepoRoot: fixture.root, CandidateTree: fixture.tree(), Carried: ref}
-		if err := candidatePathPolicy(params, tree); err != nil {
+		params := ObserveParams{RepoRoot: fixture.root, CandidateTree: observeTreeB, Carried: ref}
+		if err := candidatePathPolicyWithFacts(params, tree, policyFacts(caseOne), nil); err != nil {
 			t.Fatalf("equal carried counselor line refused: %v", err)
 		}
-		fixture.write("records/counselor/unowned.jsonl", "{}\n")
-		if err := candidatePathPolicy(ObserveParams{RepoRoot: fixture.root, CandidateTree: fixture.tree(), Carried: ref}, tree); carriageRefusalCode(err) != "record-not-owned" {
+		caseTwo := fixture.comparison(observeTreeB, "", path, "records/counselor/unowned.jsonl")
+		caseTwo.declare(path, nil, &appended)
+		unowned := "{}\n"
+		caseTwo.declare("records/counselor/unowned.jsonl", nil, &unowned)
+		if err := candidatePathPolicyWithFacts(params, tree, policyFacts(caseTwo), nil); carriageRefusalCode(err) != "record-not-owned" {
 			t.Fatalf("new unrelated counselor record = %v; want record-not-owned", err)
 		}
 	})
 
 	t.Run("human carried accepted risk register", func(t *testing.T) {
-		fixture := newObserveFixture(t)
-		fixture.git("commit", "--allow-empty", "-qm", "carried fixture",
-			"--trailer", "Carry: fixture-word", "--trailer", "Carried-By: human:Wido",
-			"--trailer", "Carried-Tree: workspace="+strings.Repeat("1", 40)+" project="+strings.Repeat("2", 40),
-			"--trailer", "Carried-Past: missing-declaration", "--trailer", "Carried-Battery: green",
-			"--trailer", "Carried-Judge: base tree="+strings.Repeat("3", 40)+" sha256="+strings.Repeat("4", 64),
-			"--trailer", "Carried-Ledger: "+strings.Repeat("5", 40),
-			"--trailer", "Landing-Provenance: carried opid=fixture-word")
-		commit := fixture.git("rev-parse", "HEAD")
+		fixture := newRepositoryObservationFixture(t)
+		commit := strings.Repeat("a", 40)
+		commitMessage := strictCarriedFixtureMessage(t, fixture.root, commit, carriedFixtureMessage("fixture-word"))
 		finding := "carried:" + commit
 		opid := "01ARZ3NDEKTSV4RRFFQ69G5FAW-seat-a-1a2b3c4d"
 		recordedAt := time.Date(2026, 9, 11, 10, 0, 0, 0, time.UTC)
 		why := "fixture accepts the carried review debt"
 		if err := counselor.AppendCarriedAcceptedRisk(fixture.root, counselor.CarriedAcceptedRiskAppend{
-			Goal: "g", Finding: finding, By: "Wido", Why: why, OpID: opid, Commit: commit, RecordedAt: recordedAt,
+			Goal: "g", Finding: finding, By: "Wido", Why: why, OpID: opid, Commit: commit, RecordedAt: recordedAt, CommitMessage: commitMessage,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -95,31 +130,37 @@ func TestHCL51CarriedCounselorAppendBelongsToItsRow(t *testing.T) {
 		tree := &goal.TreeGoals{Root: &goal.RootRecord{FormatVersion: "2"}, Live: map[string]*goal.GoalFile{"g": {
 			Id: "g", History: []goal.HistoryLine{accepted}, AcceptedRisks: []goal.AcceptedRiskRecord{{Finding: finding, Chain: goal.HumanCarriedChain, By: "Wido", Opid: opid}},
 		}}, Done: map[string]*goal.GoalFile{}}
-		if err := candidatePathPolicy(ObserveParams{RepoRoot: fixture.root, CandidateTree: fixture.tree(), Carried: "fixture-word"}, tree); err != nil {
+		const path = "records/counselor/accepted-risk-register.jsonl"
+		appended, err := os.ReadFile(filepath.Join(fixture.root, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		caseOne := fixture.comparison(observeTreeB, "", path)
+		appendedText := string(appended)
+		caseOne.declare(path, nil, &appendedText)
+		if err := candidatePathPolicyWithFacts(ObserveParams{RepoRoot: fixture.root, CandidateTree: observeTreeB, Carried: "fixture-word"}, tree, policyFacts(caseOne), commitMessage); err != nil {
 			t.Fatalf("equal human-carried accepted-risk line refused: %v", err)
 		}
 	})
 }
 
 func TestAbandonedCounselorAppendsKeepOwnership(t *testing.T) {
+	const carriedPath = "records/counselor/carried-landings.jsonl"
+	const riskPath = "records/counselor/accepted-risk-register.jsonl"
 	type ownershipFixture struct {
-		fixture     *observeFixture
+		fixture     *repositoryObservationFixture
+		reader      *observationCase
 		params      ObserveParams
 		tree        *goal.TreeGoals
 		owner       *goal.GoalFile
 		carriedLine counselor.CarriedLanding
+		message     func(string, string) ([]byte, error)
 	}
 	newFixture := func(t *testing.T, carriedLine, riskLine bool) ownershipFixture {
 		t.Helper()
-		fixture := newObserveFixture(t)
-		fixture.git("commit", "--allow-empty", "-qm", "earlier carried landing",
-			"--trailer", "Carry: earlier-word", "--trailer", "Carried-By: human:Wido",
-			"--trailer", "Carried-Tree: workspace="+strings.Repeat("1", 40)+" project="+strings.Repeat("2", 40),
-			"--trailer", "Carried-Past: missing-declaration", "--trailer", "Carried-Battery: green",
-			"--trailer", "Carried-Judge: base tree="+strings.Repeat("3", 40)+" sha256="+strings.Repeat("4", 64),
-			"--trailer", "Carried-Ledger: "+strings.Repeat("5", 40),
-			"--trailer", "Landing-Provenance: carried opid=earlier-word")
-		commit := fixture.git("rev-parse", "HEAD")
+		fixture := newRepositoryObservationFixture(t)
+		commit := strings.Repeat("a", 40)
+		message := strictCarriedFixtureMessage(t, fixture.root, commit, carriedFixtureMessage("earlier-word"))
 		carried := goal.HistoryLine{
 			At: "2026-09-13T10:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-seat-a-1a2b3c4d",
 			Verb: "carried", Actor: "seat-a+lineage", Targets: []string{"owner"}, Keep: -1,
@@ -152,24 +193,54 @@ func TestAbandonedCounselorAppendsKeepOwnership(t *testing.T) {
 			Live: map[string]*goal.GoalFile{"later": {Id: "later", State: goal.StateClaimed, History: []goal.HistoryLine{laterWord}}},
 			Done: map[string]*goal.GoalFile{}, Abandoned: map[string]*goal.GoalFile{"owner": owner},
 		}
+		changed := []string{}
+		appendedCarried := ""
 		if carriedLine {
 			encoded, marshalErr := json.Marshal(encodedCarried)
 			if marshalErr != nil {
 				t.Fatal(marshalErr)
 			}
-			fixture.write("records/counselor/carried-landings.jsonl", string(encoded)+"\n")
+			appendedCarried = string(encoded) + "\n"
+			changed = append(changed, carriedPath)
 		}
+		appendedRisk := ""
 		if riskLine {
 			if err := counselor.AppendCarriedAcceptedRisk(fixture.root, counselor.CarriedAcceptedRiskAppend{
-				Goal: owner.Id, Finding: finding, By: "Wido", Why: why, OpID: acceptOpID, Commit: commit, RecordedAt: acceptedAt,
+				Goal: owner.Id, Finding: finding, By: "Wido", Why: why, OpID: acceptOpID, Commit: commit, RecordedAt: acceptedAt, CommitMessage: message,
 			}); err != nil {
 				t.Fatal(err)
 			}
+			encoded, err := os.ReadFile(filepath.Join(fixture.root, riskPath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			appendedRisk = string(encoded)
+			changed = append(changed, riskPath)
+		}
+		reader := fixture.comparison(observeTreeB, "", changed...)
+		if carriedLine {
+			reader.declare(carriedPath, nil, &appendedCarried)
+		}
+		if riskLine {
+			reader.declare(riskPath, nil, &appendedRisk)
 		}
 		return ownershipFixture{
-			fixture: fixture, params: ObserveParams{RepoRoot: fixture.root, CandidateTree: fixture.tree(), Carried: "later-word"},
-			tree: tree, owner: owner, carriedLine: encodedCarried,
+			fixture: fixture, reader: reader, params: ObserveParams{RepoRoot: fixture.root, CandidateTree: observeTreeB, Carried: "later-word"},
+			tree: tree, owner: owner, carriedLine: encodedCarried, message: message,
 		}
+	}
+	validate := func(f ownershipFixture) error {
+		resolver := stateroot.NewResolver(func(path string) (string, error) {
+			if path != f.fixture.root {
+				f.fixture.t.Fatalf("unexpected repository-top lookup %q", path)
+			}
+			return f.fixture.repository, nil
+		}, func() (string, error) {
+			f.fixture.t.Fatal("owner resolver requested executable path")
+			return "", fmt.Errorf("unexpected executable lookup")
+		})
+		facts := observationFacts{reader: f.reader, installation: f.fixture.root, ownerForInstallation: resolver.OwnerForInstallation}
+		return candidatePathPolicyWithFacts(f.params, f.tree, facts, f.message)
 	}
 	wantCode := func(t *testing.T, got error, code string) {
 		t.Helper()
@@ -184,7 +255,7 @@ func TestAbandonedCounselorAppendsKeepOwnership(t *testing.T) {
 	}{{"carried register alone", true, false}, {"accepted-risk register alone", false, true}, {"both registers", true, true}} {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newFixture(t, test.carried, test.risk)
-			if err := ValidateCarriedCandidatePaths(fixture.params, fixture.tree); err != nil {
+			if err := validate(fixture); err != nil {
 				t.Fatalf("abandoned owner refused: %v", err)
 			}
 		})
@@ -205,7 +276,7 @@ func TestAbandonedCounselorAppendsKeepOwnership(t *testing.T) {
 				fixture.owner.State = goal.StateAbandoned
 				fixture.tree.Abandoned[fixture.owner.Id] = fixture.owner
 			}
-			if err := ValidateCarriedCandidatePaths(fixture.params, fixture.tree); err != nil {
+			if err := validate(fixture); err != nil {
 				t.Fatalf("%s owner refused: %v", state, err)
 			}
 		})
@@ -214,7 +285,7 @@ func TestAbandonedCounselorAppendsKeepOwnership(t *testing.T) {
 	t.Run("missing carried row", func(t *testing.T) {
 		fixture := newFixture(t, true, false)
 		fixture.owner.History = fixture.owner.History[1:]
-		wantCode(t, ValidateCarriedCandidatePaths(fixture.params, fixture.tree), "record-not-owned")
+		wantCode(t, validate(fixture), "record-not-owned")
 	})
 	t.Run("changed carried facts", func(t *testing.T) {
 		fixture := newFixture(t, true, false)
@@ -223,27 +294,32 @@ func TestAbandonedCounselorAppendsKeepOwnership(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		fixture.fixture.write("records/counselor/carried-landings.jsonl", string(encoded)+"\n")
-		fixture.params.CandidateTree = fixture.fixture.tree()
-		wantCode(t, ValidateCarriedCandidatePaths(fixture.params, fixture.tree), "record-not-owned")
+		changed := string(encoded) + "\n"
+		fixture.reader = fixture.fixture.comparison(observeTreeB, "", carriedPath)
+		fixture.reader.declare(carriedPath, nil, &changed)
+		wantCode(t, validate(fixture), "record-not-owned")
 	})
 	t.Run("non-human-carried waiver", func(t *testing.T) {
 		fixture := newFixture(t, false, true)
 		fixture.owner.AcceptedRisks[0].Chain = "critic-chain"
-		wantCode(t, ValidateCarriedCandidatePaths(fixture.params, fixture.tree), "record-not-owned")
+		wantCode(t, validate(fixture), "record-not-owned")
 	})
 	t.Run("existing line is rewritten", func(t *testing.T) {
 		fixture := newFixture(t, true, false)
-		fixture.fixture.git("add", "records/counselor/carried-landings.jsonl")
-		fixture.fixture.git("commit", "-qm", "existing counselor line")
+		original, err := json.Marshal(fixture.carriedLine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := string(original) + "\n"
 		fixture.carriedLine.Goal = "later"
 		encoded, err := json.Marshal(fixture.carriedLine)
 		if err != nil {
 			t.Fatal(err)
 		}
-		fixture.fixture.write("records/counselor/carried-landings.jsonl", string(encoded)+"\n")
-		fixture.params.CandidateTree = fixture.fixture.tree()
-		wantCode(t, ValidateCarriedCandidatePaths(fixture.params, fixture.tree), "register-carriage-not-append-only")
+		after := string(encoded) + "\n"
+		fixture.reader = fixture.fixture.comparison(observeTreeB, "", carriedPath)
+		fixture.reader.declare(carriedPath, &before, &after)
+		wantCode(t, validate(fixture), "register-carriage-not-append-only")
 	})
 }
 
@@ -257,11 +333,20 @@ func TestHCL58BaseJudgeFenceOwners(t *testing.T) {
 	}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
-			fixture := newObserveFixture(t)
-			fixture.write(path, "candidate change\n")
-			fixture.git("add", path)
-			params := ObserveParams{RepoRoot: fixture.root, ProjectTree: fixture.git("write-tree"), Judge: "base"}
-			got := baseJudgeFenceRefusal(params, "carried opid=fixture")
+			root := t.TempDir()
+			projectTree := strings.Repeat("b", 40)
+			params := ObserveParams{RepoRoot: root, ProjectTree: projectTree, Judge: "base"}
+			got := baseJudgeFenceRefusalWithSources(params, "carried opid=fixture", func(gotRoot, gotTree string) ([]byte, error) {
+				if gotRoot != root || gotTree != projectTree {
+					t.Fatalf("diff-tree requested for root=%q tree=%q", gotRoot, gotTree)
+				}
+				return []byte("metasystem/" + path + "\n"), nil
+			}, func(gotRoot string) (string, error) {
+				if gotRoot != root {
+					t.Fatalf("prefix requested for root=%q", gotRoot)
+				}
+				return "metasystem/", nil
+			})
 			if got == nil || got.Code != "carry-base-judge-blind" || !strings.Contains(got.Refusal, path) {
 				t.Fatalf("base judge fence for %s = %+v; want carry-base-judge-blind naming the path", path, got)
 			}

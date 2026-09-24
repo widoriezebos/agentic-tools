@@ -121,7 +121,7 @@ if (( witness_common_eligible )); then
   witness_gate_rc=0
   ( cd "$witness_snap" \
       && GOFLAGS=-mod=readonly METASYSTEM_GATE_FROZEN_TOOLCHAIN=1 \
-         METASYSTEM_PROOF_EXECUTION_ROOT="$root" \
+         METASYSTEM_PROOF_EXECUTION_ROOT="${METASYSTEM_PROOF_EXECUTION_ROOT:-$root}" \
          METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
          METASYSTEM_GATE_WITNESS_RUN="$witness_run" \
          METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST="$witness_manifest_digest" \

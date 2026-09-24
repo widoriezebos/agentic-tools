@@ -2,77 +2,94 @@ package steward
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 func TestTrunkRedRoleVerdicts(t *testing.T) {
 	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	t.Run("none is not green", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", nil)
-		role := checkTrunkRed(root, now)
+		bed := newRoleTrunkRedBed(t, now, nil, nil)
+		role := bed.trunkRedWithoutBatch()
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "no deep validation cadence") || !strings.Contains(role.Remedy, "gate cadence-tick") {
 			t.Fatalf("no entries: %+v", role)
 		}
 	})
 	t.Run("owned is alive with age", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", nil)
-		writeHealthTrunkRed(t, root, []goal.TrunkRedEntry{healthTrunkRedEntry("owned", "bed-m1", now.Add(-2*time.Hour))}, healthCadence(now, "passed"))
-		role := checkTrunkRed(root, now)
+		bed := newRoleTrunkRedBed(t, now, []goal.TrunkRedEntry{healthTrunkRedEntry("owned", "bed-m1", now.Add(-2*time.Hour))}, healthCadence(now, "passed"))
+		role := bed.trunkRedWithoutBatch()
 		if role.Status != HealthAlive || role.Reason != "1 open, all owned; oldest 2h0m0s" {
 			t.Fatalf("owned entry: %+v", role)
 		}
 	})
 	t.Run("empty owner is dead", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", nil)
-		writeHealthTrunkRed(t, root, []goal.TrunkRedEntry{healthTrunkRedEntry("unowned", "", now.Add(-time.Hour))}, healthCadence(now, "passed"))
-		role := checkTrunkRed(root, now)
+		bed := newRoleTrunkRedBed(t, now, []goal.TrunkRedEntry{healthTrunkRedEntry("unowned", "", now.Add(-time.Hour))}, healthCadence(now, "passed"))
+		role := bed.trunkRedWithoutBatch()
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "unowned") || !strings.Contains(role.Remedy, "goal trunk-red own --id unowned") {
 			t.Fatalf("unowned entry: %+v", role)
 		}
 	})
 	t.Run("stale empty batch hold is dead but a fresh hold is alive", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", nil)
-		writeHealthTrunkRed(t, root, nil, healthCadence(now, "passed"))
-		landing := healthBatchRoot(t)
-		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("landing.batch-root="+landing+"\n"), 0o644); err != nil {
+		bed := newRoleTrunkRedBed(t, now, nil, healthCadence(now, "passed"))
+		landing := t.TempDir()
+		if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), []byte("landing.batch-root="+landing+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		resolverCalls := 0
+		resolve := func(confPath, seatRoot string, clock func() time.Time) (config.BatchLanding, error) {
+			resolverCalls++
+			if confPath != filepath.Join(bed.root, "metasystem.conf") || seatRoot != bed.root || !clock().Equal(now) {
+				t.Fatalf("batch resolver arguments: conf=%q root=%q now=%s", confPath, seatRoot, clock())
+			}
+			return config.NewBatchLanding(landing, time.Minute, clock)
+		}
 		writeHealthBatch(t, landing, now.Add(-2*time.Minute), "held-opid")
-		role := checkTrunkRed(root, now)
+		role := bed.trunkRed(resolve)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "batch batch-held opid") || !strings.Contains(role.Remedy, "landing batch tick") {
 			t.Fatalf("stale hold: %+v", role)
 		}
 		writeHealthBatch(t, landing, now.Add(-2*time.Minute), "second-opid")
-		role = checkTrunkRed(root, now)
+		role = bed.trunkRed(resolve)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "batch batch-held opid second-opid") {
 			t.Fatalf("stale rotated hold: %+v", role)
 		}
 		writeHealthBatch(t, landing, now.Add(-30*time.Second), "held-opid")
-		role = checkTrunkRed(root, now)
+		role = bed.trunkRed(resolve)
 		if role.Status != HealthAlive || role.Reason != "no open trunk red" {
 			t.Fatalf("fresh hold: %+v", role)
 		}
 		writeHealthBatch(t, landing, now.Add(-30*time.Second), "second-opid", now.Add(-2*time.Minute))
-		role = checkTrunkRed(root, now)
+		role = bed.trunkRed(resolve)
 		if role.Status != HealthAlive || role.Reason != "no open trunk red" {
 			t.Fatalf("fresh re-hold after stale hold: %+v", role)
 		}
+		if resolverCalls != 4 {
+			t.Fatalf("batch resolver calls = %d, want 4", resolverCalls)
+		}
 	})
 	t.Run("unreadable configured batch root is unknown", func(t *testing.T) {
-		root := convertedBed(t, "bed-m1", nil)
-		writeHealthTrunkRed(t, root, nil, healthCadence(now, "passed"))
-		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("landing.batch-root="+filepath.Join(t.TempDir(), "missing")+"\n"), 0o644); err != nil {
+		bed := newRoleTrunkRedBed(t, now, nil, healthCadence(now, "passed"))
+		if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), []byte("landing.batch-root="+filepath.Join(t.TempDir(), "missing")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		role := checkTrunkRed(root, now)
+		resolverCalls := 0
+		role := bed.trunkRed(func(confPath, seatRoot string, clock func() time.Time) (config.BatchLanding, error) {
+			resolverCalls++
+			if confPath != filepath.Join(bed.root, "metasystem.conf") || seatRoot != bed.root || !clock().Equal(now) {
+				t.Fatalf("batch resolver arguments: conf=%q root=%q now=%s", confPath, seatRoot, clock())
+			}
+			return config.BatchLanding{}, errors.New("declared missing batch checkout")
+		})
+		if resolverCalls != 1 {
+			t.Fatalf("batch resolver calls = %d, want 1", resolverCalls)
+		}
 		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "batch root") {
 			t.Fatalf("unreadable root: %+v", role)
 		}
@@ -92,10 +109,9 @@ func TestTrunkRedHealthReportsOverdueAndNonGreenCadence(t *testing.T) {
 		{name: "non-green", groupStatus: "failed", reason: "non-green", window: now},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := convertedBed(t, "bed-m1", nil)
 			status := healthCadence(test.window, test.groupStatus)
-			writeHealthTrunkRed(t, root, nil, status)
-			role := checkTrunkRed(root, now)
+			bed := newRoleTrunkRedBed(t, now, nil, status)
+			role := bed.trunkRedWithoutBatch()
 			if role.Status != HealthDead || !strings.Contains(role.Reason, test.reason) || !strings.Contains(role.Reason, status.TrunkCommit) || !strings.Contains(role.Remedy, "gate cadence-tick") {
 				t.Fatalf("cadence health=%+v", role)
 			}
@@ -119,31 +135,6 @@ func healthTrunkRedEntry(id, machine string, opened time.Time) goal.TrunkRedEntr
 	return goal.TrunkRedEntry{ID: id, Identity: id, Group: "fast", Status: "failed", Failures: []goal.TrunkRedFailure{},
 		Sightings: []goal.TrunkRedSighting{{Attempt: "attempt-1", Batch: "batch-1", BaseCommit: "base-1", SeenAt: stamp,
 			Opid: goal.Opid("01J5X0000000000000000000W1", "bed-m1", "lineage")}}, Owner: owner, Holds: []string{"batch-1"}, Opened: stamp}
-}
-
-func writeHealthTrunkRed(t *testing.T, root string, entries []goal.TrunkRedEntry, cadence *goal.CadenceStatus) {
-	t.Helper()
-	path := filepath.Join(root, "plans", "goals", "trunk-red.json")
-	if entries == nil {
-		entries = []goal.TrunkRedEntry{}
-	}
-	data, err := json.MarshalIndent(map[string]any{"schema": 1, "entries": entries, "cadence": cadence}, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	healthGit(t, root, "add", "plans/goals/trunk-red.json")
-	healthGit(t, root, "commit", "-q", "-m", "trunk-red health fixture")
-	healthGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-}
-
-func healthBatchRoot(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	healthGit(t, root, "init", "-q", "-b", "main")
-	return root
 }
 
 func writeHealthBatch(t *testing.T, root string, heldAt time.Time, currentOpid string, previousHoldAt ...time.Time) {
@@ -181,15 +172,4 @@ func writeHealthBatch(t *testing.T, root string, heldAt time.Time, currentOpid s
 	if err := os.WriteFile(filepath.Join(directory, "batch-held.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func healthGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, output)
-	}
-	return strings.TrimSpace(string(output))
 }

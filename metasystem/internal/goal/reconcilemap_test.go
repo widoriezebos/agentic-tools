@@ -28,7 +28,7 @@ func editFile(t *testing.T, root, rel string, transform func(*GoalFile)) {
 
 func TestHandEditsMapToTheSmallestVerbSet(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	// One file: a state change (queued → parked) AND a field change
 	// (next step) — the pinned precedence maps the state verb first,
 	// then ONE edit.
@@ -41,7 +41,7 @@ func TestHandEditsMapToTheSmallestVerbSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := MapDeltas(a, tip, snap)
+	rows, err := mapDeltasFor(endpoint, tip, snap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
 	t.Parallel()
 	t.Run("live state change", func(t *testing.T) {
 		t.Parallel()
-		root, tip := reconcileBed(t)
+		root, tip, endpoint := newFakeReconcileBed(t)
 		editFile(t, root, livePath("editable"), func(file *GoalFile) {
 			file.State = StateAbandoned
 		})
@@ -72,7 +72,7 @@ func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = MapDeltas(root, tip, snapshot)
+		_, err = mapDeltasFor(endpoint, tip, snapshot)
 		if err == nil || !strings.Contains(err.Error(), "the state change queued to abandoned has no hand-edit grammar") {
 			t.Fatalf("hand state change reached the wrong refusal: %v", err)
 		}
@@ -80,7 +80,7 @@ func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
 
 	t.Run("new archive file", func(t *testing.T) {
 		t.Parallel()
-		root, tip := reconcileBed(t)
+		root, tip, endpoint := newFakeReconcileBed(t)
 		path := filepath.Join(root, filepath.FromSlash(recordsGoalsPrefix+"hand-abandoned.md"))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -92,7 +92,7 @@ func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = MapDeltas(root, tip, snapshot)
+		_, err = mapDeltasFor(endpoint, tip, snapshot)
 		if err == nil || !strings.Contains(err.Error(), "hand-creating archive entries is unmappable; done is a verb") {
 			t.Fatalf("hand-created archive reached the wrong refusal: %v", err)
 		}
@@ -101,7 +101,7 @@ func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
 
 func TestGeneratedFieldTamperRefusesByFileAndField(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Revision = 99
 	})
@@ -109,7 +109,7 @@ func TestGeneratedFieldTamperRefusesByFileAndField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = MapDeltas(a, tip, snap)
+	_, err = mapDeltasFor(endpoint, tip, snap)
 	if err == nil || !strings.Contains(err.Error(), "editable.md") || !strings.Contains(err.Error(), "Revision") {
 		t.Fatalf("a tampered generated field refuses by file and field: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestGeneratedFieldTamperRefusesByFileAndField(t *testing.T) {
 
 func TestHandCreatedFileMapsToOpen(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	created := &GoalFile{
 		Id: "hand-opened", State: StateQueued,
 		Intent: "Opened in an editor.", Origin: "human", NextStep: "Start.",
@@ -150,7 +150,7 @@ func TestHandCreatedFileMapsToOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := MapDeltas(a, tip, snap)
+	rows, err := mapDeltasFor(endpoint, tip, snap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestHandCreatedFileMapsToOpen(t *testing.T) {
 
 func TestHandDeletionIsUnmappable(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	if err := os.Remove(filepath.Join(a, "plans", "goals", "editable.md")); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestHandDeletionIsUnmappable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = MapDeltas(a, tip, snap)
+	_, err = mapDeltasFor(endpoint, tip, snap)
 	if err == nil || !strings.Contains(err.Error(), "done and prune are verbs") {
 		t.Fatalf("hand deletion refuses toward the verbs: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestHandDeletionIsUnmappable(t *testing.T) {
 
 func TestWhitespaceOnlyChangeNamesTheClosedSurface(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	abs := filepath.Join(a, "plans", "goals", "editable.md")
 	data, err := os.ReadFile(abs)
 	if err != nil {
@@ -193,7 +193,7 @@ func TestWhitespaceOnlyChangeNamesTheClosedSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = MapDeltas(a, tip, snap)
+	_, err = mapDeltasFor(endpoint, tip, snap)
 	if err == nil || !strings.Contains(err.Error(), "surface is closed") {
 		t.Fatalf("bytes without a field refuse by name: %v", err)
 	}
@@ -201,23 +201,23 @@ func TestWhitespaceOnlyChangeNamesTheClosedSurface(t *testing.T) {
 
 func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	a, _, endpoint := newFakeReconcileBed(t, nil)
 	for i, id := range []string{"harc-one", "harc-two"} {
 		ulid := []string{"01J5X00000000000000000H000", "01J5X00000000000000000H010"}[i]
-		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Arc "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(verbReqFor(endpoint, ulid, "mac-a"), id, "Arc "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
 		arcUlid := []string{"01J5X00000000000000000H020", "01J5X00000000000000000H030"}[i]
-		if res, err := SetArc(verbReq(a, arcUlid, "mac-a"), id, "hand-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := SetArc(verbReqFor(endpoint, arcUlid, "mac-a"), id, "hand-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	p, err := Project(endpointFor(a), true, time.Now())
+	p, err := Project(endpoint, true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	materialize(t, a, p.Tip)
+	tip := p.Tip
+	materializeFakeReconcile(t, endpoint, tip)
 
 	// The full-arc park: identical deltas across BOTH live members.
 	for _, id := range []string{"harc-one", "harc-two"} {
@@ -230,7 +230,7 @@ func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := MapDeltas(a, p.Tip, snap)
+	rows, err := mapDeltasFor(endpoint, tip, snap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = MapDeltas(a, p.Tip, snap2)
+	_, err = mapDeltasFor(endpoint, tip, snap2)
 	if err == nil || !strings.Contains(err.Error(), "all-or-none") {
 		t.Fatalf("a partial-arc hand-park refuses: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
 
 func TestHandGrammarRefusalArms(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 
 	// Root-record hand edits have no grammar.
 	rootPath := filepath.Join(a, "plans", "goals", "backlog.md")
@@ -270,7 +270,7 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MapDeltas(a, tip, snap); err == nil || !strings.Contains(err.Error(), "declare-free and prune are verbs") {
+	if _, err := mapDeltasFor(endpoint, tip, snap); err == nil || !strings.Contains(err.Error(), "declare-free and prune are verbs") {
 		t.Fatalf("the root record refuses toward its verbs: %v", err)
 	}
 	if err := os.WriteFile(rootPath, data, 0o644); err != nil {
@@ -297,12 +297,12 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = MapDeltas(a, tip, snap)
+		_, err = mapDeltasFor(endpoint, tip, snap)
 		if err == nil || !strings.Contains(err.Error(), leg.fragment) {
 			t.Fatalf("%s: refusal names the field: %v", leg.name, err)
 		}
 		// Restore for the next leg.
-		published, _ := ReadCommitGoals(a, tip)
+		published, _ := readCommitGoals(endpoint, tip)
 		if err := os.WriteFile(filepath.Join(a, "plans", "goals", "editable.md"), published[goalsPrefix+"editable.md"], 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -311,7 +311,7 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 	// A hand-done maps; a hand-done without its conclusion refuses.
 	// Raw bytes here: the fixture helper's own strict parse would
 	// refuse the invalid intermediate before the mapper could.
-	published, _ := ReadCommitGoals(a, tip)
+	published, _ := readCommitGoals(endpoint, tip)
 	raw := strings.Replace(string(published[goalsPrefix+"editable.md"]), "- State: queued", "- State: done", 1)
 	if err := os.WriteFile(filepath.Join(a, "plans", "goals", "editable.md"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
@@ -320,7 +320,7 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MapDeltas(a, tip, snap3); err == nil || !strings.Contains(err.Error(), "Concluded") {
+	if _, err := mapDeltasFor(endpoint, tip, snap3); err == nil || !strings.Contains(err.Error(), "Concluded") {
 		t.Fatalf("a hand-done needs its conclusion: %v", err)
 	}
 	withConclude := strings.Replace(raw, "- State: done", "- State: done\n- Concluded: Hand-concluded.", 1)
@@ -331,7 +331,7 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := MapDeltas(a, tip, snap4)
+	rows, err := mapDeltasFor(endpoint, tip, snap4)
 	if err != nil || len(rows) != 1 || rows[0].Verb != "done" || rows[0].Conclude != "Hand-concluded." {
 		t.Fatalf("a hand-done with its conclusion maps: %+v %v", rows, err)
 	}
@@ -339,14 +339,12 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 
 func TestUnparkAndLenientDisplacedRoundTrip(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
-	// Park through the verb so the base carries a parked state, then
-	// re-materialize and hand-unpark.
-	res, err := Park(verbReq(a, "01J5X00000000000000000H100", "mac-a"), "editable", "pausing")
+	a, _, endpoint := newFakeReconcileBed(t)
+	res, err := Park(verbReqFor(endpoint, "01J5X00000000000000000H100", "mac-a"), "editable", "pausing")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
-	materialize(t, a, res.Tip)
+	materializeFakeReconcile(t, endpoint, res.Tip)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.State = StateQueued
 		f.Parked = nil
@@ -355,7 +353,7 @@ func TestUnparkAndLenientDisplacedRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := MapDeltas(a, res.Tip, snap)
+	rows, err := mapDeltasFor(endpoint, res.Tip, snap)
 	if err != nil || len(rows) != 1 || rows[0].Verb != "unpark" {
 		t.Fatalf("a hand-unpark maps: %+v %v", rows, err)
 	}
@@ -369,7 +367,7 @@ func TestUnparkAndLenientDisplacedRoundTrip(t *testing.T) {
 
 func TestHandParkWithAForeignTokenRefusesUnrewritten(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	// The human typed a token the park grammar does not know. The
 	// lenient path must NOT rebuild the line into a clean placeholder
 	// park — that silently discards what they wrote; the strict
@@ -388,7 +386,7 @@ func TestHandParkWithAForeignTokenRefusesUnrewritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, mapErr := MapDeltas(a, tip, snap)
+	_, mapErr := mapDeltasFor(endpoint, tip, snap)
 	if mapErr == nil || !strings.Contains(mapErr.Error(), "diagnostic") {
 		t.Fatalf("a foreign park token refuses by diagnostic, never a cleaned rewrite: %v", mapErr)
 	}
@@ -396,7 +394,7 @@ func TestHandParkWithAForeignTokenRefusesUnrewritten(t *testing.T) {
 
 func TestHandParkWithDuplicateKeysRefusesUnrewritten(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	// A duplicate by= must reach the strict parser intact: the old
 	// rebuild laundered "by=original by= at=" into a clean
 	// placeholder line, discarding the first value AND the
@@ -415,7 +413,7 @@ func TestHandParkWithDuplicateKeysRefusesUnrewritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, mapErr := MapDeltas(a, tip, snap)
+	_, mapErr := mapDeltasFor(endpoint, tip, snap)
 	if mapErr == nil || !strings.Contains(mapErr.Error(), "diagnostic") {
 		t.Fatalf("a duplicate park key refuses by diagnostic, never a cleaned rewrite: %v", mapErr)
 	}
@@ -423,7 +421,7 @@ func TestHandParkWithDuplicateKeysRefusesUnrewritten(t *testing.T) {
 
 func TestHandParkWithABlockerTokenRefuses(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	abs := filepath.Join(a, "plans", "goals", "editable.md")
 	data, err := os.ReadFile(abs)
 	if err != nil {
@@ -439,7 +437,7 @@ func TestHandParkWithABlockerTokenRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, mapErr := MapDeltas(a, tip, snap); mapErr == nil || !strings.Contains(mapErr.Error(), "diagnostic") {
+	if _, mapErr := mapDeltasFor(endpoint, tip, snap); mapErr == nil || !strings.Contains(mapErr.Error(), "diagnostic") {
 		t.Fatalf("a blocker token without its edge refuses by diagnostic: %v", mapErr)
 	}
 	// With the edge the file parses, and the hand grammar refuses the token
@@ -452,7 +450,7 @@ func TestHandParkWithABlockerTokenRefuses(t *testing.T) {
 	if snap, err = CaptureSnapshot(a); err != nil {
 		t.Fatal(err)
 	}
-	if _, mapErr := MapDeltas(a, tip, snap); mapErr == nil || !strings.Contains(mapErr.Error(), "goal open --blocks") {
+	if _, mapErr := mapDeltasFor(endpoint, tip, snap); mapErr == nil || !strings.Contains(mapErr.Error(), "goal open --blocks") {
 		t.Fatalf("a hand park carries no blocker: %v", mapErr)
 	}
 }

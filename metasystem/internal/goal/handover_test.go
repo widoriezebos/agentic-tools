@@ -119,18 +119,17 @@ func stringProblems(problems []Problem) string {
 	return strings.Join(parts, "\n")
 }
 
-func handoverBed(t *testing.T, id string, rich bool) (string, VerbRequest) {
+func handoverBed(t *testing.T, id string, rich bool) (Endpoint, VerbRequest) {
 	t.Helper()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	req := verbReq(root, "01J5X00000000000000000HB01", "mac-studio")
+	endpoint, _ := fakeGoalEndpoint(t)
+	req := verbReqFor(endpoint, "01J5X00000000000000000HB01", "mac-studio")
 	req.Actor.Lineage, req.ClaimEpoch = "session-a", 7
 	req.CallerClass, req.EpochAuthority = "MAIN", EpochAuthorityHolder
 	if result, err := openClaimForTest(t, req, id, "Move custody without rebinding it.", OriginMain, "Hand it over.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim handover fixture: %+v %v", result, err)
 	}
 	if rich {
-		tree, _ := loadTree(root, acceptedTip(t, root))
+		tree, _ := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 		f := tree.Live[id]
 		f.Claimed.IdleSeconds = 41
 		obligation := testGovernedObligation(ObligationDraft)
@@ -141,20 +140,20 @@ func handoverBed(t *testing.T, id string, rich bool) (string, VerbRequest) {
 		f.StopCapability.FenceEpoch = 1
 		f.StopFence = &StopFence{StopID: "stop-" + id + "-r3-f1", Revision: f.Claimed.Revision, Epoch: 1, CapabilityGeneration: f.StopCapability.Generation, ClosedAt: req.stamp(), Reason: StopReasonElapsedLimit}
 		f.Landing = &LandingRecord{At: req.stamp(), Opid: f.History[len(f.History)-1].Opid}
-		publishGoalFixtures(t, root, f)
+		publishGoalFixturesForEndpoint(t, endpoint, f)
 	}
-	return root, req
+	return endpoint, req
 }
 func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 	t.Parallel()
-	root, req := handoverBed(t, "field-complete", true)
-	before, _ := loadTree(root, acceptedTip(t, root))
+	endpoint, req := handoverBed(t, "field-complete", true)
+	before, _ := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	req.Ulid, req.Now = "01J5X00000000000000000HB02", req.Now.Add(time.Minute)
 	result, err := Handover(req, "field-complete", "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil })
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("holder handover: %+v %v", result, err)
 	}
-	after, _ := loadTree(root, result.Tip)
+	after, _ := loadTreeFor(endpoint, result.Tip)
 	want, got := before.Live["field-complete"], after.Live["field-complete"]
 	rows := []struct {
 		name string
@@ -197,7 +196,7 @@ func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 	if res, err := Handover(holder, "field-complete", "landing", "landing-lineage", 12, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("same-pair epoch rebind: %+v %v", res, err)
 	}
-	rebound, _ := loadTree(root, acceptedTip(t, root))
+	rebound, _ := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if rebound.Live["field-complete"].Claimed.HandedOver != got.Claimed.HandedOver || rebound.Live["field-complete"].StopCapability.ClaimEpoch != 12 {
 		t.Fatalf("epoch rebind changed the return record or missed the epoch: %+v", rebound.Live["field-complete"])
 	}
@@ -230,16 +229,16 @@ func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 	reject("unclaimed goal", holder, "unclaimed", "landing", "landing-lineage", 13, func() (identity.Liveness, error) { return identity.Alive, nil }, "no complete claimed authority")
 }
 
-func handBackBed(t *testing.T, rich bool) (string, VerbRequest, VerbRequest) {
+func handBackBed(t *testing.T, rich bool) (Endpoint, VerbRequest, VerbRequest) {
 	t.Helper()
-	root, source := handoverBed(t, "hand-back", rich)
+	endpoint, source := handoverBed(t, "hand-back", rich)
 	source.Ulid = "01J5X00000000000000000HC01"
 	if result, err := Handover(source, "hand-back", "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("forward handover: %+v %v", result, err)
 	}
 	holder := source
 	holder.Actor, holder.ClaimEpoch, holder.Ulid = Actor{Machine: "landing", Lineage: "landing-lineage"}, 11, "01J5X00000000000000000HC02"
-	return root, source, holder
+	return endpoint, source, holder
 }
 
 func setHandoverTargetRoot(t *testing.T, request *VerbRequest, root string) {
@@ -253,7 +252,7 @@ func setHandoverTargetRoot(t *testing.T, request *VerbRequest, root string) {
 
 func TestGoalHandBackClearsHandedOverAndValidates(t *testing.T) {
 	t.Parallel()
-	root, source, holder := handBackBed(t, true)
+	endpoint, source, holder := handBackBed(t, true)
 	source.Ulid = "01J5X00000000000000000HC03"
 	if result, err := openClaimForTest(t, source, "other-member", "Land another member.", OriginMain, "Hand it over.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("second claim: %+v %v", result, err)
@@ -262,14 +261,14 @@ func TestGoalHandBackClearsHandedOverAndValidates(t *testing.T) {
 	if result, err := Handover(source, "other-member", "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("second handover: %+v %v", result, err)
 	}
-	before, _ := loadTree(root, acceptedTip(t, root))
+	before, _ := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	other := RenderFile(before.Live["other-member"])
-	setHandoverTargetRoot(t, &holder, root)
+	setHandoverTargetRoot(t, &holder, endpoint.Root)
 	result, err := Handover(holder, "hand-back", "mac-studio", "session-a", 8, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil })
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("hand-back: %+v %v", result, err)
 	}
-	after, _ := loadTree(root, result.Tip)
+	after, _ := loadTreeFor(endpoint, result.Tip)
 	returned := after.Live["hand-back"]
 	if returned.Claimed.Machine != "mac-studio" || returned.Claimed.Lineage != "session-a" || returned.Claimed.HandedOver != (HandedOver{}) || returned.StopCapability.ClaimEpoch != 8 {
 		t.Fatalf("returned claim: %+v", returned)
@@ -277,7 +276,7 @@ func TestGoalHandBackClearsHandedOverAndValidates(t *testing.T) {
 	if string(RenderFile(after.Live["other-member"])) != string(other) {
 		t.Fatal("other handed-over member changed")
 	}
-	if err := ValidateCommit(root, result.Tip); err != nil {
+	if err := validateCommitFor(endpoint, result.Tip); err != nil {
 		t.Fatalf("returned commit did not validate: %v", err)
 	}
 }
@@ -298,7 +297,7 @@ func TestGoalHandBackRefusals(t *testing.T) {
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			root, source, holder := handBackBed(t, false)
+			endpoint, source, holder := handBackBed(t, false)
 			setHandoverTargetRoot(t, &holder, test.targetRoot)
 			if test.occupied {
 				source.Ulid = "01J5X00000000000000000HD01"
@@ -307,14 +306,14 @@ func TestGoalHandBackRefusals(t *testing.T) {
 				}
 			}
 			holder.Ulid = []string{"01J5X00000000000000000HD02", "01J5X00000000000000000HD03", "01J5X00000000000000000HD04", "01J5X00000000000000000HD05", "01J5X00000000000000000HD06"}[index]
-			before := acceptedTip(t, root)
+			before := acceptedTipForEndpoint(t, endpoint)
 			result, err := Handover(holder, "hand-back", test.machine, test.lineage, test.epoch, test.batch, func() (identity.Liveness, error) { return identity.Alive, nil })
 			detail := result.Detail
 			if err != nil {
 				detail = err.Error()
 			}
-			if result.Outcome == OutcomeConfirmed || !strings.Contains(detail, test.want) || acceptedTip(t, root) != before {
-				t.Fatalf("refusal: result=%+v err=%v before=%s after=%s", result, err, before, acceptedTip(t, root))
+			if result.Outcome == OutcomeConfirmed || !strings.Contains(detail, test.want) || acceptedTipForEndpoint(t, endpoint) != before {
+				t.Fatalf("refusal: result=%+v err=%v before=%s after=%s", result, err, before, acceptedTipForEndpoint(t, endpoint))
 			}
 		})
 	}
@@ -322,7 +321,7 @@ func TestGoalHandBackRefusals(t *testing.T) {
 
 func handedOverTerminalClearsRecord(t *testing.T, done bool) {
 	t.Helper()
-	root, req := handoverBed(t, "terminal-handover", false)
+	endpoint, req := handoverBed(t, "terminal-handover", false)
 	req.Ulid = "01J5X00000000000000000HB07"
 	if res, err := Handover(req, "terminal-handover", "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("handover: %+v %v", res, err)
@@ -338,7 +337,7 @@ func handedOverTerminalClearsRecord(t *testing.T, done bool) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("terminal mutation: %+v %v", result, err)
 	}
-	tree, _ := loadTree(root, result.Tip)
+	tree, _ := loadTreeFor(endpoint, result.Tip)
 	file := tree.Live["terminal-handover"]
 	if done {
 		file = tree.Done["terminal-handover"]

@@ -17,21 +17,25 @@ import (
 // testing-contract driver to an ordinary path. Both the current tree and the
 // tree with the commit's own attribute-file changes are checked.
 func PreflightCommitAttributes(repo, before, commit string) error {
-	paths, err := changedPaths(repo, commit+"^", commit)
+	return PreflightCommitAttributesWith(repo, before, commit, DefaultCommitAccess())
+}
+
+func PreflightCommitAttributesWith(repo, before, commit string, a CommitAccess) error {
+	paths, err := commitPaths(a, repo, commit+"^", commit, "")
 	if err != nil || len(paths) == 0 {
 		return err
 	}
-	if err := refuseMisusedAttribute(repo, before, commit, paths); err != nil {
+	if err := refuseMisusedAttributeWith(a, repo, before, commit, paths); err != nil {
 		return err
 	}
-	overlay, cleanup, err := attributeOverlay(repo, before, commit, paths)
+	overlay, cleanup, err := attributeOverlayWith(a, repo, before, commit, paths)
 	if cleanup != nil {
 		defer cleanup()
 	}
 	if err != nil {
 		return err
 	}
-	return refuseMisusedAttribute(repo, overlay, commit, paths)
+	return refuseMisusedAttributeWith(a, repo, overlay, commit, paths)
 }
 
 // PreflightPatchAttributes applies only attribute-file hunks to an isolated
@@ -67,11 +71,24 @@ func PreflightPatchAttributes(repo, before, label string, patch []byte) error {
 // CheckCommitContract requires the applied contract bytes to be the semantic
 // merge of the source parent, the pre-apply tree, and the source commit.
 func CheckCommitContract(repo, before, after, commit, label string) error {
-	changed, err := pathChanged(repo, commit+"^", commit, TestingContractPath)
+	return CheckCommitContractWith(repo, before, after, commit, label, DefaultCommitAccess())
+}
+
+func CheckCommitContractWith(repo, before, after, commit, label string, a CommitAccess) error {
+	paths, err := commitPaths(a, repo, commit+"^", commit, TestingContractPath)
+	changed := len(paths) != 0
 	if err != nil || !changed {
 		return err
 	}
-	return checkContract(repo, before, after, commit+"^", commit, label)
+	base, err := a.File(repo, commit+"^", TestingContractPath)
+	if err != nil {
+		return err
+	}
+	theirs, err := a.File(repo, commit, TestingContractPath)
+	if err != nil {
+		return err
+	}
+	return checkContractBytesWith(a.File, repo, before, after, base, theirs, label)
 }
 
 // CheckPatchContract applies the same invariant to a full-index patch. The
@@ -82,18 +99,6 @@ func CheckPatchContract(repo, before, after string, patch []byte, label string) 
 		return err
 	}
 	return checkContractBlobs(repo, before, after, base, theirs, label)
-}
-
-func checkContract(repo, before, after, baseTree, theirsTree, label string) error {
-	base, err := treeFile(repo, baseTree, TestingContractPath)
-	if err != nil {
-		return err
-	}
-	theirs, err := treeFile(repo, theirsTree, TestingContractPath)
-	if err != nil {
-		return err
-	}
-	return checkContractBytes(repo, before, after, base, theirs, label)
 }
 
 func checkContractBlobs(repo, before, after, baseBlob, theirsBlob, label string) error {
@@ -109,11 +114,15 @@ func checkContractBlobs(repo, before, after, baseBlob, theirsBlob, label string)
 }
 
 func checkContractBytes(repo, before, after string, base, theirs []byte, label string) error {
-	ours, err := treeFile(repo, before, TestingContractPath)
+	return checkContractBytesWith(treeFile, repo, before, after, base, theirs, label)
+}
+
+func checkContractBytesWith(file func(string, string, string) ([]byte, error), repo, before, after string, base, theirs []byte, label string) error {
+	ours, err := file(repo, before, TestingContractPath)
 	if err != nil {
 		return err
 	}
-	actual, err := treeFile(repo, after, TestingContractPath)
+	actual, err := file(repo, after, TestingContractPath)
 	if err != nil {
 		return err
 	}
@@ -167,20 +176,6 @@ func patchContractBlobs(patch []byte) (string, string, bool, error) {
 	return "", "", false, nil
 }
 
-func changedPaths(repo, before, after string) ([]string, error) {
-	out, err := runGit(repo, nil, "diff-tree", "-r", "--name-only", "-z", "--no-renames", before, after)
-	if err != nil {
-		return nil, err
-	}
-	var paths []string
-	for _, path := range bytes.Split(out, []byte{0}) {
-		if len(path) != 0 {
-			paths = append(paths, string(path))
-		}
-	}
-	return paths, nil
-}
-
 func patchPaths(repo string, patch []byte) ([]string, error) {
 	out, err := runGitInput(repo, nil, patch, "apply", "--numstat", "-z", "-")
 	if err != nil {
@@ -200,15 +195,12 @@ func patchPaths(repo string, patch []byte) ([]string, error) {
 	return paths, nil
 }
 
-func pathChanged(repo, before, after, path string) (bool, error) {
-	out, err := runGit(repo, nil, "diff-tree", "-r", "--name-only", "-z", "--no-renames", before, after, "--", path)
-	return len(out) != 0, err
+func refuseMisusedAttribute(repo, tree, commit string, paths []string) error {
+	return refuseMisusedAttributeWith(DefaultCommitAccess(), repo, tree, commit, paths)
 }
 
-func refuseMisusedAttribute(repo, tree, commit string, paths []string) error {
-	args := []string{"check-attr", "--source=" + tree, "-z", "merge", "--"}
-	args = append(args, paths...)
-	out, err := runGit(repo, nil, args...)
+func refuseMisusedAttributeWith(a CommitAccess, repo, tree, commit string, paths []string) error {
+	out, err := a.Attributes(repo, tree, paths)
 	if err != nil {
 		return err
 	}
@@ -222,25 +214,24 @@ func refuseMisusedAttribute(repo, tree, commit string, paths []string) error {
 	return nil
 }
 
-func attributeOverlay(repo, before, commit string, paths []string) (string, func(), error) {
-	name, cleanup, err := temporaryIndex()
+func attributeOverlayWith(a CommitAccess, repo, before, commit string, paths []string) (string, func(), error) {
+	name, cleanup, err := a.OpenAttributeIndex()
 	if err != nil {
 		return "", nil, err
 	}
-	env := []string{"GIT_INDEX_FILE=" + name}
-	if _, err := runGit(repo, env, "read-tree", before); err != nil {
+	if err := a.LoadAttributeBase(repo, name, before); err != nil {
 		return "", cleanup, err
 	}
 	for _, path := range paths {
 		if filepath.Base(path) != ".gitattributes" {
 			continue
 		}
-		entry, err := runGit(repo, env, "ls-tree", "-z", commit, "--", path)
+		entry, err := a.AttributeEntry(repo, name, commit, path)
 		if err != nil {
 			return "", cleanup, err
 		}
 		if len(entry) == 0 {
-			if _, err := runGit(repo, env, "update-index", "--force-remove", "--", path); err != nil {
+			if err := a.DropAttribute(repo, name, path); err != nil {
 				return "", cleanup, err
 			}
 			continue
@@ -253,12 +244,12 @@ func attributeOverlay(repo, before, commit string, paths []string) (string, func
 		if _, err := strconv.ParseUint(parts[0], 8, 32); err != nil {
 			return "", cleanup, fmt.Errorf("attribute mode for %s is malformed", path)
 		}
-		if _, err := runGit(repo, env, "update-index", "--add", "--cacheinfo", parts[0]+","+parts[2]+","+path); err != nil {
+		if err := a.SetAttribute(repo, name, parts[0], parts[2], path); err != nil {
 			return "", cleanup, err
 		}
 	}
-	out, err := runGit(repo, env, "write-tree")
-	return strings.TrimSpace(string(out)), cleanup, err
+	tree, err := a.AttributeTree(repo, name)
+	return tree, cleanup, err
 }
 
 func patchAttributeOverlay(repo, before string, patch []byte, paths []string) (string, func(), error) {

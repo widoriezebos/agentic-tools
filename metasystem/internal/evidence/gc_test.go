@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -242,24 +241,50 @@ func TestKeepsSpendingFactTreatsAbandonedLikeDone(t *testing.T) {
 	}
 }
 
+const gcAcceptedTip = "0123456789abcdef0123456789abcdef01234567"
+
+type gcGoalRepository struct {
+	goal.Repository
+	t           *testing.T
+	files       map[string][]byte
+	accepted    int
+	fileReads   int
+	commitTimes int
+}
+
+func (r *gcGoalRepository) Accepted() (string, bool, error) {
+	r.accepted++
+	return gcAcceptedTip, true, nil
+}
+
+func (r *gcGoalRepository) Files(commit string, prefixes ...string) (map[string][]byte, error) {
+	r.t.Helper()
+	if commit != gcAcceptedTip || len(prefixes) != 2 || prefixes[0] != "plans/goals/" || prefixes[1] != "records/goals/" {
+		r.t.Fatalf("unexpected goal read: commit=%q prefixes=%q", commit, prefixes)
+	}
+	r.fileReads++
+	files := make(map[string][]byte, len(r.files))
+	for path, raw := range r.files {
+		files[path] = append([]byte(nil), raw...)
+	}
+	return files, nil
+}
+
+func (r *gcGoalRepository) CommitTime(commit string) (time.Time, error) {
+	r.t.Helper()
+	if commit != gcAcceptedTip {
+		r.t.Fatalf("unexpected commit time read: %q", commit)
+	}
+	r.commitTimes++
+	return testNow, nil
+}
+
 func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	freezeClock(t)
 	root, evidenceRoot, _, jobs := checkout(t)
-	runGit := func(args ...string) {
-		t.Helper()
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-	runGit("init", "-q", "-b", "main")
-	runGit("config", "user.name", "fixture")
-	runGit("config", "user.email", "fixture@example.invalid")
-	runGit("config", "goal.sync-remote", "local")
-	writeFile(t, filepath.Join(root, "metasystem.conf"), "")
-	writeFile(t, filepath.Join(root, "plans", "goals", "backlog.md"), string(goal.RenderRoot(&goal.RootRecord{
+	renderedRoot := goal.RenderRoot(&goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
-	})))
+	})
 	file := &goal.GoalFile{
 		Id: "bounded", State: goal.StateClaimed, Intent: "Keep the reservation spend", Origin: goal.OriginMain,
 		OpenedAt: "2026-08-10T08:00:00Z", Revision: 2,
@@ -274,10 +299,11 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 			{At: "2026-08-10T09:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-m1-00000001", Verb: "claim", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
 		},
 	}
-	writeFile(t, filepath.Join(root, "plans", "goals", "bounded.md"), string(goal.RenderFile(file)))
-	runGit("add", "plans/goals")
-	runGit("commit", "-q", "-m", "current goal revision")
-	runGit("update-ref", goal.AcceptedRef, "HEAD")
+	repo := &gcGoalRepository{t: t, files: map[string][]byte{
+		"plans/goals/backlog.md": renderedRoot,
+		"plans/goals/bounded.md": goal.RenderFile(file),
+	}}
+	endpoint := &goal.Endpoint{Root: root, Remote: "local", Repository: repo}
 
 	recordPath := filepath.Join(jobs, "spent.json")
 	writeFile(t, recordPath, `{"jobId":"spent","operationId":"spent","goalId":"bounded","goalRevision":2,"capMin":30,"status":"completed"}`)
@@ -299,7 +325,10 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	writeMirroredRecord("unbound", `{"jobId":"unbound","goalId":null,"status":"completed"}`)
 
 	before := dispatch.ProjectBudget(root, file, testNow)
-	runGC(t, root, evidenceRoot)
+	var out strings.Builder
+	if err := gcWithGoalEndpoint(root, evidenceRoot, 5400, &out, endpoint); err != nil {
+		t.Fatalf("GC: %v", err)
+	}
 	for name, wantGone := range map[string]bool{
 		"spent.json":            false,
 		"superseded.json":       true,
@@ -318,6 +347,31 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("budget projection changed across GC: before=%+v after=%+v", before, after)
 	}
+	assertCalls := func() {
+		t.Helper()
+		if repo.accepted != 1 || repo.fileReads != 1 || repo.commitTimes != 1 {
+			t.Fatalf("accepted goal reads: accepted=%d files=%d commit time=%d; want one each", repo.accepted, repo.fileReads, repo.commitTimes)
+		}
+	}
+	assertCalls()
+	t.Run("wrong checkout root stays unknown", func(t *testing.T) {
+		wrong := *endpoint
+		wrong.Root = root + "-other"
+		state := readGoalRevisionStateWithEndpoint(root, &wrong)
+		if !state.unknown || state.tree != nil {
+			t.Fatalf("wrong-root goal state: %+v", state)
+		}
+		assertCalls()
+	})
+	t.Run("missing repository stays unknown", func(t *testing.T) {
+		missing := *endpoint
+		missing.Repository = nil
+		state := readGoalRevisionStateWithEndpoint(root, &missing)
+		if !state.unknown || state.tree != nil {
+			t.Fatalf("missing-repository goal state: %+v", state)
+		}
+		assertCalls()
+	})
 }
 
 func TestSweepsResidueOfTerminalJobs(t *testing.T) {

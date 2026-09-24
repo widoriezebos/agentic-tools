@@ -15,8 +15,8 @@ package gittree
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +30,28 @@ import (
 // operations run against throwaway isolated indexes (GIT_INDEX_FILE in a
 // temp directory), so the caller's real index is never read or written.
 type Workspace struct {
-	Dir string
+	Dir       string
+	RawSource func(RawRequest) RawResult
+}
+
+// RawRequest describes the complete Git invocation made by a workspace.
+// Stdin is nil when the command has no input.
+type RawRequest struct {
+	Args      []string
+	Dir       string
+	Env       []string
+	Stdin     []byte
+	Timeout   boundedexec.Bound
+	Operation string
+}
+
+// RawResult separates a Git exit from a command that could not run.
+type RawResult struct {
+	Stdout     []byte
+	Stderr     []byte
+	ExitCode   int
+	ExitDetail string
+	Err        error
 }
 
 var treeID = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
@@ -119,28 +140,70 @@ func (w Workspace) gitTop(env []string, args ...string) ([]byte, error) {
 }
 
 func (w Workspace) gitAt(dir string, env []string, args ...string) ([]byte, error) {
-	full := append(append([]string{"-C", dir}, configPins...), args...)
-	cmd := exec.Command("git", full...)
-	cmd.Env = ScrubbedEnviron(env...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	limit := boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Local)
-	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
-		detail := strings.TrimSpace(stderr.String())
+	result := w.runRaw(w.rawRequest(dir, env, nil, "git "+strings.Join(args, " "), args...), nil, nil)
+	if result.Err != nil || result.ExitCode != 0 {
+		detail := strings.TrimSpace(string(result.Stderr))
 		if detail == "" {
-			detail = err.Error()
+			if result.Err != nil {
+				detail = result.Err.Error()
+			} else if result.ExitDetail != "" {
+				detail = result.ExitDetail
+			} else {
+				detail = fmt.Sprintf("exit status %d", result.ExitCode)
+			}
 		}
 		// The could-not-run split survives this wrapper: a spawn refusal
 		// or timeout is the runner's own failure, never a repository
 		// answer for the wall to judge.
-		var exit *exec.ExitError
-		if !errors.As(err, &exit) {
+		if result.Err != nil {
 			return nil, &RunFailure{Op: args[0], Err: fmt.Errorf("%s", detail)}
 		}
 		return nil, fmt.Errorf("git %s: %s", args[0], detail)
 	}
-	return stdout.Bytes(), nil
+	return result.Stdout, nil
+}
+
+func (w Workspace) rawRequest(dir string, env []string, stdin []byte, operation string, args ...string) RawRequest {
+	full := append(append([]string{"-C", dir}, configPins...), args...)
+	return RawRequest{
+		Args: full, Dir: dir, Env: ScrubbedEnviron(env...), Stdin: stdin,
+		Timeout:   boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Local),
+		Operation: operation,
+	}
+}
+
+// runRaw is the only native Git execution site. Streams are used by the
+// transfer adapter so a native pack need not be held in memory.
+func (w Workspace) runRaw(request RawRequest, nativeStdin io.Reader, nativeStdout io.Writer) RawResult {
+	if w.RawSource != nil {
+		return w.RawSource(request)
+	}
+	cmd := exec.Command("git", request.Args...)
+	cmd.Env = request.Env
+	if nativeStdin != nil {
+		cmd.Stdin = nativeStdin
+	} else if request.Stdin != nil {
+		cmd.Stdin = bytes.NewReader(request.Stdin)
+	}
+	var stdout, stderr bytes.Buffer
+	if nativeStdout != nil {
+		cmd.Stdout = nativeStdout
+	} else {
+		cmd.Stdout = &stdout
+	}
+	cmd.Stderr = &stderr
+	result := RawResult{}
+	runErr := boundedexec.Run(cmd, request.Timeout, request.Operation)
+	result.Stdout, result.Stderr = stdout.Bytes(), stderr.Bytes()
+	switch typed := runErr.(type) {
+	case nil:
+	case *exec.ExitError:
+		result.ExitCode = typed.ExitCode()
+		result.ExitDetail = typed.Error()
+	default:
+		result.Err = runErr
+	}
+	return result
 }
 
 func (w Workspace) gitLine(env []string, args ...string) (string, error) {
@@ -416,25 +479,21 @@ func (w Workspace) Apply(baseTree string, patch []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("gittree apply: %w", err)
 	}
-	full := append(append([]string{"-C", top}, configPins...),
-		"apply", "--cached", "--binary", "--whitespace=nowarn", "-")
-	cmd := exec.Command("git", full...)
-	cmd.Env = ScrubbedEnviron(env...)
-	cmd.Stdin = bytes.NewReader(patch)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	limit := boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Local)
-	if err := boundedexec.Run(cmd, limit, "git apply --cached"); err != nil {
+	result := w.runRaw(w.rawRequest(top, env, patch, "git apply --cached",
+		"apply", "--cached", "--binary", "--whitespace=nowarn", "-"), bytes.NewReader(patch), nil)
+	if result.Err != nil || result.ExitCode != 0 {
 		// A spawn failure or timeout is the RUNNER's could-not-run, never
 		// a verdict on the patch (WSS I11-14): only ran-and-refused git
 		// may become "does not apply exactly".
-		var exit *exec.ExitError
-		if !errors.As(err, &exit) {
-			return "", fmt.Errorf("gittree apply: %w", &RunFailure{Op: "apply --cached", Err: err})
+		if result.Err != nil {
+			return "", fmt.Errorf("gittree apply: %w", &RunFailure{Op: "apply --cached", Err: result.Err})
 		}
-		detail := strings.TrimSpace(stderr.String())
+		detail := strings.TrimSpace(string(result.Stderr))
 		if detail == "" {
-			detail = err.Error()
+			detail = result.ExitDetail
+			if detail == "" {
+				detail = fmt.Sprintf("exit status %d", result.ExitCode)
+			}
 		}
 		return "", fmt.Errorf("gittree apply: patch does not apply exactly: %s", detail)
 	}

@@ -916,6 +916,8 @@ LAND_ENGINE
 	grep -Fq 'unavailable=0' "$measure_report" \
 	  || { echo "wait-measure-fake produced an unavailable sample" >&2; cat "$measure_report" >&2; exit 1; }
 	control_uncertainty=$(grep '"targetId":"job-control"' "$measure_report" | sed -n 's/.*"uncertaintyNanos":\([0-9][0-9]*\).*/\1/p')
+	# uncertaintyNanos omitempty denotes a zero-width interval.
+	control_uncertainty=${control_uncertainty:-0}
 	unhinted_uncertainty=$(grep '"targetId":"job-unhinted"' "$measure_report" | sed -n 's/.*"uncertaintyNanos":\([0-9][0-9]*\).*/\1/p')
 	[[ "$control_uncertainty" =~ ^[0-9]+$ && "$unhinted_uncertainty" =~ ^[0-9]+$ && "$unhinted_uncertainty" -gt "$control_uncertainty" ]] \
 	  || { echo "unhinted bracket was not wider: control=$control_uncertainty unhinted=$unhinted_uncertainty" >&2; cat "$measure_report" >&2; exit 1; }
@@ -1000,6 +1002,7 @@ make_repo() { # destination
     --set watch.interval-sec=1 \
     --set census.log-max-bytes=350
   git -C "$repo" init -q -b main
+  git -C "$repo" config --local metasystem.steward.notify-command true
   git -C "$repo" add .
   git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
   # Stage the engine the way production ships it: an untracked build artifact
@@ -1221,6 +1224,7 @@ done)
 operator_scope=$(cd "$operator_scope" && pwd -P)
 operator_harness=$(cd "$operator_harness" && pwd -P)
 git -C "$operator_scope" init -q -b main
+git -C "$operator_scope" config --local metasystem.steward.notify-command true
 git -C "$operator_scope" add metasystem
 git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
 fixture_harness_roots+=("$operator_harness")

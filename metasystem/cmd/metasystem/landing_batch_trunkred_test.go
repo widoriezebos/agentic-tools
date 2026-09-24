@@ -3,9 +3,11 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,14 +18,14 @@ import (
 )
 
 func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
+	t.Parallel()
+	repository := newProofAdmissionRepositoryFixture(t, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC), false)
+	root := repository.root
 	const machine, lineage = "mac-landing", "landing-lineage"
-	ownerValue, err := newLedgerTrunkRedOwner(root, machine, lineage)
-	if err != nil || !isLedgerTrunkRedOwner(ownerValue) {
-		t.Fatalf("construct owner: %T %v", ownerValue, err)
+	owner := proofLedgerTrunkRedOwner(t, repository, machine, lineage, time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC))
+	if !isLedgerTrunkRedOwner(owner) {
+		t.Fatalf("construct owner: %T", owner)
 	}
-	owner := ownerValue.(*ledgerTrunkRedOwner)
-	owner.now = func() time.Time { return time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC) }
 	red := batch.TrunkRed{BatchID: "batch-1", AttemptID: "attempt-1", BaseCommit: "base-1", BaseTree: "tree-1",
 		SeenAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC), Joiners: []batch.Claim{{Machine: machine}},
 		Groups: []batch.RedGroup{{ID: "fast", Status: "failed", Failures: []batch.Failure{{Report: "report", Classname: "Class", Name: "Test", Status: "failed", Reason: "red"}}}}}
@@ -32,9 +34,9 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 	if err != nil || len(refs) != 1 || refs[0].Group != "fast" {
 		t.Fatalf("first record: %+v %v", refs, err)
 	}
-	afterFirst := goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch)
+	afterFirst := proofLedgerCanonicalTip(repository)
 	refs, err = owner.Record(opid, red)
-	if err != nil || len(refs) != 1 || goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch) != afterFirst {
+	if err != nil || len(refs) != 1 || proofLedgerCanonicalTip(repository) != afterFirst {
 		t.Fatalf("idempotent replay: %+v %v", refs, err)
 	}
 
@@ -45,7 +47,7 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 	entry.Phase, entry.Outcome, entry.Evidence, entry.TerminalAt = goal.PhasePushed, "", "", ""
 	writeAdapterJournalEntry(t, root, entry)
 	refs, err = owner.Record(opid, red)
-	if err != nil || len(refs) != 1 || goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch) != afterFirst {
+	if err != nil || len(refs) != 1 || proofLedgerCanonicalTip(repository) != afterFirst {
 		t.Fatalf("pushed recovery replay: %+v %v", refs, err)
 	}
 
@@ -78,11 +80,11 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 	if err := goal.MarkTerminal(root, opid3, goal.OutcomeAbandoned, "owner stopped before publication"); err != nil {
 		t.Fatal(err)
 	}
-	beforeFailed := goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch)
+	beforeFailed := proofLedgerCanonicalTip(repository)
 	_, err = owner.Record(opid3, red3)
 	var failed *batch.TrunkRedRecordFailed
 	if !errors.As(err, &failed) || failed.Outcome != string(goal.OutcomeAbandoned) || failed.Evidence != "owner stopped before publication" ||
-		goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch) != beforeFailed {
+		proofLedgerCanonicalTip(repository) != beforeFailed {
 		t.Fatalf("abandoned mapping: failure=%+v err=%v", failed, err)
 	}
 	if _, err := owner.Record("old-opid", red); err == nil {
@@ -99,8 +101,15 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 		t.Fatal(err)
 	}
 	clearOpid := goal.Opid("01J5X0000000000000000000V5", machine, lineage)
-	greenCommit := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
-	greenTree := goalSyncMutationGit(t, root, "rev-parse", "HEAD^{tree}")
+	greenCommit := strings.Repeat("2", 40)
+	greenTree := strings.Repeat("3", 40)
+	absentFix := rawGitExitOne(t)
+	assertRawGitReads(t, owner,
+		rawGitReadFact{args: []string{"cat-file", "-e", strings.Repeat("1", 40)}, err: absentFix},
+		rawGitReadFact{args: []string{"-c", "core.commitGraph=false", "rev-list", "--quiet", greenCommit}, result: ""},
+		rawGitReadFact{args: []string{"cat-file", "-e", strings.Repeat("1", 40)}, err: absentFix},
+		rawGitReadFact{args: []string{"-c", "core.commitGraph=false", "rev-list", "--quiet", greenCommit}, result: ""},
+	)
 	if err := owner.Clear(clearOpid, refs[0], batch.Green{AttemptID: "green-1", BaseCommit: greenCommit, BaseTree: greenTree, Group: "fast"}); err != nil {
 		t.Fatal(err)
 	}
@@ -219,6 +228,7 @@ func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
 }
 
 func TestLedgerTrunkRedOwnerClearRefusesChangedProjection(t *testing.T) {
+	t.Parallel()
 	assertLedgerTrunkRedClearRefusesChange(t, "ownership and branch", func(replacementCommit string) goal.TrunkRedOwnArgs {
 		return goal.TrunkRedOwnArgs{Goal: "standing-validation", Branch: "fix/reassigned",
 			BranchCommit: replacementCommit, To: "mac-reassigned", By: "Wido"}
@@ -226,12 +236,14 @@ func TestLedgerTrunkRedOwnerClearRefusesChangedProjection(t *testing.T) {
 }
 
 func TestLedgerTrunkRedOwnerClearRefusesChangedOwner(t *testing.T) {
+	t.Parallel()
 	assertLedgerTrunkRedClearRefusesChange(t, "ownership", func(string) goal.TrunkRedOwnArgs {
 		return goal.TrunkRedOwnArgs{Goal: "standing-validation", To: "mac-reassigned", By: "Wido"}
 	}, "mac-reassigned", false)
 }
 
 func TestLedgerTrunkRedOwnerClearRefusesChangedBranch(t *testing.T) {
+	t.Parallel()
 	assertLedgerTrunkRedClearRefusesChange(t, "branch", func(replacementCommit string) goal.TrunkRedOwnArgs {
 		return goal.TrunkRedOwnArgs{Goal: "standing-validation", Branch: "fix/reassigned", BranchCommit: replacementCommit}
 	}, "mac-landing", true)
@@ -273,6 +285,7 @@ func assertLedgerTrunkRedClearRefusesChange(t *testing.T, description string,
 }
 
 func TestLedgerTrunkRedOwnerClearAcceptsUnchangedProjection(t *testing.T) {
+	t.Parallel()
 	owner, ref, green, _ := ledgerTrunkRedClearFixture(t)
 	clearOpid := goal.Opid("01J5X0000000000000000000Y4", owner.actor.Machine, owner.actor.Lineage)
 	if err := owner.Clear(clearOpid, ref, green); err != nil {
@@ -287,18 +300,13 @@ func TestLedgerTrunkRedOwnerClearAcceptsUnchangedProjection(t *testing.T) {
 
 func ledgerTrunkRedClearFixture(t *testing.T) (*ledgerTrunkRedOwner, batch.EntryRef, batch.Green, string) {
 	t.Helper()
-	root := syncedClaimedGoalFixture(t)
+	repository := newProofAdmissionRepositoryFixture(t, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC), false)
 	const machine, lineage = "mac-landing", "landing-lineage"
-	ownerValue, err := newLedgerTrunkRedOwner(root, machine, lineage)
-	if err != nil {
-		t.Fatal(err)
-	}
-	owner := ownerValue.(*ledgerTrunkRedOwner)
-	owner.now = func() time.Time { return time.Date(2026, 9, 18, 11, 0, 0, 0, time.UTC) }
-	tree := goalSyncMutationGit(t, root, "rev-parse", "HEAD^{tree}")
-	fixCommit := goalSyncMutationGit(t, root, "commit-tree", tree, "-m", "fix commit")
-	greenCommit := goalSyncMutationGit(t, root, "commit-tree", tree, "-p", fixCommit, "-m", "green commit")
-	replacementCommit := goalSyncMutationGit(t, root, "commit-tree", tree, "-m", "replacement fix commit")
+	owner := proofLedgerTrunkRedOwner(t, repository, machine, lineage, time.Date(2026, 9, 18, 11, 0, 0, 0, time.UTC))
+	tree := strings.Repeat("b", 40)
+	fixCommit := strings.Repeat("c", 40)
+	greenCommit := strings.Repeat("d", 40)
+	replacementCommit := strings.Repeat("e", 40)
 	red := batch.TrunkRed{BatchID: "batch-clear-race", AttemptID: "attempt-red", BaseCommit: fixCommit, BaseTree: tree,
 		SeenAt: time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC), Joiners: []batch.Claim{{Machine: machine}},
 		Groups: []batch.RedGroup{{ID: "fast", Status: "failed", Failures: []batch.Failure{{Report: "report", Classname: "Class", Name: "Test", Status: "failed", Reason: "red"}}}}}
@@ -317,7 +325,72 @@ func ledgerTrunkRedClearFixture(t *testing.T) (*ledgerTrunkRedOwner, batch.Entry
 		t.Fatal(err)
 	}
 	green := batch.Green{AttemptID: "attempt-green", BaseCommit: greenCommit, BaseTree: tree, Group: "fast"}
+	assertRawGitReads(t, owner,
+		rawGitReadFact{args: []string{"cat-file", "-e", fixCommit}},
+		rawGitReadFact{args: []string{"merge-base", "--is-ancestor", fixCommit, greenCommit}},
+	)
 	return owner, refs[0], green, replacementCommit
+}
+
+func proofLedgerTrunkRedOwner(t *testing.T, repository *proofAdmissionRepository, machine, lineage string, now time.Time) *ledgerTrunkRedOwner {
+	t.Helper()
+	reads := 0
+	ownerValue, err := newLedgerTrunkRedOwnerWithConfig(repository.root, machine, lineage, func(root, key string) (string, error) {
+		if root != repository.root || reads >= 2 || key != []string{"goal.sync-remote", "goal.sync-branch"}[reads] {
+			t.Fatalf("owner config read %d: root=%q key=%q", reads, root, key)
+		}
+		value := []string{"local", goal.LocalLedgerBranch}[reads]
+		reads++
+		return value, nil
+	})
+	if err != nil || !isLedgerTrunkRedOwner(ownerValue) || reads != 2 {
+		t.Fatalf("construct proof owner: %T %v; config reads %d", ownerValue, err, reads)
+	}
+	owner := ownerValue.(*ledgerTrunkRedOwner)
+	owner.endpoint.Repository = repository
+	owner.now = func() time.Time { return now }
+	return owner
+}
+
+func proofLedgerCanonicalTip(repository *proofAdmissionRepository) string {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	return repository.canonical
+}
+
+type rawGitReadFact struct {
+	args   []string
+	result string
+	err    error
+}
+
+func assertRawGitReads(t *testing.T, owner *ledgerTrunkRedOwner, facts ...rawGitReadFact) {
+	t.Helper()
+	read := 0
+	owner.gitRead = func(root string, args ...string) (string, error) {
+		t.Helper()
+		if root != owner.endpoint.Root || read >= len(facts) || !reflect.DeepEqual(args, facts[read].args) {
+			t.Fatalf("raw Git read %d: root=%q args=%q, want root=%q facts=%+v", read, root, args, owner.endpoint.Root, facts)
+		}
+		fact := facts[read]
+		read++
+		return fact.result, fact.err
+	}
+	t.Cleanup(func() {
+		if read != len(facts) {
+			t.Errorf("raw Git reads: got %d, want %d", read, len(facts))
+		}
+	})
+}
+
+func rawGitExitOne(t *testing.T) error {
+	t.Helper()
+	err := exec.Command("/bin/sh", "-c", "exit 1").Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("make raw Git exit-one fact: %v", err)
+	}
+	return fmt.Errorf("raw Git reports an absent object: %w", err)
 }
 
 func adapterRecordIntent(red batch.TrunkRed) goal.Intent {

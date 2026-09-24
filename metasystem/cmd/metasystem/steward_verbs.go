@@ -779,16 +779,35 @@ type stewardLandingRefSeed struct {
 	NotSeeded string
 }
 
+type stewardLandingRefGit interface {
+	Output(repo string, args ...string) ([]byte, error)
+	CombinedOutput(repo string, args ...string) ([]byte, error)
+}
+
+type realStewardLandingRefGit struct{}
+
+func (realStewardLandingRefGit) Output(repo string, args ...string) ([]byte, error) {
+	return exec.Command("git", append([]string{"-C", repo}, args...)...).Output()
+}
+
+func (realStewardLandingRefGit) CombinedOutput(repo string, args ...string) ([]byte, error) {
+	return exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+}
+
 func seedStewardLandingRef(repo string) (stewardLandingRefSeed, error) {
-	if out, err := exec.Command("git", "-C", repo, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref").Output(); err == nil && strings.TrimSpace(string(out)) != "" {
+	return seedStewardLandingRefWithGit(repo, realStewardLandingRefGit{})
+}
+
+func seedStewardLandingRefWithGit(repo string, git stewardLandingRefGit) (stewardLandingRefSeed, error) {
+	if out, err := git.Output(repo, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref"); err == nil && strings.TrimSpace(string(out)) != "" {
 		return stewardLandingRefSeed{}, nil
 	}
-	out, err := exec.Command("git", "-C", repo, "symbolic-ref", "--quiet", "--short", "HEAD").Output()
+	out, err := git.Output(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
 	if err != nil || strings.TrimSpace(string(out)) == "" {
 		return stewardLandingRefSeed{NotSeeded: "the checkout is detached; automatic machine re-arm remains disabled until the key is configured"}, nil
 	}
 	branch := strings.TrimSpace(string(out))
-	out, err = exec.Command("git", "-C", repo, "rev-parse", "--symbolic-full-name", "@{upstream}").CombinedOutput()
+	out, err = git.CombinedOutput(repo, "rev-parse", "--symbolic-full-name", "@{upstream}")
 	if err != nil || strings.TrimSpace(string(out)) == "" {
 		return stewardLandingRefSeed{NotSeeded: fmt.Sprintf("the checked-out branch %s has no upstream; automatic machine re-arm remains disabled until the key is configured", branch)}, nil
 	}
@@ -798,8 +817,7 @@ func seedStewardLandingRef(repo string) (stewardLandingRefSeed, error) {
 	if tail == landingRef || !qualified || remote == "" || upstreamBranch == "" {
 		return stewardLandingRefSeed{NotSeeded: fmt.Sprintf("the checked-out branch %s has upstream %s, not a remote-tracking ref shaped refs/remotes/<remote>/<branch>; automatic machine re-arm remains disabled until the key is configured", branch, landingRef)}, nil
 	}
-	cmd := exec.Command("git", "-C", repo, "config", "--local", "metasystem.steward.landing-ref", landingRef)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := git.CombinedOutput(repo, "config", "--local", "metasystem.steward.landing-ref", landingRef); err != nil {
 		return stewardLandingRefSeed{}, fmt.Errorf("seed metasystem.steward.landing-ref: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return stewardLandingRefSeed{Ref: landingRef}, nil

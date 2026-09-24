@@ -67,6 +67,10 @@ func pushLandingAtomically(req LandPushRequest, prepared PreparedLanding) (CASOu
 }
 
 func LandPush(req LandPushRequest) (PreparedLanding, error) {
+	return landPushWithRepository(req, gitLandPushRepository())
+}
+
+func landPushWithRepository(req LandPushRequest, repository landPushRepository) (PreparedLanding, error) {
 	if req.Repo == "" || req.Remote == "" || req.EndpointRef == "" || !validName(req.GoalID) || req.Prepared == "" {
 		return PreparedLanding{}, fmt.Errorf("land-push needs a repository, remote, endpoint, goal, and prepared directory")
 	}
@@ -80,13 +84,12 @@ func LandPush(req LandPushRequest) (PreparedLanding, error) {
 	if prepared.Branch != "landing/"+req.GoalID {
 		return PreparedLanding{}, fmt.Errorf("prepared landing branch %s does not belong to goal %s", prepared.Branch, req.GoalID)
 	}
-	transport := GitPushTransport{}
-	endpoint, present, err := transport.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
+	endpoint, present, err := repository.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
 	if err != nil || !present {
 		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "endpoint holds %s, not prepared tip %s", endpoint, prepared.Endpoint)
 	}
 	landingRef := "refs/heads/" + prepared.Branch
-	landingTip, present, err := transport.RemoteTip(req.Repo, req.Remote, landingRef)
+	landingTip, present, err := repository.RemoteTip(req.Repo, req.Remote, landingRef)
 	if err == nil && endpoint == prepared.Landing && !present {
 		return prepared, nil
 	}
@@ -97,11 +100,11 @@ func LandPush(req LandPushRequest) (PreparedLanding, error) {
 		return PreparedLanding{}, operationRefusal(LandBranchMovedCode, "landing branch holds %s, not prepared tip %s", landingTip, prepared.Landing)
 	}
 	fetched := "refs/metasystem/goals/landing-push/" + req.GoalID
-	defer clearPushTxn(req.Repo, fetched)
-	if err := transport.Fetch(req.Repo, req.Remote, landingRef, fetched); err != nil {
+	defer repository.Clear(req.Repo, fetched)
+	if err := repository.Fetch(req.Repo, req.Remote, landingRef, fetched); err != nil {
 		return PreparedLanding{}, err
 	}
-	if _, err := gitOutput(req.Repo, "merge-base", "--is-ancestor", prepared.Endpoint, prepared.Landing); err != nil {
+	if err := repository.Ancestor(req.Repo, prepared.Endpoint, prepared.Landing); err != nil {
 		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "prepared landing %s is not a fast-forward of %s", prepared.Landing, prepared.Endpoint)
 	}
 	if req.Hooks.AfterRemoteRead != nil {
@@ -112,10 +115,10 @@ func LandPush(req LandPushRequest) (PreparedLanding, error) {
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return PreparedLanding{}, err
 	}
-	outcome, pushErr := pushLandingAtomically(req, prepared)
+	outcome, pushErr := repository.Publish(req, prepared)
 	if outcome == CASRefused {
-		endpointNow, _, _ := transport.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
-		landingNow, landingPresent, _ := transport.RemoteTip(req.Repo, req.Remote, landingRef)
+		endpointNow, _, _ := repository.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
+		landingNow, landingPresent, _ := repository.RemoteTip(req.Repo, req.Remote, landingRef)
 		if endpointNow != prepared.Endpoint {
 			return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "endpoint moved from %s to %s", prepared.Endpoint, endpointNow)
 		}
@@ -125,8 +128,8 @@ func LandPush(req LandPushRequest) (PreparedLanding, error) {
 		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "atomic landing lease refused: %v", pushErr)
 	}
 	if outcome == CASUnknown {
-		endpointNow, _, endpointErr := transport.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
-		_, landingPresent, landingErr := transport.RemoteTip(req.Repo, req.Remote, landingRef)
+		endpointNow, _, endpointErr := repository.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
+		_, landingPresent, landingErr := repository.RemoteTip(req.Repo, req.Remote, landingRef)
 		if endpointErr != nil || landingErr != nil || endpointNow != prepared.Landing || landingPresent {
 			return PreparedLanding{}, operationRefusal(PushUnknownCode, "landing outcome is unknown: %v", pushErr)
 		}

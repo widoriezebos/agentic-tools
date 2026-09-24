@@ -33,7 +33,10 @@ func TestCapContractPublicAdapterAndRetiredVerb(t *testing.T) {
 	stderr, code := captureStderr(t, func() int {
 		return dispatch([]string{"job", "exhaustion-patches"})
 	})
-	if code != 2 || stderr != "metasystem job: unknown verb \"exhaustion-patches\"\n" {
+	if code != 2 ||
+		!strings.HasPrefix(stderr, "metasystem job: unknown verb \"exhaustion-patches\"\nusage: metasystem job <verb> [flags]\n") ||
+		!strings.Contains(stderr, "\n  record-create ") ||
+		strings.Contains(stderr, "\n  exhaustion-patches ") {
 		t.Fatalf("retired public cap verb: code=%d stderr=%q", code, stderr)
 	}
 }

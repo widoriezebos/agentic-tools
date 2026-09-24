@@ -52,7 +52,7 @@ func hasLine(lines []string, substr string) bool {
 func TestOpenWorkReportsUnblockedNextStep(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "a.md", "- Next step: Finish the port\n- Waiting on the human: none\n- In flight right now: none\n")
-	lines := OpenWork(root)
+	lines := openWorkWithoutGoal(t, root)
 	if !hasLine(lines, "OPEN-WORK plans/a.md: Finish the port") {
 		t.Fatalf("expected an OPEN-WORK line, got %v", lines)
 	}
@@ -61,7 +61,7 @@ func TestOpenWorkReportsUnblockedNextStep(t *testing.T) {
 func TestOpenWorkIgnoresNextStepInsideFence(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "example.md", "# Example\n\n```text\n- Next step: Do not report this example\n```\n")
-	if lines := OpenWork(root); hasLine(lines, "example.md") {
+	if lines := openWorkWithoutGoal(t, root); hasLine(lines, "example.md") {
 		t.Fatalf("a fenced example became open work: %v", lines)
 	}
 }
@@ -69,7 +69,7 @@ func TestOpenWorkIgnoresNextStepInsideFence(t *testing.T) {
 func TestOpenWorkUsesRealNextStepBesideFencedExample(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "real.md", "```text\n- Next step: Ignore this example\n```\n\n- Next step: Ship the real change\n- In flight right now: none\n")
-	lines := OpenWork(root)
+	lines := openWorkWithoutGoal(t, root)
 	if !hasLine(lines, "OPEN-WORK plans/real.md: Ship the real change") || hasLine(lines, "Ignore this example") {
 		t.Fatalf("the real field was not selected outside the fence: %v", lines)
 	}
@@ -78,7 +78,7 @@ func TestOpenWorkUsesRealNextStepBesideFencedExample(t *testing.T) {
 func TestOpenWorkFallsBackWhenFenceIsUnclosed(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "unclosed.md", "```text\nexample without a closing fence\n- Next step: Ship the real change after the broken example\n- In flight right now: none\n")
-	lines := OpenWork(root)
+	lines := openWorkWithoutGoal(t, root)
 	if !hasLine(lines, "OPEN-WORK plans/unclosed.md: Ship the real change after the broken example") {
 		t.Fatalf("an unclosed fence swallowed the real field: %v", lines)
 	}
@@ -87,7 +87,7 @@ func TestOpenWorkFallsBackWhenFenceIsUnclosed(t *testing.T) {
 func TestOpenWorkKeepsClosedFenceExcludedBeforeUnclosedFence(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "trap.md", "```text\n- Next step: FAKE example from a closed fence\n```\n\n```text\n- Next step: REAL work to do\n- In flight right now: none\n")
-	lines := OpenWork(root)
+	lines := openWorkWithoutGoal(t, root)
 	if !hasLine(lines, "OPEN-WORK plans/trap.md: REAL work to do") || hasLine(lines, "FAKE example from a closed fence") {
 		t.Fatalf("the unpaired fence exposed a field from a closed fence: %v", lines)
 	}
@@ -97,7 +97,7 @@ func TestOpenWorkSilentWhenSettledOrWaiting(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "settled.md", "- Next step: none\n- In flight right now: none\n")
 	writePlan(t, root, "waiting.md", "- Next step: Ship it\n- Waiting on the human: approval to deploy\n- In flight right now: none\n")
-	lines := OpenWork(root)
+	lines := openWorkWithoutGoal(t, root)
 	if hasLine(lines, "settled.md") {
 		t.Fatalf("a settled plan should not be open work: %v", lines)
 	}
@@ -110,7 +110,7 @@ func TestOpenWorkSilentWhenJobInFlight(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "a.md", "- Next step: Finish the port\n- In flight right now: none\n")
 	writeJob(t, root, "job-1.json", `{"jobId":"job-1","status":"running"}`)
-	if lines := OpenWork(root); hasLine(lines, "OPEN-WORK") {
+	if lines := openWorkWithoutGoal(t, root); hasLine(lines, "OPEN-WORK") {
 		t.Fatalf("no open-work should be reported while a job is in flight: %v", lines)
 	}
 }
@@ -119,14 +119,18 @@ func TestOpenWorkSilentWhenOpenChainNewestRoundIsNonTerminal(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "a.md", "- Next step: Finish the port\n- In flight right now: none\n")
 	writeJob(t, root, "chain.json", `{"jobId":"chain","status":"pending-setup","chainClosed":false}`)
-	if lines := OpenWork(root); hasLine(lines, "OPEN-WORK") {
+	if lines := openWorkWithoutGoal(t, root); hasLine(lines, "OPEN-WORK") {
 		t.Fatalf("an open chain with a non-terminal newest round is work in flight: %v", lines)
 	}
-	scan := Scan(root)
+	scan := scanWithoutGoal(t, root)
 	if len(scan.Busy) == 0 {
 		t.Fatalf("turn-verdict scan did not count the open chain as work in flight: %+v", scan)
 	}
-	verdict, err := (&goal.Store{Root: root}).TurnVerdict(scan, "open-chain-session", "", "")
+	reads := newScanReadFixture(t, root)
+	reads.absent = true
+	reads.expect("accepted", "accepted", "accepted")
+	verdict, err := (&goal.Store{Root: root}).TurnVerdictAtEndpoint(goal.Endpoint{Root: reads.root, Remote: "local", Repository: reads}, reads.machine, scan, "open-chain-session", "", "")
+	reads.checked(0)
 	if err != nil || verdict.ShouldBlock || verdict.BlockSource != nil || !strings.Contains(verdict.Display, "STILL WORKING") || strings.Contains(verdict.Display, "OPEN WORK") {
 		t.Fatalf("pending-setup changed the undeclared checkout's trunk open-chain verdict: %+v %v", verdict, err)
 	}
@@ -135,11 +139,11 @@ func TestOpenWorkSilentWhenOpenChainNewestRoundIsNonTerminal(t *testing.T) {
 func TestTemplatePlaceholderHasItsOwnClassification(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "template.md", "- Next step: <one line, required>\n- In flight right now: none\n")
-	lines := OpenWork(root)
+	lines := openWorkWithoutGoal(t, root)
 	if !hasLine(lines, "TEMPLATE-UNFILLED plans/template.md: <one line, required>") || hasLine(lines, "OPEN-WORK") {
 		t.Fatalf("template placeholder was not classified separately: %v", lines)
 	}
-	scan := Scan(root)
+	scan := scanWithoutGoal(t, root)
 	if len(scan.Open) != 0 || len(scan.TemplateUnfilled) != 1 || !strings.Contains(scan.TemplateUnfilled[0].Detail, "TEMPLATE-UNFILLED") {
 		t.Fatalf("turn scan did not preserve the template classification: %+v", scan)
 	}
@@ -220,11 +224,15 @@ func TestOpenWorkSeenStateUsesFullLineAndPrunesCurrentScan(t *testing.T) {
 		t.Fatalf("a full-line tail edit was not new: %+v %q %v", marked, warning, err)
 	}
 	store := &goal.Store{Root: root, Now: func() time.Time { return at.Add(time.Minute) }}
+	reads := newScanReadFixture(t, root)
+	reads.absent = true
+	reads.expect("accepted", "accepted", "accepted", "accepted", "accepted", "accepted")
+	endpoint := goal.Endpoint{Root: reads.root, Remote: "local", Repository: reads}
 	firstMarked, _, err := MarkOpenWorkSeen(root, []goal.Item{first}, at)
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstVerdict, err := store.TurnVerdict(goal.ScanResult{Open: firstMarked}, "long-line-session", "", "")
+	firstVerdict, err := store.TurnVerdictAtEndpoint(endpoint, reads.machine, goal.ScanResult{Open: firstMarked}, "long-line-session", "", "")
 	if err != nil || !firstVerdict.ShouldBlock {
 		t.Fatalf("the first long line did not block: %+v %v", firstVerdict, err)
 	}
@@ -232,7 +240,8 @@ func TestOpenWorkSeenStateUsesFullLineAndPrunesCurrentScan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changedVerdict, err := store.TurnVerdict(goal.ScanResult{Open: marked}, "long-line-session", "", "")
+	changedVerdict, err := store.TurnVerdictAtEndpoint(endpoint, reads.machine, goal.ScanResult{Open: marked}, "long-line-session", "", "")
+	reads.checked(0)
 	if err != nil || !changedVerdict.ShouldBlock {
 		t.Fatalf("a tail edit past the display clip did not block the same session: %+v %v", changedVerdict, err)
 	}
@@ -260,7 +269,7 @@ func TestOpenWorkSeenStateUsesFullLineAndPrunesCurrentScan(t *testing.T) {
 func TestStalePlanWhenClaimingIdleWork(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "a.md", "- Next step: none\n- In flight right now: job-abc is churning\n")
-	lines := OpenWork(root)
+	lines := openWorkWithoutGoal(t, root)
 	if !hasLine(lines, "STALE-PLAN plans/a.md: claims work in flight while no job is running") {
 		t.Fatalf("expected a stale-plan line, got %v", lines)
 	}
@@ -270,7 +279,7 @@ func TestNoStaleWhenClaimNamesRunningJob(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "a.md", "- Next step: none\n- In flight right now: job-abc\n")
 	writeJob(t, root, "job-abc.json", `{"jobId":"job-abc","status":"running"}`)
-	if lines := OpenWork(root); hasLine(lines, "STALE-PLAN") {
+	if lines := openWorkWithoutGoal(t, root); hasLine(lines, "STALE-PLAN") {
 		t.Fatalf("a claim naming a running job is accurate, not stale: %v", lines)
 	}
 }
@@ -284,7 +293,7 @@ func TestNoStaleWhenClaimNamesTheChainRootOfALiveRound(t *testing.T) {
 		"- Next step: none\n- In flight right now: job design-critic-20260101t000000z-aaaa\n")
 	writeJob(t, root, "live.json",
 		`{"jobId":"design-critic-20260101t000000z-aaaa-r3","status":"running"}`)
-	if lines := OpenWork(root); hasLine(lines, "STALE-PLAN") {
+	if lines := openWorkWithoutGoal(t, root); hasLine(lines, "STALE-PLAN") {
 		t.Fatalf("a claim naming the chain root of a live round is accurate: %v", lines)
 	}
 }
@@ -297,7 +306,7 @@ func TestStalenessIsPerStream(t *testing.T) {
 		"- In flight right now: nothing\n- Waiting on the human: nothing blocking\n- Next step: none\n")
 	writeJob(t, root, "live.json",
 		`{"jobId":"design-critic-20260101t000000z-aaaa","status":"running"}`)
-	if lines := OpenWork(root); hasLine(lines, "STALE-PLAN plans/other.md") {
+	if lines := openWorkWithoutGoal(t, root); hasLine(lines, "STALE-PLAN plans/other.md") {
 		t.Fatalf("an idle stream was called stale because another stream had a job: %v", lines)
 	}
 }
@@ -306,7 +315,7 @@ func TestPlansReadmeIsNotAStream(t *testing.T) {
 	root := newPlanRoot(t)
 	writePlan(t, root, "README.md",
 		"Standing conventions for plans in this directory.\n")
-	if lines := OpenWork(root); len(lines) != 0 {
+	if lines := openWorkWithoutGoal(t, root); len(lines) != 0 {
 		t.Fatalf("the plans README was mistaken for a stream: %v", lines)
 	}
 }
@@ -332,7 +341,7 @@ func TestOpenWorkGateMarkerIntegration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(markers, itoa(self)+".json"), []byte(live), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if lines := OpenWork(root); hasLine(lines, "OPEN-WORK") {
+	if lines := openWorkWithoutGoal(t, root); hasLine(lines, "OPEN-WORK") {
 		t.Fatalf("a live gate run was not counted as work in flight: %v", lines)
 	}
 	if err := os.Remove(filepath.Join(markers, itoa(self)+".json")); err != nil {
@@ -342,7 +351,7 @@ func TestOpenWorkGateMarkerIntegration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(markers, "999999.json"), []byte(dead), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if lines := OpenWork(root); !hasLine(lines, "OPEN-WORK") {
+	if lines := openWorkWithoutGoal(t, root); !hasLine(lines, "OPEN-WORK") {
 		t.Fatalf("a gate marker whose process is dead still hid open work: %v", lines)
 	}
 	left, _ := os.ReadDir(markers)

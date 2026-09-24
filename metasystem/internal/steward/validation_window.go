@@ -22,8 +22,6 @@ const directValidationWindowSize = 2
 
 var cadenceCatchGroups = testpolicy.CadenceCatchGroupIDs()
 
-var cadenceFailureLinker = linkCadenceFailure
-
 type validationWindowObservation struct {
 	RunID      string   `json:"runId"`
 	AttemptID  string   `json:"attemptId"`
@@ -103,6 +101,10 @@ func compareTestingResult(result proofrun.TestResult) (missing, nonGreen []strin
 }
 
 func observeDirectValidationWindow(repoRoot string, now time.Time) error {
+	return observeDirectValidationWindowWithLinker(repoRoot, now, linkCadenceFailure)
+}
+
+func observeDirectValidationWindowWithLinker(repoRoot string, now time.Time, link func(string, validationWindowObservation, time.Time) error) error {
 	state, err := loadValidationWindow(repoRoot)
 	if err != nil {
 		return err
@@ -114,7 +116,7 @@ func observeDirectValidationWindow(repoRoot string, now time.Time) error {
 		if len(observation.Missing) == 0 && len(observation.NonGreen) == 0 {
 			continue
 		}
-		if err := cadenceFailureLinker(repoRoot, observation, now); err != nil {
+		if err := link(repoRoot, observation, now); err != nil {
 			return err
 		}
 	}
@@ -162,7 +164,7 @@ func observeDirectValidationWindow(repoRoot string, now time.Time) error {
 		if len(observation.Missing) == 0 && len(observation.NonGreen) == 0 {
 			continue
 		}
-		if err := cadenceFailureLinker(repoRoot, observation, now); err != nil {
+		if err := link(repoRoot, observation, now); err != nil {
 			return err
 		}
 	}
@@ -170,7 +172,12 @@ func observeDirectValidationWindow(repoRoot string, now time.Time) error {
 }
 
 func linkCadenceFailure(repoRoot string, observation validationWindowObservation, now time.Time) error {
-	if !goal.NewWorld(repoRoot) {
+	return linkCadenceFailureWithOwners(repoRoot, observation, now, goal.NewWorld, goal.ResolveEndpoint, goal.NewOperationULID)
+}
+
+func linkCadenceFailureWithOwners(repoRoot string, observation validationWindowObservation, now time.Time,
+	newWorld func(string) bool, resolveEndpoint func(string) (goal.Endpoint, error), newOperationULID func() (string, error)) error {
+	if !newWorld(repoRoot) {
 		return nil
 	}
 	store := &run.Store{Root: repoRoot}
@@ -178,7 +185,7 @@ func linkCadenceFailure(repoRoot string, observation validationWindowObservation
 	if err != nil || record == nil || record.GoalId == "" {
 		return fmt.Errorf("cadence failure %s has no accountable goal: %w", observation.RunID, err)
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	endpoint, err := resolveEndpoint(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -197,7 +204,7 @@ func linkCadenceFailure(repoRoot string, observation validationWindowObservation
 			return nil
 		}
 	}
-	ulid, err := goal.NewOperationULID()
+	ulid, err := newOperationULID()
 	if err != nil {
 		return err
 	}

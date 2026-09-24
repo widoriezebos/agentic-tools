@@ -36,10 +36,10 @@ func TestPeriodLawDefaultsAndExplicitWindows(t *testing.T) {
 }
 
 func TestClosedReportFileInterface(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 
-	custom, err := Report(Options{
+	custom, err := f.report(Options{
 		Root: f.root, Since: "2026-08-18T00:00:00Z", PeriodEnd: "2026-08-24T00:00:00Z",
 		Now: func() time.Time { return time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC) },
 	})
@@ -54,7 +54,7 @@ func TestClosedReportFileInterface(t *testing.T) {
 		t.Fatalf("custom window wrote a tracked report: %v", err)
 	}
 
-	weekly, err := Report(weeklyOptions(f))
+	weekly, err := f.report(weeklyOptions(f.fixtureRepo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestClosedReportFileInterface(t *testing.T) {
 	if weekly.Target != wantWeekly {
 		t.Fatalf("weekly target = %s, want %s", weekly.Target, wantWeekly)
 	}
-	goalResult, err := Report(Options{Root: f.root, GoalID: "g1", PeriodEnd: "2026-08-24T00:00:00Z"})
+	goalResult, err := f.report(Options{Root: f.root, GoalID: "g1", PeriodEnd: "2026-08-24T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}

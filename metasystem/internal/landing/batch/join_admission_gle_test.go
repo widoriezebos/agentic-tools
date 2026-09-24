@@ -13,7 +13,9 @@ import (
 
 func TestGLEBatchCrashAfterHandoverDoesNotCertifyWithoutAdmission(t *testing.T) {
 	t.Parallel()
-	bed, store := joinBed(t)
+	bed := newOrdinaryJoinBed(t)
+	store := bed.store
+	admissionTree := bed.expectJoin(joiningUnit("goal-a", "chain-a"), testpolicy.Plan{RequiredMode: testpolicy.ModeStandard})
 	store.seams.publish = func(point string) error {
 		if point == "handover" {
 			return os.ErrProcessDone
@@ -29,7 +31,7 @@ func TestGLEBatchCrashAfterHandoverDoesNotCertifyWithoutAdmission(t *testing.T) 
 	if !errors.Is(err, os.ErrProcessDone) {
 		t.Fatalf("handover crash result=%v", err)
 	}
-	if unit := load(t, store).Units[0]; unit.State != UnitJoining || unit.Admission.Status != "pending" {
+	if unit := load(t, store).Units[0]; unit.State != UnitJoining || unit.Admission.Status != "pending" || unit.Admission.Tree != admissionTree {
 		t.Fatalf("handover crash certified member: %+v", unit)
 	}
 	must(t, ReconcileJoins(store, testBatchID, bed.base, "landing+owner", time.Unix(2, 0),
@@ -43,14 +45,16 @@ func TestGLEBatchCrashAfterHandoverDoesNotCertifyWithoutAdmission(t *testing.T) 
 		func(_ string, unit Unit) (JoinAdmission, error) {
 			return JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "retained"}, nil
 		}))
-	if unit := load(t, store).Units[0]; unit.State != UnitJoined || unit.Admission.AttemptID != "retained" {
+	if unit := load(t, store).Units[0]; unit.State != UnitJoined || unit.Admission.AttemptID != "retained" || unit.Admission.Tree != admissionTree {
 		t.Fatalf("recovered admission was not retained: %+v", unit)
 	}
 }
 
 func TestGLEBatchJoinAfterHandoverResumesOnlyWithVerifiedAdmission(t *testing.T) {
 	t.Parallel()
-	bed, store := joinBed(t)
+	bed := newOrdinaryJoinBed(t)
+	store := bed.store
+	admissionTree := bed.expectJoin(joiningUnit("goal-a", "chain-a"), testpolicy.Plan{RequiredMode: testpolicy.ModeStandard})
 	crashed := errors.New("collector stopped after handover")
 	called := 0
 	err := PublishJoinWithAdmission(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0),
@@ -83,14 +87,17 @@ func TestGLEBatchJoinAfterHandoverResumesOnlyWithVerifiedAdmission(t *testing.T)
 			return JoinAdmission{}, nil
 		}))
 	record = load(t, store)
-	if called != 2 || record.Units[0].State != UnitJoined || record.Units[0].Admission.AttemptID != "retained-attempt" {
+	if called != 2 || record.Units[0].State != UnitJoined || record.Units[0].Admission.Tree != admissionTree ||
+		record.Units[0].Admission.AttemptID != "retained-attempt" || record.Units[0].Admission.ResultPath != "retained-result" {
 		t.Fatalf("admission recovery calls=%d unit=%+v", called, record.Units[0])
 	}
 }
 
 func TestGLEBatchJoinRedAdmissionReturnsMemberBeforeMembership(t *testing.T) {
 	t.Parallel()
-	_, store := joinBed(t)
+	bed := newOrdinaryJoinBed(t)
+	store := bed.store
+	bed.expectJoin(joiningUnit("goal-a", "chain-a"), testpolicy.Plan{RequiredMode: testpolicy.ModeStandard})
 	err := PublishJoinWithAdmission(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0),
 		joinPlanMode(testpolicy.ModeStandard), func() error { return nil },
 		func(string, Unit) (JoinAdmission, error) {
@@ -108,7 +115,9 @@ func TestGLEBatchJoinRedAdmissionReturnsMemberBeforeMembership(t *testing.T) {
 
 func TestGLEBatchJoinAdmissionDoesNotHoldBatchLock(t *testing.T) {
 	t.Parallel()
-	bed, store := joinBed(t)
+	bed := newOrdinaryJoinBed(t)
+	store := bed.store
+	bed.expectJoin(joiningUnit("goal-a", "chain-a"), testpolicy.Plan{RequiredMode: testpolicy.ModeStandard})
 	reconcileStore := store
 	reconcileStore.seams.flock = func(fd, operation int) error {
 		if operation == unix.LOCK_EX {
@@ -121,7 +130,11 @@ func TestGLEBatchJoinAdmissionDoesNotHoldBatchLock(t *testing.T) {
 		joinPlanMode(testpolicy.ModeStandard), func() error { return nil },
 		func(_ string, unit Unit) (JoinAdmission, error) {
 			called = true
-			if err := ReconcileJoins(reconcileStore, testBatchID, bed.base, "landing+owner", time.Unix(2, 0), nil); err != nil {
+			if err := ReconcileJoins(reconcileStore, testBatchID, bed.base, "landing+owner", time.Unix(2, 0),
+				func(string, string, string, string) (Claim, error) {
+					t.Fatal("handed-over admission read a claim")
+					return Claim{}, nil
+				}); err != nil {
 				t.Fatalf("reconcile could not acquire the batch flock during admission: %v", err)
 			}
 			if state := load(t, store).Units[0].State; state != UnitJoining {

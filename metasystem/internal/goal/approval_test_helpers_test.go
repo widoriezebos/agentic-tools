@@ -26,7 +26,7 @@ func approveGoalForTest(t *testing.T, req VerbRequest, id string, budget Budget)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("approve fixture goal %s: %+v %v", id, result, err)
 	}
-	tree, err := loadTree(req.Endpoint.Root, result.Tip)
+	tree, err := loadTreeFor(req.Endpoint, result.Tip)
 	if err != nil || tree.Live[id] == nil || tree.Live[id].State != StateApproved {
 		t.Fatalf("approval fixture did not materialize approved state for %s: result=%+v goal=%+v err=%v", id, result, tree.Live[id], err)
 	}
@@ -40,7 +40,13 @@ func claimApprovedForTest(t *testing.T, req VerbRequest, id string, budget Budge
 
 func claimArcApprovedForTest(t *testing.T, req VerbRequest, id string, budget Budget) (PublishResult, error) {
 	t.Helper()
-	tree, err := loadTree(req.Endpoint.Root, acceptedTip(t, req.Endpoint.Root))
+	var tree *TreeGoals
+	var err error
+	if req.Endpoint.Repository == nil {
+		tree, err = loadTree(req.Endpoint.Root, acceptedTip(t, req.Endpoint.Root))
+	} else {
+		tree, err = loadTreeFor(req.Endpoint, acceptedTipForEndpoint(t, req.Endpoint))
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

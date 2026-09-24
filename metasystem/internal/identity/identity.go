@@ -237,6 +237,9 @@ func AliveTaggedRef(prober Prober, ref Ref, tag string) Liveness {
 	if !sameIdentity(exact, ref) {
 		return Dead
 	}
+	if exact.Zombie || exact.Exiting {
+		return Dead
+	}
 	if !exact.ArgvKnown {
 		return Unknown
 	}

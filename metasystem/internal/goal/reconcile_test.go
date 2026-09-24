@@ -68,7 +68,7 @@ func TestBaseIsPersistedNotHead(t *testing.T) {
 
 func TestCaptureIsStableAndDiffNamesTheDeltas(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	// Hand edits: change one file, add one, remove none.
 	editablePath := filepath.Join(a, "plans", "goals", "editable.md")
 	edited, err := os.ReadFile(editablePath)
@@ -95,7 +95,7 @@ func TestCaptureIsStableAndDiffNamesTheDeltas(t *testing.T) {
 		t.Fatal("the snapshot is immune to post-capture saves")
 	}
 
-	deltas, err := DiffAgainstBase(a, tip, snap)
+	deltas, err := diffAgainstBaseFor(endpoint, tip, snap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,13 +113,14 @@ func TestCaptureIsStableAndDiffNamesTheDeltas(t *testing.T) {
 
 func TestRefreshPreservesPostCaptureEdits(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
+	calls := newFilesystemReconcileCalls(t, endpoint)
 	snap, err := CaptureSnapshot(a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A publish lands (any new tip works for the refresh contract).
-	res, err := Open(verbReq(a, "01J5X00000000000000000R010", "mac-a"), "published", "New goal.", "main", "Go.")
+	res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000R010", "mac-a"), "published", "New goal.", "main", "Go.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
@@ -128,7 +129,8 @@ func TestRefreshPreservesPostCaptureEdits(t *testing.T) {
 	if err := os.WriteFile(editablePath, []byte("post-capture edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	skipped, err := Refresh(a, res.Tip, snap)
+	calls.expectAnchor(res.Tip)
+	skipped, err := refreshFor(endpoint, res.Tip, snap, calls.anchor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,8 +152,9 @@ func TestRefreshPreservesPostCaptureEdits(t *testing.T) {
 
 func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
-	res, err := Open(verbReq(a, "01J5X00000000000000000R020", "mac-a"), "crashed", "Died mid-refresh.", "main", "Go.")
+	a, _, endpoint := newFakeReconcileBed(t)
+	calls := newFilesystemReconcileCalls(t, endpoint)
+	res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000R020", "mac-a"), "crashed", "Died mid-refresh.", "main", "Go.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
@@ -165,10 +168,12 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An ordinary session refuses while the refresh is pending.
-	if _, err := BaseTip(a); err == nil || !strings.Contains(err.Error(), "--refresh-only") {
+	if _, err := baseTipFor(endpoint, calls.head); err == nil || !strings.Contains(err.Error(), "--refresh-only") {
 		t.Fatalf("a pending refresh blocks ordinary reconcile by name: %v", err)
 	}
-	skipped, err := RefreshOnly(a)
+	calls.assertConsumed() // A pending base refuses before consulting HEAD or an anchor.
+	calls.expectAnchor(res.Tip)
+	skipped, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +188,7 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 		t.Fatal("the completed refresh clears the pending flag")
 	}
 	// Idempotent: a second completion finds nothing to do.
-	if _, err := RefreshOnly(a); err == nil {
+	if _, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor); err == nil {
 		t.Fatal("a clean base has no pending refresh to complete")
 	}
 	// A pending record WITHOUT its snapshot refuses by name (the
@@ -191,14 +196,16 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 	if err := WriteBase(a, BaseRecord{Commit: res.Tip, WrittenAt: "2026-08-21T00:00:00Z", RefreshDue: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := RefreshOnly(a); err == nil || !strings.Contains(err.Error(), "no snapshot") {
+	if _, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor); err == nil || !strings.Contains(err.Error(), "no snapshot") {
 		t.Fatalf("a snapshotless pending record refuses by name: %v", err)
 	}
+	calls.assertConsumed() // Ordinary completion and both refusals never resolve a publication endpoint.
 }
 
 func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
+	calls := newFilesystemReconcileCalls(t, endpoint)
 	// The hand edit stands in the worktree; the crash fell INSIDE the
 	// publish window (Publishing=true, Commit still the BASE).
 	editablePath := filepath.Join(a, "plans", "goals", "editable.md")
@@ -221,9 +228,11 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 		RefreshDue: true, Publishing: true, Opid: ghost, Snapshot: snap.Files}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := RefreshOnly(a); err == nil || !strings.Contains(err.Error(), "never published") {
+	calls.expectResolve()
+	if _, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor); err == nil || !strings.Contains(err.Error(), "never published") {
 		t.Fatalf("an unlanded publish resolves by name (R2-1): %v", err)
 	}
+	calls.assertConsumed() // A missing own-opid trailer must not anchor a commit.
 	if data, _ := os.ReadFile(editablePath); string(data) != string(handBytes) {
 		t.Fatal("the hand edit is UNTOUCHED when the publish never landed — completing from the base would have erased it")
 	}
@@ -237,12 +246,18 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 	// the hand edit; the crash is reconstructed as the publishing-
 	// shaped record with that reconcile's opid, and the completion
 	// must materialize the tree CARRYING the hand edit.
-	req := verbReq(a, "01J5X00000000000000000GH10", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000GH10", "mac-a")
 	req.Actor.Human = "wido"
-	recRes, err := Reconcile(req)
+	calls.expectHead(tip)
+	calls.expectAnchor(nextFakeReconcileCommit(endpoint))
+	recRes, err := reconcileFor(req, calls.head, calls.anchor)
 	if err != nil || recRes.Publish.Outcome != OutcomeConfirmed {
 		t.Fatalf("the real reconcile lands the hand edit: %+v %v", recRes.Publish, err)
 	}
+	if repo := endpoint.Repository.(*fakeGoalRepository); repo.store.canonical != recRes.Publish.Tip {
+		t.Fatalf("the fake Publish transaction did not advance the canonical tip: %s vs %s", repo.store.canonical, recRes.Publish.Tip)
+	}
+	calls.assertConsumed()
 	reconcileOpid := Opid("01J5X00000000000000000GH10", "mac-a", "lin-1")
 	if err := WriteBase(a, BaseRecord{Commit: tip, WrittenAt: "2026-08-21T09:00:00Z",
 		RefreshDue: true, Publishing: true, Opid: reconcileOpid, Snapshot: snap.Files}); err != nil {
@@ -254,9 +269,12 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 	if err := os.WriteFile(editablePath, handBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := RefreshOnly(a); err != nil {
+	calls.expectResolve()
+	calls.expectAnchor(recRes.Publish.Tip)
+	if _, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor); err != nil {
 		t.Fatalf("a landed publish completes from its own trailer: %v", err)
 	}
+	calls.assertConsumed()
 	materialized, err := os.ReadFile(editablePath)
 	if err != nil {
 		t.Fatal("the completion materialized the reconciled file")
@@ -277,7 +295,9 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 	if err := os.Remove(editablePath); err != nil {
 		t.Fatal(err)
 	}
-	skipped, err := RefreshOnly(a)
+	calls.expectResolve()
+	calls.expectAnchor(recRes.Publish.Tip)
+	skipped, err := refreshOnlyFor(endpoint, calls.resolve, calls.anchor)
 	if err != nil {
 		t.Fatalf("the deletion-preserving completion still completes: %v", err)
 	}
@@ -297,9 +317,9 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 
 func TestRefreshPreservesAPostCaptureCreation(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
-	res, err := Open(verbReq(a, "01J5X00000000000000000RC00", "mac-a"), "fresh-row", "Row.", "main", "Go.")
+	a, _, endpoint := newFakeReconcileBed(t, nil)
+	calls := newFilesystemReconcileCalls(t, endpoint)
+	res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000RC00", "mac-a"), "fresh-row", "Row.", "main", "Go.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
@@ -314,7 +334,8 @@ func TestRefreshPreservesAPostCaptureCreation(t *testing.T) {
 	if err := os.WriteFile(abs, mine, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	skipped, err := Refresh(a, res.Tip, &Snapshot{Files: map[string][]byte{}})
+	calls.expectAnchor(res.Tip)
+	skipped, err := refreshFor(endpoint, res.Tip, &Snapshot{Files: map[string][]byte{}}, calls.anchor)
 	if err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
@@ -335,12 +356,13 @@ func TestRefreshPreservesAPostCaptureCreation(t *testing.T) {
 
 func TestRefreshNeverFollowsAPostCaptureSymlink(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
+	calls := newFilesystemReconcileCalls(t, endpoint)
 	snap, err := CaptureSnapshot(a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := Open(verbReq(a, "01J5X00000000000000000SM00", "mac-a"), "sym-bait", "New goal.", "main", "Go.")
+	res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000SM00", "mac-a"), "sym-bait", "New goal.", "main", "Go.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
@@ -360,7 +382,8 @@ func TestRefreshNeverFollowsAPostCaptureSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	outsideBefore, _ := os.ReadFile(outside)
-	skipped, err := Refresh(a, res.Tip, snap)
+	calls.expectAnchor(res.Tip)
+	skipped, err := refreshFor(endpoint, res.Tip, snap, calls.anchor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +436,8 @@ func TestVerbsAreImmuneToGitEnvironmentSteering(t *testing.T) {
 
 func TestRefreshRefusesASymlinkedGoalDirectory(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
+	calls := newFilesystemReconcileCalls(t, endpoint)
 	snap, err := CaptureSnapshot(a)
 	if err != nil {
 		t.Fatal(err)
@@ -427,18 +451,24 @@ func TestRefreshRefusesASymlinkedGoalDirectory(t *testing.T) {
 	if err := os.Symlink(outside, doneDir); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Refresh(a, tip, snap); err == nil || !strings.Contains(err.Error(), "not a real directory") {
+	calls.expectAnchor(tip)
+	if _, err := refreshFor(endpoint, tip, snap, calls.anchor); err == nil || !strings.Contains(err.Error(), "not a real directory") {
 		t.Fatalf("a symlinked goal directory refuses the whole refresh: %v", err)
 	}
 }
 
 func TestOverlappingReconcileClaimsAreSerialized(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
+	calls := newFilesystemReconcileCalls(t, endpoint)
 	// A standing FRESH lock refuses the second claimant instead of
 	// letting it overwrite the first's pending record.
 	lock := baseRecordPath(a) + ".lock"
 	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	standingLock, err := os.Stat(lock)
+	if err != nil {
 		t.Fatal(err)
 	}
 	editablePath := filepath.Join(a, "plans", "goals", "editable.md")
@@ -446,18 +476,30 @@ func TestOverlappingReconcileClaimsAreSerialized(t *testing.T) {
 	if err := os.WriteFile(editablePath, []byte(strings.Replace(string(data), "Original intent.", "Contended intent.", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	req := verbReq(a, "01J5X00000000000000000CC10", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000CC10", "mac-a")
 	req.Actor.Human = "wido"
-	if _, err := Reconcile(req); err == nil || !strings.Contains(err.Error(), "mid-claim") {
+	if _, err := reconcileFor(req, calls.head, calls.anchor); err == nil || !strings.Contains(err.Error(), "mid-claim") {
 		t.Fatalf("a fresh lock serializes the claim: %v", err)
 	}
+	if owner, err := os.ReadFile(lock); err != nil || len(owner) != 0 {
+		t.Fatalf("the other claimant's lock was changed: %q %v", owner, err)
+	}
+	if after, err := os.Stat(lock); err != nil || !os.SameFile(standingLock, after) {
+		t.Fatalf("the other claimant's lock identity was changed: %v", err)
+	}
+	if rec, exists, err := ReadBase(a); err != nil || !exists || rec.Commit != tip || rec.RefreshDue {
+		t.Fatalf("the other claimant's base was changed: %+v %t %v", rec, exists, err)
+	}
+	calls.assertConsumed() // Fresh lock refusal precedes HEAD and anchoring.
 	// A STALE lock (a crashed claimant) is stolen and the session
 	// proceeds.
 	old := time.Now().Add(-11 * time.Minute)
 	if err := os.Chtimes(lock, old, old); err != nil {
 		t.Fatal(err)
 	}
-	res, err := Reconcile(req)
+	calls.expectHead(tip)
+	calls.expectAnchor(nextFakeReconcileCommit(endpoint))
+	res, err := reconcileFor(req, calls.head, calls.anchor)
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
 		t.Fatalf("a stale lock is stolen: %+v %v", res.Publish, err)
 	}
@@ -465,7 +507,8 @@ func TestOverlappingReconcileClaimsAreSerialized(t *testing.T) {
 
 func TestReconcileRefusesASymlinkedGoalDirectoryBeforeCapture(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
+	calls := newFilesystemReconcileCalls(t, endpoint)
 	// The directory identity flips BEFORE the session: capture
 	// through the link would publish outside bytes long before
 	// Refresh's own check could refuse.
@@ -478,9 +521,13 @@ func TestReconcileRefusesASymlinkedGoalDirectoryBeforeCapture(t *testing.T) {
 	if err := os.Symlink(outside, doneDir); err != nil {
 		t.Fatal(err)
 	}
-	req := verbReq(a, "01J5X00000000000000000PC10", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000PC10", "mac-a")
 	req.Actor.Human = "wido"
-	if _, err := Reconcile(req); err == nil || !strings.Contains(err.Error(), "not a real directory") {
+	if _, err := reconcileFor(req, calls.head, calls.anchor); err == nil || !strings.Contains(err.Error(), "not a real directory") {
 		t.Fatalf("the session refuses at its door, before capture: %v", err)
+	}
+	calls.assertConsumed() // Directory identity refusal precedes HEAD and anchoring.
+	if captures := endpoint.Repository.(*fakeGoalRepository).captures; len(captures) != 0 {
+		t.Fatalf("the unsafe checkout reached publication: captures=%v", captures)
 	}
 }

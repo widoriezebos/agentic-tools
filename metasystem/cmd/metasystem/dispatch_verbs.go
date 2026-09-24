@@ -225,6 +225,10 @@ func runDispatchRecordCreate(args []string) int {
 }
 
 func runDispatchClaimLaunch(args []string) int {
+	return runDispatchClaimLaunchWithGoalReads(args, nil)
+}
+
+func runDispatchClaimLaunchWithGoalReads(args []string, reads *dispatchcore.ProofAdmissionReads) int {
 	if refuseRepeatedFlags("job claim-launch", args) {
 		return 2
 	}
@@ -343,7 +347,7 @@ func runDispatchClaimLaunch(args []string) int {
 		return 1
 	}
 	claimParams.OccupancyPreparation = occupancyPreparation
-	result, err := dispatchcore.ClaimLaunch(claimParams, dispatchcore.ClaimLaunchDependencies{
+	dependencies := dispatchcore.ClaimLaunchDependencies{
 		CreatorPID: *creatorPID, IdentityReader: startReader, ProcessVerifier: commandClaimProcessVerifier{},
 		Reconcile: func(root, job string) (dispatchcore.ReconciliationResult, error) {
 			return dispatchcore.ReconcileReservation(root, job, dispatchcore.ReconciliationDependencies{
@@ -351,7 +355,13 @@ func runDispatchClaimLaunch(args []string) int {
 				Emit: func(line string) { fmt.Fprintln(os.Stderr, line) },
 			})
 		},
-	})
+	}
+	if reads != nil {
+		dependencies.MarkFirstSlice = func(params dispatchcore.ClaimLaunchParams, now time.Time) error {
+			return dispatchcore.MarkFirstSliceWithReads(params, now, *reads)
+		}
+	}
+	result, err := dispatchcore.ClaimLaunch(claimParams, dependencies)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -1177,6 +1187,10 @@ func runDispatchGoalAdmission(args []string) int {
 }
 
 func runDispatchGoalRevisionAdmission(args []string) int {
+	return runDispatchGoalRevisionAdmissionWithReads(args, dispatchcore.ConcreteProofAdmissionReads(), goalCommandNow)
+}
+
+func runDispatchGoalRevisionAdmissionWithReads(args []string, reads dispatchcore.ProofAdmissionReads, commandNow func(string) (time.Time, error)) int {
 	flags := flag.NewFlagSet("job goal-revision-admission", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
@@ -1197,11 +1211,11 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 		fmt.Fprintln(os.Stderr, "job goal-revision-admission: --format must be text or json")
 		return 2
 	}
-	now, err := goalCommandNow(*root)
+	now, err := commandNow(*root)
 	if err != nil {
 		return recordExit(err)
 	}
-	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(*root, *goalID, *revision, *proposedCap, now, *role, *dispatchMode, dispatchcore.HazardClass(*destructiveReach))
+	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatchWithReads(*root, *goalID, *revision, *proposedCap, now, *role, *dispatchMode, reads, dispatchcore.HazardClass(*destructiveReach))
 	if err != nil {
 		return recordExit(err)
 	}

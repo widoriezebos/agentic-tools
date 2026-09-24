@@ -3,12 +3,10 @@ package steward
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -25,52 +23,6 @@ func bedHistory(id, verb string) []goal.HistoryLine {
 		Targets: []string{id},
 		Keep:    -1,
 	}}
-}
-
-func convertedBed(t *testing.T, machine string, files map[string]*goal.GoalFile) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		cmd.Env = gittree.ScrubbedEnviron()
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q", "-b", "main")
-	run("config", "metasystem.goal.machine", machine)
-	run("config", "goal.sync-remote", "local")
-	run("config", "user.name", "steward-fixture")
-	run("config", "user.email", "steward-fixture@example.invalid")
-
-	rootRecord := &goal.RootRecord{
-		Identity:      "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-		FormatVersion: "1",
-		SyncMode:      goal.SyncLocal,
-		Revision:      1,
-	}
-	write := func(rel string, data []byte) {
-		t.Helper()
-		abs := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(abs, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		run("add", rel)
-	}
-	write("plans/goals/backlog.md", goal.RenderRoot(rootRecord))
-	for id, f := range files {
-		write("plans/goals/"+id+".md", goal.RenderFile(f))
-	}
-	run("commit", "-q", "-m", "converted bed")
-	run("update-ref", goal.AcceptedRef, "HEAD")
-	return root
 }
 
 func liveProcessRecord(t *testing.T) map[string]any {
@@ -104,7 +56,7 @@ func writeStewardRecord(t *testing.T, path string, record map[string]any) {
 }
 
 func TestConvertedClaimByThisMachineIsOwnedWork(t *testing.T) {
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+	root, dependencies := convertedProjectionBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"fix-it": {
 			Id: "fix-it", State: "claimed", Intent: "Repair it", Origin: "main",
 			NextStep: "Do the repair.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
@@ -116,14 +68,14 @@ func TestConvertedClaimByThisMachineIsOwnedWork(t *testing.T) {
 	announcement["mainId"] = "main-fixture"
 	announcement["ownerLineage"] = "coordinator"
 	writeStewardRecord(t, filepath.Join(root, "artifacts", "agents", "mains", "fixture.json"), announcement)
-	w, reason, err := ReadOpenWork(root)
+	w, reason, err := readOpenWorkWithDependencies(root, dependencies)
 	if err != nil || w != WorkInFlight || !strings.Contains(reason, "claim:fix-it") {
 		t.Fatalf("a claim counts only when its matching process is live: %v %q %v", w, reason, err)
 	}
 }
 
 func TestConvertedForeignClaimAndQueueIsNotOwnedHere(t *testing.T) {
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+	root, dependencies := convertedProjectionBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"theirs": {
 			Id: "theirs", State: "claimed", Intent: "Elsewhere", Origin: "main",
 			NextStep: "Work elsewhere.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
@@ -136,7 +88,7 @@ func TestConvertedForeignClaimAndQueueIsNotOwnedHere(t *testing.T) {
 			History: bedHistory("waiting", "open"),
 		},
 	})
-	w, reason, err := ReadOpenWork(root)
+	w, reason, err := readOpenWorkWithDependencies(root, dependencies)
 	if err != nil || w != WorkNone || !strings.Contains(reason, "queued") {
 		t.Fatalf("a foreign claim plus a queue is visible, never owned here: %v %q %v", w, reason, err)
 	}
@@ -167,8 +119,8 @@ func TestConvertedOnlyFencedClaimLeavesQueueOpenForHumanResume(t *testing.T) {
 		At: "2026-08-23T01:02:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000002",
 		Verb: "breach-stop", Actor: "bed-m1+goal-stop-custodian", Targets: []string{fenced.Id}, Keep: -1,
 	})
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{fenced.Id: fenced})
-	w, reason, err := ReadOpenWork(root)
+	root, dependencies := convertedProjectionBed(t, "bed-m1", map[string]*goal.GoalFile{fenced.Id: fenced})
+	w, reason, err := readOpenWorkWithDependencies(root, dependencies)
 	want := "the only claim held here is breach-stopped: fenced-here (stop stop-fenced-here-r3-f1); it waits on a human resume, and the queue is open"
 	if err != nil || w != WorkNone || reason != want {
 		t.Fatalf("fenced-only claim classification mismatch: work=%v reason=%q err=%v", w, reason, err)
@@ -176,13 +128,9 @@ func TestConvertedOnlyFencedClaimLeavesQueueOpenForHumanResume(t *testing.T) {
 }
 
 func TestConvertedUnenrolledMachineDegradesNeverGuesses(t *testing.T) {
-	root := convertedBed(t, "bed-m1", nil)
-	run := exec.Command("git", "-C", root, "config", "--unset", "metasystem.goal.machine")
-	if out, err := run.CombinedOutput(); err != nil {
-		t.Fatalf("unset: %v\n%s", err, out)
-	}
-	w, reason, err := ReadOpenWork(root)
-	if err != nil || w != WorkDegraded {
+	root, dependencies := convertedProjectionBed(t, "", nil)
+	w, reason, err := readOpenWorkWithDependencies(root, dependencies)
+	if err != nil || w != WorkDegraded || reason != "fresh canonical ledger unreadable: "+unenrolledMachineError {
 		t.Fatalf("no enrollment means no judgment — degraded, never no-work: %v %q %v", w, reason, err)
 	}
 }
@@ -214,7 +162,7 @@ func approvedStewardGoal(id, intent, next, openedAt string) *goal.GoalFile {
 }
 
 func TestConvertedIdleBacklogIsDeadAndEscalatesEveryTick(t *testing.T) {
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+	root, dependencies := convertedProjectionBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"waiting": approvedStewardGoal("waiting", "Awaits a claim", "Claim it.", "2026-08-23T00:00:00Z"),
 		"stale-claim": {
 			Id: "stale-claim", State: goal.StateClaimed, Intent: "A record is not liveness", Origin: "main",
@@ -223,7 +171,7 @@ func TestConvertedIdleBacklogIsDeadAndEscalatesEveryTick(t *testing.T) {
 			History: bedHistory("stale-claim", "claim"),
 		},
 	})
-	w, reason, err := ReadOpenWork(root)
+	w, reason, err := readOpenWorkWithDependencies(root, dependencies)
 	if err != nil || w != WorkClaimable || !strings.Contains(reason, "waiting") {
 		t.Fatalf("claimable backlog must remain actionable: %v %q %v", w, reason, err)
 	}
@@ -237,26 +185,26 @@ func TestConvertedIdleBacklogIsDeadAndEscalatesEveryTick(t *testing.T) {
 }
 
 func TestConvertedJobsCountOnlyWithLiveProcessesAndPendingSetupAgrees(t *testing.T) {
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{
+	root, dependencies := convertedProjectionBed(t, "bed-m1", map[string]*goal.GoalFile{
 		"waiting": approvedStewardGoal("waiting", "Awaits a claim", "Claim it.", "2026-08-23T00:00:00Z"),
 	})
 	jobPath := filepath.Join(root, "artifacts", "agents", "jobs", "delegate.json")
 	writeStewardRecord(t, jobPath, map[string]any{
 		"jobId": "delegate", "status": "running", "pid": 999999, "pidStartedAt": 1,
 	})
-	if w, _, err := ReadOpenWork(root); err != nil || w != WorkClaimable {
+	if w, _, err := readOpenWorkWithDependencies(root, dependencies); err != nil || w != WorkClaimable {
 		t.Fatalf("a stale running record must not suppress the escalation: %v %v", w, err)
 	}
 	live := liveProcessRecord(t)
 	live["jobId"], live["status"] = "delegate", "running"
 	writeStewardRecord(t, jobPath, live)
-	if w, reason, err := ReadOpenWork(root); err != nil || w != WorkInFlight || !strings.Contains(reason, "job:delegate") {
+	if w, reason, err := readOpenWorkWithDependencies(root, dependencies); err != nil || w != WorkInFlight || !strings.Contains(reason, "job:delegate") {
 		t.Fatalf("a live running process must count as in flight: %v %q %v", w, reason, err)
 	}
 	writeStewardRecord(t, jobPath, map[string]any{
 		"jobId": "delegate", "status": "pending-setup", "creatorLiveness": liveProcessRecord(t),
 	})
-	if w, reason, err := ReadOpenWork(root); err != nil || w != WorkInFlight || !strings.Contains(reason, "job:delegate") {
+	if w, reason, err := readOpenWorkWithDependencies(root, dependencies); err != nil || w != WorkInFlight || !strings.Contains(reason, "job:delegate") {
 		t.Fatalf("pending-setup must use its live creator in the shared predicate: %v %q %v", w, reason, err)
 	}
 }
@@ -283,8 +231,8 @@ func TestConvertedLandingClaimIsOwnedWorkNeverIdleness(t *testing.T) {
 		Verb: "land-ready", Actor: "bed-m1+coordinator", Targets: []string{landing.Id}, Keep: -1,
 	})
 	landing.Landing = &goal.LandingRecord{At: "2026-08-23T03:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000002"}
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{landing.Id: landing})
-	w, reason, err := ReadOpenWork(root)
+	root, dependencies := convertedProjectionBed(t, "bed-m1", map[string]*goal.GoalFile{landing.Id: landing})
+	w, reason, err := readOpenWorkWithDependencies(root, dependencies)
 	if err != nil || w != WorkOwned || !strings.Contains(reason, "waiting to land") || !strings.Contains(reason, "landing-here") {
 		t.Fatalf("a landing claim without a live process is owned work: work=%v reason=%q err=%v", w, reason, err)
 	}

@@ -8,11 +8,6 @@ import (
 	"testing"
 )
 
-// The F16 fold: the sync-mode identity holds at fetch and mutation
-// (not only projection), local migration bootstraps its dedicated
-// branch, and the cutover rerun stays idempotent after goals.md is
-// gone — without a second identity.
-
 // localBed writes the canonical legacy ledger into a fresh
 // single-machine repository (no origin — local mode has none).
 func localBed(t *testing.T) string {
@@ -48,25 +43,20 @@ func localReq(root, ulid string) VerbRequest {
 
 func TestLocalMigrationBootstrapsItsBranch(t *testing.T) {
 	t.Parallel()
-	r := localBed(t)
-	digest := sha256HexBytes([]byte(canonical))
-	opts := MigrateOptions{
-		SourceDigest: digest, Identity: "01J5XK00000000000000000000", SyncMode: SyncLocal,
-	}
-	res, err := Migrate(localReq(r, "01J5X00000000000000000KM00"), opts)
+	endpoint, _, seeded := fakeLegacyMigrationEndpoint(t)
+	endpoint.Remote = "local"
+	opts := MigrateOptions{SourceDigest: seeded.SourceDigest,
+		Identity: "01J5XK00000000000000000000", SyncMode: SyncLocal}
+	status := newMigrationStatusTranscript(t, append(
+		cleanMigrationStatusCalls(endpoint.Root, ""), cleanMigrationStatusCalls(endpoint.Root, "")...)...)
+	res, err := migrateWithStatus(verbReqFor(endpoint, "01J5X00000000000000000KM00", "mac-solo"), opts, status.status)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("local migrate: %+v %v", res, err)
 	}
-	// The dedicated branch was BORN by the publication, and HEAD
-	// never moved off the user's checkout branch.
-	branchTip := strings.TrimSpace(mustGit(t, r, "rev-parse", "--verify", LocalLedgerBranch))
-	if branchTip != res.Tip {
-		t.Fatalf("the local ledger branch carries the migration: %s vs %s", short(branchTip), short(res.Tip))
-	}
-	if err := ValidateCommit(r, branchTip); err != nil {
+	if err := validateCommitFor(endpoint, res.Tip); err != nil {
 		t.Fatalf("the bootstrapped ledger validates whole: %v", err)
 	}
-	tree, err := loadTree(r, branchTip)
+	tree, err := loadTreeFor(endpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,53 +64,82 @@ func TestLocalMigrationBootstrapsItsBranch(t *testing.T) {
 		t.Fatalf("the root record commits the local mode: %+v", tree.Root)
 	}
 	// The rerun is idempotent on the same identity and mode.
-	res2, err := Migrate(localReq(r, "01J5X00000000000000000KM10"), opts)
+	res2, err := migrateWithStatus(verbReqFor(endpoint, "01J5X00000000000000000KM10", "mac-solo"), opts, status.status)
 	if err != nil || res2.Outcome != OutcomeConfirmed || res2.Detail != "idempotent" {
 		t.Fatalf("the local rerun classifies idempotent: %+v %v", res2, err)
 	}
-	// Ordinary verbs work against the born branch.
-	res3, err := Open(localReq(r, "01J5X00000000000000000KM20"), "solo-work", "Single-machine work.", "main", "Go.")
+	if res2.Tip != res.Tip {
+		t.Fatalf("the idempotent rerun moved the tip: %s vs %s", short(res2.Tip), short(res.Tip))
+	}
+	// Ordinary verbs work against the local ledger.
+	res3, err := Open(verbReqFor(endpoint, "01J5X00000000000000000KM20", "mac-solo"), "solo-work", "Single-machine work.", "main", "Go.")
 	if err != nil || res3.Outcome != OutcomeConfirmed {
 		t.Fatalf("open on the local ledger: %+v %v", res3, err)
 	}
 }
 
+func TestLocalPublishCreatesBranchWithoutMovingCheckoutHEAD(t *testing.T) {
+	t.Parallel()
+	root := localBed(t)
+	headBefore := strings.TrimSpace(mustGit(t, root, "rev-parse", "HEAD"))
+	branchBefore := strings.TrimSpace(mustGit(t, root, "symbolic-ref", "HEAD"))
+	opts := MigrateOptions{SourceDigest: sha256HexBytes([]byte(canonical)),
+		Identity: "01J5XK00000000000000000000", SyncMode: SyncLocal}
+	res, err := Migrate(localReq(root, "01J5X00000000000000000KM30"), opts)
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("first local publication: %+v %v", res, err)
+	}
+	branchTip := strings.TrimSpace(mustGit(t, root, "rev-parse", "--verify", LocalLedgerBranch))
+	if branchTip != res.Tip {
+		t.Fatalf("local branch points to %s, migration returned %s", short(branchTip), short(res.Tip))
+	}
+	if got := strings.TrimSpace(mustGit(t, root, "rev-parse", "HEAD")); got != headBefore {
+		t.Fatalf("checkout HEAD moved from %s to %s", short(headBefore), short(got))
+	}
+	if got := strings.TrimSpace(mustGit(t, root, "symbolic-ref", "HEAD")); got != branchBefore {
+		t.Fatalf("checkout branch moved from %s to %s", branchBefore, got)
+	}
+}
+
 func TestSyncModeGateHoldsAtFetchAndMutation(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	digest := migrateBed(t, a)
-	res, err := Migrate(verbReq(a, "01J5X00000000000000000SG00", "mac-a"), migrateOpts(t, a, digest))
+	endpoint, repo, opts := fakeLegacyMigrationEndpoint(t)
+	status := newMigrationStatusTranscript(t, cleanMigrationStatusCalls(endpoint.Root, "manifest.md")...)
+	res, err := migrateWithStatus(verbReqFor(endpoint, "01J5X00000000000000000SG00", "mac-a"), opts, status.status)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("migrate: %+v %v", res, err)
 	}
 
-	// A remote-committed ledger pointed at local config: copying the
-	// canonical tip onto the local branch and flipping the config is
-	// exactly the split brain the gate names — at FETCH.
-	mustGit(t, a, "update-ref", LocalLedgerBranch, res.Tip)
-	flipped := Endpoint{Root: a, Remote: "local"}
+	// A local configuration reading the same remote-committed tip is
+	// the split brain the gate names at fetch and mutation.
+	flipped := endpoint
+	flipped.Remote = "local"
 	if _, err := FetchAdvance(flipped); err == nil || !strings.Contains(err.Error(), "split brain") {
 		t.Fatalf("the fetch refuses the local flip by name: %v", err)
 	}
-	// And at MUTATION: the publish gate refuses before anything moves.
-	req := verbReq(a, "01J5X00000000000000000SG10", "mac-a")
-	req.Endpoint = flipped
+	req := verbReqFor(flipped, "01J5X00000000000000000SG10", "mac-a")
 	openRes, err := Open(req, "smuggled", "Split-brain write.", "main", "Go.")
 	if err == nil || !strings.Contains(err.Error(), "split brain") {
 		t.Fatalf("the mutation refuses the local flip by name: %+v %v", openRes, err)
 	}
+	if repo.store.canonical != res.Tip || repo.accepted != res.Tip {
+		t.Fatalf("a refused flip moved the canonical or accepted tip: canonical=%s accepted=%s", short(repo.store.canonical), short(repo.accepted))
+	}
 
-	// The reverse arm: a local-committed ledger read by a remote
-	// config refuses toward the promotion goal.
-	local := localBed(t)
-	localRes, err := Migrate(localReq(local, "01J5X00000000000000000SG20"), MigrateOptions{
-		SourceDigest: sha256HexBytes([]byte(canonical)),
-		Identity:     "01J5XK00000000000000000001", SyncMode: SyncLocal,
-	})
+	// A separate local-committed ledger refuses a remote config flip.
+	local, _, seeded := fakeLegacyMigrationEndpoint(t)
+	local.Remote = "local"
+	localOpts := MigrateOptions{SourceDigest: seeded.SourceDigest,
+		Identity: "01J5XK00000000000000000001", SyncMode: SyncLocal,
+	}
+	localStatus := newMigrationStatusTranscript(t, cleanMigrationStatusCalls(local.Root, "")...)
+	localRes, err := migrateWithStatus(verbReqFor(local, "01J5X00000000000000000SG20", "mac-solo"), localOpts, localStatus.status)
 	if err != nil || localRes.Outcome != OutcomeConfirmed {
 		t.Fatalf("local migrate: %+v %v", localRes, err)
 	}
-	if err := SyncModeGate(Endpoint{Root: local, Remote: "origin", Branch: "refs/heads/main"}, localRes.Tip); err == nil ||
+	remote := local
+	remote.Remote = "origin"
+	if err := SyncModeGate(remote, localRes.Tip); err == nil ||
 		!strings.Contains(err.Error(), "config flip") {
 		t.Fatalf("the promotion arm refuses by name: %v", err)
 	}
@@ -128,30 +147,47 @@ func TestSyncModeGateHoldsAtFetchAndMutation(t *testing.T) {
 
 func TestMigrateRerunSurvivesTheCutoverCheckout(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	digest := migrateBed(t, a)
-	opts := migrateOpts(t, a, digest)
-	res, err := Migrate(verbReq(a, "01J5X00000000000000000RC00", "mac-a"), opts)
+	endpoint, repo, opts := fakeLegacyMigrationEndpoint(t)
+	status := newMigrationStatusTranscript(t, append(
+		cleanMigrationStatusCalls(endpoint.Root, "manifest.md"), cleanMigrationStatusCalls(endpoint.Root, "manifest.md")...)...)
+	res, err := migrateWithStatus(verbReqFor(endpoint, "01J5X00000000000000000RC00", "mac-a"), opts, status.status)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("migrate: %+v %v", res, err)
 	}
-	// The post-cutover checkout: HEAD advances to the migration
-	// commit and goals.md is GONE from the worktree — the state
-	// every clone reaches after its next pull.
-	mustGit(t, a, "fetch", "-q", "origin")
-	mustGit(t, a, "reset", "-q", "--hard", "origin/main")
-	if _, statErr := os.Stat(filepath.Join(a, "plans", "goals.md")); !os.IsNotExist(statErr) {
+	// Materialize the exact migrated snapshot as ordinary checkout files.
+	files, err := repo.Files(res.Tip, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range files {
+		checkoutPath := filepath.Join(endpoint.Root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(checkoutPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(checkoutPath, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{"plans/goals.md", "plans/goals-accepted.json"} {
+		if err := os.Remove(filepath.Join(endpoint.Root, filepath.FromSlash(path))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(endpoint.Root, "plans", "goals.md")); !os.IsNotExist(statErr) {
 		t.Fatalf("the cutover checkout carries no goals.md: %v", statErr)
 	}
 	// The standing identity is readable — the CLI's rerun path
 	// adopts it instead of minting a second one (F4 residue).
-	if got := ExistingLedgerIdentity(a); got != opts.Identity {
+	if got := existingLedgerIdentityFor(endpoint); got != opts.Identity {
 		t.Fatalf("the ledger's standing identity is adopted, never re-minted: %q", got)
 	}
 	// The rerun classifies idempotent with NOTHING to read in the
 	// worktree.
-	res2, err := Migrate(verbReq(a, "01J5X00000000000000000RC10", "mac-a"), opts)
+	res2, err := migrateWithStatus(verbReqFor(endpoint, "01J5X00000000000000000RC10", "mac-a"), opts, status.status)
 	if err != nil || res2.Outcome != OutcomeConfirmed || res2.Detail != "idempotent" {
 		t.Fatalf("the goals.md-less rerun classifies idempotent: %+v %v", res2, err)
+	}
+	if res2.Tip != res.Tip {
+		t.Fatalf("the rerun minted a second tip: %s vs %s", short(res2.Tip), short(res.Tip))
 	}
 }

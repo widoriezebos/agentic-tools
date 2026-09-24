@@ -25,6 +25,24 @@ type SweepResult struct {
 	Deleted     bool
 }
 
+type sweepDependencies struct {
+	localBranchTip func(repo, ref string) (string, bool, error)
+	gitOutput      func(repo string, args ...string) ([]byte, error)
+	validateRange  func(repo, endpointTip, tip, goalID string) ([]Commit, error)
+	ancestor       func(repo, older, newer string) (bool, error)
+	clearRef       func(repo, ref string) error
+}
+
+func defaultSweepDependencies() sweepDependencies {
+	return sweepDependencies{
+		localBranchTip: localBranchTip,
+		gitOutput:      gitOutput,
+		validateRange:  ValidateRange,
+		ancestor:       ancestor,
+		clearRef:       clearPushTxn,
+	}
+}
+
 type DeleteLandingRequest struct {
 	Repo, Remote, GoalID string
 	CheckClaim           func() error
@@ -49,8 +67,8 @@ func DeleteLanding(req DeleteLandingRequest) error {
 	return deleteRemoteRef(req.PushTransport, req.Repo, req.Remote, ref, tip, LandBranchMovedCode)
 }
 
-func sourceCommits(repo, base, endpointTip string) (map[string]bool, error) {
-	out, err := gitOutput(repo, "log", "--format=%(trailers:key=Goal-Source,valueonly)", base+".."+endpointTip)
+func sourceCommitsWith(repo, base, endpointTip string, read func(string, ...string) ([]byte, error)) (map[string]bool, error) {
+	out, err := read(repo, "log", "--format=%(trailers:key=Goal-Source,valueonly)", base+".."+endpointTip)
 	if err != nil {
 		return nil, err
 	}
@@ -63,8 +81,8 @@ func sourceCommits(repo, base, endpointTip string) (map[string]bool, error) {
 	return sources, nil
 }
 
-func concludedGoalAt(repo, endpointTip, goalID string) bool {
-	data, err := gitOutput(repo, "show", endpointTip+":metasystem/records/goals/"+goalID+".md")
+func concludedGoalAtWith(repo, endpointTip, goalID string, read func(string, ...string) ([]byte, error)) bool {
+	data, err := read(repo, "show", endpointTip+":metasystem/records/goals/"+goalID+".md")
 	if err != nil {
 		return false
 	}
@@ -80,11 +98,11 @@ func concludedGoalAt(repo, endpointTip, goalID string) bool {
 	return done && concluded
 }
 
-func droppedCommit(repo, endpointTip, goalID, commit, dropped string) bool {
-	if !concludedGoalAt(repo, endpointTip, goalID) {
+func droppedCommitWith(repo, endpointTip, goalID, commit, dropped string, read func(string, ...string) ([]byte, error)) bool {
+	if !concludedGoalAtWith(repo, endpointTip, goalID, read) {
 		return false
 	}
-	digest, err := UnitDigest(repo, commit)
+	digest, err := unitDigestWithGit(repo, commit, read)
 	if err != nil {
 		return false
 	}
@@ -112,8 +130,8 @@ func deleteRemoteRef(transport PushTransport, repo, remote, ref, expected, code 
 	return nil
 }
 
-func goalWorktreePaths(repo, goalID string) ([]string, error) {
-	out, err := gitOutput(repo, "worktree", "list", "--porcelain")
+func goalWorktreePathsWith(repo, goalID string, read func(string, ...string) ([]byte, error)) ([]string, error) {
+	out, err := read(repo, "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
@@ -136,13 +154,13 @@ func goalWorktreePaths(repo, goalID string) ([]string, error) {
 	return paths, nil
 }
 
-func cleanGoalWorktrees(repo, goalID string) ([]string, error) {
-	paths, err := goalWorktreePaths(repo, goalID)
+func cleanGoalWorktreesWith(repo, goalID string, read func(string, ...string) ([]byte, error)) ([]string, error) {
+	paths, err := goalWorktreePathsWith(repo, goalID, read)
 	if err != nil {
 		return nil, err
 	}
 	for _, path := range paths {
-		status, err := gitOutput(path, "status", "--porcelain=v1", "--untracked-files=all")
+		status, err := read(path, "status", "--porcelain=v1", "--untracked-files=all")
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +178,7 @@ func cleanGoalWorktrees(repo, goalID string) ([]string, error) {
 	return paths, nil
 }
 
-func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []string) error {
+func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []string, deps sweepDependencies) error {
 	for _, path := range paths {
 		same, _ := filepath.Abs(path)
 		root, _ := filepath.Abs(repo)
@@ -171,12 +189,12 @@ func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []st
 			root = resolved
 		}
 		if same == root {
-			if _, err := gitOutput(repo, "switch", "--quiet", "--detach", endpointTip); err != nil {
+			if _, err := deps.gitOutput(repo, "switch", "--quiet", "--detach", endpointTip); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, err := gitOutput(repo, "worktree", "remove", path); err != nil {
+		if _, err := deps.gitOutput(repo, "worktree", "remove", path); err != nil {
 			return err
 		}
 	}
@@ -184,8 +202,8 @@ func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []st
 		return nil
 	}
 	ref := goalBranchRef(goalID)
-	if _, err := gitOutput(repo, "update-ref", "-d", ref, localTip); err != nil {
-		observed, present, readErr := localBranchTip(repo, ref)
+	if _, err := deps.gitOutput(repo, "update-ref", "-d", ref, localTip); err != nil {
+		observed, present, readErr := deps.localBranchTip(repo, ref)
 		if readErr != nil {
 			return readErr
 		}
@@ -197,26 +215,26 @@ func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []st
 	return nil
 }
 
-func checkSweepTip(req SweepRequest, place, tip string) error {
+func checkSweepTipWith(req SweepRequest, place, tip string, deps sweepDependencies) error {
 	if req.Abandoned {
 		return nil
 	}
-	baseOut, err := gitOutput(req.Repo, "merge-base", req.EndpointTip, tip)
+	baseOut, err := deps.gitOutput(req.Repo, "merge-base", req.EndpointTip, tip)
 	if err != nil {
 		return err
 	}
 	base := strings.TrimSpace(string(baseOut))
-	sources, err := sourceCommits(req.Repo, base, req.EndpointTip)
+	sources, err := sourceCommitsWith(req.Repo, base, req.EndpointTip, deps.gitOutput)
 	if err != nil {
 		return err
 	}
-	commits, err := ValidateRange(req.Repo, req.EndpointTip, tip, req.GoalID)
+	commits, err := deps.validateRange(req.Repo, req.EndpointTip, tip, req.GoalID)
 	if err != nil {
 		return err
 	}
 	var unlanded []string
 	for _, commit := range commits {
-		if !sources[commit.ID] && !droppedCommit(req.Repo, req.EndpointTip, req.GoalID, commit.ID, req.Dropped) {
+		if !sources[commit.ID] && !droppedCommitWith(req.Repo, req.EndpointTip, req.GoalID, commit.ID, req.Dropped, deps.gitOutput) {
 			unlanded = append(unlanded, fmt.Sprintf("%s (%s %s)", commit.ID, commit.Kind, commit.Unit))
 		}
 	}
@@ -229,12 +247,12 @@ func checkSweepTip(req SweepRequest, place, tip string) error {
 	return nil
 }
 
-func sweepTipCovered(repo, tip string, checked []string) (bool, error) {
+func sweepTipCoveredWith(repo, tip string, checked []string, isAncestor func(string, string, string) (bool, error)) (bool, error) {
 	for _, checkedTip := range checked {
 		if tip == checkedTip {
 			return true, nil
 		}
-		covered, err := ancestor(repo, tip, checkedTip)
+		covered, err := isAncestor(repo, tip, checkedTip)
 		if err != nil {
 			return false, err
 		}
@@ -246,6 +264,10 @@ func sweepTipCovered(repo, tip string, checked []string) (bool, error) {
 }
 
 func Sweep(req SweepRequest) (SweepResult, error) {
+	return sweepWithDependencies(req, defaultSweepDependencies())
+}
+
+func sweepWithDependencies(req SweepRequest, deps sweepDependencies) (SweepResult, error) {
 	if req.PushTransport == nil {
 		req.PushTransport = GitPushTransport{}
 	}
@@ -267,11 +289,11 @@ func Sweep(req SweepRequest) (SweepResult, error) {
 			return SweepResult{}, err
 		}
 	}
-	localTip, localPresent, err := localBranchTip(req.Repo, ref)
+	localTip, localPresent, err := deps.localBranchTip(req.Repo, ref)
 	if err != nil {
 		return SweepResult{}, err
 	}
-	worktrees, err := cleanGoalWorktrees(req.Repo, req.GoalID)
+	worktrees, err := cleanGoalWorktreesWith(req.Repo, req.GoalID, deps.gitOutput)
 	if err != nil {
 		return SweepResult{}, err
 	}
@@ -302,18 +324,19 @@ func Sweep(req SweepRequest) (SweepResult, error) {
 			continue
 		}
 		if candidate.remote {
-			if err := fetchAndValidate(req.Repo, candidate.place, req.EndpointTip, req.GoalID, candidate.opid, candidate.tip, req.PushTransport); err != nil {
+			if err := fetchAndValidateWith(req.Repo, candidate.place, req.EndpointTip, req.GoalID, candidate.opid, candidate.tip, req.PushTransport,
+				fetchValidationDependencies{validateRange: deps.validateRange, clearRef: deps.clearRef}); err != nil {
 				return SweepResult{}, err
 			}
 		}
-		covered, err := sweepTipCovered(req.Repo, candidate.tip, checked)
+		covered, err := sweepTipCoveredWith(req.Repo, candidate.tip, checked, deps.ancestor)
 		if err != nil {
 			return SweepResult{}, err
 		}
 		if covered {
 			continue
 		}
-		if err := checkSweepTip(req, candidate.place, candidate.tip); err != nil {
+		if err := checkSweepTipWith(req, candidate.place, candidate.tip, deps); err != nil {
 			return SweepResult{}, err
 		}
 		checked = append(checked, candidate.tip)
@@ -333,7 +356,7 @@ func Sweep(req SweepRequest) (SweepResult, error) {
 			return SweepResult{}, err
 		}
 	}
-	if err := cleanupGoalWorktrees(req.Repo, req.GoalID, req.EndpointTip, localTip, worktrees); err != nil {
+	if err := cleanupGoalWorktrees(req.Repo, req.GoalID, req.EndpointTip, localTip, worktrees, deps); err != nil {
 		return SweepResult{}, err
 	}
 	return SweepResult{GoalID: req.GoalID, Tip: resultTip, Deleted: true}, nil

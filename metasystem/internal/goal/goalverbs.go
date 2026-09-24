@@ -578,6 +578,12 @@ func (s *Store) Prune(caller Caller) (Result, error) {
 // deleted ledger from the baseline, and the block-level delta replay for
 // manual edits — applying every rule the direct verbs apply.
 func (s *Store) Reconcile(caller Caller) (Result, error) {
+	return s.reconcileWithProbe(caller, func(root string) (bool, error) {
+		return headTracksLedgerWithEnvironment(root, nil)
+	})
+}
+
+func (s *Store) reconcileWithProbe(caller Caller, probe func(string) (bool, error)) (Result, error) {
 	return s.withLock(func() (Result, error) {
 		if err := s.refuseMissionSeat(); err != nil {
 			return Result{}, err
@@ -633,7 +639,7 @@ func (s *Store) Reconcile(caller Caller) (Result, error) {
 			// admitted it on that shape before the lock; the ledger is
 			// judged again as it is now.
 			if caller.Class != "HUMAN" && !(caller.Class == "MAIN" && caller.Holder) {
-				shaped, reason, err := AdoptionShaped(s.Root, state.ledgerBytes)
+				shaped, reason, err := adoptionShapedWithProbe(s.Root, state.ledgerBytes, probe)
 				if err != nil {
 					return Result{}, fmt.Errorf("genesis reconcile refused: %v", err)
 				}
@@ -825,16 +831,20 @@ func (s *Store) BaselineMatches() bool {
 // prompt omits the line and never blocks. The fetch is the caller's
 // concern; this reads what is accepted.
 func (s *Store) ServingProjection() (id, intent string, ok bool) {
-	if NewWorld(s.Root) {
-		machine, err := ResolveMachine(s.Root)
+	converted, err := s.projectionWorld()
+	if err != nil {
+		return "", "", false
+	}
+	if converted {
+		machine, err := s.projectionMachine()
 		if err != nil {
 			return "", "", false
 		}
-		endpoint, err := ResolveEndpoint(s.Root)
+		endpoint, err := s.projectionEndpoint()
 		if err != nil {
 			return "", "", false
 		}
-		proj, err := Project(endpoint, false, time.Now())
+		proj, err := s.readProjection(endpoint, time.Now())
 		if err != nil || proj.Tree == nil {
 			return "", "", false
 		}
@@ -845,6 +855,63 @@ func (s *Store) ServingProjection() (id, intent string, ok bool) {
 	}
 	id, intent, ok = s.CurrentProjection()
 	return id, intent, ok
+}
+
+// ServingProjectionAtEndpoint binds one caller-supplied repository and machine
+// to the existing serving policy without changing the Store's other reads.
+func (s *Store) ServingProjectionAtEndpoint(endpoint Endpoint, machine string) (id, intent string, ok bool) {
+	bound := *s
+	bound.projectionDeps.source = &projectionSource{endpoint: endpoint, machine: machine}
+	return bound.ServingProjection()
+}
+
+func (s *Store) projectionWorld() (bool, error) {
+	if s.projectionDeps.source == nil {
+		return NewWorld(s.Root), nil
+	}
+	resolved, err := ResolveStateRoot(s.Root)
+	if err != nil {
+		return false, err
+	}
+	if err := s.projectionDeps.source.matchesRoot(resolved); err != nil {
+		return false, err
+	}
+	return acceptedGoalWorldFor(s.projectionDeps.source.endpoint)
+}
+
+func (s *Store) projectionMachine() (string, error) {
+	if s.projectionDeps.source != nil {
+		resolved, err := ResolveStateRoot(s.Root)
+		if err != nil {
+			return "", err
+		}
+		if err := s.projectionDeps.source.matchesRoot(resolved); err != nil {
+			return "", err
+		}
+		return s.projectionDeps.source.machine, nil
+	}
+	return ResolveMachine(s.Root)
+}
+
+func (s *Store) projectionEndpoint() (Endpoint, error) {
+	if s.projectionDeps.source != nil {
+		resolved, err := ResolveStateRoot(s.Root)
+		if err != nil {
+			return Endpoint{}, err
+		}
+		if err := s.projectionDeps.source.matchesRoot(resolved); err != nil {
+			return Endpoint{}, err
+		}
+		return s.projectionDeps.source.endpoint, nil
+	}
+	return ResolveEndpoint(s.Root)
+}
+
+func (s *Store) readProjection(endpoint Endpoint, now time.Time) (Projection, error) {
+	if s.projectionDeps.source != nil {
+		return project(endpoint, false, now, s.projectionDeps)
+	}
+	return Project(endpoint, false, now)
 }
 
 func (s *Store) CurrentProjection() (id, intent string, ok bool) {

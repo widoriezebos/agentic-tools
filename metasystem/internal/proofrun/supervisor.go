@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"sort"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -462,74 +461,4 @@ func uniqueProcessIDs(members []int, rootPID int) []int {
 	}
 	sort.Ints(result)
 	return result
-}
-
-func parseCPUTime(value string) (float64, error) {
-	value = strings.TrimSpace(value)
-	days := int64(0)
-	if before, after, ok := strings.Cut(value, "-"); ok {
-		parsed, err := parsePositiveInt(before)
-		if err != nil {
-			return 0, fmt.Errorf("parse cputime days: %w", err)
-		}
-		days, value = parsed, after
-	}
-	parts := strings.Split(value, ":")
-	if len(parts) < 2 || len(parts) > 3 {
-		return 0, fmt.Errorf("invalid cputime %q", value)
-	}
-	seconds, err := parseCPUTimeSeconds(parts[len(parts)-1])
-	if err != nil || seconds >= 60 {
-		return 0, fmt.Errorf("invalid cputime seconds %q", parts[len(parts)-1])
-	}
-	minutes, err := parsePositiveInt(parts[len(parts)-2])
-	if err != nil || len(parts) == 3 && minutes >= 60 {
-		return 0, fmt.Errorf("invalid cputime minutes %q", parts[len(parts)-2])
-	}
-	hours := int64(0)
-	if len(parts) == 3 {
-		hours, err = parsePositiveInt(parts[0])
-		if err != nil || hours >= 24 && days > 0 {
-			return 0, fmt.Errorf("invalid cputime hours %q", parts[0])
-		}
-	}
-	return float64(((days*24)+hours)*60+minutes)*60 + seconds, nil
-}
-
-func parseCPUTimeSeconds(value string) (float64, error) {
-	whole, fraction, hasFraction := strings.Cut(value, ".")
-	seconds, err := parsePositiveInt(whole)
-	if err != nil {
-		return 0, err
-	}
-	if !hasFraction {
-		return float64(seconds), nil
-	}
-	if fraction == "" {
-		return 0, fmt.Errorf("empty fractional seconds")
-	}
-	place := 0.1
-	result := float64(seconds)
-	for _, digit := range fraction {
-		if digit < '0' || digit > '9' {
-			return 0, fmt.Errorf("non-decimal fractional seconds %q", fraction)
-		}
-		result += float64(digit-'0') * place
-		place /= 10
-	}
-	return result, nil
-}
-
-func parsePositiveInt(value string) (int64, error) {
-	var result int64
-	if value == "" {
-		return 0, fmt.Errorf("empty integer")
-	}
-	for _, digit := range value {
-		if digit < '0' || digit > '9' {
-			return 0, fmt.Errorf("non-decimal integer %q", value)
-		}
-		result = result*10 + int64(digit-'0')
-	}
-	return result, nil
 }

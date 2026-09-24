@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -127,9 +128,6 @@ func TestLandingBatchJoinRefusesDroppedListedTest(t *testing.T) {
 func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing.T) {
 	t.Parallel()
 	project := t.TempDir()
-	portableGitAt(t, project, "init", "-q")
-	portableGitAt(t, project, "config", "user.name", "Fixture")
-	portableGitAt(t, project, "config", "user.email", "fixture@example.invalid")
 	installation := filepath.Join(project, "metasystem")
 	contract := testpolicy.Contract{
 		SchemaVersion: 1,
@@ -143,11 +141,14 @@ func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	conf := []byte("testing.contract=contracts/custom.json\n")
+	baseTest := []byte("package pkg\nimport \"testing\"\nfunc TestProtected(t *testing.T) {}\n")
+	candidateTest := []byte("package pkg\nimport \"testing\"\nfunc TestRenamed(t *testing.T) {}\n")
 	for name, content := range map[string][]byte{
 		"metasystem/go.mod":                []byte("module fixture\n"),
-		"metasystem/metasystem.conf":       []byte("testing.contract=contracts/custom.json\n"),
+		"metasystem/metasystem.conf":       conf,
 		"metasystem/contracts/custom.json": data,
-		"app/pkg/value_test.go":            []byte("package pkg\nimport \"testing\"\nfunc TestProtected(t *testing.T) {}\n"),
+		"app/pkg/value_test.go":            baseTest,
 	} {
 		absolute := filepath.Join(project, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
@@ -157,18 +158,64 @@ func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing
 			t.Fatal(err)
 		}
 	}
-	portableGitAt(t, project, "add", ".")
-	portableGitAt(t, project, "commit", "-q", "-m", "base")
-	base := portableGitAt(t, project, "rev-parse", "HEAD^{tree}")
-	if err := productionBatchProtectedTests(installation, base, base); err != nil {
+	const base, candidate = "base-tree", "candidate-tree"
+	type rawFact struct {
+		dir        string
+		args       []string
+		output     []byte
+		want, seen int
+	}
+	var facts []*rawFact
+	add := func(dir string, want int, output []byte, args ...string) {
+		facts = append(facts, &rawFact{dir: dir, args: args, output: append([]byte(nil), output...), want: want})
+	}
+	const confOID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const contractOID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	const baseOID = "cccccccccccccccccccccccccccccccccccccccc"
+	const candidateOID = "dddddddddddddddddddddddddddddddddddddddd"
+	ls := func(tree, path string) []string {
+		return []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path}
+	}
+	entry := func(oid, path string) []byte {
+		return []byte(fmt.Sprintf("100644 blob %s\t%s\x00", oid, path))
+	}
+	add(installation, 5, []byte(project+"\n"), "rev-parse", "--show-toplevel")
+	add(installation, 5, []byte("metasystem/\n"), "rev-parse", "--show-prefix")
+	add(project, 5, entry(confOID, "metasystem/metasystem.conf"), ls(base, "metasystem/metasystem.conf")...)
+	add(project, 5, conf, "cat-file", "blob", confOID)
+	add(project, 4, entry(contractOID, "metasystem/contracts/custom.json"), ls(base, "metasystem/contracts/custom.json")...)
+	add(project, 4, data, "cat-file", "blob", contractOID)
+	add(project, 4, entry(baseOID, "app/pkg/value_test.go"), ls(base, "app/pkg")...)
+	add(project, 4, entry(baseOID, "app/pkg/value_test.go"), ls(base, "app/pkg/value_test.go")...)
+	add(project, 4, baseTest, "cat-file", "blob", baseOID)
+	add(project, 2, entry(candidateOID, "app/pkg/value_test.go"), ls(candidate, "app/pkg")...)
+	add(project, 2, entry(candidateOID, "app/pkg/value_test.go"), ls(candidate, "app/pkg/value_test.go")...)
+	add(project, 2, candidateTest, "cat-file", "blob", candidateOID)
+	pins := []string{"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+	raw := func(request gittree.RawRequest) gittree.RawResult {
+		t.Helper()
+		for _, fact := range facts {
+			args := append(append([]string{"-C", fact.dir}, pins...), fact.args...)
+			if request.Dir != fact.dir || !reflect.DeepEqual(request.Args, args) {
+				continue
+			}
+			if fact.seen == fact.want || request.Stdin != nil || request.Operation != "git "+strings.Join(fact.args, " ") || !reflect.DeepEqual(request.Env, gittree.ScrubbedEnviron()) {
+				t.Fatalf("invalid or repeated raw Git fact: %+v", request)
+			}
+			fact.seen++
+			return gittree.RawResult{Stdout: append([]byte(nil), fact.output...)}
+		}
+		t.Fatalf("undeclared raw Git call: %+v", request)
+		return gittree.RawResult{}
+	}
+	protected := func(root, baseTree, candidateTree string) error {
+		return productionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree, raw)
+	}
+	if err := protected(installation, base, base); err != nil {
 		t.Fatalf("configured base contract and project cwd rejected: %v", err)
 	}
-	if err := productionBatchProtectedTests(project, base, base); err != nil {
+	if err := protected(project, base, base); err != nil {
 		t.Fatalf("project-root batch join could not resolve nested installation: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(project, "app", "pkg", "value_test.go"),
-		[]byte("package pkg\nimport \"testing\"\nfunc TestRenamed(t *testing.T) {}\n"), 0o644); err != nil {
-		t.Fatal(err)
 	}
 	contract.Groups[0].Tests = json.RawMessage(`["TestRenamed"]`)
 	data, err = json.Marshal(contract)
@@ -178,9 +225,7 @@ func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing
 	if err := os.WriteFile(filepath.Join(installation, "contracts", "custom.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	portableGitAt(t, project, "add", ".")
-	candidate := portableGitAt(t, project, "write-tree")
-	if err := productionBatchProtectedTests(installation, base, candidate); err == nil ||
+	if err := protected(installation, base, candidate); err == nil ||
 		!strings.Contains(err.Error(), "BATCH_JOIN_TEST_DROPPED") || !strings.Contains(err.Error(), "TestProtected") {
 		t.Fatalf("configured candidate dropped-test refusal=%v", err)
 	}
@@ -188,14 +233,19 @@ func TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD(t *testing
 	request.LandingRoot = project
 	dependencies.base = func(string) (string, error) { return base, nil }
 	dependencies.assemble = func(string, string, []batch.Unit) ([]string, error) { return []string{candidate}, nil }
-	dependencies.protectedTests = productionBatchProtectedTests
+	dependencies.protectedTests = protected
 	assertJoinRefusedBeforeQueue(t, request, dependencies, "BATCH_JOIN_TEST_DROPPED", admissionCalls, 0)
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"),
 		[]byte("testing.contract=contracts/other.json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := productionBatchProtectedTests(project, base, base); err == nil ||
+	if err := protected(project, base, base); err == nil ||
 		!strings.Contains(err.Error(), "base metasystem.conf differs") {
 		t.Fatalf("uncommitted contract-path replacement refusal=%v", err)
+	}
+	for _, fact := range facts {
+		if fact.seen != fact.want {
+			t.Errorf("raw Git fact %s %q consumed %d/%d times", fact.dir, fact.args, fact.seen, fact.want)
+		}
 	}
 }

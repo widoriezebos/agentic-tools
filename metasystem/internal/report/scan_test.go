@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgoal"
 )
 
 func TestClipDetailKeepsValidUTF8AtTheByteBoundary(t *testing.T) {
@@ -62,59 +62,42 @@ func writeFile(t *testing.T, root, rel, body string) {
 	}
 }
 
-func reportGit(t *testing.T, root string, args ...string) {
+func newDraftScanRoot(t *testing.T) (string, *scanReadFixture) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
+	root := resolveRepo(t.TempDir())
+	fixture := newScanReadFixture(t, root)
+	fixture.world = true
+	fixture.setDraftFiles()
+	for name, data := range fixture.files {
+		writeFile(t, root, name, string(data))
 	}
-}
-
-func newDraftScanRoot(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	reportGit(t, root, "init", "-q", "-b", "main")
-	reportGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
-	reportGit(t, root, "config", "goal.sync-remote", "local")
-	reportGit(t, root, "config", "user.name", "report-fixture")
-	reportGit(t, root, "config", "user.email", "report-fixture@example.invalid")
-
-	const ledger = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	writeFile(t, root, "plans/goals/backlog.md", string(goal.RenderRoot(&goal.RootRecord{
-		Identity: ledger, FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
-	})))
-	writeFile(t, root, "plans/goals/draft-here.md", string(goal.RenderFile(&goal.GoalFile{
-		Id: "draft-here", State: goal.StateQueued, Intent: "Test the draft scan", Origin: goal.OriginMain,
-		NextStep: "Have a human approve this draft.", OpenedAt: "2026-09-07T00:00:00Z", Revision: 1,
-		History: []goal.HistoryLine{{
-			At: "2026-09-07T00:00:00Z", Opid: goal.Opid(ledger, "bed-m1", "coordinator"),
-			Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"draft-here"}, Keep: -1,
-		}},
-	})))
-	reportGit(t, root, "add", "plans/goals/backlog.md", "plans/goals/draft-here.md")
-	reportGit(t, root, "commit", "-q", "-m", "report scanner bed")
-	reportGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	return root
+	return root, fixture
 }
 
 func TestBrainDeclarationScanIncludesPendingSetupBeforeDeclaration(t *testing.T) {
-	root := t.TempDir()
+	root := resolveRepo(t.TempDir())
+	absent := newScanReadFixture(t, root)
+	absent.absent = true
 	writeFile(t, root, "artifacts/agents/jobs/pending-setup.json",
 		`{"jobId":"pending-setup","status":"pending-setup","role":"implementer","runtime":"fake","chainClosed":true}`)
-	ordinary := Scan(root)
+	absent.expect("identity", "endpoint", "accepted", "world")
+	ordinary := scanWithProberAtWithReads(root, identity.KernelProber{}, absent.committed, absent.reads())
+	absent.checked(0)
 	if len(ordinary.Busy) != 0 || len(ordinary.Jobs) != 0 {
 		t.Fatalf("ordinary undeclared scan changed trunk's in-flight set: %+v", ordinary)
 	}
-	declaration := ScanForBrainDeclaration(root)
+	absent.expect("endpoint", "accepted", "world")
+	declaration := scanForBrainDeclarationWithReads(root, absent.reads())
+	absent.checked(0)
 	if len(declaration.Busy) != 1 || declaration.Busy[0].Id != "pending-setup" || len(declaration.Jobs) != 1 || declaration.Jobs[0].Status != "pending-setup" {
 		t.Fatalf("brain declaration scan missed pending-setup: %+v", declaration)
 	}
 
-	declaredRoot := newDraftScanRoot(t)
+	declaredRoot, declaredReads := newDraftScanRoot(t)
 	writeFile(t, declaredRoot, "artifacts/agents/jobs/pending-setup.json",
 		`{"jobId":"pending-setup","status":"pending-setup","role":"implementer","runtime":"fake","chainClosed":true}`)
 	record := brain.Record{
-		Schema: brain.Schema, Ledger: goal.ExistingLedgerIdentity(declaredRoot), Machine: "bed-m1",
+		Schema: brain.Schema, Ledger: scanFixtureLedger, Machine: "bed-m1",
 		DeclaredBy: "Wido", DeclaredAt: "2026-09-07T00:00:00Z",
 	}
 	data, err := json.Marshal(record)
@@ -122,20 +105,24 @@ func TestBrainDeclarationScanIncludesPendingSetupBeforeDeclaration(t *testing.T)
 		t.Fatal(err)
 	}
 	writeFile(t, declaredRoot, "artifacts/agents/brain.json", string(data)+"\n")
-	declared := Scan(declaredRoot)
+	declaredReads.expect("identity", "endpoint", "accepted", "files", "commitTime", "world", "machine", "endpoint", "accepted", "files", "commitTime")
+	declared := scanWithProberAtWithReads(declaredRoot, identity.KernelProber{}, declaredReads.committed, declaredReads.reads())
+	declaredReads.checked(2)
 	if len(declared.Busy) != 1 || declared.Busy[0].Id != "pending-setup" || len(declared.Jobs) != 1 || declared.Jobs[0].Status != "pending-setup" {
 		t.Fatalf("declared brain scan did not classify pending-setup as in flight: %+v", declared)
 	}
 }
 
 func TestQuestionAndDraftScansKeepUndeclaredVerdictUnchanged(t *testing.T) {
-	root := newDraftScanRoot(t)
+	root, fixture := newDraftScanRoot(t)
 	writeFile(t, root, "artifacts/agents/channel/questions/valid.json",
 		`{"id":"valid","goal":"draft-here","kind":"other","machine":"bed-m2","openedAt":"2026-09-07T00:01:00Z","wants":"Choose the safe option.","state":"open"}`)
 	writeFile(t, root, "artifacts/agents/channel/questions/broken.json", `{broken`)
 
-	reportGit(t, root, "config", "--unset", "metasystem.goal.machine")
-	unreadable := Scan(root)
+	fixture.machine = ""
+	fixture.expect("identity", "endpoint", "accepted", "files", "commitTime", "world", "machine")
+	unreadable := scanWithProberAtWithReads(root, identity.KernelProber{}, fixture.committed, fixture.reads())
+	fixture.checked(1)
 	if len(unreadable.Questions) != 1 || unreadable.Questions[0].Id != "valid" {
 		t.Fatalf("valid question was hidden by its malformed neighbor: %+v", unreadable.Questions)
 	}
@@ -145,16 +132,52 @@ func TestQuestionAndDraftScansKeepUndeclaredVerdictUnchanged(t *testing.T) {
 		t.Fatalf("question and draft read failures were not named: %v", unreadable.Unreadable)
 	}
 
-	reportGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
-	verdict, err := (&goal.Store{Root: root}).TurnVerdict(unreadable, "undeclared-report-scan", "", "")
+	// Question and draft read failures do not make an undeclared checkout uncertain.
+	repo := testgoal.New(fixture.files, fixture.committed, scanFixtureTip)
+	verdict, err := (&goal.Store{Root: root}).TurnVerdictAtEndpoint(
+		goal.Endpoint{Root: root, Remote: "local", Repository: repo},
+		"bed-m1", unreadable, "undeclared-report-scan", "", "")
 	if err != nil || verdict.ShouldBlock || strings.Contains(verdict.Display, "UNCERTAIN") {
 		t.Fatalf("brain-only scanner failures changed an undeclared checkout's verdict: %+v %v", verdict, err)
 	}
 
-	readable := Scan(root)
+	fixture.machine = "bed-m1"
+	fixture.expect("identity", "endpoint", "accepted", "files", "commitTime", "world", "machine", "endpoint", "accepted", "files", "commitTime")
+	readable := scanWithProberAtWithReads(root, identity.KernelProber{}, fixture.committed, fixture.reads())
+	fixture.checked(2)
 	if len(readable.Drafts) != 1 || readable.Drafts[0].Id != "draft-here" ||
 		readable.Drafts[0].Detail != "Have a human approve this draft." {
 		t.Fatalf("machine-owned queued draft was not scanned: %+v", readable.Drafts)
+	}
+	if len(readable.Questions) != 1 || readable.Questions[0].Id != "valid" {
+		t.Fatalf("valid question disappeared after enrollment: %+v", readable.Questions)
+	}
+
+	for _, test := range []struct {
+		name  string
+		set   func(*scanReadFixture)
+		calls []string
+		want  string
+	}{
+		{"endpoint error", func(f *scanReadFixture) { f.endpointErr = errors.New("endpoint unavailable") },
+			[]string{"identity", "endpoint", "world", "machine", "endpoint"}, "endpoint unavailable"},
+		{"accepted read error", func(f *scanReadFixture) { f.acceptedErr = errors.New("accepted read failed") },
+			[]string{"identity", "endpoint", "accepted", "world", "machine", "endpoint", "accepted"}, "accepted read failed"},
+		{"committed files error", func(f *scanReadFixture) { f.filesErr = errors.New("committed files unreadable") },
+			[]string{"identity", "endpoint", "accepted", "files", "world", "machine", "endpoint", "accepted", "files"}, "committed files unreadable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newScanReadFixture(t, root)
+			f.world = true
+			f.setDraftFiles()
+			test.set(f)
+			f.expect(test.calls...)
+			scan := scanWithProberAtWithReads(root, identity.KernelProber{}, f.committed, f.reads())
+			f.checked(0)
+			if !strings.Contains(strings.Join(scan.Unreadable, "\n"), "draft scan: "+test.want) {
+				t.Fatalf("draft read failure missing: %v", scan.Unreadable)
+			}
+		})
 	}
 }
 
@@ -187,7 +210,7 @@ func TestScanResultClassification(t *testing.T) {
 	writeFile(t, root, "artifacts/agents/jobs/j1.json", `{"jobId":"j1","role":"impl","runtime":"codex","status":"running"}`)
 	writeFile(t, root, "artifacts/agents/jobs/broken.json", `{nope`)
 
-	scan := scanWithProber(root, prober)
+	scan := scanWithProberWithoutGoal(t, root, prober)
 
 	var busyKinds []string
 	for _, item := range scan.Busy {
@@ -233,7 +256,7 @@ func TestOtherCheckoutNeverSuppresses(t *testing.T) {
 		`{"jobId":"j9","role":"impl","runtime":"codex","status":"running"}`)
 	os.MkdirAll(quiet, 0o755)
 
-	scan := scanWithProber(quiet, prober)
+	scan := scanWithProberWithoutGoal(t, quiet, prober)
 	if len(scan.Busy) != 0 {
 		t.Fatalf("a sibling checkout's work counted busy here: %+v", scan.Busy)
 	}
@@ -250,7 +273,7 @@ func TestScanPlansClassification(t *testing.T) {
 	writeFile(t, root, "plans/waiting.md", "# P\n- Next step: Later.\n- Waiting on the human: a ruling\n")
 	writeFile(t, root, "plans/goals.md", "# Goals\n- Next step: NEVER SCANNED\n")
 
-	scan := scanWithProber(root, scanProber{})
+	scan := scanWithProberWithoutGoal(t, root, scanProber{})
 	if len(scan.Open) != 1 || !strings.Contains(scan.Open[0].Detail, "active.md") {
 		t.Fatalf("open classification wrong: %+v", scan.Open)
 	}
@@ -268,7 +291,7 @@ func TestWaitOpenWorkSignatureReadsOnlyPlanStepsUnderContext(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "plans/active.md", "# P\n- Next step: Do the thing.\n- Waiting on the human: none\n")
 	writeFile(t, root, "plans/waiting.md", "# P\n- Next step: Later.\n- Waiting on the human: a ruling\n")
-	want := Scan(root).OpenWorkSignature()
+	want := scanWithoutGoal(t, root).OpenWorkSignature()
 	got, err := OpenWorkSignature(context.Background(), root)
 	if err != nil || got != want || got == "" {
 		t.Fatalf("plan-only signature=%q want=%q err=%v", got, want, err)
@@ -332,7 +355,7 @@ func TestMonitorFacts(t *testing.T) {
 			`"watcherPid":602,"watcherStart":7500,`+
 			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
 
-	scan := scanWithProberAt(root, prober, now)
+	scan := scanWithProberAtWithoutGoal(t, root, prober, now)
 	if len(scan.Jobs) != 1 || scan.Jobs[0].MainId != "main-x" || scan.Jobs[0].WaiterLive {
 		t.Fatalf("job facts wrong: %+v", scan.Jobs)
 	}
@@ -361,7 +384,7 @@ func TestMonitorFacts(t *testing.T) {
 		`{"completedAt":"`+now.Add(time.Hour).Format("2006-01-02T15:04:05Z")+`",`+
 			`"watcherPid":602,"watcherStart":7500,`+
 			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
-	scan = scanWithProberAt(root, prober, now)
+	scan = scanWithProberAtWithoutGoal(t, root, prober, now)
 	if scan.Runs[0].Supervised {
 		t.Fatal("a future-stamped attestation was believed")
 	}
@@ -374,7 +397,7 @@ func TestMonitorFacts(t *testing.T) {
 		`{"completedAt":"`+now.Add(-time.Minute).Format("2006-01-02T15:04:05Z")+`",`+
 			`"watcherPid":602,"watcherStart":7500,`+
 			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
-	scan = scanWithProberAt(root, prober, now)
+	scan = scanWithProberAtWithoutGoal(t, root, prober, now)
 	if scan.Runs[0].Supervised {
 		t.Fatal("an attestation beyond 2x the armed interval was believed")
 	}
@@ -387,7 +410,7 @@ func TestMonitorFacts(t *testing.T) {
 		`{"completedAt":"`+now.Format("2006-01-02T15:04:05Z")+`",`+
 			`"watcherPid":602,"watcherStart":7500,`+
 			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
-	scan = scanWithProberAt(root, prober, now)
+	scan = scanWithProberAtWithoutGoal(t, root, prober, now)
 	if scan.Runs[0].Supervised {
 		t.Fatal("a non-armed watcher's attestation was believed")
 	}
@@ -400,7 +423,7 @@ func TestMonitorFacts(t *testing.T) {
 			`"watcherPid":602,"watcherStart":7500,`+
 			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
 	prober.verdicts[602] = identity.Dead
-	scan = scanWithProberAt(root, prober, now)
+	scan = scanWithProberAtWithoutGoal(t, root, prober, now)
 	if scan.Runs[0].Supervised {
 		t.Fatal("a dead watcher's attestation was believed")
 	}
