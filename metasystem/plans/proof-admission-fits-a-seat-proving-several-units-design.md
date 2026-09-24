@@ -1,5 +1,10 @@
 # Design: proof admission fits a seat proving several units (r3)
 
+- Kind: design
+- Id: 01M3A2YHDM3PZKPF8X41GSMA1R
+- Status: done
+- Goals: proof-admission-fits-a-seat-proving-several-units
+
 Goal: proof-admission-fits-a-seat-proving-several-units (tier 2, priority 1,
 sequence 30). Revision 3 folds critique r2 (6 material findings, verdict
 rework) and is the final design round under R-117-m1e item 2 ("When every

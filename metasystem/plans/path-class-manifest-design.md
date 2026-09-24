@@ -1,5 +1,10 @@
 # Path-class manifest: design (revision 2)
 
+- Kind: design
+- Id: 01M3A2YHDM8KVA3FVGP6RD7AE6
+- Status: done
+- Goals: path-class-manifest
+
 Goal: path-class-manifest (`plans/goals/path-class-manifest.md:4`, Wido's order verbatim;
 authority `memory/rulings.md:102` R-55-m1). One manifest, one verb, three consumers, three
 deletions, one refusal, fixtures. Revision 2 folds the thirteen material findings and four

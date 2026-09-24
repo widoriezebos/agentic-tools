@@ -1,5 +1,10 @@
 # Token Spend Fence, step 1 (alert mode) — design, revision 2 (goal token-spend-fence)
 
+- Kind: design
+- Id: 01M3A2YHDN94AP79J2RT1875W1
+- Status: accepted
+- Goals: token-spend-fence
+
 Author m1b (Fable lane), 2026-09-03. Tier 3 under R-54-m1 and R-60-m1 (a
 finding is material only if it changes what gets built; a disputed point at
 the budget becomes a named test obligation). Wido's words: R-58-m1 (tokens

@@ -1,5 +1,10 @@
 # Defect analysis earns the fix
 
+- Kind: design
+- Id: 01M3A2YHDMJY93Q1PFHVN3XE6P
+- Status: accepted
+- Goals: defect-analysis-gate
+
 Design for defect-analysis-gate, against repository commit 0acef6eb6. This page is the umbrella context for the three members in section 6.
 Drafted by a Codex design round for the m1b seat on 2026-09-13 (chain implementer-873925bde8faae7cf849fd18) on the seat's brief; the rostered Codex design read is the next act, then the members are opened and built on the roster lane.
 The contract is the intent and next step in `metasystem/plans/goals/defect-analysis-gate.md:6` and the ladder in `metasystem/docs/paper/12-learning-systems.md:17`.

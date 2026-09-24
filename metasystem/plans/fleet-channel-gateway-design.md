@@ -1,5 +1,10 @@
 # fleet-channel-gateway — design: one bot, one inbox, first commit wins (revision 4)
 
+- Kind: design
+- Id: 01M3A2YHDMBPXK67XBZDAMC8GP
+- Status: accepted
+- Goals: fleet-channel-gateway
+
 Goal: plans/goals/fleet-channel-gateway.md. Wido's decisions, verbatim
 from the goal record (2026-09-03): "one bot, one git inbox, FIRST COME
 FIRST SERVED - no leases"; "THE RULE, every provider: receive -> commit

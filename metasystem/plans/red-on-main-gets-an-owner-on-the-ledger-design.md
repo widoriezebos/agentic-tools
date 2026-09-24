@@ -1,5 +1,10 @@
 # Design: red on main gets an owner on the ledger
 
+- Kind: design
+- Id: 01M3A2YHDM5XV063F8Y33RVK95
+- Status: done
+- Goals: red-on-main-gets-an-owner-on-the-ledger
+
 Revision 3, 2026-09-17: records Wido's rulings of 05:52Z (option A; a fix branch on every entry), m1e's closed-entry rule, what U0 and U2a built, and the option A detail R1 builds; no critique round follows it and R1 takes this page as its whole specification. Author: Claude Fable 5.1 design delegate, launched headless by seat m1b.
 Goal: red-on-main-gets-an-owner-on-the-ledger (tier 3, claimed by m1b). Paths are under `metasystem/`; revision 2 refs are at R0 commit c87e30eee, revision 3 refs (sections 4a to 4c, 5a, 7, 9, 10a) at a87c021fd. Brief-b is `plans/units-land-in-batches-under-one-proof-brief-b.md`. Revision 2 folded critique round 1 (section 13) and the seat rulings F1 to F4.
 

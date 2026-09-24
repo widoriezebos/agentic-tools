@@ -1,5 +1,10 @@
 # Proof runs: priced up front, alive throughout, paid once (design, round 1 folded)
 
+- Kind: design
+- Id: 01M3A2YHDMM1ACWPYWY9EYD1HF
+- Status: done
+- Goals: proof-run-cost-and-liveness
+
 Goal: proof-run-cost-and-liveness (Wido's order 2026-08-27; his
 condition recorded: mechanical prevention is the acceptance bar).
 Critique: FAILSAFE round 3. Round 1

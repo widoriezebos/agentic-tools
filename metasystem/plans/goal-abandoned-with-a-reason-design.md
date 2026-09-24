@@ -1,5 +1,10 @@
 # A goal that will never be worked, and why (goal goal-abandoned-with-a-reason)
 
+- Kind: design
+- Id: 01M3A2YHDM58J3QN8D9WNE2MN2
+- Status: done
+- Goals: goal-abandoned-with-a-reason
+
 Revision: 7. Date: 2026-09-13. Design authoring job: `gawr-cutover-design`.
 This revision closes the receipt-cutover promotion-record gap. Section 10a
 defines record versions, keeps the old engine's pin and defines the refusal

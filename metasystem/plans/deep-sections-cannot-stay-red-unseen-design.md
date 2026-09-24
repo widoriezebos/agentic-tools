@@ -1,5 +1,10 @@
 # Deep sections cannot stay red unseen
 
+- Kind: design
+- Id: 01M3A2YHDM2VCX7NQPGH7MXT95
+- Status: done
+- Goals: deep-sections-cannot-stay-red-unseen
+
 This design is based on the tree at `ee5d0829c88f06c1388a304b3e39907f77f184b0`. Citations without a historical commit refer to that tree. Historical citations name the commit they describe.
 
 ## Why the miss happened

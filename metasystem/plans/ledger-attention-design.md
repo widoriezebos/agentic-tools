@@ -1,5 +1,10 @@
 # Ledger Attention — design
 
+- Kind: design
+- Id: 01M3A2YHDMK0HB6N074ZFQYZCA
+- Status: done
+- Goals: ledger-attention
+
 Goal: `plans/goals/ledger-attention.md`. Design half (1h, Fable lane).
 The implementation half is a separate 2h Sol-lane slice; the plan in
 §7 leaves it zero judgment calls. All file:line citations are relative

@@ -1,5 +1,10 @@
 # The process steward (backlog item 21)
 
+- Kind: design
+- Id: 01M3A2YHDMG6HKD9J5AQ3VG1Q3
+- Status: superseded
+- Goals: process-steward
+
 - Status: PARKED (D87 as corrected by D94). Two critique rounds
   (records/steward/ps-critique-r1.md, 7 findings; records/steward/ps-critique-r2.md, 8
   findings) plus the Opus-window special review

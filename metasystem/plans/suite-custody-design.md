@@ -1,5 +1,10 @@
 # Suite custody: the override dies with its leg, and teardown survives signals (suite-custody)
 
+- Kind: design
+- Id: 01M3A2YHDN2BT7CTG7CT37ZRYE
+- Status: superseded
+- Goals: suite-custody
+
 Working Mode: design
 
 Owner: m2 coordinator brief, v3. Rounds: fd8a (8 material), c9ff (5

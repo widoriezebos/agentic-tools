@@ -1,5 +1,10 @@
 # Design: the breach machinery stops lying
 
+- Kind: design
+- Id: 01M3A2YHDK31ZK3YEWCE7A1589
+- Status: done
+- Goals: breach-clock-and-budget-honesty
+
 Goal: breach-clock-and-budget-honesty (plans/goals/breach-clock-and-budget-honesty.md,
 revision 14). Design revision 6a, 2026-09-02, the orchestrator's hand-fold of Sol's round-5 register (BCD-R5-001 to -003, wording only) onto revision 6, which was the Fable-lane designer's fold of
 the three Fix 3 gaps at which Sol's build breach-build-1b stopped (no bytes

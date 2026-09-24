@@ -1,5 +1,10 @@
 # Job record birth token: design
 
+- Kind: design
+- Id: 01M3A2YHDMDN8SWPGP84DX307V
+- Status: accepted
+- Goals: job-record-birth-token
+
 Goal: `plans/goals/job-record-birth-token.md` (claimed 2026-09-02, revision 3,
 4-hour box). Revision 1 of this note, 2026-09-02, authored under job
 birth-token-design-r1. Every path below is relative to `metasystem/`.

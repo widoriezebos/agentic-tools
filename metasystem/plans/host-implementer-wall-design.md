@@ -1,5 +1,10 @@
 # The host-implementer wall (goal host-implementer-wall, D99/D100)
 
+- Kind: design
+- Id: 01M3A2YHDMWD569BF8QNKKY8N9
+- Status: done
+- Goals: host-implementer-wall
+
 - Status: IMPLEMENTATION-FIRST (D81 pivot, D101) — five critique
   rounds folded (plans/hiw-critique-r1..r5.md; trajectory 9, 8,
   4+matrix, 5, 1). r5 left exactly one structural finding

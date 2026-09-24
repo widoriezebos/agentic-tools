@@ -1,5 +1,10 @@
 # Human Approval for Execution — design (goal human-approval-for-execution, revision 2)
 
+- Kind: design
+- Id: 01M3A2YHDM9FHK0CZBKKK1MS0D
+- Status: done
+- Goals: human-approval-for-execution
+
 Author m0 (Fable lane, job hae-design-r1c), 2026-09-03; revision 2 by the
 fold job hae-fold the same day, folding all eight material findings of
 the one review (records/human-approval/hae-review.md, HAE-R1-*). Tier 3

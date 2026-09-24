@@ -1,5 +1,10 @@
 # human-carried-landing-carry — design: the carried landing (revision 6)
 
+- Kind: design
+- Id: 01M3A2YHDMZ3P6VP1HP5WFPD1G
+- Status: done
+- Goals: human-carried-landing-carry
+
 Goal: plans/goals/human-carried-landing-carry.md (Wido's ruling of
 2026-09-04, "All approved": the carry, points 02 and 04 to 09 of
 plans/human-carried-landing-design.md revision 2.1, moves to this goal

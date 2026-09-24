@@ -1,5 +1,10 @@
 # The counselor — high-level design
 
+- Kind: design
+- Id: 01M3A2YHDKEHB8GB76VK6A8W1N
+- Status: accepted
+- Goals: counselor
+
 Ratified in conversation (Wido, 2026-08-24): the name, the seat, and
 the shape below. Detailed design per slice runs its own critique chain
 at claim time; this note is the standing direction.

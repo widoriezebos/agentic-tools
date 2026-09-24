@@ -1,5 +1,10 @@
 # The multi-machine backlog: git-synced, claimed, dependency-aware
 
+- Kind: design
+- Id: 01M3A2YHDKHNMXKEAW4HZT2NGZ
+- Status: done
+- Goals: backlog-git-sync
+
 STATUS: CONVERGED at round 10 (2026-08-19, D119) — the declared
 failsafe round returned "no demonstrated D115 failure and no
 non-arbitrable architecture defect"; its eight fixture-expressible

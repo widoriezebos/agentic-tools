@@ -1,5 +1,10 @@
 # Design: human-break-glass-commit-keeps-the-ledger-valid
 
+- Kind: design
+- Id: 01M3A2YHDM5CW8JEFDFBM42XM9
+- Status: accepted
+- Goals: human-break-glass-commit-keeps-the-ledger-valid
+
 > **Status, 2026-09-16: closed on Wido's word; revision 3 is the design of record.** Its round-3 critique (`records/misc/human-break-glass-commit-keeps-the-ledger-valid-critique-r3.md`, verdict rework) left 4 material findings: BGCR3-01, BGCR3-02, BGCR3-03, BGCR3-04. Wido ruled that this page closes under the round-two rule with the remaining round-3 findings carried as obligations (order item 2, recorded on the goal). On 2026-09-16 he chose to close it by hand ("I want option A"): its critique rounds ran as Codex tasks outside the engine, so the engine close verb has no critic root to close. The obligations are recorded on the goal file. Each one must be resolved in the brief of the unit it touches, before that unit is built.
 
 Goal: human-break-glass-commit-keeps-the-ledger-valid (tier 3, priority 1 sequence 6, approved 2026-09-15T19:11:31Z

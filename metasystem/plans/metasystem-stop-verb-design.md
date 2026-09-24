@@ -1,5 +1,10 @@
 # One word stops the metasystem: `metasystem stop`, `status` and `arm` (goal metasystem-stop-verb)
 
+- Kind: design
+- Id: 01M3A2YHDMGS19GJ1FB0J4M46J
+- Status: done
+- Goals: metasystem-stop-verb
+
 - Status: design closed at revision 3 with the build addendum of section
   13; slice 1 is built and PARKED in chain stopverb-build1, unreviewed and
   unlanded. This file supersedes `plans/metasystem-stop-design.md`

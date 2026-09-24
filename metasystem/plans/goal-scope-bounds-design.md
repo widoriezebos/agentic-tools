@@ -1,5 +1,10 @@
 # Goal scope bounds and the split mechanism — design (goal-scope-bounds, slice 1)
 
+- Kind: design
+- Id: 01M3A2YHDM5JQWVGGGNA6HE6DM
+- Status: accepted
+- Goals: goal-scope-bounds
+
 Status: REVISED (gsb-design-r2, 2026-08-31; round-1 findings GSB-R1-001..014
 closed in section 9). Designer: Fable lane (R-25).
 Authority: `plans/goals/goal-scope-bounds.md` (Wido 2026-08-30, human origin),

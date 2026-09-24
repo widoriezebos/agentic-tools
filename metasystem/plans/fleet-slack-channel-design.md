@@ -1,5 +1,10 @@
 # Fleet Conversation Channel — design (goal fleet-slack-channel, revision 4)
 
+- Kind: design
+- Id: 01M3A2YHDMADA13NBKF2MW56PZ
+- Status: done
+- Goals: fleet-slack-channel
+
 Author m0b (Fable lane), 2026-09-03. Tier 3 under R-54-m1; revision 2 folded Sol round 1
 (FSC-R1-001..008), revision 3 the closing review's five obligations (FSC-R2-001..005),
 revision 4 the build's gap FSC-B1-001 (the fake's cross-process lifecycle, §2); §10.
