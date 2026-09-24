@@ -235,32 +235,6 @@ func TestReconcileEqualCyclesReturnsZero(t *testing.T) {
 	}
 }
 
-// stagnationParkedMission extends anchoredMission: the mission is parked for
-// stop-loss with a stagnation ask on disk, and that park is anchored — the
-// exact position a crash during the reset transaction leaves behind.
-func stagnationParkedMission(t *testing.T) (repo, state, ledger, asksDir string) {
-	t.Helper()
-	repo, state, ledger = anchoredMission(t)
-	_, hash, _ := VerifyStateShape(state)
-	doc, _ := readStateDoc(state)
-	doc["status"] = "parked"
-	doc["parkReason"] = "stop-loss"
-	doc["waitingList"] = []any{"stop-loss"}
-	src := state + ".src"
-	if err := atomicWriteJSON(src, doc); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteState(state, src, hash); err != nil {
-		t.Fatal(err)
-	}
-	if err := Anchor(state, repo, ledger); err != nil {
-		t.Fatal(err)
-	}
-	asksDir = filepath.Join(filepath.Dir(state), "asks")
-	writeAsk(t, asksDir, "stop-loss", StopLossKindStagnation)
-	return repo, state, ledger, asksDir
-}
-
 func writeAsk(t *testing.T, asksDir, askID, kind string) {
 	t.Helper()
 	ask := map[string]any{

@@ -1,9 +1,11 @@
 package landing
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,11 +45,24 @@ type repositoryObservationFixture struct {
 }
 
 func newRepositoryObservationFixture(t *testing.T) *repositoryObservationFixture {
+	return newRepositoryObservationFixtureAt(t, false)
+}
+
+func newAdoptedRepositoryObservationFixture(t *testing.T) *repositoryObservationFixture {
+	return newRepositoryObservationFixtureAt(t, true)
+}
+
+func newRepositoryObservationFixtureAt(t *testing.T, adopted bool) *repositoryObservationFixture {
 	t.Helper()
 	repository := t.TempDir()
 	root := filepath.Join(repository, "metasystem")
+	if adopted {
+		root = repository
+	}
 	f := &repositoryObservationFixture{t: t, repository: repository, root: root, baseFiles: map[string][]byte{}}
-	f.writeOutside("development/metasystem-design.md", "fixture\n")
+	if !adopted {
+		f.writeOutside("development/metasystem-design.md", "fixture\n")
+	}
 	f.base(".gitignore", "artifacts/\n")
 	f.base("product.txt", "before\n")
 	for _, policy := range []string{"path-classes.txt", "landing-classes.json"} {
@@ -103,15 +118,17 @@ func (f *repositoryObservationFixture) base(path, content string) {
 // observationCase fixes one base/candidate comparison. Unlisted reads fail,
 // and all returned slices and maps are copies of its immutable facts.
 type observationCase struct {
-	fixture   *repositoryObservationFixture
-	candidate string
-	diff      []byte
-	changed   []string
-	files     map[observationKey]observationFile
-	entries   map[observationEntriesKey]map[string]gittree.Entry
-	sealed    bool
-	exact     *exactObservationFacts
-	chain     *chainObservationFacts
+	fixture    *repositoryObservationFixture
+	candidate  string
+	diff       []byte
+	changed    []string
+	files      map[observationKey]observationFile
+	entries    map[observationEntriesKey]map[string]gittree.Entry
+	sealed     bool
+	exact      *exactObservationFacts
+	chain      *chainObservationFacts
+	receiptRaw func(gittree.RawRequest) gittree.RawResult
+	diffRaw    func(string, ...string) ([]byte, error)
 }
 
 // An exact case permits only its declared reads and checks that every read
@@ -320,7 +337,10 @@ func (c *observationCase) observe(params ObserveParams) Observation {
 		}
 		if c.exact != nil || c.chain != nil {
 			prefix := "metasystem/"
-			if !strings.HasPrefix(path, prefix) {
+			if c.fixture.root == c.fixture.repository {
+				prefix = ""
+			}
+			if !strings.HasPrefix(path, prefix) || path == "" {
 				c.fixture.t.Fatalf("unexpected ownership path %q", path)
 			}
 			c.consumeExact("owner:" + strings.TrimPrefix(path, prefix))
@@ -328,6 +348,8 @@ func (c *observationCase) observe(params ObserveParams) Observation {
 		return resolver.OwnerForInstallation(installation, path)
 	}
 	facts := observationFacts{reader: c, installation: c.fixture.root, ownerForInstallation: owner}
+	facts.receiptRawSource = c.receiptRaw
+	facts.diffCommand = c.diffRaw
 	if c.chain != nil {
 		facts.apply = c.Apply
 	}
@@ -340,6 +362,109 @@ func (c *observationCase) observe(params ObserveParams) Observation {
 		c.verifyExactConsumption()
 	}
 	return result
+}
+
+// The receipt validator receives only the raw tree and entry responses its
+// command-receipt path needs. Every other request is a fixture error.
+func (c *observationCase) bindCommandReceipt(command string) string {
+	c.fixture.t.Helper()
+	identity := strings.Repeat("9", 40)
+	entryLines := c.receiptEntries()
+	indexModes := map[string]string{}
+	c.receiptRaw = func(request gittree.RawRequest) gittree.RawResult {
+		c.fixture.t.Helper()
+		args := request.Args
+		if len(args) < 3 || args[0] != "-C" || args[1] != request.Dir {
+			c.fixture.t.Fatalf("malformed raw receipt request: %+v", request)
+		}
+		for len(args) > 2 && args[2] == "-c" {
+			if len(args) < 5 {
+				c.fixture.t.Fatalf("malformed Git pins: %q", args)
+			}
+			args = append(args[:2:2], args[4:]...)
+		}
+		operation := args[2:]
+		index := ""
+		for _, entry := range request.Env {
+			if strings.HasPrefix(entry, "GIT_INDEX_FILE=") {
+				index = strings.TrimPrefix(entry, "GIT_INDEX_FILE=")
+			}
+		}
+		if request.Dir != c.fixture.root && request.Dir != c.fixture.repository {
+			c.fixture.t.Fatalf("unexpected raw receipt directory %q", request.Dir)
+		}
+		answer := func(value string) gittree.RawResult { return gittree.RawResult{Stdout: []byte(value)} }
+		switch {
+		case slices.Equal(operation, []string{"rev-parse", "--show-prefix"}) && request.Dir == c.fixture.root && index == "":
+			return answer("metasystem/\n")
+		case slices.Equal(operation, []string{"rev-parse", "--show-toplevel"}) && request.Dir == c.fixture.root && index == "":
+			return answer(c.fixture.repository + "\n")
+		case slices.Equal(operation, []string{"rev-parse", c.candidate + ":metasystem"}) && request.Dir == c.fixture.root && index == "":
+			return answer(c.candidate + "\n")
+		case slices.Equal(operation, []string{"ls-files", "--stage", "-z"}) && index == "" && request.Dir == c.fixture.root:
+			return gittree.RawResult{Stdout: append([]byte(nil), entryLines...)}
+		case slices.Equal(operation, []string{"read-tree", "--empty"}) && index != "" && indexModes[index] == "" && request.Dir == c.fixture.root:
+			indexModes[index] = "stage-seeded"
+			return gittree.RawResult{}
+		case slices.Equal(operation, []string{"update-index", "-z", "--index-info"}) && indexModes[index] == "stage-seeded" && bytes.Equal(request.Stdin, entryLines) && request.Dir == c.fixture.repository:
+			indexModes[index] = "stage-ready"
+			return gittree.RawResult{}
+		case slices.Equal(operation, []string{"read-tree", "HEAD"}) && index != "" && indexModes[index] == "" && request.Dir == c.fixture.root:
+			indexModes[index] = "snapshot-seeded"
+			return gittree.RawResult{}
+		case slices.Equal(operation, []string{"add", "-A", "--", "."}) && indexModes[index] == "snapshot-seeded" && request.Dir == c.fixture.root:
+			indexModes[index] = "snapshot-ready"
+			return gittree.RawResult{}
+		case slices.Equal(operation, []string{"read-tree", c.candidate}) && index != "" && indexModes[index] == "" && request.Dir == c.fixture.root:
+			indexModes[index] = "filter-seeded"
+			return gittree.RawResult{}
+		case len(operation) >= 3 && slices.Equal(operation[:3], []string{"update-index", "--force-remove", "--"}) && slices.Equal(operation[3:], appendOnlyRegisters) && indexModes[index] == "filter-seeded" && request.Dir == c.fixture.repository:
+			indexModes[index] = "filter-ready"
+			return gittree.RawResult{}
+		case slices.Equal(operation, []string{"write-tree"}) && indexModes[index] == "filter-ready" && request.Dir == c.fixture.root:
+			indexModes[index] = "done"
+			return answer(identity + "\n")
+		case slices.Equal(operation, []string{"write-tree"}) && (indexModes[index] == "stage-ready" || indexModes[index] == "snapshot-ready") && request.Dir == c.fixture.root:
+			indexModes[index] = "done"
+			return answer(c.candidate + "\n")
+		}
+		c.fixture.t.Fatalf("undeclared raw receipt request: %q, stdin=%q", request.Operation, request.Stdin)
+		return gittree.RawResult{}
+	}
+	receipt := TestReceipt{SchemaVersion: 3, Tree: c.candidate, Command: command, ExitStatus: 0,
+		Time: "2026-09-24T08:00:00Z", Binding: filteredReceiptBinding(c.candidate, identity),
+		WorktreeProjection: &TestReceiptProjection{Excludes: AppendOnlyRegisters(), Tree: identity}}
+	writeTestReceiptFixture(c.fixture.t, c.fixture.root, c.candidate, receipt)
+	return TestReceiptPath(c.fixture.root, c.candidate)
+}
+
+func (c *observationCase) receiptEntries() []byte {
+	c.fixture.t.Helper()
+	paths := map[string]observationFile{}
+	for path, data := range c.fixture.baseFiles {
+		paths[path] = observationFile{data: data, present: true}
+	}
+	for key, fact := range c.files {
+		if key.tree == c.candidate {
+			paths[key.path] = fact
+		}
+	}
+	names := make([]string, 0, len(paths))
+	for name, fact := range paths {
+		if fact.present {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	var output bytes.Buffer
+	for _, name := range names {
+		entry := gittree.Entry{Mode: "100644", OID: chainBlobOID(paths[name].data)}
+		if declared, ok := c.entries[entriesKey(c.candidate, []string{name})][name]; ok {
+			entry = declared
+		}
+		fmt.Fprintf(&output, "%s %s 0\t%s\x00", entry.Mode, entry.OID, name)
+	}
+	return output.Bytes()
 }
 
 func (c *observationCase) HeadTree() (string, error) {
@@ -410,5 +535,8 @@ func (c *observationCase) Entries(tree string, paths []string) (map[string]gittr
 
 func (c *observationCase) Prefix() (string, error) {
 	c.consumeExact("prefix")
+	if c.fixture.root == c.fixture.repository {
+		return "", nil
+	}
 	return "metasystem/", nil
 }

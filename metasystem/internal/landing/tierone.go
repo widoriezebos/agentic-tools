@@ -29,7 +29,7 @@ func fullReceiptCommandAccepted(receipt TestReceipt) bool {
 	return receipt.Command == CanonicalValidatorCommand && receipt.Proof != nil && receipt.Coverage != nil
 }
 
-func observeTierOne(params ObserveParams, change string) Observation {
+func observeTierOne(params ObserveParams, change string, facts observationFacts) Observation {
 	provenance := "direct-fix class=tier-1 change=" + change
 	if !landingID.MatchString(params.RootJob) || (params.Goal != "" && !landingID.MatchString(params.Goal)) {
 		return refuse("tier1-declaration-refused", provenance)
@@ -56,7 +56,7 @@ func observeTierOne(params ObserveParams, change string) Observation {
 			return result
 		}
 	}
-	workspace := gittree.Workspace{Dir: params.RepoRoot}
+	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
 		return refuse("tier1-policy-unreadable", provenance)
@@ -95,7 +95,7 @@ func observeTierOne(params ObserveParams, change string) Observation {
 			return refuse("tier1-floor-refused", provenance)
 		}
 	}
-	resolved, err := resolvePathClasses(workspace, classes, paths)
+	resolved, err := resolvePathClassesWithFacts(facts, classes, paths)
 	if err != nil {
 		return refuse("tier1-policy-unreadable", provenance)
 	}
@@ -110,7 +110,7 @@ func observeTierOne(params ObserveParams, change string) Observation {
 			bound = append(bound, changedPath)
 		}
 	}
-	metric, err := tierOneDiffMetric(params.RepoRoot, workspace, baseTree, params.CandidateTree, bound)
+	metric, err := tierOneDiffMetric(params.RepoRoot, workspace, facts.diffCommand, baseTree, params.CandidateTree, bound)
 	if err != nil {
 		return refuse("tier1-diff-shape-refused", provenance)
 	}
@@ -120,7 +120,7 @@ func observeTierOne(params ObserveParams, change string) Observation {
 	if metric > 40 {
 		return refuse("tier1-line-bound-refused", provenance)
 	}
-	receipt, err := readTestReceipt(params)
+	receipt, err := readObservationReceipt(params, facts)
 	if err != nil {
 		return refuse("tier1-receipt-refused", provenance)
 	}
@@ -165,8 +165,8 @@ func tierOneRootGateWidth(params ObserveParams) (string, map[string]any, error) 
 	return text, record, nil
 }
 
-func tierOneDiffMetric(root string, workspace gittree.Workspace, baseTree, candidateTree string, paths []string) (int, error) {
-	shape, err := landingGit(root, "diff-tree", "-r", "--no-commit-id", "-M", "-C", "--name-status", baseTree, candidateTree)
+func tierOneDiffMetric(root string, workspace observationReader, command func(string, ...string) ([]byte, error), baseTree, candidateTree string, paths []string) (int, error) {
+	shape, err := command(root, "diff-tree", "-r", "--no-commit-id", "-M", "-C", "--name-status", baseTree, candidateTree)
 	if err != nil {
 		return 0, err
 	}
@@ -177,7 +177,7 @@ func tierOneDiffMetric(root string, workspace gittree.Workspace, baseTree, candi
 		}
 	}
 
-	numstat, err := landingGit(root, "diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidateTree, "--")
+	numstat, err := command(root, "diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidateTree, "--")
 	if err != nil {
 		return 0, err
 	}

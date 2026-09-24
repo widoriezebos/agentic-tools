@@ -370,16 +370,6 @@ func removeMirroredLogs(jobsDir, chain string, files map[string]any) error {
 	return nil
 }
 
-// pruneMirroredRecords removes terminal job records whose chain payload is
-// already collected and whose mirror holds the record past the grace window.
-// Job records are the registry while work is recent: the staleness check
-// reads them for its chain window and the census joins custody through them.
-// Past that window, a terminal chain's records serve only history, and
-// history is the mirror, which already holds every record file.
-func pruneMirroredRecords(checkoutRoot, jobsDir, evidenceRoot string, graceSeconds float64) error {
-	return pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot, graceSeconds, nil)
-}
-
 func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string, graceSeconds float64, endpoint *goal.Endpoint) error {
 	agents := filepath.Join(checkoutRoot, "artifacts", "agents")
 	goalState := readGoalRevisionStateWithEndpoint(checkoutRoot, endpoint)
@@ -462,13 +452,6 @@ func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string
 type goalRevisionState struct {
 	tree    *goal.TreeGoals
 	unknown bool
-}
-
-// readGoalRevisionState takes one accepted-ledger view for the entire GC pass.
-// A converted ledger that cannot be read makes deletion conservative; GC must
-// not turn an evidence outage into a budget refund.
-func readGoalRevisionState(checkoutRoot string) goalRevisionState {
-	return readGoalRevisionStateWithEndpoint(checkoutRoot, nil)
 }
 
 func readGoalRevisionStateWithEndpoint(checkoutRoot string, explicit *goal.Endpoint) goalRevisionState {

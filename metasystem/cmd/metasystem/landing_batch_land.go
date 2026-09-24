@@ -431,10 +431,6 @@ func batchDetachedCheckout(root, tree string) (string, func() error, error) {
 	return detached.Workspace().Dir, detached.Close, nil
 }
 
-func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
-	return executeBatchPrefixReceiptWithDecision(root, id, record, goalID, tree, batch.PrefixDecision{Groups: groups})
-}
-
 func executeBatchPrefixReceiptWithDecision(root, id string, record batch.Record, goalID, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
 	return executeBatchPrefixReceiptWithDependencies(root, id, record, goalID, tree, decision, batchExecutionDependencies{
 		executable: batchPrefixReceiptExecutable, checkout: batchDetachedCheckout,

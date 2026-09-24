@@ -87,34 +87,6 @@ func writeFileMode(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
-// newContractRepo builds a git repository with the frozen instruments committed
-// and tagged, and writes the base contract at plans/mission-alpha.contract.md.
-func newContractRepo(t *testing.T) (repo, contractPath string) {
-	t.Helper()
-	repo = filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runGitCmd(t, repo, "-c", "init.defaultBranch=main", "init", "-q")
-	runGitCmd(t, repo, "config", "user.name", "metasystem")
-	runGitCmd(t, repo, "config", "user.email", "metasystem@example.invalid")
-	runGitCmd(t, repo, "config", "commit.gpgsign", "false")
-
-	writeFileMode(t, filepath.Join(repo, "scripts", "gate.sh"),
-		"#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\n'\n", 0o755)
-	writeFileMode(t, filepath.Join(repo, "truth", "reference.txt"), "certified truth\n", 0o644)
-	writeFileMode(t, filepath.Join(repo, "docs", "project-rules.md"), projectRules, 0o644)
-	writeFileMode(t, filepath.Join(repo, "scripts", "agents", "arm-supervision.sh"),
-		"#!/usr/bin/env bash\nprintf 'fixture-fingerprint\\n'\n", 0o755)
-	runGitCmd(t, repo, "add", ".")
-	runGitCmd(t, repo, "commit", "-qm", "instruments")
-	runGitCmd(t, repo, "tag", "instruments")
-
-	contractPath = filepath.Join(repo, "plans", "mission-alpha.contract.md")
-	writeFileMode(t, contractPath, sealableContract(), 0o644)
-	return repo, contractPath
-}
-
 func TestContractValidateAcceptsBase(t *testing.T) {
 	contractPath, repository := newContractFiles(t, 1)
 	resolved, warnings, err := contractValidateWithRepository(contractPath, repository)

@@ -333,6 +333,69 @@ func (r *proofAdmissionRepository) reads() dispatchcore.ProofAdmissionReads {
 		Receipt: dispatchcore.ReceiptAdmissionSource{AcceptedLedgerTip: r.receiptTip, TopLevel: r.receiptTop, FileAt: r.receiptFile},
 	}
 }
+
+func (r *proofAdmissionRepository) extendBudgetInputs(t *testing.T) syncRequestDependencies {
+	t.Helper()
+	backlog := filepath.Join(r.root, "plans", "goals", "backlog.md")
+	if err := os.WriteFile(backlog, r.rawFile(t, "metasystem/plans/goals/backlog.md"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	guard := filepath.Join(r.root, "scripts", "agents", "pre-commit-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reads := r.reads()
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.authorityFacts = goalAuthorityReadFacts{
+		repositoryTop: r.receiptTop,
+		ledgerIdentity: func(root string) string {
+			if root != r.root {
+				t.Fatalf("ledger identity root = %q, want %q", root, r.root)
+			}
+			physical, err := os.ReadFile(backlog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			accepted := r.rawFile(t, "metasystem/plans/goals/backlog.md")
+			if string(physical) != string(accepted) {
+				t.Fatal("physical backlog differs from the accepted root")
+			}
+			record, problems := goal.ParseRoot(accepted)
+			if record == nil || len(problems) != 0 {
+				t.Fatalf("accepted backlog root: record=%+v problems=%v", record, problems)
+			}
+			return record.Identity
+		},
+	}
+	dependencies.ensureGuard = func(root string) error {
+		if root != r.root {
+			return fmt.Errorf("guard root %q differs from %q", root, r.root)
+		}
+		info, err := os.Stat(guard)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+			return fmt.Errorf("fixture guard is not executable: %s", guard)
+		}
+		return nil
+	}
+	dependencies.endpoint = reads.ResolveEndpoint
+	dependencies.machine = reads.ResolveMachine
+	return dependencies
+}
+
+func (r *proofAdmissionRepository) commandNow(now time.Time) func(string) (time.Time, error) {
+	return func(root string) (time.Time, error) {
+		if root != r.root {
+			return time.Time{}, fmt.Errorf("admission clock root %q differs from %q", root, r.root)
+		}
+		return now, nil
+	}
+}
 func (r *proofAdmissionRepository) amend(t *testing.T, id string, mutate func(*goal.GoalFile)) *goal.GoalFile {
 	t.Helper()
 	file := r.goalFile(t, id)

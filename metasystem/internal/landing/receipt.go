@@ -598,6 +598,10 @@ func receiptIdentity(workspace gittree.Workspace, tree string) (string, error) {
 }
 
 func readTestReceipt(params ObserveParams) (TestReceipt, error) {
+	return readTestReceiptWithWorkspace(params, gittree.Workspace{Dir: params.RepoRoot})
+}
+
+func readTestReceiptWithWorkspace(params ObserveParams, workspace gittree.Workspace) (TestReceipt, error) {
 	now := params.Now.UTC()
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -744,7 +748,6 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 	if _, err := time.Parse(time.RFC3339Nano, receipt.Time); err != nil {
 		return TestReceipt{}, fmt.Errorf("test receipt time is malformed")
 	}
-	workspace := gittree.Workspace{Dir: params.RepoRoot}
 	expectedWorktree := params.CandidateTree
 	if receipt.SchemaVersion == 1 {
 		if receipt.WorktreeProjection != nil {

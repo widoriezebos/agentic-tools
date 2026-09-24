@@ -66,24 +66,6 @@ func (bed *goalRepositoryFixture) seed(t *testing.T, file *goal.GoalFile, now ti
 	bed.endpoint = goal.Endpoint{Root: bed.root, Remote: goal.SyncLocal, Branch: goal.LocalLedgerBranch, Repository: bed.repository}
 }
 
-func (bed *goalRepositoryFixture) acceptedFile(t *testing.T, id string) *goal.GoalFile {
-	t.Helper()
-	tip, present, err := bed.repository.Accepted()
-	if err != nil || !present {
-		t.Fatalf("accepted tip: %q present=%t err=%v", tip, present, err)
-	}
-	path := "plans/goals/" + id + ".md"
-	files, err := bed.repository.Files(tip, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(files[path])
-	if file == nil || len(problems) != 0 {
-		t.Fatalf("accepted goal parse: %+v %v", file, problems)
-	}
-	return file
-}
-
 func (bed *goalRepositoryFixture) binding(root, id string, now time.Time) (dispatch.GoalBinding, error) {
 	if root != bed.root {
 		return dispatch.GoalBinding{}, fmt.Errorf("undeclared goal root %q", root)

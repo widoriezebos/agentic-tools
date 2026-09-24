@@ -3,10 +3,10 @@ package landing
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -165,45 +165,6 @@ func (f *observeFixture) writeHeldGoalWithTier(id, machine, lineage string, tier
 			Verb: "claim", Actor: machine + "+" + lineage, Targets: []string{id}, Keep: -1,
 		}},
 	}))
-}
-
-func (f *observeFixture) prepareTierOne(gateWidth string) string {
-	f.t.Helper()
-	f.writeHeldGoalWithTier("tier-one", "m9", "L1", 1)
-	f.git("add", ".")
-	f.git("commit", "-qm", "prepare tier-one goal")
-	record := map[string]any{
-		"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
-		"goalId": "tier-one", "goalRevision": 1, "goalTier": 1,
-	}
-	if gateWidth != "" {
-		record["gateWidth"] = gateWidth
-	}
-	f.writeChainRecord("tier-one-root", record)
-	return "tier-one-root"
-}
-
-func (f *observeFixture) tierOneReceipt(command string) (string, string) {
-	f.t.Helper()
-	candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	receipt, err := CreateTestReceipt(f.root, candidate, command, io.Discard, io.Discard)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	if receipt.Tree != candidate {
-		f.t.Fatalf("receipt tree %s does not equal candidate %s", receipt.Tree, candidate)
-	}
-	return candidate, TestReceiptPath(f.root, candidate)
-}
-
-func tierOneParams(f *observeFixture, candidate, receipt string) ObserveParams {
-	return ObserveParams{
-		RepoRoot: f.root, CandidateTree: candidate, DirectFix: "tier-1",
-		Goal: "tier-one", Actor: "m9+L1", RootJob: "tier-one-root", TestReceipt: receipt,
-	}
 }
 
 func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
@@ -442,150 +403,180 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 	})
 }
 
+func (f *repositoryObservationFixture) tierOneRoot(width string, tier uint8) {
+	f.t.Helper()
+	file := &goal.GoalFile{
+		Id: "tier-one", State: goal.StateClaimed, Tier: tier, Intent: "Fixture ownership.", Origin: goal.OriginMain,
+		NextStep: "Exercise landing binding.", OpenedAt: "2026-09-03T08:00:00Z", Revision: 1,
+		Claimed: &goal.ClaimRecord{Machine: "m9", Lineage: "L1", At: "2026-09-03T08:01:00Z", Revision: 1},
+		History: []goal.HistoryLine{{At: "2026-09-03T08:01:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-m9-00000001",
+			Verb: "claim", Actor: "m9+L1", Targets: []string{"tier-one"}, Keep: -1}},
+	}
+	f.base("plans/goals/tier-one.md", string(goal.RenderFile(file)))
+	record := map[string]any{"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
+		"goalId": "tier-one", "goalRevision": 1, "goalTier": 1}
+	if width != "" {
+		record["gateWidth"] = width
+	}
+	f.writeChainRecord("tier-one-root", record)
+}
+
+func tierOneCase(f *repositoryObservationFixture, candidate string, changes ...chainFileChange) *observationCase {
+	f.t.Helper()
+	paths := make([]string, len(changes))
+	for i, change := range changes {
+		paths[i] = change.path
+	}
+	c := f.comparison(candidate, string(chainDiff(changes...)), paths...)
+	for _, change := range changes {
+		c.declare(change.path, change.before, change.after)
+	}
+	c.bindTierOneDiff("", "")
+	return c
+}
+
+func (c *observationCase) bindTierOneDiff(shape, numstat string) {
+	c.fixture.t.Helper()
+	bound := make([]string, 0, len(c.changed))
+	var generatedShape, generatedStat strings.Builder
+	for _, path := range c.changed {
+		before := c.files[observationKey{observeBaseTree, path}]
+		after := c.files[observationKey{c.candidate, path}]
+		status := "M"
+		if !before.present {
+			status = "A"
+		} else if !after.present {
+			status = "D"
+		}
+		fmt.Fprintf(&generatedShape, "%s\t%s\n", status, path)
+		added, removed := strings.Count(string(after.data), "\n"), strings.Count(string(before.data), "\n")
+		fmt.Fprintf(&generatedStat, "%d\t%d\t%s\x00", added, removed, path)
+		if path != receiptLedgerPath {
+			bound = append(bound, path)
+		}
+	}
+	if shape == "" {
+		shape = generatedShape.String()
+	}
+	if numstat == "" {
+		numstat = generatedStat.String()
+	}
+	for _, tree := range []string{observeBaseTree, c.candidate} {
+		entries := map[string]gittree.Entry{}
+		for _, path := range bound {
+			for name, entry := range c.entries[entriesKey(tree, []string{path})] {
+				entries[name] = entry
+			}
+		}
+		c.declareEntries(tree, bound, entries)
+	}
+	c.diffRaw = func(root string, args ...string) ([]byte, error) {
+		c.fixture.t.Helper()
+		if root != c.fixture.root {
+			c.fixture.t.Fatalf("unexpected tier-one diff root %q", root)
+		}
+		switch {
+		case slices.Equal(args, []string{"diff-tree", "-r", "--no-commit-id", "-M", "-C", "--name-status", observeBaseTree, c.candidate}):
+			return []byte(shape), nil
+		case slices.Equal(args, []string{"diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", observeBaseTree, c.candidate, "--"}):
+			return []byte(numstat), nil
+		}
+		c.fixture.t.Fatalf("undeclared tier-one diff command: %q", args)
+		return nil, nil
+	}
+}
+
+func tierOneCaseParams(c *observationCase, receipt string) ObserveParams {
+	return ObserveParams{RepoRoot: c.fixture.root, CandidateTree: c.candidate, DirectFix: "tier-1",
+		Goal: "tier-one", Actor: "m9+L1", RootJob: "tier-one-root", TestReceipt: receipt}
+}
+
 func TestObserveTierOneDirectFixBoundsAndReceipt(t *testing.T) {
-	t.Run("lawful area landing with absent gateWidth", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("")
-		f.write("docs/constant.txt", "one changed line\n")
-		f.git("add", "docs/constant.txt")
-		candidate, receipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, receipt))
-		if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "tier-1" {
-			t.Fatalf("lawful tier-1 landing classified as %+v", got)
-		}
-	})
-
-	t.Run("protected floor", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		f.write("internal/goal/constant.txt", "protected\n")
-		f.git("add", "internal/goal/constant.txt")
-		candidate, receipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, receipt))
-		if got.Bar != BarRefusal || got.Code != "tier1-floor-refused" || got.Mode != "refuse" {
-			t.Fatalf("tier-1 floor landing classified as %+v", got)
-		}
-	})
-
+	for _, test := range []struct {
+		name, width, path, content, code string
+		tier                             uint8
+		files                            int
+	}{
+		{"lawful area landing with absent gateWidth", "", "docs/constant.txt", "one changed line\n", "tier-1", 1, 1},
+		{"protected floor", "area", "internal/goal/constant.txt", "protected\n", "tier1-floor-refused", 1, 1},
+		{"goal raised to tier two after root dispatch", "area", "docs/constant.txt", "change\n", "tier1-goal-tier-2-refused", 2, 1},
+		{"forty-one changed lines", "area", "docs/large.txt", strings.Repeat("changed\n", 41), "tier1-line-bound-refused", 1, 1},
+		{"four changed files", "area", "docs/file.txt", "change\n", "tier1-file-bound-refused", 1, 4},
+		{"missing receipt", "area", "docs/constant.txt", "change\n", "tier1-declaration-refused", 1, 1},
+		{"missing goal", "area", "docs/constant.txt", "change\n", "tier1-declaration-refused", 1, 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newRepositoryObservationFixture(t)
+			f.tierOneRoot(test.width, test.tier)
+			changes := make([]chainFileChange, test.files)
+			for i := range changes {
+				path := test.path
+				if test.files > 1 {
+					path = fmt.Sprintf("docs/%d.txt", i)
+				}
+				changes[i] = chainAddition(path, test.content)
+			}
+			c := tierOneCase(f, observeTreeB, changes...)
+			receipt := c.bindCommandReceipt("true")
+			params := tierOneCaseParams(c, receipt)
+			if test.name == "missing receipt" {
+				params.TestReceipt = ""
+			}
+			if test.name == "missing goal" {
+				params.Goal = ""
+			}
+			got := c.observe(params)
+			if got.Code != test.code || (test.code == "tier-1" && (got.Bar != BarDirectFix || got.Verdict != "pass")) ||
+				(test.code != "tier-1" && (got.Bar != BarRefusal || got.Mode != "refuse")) {
+				t.Fatalf("tier-one landing classified as %+v", got)
+			}
+		})
+	}
 	t.Run("foreign tree receipt", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		f.write("docs/first.txt", "first\n")
-		f.git("add", "docs/first.txt")
-		_, receipt := f.tierOneReceipt("true")
-		f.write("docs/second.txt", "second\n")
-		f.git("add", "docs/second.txt")
-		candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+		f := newRepositoryObservationFixture(t)
+		f.tierOneRoot("area", 1)
+		first := tierOneCase(f, observeTreeB, chainAddition("docs/first.txt", "first\n"))
+		oldPath := first.bindCommandReceipt("true")
+		c := tierOneCase(f, observeTreeC, chainAddition("docs/first.txt", "first\n"), chainAddition("docs/second.txt", "second\n"))
+		c.bindCommandReceipt("true")
+		foreign, err := os.ReadFile(oldPath)
 		if err != nil {
 			t.Fatal(err)
 		}
-		foreign, err := os.ReadFile(receipt)
-		if err != nil {
+		path := TestReceiptPath(f.root, c.candidate)
+		if err := os.WriteFile(path, foreign, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		expectedPath := TestReceiptPath(f.root, candidate)
-		f.writeBytes(filepath.Join("artifacts", "agents", "landing", "receipts", candidate+".json"), foreign)
-		got := Observe(tierOneParams(f, candidate, expectedPath))
+		params := tierOneCaseParams(c, path)
+		if _, err := readTestReceiptWithWorkspace(params, gittree.Workspace{Dir: f.root, RawSource: c.receiptRaw}); err == nil ||
+			!strings.Contains(err.Error(), "test receipt does not record a successful command for the candidate tree") {
+			t.Fatalf("foreign-tree receipt validation error = %v", err)
+		}
+		got := c.observe(params)
 		if got.Bar != BarRefusal || got.Code != "tier1-receipt-refused" || got.Mode != "refuse" {
 			t.Fatalf("foreign-tree receipt classified as %+v", got)
 		}
 	})
-
-	t.Run("goal raised to tier two after root dispatch", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		f.writeHeldGoalWithTier("tier-one", "m9", "L1", 2)
-		f.git("add", "plans/goals/tier-one.md")
-		f.git("commit", "-qm", "raise goal to tier two")
-		f.write("docs/constant.txt", "change\n")
-		f.git("add", "docs/constant.txt")
-		candidate, receipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, receipt))
-		if got.Bar != BarRefusal || got.Code != "tier1-goal-tier-2-refused" || got.Mode != "refuse" {
-			t.Fatalf("tier-two goal with a tier-one root classified as %+v", got)
-		}
-	})
-
-	t.Run("forty-one changed lines", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		f.write("docs/large.txt", strings.Repeat("changed\n", 41))
-		f.git("add", "docs/large.txt")
-		candidate, receipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, receipt))
-		if got.Bar != BarRefusal || got.Code != "tier1-line-bound-refused" {
-			t.Fatalf("forty-one changed lines classified as %+v", got)
-		}
-	})
-
-	t.Run("four changed files", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		for _, name := range []string{"one", "two", "three", "four"} {
-			f.write("docs/"+name+".txt", name+"\n")
-		}
-		f.git("add", "docs")
-		candidate, receipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, receipt))
-		if got.Bar != BarRefusal || got.Code != "tier1-file-bound-refused" {
-			t.Fatalf("four changed files classified as %+v", got)
-		}
-	})
-
-	t.Run("missing receipt", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		f.write("docs/constant.txt", "change\n")
-		f.git("add", "docs/constant.txt")
-		candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
-		if err != nil {
-			t.Fatal(err)
-		}
-		params := tierOneParams(f, candidate, "")
-		got := Observe(params)
-		if got.Bar != BarRefusal || got.Code != "tier1-declaration-refused" || got.Mode != "refuse" {
-			t.Fatalf("missing tier-1 receipt classified as %+v", got)
-		}
-	})
-
-	t.Run("missing goal", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		f.write("docs/constant.txt", "change\n")
-		f.git("add", "docs/constant.txt")
-		candidate, receipt := f.tierOneReceipt("true")
-		params := tierOneParams(f, candidate, receipt)
-		params.Goal = ""
-		got := Observe(params)
-		if got.Bar != BarRefusal || got.Code != "tier1-declaration-refused" || got.Mode != "refuse" {
-			t.Fatalf("missing tier-1 goal classified as %+v", got)
-		}
-	})
-
 	for name, mutate := range map[string]func(map[string]any){
-		"wrong goal":      func(record map[string]any) { record["goalId"] = "other" },
-		"wrong tier":      func(record map[string]any) { record["goalTier"] = 2 },
-		"unknown width":   func(record map[string]any) { record["gateWidth"] = "wide" },
-		"non-root record": func(record map[string]any) { record["parentJob"] = "parent" },
+		"wrong goal":      func(r map[string]any) { r["goalId"] = "other" },
+		"wrong tier":      func(r map[string]any) { r["goalTier"] = 2 },
+		"unknown width":   func(r map[string]any) { r["gateWidth"] = "wide" },
+		"non-root record": func(r map[string]any) { r["parentJob"] = "parent" },
 	} {
 		t.Run(name+" root", func(t *testing.T) {
-			f := newObserveFixture(t)
-			f.prepareTierOne("area")
-			record := map[string]any{
-				"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
-				"goalId": "tier-one", "goalRevision": 1, "goalTier": 1, "gateWidth": "area",
-			}
+			f := newRepositoryObservationFixture(t)
+			f.tierOneRoot("area", 1)
+			record := map[string]any{"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
+				"goalId": "tier-one", "goalRevision": 1, "goalTier": 1, "gateWidth": "area"}
 			mutate(record)
 			f.writeChainRecord("tier-one-root", record)
-			f.write("docs/constant.txt", "change\n")
-			f.git("add", "docs/constant.txt")
-			candidate, receipt := f.tierOneReceipt("true")
-			got := Observe(tierOneParams(f, candidate, receipt))
-			wantCode := "tier1-root-refused"
+			c := tierOneCase(f, observeTreeB, chainAddition("docs/constant.txt", "change\n"))
+			got := c.observe(tierOneCaseParams(c, c.bindCommandReceipt("true")))
+			want := "tier1-root-refused"
 			if name == "wrong goal" {
-				wantCode = "goal-binding-mismatch"
+				want = "goal-binding-mismatch"
 			}
-			if got.Code != wantCode || got.Mode != "refuse" {
+			if got.Code != want || got.Mode != "refuse" {
 				t.Fatalf("invalid tier-1 root classified as %+v", got)
 			}
 		})
@@ -593,65 +584,46 @@ func TestObserveTierOneDirectFixBoundsAndReceipt(t *testing.T) {
 }
 
 func TestObserveTierOneRefusesForbiddenDiffShapes(t *testing.T) {
-	t.Run("binary", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		f.writeBytes("docs/binary.dat", []byte{'a', 0, 'b'})
-		f.git("add", "docs/binary.dat")
-		candidate, receipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, receipt))
-		if got.Code != "tier1-diff-shape-refused" || got.Mode != "refuse" {
-			t.Fatalf("binary change classified as %+v", got)
-		}
-	})
-
-	t.Run("rename", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.write("docs/old.txt", "unchanged content\n")
-		f.prepareTierOne("area")
-		f.git("mv", "docs/old.txt", "docs/new.txt")
-		candidate, receipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, receipt))
-		if got.Code != "tier1-diff-shape-refused" || got.Mode != "refuse" {
-			t.Fatalf("rename classified as %+v", got)
-		}
-	})
-
-	t.Run("mode only", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.write("docs/mode.txt", "same content\n")
-		f.prepareTierOne("area")
-		if err := os.Chmod(filepath.Join(f.root, "docs", "mode.txt"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		f.git("add", "docs/mode.txt")
-		candidate, receipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, receipt))
-		if got.Code != "tier1-diff-shape-refused" || got.Mode != "refuse" {
-			t.Fatalf("mode-only change classified as %+v", got)
-		}
-	})
+	for _, name := range []string{"binary", "rename", "mode only"} {
+		t.Run(name, func(t *testing.T) {
+			f := newRepositoryObservationFixture(t)
+			f.tierOneRoot("area", 1)
+			var c *observationCase
+			switch name {
+			case "binary":
+				c = tierOneCase(f, observeTreeB, chainAddition("docs/binary.dat", "a\x00b"))
+				c.diff = []byte("diff --git a/docs/binary.dat b/docs/binary.dat\nnew file mode 100644\nBinary files /dev/null and b/docs/binary.dat differ\n")
+				c.bindTierOneDiff("A\tdocs/binary.dat\n", "-\t-\tdocs/binary.dat\x00")
+			case "rename":
+				f.base("docs/old.txt", "unchanged content\n")
+				c = tierOneCase(f, observeTreeB, chainFileChange{path: "docs/old.txt", before: observationText("unchanged content\n")}, chainAddition("docs/new.txt", "unchanged content\n"))
+				c.diff = []byte("diff --git a/docs/old.txt b/docs/new.txt\nsimilarity index 100%\nrename from docs/old.txt\nrename to docs/new.txt\n")
+				c.bindTierOneDiff("R100\tdocs/old.txt\tdocs/new.txt\n", "0\t0\t\x00docs/old.txt\x00docs/new.txt\x00")
+			case "mode only":
+				f.base("docs/mode.txt", "same content\n")
+				c = tierOneCase(f, observeTreeB, chainReplacement("docs/mode.txt", "same content\n", "same content\n"))
+				c.declareEntries(c.candidate, []string{"docs/mode.txt"}, map[string]gittree.Entry{"docs/mode.txt": {Mode: "100755", OID: observeBaseBlob}})
+				c.diff = []byte("diff --git a/docs/mode.txt b/docs/mode.txt\nold mode 100644\nnew mode 100755\n")
+				c.bindTierOneDiff("M\tdocs/mode.txt\n", "0\t0\tdocs/mode.txt\x00")
+			}
+			got := c.observe(tierOneCaseParams(c, c.bindCommandReceipt("true")))
+			if got.Code != "tier1-diff-shape-refused" || got.Mode != "refuse" {
+				t.Fatalf("%s change classified as %+v", name, got)
+			}
+		})
+	}
 }
 
 func TestObserveTierOneFullGateRequiresExactCommand(t *testing.T) {
-	f := newObserveFixture(t)
-	for _, script := range []string{"go-gate.sh", "dispatch-fixtures.sh", "goal-cli-fixtures.sh"} {
-		f.write("scripts/agents/"+script, "#!/usr/bin/env bash\nexit 0\n")
-		if err := os.Chmod(filepath.Join(f.root, "scripts", "agents", script), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	f.prepareTierOne("full")
-	f.write("docs/constant.txt", "change\n")
-	f.git("add", "docs/constant.txt")
-	candidate, receipt := f.tierOneReceipt("true")
-	got := Observe(tierOneParams(f, candidate, receipt))
+	f := newRepositoryObservationFixture(t)
+	f.tierOneRoot("full", 1)
+	c := tierOneCase(f, observeTreeB, chainAddition("docs/constant.txt", "change\n"))
+	got := c.observe(tierOneCaseParams(c, c.bindCommandReceipt("true")))
 	if got.Code != "tier1-full-gate-refused" || got.Mode != "refuse" {
 		t.Fatalf("area command under a full gate classified as %+v", got)
 	}
-
-	candidate, receipt = f.tierOneReceipt(fullBatteryCommand)
-	got = Observe(tierOneParams(f, candidate, receipt))
+	c = tierOneCase(f, observeTreeB, chainAddition("docs/constant.txt", "change\n"))
+	got = c.observe(tierOneCaseParams(c, c.bindCommandReceipt(fullBatteryCommand)))
 	if got.Bar != BarDirectFix || got.Code != "tier-1" || got.Verdict != "pass" {
 		t.Fatalf("exact full-battery receipt classified as %+v", got)
 	}
@@ -659,24 +631,19 @@ func TestObserveTierOneFullGateRequiresExactCommand(t *testing.T) {
 
 func TestSTR4R1FullWidthChainRequiresFullBatteryReceipt(t *testing.T) {
 	run := func(command string) Observation {
-		f := newObserveFixture(t)
-		for _, script := range []string{"go-gate.sh", "dispatch-fixtures.sh", "goal-cli-fixtures.sh"} {
-			f.write("scripts/agents/"+script, "#!/usr/bin/env bash\nexit 0\n")
-			if err := os.Chmod(filepath.Join(f.root, "scripts", "agents", script), 0o755); err != nil {
-				t.Fatal(err)
-			}
+		f := newRepositoryObservationFixture(t)
+		change := chainAddition("internal/x.go", "package internal\n")
+		patch := chainDiff(change)
+		f.writeChainRecord("full-chain", map[string]any{"jobId": "full-chain", "parentJob": nil,
+			"role": "implementer", "round": 1, "goalTier": 2, "gateWidth": "full",
+			"destructiveReach": "DESIGN-BEARING", "chainClosed": true})
+		f.writeChainReview("full-chain", 1, "full-chain", chainReviewedTree, patch)
+		c := f.chainCase(observeTreeB, change)
+		if command == fullBatteryCommand {
+			c.bindChain(patch, chainReviewedTree, change)
+			c.wantChainPolicy(c.changed...)
 		}
-		f.git("add", "scripts/agents")
-		f.git("commit", "-qm", "full battery fixture")
-		f.write("internal/x.go", "package internal\n")
-		f.git("add", "internal/x.go")
-		candidate, receipt := f.tierOneReceipt(command)
-		f.writeChainRecord("full-chain", map[string]any{
-			"jobId": "full-chain", "parentJob": nil, "role": "implementer", "round": 1,
-			"goalTier": 2, "gateWidth": "full", "destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-		})
-		f.writeChainReview("full-chain", 1, "full-chain", candidate)
-		return Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "full-chain", TestReceipt: receipt})
+		return c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "full-chain", TestReceipt: c.bindCommandReceipt(command)})
 	}
 	got := run("true")
 	if got.Code != "chain-full-gate-refused" || got.Verdict != "would-refuse" {
@@ -822,42 +789,38 @@ func TestObserveExactRevertRefusesByClass(t *testing.T) {
 
 func TestObserveAdoptedApplicationPathsAreOutside(t *testing.T) {
 	t.Run("exact revert passes", func(t *testing.T) {
-		f := newAdoptedObserveFixture(t)
-		f.write("product.txt", "after\n")
-		f.git("add", "product.txt")
-		f.git("commit", "-qm", "application change to revert")
-		revertOf := f.git("rev-parse", "HEAD")
-		f.write("product.txt", "before\n")
-
-		got := Observe(ObserveParams{
-			RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "exact-revert", RevertOf: revertOf,
-		})
+		f := newAdoptedRepositoryObservationFixture(t)
+		c := f.comparison(observeTreeB, "diff --git a/product.txt b/product.txt\n-after\n+before\n", "product.txt")
+		c.exactRevert("product.txt")
+		c.declare("product.txt", observationText("after\n"), observationText("before\n"))
+		c.declareInverseEntries("product.txt", observationText("before\n"), observationText("after\n"))
+		for _, tree := range []string{observeBaseTree, c.candidate, c.exact.preimageTree, c.exact.postimageTree} {
+			c.expectExact("entries:"+tree+":product.txt", 1)
+		}
+		got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "exact-revert", RevertOf: c.revertCommit()})
 		if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "exact-revert" {
 			t.Fatalf("exact inverse of adopted application path classified as %+v", got)
 		}
 	})
-
 	t.Run("certified chain passes", func(t *testing.T) {
-		f := newAdoptedObserveFixture(t)
-		f.write("product.txt", "chain change\n")
-		candidate := f.tree()
-		f.writeChainRecord("application-chain", map[string]any{
-			"jobId": "application-chain", "parentJob": nil, "role": "implementer", "round": 1,
-			"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-		})
-		f.writeChainReview("application-chain", 1, "application-chain", candidate)
-
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "application-chain"})
+		f := newAdoptedRepositoryObservationFixture(t)
+		change := chainReplacement("product.txt", "before\n", "chain change\n")
+		patch := chainDiff(change)
+		f.writeChainRecord("application-chain", chainRoot("application-chain"))
+		f.writeChainReview("application-chain", 1, "application-chain", chainReviewedTree, patch)
+		c := f.chainCase(observeTreeB, change)
+		c.bindChain(patch, chainReviewedTree, change)
+		c.wantChainPolicy(c.changed...)
+		got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "application-chain"})
 		if got.Bar != BarChain || got.Verdict != "pass" || got.Code != "closed-chain" {
 			t.Fatalf("certified adopted application path classified as %+v", got)
 		}
 	})
-
 	t.Run("register carriage refuses", func(t *testing.T) {
-		f := newAdoptedObserveFixture(t)
-		f.write("product.txt", "carriage change\n")
-
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage"})
+		f := newAdoptedRepositoryObservationFixture(t)
+		c := f.comparison(observeTreeB, "diff --git a/product.txt b/product.txt\n+carriage change\n", "product.txt")
+		c.declare("product.txt", observationText("before\n"), observationText("carriage change\n"))
+		got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage"})
 		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-path-refused" {
 			t.Fatalf("register carriage of adopted application path classified as %+v", got)
 		}
@@ -1062,27 +1025,22 @@ func TestObserveVerdictSurvivesLanding(t *testing.T) {
 func TestObserveTierOneBoundsIgnoreTheReceiptLedger(t *testing.T) {
 	const receipt = "receipt=existing\n1|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=tier-one|note=fixture\n"
 	t.Run("three files and the receipt line", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		for _, name := range []string{"one", "two", "three"} {
-			f.write("docs/"+name+".txt", name+"\n")
-		}
-		f.write("memory/receipts.log", receipt)
-		f.git("add", "docs", "memory/receipts.log")
-		candidate, testReceipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, testReceipt))
+		f := newRepositoryObservationFixture(t)
+		f.tierOneRoot("area", 1)
+		c := tierOneCase(f, observeTreeB,
+			chainAddition("docs/one.txt", "one\n"), chainAddition("docs/two.txt", "two\n"),
+			chainAddition("docs/three.txt", "three\n"), chainReplacement(receiptLedgerPath, "receipt=existing\n", receipt))
+		got := c.observe(tierOneCaseParams(c, c.bindCommandReceipt("true")))
 		if got.Verdict != "pass" || got.Bar != BarDirectFix {
 			t.Fatalf("three files with their receipt line classified as %+v", got)
 		}
 	})
 	t.Run("forty lines and the receipt line", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.prepareTierOne("area")
-		f.write("docs/large.txt", strings.Repeat("changed\n", 40))
-		f.write("memory/receipts.log", receipt)
-		f.git("add", "docs", "memory/receipts.log")
-		candidate, testReceipt := f.tierOneReceipt("true")
-		got := Observe(tierOneParams(f, candidate, testReceipt))
+		f := newRepositoryObservationFixture(t)
+		f.tierOneRoot("area", 1)
+		c := tierOneCase(f, observeTreeB, chainAddition("docs/large.txt", strings.Repeat("changed\n", 40)),
+			chainReplacement(receiptLedgerPath, "receipt=existing\n", receipt))
+		got := c.observe(tierOneCaseParams(c, c.bindCommandReceipt("true")))
 		if got.Verdict != "pass" || got.Bar != BarDirectFix {
 			t.Fatalf("forty lines with their receipt line classified as %+v", got)
 		}

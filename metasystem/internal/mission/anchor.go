@@ -264,13 +264,6 @@ func anchorWritePinnedWithOperations(ops anchorOperations, statePath, repo, ledg
 	return anchorWriteHeldWithOperations(ops, statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA)
 }
 
-// anchorWriteHeld is the body of the anchor for callers that ALREADY
-// hold the state lock — reconciliation's heal branches, which lock for
-// their whole pass (flock self-deadlocks on a second acquisition).
-func anchorWriteHeld(statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA string) (string, error) {
-	return anchorWriteHeldWithOperations(defaultAnchorOperations(), statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA)
-}
-
 func anchorWriteHeldWithOperations(ops anchorOperations, statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA string) (string, error) {
 	state, err := readStateDoc(statePath)
 	if err != nil {
@@ -449,12 +442,6 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// verifyAnchor checks the latest anchor's trailers, that it is on the mission
-// branch, and that it carries the exact current ledger bytes.
-func verifyAnchor(repo string, state map[string]any, ledgerPath string) error {
-	return verifyAnchorWithOperations(defaultAnchorOperations(), repo, state, ledgerPath)
-}
-
 func verifyAnchorWithOperations(ops anchorOperations, repo string, state map[string]any, ledgerPath string) error {
 	missionID, _ := state["missionId"].(string)
 	anchor, err := latestAnchorWithOperations(ops, repo, missionID)
@@ -568,17 +555,6 @@ func anchoredLedgerPrefixWithOperations(ops anchorOperations, repo string, state
 		return "", "", err
 	}
 	return anchored, string(data), nil
-}
-
-// anchorTreeIsLedgerOnly pins an anchor commit's SHAPE: its tree is
-// exactly one blob — the mission ledger, whose sha is authenticated
-// separately — and it carries at most one parent (the predecessor
-// anchor). --full-tree ignores the invocation cwd so a nested
-// workspace-rooted anchor tree is scoped whole, not to the checkout
-// prefix; entries split on the NUL record terminator only, so a
-// whitespace-only filename still counts.
-func anchorTreeIsLedgerOnly(repo, commit, ledgerRel string) error {
-	return anchorTreeIsLedgerOnlyWithOperations(defaultAnchorOperations(), repo, commit, ledgerRel)
 }
 
 func anchorTreeIsLedgerOnlyWithOperations(ops anchorOperations, repo, commit, ledgerRel string) error {
@@ -942,17 +918,6 @@ func pendingStampMatches(ledgerPath string, cycle int64, current string) bool {
 	return sha != "" && sha == sha256Hex(current)
 }
 
-// parkUnlessRecoverable is every reconciliation park's LAST gate:
-// ONE LAWFUL STEP with a disputed
-// ledger — the state write landed, its authenticated anchor never did —
-// is recoverable by byte restoration, and writing a state-integrity
-// park would make the anchor a grandparent and destroy that recovery.
-// The shape refuses WITHOUT writing, naming the repair; every other
-// divergence parks.
-func parkUnlessRecoverable(statePath, repo string, state map[string]any, ledgerPath string) (int, error) {
-	return parkUnlessRecoverableWithOperations(defaultAnchorOperations(), statePath, repo, state, ledgerPath)
-}
-
 func parkUnlessRecoverableWithOperations(ops anchorOperations, statePath, repo string, state map[string]any, ledgerPath string) (int, error) {
 	// The park is a DURABLE ruling on repository truth; a git that could
 	// not run at all (spawn failure, timeout) proves no divergence, and
@@ -973,17 +938,6 @@ func parkUnlessRecoverableWithOperations(ops anchorOperations, statePath, repo s
 		return 3, stateErr("mission ledger disputes its anchored truth one step behind the state; restore the ledger bytes to the anchor ref's copy, then reconcile again")
 	}
 	return 3, parkIntegrity(statePath, state, nil)
-}
-
-// oneStepDisputedLedger reports the one recoverable divergence shape:
-// the anchor tip is exactly the state's immediate predecessor (the
-// write landed, its anchor never did) while the live ledger bytes
-// disagree with the tip's recorded truth.
-// The error return carries ONLY could-not-run outcomes: a
-// git that never ran proves nothing, and the caller must refuse
-// retryably instead of letting a collapsed false reach a durable park.
-func oneStepDisputedLedger(repo string, state map[string]any, ledgerPath string) (bool, error) {
-	return oneStepDisputedLedgerWithOperations(defaultAnchorOperations(), repo, state, ledgerPath)
 }
 
 func oneStepDisputedLedgerWithOperations(ops anchorOperations, repo string, state map[string]any, ledgerPath string) (bool, error) {
@@ -1089,14 +1043,6 @@ func verifyReservedGap(repo string, state map[string]any, appended int64) error 
 		return stateErr("ledger-ahead block %d does not match the open turn's cycle", appended)
 	}
 	return nil
-}
-
-// anchorLagHealable reports the exact heal-crash shape: the latest anchor
-// binds the state's PREVIOUS hash while cycle count and the ledger bytes'
-// hash agree with the present truth.
-// The error return carries ONLY could-not-run outcomes.
-func anchorLagHealable(repo string, state map[string]any, ledgerPath string) (string, bool, error) {
-	return anchorLagHealableWithOperations(defaultAnchorOperations(), repo, state, ledgerPath)
 }
 
 func anchorLagHealableWithOperations(ops anchorOperations, repo string, state map[string]any, ledgerPath string) (string, bool, error) {
@@ -1205,16 +1151,6 @@ func annotationOnlySuffix(suffix string) bool {
 		seen = true
 	}
 	return seen
-}
-
-// stopLossResetForgivable is the exact reconciliation tolerance: (a) the
-// mission state is parked with the stagnation stop-loss reason, and (b) the
-// ledger's unanchored suffix consists solely of `Stop-loss reset:` lines each
-// naming an ask that exists on disk as a stagnation stop-loss ask. Anything
-// else parks on disagreement.
-// The error return carries ONLY could-not-run outcomes.
-func stopLossResetForgivable(statePath, repo string, state map[string]any, ledgerPath string) (bool, error) {
-	return stopLossResetForgivableWithOperations(defaultAnchorOperations(), statePath, repo, state, ledgerPath)
 }
 
 func stopLossResetForgivableWithOperations(ops anchorOperations, statePath, repo string, state map[string]any, ledgerPath string) (bool, error) {

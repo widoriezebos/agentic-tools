@@ -115,6 +115,8 @@ type observationReader interface {
 
 type observationFacts struct {
 	reader               observationReader
+	receiptRawSource     func(gittree.RawRequest) gittree.RawResult
+	diffCommand          func(string, ...string) ([]byte, error)
 	apply                func(string, []byte) (string, error)
 	installation         string
 	ownerForInstallation func(string, string) (stateroot.Ownership, string, error)
@@ -126,10 +128,15 @@ func defaultObservationFacts(root string) observationFacts {
 	workspace := gittree.Workspace{Dir: root}
 	return observationFacts{
 		reader: workspace, installation: root,
+		diffCommand:          landingGit,
 		apply:                workspace.Apply,
 		ownerForInstallation: stateroot.OwnerForInstallation,
 		singleParent:         workspace.SingleParent, treeOf: workspace.TreeOf,
 	}
+}
+
+func readObservationReceipt(params ObserveParams, facts observationFacts) (TestReceipt, error) {
+	return readTestReceiptWithWorkspace(params, gittree.Workspace{Dir: params.RepoRoot, RawSource: facts.receiptRawSource})
 }
 
 // Observe evaluates one prospective landing. The caller enforces refusing
@@ -423,7 +430,7 @@ func observeChainWithFacts(params ObserveParams, change string, facts observatio
 		}
 	}
 	if testingContractEnabled(params.RepoRoot) && params.Recertification == "" {
-		receipt, receiptErr := readTestReceipt(params)
+		receipt, receiptErr := readObservationReceipt(params, facts)
 		if receiptErr != nil || receipt.SchemaVersion != 2 {
 			observation := wouldRefuse("chain-test-receipt-refused", provenance)
 			var verificationFailure *testingReceiptVerificationFailure
@@ -433,7 +440,7 @@ func observeChainWithFacts(params ObserveParams, change string, facts observatio
 			return observation
 		}
 	} else if width == "full" && params.Recertification == "" {
-		receipt, receiptErr := readTestReceipt(params)
+		receipt, receiptErr := readObservationReceipt(params, facts)
 		if receiptErr != nil || !fullReceiptCommandAccepted(receipt) {
 			return wouldRefuse("chain-full-gate-refused", provenance)
 		}
@@ -472,7 +479,7 @@ func observeChainWithFacts(params ObserveParams, change string, facts observatio
 			observation.Detail = "gate-width"
 			return observation
 		}
-		receipt, receiptErr := readTestReceipt(params)
+		receipt, receiptErr := readObservationReceipt(params, facts)
 		if verified.Record.TestingReceiptSchema == 2 {
 			if receiptErr != nil || receipt.SchemaVersion != 2 || receipt.Testing == nil ||
 				!receipt.Testing.Delivery.Sufficient || receipt.Tree != verified.Record.MergedWholeTree {
@@ -1506,7 +1513,7 @@ func observeDirectFixWithFacts(params ObserveParams, change string, facts observ
 		}
 		return result
 	case "tier-1":
-		return observeTierOne(params, change)
+		return observeTierOne(params, change, facts)
 	default:
 		return wouldRefuse("unknown-direct-fix-class", "invalid change="+change)
 	}

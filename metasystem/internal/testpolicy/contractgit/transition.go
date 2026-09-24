@@ -101,18 +101,6 @@ func CheckPatchContract(repo, before, after string, patch []byte, label string) 
 	return checkContractBlobs(repo, before, after, base, theirs, label)
 }
 
-func checkContract(repo, before, after, baseTree, theirsTree, label string) error {
-	base, err := treeFile(repo, baseTree, TestingContractPath)
-	if err != nil {
-		return err
-	}
-	theirs, err := treeFile(repo, theirsTree, TestingContractPath)
-	if err != nil {
-		return err
-	}
-	return checkContractBytes(repo, before, after, base, theirs, label)
-}
-
 func checkContractBlobs(repo, before, after, baseBlob, theirsBlob, label string) error {
 	base, err := runGit(repo, nil, "cat-file", "blob", baseBlob)
 	if err != nil {
@@ -188,20 +176,6 @@ func patchContractBlobs(patch []byte) (string, string, bool, error) {
 	return "", "", false, nil
 }
 
-func changedPaths(repo, before, after string) ([]string, error) {
-	out, err := runGit(repo, nil, "diff-tree", "-r", "--name-only", "-z", "--no-renames", before, after)
-	if err != nil {
-		return nil, err
-	}
-	var paths []string
-	for _, path := range bytes.Split(out, []byte{0}) {
-		if len(path) != 0 {
-			paths = append(paths, string(path))
-		}
-	}
-	return paths, nil
-}
-
 func patchPaths(repo string, patch []byte) ([]string, error) {
 	out, err := runGitInput(repo, nil, patch, "apply", "--numstat", "-z", "-")
 	if err != nil {
@@ -219,11 +193,6 @@ func patchPaths(repo string, patch []byte) ([]string, error) {
 		paths = append(paths, string(fields[2]))
 	}
 	return paths, nil
-}
-
-func pathChanged(repo, before, after, path string) (bool, error) {
-	out, err := runGit(repo, nil, "diff-tree", "-r", "--name-only", "-z", "--no-renames", before, after, "--", path)
-	return len(out) != 0, err
 }
 
 func refuseMisusedAttribute(repo, tree, commit string, paths []string) error {

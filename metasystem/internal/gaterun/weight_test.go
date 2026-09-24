@@ -45,11 +45,6 @@ func (prober *proofProber) Probe(pid int64) (identity.Exact, identity.Liveness, 
 	return identity.Exact{Pid: pid, StartedAt: prober.started}, identity.Alive, nil
 }
 
-func governedWeightBed(t *testing.T, now time.Time) (string, *goal.GoalFile) {
-	bed, file := governedWeightFixture(t, now)
-	return bed.root, file
-}
-
 func governedWeightFixture(t *testing.T, now time.Time) (*goalRepositoryFixture, *goal.GoalFile) {
 	t.Helper()
 	bed := newGoalRepositoryFixture(t, now)

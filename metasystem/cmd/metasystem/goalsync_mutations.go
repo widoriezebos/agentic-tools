@@ -2642,6 +2642,10 @@ func runGoalSetBudget(args []string) int {
 }
 
 func runGoalExtendBudget(args []string) int {
+	return runGoalExtendBudgetWithInputs(args, goalCommandNow, defaultSyncRequestDependencies(), dispatchcore.ConcreteProofAdmissionReads())
+}
+
+func runGoalExtendBudgetWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, reads dispatchcore.ProofAdmissionReads) int {
 	flags := flag.NewFlagSet("goal extend-budget", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -2659,7 +2663,7 @@ func runGoalExtendBudget(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal extend-budget works the synced backlog; this checkout still carries the legacy ledger")
 		return 1
 	}
-	req, err := syncReq("extend-budget", *root, "", *lineage)
+	req, err := syncReqWithProofAtWithDependencies("extend-budget", *root, "", *lineage, nil, commandNow, dependencies)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -2670,7 +2674,7 @@ func runGoalExtendBudget(args []string) int {
 		return 1
 	}
 	defer held.Release()
-	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(*root, *id, *revision, *proposedCap, req.Now, *role, *dispatchMode, dispatchcore.HazardClass(*destructiveReach))
+	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatchWithReads(*root, *id, *revision, *proposedCap, req.Now, *role, *dispatchMode, reads, dispatchcore.HazardClass(*destructiveReach))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
