@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M38Z622SJ4Q3Z3R3RXKY7TFV
-- Status: accepted
+- Status: done
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-24, Claude on Fable, on Wido's ask: "I also would like to see a bit more clearly the difference between my message and the partner message." A presentation slice over g1-s31; not sent to Astra: it changes no behaviour.
