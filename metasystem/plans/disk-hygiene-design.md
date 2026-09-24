@@ -1,3 +1,10 @@
+# Disk Hygiene Design
+
+- Kind: design
+- Id: 01M3A2YHDM2Z0KWBWQGND5594N
+- Status: done
+- Goals: disk-hygiene
+
 - Status: IMPLEMENTATION-FIRST (D81/D85) — r1/r2 folded, r3 (14 findings) is the fixture list; building highest-value slices behind fixtures rather than a 4th prose round. Slice 1: the headroom guard (the ENOSPC fix) — SHIPPED, both hosts green; hardened 2026-08-17 after its retroactive code review (records/steward/opus-window-review-dh.md part A, D95): fd-pinned measurement, ENOENT-only ascent (every other establish failure refuses), checked arithmetic and floor validation, the suite distinguishing measure-failure (refuse) from below-floor (advisory), a df bootstrap check on clean checkouts, and the documented rule that entries are per-path advisories (APFS volumes share a container pool across distinct device ids — never sum entries). Slice 2 attempt: a worktree observer (`janitor worktrees`) classifying the dispatch-owned-worktrees row by "job terminal + custody dead" — BUILT then REVERTED (D89). Its mandatory code critique (records/misc/wt-code-critique-r1.md, 5 structural) proved the verdict UNSOUND for any future reclaimer to trust: it classified as reclaimable three implementer worktrees still holding UNMERGED work (a modified dispatch.sh in caps-census-gate-order), because terminality is NOT a data-release proof — conformance review and merge read the worktree AFTER the job terminates. The corrected worktree-reclaim proof is captured below; the accumulation it surfaced (118 dirs / ~500MB) is recorded as KI-35, REPORT-ONLY: the earlier "safe manual cleanup" advice was WITHDRAWN (the dh review F13 — ignored data, committed-but-unmerged branches, and a repository-global prune made it unsafe); no manual bulk cleanup until the journaled reclaim exists.
   Critiques r1 and r2 are folded into this text (12 and 15
   findings). The r3 verdict landed after the park: REVISE, 14

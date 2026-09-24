@@ -1,5 +1,10 @@
 # Design: a landing receipt that survives an append to a register
 
+- Kind: design
+- Id: 01M3A2YHDMGB0JNP7E0HB0VWFC
+- Status: done
+- Goals: landing-receipt-survives-records-drift
+
 Goal: `plans/goals/landing-receipt-survives-records-drift.md`.
 Revision 3, folding the round-2 read
 (`records/misc/landing-receipt-survives-records-drift-critique-r2.md`) of

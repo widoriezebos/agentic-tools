@@ -1,5 +1,10 @@
 # Design: a proof group is bounded by what it consumes, never by the host's clock
 
+- Kind: design
+- Id: 01M3A2YHDM5GCAN114MP546CM1
+- Status: done
+- Goals: proof-groups-detect-hangs-by-progress-not-the-clock
+
 Goal: proof-groups-detect-hangs-by-progress-not-the-clock (tier 3,
 DESIGN-BEARING). **Revision 3, 2026-09-10 22:20Z**, written on the m1 seat
 (lineage main-1788940932-18533-7fa6c2). Revision 1 (landed 19775023a as

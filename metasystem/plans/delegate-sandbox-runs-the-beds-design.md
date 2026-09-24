@@ -1,5 +1,10 @@
 # Delegate sandbox runs the beds
 
+- Kind: design
+- Id: 01M3A2YHDMCEX6Q46T5BPA91F7
+- Status: accepted
+- Goals: delegate-sandbox-runs-the-beds
+
 Design for goal 22 (row 22, phase D) in `metasystem/plans/delivery-efficiency-plan.md`.
 The contract is `metasystem/plans/goals/delegate-sandbox-runs-the-beds.md:8` (Intent) and `:10` (Next step).
 Revision 4, 2026-09-14, by the design lane on the m1c seat at HEAD `5a34ae23`, folding the Codex Sol critique of revision 3 (its findings 6, 7 and 8 concern this page). Revisions 2 and 3 folded rounds 1 and 2. Every finding of every round has a row in the revision record. Where a finding is about a mechanism a fixture settles faster than more prose, the fixture is the unit's first content and is marked "fixture first" (D81). Every file and line below was re-read at that commit; paths are relative to `metasystem/`.

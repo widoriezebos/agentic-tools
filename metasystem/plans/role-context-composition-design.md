@@ -1,5 +1,10 @@
 # Role context composition
 
+- Kind: design
+- Id: 01M3A2YHDMH8SYSGHE815A5B6Q
+- Status: accepted
+- Goals: role-context-composition
+
 Working Mode: design
 
 Goal: `role-context-composition`

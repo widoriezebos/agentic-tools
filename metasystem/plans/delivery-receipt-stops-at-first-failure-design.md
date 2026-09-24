@@ -1,5 +1,10 @@
 # delivery-receipt-stops-at-first-failure: design
 
+- Kind: design
+- Id: 01M3A2YHDMXVB5D6J4FVNXT6VF
+- Status: done
+- Goals: delivery-receipt-stops-at-first-failure
+
 Goal 9 of plans/delivery-efficiency-plan.md; R-96-m1e is the word. One
 critique read, then the build behind the fixtures in section 5.
 

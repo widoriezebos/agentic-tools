@@ -1,5 +1,10 @@
 # delegate-rounds-reuse-a-warm-gate: design
 
+- Kind: design
+- Id: 01M3A2YHDMFJRHBGQCEK0PYASV
+- Status: done
+- Goals: delegate-rounds-reuse-a-warm-gate
+
 Goal 13 of plans/delivery-efficiency-plan.md. One critique read of this page,
 then three slices under the one goal, each with its own fixtures and one
 critic read; the delegate machinery itself stays off for landings until

@@ -1,5 +1,10 @@
 # Design: a fresh session boots itself into the fleet
 
+- Kind: design
+- Id: 01M3A2YHDMRDF85KG9ZR1CMXZ4
+- Status: accepted
+- Goals: fleet-join-bootstrap
+
 Goal: fleet-join-bootstrap (plans/goals/fleet-join-bootstrap.md, revision 4).
 Design revision 1, 2026-09-02, Fable-lane designer, job fleet-join-design-r1b.
 Wido's open question, verbatim from the dispatching seat's record: "whether a

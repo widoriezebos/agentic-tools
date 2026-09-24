@@ -1,5 +1,10 @@
 # human-carried-landing — design: the machine never refuses a verified human (revision 2.1)
 
+- Kind: design
+- Id: 01M3A2YHDMKV7SET8MT3FFT8GS
+- Status: accepted
+- Goals: human-carried-landing
+
 Goal: plans/goals/human-carried-landing.md. Ruling: R-75-m3 (Wido,
 verbatim: "I do not ever want to be in a HAL2000 situation where the
 computer refuses under a situation judged as critical for the human";

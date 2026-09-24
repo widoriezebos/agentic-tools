@@ -61,6 +61,9 @@ type Record struct {
 	Title  string
 	Path   string // checkout-relative
 	Home   string // checkout-relative home the record was found in
+	// HomeName is the home's own name where it has one its path does not give.
+	// Empty means the path is the name.
+	HomeName string
 
 	Cites      []string
 	Affects    []string
@@ -95,6 +98,18 @@ func (r Record) References(key string) []string {
 		return r.Answers
 	}
 	return nil
+}
+
+// Declares reports whether the head wrote this key at all, whatever value it
+// gave it. It is the question that tells a record's declaration from the
+// legacy bullets a historical document opens with: a head that writes Kind is
+// claiming to be a record, faulty or not, and a bullet list that does not is
+// prose that happens to look like one.
+func (r Record) Declares(key string) bool { return r.declares(key) }
+
+func (r Record) declares(key string) bool {
+	_, written := r.lines[foldKey(key)]
+	return written
 }
 
 // line is where a key was declared, or the head's first line when it was not.

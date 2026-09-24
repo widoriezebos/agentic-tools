@@ -84,11 +84,23 @@ var QueryStatuses = append(append([]string(nil), Statuses...), QuestionStatuses.
 // Home is one place the resolver looks: a directory holding records of one
 // kind, or the single file the questions register lives in.
 type Home struct {
-	Kind     string // the kind the home holds; empty for the register
-	Path     string // absolute
-	Rel      string // checkout-relative, the way every answer names it
-	Book     bool   // a directory whose index.md is itself a record of the kind
-	Register bool   // the one questions table
+	Kind string // the kind the home holds; empty for the register
+	Path string // absolute
+	Rel  string // checkout-relative, the way every answer names it
+	// Name is what a reader calls this home where its path does not say it.
+	// Empty means the path is the name, which is true of every home but the
+	// kit's own history.
+	Name string
+	// Glob makes a home flat and historical, and only the kit's own history is
+	// one. Two rules arrive with it, together because the one home that has it
+	// needs both: only the names this pattern matches, directly beneath the
+	// home and never in a subdirectory, are read at all; and a file there that
+	// declares no Kind is a document the typing pass has not reached, not a
+	// record with a faulty head — the legacy bullets some of them open with
+	// are prose left where it was written, not a declaration.
+	Glob     string
+	Book     bool // a directory whose index.md is itself a record of the kind
+	Register bool // the one questions table
 }
 
 // Chapter is one line of a book's reading order: a record of the book's kind
@@ -166,9 +178,23 @@ func ResolveRoots(installation string) (Roots, error) {
 	}, nil
 }
 
-// Homes are the homes in reading order. The second design home is the
-// self-hosted layout's alone: there the state root is the installation, and the
-// kit's own designs sit at the checkout root beside it.
+// HistoricalDesignsName is what the pane calls the kit's own history, because
+// "metasystem/plans" names a directory of briefs and ledger files and says
+// nothing about the one convention read out of it.
+const HistoricalDesignsName = "designs (historical)"
+
+// HistoricalDesignsGlob is the whole of the convention the kit's designs were
+// written under before a design was a record: the goal's id, then -design.md,
+// flat beneath the installation's plans directory. It is deliberately narrow —
+// that directory also holds the briefs, the goal ledger and plans/designs — so
+// a home read recursively would read the ledger and read plans/designs twice.
+const HistoricalDesignsGlob = "*-design.md"
+
+// Homes are the homes in reading order. The second design home and the
+// historical one belong to the self-hosted layout alone: there the state root
+// is the installation, the kit's own designs sit at the checkout root beside
+// it, and the kit's own history sits flat beneath the installation's plans. An
+// adopted application has neither and never acquires the kit's past.
 func Homes(roots Roots) []Home {
 	homes := []Home{
 		{Kind: KindIntent, Path: filepath.Join(roots.StateRoot, "docs", "intent"), Book: true},
@@ -177,13 +203,55 @@ func Homes(roots Roots) []Home {
 		{Kind: KindDesign, Path: filepath.Join(roots.StateRoot, "plans", "designs")},
 	}
 	if SelfHosted(roots) {
-		homes = append(homes, Home{Kind: KindDesign, Path: filepath.Join(roots.Checkout, "plans", "designs")})
+		homes = append(homes,
+			Home{Kind: KindDesign, Path: filepath.Join(roots.Checkout, "plans", "designs")},
+			Home{
+				Kind: KindDesign,
+				Path: filepath.Join(roots.Installation, "plans"),
+				Name: HistoricalDesignsName,
+				Glob: HistoricalDesignsGlob,
+			})
 	}
 	homes = append(homes, Home{Path: filepath.Join(roots.StateRoot, "memory", "questions.md"), Register: true})
 	for index := range homes {
 		homes[index].Rel = relative(roots.Checkout, homes[index].Path)
 	}
 	return homes
+}
+
+// HomeFor is the home that would read a record at this checkout-relative
+// path, and whether there is one at all.
+//
+// It answers the question a writer asks before it judges a file by the head
+// grammar: a document the homes do not read is never a record, so nothing may
+// refuse it over a head it does not have. The register is not a home here —
+// it is a file of rows — and a home that is the checkout root itself would
+// admit everything, so only a proper prefix counts. A historical home admits
+// only what its glob names directly beneath it, which is how the briefs and
+// the goal ledger sharing that directory stay out.
+func HomeFor(roots Roots, rel string) (Home, bool) {
+	if !strings.HasSuffix(rel, ".md") {
+		return Home{}, false
+	}
+	for _, home := range Homes(roots) {
+		if home.Register || home.Rel == "" || home.Rel == "." {
+			continue
+		}
+		name, inside := strings.CutPrefix(rel, home.Rel+"/")
+		if !inside || name == "" {
+			continue
+		}
+		if home.Glob == "" {
+			return home, true
+		}
+		if strings.Contains(name, "/") {
+			continue
+		}
+		if matched, err := path.Match(home.Glob, name); err == nil && matched {
+			return home, true
+		}
+	}
+	return Home{}, false
 }
 
 // SelfHosted is the template layout and nothing else: there, and only there,
@@ -292,24 +360,65 @@ func (p *Project) readRecords(home Home) error {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			return nil
 		}
-		rel := relative(p.Roots.Checkout, filepath.Join(home.Path, filepath.FromSlash(name)))
-		data, read := p.readWithin(root, name, rel)
-		if !read {
-			return nil
-		}
-		record, problems, isRecord := parseRecord(rel, string(data))
-		if !isRecord {
-			return nil
-		}
-		record.Home = home.Rel
-		p.Records = append(p.Records, record)
-		p.Problems = append(p.Problems, problems...)
+		p.readRecord(root, home, name)
 		return nil
+	}
+	if home.Glob != "" {
+		return p.readFlat(root, home)
 	}
 	if err := fs.WalkDir(root.FS(), ".", walk); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
+}
+
+// readFlat walks a historical home: the names its glob matches, directly
+// beneath it, in name order, and nothing in a subdirectory. A subdirectory is
+// not descended at all, which is why the goal ledger and the second design
+// home, both beneath this one's path, are not read again here.
+func (p *Project) readFlat(root *os.Root, home Home) error {
+	entries, err := fs.ReadDir(root.FS(), ".")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		matched, matchErr := path.Match(home.Glob, entry.Name())
+		if matchErr != nil || !matched {
+			continue
+		}
+		p.readRecord(root, home, entry.Name())
+	}
+	return nil
+}
+
+// readRecord reads one file of a home and keeps what it declares. A file that
+// declares nothing is not a record and is not refused; in a historical home a
+// file that declares no Kind is not a record either, because the legacy
+// bullets it opens with are the prose its author wrote and not a head the
+// typing pass has yet given it.
+func (p *Project) readRecord(root *os.Root, home Home, name string) {
+	rel := relative(p.Roots.Checkout, filepath.Join(home.Path, filepath.FromSlash(name)))
+	data, read := p.readWithin(root, name, rel)
+	if !read {
+		return
+	}
+	record, problems, isRecord := parseRecord(rel, string(data))
+	if !isRecord {
+		return
+	}
+	if home.Glob != "" && !record.declares("Kind") {
+		return
+	}
+	record.Home = home.Rel
+	record.HomeName = home.Name
+	p.Records = append(p.Records, record)
+	p.Problems = append(p.Problems, problems...)
 }
 
 // readWithin reads one entry of a home, and never a byte from outside it. A

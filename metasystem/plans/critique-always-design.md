@@ -1,5 +1,10 @@
 # critique-always
 
+- Kind: design
+- Id: 01M3A2YHDKR2GJGT38B5Y0PHZN
+- Status: done
+- Goals: critique-always
+
 - Owner: m1e (goal 18 of plans/delivery-efficiency-plan.md), claimed 2026-09-12 21:55Z.
 - Goal and current status: critique follows the tier, not the hazard class (Wido, 2026-09-10: "if the risk is high, even though it is a small change, it should get a critique"). A chain on a tier-2 or tier-3 goal needs an independent critique before it closes whatever its class; a tier-1 chain closes without one (R-54-m1's tier-1 clause stands). Built by Codex gpt-5.6-sol from the seat's brief (section 2) in a worktree; read by Opus; integrated, landed and verified by the seat.
 - In flight right now: nothing. Landed 894a269e, verified through the engine, concluded a5050811 in Wido's name (2026-09-13 01:00 local).

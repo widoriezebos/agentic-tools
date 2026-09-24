@@ -1,5 +1,10 @@
 # Registered wait matches the runtime session
 
+- Kind: design
+- Id: 01M3A2YHDMV0SVQ4QJMWQWTHF1
+- Status: superseded
+- Goals: registered-wait-matches-the-runtime-session
+
 Design for `metasystem/plans/goals/registered-wait-matches-the-runtime-session.md`. Revision 4.
 Drafted 2026-09-15 on the m1c seat by a Claude Fable design delegate, from files re-read at worktree HEAD 0b8d9d62.
 Revision 4 is the final prose revision under R-97-m1e with D81: after three critique rounds, all five members are marked ready to build, and every standing finding from rounds 1 to 3 is either closed in the text or carried as a named test in the unit that owns its rule. No further critique round runs; a code read of each unit carries its checks.

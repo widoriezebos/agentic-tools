@@ -1,5 +1,10 @@
 # critique-closes-on-folded-proof
 
+- Kind: design
+- Id: 01M3A2YHDKNSS10646SPQPNTKB
+- Status: accepted
+- Goals: critique-closes-on-folded-proof
+
 - Owner: m1e (goal 16 of plans/delivery-efficiency-plan.md), claimed for the design. **Revision 3, 2026-09-13**, written on the seat (Fable) under Wido's lanes after his word on section 11 (option (a)): this page is narrowed to the rules he has ruled on, no read of a subject already read clean and the close on a prior clean read, design critique failing safe at round two, and the measure; the certification record (rule 1 of the DONE line) moves to goal certification-closes-a-folded-bounded-finding, opened in his name, whose page starts from the two read records of this one.
 - Goal and current status: revision 3 (narrowed to the buildable rules, section 11) with build specs 9b and 9c. Slice 0 landed 4fbd271c; slice 1 part 1a-i landed 20eecaf0; parts 1a-ii (units a, b, c) and 1b are not built.
 - In flight right now: nothing. Slice 2 landed on origin/main on 2026-09-16 (U2c 47a010c08, U2d 7e50bde23, U2e 48b3e7369); the goal's Next carries what remains.

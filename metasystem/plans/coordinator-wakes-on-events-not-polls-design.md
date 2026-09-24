@@ -1,5 +1,10 @@
 # Coordinator wakes on events, not polls
 
+- Kind: design
+- Id: 01M3A2YHDK3DM5YS2DSBPWV22W
+- Status: done
+- Goals: coordinator-wakes-on-events-not-polls
+
 Design for goal 14 in `metasystem/plans/delivery-efficiency-plan.md`.
 The full intent is `metasystem/plans/goals/coordinator-wakes-on-events-not-polls.md:8`.
 Drafted for the m1b seat on 2026-09-13 by Codex design chain implementer-fa5b5830882bcf6ea864cdf6. The second rostered read is folded here; the member goals of section 6 follow.

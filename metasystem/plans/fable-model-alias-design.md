@@ -1,5 +1,10 @@
 # Fable model alias — design, revision 2 (folds Sol critique round 1)
 
+- Kind: design
+- Id: 01M3A2YHDM2KFBQDV57GQRM3DX
+- Status: done
+- Goals: fable-model-alias
+
 Goal `plans/goals/fable-model-alias.md`. Wido, verbatim (2026-09-03): "i want claude-fable-5 to be an alias for claude-fable-5.1 to
 avoid running into DESSIGNM-BEARING", then "I want it to be the alias for the latest class 5 model, is that possible?". Answer: yes, as a
 TRACKED POINTER moved only by a one-line configuration landing on his word. Extends `plans/fable-5-1-rollover-design.md` (R-46-m0b);

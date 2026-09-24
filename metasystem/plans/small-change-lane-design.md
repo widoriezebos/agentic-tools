@@ -1,5 +1,10 @@
 # The small-change lane (goal small-change-lane)
 
+- Kind: design
+- Id: 01M3A2YHDNX4ED00Y4PVBQTV29
+- Status: accepted
+- Goals: small-change-lane
+
 Revision: 3, the final fold. Date: 2026-09-16. Author: a Claude Fable design
 delegate for seat m1e (Wido, 2026-09-13: design is a Fable delegate's; the
 seat drafts of 2026-09-13 are withdrawn and were mined for code facts only).

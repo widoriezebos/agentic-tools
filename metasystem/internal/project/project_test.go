@@ -251,7 +251,8 @@ func TestHomesFollowTheLayout(t *testing.T) {
 			selfHosted: true,
 			homes: []string{
 				"metasystem/docs/intent", "metasystem/docs/doctrine", "metasystem/docs/decisions",
-				"metasystem/plans/designs", "plans/designs", "metasystem/memory/questions.md",
+				"metasystem/plans/designs", "plans/designs", "metasystem/plans",
+				"metasystem/memory/questions.md",
 			},
 		},
 		{
@@ -288,6 +289,101 @@ func TestHomesFollowTheLayout(t *testing.T) {
 			testutil.Expect(t, "the questions", len(read.Questions), 3)
 		})
 	}
+}
+
+// seedHistory writes the kit's own past the way the checkout carries it: a
+// typed design, an untyped one, one opening with legacy bullets, and two
+// decoys that prove the glob is the whole of the selection — a brief flat
+// beside them, and a file one directory down.
+func (f *fixture) seedHistory() {
+	f.t.Helper()
+
+	f.write("metasystem/plans/two-homes-design.md",
+		record("Two homes, typed", "design", "design-history-typed", "done", "two-homes"))
+	f.write("metasystem/plans/ledger-sync-design.md",
+		"# The ledger, untyped\n\nProse the typing pass has not reached.\n")
+	f.write("metasystem/plans/reading-pane-design.md",
+		"# The pane, with legacy bullets\n\n- Owner: wido\n- Date: 2026-01-01\n\nProse.\n")
+	f.write("metasystem/plans/two-homes-brief.md",
+		record("A brief is not a design", "design", "design-history-brief", "draft", ""))
+	f.write("metasystem/plans/nested/buried-design.md",
+		record("A design one directory down", "design", "design-history-nested", "draft", ""))
+}
+
+// The kit's own history is a home of the self-hosted layout alone: flat, one
+// glob, and never the ledger or plans/designs read a second time. A file there
+// that declares no Kind is a document the typing pass has not reached — not a
+// record, and not a refusal either, which is what keeps the legacy bullets
+// some of them open with out of the check.
+func TestTheHistoricalDesignHomeIsFlatAndSelfHostedOnly(t *testing.T) {
+	t.Parallel()
+
+	t.Run("self-hosted", func(t *testing.T) {
+		t.Parallel()
+
+		f := newFixture(t, true)
+		f.seed()
+		f.seedHistory()
+		read := f.read()
+
+		historical := homeWithRel(t, read.Homes, "metasystem/plans")
+		testutil.Expect(t, "the historical home's name", historical.Name, HistoricalDesignsName)
+		testutil.Expect(t, "the historical home's kind", historical.Kind, KindDesign)
+		testutil.Expect(t, "the historical home's glob", historical.Glob, HistoricalDesignsGlob)
+		testutil.Expect(t, "what the historical home lists",
+			pathsOf(recordsFromHome(read.Records, "metasystem/plans")),
+			[]string{"metasystem/plans/two-homes-design.md"})
+		testutil.Expect(t, "the home's name travels with the record",
+			read.Record("design-history-typed").HomeName, HistoricalDesignsName)
+		testutil.Expect(t, "a brief flat beside the designs is not read",
+			read.Record("design-history-brief"), (*Record)(nil))
+		testutil.Expect(t, "a design one directory down is not read",
+			read.Record("design-history-nested"), (*Record)(nil))
+		testutil.Expect(t, "the ledger is not read through the historical home",
+			contains(pathsOf(read.Records), "metasystem/plans/goals/ledger-sync.md"), false)
+		testutil.Expect(t, "plans/designs is read once",
+			pathsOf(read.List(KindDesign, ListOptions{Goal: "reading-pane"})),
+			[]string{"metasystem/plans/designs/pane/reading.md"})
+		testutil.Expect(t, "an untyped historical file refuses nothing",
+			problemLines(read.Problems), []string{})
+	})
+
+	t.Run("adopted", func(t *testing.T) {
+		t.Parallel()
+
+		f := newFixture(t, false)
+		f.seed()
+		f.write("plans/adopted-design.md",
+			record("An adopted application's own flat plan", "design", "design-adopted-flat", "draft", ""))
+		read := f.read()
+
+		testutil.Expect(t, "an adopted layout has no historical home",
+			contains(homeRels(read.Homes), "plans"), false)
+		testutil.Expect(t, "a flat design beside an adopted application's plans is not read",
+			read.Record("design-adopted-flat"), (*Record)(nil))
+		testutil.Expect(t, "the adopted refusals", problemLines(read.Problems), []string{})
+	})
+}
+
+func homeWithRel(t *testing.T, homes []Home, rel string) Home {
+	t.Helper()
+	for _, home := range homes {
+		if home.Rel == rel {
+			return home
+		}
+	}
+	t.Fatalf("no home at %s", rel)
+	return Home{}
+}
+
+func recordsFromHome(records []Record, home string) []Record {
+	var collected []Record
+	for _, record := range records {
+		if record.Home == home {
+			collected = append(collected, record)
+		}
+	}
+	return collected
 }
 
 // A book's index carries the reading order, and a chapter is a record anywhere

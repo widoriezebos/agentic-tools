@@ -1,5 +1,10 @@
 # Account provenance design
 
+- Kind: design
+- Id: 01M3A2YHDKCXX1GQ1ZX2BZW4JC
+- Status: done
+- Goals: account-provenance
+
 Goal: account-provenance (goal file at revision 7, claimed by
 m1+main-1788333680-2840-7f79f4). Wido's word (decision-ask 2026-08-31,
 recorded in the goal): the string m0 stamps in every landing message until

@@ -1,5 +1,10 @@
 # fixture-children-cannot-outlive-their-test: design, revision 3
 
+- Kind: design
+- Id: 01M3A2YHDMX5B1JTEYZNZ2N1KB
+- Status: done
+- Goals: fixture-children-cannot-outlive-their-test
+
 Priority 1, tier 2, opened by Wido 2026-09-16 (goal
 plans/goals/fixture-children-cannot-outlive-their-test.md). Revision 3
 answers FC-6, FC-7 and FC-8 from the round 2 critique and adds producer 2's

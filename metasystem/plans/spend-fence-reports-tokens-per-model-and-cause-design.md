@@ -1,5 +1,10 @@
 # spend-fence-reports-tokens-per-model-and-cause: design, revision 3
 
+- Kind: design
+- Id: 01M3A2YHDNJGCMYACYCAMFRRB1
+- Status: accepted
+- Goals: spend-fence-reports-tokens-per-model-and-cause
+
 Owns units U5a, U5b and U5c of plans/seats-spend-tokens-in-bounded-sessions-design.md
 (P7) and SSTB-114, 115, 116, 204, 205, 206 and 207. Revision 3, 2026-09-15,
 by a fresh bounded delegate, answers the seven findings round 2 left open;

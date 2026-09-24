@@ -1,5 +1,10 @@
 # Built work lands beside the seat's claim, and a re-claim keeps its episode (goal land-ready-work-lands-without-a-claim-slot)
 
+- Kind: design
+- Id: 01M3A2YHDM9VT15RJP0801CG8S
+- Status: done
+- Goals: land-ready-work-lands-without-a-claim-slot
+
 - Status: revision 3 after two design reads (section 6); the two budget-law choices of section 7 are taken as the second reader advised and put to Wido at the landing; built behind the fixtures in section 4 (2026-09-12)
 - Goal: land-ready-work-lands-without-a-claim-slot (goal 20 of plans/delivery-efficiency-plan.md)
 - Next step: none

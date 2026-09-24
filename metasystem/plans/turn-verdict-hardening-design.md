@@ -1,5 +1,10 @@
 # Design: turn-verdict hardening — a seat cannot end its turn on ready work
 
+- Kind: design
+- Id: 01M3A2YHDN5JGGCENJ1SY5198V
+- Status: done
+- Goals: turn-verdict-hardening
+
 Goal: turn-verdict-hardening (plans/goals/turn-verdict-hardening.md, revision 4,
 priority-1). Author: implementer delegate tvh-design-2 under dispatch by
 m0b+main-1788250419-3170380-8a1fb3, 2026-09-02; revision 2 by delegate

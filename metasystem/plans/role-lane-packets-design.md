@@ -1,5 +1,10 @@
 # Role-Lane Packets Design
 
+- Kind: design
+- Id: 01M3A2YHDMZNZEV7P4BXTYPJTA
+- Status: superseded
+- Goals: role-lane-packets
+
 - Goal: role-lane-packets (plans/goals/role-lane-packets.md, revision 2)
 - Authority: R-25-m1 (the lane map), R-25b-m1 (carried whole), R-28-m1
   (tier/effort delegation inside the lanes, due 2026-09-30) as narrowed

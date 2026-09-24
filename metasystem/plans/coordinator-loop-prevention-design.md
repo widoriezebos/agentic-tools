@@ -1,5 +1,10 @@
 # Shared proof admission and finite delivery
 
+- Kind: design
+- Id: 01M3A2YHDKBQA1PEKHRCXB0Y8Q
+- Status: done
+- Goals: coordinator-loop-prevention
+
 Status: independent design critique completed at 96248b74723851ef2d11f22003fff28324578f8e with zero material findings in round three. The final empty findings-to-dispositions join passes. Native register closure remains incomplete: the critic explicitly resolved prior findings in evidence but omitted the same-id material:false rows the register requires. No findings, native records or risk decisions have been rewritten to hide that mismatch. Implementation proceeds through normal admission against the actually reviewed contract; the retained register issue needs a lawful resolution before claiming the entire workflow closed. The isolated witness correction and shared implementation still require independent code critique.
 Goal: coordinator-loop-prevention. Author: main Codex/Astra, xhigh.
 Source baseline: stop/status/arm source a3131fbb, integrated through origin/main 4b4d4ab5. The progress record carries the source integration and focused canaries. This revision replaces the earlier proposal's obsolete assignment of proof process lifecycle to run.

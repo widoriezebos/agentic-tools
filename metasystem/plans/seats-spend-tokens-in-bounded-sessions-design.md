@@ -1,5 +1,10 @@
 # seats-spend-tokens-in-bounded-sessions
 
+- Kind: design
+- Id: 01M3A2YHDNH7RQJ6JV67ZW44K8
+- Status: accepted
+- Goals: seats-spend-tokens-in-bounded-sessions
+
 Goal seats-spend-tokens-in-bounded-sessions (plans/goals/seats-spend-tokens-in-bounded-sessions.md), revision 3 of the design, written by a fresh Claude Fable delegate from artifacts/reports/tokens-design-brief-r3.md on 2026-09-15 at trunk a1d23839f. Paths are relative to the metasystem module. Line numbers name that tree.
 
 Revision 3, folded after critique round 3 by Wido's decision (option a), 2026-09-15; no further critique round. The fold follows artifacts/reports/tokens-design-brief-r3-fold.md, and section 4 records each round-3 finding's disposition. Goals are named by id only, because sequence numbers shift (SSTB-312).

@@ -275,20 +275,19 @@ func references(read *resolver.Project, id string) (referenced []Link, supersede
 	return referenced, superseded
 }
 
-// beneathAHome reports whether this id could name a record at all: it lies
-// inside one of the directories the resolver reads. The register is not one of
-// them — it is a file of rows, not a record — and a home that is the checkout
-// root itself would admit everything, so only a proper prefix counts.
+// beneathAHome reports whether this id could name a record at all: the
+// resolver's own answer about which home, if any, would read a record there.
 func beneathAHome(roots Roots, id string) bool {
-	for _, home := range resolver.Homes(resolver.Roots(roots)) {
-		if home.Register || home.Rel == "" || home.Rel == "." {
-			continue
-		}
-		if strings.HasPrefix(id, home.Rel+"/") {
-			return true
-		}
-	}
-	return false
+	_, found := resolver.HomeFor(resolver.Roots(roots), id)
+	return found
+}
+
+// historicalHome reports whether the home that would read this path is one of
+// untyped history, where a file declaring no Kind is a document rather than a
+// record with a faulty head.
+func historicalHome(roots Roots, id string) bool {
+	home, found := resolver.HomeFor(resolver.Roots(roots), id)
+	return found && home.Glob != ""
 }
 
 // withoutTheHead drops the record's head lines from the blocks. The head is

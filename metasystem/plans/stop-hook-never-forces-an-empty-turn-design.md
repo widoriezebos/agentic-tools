@@ -1,5 +1,10 @@
 # Stop hooks must not force empty turns
 
+- Kind: design
+- Id: 01M3A2YHDNKDH07EKHPMG4MEWZ
+- Status: accepted
+- Goals: stop-hook-never-forces-an-empty-turn
+
 Design for goal 4 of `metasystem/plans/delivery-efficiency-plan.md`, dated 2026-09-12.
 The accepted scope and absorbed clauses are in `metasystem/plans/goals/stop-hook-never-forces-an-empty-turn.md:8` and line 10.
 Drafted in three Codex rounds (chain stop-hook-design-190340, gpt-6-astra), read twice by Codex gpt-5.6-sol, settled by the m1b seat under Wido's lanes of 2026-09-12 (the seat designs, Codex reads and builds, Opus reads the build).

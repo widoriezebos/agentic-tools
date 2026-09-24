@@ -1,5 +1,10 @@
 # `metasystem doctor` repairs what stops other seats (goal fleet-doctor-repairs-what-stops-other-seats)
 
+- Kind: design
+- Id: 01M3A2YHDMXBFPCK89427K1003
+- Status: accepted
+- Goals: fleet-doctor-repairs-what-stops-other-seats
+
 > **Status, 2026-09-16: closed on Wido's word; revision 3 is the design of record.** Its round-3 critique (`records/misc/fleet-doctor-repairs-what-stops-other-seats-critique-r3.md`, verdict rework) left 7 material findings: DRC-R3-001, DRC-R3-002, DRC-R3-003, DRC-R3-004, DRC-R3-005, DRC-R3-006, DRC-R3-007. Wido ruled that this page closes under the round-two rule with the remaining round-3 findings carried as obligations (order item 2, recorded on the goal). On 2026-09-16 he chose to close it by hand ("I want option A"): its critique rounds ran as Codex tasks outside the engine, so the engine close verb has no critic root to close. The obligations are recorded on the goal file. Each one must be resolved in the brief of the unit it touches, before that unit is built.
 
 Revision 3 (the last round), 2026-09-16, by a Claude Fable design delegate for seat m1e, from revision 2, the

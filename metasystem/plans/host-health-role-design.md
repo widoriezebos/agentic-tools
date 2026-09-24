@@ -1,5 +1,10 @@
 # Host health role design (host-health-role)
 
+- Kind: design
+- Id: 01M3A2YHDMGPFXHR8D1VDVX28C
+- Status: accepted
+- Goals: host-health-role
+
 Working Mode: design
 Goal: `plans/goals/host-health-role.md` (revision 3, claimed by m1)
 Brief: `plans/host-health-role-design-brief.md`

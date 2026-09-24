@@ -1,5 +1,10 @@
 # goals-live-on-branches: design, revision 3
 
+- Kind: design
+- Id: 01M3A2YHDM5Y2ZP4KHR300BJX4
+- Status: done
+- Goals: goals-live-on-branches
+
 Revision 3, 2026-09-17, Wido's ruling: the goal lands, not the slice. An amendment of revision 2, which Wido approved
 on 2026-09-17 with three rulings: a goal's slices land on its branch and only the goal lands on the endpoint, under
 one full suite at the merge; a red found at that landing is fixed at once as part of the landing, with no new goal

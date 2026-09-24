@@ -1,5 +1,10 @@
 # retained-proof-reuse-crosses-claims-and-attempts: design
 
+- Kind: design
+- Id: 01M3A2YHDMA8MNA59MK25AJ87Z
+- Status: done
+- Goals: retained-proof-reuse-crosses-claims-and-attempts
+
 Goal 10 of plans/delivery-efficiency-plan.md. One critique read of this page,
 then the build lands in two slices under the one goal, each with its own
 fixtures and its own critic read; the third clause is parked here with its

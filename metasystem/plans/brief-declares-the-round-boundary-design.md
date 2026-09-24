@@ -1,5 +1,10 @@
 # brief-declares-the-round-boundary
 
+- Kind: design
+- Id: 01M3A2YHDKRCNJXVDTHD98E2C4
+- Status: accepted
+- Goals: brief-declares-the-round-boundary
+
 - Owner: m1e (goal 28 of plans/delivery-efficiency-plan.md). **Revision 3, 2026-09-14**, the final prose fold, by the Codex gpt-6-astra design delegate from critique round 2 (records/misc/brief-declares-the-round-boundary-critique-r2.md, three material findings, all accepted; two round-1 findings reopened and discharged) under the seat's rulings; the seat integrated the page and edits only this header block.
 - Goal and current status: the brief carries a paired Boundary and Ceiling or neither, parsed once at admission from the seat-authored bytes and persisted beside the round as admitted-brief.md and brief-bounds.json with the admitted digest; review reads the record, never prose, and refuses a candidate outside the bounds before a read is spent. Eleven builder units of at most 400 changed lines each (1a, 1b, 2, 3a, 3b, 3c, 4a, 4b, 4c, 6a, 6b), each with its own Boundary, Ceiling, Non-goals and the proof rule, and a complete rule-to-witness table with every row independently named. Nothing built yet.
 - In flight right now: the two-round review budget is spent (eight material findings in round 1, three in round 2, all folded). Under R-97-m1e and D81 this page is the implementation spec; every standing finding is a named test or fixture leg in the unit that owns its rule, and each unit's independent code read carries the check from here. Unit 1a is being briefed.

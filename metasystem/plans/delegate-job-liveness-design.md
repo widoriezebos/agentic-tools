@@ -1,5 +1,10 @@
 # delegate-job-liveness — design record (2026-08-27; THE PARENT MAP after the round-4 split)
 
+- Kind: design
+- Id: 01M3A2YHDMKT7HMV0RKMM563KV
+- Status: done
+- Goals: delegate-job-liveness
+
 Working Mode: design
 
 ## THE SPLIT (RULING 6 — Wido, 2026-08-27 evening)

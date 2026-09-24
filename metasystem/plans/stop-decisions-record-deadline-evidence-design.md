@@ -1,5 +1,10 @@
 # stop-decisions-record-deadline-evidence: build design
 
+- Kind: design
+- Id: 01M3A2YHDNQ4X9KAZN3MHX30SW
+- Status: done
+- Goals: stop-decisions-record-deadline-evidence
+
 Revision: 4 (2026-09-14), following revision 3 at 78f40168.
 This revision decides the two hook-bed fixtures that reached the retired shell parent. Other decisions stand.
 

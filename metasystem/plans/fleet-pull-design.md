@@ -1,5 +1,10 @@
 # Review brief: fleet-pull
 
+- Kind: design
+- Id: 01M3A2YHDMG2GZQ1WPPM1F0WTB
+- Status: accepted
+- Goals: fleet-pull
+
 Round budget: 3 focused rounds — agreed before round one; exhaustion
 follows the critique skills' budget rules, never a silent round 4.
 

@@ -1,5 +1,10 @@
 # builder-proves-each-rule-by-mutation
 
+- Kind: design
+- Id: 01M3A2YHDKNK8S6MM1BKCYCPMC
+- Status: accepted
+- Goals: builder-proves-each-rule-by-mutation
+
 - Owner: m1e (goal 29 of plans/delivery-efficiency-plan.md). **Revision 3, 2026-09-14**, the final prose fold, by the Codex gpt-6-astra design delegate from critique round 2 (records/misc/builder-proves-each-rule-by-mutation-critique-r2.md, five material findings, all accepted; the five round-1 findings it kept open are folded here) under the seat's rulings and bound to the sibling's revision 3; the seat integrated the page and edits only this header block.
 - Goal and current status: the builder returns one observed mutation claim per acceptance row declared in the brief's Rules header; review joins the chain's declarations to valid claims with explicit time semantics and checks their named tests in the final candidate; the critic reproduces a deterministic sample. Eleven builder units of at most 400 changed lines each, in this order after the sibling's 1a, 3a, 3b and 3c: U0, U3a, U3b, U1, U2, U4a, U4j, U5a, U5b, U5c, U4b. Nothing built yet.
 - In flight right now: the two-round review budget is spent (seven material findings in round 1, five in round 2, all folded). Under R-97-m1e and D81 this page is the implementation spec; every standing finding is a named test or fixture leg in the unit that owns its rule, and each unit's independent code read carries the check from here. U0 waits for the sibling's admission units.

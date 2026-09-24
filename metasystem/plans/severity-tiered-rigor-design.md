@@ -1,5 +1,10 @@
 # severity-tiered-rigor — design round 1 record (2026-08-26)
 
+- Kind: design
+- Id: 01M3A2YHDND3FTGC116G78F28T
+- Status: done
+- Goals: severity-tiered-rigor
+
 Sketch critiqued by codex; VERDICT needs-rework; 10 findings + minimal slice one (4h). Queued per Wido's ruling — shovel-ready for the claimant. Round budget: 2 remaining of 3.
 
 SEE SESSION RECORD: round-1 verdict delivered 2026-08-26 ~13:20; re-run design round if lost.

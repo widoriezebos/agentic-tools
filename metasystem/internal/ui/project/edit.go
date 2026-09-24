@@ -154,6 +154,11 @@ func admissibleSource(source string) *Refusal {
 // runs when the file is a record today or would be one after the save — so a
 // record whose head has been deleted is refused as the record it stops being,
 // and a plain document that grows a head is refused if that head is bad.
+//
+// In a home of untyped history the jurisdiction is narrower still, by the same
+// rule the resolver reads it under: a file that declares no Kind is prose the
+// typing pass has not reached, so the legacy bullets it opens with are not a
+// head and are not judged as one.
 func refusedByTheProject(roots Roots, id, source string) (*Refusal, error) {
 	if !beneathAHome(roots, id) {
 		return nil, nil
@@ -162,7 +167,10 @@ func refusedByTheProject(roots Roots, id, source string) (*Refusal, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _, declares := resolver.ParseRecord(id, source)
+	written, _, declares := resolver.ParseRecord(id, source)
+	if declares && historicalHome(roots, id) && !written.Declares("Kind") {
+		return nil, nil
+	}
 	if !declares && !isRecord(read, id) {
 		return nil, nil
 	}

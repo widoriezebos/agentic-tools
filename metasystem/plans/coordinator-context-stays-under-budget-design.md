@@ -1,5 +1,10 @@
 # coordinator-context-stays-under-budget
 
+- Kind: design
+- Id: 01M3A2YHDKJS1BXQ203RAERCAD
+- Status: done
+- Goals: coordinator-context-stays-under-budget
+
 - Owner: m1e (goal 15 of plans/delivery-efficiency-plan.md). **Revision 3, 2026-09-13**, written on the seat (Fable) under Wido's lanes; revision 2 (5b5e917b) was read by Codex gpt-5.6-sol (records/misc/coordinator-context-design-critique-r2.md, six material findings, rework required) and this revision folds all six with Wido's two answers of 2026-09-13 (section 10).
 - Goal and current status: slice 1 landed 644960b4; slice 1b-i 349ac583; slice 1b-ii 4ddb6997 and b9fcccb0. Revision 3 is the design for slices 1b, 2 and 3; section 8b is the build spec for slice 1b, section 8c for slices 2 and 3, and 8c.8 the amendment after the slice 2a build.
 - In flight right now: slice 1b-ii part 1 (section 8b rows CCB-1b-07 to 11: over-limit bodies staged and referenced, verification by the adapters before launch) in its Codex fold round 2 after an Opus read with four material findings (staging before the claim wins, a refused follow-up touching a running round's staged files, the merge conformance reader, a fixture comparison); worktree .claude/worktrees/ccb-1bii-tip.

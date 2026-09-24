@@ -1,5 +1,10 @@
 # Failed-job attention — design
 
+- Kind: design
+- Id: 01M3A2YHDMF72GCQ9EE257WK4T
+- Status: accepted
+- Goals: failed-job-attention
+
 Goal: failed-job-attention (plans/goals/failed-job-attention.md, revision 11).
 Mode: design. Date: 2026-09-02. Appetite: 1.5h build; the SIMPLEST design
 honoring the existing episode pattern wins. **Design revision 3**: folds the
