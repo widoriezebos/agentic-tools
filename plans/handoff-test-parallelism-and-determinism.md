@@ -19,7 +19,7 @@ UI clone: `/Users/wido/LocalStorage/GitHub/agentic-tools-ui`.
 
 ## Source and backups
 
-Main HEAD remains `761586c9734c78d9d8cbef1e7f8d30ff4e31db46`. Accepted/staged: **243 batches, 1,472 original parent tests converted**. This is not a global completion denominator.
+Main HEAD remains `761586c9734c78d9d8cbef1e7f8d30ff4e31db46`. Accepted/staged: **246 batches, 1,475 original parent tests converted**. This is not a global completion denominator.
 
 Frozen bx: `E/rollout/parallel-final-candidate-20260923bx/source`, commit `9787c5df34fac89c770c031308367621b1c116dd`, tree `aedc173df111eb72bfd1671640edde1936797159`. It contains accepted229. Full run ended before root lifted Main freeze and applied ten reviewed units. Their composition was checked in an alternate index before application; code/index tree before this handoff edit is `f99fbdde919503b38b1657c27fefdb78bb2216b3`.
 
@@ -69,3 +69,27 @@ Root applied D1 as240, forklock7 as241, protectedselector3 restoration as242 and
 Orphan2 builder20260924t120612-1548a3e01c is active in E/units/wall-orphan-two-prepared/source (bx plus acceptedD1); exact2 parents diagnosticrace/Gitdeniedgreen, finalproof/readpending. Root design C/wall-orphan-two-root-design.md. Remaining eight wall parents were regional, not a global Git-removal denominator; after orphan2 six remain in that wave. Original typedcensus428 includes unresolved ordinary/mixed/native classes and is not a completioncount.
 
 Latest cleanup cleared three more inactive private caches (provenance4,candidateumask,terminal4) for1.80GiB, in addition to prior15.67GiB Maccleanup. VMstill28.77GiBhostallocation,65.89GiBguestfree. Exactnewrecord C/private-cache-cleanup-20260924-postbx/summary.md.
+
+## Continuation at 14:29 CEST
+
+Cleanup requested by the user is complete: current request cleared 29 inactive private caches (15.67GiB) plus three later inactive caches (1.80GiB), about17.47GiB explicit cache reclaim. Latest host sample153GiB free,84%used; concurrent processes affect the free-space delta. VM remains28.77GiB host allocation and65.89GiB guest free; disposable guest build caches12KiB each. The earlier31.55GiB VM reclaim is not counted again. No source/worktrees/retained proof or active/shared/pinned analyzer caches were removed.
+
+Remote backup is now root-verified through243/1472 at8ad137721d76a5d3be01b487118a3e5d24c0926b, fast-forward on backup/test-parallelism-20260924. Root independently replayed exact four patches plus handoff in alternate index, checked source equality and append-only receipt, read eight compile exits, pushed and verified remote SHA. No Main integration. Origin/main's one-commit move is only the authorized goal-budget record47dbe0f1; root MainHEADstill761586c9.
+
+Frozen by243 is E/rollout/parallel-final-candidate-20260924by/source atb9227f9239d73a52223ca137e4a15d0d7e600dcb/treebefeaf472e934b17ba2f68a7345f0af24cbd0038. It remains immutable. Integration check found four unreachable declarations (branchRawDigest,isolateGlobalGitConfig,unitCommitInRange wrapper,hostCycleOpenRef) and three stale refusal Site lines; dispatch_budget_resume coordinates minimal private repair+Sol6read. Forklock scanner, parallel ratchet and batch compile passed.
+
+Orphan2 root accepted/applied as244, +2 parents ->1474. Exact patch859f0b93f1b7423eebccf111d526a8133df72136744891fa370ecbcb522b2943, C/accepted/wall-orphan-two.json. Both real adoption/resume parents pass twice under race/atomic/Git denied with actual JSON assertions and no skips; native anchor control separatelypassed. Independent readLAND no materialfindings. Reader actualprocess exit0/report retained; supervisor statefailed only because declared output path duplicatedmetasystem, not a source/proof failure. Root read entire patch, originalclaims, owner and logs/hashes.
+
+Active: steward_final_conversion coordinates one small VerifiedLedgerPin Git-free conversion using acceptedorphan rawowner; validate_and_anchor maps remaining restore/resume fixtures read-only; goal_branch_source_map checks non-wall leftovers against stale census; proof_worker_conversion determines cheapest native proof for previouslyblocked fourgroups. No new full suite launched. Continue same goal, no scope expansion, no certifiedglobalremainingdenominator or reliable finalETA.
+
+## Continuation after Claude cleanup notice, 14:39 CEST
+
+Main accepted/staged246/1475. Newly applied245 by243-integration-repair SHA706e6c30b94cffad3998507e35305265d8b7e4fc03713065fcebe91703073cf6: four unreachable declarations removed, three exact source anchors updated; whole-module pinnedstaticcheck, HCL03 and batchcompilegreen, independentreadLAND. Root checked actual emissionlines/fullpatch/proof. Initial staticcheck cache-permissionfailure retained; all small logs copied from temporary path into durable E/units/by243-integration-repair-prepared/proof.
+
+Applied246 wall-pin-one SHA7cae14ccfea2c81128b36d620ed04a836a6af2d0b69d33f7a0aa0b51646f8aab; original pin parent now real rawowner with savedref/logfacts around actualledgernewline, expectedpin==savedSHA and!=movedSHA, original assertionsintact. Focusedrace (not atomiccoverage) passed/Gitdenial0; root read fullpatch/command/output/exit and independentreadzeroissues.
+
+Active Sol6 builders: validate_and_anchor reservation drift parent, private E/units/wall-reservation-drift-prepared/source basedcorrect20260924by+acceptedorphan2, native20260924t123255-23f75d3da3. Preservesrealadoption/reservation/wall, target<=280testlines,noproduction; sharedfixtureeditmustproveall3parents. adoption_filled_delivery_failure: hostsetup generatedClaudeStop degradedoutsideGit oneparent, privateby243, existingresolver/strictchildGitnegativefacts, <=90lines/no production. Original wallrestore+resumetail pair needs actualfakehost and fullerapprovedcontract/prompt; read-onlymappingreturned, notyetbuilt. Neverrelaxrealpolicyassertions.
+
+Claude's disk notice at14:15–14:40 says old(>24h) suitefailure payloads distilled, logs>1MB gzipped, oldprooflogs gzipped, pre21SepCodexsessions removed; trackedsource/index untouched, enginepins untouched. Exactnotice C/claude-cleanup-handoff-20260924-1440.md. LatestSSD190GiBfree includesClaude cleanup. Lookfor.gz when oldevidenceabsent, reconstruct disposable trees fromexactGit, reportmissingrequiredproof; today'sevidenceoutsidewindow. No furthercleanupneeded.
+
+Source-mapagent retracted proposedvalidatework: immutable-review and closureparents alreadyfile/rawconverted. Onlyverifiednon-wallfreshunitwas hostsetup parent nowdelegated. Oldcensusnotremainingcount. Cheapestnativeblocked-stagecheck uses diagnosticcanary+groups(fast-static-build,section/adoption-fixtures,section/land-fixtures,section/supervision-and-census-fixtures), includesmandatorycanary/refusalprerequisite, omitforce/no-reuse. Diagnosticgreenisnotdeliveryproof. fast-static-build andlandeachreserveall9workers; adoption/supervisiononeeach. Roothasnotlaunchedanotherfullrun. Goalnextreturnedcontinuecurrentgoal; acceptedgoalviewold1h36m refreshthroughverbwhenneeded, no newgoal.

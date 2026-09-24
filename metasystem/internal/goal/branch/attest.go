@@ -629,9 +629,6 @@ func bindLandedUnit(r attestationReads, repo, snapshot, endpointTip, goalID, com
 	return result, nil
 }
 
-func unitCommitInRange(repo, endpointTip, tip, goalID string, units []string) (string, error) {
-	return unitCommitInRangeWithReads(gitAttestationReads{}, repo, endpointTip, tip, goalID, units)
-}
 func unitCommitInRangeWithReads(r attestationReads, repo, endpointTip, tip, goalID string, units []string) (string, error) {
 	commits, err := r.Range(repo, endpointTip, tip, goalID)
 	if err != nil {

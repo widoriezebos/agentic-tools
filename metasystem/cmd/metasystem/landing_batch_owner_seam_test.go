@@ -68,12 +68,6 @@ func TestBatchLedgerOwnerUsesLandingIdentity(t *testing.T) {
 	}
 }
 
-func isolateGlobalGitConfig(t *testing.T) {
-	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-}
-
 func TestResolveExplicitBatchLandingRejectsInvalidRoots(t *testing.T) {
 	seat := t.TempDir()
 	now := func() time.Time { return time.Unix(1, 0) }

@@ -1368,12 +1368,10 @@ func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
 // window — re-executes the park at the next reservation, even when
 // the workspace was cleaned up in between.
 func TestReservationReparksOrphanedEvidence(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed, _, _ := newOrphanResumeBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
-		[]string{"authorship of solo.go"}); code != 0 {
-		t.Fatalf("adoption must succeed: %d", code)
-	}
+	bed.nextIdentity = "alpha-t9-orphan"
 	// The crash artifact: violated evidence for a turn no ledger knows.
 	orphanDir := filepath.Join(engine.missionDir(), "turns", "alpha-t9-orphan")
 	if err := os.MkdirAll(orphanDir, 0o755); err != nil {
@@ -1388,7 +1386,9 @@ func TestReservationReparksOrphanedEvidence(t *testing.T) {
 	writeJSONFile(t, filepath.Join(orphanDir, "wall.json"), evidence.document())
 
 	signal := filepath.Join(t.TempDir(), "resume.json")
-	engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-o", signal)
+	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-o", signal); code != 0 {
+		t.Fatalf("orphan resume failed: %d", code)
+	}
 
 	final := readTestDoc(t, statePath)
 	if final["parkReason"] != "wall-violation" {
@@ -1405,6 +1405,7 @@ func TestReservationReparksOrphanedEvidence(t *testing.T) {
 	if last["resolution"] != nil {
 		t.Fatal("the re-parked taint must be unresolved")
 	}
+	assertOrphanResume(t, bed, "alpha-t9-orphan")
 }
 
 // Both typed resolutions through the REAL human
@@ -1464,12 +1465,10 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 // reservation-time sweep — ONLY the resume-time sweep can turn the
 // orphaned evidence into a taint before the fence buries it.
 func TestResumeSweepOutranksTheCycleFence(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed, _, _ := newOrphanResumeBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
-		[]string{"authorship of solo.go"}); code != 0 {
-		t.Fatalf("adoption must succeed: %d", code)
-	}
+	bed.nextIdentity = "alpha-t8-lastcycle"
 	// Orphaned violated evidence, crash artifact shape.
 	orphanDir := filepath.Join(engine.missionDir(), "turns", "alpha-t8-lastcycle")
 	if err := os.MkdirAll(orphanDir, 0o755); err != nil {
@@ -1499,7 +1498,9 @@ func TestResumeSweepOutranksTheCycleFence(t *testing.T) {
 	writeJSONFile(t, engine.fencesPath(), fences)
 
 	signal := filepath.Join(t.TempDir(), "resume.json")
-	engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-f", signal)
+	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-f", signal); code != 0 {
+		t.Fatalf("final-cycle orphan resume failed: %d", code)
+	}
 
 	final := readTestDoc(t, statePath)
 	if final["parkReason"] != "wall-violation" {
@@ -1510,6 +1511,7 @@ func TestResumeSweepOutranksTheCycleFence(t *testing.T) {
 	if reason, _ := last["reason"].(string); !strings.Contains(reason, "final-cycle orphan") {
 		t.Fatalf("the orphaned violation must be the booked taint: %v", reason)
 	}
+	assertOrphanResume(t, bed, "alpha-t8-lastcycle")
 }
 
 // EVERY unparsable-ledger tamper shape resolves through ONE
@@ -1705,16 +1707,59 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	}
 }
 
-// The pin ORIGIN is distinguishing: when the live
-// ledger bytes have moved past the anchored truth, the verified pin is
-// the TIP's sha — a reverted post-write reread would return the moved
-// bytes' sha and this test would fail.
+type tipPinContinuity struct {
+	*resolutionFileBed
+	raw mission.RawAnchorOperations
+}
+
+func (c *tipPinContinuity) LedgerPin(root, missionID string) (string, error) {
+	if root != c.e.Root || missionID != c.e.Mission {
+		c.t.Fatalf("ledger pin arguments = %q %q", root, missionID)
+	}
+	return mission.AnchoredLedgerSHAWithRawAnchorOperations(c.raw, root, missionID)
+}
+
+func (c *tipPinContinuity) VerifyStateWithAnchor(state, root, ledger string) (int64, string, error) {
+	c.t.Fatalf("unexpected VerifyStateWithAnchor(%q, %q, %q)", state, root, ledger)
+	return 0, "", nil
+}
+
+// The saved anchor tip stays fixed when the live ledger gains a newline.
 func TestVerifiedLedgerPinIsTheAnchorTip(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
+	bed := newResolutionFileBed(t)
+	owner := &orphanContinuity{t: t, b: bed, reads: make(map[string]int),
+		remaining: map[string]int{"ref": 2, "log": 2}}
+	owner.saveAnchor()
+	anchorSHA := sha256Hex(string(bed.anchored))
+	owner.raw = mission.RawAnchorOperations{
+		GitOutput: func(root string, args ...string) (string, error) {
+			return owner.git(root, args...), nil
+		},
+		GitTry: func(root string, args ...string) (string, int) {
+			t.Fatalf("unexpected anchor Git try %q %q", root, args)
+			return "", 1
+		},
+		GitStdinOutput: func(root string, data []byte, args ...string) (string, error) {
+			t.Fatalf("unexpected anchor Git write %q %q", root, args)
+			return "", nil
+		},
+		GitEnvOutput: func(root string, env []string, args ...string) (string, error) {
+			t.Fatalf("unexpected anchor Git env write %q %q", root, args)
+			return "", nil
+		},
+	}
+	bed.e.continuityFacts = &tipPinContinuity{resolutionFileBed: bed, raw: owner.raw}
+	engine := bed.e
+	ledgerPath := bed.ledger
 	tipSHA, err := engine.verifiedLedgerPin()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if tipSHA != anchorSHA {
+		t.Fatalf("the tip pin must equal the saved anchor ledger: %s vs %s", tipSHA, anchorSHA)
+	}
+	if owner.reads["ref"] != 1 || owner.reads["log"] != 1 {
+		t.Fatalf("anchor reads before append: %v", owner.reads)
 	}
 	moved, err := os.ReadFile(ledgerPath)
 	if err != nil {
@@ -1731,6 +1776,10 @@ func TestVerifiedLedgerPinIsTheAnchorTip(t *testing.T) {
 	}
 	if pin == movedSHA {
 		t.Fatal("the pin must never be the moved live bytes")
+	}
+	if owner.reads["ref"] != 2 || owner.reads["log"] != 2 ||
+		owner.remaining["ref"] != 0 || owner.remaining["log"] != 0 {
+		t.Fatalf("anchor reads after append: %v, remaining: %v", owner.reads, owner.remaining)
 	}
 }
 

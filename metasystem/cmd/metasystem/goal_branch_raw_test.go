@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,10 +31,6 @@ type branchRawFixture struct {
 func branchRawID(c string) string { return strings.Repeat(c, 40) }
 func branchRawEntry(path string) []byte {
 	return []byte(":100644 100644 " + branchRawID("1") + " " + branchRawID("2") + " M\x00" + path + "\x00")
-}
-func branchRawDigest(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
 }
 func branchRawKey(args ...string) string { return strings.Join(args, "\x00") }
 

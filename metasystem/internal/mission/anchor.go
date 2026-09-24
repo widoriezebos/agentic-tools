@@ -645,7 +645,17 @@ func anchorTreeIsLedgerOnlyWithOperations(ops anchorOperations, repo, commit, le
 // position the caller VERIFIED,
 // never whatever bytes a post-write reread finds.
 func AnchoredLedgerSHA(repo, missionID string) (string, error) {
-	anchor, err := latestAnchor(repo, missionID)
+	return anchoredLedgerSHAWithOperations(defaultAnchorOperations(), repo, missionID)
+}
+
+// AnchoredLedgerSHAWithRawAnchorOperations reads the pin through supplied raw
+// Git calls while retaining the native anchor tip checks.
+func AnchoredLedgerSHAWithRawAnchorOperations(raw RawAnchorOperations, repo, missionID string) (string, error) {
+	return anchoredLedgerSHAWithOperations(raw.operations(), repo, missionID)
+}
+
+func anchoredLedgerSHAWithOperations(ops anchorOperations, repo, missionID string) (string, error) {
+	anchor, err := latestAnchorWithOperations(ops, repo, missionID)
 	if err != nil {
 		return "", err
 	}

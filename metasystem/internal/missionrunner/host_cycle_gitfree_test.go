@@ -324,8 +324,6 @@ func (w *hostCycleWorkspace) openRef() string {
 func hostCycleTreeRef() string { return "refs/metasystem/missions/alpha/" + hostTree }
 
 const hostCycleStateRef = "refs/metasystem/missions/alpha/state-anchors"
-const hostCycleOpenRef = "refs/metasystem/missions/alpha/turn-open-head"
-
 func (w *hostCycleWorkspace) unexpected(name string, args ...any) {
 	w.t.Fatalf("undeclared wall %s %v", name, args)
 }
