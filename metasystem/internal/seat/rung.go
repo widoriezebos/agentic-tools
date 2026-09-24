@@ -127,21 +127,22 @@ func (e *RefRefused) Error() string {
 }
 
 // refusalNamesRef decides, from git's own voice, whether a failed push was
-// refused for the ref it named or failed for the transport.
+// refused for the REF it named or failed for the transport. Only a refusal
+// that names the destination ref moves the publisher down a rung, because
+// only that one is evidence about the rung: a rejection phrased in a
+// ruleset's or a hook's own words, with no ref in it, is about the push and
+// not about the namespace, and descending on it would abandon a lawful rung
+// on the strength of a word. A transient ref lock is not a rung fault
+// either, and the next tick retries it where it stands.
 func refusalNamesRef(ref, output string) bool {
 	lowered := strings.ToLower(output)
 	for _, transport := range []string{
 		"could not read username", "authentication failed", "could not resolve host",
 		"connection timed out", "operation timed out", "timed out", "connection refused",
-		"repository not found", "permission denied (publickey)",
+		"repository not found", "permission denied (publickey)", "cannot lock ref",
 	} {
 		if strings.Contains(lowered, transport) {
 			return false
-		}
-	}
-	for _, named := range []string{"funny refname", "remote rejected", "pre-receive hook", "protected branch", "ruleset", "cannot lock ref", "non-fast-forward"} {
-		if strings.Contains(lowered, named) {
-			return true
 		}
 	}
 	return strings.Contains(output, ref)

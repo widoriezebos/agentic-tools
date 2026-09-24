@@ -240,7 +240,7 @@ func TestGitClassifiesARefusalThatNamesTheRefAgainstOneThatDoesNot(t *testing.T)
 	named := []string{
 		"remote: error: refusing to create funny refname 'refs/metasystem/presence/m1e'",
 		"! [remote rejected] m1e -> refs/metasystem/presence/m1e (pre-receive hook declined)",
-		"remote: error: GH013: Repository rule violations found; ruleset says no",
+		"remote: error: GH013: rule violations found for refs/metasystem/presence/m1e; ruleset says no",
 		"error: failed to push some refs; refs/metasystem/presence/m1e was rejected",
 	}
 	for _, output := range named {
@@ -253,10 +253,15 @@ func TestGitClassifiesARefusalThatNamesTheRefAgainstOneThatDoesNot(t *testing.T)
 		"ssh: connect to host example.invalid port 22: Operation timed out",
 		"fatal: Authentication failed for 'https://example.invalid/'",
 		"ssh: Could not resolve hostname example.invalid",
+		// Nothing below names the destination ref, so nothing below is
+		// evidence about the rung, however refusing the words sound.
+		"remote: error: GH013: Repository rule violations found; ruleset says no",
+		"! [remote rejected] (pre-receive hook declined)",
+		"error: cannot lock ref 'refs/metasystem/presence/m1e': is at 0000 but expected 1111",
 	}
 	for _, output := range transport {
 		if refusalNamesRef(ref, output) {
-			t.Errorf("a transport failure read as a ref refusal: %q", output)
+			t.Errorf("a failure that is not about the rung read as a ref refusal: %q", output)
 		}
 	}
 }
