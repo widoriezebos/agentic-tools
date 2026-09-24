@@ -36,6 +36,8 @@ type landingRepository struct {
 	tree        func(dir string) (string, error)
 	exists      func(repo, snapshot, path string) error
 	filterExact func(repo, tree string, paths []string) (string, error)
+	ancestor    func(repo, ancestor, descendant string) error
+	firstParent func(repo, from, to string) ([]byte, error)
 	trailers    func(repo, commit string) ([]byte, error)
 	contracts   contractgit.CommitAccess
 	projection  landing.ProjectionAccess
@@ -46,6 +48,7 @@ func (r landingRepository) complete() bool {
 		r.head != nil && r.index != nil && r.entry != nil && r.patch != nil &&
 		r.apply != nil && r.transition != nil && r.message != nil && r.stage != nil &&
 		r.commit != nil && r.tree != nil && r.exists != nil && r.filterExact != nil &&
+		r.ancestor != nil && r.firstParent != nil &&
 		r.trailers != nil && r.contracts != nil && r.projection != nil
 }
 
@@ -128,6 +131,13 @@ func gitLandingRepository() landingRepository {
 		},
 		filterExact: func(repo, tree string, paths []string) (string, error) {
 			return (gittree.Workspace{Dir: repo}).FilterTree(tree, paths)
+		},
+		ancestor: func(repo, ancestor, descendant string) error {
+			_, err := gitOutput(repo, "merge-base", "--is-ancestor", ancestor, descendant)
+			return err
+		},
+		firstParent: func(repo, from, to string) ([]byte, error) {
+			return gitOutput(repo, "rev-list", "--first-parent", "--reverse", from+".."+to)
 		},
 		trailers: func(repo, commit string) ([]byte, error) {
 			return gitOutput(repo, "show", "-s", "--format=%B", commit)

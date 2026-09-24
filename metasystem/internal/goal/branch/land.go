@@ -526,26 +526,26 @@ func appendReceiptRow(worktree, goalID, lastUnit, attempt, stamp string) error {
 	return closeErr
 }
 
-func redProofChecked(repo, branchTip, goalID string, proof LandingProof) bool {
+func redProofChecked(r landingRepository, repo, branchTip, goalID string, proof LandingProof) bool {
 	if proof.CanaryRun == "" || !hex40(proof.CanaryTip) || proof.Fix == "" {
 		return false
 	}
-	fix, err := KindOf(repo, proof.Fix, goalID)
+	fix, err := r.reads.Kind(repo, proof.Fix, goalID)
 	if err != nil || fix.Kind != Unit {
 		return false
 	}
-	if _, err := gitOutput(repo, "merge-base", "--is-ancestor", proof.Fix, proof.CanaryTip); err != nil {
+	if err := r.ancestor(repo, proof.Fix, proof.CanaryTip); err != nil {
 		return false
 	}
 	if proof.CanaryTip == branchTip {
 		return true
 	}
-	out, err := gitOutput(repo, "rev-list", "--first-parent", "--reverse", proof.CanaryTip+".."+branchTip)
+	out, err := r.firstParent(repo, proof.CanaryTip, branchTip)
 	if err != nil {
 		return false
 	}
 	for _, commit := range strings.Fields(string(out)) {
-		kind, err := KindOf(repo, commit, goalID)
+		kind, err := r.reads.Kind(repo, commit, goalID)
 		if err != nil || kind.Kind == Unit {
 			return false
 		}
@@ -805,7 +805,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	for _, proof := range proofs {
 		proofIdentity := proof.RetryIdentity
 		if proofIdentity == "" {
-			proofIdentity, err = landingRetryIdentity(req.Repo, proof.Candidate, req.GoalID)
+			proofIdentity, err = landingRetryIdentityWith(r, req.Repo, proof.Candidate, req.GoalID)
 			if err != nil {
 				return LandResult{}, err
 			}
@@ -816,7 +816,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	}
 	if len(proofs) != 0 {
 		last := proofs[len(proofs)-1]
-		if last.Verdict == "red" && !redProofChecked(req.Repo, req.BranchTip, req.GoalID, last) {
+		if last.Verdict == "red" && !redProofChecked(r, req.Repo, req.BranchTip, req.GoalID, last) {
 			return LandResult{}, operationRefusal(LandUncheckedCode, "proof %d is red without a clean canary on the fixed branch tip", last.Number)
 		}
 	}

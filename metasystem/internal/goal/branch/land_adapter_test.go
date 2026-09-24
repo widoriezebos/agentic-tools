@@ -110,5 +110,84 @@ func TestPrepareLandingGitAdapter(t *testing.T) {
 				t.Fatalf("record draft lacks %s: %s", value, draft)
 			}
 		}
+		t.Run("retry_identity_transfer", func(t *testing.T) {
+			if result.RetryIdentity == "" {
+				t.Fatal("prepared landing has no retry identity")
+			}
+			git(t, f.root, "push", "-q", "origin", ":refs/heads/landing/goal-a")
+			proof := branch.LandingProof{Number: 1, Endpoint: result.Endpoint, Candidate: result.Candidate,
+				Landing: result.Landing, RetryIdentity: result.RetryIdentity, Attempt: result.Attempt,
+				Verdict: "red", Groups: []string{"deep"}}
+			recordPath := "metasystem/records/misc/goal-a-landing.md"
+			recordBytes := []byte(branch.RenderLandingProof(proof) + "\n")
+			if err := os.MkdirAll(filepath.Join(f.root, "metasystem/records/misc"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(f.root, recordPath), recordBytes, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			git(t, f.root, "add", recordPath)
+			if _, err := branch.CommitStaged(branch.CommitRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
+				GoalID: "goal-a", OpID: "transfer-red-record", Kind: branch.Plan, CheckClaim: claimAllowed}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := branch.Push(pushRequest(f.branchFixture, "transfer-red-push")); err != nil {
+				t.Fatal(err)
+			}
+
+			clone := filepath.Join(t.TempDir(), "clone-b")
+			git(t, filepath.Dir(clone), "clone", "-q", "--no-local", f.origin, clone)
+			git(t, clone, "config", "user.name", "Clone B")
+			git(t, clone, "config", "user.email", "clone-b@example.invalid")
+			git(t, clone, "config", "goal.human.Wido", "Wido Approver <wido@example.invalid>")
+			freshTip := git(t, clone, "rev-parse", "origin/goal/goal-a")
+			if freshTip != git(t, f.root, "rev-parse", "refs/heads/goal/goal-a") {
+				t.Fatal("clone B did not receive the goal tip")
+			}
+			for _, commit := range append([]string{f.base}, f.units...) {
+				git(t, clone, "cat-file", "-e", commit+"^{commit}")
+			}
+			transferred, err := exec.Command("git", "-C", clone, "show", freshTip+":"+recordPath).Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(transferred, recordBytes) {
+				t.Fatalf("transferred record bytes = %q; want %q", transferred, recordBytes)
+			}
+			parsed, err := branch.ParseLandingRecord(transferred)
+			if err != nil || len(parsed) != 1 || parsed[0].RetryIdentity != result.RetryIdentity {
+				t.Fatalf("transferred retry identity = %+v, err=%v", parsed, err)
+			}
+			for _, object := range []string{result.Landing + "^{commit}", result.Candidate + "^{tree}"} {
+				if err := exec.Command("git", "-C", clone, "cat-file", "-e", object).Run(); err == nil {
+					t.Fatalf("old landing object %s is available in clone B", object)
+				}
+			}
+			if err := exec.Command("git", "-C", clone, "show-ref", "--verify", "--quiet", "refs/remotes/origin/landing/goal-a").Run(); err == nil {
+				t.Fatal("old landing ref is available in clone B")
+			}
+			fresh := landFixture{branchFixture: &branchFixture{root: clone, origin: f.origin, base: f.base},
+				units: append([]string(nil), f.units...), tip: freshTip}
+			fresh.projected, err = landing.ProjectWorkspaceTree(filepath.Join(clone, "metasystem"), git(t, clone, "rev-parse", freshTip+"^{tree}"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			fresh.receipt = filepath.Join(t.TempDir(), "retry.json")
+			writeLandingReceipt(t, fresh.receipt, fresh.projected, "clone-b-retry")
+			out := filepath.Join(t.TempDir(), "retry")
+			before := git(t, clone, "worktree", "list", "--porcelain")
+			_, err = branch.PrepareLanding(landRequest(t, fresh, out))
+			requireLandCode(t, err, branch.LandRetryCode)
+			requireAbsent(t, out)
+			if after := git(t, clone, "worktree", "list", "--porcelain"); after != before {
+				t.Fatalf("clone B scratch worktree remains:\n%s", after)
+			}
+			if state := git(t, clone, "status", "--short"); state != "" {
+				t.Fatalf("clone B source changed: %s", state)
+			}
+			if err := exec.Command("git", "-C", f.origin, "show-ref", "--verify", "--quiet", "refs/heads/landing/goal-a").Run(); err == nil {
+				t.Fatal("retry published a landing ref")
+			}
+		})
 	})
 }

@@ -36,26 +36,30 @@ type landingFact struct {
 }
 
 type landingFacts struct {
-	t               *testing.T
-	repo            string
-	nodes           map[string]landingFact
-	trees           map[string]map[string][]byte
-	base            string
-	events          []string
-	next            int
-	remote          string
-	scratch         string
-	scratchEndpoint string
-	scratchHead     string
-	staged          map[string][]byte
-	attributeFiles  map[string][]byte
-	messages        map[string][]byte
-	dates           map[string]string
-	stamp           string
-	composition     bool
-	lastIndex       string
-	units           []string
-	folds           [][]string
+	t                *testing.T
+	repo             string
+	nodes            map[string]landingFact
+	trees            map[string]map[string][]byte
+	base             string
+	events           []string
+	next             int
+	remote           string
+	scratch          string
+	scratchEndpoint  string
+	scratchHead      string
+	staged           map[string][]byte
+	attributeFiles   map[string][]byte
+	messages         map[string][]byte
+	dates            map[string]string
+	stamp            string
+	composition      bool
+	lastIndex        string
+	units            []string
+	folds            [][]string
+	ancestorError    error
+	firstParentError error
+	kindError        error
+	kindErrorAt      string
 }
 
 func newLandingFacts(t *testing.T, baseFiles map[string]string) *landingFacts {
@@ -293,7 +297,16 @@ func (f *landingFacts) Range(repo, endpoint, tip, goal string) ([]Commit, error)
 func (f *landingFacts) Kind(repo, commit, goal string) (KindInfo, error) {
 	f.requireRepo(repo, goal)
 	f.call("kind:" + commit)
-	node := f.nodes[commit]
+	if f.kindError != nil && (f.kindErrorAt == "" || f.kindErrorAt == commit) {
+		return KindInfo{}, f.kindError
+	}
+	node, ok := f.nodes[commit]
+	if !ok {
+		return KindInfo{}, fmt.Errorf("unknown commit %s", commit)
+	}
+	if node.kind == Unit || node.kind == Plan {
+		return KindInfo{Kind: node.kind, Unit: node.unit, CommitID: commit}, nil
+	}
 	for id := node.parent; id != ""; id = f.nodes[id].parent {
 		if f.nodes[id].kind == Unit && f.nodes[id].unit == node.unit {
 			return KindInfo{Kind: Read, Unit: node.unit, Units: strings.Split(node.unit, "+"), CommitID: id}, nil
@@ -463,6 +476,51 @@ func (f *landingFacts) repository() landingRepository {
 		tree:        func(dir string) (string, error) { f.call("tree"); return f.indexTree(dir) },
 		exists:      f.exists,
 		filterExact: func(repo, tree string, paths []string) (string, error) { return f.filter(repo, tree, paths, false) },
+		ancestor: func(repo, ancestor, descendant string) error {
+			f.requireRepo(repo, "goal-a")
+			f.call("ancestor:" + ancestor + ":" + descendant)
+			if f.ancestorError != nil {
+				return f.ancestorError
+			}
+			if _, ok := f.nodes[ancestor]; !ok {
+				return fmt.Errorf("unknown ancestor %s", ancestor)
+			}
+			for id := descendant; id != ""; id = f.nodes[id].parent {
+				if _, ok := f.nodes[id]; !ok {
+					return fmt.Errorf("unknown descendant %s", id)
+				}
+				if id == ancestor {
+					return nil
+				}
+			}
+			return fmt.Errorf("%s is not an ancestor of %s", ancestor, descendant)
+		},
+		firstParent: func(repo, from, to string) ([]byte, error) {
+			f.requireRepo(repo, "goal-a")
+			f.call("first-parent:" + from + ":" + to)
+			if f.firstParentError != nil {
+				return nil, f.firstParentError
+			}
+			if _, ok := f.nodes[from]; !ok {
+				return nil, fmt.Errorf("unknown range start %s", from)
+			}
+			if _, ok := f.nodes[to]; !ok {
+				return nil, fmt.Errorf("unknown range end %s", to)
+			}
+			excluded := map[string]bool{}
+			for id := from; id != ""; id = f.nodes[id].parent {
+				excluded[id] = true
+			}
+			var reverse []string
+			for id := to; id != "" && !excluded[id]; id = f.nodes[id].parent {
+				reverse = append(reverse, id)
+			}
+			var out strings.Builder
+			for i := len(reverse) - 1; i >= 0; i-- {
+				fmt.Fprintln(&out, reverse[i])
+			}
+			return []byte(out.String()), nil
+		},
 		trailers: func(repo, commit string) ([]byte, error) {
 			f.call("trailers")
 			return append([]byte(nil), f.messages[commit]...), nil
@@ -776,7 +834,9 @@ func (f *landingFacts) filter(repo, tree string, paths []string, prefixes bool) 
 		f.call("filter-exact")
 	}
 	if _, known := f.trees[tree]; !known {
-		return "", fmt.Errorf("unknown tree %s", tree)
+		if _, known := f.nodes[tree]; !known {
+			return "", fmt.Errorf("unknown tree or commit %s", tree)
+		}
 	}
 	files := cloneFiles(f.snapshot(tree))
 	for path := range files {
@@ -1022,6 +1082,75 @@ func (f *landingFacts) expectSuccess(tip string, count int) {
 	f.expect("tree", "head")
 	f.expectProjection()
 	f.expect("exists", "filter-exact", "push", "close")
+}
+
+func (f *landingFacts) expectRetry(tip string, count int, proof LandingProof, canary bool, push bool) {
+	f.expectPending(tip, count)
+	f.expectPass(count)
+	f.expect("tree", "head")
+	f.expectProjection()
+	f.expect("exists", "file:"+tip+":"+landingRecordPath("goal-a"), "filter-exact")
+	if proof.RetryIdentity == "" {
+		f.expect("filter-exact")
+	}
+	if canary {
+		f.expect("kind:" + proof.Fix)
+		f.expect("ancestor:" + proof.Fix + ":" + proof.CanaryTip)
+		if proof.CanaryTip != tip {
+			f.expect("first-parent:"+proof.CanaryTip+":"+tip, "kind:"+tip)
+		}
+	}
+	if push {
+		f.expect("push")
+	}
+	f.expect("close")
+}
+
+func (f *landingFacts) assertRetryRefusal(out string, err error, code, tip, remote string) {
+	f.t.Helper()
+	requireLandingRefusal(f.t, err, code)
+	f.consumed()
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		f.t.Fatalf("refusal output exists: %v", err)
+	}
+	if f.remote != remote {
+		f.t.Fatalf("refusal moved landing ref: %s to %s", remote, f.remote)
+	}
+	if got := f.readFiles(f.repo); !reflect.DeepEqual(got, f.nodes[tip].files) {
+		f.t.Fatal("refusal changed source snapshot")
+	}
+	if f.scratch != "" {
+		if _, err := os.Stat(f.scratch); !os.IsNotExist(err) {
+			f.t.Fatalf("scratch remains: %v", err)
+		}
+	}
+}
+
+func (f *landingFacts) record(parent string, proof LandingProof) string {
+	f.t.Helper()
+	tip := f.plan(parent, landingRecordPath("goal-a"), RenderLandingProof(proof)+"\n")
+	f.writeFiles(f.repo, f.nodes[tip].files)
+	return tip
+}
+
+func (f *landingFacts) retryReceipt(tip, attempt string) string {
+	f.t.Helper()
+	path := filepath.Join(f.t.TempDir(), "receipt.json")
+	f.writeReceipt(path, f.projected(f.nodes[tip].tree), attempt)
+	return path
+}
+
+func (f *landingFacts) assertLanding(result LandResult, out string, number int) {
+	f.t.Helper()
+	if result.ProofNumber != number || result.RetryIdentity == "" || f.remote != result.Landing || f.nodes[result.Landing].tree != result.Candidate {
+		f.t.Fatalf("landing result = %+v", result)
+	}
+	if _, err := os.Stat(filepath.Join(out, "record-draft")); err != nil {
+		f.t.Fatalf("landing artifact: %v", err)
+	}
+	if _, err := os.Stat(f.scratch); !os.IsNotExist(err) {
+		f.t.Fatalf("scratch remains: %v", err)
+	}
 }
 
 func (f *landingFacts) writeReceipt(path, tree, attempt string) {
@@ -1539,4 +1668,225 @@ func TestGoalLandingKeepsBuildUnitList(t *testing.T) {
 	if seriesErr != nil || len(series) != 1 || series[0].Units != "5+6" || series[0].Actual != series[0].Expected {
 		t.Fatalf("multi-unit series=%+v err=%v", series, seriesErr)
 	}
+}
+
+func TestGoalLandingPreimageRetryAndCanaryFence(t *testing.T) {
+	t.Parallel()
+	t.Run("endpoint preimage", func(t *testing.T) {
+		t.Parallel()
+		f, tip, _ := newCompositionFacts(t)
+		endpoint := f.unit(f.base, "endpoint", "metasystem/one.go", "endpoint owns this path\n")
+		out := filepath.Join(t.TempDir(), "preimage")
+		receipt := f.retryReceipt(tip, "attempt-deep")
+		f.expectStatus(endpoint, tip)
+		f.expect("remote", "open:"+endpoint, "reset:"+endpoint, "head", "index", "raw:"+f.folds[0][0], "entry:metasystem/plans/goal-a.md")
+		f.expectApply()
+		fold := f.folds[0][1]
+		f.expect("index", "raw:"+fold)
+		entries, parseErr := parseRawEntries(fold, f.nodes[fold].raw)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		for _, entry := range entries {
+			f.expect("entry:" + entry.Path)
+		}
+		f.expectApply()
+		f.expect("index", "raw:"+f.units[0], "entry:metasystem/one.go", "close")
+		_, err := prepareLanding(f.request(endpoint, tip, out, receipt), f.repository())
+		f.assertRetryRefusal(out, err, UnitRereadCode, tip, "")
+	})
+
+	t.Run("recorded red candidate", func(t *testing.T) {
+		t.Parallel()
+		f, tip, projected := newCompositionFacts(t)
+		receipt := filepath.Join(t.TempDir(), "receipt.json")
+		f.writeReceipt(receipt, projected, "attempt-deep")
+		firstOut := filepath.Join(t.TempDir(), "first")
+		f.expectSuccess(tip, 3)
+		first, err := prepareLanding(f.request(f.base, tip, firstOut, receipt), f.repository())
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.consumed()
+		f.assertLanding(first, firstOut, 1)
+		proof := LandingProof{Number: 1, Endpoint: first.Endpoint, Candidate: first.Candidate,
+			Landing: first.Landing, Attempt: first.Attempt, Verdict: "red", Groups: []string{"deep"}}
+		tip = f.record(tip, proof)
+		f.folds[2] = append(f.folds[2], tip)
+		receipt = f.retryReceipt(tip, "attempt-red-rerun")
+		out := filepath.Join(t.TempDir(), "retry")
+		remote := f.remote
+		f.expectRetry(tip, 3, proof, false, false)
+		_, err = prepareLanding(f.request(f.base, tip, out, receipt), f.repository())
+		f.assertRetryRefusal(out, err, LandRetryCode, tip, remote)
+	})
+
+	t.Run("red proof needs clean canary", func(t *testing.T) {
+		t.Parallel()
+		f, tip, _ := newCompositionFacts(t)
+		proof := LandingProof{Number: 1, Endpoint: f.base, Candidate: f.base, Landing: f.base,
+			Attempt: "old", Verdict: "red", Groups: []string{"deep"}}
+		tip = f.record(tip, proof)
+		f.folds[2] = append(f.folds[2], tip)
+		receipt := f.retryReceipt(tip, "attempt-after-red")
+		uncheckedOut := filepath.Join(t.TempDir(), "unchecked")
+		f.expectRetry(tip, 3, proof, false, false)
+		_, err := prepareLanding(f.request(f.base, tip, uncheckedOut, receipt), f.repository())
+		f.assertRetryRefusal(uncheckedOut, err, LandUncheckedCode, tip, "")
+
+		proof.CanaryRun, proof.CanaryTip, proof.Fix = "canary-clean", tip, f.units[2]
+		tip = f.record(tip, proof)
+		f.folds[2] = append(f.folds[2], tip)
+		receipt = f.retryReceipt(tip, "attempt-after-canary")
+		checkedOut := filepath.Join(t.TempDir(), "checked")
+		f.expectRetry(tip, 3, proof, true, true)
+		result, err := prepareLanding(f.request(f.base, tip, checkedOut, receipt), f.repository())
+		if err != nil || result.ProofNumber != 2 {
+			t.Fatalf("checked landing = %+v err=%v", result, err)
+		}
+		f.consumed()
+		f.assertLanding(result, checkedOut, 2)
+
+		for _, row := range []struct {
+			name, fix, canary              string
+			kindErr, ancestorErr, rangeErr error
+			kindErrorAt                    string
+			want                           bool
+		}{
+			{name: "wrong fix kind", fix: tip, canary: tip},
+			{name: "failed ancestry", fix: f.units[2], canary: f.base},
+			{name: "kind error", fix: f.units[2], canary: tip, kindErr: errors.New("kind unavailable")},
+			{name: "ancestor error", fix: f.units[2], canary: tip, ancestorErr: errors.New("ancestor unavailable")},
+			{name: "range error", fix: f.units[2], canary: f.units[2], rangeErr: errors.New("range unavailable")},
+			{name: "range classification error", fix: f.units[2], canary: proof.CanaryTip, kindErr: errors.New("plan kind unavailable"), kindErrorAt: tip},
+			{name: "same tip", fix: f.units[2], canary: tip, want: true},
+		} {
+			p := proof
+			p.Fix, p.CanaryTip = row.fix, row.canary
+			f.kindError, f.kindErrorAt, f.ancestorError, f.firstParentError = row.kindErr, row.kindErrorAt, row.ancestorErr, row.rangeErr
+			f.expect("kind:" + p.Fix)
+			if (row.kindErr == nil || row.kindErrorAt != "") && row.fix != tip {
+				f.expect("ancestor:" + p.Fix + ":" + p.CanaryTip)
+				if row.ancestorErr == nil && row.canary != f.base && row.canary != tip {
+					f.expect("first-parent:" + p.CanaryTip + ":" + tip)
+					if row.kindErrorAt != "" {
+						f.expect("kind:" + tip)
+					}
+				}
+			}
+			if got := redProofChecked(f.repository(), f.repo, tip, "goal-a", p); got != row.want {
+				t.Fatalf("%s = %t, want %t", row.name, got, row.want)
+			}
+			f.consumed()
+		}
+		f.kindError, f.kindErrorAt, f.ancestorError, f.firstParentError = nil, "", nil, nil
+		repository := f.repository()
+		f.expect("first-parent:" + tip + ":" + tip)
+		if empty, err := repository.firstParent(f.repo, tip, tip); err != nil || len(empty) != 0 {
+			t.Fatalf("empty first-parent range = %q, err=%v", empty, err)
+		}
+		f.consumed()
+		sibling := f.plan(f.base, "metasystem/plans/sibling.md", "sibling\n")
+		f.expect("first-parent:" + sibling + ":" + tip)
+		divergent, err := repository.firstParent(f.repo, sibling, tip)
+		var want strings.Builder
+		for _, node := range f.chain(f.base, tip) {
+			fmt.Fprintln(&want, node.id)
+		}
+		if err != nil || string(divergent) != want.String() {
+			t.Fatalf("divergent first-parent range = %q, err=%v; want %q", divergent, err, want.String())
+		}
+		f.consumed()
+		unitAfter := f.unit(tip, "late", "metasystem/late.go", "late\n")
+		p := proof
+		p.CanaryTip = tip
+		f.expect("kind:"+p.Fix, "ancestor:"+p.Fix+":"+p.CanaryTip, "first-parent:"+p.CanaryTip+":"+unitAfter, "kind:"+unitAfter)
+		if redProofChecked(f.repository(), f.repo, unitAfter, "goal-a", p) {
+			t.Fatal("unit after canary was accepted")
+		}
+		f.consumed()
+	})
+}
+
+func TestGoalLandingRetryIdentitySurvivesASecondClone(t *testing.T) {
+	t.Parallel()
+	f, tip, projected := newCompositionFacts(t)
+	receipt := filepath.Join(t.TempDir(), "receipt.json")
+	f.writeReceipt(receipt, projected, "attempt-deep")
+	firstOut := filepath.Join(t.TempDir(), "first")
+	f.expectSuccess(tip, 3)
+	first, err := prepareLanding(f.request(f.base, tip, firstOut, receipt), f.repository())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.consumed()
+	f.assertLanding(first, firstOut, 1)
+	if first.RetryIdentity == "" {
+		t.Fatal("prepared landing has no persisted retry identity")
+	}
+	proof := LandingProof{Number: 1, Endpoint: first.Endpoint, Candidate: first.Candidate, Landing: first.Landing,
+		RetryIdentity: first.RetryIdentity, Attempt: first.Attempt, Verdict: "red", Groups: []string{"deep"}}
+	tip = f.record(tip, proof)
+	f.folds[2] = append(f.folds[2], tip)
+	f.remote = ""
+
+	fresh := newLandingFacts(t, map[string]string{"base.txt": "base", "metasystem/memory/receipts.log": "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n"})
+	fresh.composition, fresh.stamp = true, f.stamp
+	for _, node := range f.chain(f.base, tip) {
+		fresh.add(node.parent, string(node.kind), node.unit, node.files)
+	}
+	fresh.units = append([]string(nil), f.units...)
+	for _, folds := range f.folds {
+		fresh.folds = append(fresh.folds, append([]string(nil), folds...))
+	}
+	fresh.writeFiles(fresh.repo, fresh.nodes[tip].files)
+	if _, ok := fresh.nodes[first.Landing]; ok {
+		t.Fatal("old landing object reached fresh graph")
+	}
+	if _, ok := fresh.trees[first.Candidate]; ok {
+		t.Fatal("old candidate object reached fresh graph")
+	}
+	receipt = fresh.retryReceipt(tip, "clone-b-retry")
+	out := filepath.Join(t.TempDir(), "retry")
+	fresh.expectRetry(tip, 3, proof, false, false)
+	_, err = prepareLanding(fresh.request(fresh.base, tip, out, receipt), fresh.repository())
+	fresh.assertRetryRefusal(out, err, LandRetryCode, tip, "")
+
+	legacy := proof
+	legacy.RetryIdentity = ""
+	legacy.Candidate = first.Candidate
+	legacyTip := fresh.record(tip, legacy)
+	fresh.folds[2] = append(fresh.folds[2], legacyTip)
+	receipt = fresh.retryReceipt(legacyTip, "clone-b-legacy")
+	fresh.expectRetry(legacyTip, 3, legacy, false, false)
+	legacyOut := filepath.Join(t.TempDir(), "legacy")
+	_, err = prepareLanding(fresh.request(fresh.base, legacyTip, legacyOut, receipt), fresh.repository())
+	if err == nil || !strings.Contains(err.Error(), "unknown tree") {
+		t.Fatalf("missing legacy candidate = %v", err)
+	}
+	fresh.consumed()
+	if _, err := os.Stat(legacyOut); !os.IsNotExist(err) {
+		t.Fatalf("legacy refusal output exists: %v", err)
+	}
+	if _, err := os.Stat(fresh.scratch); !os.IsNotExist(err) {
+		t.Fatalf("legacy refusal scratch remains: %v", err)
+	}
+
+	fix := fresh.unit(tip, "land-fix-1", "metasystem/fix.go", "fixed\n")
+	fixRead := fresh.read(fix, fix, "land-fix-1")
+	fresh.units = append(fresh.units, fix)
+	fresh.folds[2] = fresh.folds[2][:2]
+	fresh.folds = append(fresh.folds, []string{f.folds[2][2], tip, fixRead})
+	proof.CanaryRun, proof.CanaryTip, proof.Fix = "clone-b-canary", fixRead, fix
+	fixedTip := fresh.record(fixRead, proof)
+	fresh.folds[3] = append(fresh.folds[3], fixedTip)
+	receipt = fresh.retryReceipt(fixedTip, "clone-b-fixed")
+	fixedOut := filepath.Join(t.TempDir(), "fixed")
+	fresh.expectRetry(fixedTip, 4, proof, true, true)
+	result, err := prepareLanding(fresh.request(fresh.base, fixedTip, fixedOut, receipt), fresh.repository())
+	if err != nil || result.Landing == first.Landing || result.ProofNumber != 2 {
+		t.Fatalf("second clone fixed landing=%+v err=%v", result, err)
+	}
+	fresh.consumed()
+	fresh.assertLanding(result, fixedOut, 2)
 }

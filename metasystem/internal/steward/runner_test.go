@@ -230,7 +230,7 @@ func TestSecondRunnerRefusesBesideALiveOne(t *testing.T) {
 	}
 	secondDeps := runnerLoopDependencies{
 		Tick: repository.runnerTick(), DeliverPending: runnerPendingDelivery(root, "true"),
-		Now: time.Now, Sleep: time.Sleep,
+		Now: time.Now, Sleep: func(time.Duration) { t.Fatal("second runner waited instead of refusing") },
 		AfterRecordPublished: func() { t.Error("second runner published a record") },
 	}
 	if err := runLoopWithDependencies(root, census, nil, time.Hour, TickConfig{}, secondDeps); err == nil {
@@ -268,7 +268,7 @@ func TestArmRefusesWithoutANotifier(t *testing.T) {
 }
 
 func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
-	root := reviveRepo(t) // notify-command configured
+	root := newProcessGitFixture(t)
 	reapStewardRunnerFixture(t, root)
 	bin, err := filepath.Abs("../../bin/metasystem")
 	if err != nil {
@@ -321,7 +321,7 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 }
 
 func TestKilledStewardIsRestoredByOneWatcherRepairPass(t *testing.T) {
-	root := reviveRepo(t)
+	root := newProcessGitFixture(t)
 	reapStewardRunnerFixture(t, root)
 	bin, err := filepath.Abs("../../bin/metasystem")
 	if err != nil {
@@ -394,6 +394,7 @@ func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bin = canonicalPath(bin)
 	now := time.Now()
 	digest, err := installDigest(bin)
 	if err != nil {
@@ -458,7 +459,7 @@ func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
 }
 
 func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
-	root := reviveRepo(t)
+	root := newProcessGitFixture(t)
 	reapStewardRunnerFixture(t, root)
 	bin, err := filepath.Abs("../../bin/metasystem")
 	if err != nil {

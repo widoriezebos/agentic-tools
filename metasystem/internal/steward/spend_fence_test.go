@@ -16,6 +16,9 @@ import (
 var spendFenceNow = time.Date(2026, 9, 2, 20, 0, 0, 0, time.UTC)
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == processGitHelperArg {
+		os.Exit(runProcessGitHelper(os.Args[2:]))
+	}
 	declarations := []testenv.Declaration{}
 	if os.Getenv("METASYSTEM_STEWARD_TEST_CANDIDATE_ENGINE") == "1" {
 		declarations = append(declarations, testenv.Declare("METASYSTEM_BIN"))
