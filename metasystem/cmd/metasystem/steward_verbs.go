@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -611,6 +612,9 @@ func runStewardRevive(args []string) int {
 func runStewardRun(args []string) int {
 	flags := flag.NewFlagSet("steward run", flag.ContinueOnError)
 	repo := pathFlag(flags, "repo", "", "checkout root")
+	// The arming caller's handoff. The runner keeps the value in memory and
+	// reports it on this machine's presence record; nothing persists it.
+	lineage := flags.String("lineage", "", "the session lineage this runner was armed under (\"no-lease\" when there was none)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -630,6 +634,7 @@ func runStewardRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward run: fixture clock:", clockErr)
 		return 2
 	}
+	tickConfig.ArmedLineage = *lineage
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
 		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
@@ -702,12 +707,13 @@ func runStewardArm(args []string) int {
 		return 1
 	}
 	var msg string
+	lineage := armingLineage(*repo)
 	if *temporaryWord != "" {
-		msg, err = steward.ArmTemporary(*repo, bin, *temporaryWord, *reviewBy)
+		msg, err = steward.ArmTemporaryWithLineage(*repo, bin, *temporaryWord, *reviewBy, lineage)
 	} else if fixtureEnrollment {
-		msg, err = steward.ArmFixture(*repo, bin)
+		msg, err = steward.ArmFixtureWithLineage(*repo, bin, lineage)
 	} else {
-		msg, err = steward.Arm(*repo, bin)
+		msg, err = steward.ArmWithLineage(*repo, bin, lineage)
 	}
 	if err != nil {
 		var stopped *steward.StoppedError
@@ -926,4 +932,16 @@ func runStewardStatus(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// armingLineage reads the lineage of the session that holds this checkout,
+// which the arming caller hands to the runner it starts. A checkout with no
+// lease is the literal no-lease: a fresh machine armed before its first
+// session is an ordinary state, not a fault.
+func armingLineage(repo string) string {
+	holder, err := lease.CurrentHolder(repo)
+	if err != nil || holder.OwnerLineage == "" {
+		return seat.NoLease
+	}
+	return holder.OwnerLineage
 }

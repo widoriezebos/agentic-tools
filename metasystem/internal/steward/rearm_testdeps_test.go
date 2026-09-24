@@ -178,7 +178,7 @@ func rearmHumanArm(t *testing.T, root, binary string, replace bool, word, review
 	if word != "" {
 		mintedBy = "human-word"
 	}
-	outcome, err := armWithRearmDeps(root, binary, replace, false, false,
+	outcome, err := armWithRearmDeps(root, binary, replace, false, false, "",
 		humanMintDecision(mintedBy, word, reviewBy, enrollment), rearmTestDeps(t))
 	return outcome.Message, err
 }

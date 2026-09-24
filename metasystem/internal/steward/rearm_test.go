@@ -180,7 +180,7 @@ func newRearmBed(t *testing.T, startRunner bool) rearmBed {
 	buildFakeRunner(t, engine, first)
 	buildFakeRunner(t, replacement, second)
 	if startRunner {
-		outcome, err := armWithRearmDeps(root, engine, false, false, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal), rearmTestDeps(t))
+		outcome, err := armWithRearmDeps(root, engine, false, false, false, "", humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal), rearmTestDeps(t))
 		if message := outcome.Message; err != nil || !strings.Contains(message, "armed") {
 			t.Fatalf("initial arm: %q %v", message, err)
 		}
@@ -915,7 +915,7 @@ func TestIdentityPublicationKeepsAndClearsDurabilityDoubt(t *testing.T) {
 	if _, err := os.Stat(identityDurabilityPendingPath(path)); err != nil {
 		t.Fatalf("a verifier removed a marker owned by the arm path: %v", err)
 	}
-	_, armErr := armWithRearmDeps(root, "/bin/true", false, false, false,
+	_, armErr := armWithRearmDeps(root, "/bin/true", false, false, false, "",
 		func(_ InstallIdentity, priorErr error, _ enrolledBytes) (mintPlan, error) {
 			return mintPlan{}, priorErr
 		}, rearmTestDeps(t))
@@ -1192,7 +1192,7 @@ func TestHumanArmBesideALiveLegacyRunnerNamesRestart(t *testing.T) {
 		pinned.Close()
 		t.Fatal(err)
 	}
-	if _, err := launchRunner(bed.root, pinned); err != nil {
+	if _, err := launchRunner(bed.root, pinned, ""); err != nil {
 		pinned.Close()
 		t.Fatal(err)
 	}

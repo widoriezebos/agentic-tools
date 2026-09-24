@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
@@ -104,6 +105,24 @@ func TickSeconds(repoRoot string) int {
 	return 600
 }
 
+// runnerContext composes what the tick needs to publish this machine's
+// presence: the enrolled installation's identity, the running engine's own
+// build stamp, the lineage the arming caller handed to steward run, and this
+// runner's own cadence. An unreadable enrollment leaves generation zero,
+// which the component records as an unarmed tick rather than publishing.
+func runnerContext(repoRoot, lineage string) *seat.RunnerContext {
+	resident := &seat.RunnerContext{ArmedLineage: lineage, TickSeconds: TickSeconds(repoRoot)}
+	if resident.ArmedLineage == "" {
+		resident.ArmedLineage = seat.NoLease
+	}
+	if installed, _, err := installedEnrollment(repoRoot); err == nil {
+		resident.RepoIdentity = installed.RepoIdentity
+		resident.Generation = installed.Generation
+		resident.Engine = installed.EngineBuild
+	}
+	return resident
+}
+
 // RunLoop is the runner's body: acquire the per-repository lock
 // (refusing beside a live runner), then tick until the stop file
 // appears. Each pass reaps, decides, drives any lawful revival, and then
@@ -178,6 +197,10 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	if err := claim.Close(); err != nil {
 		return fmt.Errorf("close steward runner creation claim: %w", err)
 	}
+	// The runner context is filled HERE and nowhere else: only the resident
+	// runner knows the identity it was enrolled with and the lineage its
+	// arming caller handed it, so only the resident runner publishes presence.
+	cfg.Runner = runnerContext(top, cfg.ArmedLineage)
 
 	for {
 		if _, err := os.Stat(runnerStopPath(top)); err == nil {
@@ -237,14 +260,28 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 // repo's own binary, verify the operator is reachable, and spawn the
 // detached runner unless one already lives. Idempotent.
 func Arm(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, false, false, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
+	return ArmWithLineage(repoRoot, binaryPath, "")
+}
+
+// ArmWithLineage is Arm when the arming caller knows the session lineage it
+// holds the checkout under. The runner carries the value in memory and
+// reports it on this machine's presence record; neither RunnerRecord nor
+// InstallIdentity gains a field for it. An empty lineage is the literal
+// no-lease, which is what a fresh machine armed before its first session has.
+func ArmWithLineage(repoRoot, binaryPath, lineage string) (string, error) {
+	outcome, err := arm(repoRoot, binaryPath, false, false, false, lineage, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
 	return outcome.Message, err
 }
 
 // ArmFixture is Arm when the caller's HUMAN classification came from the
 // fixture-authority process table rather than a real terminal.
 func ArmFixture(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, false, false, true, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
+	return ArmFixtureWithLineage(repoRoot, binaryPath, "")
+}
+
+// ArmFixtureWithLineage is ArmFixture carrying the arming session's lineage.
+func ArmFixtureWithLineage(repoRoot, binaryPath, lineage string) (string, error) {
+	outcome, err := arm(repoRoot, binaryPath, false, false, true, lineage, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
 	return outcome.Message, err
 }
 
@@ -253,13 +290,18 @@ func ArmFixture(repoRoot, binaryPath string) (string, error) {
 // record itself, so the temporary state is visible to every reader until
 // a terminal re-arm mints the next generation without them.
 func ArmTemporary(repoRoot, binaryPath, humanWord, reviewBy string) (string, error) {
+	return ArmTemporaryWithLineage(repoRoot, binaryPath, humanWord, reviewBy, "")
+}
+
+// ArmTemporaryWithLineage is ArmTemporary carrying the arming session's lineage.
+func ArmTemporaryWithLineage(repoRoot, binaryPath, humanWord, reviewBy, lineage string) (string, error) {
 	if err := humanauthority.ValidateTemporaryWordPair(humanWord, reviewBy); err != nil {
 		return "", err
 	}
 	if humanWord == "" {
 		return "", fmt.Errorf("temporary steward arm requires the verbatim word and review-by date")
 	}
-	outcome, err := arm(repoRoot, binaryPath, true, false, false, humanMintDecision("human-word", humanWord, reviewBy, EnrollmentTemporaryWord))
+	outcome, err := arm(repoRoot, binaryPath, true, false, false, lineage, humanMintDecision("human-word", humanWord, reviewBy, EnrollmentTemporaryWord))
 	return outcome.Message, err
 }
 
@@ -378,7 +420,7 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 			LandedCommit: landedCommit, LandingRef: landingRef, Enrollment: prior.Enrollment,
 		}, nil
 	}
-	outcome, err := armWithRearmDeps(repoRoot, invokingBinary, true, true, false, decision, deps)
+	outcome, err := armWithRearmDeps(repoRoot, invokingBinary, true, true, false, "", decision, deps)
 	return outcome.ReArmOutcome, err
 }
 
@@ -386,13 +428,13 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 // the repair path for a process that remains alive but no longer completes
 // ticks.
 func Restart(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, true, false, false, humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
+	outcome, err := arm(repoRoot, binaryPath, true, false, false, "", humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal))
 	return outcome.Message, err
 }
 
 // RestartFixture is Restart under fixture-granted HUMAN classification.
 func RestartFixture(repoRoot, binaryPath string) (string, error) {
-	outcome, err := arm(repoRoot, binaryPath, true, false, true, humanMintDecision("human-terminal", "", "", EnrollmentFixture))
+	outcome, err := arm(repoRoot, binaryPath, true, false, true, "", humanMintDecision("human-terminal", "", "", EnrollmentFixture))
 	return outcome.Message, err
 }
 
@@ -604,7 +646,9 @@ func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock 
 			return RunnerRepairOutcome{}, err
 		}
 	}
-	replacement, err := launchRunner(top, pinned)
+	// A watcher repair relaunches without an arming caller, so the
+	// replacement runner reports no-lease until the next arm.
+	replacement, err := launchRunner(top, pinned, "")
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
@@ -643,11 +687,11 @@ func runnerExclusionWithGit(top string, allowFixture bool, gitOutput func(string
 var beforeArmLock func()
 var afterArmDecision func()
 
-func arm(repoRoot, binaryPath string, replace, machine, allowFixture bool, decide mintDecision) (armOutcome, error) {
-	return armWithRearmDeps(repoRoot, binaryPath, replace, machine, allowFixture, decide, defaultRearmResolverDeps())
+func arm(repoRoot, binaryPath string, replace, machine, allowFixture bool, lineage string, decide mintDecision) (armOutcome, error) {
+	return armWithRearmDeps(repoRoot, binaryPath, replace, machine, allowFixture, lineage, decide, defaultRearmResolverDeps())
 }
 
-func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixture bool, decide mintDecision, deps rearmResolverDeps) (armOutcome, error) {
+func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixture bool, lineage string, decide mintDecision, deps rearmResolverDeps) (armOutcome, error) {
 	outcome := armOutcome{ReArmOutcome: ReArmOutcome{Stage: StageBeforeMint}}
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -790,7 +834,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	if err := pinned.PrepareForExecution(); err != nil {
 		return outcome, err
 	}
-	record, err := launchRunner(top, pinned)
+	record, err := launchRunner(top, pinned, lineage)
 	if err != nil {
 		return outcome, err
 	}
@@ -817,13 +861,13 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	return outcome, nil
 }
 
-func launchRunner(repoRoot string, binary *EnrolledBinary) (RunnerRecord, error) {
+func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string) (RunnerRecord, error) {
 	logFile, err := os.OpenFile(runnerLogPath(repoRoot), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return RunnerRecord{}, err
 	}
 	defer logFile.Close()
-	cmd, err := binary.Command(runnerLaunchArguments(repoRoot)...)
+	cmd, err := binary.Command(runnerLaunchArguments(repoRoot, lineage)...)
 	if err != nil {
 		return RunnerRecord{}, err
 	}
@@ -850,8 +894,13 @@ func launchRunner(repoRoot string, binary *EnrolledBinary) (RunnerRecord, error)
 	return RunnerRecord{}, fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(repoRoot))
 }
 
-func runnerLaunchArguments(repoRoot string) []string {
-	return []string{"steward", "run", "--repo", repoRoot}
+// runnerLaunchArguments is the arming caller's handoff: the runner learns
+// the lineage it was armed under as an argument and keeps it in memory.
+func runnerLaunchArguments(repoRoot, lineage string) []string {
+	if lineage == "" {
+		lineage = seat.NoLease
+	}
+	return []string{"steward", "run", "--repo", repoRoot, "--lineage", lineage}
 }
 
 var runnerStopWriter = os.WriteFile

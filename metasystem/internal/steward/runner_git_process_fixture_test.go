@@ -98,6 +98,13 @@ func newProcessGitFixture(t *testing.T) string {
 	add(cwd, withRoot("rev-parse", "--show-toplevel"), root+"\n", 0)
 	add(cwd, withRoot("rev-parse", "HEAD"), processGitHead+"\n", 0)
 	add(cwd, withRoot("rev-parse", "--verify", "--quiet", "refs/metasystem/goals/accepted"), "", 1)
+	// Seat presence rides every resident tick: this fixture repository has no
+	// origin, so the presence fetch fails as Git would and the copy is empty.
+	config.Replies = append(config.Replies, processGitReply{Cwd: cwd, Args: withRoot("-c", "core.logAllRefUpdates=false", "fetch", "--no-tags", "--refmap=", "--atomic", "--prune", "origin",
+		"+refs/metasystem/presence/*:refs/metasystem/presence-copy/metasystem/*", "+refs/heads/presence/*:refs/metasystem/presence-copy/heads/*"),
+		Stderr: []byte("fatal: 'origin' does not appear to be a git repository\n"), Exit: 128})
+	add(cwd, withRoot("-c", "core.logAllRefUpdates=false", "for-each-ref", "--format=%(refname)", "refs/metasystem/presence-copy/metasystem"), "", 0)
+	add(cwd, withRoot("-c", "core.logAllRefUpdates=false", "for-each-ref", "--format=%(refname)", "refs/metasystem/presence-copy/heads"), "", 0)
 	for _, key := range []string{"goal.sync-remote", "goal.sync-branch", "metasystem.goal.machine"} {
 		add(root, []string{"config", "--get", key}, "", 1)
 	}

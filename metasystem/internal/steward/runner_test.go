@@ -82,8 +82,11 @@ func TestArmTemporaryRefusesContentFreeRemoteWord(t *testing.T) {
 }
 
 func TestRunnerLaunchArgumentsRemainCompatible(t *testing.T) {
-	if got := strings.Join(runnerLaunchArguments("/fixture/repo"), " "); got != "steward run --repo /fixture/repo" {
-		t.Fatalf("runner launch argv = %q; want the pre-change contract", got)
+	if got := strings.Join(runnerLaunchArguments("/fixture/repo", ""), " "); got != "steward run --repo /fixture/repo --lineage no-lease" {
+		t.Fatalf("runner launch argv = %q; want the pre-change contract plus the lineage handoff", got)
+	}
+	if got := strings.Join(runnerLaunchArguments("/fixture/repo", "lineage-7"), " "); got != "steward run --repo /fixture/repo --lineage lineage-7" {
+		t.Fatalf("runner launch argv = %q; want the arming caller's lineage", got)
 	}
 }
 
@@ -254,7 +257,7 @@ func TestSecondRunnerRefusesBesideALiveOne(t *testing.T) {
 func TestArmRefusesWithoutANotifier(t *testing.T) {
 	root := canonicalPath(t.TempDir())
 	deps := runnerPolicyDeps(t, root, &runnerPolicyNotify{err: os.ErrNotExist})
-	outcome, err := armWithRearmDeps(root, "/usr/bin/true", false, false, false,
+	outcome, err := armWithRearmDeps(root, "/usr/bin/true", false, false, false, "",
 		humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal), deps)
 	if err == nil || !strings.Contains(err.Error(), "no notification channel is configured") || outcome.Stage != StageBeforeMint {
 		t.Fatalf("an unreachable watchdog must refuse before minting: %+v %v", outcome, err)
@@ -638,7 +641,7 @@ func TestArmReportsARunnerThatDiedTrying(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=codex\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := armWithRearmDeps(root, "/bin/sleep", false, false, false,
+	if _, err := armWithRearmDeps(root, "/bin/sleep", false, false, false, "",
 		humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal),
 		runnerPolicyDeps(t, root, &runnerPolicyNotify{output: "true\n"})); err == nil || !strings.Contains(err.Error(), "died before guarding") {
 		t.Fatalf("a runner that cannot run is a named failure, not a claimed guard: %v", err)
@@ -666,7 +669,7 @@ func TestArmStaysOutOfFixtureWorlds(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps := runnerPolicyDeps(t, root, nil)
-	outcome, err := armWithRearmDeps(root, "/bin/sleep", false, false, false,
+	outcome, err := armWithRearmDeps(root, "/bin/sleep", false, false, false, "",
 		humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal), deps)
 	if err != nil || !strings.Contains(outcome.Message, "not armed: fake-runtimes repository") || outcome.Stage != StageBeforeMint {
 		t.Fatalf("ambient arming must stay out of fake-runtimes repositories: %+v %v", outcome, err)
