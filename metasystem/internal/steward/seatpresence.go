@@ -77,6 +77,7 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 	}
 
 	machine, enrolled := seat.Machine(repoRoot)
+	var mine *seat.Record
 	switch {
 	case !enrolled:
 		report = seatPresenceSkip(report, seat.SkipNoNickname)
@@ -85,7 +86,17 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 	case generation < 1:
 		report = seatPresenceSkip(report, seat.SkipUnarmed)
 	default:
-		report = publishSeatPresence(repoRoot, transport, fleetCopy, machine, *runner, now, report)
+		report, mine = publishSeatPresence(repoRoot, transport, fleetCopy, machine, *runner, now, report)
+	}
+	if mine != nil {
+		// This machine knows its own record before any reader fetches it, so
+		// the standings it derives report itself from what it just published
+		// rather than from the copy it read a moment earlier.
+		if fleetCopy.Records == nil {
+			fleetCopy.Records = map[string]seat.Record{}
+		}
+		fleetCopy.Records[machine] = *mine
+		delete(fleetCopy.Malformed, machine)
 	}
 	if len(problems) > 0 {
 		report.Detail = strings.TrimSpace(report.Detail + " " + strings.Join(problems, "; "))
@@ -137,17 +148,17 @@ func seatPresenceFailed(repoRoot string, state seat.PublicationState, report Sea
 
 // publishSeatPresence composes this machine's record and climbs the ladder.
 func publishSeatPresence(repoRoot string, transport seat.Git, fleetCopy seat.Copy, machine string,
-	runner seat.RunnerContext, now time.Time, report SeatPresenceReport) SeatPresenceReport {
+	runner seat.RunnerContext, now time.Time, report SeatPresenceReport) (SeatPresenceReport, *seat.Record) {
 	record, detail, err := seat.Compose(machine, runner, seat.ReadJobs(repoRoot), now)
 	if err != nil {
 		report.Outcome, report.Detail = seat.OutcomeFailed, err.Error()
-		return report
+		return report, nil
 	}
 	report.Detail = detail
 	if published, seen := fleetCopy.Records[machine]; seen {
 		if conflict := seat.Conflict(&published, record); conflict != nil {
 			report.Outcome, report.Reason = seat.OutcomeSkipped, conflict.Error()
-			return report
+			return report, nil
 		}
 	}
 	state, _, _ := seat.LoadPublicationState(repoRoot)
@@ -167,14 +178,14 @@ func publishSeatPresence(repoRoot string, transport seat.Git, fleetCopy seat.Cop
 		if result.Rung > 0 {
 			report.Rung = int(result.Rung)
 		}
-		return report
+		return report, nil
 	}
 	report.Outcome, report.Rung = seat.OutcomePublished, int(result.Rung)
 	if result.Fell {
 		report.Detail = strings.TrimSpace(report.Detail + " " + fmt.Sprintf("fell to rung %d (%s): %s",
 			result.Rung, result.Rung.Description(), strings.Join(result.Refusals, "; ")))
 	}
-	return report
+	return report, &record
 }
 
 // noticeSeatStandings compares every machine's standing with the standing

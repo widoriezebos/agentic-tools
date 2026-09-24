@@ -224,7 +224,8 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		return TickResult{}, fmt.Errorf("record seat-presence attempt: %w", err)
 	}
 	seatReport := RunSeatPresence(repoRoot, cfg.Runner, generation, cfg.now())
-	seatResult, seatOutcome, seatEvidence := ComponentOK, "PASS_COMPLETE", seatReport.Outcome
+	seatResult, seatOutcome := ComponentOK, "PASS_COMPLETE"
+	var seatEvidence string
 	switch seatReport.Outcome {
 	case seat.OutcomeSkipped:
 		seatOutcome, seatEvidence = "SKIPPED", "skipped: "+seatReport.Reason
