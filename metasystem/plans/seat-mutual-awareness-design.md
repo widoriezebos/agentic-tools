@@ -440,9 +440,30 @@ display and to flag. Whoever can push to the ledger remote can forge a
 machine's presence, exactly as they could forge its claims today; the
 remote's push permission is the boundary, unchanged. The record carries no
 token, no hostname and no free text. The push uses the credentials the
-ledger push already uses and one round trip per tick. `seat.presence-stale-min`
-is the one new configuration key, read through internal/config like the
-steward's other keys, default 30.
+ledger push already uses and one round trip per tick. Two configuration keys, read through internal/config like the steward's
+other keys: `seat.presence-stale-min`, default 30; and
+`seat.presence-namespace`, default `refs/metasystem/presence`, the ref
+prefix presence is published under and fetched from. The default is
+ordinary git: any ref under `refs/` is legal to the protocol, every
+self-hosted server (SSH, a bare repository, git daemon, Gitea, Forgejo)
+serves it, and it was proven on this fleet's own remote, github.com, on
+2026-09-24 with the exact operations of sections 3 and 4: push of a
+parentless commit, listing, fetch with `--no-tags --refmap= --atomic
+--prune`, force-update without history, deletion and pruning, all nine
+accepted. GitHub Enterprise Server runs the same server code. A host that
+admits only branches and tags (some hosted services do) is served by
+setting the key to `refs/heads/presence`: the same design under a branch
+name per machine, still one writer each, with the one caveat that a
+branch ruleset forbidding force pushes to all branches must exempt
+`presence/*`.
+
+The namespace is proven, not assumed: the first publish after arming is
+the preflight. When the remote refuses the ref (a pre-receive hook, a
+funny-ref refusal or a ruleset), the component records `failed` with the
+detail `SEAT_PRESENCE_NAMESPACE_REFUSED: <git's words>` and the health
+role's remedy names the key and the branch namespace, so an operator
+learns on the first tick, never at rollout, and fixes it with one
+configuration line and no rebuild.
 
 ## 9. Deferred, with their shape fixed so they stay small
 
@@ -547,12 +568,10 @@ enrollment. No membership and no asks until a case asks for them.
 Confidence: high that slice 1 is small, buildable and useful on its own,
 because every seam it touches is traced above and none is new: a component
 in the tick, a role in the health list, a fetch, a push, one verb. Weakest
-claims, in order. First, custom refs at the remote: git pushes and fetches
-`refs/metasystem/*` like any ref and GitHub stores them, but a remote
-policy could refuse ref namespaces outside heads and tags; the build proves
-the round trip against the real remote before the tick ships it, and the
-fallback is `refs/heads/presence/<machine>`, the same design in a different
-namespace, still one writer per branch. Second, the per-reader
+claims, in order. First, custom refs at the remote: proven on github.com on 2026-09-24
+(section 8) and standard git everywhere self-hosted; a hosted service that
+admits only branches is served by the namespace key and the preflight,
+without a rebuild. Second, the per-reader
 namespaces of section 4 are the answer to ref-lock contention within one
 clone; the build proves with two concurrent readers that neither blocks
 the other, and `seat fleet --fetch`'s cleanup of its namespace must
@@ -614,6 +633,6 @@ the tree:
 Builder clarifications folded into section 10: the ratchet limits serial
 tests, so the git adapter test is parallel; isolation rows carry owner and
 evidence; the supervision scenario goes in both lists; no-nickname stays a
-skipped outcome and only emitted errors get register rows. Not established
-by either read, and carried in section 12: the remote's acceptance of the
-namespace.
+skipped outcome and only emitted errors get register rows. What neither read could establish, the remote's acceptance of the
+namespace, was then proven on the real remote and made configuration
+(section 8).
