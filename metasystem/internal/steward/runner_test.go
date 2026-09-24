@@ -71,8 +71,11 @@ func TestArmTemporaryRefusesContentFreeRemoteWord(t *testing.T) {
 }
 
 func TestRunnerLaunchArgumentsRemainCompatible(t *testing.T) {
-	if got := strings.Join(runnerLaunchArguments("/fixture/repo"), " "); got != "steward run --repo /fixture/repo" {
-		t.Fatalf("runner launch argv = %q; want the pre-change contract", got)
+	if got := strings.Join(runnerLaunchArguments("/fixture/repo", ""), " "); got != "steward run --repo /fixture/repo --lineage no-lease" {
+		t.Fatalf("runner launch argv = %q; want the pre-change contract plus the lineage handoff", got)
+	}
+	if got := strings.Join(runnerLaunchArguments("/fixture/repo", "lineage-7"), " "); got != "steward run --repo /fixture/repo --lineage lineage-7" {
+		t.Fatalf("runner launch argv = %q; want the arming caller's lineage", got)
 	}
 }
 

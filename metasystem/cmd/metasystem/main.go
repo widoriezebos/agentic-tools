@@ -634,6 +634,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "seat",
+			summary: "the fleet's seats: who is present, what each is running",
+			verbs: []verb{
+				{"fleet", "print every machine's presence standing, this machine first", runSeatFleet},
+			},
+		},
+		{
 			name:    "steward",
 			summary: "the idle watchdog: open delegated work is never silently idle (D121)",
 			verbs: []verb{

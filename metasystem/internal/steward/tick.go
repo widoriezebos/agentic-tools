@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -32,7 +33,15 @@ type TickConfig struct {
 	MaxRevivals int
 	// Now is set only by fixture-authorized command boundaries. A zero value
 	// keeps each tick operation on the wall clock.
-	Now               time.Time
+	Now time.Time
+	// ArmedLineage is the lineage steward arm handed to steward run. Only
+	// RunLoop reads it, and only to fill Runner.
+	ArmedLineage string
+	// Runner is the resident runner's own context, filled ONLY by RunLoop
+	// from the identity it was enrolled with. A tick with no runner context
+	// publishes no presence, so a command process running the manual tick
+	// verb can never publish this machine's rollout confirmation.
+	Runner            *seat.RunnerContext
 	narrationLocation *time.Location
 }
 
@@ -75,6 +84,7 @@ type TickResult struct {
 	Health          HealthVerdict
 	GoalStops       []BreachStopReport
 	LedgerAttention LedgerAttentionReport
+	SeatPresence    SeatPresenceReport
 }
 
 // BreachStopReport is machinery history for one heal-before-notify stop pass.
@@ -205,6 +215,41 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		return TickResult{}, fmt.Errorf("record ledger-attention completion: %w", err)
 	}
 
+	// Presence rides here, after the ledger-attention completion record and
+	// before the evidence-store reads whose failure ends the tick degraded,
+	// so a torn evidence store on this machine does not make it read dead to
+	// its peers. The component owns both its fetch and its publish.
+	seatAttempt, err := beginComponentAttempt(repoRoot, "seat-presence", generation, selfExact.Ref(), cfg.now())
+	if err != nil {
+		return TickResult{}, fmt.Errorf("record seat-presence attempt: %w", err)
+	}
+	seatReport, seatEvidenceErr := RunSeatPresence(repoRoot, cfg.Runner, generation, cfg.now())
+	seatResult, seatOutcome := ComponentOK, "PASS_COMPLETE"
+	var seatEvidence string
+	switch {
+	case seatEvidenceErr != nil:
+		seatResult, seatOutcome, seatEvidence = ComponentError, "STATE_WRITE_FAILED", seatEvidenceErr.Error()
+	case seatReport.Outcome == seat.OutcomeSkipped:
+		seatOutcome, seatEvidence = "SKIPPED", "skipped: "+seatReport.Reason
+	case seatReport.Outcome == seat.OutcomeFailed:
+		seatResult, seatOutcome, seatEvidence = ComponentError, "PUBLISH_FAILED", "failed: "+seatReport.Detail
+	default:
+		seatEvidence = fmt.Sprintf("published on rung %d", seatReport.Rung)
+		if seatReport.Detail != "" {
+			seatEvidence += "; " + seatReport.Detail
+		}
+	}
+	if _, err := completeComponentAttempt(repoRoot, "seat-presence", generation, seatAttempt.AttemptSeq,
+		seatResult, seatOutcome, seatEvidence, nil, cfg.now()); err != nil {
+		return TickResult{}, fmt.Errorf("record seat-presence completion: %w", err)
+	}
+	// A component that could not write its own durable evidence follows the
+	// tick's rule for every component: the observation is not recorded, so
+	// the tick does not claim it was.
+	if seatEvidenceErr != nil {
+		return TickResult{}, fmt.Errorf("record seat-presence evidence: %w", seatEvidenceErr)
+	}
+
 	evPath := EvidencePath(repoRoot)
 	prev, err := LoadEvidence(evPath)
 	if err != nil {
@@ -246,7 +291,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	}
 	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
 		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops,
-		LedgerAttention: ledgerReport}
+		LedgerAttention: ledgerReport, SeatPresence: seatReport}
 	if err := NarrateDigest(repoRoot, prev, result, cfg.now()); err != nil {
 		return result, fmt.Errorf("write narrator digest: %w", err)
 	}

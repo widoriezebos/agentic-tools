@@ -53,6 +53,7 @@ const (
 	RoleHookFreshness     HealthRole = "hook-freshness"
 	RoleStopHookDuration  HealthRole = "stop-hook-duration"
 	RoleLedgerAttention   HealthRole = "ledger-attention"
+	RoleSeatPresence      HealthRole = "seat-presence"
 	// Keep the published role name stable for existing health consumers.
 	RoleClaimedGoalBudget   HealthRole = "claimed-goal-appetite"
 	RoleStopCapabilityEpoch HealthRole = "stop-capability-epoch"
@@ -77,6 +78,7 @@ var healthRoleOrder = []HealthRole{
 	RoleStopHookDuration,
 	RoleContext,
 	RoleLedgerAttention,
+	RoleSeatPresence,
 	RoleClaimedGoalBudget,
 	RoleStopCapabilityEpoch,
 	RoleClaimedGoalDelivery,
@@ -434,6 +436,7 @@ func evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot string, now time.Ti
 		timed(func() RoleVerdict { return checkStopHookDuration(repoRoot) }),
 		timed(func() RoleVerdict { return checkContextBudget(repoRoot, metasystemRoot, now, prober) }),
 		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
+		timed(func() RoleVerdict { return checkSeatPresence(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalBudgets(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkStopCapabilityEpoch(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalDelivery(repoRoot, now) }),
@@ -766,6 +769,11 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 		// The watcher repairs the steward process whose failed tick also stops
 		// narration. An isolated narrator failure has no separate automatic act.
 		return roleIsDead(RoleStewardRunner)
+	case RoleSeatPresence:
+		// The next tick republishes by itself, so a dead presence role must
+		// follow the ordinary consecutive-failure path rather than escalate
+		// on its first dead observation.
+		return true
 	case RoleClaimedGoalBudget, RoleStopCapabilityEpoch:
 		return !role.NoAutomaticRemedy
 	default:
