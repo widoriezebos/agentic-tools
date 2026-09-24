@@ -144,6 +144,18 @@ if ! grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root
     echo "go gate: metasystem Go source present but go.mod does not declare the metasystem module — damaged template, refusing to skip" >&2
     exit 1
   fi
+  # The project's own memory is checked in an adopted installation too, from
+  # the executable that shipped with it: the design homes, the decision home,
+  # the books and the question register are the application's, and a seat
+  # writing a design there is the seat this check exists for. Only the Go
+  # checks are inapplicable here; the record grammar is not. No executable yet
+  # is the bootstrap residual, said out loud rather than passed over silently.
+  if [[ -x "$root/bin/metasystem" ]]; then
+    "$root/bin/metasystem" project check --root "$root" \
+      || { echo "go gate: project check refused the declared memory (docs/design/design-obligation-gate.md, A design is a record)" >&2; exit 1; }
+  else
+    echo "go gate: project check skipped; this installation carries no engine binary yet" >&2
+  fi
   echo "go gate: not the metasystem source tree (adopted checkouts carry only the engine binary); skipped" >&2
   exit 0
 fi
@@ -635,6 +647,20 @@ $gate_stop_surface_out")
 fi
 if [[ "$gate_stop_surface_applicable" != 1 ]]; then
   echo "go gate: Stop decision surface audit not applicable to this tree"
+fi
+
+# The project's declared memory — the intent and doctrine books, the
+# decisions, the designs and the question register — is checked here, with the
+# executable this gate has just built rather than by a second compilation: the
+# read is milliseconds over a few hundred files. A refusal joins the static
+# reds, so a design with a duplicate id, a malformed head or a Goals line
+# naming no ledger goal blocks every delivery that consumes this gate's
+# retained proof, an unrelated code change included (the homes are declared
+# inputs of fast-static-build in testing.json, so touching one re-proves it).
+if [[ -n "$gate_build_scratch" && "$gate_hook_start_scope" == installation ]]; then
+  gate_project_check_out=$("$gate_build_scratch" project check --root "$root" 2>&1) \
+    || gate_static_reds+=("project check refused the declared memory (docs/design/design-obligation-gate.md, A design is a record):
+$gate_project_check_out")
 fi
 
 if (( ${#gate_static_reds[@]} )); then

@@ -124,7 +124,10 @@ or home each deferred item will build on. Iterating is a separate decision,
 taken after step 1 has value (R-121, 2026-09-22; the memory-system design
 that prompted it grew to 470 lines and three critique rounds before it was
 cut to 110 lines and two slices). A mechanism for a hole nobody has fallen
-into yet is not part of step 1.
+into yet is not part of step 1. Whatever the slice, the design itself is a
+record: the head it declares, the home the engine resolves for it, and the
+boundary that finds it by goal are in `docs/design/design-obligation-gate.md`
+("A design is a record").
 
 When a design divides implementation into units, a unit is one coherent
 section of the design: the files, behavior and tests that one builder produces
