@@ -1735,8 +1735,11 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			fmt.Fprintln(os.Stderr, riskErr)
 			return 2, true
 		}
+		// The open's own hand is proved whenever the command claims a person,
+		// not only when it lowers a tier: the engine decides whose open this
+		// is from the proof, and --origin human is a word anyone can type.
 		var proof *humanauthority.Proof
-		if f.tier != 0 && uint8(f.tier) < risk.DerivedTier() {
+		if claimsAHuman(f) || f.tier != 0 && uint8(f.tier) < risk.DerivedTier() {
 			proven, proofErr := proveGoalHumanAuthority("open", f, humanauthority.ProveOrTemporaryGoalAuthority)
 			if proofErr != nil {
 				fmt.Fprintln(os.Stderr, proofErr)
@@ -2014,7 +2017,46 @@ func proveEnrolledGoalHumanAuthority(root string, pid int64, reader humanauthori
 // for G. It is not a human-only verb - a seat records the edge on the goal it
 // holds, exactly as its open already does - so it takes the ordinary request
 // and lets the engine judge the actor.
+// claimsAHuman reports that this command is presenting itself as a person's
+// act. A --by alone is exactly that presentation and not the act, so a
+// command that claims one proves one: the engine reads the proof and never
+// the name, and a name that could not be proved is refused here rather than
+// being carried in as a seat with a person's word attached to it.
+func claimsAHuman(f *syncFlags) bool {
+	return f.by != "" || f.fixtureHumanAuthority || f.temporaryWord != ""
+}
+
+// provenGoalRequest assembles the request a goal verb runs under, with the
+// human proof where the command claims a person and without one otherwise.
+func provenGoalRequest(name string, f *syncFlags, prove goalAuthorityProver) (goal.VerbRequest, *humanauthority.Proof, error) {
+	if !claimsAHuman(f) {
+		request, err := syncReq(name, f.root, f.by, f.lineage)
+		return request, nil, err
+	}
+	classification, err := classifyGoalAuthorityFirst(name, f)
+	if err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	proof, err := proveGoalHumanAuthority(name, f, prove)
+	if err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	if err := resolveGoalHuman(f, proof); err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	request, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	return request, &proof, err
+}
+
 func runGoalBlock(args []string) int {
+	return runGoalBlockWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+// runGoalBlockWithAuthority writes one edge. It is not a human-only verb — a
+// seat records an edge on the goal it holds, exactly as its open already does
+// — but a --by beside it is a person's claim, and a person's claim is proved
+// before the engine sees it.
+func runGoalBlockWithAuthority(args []string, prove goalAuthorityProver) int {
 	f, ok := parseSyncFlags("block", args)
 	if !ok {
 		return 2
@@ -2027,12 +2069,19 @@ func runGoalBlock(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal block needs --id <the goal that waits> and --blocker <the goal it waits for>")
 		return 2
 	}
-	req, err := syncReq("block", f.root, f.by, f.lineage)
+	req, proof, err := provenGoalRequest("block", f, prove)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	res, runErr := goal.Block(req, f.id, f.blocker)
+	res, runErr := goal.Block(req, f.id, f.blocker, proof)
+	if runErr == nil && res.Outcome == goal.OutcomeConfirmed && proof != nil {
+		operation := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+		if recordErr := recordGoalApprovalProof(f.root, operation, "goal block", *proof); recordErr != nil {
+			fmt.Fprintln(os.Stderr, "the act landed at tip "+res.Tip+", but its authority proof did not: "+recordErr.Error()+"; do not run it again")
+			return 1
+		}
+	}
 	return printSyncResult(res, runErr)
 }
 
@@ -2058,29 +2107,7 @@ func runGoalUnblockWithAuthority(args []string, prove goalAuthorityProver) int {
 		fmt.Fprintln(os.Stderr, "goal unblock needs --id <the goal that waits> and --blocker <the goal it no longer waits for>")
 		return 2
 	}
-	var req goal.VerbRequest
-	var err error
-	var proof *humanauthority.Proof
-	if f.by != "" || f.fixtureHumanAuthority || f.temporaryWord != "" {
-		classification, classifyErr := classifyGoalAuthorityFirst("unblock", f)
-		if classifyErr != nil {
-			fmt.Fprintln(os.Stderr, classifyErr)
-			return 1
-		}
-		observed, proofErr := proveGoalHumanAuthority("unblock", f, prove)
-		if proofErr != nil {
-			fmt.Fprintln(os.Stderr, proofErr)
-			return 1
-		}
-		if err := resolveGoalHuman(f, observed); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 2
-		}
-		proof = &observed
-		req, err = syncReqClassified(f.root, f.by, f.lineage, proof, classification)
-	} else {
-		req, err = syncReq("unblock", f.root, f.by, f.lineage)
-	}
+	req, proof, err := provenGoalRequest("unblock", f, prove)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

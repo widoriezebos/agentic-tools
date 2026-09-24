@@ -404,10 +404,13 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		// Both directions are rebuilt, in the order they were named, so a
 		// replayed open carries the goals it blocks and the goals it waits
 		// for rather than half of its dependencies.
+		// A replay carries no proof, so it is a seat's hand whatever name the
+		// journal recorded — and a journaled name is refused above, so the
+		// opens that reach here are the seat's own and are judged as such.
 		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"],
-			commaValues(in.Args["blocks"]), commaValues(in.Args["blockedBy"]), uint8(tier), budget, risk, in.Args["why"], commaValues(in.Args["labels"]))
+			commaValues(in.Args["blocks"]), commaValues(in.Args["blockedBy"]), uint8(tier), budget, risk, in.Args["why"], false, commaValues(in.Args["labels"]))
 	case "block":
-		return blockRequest(r, target, in.Args["blocker"]), nil
+		return blockRequest(r, target, in.Args["blocker"], false), nil
 	case "unblock":
 		// An early unblock never reaches the mutation with a proof here: the
 		// conditional boundary below refuses it by name, and a satisfied edge

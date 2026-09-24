@@ -43,6 +43,7 @@ func TestOnlyGoalOpenTakesBlocks(t *testing.T) {
 
 // --blocker belongs to the two edge verbs, and to nothing else.
 func TestOnlyBlockAndUnblockTakeTheBlockerFlag(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for _, name := range []string{"open", "park", "unpark"} {
 		if _, ok := parseSyncFlags(name, []string{"--root", root, "--id", "x", "--because", "y", "--blocker", "g"}); ok {

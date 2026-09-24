@@ -165,7 +165,7 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 		id   string
 		risk RiskRecord
 	}{{"small", low}, {"medium", mid}, {"proven-first", low}} {
-		if res, err := OpenRisked(attorneyReq(root, 11+i, "mac-a"), open.id, "Work "+open.id+".", OriginHuman, "Do it.", nil, nil, open.risk, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := OpenRisked(asPerson(t, root, attorneyReq(root, 11+i, "mac-a")), open.id, "Work "+open.id+".", OriginHuman, "Do it.", nil, nil, open.risk, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", open.id, res, err)
 		}
 	}
@@ -337,7 +337,7 @@ func TestAnAttorneyActNeverRewritesAPersonsApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	low := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
-	if res, err := OpenRisked(attorneyReq(root, 41, "mac-a"), "kept", "Kept by the person.", OriginHuman, "Do it.", nil, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(asPerson(t, root, attorneyReq(root, 41, "mac-a")), "kept", "Kept by the person.", OriginHuman, "Do it.", nil, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	if res, err := claimApprovedForTest(t, attorneyReq(root, 42, "mac-a"), "kept", small); err != nil || res.Outcome != OutcomeConfirmed {
@@ -385,7 +385,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 		id   string
 		risk RiskRecord
 	}{{"paused-one", low}, {"paused-two", mid}, {"held-one", low}, {"revoked-one", low}} {
-		if res, err := OpenRisked(attorneyReq(root, 70+i, "mac-a"), open.id, "Work "+open.id+".", OriginHuman, "Do it.", nil, nil, open.risk, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := OpenRisked(asPerson(t, root, attorneyReq(root, 70+i, "mac-a")), open.id, "Work "+open.id+".", OriginHuman, "Do it.", nil, nil, open.risk, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", open.id, res, err)
 		}
 	}
@@ -447,7 +447,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	expectRefusal(t, "tier-2-only entry", mustPublish(UnparkUnderAttorney(narrowLifter, "paused-one", "it holds")), nil, "covers tier 2 only")
 	// A person's park that gained a blocker edge afterwards stays until the
 	// blocker is done: the goal could not be worked anyway.
-	if res, err := OpenRisked(withUlid(human, 65), "fix-paused", "The defect that blocks paused-one.", OriginHuman, "Fix.", []string{"paused-one"}, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(asPerson(t, root, withUlid(human, 65)), "fix-paused", "The defect that blocks paused-one.", OriginHuman, "Fix.", []string{"paused-one"}, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human open --blocks against a parked goal: %+v %v", res, err)
 	}
 	expectRefusal(t, "park with an unfinished blocker edge", mustPublish(UnparkUnderAttorney(withUlid(lifter, 66), "paused-one", "the condition passed")), nil, "which is not done")

@@ -346,7 +346,7 @@ func (a Authority) Block(dependent, blocker string) error {
 	if err != nil {
 		return err
 	}
-	result, publishErr := goal.Block(request, dependent, blocker)
+	result, publishErr := goal.Block(request, dependent, blocker, &a.proof)
 	return a.settle(request, result, publishErr, "goal block")
 }
 

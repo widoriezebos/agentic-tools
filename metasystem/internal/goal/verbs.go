@@ -733,7 +733,7 @@ func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) 
 // OpenTiered adds a queued goal at the caller-selected tier. Goal-free clears
 // in the same commit when it was declared.
 func OpenTiered(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, labels ...string) (PublishResult, error) {
-	req, err := openRequest(r, id, intent, origin, nextStep, nil, nil, tier, supplied, nil, "", labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, nil, nil, tier, supplied, nil, "", false, labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -754,7 +754,11 @@ func OpenTiered(r VerbRequest, id, intent, origin, nextStep string, tier uint8, 
 // unless every named goal is already done.
 func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, blocks, blockedBy []string, risk RiskRecord, requestedTier uint8, why string, supplied *Budget, proof *humanauthority.Proof, labels ...string) (PublishResult, error) {
 	blocks, blockedBy = namedGoals(blocks), namedGoals(blockedBy)
-	if origin == OriginMain && len(blocks) == 0 {
+	// Who is opening is decided by the proof, never by --origin: origin is a
+	// word the caller supplies, and a seat that typed "human" into it would
+	// otherwise have talked its way out of the one rule that binds its opens.
+	hand, _ := humanHand(r, proof)
+	if hand == nil && len(blocks) == 0 {
 		return PublishResult{}, fmt.Errorf("%s", SeatOpenNeedsBlocker)
 	}
 	if err := risk.Validate(); err != nil {
@@ -779,7 +783,7 @@ func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, blocks, bloc
 			return PublishResult{}, err
 		}
 	}
-	req, err := openRequest(r, id, intent, origin, nextStep, blocks, blockedBy, tier, supplied, &risk, why, labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, blocks, blockedBy, tier, supplied, &risk, why, hand != nil, labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
@@ -793,7 +797,7 @@ const SeatOpenNeedsBlocker = "a seat opens only the defect that blocks its claim
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blockedBy []string, tier uint8, supplied *Budget, risk *RiskRecord, why string, labels []string) (PublishRequest, error) {
+func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blockedBy []string, tier uint8, supplied *Budget, risk *RiskRecord, why string, human bool, labels []string) (PublishRequest, error) {
 	if tier < 1 || tier > 3 {
 		return PublishRequest{}, fmt.Errorf("goal open requires --tier 1, 2, or 3")
 	}
@@ -890,7 +894,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 			// a goal a seat does not hold, a goal that is not live — is the
 			// verb's answer, and nothing publishes (S37-01, S37-05).
 			for _, blocked := range blocks {
-				held, err := parkBehindBlocker(t, r, blocked, id)
+				held, err := parkBehindBlocker(t, r, blocked, id, human)
 				if err != nil {
 					return nil, err
 				}
@@ -922,39 +926,62 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 // blocker, and the goal returns by itself when the blocker is done. A
 // person may name any live goal, and only a person reaches the branch
 // that adds a second blocker to a goal that is parked already.
-func parkBehindBlocker(t *TreeGoals, r VerbRequest, blocked, blocker string) (*GoalFile, error) {
-	return recordBlockerEdge(t, r, blocked, blocker, "--blocks", "its open", false)
+func parkBehindBlocker(t *TreeGoals, r VerbRequest, blocked, blocker string, human bool) (*GoalFile, error) {
+	return recordBlockerEdge(t, r, blocked, blocker, blockerEdge{
+		naming: "--blocks", parkVerb: "park", edgeVerb: "edit", occasion: "its open", human: human,
+	})
+}
+
+// blockerEdge is one edge as the verb writing it describes itself.
+type blockerEdge struct {
+	// naming is the flag that named the goal that waits, for the refusals.
+	naming string
+	// parkVerb and edgeVerb are the History verbs this write records. An
+	// open's edge rides the open's own park and edit lines, because the open
+	// is the operation; goal block is its own verb and records itself.
+	parkVerb, edgeVerb string
+	// occasion is what an edge-only line says made the edge.
+	occasion string
+	// satisfied says the blocker is already done, which is decided by the
+	// caller in the mutation rather than left to the next completion event: a
+	// satisfied edge is recorded and parks nothing, because a goal parked
+	// behind work that has already finished waits for an event that has
+	// already happened (S37-06).
+	satisfied bool
+	// human says a person's own authority is behind this write, proof and
+	// all. It is what widens the reach past the seat's own claim, and it is
+	// never inferred from a name or from an origin.
+	human bool
 }
 
 // recordBlockerEdge is the one path an edge is written on: an open naming the
 // goals it unblocks, and goal block on a goal that already exists.
-//
-// satisfied says the blocker is already done, which is decided by the caller
-// in the mutation rather than left to the next completion event: a satisfied
-// edge is recorded and parks nothing, because a goal parked behind work that
-// has already finished waits for an event that has already happened (S37-06).
-func recordBlockerEdge(t *TreeGoals, r VerbRequest, blocked, blocker, naming, occasion string, satisfied bool) (*GoalFile, error) {
+func recordBlockerEdge(t *TreeGoals, r VerbRequest, blocked, blocker string, edge blockerEdge) (*GoalFile, error) {
 	f, live := t.Live[blocked]
 	if !live {
 		if _, done := t.Done[blocked]; done {
-			return nil, fmt.Errorf("%s %s names a done goal; a blocker opens only for live work", naming, blocked)
+			return nil, fmt.Errorf("%s %s names a done goal; a blocker opens only for live work", edge.naming, blocked)
 		}
-		return nil, fmt.Errorf("%s %s names a goal that is not live", naming, blocked)
+		return nil, fmt.Errorf("%s %s names a goal that is not live", edge.naming, blocked)
 	}
-	if r.Actor.Human == "" && !heldBySeat(f, r) {
+	if !edge.human && !heldBySeat(f, r) {
 		return nil, seatHoldsOnly("a seat opens only the defect that blocks the goal it holds", f, blocked)
 	}
 	if !contains(f.Blocked, blocker) {
 		f.Blocked = sortedUnique(append(append([]string(nil), f.Blocked...), blocker))
 	}
-	if satisfied || f.State == StateParked {
+	if edge.satisfied || f.State == StateParked {
 		// A park that stands keeps standing, and a satisfied edge never made
-		// one: either way only the edge is new.
+		// one: either way only the edge is new. A dependency park's reason is
+		// written from the goals it waits for, so it is written again here:
+		// a reason that still named yesterday's list would be the record
+		// saying one thing and the list saying another.
+		refreshParkReason(t, f)
 		f.Revision++
 		f.History = append(f.History, HistoryLine{
-			At: r.stamp(), Opid: r.opid(), Verb: "edit",
+			At: r.stamp(), Opid: r.opid(), Verb: edge.edgeVerb,
 			Actor: r.Actor.historyActor(), Targets: []string{blocked}, Keep: -1,
-			Reason: "blockedBy adds " + blocker + " (" + occasion + ")",
+			Reason: "blockedBy adds " + blocker + " (" + edge.occasion + ")",
 		})
 		return f, nil
 	}
@@ -982,11 +1009,63 @@ func recordBlockerEdge(t *TreeGoals, r VerbRequest, blocked, blocker, naming, oc
 	}
 	f.Revision++
 	f.History = append(f.History, HistoryLine{
-		At: r.stamp(), Opid: r.opid(), Verb: "park",
+		At: r.stamp(), Opid: r.opid(), Verb: edge.parkVerb,
 		Actor: r.Actor.historyActor(), Targets: []string{blocked},
 		Displaced: displaced, Keep: -1, Reason: because,
 	})
 	return f, nil
+}
+
+// refreshParkReason rewrites a dependency-created park's reason from the
+// goals it is still waiting for. It is called wherever that list can change —
+// an edge added, an edge removed, a blocker finished — because the reason is
+// derived and a derived sentence that is written once goes stale: a reader
+// told "blocked by A, B" after A finished is told something the ledger no
+// longer says. A person's own park carries no marker and is left alone.
+func refreshParkReason(t *TreeGoals, f *GoalFile) bool {
+	if f.State != StateParked || f.Parked == nil || f.Parked.Blocker == "" {
+		return false
+	}
+	open := unsatisfiedBlockers(t, f.Blocked)
+	if len(open) == 0 {
+		return false
+	}
+	because := blockedBecause(open)
+	if because == f.Parked.Because {
+		return false
+	}
+	f.Parked.Because = because
+	return true
+}
+
+// humanHand is the proof that makes a request a person's own act, or nil.
+//
+// A person is a name AND a proof the approval gate admits — the enrolled
+// terminal, the verified channel, the signed-in session, or the recorded
+// relay. A name alone is not one, and neither is an origin: the command edge
+// carries any --by into the actor and any --origin into the record, so a rule
+// that read either would widen a seat's reach on the strength of a string the
+// seat typed itself. The proof is the only thing a seat cannot write down.
+//
+// The proof a verb was handed and the one its request already carries are the
+// same in-process observation, so either will do; the one that is there is
+// returned, because a caller recording provenance records that object and not
+// the fact that there was one.
+//
+// temporary says the admitted proof is the recorded relay, which a caller
+// writing a History line passes on to the provenance it records.
+func humanHand(r VerbRequest, proof *humanauthority.Proof) (admitted *humanauthority.Proof, temporary bool) {
+	if r.Actor.Human == "" {
+		return nil, false
+	}
+	if proof == nil {
+		proof = r.Authority
+	}
+	_, _, relayed, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
+	if err != nil {
+		return nil, false
+	}
+	return proof, relayed
 }
 
 // heldBySeat reports whether this goal is the acting seat's own claim, which
@@ -1053,30 +1132,33 @@ func blockedBecause(blockers []string) string {
 // blocker, calls it after moving that goal to the archive. The goal
 // returns to its resting state (approved when its approval stands,
 // queued otherwise) and is claimable again at once.
+//
+// A park that does not lift is not left as it was: its reason names the goals
+// it waits for, and one of them has just finished, so the reason is written
+// again. That is why this returns every file it touched rather than only the
+// ones that returned — the caller writes each of them.
 func returnBlockerParks(t *TreeGoals, r VerbRequest, finished string) []*GoalFile {
-	var returned []*GoalFile
+	var touched []*GoalFile
 	for _, id := range sortedGoalIds(t.Live) {
 		f := t.Live[id]
 		if f.State != StateParked || f.Parked == nil || f.Parked.Blocker == "" {
 			continue
 		}
-		clear := true
-		for _, dep := range f.Blocked {
-			if depState(t, dep) != StateDone {
-				clear = false
-				break
+		if open := unsatisfiedBlockers(t, f.Blocked); len(open) > 0 {
+			if refreshParkReason(t, f) {
+				touch(f, r, "edit", []string{id})
+				f.History[len(f.History)-1].Reason = "blocker " + finished + " is done; " + f.Parked.Because
+				touched = append(touched, f)
 			}
-		}
-		if !clear {
 			continue
 		}
 		f.State = restingState(f)
 		f.Parked = nil
 		touch(f, r, "unpark", []string{id})
 		f.History[len(f.History)-1].Reason = "blocker " + finished + " is done; the park lifts"
-		returned = append(returned, f)
+		touched = append(touched, f)
 	}
-	return returned
+	return touched
 }
 
 // Claim takes ownership of a human-approved goal for the actor's pair.
@@ -2672,16 +2754,17 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 // edge and parks nothing; a self-edge, an edge that closes a cycle, an
 // abandoned blocker and a goal the ledger does not carry are refused by the
 // tree's own validation, which already judges the whole blocked graph.
-func Block(r VerbRequest, id, blocker string) (PublishResult, error) {
+func Block(r VerbRequest, id, blocker string, proof *humanauthority.Proof) (PublishResult, error) {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(blocker) == "" {
 		return PublishResult{}, fmt.Errorf("goal block names the goal that waits with --id and the goal it waits for with --blocker")
 	}
-	return Publish(r.Endpoint, blockRequest(r, strings.TrimSpace(id), strings.TrimSpace(blocker)))
+	hand, _ := humanHand(r, proof)
+	return Publish(r.Endpoint, blockRequest(r, strings.TrimSpace(id), strings.TrimSpace(blocker), hand != nil))
 }
 
 // blockRequest builds the verb's complete transaction request - the
 // ONE mutation semantics both the live verb and recovery replay run.
-func blockRequest(r VerbRequest, id, blocker string) PublishRequest {
+func blockRequest(r VerbRequest, id, blocker string, human bool) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "block", Targets: []string{id, blocker}, Args: intentArgs(r, map[string]string{
@@ -2704,7 +2787,10 @@ func blockRequest(r VerbRequest, id, blocker string) PublishRequest {
 					return nil, NothingToDo{Reason: "goal " + id + " already waits for " + blocker}
 				}
 			}
-			f, err := recordBlockerEdge(t, r, id, blocker, "--id", "goal block", depState(t, blocker) == StateDone)
+			f, err := recordBlockerEdge(t, r, id, blocker, blockerEdge{
+				naming: "--id", parkVerb: "block", edgeVerb: "block", occasion: "goal block",
+				satisfied: depState(t, blocker) == StateDone, human: human,
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -2727,10 +2813,11 @@ func blockRequest(r VerbRequest, id, blocker string) PublishRequest {
 // first of them, as abandon and split already repair it (S37-03).
 //
 // Removing an edge whose blocker is not done is an early lift, which is a
-// person's act. Its admission is the approval gate's, so the enrolled
-// terminal and the signed-in session both reach it and the browser's own act
-// is not locked out (S37-04); the proof's provenance lands on the History
-// line exactly as an approval records it.
+// person's act. Its admission is the approval gate's own, the one approve
+// uses, so the enrolled terminal, the verified channel and the signed-in
+// session all reach it and the browser's own act is not locked out (S37-04);
+// the proof's provenance lands on the History line exactly as an approval
+// records it.
 //
 // What is left for a seat is one case and one goal: a satisfied edge on the
 // goal it holds. A seat keeps exactly today's power and no more, so its
@@ -2769,19 +2856,17 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 			if !contains(f.Blocked, blocker) {
 				return nil, NothingToDo{Reason: "goal " + id + " does not wait for " + blocker}
 			}
-			var temporary bool
+			hand, temporary := humanHand(r, proof)
 			if early := depState(t, blocker) != StateDone; early {
-				missing := fmt.Sprintf("goal %s waits for %s, which is not done; removing an unfinished blocker is an early lift and a human act", id, blocker)
-				if r.Actor.Human == "" {
+				// A name without a proof is a seat here, and no seat runs an
+				// early lift, so the one refusal answers both.
+				if hand == nil {
+					missing := fmt.Sprintf("goal %s waits for %s, which is not done; removing an unfinished blocker is an early lift and a human act", id, blocker)
 					return nil, humanAuthorityRequired{
 						row:    humanAuthorityRow{Verb: "unblock", Name: "early unblock", Missing: missing},
 						grade:  humanauthority.GradeEnrolled,
 						detail: missing,
 					}
-				}
-				var proofErr error
-				if _, _, temporary, proofErr = approvalProofClass(r.Endpoint.Root, proof); proofErr != nil {
-					return nil, proofErr
 				}
 				if err := refuseRelayedAfterFleetEnrollment(t, temporary); err != nil {
 					return nil, err
@@ -2789,13 +2874,15 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 			} else {
 				// The satisfied case is the only one a seat can reach, and it
 				// reaches it on one goal: the one it holds. A seat keeps
-				// exactly today's power, and naming one goal it claims never
+				// exactly today's power, and holding one goal never
 				// authorises another (S37-01) — in this direction as in the
 				// other, because they are the same rule seen from both ends.
-				if r.Actor.Human == "" && !heldBySeat(f, r) {
+				if hand == nil && !heldBySeat(f, r) {
 					return nil, seatHoldsOnly("a seat removes an edge only from the goal it holds", f, id)
 				}
-				proof = nil
+				// A satisfied edge is nobody's early lift, so nothing about
+				// authority is recorded beside it.
+				hand = nil
 			}
 			remaining := make([]string, 0, len(f.Blocked))
 			for _, dep := range f.Blocked {
@@ -2812,10 +2899,15 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 					f.Parked = nil
 					returned = true
 					reason += "; every remaining blocker is done and the park lifts"
-				} else if f.Parked.Blocker == blocker {
-					f.Parked.Blocker = f.Blocked[0]
-					f.Parked.Because = blockedBecause(unsatisfiedBlockers(t, f.Blocked))
-					reason += "; the park stands on " + f.Parked.Blocker
+				} else {
+					if f.Parked.Blocker == blocker {
+						f.Parked.Blocker = f.Blocked[0]
+						reason += "; the park stands on " + f.Parked.Blocker
+					}
+					// The reason is derived from what is still open, whether
+					// or not the marker moved: an edge removed changes that
+					// list either way.
+					refreshParkReason(t, f)
 				}
 			}
 			if !returned && f.State == StateParked {
@@ -2823,8 +2915,8 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 			}
 			touch(f, r, "unblock", []string{id, blocker})
 			f.History[len(f.History)-1].Reason = reason
-			if proof != nil {
-				recordApprovalProof(f, proof, temporary)
+			if hand != nil {
+				recordApprovalProof(f, hand, temporary)
 			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},

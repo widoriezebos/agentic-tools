@@ -90,7 +90,7 @@ func TestAbandonRepairsBlockerParksForCarriedWaivedAndAlso(t *testing.T) {
 			risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "abandon blocker park fixture"}
 			blockerReq := verbReq(root, fmt.Sprintf("01J5X00000000000000000P2%d0", index), "mac-a")
 			blockerReq.Actor.Human = "Wido"
-			if result, err := OpenRisked(blockerReq, "blocker", "Block the dependent.", OriginHuman, "Resolve the blocker.", []string{"dependent"}, nil, risk, 0, "", nil, nil); err != nil || result.Outcome != OutcomeConfirmed {
+			if result, err := OpenRisked(blockerReq, "blocker", "Block the dependent.", OriginHuman, "Resolve the blocker.", []string{"dependent"}, nil, risk, 0, "", nil, goalHumanProof(t, root, blockerReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("open blocker: %+v %v", result, err)
 			}
 			if test.want == "carried" {
@@ -145,11 +145,11 @@ func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "abandon blocker park fixture"}
 	person := verbReq(root, "01J5X00000000000000000Q020", "mac-a")
 	person.Actor.Human = "Wido"
-	if result, err := OpenRisked(person, "done-blocker", "Finish the first blocker.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, nil); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := OpenRisked(person, "done-blocker", "Finish the first blocker.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, goalHumanProof(t, root, person.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open first blocker: %+v %v", result, err)
 	}
 	person.Ulid = "01J5X00000000000000000Q030"
-	if result, err := OpenRisked(person, "waived-blocker", "Remove the second blocker.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, nil); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := OpenRisked(person, "waived-blocker", "Remove the second blocker.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, goalHumanProof(t, root, person.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open second blocker: %+v %v", result, err)
 	}
 	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000Q040", "mac-a"), "done-blocker", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
@@ -200,7 +200,7 @@ func TestAbandonCarryDoesNotMoveAWaivedParkToTheSuccessor(t *testing.T) {
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "abandon blocker park fixture"}
 	person := verbReq(root, "01J5X00000000000000000Q120", "mac-a")
 	person.Actor.Human = "Wido"
-	if result, err := OpenRisked(person, "blocker", "Block the dependent.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, nil); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := OpenRisked(person, "blocker", "Block the dependent.", OriginHuman, "Resolve it.", []string{"dependent"}, nil, risk, 0, "", nil, goalHumanProof(t, root, person.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open blocker: %+v %v", result, err)
 	}
 	if result, err := Open(verbReq(root, "01J5X00000000000000000Q130", "mac-a"), "successor", "Carry unwaived dependencies.", OriginHuman, "Resolve the successor."); err != nil || result.Outcome != OutcomeConfirmed {
