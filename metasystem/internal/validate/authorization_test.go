@@ -30,7 +30,10 @@ func (f *conformanceFixture) missionize(mission string) {
 	// The issuance point derivation requires the boundary base to BE a
 	// named expected-tree point: in a live mission that is the open
 	// turn's pre-tree; the bed states exactly that.
-	baseTree := f.git(f.controller, "rev-parse", f.baseSha+"^{tree}")
+	baseTree := rawBaseTree
+	if f.raw == nil {
+		baseTree = f.git(f.controller, "rev-parse", f.baseSha+"^{tree}")
+	}
 	f.writeJSON("artifacts/agents/missions/"+mission+"/state.json", map[string]any{
 		"integrity": map[string]any{"sequence": 4},
 		"openTurn":  map[string]any{"preTree": baseTree},
@@ -280,7 +283,7 @@ func TestAuthorizationRefusesEmptyDiff(t *testing.T) {
 // declared net cannot merge without a warden chain reviewing it — and
 // with one, the issued record carries the lane fact inside its digest.
 func TestMissionAuthorizationGuardrailLane(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")
 	f.writeImplementer("", "source.txt")
 	f.missionize("m-net")

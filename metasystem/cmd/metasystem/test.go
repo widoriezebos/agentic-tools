@@ -738,6 +738,43 @@ func testingPreparationAccountsToGoal(request testingSelectionRequest) (bool, er
 var prepareTestingForCommand = prepareTesting
 
 func compareTrustedPolicyDecision(installation, projectRoot, candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput) error {
+	seconds := 0
+	limit := func() int {
+		if seconds == 0 {
+			seconds = steward.RearmResolveSeconds(installation)
+		}
+		return seconds
+	}
+	return compareTrustedPolicyDecisionWithReaders(candidateTree, policyBaseCommit, baseContractDigest, decision, projectRoot, policyBaseMoveReaders{
+		isAncestor: func(root, ours, engine string) (bool, error) {
+			_, err := landedRearmGitStep(context.Background(), landedRearmClock, limit(), "compare-moved-policy-base-ancestry", root,
+				"merge-base", "--is-ancestor", ours, engine)
+			if err != nil {
+				var exitError *exec.ExitError
+				if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+					return false, nil
+				}
+				return false, err
+			}
+			return true, nil
+		},
+		localLandingRef: func(root string) (string, error) {
+			return readLocalLandingRefText(context.Background(), landedRearmClock, limit(), root)
+		},
+		commitAtRef: func(root, ref string) (string, error) {
+			return landedRearmGitStep(context.Background(), landedRearmClock, limit(), "reread-moved-policy-base", root,
+				"rev-parse", "--verify", ref+"^{commit}")
+		},
+	})
+}
+
+type policyBaseMoveReaders struct {
+	isAncestor      func(projectRoot, ours, engine string) (bool, error)
+	localLandingRef func(projectRoot string) (string, error)
+	commitAtRef     func(projectRoot, ref string) (string, error)
+}
+
+func compareTrustedPolicyDecisionWithReaders(candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput, projectRoot string, readers policyBaseMoveReaders) error {
 	mismatch := decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest, decision)
 	if mismatch == nil {
 		return nil
@@ -747,7 +784,7 @@ func compareTrustedPolicyDecision(installation, projectRoot, candidateTree, poli
 	if candidateTree != decision.CandidateTree || policyBaseCommit == decision.PolicyBaseCommit {
 		return mismatch
 	}
-	moved, err := authenticatedPolicyBaseMove(installation, projectRoot, policyBaseCommit, decision.PolicyBaseCommit)
+	moved, err := authenticatedPolicyBaseMove(projectRoot, policyBaseCommit, decision.PolicyBaseCommit, readers)
 	if err != nil || !moved {
 		return mismatch
 	}
@@ -760,23 +797,20 @@ func trustedPolicyFloorRequest(request testingSelectionRequest) testingSelection
 	return request
 }
 
-func authenticatedPolicyBaseMove(installation, projectRoot, ours, engine string) (bool, error) {
-	seconds := steward.RearmResolveSeconds(installation)
-	_, err := landedRearmGitStep(context.Background(), landedRearmClock, seconds, "compare-moved-policy-base-ancestry", projectRoot,
-		"merge-base", "--is-ancestor", ours, engine)
-	if err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
-			return false, nil
-		}
+func authenticatedPolicyBaseMove(projectRoot, ours, engine string, readers policyBaseMoveReaders) (bool, error) {
+	ancestor, err := readers.isAncestor(projectRoot, ours, engine)
+	if err != nil || !ancestor {
 		return false, err
 	}
-	ref, _, _, err := landingRefParts(context.Background(), landedRearmClock, seconds, projectRoot)
+	refText, err := readers.localLandingRef(projectRoot)
 	if err != nil {
 		return false, err
 	}
-	current, err := landedRearmGitStep(context.Background(), landedRearmClock, seconds, "reread-moved-policy-base", projectRoot,
-		"rev-parse", "--verify", ref+"^{commit}")
+	ref, _, _, err := parseLandingRefParts(refText)
+	if err != nil {
+		return false, err
+	}
+	current, err := readers.commitAtRef(projectRoot, ref)
 	if err != nil {
 		return false, err
 	}

@@ -12,7 +12,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgoal"
 )
 
 func TestClipDetailKeepsValidUTF8AtTheByteBoundary(t *testing.T) {
@@ -130,8 +132,15 @@ func TestQuestionAndDraftScansKeepUndeclaredVerdictUnchanged(t *testing.T) {
 		t.Fatalf("question and draft read failures were not named: %v", unreadable.Unreadable)
 	}
 
-	// goal.TestUndeclaredCheckoutDropsOnlyBrainDraftScannerFailure owns the
-	// verdict exclusion; this test checks the scanner's question and draft facts.
+	// Question and draft read failures do not make an undeclared checkout uncertain.
+	repo := testgoal.New(fixture.files, fixture.committed, scanFixtureTip)
+	verdict, err := (&goal.Store{Root: root}).TurnVerdictAtEndpoint(
+		goal.Endpoint{Root: root, Remote: "local", Repository: repo},
+		"bed-m1", unreadable, "undeclared-report-scan", "", "")
+	if err != nil || verdict.ShouldBlock || strings.Contains(verdict.Display, "UNCERTAIN") {
+		t.Fatalf("brain-only scanner failures changed an undeclared checkout's verdict: %+v %v", verdict, err)
+	}
+
 	fixture.machine = "bed-m1"
 	fixture.expect("identity", "endpoint", "accepted", "files", "commitTime", "world", "machine", "endpoint", "accepted", "files", "commitTime")
 	readable := scanWithProberAtWithReads(root, identity.KernelProber{}, fixture.committed, fixture.reads())

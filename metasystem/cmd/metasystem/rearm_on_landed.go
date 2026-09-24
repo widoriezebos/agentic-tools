@@ -125,16 +125,28 @@ func decideLandedRearm(facts landedRearmFacts, checkout string) landedRearmDecis
 // landingRefParts reads the landing ref the way the trusted policy base
 // does and splits it into the remote and branch the fetch needs.
 func landingRefParts(ctx context.Context, clock steward.RearmClock, seconds int, projectRoot string) (ref, remote, branch string, err error) {
-	ref, err = landedRearmGitStep(ctx, clock, seconds, "read-landing-ref", projectRoot, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
+	ref, err = readLocalLandingRefText(ctx, clock, seconds, projectRoot)
+	if err != nil {
+		return "", "", "", err
+	}
+	return parseLandingRefParts(ref)
+}
+
+func readLocalLandingRefText(ctx context.Context, clock steward.RearmClock, seconds int, projectRoot string) (string, error) {
+	ref, err := landedRearmGitStep(ctx, clock, seconds, "read-landing-ref", projectRoot, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
 	if err != nil {
 		if errors.Is(err, steward.ErrJudgmentStalled) {
-			return "", "", "", err
+			return "", err
 		}
 		var exitError *exec.ExitError
 		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
-			return "", "", "", err
+			return "", err
 		}
 	}
+	return ref, nil
+}
+
+func parseLandingRefParts(ref string) (parsed, remote, branch string, err error) {
 	tail := strings.TrimPrefix(ref, "refs/remotes/")
 	remote, branch, qualified := strings.Cut(tail, "/")
 	if tail == ref || !qualified || remote == "" || branch == "" {

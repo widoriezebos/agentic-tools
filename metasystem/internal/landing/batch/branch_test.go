@@ -196,11 +196,19 @@ func TestAssembleUnitsKeepsBranchAndChainMembersInJoinOrder(t *testing.T) {
 }
 
 func TestBatchBranchReaderRefusesReaderRecord(t *testing.T) {
-	bed := newGoalBranchBed(t)
-	tip := buildGoalBranch(t, bed, "goal-a", []string{"1", "2", "3"}, 1)
-	_, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tip, GoalID: "goal-a", Last: true})
-	if err == nil || !strings.HasPrefix(err.Error(), "BATCH_JOIN_UNREAD:") {
-		t.Fatalf("reader-record join=%v", err)
+	readerRecord := goalbranch.Attestation{Source: goalbranch.AttestationSource{Kind: "reader-record"}}
+	err := requireCriticRootSource("2", readerRecord)
+	refusal, ok := err.(*boundaryRefusal)
+	if !ok {
+		t.Fatalf("reader-record refusal type = %T, error = %v", err, err)
+	}
+	if refusal.Code != "BATCH_JOIN_UNREAD" || refusal.Detail != "build 2 was read outside a critic-root job" ||
+		refusal.Error() != "BATCH_JOIN_UNREAD: build 2 was read outside a critic-root job" {
+		t.Fatalf("reader-record refusal = %+v", refusal)
+	}
+	criticRoot := goalbranch.Attestation{Source: goalbranch.AttestationSource{Kind: "critic-root"}}
+	if err := requireCriticRootSource("2", criticRoot); err != nil {
+		t.Fatalf("critic-root refusal = %v", err)
 	}
 }
 

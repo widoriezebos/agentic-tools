@@ -25,6 +25,7 @@ type conformanceFixture struct {
 	controller string
 	worktree   string
 	baseSha    string
+	raw        *rawConformanceFixture
 }
 
 func (f *conformanceFixture) git(dir string, args ...string) string {
@@ -194,6 +195,11 @@ func (f *conformanceFixture) writeCritic(tree, materialID, exhaustion, model str
 }
 
 func (f *conformanceFixture) commitWorktree() {
+	if f.raw != nil {
+		f.raw.fact()
+		f.raw.committed = true
+		return
+	}
 	f.git(f.worktree, "add", ".")
 	f.git(f.worktree, "-c", "user.name=m", "-c", "user.email=m@x", "commit", "-qm", "change")
 }
@@ -220,7 +226,14 @@ func appendFile(t *testing.T, path, text string) {
 
 func expectConformance(t *testing.T, f *conformanceFixture, stage string, wantCode int, wantText string) (out, errs []string) {
 	t.Helper()
-	out, errs, code := Conformance(f.controller, stage, "impl")
+	var code int
+	if f.raw != nil {
+		f.raw.prepare(stage)
+		out, errs, code = conformanceWithRaw(f.controller, stage, "impl", ConformanceOptions{}, f.raw.answer, nil)
+		f.raw.consumed()
+	} else {
+		out, errs, code = Conformance(f.controller, stage, "impl")
+	}
 	if code != wantCode {
 		t.Fatalf("%s stage exit %d, want %d\nout: %v\nerr: %v", stage, code, wantCode, out, errs)
 	}
@@ -454,7 +467,7 @@ func TestSTR2CriticUnionDifferingClassRefuses(t *testing.T) {
 }
 
 func TestConformanceReviewAndCritiqueMerge(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")
 	f.writeImplementer("", "source.txt")
 
@@ -614,7 +627,7 @@ func TestConformanceReviewIdenticalRerunIsIdempotent(t *testing.T) {
 }
 
 func TestConformanceReviewRefusesDelegateReceiptChange(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	if err := os.MkdirAll(filepath.Join(f.worktree, "memory"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +705,7 @@ func TestConformanceWaivers(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newConformanceFixture(t)
+			f := newRawConformanceFixture(t)
 			tc.change(f)
 			f.writeImplementer("prose-under-30", tc.boundary)
 			f.commitWorktree()
@@ -700,7 +713,7 @@ func TestConformanceWaivers(t *testing.T) {
 		})
 	}
 	t.Run("wrong class", func(t *testing.T) {
-		f := newConformanceFixture(t)
+		f := newRawConformanceFixture(t)
 		appendFile(t, filepath.Join(f.worktree, "docs", "note.md"), "small\n")
 		f.writeImplementer("prose-under-100", "docs/note.md")
 		f.commitWorktree()
@@ -710,7 +723,7 @@ func TestConformanceWaivers(t *testing.T) {
 }
 
 func TestMergeWaiverRefusesBehaviorPath(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "AGENTS.md"), "small behavior change\n")
 	f.writeImplementer("prose-under-30", "AGENTS.md")
 	f.commitWorktree()
@@ -856,7 +869,7 @@ func TestConformanceProtectsDeclaredInstructionFile(t *testing.T) {
 		InstructionFile: "plans/NEWRT.md",
 	}))
 	defer restore()
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	os.MkdirAll(filepath.Join(f.worktree, "plans"), 0o755)
 	os.WriteFile(filepath.Join(f.worktree, "plans", "NEWRT.md"), []byte("changed\n"), 0o644)
 	f.writeImplementer("prose-under-30", "plans/NEWRT.md")

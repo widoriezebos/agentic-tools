@@ -1,14 +1,10 @@
 package gittree
 
 import (
-	"bytes"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
 // TransferTreeClosure copies one exact tree and every object reachable from it
@@ -38,15 +34,17 @@ func (w Workspace) TransferTreeClosure(tree string, destination Workspace) error
 	packPath := pack.Name()
 	defer os.Remove(packPath)
 
-	producer := exec.Command("git", append(append([]string{"-C", sourceTop}, configPins...), "pack-objects", "--stdout", "--revs")...)
-	producer.Env = ScrubbedEnviron()
-	producer.Stdin = strings.NewReader(tree + "\n")
-	producer.Stdout = pack
-	var producerError bytes.Buffer
-	producer.Stderr = &producerError
-	if err := boundedexec.Run(producer, boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Local), "git pack-objects"); err != nil {
+	producer := w.runRaw(w.rawRequest(sourceTop, nil, []byte(tree+"\n"), "git pack-objects",
+		"pack-objects", "--stdout", "--revs"), nil, pack)
+	if w.RawSource != nil && producer.Err == nil && producer.ExitCode == 0 {
+		if _, err := pack.Write(producer.Stdout); err != nil {
+			_ = pack.Close()
+			return fmt.Errorf("gittree transfer: create tree pack: %w", err)
+		}
+	}
+	if producer.Err != nil || producer.ExitCode != 0 {
 		_ = pack.Close()
-		return fmt.Errorf("gittree transfer: create tree pack: %s", commandError(producerError.String(), err))
+		return fmt.Errorf("gittree transfer: create tree pack: %s", rawCommandError(producer))
 	}
 	if err := pack.Close(); err != nil {
 		return fmt.Errorf("gittree transfer: close tree pack: %w", err)
@@ -56,15 +54,19 @@ func (w Workspace) TransferTreeClosure(tree string, destination Workspace) error
 	if err != nil {
 		return fmt.Errorf("gittree transfer: reopen tree pack: %w", err)
 	}
-	consumer := exec.Command("git", append(append([]string{"-C", destinationTop}, configPins...), "index-pack", "--stdin")...)
-	consumer.Env = ScrubbedEnviron()
-	consumer.Stdin = pack
-	var consumerOutput, consumerError bytes.Buffer
-	consumer.Stdout, consumer.Stderr = &consumerOutput, &consumerError
-	runErr := boundedexec.Run(consumer, boundedexec.Timeout(filepath.Join(destination.Dir, "metasystem.conf"), boundedexec.Local), "git index-pack")
+	var packBytes []byte
+	if destination.RawSource != nil {
+		packBytes, err = io.ReadAll(pack)
+		if err != nil {
+			_ = pack.Close()
+			return fmt.Errorf("gittree transfer: read tree pack: %w", err)
+		}
+	}
+	consumer := destination.runRaw(destination.rawRequest(destinationTop, nil, packBytes, "git index-pack",
+		"index-pack", "--stdin"), pack, nil)
 	closeErr := pack.Close()
-	if runErr != nil {
-		return fmt.Errorf("gittree transfer: import tree pack: %s", commandError(consumerError.String(), runErr))
+	if consumer.Err != nil || consumer.ExitCode != 0 {
+		return fmt.Errorf("gittree transfer: import tree pack: %s", rawCommandError(consumer))
 	}
 	if closeErr != nil {
 		return fmt.Errorf("gittree transfer: close imported tree pack: %w", closeErr)
@@ -78,9 +80,15 @@ func (w Workspace) TransferTreeClosure(tree string, destination Workspace) error
 	return nil
 }
 
-func commandError(stderr string, err error) string {
-	if detail := strings.TrimSpace(stderr); detail != "" {
+func rawCommandError(result RawResult) string {
+	if detail := strings.TrimSpace(string(result.Stderr)); detail != "" {
 		return detail
 	}
-	return err.Error()
+	if result.Err != nil {
+		return result.Err.Error()
+	}
+	if result.ExitDetail != "" {
+		return result.ExitDetail
+	}
+	return fmt.Sprintf("exit status %d", result.ExitCode)
 }

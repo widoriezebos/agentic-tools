@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
@@ -118,7 +119,11 @@ func sha256Bytes(data []byte) string {
 }
 
 func repoRelative(root, path string) (string, error) {
-	top, err := (gittree.Workspace{Dir: root}).TopLevel()
+	return repoRelativeWithRaw(root, path, nil)
+}
+
+func repoRelativeWithRaw(root, path string, raw func(gittree.RawRequest) gittree.RawResult) (string, error) {
+	top, err := (gittree.Workspace{Dir: root, RawSource: raw}).TopLevel()
 	if err != nil {
 		return "", err
 	}
@@ -136,11 +141,15 @@ func repoRelative(root, path string) (string, error) {
 }
 
 func artifactAbsolute(root, relative string) (string, error) {
+	return artifactAbsoluteWithRaw(root, relative, nil)
+}
+
+func artifactAbsoluteWithRaw(root, relative string, raw func(gittree.RawRequest) gittree.RawResult) (string, error) {
 	if relative == "" || filepath.IsAbs(relative) || filepath.Clean(relative) != filepath.FromSlash(relative) ||
 		relative == ".." || strings.HasPrefix(relative, "../") || strings.ContainsRune(relative, '\x00') {
 		return "", fmt.Errorf("artifact path %q is not canonical repository-relative", relative)
 	}
-	top, err := (gittree.Workspace{Dir: root}).TopLevel()
+	top, err := (gittree.Workspace{Dir: root, RawSource: raw}).TopLevel()
 	if err != nil {
 		return "", err
 	}
@@ -152,11 +161,15 @@ func artifactAbsolute(root, relative string) (string, error) {
 // path-bound protocol; following a link would let a valid-looking record name
 // mutable bytes outside that protocol location.
 func artifactRegularNoFollow(root, relative string) (string, error) {
-	absolute, err := artifactAbsolute(root, relative)
+	return artifactRegularNoFollowWithRaw(root, relative, nil)
+}
+
+func artifactRegularNoFollowWithRaw(root, relative string, raw func(gittree.RawRequest) gittree.RawResult) (string, error) {
+	absolute, err := artifactAbsoluteWithRaw(root, relative, raw)
 	if err != nil {
 		return "", err
 	}
-	top, err := (gittree.Workspace{Dir: root}).TopLevel()
+	top, err := (gittree.Workspace{Dir: root, RawSource: raw}).TopLevel()
 	if err != nil {
 		return "", err
 	}
@@ -258,7 +271,12 @@ func RecertificationRecordDigest(record RecertificationRecord) (string, error) {
 }
 
 func recertificationRelative(root, chain, inputDigest string) (string, error) {
-	prefix, err := projectInstallPrefix(root)
+	return recertificationRelativeWithRaw(root, chain, inputDigest, nil)
+}
+
+func recertificationRelativeWithRaw(root, chain, inputDigest string, raw func(gittree.RawRequest) gittree.RawResult) (string, error) {
+	run := &conformanceRun{root: root, rawSource: raw}
+	prefix, err := run.installationPrefix()
 	if err != nil {
 		return "", err
 	}
@@ -973,6 +991,10 @@ func (r *conformanceRun) recertify(testCommand string) ([]string, []string, int)
 // VerifyRecertification loads and independently replays the selected proof.
 // It never trusts hashes as a substitute for the deterministic merge.
 func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertification, error) {
+	return verifyRecertificationWithRaw(root, chain, suppliedPath, nil, nil)
+}
+
+func verifyRecertificationWithRaw(root, chain, suppliedPath string, raw func(gittree.RawRequest) gittree.RawResult, endpoint func(string) (goal.Endpoint, error)) (VerifiedRecertification, error) {
 	fail := func(detail string, err error) (VerifiedRecertification, error) {
 		return VerifiedRecertification{}, &RecertificationFailure{Reason: "chain-recertification-unproven", Detail: detail, Err: err}
 	}
@@ -982,7 +1004,7 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 	if filepath.IsAbs(suppliedPath) || filepath.ToSlash(filepath.Clean(suppliedPath)) != suppliedPath || strings.Contains(suppliedPath, "..") {
 		return fail("record-path", fmt.Errorf("recertification path is not canonical repository-relative"))
 	}
-	absolute, err := artifactRegularNoFollow(root, suppliedPath)
+	absolute, err := artifactRegularNoFollowWithRaw(root, suppliedPath, raw)
 	if err != nil {
 		return fail("record-path", err)
 	}
@@ -994,7 +1016,7 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 	if err != nil || record.SchemaVersion != 1 || record.ProofKind != gittree.DisjointMergeProofKind || record.RootChain != chain || record.GitVersion == "" {
 		return fail("record-schema", err)
 	}
-	expectedPath, err := recertificationRelative(root, chain, record.InputDigest)
+	expectedPath, err := recertificationRelativeWithRaw(root, chain, record.InputDigest, raw)
 	if err != nil || expectedPath != suppliedPath {
 		return fail("record-path", fmt.Errorf("record path is %q, expected %q", suppliedPath, expectedPath))
 	}
@@ -1034,7 +1056,7 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 	if record.SourceAnchorRef != wantSourceRef || record.MergedAnchorRef != wantMergedRef {
 		return fail("anchor-ref", fmt.Errorf("recorded anchor refs are noncanonical"))
 	}
-	reviewPath, err := artifactRegularNoFollow(root, record.ReviewArtifact)
+	reviewPath, err := artifactRegularNoFollowWithRaw(root, record.ReviewArtifact, raw)
 	if err != nil {
 		return fail("review-path", err)
 	}
@@ -1051,7 +1073,7 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 		review.ImplementerJob != record.CertifiedImplementerJob || review.ReviewedTree != record.ReviewedTree {
 		return fail("review-binding", fmt.Errorf("review artifact does not bind the recorded implementer and tree"))
 	}
-	patchPath, err := artifactRegularNoFollow(root, record.PatchArtifact)
+	patchPath, err := artifactRegularNoFollowWithRaw(root, record.PatchArtifact, raw)
 	if err != nil {
 		return fail("patch-path", err)
 	}
@@ -1059,7 +1081,7 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 	if err != nil || patchDigest != record.PatchDigest {
 		return fail("patch-digest", err)
 	}
-	criticPath, err := artifactRegularNoFollow(root, record.CriticReturnArtifact)
+	criticPath, err := artifactRegularNoFollowWithRaw(root, record.CriticReturnArtifact, raw)
 	if err != nil {
 		return fail("critic-path", err)
 	}
@@ -1071,7 +1093,7 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 	if json.Unmarshal(criticBytes, &criticReturn) != nil || criticReturn["reviewedTree"] != record.ReviewedTree {
 		return fail("critic-binding", fmt.Errorf("critic return does not name reviewed tree"))
 	}
-	workspace := gittree.Workspace{Dir: root}
+	workspace := gittree.Workspace{Dir: root, RawSource: raw}
 	sourceHead, err := workspace.ResolveCommit(record.SourceHead)
 	if err != nil || sourceHead != record.SourceHead {
 		return fail("source-head", err)
@@ -1117,7 +1139,7 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 	if !reflect.DeepEqual(mergeResult.Manifest, record.HunkManifest) {
 		return fail("hunk-manifest-mismatch", fmt.Errorf("canonical hunk manifest differs"))
 	}
-	diffPath, err := artifactRegularNoFollow(root, record.DiffArtifact)
+	diffPath, err := artifactRegularNoFollowWithRaw(root, record.DiffArtifact, raw)
 	if err != nil || filepath.Dir(diffPath) != filepath.Dir(absolute) || filepath.Base(diffPath) != "diff.patch" {
 		return fail("diff-path", fmt.Errorf("diff artifact is not beside record: %w", err))
 	}
@@ -1160,8 +1182,8 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 		return fail("implementer-record", fmt.Errorf("malformed implementer record"))
 	}
 	run := &conformanceRun{root: root, job: record.CertifiedImplementerJob, record: jobRecord,
-		rootJob: record.RootChain, workspace: fmt.Sprint(jobRecord["workspaceRoot"]), criticRoot: record.CriticRoot}
-	prefix, err := projectInstallPrefix(root)
+		rootJob: record.RootChain, workspace: fmt.Sprint(jobRecord["workspaceRoot"]), criticRoot: record.CriticRoot, rawSource: raw, resolveEndpoint: endpoint}
+	prefix, err := run.installationPrefix()
 	if err != nil {
 		return fail("project-prefix", err)
 	}
@@ -1170,9 +1192,9 @@ func VerifyRecertification(root, chain, suppliedPath string) (VerifiedRecertific
 	if err != nil {
 		return fail("review-selection", err)
 	}
-	selectedReview, reviewPathErr := repoRelative(root, selected.reviewPath)
-	selectedPatch, patchPathErr := repoRelative(root, selected.patchPath)
-	selectedCritic, criticPathErr := repoRelative(root, selected.criticPath)
+	selectedReview, reviewPathErr := repoRelativeWithRaw(root, selected.reviewPath, raw)
+	selectedPatch, patchPathErr := repoRelativeWithRaw(root, selected.patchPath, raw)
+	selectedCritic, criticPathErr := repoRelativeWithRaw(root, selected.criticPath, raw)
 	if reviewPathErr != nil || patchPathErr != nil || criticPathErr != nil ||
 		selectedReview != record.ReviewArtifact || selectedPatch != record.PatchArtifact || selectedCritic != record.CriticReturnArtifact ||
 		selected.reviewed != record.ReviewedTree || selected.criticRoot != record.CriticRoot || selected.criticRound != record.CriticTerminalRound ||

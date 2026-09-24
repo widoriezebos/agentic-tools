@@ -42,7 +42,11 @@ type MeasureResult struct {
 // against the price the seal froze. The gate passes when it clears every
 // threshold and every guard clears its floor.
 func Measure(path string, previous map[string]string) (*MeasureResult, error) {
-	doc, repo, projectRoot, err := contractLoad(path)
+	return contractMeasureWithSource(path, previous, contractRepositoryFor, nil)
+}
+
+func contractMeasureWithSource(path string, previous map[string]string, repository func(string) (string, error), source *contractSource) (*MeasureResult, error) {
+	doc, repo, projectRoot, err := contractLoadWithSource(path, repository, source)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +223,7 @@ func (d *contractDoc) guardNames() []string {
 // candidate at the tip of the sealed branch, and the frozen-instruments
 // gate ref. Every worktree of the measurement materializes at these pins.
 func (d *contractDoc) resolvePins(repo string) (candidateSHA, gateRef string, err error) {
-	gateRef, err = contractGitTrim(repo, "rev-parse", d.values["gate.ref"]+"^{commit}")
+	gateRef, err = d.gitTrim(repo, "rev-parse", d.values["gate.ref"]+"^{commit}")
 	if err != nil {
 		return "", "", err
 	}
@@ -227,7 +231,7 @@ func (d *contractDoc) resolvePins(repo string) (candidateSHA, gateRef string, er
 	if err != nil {
 		return "", "", err
 	}
-	candidateSHA, err = contractGitTrim(repo, "rev-parse", branch+"^{commit}")
+	candidateSHA, err = d.gitTrim(repo, "rev-parse", branch+"^{commit}")
 	if err != nil {
 		return "", "", err
 	}
@@ -249,7 +253,7 @@ func (d *contractDoc) materializeCandidate(repo, projectRoot, candidateSHA, gate
 	}
 	worktree := filepath.Join(scratch, "candidate")
 	cleanup := func() {
-		gitTry(repo, "worktree", "remove", "--force", worktree)
+		d.gitTry(repo, "worktree", "remove", "--force", worktree)
 		os.RemoveAll(scratch)
 	}
 	// The registry entry lands BEFORE the worktree exists: the wall's
@@ -260,11 +264,11 @@ func (d *contractDoc) materializeCandidate(repo, projectRoot, candidateSHA, gate
 		os.RemoveAll(scratch)
 		return "", nil, stateErr("measurement cannot record its worktree: %v", err)
 	}
-	if _, err := gitOutput(repo, "worktree", "add", "--detach", "--quiet", worktree, candidateSHA); err != nil {
+	if _, err := d.gitOutput(repo, "worktree", "add", "--detach", "--quiet", worktree, candidateSHA); err != nil {
 		cleanup()
 		return "", nil, err
 	}
-	if _, err := gitOutput(worktree, append([]string{"checkout", "--quiet", gateRef, "--"}, restored...)...); err != nil {
+	if _, err := d.gitOutput(worktree, append([]string{"checkout", "--quiet", gateRef, "--"}, restored...)...); err != nil {
 		cleanup()
 		return "", nil, err
 	}

@@ -223,8 +223,9 @@ func TestContractValidateRejects(t *testing.T) {
 }
 
 func TestContractSealWritesBlockAndDigest(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	digest, err := Seal(contractPath)
+	f := newContractSource(t, 2, false)
+	contractPath := f.path
+	digest, err := f.seal(false)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -251,8 +252,12 @@ func TestContractSealWritesBlockAndDigest(t *testing.T) {
 	}
 
 	// A sealed contract may not be resealed.
-	if _, err := Seal(contractPath); err == nil || !strings.Contains(err.Error(), "already sealed") {
+	if _, err := contractSealWithSource(contractPath, f.repository, f.source()); err == nil || !strings.Contains(err.Error(), "already sealed") {
 		t.Fatalf("expected already-sealed refusal, got %v", err)
+	}
+	failed := newContractSource(t, 1, false)
+	if _, err := failed.seal(true); err == nil || !strings.Contains(err.Error(), "injected checkout failure") {
+		t.Fatalf("checkout failure did not propagate after registration: %v", err)
 	}
 }
 
@@ -274,40 +279,42 @@ func TestContractPreflightUnsealed(t *testing.T) {
 }
 
 func TestContractPreflightUnsigned(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	if _, err := Seal(contractPath); err != nil {
+	f := newContractSource(t, 2, false)
+	if _, err := f.seal(false); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
-	_, _, err := Preflight(contractPath, "")
+	_, _, err := f.preflight(false)
 	if err == nil || !strings.Contains(err.Error(), "unsigned") {
 		t.Fatalf("expected unsigned refusal, got %v", err)
 	}
 }
 
 func TestContractPreflightApprovalHashMismatch(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	if _, err := Seal(contractPath); err != nil {
+	f := newContractSource(t, 2, false)
+	contractPath := f.path
+	if _, err := f.seal(false); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	data, _ := os.ReadFile(contractPath)
 	writeFileMode(t, contractPath,
 		string(data)+"\nApproval: name=Human; date=2026-08-04; contract-sha256="+strings.Repeat("0", 64)+"\n", 0o644)
-	_, _, err := Preflight(contractPath, "")
+	_, _, err := f.preflight(false)
 	if err == nil || !strings.Contains(err.Error(), "approval hash") {
 		t.Fatalf("expected approval-hash refusal, got %v", err)
 	}
 }
 
 func TestContractPreflightStaleExposure(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	if _, err := Seal(contractPath); err != nil {
+	f := newContractSource(t, 2, false)
+	contractPath := f.path
+	if _, err := f.seal(false); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	data, _ := os.ReadFile(contractPath)
 	// Change an authored fence value after sealing; the sealed exposure now
 	// disagrees with the live contract.
 	writeFileMode(t, contractPath, strings.Replace(string(data), "fence.jobs=4", "fence.jobs=5", 1), 0o644)
-	_, _, err := Preflight(contractPath, "")
+	_, _, err := f.preflight(false)
 	if err == nil || !strings.Contains(err.Error(), "exposure is stale") {
 		t.Fatalf("expected stale-exposure refusal, got %v", err)
 	}
@@ -317,8 +324,9 @@ func TestContractPreflightStaleExposure(t *testing.T) {
 // approval line it protects: sealing yields a digest, and appending exactly
 // that approval leaves preflight's recomputed hash matching.
 func TestContractApprovalHashStable(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	digest, err := Seal(contractPath)
+	f := newContractSource(t, 1, false)
+	contractPath := f.path
+	digest, err := f.seal(false)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -371,14 +379,15 @@ func removeLine(text, line string) string {
 // patience-bearing contract passes its own preflight and a
 // pre-feature contract's seal is unchanged by the feature's existence.
 func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
-	_, contractPath := newContractRepo(t)
+	f := newContractSource(t, 3, false)
+	contractPath := f.path
 	withPatience := strings.Replace(sealableContract(), "exposure=EUR:10",
 		"exposure=EUR:10\npatience.rounds.implementer.codex.gpt-5-6-sol=4", 1)
 	writeFileMode(t, contractPath, withPatience, 0o644)
-	if _, _, err := Validate(contractPath); err != nil {
+	if _, _, err := contractValidateWithRepository(contractPath, f.repository); err != nil {
 		t.Fatalf("patience-bearing contract rejected: %v", err)
 	}
-	digest, err := Seal(contractPath)
+	digest, err := f.seal(false)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -402,8 +411,8 @@ func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
 	// missing ordered-emitter entry fails exactly here.
 	signed := string(data) + "\nApproval: name=Human; date=2026-08-12; contract-sha256=" + digest + "\n"
 	writeFileMode(t, contractPath, signed, 0o644)
-	if _, _, err := Preflight(contractPath, ""); err != nil &&
-		(strings.Contains(err.Error(), "seal") || strings.Contains(err.Error(), "stale")) {
+	if _, _, err := f.preflight(true); err == nil || !strings.Contains(err.Error(), "origin fetch failed") ||
+		strings.Contains(err.Error(), "seal") || strings.Contains(err.Error(), "stale") {
 		t.Fatalf("patience-bearing seal failed its own preflight recomputation: %v", err)
 	}
 }
@@ -511,15 +520,16 @@ func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
 // Issue #4 option 3: a single binary gate metric with a no-gain budget
 // below the cycle fence is UNSIGNABLE — refused at seal by name.
 func TestContractSealRefusesBinaryGateShortFuse(t *testing.T) {
-	_, contractPath := newContractRepo(t)
+	f := newContractSource(t, 2, false)
+	contractPath := f.path
 	writeFileMode(t, contractPath, baseContract(), 0o644)
-	if _, err := Seal(contractPath); err == nil ||
+	if _, err := contractSealWithSource(contractPath, f.repository, f.source()); err == nil ||
 		!strings.Contains(err.Error(), "parks perfect play") {
 		t.Fatalf("binary-gate short fuse must refuse at seal: %v", err)
 	}
 	// Raising the budget to the fence signs cleanly.
 	writeFileMode(t, contractPath, sealableContract(), 0o644)
-	if _, err := Seal(contractPath); err != nil {
+	if _, err := f.seal(false); err != nil {
 		t.Fatalf("fuse-compliant contract refused: %v", err)
 	}
 }

@@ -92,6 +92,13 @@ func groupBranchBuilds(status goalbranch.Status, count int) []BranchBuild {
 	return groups
 }
 
+func requireCriticRootSource(unit string, attestation goalbranch.Attestation) error {
+	if attestation.Source.Kind != "critic-root" {
+		return refuseBatch("BATCH_JOIN_UNREAD", "build "+unit+" was read outside a critic-root job")
+	}
+	return nil
+}
+
 func ReadGoalBranch(request BranchReadRequest) (BranchMember, error) {
 	if request.Repo == "" || request.EndpointTip == "" || request.BranchTip == "" || request.GoalID == "" || request.Last == (request.Through != "") {
 		return BranchMember{}, fmt.Errorf("branch join needs a repository, endpoint, branch tip, goal, and exactly one of last or through")
@@ -125,8 +132,8 @@ func ReadGoalBranch(request BranchReadRequest) (BranchMember, error) {
 		if err != nil {
 			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "build "+unit.Unit+" has no valid branch attestation: "+err.Error())
 		}
-		if attestation.Source.Kind != "critic-root" {
-			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "build "+unit.Unit+" was read outside a critic-root job")
+		if err := requireCriticRootSource(unit.Unit, attestation); err != nil {
+			return BranchMember{}, err
 		}
 		build.Attestation = attestation
 		paths := map[string]bool{}

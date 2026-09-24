@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -572,18 +573,87 @@ func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
 	}
 }
 
-func newPolicyBaseMoveFixture(t *testing.T) (string, string) {
+type policyBaseMoveFixture struct {
+	root    string
+	parents map[string]string
+	refText string
+	commits map[string]string
+	git     *testgit.Stub
+}
+
+func newPolicyBaseMoveFixture(t *testing.T, parents map[string]string, tip string, calls ...[]string) *policyBaseMoveFixture {
 	t.Helper()
 	root := t.TempDir()
-	testingFixtureGit(t, root, "init", "-q", "-b", "main")
-	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\n"), 0o644)
-	writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), []byte("base contract\n"), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "old base")
-	old := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
-	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", old)
-	return root, old
+	copyParents := make(map[string]string, len(parents))
+	for commit, parent := range parents {
+		if !policyBaseFixtureSHA(commit) || parent != "" && !policyBaseFixtureSHA(parent) {
+			t.Fatalf("invalid fixture commit or parent: %q %q", commit, parent)
+		}
+		copyParents[commit] = parent
+	}
+	if _, exists := copyParents[tip]; !exists {
+		t.Fatalf("landing tip is absent from fixture ancestry: %q", tip)
+	}
+	expected := make([]testgit.Expectation, 0, len(calls))
+	for _, call := range calls {
+		expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: root, Args: call}})
+	}
+	return &policyBaseMoveFixture{
+		root: root, parents: copyParents, refText: "refs/remotes/origin/main",
+		commits: map[string]string{"refs/remotes/origin/main": tip}, git: testgit.New(t, expected...),
+	}
+}
+
+func policyBaseFixtureSHA(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, digit := range value {
+		if digit < '0' || digit > '9' && digit < 'a' || digit > 'f' {
+			return false
+		}
+	}
+	return true
+}
+
+func (fixture *policyBaseMoveFixture) readers() policyBaseMoveReaders {
+	return policyBaseMoveReaders{
+		isAncestor: func(root, ours, engine string) (bool, error) {
+			if result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"ancestry", ours, engine}}); result.Err != nil {
+				return false, result.Err
+			}
+			if !policyBaseFixtureSHA(ours) || !policyBaseFixtureSHA(engine) {
+				return false, fmt.Errorf("invalid ancestry commit")
+			}
+			if _, exists := fixture.parents[ours]; !exists {
+				return false, fmt.Errorf("unknown ancestor commit %s", ours)
+			}
+			for commit := engine; commit != ""; commit = fixture.parents[commit] {
+				if _, exists := fixture.parents[commit]; !exists {
+					return false, fmt.Errorf("unknown descendant commit %s", commit)
+				}
+				if commit == ours {
+					return true, nil
+				}
+			}
+			return false, nil
+		},
+		localLandingRef: func(root string) (string, error) {
+			result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"landing-ref"}})
+			return fixture.refText, result.Err
+		},
+		commitAtRef: func(root, ref string) (string, error) {
+			result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"commit-at-ref", ref}})
+			if result.Err != nil {
+				return "", result.Err
+			}
+			commit, exists := fixture.commits[ref]
+			if !exists || !policyBaseFixtureSHA(commit) {
+				return "", fmt.Errorf("unknown landing ref or invalid commit %q", ref)
+			}
+			return commit, nil
+		},
+	}
 }
 
 func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
@@ -596,32 +666,26 @@ func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(preparationRestartedEnv, "")
-			root, old := newPolicyBaseMoveFixture(t)
-			writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar moved = true\n"), 0o644)
-			if test.contractChange {
-				writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), []byte("changed base contract\n"), 0o644)
-			}
-			testingFixtureGit(t, root, "add", ".")
-			testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "move base")
-			moved := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-			testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", moved)
+			old, moved := strings.Repeat("a", 40), strings.Repeat("b", 40)
+			fixture := newPolicyBaseMoveFixture(t, map[string]string{old: "", moved: old}, moved,
+				[]string{"ancestry", old, moved}, []string{"landing-ref"}, []string{"commit-at-ref", "refs/remotes/origin/main"})
 			decision := testingPlanOutput{CandidateTree: "candidate", PolicyBaseCommit: moved, BaseContractDigest: "old-digest"}
 			if test.contractChange {
 				decision.BaseContractDigest = "new-digest"
 			}
 			calls, rearms := 0, 0
-			_, err := prepareTestingWith(testingSelectionRequest{LandedRearm: true}, func(request testingSelectionRequest) (testingPreparation, error) {
+			prepared, err := prepareTestingWith(testingSelectionRequest{LandedRearm: true}, func(request testingSelectionRequest) (testingPreparation, error) {
 				calls++
 				if calls == 1 {
-					return testingPreparation{}, compareTrustedPolicyDecision(root, root, "candidate", old, "old-digest", decision)
+					return testingPreparation{}, compareTrustedPolicyDecisionWithReaders("candidate", old, "old-digest", decision, fixture.root, fixture.readers())
 				}
 				if request.LandedRearm {
 					rearms++
 				}
 				return testingPreparation{PolicyBaseCommit: moved}, nil
 			})
-			if err != nil || calls != 2 || rearms != 1 {
-				t.Fatalf("descendant move did not succeed after exactly one restart and re-arm: calls=%d rearms=%d err=%v", calls, rearms, err)
+			if err != nil || calls != 2 || rearms != 1 || prepared.PolicyBaseCommit != moved || os.Getenv(preparationRestartedEnv) != "1" {
+				t.Fatalf("descendant move did not succeed after exactly one restart and re-arm: calls=%d rearms=%d prepared=%+v guard=%q err=%v", calls, rearms, prepared, os.Getenv(preparationRestartedEnv), err)
 			}
 		})
 	}
@@ -643,35 +707,23 @@ func TestSecondBaseMoveRefusesBaseMoved(t *testing.T) {
 }
 
 func TestUnexplainedPolicyFieldRefusesDecisionMismatch(t *testing.T) {
-	root, old := newPolicyBaseMoveFixture(t)
-	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar moved = true\n"), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "move base")
-	moved := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", moved)
-	err := compareTrustedPolicyDecision(root, root, "candidate", old, "digest", testingPlanOutput{
+	old, moved := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	fixture := newPolicyBaseMoveFixture(t, map[string]string{old: "", moved: old}, moved)
+	err := compareTrustedPolicyDecisionWithReaders("candidate", old, "digest", testingPlanOutput{
 		CandidateTree: "other-candidate", PolicyBaseCommit: moved, BaseContractDigest: "other-digest",
-	})
+	}, fixture.root, fixture.readers())
 	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=candidate-tree") {
 		t.Fatalf("candidate mismatch was incorrectly explained by the base move: %v", err)
 	}
 }
 
 func TestNonDescendantPolicyBaseRefusesDecisionMismatch(t *testing.T) {
-	root, common := newPolicyBaseMoveFixture(t)
-	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar ours = true\n"), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "ours")
-	ours := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	testingFixtureGit(t, root, "checkout", "-q", "-b", "sibling", common)
-	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar sibling = true\n"), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "sibling")
-	sibling := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", sibling)
-	err := compareTrustedPolicyDecision(root, root, "candidate", ours, "digest", testingPlanOutput{
+	common, ours, sibling := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
+	fixture := newPolicyBaseMoveFixture(t, map[string]string{common: "", ours: common, sibling: common}, sibling,
+		[]string{"ancestry", ours, sibling})
+	err := compareTrustedPolicyDecisionWithReaders("candidate", ours, "digest", testingPlanOutput{
 		CandidateTree: "candidate", PolicyBaseCommit: sibling, BaseContractDigest: "digest",
-	})
+	}, fixture.root, fixture.readers())
 	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=policy-base-commit") {
 		t.Fatalf("non-descendant base was incorrectly restarted: %v", err)
 	}

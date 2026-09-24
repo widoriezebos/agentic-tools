@@ -1534,7 +1534,7 @@ func TestSessionStopIsHolderBoundSingleUseAndConsumedAcrossQuietTurns(t *testing
 	quietStore.Prober = store.Prober
 	quietMarker := sessionStopFixture(t, quietStore, "session-quiet", "main-1", 9)
 	quietBytes, _ := os.ReadFile(sessionStopPath(quietRoot, quietMarker.SessionId))
-	if verdict, err := quietStore.TurnVerdict(ScanResult{}, "session-quiet", "", "main-1", TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1"}}); err != nil || verdict.ShouldBlock {
+	if verdict, err := quietStore.TurnVerdict(ScanResult{}, "session-quiet", "", "main-1"); err != nil || verdict.ShouldBlock {
 		t.Fatalf("the next quiet turn must consume the marker without inventing a block: %+v %v", verdict, err)
 	}
 	if err := os.WriteFile(sessionStopPath(quietRoot, quietMarker.SessionId), quietBytes, 0o644); err != nil {
