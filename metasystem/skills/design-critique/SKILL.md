@@ -11,6 +11,16 @@ A design is attacked before it is built, and the loop ends the moment further cr
 
 The critic attacks; the designer adjudicates; neither does the other's job. A critic reports findings only; it never rewrites the design, and refuting the design's premise is encouraged, not out of scope. The designer answers every finding with a disposition; silently dropping one is a defect. The critic may be another agent, a fresh-context session, or a human; what matters is that it did not write the design it is attacking.
 
+## Find the Record Before the First Round
+
+The critique's first act is not a reading; it is one command, run for the goal the design is for:
+
+```bash
+metasystem project design-of --root <checkout> --goal <goal id>
+```
+
+A design the resolver cannot find is not ready to be attacked: the round returns that refusal as its single finding and stops, and the designer writes the head and moves the file into the home before the loop starts (`docs/design/design-obligation-gate.md`, "A design is a record"). A design about the project as a whole names no goal and says so in the brief; everything below runs once the command has answered.
+
 ## Step 1 Before Anything
 
 The critic's first question, answered before any other finding: does the design name **step 1** — what exists and is usable after one slice — and list what it defers? A design that does not is not complete enough to attack; the critique returns that single finding and stops. This is the human's standing law (R-121, 2026-09-22): every design is first the design of the smallest thing that works, whatever the size of the ask, and iteration is a separate decision taken after step 1 has value. The rest of this skill runs inside that anchor.

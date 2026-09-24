@@ -543,6 +543,7 @@ func families() []family {
 				{"show", "show one record by id, its references, and what references it", runProjectShow},
 				{"tree", "the declared areas, each with counts by kind and status", runProjectTree},
 				{"check", "refuse every fault in the homes, anchored at its file and line", runProjectCheck},
+				{"design-of", "the design records that name one ledger goal, or the refusal that there are none", runProjectDesignOf},
 			},
 		},
 		{

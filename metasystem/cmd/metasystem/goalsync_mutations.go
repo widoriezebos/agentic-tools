@@ -1758,7 +1758,9 @@ func trySyncMutation(name string, args []string) (int, bool) {
 				return 1, true
 			}
 			res, err := goal.OpenClaim(req, f.id, f.intent, f.origin, f.next, *budget, f.labels...)
-			return printSyncResult(res, err), true
+			code := printSyncResult(res, err)
+			hintDesignIsARecord(os.Stderr, res.Outcome, f.id)
+			return code, true
 		}
 		budget, budgetErr := f.budgetTuple(false)
 		if budgetErr != nil {
@@ -1766,7 +1768,9 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			return 2, true
 		}
 		res, err := goal.OpenRisked(req, f.id, f.intent, f.origin, f.next, f.blocks, f.blockedBy, risk, uint8(f.tier), f.why, budget, proof, f.labels...)
-		return printSyncResult(res, err), true
+		code := printSyncResult(res, err)
+		hintDesignIsARecord(os.Stderr, res.Outcome, f.id)
+		return code, true
 	case "park":
 		if !need(f.id, "id") || !need(f.because, "because") {
 			return 2, true
@@ -1939,6 +1943,9 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 		req.ApprovedRef = f.approvedRef
 		res, runErr := run(req, f)
 		code := printSyncResult(res, runErr)
+		if name == "claim" {
+			hintDesignIsARecord(os.Stderr, res.Outcome, f.id)
+		}
 		return code
 	}
 }
