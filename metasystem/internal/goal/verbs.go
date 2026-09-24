@@ -757,7 +757,10 @@ func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, blocks, bloc
 	// Who is opening is decided by the proof, never by --origin: origin is a
 	// word the caller supplies, and a seat that typed "human" into it would
 	// otherwise have talked its way out of the one rule that binds its opens.
-	hand, _ := humanHand(r, proof)
+	hand, _, handErr := humanHand(r, proof)
+	if handErr != nil {
+		return PublishResult{}, handErr
+	}
 	if hand == nil && len(blocks) == 0 {
 		return PublishResult{}, fmt.Errorf("%s", SeatOpenNeedsBlocker)
 	}
@@ -782,6 +785,13 @@ func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, blocks, bloc
 		if _, _, _, err := approvalProofClass(r.Endpoint.Root, proof); err != nil {
 			return PublishResult{}, err
 		}
+	}
+	// The origin that lands is the one the hand supports. A seat that asked
+	// for human origin would otherwise open a goal it could not afterwards
+	// conclude, because concluding a human-origin goal is a person's act: the
+	// record would say a person opened it and no person had.
+	if hand == nil {
+		origin = OriginMain
 	}
 	req, err := openRequest(r, id, intent, origin, nextStep, blocks, blockedBy, tier, supplied, &risk, why, hand != nil, labels)
 	if err != nil {
@@ -880,7 +890,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, blocks, blo
 					f.State = StateParked
 					f.Parked = &ParkRecord{
 						By: r.Actor.historyActor(), At: r.stamp(),
-						Because: blockedBecause(f.Blocked), Blocker: blockedBy[0],
+						Because: blockedBecause(unsatisfied), Blocker: blockedBy[0],
 					}
 				}
 			}
@@ -1052,20 +1062,62 @@ func refreshParkReason(t *TreeGoals, f *GoalFile) bool {
 // returned, because a caller recording provenance records that object and not
 // the fact that there was one.
 //
+// The name must also be the proof's own. A proof admits one person, and a
+// request that names another is attributing the act to somebody who did not
+// make it — which is worse than an unproven act, because the record would
+// read as theirs. That is a refusal rather than a demotion to seat: nothing
+// about it is a seat's lawful act, and answering "you are a seat" would hide
+// the substitution behind a rule about blockers.
+//
 // temporary says the admitted proof is the recorded relay, which a caller
 // writing a History line passes on to the provenance it records.
-func humanHand(r VerbRequest, proof *humanauthority.Proof) (admitted *humanauthority.Proof, temporary bool) {
+func humanHand(r VerbRequest, proof *humanauthority.Proof) (admitted *humanauthority.Proof, temporary bool, err error) {
 	if r.Actor.Human == "" {
-		return nil, false
+		return nil, false, nil
 	}
 	if proof == nil {
 		proof = r.Authority
 	}
-	_, _, relayed, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
-	if err != nil {
-		return nil, false
+	_, _, relayed, classErr := approvalProofClassForApprove(r.Endpoint.Root, proof)
+	if classErr != nil {
+		return nil, false, nil
 	}
-	return proof, relayed
+	if named := humanOfProof(r.Endpoint.Root, proof); named != "" && named != r.Actor.Human {
+		return nil, false, fmt.Errorf("the proof names %s and the act is attributed to %s; an act is recorded under the person who made it", named, r.Actor.Human)
+	}
+	return proof, relayed, nil
+}
+
+// humanOfProof is the person an admitted proof names, or "" where its class
+// names nobody a --by could be checked against.
+//
+// Three classes name somebody: the enrolled terminal records the person it
+// was enrolled for, and the signed-in session and the verified channel answer
+// both carry the handle the act came from. The recorded relay names none — it
+// carries the words that were relayed and not who relayed them, which is the
+// whole reason it is temporary — so there the name stands on its own, as it
+// always has.
+//
+// A fixture proof is deliberately not read from the enrollment: it proves a
+// checkout that declared the fake runtime and nothing about a person, so
+// there is nobody in it to compare a name with.
+func humanOfProof(root string, proof *humanauthority.Proof) string {
+	if proof == nil {
+		return ""
+	}
+	if proof.Outcome == humanauthority.OutcomeSession ||
+		proof.Outcome == humanauthority.OutcomeVerifiedChannel ||
+		proof.Outcome == humanauthority.OutcomeChannel {
+		return proof.ChannelUser
+	}
+	if !proof.EnrolledTerminalFor(root) {
+		return ""
+	}
+	enrollment, err := humanauthority.ReadEnrollment(root)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(enrollment.Human)
 }
 
 // heldBySeat reports whether this goal is the acting seat's own claim, which
@@ -2758,7 +2810,10 @@ func Block(r VerbRequest, id, blocker string, proof *humanauthority.Proof) (Publ
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(blocker) == "" {
 		return PublishResult{}, fmt.Errorf("goal block names the goal that waits with --id and the goal it waits for with --blocker")
 	}
-	hand, _ := humanHand(r, proof)
+	hand, _, handErr := humanHand(r, proof)
+	if handErr != nil {
+		return PublishResult{}, handErr
+	}
 	return Publish(r.Endpoint, blockRequest(r, strings.TrimSpace(id), strings.TrimSpace(blocker), hand != nil))
 }
 
@@ -2856,7 +2911,10 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 			if !contains(f.Blocked, blocker) {
 				return nil, NothingToDo{Reason: "goal " + id + " does not wait for " + blocker}
 			}
-			hand, temporary := humanHand(r, proof)
+			hand, temporary, handErr := humanHand(r, proof)
+			if handErr != nil {
+				return nil, handErr
+			}
 			if early := depState(t, blocker) != StateDone; early {
 				// A name without a proof is a seat here, and no seat runs an
 				// early lift, so the one refusal answers both.

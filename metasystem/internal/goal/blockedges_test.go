@@ -39,7 +39,7 @@ func channelProofForTest(t *testing.T, root string, now time.Time) *humanauthori
 	t.Helper()
 	proof, err := humanauthority.VerifiedChannelAnswerProof(root, governance.RecordedChannelAuthority{
 		Outcome:  governance.AuthorityOutcomeVerifiedChannelAnswer,
-		Provider: "slack", UserID: "UWIDO", MessageRef: "1/2", ContextID: "thread-1", Step: 42,
+		Provider: "slack", UserID: "Wido", MessageRef: "1/2", ContextID: "thread-1", Step: 42,
 	}, now)
 	if err != nil {
 		t.Fatalf("mint a verified channel answer proof: %v", err)
@@ -700,7 +700,7 @@ func TestEarlyUnblockIsAdmittedByAVerifiedChannelAnswer(t *testing.T) {
 	}
 	last := tree.Live["waits-channel"].History[len(tree.Live["waits-channel"].History)-1]
 	if last.Verb != "unblock" || last.AuthorityOutcome != AuthorityOutcomeVerifiedChannelAnswer ||
-		last.ChannelProvider != "slack" || last.ChannelUser != "UWIDO" || last.ChannelRef != "1/2" {
+		last.ChannelProvider != "slack" || last.ChannelUser != "Wido" || last.ChannelRef != "1/2" {
 		t.Fatalf("the channel answer's provenance is not on the line: %+v", last)
 	}
 	assertFilesParse(t, tree)
@@ -841,6 +841,145 @@ func TestRecoveryReplaysASeatsEdgesAndRefusesAJournaledName(t *testing.T) {
 	if held := projection.Tree.Live["seat-goal"]; len(held.Blocked) != 0 {
 		t.Fatalf("the refused replay changed the record: %v", held.Blocked)
 	}
+}
+
+// A proof admits one person. An act attributed to somebody else is worse than
+// an unproven one, because the record would read as theirs, so the name and
+// the proof are bound and a mismatch is refused by name on every edge verb.
+func TestANameThatIsNotTheProofsIsRefusedOnEveryEdgeVerb(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000C200", "someones-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000C201", "a-defect", OriginMain)
+
+	// The proof is Wido's session; the act says Bob made it.
+	asBob := func(ulid string) (VerbRequest, *humanauthority.Proof) {
+		request := verbReq(root, ulid, "mac-a")
+		request.Actor.Human = "Bob"
+		return request, sessionProofForTest(t, root, request.Now)
+	}
+
+	before := acceptedTip(t, root)
+	bobOpen, wido := asBob("01J5X00000000000000000C202")
+	if _, err := OpenRisked(bobOpen, "bobs-fix", "An open attributed to Bob.", OriginHuman, "Fix it.",
+		nil, nil, edgeRisk(), 0, "", &budget, wido); err == nil ||
+		!strings.Contains(err.Error(), "the proof names Wido") || !strings.Contains(err.Error(), "attributed to Bob") {
+		t.Fatalf("an open under somebody else's proof: %v", err)
+	}
+	bobBlock, wido := asBob("01J5X00000000000000000C203")
+	if _, err := Block(bobBlock, "someones-work", "a-defect", wido); err == nil ||
+		!strings.Contains(err.Error(), "the proof names Wido") {
+		t.Fatalf("a block under somebody else's proof: %v", err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("a refused substitution moved the ledger")
+	}
+
+	// The same proof, under the name it names, acts.
+	request := personReq(root, "01J5X00000000000000000C205", "mac-a")
+	if result, err := Block(request, "someones-work", "a-defect", sessionProofForTest(t, root, request.Now)); err != nil ||
+		result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the proof's own person could not act: %+v %v", result, err)
+	}
+
+	// And the edge it wrote cannot be removed in somebody else's name.
+	written := acceptedTip(t, root)
+	bobUnblock, wido := asBob("01J5X00000000000000000C206")
+	if result, err := Unblock(bobUnblock, "someones-work", "a-defect", wido); err != nil ||
+		result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "the proof names Wido") {
+		t.Fatalf("an unblock under somebody else's proof: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != written {
+		t.Fatal("a refused unblock moved the ledger")
+	}
+}
+
+// --origin human is a word the caller supplies. A seat that types it opens a
+// goal it could not afterwards conclude, because concluding a human-origin
+// goal is a person's act — so what lands is the origin the hand supports.
+func TestASeatsOpenIsStoredAsASeatsWhateverOriginItAsksFor(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000C300", "seat-holds", OriginHuman)
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000C301", "mac-a"), "seat-holds", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the seat claims its goal: %+v %v", result, err)
+	}
+
+	// A seat naming human origin, with a blocker it holds, opens as a seat.
+	result, err := OpenRisked(namedOnly(root, "01J5X00000000000000000C302", "mac-a"), "seat-fix",
+		"A defect the seat found.", OriginHuman, "Fix it.",
+		[]string{"seat-holds"}, nil, edgeRisk(), 0, "", &budget, nil)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a seat's open naming the goal it holds: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened := tree.Live["seat-fix"]; opened.Origin != OriginMain {
+		t.Fatalf("a seat's open was stored as the person's: %q", opened.Origin)
+	}
+	// And the seat can finish what it opened, which is the whole point.
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000C303", "mac-a"), "seat-fix", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim the seat's own goal: %+v %v", result, err)
+	}
+	if result, err := Done(verbReq(root, "01J5X00000000000000000C304", "mac-a"), "seat-fix", "Fixed."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a seat could not conclude the goal it opened: %+v %v", result, err)
+	}
+
+	// A person's open, proof and all, keeps the origin it asked for.
+	person := personReq(root, "01J5X00000000000000000C305", "mac-a")
+	result, err = OpenRisked(person, "persons-work", "What the person asked for.", OriginHuman, "Do it.",
+		nil, nil, edgeRisk(), 0, "", &budget, personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a person's open: %+v %v", result, err)
+	}
+	tree, err = loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened := tree.Live["persons-work"]; opened.Origin != OriginHuman {
+		t.Fatalf("a proven person's open lost its origin: %q", opened.Origin)
+	}
+}
+
+// The reason a park carries is what it is still waiting for, at the moment it
+// is written. A blocker that was already done when the goal opened was never
+// part of the wait.
+func TestAnOpensParkNamesOnlyTheBlockersThatAreNotDone(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000C400", "already-closed", OriginMain)
+	liveGoalForEdges(t, root, "01J5X00000000000000000C401", "still-open", OriginMain)
+	concludeForEdges(t, root, "01J5X00000000000000000C402", "01J5X00000000000000000C403", "already-closed")
+
+	result, err := OpenRisked(personReq(root, "01J5X00000000000000000C404", "mac-a"), "behind-both",
+		"Work behind one done and one live.", OriginHuman, "Wait.",
+		nil, []string{"already-closed", "still-open"}, edgeRisk(), 0, "", &budget, personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by one done and one live: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := tree.Live["behind-both"]
+	if waiting.State != StateParked || waiting.Parked == nil {
+		t.Fatalf("the live blocker did not park the goal: state=%s parked=%+v", waiting.State, waiting.Parked)
+	}
+	if waiting.Parked.Because != blockedBecause([]string{"still-open"}) {
+		t.Fatalf("the park's reason names a blocker that was already done: %q", waiting.Parked.Because)
+	}
+	if strings.Join(waiting.Blocked, ",") != "already-closed,still-open" {
+		t.Fatalf("the satisfied edge was not kept: %v", waiting.Blocked)
+	}
+	assertFilesParse(t, tree)
 }
 
 // A recovered open rebuilds the same mutation, which means both directions of

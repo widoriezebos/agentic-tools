@@ -1862,6 +1862,15 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			printJSON(map[string]any{"outcome": "confirmed", "skipped": skipped})
 			return 0, true
 		}
+		// Reconcile is the hand-edit path and always names its human, but
+		// most of what it republishes needs no proof: an intent reworded, a
+		// next step rewritten. So the proof is taken where it can be taken
+		// and the session runs either way; the edits that do need one — a
+		// blocker removed before it is done — ask for it themselves and name
+		// the edge when it is missing.
+		if proven, _, proofErr := provenGoalRequest("reconcile", f, humanauthority.ProveOrTemporaryGoalAuthority); proofErr == nil {
+			req = proven
+		}
 		res, err := goal.Reconcile(req)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

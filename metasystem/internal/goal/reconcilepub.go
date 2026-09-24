@@ -224,6 +224,59 @@ func newReplaySession() *replaySession {
 	return &replaySession{archived: map[string]bool{}, moved: map[string]bool{}}
 }
 
+// applyHandEditedEdges is the BlockedBy half of a hand edit, held to the same
+// rules the two edge verbs are held to.
+//
+// Reconcile is the path a file edited by hand comes back on, and a file is a
+// place where any line can be changed: the list of blockers as readily as the
+// next step. Without this, the edge verbs' rules would be a front door with
+// the back door open - a seat could delete an unfinished blocker from a
+// parked goal, type a person into --by, and reconcile it in with no proof at
+// all. So the diff is judged rather than applied: a removed edge whose
+// blocker is not done is the early lift, which is a person's act under a
+// proof the approval gate admits; an added edge is goal block, which reaches
+// only the goal the seat holds.
+//
+// What follows the diff is the repair the verbs do, because the record has to
+// stay lawful whichever door it came through: the marker moves to an edge
+// that is still in the list, the reason is written from what is still open,
+// and a dependency park whose condition the edit satisfied returns.
+func applyHandEditedEdges(t *TreeGoals, r VerbRequest, f *GoalFile, edited []string, conflict func(string, string, ...any) error) error {
+	hand, _, handErr := humanHand(r, r.Authority)
+	if handErr != nil {
+		return handErr
+	}
+	wanted := sortedUnique(append([]string(nil), edited...))
+	if hand == nil {
+		for _, blocker := range f.Blocked {
+			if contains(wanted, blocker) || depState(t, blocker) == StateDone {
+				continue
+			}
+			return conflict("blockedBy", "the edit drops %s, which is not done; removing an unfinished blocker is an early lift and a human act, and a name without a proof is not one", blocker)
+		}
+		for _, blocker := range wanted {
+			if contains(f.Blocked, blocker) || heldBySeat(f, r) {
+				continue
+			}
+			return conflict("blockedBy", "the edit adds %s to a goal this seat does not hold (R-93-m1e)", blocker)
+		}
+	}
+	f.Blocked = wanted
+	if f.State != StateParked || f.Parked == nil || f.Parked.Blocker == "" {
+		return nil
+	}
+	if len(unsatisfiedBlockers(t, f.Blocked)) == 0 {
+		f.State = restingState(f)
+		f.Parked = nil
+		return nil
+	}
+	if !contains(f.Blocked, f.Parked.Blocker) {
+		f.Parked.Blocker = f.Blocked[0]
+	}
+	refreshParkReason(t, f)
+	return nil
+}
+
 // applyRow applies one mapped verb's complete effects onto the
 // fetched tree, with the row's before-predicate as the conflict
 // gate.
@@ -427,7 +480,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			f.NextStep = *row.Fields.NextStep
 		}
 		if row.Fields.Blocked != nil {
-			f.Blocked = append([]string(nil), (*row.Fields.Blocked)...)
+			if err := applyHandEditedEdges(t, r, f, *row.Fields.Blocked, conflict); err != nil {
+				return nil, err
+			}
 		}
 		if row.Fields.Labels != nil {
 			labels, err := canonicalLabels(*row.Fields.Labels)
