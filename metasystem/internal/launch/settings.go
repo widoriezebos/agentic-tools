@@ -20,6 +20,11 @@ const (
 	BuildEffortKey              = "launch.build.effort"
 	DesignModelKey              = "launch.design.model"
 	ReadModelKey                = "launch.read.model"
+	CritiqueModelKey            = "launch.critique.model"
+	BuildRuntimeKey             = "launch.build.runtime"
+	CritiqueRuntimeKey          = "launch.critique.runtime"
+	DesignRuntimeKey            = "launch.design.runtime"
+	ReadRuntimeKey              = "launch.read.runtime"
 	WaitCapKey                  = "launch.wait.cap.seconds"
 	BriefCapKey                 = "launch.brief.admitted.tokens"
 	BuildLinesCapKey            = "launch.build.max.changed.lines"
@@ -45,6 +50,9 @@ type ShippedSeatWindow struct {
 type Settings struct {
 	SeatWindow, BuildWindow, DesignWindow, ReadWindow int64
 	BuildModel, BuildEffort, DesignModel, ReadModel   string
+	CritiqueModel                                     string
+	BuildRuntime, CritiqueRuntime, DesignRuntime      string
+	ReadRuntime                                       string
 	WaitCapSeconds, BriefCap, BuildLinesCap           int64
 	ReadSplitLines                                    int64
 	DesignBaselineTokens, DesignBaselineRequests      int64
@@ -55,12 +63,20 @@ type Settings struct {
 var settingDefaults = []Setting{
 	{Key: SeatWindowKey, Value: "0", Source: "default"}, {Key: BuildWindowKey, Value: "0", Source: "default"},
 	{Key: DesignWindowKey, Value: "0", Source: "default"}, {Key: ReadWindowKey, Value: "0", Source: "default"},
-	{Key: BuildModelKey, Value: "gpt-6-sol", Source: "default"}, {Key: BuildEffortKey, Value: "xhigh", Source: "default"},
-	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "claude-opus-5-5[1m]", Source: "default"},
+	{Key: BuildModelKey, Value: "claude-opus-5-5", Source: "default"}, {Key: BuildEffortKey, Value: "xhigh", Source: "default"},
+	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "gpt-6-sol", Source: "default"},
 	{Key: WaitCapKey, Value: "240", Source: "default"}, {Key: BriefCapKey, Value: "120000", Source: "default"},
 	{Key: BuildLinesCapKey, Value: "1500", Source: "default"}, {Key: ReadSplitLinesKey, Value: "1200", Source: "default"},
 	{Key: DesignBaselineTokensKey, Value: "2432374", Source: "default"}, {Key: DesignBaselineRequestsKey, Value: "28", Source: "default"},
 	{Key: DesignBaselinePeakTokensKey, Value: "163000", Source: "default"},
+	// The roster proper (R-123): every lane names its agent and its model,
+	// appended after the index reads above so those hold. The critique lane
+	// has a model of its own, because the author and the critic are
+	// different models; and a lane names its runtime because a model name is
+	// not an agent — more than one agent can serve the same model.
+	{Key: CritiqueModelKey, Value: "gpt-6-sol", Source: "default"},
+	{Key: BuildRuntimeKey, Value: "claude", Source: "default"}, {Key: CritiqueRuntimeKey, Value: "codex", Source: "default"},
+	{Key: DesignRuntimeKey, Value: "claude", Source: "default"}, {Key: ReadRuntimeKey, Value: "codex", Source: "default"},
 }
 
 func LoadShippedSeatWindow(moduleRoot string, configured int64) (ShippedSeatWindow, error) {
@@ -144,6 +160,20 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool), use
 	}
 	result.BuildModel, result.BuildEffort = result.Values[4].Value, result.Values[5].Value
 	result.DesignModel, result.ReadModel = result.Values[6].Value, result.Values[7].Value
+	for _, setting := range result.Values {
+		switch setting.Key {
+		case CritiqueModelKey:
+			result.CritiqueModel = setting.Value
+		case BuildRuntimeKey:
+			result.BuildRuntime = setting.Value
+		case CritiqueRuntimeKey:
+			result.CritiqueRuntime = setting.Value
+		case DesignRuntimeKey:
+			result.DesignRuntime = setting.Value
+		case ReadRuntimeKey:
+			result.ReadRuntime = setting.Value
+		}
+	}
 	targets = []*int64{&result.WaitCapSeconds, &result.BriefCap, &result.BuildLinesCap, &result.ReadSplitLines,
 		&result.DesignBaselineTokens, &result.DesignBaselineRequests, &result.DesignBaselinePeakTokens}
 	for offset := range targets {
@@ -154,10 +184,28 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool), use
 	return result, nil
 }
 
+// launchRuntime is the agent a lane runs on, by the lane's own setting.
+func (s Settings) launchRuntime(kind string) string {
+	switch kind {
+	case "build":
+		return s.BuildRuntime
+	case "critique":
+		return s.CritiqueRuntime
+	case "design":
+		return s.DesignRuntime
+	case "read":
+		return s.ReadRuntime
+	default:
+		return ""
+	}
+}
+
 func (s Settings) launchValues(kind string) (string, string, int64) {
 	switch kind {
-	case "build", "critique":
+	case "build":
 		return s.BuildModel, s.BuildEffort, s.BuildWindow
+	case "critique":
+		return s.CritiqueModel, s.BuildEffort, s.BuildWindow
 	case "design":
 		return s.DesignModel, s.BuildEffort, s.DesignWindow
 	case "read":

@@ -105,8 +105,8 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 		kind, adapter, model string
 	}{
 		{"design", "claude-headless", "claude-fable-5-1"},
-		{"read", "claude-headless", "claude-opus-5-5[1m]"},
-		{"build", "codex-exec", "gpt-6-sol"},
+		{"read", "codex-exec", "gpt-6-sol"},
+		{"build", "claude-headless", "claude-opus-5-5"},
 		{"critique", "codex-exec", "gpt-6-sol"},
 	}
 	for index, row := range cases {
