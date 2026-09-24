@@ -90,15 +90,18 @@ func (r Record) At() time.Time {
 // rawRecord distinguishes an absent key from a zero value and a wrong type
 // from a missing one, which the reader's rule requires.
 type rawRecord struct {
-	PresenceSchema *int             `json:"presenceSchema"`
-	Machine        *string          `json:"machine"`
-	RepoIdentity   *string          `json:"repoIdentity"`
-	Generation     *int             `json:"generation"`
-	Engine         *string          `json:"engine"`
-	ArmedLineage   *string          `json:"armedLineage"`
-	TickSeconds    *int             `json:"tickSeconds"`
-	Chain          *json.RawMessage `json:"chain"`
-	TickAt         *string          `json:"tickAt"`
+	PresenceSchema *int    `json:"presenceSchema"`
+	Machine        *string `json:"machine"`
+	RepoIdentity   *string `json:"repoIdentity"`
+	Generation     *int    `json:"generation"`
+	Engine         *string `json:"engine"`
+	ArmedLineage   *string `json:"armedLineage"`
+	TickSeconds    *int    `json:"tickSeconds"`
+	// Chain is read raw, because a pointer would make a present null
+	// indistinguishable from an absent key, and the reader must refuse the
+	// one while accepting the other.
+	Chain  json.RawMessage `json:"chain"`
+	TickAt *string         `json:"tickAt"`
 }
 
 // ParseRecord validates the keys this engine knows and ignores the rest. It
@@ -169,9 +172,9 @@ func ParseRecord(data []byte) (Record, error) {
 		TickSeconds:    *raw.TickSeconds,
 		TickAt:         tickAt.Format(time.RFC3339),
 	}
-	if string(*raw.Chain) != "null" {
+	if string(raw.Chain) != "null" {
 		var chain Chain
-		if err := json.Unmarshal(*raw.Chain, &chain); err != nil {
+		if err := json.Unmarshal(raw.Chain, &chain); err != nil {
 			return malformed("the presence record's chain is neither an object nor null: %v", err)
 		}
 		record.Chain = &chain
