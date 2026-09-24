@@ -124,14 +124,26 @@ func CommitMessage(record Record) string {
 	return fmt.Sprintf("seat presence %s %s", record.Machine, record.TickAt)
 }
 
+// Write is one publish: which ref, which record, what the commit descends
+// from, and whether the ref update may replace what is there. Parent and
+// Force are separate because they are separate facts: rung 3's first publish
+// creates the branch from nothing and must still not be a force push.
+type Write struct {
+	Ref     string
+	Message string
+	File    []byte
+	// Parent is the commit the new record descends from; empty means a
+	// parentless commit.
+	Parent string
+	// Force replaces whatever the ref holds. Without it the update must
+	// fast-forward, which also creates a ref that does not exist yet.
+	Force bool
+}
+
 // RemoteWriter publishes one presence commit and moves one ref to it. The
 // git implementation is Git; the behaviour tests drive fakes.
 type RemoteWriter interface {
-	// Publish writes file as the whole tree of a new commit and updates ref
-	// to it. An empty parent means a parentless commit and a forced update;
-	// a named parent means the commit is its child and the update must
-	// fast-forward.
-	Publish(ref, message string, file []byte, parent string) (commit string, err error)
+	Publish(Write) (commit string, err error)
 }
 
 // PublishRequest is one pass up the ladder.
@@ -175,11 +187,13 @@ func Publish(writer RemoteWriter, request PublishRequest) (PublishResult, error)
 	var lastErr error
 	for index, rung := range rungs {
 		ref := rung.Ref(record.Machine)
-		parent := ""
+		write := Write{Ref: ref, Message: message, File: file, Force: rung.Force()}
 		if !rung.Force() {
-			parent = request.BranchTip
+			// The fast-forward rung descends from whatever this clone last
+			// read on the branch; an empty tip is the branch's first record.
+			write.Parent = request.BranchTip
 		}
-		commit, err := writer.Publish(ref, message, file, parent)
+		commit, err := writer.Publish(write)
 		if err == nil {
 			result.Rung, result.Commit = rung, commit
 			result.Fell = index > 0

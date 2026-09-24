@@ -18,16 +18,18 @@ type fakeRemote struct {
 	transport error
 	offered   []string
 	parents   []string
+	forced    []bool
 }
 
-func (f *fakeRemote) Publish(ref, message string, file []byte, parent string) (string, error) {
-	f.offered = append(f.offered, ref)
-	f.parents = append(f.parents, parent)
+func (f *fakeRemote) Publish(write Write) (string, error) {
+	f.offered = append(f.offered, write.Ref)
+	f.parents = append(f.parents, write.Parent)
+	f.forced = append(f.forced, write.Force)
 	if f.transport != nil {
 		return "", f.transport
 	}
-	if detail, refused := f.refuse[ref]; refused {
-		return "", &RefRefused{Ref: ref, Detail: detail}
+	if detail, refused := f.refuse[write.Ref]; refused {
+		return "", &RefRefused{Ref: write.Ref, Detail: detail}
 	}
 	return fmt.Sprintf("commit-%d", len(f.offered)), nil
 }
@@ -56,6 +58,9 @@ func TestTheLadderStartsOnTheMetasystemRef(t *testing.T) {
 	}
 	if remote.parents[0] != "" {
 		t.Fatalf("rung 1 pushed a child of %q; it is parentless", remote.parents[0])
+	}
+	if !remote.forced[0] {
+		t.Fatal("rung 1 must replace the ref without history")
 	}
 }
 
@@ -103,16 +108,38 @@ func TestRefusingBothForcedRungsLandsOnTheFastForwardBranch(t *testing.T) {
 }
 
 // refusingForce refuses every forced push by name, which is what a branch
-// ruleset that forbids force pushes does.
+// ruleset that forbids force pushes does. It judges the push mode, never the
+// parent: rung 3's first publish has no parent either and must still pass.
 type refusingForce struct{ inner *fakeRemote }
 
-func (r *refusingForce) Publish(ref, message string, file []byte, parent string) (string, error) {
-	if parent == "" && strings.HasPrefix(ref, BranchNamespace) {
-		r.inner.offered = append(r.inner.offered, ref)
-		r.inner.parents = append(r.inner.parents, parent)
-		return "", &RefRefused{Ref: ref, Detail: "protected branch hook declined"}
+func (r *refusingForce) Publish(write Write) (string, error) {
+	if write.Force && strings.HasPrefix(write.Ref, BranchNamespace) {
+		r.inner.offered = append(r.inner.offered, write.Ref)
+		r.inner.parents = append(r.inner.parents, write.Parent)
+		r.inner.forced = append(r.inner.forced, write.Force)
+		return "", &RefRefused{Ref: write.Ref, Detail: "protected branch hook declined"}
 	}
-	return r.inner.Publish(ref, message, file, parent)
+	return r.inner.Publish(write)
+}
+
+func TestTheFastForwardRungCreatesItsBranchWithoutAForcePush(t *testing.T) {
+	t.Parallel()
+	remote := &fakeRemote{}
+	// No branch tip is known yet: this is the branch's first record, and it
+	// must still reach the remote as an ordinary create, not a force push.
+	result, err := Publish(remote, PublishRequest{Record: fixtureRecord(t), Start: RungBranchFastForward})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Rung != RungBranchFastForward {
+		t.Fatalf("result = %+v", result)
+	}
+	if remote.forced[0] {
+		t.Fatal("the fast-forward rung forced its first publish")
+	}
+	if remote.parents[0] != "" {
+		t.Fatalf("the branch's first record descended from %q", remote.parents[0])
+	}
 }
 
 func TestATimeoutMovesNoRung(t *testing.T) {

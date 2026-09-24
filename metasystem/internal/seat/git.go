@@ -169,10 +169,12 @@ func (g Git) readPrefix(prefix string) (Copy, error) {
 }
 
 // Publish writes the record as the whole tree of a fresh commit and moves
-// ref to it: force and parentless when parent is empty, a child of parent
-// and fast-forward otherwise. In LocalMode the ref is updated locally and
-// nothing is pushed.
-func (g Git) Publish(ref, message string, file []byte, parent string) (string, error) {
+// ref to it. The commit descends from write.Parent, and the ref update is
+// forced only when write.Force says so, so the fast-forward rung creates its
+// branch without a force push and keeps history from there. In LocalMode the
+// ref is updated locally and nothing is pushed.
+func (g Git) Publish(write Write) (string, error) {
+	ref, parent, file := write.Ref, write.Parent, write.File
 	blob, _, err := g.run("presence blob", file, "hash-object", "-w", "--stdin")
 	if err != nil {
 		return "", err
@@ -181,7 +183,7 @@ func (g Git) Publish(ref, message string, file []byte, parent string) (string, e
 	if err != nil {
 		return "", err
 	}
-	args := []string{"commit-tree", strings.TrimSpace(tree), "-m", message}
+	args := []string{"commit-tree", strings.TrimSpace(tree), "-m", write.Message}
 	if parent != "" {
 		args = append(args, "-p", parent)
 	}
@@ -197,7 +199,7 @@ func (g Git) Publish(ref, message string, file []byte, parent string) (string, e
 		return object, nil
 	}
 	spec := object + ":" + ref
-	if parent == "" {
+	if write.Force {
 		spec = "+" + spec
 	}
 	stdout, stderr, err := g.run("presence push", nil, "push", g.Remote, spec)
