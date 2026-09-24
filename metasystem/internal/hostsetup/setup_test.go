@@ -723,15 +723,6 @@ func hostSetupModuleRoot(t *testing.T) string {
 	}
 }
 
-func copyHostSourceFile(t *testing.T, root, relative, destination string, mode os.FileMode) {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, relative))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeHostFile(t, destination, string(data), mode)
-}
-
 func hostSetupCleanEnvironment() []string {
 	var environment []string
 	for _, entry := range os.Environ() {

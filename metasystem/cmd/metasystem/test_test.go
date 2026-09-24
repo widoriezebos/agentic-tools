@@ -493,11 +493,11 @@ func testingTerminalControlRootProblems(testSource, proofSource, launcherSource 
 		{"test.go", "runTestWorker", "canonicalProofRoot", "controlRoot"},
 		{"test.go", "runTestWorker", "proofrun.AuthenticateWorker", "canonicalControl"},
 		{"test.go", "runTestWorker", "proofrun.ReadAttempt", "canonicalControl"},
-		{"test.go", "testingTerminalCommit", "readTestingWorkerResult", "workerResultPath"},
-		{"test.go", "testingTerminalCommit", "commitProofTerminalWithTestResult", "completion"},
-		{"proof_run.go", "commitProofTerminalWithTestResult", "commitProofTerminalWithReason", "completion"},
-		{"proof_run.go", "commitProofTerminalWithReason", "proofrun.ReadProcessRecord", "completion.ControlRoot"},
-		{"proof_run.go", "commitProofTerminalWithReason", "proofrun.FinalizeAttemptWithTestResultLocked", "completion.ControlRoot"},
+		{"test.go", "testingTerminalCommit", "testingTerminalCommitWithReads", "workerResultPath"},
+		{"test.go", "testingTerminalCommitWithReads", "readTestingWorkerResult", "workerResultPath"},
+		{"test.go", "testingTerminalCommitWithReads", "commitProofTerminalWithReasonAndReads", "completion"},
+		{"proof_run.go", "commitProofTerminalWithReasonAndReads", "proofrun.ReadProcessRecord", "completion.ControlRoot"},
+		{"proof_run.go", "commitProofTerminalWithReasonAndReads", "proofrun.FinalizeAttemptWithTestResultLocked", "completion.ControlRoot"},
 		{"launcher.go", "LaunchSuite", "options.CommitTerminal", "completion"},
 	}
 	for _, check := range checks {

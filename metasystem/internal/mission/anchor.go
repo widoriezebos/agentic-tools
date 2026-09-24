@@ -173,8 +173,6 @@ func resolvePath(path string) string {
 
 var trailerRe = regexp.MustCompile(`(?m)^(Mission-[A-Za-z0-9-]+): (.+)$`)
 
-// latestAnchor returns the trailers (plus the commit sha) of the most recent
-// anchor commit for a mission.
 // stateAnchorRef is the runner-owned ref carrying a mission's state
 // anchors: anchors OFF the mission branch keep the
 // branch tree free of force-tracked bookkeeping — delegate worktrees
@@ -188,10 +186,6 @@ func stateAnchorRef(mission string) string {
 // ErrNoAnchor names the one tolerable absence: a mission that has never
 // anchored (fresh unit beds); every OTHER anchor failure is disagreement.
 var ErrNoAnchor = stateErr("mission state has no local anchor commit")
-
-func latestAnchor(repo, mission string) (map[string]string, error) {
-	return latestAnchorWithOperations(defaultAnchorOperations(), repo, mission)
-}
 
 func latestAnchorWithOperations(ops anchorOperations, repo, mission string) (map[string]string, error) {
 	// Absence must be PROVEN, not inferred from a nonzero exit
@@ -1317,4 +1311,9 @@ func verifyStateWithAnchorWithOperations(ops anchorOperations, statePath, repo, 
 	seq, _ := intValue(integrity["sequence"])
 	h, _ := integrity["hash"].(string)
 	return seq, h, nil
+}
+
+// AnchorNamedWithRawAnchorOperations uses supplied Git calls for the normal pinned anchor write.
+func AnchorNamedWithRawAnchorOperations(raw RawAnchorOperations, statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA string) error {
+	return anchorNamedWithOperations(raw.operations(), statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA)
 }

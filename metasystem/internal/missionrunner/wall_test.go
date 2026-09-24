@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -1499,10 +1500,8 @@ func TestReservationReparksOrphanedEvidence(t *testing.T) {
 	assertOrphanResume(t, bed, "alpha-t9-orphan")
 }
 
-// Both typed resolutions through the REAL human
-// entrypoint: the wrapper resolves the bed root from
-// its own location and forwards to the bed's binary — this is the
-// invocation a human actually types, wrapper to binary to engine.
+// The freshly compiled command handles both typed resolutions and publishes
+// each fixture's state anchor through native Git.
 func TestResolveTaintThroughWrapper(t *testing.T) {
 	restoreBed := parkedSoloBuildMission(t)
 	statePath := filepath.Join(restoreBed.missionDir(), "state.json")
@@ -1524,6 +1523,10 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the wrapper restore must succeed: %v\n%s", err, out)
 	}
+	if _, _, err := mission.VerifyStateWithAnchor(statePath, restoreBed.Root,
+		filepath.Join(restoreBed.missionDir(), "ledger.md")); err != nil {
+		t.Fatalf("the restore must publish a verifiable state anchor: %v", err)
+	}
 	after := readTestDoc(t, statePath)
 	if after["parkReason"] != nil || unresolvedTaint(after) != "" {
 		t.Fatalf("the wrapper restore must unpark and lift the STOP: %v", after["parkReason"])
@@ -1536,6 +1539,10 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 		"--waives", "authorship of solo.go")
 	if err != nil {
 		t.Fatalf("the wrapper adoption must succeed: %v\n%s", err, out)
+	}
+	if _, _, err := mission.VerifyStateWithAnchor(adoptState, adoptBed.Root,
+		filepath.Join(adoptBed.missionDir(), "ledger.md")); err != nil {
+		t.Fatalf("the adoption must publish a verifiable state anchor: %v", err)
 	}
 	adopted := readTestDoc(t, adoptState)
 	entry := adopted["workspaceTaint"].(map[string]any)["entries"].([]any)[0].(map[string]any)
@@ -1670,18 +1677,23 @@ func TestUnparsableLedgerTamperResolvesAfterRestoration(t *testing.T) {
 // reverted to a post-write reread would pin the moved bytes and anchor
 // them successfully, failing this test.
 func TestTailAnchorRefusesMovedLedger(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
-	statePath := filepath.Join(engine.missionDir(), "state.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
+	bed := newResolutionFileBed(t)
+	engine, statePath, ledgerPath := bed.e, bed.state, bed.ledger
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, true, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("restore must succeed: %d", code)
 	}
+	trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, "")
+	trace.install(engine)
 	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	if len(asks) != 1 {
+		t.Fatalf("wall asks = %v", asks)
+	}
 	crashed := deepCopyDoc(readTestDoc(t, asks[0]))
 	crashed["answeredAt"] = nil
 	crashed["answer"] = nil
@@ -1697,8 +1709,19 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	engine.preAnchorHook = func() {
 		writeText(t, ledgerPath, string(pristine)+"\n")
 	}
+	trace.verify(trace.tip)
+	trace.tipReads(trace.tip)
+	trace.output(trace.branch+"\n", "branch", "--show-current")
+	trace.begin()
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "tail retry", nil); code == 0 {
 		t.Fatal("the tail anchor must refuse ledger bytes moved past the verified pin")
+	}
+	trace.done()
+	if ask := readTestDoc(t, asks[0]); ask["answeredAt"] == nil {
+		t.Fatalf("the resolution tail did not answer its ask: %v", ask)
+	}
+	if waiting := readTestDoc(t, statePath)["waitingList"].([]any); len(waiting) != 0 {
+		t.Fatalf("the resolution tail did not clear its waiting list: %v", waiting)
 	}
 	// The refused anchor left the tail DURABLE (asks answered, waiting
 	// list written) with the anchor one lawful step behind. The NATURAL
@@ -1709,9 +1732,12 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	beforeRetry := readTestDoc(t, statePath)
 	beforeIntegrity, _ := beforeRetry["integrity"].(map[string]any)
 	beforeHash, _ := beforeIntegrity["hash"].(string)
-	if code, _ := mission.Reconcile(statePath, engine.Root, ledgerPath); code == 0 {
+	trace.movedRetry(trace.tip)
+	trace.begin()
+	if code, _ := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath); code == 0 {
 		t.Fatal("reconciliation over moved bytes must refuse")
 	}
+	trace.done()
 	afterRetry := readTestDoc(t, statePath)
 	afterIntegrity, _ := afterRetry["integrity"].(map[string]any)
 	if afterHash, _ := afterIntegrity["hash"].(string); afterHash != beforeHash {
@@ -1730,9 +1756,13 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	}
 	savedStderr := os.Stderr
 	os.Stderr = stderrW
+	trace.tipReads(trace.tip)
+	trace.movedRetry(trace.tip)
+	trace.begin()
 	code := engine.ResolveTaint(1, "restore", preTree, "Wido", "retry over moved bytes", nil)
 	os.Stderr = savedStderr
 	stderrW.Close()
+	trace.done()
 	captured, _ := io.ReadAll(stderrR)
 	if code == 0 {
 		t.Fatal("resolve over moved bytes must refuse")
@@ -1743,27 +1773,42 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	// Restoring the bytes lets reconciliation bridge it — the same heal
 	// every crash window uses.
 	writeText(t, ledgerPath, string(pristine))
-	if code, rerr := mission.Reconcile(statePath, engine.Root, ledgerPath); rerr != nil || code != 0 {
+	healed := trace.fact(string(pristine), trace.tip, "")
+	trace.tipReads(trace.tip)
+	trace.lag(trace.tip)
+	trace.publication(healed, "")
+	trace.begin()
+	if code, rerr := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath); rerr != nil || code != 0 {
 		t.Fatalf("reconciliation must heal the refused-anchor tail: code=%d err=%v", code, rerr)
 	}
+	trace.done()
+	trace.verify(healed)
+	trace.begin()
 	if _, err := engine.verifyState(statePath, true); err != nil {
 		t.Fatalf("the healed mission must verify clean: %v", err)
 	}
+	trace.done()
 }
 
 // The RESUME CLOSE-MARKER call site faces the same moved-bytes window
 // and must refuse rather than rebind.
 func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
+	engine, statePath, ledgerPath, _, reads, workspace, gitLog := resumeFileBed(t, false)
+	trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, strings.Repeat("d", 40))
+	trace.install(engine)
+	workspace.expected = []string{
+		"HistorySteeringFiles", "HeadCommit", "TreeOf", "FilterTree", "SymbolicHead", "RefMap",
+		"WorktreeCensus", "StagedTree", "FilterTree", "Prefix", "SnapshotSeeded", "FilterTree",
+		"Prefix", "TopLevel",
+		"HistorySteeringFiles", "HeadCommit", "TreeOf", "FilterTree", "SymbolicHead", "RefMap",
+		"WorktreeCensus", "StagedTree", "FilterTree", "Prefix", "SnapshotSeeded", "FilterTree",
 	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-clean", 1)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := engine.anchor(statePath, ledgerPath, "open"); err != nil {
-		t.Fatal(err)
+	reads.blobs = 3
+	for i := 0; i < 2; i++ {
+		reads.auth++
+		reads.git = append(reads.git, wallGitReply{root: engine.Root, args: []string{"cat-file", "-t", recoveryPre}, stdout: "tree\n"})
 	}
+	reads.git = append(reads.git, wallGitReply{root: engine.Root, args: []string{"update-ref", "-d", mission.MissionRefNamespace(engine.Mission) + "turn-open-head"}})
 	pristine, err := os.ReadFile(ledgerPath)
 	if err != nil {
 		t.Fatal(err)
@@ -1771,12 +1816,22 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	engine.preAnchorHook = func() {
 		writeText(t, ledgerPath, string(pristine)+"\n")
 	}
-	// This fixture checks the production pin refusal. The bed's ordinary
-	// anchor override uses the unpinned mission anchor for other tests.
+	// The close marker must route through the pinned anchor effect.
 	engine.anchorFn = nil
+	trace.verify(trace.tip)   // Reconciliation before the wall decision.
+	trace.tipReads(trace.tip) // The close pin reads the saved tip.
+	trace.output(trace.branch+"\n", "branch", "--show-current")
+	trace.begin()
 	if _, _, _, rerr := engine.resumeState(); rerr == nil {
 		t.Fatal("the close-marker anchor must refuse ledger bytes moved past the verified pin")
 	}
+	trace.done()
+	if workspace.beforeDecision != nil {
+		t.Fatal("the clean wall decision did not run")
+	}
+	workspace.done()
+	reads.done()
+	assertNoGitInvocations(t, gitLog)
 	// The natural retry with bytes still moved refuses WITHOUT widening;
 	// restoration heals.
 	engine.preAnchorHook = nil
@@ -1784,18 +1839,36 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	before := readTestDoc(t, statePathClean)
 	beforeIntegrity, _ := before["integrity"].(map[string]any)
 	beforeHash, _ := beforeIntegrity["hash"].(string)
-	if code, _ := mission.Reconcile(statePathClean, engine.Root, ledgerPath); code == 0 {
+	if before["openTurn"] != nil || beforeHash == trace.tip.hash {
+		t.Fatal("close marker did not retire with a new durable state")
+	}
+	trace.movedRetry(trace.tip)
+	trace.begin()
+	if code, _ := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePathClean, engine.Root, ledgerPath); code == 0 {
 		t.Fatal("reconciliation over moved bytes must refuse")
 	}
+	trace.done()
 	after := readTestDoc(t, statePathClean)
 	afterIntegrity, _ := after["integrity"].(map[string]any)
 	if afterHash, _ := afterIntegrity["hash"].(string); afterHash != beforeHash {
 		t.Fatal("the refusal must not write — the gap must stay one step")
 	}
 	writeText(t, ledgerPath, string(pristine))
-	if code, rerr := mission.Reconcile(statePathClean, engine.Root, ledgerPath); rerr != nil || code != 0 {
+	healed := trace.fact(string(pristine), trace.tip, "")
+	trace.tipReads(trace.tip)
+	trace.lag(trace.tip)
+	trace.publication(healed, "")
+	trace.begin()
+	if code, rerr := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePathClean, engine.Root, ledgerPath); rerr != nil || code != 0 {
 		t.Fatalf("restoration must heal the close-marker gap: code=%d err=%v", code, rerr)
 	}
+	trace.done()
+	trace.verify(healed)
+	trace.begin()
+	if _, err := engine.verifyState(statePathClean, true); err != nil {
+		t.Fatalf("healed close marker must verify: %v", err)
+	}
+	trace.done()
 }
 
 type tipPinContinuity struct {
@@ -1927,39 +2000,41 @@ func ledgerTamperPark(t *testing.T, tamper func(string) string) (*Engine, string
 // anchor missing. The reconciliation anchor-lag heal recovers it without
 // human surgery.
 func TestResolveTaintCrashHealsAtReconcile(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
-	statePath := filepath.Join(engine.missionDir(), "state.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
+	bed := newResolutionFileBed(t)
+	engine, statePath, ledgerPath := bed.e, bed.state, bed.ledger
+	trace := newThreeAnchorTrace(t, engine.Root, statePath, ledgerPath, "")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, true, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("restore must succeed: %d", code)
 	}
-
-	// Simulate the crash between the state write and the anchor: rewind
-	// the runner-owned anchor ref to its parent, leaving state exactly
-	// one write ahead.
-	ref := "refs/metasystem/missions/" + engine.Mission + "/state-anchors"
-	rev := exec.Command("git", "-C", engine.Root, "rev-parse", ref+"^")
-	parent, err := rev.Output()
-	if err != nil {
-		t.Fatalf("the resolution anchor must have a parent: %v", err)
+	if got := readTestDoc(t, statePath)["integrity"].(map[string]any)["previousHash"]; got != trace.tip.hash {
+		t.Fatalf("crash parent hash = %v, want saved tip %s", got, trace.tip.hash)
 	}
-	rewind := exec.Command("git", "-C", engine.Root, "update-ref", ref, strings.TrimSpace(string(parent)))
-	if out, err := rewind.CombinedOutput(); err != nil {
-		t.Fatalf("rewind: %v\n%s", err, out)
-	}
-
-	code, err := mission.Reconcile(statePath, engine.Root, ledgerPath)
+	trace.install(engine)
+	healed := trace.fact(trace.tip.ledger, trace.tip, "")
+	trace.tipReads(trace.tip)
+	trace.lag(trace.tip)
+	trace.publication(healed, "")
+	trace.begin()
+	code, err := mission.ReconcileWithRawAnchorOperations(trace.raw(), statePath, engine.Root, ledgerPath)
 	if err != nil || code != 0 {
 		t.Fatalf("the anchor-lag heal must recover the resolution write: code=%d err=%v", code, err)
 	}
-	if _, err := engine.verifyState(statePath, false); err != nil {
+	trace.done()
+	if healed.commit == healed.parent.commit || trace.tip != healed {
+		t.Fatal("healed anchor did not advance the saved parent tip")
+	}
+	trace.verify(healed)
+	trace.begin()
+	if _, err := engine.verifyState(statePath, true); err != nil {
 		t.Fatalf("the healed mission must verify clean: %v", err)
 	}
+	trace.done()
 }
 
 func TestResolveTaintAdoptDisputedTree(t *testing.T) {
@@ -2115,4 +2190,249 @@ func testAdmissionOrigins() map[string]any {
 		"refMap": map[string]any{}, "worktreeCensus": []any{},
 		"capturedAt": "2026-01-01T00:00:00Z",
 	}
+}
+
+// A fact copies the committed position before a later state or ledger write.
+type threeAnchorFact struct {
+	hash, sha, ledger, commit, blob, tree, message string
+	parent                                         *threeAnchorFact
+}
+
+type threeAnchorTrace struct {
+	t                                     *testing.T
+	root, state, ledger, rel, ref, branch string
+	tip, pending                          *threeAnchorFact
+	queued                                []testgit.Expectation
+	stub                                  *testgit.Stub
+	wantCalls                             int
+	indexDirs                             map[string]bool
+}
+
+func newThreeAnchorTrace(t *testing.T, root, state, ledger string, commit string) *threeAnchorTrace {
+	t.Helper()
+	rel, err := filepath.Rel(root, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := readTestDoc(t, state)
+	b := &threeAnchorTrace{t: t, root: root, state: state, ledger: ledger,
+		rel: filepath.ToSlash(rel), ref: "refs/metasystem/missions/alpha/state-anchors",
+		branch: doc["branch"].(string), indexDirs: make(map[string]bool)}
+	data, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.tip = b.fact(string(data), nil, commit)
+	return b
+}
+
+func (b *threeAnchorTrace) fact(ledger string, parent *threeAnchorFact, commit string) *threeAnchorFact {
+	b.t.Helper()
+	doc := readTestDoc(b.t, b.state)
+	hash := doc["integrity"].(map[string]any)["hash"].(string)
+	sha := sha256Hex(ledger)
+	if commit == "" {
+		sum := sha256.Sum256([]byte(hash + ":" + sha))
+		commit = fmt.Sprintf("%x", sum[:20])
+	}
+	blobSum := sha1.Sum([]byte(fmt.Sprintf("blob %d\x00%s", len(ledger), ledger)))
+	blob := fmt.Sprintf("%x", blobSum)
+	treeSum := sha256.Sum256([]byte("tree:" + blob))
+	cycle, ok := jsonInt(doc["ledger"].(map[string]any)["cycles"])
+	if !ok {
+		b.t.Fatal("state has no ledger cycle")
+	}
+	message := fmt.Sprintf("mission(alpha): anchor cycle %d\n\nMission-Id: alpha\nMission-State-Hash: %s\nMission-Ledger-SHA256: %s\nMission-Ledger-Path: %s\nMission-Cycle: %d\n\n", cycle, hash, sha, b.rel, cycle)
+	return &threeAnchorFact{hash: hash, sha: sha, ledger: ledger, commit: commit,
+		blob: blob, tree: fmt.Sprintf("%x", treeSum[:20]), message: message, parent: parent}
+}
+
+func (b *threeAnchorTrace) output(value string, args ...string) {
+	b.queued = append(b.queued, testgit.Expectation{Call: testgit.Call{Dir: b.root, Args: args},
+		Result: testgit.Result{Stdout: []byte(value)}})
+}
+
+func (b *threeAnchorTrace) tipReads(f *threeAnchorFact) {
+	b.output(b.ref+"\n", "for-each-ref", "--format=%(refname)", b.ref)
+	b.output(f.commit+"\x1f"+f.message, "log", "-1", "--format=%H%x1f%B", b.ref)
+}
+
+func (b *threeAnchorTrace) treeReads(f *threeAnchorFact) {
+	listing := func(x *threeAnchorFact) string {
+		return "100644 blob " + x.blob + "\t" + b.rel + "\x00"
+	}
+	b.output(listing(f), "ls-tree", "-r", "--full-tree", "-z", f.commit)
+	parents := f.commit
+	if f.parent != nil {
+		parents += " " + f.parent.commit
+	}
+	b.output(parents+"\n", "rev-list", "--parents", "-n", "1", f.commit)
+	if f.parent != nil {
+		b.output(listing(f.parent), "ls-tree", "-r", "--full-tree", "-z", f.parent.commit)
+	}
+}
+
+func (b *threeAnchorTrace) verify(f *threeAnchorFact) {
+	b.tipReads(f)
+	b.output("", "merge-base", "--is-ancestor", f.commit, b.ref)
+	b.output(f.ledger, "show", f.commit+":"+b.rel)
+	b.treeReads(f)
+}
+
+func (b *threeAnchorTrace) lag(f *threeAnchorFact) {
+	b.tipReads(f)
+	b.output(f.ledger, "show", f.commit+":"+b.rel)
+}
+
+func (b *threeAnchorTrace) movedRetry(f *threeAnchorFact) {
+	b.tipReads(f) // The state hash disagrees before ancestry or tree reads.
+	b.lag(f)
+	b.output(".git\n", "rev-parse", "--git-dir")
+	b.lag(f) // The disputed-ledger probe checks the saved committed blob.
+}
+
+func (b *threeAnchorTrace) index(value string, args ...string) {
+	b.queued = append(b.queued, testgit.Expectation{
+		Call: testgit.Call{Dir: b.root, Args: args}, Result: testgit.Result{Stdout: []byte(value)},
+		Check: func(call testgit.Call) error {
+			if len(call.Env) != 1 || len(call.Stdin) != 0 || !strings.HasPrefix(call.Env[0], "GIT_INDEX_FILE=") {
+				return fmt.Errorf("index env/stdin: %q %q", call.Env, call.Stdin)
+			}
+			path := strings.TrimPrefix(call.Env[0], "GIT_INDEX_FILE=")
+			dir := filepath.Dir(path)
+			if filepath.Base(path) != "index" || !strings.HasPrefix(filepath.Base(dir), "metasystem-anchor.") || filepath.Dir(dir) != os.TempDir() {
+				return fmt.Errorf("index path: %q", path)
+			}
+			if _, err := os.Stat(dir); err != nil {
+				return err
+			}
+			if len(b.indexDirs) == 0 {
+				b.indexDirs[dir] = true
+			} else if !b.indexDirs[dir] || len(b.indexDirs) != 1 {
+				return fmt.Errorf("index path changed: %q", path)
+			}
+			return nil
+		},
+	})
+}
+
+func (b *threeAnchorTrace) publication(next *threeAnchorFact, identity string) {
+	b.t.Helper()
+	if next.parent != b.tip || b.pending != nil {
+		b.t.Fatal("publication has no matching saved parent")
+	}
+	b.pending = next
+	b.output(b.branch+"\n", "branch", "--show-current")
+	b.tipReads(b.tip)
+	b.queued = append(b.queued, testgit.Expectation{
+		Call:   testgit.Call{Dir: b.root, Args: []string{"hash-object", "-w", "--no-filters", "--stdin"}, Stdin: []byte(next.ledger)},
+		Result: testgit.Result{Stdout: []byte(next.blob + "\n")},
+	})
+	b.index("", "read-tree", "--empty")
+	b.index("", "update-index", "--add", "--cacheinfo", "100644,"+next.blob+","+b.rel)
+	b.index(next.tree+"\n", "write-tree")
+	b.output(b.tip.commit+"\n", "rev-parse", "--verify", b.ref)
+	message := strings.TrimSuffix(next.message, "\n\n")
+	if identity == "" {
+		identity = "metasystem"
+	}
+	b.queued = append(b.queued, testgit.Expectation{
+		Call: testgit.Call{Dir: b.root, Args: []string{"commit-tree", next.tree, "-m", message, "-p", b.tip.commit},
+			Env: []string{"GIT_AUTHOR_NAME=" + identity, "GIT_AUTHOR_EMAIL=" + identity + "@example.invalid",
+				"GIT_COMMITTER_NAME=metasystem", "GIT_COMMITTER_EMAIL=metasystem@example.invalid"}},
+		Result: testgit.Result{Stdout: []byte(next.commit + "\n")},
+	})
+	b.output("", "update-ref", b.ref, next.commit, b.tip.commit)
+}
+
+func (b *threeAnchorTrace) begin() {
+	b.t.Helper()
+	if b.stub != nil {
+		b.done()
+	}
+	b.wantCalls = len(b.queued)
+	b.stub = testgit.New(b.t, b.queued...)
+	b.queued = nil
+}
+
+func (b *threeAnchorTrace) done() {
+	b.t.Helper()
+	if b.stub == nil || len(b.stub.Calls()) != b.wantCalls || b.pending != nil {
+		b.t.Fatalf("raw anchor calls: got %d, want %d, pending publication %v", len(b.stub.Calls()), b.wantCalls, b.pending != nil)
+	}
+	b.stub = nil
+}
+
+func (b *threeAnchorTrace) raw() mission.RawAnchorOperations {
+	run := func(call testgit.Call) testgit.Result {
+		b.t.Helper()
+		if b.stub == nil {
+			b.t.Fatal("anchor call outside declared transcript")
+		}
+		result := b.stub.Run(call)
+		if result.Err == nil && len(call.Args) == 4 && call.Args[0] == "update-ref" && b.pending != nil {
+			b.tip = b.pending
+			b.pending = nil
+		}
+		return result
+	}
+	return mission.RawAnchorOperations{
+		GitOutput: func(root string, args ...string) (string, error) {
+			r := run(testgit.Call{Dir: root, Args: args})
+			return string(r.Stdout), r.Err
+		},
+		GitTry: func(root string, args ...string) (string, int) {
+			r := run(testgit.Call{Dir: root, Args: args})
+			if r.Err != nil {
+				return string(r.Stdout), -1
+			}
+			return string(r.Stdout), 0
+		},
+		GitStdinOutput: func(root string, data []byte, args ...string) (string, error) {
+			r := run(testgit.Call{Dir: root, Args: args, Stdin: data})
+			return string(r.Stdout), r.Err
+		},
+		GitEnvOutput: func(root string, env []string, args ...string) (string, error) {
+			r := run(testgit.Call{Dir: root, Args: args, Env: env})
+			return string(r.Stdout), r.Err
+		},
+	}
+}
+
+type threeAnchorContinuity struct {
+	b   *threeAnchorTrace
+	raw mission.RawAnchorOperations
+}
+
+func (c *threeAnchorContinuity) paths(state, root, ledger string) {
+	if state != c.b.state || root != c.b.root || ledger != c.b.ledger {
+		c.b.t.Fatalf("continuity paths: %q %q %q", state, root, ledger)
+	}
+}
+func (c *threeAnchorContinuity) Reconcile(state, root, ledger string) (int, error) {
+	c.paths(state, root, ledger)
+	return mission.ReconcileWithRawAnchorOperations(c.raw, state, root, ledger)
+}
+func (c *threeAnchorContinuity) VerifyStateWithAnchor(state, root, ledger string) (int64, string, error) {
+	c.paths(state, root, ledger)
+	return mission.VerifyStateWithRawAnchorOperations(c.raw, state, root, ledger)
+}
+func (c *threeAnchorContinuity) LedgerPin(root, missionID string) (string, error) {
+	if root != c.b.root || missionID != "alpha" {
+		c.b.t.Fatalf("ledger pin: %q %q", root, missionID)
+	}
+	return mission.AnchoredLedgerSHAWithRawAnchorOperations(c.raw, root, missionID)
+}
+
+func (b *threeAnchorTrace) install(e *Engine) *threeAnchorContinuity {
+	raw := b.raw()
+	c := &threeAnchorContinuity{b: b, raw: raw}
+	e.continuityFacts = c
+	e.pinnedAnchorEffect = func(state, ledger, identity, hash, sha string) error {
+		if state != b.state || ledger != b.ledger {
+			b.t.Fatalf("pinned paths: %q %q", state, ledger)
+		}
+		return mission.AnchorNamedWithRawAnchorOperations(raw, state, b.root, ledger, identity, hash, sha)
+	}
+	return c
 }
