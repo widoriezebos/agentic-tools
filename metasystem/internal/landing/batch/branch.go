@@ -100,10 +100,32 @@ func requireCriticRootSource(unit string, attestation goalbranch.Attestation) er
 }
 
 func ReadGoalBranch(request BranchReadRequest) (BranchMember, error) {
+	return readGoalBranchWithReaders(request, branchReaders{
+		status:      goalbranch.InspectStatus,
+		attestation: goalbranch.ValidateAttestationAt,
+		entries:     goalbranch.RawEntries,
+		message:     branchCommitMessage,
+	})
+}
+
+type branchReaders struct {
+	status      func(repo, endpointTip, tip, goalID string) (goalbranch.Status, error)
+	attestation func(repo, snapshot, endpointTip, goalID, unit, commit string) (goalbranch.Attestation, error)
+	entries     func(repo, commit string) ([]goalbranch.Entry, error)
+	message     func(repo, commit string) ([]byte, error)
+}
+
+func branchCommitMessage(repo, commit string) ([]byte, error) {
+	command := exec.Command("git", "-C", repo, "show", "-s", "--format=%B", commit)
+	command.Env = gittree.ScrubbedEnviron()
+	return command.Output()
+}
+
+func readGoalBranchWithReaders(request BranchReadRequest, readers branchReaders) (BranchMember, error) {
 	if request.Repo == "" || request.EndpointTip == "" || request.BranchTip == "" || request.GoalID == "" || request.Last == (request.Through != "") {
 		return BranchMember{}, fmt.Errorf("branch join needs a repository, endpoint, branch tip, goal, and exactly one of last or through")
 	}
-	status, err := goalbranch.InspectStatus(request.Repo, request.EndpointTip, request.BranchTip, request.GoalID)
+	status, err := readers.status(request.Repo, request.EndpointTip, request.BranchTip, request.GoalID)
 	if err != nil {
 		return BranchMember{}, err
 	}
@@ -128,7 +150,7 @@ func ReadGoalBranch(request BranchReadRequest) (BranchMember, error) {
 	for index := range member.Builds {
 		build := &member.Builds[index]
 		unit := status.Units[index]
-		attestation, err := goalbranch.ValidateAttestationAt(request.Repo, request.BranchTip, request.EndpointTip, request.GoalID, unit.Unit, build.Commit)
+		attestation, err := readers.attestation(request.Repo, request.BranchTip, request.EndpointTip, request.GoalID, unit.Unit, build.Commit)
 		if err != nil {
 			return BranchMember{}, refuseBatch("BATCH_JOIN_UNREAD", "build "+unit.Unit+" has no valid branch attestation: "+err.Error())
 		}
@@ -138,7 +160,7 @@ func ReadGoalBranch(request BranchReadRequest) (BranchMember, error) {
 		build.Attestation = attestation
 		paths := map[string]bool{}
 		for _, fold := range build.Folds {
-			entries, err := goalbranch.RawEntries(request.Repo, fold.ID)
+			entries, err := readers.entries(request.Repo, fold.ID)
 			if err != nil {
 				return BranchMember{}, err
 			}
@@ -150,9 +172,7 @@ func ReadGoalBranch(request BranchReadRequest) (BranchMember, error) {
 			build.FoldPaths = append(build.FoldPaths, path)
 		}
 		slices.Sort(build.FoldPaths)
-		command := exec.Command("git", "-C", request.Repo, "show", "-s", "--format=%B", build.Commit)
-		command.Env = gittree.ScrubbedEnviron()
-		message, err := command.Output()
+		message, err := readers.message(request.Repo, build.Commit)
 		if err != nil {
 			return BranchMember{}, err
 		}

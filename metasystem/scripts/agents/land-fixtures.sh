@@ -1395,6 +1395,7 @@ take_fixture_receipt() { # engine, checkout, output log
 
 if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   clock_checkout=${METASYSTEM_RECEIPT_CLOCK_FIXTURE_ROOT:?}
+  clock_tree=${METASYSTEM_RECEIPT_CLOCK_TREE:?}
   clock_cap_min=${METASYSTEM_RECEIPT_CLOCK_CAP_MIN:?}
   clock_test_executable=${METASYSTEM_RECEIPT_CLOCK_TEST_EXECUTABLE:?}
   clock_ready=${METASYSTEM_RECEIPT_CLOCK_READY:?}
@@ -1411,7 +1412,12 @@ if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   printf '{}\n' >"$clock_identity"
   printf '[]\n' >"$clock_processes"
   prepare_receipt_environment "$clock_identity" "$clock_registry" "$clock_checkout"
-  receipt_environment+=("METASYSTEM_CENSUS_PROCESS_FILE=$clock_processes")
+  receipt_environment+=(
+    "METASYSTEM_CENSUS_PROCESS_FILE=$clock_processes"
+    "GO_WANT_PROOF_COMMAND_FIXTURE_CHILD=${GO_WANT_PROOF_COMMAND_FIXTURE_CHILD:?}"
+    "GO_PROOF_COMMAND_FIXTURE_SNAPSHOT=${GO_PROOF_COMMAND_FIXTURE_SNAPSHOT:?}"
+    "GO_PROOF_COMMAND_FIXTURE_TEMP_ROOT=${GO_PROOF_COMMAND_FIXTURE_TEMP_ROOT:?}"
+  )
   echo "land receipt-clock-boundary fixture: shell clock=$fixture_receipt_now cap-min=$clock_cap_min"
   clock_fixture_start=$(receipt_env_run "$source_engine" proc started-at --pid "$$")
   receipt_env_run env METASYSTEM_OWNER_LINEAGE=m1 "$source_engine" lease announce \
@@ -1421,7 +1427,6 @@ if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   printf -v clock_child_command \
     'GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD=shell-boundary METASYSTEM_WAIT_BINARY=%q %q -test.run=^TestLandingReceiptShellCallerCarriesAuthorizedClock$ -test.count=1 -- --receipt-clock-private-child %q %q %q' \
     "$source_engine" "$clock_test_executable" "$clock_observed" "$clock_ready" "$clock_release"
-  clock_tree=$(git -C "$clock_checkout" write-tree)
   set +e
   receipt_checkout_env_run "$clock_checkout" env METASYSTEM_OWNER_LINEAGE=m1 \
     "$source_engine" landing test-receipt --root "$clock_checkout" \

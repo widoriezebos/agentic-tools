@@ -327,10 +327,12 @@ func landingGitOutput(root string, args ...string) (string, error) {
 // RequirePassingCommitVerdict keeps a branch member local unless the commit
 // boundary recorded that its complete provenance check passed.
 func RequirePassingCommitVerdict(root, goalID, commit string) error {
-	command := exec.Command("git", "-C", root, "show", "-s", "--format=%(trailers:key=Landing-Provenance-Verdict,valueonly)", commit)
-	command.Env = gittree.ScrubbedEnviron()
-	output, err := command.Output()
-	verdict := strings.TrimSpace(string(output))
+	return RequirePassingCommitVerdictWithRead(root, goalID, commit, landingGitOutput)
+}
+
+func RequirePassingCommitVerdictWithRead(root, goalID, commit string, readGit func(root string, args ...string) (string, error)) error {
+	output, err := readGit(root, "show", "-s", "--format=%(trailers:key=Landing-Provenance-Verdict,valueonly)", commit)
+	verdict := strings.TrimSpace(output)
 	if err != nil {
 		verdict = "unreadable"
 	}

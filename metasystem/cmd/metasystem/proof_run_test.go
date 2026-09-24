@@ -2624,8 +2624,8 @@ func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
 }
 
 func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
-	controlRoot := syncedClaimedGoalFixture(t)
-	proofFixture := pinProofBinaryFixture(t, controlRoot)
+	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), false)
+	controlRoot := repository.root
 	capacityConfig := filepath.Join(controlRoot, "metasystem.conf")
 	capacityBytes, err := os.ReadFile(capacityConfig)
 	if err != nil {
@@ -2638,32 +2638,20 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	if err := os.WriteFile(capacityConfig, capacityBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	controlRoot, err = filepath.EvalSymlinks(controlRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	goalPath := filepath.Join(controlRoot, "plans", "goals", "standing-validation.md")
-	goalBytes, err := os.ReadFile(goalPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	goalFile, problems := goal.ParseFile(goalBytes)
-	if len(problems) != 0 {
-		t.Fatalf("parse command canary goal: %v", problems)
-	}
-	goalFile.StopCapability = &goal.StopCapability{Generation: 2, Revision: goalFile.Claimed.Revision,
-		Machine: goalFile.Claimed.Machine, ClaimEpoch: 1}
-	goalFile.Budget.ElapsedLimit = "10000h"
-	goalFile.Approved.Digest = goal.ApprovalDigest(goalFile.Intent, goalFile.Tier, *goalFile.Budget, goalFile.Risk)
-	if err := os.WriteFile(goalPath, goal.RenderFile(goalFile), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	goalSyncMutationGit(t, controlRoot, "add", "plans/goals/standing-validation.md", "metasystem.conf")
-	goalSyncMutationGit(t, controlRoot, "commit", "-qm", "bind command canary stop capability")
-	goalSyncMutationGit(t, controlRoot, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, controlRoot, "update-ref", goal.AcceptedRef, "HEAD")
+	repository.seed(map[string][]byte{"metasystem/metasystem.conf": capacityBytes})
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: file.Claimed.Revision,
+			Machine: file.Claimed.Machine, ClaimEpoch: 1}
+		file.Budget.ElapsedLimit = "10000h"
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	snapshot := writeProofCommandFixtureSnapshot(t, repository)
+	controlRoot = repository.root
 	makeExecutionRoot := func() string {
 		root := t.TempDir()
+		if _, err := os.Lstat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
+			t.Fatalf("execution root contains .git: %v", err)
+		}
 		if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -2682,23 +2670,28 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		return root
 	}
 	firstRoot, renamedRoot := makeExecutionRoot(), makeExecutionRoot()
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build command canary engine: %v\n%s", err, output)
-	}
+	engine := proofCommandFixtureWrapper(t)
 	identities := filepath.Join(t.TempDir(), "process-identities.json")
 	if err := os.WriteFile(identities, []byte(fmt.Sprintf(`{"%d":{"terminal":true}}`, os.Getpid())), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	count := filepath.Join(t.TempDir(), "child-launches")
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ready := filepath.Join(t.TempDir(), "retry-child-ready")
 	release := filepath.Join(t.TempDir(), "retry-child-release")
 	body := `count=0; test ! -f "$1" || count=$(cat "$1"); count=$((count+1)); printf '%d\n' "$count" >"$1"; if test "$count" -gt 1; then nested_engine=$4; nested_root=$5; nested_control=$6; nested_conf=$7; nested_result=$8; if test -z "$nested_engine"; then printf "nested command argc=%s\n" "$#" >&2; exit 97; fi; env -u METASYSTEM_HOST_RESOURCE_FDS "$nested_engine" proof-run launch --suite nested-command --root "$nested_root" --control-root "$nested_control" --goal standing-validation --cap-min 1 --command-class command-retry --conf "$nested_conf" --progress "$nested_result.progress" --log "$nested_result.log" --banner nested --result "$nested_result" -- sh -c "printf 'nested-legacy-tail\\n'" >"$nested_result.output" 2>&1 || { printf "nested engine=%s argc=%s\n" "$nested_engine" "$#" >&2; cat "$nested_result.output" >&2; exit 97; }; printf 'ready\n' >"$2"; while test ! -e "$3"; do sleep .05; done; fi; test "$count" -gt 1`
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
-	environment := append(receiptCanaryEnvironment(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identities,
+	environment := append(receiptCanaryEnvironment(), proofCommandFixtureMarker+"=1", proofCommandFixtureSnapshotEnv+"="+snapshot,
+		proofCommandFixtureTempRootEnv+"="+os.TempDir(),
+		"METASYSTEM_WAIT_BINARY="+os.Getenv("METASYSTEM_WAIT_BINARY"),
+		"METASYSTEM_WAIT_BINARY_SOURCE="+os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE"),
+		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
+		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identities,
 		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+controlRoot)
 	run := func(root, retry, result string) (int, proofrun.LaunchResult, string) {
@@ -2711,7 +2704,8 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		}
 		args = append(args, "--", "bash", "-c", body, "fixture", count, ready, release,
 			engine, root, controlRoot, filepath.Join(root, "metasystem.conf"), result+".nested.json")
-		command := proofFixture.command(environment, engine, args...)
+		command := exec.Command(engine, args...)
+		command.Env = environment
 		var output []byte
 		if retry == "" {
 			output, err = command.CombinedOutput()
@@ -2806,6 +2800,13 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	if err != nil || len(attempts) != 2 || attempts[1].Retry == nil || attempts[1].PreviousAttempt != first.AttemptID ||
 		attempts[0].ExecutionRoot == attempts[1].ExecutionRoot {
 		t.Fatalf("command accounting after renamed-root retry: attempts=%+v err=%v", attempts, err)
+	}
+	for _, attempt := range attempts {
+		actual, digestErr := proofrun.FullDigest(attempt.ExecutionRoot)
+		if digestErr != nil || attempt.ProofIdentity.ManifestDigest != actual {
+			t.Fatalf("retained attempt %s manifest is not derived from its execution files: got=%s actual=%s err=%v",
+				attempt.AttemptID, attempt.ProofIdentity.ManifestDigest, actual, digestErr)
+		}
 	}
 	assertHostAdmissionClean(t, admissionDir, 1)
 
@@ -3275,15 +3276,22 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 		}
 		_ = release.Close()
 		root := os.Getenv("GOVERNED_COMMAND_ROOT")
-		proofFixture := pinProofBinaryFixture(t, root)
-		command := proofFixture.command(os.Environ(), os.Getenv("GOVERNED_COMMAND_ENGINE"), "proof-run", "launch",
+		command := exec.Command(os.Getenv("GOVERNED_COMMAND_ENGINE"), "proof-run", "launch",
 			"--suite", "governed-command", "--root", root, "--control-root", root,
 			"--conf", filepath.Join(root, "metasystem.conf"), "--progress", filepath.Join(root, "artifacts", "governed.progress.jsonl"),
 			"--log", filepath.Join(root, "artifacts", "governed.log"), "--banner", "governed command canary", "--", "true")
 		// The governed locators travel under the fixture's own names: the
 		// package's TestMain clears every METASYSTEM_PROOF_* control before
 		// a test runs, so the engine receives them here, not by inheritance.
-		command.Env = append(command.Env, "METASYSTEM_PROOF_RUN_ROOT="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ROOT"),
+		command.Env = append(receiptCanaryEnvironment(), proofCommandFixtureMarker+"=1",
+			proofCommandFixtureSnapshotEnv+"="+os.Getenv(proofCommandFixtureSnapshotEnv),
+			proofCommandFixtureTempRootEnv+"="+os.Getenv(proofCommandFixtureTempRootEnv),
+			"METASYSTEM_WAIT_BINARY="+os.Getenv("METASYSTEM_WAIT_BINARY"),
+			"METASYSTEM_WAIT_BINARY_SOURCE="+os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE"),
+			"METASYSTEM_CENSUS_PROCESS_FILE="+os.Getenv("GOVERNED_COMMAND_PROCESS_TABLE"),
+			"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+os.Getenv("GOVERNED_COMMAND_ADMISSION_DIR"),
+			"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root,
+			"METASYSTEM_PROOF_RUN_ROOT="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ROOT"),
 			"METASYSTEM_PROOF_RUN_ID="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ID"))
 		command.Stdout, command.Stderr = os.Stdout, os.Stderr
 		if err := command.Run(); err != nil {
@@ -3294,41 +3302,29 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 		}
 		os.Exit(0)
 	}
-	root := syncedClaimedGoalFixture(t)
-	root, err := filepath.EvalSymlinks(root)
-	if err != nil {
+	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), false)
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: file.Claimed.Revision,
+			Machine: file.Claimed.Machine, ClaimEpoch: 1}
+		file.Budget.ElapsedLimit = "10000h"
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	snapshot := writeProofCommandFixtureSnapshot(t, repository)
+	root := repository.root
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	goalPath := filepath.Join(root, "plans", "goals", "standing-validation.md")
-	goalBytes, err := os.ReadFile(goalPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	governedGoal, problems := goal.ParseFile(goalBytes)
-	if len(problems) != 0 {
-		t.Fatal(problems)
-	}
-	governedGoal.StopCapability = &goal.StopCapability{Generation: 2, Revision: governedGoal.Claimed.Revision,
-		Machine: governedGoal.Claimed.Machine, ClaimEpoch: 1}
-	governedGoal.Budget.ElapsedLimit = "10000h"
-	governedGoal.Approved.Digest = goal.ApprovalDigest(governedGoal.Intent, governedGoal.Tier, *governedGoal.Budget, governedGoal.Risk)
-	if err := os.WriteFile(goalPath, goal.RenderFile(governedGoal), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	goalSyncMutationGit(t, root, "add", "plans/goals/standing-validation.md")
-	goalSyncMutationGit(t, root, "commit", "-qm", "bind governed command authority")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 		path := filepath.Join(root, "scripts", "agents", name)
 		if err := os.WriteFile(path, []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build governed canary engine: %v\n%s", err, output)
+	engine := proofCommandFixtureWrapper(t)
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	now := time.Now().UTC()
 	weight := uint64(0)
@@ -3368,6 +3364,11 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	})
 	child := exec.Command(os.Args[0], "-test.run=^TestProofRunCommandGovernedParentSharesOneCharge$")
 	child.Env = append(receiptCanaryEnvironment(), "GO_WANT_GOVERNED_COMMAND_PARENT=1", "GOVERNED_COMMAND_ROOT="+root, "GOVERNED_COMMAND_ENGINE="+engine,
+		"GOFLAGS=-buildvcs=false",
+		proofCommandFixtureSnapshotEnv+"="+snapshot,
+		proofCommandFixtureTempRootEnv+"="+os.TempDir(),
+		"GOVERNED_COMMAND_ADMISSION_DIR="+admissionDir,
+		"GOVERNED_COMMAND_PROCESS_TABLE="+processTable,
 		"GOVERNED_COMMAND_PROOF_RUN_ROOT="+root, "GOVERNED_COMMAND_PROOF_RUN_ID=governed-command")
 	child.ExtraFiles = []*os.File{readyWrite, releaseRead}
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -3387,6 +3388,9 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	})
 	line, err := bufio.NewReader(readyRead).ReadString('\n')
 	if err != nil || line != "ready\n" {
+		_ = child.Process.Kill()
+		_ = child.Wait()
+		finished = true
 		t.Fatalf("governed parent readiness = %q, %v: %s", line, err, output.String())
 	}
 	_ = readyRead.Close()
@@ -3410,7 +3414,13 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 		attempts[0].Terminal == nil || attempts[0].Terminal.Result != proofrun.TerminalSuccess {
 		t.Fatalf("governed command attempt=%+v err=%v output=%s", attempts, err, output.String())
 	}
-	goalBytes, err = os.ReadFile(filepath.Join(root, "plans", "goals", "standing-validation.md"))
+	actualDigest, err := proofrun.FullDigest(root)
+	if err != nil || attempts[0].ProofIdentity.ManifestDigest != actualDigest {
+		t.Fatalf("governed attempt manifest is not derived from execution files: got=%s actual=%s err=%v",
+			attempts[0].ProofIdentity.ManifestDigest, actualDigest, err)
+	}
+	assertHostAdmissionClean(t, admissionDir, 1)
+	goalBytes, err := os.ReadFile(filepath.Join(root, "plans", "goals", "standing-validation.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -720,14 +720,15 @@ esac
 
 func TestLandingReceiptRefusesSemanticBudgetBeforeCommand(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	runReceiptGit(t, root, "init", "-q", "-b", "main")
-	runReceiptGit(t, root, "config", "user.name", "fixture")
-	runReceiptGit(t, root, "config", "user.email", "fixture@example.invalid")
-	runReceiptGit(t, root, "config", "goal.sync-remote", "local")
-	runReceiptGit(t, root, "config", "goal.sync-branch", goal.LocalLedgerBranch)
-	runReceiptGit(t, root, "config", "metasystem.goal.machine", "fixture-machine")
-	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\nmetasystem.runtimes=fake\n")
+	top := t.TempDir()
+	var err error
+	top, err = filepath.EvalSymlinks(top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(top, "metasystem")
+	writeReceiptFixture(t, top, "development/metasystem-design.md", "fixture template marker\n")
+	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\nmetasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=4\n")
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\n")
 	writeReceiptFixture(t, root, "payload.txt", "semantic budget fixture\n")
 
@@ -764,11 +765,34 @@ func TestLandingReceiptRefusesSemanticBudgetBeforeCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	runReceiptGit(t, root, "add", "-A")
-	runReceiptGit(t, root, "commit", "-qm", "semantic budget fixture")
-	runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	runReceiptGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	tree := runReceiptGit(t, root, "write-tree")
+	read := func(path string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(top, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	repository := &proofAdmissionRepository{top: top, root: root, commits: map[string]proofAdmissionCommit{}, operations: map[string]string{}}
+	repository.seed(map[string][]byte{
+		"development/metasystem-design.md":         read("development/metasystem-design.md"),
+		"metasystem/metasystem.conf":               read("metasystem/metasystem.conf"),
+		"metasystem/plans/goals/backlog.md":        read("metasystem/plans/goals/backlog.md"),
+		"metasystem/plans/goals/fixture-budget.md": read("metasystem/plans/goals/fixture-budget.md"),
+	})
+	fixture := newDeadlineReceiptTreeFixture(t, repository)
+	claimed := repository.goalFile(t, "fixture-budget").Claimed
+	if claimed == nil {
+		t.Fatal("accepted budget goal has no machine claim")
+	}
+	snapshot := writeProofCommandFixtureSnapshot(t, repository, claimed.Machine)
+	wrapper := proofCommandFixtureWrapper(t)
+	tempRoot := t.TempDir()
+	admissionDir := filepath.Join(tempRoot, "host-admission")
+	processes := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processes, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	marker := filepath.Join(root, "command-ran")
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
@@ -778,23 +802,30 @@ func TestLandingReceiptRefusesSemanticBudgetBeforeCommand(t *testing.T) {
 		exact.StartTicks, exact.BootID, "batch-proof-main", "fake", "m1"); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command(commandTestExecutable(t), "landing", "test-receipt",
-		"--root", root, "--tree", tree, "--command", "touch "+marker,
+	command := exec.Command(wrapper, "landing", "test-receipt", "--root", root,
+		"--tree", fixture.tree, "--command", "touch "+marker,
 		"--goal", "fixture-budget", "--cap-min", "13")
-	command.Env = fixtureCommandEnvironment(t, "METASYSTEM_GOAL_NOW="+now.Add(2*time.Minute).Format(time.RFC3339))
+	command.Env = append(testenv.WithoutInheritedControls(os.Environ()),
+		proofCommandFixtureMarker+"=1",
+		proofCommandFixtureSnapshotEnv+"="+snapshot,
+		proofCommandFixtureTempRootEnv+"="+tempRoot,
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root,
+		"METASYSTEM_CENSUS_PROCESS_FILE="+processes,
+		"METASYSTEM_GOAL_NOW="+now.Add(2*time.Minute).Format(time.RFC3339))
 	output, commandErr := command.CombinedOutput()
 	code := 0
 	if commandErr != nil {
 		var exit *exec.ExitError
 		if !errors.As(commandErr, &exit) {
-			t.Fatalf("run public receipt refusal: %v", commandErr)
+			t.Fatalf("run receipt refusal: %v\n%s", commandErr, output)
 		}
 		code = exit.ExitCode()
 	}
-	stderr := string(output)
-	if code != proofrun.ExitAdmissionRefused || !strings.Contains(stderr, "BUDGET_REFUSED") {
-		t.Fatalf("over-budget receipt exit=%d, stderr=%q", code, stderr)
+	if code != proofrun.ExitAdmissionRefused || !bytes.Contains(output, []byte("BUDGET_REFUSED")) {
+		t.Fatalf("over-budget receipt exit=%d, output=%q", code, output)
 	}
+	t.Logf("receipt exit=%d output=%s", code, output)
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("budget-refused command ran: %v", err)
 	}
@@ -823,7 +854,6 @@ func receiptClockFixtureCases() []receiptClockFixtureCase {
 }
 
 func TestLandingReceiptPublicSemanticClockBoundariesAndDelayedCompletion(t *testing.T) {
-	t.Parallel()
 	if selected := os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD"); selected != "" {
 		for _, testCase := range receiptClockFixtureCases() {
 			if testCase.name == selected {
@@ -833,34 +863,14 @@ func TestLandingReceiptPublicSemanticClockBoundariesAndDelayedCompletion(t *test
 		}
 		t.Fatalf("unknown receipt clock fixture case %q", selected)
 	}
+	t.Parallel()
 	for _, testCase := range receiptClockFixtureCases() {
 		t.Run(testCase.name, func(t *testing.T) {
 			startedAt := time.Date(2026, time.September, 21, 8, 0, 0, 0, time.UTC)
-			root, _ := proofExtensionGoalFixtureAt(t, startedAt)
-			root, err := filepath.EvalSymlinks(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			confPath := filepath.Join(root, "metasystem.conf")
-			configuration, err := os.ReadFile(confPath)
-			if err != nil || !bytes.Contains(configuration, []byte(proofrun.AdmissionCapKey+"=4")) {
-				t.Fatalf("read pinned receipt host capacity: %v", err)
-			}
-			configuration = bytes.Replace(configuration, []byte(proofrun.AdmissionCapKey+"=4"), []byte(proofrun.AdmissionCapKey+"=1"), 1)
-			if err := os.WriteFile(confPath, configuration, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			writeReceiptFixture(t, root, ".gitignore", "artifacts/\n")
-			runReceiptGit(t, root, "add", "metasystem.conf", ".gitignore")
-			runReceiptGit(t, root, "commit", "-qm", "public receipt clock fixture")
-			runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-			runReceiptGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 			command := exec.Command(commandTestExecutable(t), "-test.run=^TestLandingReceiptPublicSemanticClockBoundariesAndDelayedCompletion$", "-test.v")
 			command.Env = append(testenv.WithoutInheritedControls(os.Environ()),
 				"GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD="+testCase.name,
-				"FIXTURE_RECEIPT_CLOCK_ROOT="+root,
-				"METASYSTEM_GOAL_NOW="+startedAt.Format(time.RFC3339Nano),
-				"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
+				"METASYSTEM_GOAL_NOW="+startedAt.Format(time.RFC3339Nano))
 			output, err := command.CombinedOutput()
 			if err != nil {
 				t.Fatalf("owned public receipt clock fixture: %v\n%s", err, output)
@@ -908,16 +918,19 @@ func TestLandingReceiptShellCallerCarriesAuthorizedClock(t *testing.T) {
 	for _, capMinutes := range []int{1, 3} {
 		capMinutes := capMinutes
 		t.Run(fmt.Sprintf("cap-%d-minute", capMinutes), func(t *testing.T) {
-			root, _ := proofExtensionGoalFixtureAt(t, fixtureInstant)
-			root, err := filepath.EvalSymlinks(root)
+			repository := newProofAdmissionRepositoryFixture(t, fixtureInstant, true)
+			root, err := filepath.EvalSymlinks(repository.root)
 			if err != nil {
 				t.Fatal(err)
 			}
-			writeReceiptFixture(t, root, ".gitignore", "artifacts/\n")
-			runReceiptGit(t, root, "add", ".gitignore")
-			runReceiptGit(t, root, "commit", "-qm", "ignore receipt artifacts")
-			runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-			runReceiptGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+			repository.root = root
+			repository.top, err = filepath.EvalSymlinks(repository.top)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture := newDeadlineReceiptTreeFixture(t, repository)
+			snapshot := writeProofCommandFixtureSnapshot(t, repository)
+			proofWrapper := proofCommandFixtureWrapper(t)
 			scriptRoot := t.TempDir()
 			for _, directory := range []string{filepath.Join(scriptRoot, "scripts", "agents"), filepath.Join(scriptRoot, "bin")} {
 				if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -938,7 +951,7 @@ func TestLandingReceiptShellCallerCarriesAuthorizedClock(t *testing.T) {
 				}
 			}
 			engine := filepath.Join(scriptRoot, "bin", "metasystem")
-			wrapper := fmt.Sprintf("#!/usr/bin/env bash\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec %q \"$@\"\n", commandTestExecutable(t))
+			wrapper := fmt.Sprintf("#!/usr/bin/env bash\nif [[ \"${1:-}\" == landing && \"${2:-}\" == test-receipt ]]; then\n  exec %q \"$@\"\nfi\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec %q \"$@\"\n", proofWrapper, commandTestExecutable(t))
 			if err := testexec.WriteFile(engine, []byte(wrapper), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -965,10 +978,14 @@ func TestLandingReceiptShellCallerCarriesAuthorizedClock(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			command := exec.CommandContext(ctx, "bash", filepath.Join(scriptRoot, "scripts", "agents", "land-fixtures.sh"),
 				"--fixture-bed-child", "receipt-clock-boundary", capability)
-			command.Env = fixtureCommandEnvironment(t,
+			command.Env = append(testenv.WithoutInheritedControls(os.Environ()),
+				proofCommandFixtureMarker+"=1",
+				proofCommandFixtureSnapshotEnv+"="+snapshot,
+				proofCommandFixtureTempRootEnv+"="+namespace,
 				"METASYSTEM_FIXTURE_NAMESPACE="+namespace,
 				"METASYSTEM_TEST_WORKERS=1",
 				"METASYSTEM_RECEIPT_CLOCK_FIXTURE_ROOT="+root,
+				"METASYSTEM_RECEIPT_CLOCK_TREE="+fixture.tree,
 				"METASYSTEM_RECEIPT_CLOCK_CAP_MIN="+strconv.Itoa(capMinutes),
 				"METASYSTEM_RECEIPT_CLOCK_TEST_EXECUTABLE="+commandTestExecutable(t),
 				"METASYSTEM_RECEIPT_CLOCK_READY="+readyPath,
@@ -996,13 +1013,19 @@ func TestLandingReceiptShellCallerCarriesAuthorizedClock(t *testing.T) {
 			}
 			var result proofrun.LaunchResult
 			encoded, err := os.ReadFile(resultPath)
-			if err != nil || json.Unmarshal(encoded, &result) != nil || result.ExitStatus != 0 || result.AttemptID == "" {
+			if err != nil || json.Unmarshal(encoded, &result) != nil || result.ExitStatus != 0 ||
+				result.Disposition != proofrun.DispositionExecuted || result.AttemptID == "" {
 				t.Fatalf("shell receipt result=%+v read=%v bytes=%s", result, err, encoded)
 			}
 			attempt, err := proofrun.ReadAttempt(root, result.AttemptID)
 			wantDeadline := fixtureInstant.Add(time.Duration(capMinutes) * time.Minute).Format(time.RFC3339Nano)
-			if err != nil || attempt.StartedAt != fixtureInstant.Format(time.RFC3339Nano) || attempt.Deadline != wantDeadline || attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess {
+			if err != nil || attempt.StartedAt != fixtureInstant.Format(time.RFC3339Nano) || attempt.Deadline != wantDeadline ||
+				attempt.ReservedMinutes != uint64(capMinutes) ||
+				attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) == 0 {
 				t.Fatalf("public command clock attempt=%+v err=%v", attempt, err)
+			}
+			if _, err := os.Stat(landing.TestReceiptPath(root, fixture.tree)); err != nil {
+				t.Fatalf("shell receipt was not published: %v", err)
 			}
 			for _, marker := range []string{
 				"shell clock=" + fixtureInstant.Format(time.RFC3339),
@@ -1029,41 +1052,47 @@ func receiptClockPrivateChildArguments() ([]string, bool) {
 
 func runLandingReceiptPublicSemanticClockCase(t *testing.T, testCase receiptClockFixtureCase) {
 	startedAt := time.Date(2026, time.September, 21, 8, 0, 0, 0, time.UTC)
-	root, err := filepath.EvalSymlinks(os.Getenv("FIXTURE_RECEIPT_CLOCK_ROOT"))
+	repository := newProofAdmissionRepositoryFixture(t, startedAt, true)
+	root, err := filepath.EvalSymlinks(repository.root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const admissionDirectoryEnvironment = "METASYSTEM_PROOF_ADMISSION_TEST_DIR"
-	previousAdmissionDir, hadAdmissionDir := os.LookupEnv(admissionDirectoryEnvironment)
-	if err := os.Setenv(admissionDirectoryEnvironment, filepath.Join(t.TempDir(), "host-admission")); err != nil {
+	repository.root = root
+	repository.top, err = filepath.EvalSymlinks(repository.top)
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if hadAdmissionDir {
-			_ = os.Setenv(admissionDirectoryEnvironment, previousAdmissionDir)
-		} else {
-			_ = os.Unsetenv(admissionDirectoryEnvironment)
-		}
-	})
 	confPath := filepath.Join(root, "metasystem.conf")
+	configuration := repository.rawFile(t, "metasystem/metasystem.conf")
+	configuration = bytes.Replace(configuration, []byte(proofrun.AdmissionCapKey+"=4"), []byte(proofrun.AdmissionCapKey+"=1"), 1)
+	if !bytes.Contains(configuration, []byte(proofrun.AdmissionCapKey+"=1")) {
+		t.Fatal("public receipt fixture did not narrow host capacity to one")
+	}
+	if err := os.WriteFile(confPath, configuration, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repository.seed(map[string][]byte{"metasystem/metasystem.conf": configuration})
+	fixture := newDeadlineReceiptTreeFixture(t, repository)
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+	processes := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processes, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processes)
 	announceProofFixtureHolder(t, root)
 	holder, err := proofrun.AcquireHostResources(context.Background(), root, confPath, "heavy", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = holder.Close() })
-	tree := runReceiptGit(t, root, "write-tree")
+	tree := fixture.tree
 	launchCount := filepath.Join(t.TempDir(), "native-launches")
+	t.Setenv("LANDING_DEADLINE_LAUNCH_COUNT", launchCount)
 	resultPath := filepath.Join(t.TempDir(), "launch-result.json")
 	semanticNow := startedAt
-	previousGoalNow, hadGoalNow := os.LookupEnv(goalNowEnvironment)
-	t.Cleanup(func() {
-		if hadGoalNow {
-			_ = os.Setenv(goalNowEnvironment, previousGoalNow)
-		} else {
-			_ = os.Unsetenv(goalNowEnvironment)
-		}
-	})
+	t.Setenv(goalNowEnvironment, startedAt.Format(time.RFC3339Nano))
 	setSemanticNow := func(at time.Time) {
 		semanticNow = at
 		// This exact-run child is the sole process owner of the declared clock.
@@ -1094,7 +1123,31 @@ func runLandingReceiptPublicSemanticClockCase(t *testing.T, testCase receiptCloc
 		"--command", "printf 'launch\\n' >> " + strconv.Quote(launchCount),
 		"--goal", "standing-validation", "--cap-min", strconv.Itoa(testCase.capMinutes), "--result", resultPath}
 	code, _, problem := captureChannelOutput(t, func() int {
-		return runLandingTestReceiptWithContext(parent, resolveClock, args)
+		reads := repository.reads()
+		return runLandingTestReceiptWithInputs(parent, resolveClock, nil, landingReceiptTestRun, args,
+			func(receiptRoot, receiptTree, command string) (*landing.ReceiptPreparation, error) {
+				return landing.PrepareTestReceiptWithWorkspace(receiptRoot, receiptTree, command, fixture.workspace(),
+					func(freezeRoot, freezeTree string) (proofrun.FrozenExport, error) {
+						if freezeRoot != root || freezeTree != tree {
+							t.Fatalf("freeze coordinates = %q %q", freezeRoot, freezeTree)
+						}
+						frozen, err := proofrun.Freeze(freezeRoot)
+						if err == nil {
+							fixture.frozen = frozen.Root
+							fixture.checkFiles(frozen.Root)
+						}
+						return frozen, err
+					})
+			},
+			func(request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+				return admitCandidateProofLaunchWithRepository(t, repository, request)
+			},
+			func(receiptRoot, attemptID, receiptTree string, now time.Time) (landing.TestReceipt, error) {
+				return landing.PublishCommittedReceiptAtWithWorkspace(receiptRoot, attemptID, receiptTree, now, fixture.workspace())
+			},
+			func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+				return commitProofTerminalWithReasonAndReads(completion, receipt, nil, "proof launcher completed", &reads)
+			})
 	})
 	if code != testCase.wantExit || observedWait != 1 || !strings.Contains(problem, testCase.wantReason) {
 		t.Fatalf("public boundary exit=%d want=%d waits=%d stderr=%q", code, testCase.wantExit, observedWait, problem)
@@ -1119,8 +1172,12 @@ func runLandingReceiptPublicSemanticClockCase(t *testing.T, testCase receiptCloc
 	if !strings.Contains(launchResult.Reason, testCase.wantReason) {
 		t.Fatalf("structured refusal reason=%q want substring %q", launchResult.Reason, testCase.wantReason)
 	}
-	if testCase.refusesExpiry && launchResult.Disposition != proofrun.DispositionAdmissionRefused {
-		t.Fatalf("semantic expiry disposition=%+v", launchResult)
+	wantDisposition := proofrun.DispositionExecuted
+	if testCase.wantLaunches == 0 {
+		wantDisposition = proofrun.DispositionAdmissionRefused
+	}
+	if launchResult.Disposition != wantDisposition {
+		t.Fatalf("semantic boundary disposition=%+v want=%s", launchResult, wantDisposition)
 	}
 	attempts, err := proofrun.ReadAttempts(root)
 	if err != nil || len(attempts) != 1 {
@@ -1142,8 +1199,13 @@ func runLandingReceiptPublicSemanticClockCase(t *testing.T, testCase receiptCloc
 		if _, err := os.Stat(landing.TestReceiptPath(root, tree)); err != nil {
 			t.Fatalf("accepted boundary did not publish receipt: %v", err)
 		}
-	} else if attempt.Terminal.Result == proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) != 0 {
-		t.Fatalf("refused boundary published success: %+v", attempt)
+	} else {
+		if attempt.Terminal.Result == proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) != 0 {
+			t.Fatalf("refused boundary published success: %+v", attempt)
+		}
+		if _, err := os.Stat(landing.TestReceiptPath(root, tree)); !os.IsNotExist(err) {
+			t.Fatalf("refused boundary projected a receipt: %v", err)
+		}
 	}
 	probe, acquireErr := proofrun.AcquireHostResources(t.Context(), root, confPath, "heavy", nil)
 	if acquireErr != nil || probe == nil {
@@ -1155,7 +1217,7 @@ func runLandingReceiptPublicSemanticClockCase(t *testing.T, testCase receiptCloc
 	if err := probe.Close(); err != nil {
 		t.Fatal(err)
 	}
-	assertHostAdmissionClean(t, os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR"), 1)
+	assertHostAdmissionClean(t, admissionDir, 1)
 }
 
 func TestNestedPublicProofRunConsumesInheritedWorkerCeiling(t *testing.T) {

@@ -143,14 +143,14 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 			}
 			last := unit.GoalLast && len(unit.CommitIDs) != 0 && build.Commit == unit.CommitIDs[len(unit.CommitIDs)-1]
 			declaration := batch.AttestedDeclaration(build.Commit, unit.BranchTip, baseCommit)
-			if err := batch.CommitWithWrapper(controlRoot, declaration, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+			if err := batch.CommitWithWrapperWithRead(controlRoot, declaration, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor, readGit); err != nil {
 				return "", err
 			}
-			commit, err := gitOutput(root, "rev-parse", "HEAD")
+			commit, err := readGit(root, "rev-parse", "HEAD")
 			if err != nil {
 				return "", err
 			}
-			if err := batch.RequirePassingCommitVerdict(root, unit.GoalID, commit); err != nil {
+			if err := batch.RequirePassingCommitVerdictWithRead(root, unit.GoalID, commit, readGit); err != nil {
 				return "", err
 			}
 			return commit, nil

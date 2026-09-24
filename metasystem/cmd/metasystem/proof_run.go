@@ -40,6 +40,12 @@ import (
 var legacyProofFenceRead = stopfence.Read
 
 func runProofRunLaunch(args []string) int {
+	return runProofRunLaunchWithInputs(args, admitProofLaunch, commitProofTerminalWithTestResult)
+}
+
+func runProofRunLaunchWithInputs(args []string,
+	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
+	terminal func(proofrun.CompletionContext, json.RawMessage, *proofrun.TestResult) error) int {
 	flags := flag.NewFlagSet("proof-run launch", flag.ContinueOnError)
 	suite := flags.String("suite", "", "suite name")
 	root := pathFlag(flags, "root", "", "metasystem root")
@@ -210,7 +216,7 @@ func runProofRunLaunch(args []string) int {
 		}
 		return status
 	}
-	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{
+	attempt, decision, joined, err := admit(proofLaunchAdmission{
 		ControlRoot: controlRoot, ExecutionRoot: executionRoot, ConfPath: *conf, GoalID: *goalID, AuthorityGoalID: *authorityGoalID,
 		CapMin: *capMin, RetryDecision: *retryDecision, ScopeClass: *scopeClass,
 		CommandClass: *commandClass, Sections: expected, IdentityInputs: identityInputs, Environment: launchEnvironment, Now: commandClock(),
@@ -279,7 +285,7 @@ func runProofRunLaunch(args []string) int {
 			return payload, prepareErr
 		},
 		CommitTerminal: func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
-			return commitProofTerminalWithTestResult(completion, receipt, outerTesting)
+			return terminal(completion, receipt, outerTesting)
 		},
 	})
 	launchStatus = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, launchStatus)

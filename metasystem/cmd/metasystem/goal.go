@@ -208,6 +208,15 @@ type legacyMutationInputs struct {
 func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet) []*string,
 	run func(*goal.Store, goal.Caller, []string) (goal.Result, error),
 	trySync func(string, []string) (int, bool), inputs legacyMutationInputs) int {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(os.Stdout, "Shared synced-goal options follow; each verb may accept fewer flags.")
+		_, err := parseSyncFlagValuesWithOutput(name, args, os.Stdout)
+		if err == flag.ErrHelp {
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, "goal "+name+" help:", err)
+		return 2
+	}
 	if inputs.repositoryTop == nil {
 		inputs.repositoryTop = stateroot.RepositoryTop
 	}

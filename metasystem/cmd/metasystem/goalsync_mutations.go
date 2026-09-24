@@ -1081,8 +1081,12 @@ func humanFlagDrop(message string) []string {
 }
 
 func parseSyncFlagValues(name string, args []string) (*syncFlags, error) {
+	return parseSyncFlagValuesWithOutput(name, args, io.Discard)
+}
+
+func parseSyncFlagValuesWithOutput(name string, args []string, output io.Writer) (*syncFlags, error) {
 	fs := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(output)
 	f := &syncFlags{}
 	pathFlagVar(fs, &f.root, "root", ".", "checkout root")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
