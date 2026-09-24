@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3A3TATJ3NB3JC43W342M8GC
-- Status: draft
+- Status: accepted
 - Goals: seat-mutual-awareness
 
 Goal: plans/goals/seat-mutual-awareness.md. Wido's order (2026-08-31, verbatim
@@ -180,6 +180,21 @@ break "equals the ref's last segment" and the notification file names of
 section 5, so the publisher refuses any other name with
 `SEAT_MACHINE_NICKNAME_INVALID` and publishes nothing.
 
+The runner context, so that only the resident runner can publish. `RunLoop`
+(runner.go:171) calls `RunTick` with a `TickConfig`; the manual verb
+`metasystem steward tick` calls the same `RunTick` with `TickConfig{Now}`
+(steward_verbs.go:356-376), and `RunTick` reads the installed generation
+from disk (tick.go:140), so publishing "inside the tick" alone would let a
+command process publish the rollout confirmation of section 7. Therefore
+`TickConfig` gains `Runner *RunnerContext{RepoIdentity, Generation, Engine,
+ArmedLineage, TickSeconds}`, filled only by `RunLoop` from the identity it
+was enrolled with and from the lineage `steward arm` hands to `steward run
+--repo <root> --lineage <lineage or no-lease>` (revision 5's handoff,
+restored; the runner keeps it in memory, and neither `RunnerRecord` nor
+`InstallIdentity` gains a field). A tick with no runner context publishes
+nothing: component outcome `skipped`, reason `manual tick publishes no
+presence`.
+
 Writer and cadence. The tick composes and publishes the record as component
 attempt `seat-presence`. It publishes EVERY tick, changed or not: the
 timestamp is the liveness signal, and a record that only moved on change
@@ -193,6 +208,37 @@ another checkout is publishing under this nickname
 (`SEAT_PRESENCE_CONFLICT`, also a health reason in section 5). A failed
 publish records the git error as the component's detail, leaves the
 previous ref in place, and never degrades the tick.
+
+Transport is bounded. The fetch and the push each run on an owned process
+group under a deadline, the way the ledger fetch does (`CaptureTipBounded`,
+internal/goal/attention.go:630, whose budget they reuse), so a hung remote
+ends as a failed attempt and never as a hung tick, which holds the
+repository's tick arbitration for its whole pass (tick.go:127-136). Two
+failure classes are kept apart: a transport failure is the component's
+outcome and the tick continues; a failure to write the component's own
+evidence follows the tick's rule for every component (tick.go:194-204).
+
+The chain field is composed by dispatch's own rules: a job qualifies while
+its status is non-terminal in the canonical vocabulary (`pending-setup`,
+`pending`, `running`; internal/dispatch/record.go:56-60); the newest is by
+`createdAt`, ties by job id; `startedAt` is null for a record that has none
+yet (a pending-setup reservation, claim.go:718) and `round` is 0 when the
+record carries none; an unreadable or corrupt record makes `chain` null and
+names itself in the component's detail rather than failing the publish.
+
+The component keeps its own publication state, local, at
+artifacts/agents/steward/seat-presence.json: `lastAttemptAt`,
+`lastSuccessAt`, `lastOutcome` (`published`, `skipped: <reason>` or
+`failed: <detail>`), `consecutiveFailures` and `detail`. Health reads it
+(section 5); the component evidence record stores a digest, not this
+(component_evidence.go:38), and health's own counters count dead
+observations, not attempts.
+
+Refusal codes, rowed in the register because they are emitted as errors:
+`SEAT_MACHINE_NICKNAME_INVALID` (the publisher), `SEAT_PRESENCE_MALFORMED`
+(the reader) and `SEAT_PRESENCE_CONFLICT` (the publisher). No nickname and
+manual tick are skipped outcomes, not refusals, and a failed push is the
+component's detail.
 
 Where in the tick. The component owns both its fetch (section 4) and its
 publish, and runs immediately after the ledger-attention completion record
@@ -219,6 +265,12 @@ the same way, so:
 - the tick's `seat-presence` component fetches
   `+refs/metasystem/presence/*:refs/metasystem/presence/*`, once per tick;
   that namespace is the clone's canonical local copy;
+- every presence fetch is `git fetch --no-tags --refmap= --atomic --prune
+  <remote> +refs/metasystem/presence/*:<namespace>/*`: `--refmap=` keeps
+  it out of the remote-tracking refs, `--atomic` makes a multi-ref update
+  all or nothing so a failed fetch leaves no half-updated namespace, and
+  `--prune` with that one refspec removes only namespace refs whose remote
+  ref is gone, so an operator's deletion (below) reaches every reader;
 - `metasystem seat fleet` reads that copy by default and reports its age;
   with `--fetch` it fetches into `refs/metasystem/presence-fetch/<ulid>/*`,
   reads, and deletes the namespace before it exits;
@@ -231,7 +283,8 @@ the same way, so:
   age and outcome and is never returned as a ledger failure.
 
 A presence fetch never runs inside a goal transaction's per-operation
-fetch. A fetch that fails leaves the previously fetched refs. An old engine
+fetch. In `LocalMode` a reader reads the local refs and neither fetches nor
+prunes. A fetch that fails leaves the previously fetched refs. An old engine
 never fetches these refs, because the refspec is explicit, and is never
 disturbed by them.
 
@@ -246,7 +299,7 @@ inequality, stated once:
 |---|---|
 | reachable | the record is well formed and `0 <= age <= threshold`; a record from the future by less than the threshold is reachable with `clock ahead by <d>` appended to its reason |
 | unreachable | the record is well formed and `age > threshold` |
-| unknown | no ref exists for a machine the ledger names (a `Claimed:` line or a job root); the record is malformed; or `tickAt` is ahead of the reader's clock by more than the threshold, reason `clock ahead by <d>`, the house pattern for clock disorder (`CLOCK_REGRESSED`, health.go:570, 678, 822) |
+| unknown | no ref exists for a machine the ledger names in a `Claimed:` line; the record is malformed; or `tickAt` is ahead of the reader's clock by more than the threshold, reason `clock ahead by <d>`, the house pattern for clock disorder (`CLOCK_REGRESSED`, health.go:570, 678, 822) |
 
 Retired is not a standing of this slice. An operator removes a machine that
 is gone for good with one git act, `git push <remote>
@@ -254,10 +307,19 @@ is gone for good with one git act, `git push <remote>
 until membership records (section 9) make retirement a recorded human act.
 
 The machine set a reader reports is the union of the presence refs it read
-and the machines named by `Claimed:` lines at the accepted tip, so a
-claiming machine that never published is visible as unknown rather than
-invisible. The flag of section 5 is computed by joining those `Claimed:`
-lines to each machine's standing, never from the record.
+and the machines named by `Claimed:` lines at one captured accepted tip,
+so a claiming machine that never published is visible as unknown rather
+than invisible, and a machine whose ref was deleted and that nothing claims
+is simply gone. The flag of section 5 is computed by joining those
+`Claimed:` lines to each machine's standing, never from the record. When
+the accepted tip cannot be read, the reader reports standings from the refs
+alone, prints `claims unavailable: <reason>`, and raises no flag.
+
+`since`, wherever a standing carries one, is the reader's first observation
+of that standing, frozen in the local standings file of section 5, never
+recomputed; an unknown machine with no record has no `since`. Residual, and
+said so in the reason text: an old `tickAt` alone cannot tell a slow clock
+from a silent machine; the reader reports what it observed.
 
 The verb: `metasystem seat fleet [--root <checkout>] [--fetch] [--json]`.
 One line per machine, this machine first:
@@ -289,8 +351,18 @@ the closed schema. The check itself decides only one thing:
   `check the ledger remote; the next tick republishes`, once the last
   success is older than that; a `SEAT_PRESENCE_CONFLICT` skip is dead with
   its own reason and the remedy `one checkout per nickname`;
-- never unknown: a failure to publish is a fact about this machine, not a
-  gap in its knowledge.
+- unknown only when the publication state of section 3 cannot be read, the
+  house rule for unreadable evidence; a known publish failure is never
+  unknown.
+
+Precedence, evaluated in this order from the publication state: unreadable
+state, unknown; no attempt yet since arming, alive with `first publish
+pending`; last outcome skipped for no nickname, alive with `publishes no
+presence: no machine nickname` (a configuration fact, not a fault); last
+outcome a conflict, dead; last success older than the threshold, dead with
+the last detail; otherwise alive, with the last failure's detail appended
+when the newest attempt failed while an earlier success is still fresh. A
+manual tick writes no publication state and changes no verdict.
 
 The engine owns the rest, and the design bends to it rather than the other
 way round: `ConsecutiveFailures` is counted by the health evaluator over
@@ -310,7 +382,12 @@ Others' silence, the transition check inside the `seat-presence` component:
 after its fetch, the component compares every machine's standing with the
 standing it recorded at the previous tick (artifacts/agents/steward/seat-fleet.json,
 local) and queues one notification per change of standing, deduplicated by
-`(machine, standing, since)`. `QueueNotification` uses the nonce as a file
+`(machine, standing, since)`. Order matters, and it is ledger attention's
+order (tick.go:259-264): every transition's notification is queued first,
+then the new standings are persisted with their frozen `since`; a crash
+between the two repeats a notification, which delivery already permits
+(notify.go:242), and never loses one. The first read after arming persists
+the standings as a baseline and notifies nothing. `QueueNotification` uses the nonce as a file
 name (internal/steward/intervene.go:345), so the nonce is
 `seat-presence-<machine>-<standing>-<since as unix seconds>`, which with
 the nickname charset of section 3 is always a plain file name. The words:
@@ -403,26 +480,40 @@ after one, two and three failures and after recovery; the transition check
 firing once per change; the text and JSON of `seat fleet` from an injected
 clock.
 
+Behaviour tests also cover: a pending-setup reservation composing a chain
+with a null `startedAt`; a corrupt job record yielding a null chain with a
+named detail; a tick without runner context skipping; the verdict
+precedence of section 5 case by case; and the transition order, queue then
+persist, with the baseline read notifying nothing.
+
 Git, narrowly and explained: one adapter integration test,
-`TestPresenceRefRoundTripsThroughABareRemote`, with a bare repository in
-`t.TempDir()` as the remote and two clones: publish, fetch into the other
-clone, read the file back, publish again and prove the ref moved without
-history, and the `LocalMode` update of the local ref only. Its operations
+`TestPresenceRefRoundTripsThroughABareRemote`, marked `t.Parallel()` so it
+stays outside the serial count the ratchet limits, with a bare repository
+in `t.TempDir()` as the remote and two clones: publish, fetch into the
+other clone, read the file back, publish again and prove the ref moved
+without history; two readers fetching concurrently into their own
+namespaces without blocking each other; a ref deleted at the remote pruned
+from the namespace; a fetch that fails part way leaving the namespace as
+it was; and the `LocalMode` update of the local ref only. Its operations
 are classified in the isolation inventory as fixture-data and
 host-readonly following the existing git fixture rows. The tick integration
 is one scenario, `seat-presence`, added to the supervision fixture bed
 (scripts/agents/supervision-fixtures.sh, the kit's existing git-driven
-integration layer): arm against a local bare remote, tick once, assert the
-component record, the ref at the remote and the health line.
+integration layer) in both its invocation and its acceptance lists
+(supervision-fixtures.sh:46), with the assertions in Go where the bed
+allows: arm against a local bare remote, tick once, assert the component
+record, the ref at the remote, the publication state and the health line;
+then run `metasystem steward tick` by hand and assert the ref did not
+move. Isolation inventory rows carry an owner sentence and evidence beside
+their classification, as the existing rows do.
 
 testing.json: a unit group `seat-standard` (packages `internal/seat`, tests
 all) and a surface `seat-presence` over `metasystem/internal/seat/**`,
 `metasystem/cmd/metasystem/seat_verbs.go` and the steward files touched,
 standard `seat-standard`, `fast-static-build`, `refusal-register-standard`,
 deep `section/supervision-and-census-fixtures`. Every new refusal code
-(`SEAT_NO_MACHINE_NICKNAME`, `SEAT_MACHINE_NICKNAME_INVALID`,
-`SEAT_PRESENCE_MALFORMED`, `SEAT_PRESENCE_CONFLICT`,
-`SEAT_PRESENCE_PUBLISH_FAILED`) gets its register row with a Shape and a
+(`SEAT_MACHINE_NICKNAME_INVALID`, `SEAT_PRESENCE_MALFORMED`,
+`SEAT_PRESENCE_CONFLICT`) gets its register row with a Shape and a
 Site naming the real emission line within the register test's two-line
 window (internal/refusal/register_test.go:55). The parallel ratchet
 is refreshed with `audit parallel-ratchet -update`, and the shared test
@@ -431,8 +522,9 @@ main lands with the package.
 Build order, smallest first:
 
 1. Slice 1, presence: `internal/seat`; the tick component and the fetch at
-   the start of ledger-attention; the health role and its `hasLawfulAutomaticRemedy` case; the
-   transition check and its notification; `metasystem seat fleet`; the
+   the start of ledger-attention; the runner context and the `--lineage` handoff from `steward arm` to
+   `steward run`; the health role and its `hasLawfulAutomaticRemedy` case;
+   the transition check and its notification; `metasystem seat fleet`; the
    configuration key; refusal rows; the tests above. One build
    lane (Claude on Opus), one code read (Codex on Sol), after one design
    critique of this page (Codex on Astra, Wido's named extra read). Box: two
@@ -468,8 +560,12 @@ survive an interrupted read (a stale `presence-fetch/<ulid>` namespace is
 harmless and collected by the next run). Third, clocks: a machine whose clock is off by more
 than the stale window reads wrong in one direction or the other; the
 reason text names it, and the ledger already carries the same exposure.
-Reject condition: Wido wants membership or asks in the first slice after
-all, in which case revision 5's sections 2 and 4 to 8 return and the box
+One alternative declined: a reversible encoding of arbitrary nicknames into
+the ref suffix, so that a name with a slash could publish. Every nickname
+in this fleet fits the charset, the encoding would be one more thing to
+get right on both sides, and a refused name says exactly how to fix
+itself. Reject condition: Wido wants membership or asks in the first slice
+after all, in which case revision 5's sections 2 and 4 to 8 return and the box
 is the one it counted.
 
 ## Dispositions (Opus read, 2026-09-24, on revision 7 as first written)
@@ -493,3 +589,31 @@ Non-material corrections folded: the sync-branch default and its
 qualification; the receipt-line cite; the ratchet pins serial test counts;
 refusal rows need Shape and a real Site; the retro-debt cite; the churn
 of unreachable objects named in section 3.
+
+## Dispositions (Astra read, 2026-09-24, on revision 7 as first written)
+
+Ten material findings on the same text Opus read; six were already folded
+by the Opus round (per-reader namespaces, the total standing predicate,
+clock-ahead as unknown, the health remedy switch, `holds` and `lastLanding`
+dropped, the nickname rule). What this round added, each verified against
+the tree:
+
+| id | finding | fold |
+|---|---|---|
+| A1 | the fetch contract lacked pruning and atomic updates; deleted remote refs would linger | `--atomic --prune` with the one refspec; LocalMode reads without fetching (section 4) |
+| A2 | presence transport was unbounded inside a tick that holds repository arbitration; transport failures and evidence-write failures were not told apart | an owned process group under the ledger fetch's deadline; the two failure classes named (section 3) |
+| A3 | `since` was undefined and an old timestamp cannot tell a slow clock from silence | `since` is the reader's frozen first observation; the residual is said in the reason (section 4) |
+| A4 | a manual `steward tick` calls the same `RunTick`, so a command process could publish the rollout confirmation; `armedLineage` had no seam | a runner context on `TickConfig` filled only by `RunLoop`, the `--lineage` handoff restored, manual ticks skip (section 3) |
+| A5 | the role's counters and details had no owner; initial, skipped and unreadable cases were unspecified | a publication state file owned by the component; verdict precedence stated case by case (sections 3 and 5) |
+| A6 | job roots in the machine universe; an unreadable accepted tip unspecified | universe is refs and claims; an unreadable tip reports standings only, no flag (section 4) |
+| A7 | once-per-transition needed durable identity and queue-before-persist order | ledger attention's order, frozen `since`, a silent baseline (section 5) |
+| A8 | nicknames with a slash cannot be a ref suffix | the charset refusal stands; the encoding alternative is declined in section 12 |
+| A9 | receipts carry no landing commit | already dropped with F9 |
+| A10 | `pending-setup` reservations lack `startedAt`; corrupt ancestry | qualifying states, ordering and null fields defined by dispatch's vocabulary (section 3) |
+
+Builder clarifications folded into section 10: the ratchet limits serial
+tests, so the git adapter test is parallel; isolation rows carry owner and
+evidence; the supervision scenario goes in both lists; no-nickname stays a
+skipped outcome and only emitted errors get register rows. Not established
+by either read, and carried in section 12: the remote's acceptance of the
+namespace.
