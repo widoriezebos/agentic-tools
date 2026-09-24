@@ -71,7 +71,7 @@ const MEANINGS: Partial<Record<LaneId, string>> = {
   "to-do": "To Do is work that is not authorized; only withdrawing an approval puts a goal back there.",
   ready: "Ready for Work is approved work the claim gate admits; only an approval puts a goal there.",
   "in-progress": "In Progress is a seat's claim, which a seat makes when the engine runs. The browser cannot claim work.",
-  review: "Review and Verification is read from a claim that has built and is waiting to land; nothing here can record that.",
+  review: "Review is read from a claim that has built and is waiting to land; nothing here can record that.",
   waiting: "Waiting is a park with a reason, or an authoritative blocker. Park it from the terminal with goal park.",
   done: "Done is a landing with its evidence. Completing implementation is not completing a goal, and no drop can stand in for either.",
   abandoned: "Abandoned is work dropped with a recorded reason. Drop it from the terminal with goal abandon.",

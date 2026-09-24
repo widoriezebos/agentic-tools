@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:1b0c731050f8036cae840a7702e799a88273086437a5e8d2c6e416b430790201",
+  "sourceDigest": "sha256:32565bdeacb7a873c44f0b889371e12fc462a5edd36eff1502bb877ba25ad0be",
   "source": [
     {
       "path": ".npmrc",
@@ -184,7 +184,7 @@
     },
     {
       "path": "src/backlog/moves.ts",
-      "sha256": "09d6344b5b29797285a510aa86308573a8b53a37b1fa66003a84e9d0f29bd10f"
+      "sha256": "825121d7d459d285e66592d204581b1be06bbf4d1378e2579f24d29fe3d0df81"
     },
     {
       "path": "src/backlog/opening.test.ts",
@@ -698,7 +698,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "a62d452204912f96602c2b01c927dcac0311d87275b727a420be0ff9db38fef7"
+      "sha256": "c219ba89d0e10f952d43429bd3b88a8323f4b5efa220f1d52b834f4df5640aa0"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
