@@ -67,6 +67,14 @@ func RawEntries(repo, commit string) ([]Entry, error) {
 	return rawEntriesWithGitParsed(repo, commit, gitOutput)
 }
 
+func RawEntriesWithRaw(repo, commit string, read func(string, ...string) ([]byte, error)) ([]Entry, error) {
+	return rawEntriesWithGitParsed(repo, commit, read)
+}
+
+func UnitDigestWithRaw(repo, commit string, read func(string, ...string) ([]byte, error)) (string, error) {
+	return unitDigestWithGit(repo, commit, read)
+}
+
 func rawEntriesWithGitParsed(repo, commit string, gitRead func(string, ...string) ([]byte, error)) ([]Entry, error) {
 	raw, err := rawEntriesWithGit(repo, commit, gitRead)
 	if err != nil {

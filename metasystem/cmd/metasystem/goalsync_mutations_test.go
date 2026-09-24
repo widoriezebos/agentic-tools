@@ -215,7 +215,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	reads := repository.reads()

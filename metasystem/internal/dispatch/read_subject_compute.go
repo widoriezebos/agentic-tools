@@ -29,6 +29,13 @@ type readSubjectFacts interface {
 	LiveWorkspaceTree(repoRoot, workspaceRoot string) (string, error)
 }
 
+// ReadSubjectFacts supplies the repository bytes used by subject computation.
+type ReadSubjectFacts = readSubjectFacts
+
+func ComputeReadSubjectWithFacts(req ReadSubjectRequest, facts ReadSubjectFacts) (ReadSubject, bool, error) {
+	return computeReadSubject(req, facts)
+}
+
 type gitReadSubjectFacts struct{}
 
 func (gitReadSubjectFacts) CommitParent(repo, commit string) (string, error) {

@@ -48,22 +48,10 @@ func TestGoalBranchReadDelegateUsesBinarySeamAndReturnsWithoutWaiting(t *testing
 }
 
 func TestGLEGoalBranchReadPassesFrozenBriefAndSolOverrideToDelegate(t *testing.T) {
-	worktree, _, _ := goalBranchCLIFixture(t, "m1")
-	writeTestingFixtureFile(t, filepath.Join(worktree, "metasystem", "code.go"), []byte("package example\n"), 0o644)
-	goalSyncMutationGit(t, worktree, "add", "metasystem/code.go")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", worktree})
-	})
-	unit := strings.TrimSpace(stdout)
-	if code != 0 || stderr != "" || len(unit) != 40 {
-		t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "read-brief-push"})
-	})
-	if code != 0 || stderr != "" {
-		t.Fatalf("unit push: code=%d stderr=%q", code, stderr)
-	}
+	f := newBranchRawFixture(t, false, false)
+	worktree, unit := f.installation, f.unit
+	raw := f.dependencies()
+	code, stdout, stderr := 0, "", ""
 	input := filepath.Join(t.TempDir(), "accepted-design.md")
 	design := "Accepted implementation design: exact input identity and declared ownership.\n"
 	writeTestingFixtureFile(t, input, []byte(design), 0o644)
@@ -80,7 +68,7 @@ func TestGLEGoalBranchReadPassesFrozenBriefAndSolOverrideToDelegate(t *testing.T
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
 		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
 			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, goalBranchReadDependencies{
-			Binary: binary, Gate: func(string) (string, error) { return "green", nil },
+			Binary: binary, Gate: func(string) (string, error) { return "green", nil }, Raw: raw,
 		})
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=dispatched") {
@@ -108,28 +96,17 @@ func TestGLEGoalBranchReadPassesFrozenBriefAndSolOverrideToDelegate(t *testing.T
 }
 
 func TestGLEGoalBranchNestedReadCollectWritesProjectAttestation(t *testing.T) {
-	installation, _, base := goalBranchCLIFixtureBelow(t, "m1", "metasystem")
-	writeTestingFixtureFile(t, filepath.Join(installation, "code.go"), []byte("package fixture\n"), 0o644)
-	goalSyncMutationGit(t, installation, "add", "code.go")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", installation})
-	})
-	unit := strings.TrimSpace(stdout)
-	if code != 0 || stderr != "" || len(unit) != 40 {
-		t.Fatalf("nested unit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", installation, "--opid", "nested-read-push"})
-	})
-	if code != 0 || stderr != "" {
-		t.Fatalf("nested push: code=%d stderr=%q", code, stderr)
-	}
+	f := newBranchRawFixture(t, true, false)
+	installation, unit := f.installation, f.unit
+	raw := f.dependencies()
+	code, stdout, stderr := 0, "", ""
+	base := f.base
 	const job = "critic-nested"
 	writeClosure := func() {
 		t.Helper()
-		subject, present, err := dispatchmodel.ComputeReadSubject(dispatchmodel.ReadSubjectRequest{
+		subject, present, err := dispatchmodel.ComputeReadSubjectWithFacts(dispatchmodel.ReadSubjectRequest{
 			RepoRoot: installation, Role: "code-critic", Reviews: "commit:" + unit,
-		})
+		}, f)
 		if err != nil || !present {
 			t.Fatalf("nested subject present=%t err=%v", present, err)
 		}
@@ -150,7 +127,7 @@ func TestGLEGoalBranchNestedReadCollectWritesProjectAttestation(t *testing.T) {
 		}
 	}
 	deps := goalBranchReadDependencies{Gate: func(string) (string, error) { return "green", nil },
-		Delegate: func(_, _, _, _, _ string) (string, error) { writeClosure(); return job, nil }, Commit: branch.CommitRead}
+		Delegate: func(_, _, _, _, _ string) (string, error) { writeClosure(); return job, nil }, Commit: branch.CommitRead, Raw: raw}
 	args := []string{"--root", installation, "--goal", "standing-validation", "--unit", unit}
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int { return runGoalBranchReadWith(args, deps) })
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=dispatched") {
@@ -162,11 +139,14 @@ func TestGLEGoalBranchNestedReadCollectWritesProjectAttestation(t *testing.T) {
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=collected") {
 		t.Fatalf("nested read collect: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	if _, err := branch.ValidateAttestation(installation, base, "standing-validation", "u1", unit); err != nil {
+	if _, err := branch.ValidateAttestationWithReads(f, installation, base, "standing-validation", "u1", unit); err != nil {
 		t.Fatalf("nested attestation validation: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(installation, "records", "reads", "standing-validation", unit+".json")); err != nil {
 		t.Fatalf("attestation missing from installation records: %v", err)
+	}
+	if !f.staged || !f.published || f.tip != f.read {
+		t.Fatalf("read publication: staged=%t published=%t tip=%s", f.staged, f.published, f.tip)
 	}
 }
 
@@ -193,22 +173,10 @@ func TestGLEGoalBranchReadRejectsDuplicateAndEmptyContextFlags(t *testing.T) {
 }
 
 func TestGLEGoalBranchReadRetriesStructuredRosterRefusalWithFrozenContext(t *testing.T) {
-	worktree, _, _ := goalBranchCLIFixture(t, "m1")
-	writeTestingFixtureFile(t, filepath.Join(worktree, "metasystem", "code.go"), []byte("package example\n"), 0o644)
-	goalSyncMutationGit(t, worktree, "add", "metasystem/code.go")
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "u1", "--root", worktree})
-	})
-	unit := strings.TrimSpace(stdout)
-	if code != 0 || stderr != "" || len(unit) != 40 {
-		t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
-	}
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "read-retry-push"})
-	})
-	if code != 0 || stderr != "" {
-		t.Fatalf("unit push: code=%d stderr=%q", code, stderr)
-	}
+	f := newBranchRawFixture(t, false, false)
+	worktree, unit := f.installation, f.unit
+	raw := f.dependencies()
+	code, stdout, stderr := 0, "", ""
 	input := filepath.Join(t.TempDir(), "accepted-design.md")
 	accepted := "accepted design frozen before the roster refusal\n"
 	writeTestingFixtureFile(t, input, []byte(accepted), 0o644)
@@ -228,7 +196,7 @@ func TestGLEGoalBranchReadRetriesStructuredRosterRefusalWithFrozenContext(t *tes
 	t.Setenv("LAUNCH_PATH", launchPath)
 	t.Setenv("ARGV_PATH", argvPath)
 	t.Setenv("BRIEF_COPY", briefCopy)
-	deps := goalBranchReadDependencies{Binary: binary, Gate: func(string) (string, error) { return "green", nil }}
+	deps := goalBranchReadDependencies{Binary: binary, Gate: func(string) (string, error) { return "green", nil }, Raw: raw}
 	code, _, stderr = captureCommandOutput(t, true, true, func() int {
 		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
 			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, deps)
@@ -708,35 +676,23 @@ func TestGoalBranchCommitAcceptsBuildUnitList(t *testing.T) {
 }
 
 func TestCommitReadRefusesUnrecordedFastGateRun(t *testing.T) {
-	setup := func(t *testing.T) (root, unit, tree, record string) {
+	setup := func(t *testing.T) (*branchRawFixture, string) {
 		t.Helper()
-		root, _, base := goalBranchCLIFixture(t, "m1")
-		writeTestingFixtureFile(t, filepath.Join(root, "metasystem", "read.go"), []byte("package fixture\n"), 0o644)
-		goalSyncMutationGit(t, root, "add", "metasystem/read.go")
-		unit, err := branch.CommitStaged(branch.CommitRequest{Repo: root, Remote: "upstream", EndpointTip: base,
-			GoalID: "standing-validation", Unit: "u1", OpID: "gate-unit", Kind: branch.Unit, CheckClaim: func() error { return nil }})
-		if err != nil {
-			t.Fatal(err)
-		}
-		digest, err := branch.UnitDigest(root, unit)
-		if err != nil {
-			t.Fatal(err)
-		}
-		record = "metasystem/records/misc/command-read.md"
-		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(record)), []byte(unit+" "+digest+"\n"), 0o644)
-		return root, unit, goalSyncMutationGit(t, root, "rev-parse", unit+"^{tree}"), record
+		f := newBranchRawFixture(t, false, true)
+		return f, f.readerRecord()
 	}
 	args := func(root, record string) []string {
 		return []string{"--goal", "standing-validation", "--kind", "read", "--unit", "u1", "--reader-record", record, "--root", root}
 	}
 
 	t.Run("made-up observation", func(t *testing.T) {
-		root, unit, tree, record := setup(t)
+		f, record := setup(t)
+		root, unit, tree := f.installation, f.unit, f.tree
 		commandArgs := append(args(root, record), "--gate-run", "made-up", "--gate-tree", tree)
 		code, _, stderr := captureCommandOutput(t, true, true, func() int {
 			return runGoalBranchCommitWith(commandArgs, goalBranchCommitDependencies{
 				Gate:  func(string) (string, error) { return "go gate: fast mode passed", nil },
-				NewID: func(string) (string, error) { return "recorded-run", nil },
+				NewID: func(string) (string, error) { return "recorded-run", nil }, Raw: f.dependencies(),
 			})
 		})
 		if code == 0 || !strings.Contains(stderr, branch.ReadUngatedCode) || !strings.Contains(stderr, "recorded-run") {
@@ -745,13 +701,17 @@ func TestCommitReadRefusesUnrecordedFastGateRun(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json")); !os.IsNotExist(err) {
 			t.Fatalf("made-up gate wrote attestation: %v", err)
 		}
+		if f.staged || f.published {
+			t.Fatal("made-up gate published a read")
+		}
 	})
 
 	t.Run("red gate", func(t *testing.T) {
-		root, unit, _, record := setup(t)
+		f, record := setup(t)
+		root, unit := f.installation, f.unit
 		code, _, stderr := captureCommandOutput(t, true, true, func() int {
 			return runGoalBranchCommitWith(args(root, record), goalBranchCommitDependencies{
-				Gate: func(string) (string, error) { return "go gate: staticcheck failed", errors.New("exit 1") },
+				Gate: func(string) (string, error) { return "go gate: staticcheck failed", errors.New("exit 1") }, Raw: f.dependencies(),
 			})
 		})
 		if code == 0 || !strings.Contains(stderr, branch.ReadUngatedCode) || !strings.Contains(stderr, "staticcheck failed") {
@@ -760,18 +720,36 @@ func TestCommitReadRefusesUnrecordedFastGateRun(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json")); !os.IsNotExist(err) {
 			t.Fatalf("red gate wrote attestation: %v", err)
 		}
+		if f.staged || f.published {
+			t.Fatal("red gate published a read")
+		}
 	})
 
 	t.Run("recorded observation", func(t *testing.T) {
-		root, unit, tree, record := setup(t)
+		f, record := setup(t)
+		root, unit, tree := f.installation, f.unit, f.tree
 		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
 			return runGoalBranchCommitWith(args(root, record), goalBranchCommitDependencies{
 				Gate:  func(string) (string, error) { return "go gate: fast mode passed", nil },
-				NewID: func(string) (string, error) { return "recorded-run", nil },
+				NewID: func(string) (string, error) { return "recorded-run", nil }, Raw: f.dependencies(),
 			})
 		})
-		if code != 0 || len(strings.TrimSpace(stdout)) != 40 || stderr != "" {
+		if code != 0 || stdout != f.read+"\n" || stderr != "" {
 			t.Fatalf("recorded gate: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
+		journalPath := filepath.Join(f.project, ".git", "metasystem", "goal-reads", "standing-validation", f.unit+".json")
+		journalData, err := os.ReadFile(journalPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var journal struct {
+			Goal       string `json:"goal"`
+			UnitCommit string `json:"unitCommit"`
+			Tree       string `json:"tree"`
+			GateRunID  string `json:"gateRunId"`
+		}
+		if err := json.Unmarshal(journalData, &journal); err != nil || journal.Goal != "standing-validation" || journal.UnitCommit != f.unit || journal.Tree != f.tree || journal.GateRunID != "recorded-run" {
+			t.Fatalf("gate journal=%+v err=%v", journal, err)
 		}
 		data, err := os.ReadFile(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json"))
 		if err != nil {
@@ -780,6 +758,9 @@ func TestCommitReadRefusesUnrecordedFastGateRun(t *testing.T) {
 		var att branch.Attestation
 		if err := json.Unmarshal(data, &att); err != nil || att.Gate.RunID != "recorded-run" || att.Gate.Tree != tree {
 			t.Fatalf("attestation gate=%+v err=%v", att.Gate, err)
+		}
+		if !f.staged || !f.published || f.tip != f.read {
+			t.Fatalf("recorded gate publication: staged=%t published=%t tip=%s", f.staged, f.published, f.tip)
 		}
 	})
 }

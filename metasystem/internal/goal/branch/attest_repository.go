@@ -23,6 +23,46 @@ type attestationReads interface {
 	Transition(repo, before, after string) ([]byte, error)
 	TreeEntry(repo, tree, path string) (string, error)
 }
+
+type AttestationReads = attestationReads
+
+// ReadCommitInputs supplies the facts and effects needed by a read commit.
+// Every field is required when Inputs is supplied; omitted fields never use Git.
+type ReadCommitInputs struct {
+	Reads        AttestationReads
+	Facts        CommitFacts
+	Effects      CommitEffects
+	Patch        func(string, map[string][]byte, string) ([]byte, error)
+	RestoreIndex func(string, string) error
+	Stage        func(string, []string) error
+}
+
+func (in *ReadCommitInputs) repository() (commitRepository, error) {
+	if in == nil {
+		return gitCommitRepository(), nil
+	}
+	if in.Reads == nil || !in.Facts.complete() || !in.Effects.complete() || in.Patch == nil || in.RestoreIndex == nil || in.Stage == nil {
+		return commitRepository{}, fmt.Errorf("read commit inputs are incomplete")
+	}
+	return commitRepository{facts: in.Facts, effects: in.Effects}, nil
+}
+
+func (in *ReadCommitInputs) readers() (attestationReads, readCommitEffects, error) {
+	if in == nil {
+		return gitAttestationReads{}, gitReadCommitEffects(), nil
+	}
+	repo, err := in.repository()
+	if err != nil {
+		return nil, readCommitEffects{}, err
+	}
+	return in.Reads, readCommitEffects{
+		Inspect: repo.inspectCommitBranch, StagedPaths: repo.facts.Staged,
+		AdoptionClean: repo.adoptionCheckoutClean, Patch: in.Patch,
+		Build: repo.buildCommitOnto, IndexTree: repo.facts.Index,
+		RestoreIndex: in.RestoreIndex, Stage: in.Stage, Install: repo.installCommitOnto,
+	}, nil
+}
+
 type gitAttestationReads struct{}
 
 func (gitAttestationReads) ReadSubject(repo, commit string) (readsubject.ReadSubject, error) {

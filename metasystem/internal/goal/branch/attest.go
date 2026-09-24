@@ -91,6 +91,8 @@ type CommitReadRequest struct {
 	GateRunID, GateTree                           string
 	TestsChanged                                  []TestChange
 	Transport                                     PushTransport
+	Inputs                                        *ReadCommitInputs
+	GateRepository                                BranchReadRepository
 }
 
 type LandedUnit struct {
@@ -446,6 +448,15 @@ func ValidateAttestation(repo, endpointTip, goalID, unit, commit string) (Attest
 	return validateAttestation(gitAttestationReads{}, repo, "", endpointTip, goalID, unit, commit, map[string]bool{})
 }
 
+func ValidateAttestationWithReads(reads AttestationReads, repo, endpointTip, goalID, unit, commit string) (Attestation, error) {
+	return validateAttestation(reads, repo, "", endpointTip, goalID, unit, commit, map[string]bool{})
+}
+
+func ComputeSubjectWithReads(reads AttestationReads, repo, commit string) (AttestationSubject, error) {
+	subject, _, err := computeSubjectWithReads(reads, repo, commit)
+	return subject, err
+}
+
 // ValidateAttestationAt validates the evidence as it exists in one fetched
 // branch snapshot while keeping local critic artifacts available at repo.
 func ValidateAttestationAt(repo, snapshot, endpointTip, goalID, unit, commit string) (Attestation, error) {
@@ -667,7 +678,14 @@ func prospectiveReadPatch(repo string, generated map[string][]byte, readerRecord
 }
 
 func CommitRead(req CommitReadRequest) (string, Attestation, error) {
-	return commitRead(req, gitAttestationReads{}, gitReadCommitEffects())
+	if req.Inputs != nil && (req.Transport == nil || req.GateRepository == nil) {
+		return "", Attestation{}, fmt.Errorf("read commit raw transport and gate repository are required")
+	}
+	reads, effects, err := req.Inputs.readers()
+	if err != nil {
+		return "", Attestation{}, err
+	}
+	return commitRead(req, reads, effects)
 }
 func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) (string, Attestation, error) {
 	unitRequest := CommitRequest{Unit: req.Unit, Units: req.Units}

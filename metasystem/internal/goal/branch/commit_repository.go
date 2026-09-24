@@ -9,6 +9,8 @@ import (
 
 type commitWorktree struct{ Path, Branch string }
 
+type CommitWorktree = commitWorktree
+
 type commitFacts struct {
 	Tip       func(repo, ref string) (string, bool, error)
 	Head      func(repo string) (string, error)
@@ -27,6 +29,12 @@ type commitFacts struct {
 	Worktrees func(repo string) ([]commitWorktree, error)
 }
 
+type CommitFacts = commitFacts
+
+func (f commitFacts) complete() bool {
+	return f.Tip != nil && f.Head != nil && f.Tree != nil && f.Index != nil && f.HeadRef != nil && f.Staged != nil && f.Unstaged != nil && f.Patch != nil && f.Range != nil && f.Ancestor != nil && f.Suffix != nil && f.Kind != nil && f.Entries != nil && f.Changes != nil && f.Worktrees != nil
+}
+
 type commitEffects struct {
 	ClearFetch   func(repo, ref string) error
 	Open         func(repo, base string, amend bool) (dir string, close func(), err error)
@@ -38,6 +46,12 @@ type commitEffects struct {
 	Attach       func(repo, ref string) error
 	Restore      func(repo, ref, commit string) error
 	Publish      func(repo, goal, old, next, origin string) error
+}
+
+type CommitEffects = commitEffects
+
+func (e commitEffects) complete() bool {
+	return e.ClearFetch != nil && e.Open != nil && e.Apply != nil && e.Commit != nil && e.Replay != nil && e.WithoutPaths != nil && e.Checkout != nil && e.Attach != nil && e.Restore != nil && e.Publish != nil
 }
 
 type commitRepository struct {

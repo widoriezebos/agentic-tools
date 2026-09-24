@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 const (
@@ -58,7 +59,7 @@ func newProcessGitFixture(t *testing.T) string {
 	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 	deny := "#!/bin/sh\nprintf 'denied git: %s\\n' \"$*\" >> " + quote(denied) + "\nexit 98\n"
-	if err := os.WriteFile(filepath.Join(denyDir, "git"), []byte(deny), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(denyDir, "git"), []byte(deny), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", denyDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -135,7 +136,7 @@ func newProcessGitFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	shim := "#!/bin/sh\nGORACE=atexit_sleep_ms=0 exec " + quote(bin) + " " + processGitHelperArg + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(shimDir, "git"), []byte(shim), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(shimDir, "git"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(processGitConfigEnv, configPath)

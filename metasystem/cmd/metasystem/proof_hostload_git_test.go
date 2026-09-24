@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // Each CLI leg has its own transcript. The accepted blobs come from the
@@ -52,14 +54,14 @@ func newHostLoadGitFixture(t *testing.T, root, tip string, now time.Time, accept
 		t.Fatal(err)
 	}
 	shim := "#!/bin/sh\nexec \"$HOSTLOAD_GIT_HELPER\" -test.run=^TestHostLoadGitHelper$ -- \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(shim), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(bin, "git"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	deny := filepath.Join(dir, "deny")
 	if err := os.Mkdir(deny, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(deny, "git"), []byte("#!/bin/sh\nprintf 'proof fixture Git shim is missing\\n' >&2\nexit 97\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(deny, "git"), []byte("#!/bin/sh\nprintf 'proof fixture Git shim is missing\\n' >&2\nexit 97\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"backlog.md", "standing-validation.md"} {

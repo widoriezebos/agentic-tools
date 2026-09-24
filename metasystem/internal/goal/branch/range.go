@@ -197,6 +197,10 @@ func ValidateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 	return validateRangeWithGit(repo, endpointTip, tip, goalID, gitRead)
 }
 
+func KindOfWithRaw(repo, commit, goalID string, read func(string, ...string) ([]byte, error)) (KindInfo, error) {
+	return kindOfWithGit(repo, commit, goalID, read)
+}
+
 func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(string, ...string) ([]byte, error)) ([]Commit, error) {
 	baseOut, err := gitRead(repo, "merge-base", endpointTip, tip)
 	if err != nil || strings.TrimSpace(string(baseOut)) == "" {

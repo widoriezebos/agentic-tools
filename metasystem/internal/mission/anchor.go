@@ -92,6 +92,20 @@ type anchorOperations struct {
 	gitEnvOutput   func(string, []string, ...string) (string, error)
 }
 
+// RawAnchorOperations supplies Git results to the existing anchor checks.
+// Every callback is required; callers retain responsibility for rejecting
+// unexpected operations and for keeping the returned facts consistent.
+type RawAnchorOperations struct {
+	GitOutput      func(string, ...string) (string, error)
+	GitTry         func(string, ...string) (string, int)
+	GitStdinOutput func(string, []byte, ...string) (string, error)
+	GitEnvOutput   func(string, []string, ...string) (string, error)
+}
+
+func (raw RawAnchorOperations) operations() anchorOperations {
+	return anchorOperations{raw.GitOutput, raw.GitTry, raw.GitStdinOutput, raw.GitEnvOutput}
+}
+
 func defaultAnchorOperations() anchorOperations {
 	return anchorOperations{gitOutput, gitTry, gitStdinOutput, gitEnvOutput}
 }
@@ -731,6 +745,12 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 	return reconcileWithOperations(defaultAnchorOperations(), statePath, repo, ledgerPath)
 }
 
+// ReconcileWithRawAnchorOperations runs the normal reconciliation with supplied
+// Git calls. It does not change the default Reconcile path.
+func ReconcileWithRawAnchorOperations(raw RawAnchorOperations, statePath, repo, ledgerPath string) (int, error) {
+	return reconcileWithOperations(raw.operations(), statePath, repo, ledgerPath)
+}
+
 func reconcileWithOperations(ops anchorOperations, statePath, repo, ledgerPath string) (int, error) {
 	lock, err := lockFile(statePath)
 	if err != nil {
@@ -1264,6 +1284,12 @@ func reconcileCorruptState(statePath string, raw map[string]any) (int, error) {
 // its anchor, returning the sequence and hash.
 func VerifyStateWithAnchor(statePath, repo, ledgerPath string) (int64, string, error) {
 	return verifyStateWithAnchorWithOperations(defaultAnchorOperations(), statePath, repo, ledgerPath)
+}
+
+// VerifyStateWithRawAnchorOperations runs the normal anchor verification with
+// supplied Git calls. It does not change the default verification path.
+func VerifyStateWithRawAnchorOperations(raw RawAnchorOperations, statePath, repo, ledgerPath string) (int64, string, error) {
+	return verifyStateWithAnchorWithOperations(raw.operations(), statePath, repo, ledgerPath)
 }
 
 func verifyStateWithAnchorWithOperations(ops anchorOperations, statePath, repo, ledgerPath string) (int64, string, error) {

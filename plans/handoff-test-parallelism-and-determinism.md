@@ -1,68 +1,71 @@
 # Test parallelism and Git-free tests: current handoff
 
-Updated 24 September 2026, 12:51 CEST. Continue `finish-test-repairs-and-integrate`; do not claim a new goal or expand scope. Root Astra coordinates Sol6 xhigh builders/readers. The user authorizes commits, pushes, tmux and bypassing broken machinery. Work remains active.
+Updated 24 September 2026, 13:59 CEST. Continue `finish-test-repairs-and-integrate`; do not claim a new goal or expand scope. Root Astra coordinates Sol6 xhigh builders/readers. The user authorizes commits, pushes, tmux and bypassing broken machinery. Work remains active; final integration has not happened.
 
-## Authority and safety
+## Safety and scope
 
-- Never read, echo, copy or diff actual `metasystem/metasystem.conf.local` (secrets).
-- Preserve inherited changes, four zero launch caps, and append-only receipt/narrator logs.
-- Ordinary tests must stub Git, including setup. Only narrow named native adapter tests may use it, with a concrete reason. Keep original behavior assertions and actual policy; stubs supply raw repository facts, not final verdicts.
-- Mac suites: nine workers. Linux VM: six workers, six CPUs, 16 GiB. Keep inherited worker allowance intact. Full Linux validation is required for this goal's runner/process changes; subsequent work uses selective Linux checks.
-- No new audit system, inventory, emulator or dependency. User wants a small, reliable test capability. Use existing seams.
-- All builds/read clones are private `git clone --shared` checkouts. Frozen rollout trees are read-only. Never copy build caches. Never clear a shared/default Go cache; clear only an explicit inactive private cache. Preserve the pinned analyzer in `C/steward-deadcode-build/go-cache`.
-- Do not repeat valid behavior tests for report packaging, path labels, or deletion of verified unreachable wrappers. Compile/static checks suffice for those edits. Rerun affected behavior for actual reachable changes.
+- Never read, echo, copy or diff actual `metasystem/metasystem.conf.local`; it contains secrets.
+- Preserve inherited work, four zero launch caps, append-only receipt/narrator logs, source and retained proof.
+- Ordinary tests stub Git including setup. Preserve real policy decisions and original assertions; inject raw repository facts. Native adapter exceptions need a specific interaction that a stub cannot prove.
+- Mac test workers9; Linux6 with six CPUs/16GiB, no oversubscription. Full Linux proof remains required for this runner/process goal; subsequent routine work is selective.
+- No maintained inventory, audit system, emulator or dependency. Temporary census files are incomplete analysis, not product machinery or a certified remaining count.
+- Create private clones for builds/reads. Rollout snapshots are immutable inputs, not workspaces. Never copy build caches or clear shared/default caches. Preserve pinned analyzer `C/steward-deadcode-build/go-cache`.
+- Match test reruns to changed behavior. Report/packaging repairs do not require replaying valid runs. Native group identity determines evidence reuse.
 
 ## Paths
 
-R = `/Users/wido/LocalStorage/GitHub/agentic-tools-m1e`
-E = `/Users/wido/LocalStorage/agentic-tools-evidence/test-parallelism-20260921`
-C = E + `/coordination/git-free-tests-20260923`
-T = `/Users/wido/LocalStorage/transport/test-parallelism-20260921`
-UI clone = `/Users/wido/LocalStorage/GitHub/agentic-tools-ui`
+R=`/Users/wido/LocalStorage/GitHub/agentic-tools-m1e`; E=`/Users/wido/LocalStorage/agentic-tools-evidence/test-parallelism-20260921`; C=`E/coordination/git-free-tests-20260923`; T=`/Users/wido/LocalStorage/transport/test-parallelism-20260921`.
+UI clone: `/Users/wido/LocalStorage/GitHub/agentic-tools-ui`.
 
-## Accepted and saved work
+## Source and backups
 
-- Main/origin main: `761586c9734c78d9d8cbef1e7f8d30ff4e31db46`. Final integration has NOT happened.
-- Accepted/staged: **229 batches, 1,451 original parent tests converted**. `C/git-conversion-count-live-229.json`. Provisional 212 old typed candidates remain, but there is no certified global remaining denominator.
-- `C/accepted/<name>.json` and `.patch` preserve reviewed hashes, files, actual read/proof paths, counts and limitations. Root has read each accepted computed patch and independent report; focused proof is retained.
-- Latest frozen snapshot: `E/rollout/parallel-final-candidate-20260923bw/source`, commit `759333a5a0abb41095936f3b3c8a682c36843b1b`, tree `2700a822cfedf7a3a650612cb3399578a4ee4788`. Next label `bx`.
-- Remote backup verified 12:21 CEST: branch `backup/test-parallelism-20260924`, commit `1ca0518777afa45de3a934b021c01e63a958533f`, tree `d5fca050a90050f95622b421f293fed522ef444e`, through 222 batches / 1,440 parents. `C/remote-backup-20260924-latest.json` owns latest backup identity. Batches223–229 and this concise handoff are staged/pending backup.
-- Backup uses an alternate index from the frozen commit plus explicit handoff/receipt/narrator paths, then normal fast-forward push and ls-remote verification. Main index stays intact. No secret path in tree.
+Main HEAD remains `761586c9734c78d9d8cbef1e7f8d30ff4e31db46`. Accepted/staged: **243 batches, 1,472 original parent tests converted**. This is not a global completion denominator.
 
-Recent accepted batches: 211 validate-paththree; 212 batch-protected-two; 213 cmd-read-items-three; 214 cmd-brain-boot-six; 215 missionrunner-host-first-six; 216 batch-package-selection-four; 217 landing-receipt-reader-three; 218 missionrunner-host-four; 219 cmd-session-stop-two; 220 composed-bu215-dead-three (zero parents); 221 batch-dependent-five; 222 cmd-candidate-engine-four; 223 composed-bv222-compile-repair (zero parents); 224 cmd-batch-owner-seven (+7); 225 hcl03-bw223-site-refresh (zero); 226 cmd-candidate-engine-one-B (+1); 227 missionrunner-faulted-three (+3); 228 engine-binding-two-bw223 (zero); 229 parallel-ratchet-twelve-bw223 (zero).
+Frozen bx: `E/rollout/parallel-final-candidate-20260923bx/source`, commit `9787c5df34fac89c770c031308367621b1c116dd`, tree `aedc173df111eb72bfd1671640edde1936797159`. It contains accepted229. Full run ended before root lifted Main freeze and applied ten reviewed units. Their composition was checked in an alternate index before application; code/index tree before this handoff edit is `f99fbdde919503b38b1657c27fefdb78bb2216b3`.
 
-## VM cleanup is complete
+Ten applied units: candidate-engine umask; branch-inspection2; batch-registry1; batch-provenance4; metrics3; terminal4; branch-path2; landing-receipt umask; refusal Site3; validate-conformance umask. Actual hashes/read/proof and application record: `C/ready-after-bx-run.json`, `C/accepted-after-bx-ten.json`, `C/root-review-pending-bx.md`.
 
-Measured actual host allocation for `~/.lima/metasystem-debian/disk`: **60.32 to 28.77 GiB, 31.55 GiB reclaimed**. Guest uses 29 GiB with 66 GiB free; Mac had 116 GiB free at 12:15. Removed disposable Go/Staticcheck caches and six confirmed orphan compiler directories, then sync/fstrim. Source, worktrees, evidence, tools and other apps preserved. VM remains running. Exact evidence: `C/vm-cleanup-20260924/{results.json,summary.md}`. Do not repeat blind cleanup.
+Remote backup branch `backup/test-parallelism-20260924` verified through firstsix at `6f26399dc6929b5173ec2f06cfd6765d374aee74`; nextfour private aggregate in `E/units/after-bx-ten-aggregate` is being prepared for root verification/push. Read `C/remote-backup-20260924-latest.json` for latest remote state. These are WIP backups, not final Main integration.
 
-## Current delegates and next decisions
+## Current full-run evidence
 
-1. **validate_and_anchor**: last full-run prerequisite. Exact twelve safe top-level `t.Parallel()` additions, five test files; SHA84cdf82d167f28d1dc8d39aa5fb08b17579eb0e64c92a785ff3c4750645df3ba. Root read full patch. Verifier ran all twelve plus parallel-ratchet: 13 pass, five package exits0, race/atomic, no skips. Builder cache denial before execution retained; verifier used clone-owned writable cache. Independent whole-patch/helper-safety read passed, zero material findings; accepted229. Unit `E/units/parallel-ratchet-bw223-prepared/source/metasystem/artifacts/parallel-ratchet-bw223/{builder,verifier}`. Snapshot bx and immediately launch full Mac9.
-2. **proof_worker_conversion**: preparing next full Mac9 run via existing enrolled human terminal, exact candidate frontend and current goal. No source edits, no launch until root supplies bx identity. Memo `C/mac9-next-launch-az-timing-facts.md`. Do not reuse historical goal/lineage or pass internal-only --control-root. Ordinary `test run --root MAIN/metasystem --goal finish-test-repairs-and-integrate --tree TREE --mode auto --purpose delivery --cap-min 120 --all-groups --result OUT/result.json`. Main index must match frozen candidate. Use exact current source frontend; leave installed binary untouched. Need current wall time and actual concurrency, not more old numbers.
-3. **dispatch_budget_resume**: inventory repair accepted228; now small read-only diagnosis why AZ configured9 but at most4 groups, source/request distinction between group slots and native test workers. No source changes or secrets.
-4. **landing_composition**: metrics-three isolated builder starting at bv222 after second bounded fresh critique found no material issue. First critic failed to return usable report; not counted green. Root design `C/cmd-metrics-three-root-design.md`, three ordinary parents, five paths/450-line ceiling. Local branch failure occurs at endpoint fetch BEFORE Sweep. Preserve real Done/Authorize/policy with raw endpoint replies. Must not delay current whole-suite launch.
-5. **counselor_conversion**: B accepted226; **steward_final_conversion**: faulted3 accepted227; both idle. No extra broad tests requested.
-6. **carrier_correction**: branch-family scout complete; CheckPrintsKinds/SweepLists are small potential next pair. Root design not dispatched; StatusAbsentOrigin depends on endpoint seam. CheckFetchesCurrentOriginTip is retained native adapter. No edits yet.
-7. **gaterun_conversion**: dependent-five accepted221, idle; last followup had thread-limit refusal, do not assume running.
+`E/rollout/final-selected-delivery-20260924bx-retry1/result.json` is schema3, attempt `proof-muff86j6-b88b51f55265222f`, 168 selected groups: **151 passed, 11 failed, 2 invalid, 4 blocked**; delivery insufficient, native launcher and wrapper exit1. Wrapper wall **55m32s**; native interval **53m20.099s**, 13:01:42 to13:55:02 CEST. This is a complete red attempt, NOT a passing full-suite time or demonstrated whole-suite speedup. Earlier AZ55m was historical, not the new implementation's result.
 
-Accepted226 root additionally checked captured filtered environment: `testingEnvironment` removes all Git variables, while actual commit/projection owner reads changed ambient Git environment; original foreign-environment case remains meaningful. Accepted227 retains actual Seal/Measure/wall/conclusion with independent anchored/current ledger bytes and missing instruments removed before reopening turn. Exact proof and independent reports are named in acceptance records.
+Raw request/progress/group/shard logs remain under `R/metasystem/artifacts/agents/proof-runs/<attempt>/testing/2619731a1700dd3b0072592a57f3a6e3de60d0ef0e4bf5ef4d48aa41d61db2a9`; wrapper/watcher records are beside result. The full selection was forced fresh to observe current behavior.
 
-## Validation and full-suite plan
+Observed: nine simultaneous native shards were proved by timestamp overlap. Group concurrency remained4, full for46m16s (86.8% of native time); the tail used fewer workers. 8,893 top-level package/test observations represent5,749 unique identities and3,144 repeated executions across groups, excluding subtests/package-build. Tags and execution conditions differ for some repeats; do not delete them blindly. Worker9 does not imply optimal scheduling or universal native-process cap: setup and section children also consume resources.
 
-- Full pinned staticcheck on bv222 initially failed on integration-unused os/exec in gate_test.go; that compile error also produced false U1000 claims about helpers with test callers. Accepted223 removes only unused import, redundant local assignment and equivalent fixture struct literal. Full staticcheck and batch compile-only then passed. Evidence `E/units/composed-bv222-compile-repair`.
-- Stop audit through208+ passed (three added, none removed). Original top-level t.Parallel-loss scan throughbr210 found none; not a global parallel-runtime guarantee.
-- Last complete Mac run was AZ161: **failed in55m33.6s**, 167 selected groups,142 pass/5 reuse/17 fail/3 blocked. Nine configured workers, maximum four concurrent groups observed. Do not claim measured speedup or optimal CPU use. Facts `C/full-az-mac-failure-facts.md`.
-- HCL03 116 site replacements accepted225: exact source sites, no policy/code change, focused and full package passed. Fresh old-AZ focused checks on bw223 gave seven passes and two failures; inventory now fixed228, parallel-ratchet twelve-marker proof and independent read green, accepted229. No full suite active yet.
-- After these focused prerequisites, start a selected full suite on a frozen candidate while independent conversions continue if safe. Use native input-identity reuse for unchanged groups; do not defer all whole-system observation merely until every remaining conversion finishes. Reprove changed execution identities, never blanket reuse.
-- Then full Mac9/Linux6 validation with actual worker overlap and wall time, masked gate-fence/fail-open checks, matching retained proof, Main commit/push, installed/generic-app witness. Do not claim delivery before these pass.
-- Last communicated18–22 CEST delivery range was LOW confidence. No reliable final ETA or current whole-suite runtime yet. User corrected root twice for quoting old55m measurement when asked about new implementation. Root acknowledged new runtime is unmeasured and prioritized immediate full run once two prerequisites pass.
+Failures cluster into four causes:
+1. Umask077 created0600 fixture files where raw snapshots require0644. Three local fixtures now explicitly chmod0644; focused reproduced failures then race/atomic green, root-reviewed/applied.
+2. Seven direct executable writes bypass existing testexec fork lock. Private patch built; scanner/focused tests green. Steward control initially lacked exactbx engine, then passed after private binary installation; fresh read LAND, root accepted/applied241.
+3. Three refusal source-line references stale after owner edits. Exact Site-only repair focused pass/root-reviewed/applied. This failure blocked fast-static-build and adoption/land/supervision-census sections; those four groups have not run.
+4. Protected policy base47dbe0f1 still selects three removed/moved command test names. Current candidate contract is not stale. Root design restores substantive Git-free command parents using actual package selector, expansion, nested-root and parity decisions. Keep protected policy and selectors intact; builder pending.
 
-## Review/provenance lessons for next compaction
+A delegate briefly edited only the three refusal Site values in the frozen bx checkout. Root preserved patch and restored exactHEAD; checkout clean. Request and worker code confirm fullrun consumed Main plus detached pinned-tree workspaces, never bx working contents. No run invalidation or repeat is justified by that incident. Record: `E/units/refusal-site-three-bx-repair/source-restoration.json`.
 
-- Candidate A review found lost cold-parent t.Parallel, mutable facts under fixed IDs, and incomplete commit request identity. All fixed; final key uses actual normalized argv/environment/stdin, excluding project-tree identity absent from actual commit input. Same actual request must give same synthetic OID. Native object serialization has separate small witnesses.
-- Batch dependent-five initial builder edited shared frozen br210. Exact patch/proof preserved, root reversed only those two files and verified clean HEAD. Correction ran privately; native witness now uses the SAME declared A/B/C patch bytes as the policy fixture.
-- Compile errors can make staticcheck's unused-function results incomplete. Repair compilation first, verify callers before deleting.
-- Stale local wait85814ee3240c2c7c38b752f4e627211d (contract-nine already completed) was ended through `metasystem wait end`. `goal next` confirms current claimed goal. Never manually edit goal ledgers.
-- The runtime exposes no manual compaction tool here. The automatic checkpoint was restored around12:40. Keep this note current and do not change launch caps.
+## Delegates / next work
 
-Historical continuation notes through12:20 are preserved at `C/handoff-history-through-20260924-1229.md` and in remote backup commit1ca051877. This current note replaces repeated old status blocks; read history only for a specific missing fact.
+- `dispatch_budget_resume`: forklock-seven repair in `E/units/forklock-seven-bx-repair-prepared`; fresh independent read LAND; root accepted/applied241. No production change. Preserve initial steward prerequisite failure and subsequent passing proof with exactbx binary provenance.
+- `adoption_filled_delivery_failure`: protected selector restoration, root design `C/bx-protected-selectors-restoration-design.md`, source map `C/bx-legacy-selector-source-map.md`; NEW clone `E/units/protected-selectors-restoration-bx/source`. Sol6 build32/read14, <=300lines. Real raw selection, not canned Selection; no contract bypass.
+- `validate_and_anchor`: revised D1 pre-call ledger-tamper conversion, actual mission raw verification/reconcile. Original correction rejected because it moved tamper after authentication. Final correction removes redundant in-test Git-denial env/log-truncation; external denial proof passes. Patch `E/units/wall-drift-d1-revised-bx-prepared/source/metasystem/artifacts/wall-drift-d1-revised-bx/correction/source.patch`, SHAef659eade9a50dc8cd19014ed973fe905dbf54fa310ce818a1d7dc7aa235cf45. Scoped read LAND; root inspected actual proof and applied as batch240. Parent remains serial because existing stageHumanShell needs t.Setenv; no all-tests-t.Parallel claim. Remaining wall resume cases need a real resume-capable raw host/continuity fixture; no native-Git exception established for them.
+- `steward_final_conversion`: branch-read four conversions, private `E/units/goal-branch-four-bx/source`. Astra design `C/goal-branch-four-design-last.md`; 224line raw ports compile but initial builder stopped on estimated520line cap before fixture conversion. Root authorized same behavior/scope up to850lines, reuse existing fixtures,28additionalcalls/read18. No canned claim/Inspect/Build/Install decisions.
+- `landing_composition`: nextfour private backup aggregate, root verifies source bytes/tree then pushes fast-forward. No Main edits by delegates.
+- `counselor_conversion` and `goal_branch_source_map`: narrow umask/Site repairs complete and applied. `proof_worker_conversion`: fullrun complete; no rerun requested.
+
+## Cleanup completed
+
+First VM cleanup reclaimed31.55GiB of host allocation (60.32→28.77GiB); second/third checks found no additional disposable guest caches. Guest has65.89GiB available. Latest Mac cleanup removed29 inactive private caches and reclaimed15.67GiB, leaving124.99GiB at13:13; active builds/suite subsequently consumed space, with108.21GiB available at13:49. Preserve active caches/evidence. `C/cleanup-host-second-result.json`, `C/vm-cleanup-20260924-third/summary.md` retain measurements. Do not double-count earlier VM reclaim as current cleanup.
+
+## Next completion steps
+
+Finish current bounded repairs/conversions, independently review their actual patch/proof, compose and save backups. Reuse matching green group evidence, rerun changed identities, complete previously blocked stages; full Linux6 proof remains required. Then exact candidate proof, actual runtime/parallel observation, final Main commit/push and installed/generic-application witness. No reliable final ETA or passing current-suite wall time yet. Never claim completion from focused greens alone.
+
+Earlier history is retained in `C/handoff-history-through-20260924-1251.md` and prior backup commits. Goal budget was legitimately extended through supported human enrollment/approval to120h; zero launch caps remain. Do not manually edit goal ledgers or create another goal. The platform goal-tool state may still say blocked despite this actively resumed work; do not treat that as a stop instruction.
+
+## Continuation at 14:16 CEST
+
+Root applied D1 as240, forklock7 as241, protectedselector3 restoration as242 and branch-read4 as243. All four known full-run failure families are repaired with focused proof; final composed validation is still pending. Backup e8fa85921b68fbffbacbb0e00ff7164a93297a15 is pushed/remote-verified through239. Branch4 composition reused accepted ValidateRangeWithGit instead of adding a duplicate wrapper, with unchanged actual owner and compilegreen; original focusedrace proof retained. Current sourcecount243/1472; no certified global remainingcount.
+
+Orphan2 builder20260924t120612-1548a3e01c is active in E/units/wall-orphan-two-prepared/source (bx plus acceptedD1); exact2 parents diagnosticrace/Gitdeniedgreen, finalproof/readpending. Root design C/wall-orphan-two-root-design.md. Remaining eight wall parents were regional, not a global Git-removal denominator; after orphan2 six remain in that wave. Original typedcensus428 includes unresolved ordinary/mixed/native classes and is not a completioncount.
+
+Latest cleanup cleared three more inactive private caches (provenance4,candidateumask,terminal4) for1.80GiB, in addition to prior15.67GiB Maccleanup. VMstill28.77GiBhostallocation,65.89GiBguestfree. Exactnewrecord C/private-cache-cleanup-20260924-postbx/summary.md.

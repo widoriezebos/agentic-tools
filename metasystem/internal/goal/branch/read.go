@@ -202,20 +202,31 @@ func ResolveReadGate(request ReadGateRequest) (GateObservation, error) {
 }
 
 func ResolveCommitReadGate(request CommitReadRequest, gate func(string) (string, error), newID func(string) (string, error)) (GateObservation, error) {
+	if request.Inputs != nil && (request.Transport == nil || request.GateRepository == nil) {
+		return GateObservation{}, fmt.Errorf("read commit raw transport and gate repository are required")
+	}
 	units, err := requestUnits(CommitRequest{Unit: request.Unit, Units: request.Units})
 	if err != nil || len(units) == 0 {
 		return GateObservation{}, fmt.Errorf("read commits need one or more distinct unit names")
 	}
-	state, err := inspectCommitBranch(CommitRequest{Repo: request.Repo, Remote: request.Remote, EndpointTip: request.EndpointTip,
+	repository, err := request.Inputs.repository()
+	if err != nil {
+		return GateObservation{}, err
+	}
+	state, err := repository.inspectCommitBranch(CommitRequest{Repo: request.Repo, Remote: request.Remote, EndpointTip: request.EndpointTip,
 		GoalID: request.GoalID, Units: units, OpID: request.OpID, Kind: Read, Transport: request.Transport})
 	if err != nil {
 		return GateObservation{}, err
 	}
-	commit, err := unitCommitInRange(request.Repo, request.EndpointTip, state.baseTip, request.GoalID, units)
+	reads, _, err := request.Inputs.readers()
 	if err != nil {
 		return GateObservation{}, err
 	}
-	return ResolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID, UnitCommit: commit, Gate: gate, NewID: newID})
+	commit, err := unitCommitInRangeWithReads(reads, request.Repo, request.EndpointTip, state.baseTip, request.GoalID, units)
+	if err != nil {
+		return GateObservation{}, err
+	}
+	return ResolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID, UnitCommit: commit, Gate: gate, NewID: newID, Repository: request.GateRepository})
 }
 
 func branchReadID(prefix string) (string, error) {

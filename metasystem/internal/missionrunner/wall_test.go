@@ -1271,24 +1271,39 @@ func TestReservationParksOnDriftAfterResolution(t *testing.T) {
 // resolution: tamper between the park and the ruling fails the anchor-verified
 // entry, and reconciliation refuses to bless it.
 func TestResolveTaintRefusesLedgerDrift(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
+	continuity := newDriftAnchorContinuity(t, bed)
+	savedHash, savedSHA, savedLedger, pins := bed.anchorHash, bed.anchorSHA, string(bed.anchored), bed.pins
 
 	tampered, err := os.ReadFile(ledgerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeText(t, ledgerPath, string(tampered)+"- Stop-loss reset: ask=forged-mid-resolution\n")
+	if _, _, _, err := mission.ParseLedger(ledgerPath); err != nil {
+		t.Fatalf("the forged append must remain parseable for anchor verification: %v", err)
+	}
 
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
-	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring", nil); code == 0 {
-		t.Fatal("a resolution over drifted ledger bytes must refuse")
+	live, err := os.ReadFile(ledgerPath)
+	if err != nil || string(live) != string(tampered)+"- Stop-loss reset: ask=forged-mid-resolution\n" {
+		t.Fatalf("forged ledger append missing before resolution: %q, %v", live, err)
 	}
+	t.Log("forged ledger append is present before ResolveTaint")
+	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring", nil); code != 3 {
+		t.Fatalf("a resolution over drifted ledger bytes must refuse with code 3, got %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(engine.Root, "solo.go")); !os.IsNotExist(err) {
+		t.Fatalf("safe-tree restoration did not remove solo.go: %v", err)
+	}
+	assertDriftRefused(t, bed, continuity, savedHash, savedSHA, savedLedger, pins)
 }
 
 // The runner repairs a resolution's crash tail at

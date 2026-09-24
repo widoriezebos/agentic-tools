@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // proofAdmissionRepository stores complete immutable repository trees. Goal
@@ -344,7 +345,7 @@ func (r *proofAdmissionRepository) extendBudgetInputs(t *testing.T) syncRequestD
 	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	reads := r.reads()

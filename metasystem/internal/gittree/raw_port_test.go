@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type rawPortStep struct {
@@ -172,7 +173,7 @@ func TestWorkspaceRawSourceNativeSignalDetail(t *testing.T) {
 	if err := os.Mkdir(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nkill -TERM $$\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nkill -TERM $$\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
