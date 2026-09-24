@@ -147,8 +147,11 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 		}
 	}
 
-	notified, err := noticeSeatStandings(repoRoot, machine, fleetCopy, now)
+	notified, standingsDetail, err := noticeSeatStandings(repoRoot, machine, fleetCopy, now)
 	report.Notified = notified
+	if standingsDetail != "" {
+		report.Detail = strings.TrimSpace(report.Detail + " " + standingsDetail)
+	}
 	if err != nil {
 		return report, fmt.Errorf("record seat-presence standings: %w", err)
 	}
@@ -225,11 +228,15 @@ func publishSeatPresence(repoRoot string, transport seat.Git, fleetCopy seat.Cop
 // attention's order: every notification is queued first, then the new
 // standings are persisted with their frozen since, so a crash between the
 // two repeats a notification and never loses one.
-func noticeSeatStandings(repoRoot, machine string, fleetCopy seat.Copy, now time.Time) ([]string, error) {
+// A standings file that cannot be read is NOT a baseline: the silent first
+// read belongs to an absent file alone. Treating a torn one as absent would
+// swallow every transition it holds the history for and then overwrite the
+// only evidence of what went wrong, so an unreadable file is reported and
+// left exactly where it is.
+func noticeSeatStandings(repoRoot, machine string, fleetCopy seat.Copy, now time.Time) ([]string, string, error) {
 	previous, existed, err := seat.LoadStandings(repoRoot)
 	if err != nil {
-		previous = seat.StandingsState{Machines: map[string]seat.Observation{}}
-		existed = false
+		return nil, "the seat-fleet standings are unreadable and were left untouched: " + err.Error(), nil
 	}
 	claims, unavailable := seat.Claims(repoRoot)
 	standings := seat.Fleet(seat.FleetInput{
@@ -239,11 +246,11 @@ func noticeSeatStandings(repoRoot, machine string, fleetCopy seat.Copy, now time
 	var notified []string
 	for _, notification := range seat.Transitions(previous.Machines, standings, !existed) {
 		if err := QueueNotification(repoRoot, PendingNotification{Nonce: notification.Nonce, Message: notification.Message}); err != nil {
-			return notified, err
+			return notified, "", err
 		}
 		notified = append(notified, notification.Nonce)
 	}
-	return notified, seat.SaveStandings(repoRoot, seat.NextStandings(standings, now))
+	return notified, "", seat.SaveStandings(repoRoot, seat.NextStandings(standings, now))
 }
 
 // checkSeatPresence is the health role: one thing decided, alive or dead by

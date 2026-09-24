@@ -184,7 +184,7 @@ func TestTheTransitionQueuesBeforeItPersists(t *testing.T) {
 			Engine: "8a01d77", ArmedLineage: seat.NoLease, TickSeconds: 600,
 			TickAt: seat.FormatTime(seatFixtureClock.Add(-6 * time.Hour))},
 	}}
-	notified, err := noticeSeatStandings(root, "m1e", copied, seatFixtureClock)
+	notified, _, err := noticeSeatStandings(root, "m1e", copied, seatFixtureClock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestTheTransitionQueuesBeforeItPersists(t *testing.T) {
 		t.Fatalf("standings = %+v", standings.Machines)
 	}
 	// The same standing at the next pass is not news again.
-	again, err := noticeSeatStandings(root, "m1e", copied, seatFixtureClock.Add(10*time.Minute))
+	again, _, err := noticeSeatStandings(root, "m1e", copied, seatFixtureClock.Add(10*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestTheFirstReadPersistsABaselineAndNotifiesNothing(t *testing.T) {
 			Engine: "8a01d77", ArmedLineage: seat.NoLease, TickSeconds: 600,
 			TickAt: seat.FormatTime(seatFixtureClock.Add(-6 * time.Hour))},
 	}}
-	notified, err := noticeSeatStandings(root, "m1e", copied, seatFixtureClock)
+	notified, _, err := noticeSeatStandings(root, "m1e", copied, seatFixtureClock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,6 +237,37 @@ func TestTheFirstReadPersistsABaselineAndNotifiesNothing(t *testing.T) {
 	}
 	if standings := seatStandings(t, root); standings.Machines["m1c"].Standing != seat.Unreachable {
 		t.Fatalf("the baseline was not persisted: %+v", standings)
+	}
+}
+
+func TestATornStandingsFileIsReportedAndLeftAlone(t *testing.T) {
+	t.Parallel()
+	root := seatPresenceRoot(t)
+	torn := []byte("{\"schema\":1,\"machines\":\n")
+	if err := os.WriteFile(seat.StandingsPath(root), torn, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	copied := seat.Copy{Records: map[string]seat.Record{
+		"m1c": {PresenceSchema: 1, Machine: "m1c", RepoIdentity: "repo-c", Generation: 3,
+			Engine: "8a01d77", ArmedLineage: seat.NoLease, TickSeconds: 600,
+			TickAt: seat.FormatTime(seatFixtureClock.Add(-6 * time.Hour))},
+	}}
+	notified, detail, err := noticeSeatStandings(root, "m1e", copied, seatFixtureClock)
+	if err != nil {
+		t.Fatalf("a torn standings file failed the tick: %v", err)
+	}
+	if len(notified) != 0 {
+		t.Fatalf("a torn standings file notified %v", notified)
+	}
+	if !strings.Contains(detail, "unreadable") {
+		t.Fatalf("detail = %q; the component must report what it could not read", detail)
+	}
+	after, err := os.ReadFile(seat.StandingsPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(torn) {
+		t.Fatalf("the torn standings file was overwritten: %s", after)
 	}
 }
 
