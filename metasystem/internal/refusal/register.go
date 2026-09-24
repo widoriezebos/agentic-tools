@@ -334,7 +334,7 @@ var Rows = []Row{
 	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:677", Shape: Question},
 	{Code: "SEAT_MACHINE_NICKNAME_INVALID", Owner: "internal/seat", Site: "record.go:43", Shape: Question},
 	{Code: "SEAT_PRESENCE_MALFORMED", Owner: "internal/seat", Site: "record.go:114", Shape: Question},
-	{Code: "SEAT_PRESENCE_CONFLICT", Owner: "internal/seat", Site: "publish.go:214", Shape: Question},
+	{Code: "SEAT_PRESENCE_CONFLICT", Owner: "internal/seat", Site: "publish.go:286", Shape: Question},
 }
 
 var Exclusions = []Exclusion{
