@@ -613,20 +613,28 @@ func TestGoalBranchCheckFetchesCurrentOriginTip(t *testing.T) {
 }
 
 func TestGoalBranchGitKeepsStderrOutOfObjectIDs(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
+	root := t.TempDir()
+	want := strings.Repeat("a", 40)
 	bin := t.TempDir()
-	wrapper := filepath.Join(bin, "git")
-	writeTestingFixtureFile(t, wrapper, []byte("#!/bin/sh\nprintf 'wrapper warning\\n' >&2\nexec "+realGit+" \"$@\"\n"), 0o755)
+	transcript := filepath.Join(bin, "calls")
+	mock := filepath.Join(bin, "git")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$GOAL_BRANCH_GIT_LOG\"\n" +
+		"if [ \"$#\" -ne 4 ] || [ \"$1\" != -C ] || [ \"$2\" != \"$GOAL_BRANCH_GIT_ROOT\" ] || [ \"$3\" != rev-parse ] || [ \"$4\" != HEAD ]; then\n" +
+		"  printf 'unexpected git argv\\n' >&2; exit 2\nfi\n" +
+		"printf '%s\\n' '" + want + "'\nprintf 'wrapper warning\\n' >&2\n"
+	writeTestingFixtureFile(t, mock, []byte(script), 0o755)
+	t.Setenv("GOAL_BRANCH_GIT_ROOT", root)
+	t.Setenv("GOAL_BRANCH_GIT_LOG", transcript)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	got, err := goalBranchGit(root, "rev-parse", "HEAD")
 	if err != nil || got != want {
 		t.Fatalf("object id = %q, want %q, err=%v", got, want, err)
 	}
+	calls, err := os.ReadFile(transcript)
+	if err != nil || string(calls) != "-C\n"+root+"\nrev-parse\nHEAD\n" {
+		t.Fatalf("mock git calls = %q, err=%v", calls, err)
+	}
+	t.Logf("mock git calls: %q", calls)
 }
 
 func TestGoalBranchClaimRequiresMachineAndLineage(t *testing.T) {

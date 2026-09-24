@@ -97,6 +97,9 @@ func (f *repositoryObservationFixture) writeOutside(path, content string) {
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		f.t.Fatal(err)
 	}
+	if err := os.Chmod(file, 0o644); err != nil {
+		f.t.Fatal(err)
+	}
 }
 
 func (f *repositoryObservationFixture) write(path, content string) {
@@ -106,6 +109,9 @@ func (f *repositoryObservationFixture) write(path, content string) {
 		f.t.Fatal(err)
 	}
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.Chmod(file, 0o644); err != nil {
 		f.t.Fatal(err)
 	}
 }

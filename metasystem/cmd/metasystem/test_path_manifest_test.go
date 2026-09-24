@@ -106,17 +106,27 @@ func TestGLEPathMovedBaseReopensForDiscoveredLiteral(t *testing.T) {
 func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	root := t.TempDir()
 	writeTestingFixtureFile(t, filepath.Join(root, "src", "real.go"), []byte("package src\n"), 0o644)
-	testingFixtureGit(t, root, "init")
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "input")
-	tree, err := (gittree.Workspace{Dir: root}).HeadTree()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := strings.Repeat("a", 40)
+	calls := 0
+	workspace := gittree.Workspace{Dir: root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		calls++
+		wantArgs := []string{"-C", root,
+			"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+			"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+			"-c", "gc.auto=0", "-c", "maintenance.auto=false",
+			"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", "."}
+		if calls != 1 || request.Dir != root || !slices.Equal(request.Args, wantArgs) || request.Stdin != nil {
+			t.Fatalf("raw tree request %d = %+v, want args %q at %q", calls, request, wantArgs, root)
+		}
+		return gittree.RawResult{Stdout: []byte("100644 blob " + strings.Repeat("b", 40) + "\tsrc/real.go\x00")}
+	}}
 	group := testpolicy.Group{ID: "app", Inputs: []string{"src/real.go", "src/futrue?.go"}}
 	contract := testpolicy.Contract{Groups: []testpolicy.Group{group}}
 	plan := testpolicy.Plan{SelectedGroups: []string{"app"}}
-	unmatched, err := unmatchedTestingInputs(gittree.Workspace{Dir: root}, tree, contract, plan)
+	unmatched, err := unmatchedTestingInputs(workspace, tree, contract, plan)
+	if calls != 1 {
+		t.Fatalf("raw tree calls = %d, want 1", calls)
+	}
 	if err != nil || len(unmatched) != 1 || unmatched[0].Group != "app" || unmatched[0].Pattern != "src/futrue?.go" {
 		t.Fatalf("candidate no-match report = %v, %v", unmatched, err)
 	}

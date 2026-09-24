@@ -38,6 +38,9 @@ func newFileConformanceFixture(t *testing.T) *conformanceFixture {
 			if err := os.WriteFile(path, data, 0o644); err != nil {
 				t.Fatal(err)
 			}
+			if err := os.Chmod(path, 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	return f
