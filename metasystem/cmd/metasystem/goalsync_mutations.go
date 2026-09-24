@@ -38,8 +38,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
-var goalHandoverProber identity.Prober = identity.KernelProber{}
-
 type goalRecoveryPolicy struct {
 	dispatchcore.GoalRecoveryPolicy
 	root string
@@ -82,7 +80,11 @@ func configureCarriedCounselor(endpoint *goal.Endpoint) {
 }
 
 func goalHandoverTargetLiveness(root, targetMachine, targetLineage string, targetEpoch int64) (identity.Liveness, error) {
-	machine, err := goal.ResolveMachine(root)
+	return goalHandoverTargetLivenessWithReads(root, targetMachine, targetLineage, targetEpoch, goal.ResolveMachine, identity.KernelProber{})
+}
+
+func goalHandoverTargetLivenessWithReads(root, targetMachine, targetLineage string, targetEpoch int64, resolveMachine func(string) (string, error), prober identity.Prober) (identity.Liveness, error) {
+	machine, err := resolveMachine(root)
 	if err != nil || machine != targetMachine {
 		return identity.Unknown, fmt.Errorf("target checkout is machine %q, not target %q", machine, targetMachine)
 	}
@@ -101,7 +103,7 @@ func goalHandoverTargetLiveness(root, targetMachine, targetLineage string, targe
 		if announcement.MainId == holder.MainId && lineage == targetLineage {
 			ref := identity.Ref{Pid: announcement.Pid, StartedAtSec: announcement.PidStartedAt,
 				StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
-			return identity.AliveRef(goalHandoverProber, ref), nil
+			return identity.AliveRef(prober, ref), nil
 		}
 	}
 	return identity.Unknown, nil

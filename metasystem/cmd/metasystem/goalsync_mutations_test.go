@@ -2037,7 +2037,29 @@ func syncedStoppedGoalFixture(t *testing.T) string {
 	return root
 }
 
-func addSyncedLiveProofGoal(t *testing.T, root string) {
+func proofSelectorStoppedFixture(t *testing.T) (*proofAdmissionRepository, time.Time) {
+	t.Helper()
+	now := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
+		closedAt := "2026-09-01T09:00:00Z"
+		file.Revision++
+		file.StopCapability = &goal.StopCapability{
+			Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1, FenceEpoch: 1,
+		}
+		file.StopFence = &goal.StopFence{
+			StopID: "stop-standing-validation-r2-f1", Revision: 2, Epoch: 1, CapabilityGeneration: 2,
+			ClosedAt: closedAt, Reason: goal.StopReasonElapsedLimit,
+		}
+		file.History = append(file.History, goal.HistoryLine{
+			At: closedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAC", "mac-cli", "m1"),
+			Verb: "breach-stop", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1,
+		})
+	})
+	return repository, now
+}
+
+func addProofSelectorLiveGoal(t *testing.T, repository *proofAdmissionRepository) {
 	t.Helper()
 	openedAt := "2026-08-30T08:10:00Z"
 	claimAt := "2026-08-30T08:15:00Z"
@@ -2059,19 +2081,13 @@ func addSyncedLiveProofGoal(t *testing.T, root string) {
 			{At: approvedAt, Opid: approvalOpid, Verb: "approve", Actor: "human:Wido", Targets: []string{"live-validation"}, Keep: -1},
 		},
 	}
-	path := filepath.Join(root, "plans", "goals", file.Id+".md")
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	goalSyncMutationGit(t, root, "add", "plans/goals/"+file.Id+".md")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "add live proof goal fixture")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	repository.seed(map[string][]byte{"metasystem/plans/goals/" + file.Id + ".md": goal.RenderFile(file)})
 }
 
 func TestProofGoalResolutionUsesLiveClaimBesideBreachStoppedClaim(t *testing.T) {
-	root := syncedStoppedGoalFixture(t)
-	addSyncedLiveProofGoal(t, root)
+	repository, now := proofSelectorStoppedFixture(t)
+	root, reads := repository.root, repository.reads()
+	addProofSelectorLiveGoal(t, repository)
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
 
@@ -2079,8 +2095,12 @@ func TestProofGoalResolutionUsesLiveClaimBesideBreachStoppedClaim(t *testing.T) 
 		name    string
 		resolve func() (string, error)
 	}{
-		{name: "proof run", resolve: func() (string, error) { return uniqueActiveProofGoal(root, time.Now().UTC()) }},
-		{name: "testing", resolve: func() (string, error) { return resolveTestingGoal(root, "") }},
+		{name: "proof run", resolve: func() (string, error) {
+			return uniqueActiveProofGoalWithReads(root, now, reads.ResolveMachine, reads.ResolveEndpoint)
+		}},
+		{name: "testing", resolve: func() (string, error) {
+			return resolveTestingGoalWithReads(root, "", reads.ResolveMachine, reads.ResolveEndpoint, func() time.Time { return now })
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := test.resolve()
@@ -2092,7 +2112,8 @@ func TestProofGoalResolutionUsesLiveClaimBesideBreachStoppedClaim(t *testing.T) 
 }
 
 func TestProofGoalResolutionNamesTheOnlyBreachStoppedClaim(t *testing.T) {
-	root := syncedStoppedGoalFixture(t)
+	repository, now := proofSelectorStoppedFixture(t)
+	root, reads := repository.root, repository.reads()
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
 	want := "proof accounting has no live claimed goal for machine mac-cli; the only claim here is breach-stopped: standing-validation (stop stop-standing-validation-r2-f1); pass --goal"
@@ -2101,8 +2122,12 @@ func TestProofGoalResolutionNamesTheOnlyBreachStoppedClaim(t *testing.T) {
 		name    string
 		resolve func() (string, error)
 	}{
-		{name: "proof run", resolve: func() (string, error) { return uniqueActiveProofGoal(root, time.Now().UTC()) }},
-		{name: "testing", resolve: func() (string, error) { return resolveTestingGoal(root, "") }},
+		{name: "proof run", resolve: func() (string, error) {
+			return uniqueActiveProofGoalWithReads(root, now, reads.ResolveMachine, reads.ResolveEndpoint)
+		}},
+		{name: "testing", resolve: func() (string, error) {
+			return resolveTestingGoalWithReads(root, "", reads.ResolveMachine, reads.ResolveEndpoint, func() time.Time { return now })
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := test.resolve()
@@ -2231,8 +2256,6 @@ func goalSyncMutationGit(t *testing.T, root string, args ...string) string {
 func handoverTargetRoot(t *testing.T, machine, lineage string) (string, string, lease.Announcement, identity.Exact) {
 	t.Helper()
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q")
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", machine)
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe target: state=%s err=%v", state, err)
@@ -2288,10 +2311,8 @@ func TestGoalHandoverTargetLiveness(t *testing.T) {
 				ann.OwnerLineage = "other"
 				writeHandoverJSON(t, path, ann)
 			}
-			old := goalHandoverProber
-			goalHandoverProber = processRefProber{exact: exact, state: test.state}
-			t.Cleanup(func() { goalHandoverProber = old })
-			got, _ := goalHandoverTargetLiveness(root, test.targetMachine, "target-lineage", test.epoch)
+			got, _ := goalHandoverTargetLivenessWithReads(root, test.targetMachine, "target-lineage", test.epoch,
+				func(string) (string, error) { return test.machine, nil }, processRefProber{exact: exact, state: test.state})
 			if got != test.want {
 				t.Fatalf("liveness = %s, want %s", got, test.want)
 			}
@@ -2337,8 +2358,10 @@ func TestGoalEditLowersARecordedTierOnlyUnderHumanProof(t *testing.T) {
 }
 
 func TestProofGoalResolutionStaysAmbiguousBesideALandingClaim(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "landing fixture", func(file *goal.GoalFile) {
+	now := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	root, reads := repository.root, repository.reads()
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Revision++
 		opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAD", "mac-cli", "m1")
 		file.History = append(file.History, goal.HistoryLine{
@@ -2349,12 +2372,12 @@ func TestProofGoalResolutionStaysAmbiguousBesideALandingClaim(t *testing.T) {
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
 	// A landing goal alone resolves to it: its receipts still bind to its claim.
-	if got, err := uniqueActiveProofGoal(root, time.Now().UTC()); err != nil || got != "standing-validation" {
+	if got, err := uniqueActiveProofGoalWithReads(root, now, reads.ResolveMachine, reads.ResolveEndpoint); err != nil || got != "standing-validation" {
 		t.Fatalf("a landing goal alone did not resolve: %q %v", got, err)
 	}
 	// Beside a working claim both are live proof targets, so the seat names one.
-	addSyncedLiveProofGoal(t, root)
-	got, err := uniqueActiveProofGoal(root, time.Now().UTC())
+	addProofSelectorLiveGoal(t, repository)
+	got, err := uniqueActiveProofGoalWithReads(root, now, reads.ResolveMachine, reads.ResolveEndpoint)
 	if err == nil || got != "" || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "--goal") {
 		t.Fatalf("a working claim beside a landing claim did not stay ambiguous: %q %v", got, err)
 	}

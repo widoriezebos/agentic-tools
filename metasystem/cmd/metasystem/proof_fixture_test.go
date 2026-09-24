@@ -224,7 +224,9 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 			"--command-class", name, "--progress", filepath.Join(root, name+"-progress.jsonl"),
 			"--log", filepath.Join(root, name+".log"), "--banner", name, "--result", resultPath, "--", "/usr/bin/true")
 		command.Env = append(command.Env,
-			"METASYSTEM_GOAL_NOW="+now.Format(time.RFC3339), "METASYSTEM_OWNER_LINEAGE=m1")
+			"METASYSTEM_GOAL_NOW="+now.Format(time.RFC3339), "METASYSTEM_OWNER_LINEAGE=m1",
+			"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+filepath.Join(root, "admission"),
+			"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 		if ambient {
 			command.Env = append(command.Env, proofrun.TestHostLoadEnvironment+"=0")
 		}

@@ -1388,11 +1388,15 @@ func validProofCandidateTree(value string) bool {
 }
 
 func uniqueActiveProofGoal(root string, now time.Time) (string, error) {
-	machine, err := goal.ResolveMachine(root)
+	return uniqueActiveProofGoalWithReads(root, now, goal.ResolveMachine, goal.ResolveEndpoint)
+}
+
+func uniqueActiveProofGoalWithReads(root string, now time.Time, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error)) (string, error) {
+	machine, err := resolveMachine(root)
 	if err != nil {
 		return "", err
 	}
-	endpoint, err := goal.ResolveEndpoint(root)
+	endpoint, err := resolveEndpoint(root)
 	if err != nil {
 		return "", err
 	}

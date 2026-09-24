@@ -2362,6 +2362,10 @@ func testingGoalRiskWithEndpoint(endpoint goal.Endpoint, id string, now time.Tim
 }
 
 func resolveTestingGoal(root, requested string) (string, error) {
+	return resolveTestingGoalWithReads(root, requested, goal.ResolveMachine, goal.ResolveEndpoint, time.Now)
+}
+
+func resolveTestingGoalWithReads(root, requested string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), now func() time.Time) (string, error) {
 	if requested != "" {
 		return requested, nil
 	}
@@ -2380,7 +2384,7 @@ func resolveTestingGoal(root, requested string) (string, error) {
 		}
 		return attempt.AccountedGoal(), nil
 	}
-	return uniqueActiveProofGoal(root, time.Now().UTC())
+	return uniqueActiveProofGoalWithReads(root, now().UTC(), resolveMachine, resolveEndpoint)
 }
 
 func trustedTestingPolicyBase(projectRoot string, workspace gittree.Workspace) (string, error) {

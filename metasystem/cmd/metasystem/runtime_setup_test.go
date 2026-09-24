@@ -64,7 +64,11 @@ func (r *runtimeLayoutRecorder) resolve(path string) (stateroot.Layout, error) {
 		if len(seenTop) != 1 {
 			r.t.Fatalf("repeated repository request %q", seen)
 		}
-		canonical, err := filepath.EvalSymlinks(path)
+		repositoryProbe := path
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			repositoryProbe = filepath.Dir(path)
+		}
+		canonical, err := filepath.EvalSymlinks(repositoryProbe)
 		if err != nil || seen != canonical {
 			r.t.Fatalf("unexpected repository request %q; want %q (%v)", seen, canonical, err)
 		}
