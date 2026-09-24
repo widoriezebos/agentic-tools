@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M348YTJ2GP1RR68KFVQTDG0N
 - Status: done
+- Goals: browser-interface
 
 - Gate 1, state `designed`, revision 5 after Sol's round-4 design review (D12), the last design round for this slice by the planner's ruling, author Claude on Fable as a D23 delegate, 2026-09-21.
 - Revision 5 answers K1 to K4 of [Sol's round 4](g1-s8-frontend-toolchain-design-sol-review.md), under the planner's ruling at its head: the guard requires the absent-tree run to be green, with every expected verdict, before it plants anything, and states which walkers its comparison reaches and which are covered only by their mandatory fixtures (K3); the planted corpus gains an executable shell file, an extensionless executable named by a `bin` entry with its `.bin` link, and hidden configuration (K4); the audit fixture runs on a synthetic lockfile with a peer-only node, so every `--include` flag has a control that fails without it (K2); the registry is pinned at the audit and declared for the install, the "no bypass of any kind" overclaim is withdrawn, and the gate's boundary is stated in plain words (K1, the accepted half). H2 and H3 are not reopened. Anything material still standing after this revision is a named obligation on the builder, settled in code review.

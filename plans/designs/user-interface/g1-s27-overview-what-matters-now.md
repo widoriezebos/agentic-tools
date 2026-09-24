@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M375RPSQF8K5A6K88FACNP3G
 - Status: accepted
+- Goals: browser-interface
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-23, Claude on Fable, on Wido's ask: "Let's build a project overview. This is to be a landing page of sorts ... come in from the UX perspective. What would you expect to see here? Design it and implement it." The master design's rule for the section is the design's spine: lead with "What needs me?" and "What changed since I last looked?", every entry linking to its record, a useful visit of a few minutes without reading a stream of activity, and a last-visit marker kept per human in server-local preference state.

@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M3926GXBJPGZR3EWREV8CNGG
 - Status: done
+- Goals: browser-interface
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-24, Claude on Fable, on Wido's review of the New goal sheet: "This looks awful. We need to do much better from a UX perspective." The bands of empty space were a stylesheet bug, fixed the same hour (`3e4567000`). What remains is the design: an eyebrow in the engine's words, a warning banner inside the form, four risk questions in the engine's vocabulary in front of every goal, placeholders doing the work of hints, and the one button that matters below the fold. Presentation and form design only; the act and its route are unchanged.

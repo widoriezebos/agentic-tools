@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M37EX4M5VVXQBPH137CTM89V
 - Status: done
+- Goals: project-partner
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 3, 2026-09-23, Claude on Fable, after Astra's critique of revision 2 ([g1-s28-astra-critique.md](g1-s28-astra-critique.md): six material findings, "build after listed changes"), every one accepted below, and amended the same day on Astra's confirmation round (two text gaps: inherited approvals and network in the read-only contract; page context kept with replayed history), which found nothing else. Revision 2 came after Wido's two rulings: "Both claude and codex I'm told have a separate server component that will do acp for them ... we should definitely factor that in" and "we must have the design for this critiqued by Astra first before we implement". Revision 1 wrapped Claude and Codex behind the seam through their command lines; revision 2 drops those emulators, because every runtime has an ACP server. Revision 1 was on Wido's ask: "I want to get started on that one so that we have an integrated agent that we can discuss anything, including what is visible on the UI ... make sure it is agent independent (i.e. supports claude, codex and devin and some future agent). Get me the smallest thing that works now." The master design's "The brain" and its integration table are the target: an ACP session host, an MCP endpoint of bounded tools, proposals that become sheets, shared selection. This is step 1 of that, and nothing in it has to be undone to get there.

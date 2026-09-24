@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M348YTJ2VPW69NS3DHQK8S2K
 - Status: accepted
+- Goals: browser-interface
 
 - Gate 1, state `designed`, **revision 1**, author Claude on Fable as a D23 delegate, 2026-09-22. Full pipeline: a data contract (one route, one payload the brain's tools will read later) and the first nested route of the shell.
 - Refines the [master](../user-interface-design.md) at `ui-development` commit `c2b7ef4b7`: Backlog item detail (`:549` to `:562`), Execution evidence (`:621` to `:639`, the capture-gap labels at `:637`), Rules for an intuitive structure (`:433` to `:449`, the two kinds of emptiness at `:437`), the rule that constraints are not parsed conventions hidden inside Intent (`:507`), `DefinitionRefs` (`:509` to `:511`), the slice-plan owner (`:602`), the split that refuses once slicing has started (`:615`), allowed actions as an owner addition (`:261`), a historical result's revision (`:346`), the terminal-command rule (`:733`), the gate 1 and gate 6 rows (`:809`, `:814`). Plan: the `g1-s11` row (`:196`), D6 (`:132`, settled by `g1-s21`), D32 (`:51`), the conventions (`:114` to `:123`), the must-not-touch list (`:110`), M5 and M7 (`:144`, `:148`), the `g1-s6` and `g1-s16` rows (`:190`, `:204`).

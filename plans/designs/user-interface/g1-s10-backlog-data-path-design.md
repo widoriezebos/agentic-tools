@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M348YTJ2CADH7VF4W4B7E1X8
 - Status: done
+- Goals: browser-interface
 
 - Gate 1, state `designed`, **revision 4**, author Claude on Fable as a D23 delegate, 2026-09-21. Delivery step 3 of D21 (plan `:153`): a thin cut through `g1-s2`, `g1-s3`, `g1-s4`, `g1-s7`, and the list half of `g1-s10`, none in full.
 - Revision 4 applies Sol's [loop review](g1-s10-backlog-data-path-design-sol-review.md), whose verdict on revision 3 is safe to build and whose three material findings are all builder obligations: the loop starts only once the server owns the checkout and dies on every `Serve` return (L1, O21); the fetch is bounded, so revision 3's "known limit" is solved here rather than deferred (L2, O22); and cancellation outranks a ready timer (L3, O23). Nothing else in revision 3 changes, and the planner ruled the third `internal/goal` export in, on the review's own reasoning.

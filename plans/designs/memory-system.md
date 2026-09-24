@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M348YTJ2EY11F37Y5KBVNSER
 - Status: accepted
+- Goals: browser-interface
 - Revision: 9, 2026-09-23, on Wido's ruling: intent and doctrine never name goals — they are the project's own, so `check` and the write route refuse a `Goals` line on either (rule 1 and section 4); revision 8 was: 2026-09-22, on Wido's ruling of the same afternoon — areas are removed: goals are the only subdivision, and per goal the Project section shows its intent, its designs, its decisions and its open questions; revision 7 was: structure first, the smallest thing that already works in the interface, nothing that blocks a hole nobody has fallen into yet. Revisions 1 to 6 and Astra's three rounds are records of how the structure was found: [revision 6](../memory-system-r6.md), [round 1](../memory-system-critique-astra.md), [round 2](../memory-system-critique-astra-r2.md), [round 3](../memory-system-critique-astra-r3.md). Everything they settled that step 1 does not need is in section 6, to be built when it hurts, on top of the same fields.
 
 Paths are relative to the checkout root. `<root>` is the state root the engine resolves; in this checkout that is `metasystem/`, and the host's `plans/` at the checkout root is read as a second home for designs.

@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M348YTJ2688CC90GYDBYGJB5
 - Status: done
+- Goals: browser-interface
 
 - Gate 1, state `designed`, revision 2, author Claude on Fable as a D23 delegate, 2026-09-21. Full pipeline: a Go dependency and a data contract.
 - Revision 2, 2026-09-21, after [Sol's review of the document route](g1-s21-project-thread-design-sol-review.md): the reading boundary is one anchored open through `os.Root` with `fstat` and a bounded read on the opened descriptor (F1, F3), the refused segments fold case (F2), and the route's breadth, HEAD, hard links, and the shared cut-guard allowlist are recorded; nothing else changed.

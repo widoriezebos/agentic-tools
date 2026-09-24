@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M37RK7DZ74773VR9DBFZ838A
 - Status: done
+- Goals: project-partner
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 2, 2026-09-23, Claude on Fable, after Astra's critique of revision 1 ([g1-s30-astra-critique.md](g1-s30-astra-critique.md): six material findings, "build after listed changes", all six taken below). Revision 1 was on Wido's question "Is the project partner an expert on both the metasystem and also the UI? If not; what supporting system for the agent do we need to get in place to make this possible and easy to maintain/extend?" and his ruling "write the design, get it critiqued by astra and then build it". Builds on g1-s28 (the Partner reads and explains) and g1-s29 (it is told what the human sees and can look further).

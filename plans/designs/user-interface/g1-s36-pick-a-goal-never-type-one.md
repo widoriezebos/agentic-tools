@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M399JG8XXXNZDA73K88172SW
 - Status: done
+- Goals: browser-interface
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-24, Claude on Fable, on Wido's review of the New goal sheet: "the 'Unblocks' is a free text field; so we can enter anything there. I think we need a bit of help here to avoid mistakes." Ruled "design for this and get it implemented". Frontend only; the act's request is unchanged.

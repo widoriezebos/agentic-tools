@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M348YTJ2RBF1X248BXP0EW4F
 - Status: done
+- Goals: browser-interface
 
 - Gate 1, author Claude with the human, 2026-09-21. Revision 6, after [Sol's design review](g1-s1-server-lifecycle-design-sol-review.md) under the roster. Revision 4 closed [critique rounds 1 to 3](g1-s1-server-lifecycle-design-critique.md). Revision 5 kept the server's state under the Git checkout, against Astra's finding B8; that rested on a false premise about the engine, which Sol exposed, and revision 6 reverses it. Five obligations for the code critique are listed under Verification.
 - Refines the master at commit `94181f05a`: [Component responsibilities](../user-interface-design.md#component-responsibilities), [Scope and request principals](../user-interface-design.md#scope-and-request-principals), the browser protections in [Human acts from the browser](../user-interface-design.md#human-acts-from-the-browser), and [Trustworthy state and interaction](../user-interface-design.md#trustworthy-state-and-interaction).

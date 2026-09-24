@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M37QJM3F6W43TDPD8RKR2DB5
 - Status: done
+- Goals: project-partner
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 2, 2026-09-23, Claude on Fable, after Astra's critique of revision 1 ([g1-s29-astra-critique.md](g1-s29-astra-critique.md): nine material findings, "build after listed changes", every one a missing contract rather than a wrong idea; all nine are the contracts below). Revision 1 was on Wido's ask: "how do we bring this to the next level, where I can ask the agent about what I see on screen (and the agent can see that too)" and his ruling on the UX proposal: "so that is what we will do. Design this, get it critiqued by astra but do not get distracted from the UX design, and then implement." Builds on g1-s28, where the Partner reads and explains and is told a snapshot of the page a question was sent from.

@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M39FGA0X84X669Q6WREHDEGS
 - Status: done
+- Goals: browser-interface
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 2, 2026-09-24, Claude on Fable, after Astra's critique of revision 1 ([g1-s37-astra-critique.md](g1-s37-astra-critique.md): nine material findings, "build after the nine listed changes", all nine taken below). Revision 1 was on Wido's finding: "a goal could unblock several others, right? And it could also be the other way around. A goal could be blocked by several others ... this feels to me like an oversight." Ruled: "design for this and get it implemented. And indeed, you need a critique from Astra." Touches the goal package, a tier-1 floor, on Wido's word.

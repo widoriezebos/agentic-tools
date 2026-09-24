@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M38YVXPK3DER8T29CGGVZSXE
 - Status: done
+- Goals: project-partner
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-24, Claude on Fable, on Wido's ask: "I want a font chooser for the project partner. It should remember the font that was set across sessions. I want the font that is currently selected, but I also want a fixed width font so that it looks more like a terminal ... Is it possible to choose operating system fonts? Currently, in my terminal, I have 'Meslo LG M Regular for Powerline 24' which I like a lot. So a few popular fonts to choose from would be nice, and a font size picker." A presentation slice over the conversation; not sent to Astra: it changes no behaviour.

@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M35FP24C2R60PRGEPA9DD9Z4
 - Status: accepted
+- Goals: browser-interface
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-22, Claude on Fable, on Wido's ruling: "we should be able to enroll from the user interface, leveraging the TOTP functionality ... For now, we don't have a login mechanism, so it is fine to assume a user ... use the TOTP that we have in place." Built as the smallest thing that works: one secret, one human, the board's four acts. The master design's rule is "Human acts from the browser" in [user-interface-design.md](../user-interface-design.md); this page is what step 1 of it does and does not do.

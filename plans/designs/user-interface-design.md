@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M348YTJ290F6VMX6TWV1M1WZ
 - Status: accepted
+- Goals: browser-interface
 
 Status: Interface structure, core interactions, and the shared-operation approach for conversation and visual controls are confirmed by the human. The round-one critique has been adjudicated and the structural backend requirements below added; those amendments had an independent [second review](../user-interface-design-critique-r2.md) and two design reviews by Astra on 2026-09-21, the [first](../user-interface-design-critique-astra.md) on the amendments and the [second](../user-interface-design-critique-astra-r2.md) on how they were applied and on the decisions taken after it. The findings the planner agreed with, each checked against the source along its whole chain, are applied below; [how each was disposed](../user-interface-design-critique-r2.md#dispositions-after-the-astra-review) is recorded with the second review. This document does not authorize implementation or execution. See [critique dispositions](../user-interface-design-critique-dispositions.md) for every finding, decision, and reason.
 

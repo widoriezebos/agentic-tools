@@ -3,6 +3,7 @@
 - Kind: design
 - Id: 01M39Y32TV3GJYNQ41QT8W3HRM
 - Status: done
+- Goals: project-partner
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-24, Claude on Fable, on Wido's finding that a draft chip outlived its sheet, and his ruling: "we need to have proper management around the life cycle of chips ... a proper mechanism for this to make sure that we do this right all over the place." Frontend only; the Partner's routes are unchanged.
