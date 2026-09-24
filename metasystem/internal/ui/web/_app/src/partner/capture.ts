@@ -138,7 +138,7 @@ function put<K extends keyof Page>(page: Page, key: K, value: string | undefined
 
 /**
  * Whether the page has moved on from the capture the last question was sent
- * with — which is what puts "Refresh what it sees" on the chip.
+ * with — which is what puts "page moved on · Show it the latest" on the chip.
  *
  * It is the reading and nothing else: a filter a human changed is a new
  * capture the next question will make anyway, and offering to refresh for it

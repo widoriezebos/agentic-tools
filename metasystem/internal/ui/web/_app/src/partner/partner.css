@@ -582,6 +582,11 @@
   padding-right: 4px;
 }
 
+.ms-seeing-moved {
+  color: var(--ms-text-3);
+  font-size: 12px;
+}
+
 .ms-seeing-refresh {
   padding: 0;
   border: 0;

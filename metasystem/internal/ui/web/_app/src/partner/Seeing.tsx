@@ -69,10 +69,16 @@ export function SeeingRow() {
           answers to "what is this question about", and both are theirs to
           take back. */}
       {sheetDraft !== null && <DraftChip draft={sheetDraft} onClear={clearSheetDraft} />}
+      {/* The page moved on since the Partner last looked; the control brings
+          its view up to date for the next question, and the words say whose
+          view that is (Wido, 2026-09-24: not "refresh", not "what I see"). */}
       {moved && (
-        <button type="button" className="ms-seeing-refresh" onClick={refresh}>
-          Refresh what it sees
-        </button>
+        <>
+          <span className="ms-seeing-moved">page moved on</span>
+          <button type="button" className="ms-seeing-refresh" onClick={refresh}>
+            Show it the latest
+          </button>
+        </>
       )}
       {open && (
         <SeeingSheet
