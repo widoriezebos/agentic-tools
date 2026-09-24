@@ -1,6 +1,6 @@
 # Test parallelism and Git-free tests: current handoff
 
-Updated 24 September 2026, 13:59 CEST. Continue `finish-test-repairs-and-integrate`; do not claim a new goal or expand scope. Root Astra coordinates Sol6 xhigh builders/readers. The user authorizes commits, pushes, tmux and bypassing broken machinery. Work remains active; final integration has not happened.
+Updated 24 September 2026, 16:05 CEST. Continue `finish-test-repairs-and-integrate`; do not claim a new goal or expand scope. Root Astra coordinates Sol6 xhigh builders/readers. The user authorizes commits, pushes, tmux and bypassing broken machinery. Work remains active; final integration has not happened.
 
 ## Safety and scope
 
@@ -19,7 +19,7 @@ UI clone: `/Users/wido/LocalStorage/GitHub/agentic-tools-ui`.
 
 ## Source and backups
 
-Main HEAD remains `761586c9734c78d9d8cbef1e7f8d30ff4e31db46`. Accepted/staged: **248 batches, 1,477 original parent tests converted**. This is not a global completion denominator.
+Main HEAD remains `761586c9734c78d9d8cbef1e7f8d30ff4e31db46`. Accepted/staged: **257 batches, 1,489 original parent tests converted**. This is not a global completion denominator.
 
 Frozen bx: `E/rollout/parallel-final-candidate-20260923bx/source`, commit `9787c5df34fac89c770c031308367621b1c116dd`, tree `aedc173df111eb72bfd1671640edde1936797159`. It contains accepted229. Full run ended before root lifted Main freeze and applied ten reviewed units. Their composition was checked in an alternate index before application; code/index tree before this handoff edit is `f99fbdde919503b38b1657c27fefdb78bb2216b3`.
 
@@ -130,3 +130,15 @@ Shared multi-publication fixture correction is now the ONE-LINE reset `b.indexDi
 Host-resume two correction has actual focused race green (not atomic coverage, no repeat just for that flag), with owner-written prior recovered acceptance/verification and first resumed host refusing repeat. Await actual final source/denial/read. Unparsable parent reached actual final publication for all three shapes; simpler shared reset/final proof/native read pending. Ledger-ahead two active. Landing two active; Park needs only optional existing `gittree.RawSource` wiring on `ParkParams` to its existing Workspace (root approved <=6 production lines) so real Park and real ResolveCommit checks run with one strict raw reply. Fresh receipt reuses file-only fixtures and real admission/expiry owner.
 
 Linux operational preparation is complete, report `E/coordination/linux-final-worker-cap-prep/report.md`. Existing scripts preserve inherited METASYSTEM_TEST_WORKERS through Lima/sudo, shell syntax and read-only propagation checked. VM has six CPUs/16GiB and 66GiB free, actual guest home `/home/wido.guest`. Host has about192GiB free. No Linux suite launched yet; final clean candidate and current host/guest policy engine paths must be pinned. Existing binary build stamps differ and are not final-generation evidence.
+
+## Continuation at 16:05 CEST
+
+Accepted/staged257 /1,489 converted original parents. Added252 unparsable-ledger1,253 landingclock/freshreceipt2,254 ledger-ahead2,255 resumed-host2,256 ParkPublication1,257 literal-manifest1; exact patches/root reviews and proof under C/accepted. Shared threeAnchorTrace indexDirs reset belongs252; resumed-host255 import-only composition preserves earlier imports and still needs composed compile. Literal257 removes invalid cross-lifetime index pathname uniqueness only; actual per-operation indices and literal file bytes checked. Park256 forwards existing raw Workspace on all publication branches. Focused proofs passed; not all were atomic coverage (see exact commands). Native independent reads zero material findings.
+
+Latest root-verified pushed backup is6df1094c98533addd3cfcab0e27097cb7ba56a12 through251/1480, tree48b84e8f1acda95a976bb384a59d04a4e2108205. Next through257 backup in preparation. MainHEAD761586c9 unchanged; origin/main47dbe0f1 authorized goal-budget change pending integration.
+
+Finite landing helper-family source check C/landing-fixture-remainder-current-251.md found ten missed ordinary parents (8 listed ordinary plus2 mistakenly listed already actively owned). Therefore previous3-left count was incomplete. Current confirmed ordinary remaining11, plus3 mixed parents to separate pure assertions from physical witnesses; global total not certified. Schema2 terminal-group-owner parent builder green development run, final race/atomic and fresh read pending. Other remaining families: adoption-rulings1, carriedHCL3, attested-declaration1, canonicalreceipt3, schema2siblings2. Native Sol6xhigh builds/read will be coordinated in parallel; no new goal, inventory, or emulator. Parent exact assertions retained. Root told user provisional20:00–22:00CEST, low confidence until composed final validation.
+
+No fullsuite running. bz248 diagnostic failed two families subsequently fixed251 (stale AST owner path and two unused declarations), targeted race and full pinnedstaticcheck passed. Early full validation can bank unchanged groups but final landing-test edits also restamp engine; selected section and steward-consuming group identities need new proof too. Do not claim only three landing groups need rerun.
+
+Linux6 execution wrappers prepared E/coordination/linux-final-normal-tmux-prepared with inherited METASYSTEM_TEST_WORKERS propagation; all bash-n plus guest env propagation checks passed. VM6CPU/16GiB, guestHOME /home/wido.guest,66GiBfree; Mac around192GiBfree. Pin final candidate/current policy engines before real Linux run, old installed stamps differ. No need further cleanup.

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -241,6 +242,10 @@ func (f *resumeWorkspaceFacts) AnchorCommit(string, string, string) error {
 }
 
 func resumeFileBed(t *testing.T, drift bool) (*Engine, string, string, *strictResumeContinuity, *resumeReads, *resumeWorkspaceFacts, string) {
+	return resumeFileBedCore(t, drift, true)
+}
+
+func resumeFileBedCore(t *testing.T, drift, localGitDenial bool) (*Engine, string, string, *strictResumeContinuity, *resumeReads, *resumeWorkspaceFacts, string) {
 	t.Helper()
 	root := t.TempDir()
 	e := &Engine{Root: root, Mission: "alpha"}
@@ -248,9 +253,22 @@ func resumeFileBed(t *testing.T, drift bool) (*Engine, string, string, *strictRe
 	ledgerPath := filepath.Join(e.missionDir(), "ledger.md")
 	contractPath := e.approvedContractPath()
 	contract := "```mission\ncandidate.branch=main\nstream.solo=Do solo\n```\n```mission-seal\ncandidate.branch=main\n```\n"
+	if !localGitDenial {
+		contract = strings.Replace(contract, "stream.solo=Do solo\n", "stream.solo=Do solo\n"+
+			"fence.wall-clock-hours=2\nfence.cycles=5\nfence.jobs=4\nfence.concurrency=2\nfence.job-cap-min=30\n"+
+			"host.runtime=fake\nhost.model=fixture\nhost.turn-cap-min=30\n", 1)
+		writeText(t, filepath.Join(root, "plans", "mission-alpha.contract.md"), contract)
+	}
 	writeText(t, contractPath, contract)
 	sum := sha256.Sum256([]byte(contract))
-	writeJSONFile(t, e.fencesPath(), map[string]any{"cycles": 0, "approvedContractSha256": hex.EncodeToString(sum[:])})
+	fences := map[string]any{"cycles": 0, "approvedContractSha256": hex.EncodeToString(sum[:])}
+	if !localGitDenial {
+		fences["schemaVersion"] = 1
+		fences["missionId"] = e.Mission
+		fences["startedAt"] = time.Now().UTC().Format(time.RFC3339)
+		fences["reservations"] = map[string]any{}
+	}
+	writeJSONFile(t, e.fencesPath(), fences)
 	if err := mission.InitLedger(ledgerPath, 5, 3); err != nil {
 		t.Fatal(err)
 	}
@@ -295,13 +313,15 @@ func resumeFileBed(t *testing.T, drift bool) (*Engine, string, string, *strictRe
 	reads := &resumeReads{t: t, root: root, ledger: ledgerPath, git: []wallGitReply{{root: root, args: []string{"config", "--local", "--type=bool", "--get", "core.fileMode"}, stdout: "true\n"}}}
 	e.wallReadFacts = reads
 	gitLog := filepath.Join(root, "git-invocations.log")
-	gitBin := filepath.Join(root, "deny-bin")
-	writeText(t, filepath.Join(gitBin, "git"), "#!/bin/sh\nprintf 'unexpected git\\n' >> '"+gitLog+"'\nexit 93\n")
-	if err := os.Chmod(filepath.Join(gitBin, "git"), 0o755); err != nil {
-		t.Fatal(err)
+	if localGitDenial {
+		gitBin := filepath.Join(root, "deny-bin")
+		writeText(t, filepath.Join(gitBin, "git"), "#!/bin/sh\nprintf 'unexpected git\\n' >> '"+gitLog+"'\nexit 93\n")
+		if err := os.Chmod(filepath.Join(gitBin, "git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", gitBin)
+		t.Cleanup(func() { assertNoGitInvocations(t, gitLog) })
 	}
-	t.Setenv("PATH", gitBin)
-	t.Cleanup(func() { assertNoGitInvocations(t, gitLog) })
 	workspace.beforeDecision = func() {
 		state := readTestDoc(t, statePath)
 		if state["openTurn"] == nil {

@@ -49,6 +49,10 @@ type recoveryFileBed struct {
 }
 
 func newRecoveryFileBed(t *testing.T, initial ...map[string]string) *recoveryFileBed {
+	return newRecoveryFileBedBeforeOpen(t, nil, initial...)
+}
+
+func newRecoveryFileBedBeforeOpen(t *testing.T, beforeOpen func(*recoveryFileBed), initial ...map[string]string) *recoveryFileBed {
 	t.Helper()
 	if len(initial) > 1 {
 		t.Fatal("one initial file set per recovery bed")
@@ -79,10 +83,15 @@ func newRecoveryFileBed(t *testing.T, initial ...map[string]string) *recoveryFil
 			writeText(t, filepath.Join(root, path), content)
 		}
 	}
-	b.openTurn(recoveryPre, recoveryHead, recoveryPre, map[string]string{"refs/heads/main": recoveryHead})
-	b.turnDir = filepath.Join(e.missionDir(), "turns", "alpha-t1-live")
+	turnID, cycle := "alpha-t1-live", 1
+	if beforeOpen != nil {
+		beforeOpen(b)
+		turnID, cycle = "alpha-t2-live", 2
+	}
+	b.openTurn(turnID, cycle, recoveryPre, recoveryHead, recoveryPre, map[string]string{"refs/heads/main": recoveryHead})
+	b.turnDir = filepath.Join(e.missionDir(), "turns", turnID)
 	writeJSONFile(t, filepath.Join(b.turnDir, "turn.json"), map[string]any{
-		"missionId": e.Mission, "turnId": "alpha-t1-live", "cycle": 1,
+		"missionId": e.Mission, "turnId": turnID, "cycle": cycle,
 		"runtime": "fake", "model": "fixture", "status": "running",
 	})
 	original, err := os.ReadFile(b.ledger)
@@ -100,7 +109,7 @@ func newRecoveryFileBed(t *testing.T, initial ...map[string]string) *recoveryFil
 	e.wallReadFacts = f
 	e.anchorFn = func(state, ledger, identity string) error {
 		f.next("StateAnchor", state, ledger, identity)
-		if state != b.state || ledger != b.ledger || identity != "alpha-t1-live" {
+		if state != b.state || ledger != b.ledger || identity != turnID {
 			t.Fatalf("unexpected state anchor %q %q %q", state, ledger, identity)
 		}
 		if _, _, err := mission.VerifyStateShape(state); err != nil {
@@ -112,9 +121,9 @@ func newRecoveryFileBed(t *testing.T, initial ...map[string]string) *recoveryFil
 	return b
 }
 
-func (b *recoveryFileBed) openTurn(pre, head, headTree string, refs map[string]string) {
+func (b *recoveryFileBed) openTurn(turnID string, cycle int, pre, head, headTree string, refs map[string]string) {
 	b.t.Helper()
-	sequence, hash, err := mission.VerifyStateShape(b.state)
+	_, hash, err := mission.VerifyStateShape(b.state)
 	if err != nil {
 		b.t.Fatal(err)
 	}
@@ -122,10 +131,9 @@ func (b *recoveryFileBed) openTurn(pre, head, headTree string, refs map[string]s
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	taint, _ := doc["workspaceTaint"].(map[string]any)
-	segment, _ := jsonInt(taint["segment"])
+	sequence, segment := mission.CurrentSequencePoint(doc)
 	doc["openTurn"] = map[string]any{
-		"turnId": "alpha-t1-live", "cycle": 1, "preTree": pre,
+		"turnId": turnID, "cycle": cycle, "preTree": pre,
 		"sequence": sequence, "segment": segment, "openedAt": "2026-08-18T00:00:00Z",
 		"headCommit": head, "headTree": headTree, "topTree": nil,
 		"refMap": mission.RecordableRefMap(refs, b.e.Mission), "topStaged": nil,

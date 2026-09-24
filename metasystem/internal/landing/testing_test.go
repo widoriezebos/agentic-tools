@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func TestFreshReceiptCannotMatchOrdinaryVerification(t *testing.T) {
 }
 
 func TestFreshReceiptRequiresItsNativeProducerEpisodeBindingAndExpiry(t *testing.T) {
-	f := newObserveFixture(t)
+	f := &observeFixture{t: t, root: t.TempDir()}
 	f.write("metasystem.conf", "dispatch.cap-max=120\nmetasystem.runtimes=fake\n")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", f.root)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "proof-admission"))
@@ -96,27 +97,172 @@ func TestFreshReceiptRequiresItsNativeProducerEpisodeBindingAndExpiry(t *testing
 
 func TestGLEPathTestingReceiptPostureReadsLiteralManifest(t *testing.T) {
 	t.Parallel()
-	f := newAdoptedObserveFixture(t)
-	f.write("metasystem.conf", "testing.contract=testing.json\n")
-	f.write("testing.json", "{}\n")
-	f.write("inputs/[literal].go", "candidate\n")
-	f.git("add", ".")
-	f.git("commit", "-qm", "candidate")
-	tree, err := (gittree.Workspace{Dir: f.root}).HeadTree()
+	projectRoot, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.write("inputs/[literal].go", "working edit\n")
-	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
-	if err != nil {
+	installationRoot := filepath.Join(projectRoot, "metasystem")
+	paths := []string{"metasystem/inputs/[literal].go", "metasystem/metasystem.conf", "metasystem/testing.json"}
+	before := map[string][]byte{
+		paths[0]: []byte("candidate\n"), paths[1]: []byte("testing.contract=testing.json\n"), paths[2]: []byte("{}\n"),
+	}
+	for path, data := range before {
+		full := filepath.Join(projectRoot, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after := map[string][]byte{}
+	for path, data := range before {
+		after[path] = bytes.Clone(data)
+	}
+	after[paths[0]] = []byte("working edit\n")
+	raw := &literalReceiptRaw{t: t, root: projectRoot, paths: paths, before: before, after: after,
+		candidate: receiptFactID(before), edited: receiptFactID(after)}
+	workspace := gittree.Workspace{Dir: projectRoot, RawSource: raw.answer}
+	result := proofrun.TestResult{ProjectRoot: projectRoot, CandidateTree: raw.candidate,
+		Groups: []proofrun.GroupResult{{InputManifest: []string{pathpattern.EncodeLiteral(paths[0])}}}}
+	index, working, err := testingReceiptPostureWithWorkspace(installationRoot, result, workspace)
+	if err != nil || index != raw.candidate || working != raw.candidate {
+		t.Fatalf("clean literal input posture: index=%s working=%s err=%v", index, working, err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, filepath.FromSlash(paths[0])), after[paths[0]], 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result := proofrun.TestResult{ProjectRoot: projectRoot, CandidateTree: tree,
-		Groups: []proofrun.GroupResult{{InputManifest: []string{pathpattern.EncodeLiteral("inputs/[literal].go")}}}}
-	_, working, err := testingReceiptPosture(f.root, result)
-	if err != nil || working == tree {
-		t.Fatalf("receipt posture missed literal input drift: %s, %v", working, err)
+	index, working, err = testingReceiptPostureWithWorkspace(installationRoot, result, workspace)
+	if err != nil || index != raw.candidate || working != raw.edited || working == raw.candidate {
+		t.Fatalf("receipt posture missed literal input drift: index=%s working=%s err=%v", index, working, err)
 	}
+	if raw.calls != 20 || raw.literalSelections != 2 || raw.editedReads != 1 {
+		t.Fatalf("literal receipt raw transcript: calls=%d selectors=%d edited reads=%d", raw.calls, raw.literalSelections, raw.editedReads)
+	}
+}
+
+// literalReceiptRaw declares only the raw repository answers used by the
+// receipt posture. The owner's real staged and relevant-snapshot code chooses
+// the literal paths; the raw source verifies those requests against files.
+type literalReceiptRaw struct {
+	t                  *testing.T
+	root               string
+	paths              []string
+	before, after      map[string][]byte
+	candidate, edited  string
+	calls              int
+	literalSelections  int
+	editedReads        int
+	staged, projection string
+}
+
+func (f *literalReceiptRaw) answer(request gittree.RawRequest) gittree.RawResult {
+	f.t.Helper()
+	pins := []string{
+		"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false",
+	}
+	prefix := append([]string{"-C", f.root}, pins...)
+	if request.Dir != f.root || len(request.Args) < len(prefix) || !slices.Equal(request.Args[:len(prefix)], prefix) {
+		f.t.Fatalf("unexpected raw receipt root or pins: %q %q", request.Dir, request.Args)
+	}
+	args := request.Args[len(prefix):]
+	if request.Operation != "git "+strings.Join(args, " ") {
+		f.t.Fatalf("raw receipt operation %q for %q", request.Operation, args)
+	}
+	private := ""
+	for _, entry := range request.Env {
+		if strings.HasPrefix(entry, "GIT_INDEX_FILE=") {
+			private = strings.TrimPrefix(entry, "GIT_INDEX_FILE=")
+		}
+	}
+	if private != "" && (filepath.Base(private) != "index" || !filepath.IsAbs(private)) {
+		f.t.Fatalf("invalid private index path %q", private)
+	}
+	phase, step := f.calls/10, f.calls%10
+	if phase > 1 {
+		f.t.Fatalf("extra raw receipt call %q", args)
+	}
+	want := func(expected ...string) {
+		if !slices.Equal(args, expected) {
+			f.t.Fatalf("raw receipt call %d = %q, want %q", f.calls, args, expected)
+		}
+	}
+	answer := func(value string) gittree.RawResult { return gittree.RawResult{Stdout: []byte(value)} }
+	entries := func(format string) string {
+		var out strings.Builder
+		for _, path := range f.paths {
+			fmt.Fprintf(&out, format, chainBlobOID(f.before[path]), path)
+		}
+		return out.String()
+	}
+	var result gittree.RawResult
+	switch step {
+	case 0:
+		want("ls-files", "--stage", "-z")
+		result = answer(entries("100644 %s 0\t%s\x00"))
+	case 1:
+		want("read-tree", "--empty")
+		f.staged = private
+	case 2:
+		want("rev-parse", "--show-toplevel")
+		result = answer(f.root + "\n")
+	case 3:
+		want("update-index", "-z", "--index-info")
+		if private != f.staged || !bytes.Equal(request.Stdin, []byte(entries("100644 %s 0\t%s\x00"))) {
+			f.t.Fatalf("staged index or entries changed: %q", request.Stdin)
+		}
+	case 4:
+		want("write-tree")
+		if private != f.staged {
+			f.t.Fatal("staged write used another index")
+		}
+		result = answer(f.candidate + "\n")
+	case 5:
+		want("rev-parse", "--show-prefix")
+		result = answer("")
+	case 6:
+		want(append([]string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", f.candidate, "--"}, f.paths...)...)
+		f.literalSelections++
+		result = answer(entries("100644 blob %s\t%s\x00"))
+	case 7:
+		want("read-tree", f.candidate)
+		f.projection = private
+	case 8:
+		want(append([]string{"add", "-A", "-f", "--"}, f.paths...)...)
+		if private != f.projection {
+			f.t.Fatal("relevant add used another index")
+		}
+		for _, path := range f.paths {
+			data, err := os.ReadFile(filepath.Join(f.root, filepath.FromSlash(path)))
+			wantData := f.before[path]
+			if phase == 1 {
+				wantData = f.after[path]
+			}
+			if err != nil || !bytes.Equal(data, wantData) {
+				f.t.Fatalf("selected input %q = %q, %v; want %q", path, data, err, wantData)
+			}
+			if phase == 1 && path == f.paths[0] {
+				f.editedReads++
+			}
+		}
+	case 9:
+		want("write-tree")
+		if private != f.projection {
+			f.t.Fatal("relevant write used another index")
+		}
+		if phase == 0 {
+			result = answer(f.candidate + "\n")
+		} else {
+			result = answer(f.edited + "\n")
+		}
+	}
+	if (step == 0 || step == 2 || step == 5 || step == 6) != (private == "") {
+		f.t.Fatalf("raw receipt private index mismatch at call %d: %q", f.calls, private)
+	}
+	f.calls++
+	return result
 }
 
 func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {

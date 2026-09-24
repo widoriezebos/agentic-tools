@@ -260,6 +260,10 @@ func validateTestingReceiptEngineIdentity(receipt TestReceipt) error {
 // Schema two binds the whole staged candidate and projects only actual test inputs.
 func testingReceiptPosture(installationRoot string, result proofrun.TestResult) (string, string, error) {
 	workspace := gittree.Workspace{Dir: result.ProjectRoot}
+	return testingReceiptPostureWithWorkspace(installationRoot, result, workspace)
+}
+
+func testingReceiptPostureWithWorkspace(installationRoot string, result proofrun.TestResult, workspace gittree.Workspace) (string, string, error) {
 	index, err := workspace.StagedTree()
 	if err != nil {
 		return "", "", err

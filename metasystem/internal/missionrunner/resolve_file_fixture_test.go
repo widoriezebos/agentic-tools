@@ -28,8 +28,19 @@ type resolutionFileBed struct {
 type resolutionFacts struct{ *recoveryFacts }
 
 func newResolutionFileBed(t *testing.T) *resolutionFileBed {
+	return newResolutionFileBedBeforeOpen(t, nil)
+}
+
+func newResolutionFileBedBeforeOpen(t *testing.T, beforeOpen func(*recoveryFileBed)) *resolutionFileBed {
 	t.Helper()
-	r := newRecoveryFileBed(t, map[string]string{"solo.go": resolutionSolo})
+	initial := map[string]string{"solo.go": resolutionSolo}
+	if beforeOpen != nil {
+		initial = map[string]string{}
+	}
+	r := newRecoveryFileBedBeforeOpen(t, beforeOpen, initial)
+	if beforeOpen != nil {
+		writeText(t, filepath.Join(r.e.Root, "solo.go"), resolutionSolo)
+	}
 	writeText(t, filepath.Join(r.e.Root, "metasystem.conf"), "metasystem.runtimes=fake\n")
 	b := &resolutionFileBed{recoveryFileBed: r, nextIdentity: "Wido"}
 	f := &resolutionFacts{r.facts}
@@ -52,7 +63,8 @@ func newResolutionFileBed(t *testing.T) *resolutionFileBed {
 		t.Fatalf("park asks = %d", len(park.Asks))
 	}
 	park.Asks[0]["taintId"] = int64(1)
-	if _, err := appendTaintEntry(park.State, "alpha-t1-live", "undeclared host-authored change: solo.go"); err != nil {
+	turnID := state["openTurn"].(map[string]any)["turnId"].(string)
+	if _, err := appendTaintEntry(park.State, turnID, "undeclared host-authored change: solo.go"); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.e.writeProposedAsks(park.Asks); err != nil {
