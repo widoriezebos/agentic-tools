@@ -351,6 +351,10 @@ func boolAsString(f *flag.FlagSet, name string) *string {
 // The summary keeps backlog reads bounded; explicit JSON preserves the
 // records needed by scripts and detailed inspection.
 func runGoalList(args []string) int {
+	return runGoalListWithResolver(args, goal.ResolveEndpoint)
+}
+
+func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
 	flags := flag.NewFlagSet("goal list", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	var output goalListOutput
@@ -375,7 +379,7 @@ func runGoalList(args []string) int {
 		return 1
 	}
 	if converted(*root) {
-		return listSynced(*root, output, *fetch, labels...)
+		return listSyncedWithResolver(*root, output, *fetch, resolve, labels...)
 	}
 	if len(labels) > 0 || *fetch {
 		fmt.Fprintln(os.Stderr, "goal list --label and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
@@ -468,8 +472,8 @@ func runGoalTierProbe(args []string) int {
 	return 0
 }
 
-func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLabels ...string) int {
-	e, err := goal.ResolveEndpoint(root)
+func listSyncedWithResolver(root string, output goalListOutput, fetchFirst bool, resolve func(string) (goal.Endpoint, error), requiredLabels ...string) int {
+	e, err := resolve(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -522,6 +526,10 @@ func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLab
 
 // History stays opt-in so inspecting one goal does not replay its ledger.
 func runGoalShow(args []string) int {
+	return runGoalShowWithResolver(args, goal.ResolveEndpoint)
+}
+
+func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
 	flags := flag.NewFlagSet("goal show", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -534,7 +542,7 @@ func runGoalShow(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal show reads the synced backlog; this checkout still carries the legacy ledger (goal list --json shows it whole)")
 		return 1
 	}
-	e, err := goal.ResolveEndpoint(*root)
+	e, err := resolve(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

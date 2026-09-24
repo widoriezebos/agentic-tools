@@ -158,6 +158,16 @@ func TestDeletedGoPackagesSelectNearestExistingDirectory(t *testing.T) {
 	if len(packages) != 0 {
 		t.Fatalf("create-delete path selected packages=%v", packages)
 	}
+	t.Run("branch-member-patch-deletion", func(t *testing.T) {
+		bedGit(t, root, "commit", "-qm", "delete package")
+		commit := bedGit(t, root, "rev-parse", "HEAD")
+		patch, err := BranchMemberPatch(root, BranchMember{Builds: []BranchBuild{{Commit: commit}}})
+		must(t, err)
+		changes := patchGateChanges(patch)
+		if change, ok := changes["metasystem/outer/missing/inner/value.go"]; len(changes) != 1 || !ok || !change.Deleted {
+			t.Fatalf("branch deletion changes=%v", changes)
+		}
+	})
 }
 
 func isSharedFixtureHarness(path string) bool {

@@ -1093,6 +1093,51 @@ func TestLandingBranchLeasesEndpointAndDeletesCandidateAtomically(t *testing.T) 
 	if err := exec.Command("git", "--git-dir", origin, "show-ref", "--verify", "--quiet", branchRef).Run(); err == nil {
 		t.Fatalf("candidate branch %s survived atomic landing", branchRef)
 	}
+	t.Run("survivor-rebuild-republish", func(t *testing.T) {
+		bed := newGoalBranchBed(t)
+		tipA := buildGoalBranch(t, bed, "goal-a", []string{"1"}, -1)
+		memberA, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipA, GoalID: "goal-a", Last: true})
+		must(t, err)
+		tipB := buildGoalBranch(t, bed, "goal-b", []string{"1"}, -1)
+		memberB, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipB, GoalID: "goal-b", Last: true})
+		must(t, err)
+		remote := filepath.Join(t.TempDir(), "origin.git")
+		branchGit(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
+		branchGit(t, bed.root, "remote", "add", "origin", remote)
+		branchGit(t, bed.root, "push", "-q", "origin", bed.base+":refs/heads/main")
+		claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
+		unitA := BindBranchMember(Unit{GoalID: "goal-a", Chain: tipA, Claim: claim, State: UnitJoined,
+			AuthorName: "Approver A", AuthorEmail: "a@example.invalid"}, memberA)
+		unitB := BindBranchMember(Unit{GoalID: "goal-b", Chain: tipB, Claim: claim, State: UnitJoined,
+			AuthorName: "Approver B", AuthorEmail: "b@example.invalid"}, memberB)
+		baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
+		oldTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, "", "owner", []Unit{unitA, unitB})
+		must(t, err)
+		ref := "refs/heads/landing/" + testBatchID
+		if got := branchGit(t, remote, "rev-parse", ref); got != oldTip {
+			t.Fatalf("initial remote tip=%s, want %s", got, oldTip)
+		}
+		newTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, oldTip, "owner", []Unit{unitB})
+		must(t, err)
+		if got := branchGit(t, remote, "rev-parse", ref); got != newTip || newTip == oldTip {
+			t.Fatalf("survivor remote tip=%s, old=%s new=%s", got, oldTip, newTip)
+		}
+		if got := branchGit(t, remote, "show", newTip+":metasystem/a-1.txt"); got != "base" {
+			t.Fatalf("removed member bytes=%q", got)
+		}
+		if got := branchGit(t, remote, "show", newTip+":metasystem/b-1.txt"); got != "goal-b/1" {
+			t.Fatalf("survivor bytes=%q", got)
+		}
+		must(t, DeleteLandingBranch(bed.root, testBatchID, newTip))
+		if err := exec.Command("git", "--git-dir", remote, "show-ref", "--verify", "--quiet", ref).Run(); err == nil {
+			t.Fatalf("survivor branch %s survived deletion at %s", ref, newTip)
+		}
+		republished, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, newTip, "owner", []Unit{unitB})
+		must(t, err)
+		if got := branchGit(t, remote, "rev-parse", ref); got != republished {
+			t.Fatalf("republished tip=%s, want %s", got, republished)
+		}
+	})
 }
 
 func TestEndpointPushErrorClassifiesOnlyStaleInfoAsLease(t *testing.T) {

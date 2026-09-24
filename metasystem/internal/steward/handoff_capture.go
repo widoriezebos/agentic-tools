@@ -384,6 +384,10 @@ func readHandoffGoalSnapshot(root string, now time.Time) (handoffGoalSnapshot, e
 	if err != nil {
 		return handoffGoalSnapshot{}, err
 	}
+	return handoffSnapshotFromWork(work), nil
+}
+
+func handoffSnapshotFromWork(work goal.ClaimableBudgetedWork) handoffGoalSnapshot {
 	snapshot := handoffGoalSnapshot{claimed: work.Claimed, landing: work.Landing, accepted: make(map[string]*goal.GoalFile)}
 	ids := work.Claimed
 	if len(ids) == 0 {
@@ -394,7 +398,7 @@ func readHandoffGoalSnapshot(root string, now time.Time) (handoffGoalSnapshot, e
 			snapshot.accepted[ids[0]] = file
 		}
 	}
-	return snapshot, nil
+	return snapshot
 }
 
 func selectHandoffGoalWithReader(root string, now time.Time, readGoal handoffGoalReader) (*goal.GoalFile, string, error) {
@@ -1067,6 +1071,21 @@ func readLiveHandoffIntents(root string) ([]Intent, error) {
 // no nonce state or intent.
 func Handoff(stateRoot string, caller HandoffCaller, record HandoffRecord, now time.Time, receiptFile string) (HandoffResult, error) {
 	return handoffWithGoalReader(stateRoot, caller, record, now, receiptFile, readHandoffGoalSnapshot)
+}
+
+// HandoffWithWorkReader uses a supplied claimable-work read while retaining
+// handoff selection, caller admission, capture, and publication in one path.
+func HandoffWithWorkReader(stateRoot string, caller HandoffCaller, record HandoffRecord, now time.Time, receiptFile string, readWork func(string, time.Time) (goal.ClaimableBudgetedWork, error)) (HandoffResult, error) {
+	if readWork == nil {
+		return HandoffResult{}, fmt.Errorf("handoff requires a claimable-work reader")
+	}
+	return handoffWithGoalReader(stateRoot, caller, record, now, receiptFile, func(root string, at time.Time) (handoffGoalSnapshot, error) {
+		work, err := readWork(root, at)
+		if err != nil {
+			return handoffGoalSnapshot{}, err
+		}
+		return handoffSnapshotFromWork(work), nil
+	})
 }
 
 func handoffWithGoalReader(stateRoot string, caller HandoffCaller, record HandoffRecord, now time.Time, receiptFile string, readGoal handoffGoalReader) (HandoffResult, error) {

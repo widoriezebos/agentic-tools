@@ -20,6 +20,15 @@ func seedClaimLaunchGoal(t *testing.T, root string) {
 	goalSyncMutationGit(t, root, "config", "user.email", "fixture@example.invalid")
 	goalSyncMutationGit(t, root, "config", "goal.sync-remote", "local")
 	goalSyncMutationGit(t, root, "config", "goal.sync-branch", goal.LocalLedgerBranch)
+	seedClaimLaunchGoalFiles(t, root)
+	goalSyncMutationGit(t, root, "add", "plans/goals")
+	goalSyncMutationGit(t, root, "commit", "-qm", "seed goal ledger")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+}
+
+func seedClaimLaunchGoalFiles(t *testing.T, root string) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -43,10 +52,6 @@ func seedClaimLaunchGoal(t *testing.T, root string) {
 	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "goal-a.md"), goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goalSyncMutationGit(t, root, "add", "plans/goals")
-	goalSyncMutationGit(t, root, "commit", "-qm", "seed goal ledger")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 }
 
 func setClaimLaunchCapability(t *testing.T, root string, mode dispatchcore.DispatchMode) {
