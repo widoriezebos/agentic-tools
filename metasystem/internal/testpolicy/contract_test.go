@@ -234,6 +234,30 @@ func TestMetaSystemBatchBuildCDPinsInputsAndTaggedWitnessOwner(t *testing.T) {
 	}
 }
 
+func TestFastStaticBuildDeclaresLiveAndConcludedGoalInputs(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, ok := groupMap(contract.Groups)["fast-static-build"]
+	if !ok {
+		t.Fatal("fast-static-build group is absent")
+	}
+	for _, input := range []string{
+		"plans/goals/*.md", "records/goals/*.md",
+		"metasystem/plans/goals/*.md", "metasystem/records/goals/*.md",
+	} {
+		if !contains(group.Inputs, input) {
+			t.Errorf("fast-static-build inputs omit %s", input)
+		}
+	}
+}
+
 func TestMetaSystemContractAlwaysAuditsGoTestEnvironments(t *testing.T) {
 	data, err := os.ReadFile("../../testing.json")
 	if err != nil {

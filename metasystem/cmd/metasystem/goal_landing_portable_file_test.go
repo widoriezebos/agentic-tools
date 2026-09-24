@@ -107,6 +107,9 @@ func (f *portableFileProof) open(tree string, files map[string]portableFile) fun
 			if err = os.MkdirAll(filepath.Dir(target), 0o755); err == nil {
 				err = testexec.WriteFile(target, []byte(file.data), file.mode)
 			}
+			if err == nil {
+				err = os.Chmod(target, file.mode)
+			}
 			if err != nil {
 				_ = os.RemoveAll(dir)
 				return nil, err

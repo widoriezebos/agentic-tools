@@ -2704,8 +2704,7 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		}
 		args = append(args, "--", "bash", "-c", body, "fixture", count, ready, release,
 			engine, root, controlRoot, filepath.Join(root, "metasystem.conf"), result+".nested.json")
-		command := exec.Command(engine, args...)
-		command.Env = environment
+		command := (proofBinaryFixture{t: t}).command(environment, engine, args...)
 		var output []byte
 		if retry == "" {
 			output, err = command.CombinedOutput()
@@ -3276,14 +3275,10 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 		}
 		_ = release.Close()
 		root := os.Getenv("GOVERNED_COMMAND_ROOT")
-		command := exec.Command(os.Getenv("GOVERNED_COMMAND_ENGINE"), "proof-run", "launch",
-			"--suite", "governed-command", "--root", root, "--control-root", root,
-			"--conf", filepath.Join(root, "metasystem.conf"), "--progress", filepath.Join(root, "artifacts", "governed.progress.jsonl"),
-			"--log", filepath.Join(root, "artifacts", "governed.log"), "--banner", "governed command canary", "--", "true")
 		// The governed locators travel under the fixture's own names: the
 		// package's TestMain clears every METASYSTEM_PROOF_* control before
 		// a test runs, so the engine receives them here, not by inheritance.
-		command.Env = append(receiptCanaryEnvironment(), proofCommandFixtureMarker+"=1",
+		environment := append(receiptCanaryEnvironment(), proofCommandFixtureMarker+"=1",
 			proofCommandFixtureSnapshotEnv+"="+os.Getenv(proofCommandFixtureSnapshotEnv),
 			proofCommandFixtureTempRootEnv+"="+os.Getenv(proofCommandFixtureTempRootEnv),
 			"METASYSTEM_WAIT_BINARY="+os.Getenv("METASYSTEM_WAIT_BINARY"),
@@ -3293,6 +3288,10 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 			"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root,
 			"METASYSTEM_PROOF_RUN_ROOT="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ROOT"),
 			"METASYSTEM_PROOF_RUN_ID="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ID"))
+		command := (proofBinaryFixture{t: t}).command(environment, os.Getenv("GOVERNED_COMMAND_ENGINE"), "proof-run", "launch",
+			"--suite", "governed-command", "--root", root, "--control-root", root,
+			"--conf", filepath.Join(root, "metasystem.conf"), "--progress", filepath.Join(root, "artifacts", "governed.progress.jsonl"),
+			"--log", filepath.Join(root, "artifacts", "governed.log"), "--banner", "governed command canary", "--", "true")
 		command.Stdout, command.Stderr = os.Stdout, os.Stderr
 		if err := command.Run(); err != nil {
 			if exit, ok := err.(*exec.ExitError); ok {

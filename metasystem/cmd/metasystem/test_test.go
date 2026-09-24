@@ -614,9 +614,10 @@ func testingTerminalControlRootProblems(testSource, proofSource, launcherSource 
 	checks := []struct {
 		file, function, call, argument string
 	}{
-		{"test.go", "runTestWorker", "canonicalProofRoot", "controlRoot"},
-		{"test.go", "runTestWorker", "proofrun.AuthenticateWorker", "canonicalControl"},
-		{"test.go", "runTestWorker", "proofrun.ReadAttempt", "canonicalControl"},
+		{"test.go", "runTestWorker", "runTestWorkerWithCandidateOpener", "args"},
+		{"test.go", "runTestWorkerWithCandidateOpener", "canonicalProofRoot", "controlRoot"},
+		{"test.go", "runTestWorkerWithCandidateOpener", "proofrun.AuthenticateWorker", "canonicalControl"},
+		{"test.go", "runTestWorkerWithCandidateOpener", "proofrun.ReadAttempt", "canonicalControl"},
 		{"test.go", "testingTerminalCommit", "testingTerminalCommitWithReads", "workerResultPath"},
 		{"test.go", "testingTerminalCommitWithReads", "readTestingWorkerResult", "workerResultPath"},
 		{"test.go", "testingTerminalCommitWithReads", "commitProofTerminalWithReasonAndReads", "completion"},

@@ -305,6 +305,7 @@ func TestFastForwardRefusesNonAppendRegisters(t *testing.T) {
 // This adapter witnesses the native merge's HEAD/index move; the policy cases
 // above exercise register decisions and recovery against strict raw facts.
 func TestFastForwardNativeHeadIndexAdapter(t *testing.T) {
+	t.Parallel()
 	f := newAdvanceFixture(t)
 	appendAdvanceFile(t, f.root, ffReceipt, "receipt=staged\n")
 	runAdvanceGit(t, f.root, "add", ffReceipt)

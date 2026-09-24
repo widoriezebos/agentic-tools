@@ -336,6 +336,7 @@ func TestLandingRejectsStaleCriticClosure(t *testing.T) {
 }
 
 func TestLandingNativeMovedBaseReplayAdapter(t *testing.T) {
+	t.Parallel()
 	fixture, _, _, _ := newLandingClosureFixture(t)
 	if err := os.Remove(filepath.Join(fixture.root, "internal", "output.go")); err != nil {
 		t.Fatal(err)
