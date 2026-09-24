@@ -1,4 +1,5 @@
-import { useRef, useState, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { actingAs } from "./acting";
 import { BacklogError, openGoal, type Backlog } from "./api";
@@ -7,15 +8,22 @@ import {
   derivedTier,
   emptyRisk,
   goalOf,
+  idRefusal,
   intakeFor,
-  INTENT_RULE,
-  NEXT_STEP_RULE,
   openNote,
   overridesTier,
+  slugFrom,
+  tierLine,
+  unopenable,
   ANSWERS,
+  ID_RULE,
+  INTENT_RULE,
+  NEXT_STEP_RULE,
+  SCORES,
   type Answer,
   type Intake,
   type Risk,
+  type Score,
 } from "./opening";
 import { Panel } from "./Panel";
 import { Button } from "../shell/controls";
@@ -23,26 +31,37 @@ import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
 
 /**
- * A new goal, before it is opened.
+ * A new goal, before it is opened, as one screen.
  *
- * Intake is the one act on this board with no card to start from, and the one
- * where what the engine requires and what a board would guess differ most.
- * The two lines a human writes carry the rule they are written under, beside
- * the field rather than in a manual: an intent is what done looks like, and a
- * next step is intent, constraints and freedoms and never a script — because
- * a goal written as steps binds its executor to the author's context and goes
- * stale the moment reality shifts.
+ * The common case is three answers: what the goal is called, what done looks
+ * like, and what to take on first. They are the whole form a human sees when
+ * the sheet opens, with the button that ends it in view below them. Nothing
+ * else has gone — the four risk answers and their basis are what the engine
+ * derives the rigor tier from and refuses an open without, and the labels and
+ * the blocker are still here — but each waits behind a disclosure until it is
+ * wanted, which is what "the common case is three answers" means when it is
+ * made real rather than merely said.
  *
- * The four risk answers are fields because the engine derives the rigor tier
- * from them and refuses an open without them and their basis. The tier is
- * therefore offered as "the one they derive" unless a human overrides it, and
- * an override is recorded with why, which is the engine's own rule.
+ * Two things are stated here and nowhere else in the browser. The id is
+ * suggested from the intent's first words until a human names it themselves,
+ * because a goal's id is what every other record refers to and typing it
+ * twice is work the browser can do once; and it is checked against the
+ * engine's own rule and the ids this board already carries before the act is
+ * sent, because a refusal read under the field is worth more than the same
+ * refusal read after a round trip.
  *
- * There is no priority here and no arc. `goal open` has no flag for either. A
- * new goal arrives where the engine appends it and is placed with the same
- * re-rank the board already publishes; an arc is `goal set-arc`, a separate
- * verb with its own membership rules. Offering them would be promising a
- * record this act cannot write.
+ * There is no banner about proof. An act that needs a human opens the sign-in
+ * sheet by itself and sends the same act again, as every act on this board
+ * does now, so a warning in front of a form a human has not filled in yet is
+ * a warning about nothing. The one thing that does stop the act before it
+ * starts is a ledger that could not be read at all, and that is one muted
+ * line under the head.
+ *
+ * There is still no priority here and no arc. `goal open` has no flag for
+ * either. A new goal arrives where the engine appends it and is placed with
+ * the same re-rank the board already publishes; an arc is `goal set-arc`, a
+ * separate verb with its own membership rules. Offering them would be
+ * promising a record this act cannot write.
  */
 export function OpenSheet({
   backlog,
@@ -64,24 +83,52 @@ export function OpenSheet({
 }) {
   const [intake, setIntake] = useState<Intake>(() => intakeFor(intent));
   const [risk, setRisk] = useState<Risk>(emptyRisk);
+  /** Whether a human has named the goal, after which nothing suggests an id. */
+  const [named, setNamed] = useState(false);
+  /**
+   * Whether the risk disclosure is open: null until anything has an opinion,
+   * which is what makes it closed when the sheet opens and lets the sheet
+   * open it once without ever arguing with the human afterwards.
+   */
+  const [answersOpen, setAnswersOpen] = useState<boolean | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
   const { session, askToSignIn } = useSession();
   const retried = useRef(false);
   const authority = actingAs(backlog.authority, session);
-  const blocked = blockedForOpen(intake, risk);
+
+  // The intake as the act would take it: the typed id, or the suggestion
+  // standing in for one nobody has typed. The suggestion is the value and not
+  // a hint behind it, because a human who presses Open goal without touching
+  // the field means the name they can read in it.
+  const asked: Intake = { ...intake, id: named ? intake.id : slugFrom(intake.intent) };
+  const taken = [...backlog.rows, ...backlog.closed].map((row) => row.ref.id);
+  const cannot = unopenable(backlog.ledger.state);
+  const blocked = blockedForOpen(asked, risk);
+  const refuseId = idRefusal(asked.id, taken);
+
+  // Everything blockedForOpen names after the three fields lives inside the
+  // risk disclosure, so the sheet opens it once, at the moment those three
+  // are answered and the act is waiting on what is inside. It opens once and
+  // not on every keystroke after: a panel that shut itself again the instant
+  // the basis was typed would take the tier away mid-sentence. After that the
+  // human's own word is the only one that moves it.
+  if (answersOpen === null && asked.id.trim() !== "" && asked.intent.trim() !== "" && asked.nextStep.trim() !== "") {
+    setAnswersOpen(true);
+  }
 
   const send = () => {
-    if (blocked !== "") {
+    if (blocked !== "" || cannot !== "" || refuseId !== "") {
       return;
     }
     setSending(true);
     setRefusal("");
-    const asked = goalOf(intake, risk);
-    openGoal(asked)
+    const wanted = goalOf(asked, risk);
+    openGoal(wanted)
       .then((opened) => {
         setSending(false);
-        onDone(opened, asked.id);
+        onDone(opened, wanted.id);
       })
       .catch((error: unknown) => {
         setSending(false);
@@ -94,141 +141,325 @@ export function OpenSheet({
       });
   };
 
-  const line = (
-    key: "id" | "intent" | "nextStep" | "labels" | "blocks" | "why",
-    label: string,
-    hint: string,
-    rule?: string,
-  ) => (
-    <div className="ms-act-field" key={key}>
-      <label htmlFor={`ms-open-${key}`}>{label}</label>
-      <input
-        id={`ms-open-${key}`}
-        type="text"
-        value={intake[key]}
-        placeholder={hint}
-        onChange={(event) => {
-          setIntake({ ...intake, [key]: event.target.value });
-        }}
-      />
-      {rule !== undefined && <p className="ms-act-rule">{rule}</p>}
-    </div>
-  );
+  const answer = (key: Score["key"], value: Answer) => {
+    setRisk({ ...risk, [key]: value });
+  };
 
   return (
     <Panel
-      eyebrow="Intake → To Do"
+      form
+      eyebrow="Opens in To Do, not yet approved"
       title="New goal"
-      unproven={authority.proven ? "" : authority.reason}
+      unproven=""
       refusal={refusal}
-      note={blocked === "" ? openNote(authority.human) : blocked}
+      note={cannot === "" ? (blocked === "" ? openNote(authority.human) : blocked) : ""}
+      aside={cannot === "" ? undefined : <p className="ms-act-cannot">{cannot}</p>}
       onClose={onClose}
       act={
-        <Button primary disabled={blocked !== "" || sending} onClick={send}>
-          Open goal
+        <Button primary disabled={cannot !== "" || blocked !== "" || refuseId !== "" || sending} onClick={send}>
+          {sending ? "Opening…" : "Open goal"}
         </Button>
       }
     >
-      {line("id", "Id", "a short name, as every seat will refer to it")}
-      {line("intent", "Intent", "what done looks like", INTENT_RULE)}
-      {line("nextStep", "First next step", "what to take on, and what is free", NEXT_STEP_RULE)}
-      {line("labels", "Labels (optional)", "ui board")}
-      {line("blocks", "Unblocks (optional)", "the goal this one clears the way for")}
-
-      <p className="ms-act-source">
-        The four risk answers are how the engine works out the rigor this goal is held to. Severity and novelty derive
-        the tier; exposure and accumulation scale the proof rather than lifting it.
-      </p>
-      <div className="ms-act-budget">
-        <Answers
-          label="Severity"
-          value={risk.severity}
-          onChange={(value) => {
-            setRisk({ ...risk, severity: value });
-          }}
-        />
-        <Answers
-          label="Novelty"
-          value={risk.novelty}
-          onChange={(value) => {
-            setRisk({ ...risk, novelty: value });
-          }}
-        />
-        <Answers
-          label="Exposure"
-          value={risk.exposure}
-          onChange={(value) => {
-            setRisk({ ...risk, exposure: value });
-          }}
-        />
-        <Answers
-          label="Accumulation"
-          value={risk.accumulation}
-          onChange={(value) => {
-            setRisk({ ...risk, accumulation: value });
-          }}
-        />
-      </div>
-      <div className="ms-act-field">
-        <label htmlFor="ms-open-basis">Basis</label>
+      <Field id="ms-open-id" label="Id" hint={ID_RULE} refuse={refuseId}>
         <input
-          id="ms-open-basis"
+          id="ms-open-id"
           type="text"
-          value={risk.basis}
-          placeholder="why those four answers are the answers"
+          value={asked.id}
+          placeholder="e.g. refund-worker"
+          aria-describedby="ms-open-id-hint"
           onChange={(event) => {
-            setRisk({ ...risk, basis: event.target.value });
+            setNamed(event.target.value !== "");
+            setIntake({ ...intake, id: event.target.value });
           }}
         />
-      </div>
-      <div className="ms-act-field">
-        <label htmlFor="ms-open-tier">Tier</label>
-        <select
-          id="ms-open-tier"
-          value={intake.tier}
+      </Field>
+
+      <Field id="ms-open-intent" label="Intent" hint={INTENT_RULE}>
+        <textarea
+          id="ms-open-intent"
+          rows={2}
+          value={intake.intent}
+          placeholder="e.g. Refunds are issued within a day, with nobody touching the queue."
+          aria-describedby="ms-open-intent-hint"
           onChange={(event) => {
-            setIntake({ ...intake, tier: event.target.value as "" | Answer });
+            setIntake({ ...intake, intent: event.target.value });
           }}
+        />
+      </Field>
+
+      <Field id="ms-open-nextStep" label="First next step" hint={NEXT_STEP_RULE}>
+        <textarea
+          id="ms-open-nextStep"
+          rows={2}
+          value={intake.nextStep}
+          placeholder="e.g. Take the worker to a working end state; the approach is yours."
+          aria-describedby="ms-open-nextStep-hint"
+          onChange={(event) => {
+            setIntake({ ...intake, nextStep: event.target.value });
+          }}
+        />
+      </Field>
+
+      <Disclosure
+        label={`Tier ${String(derivedTier(risk))} · from the four answers below`}
+        open={answersOpen ?? false}
+        onOpen={setAnswersOpen}
+      >
+        {SCORES.map((score) => (
+          <Stops key={score.key} score={score} value={risk[score.key]} onChange={answer} />
+        ))}
+        <Field
+          id="ms-open-basis"
+          label="Basis"
+          hint="One line saying why those four answers are the answers."
         >
-          <option value="">the one these answers derive ({derivedTier(risk)})</option>
-          {ANSWERS.map((answer) => (
-            <option key={answer} value={answer}>
-              {answer}
-            </option>
-          ))}
-        </select>
-      </div>
-      {overridesTier(intake, risk) && line("why", "Why that tier", "why this goal is held to another rigor")}
+          <input
+            id="ms-open-basis"
+            type="text"
+            value={risk.basis}
+            placeholder="e.g. severity 1: reversible; novelty 2: new logic in an existing owner; exposure 2: every seat; accumulation 1: nothing compounds"
+            aria-describedby="ms-open-basis-hint"
+            onChange={(event) => {
+              setRisk({ ...risk, basis: event.target.value });
+            }}
+          />
+        </Field>
+        <p className="ms-act-derived">{tierLine(risk)}</p>
+        <Field
+          id="ms-open-tier"
+          label="Tier"
+          hint="The tier the answers derive is the usual one. Another is recorded with why, and a lower one is a human's own act."
+        >
+          <select
+            id="ms-open-tier"
+            value={intake.tier}
+            aria-describedby="ms-open-tier-hint"
+            onChange={(event) => {
+              setIntake({ ...intake, tier: event.target.value as "" | Answer });
+            }}
+          >
+            <option value="">the one these answers derive ({derivedTier(risk)})</option>
+            {ANSWERS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {overridesTier(asked, risk) && (
+          <Field
+            id="ms-open-why"
+            label="Why that tier"
+            hint="Why this goal is held to a rigor its own answers did not derive."
+          >
+            <input
+              id="ms-open-why"
+              type="text"
+              value={intake.why}
+              placeholder="e.g. the answers derive 3, but the fix shape is known and carries no design unknowns"
+              aria-describedby="ms-open-why-hint"
+              onChange={(event) => {
+                setIntake({ ...intake, why: event.target.value });
+              }}
+            />
+          </Field>
+        )}
+      </Disclosure>
+
+      <Disclosure label="More" open={moreOpen} onOpen={setMoreOpen}>
+        <Field
+          id="ms-open-labels"
+          label="Labels"
+          hint="Lowercase words the board narrows by, separated by spaces or commas."
+        >
+          <input
+            id="ms-open-labels"
+            type="text"
+            value={intake.labels}
+            placeholder="e.g. ui board"
+            aria-describedby="ms-open-labels-hint"
+            onChange={(event) => {
+              setIntake({ ...intake, labels: event.target.value });
+            }}
+          />
+        </Field>
+        <Field
+          id="ms-open-blocks"
+          label="Unblocks"
+          hint="The goal this one clears the way for. It parks with this one recorded as its blocker, and returns when this one is done."
+        >
+          <input
+            id="ms-open-blocks"
+            type="text"
+            value={intake.blocks}
+            placeholder="e.g. refund-queue"
+            aria-describedby="ms-open-blocks-hint"
+            onChange={(event) => {
+              setIntake({ ...intake, blocks: event.target.value });
+            }}
+          />
+        </Field>
+      </Disclosure>
     </Panel>
   );
 }
 
-function Answers({
+/**
+ * One field: what it is called, the field itself, what it is for, and what it
+ * refuses. The hint is under the field rather than inside it as a placeholder,
+ * because a placeholder is gone the moment it is needed most — while the
+ * human is typing — and the placeholder is left to do the one thing it is
+ * good at, which is showing an example.
+ */
+function Field({
+  id,
   label,
-  value,
-  onChange,
+  hint,
+  refuse = "",
+  children,
 }: {
+  id: string;
   label: string;
-  value: Answer;
-  onChange: (value: Answer) => void;
-}): ReactNode {
-  const id = `ms-open-${label.toLowerCase()}`;
+  hint: string;
+  /** What this field itself refuses, before anything is sent, or "". */
+  refuse?: string;
+  children: ReactNode;
+}) {
   return (
     <div className="ms-act-field">
       <label htmlFor={id}>{label}</label>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value as Answer);
-        }}
-      >
-        {ANSWERS.map((answer) => (
-          <option key={answer} value={answer}>
-            {answer}
-          </option>
-        ))}
-      </select>
+      {children}
+      <p className="ms-act-hint" id={`${id}-hint`}>
+        {hint}
+      </p>
+      {refuse !== "" && (
+        <p className="ms-act-refuse" role="alert">
+          {refuse}
+        </p>
+      )}
     </div>
   );
 }
+
+/**
+ * A disclosure the sheet owns rather than the browser.
+ *
+ * A native `<details>` would be simpler and is what the rest of this build
+ * uses, but the risk disclosure has to open itself when the act is waiting on
+ * something inside it, and a browser that fires `toggle` for its own opening
+ * as well as for a human's cannot tell the two apart. So the summary's click
+ * is taken instead: Enter and Space on a summary are clicks, so the keyboard
+ * is covered, and the element's open state is the one this sheet computed.
+ */
+function Disclosure({
+  label,
+  open,
+  onOpen,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  onOpen: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <details className="ms-act-disclosure" open={open}>
+      <summary
+        className="ms-act-disclosure-line"
+        onClick={(event) => {
+          event.preventDefault();
+          onOpen(!open);
+        }}
+      >
+        <ChevronRight className="ms-act-chevron" size={14} strokeWidth={2} aria-hidden="true" />
+        <span>{label}</span>
+      </summary>
+      <div className="ms-act-disclosed">{children}</div>
+    </details>
+  );
+}
+
+/**
+ * One risk answer: the score's name, the question it answers, and the three
+ * stops with what each of them means.
+ *
+ * Every word here is the kit's; see SCORES in opening.ts for where each one
+ * comes from. The three stops are a radio group rather than a select because
+ * the whole scale is the thing being read — what a 1 means beside what a 3
+ * means is the answer, and a select shows one of them at a time.
+ */
+function Stops({
+  score,
+  value,
+  onChange,
+}: {
+  score: Score;
+  value: Answer;
+  onChange: (key: Score["key"], value: Answer) => void;
+}) {
+  const stops = useRef<(HTMLButtonElement | null)[]>([]);
+  const name = `ms-open-${score.key}-name`;
+  const question = `ms-open-${score.key}-question`;
+
+  const keys = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = STEPS[event.key];
+    if (step === undefined) {
+      return;
+    }
+    event.preventDefault();
+    const at = ANSWERS.indexOf(value);
+    const next = (at + step + ANSWERS.length) % ANSWERS.length;
+    onChange(score.key, ANSWERS[next]);
+    stops.current[next]?.focus();
+  };
+
+  return (
+    <div className="ms-act-score">
+      <p className="ms-act-score-name" id={name}>
+        {score.name}
+      </p>
+      <p className="ms-act-score-question" id={question}>
+        {score.question}
+      </p>
+      <div
+        className="ms-act-stops"
+        role="radiogroup"
+        aria-labelledby={name}
+        aria-describedby={question}
+        onKeyDown={keys}
+      >
+        {ANSWERS.map((stop, at) => (
+          <button
+            key={stop}
+            type="button"
+            className="ms-act-stop"
+            role="radio"
+            aria-checked={stop === value}
+            // The roving tab stop: one stop of the three is in the tab order,
+            // and it is the chosen one, so Tab moves between questions and the
+            // arrows move within one.
+            tabIndex={stop === value ? 0 : -1}
+            ref={(element) => {
+              stops.current[at] = element;
+            }}
+            onClick={() => {
+              onChange(score.key, stop);
+            }}
+          >
+            <span className="ms-act-stop-number">{stop}</span>
+            <span className="ms-act-stop-word">{score.stops[at]}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Which way each key moves along a scale that is read left to right. */
+const STEPS: Record<string, number | undefined> = {
+  ArrowRight: 1,
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowUp: -1,
+};

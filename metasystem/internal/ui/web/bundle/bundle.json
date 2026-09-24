@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:c4faebff8acb2274adb730c6bb6073d4fda970c39c22c9054f16f9a1abd699b4",
+  "sourceDigest": "sha256:6666a1561ceb4e3532a8b02e92da5cbce0e181c424cde99a117f9341ec7755f5",
   "source": [
     {
       "path": ".npmrc",
@@ -99,12 +99,16 @@
       "sha256": "5168e2a44f729d4e813136608193dc9b29a424c579f45deba6d79eeb64d933b1"
     },
     {
+      "path": "src/backlog/OpenSheet.test.tsx",
+      "sha256": "a4a93c2977729e8979710ceaa87bd2ce5d5a9ced21e1cc02e44c41c4902c6b34"
+    },
+    {
       "path": "src/backlog/OpenSheet.tsx",
-      "sha256": "95336847e3d8a908684373f25857f66acc1d2dc65a825d676b3a6d9edd9acb2b"
+      "sha256": "a1021f9ed3e981007e7a7c7d55f81087a2884c549d256443379fb8fba3da6ad5"
     },
     {
       "path": "src/backlog/Panel.tsx",
-      "sha256": "257b2f11d9a60a2f6d0322bd4c341467b71032a7ec54be4223c02245f3bab7f2"
+      "sha256": "26d4e76fe7220823de7065e4ca12818fe434836a7689defdb3ce7c422bdc48db"
     },
     {
       "path": "src/backlog/RankSheet.tsx",
@@ -140,7 +144,7 @@
     },
     {
       "path": "src/backlog/backlog.css",
-      "sha256": "7d4bfd934e6d5df5669a26f3fd90e60acaaff03b7b42665b19c4f0a089a7ca8f"
+      "sha256": "4be4ed272ade474a3b98a700641350f7064469e6e9ff4ea70f4b14e45bc76ae9"
     },
     {
       "path": "src/backlog/columns.ts",
@@ -188,11 +192,11 @@
     },
     {
       "path": "src/backlog/opening.test.ts",
-      "sha256": "0c8b63f32637678c12dda260d0dc1c82d38a2bd21b0a7f587473b29cbabcdc51"
+      "sha256": "74fac053c06d604ec6073109313dc7c9abe091685b9504318a087813e5b9379a"
     },
     {
       "path": "src/backlog/opening.ts",
-      "sha256": "9d7e1d73f0860ae134459e8c04ce6e6b0f22629f2cda2f4ef2be0b36abdaace6"
+      "sha256": "4ff239d848704f7b02e77f5a9661d501f620b24d4a768d74c3e92477be552f96"
     },
     {
       "path": "src/backlog/reorder.test.ts",
@@ -706,11 +710,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "f863ee6c6ae2a15ca62c0d0cb65135c5c10b9b6d121ce58a3e44ca72af2ec86a"
+      "sha256": "821b97d4911f0e6882dd2ab54ee324eb826037c1acb02186316a96378ef49543"
     },
     {
       "path": "assets/index.js",
-      "sha256": "b3411f95d046b2ad3e626ffa70489aaf967a1cfa28054a5b6c961596807b5dbe"
+      "sha256": "f9471f789ee27c313522e3a10ac037b7aa0597ea7ce960a84470df44d9c0d013"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

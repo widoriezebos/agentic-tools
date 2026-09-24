@@ -33,6 +33,8 @@ export function Panel({
   refusal,
   note,
   act,
+  aside,
+  form = false,
   onClose,
   children,
 }: {
@@ -49,6 +51,17 @@ export function Panel({
   note: string;
   /** The primary button, which the sheet owns because it knows the act. */
   act: ReactNode;
+  /** One line under the head, where the sheet has something to say there. */
+  aside?: ReactNode;
+  /**
+   * The one-screen shape: the body between the head and the foot scrolls and
+   * the foot stays where it is, so the button that ends a form is never below
+   * the fold. A confirmation is short enough to scroll whole and takes the
+   * default; a form a human fills takes this. The refusal moves with the
+   * foot, because the sentence explaining why nothing happened belongs beside
+   * the button that did not work.
+   */
+  form?: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -94,7 +107,7 @@ export function Panel({
     <>
       <div className="ms-act-scrim" aria-hidden="true" />
       <section
-        className="ms-act-sheet"
+        className={form ? "ms-act-sheet ms-act-sheet--form" : "ms-act-sheet"}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ms-act-title"
@@ -119,15 +132,21 @@ export function Panel({
             {unproven}
           </p>
         )}
-        {children}
+        {aside}
+        {form ? <div className="ms-act-body">{children}</div> : children}
         <div className="ms-act-foot">
+          {form && refusal !== "" && (
+            <p className="ms-act-refusal" role="alert">
+              {refusal}
+            </p>
+          )}
           <div className="ms-act-buttons">
             {act}
             <Button onClick={onClose}>Cancel</Button>
           </div>
-          <p className="ms-act-note">{note}</p>
+          {note !== "" && <p className="ms-act-note">{note}</p>}
         </div>
-        {refusal !== "" && (
+        {!form && refusal !== "" && (
           <p className="ms-act-refusal" role="alert">
             {refusal}
           </p>
