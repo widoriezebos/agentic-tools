@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M39FGA0X84X669Q6WREHDEGS
-- Status: accepted
+- Status: done
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 2, 2026-09-24, Claude on Fable, after Astra's critique of revision 1 ([g1-s37-astra-critique.md](g1-s37-astra-critique.md): nine material findings, "build after the nine listed changes", all nine taken below). Revision 1 was on Wido's finding: "a goal could unblock several others, right? And it could also be the other way around. A goal could be blocked by several others ... this feels to me like an oversight." Ruled: "design for this and get it implemented. And indeed, you need a critique from Astra." Touches the goal package, a tier-1 floor, on Wido's word.
@@ -27,7 +27,12 @@ The ledger already holds the relation both ways: a goal's record carries `Blocke
 7. The open request keeps `blocks` compatible: a string (one id, or comma-separated) or an array, normalised on the server, absent or empty meaning none; it gains `blockedBy` as an array with the same rule. The sheet's "More" holds two pickers, "Blocks" and "Blocked by", each taking several goals as chips, with the hints "The chosen goals wait for this one" and "This goal waits for the chosen ones and parks until they are done"; a fenced target's refusal is shown under the picker with the goal named.
 8. Two routes, `POST /api/backlog/goals/{dependent}/block {blocker}` and `/unblock {blocker}`, where the path id is always the goal that waits; a "Holds" row on G's page therefore acts on X's route. Authority comes from the act owner, never the body; an early unblock needs the signed-in human like every act. The goal page shows "Waits for" and "Holds" with states and links, the Waiting card's line reads "waiting for A and B to be done", and the board's unknown-blocker gap stays as it is.
 
+## Built, 2026-09-24
+
+Six commits, `b6247b828` to `a5485dbce`, merged after one Astra round, one Astra confirmation and three Sol passes ([g1-s37-sol-reviews.md](g1-s37-sol-reviews.md)). What stands beyond the design's letter: a name is not authority on the new verbs and the multi-target open, a proof the approval gate admits is; a seat's open is stored as `main` when no proof is present; the verified channel and the relay stand outside the name binding because their identities are not names; a journaled human edge act is refused on replay because a stored name cannot restore its proof. Wido stopped the work after Sol's third pass: "Are we still aiming for building the smallest thing that works? Because it feels like we're going down a rabbit hole." The four findings of that pass are pre-existing authority gaps the new verbs did not create, and shipping leaves those paths exactly as they were.
+
 ## Later, when it hurts
 
 - A picture of the dependency graph; bulk edits; blockers across arcs shown on the board as lines.
 - Seats adding blockers to goals they do not hold.
+- The engine's authority on every write of `BlockedBy`, in Sol's words: direct `Edit` and reconcile's open arm rewrite the list unchecked; a proofless `--by` is still attribution in History and the journal; the name binding reads the current enrolment rather than the one the proof observed. One design of its own, with Astra, when it hurts.
