@@ -758,7 +758,7 @@ BACKLOG
       --pid "$$" --start "$receipt_fixture_start" --tag "land-$fixture_scenario-seed" \
       --runtime fake --owner-lineage land-receipt-fixture >/dev/null
     METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$seed_goal_engine" goal open --root "$leg_seed" \
-      --id fx --origin human --intent "Create an exact fixture-local landing receipt." \
+      --id fx --origin human --by Wido --intent "Create an exact fixture-local landing receipt." \
       --next "Run the bounded fixture receipt." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
       --basis "This disposable fixture executes only its bounded local landing receipt." \
@@ -903,7 +903,7 @@ if is_carried_scenario; then
       --tag "land-$fixture_scenario-peer" --runtime fake --owner-lineage land-receipt-fixture-b >/dev/null
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
       "$leg_peer/bin/metasystem" goal open --root "$leg_peer" \
-        --id fx-b --origin human --intent "Create the second seat's carried landing." \
+        --id fx-b --origin human --by Wido --intent "Create the second seat's carried landing." \
         --next "Prove debt is visible between seats." \
         --risk severity=1,novelty=1,exposure=1,accumulation=1 \
         --basis "This disposable fixture serializes two carried landing seats." \
@@ -1468,7 +1468,7 @@ publish_peer_ledger_move() { # optional peer checkout
     --pid "$$" --start "$peer_start" --tag land-receipt-fixture-peer \
     --runtime fake --owner-lineage land-receipt-fixture-peer >/dev/null
   receipt_env_run env METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-peer \
-    "$engine" goal open --root "$checkout" --id peer-goal --origin human \
+    "$engine" goal open --root "$checkout" --id peer-goal --origin human --by Wido \
       --intent "Publish one fixture peer goal." \
       --next "Let the landing consume this ledger-only move." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \

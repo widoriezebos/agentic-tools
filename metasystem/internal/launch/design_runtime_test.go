@@ -10,34 +10,50 @@ import (
 	"time"
 )
 
-func TestLaneAdapterFollowsItsRuntimeSetting(t *testing.T) {
+// A lane runs on the agent its own runtime setting names. The model never
+// routes on its own: more than one agent can serve the same model, so a Codex
+// model on a Claude lane is a Claude launch of that model, and a runtime this
+// engine cannot launch is refused rather than guessed.
+type laneAdapterCase struct {
+	name        string
+	kind        string
+	useSettings bool
+	runtime     string
+	settings    string
+	adapterData string
+	model       string
+	want        string
+	refused     bool
+}
+
+// Design lanes follow the design runtime setting; the resolved model is only
+// the model that agent runs.
+func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
 	t.Parallel()
 
-	// A lane runs on the agent its own runtime setting names. The model never
-	// routes on its own: more than one agent can serve the same model, so a
-	// Codex model on a Claude lane is a Claude launch of that model, and a
-	// runtime this engine cannot launch is refused rather than guessed.
-	cases := []struct {
-		name        string
-		kind        string
-		useSettings bool
-		runtime     string
-		settings    string
-		adapterData string
-		model       string
-		want        string
-		refused     bool
-	}{
+	runLaneAdapterCases(t, "design-runtime-", []laneAdapterCase{
 		{name: "Codex from settings", kind: "design", useSettings: true, runtime: "codex", settings: "gpt-6-astra", want: "codex-exec"},
 		{name: "Claude from settings", kind: "design", useSettings: true, runtime: "claude", settings: "claude-opus-5-5[1m]", want: "claude-headless"},
 		{name: "the model alone never routes", kind: "design", useSettings: true, runtime: "claude", settings: "gpt-6-astra", want: "claude-headless"},
 		{name: "adapter data changes the model, not the agent", kind: "design", useSettings: true, runtime: "claude", settings: "claude-opus-5-5[1m]", adapterData: "gpt-6-astra", want: "claude-headless"},
 		{name: "spec changes the model, not the agent", kind: "design", useSettings: true, runtime: "codex", settings: "gpt-6-astra", model: "claude-opus-5-5[1m]", want: "codex-exec"},
 		{name: "default design", kind: "design", want: "claude-headless"},
+		{name: "an agent this engine cannot launch is refused", kind: "design", useSettings: true, runtime: "devin", settings: "claude-opus-5-5", refused: true},
+	})
+}
+
+// Read lanes follow the read runtime setting and default to Codex.
+func TestLaneAdapterFollowsItsRuntimeSetting(t *testing.T) {
+	t.Parallel()
+
+	runLaneAdapterCases(t, "read-runtime-", []laneAdapterCase{
 		{name: "read defaults to Codex", kind: "read", want: "codex-exec"},
 		{name: "read on Claude by its setting", kind: "read", useSettings: true, runtime: "claude", settings: "claude-opus-5-5[1m]", want: "claude-headless"},
-		{name: "an agent this engine cannot launch is refused", kind: "design", useSettings: true, runtime: "devin", settings: "claude-opus-5-5", refused: true},
-	}
+	})
+}
+
+func runLaneAdapterCases(t *testing.T, idPrefix string, cases []laneAdapterCase) {
+	t.Helper()
 	for index, row := range cases {
 		row := row
 		t.Run(row.name, func(t *testing.T) {
@@ -58,7 +74,7 @@ func TestLaneAdapterFollowsItsRuntimeSetting(t *testing.T) {
 				setString(data, "model", row.adapterData)
 			}
 			spec := StartSpec{
-				ID:               "design-runtime-" + string(rune('a'+index)),
+				ID:               idPrefix + string(rune('a'+index)),
 				Kind:             row.kind,
 				Brief:            brief(t),
 				WorkingDirectory: t.TempDir(),
