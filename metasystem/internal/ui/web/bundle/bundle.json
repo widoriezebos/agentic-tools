@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:059693c4b13e09fa67c65561632b02bf3b411cd54e3915908c1af023abf73553",
+  "sourceDigest": "sha256:5e03f7406b48bc117ec942a7ca9f109de6ceb49b704376329e542aa16185bd71",
   "source": [
     {
       "path": ".npmrc",
@@ -476,7 +476,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "dedf8d29d4516e2fcab9b70108b02424464df0c10b7a04079ebc8c475dd072cc"
+      "sha256": "a122e30480439f434acaf805ab4e899795a73a32c4a8f15cf52279f0d1014910"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -750,7 +750,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "d035f93e5a2e0a642be7b6bcbf7dfadc9c397b947a972a32bc61776463ac6c4d"
+      "sha256": "4c194f8a1383ad9c94e96b5f0ee27da57ea614f8f2a1473de1cbdc17abe1339d"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

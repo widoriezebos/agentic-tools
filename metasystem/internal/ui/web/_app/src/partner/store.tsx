@@ -309,6 +309,11 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         const at = held.lastIndexOf(name);
         return at < 0 ? held : [...held.slice(0, at), ...held.slice(at + 1)];
       });
+      // A draft's life is its sheet's: cancelled, the thing it described is
+      // gone; opened, it is a goal now. Either way the chip would describe
+      // nothing, so it goes with the sheet (Wido, 2026-09-24). A draft from
+      // another sheet stands.
+      setSheetDraft((draft) => (draft !== null && draft.sheet === name ? null : draft));
     };
   }, []);
 
