@@ -4,12 +4,12 @@ import { describe, expect, it } from "vitest";
 import { firstWords, GoalPicker, matching, pickRefusal, type PickableGoal } from "./GoalPicker";
 
 /**
- * The field that must hold an existing goal.
+ * The field that must hold existing goals.
  *
  * Three of its claims are rules and are asserted as rules: which goals a typed
- * line finds, that the goal being opened is never one of them, and what the
- * field refuses. The fourth is what a chosen goal looks like, which can only
- * be read from the markup, so it is read from the markup.
+ * line finds, which goals are never among them, and what the field refuses.
+ * The fourth is what the chosen goals look like, which can only be read from
+ * the markup, so it is read from the markup.
  */
 
 const GOALS: PickableGoal[] = [
@@ -53,36 +53,45 @@ describe("what a typed line finds", () => {
     expect(ids(matching(GOALS, "", "g1-s13"))).toEqual(["g1-s14", "refund-queue", "g1-s9", "g1-s7"]);
     expect(ids(matching(GOALS, "g1-s13", "g1-s13"))).toEqual([]);
   });
+
+  // A goal already chosen is a chip on screen: offering it again would be
+  // offering a choice that says nothing.
+  it("never offers a goal that has already been chosen", () => {
+    expect(ids(matching(GOALS, "", ["g1-s13", "refund-queue"]))).toEqual(["g1-s14", "g1-s9", "g1-s7"]);
+  });
 });
 
 describe("what the field refuses", () => {
-  it("refuses nothing while it is empty, because no blocker is the common case", () => {
-    expect(pickRefusal("", "", GOALS)).toBe("");
+  it("refuses nothing while it is empty, because no dependency is the common case", () => {
+    expect(pickRefusal([], "", GOALS)).toBe("");
   });
 
-  it("refuses nothing for a live goal that was chosen", () => {
-    expect(pickRefusal("g1-s13", "", GOALS)).toBe("");
+  it("refuses nothing for live goals that were chosen", () => {
+    expect(pickRefusal(["g1-s13", "g1-s14"], "", GOALS)).toBe("");
   });
 
   it("says a line that names no goal names no goal", () => {
-    expect(pickRefusal("", "refnud", GOALS)).toBe("no goal named refnud");
+    expect(pickRefusal([], "refnud", GOALS)).toBe("no goal named refnud");
   });
 
   // A line that finds goals and chose none is not an answer either: sent as
-  // it stands it would be no blocker at all, which is a typed intent dropped.
+  // it stands it would be no dependency at all, which is a typed intent
+  // dropped.
   it("asks for a choice when the line finds goals and none was chosen", () => {
-    expect(pickRefusal("", "reads", GOALS)).toBe("Choose one of the goals listed, or clear the field.");
+    expect(pickRefusal([], "reads", GOALS)).toBe("Choose one of the goals listed, or clear the field.");
   });
 
-  it("says what a goal that has already ended has nothing to unblock", () => {
-    expect(pickRefusal("g1-s9", "", GOALS)).toBe("already done, nothing to unblock");
-    expect(pickRefusal("g1-s7", "", GOALS)).toBe("abandoned, nothing to unblock");
+  // With several chips on screen the refusal has to say which one it is
+  // about, so it names the goal.
+  it("names the goal that has already ended, and what it ended as", () => {
+    expect(pickRefusal(["g1-s9"], "", GOALS)).toBe("g1-s9 is already done, nothing to unblock");
+    expect(pickRefusal(["g1-s13", "g1-s7"], "", GOALS)).toBe("g1-s7 is abandoned, nothing to unblock");
   });
 
   // The goal being opened is not in the list, so its own id is a line that
   // names no goal rather than a goal that could be chosen.
   it("counts the excluded goal as no goal at all", () => {
-    expect(pickRefusal("", "g1-s13", GOALS, "g1-s13")).toBe("no goal named g1-s13");
+    expect(pickRefusal([], "g1-s13", GOALS, "g1-s13")).toBe("no goal named g1-s13");
   });
 });
 
@@ -108,7 +117,7 @@ describe("the intent's first words", () => {
 describe("the field itself", () => {
   it("is a combobox with a list it can name, and no list until it is asked", () => {
     const markup = renderToStaticMarkup(
-      <GoalPicker id="ms-open-blocks" goals={GOALS} chosen="" onChoose={() => undefined} />,
+      <GoalPicker id="ms-open-blocks" goals={GOALS} chosen={[]} onChoose={() => undefined} />,
     );
     expect(markup).toContain('role="combobox"');
     expect(markup).toContain('aria-expanded="false"');
@@ -119,14 +128,29 @@ describe("the field itself", () => {
 
   // What was chosen is a goal, and a goal is an id and what it is for. An id
   // alone in a box is what this field exists to stop.
-  it("shows the choice as a chip: the id, the intent's first words, and a way out", () => {
+  it("shows each choice as a chip: the id, the intent's first words, and a way out", () => {
     const markup = renderToStaticMarkup(
-      <GoalPicker id="ms-open-blocks" goals={GOALS} chosen="refund-queue" onChoose={() => undefined} />,
+      <GoalPicker
+        id="ms-open-blocks"
+        goals={GOALS}
+        chosen={["refund-queue", "g1-s14"]}
+        onChoose={() => undefined}
+      />,
     );
-    expect(markup).toContain("ms-pick-chosen");
+    expect(markup).toContain("ms-pick-chips");
     expect(markup).toContain('class="ms-mono">refund-queue<');
     expect(markup).toContain("Refunds are issued within a day");
     expect(markup).toContain('aria-label="Clear refund-queue"');
-    expect(markup).not.toContain('role="combobox"');
+    expect(markup).toContain('class="ms-mono">g1-s14<');
+    expect(markup).toContain('aria-label="Clear g1-s14"');
+  });
+
+  // The field stays under the chips, because the usual act after naming a
+  // goal is naming another one.
+  it("keeps the field open under the chips, so a second goal can be named", () => {
+    const markup = renderToStaticMarkup(
+      <GoalPicker id="ms-open-blocks" goals={GOALS} chosen={["refund-queue"]} onChoose={() => undefined} />,
+    );
+    expect(markup).toContain('role="combobox"');
   });
 });

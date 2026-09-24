@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   anchorFor,
+  andList,
   closedLaneIds,
   DRAFT,
   DRAFTS_READ,
@@ -10,6 +11,7 @@ import {
   laneTitle,
   openLanes,
   shownLanes,
+  waitingFor,
   SPLIT_HELP,
   UNPLACEABLE,
   type Lane,
@@ -140,5 +142,35 @@ describe("the lanes", () => {
   it("give each lane a term of its own", () => {
     const terms = lanes.map((lane) => lane.help).filter((help) => help !== null);
     expect(new Set(terms).size).toBe(terms.length);
+  });
+});
+
+/**
+ * The line a Waiting card carries.
+ *
+ * It answers "what has to happen", not "what state is this in", because the
+ * card is read by a human deciding whether to go and do one of those things.
+ */
+describe("what a waiting goal says it is waiting for", () => {
+  it("names one goal as a sentence", () => {
+    expect(waitingFor(["refund-queue"])).toBe("waiting for refund-queue to be done");
+  });
+
+  it("joins two with and, and three with commas and an and", () => {
+    expect(waitingFor(["a", "b"])).toBe("waiting for a and b to be done");
+    expect(waitingFor(["a", "b", "c"])).toBe("waiting for a, b and c to be done");
+  });
+
+  // A goal waiting for nothing has nothing to say, and a card with an empty
+  // line is a card with no line at all.
+  it("says nothing when nothing is open", () => {
+    expect(waitingFor([])).toBe("");
+  });
+
+  it("writes a list the way English writes one", () => {
+    expect(andList([])).toBe("");
+    expect(andList(["a"])).toBe("a");
+    expect(andList(["a", "b"])).toBe("a and b");
+    expect(andList(["a", "b", "c"])).toBe("a, b and c");
   });
 });

@@ -159,7 +159,13 @@ func main() {
 		SetPriority: func(_ *session.Session, id string, priority uint8, sequence *uint64) error {
 			return state.setPriority(id, priority, sequence)
 		},
-		Open:    func(_ *session.Session, opened act.Opened) error { return state.open(opened) },
+		Open: func(_ *session.Session, opened act.Opened) error { return state.open(opened) },
+		Block: func(_ *session.Session, dependent, blocker string) error {
+			return state.block(dependent, blocker)
+		},
+		Unblock: func(_ *session.Session, dependent, blocker string) error {
+			return state.unblock(dependent, blocker)
+		},
 		Project: func() (project.Pane, error) { return state.project(), nil },
 		// The document reader and the in-place editor, over the fixture
 		// checkout, through the same package the engine wires.
@@ -438,6 +444,20 @@ func newLedger(calm bool) *ledger {
 		Because: "the census format is still being decided",
 	}
 
+	// One goal that waits for two others and is itself waited for by one, so
+	// that the goal page has both directions to show, the Waiting card has
+	// its line, and removing an edge from the page has an edge to remove.
+	waits := add(ranked(walkthroughGoal("g1-s23", goal.StateParked, "The seat census answers the fleet page"), 2, 12))
+	waits.Blocked = []string{"g1-s24", "g1-s25"}
+	waits.Parked = &goal.ParkRecord{
+		By: "human:Wido", At: stampedAgo(20 * time.Hour), Blocker: "g1-s24",
+		Because: "blocked by g1-s24, g1-s25; returns when they are done",
+	}
+	add(ranked(walkthroughGoal("g1-s24", goal.StateQueued, "The census format is decided"), 2, 13))
+	add(ranked(walkthroughGoal("g1-s25", goal.StateQueued, "The seat roster is read from the registry"), 2, 14))
+	holder := add(ranked(walkthroughGoal("g1-s26", goal.StateQueued, "The fleet page draws the census"), 2, 15))
+	holder.Blocked = []string{"g1-s23"}
+
 	// Two goals the ledger wrote to inside the day, so that what changed
 	// since the last visit has rows rather than a sentence saying nothing
 	// did. The stamps are relative to this process's clock for the reason the
@@ -643,6 +663,10 @@ var walkthroughTitles = map[string]string{
 	"g1-s13": "The goal page",
 	"g1-s9":  "The application shell",
 	"g1-s10": "The backlog's data path",
+	"g1-s23": "The seat census",
+	"g1-s24": "The census format",
+	"g1-s25": "The seat roster",
+	"g1-s26": "The fleet page's census",
 }
 
 // paneGoals are the goals the Project pane carries, in the order the ledger
@@ -650,7 +674,7 @@ var walkthroughTitles = map[string]string{
 // ones are here because a design's work is read out of them — a payload that
 // carried only live goals would show a shipped design as a design naming a
 // goal nobody has heard of.
-var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s9", "g1-s10"}
+var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s9", "g1-s10", "g1-s23", "g1-s24", "g1-s25", "g1-s26"}
 
 // goalFile is one goal of the fixture tree, live or concluded.
 func (l *ledger) goalFile(id string) *goal.GoalFile {
@@ -936,7 +960,96 @@ func (l *ledger) open(opened act.Opened) error {
 	if err := l.setPriority(opened.ID, 3, nil); err != nil {
 		return err
 	}
+	// Both directions of the blocked relation, as the engine writes them: the
+	// goals that will wait for this one park behind it, and this one parks
+	// behind the goals it waits for unless every one of them is done.
+	for _, held := range opened.Blocks {
+		if err := l.block(held, opened.ID); err != nil {
+			return err
+		}
+	}
+	for _, blocker := range opened.BlockedBy {
+		if err := l.block(opened.ID, blocker); err != nil {
+			return err
+		}
+	}
 	l.plantGoal(opened.ID, opened.Intent)
+	return nil
+}
+
+// block and unblock are the walkthrough's two edge acts.
+//
+// They are the engine's rules in the small: the edge lands on the goal that
+// waits, a blocker that is already done parks nothing, and the park returns
+// only when it was the dependency's own and every remaining goal it waits for
+// is done. A person's ordinary park carries no marker and is left alone.
+func (l *ledger) block(dependent, blocker string) error {
+	file := l.tree.Live[dependent]
+	if file == nil {
+		return fmt.Errorf("goal %s is not live", dependent)
+	}
+	if dependent == blocker {
+		return fmt.Errorf("goal %s cannot wait for itself", dependent)
+	}
+	if !l.tree.Exists(blocker) {
+		return fmt.Errorf("the ledger carries no goal named %s", blocker)
+	}
+	for _, named := range file.Blocked {
+		if named == blocker {
+			return fmt.Errorf("goal %s already waits for %s", dependent, blocker)
+		}
+	}
+	file.Blocked = append(append([]string(nil), file.Blocked...), blocker)
+	sort.Strings(file.Blocked)
+	if l.tree.Done[blocker] != nil || file.State == goal.StateParked {
+		return nil
+	}
+	file.State = goal.StateParked
+	file.Claimed, file.Landing = nil, nil
+	file.Parked = &goal.ParkRecord{
+		By: "human:Wido", At: stampedAgo(time.Minute), Blocker: blocker,
+		Because: "blocked by " + strings.Join(file.Blocked, ", ") + "; returns when they are done",
+	}
+	return nil
+}
+
+func (l *ledger) unblock(dependent, blocker string) error {
+	file := l.tree.Live[dependent]
+	if file == nil {
+		return fmt.Errorf("goal %s is not live", dependent)
+	}
+	remaining := []string{}
+	found := false
+	for _, named := range file.Blocked {
+		if named == blocker {
+			found = true
+			continue
+		}
+		remaining = append(remaining, named)
+	}
+	if !found {
+		return fmt.Errorf("goal %s does not wait for %s", dependent, blocker)
+	}
+	file.Blocked = remaining
+	if file.State != goal.StateParked || file.Parked == nil || file.Parked.Blocker == "" {
+		return nil
+	}
+	open := []string{}
+	for _, named := range remaining {
+		if l.tree.Done[named] == nil {
+			open = append(open, named)
+		}
+	}
+	if len(open) == 0 {
+		file.State = goal.StateQueued
+		if file.Approved != nil {
+			file.State = goal.StateApproved
+		}
+		file.Parked = nil
+		return nil
+	}
+	file.Parked.Blocker = open[0]
+	file.Parked.Because = "blocked by " + strings.Join(open, ", ") + "; returns when they are done"
 	return nil
 }
 

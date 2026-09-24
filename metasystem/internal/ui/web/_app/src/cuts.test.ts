@@ -70,12 +70,15 @@ const LIFECYCLE_HANDLERS = ["onfocus", "ononline", "onoffline", "onvisibilitycha
  */
 const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   ["shell/workspace.ts", 1, ["/api/workspace"]],
-  // The board's four acts join the backlog's one read at the call site it
+  // The board's six acts join the backlog's one read at the call site it
   // already had: an act is the same request with a body, so there is still
-  // exactly one place in this build that reaches the network from here. Three
+  // exactly one place in this build that reaches the network from here. Five
   // of the act routes name a goal by its id between the prefix and their own
-  // suffix, which is why those suffixes are listed on their own; the fourth
+  // suffix, which is why those suffixes are listed on their own; the sixth
   // opens a goal and so names the collection, which has no id in it at all.
+  // The two edge routes name the goal that WAITS, whichever end of the
+  // relation the page acted from, so a goal page reads one call site and not
+  // two mirrored ones.
   // The query is Refresh's and nobody else's: it asks the server to fetch the
   // canonical branch once before it answers. It is the same resource and the
   // same call site — a read a human asked for, not a read anything repeats.
@@ -90,6 +93,8 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       "/approve",
       "/withdraw",
       "/priority",
+      "/block",
+      "/unblock",
     ],
   ],
   // The Project section's writes join its two reads at the one call site it

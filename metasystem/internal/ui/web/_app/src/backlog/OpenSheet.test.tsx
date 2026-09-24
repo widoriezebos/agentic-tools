@@ -34,6 +34,7 @@ function row(over: Partial<Row> = {}): Row {
     arc: "",
     pinned: "",
     blockedBy: [],
+    holds: [],
     openBlockers: [],
     sliced: false,
     decomposed: false,
@@ -228,31 +229,34 @@ describe("what is disclosed", () => {
     expect(markup).not.toContain("Keep the derived tier");
   });
 
-  it("holds the labels and the blocker behind More", () => {
+  it("holds the labels and both directions of the relation behind More", () => {
     const markup = sheet();
     expect(markup).toContain(">More</span>");
     expect(markup).toContain('id="ms-open-labels"');
     expect(markup).toContain('id="ms-open-blocks"');
+    expect(markup).toContain('id="ms-open-blockedBy"');
   });
 
-  // Neither field is free text any more: both are comboboxes over what this
-  // page has already loaded, and neither is the plain box it used to be.
-  it("asks for the blocker and the labels through the two shell fields", () => {
+  // No field there is free text any more: all three are comboboxes over what
+  // this page has already loaded, and none is the plain box it used to be.
+  it("asks for both dependency directions and the labels through the shell fields", () => {
     const markup = sheet();
-    expect(markup.split('role="combobox"').length - 1).toBe(2);
+    expect(markup.split('role="combobox"').length - 1).toBe(3);
     expect(markup).toContain('aria-controls="ms-open-blocks-list"');
+    expect(markup).toContain('aria-controls="ms-open-blockedBy-list"');
     expect(markup).toContain('aria-controls="ms-open-labels-list"');
     expect(markup).not.toMatch(/<input[^>]*id="ms-open-blocks"[^>]*value="[^"]/);
     // The list is a human's own request: nothing is open when the sheet is.
     expect(markup).not.toContain('role="listbox"');
   });
 
-  // The consequence of naming a blocker, said before it is named rather than
-  // after the act: this is what the sheet promises the engine will do.
-  it("says what recording a blocker does, under the field that records it", () => {
-    expect(sheet()).toContain(
-      "This goal parks with the chosen one recorded as its blocker, and returns when that one is done.",
-    );
+  // The consequence of naming a dependency, said before it is named rather
+  // than after the act. Two directions read almost the same, so each names
+  // the goal that ends up waiting.
+  it("says who waits, under each of the two fields that records it", () => {
+    const markup = sheet();
+    expect(markup).toContain("The chosen goals wait for this one.");
+    expect(markup).toContain("This goal waits for the chosen ones and parks until they are done.");
   });
 });
 

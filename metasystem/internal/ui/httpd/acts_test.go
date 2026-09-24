@@ -13,7 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
 
-// The board's four acts, at the boundary: who may reach them at all, what a
+// The board's six acts, at the boundary: who may reach them at all, what a
 // body has to be, how a refusal comes back, and what a confirmed act answers
 // with. What the acts do to the ledger is proved in internal/ui/act, so the
 // actor here is a recorder and every case can assert the one thing only this
@@ -24,6 +24,8 @@ type acted struct {
 	withdrawn  [][2]string
 	ranked     []rankedAt
 	opened     []act.Opened
+	blocked    [][2]string
+	unblocked  [][2]string
 	refusal    error
 	budgetLaw  map[string]goalbudget.Budget
 	authorized AuthorityInfo
@@ -68,6 +70,16 @@ func (rec *acted) acting() Info {
 			rec.opened = append(rec.opened, opened)
 			return rec.refusal
 		},
+		Block: func(signed *session.Session, dependent, blocker string) error {
+			rec.hand(signed)
+			rec.blocked = append(rec.blocked, [2]string{dependent, blocker})
+			return rec.refusal
+		},
+		Unblock: func(signed *session.Session, dependent, blocker string) error {
+			rec.hand(signed)
+			rec.unblocked = append(rec.unblocked, [2]string{dependent, blocker})
+			return rec.refusal
+		},
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) { return rec.budgetLaw, nil },
 	}
 }
@@ -81,7 +93,8 @@ func (rec *acted) hand(signed *session.Session) {
 }
 
 func (rec *acted) reached() int {
-	return len(rec.approvals) + len(rec.withdrawn) + len(rec.ranked) + len(rec.opened)
+	return len(rec.approvals) + len(rec.withdrawn) + len(rec.ranked) + len(rec.opened) +
+		len(rec.blocked) + len(rec.unblocked)
 }
 
 func proven() AuthorityInfo {

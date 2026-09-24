@@ -51,7 +51,9 @@ export type HelpId =
   | "priority"
   | "tier"
   | "seat"
-  | "arc";
+  | "arc"
+  | "waits-for"
+  | "holds";
 
 /** The name the popover heads itself with, and what that name is for. */
 export type Term = { term: string; text: string };
@@ -216,6 +218,14 @@ export const HELP: Record<HelpId, Term> = {
   arc: {
     term: "Arc",
     text: "The larger line of work a goal belongs to, named so related goals can be seen together.",
+  },
+  "waits-for": {
+    term: "Waits for",
+    text: "The goals this one waits for. It parks until every one of them is done, and a seat cannot claim it before then. Removing a goal that is not yet done is a decision only a person can record.",
+  },
+  holds: {
+    term: "Holds",
+    text: "The goals that are waiting for this one. Each of them stays parked until this goal is done, so finishing it is what lets them be claimed.",
   },
 };
 

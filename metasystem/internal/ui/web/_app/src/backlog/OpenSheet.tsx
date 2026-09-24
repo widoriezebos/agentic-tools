@@ -17,7 +17,10 @@ import {
   slugFrom,
   tierLine,
   unopenable,
+  whichFieldRefused,
   ANSWERS,
+  BLOCKED_BY_RULE,
+  BLOCKS_RULE,
   ID_RULE,
   INTENT_RULE,
   NEXT_STEP_RULE,
@@ -55,16 +58,20 @@ import { failureMessage } from "../shell/workspace";
  * sent, because a refusal read under the field is worth more than the same
  * refusal read after a round trip.
  *
- * Neither of the two fields behind More is free text any more, and one of
- * them never should have been. Unblocks names a goal the ledger already
- * carries, so it is a picker over what this page has loaded rather than a box
- * to guess an id into: what is chosen is a goal, what is chosen is on screen,
- * and a goal that has already ended is refused here rather than by the engine
- * after the act. Labels stays free words — a label is invented the first time
- * it is used — but it shows what the board already carries and marks a word
- * it does not, so a typo is visible before it is a label nobody meant. Both
- * fields are the shell's, because the priority sheet and the record sheets
- * ask for the same two things.
+ * None of the three fields behind More is free text any more, and the two
+ * dependency ones never should have been. Blocks names the goals that will
+ * wait for this one and Blocked by the goals this one will wait for, and both
+ * are pickers over what this page has loaded rather than boxes to guess ids
+ * into: what is chosen is a goal, what is chosen is on screen, and a goal that
+ * has already ended is refused here rather than by the engine after the act.
+ * Each takes several, because the relation takes several in both directions,
+ * and a refusal the engine sends back about one of the chosen goals — a
+ * breach-stopped goal the open would have parked — is shown under the picker
+ * that named it rather than in the foot. Labels stays free words — a label is
+ * invented the first time it is used — but it shows what the board already
+ * carries and marks a word it does not, so a typo is visible before it is a
+ * label nobody meant. All three are the shell's, because the priority sheet
+ * and the record sheets ask for the same things.
  *
  * There is no banner about proof. An act that needs a human opens the sign-in
  * sheet by itself and sends the same act again, as every act on this board
@@ -119,13 +126,24 @@ export function OpenSheet({
    */
   const [overriding, setOverriding] = useState(false);
   /**
-   * What the Unblocks field itself refuses, or "". It is the picker's own
+   * What each dependency field itself refuses, or "". It is the picker's own
    * sentence rather than the sheet's, because the picker is the only thing
    * that knows what was typed, what was chosen, and what the board carries;
    * the sheet keeps it so that the act can be held until the field is
    * answered, and shows it under that field rather than in the foot.
    */
   const [blocksRefusal, setBlocksRefusal] = useState("");
+  const [blockedByRefusal, setBlockedByRefusal] = useState("");
+  /**
+   * What the engine refused, where the refusal named one of the chosen goals.
+   *
+   * A fenced goal is the case this exists for: the open is refused because a
+   * goal it would have parked is breach-stopped, and a sentence naming that
+   * goal in the sheet's foot is a sentence about a field two disclosures away.
+   * It is shown under the picker that named it, and the foot keeps every
+   * refusal that is about no field in particular.
+   */
+  const [engineRefusedField, setEngineRefusedField] = useState<"blocks" | "blockedBy" | "">("");
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
   const { session, askToSignIn } = useSession();
@@ -164,11 +182,12 @@ export function OpenSheet({
   }
 
   const send = () => {
-    if (blocked !== "" || cannot !== "" || refuseId !== "" || blocksRefusal !== "") {
+    if (blocked !== "" || cannot !== "" || refuseId !== "" || blocksRefusal !== "" || blockedByRefusal !== "") {
       return;
     }
     setSending(true);
     setRefusal("");
+    setEngineRefusedField("");
     const wanted = goalOf(asked, risk);
     openGoal(wanted)
       .then((opened) => {
@@ -182,7 +201,9 @@ export function OpenSheet({
           askToSignIn(send);
           return;
         }
-        setRefusal(failureMessage(error));
+        const said = failureMessage(error);
+        setRefusal(said);
+        setEngineRefusedField(whichFieldRefused(said, asked));
       });
   };
 
@@ -213,17 +234,25 @@ export function OpenSheet({
         { name: "Why these answers", value: risk.basis },
         { name: "Why that tier", value: intake.why },
         { name: "Labels", value: intake.labels },
-        { name: "Unblocks", value: intake.blocks },
+        { name: "Blocks", value: intake.blocks.join(", ") },
+        { name: "Blocked by", value: intake.blockedBy.join(", ") },
       ]}
       unproven=""
-      refusal={refusal}
+      refusal={engineRefusedField === "" ? refusal : ""}
       note={cannot === "" ? (blocked === "" ? openNote(authority.human) : blocked) : ""}
       aside={cannot === "" ? undefined : <p className="ms-act-cannot">{cannot}</p>}
       onClose={onClose}
       act={
         <Button
           primary
-          disabled={cannot !== "" || blocked !== "" || refuseId !== "" || blocksRefusal !== "" || sending}
+          disabled={
+            cannot !== "" ||
+            blocked !== "" ||
+            refuseId !== "" ||
+            blocksRefusal !== "" ||
+            blockedByRefusal !== "" ||
+            sending
+          }
           onClick={send}
         >
           {sending ? "Opening…" : "Open goal"}
@@ -380,21 +409,39 @@ export function OpenSheet({
         </Field>
         <Field
           id="ms-open-blocks"
-          label="Unblocks"
-          hint="This goal parks with the chosen one recorded as its blocker, and returns when that one is done."
-          refuse={blocksRefusal}
+          label="Blocks"
+          hint={BLOCKS_RULE}
+          refuse={blocksRefusal === "" && engineRefusedField === "blocks" ? refusal : blocksRefusal}
         >
           <GoalPicker
             id="ms-open-blocks"
             goals={goals}
             chosen={intake.blocks}
-            // A goal cannot unblock itself, and the id in the field above is
+            // A goal cannot block itself, and the id in the field above is
             // what this goal is about to be called.
             exclude={asked.id}
             placeholder="e.g. refund-queue"
             onChoose={(blocks, why) => {
               setIntake({ ...intake, blocks });
               setBlocksRefusal(why);
+            }}
+          />
+        </Field>
+        <Field
+          id="ms-open-blockedBy"
+          label="Blocked by"
+          hint={BLOCKED_BY_RULE}
+          refuse={blockedByRefusal === "" && engineRefusedField === "blockedBy" ? refusal : blockedByRefusal}
+        >
+          <GoalPicker
+            id="ms-open-blockedBy"
+            goals={goals}
+            chosen={intake.blockedBy}
+            exclude={asked.id}
+            placeholder="e.g. refund-queue"
+            onChoose={(blockedBy, why) => {
+              setIntake({ ...intake, blockedBy });
+              setBlockedByRefusal(why);
             }}
           />
         </Field>

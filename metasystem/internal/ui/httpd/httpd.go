@@ -88,9 +88,10 @@ type Info struct {
 	// than through the ancestry of the process that started the server. A nil
 	// store is a build that cannot sign anyone in, which the routes say.
 	Sessions *session.Store
-	// The backlog's four acts, each one the human working their own backlog
+	// The backlog's six acts, each one the human working their own backlog
 	// in their own checkout: admitting work, withdrawing that admission,
-	// placing a goal in a priority band, and opening a new goal at intake.
+	// placing a goal in a priority band, opening a new goal at intake, and
+	// saying which goal waits for which.
 	// They publish through the engine in-process under the hand that reached
 	// them: the live browser session where the request carries one, and the
 	// boot proof otherwise. A nil field is an engine that cannot act, which
@@ -104,6 +105,11 @@ type Info struct {
 	SetPriority func(signed *session.Session, id string, priority uint8, sequence *uint64) error
 	// Open is the human's intake act: one new goal, under origin human.
 	Open func(signed *session.Session, opened act.Opened) error
+	// Block and Unblock write and remove one edge of the blocked relation.
+	// The first argument is always the goal that WAITS, whichever end of the
+	// relation the page acted from, so both directions reach one mutation.
+	Block   func(signed *session.Session, dependent, blocker string) error
+	Unblock func(signed *session.Session, dependent, blocker string) error
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.

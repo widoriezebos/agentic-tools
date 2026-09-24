@@ -7,7 +7,7 @@ import { BacklogError, rankGoal, type Backlog, type Row } from "./api";
 import { boardBelow, boardColumns } from "./columns";
 import { windowTitle, WINDOWS, type Filters, type Window } from "./filters";
 import { dateAndTime } from "./format";
-import { DONE, laneFor, SPLIT_HELP, type LaneId } from "./lanes";
+import { DONE, laneFor, waitingFor, SPLIT_HELP, type LaneId } from "./lanes";
 import { CardMenu } from "./CardMenu";
 import { offersFor, opensMenu, type At, type OfferId } from "./menu";
 import { moveFor, refusalFor, targetsFrom } from "./moves";
@@ -886,11 +886,20 @@ function blockerOf(row: Row): string {
   if (row.fence !== undefined) {
     return `stopped ${dateAndTime(row.fence.closedAt)}: ${row.fence.reason}`;
   }
+  // A dependency-created park carries a marker, and its reason is written
+  // from the blockers themselves. The card says what has to happen rather
+  // than repeating the record's own sentence back: "waiting for A and B to be
+  // done" is the thing a human reading a Waiting card wants to know. A
+  // person's own park carries no marker, and their reason is theirs.
+  const dependency = row.waiting !== undefined && row.waiting.blocker !== "";
+  if (dependency && row.openBlockers.length > 0) {
+    return waitingFor(row.openBlockers);
+  }
   if (row.waiting !== undefined && row.waiting.reason !== "") {
     return `parked: ${row.waiting.reason}`;
   }
   if (row.openBlockers.length > 0) {
-    return `blocked by ${row.openBlockers.join(", ")}`;
+    return waitingFor(row.openBlockers);
   }
   if (row.approved !== undefined && row.approved.expired) {
     return `approval expired: ${row.approved.expiredWhy}`;

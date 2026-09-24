@@ -109,7 +109,7 @@ func writeRouteOf(path string) (written, bool) {
 	if route, ok := partnerRouteOf(path); ok {
 		return route, true
 	}
-	// The backlog's four acts are writes under the same policy, and are
+	// The backlog's six acts are writes under the same policy, and are
 	// routed here so that the method, the host, the site and the origin are
 	// judged for them exactly as they are for the Project's four.
 	return actRouteOf(path)
@@ -209,6 +209,10 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.setGoalPriority(w, r, route.id)
 	case routeOpen:
 		h.openGoal(w, r)
+	case routeBlock:
+		h.blockGoal(w, r, route.id)
+	case routeUnblock:
+		h.unblockGoal(w, r, route.id)
 	case routeSignIn:
 		h.signIn(w, r)
 	case routeSignOut:
