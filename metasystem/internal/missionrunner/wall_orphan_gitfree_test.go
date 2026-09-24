@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
@@ -144,8 +146,31 @@ func (f *orphanWallReads) LedgerTruth(root string, state map[string]any, path st
 }
 
 func newOrphanResumeBed(t *testing.T) (*resolutionFileBed, *orphanContinuity, *orphanWallReads) {
+	return newOrphanResumeBedWithReservation(t, false)
+}
+
+func newOrphanResumeBedWithReservation(t *testing.T, reserve bool) (*resolutionFileBed, *orphanContinuity, *orphanWallReads) {
 	t.Helper()
 	b := newResolutionFileBed(t)
+	if reserve {
+		original, err := os.ReadFile(b.e.approvedContractPath())
+		if err != nil {
+			t.Fatal(err)
+		}
+		contract := strings.Replace(string(original), "stream.solo=Do solo\n", "stream.solo=Do solo\n"+
+			"fence.wall-clock-hours=2\nfence.cycles=5\nfence.jobs=4\nfence.concurrency=2\nfence.job-cap-min=30\n"+
+			"host.runtime=fake\nhost.model=fixture\nhost.turn-cap-min=30\n", 1)
+		if contract == string(original) {
+			t.Fatal("reservation contract has no stream insertion point")
+		}
+		writeText(t, b.e.approvedContractPath(), contract)
+		writeText(t, b.e.contractPath(), contract)
+		sum := sha256.Sum256([]byte(contract))
+		writeJSONFile(t, b.e.fencesPath(), map[string]any{
+			"schemaVersion": 1, "missionId": b.e.Mission, "startedAt": time.Now().UTC().Format(time.RFC3339),
+			"cycles": 0, "reservations": map[string]any{}, "approvedContractSha256": fmt.Sprintf("%x", sum),
+		})
+	}
 	b.expectResolve(recoveryPost, false, true, false)
 	if code := b.e.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
 		[]string{"authorship of solo.go"}); code != 0 {
@@ -181,7 +206,12 @@ func newOrphanResumeBed(t *testing.T) (*resolutionFileBed, *orphanContinuity, *o
 	}}
 	b.e.wallReadFacts = reads
 	b.e.anchorFn = func(state, ledger, identity string) error {
-		if state != b.state || ledger != b.ledger || identity != b.nextIdentity {
+		wantIdentity := b.nextIdentity
+		if wantIdentity == "" {
+			entries := readTestDoc(t, b.state)["workspaceTaint"].(map[string]any)["entries"].([]any)
+			wantIdentity, _ = entries[len(entries)-1].(map[string]any)["turnId"].(string)
+		}
+		if state != b.state || ledger != b.ledger || identity == "" || identity != wantIdentity {
 			t.Fatalf("unexpected orphan anchor %q %q %q", state, ledger, identity)
 		}
 		_, hash, err := mission.VerifyStateShape(state)

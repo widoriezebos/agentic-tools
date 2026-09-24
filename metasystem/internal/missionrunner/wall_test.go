@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -1213,19 +1214,90 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 // E-continuity at reservation: drift landing
 // between a resolution and the next turn parks as a NEW wall violation
 // instead of becoming the silently grandfathered baseline.
-func TestReservationParksOnDriftAfterResolution(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
-	statePath := filepath.Join(engine.missionDir(), "state.json")
+type reservationDriftFacts struct {
+	*orphanWallReads
+	projection string
+	snapshots  int
+	filters    int
+	changes    int
+}
 
-	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
-		[]string{"authorship of solo.go"}); code != 0 {
-		t.Fatalf("adoption must succeed: %d", code)
+func (f *reservationDriftFacts) liveProjection() string {
+	f.t.Helper()
+	root := f.b.e.Root
+	solo, err := os.ReadFile(filepath.Join(root, "solo.go"))
+	if err != nil || string(solo) != resolutionSolo {
+		f.t.Fatalf("reservation solo.go bytes = %q, %v", solo, err)
 	}
+	drift, err := os.ReadFile(filepath.Join(root, "drift.txt"))
+	if err != nil || string(drift) != "unruled bytes\n" {
+		f.t.Fatalf("reservation drift.txt bytes = %q, %v", drift, err)
+	}
+	blob := func(data []byte) [sha1.Size]byte {
+		return sha1.Sum(append([]byte(fmt.Sprintf("blob %d\x00", len(data))), data...))
+	}
+	driftBlob, soloBlob := blob(drift), blob(solo)
+	tree := append([]byte("100644 drift.txt\x00"), driftBlob[:]...)
+	tree = append(tree, []byte("100644 solo.go\x00")...)
+	tree = append(tree, soloBlob[:]...)
+	sum := sha1.Sum(append([]byte(fmt.Sprintf("tree %d\x00", len(tree))), tree...))
+	return fmt.Sprintf("%x", sum)
+}
+
+func (f *reservationDriftFacts) Snapshot(base string) (string, error) {
+	f.next("Snapshot", base)
+	f.snapshots++
+	return f.liveProjection(), nil
+}
+
+func (f *reservationDriftFacts) FilterTree(tree string, paths []string) (string, error) {
+	f.next("FilterTree", tree, paths)
+	f.filters++
+	if tree != f.liveProjection() {
+		f.t.Fatalf("filtered tree %q is not the live projection", tree)
+	}
+	return tree, nil
+}
+
+func (f *reservationDriftFacts) ChangedPaths(from, to string) ([]string, error) {
+	f.next("ChangedPaths", from, to)
+	f.changes++
+	if from != recoveryPost || to != f.liveProjection() {
+		f.t.Fatalf("changed-path trees %q -> %q do not describe reservation drift", from, to)
+	}
+	return []string{"drift.txt"}, nil
+}
+
+func TestReservationParksOnDriftAfterResolution(t *testing.T) {
+	bed, continuity, reads := newOrphanResumeBedWithReservation(t, true)
+	engine := bed.e
+	statePath := filepath.Join(engine.missionDir(), "state.json")
 	// Out-of-band drift AFTER the ruling, BEFORE the next reservation.
 	writeText(t, filepath.Join(engine.Root, "drift.txt"), "unruled bytes\n")
+	facts := &reservationDriftFacts{orphanWallReads: reads}
+	facts.projection = facts.liveProjection()
+	if facts.projection == recoveryPost {
+		t.Fatal("physical drift did not change the filtered projection")
+	}
+	engine.wallWorkspaceFactory = func(root string) wallWorkspace {
+		if root != engine.Root {
+			t.Fatalf("reservation workspace root %q", root)
+		}
+		return facts
+	}
+	bed.nextIdentity = ""
+	reads.add("Snapshot", nil, "HEAD")
+	reads.add("FilterTree", nil, facts.projection, []string{missionLedgerRel(engine.Mission)})
+	reads.add("Anchor", nil, engine.Mission, facts.projection)
+	reads.add("ChangedPaths", nil, recoveryPost, facts.projection)
 
 	signal := filepath.Join(t.TempDir(), "resume.json")
-	engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-d", signal)
+	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-d", signal); code != 0 {
+		t.Fatalf("reservation drift resume failed: %d", code)
+	}
+	if facts.snapshots != 1 || facts.filters != 1 || facts.changes != 1 {
+		t.Fatalf("reservation projection calls: snapshot=%d filter=%d changed=%d", facts.snapshots, facts.filters, facts.changes)
+	}
 
 	final := readTestDoc(t, statePath)
 	if final["parkReason"] != "wall-violation" {
@@ -1250,6 +1322,12 @@ func TestReservationParksOnDriftAfterResolution(t *testing.T) {
 	if v, _ := evidence["violation"].(string); !strings.Contains(v, "workspace drifted between turns") {
 		t.Fatalf("the drift park must record wall evidence: %v", evidence)
 	}
+	if evidence["preTree"] != facts.projection || evidence["postTree"] != facts.projection || evidence["expectedTree"] != recoveryPost {
+		t.Fatalf("the wall evidence must carry the observed and adopted projections: %v", evidence)
+	}
+	if paths, ok := evidence["unaccounted"].([]any); !ok || len(paths) != 1 || paths[0] != "drift.txt" {
+		t.Fatalf("the wall evidence must name the changed live path: %v", evidence)
+	}
 	// ...and booked NO ledger block: the reserved
 	// cycle heals as a lost turn, so every crash window reconciles.
 	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
@@ -1259,11 +1337,24 @@ func TestReservationParksOnDriftAfterResolution(t *testing.T) {
 	}
 	stateLedger, _ := final["ledger"].(map[string]any)
 	stateCycles, _ := jsonInt(stateLedger["cycles"])
-	if int64(len(cycles)) != stateCycles {
+	if len(cycles) != 0 || int64(len(cycles)) != stateCycles {
 		t.Fatalf("the reservation park must not book the ledger: ledger=%d state=%d", len(cycles), stateCycles)
 	}
-	if _, _, err := mission.VerifyStateWithAnchor(statePath, engine.Root, ledgerPath); err != nil {
+	for _, key := range []string{"ref", "log", "ancestry", "blob", "tree", "parents"} {
+		continuity.remaining[key]++
+	}
+	if _, _, err := mission.VerifyStateWithRawAnchorOperations(continuity.raw, statePath, engine.Root, ledgerPath); err != nil {
 		t.Fatalf("the parked position must verify with its anchor: %v", err)
+	}
+	assertOrphanResume(t, bed, turnID)
+	turn := readTestDoc(t, filepath.Join(engine.missionDir(), "turns", turnID, "turn.json"))
+	if turn["status"] != "failed" || turn["outcome"] != "wall-violation" || turn["pid"] != nil {
+		t.Fatalf("reservation must stop before launching a host: %v", turn)
+	}
+	for _, name := range []string{"host.log", "raw.out", "result.json", "return.json"} {
+		if _, err := os.Stat(filepath.Join(engine.missionDir(), "turns", turnID, name)); !os.IsNotExist(err) {
+			t.Fatalf("host artifact %s exists or cannot be inspected: %v", name, err)
+		}
 	}
 }
 

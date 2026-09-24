@@ -564,13 +564,12 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 }
 
 func TestGeneratedShippedClaudeStopLauncherAllowsDegradedOutsideGit(t *testing.T) {
-	root := hostSetupModuleRoot(t)
-	_, installation := hostFixture(t, false)
-	copyHostSourceFile(t, root, "scripts/enforcement/claude-code-hooks.json", filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), 0o644)
-	if _, err := Setup(Options{RepositoryPath: installation, Runtimes: []string{"claude"}}); err != nil {
+	t.Parallel()
+	repo, resolver := hostGitFreeNestedFixture(t)
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err != nil {
 		t.Fatal(err)
 	}
-	commands := generatedClaudeCommands(t, filepath.Join(installation, ".claude", "settings.json"), "stop")
+	commands := generatedClaudeCommands(t, filepath.Join(repo, ".claude", "settings.json"), "stop")
 	if len(commands) != 1 {
 		t.Fatalf("generated shipped settings contain %d Claude Stop commands; want one", len(commands))
 	}
@@ -578,12 +577,36 @@ func TestGeneratedShippedClaudeStopLauncherAllowsDegradedOutsideGit(t *testing.T
 	if err := os.MkdirAll(nonGit, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	physicalNonGit, err := filepath.EvalSymlinks(nonGit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateBin := t.TempDir()
+	gitCalls := filepath.Join(t.TempDir(), "git-calls")
+	writeHostFile(t, filepath.Join(privateBin, "git"), `#!/bin/sh
+if [ "$(pwd -P)" != "$HOSTSETUP_EXPECT_GIT_DIR" ] || [ "$#" -ne 2 ] ||
+   [ "$1" != rev-parse ] || [ "$2" != --show-toplevel ]; then
+  printf 'unexpected git call: %s |' "$(pwd -P)" >> "$HOSTSETUP_GIT_CALLS"
+  printf ' <%s>' "$@" >> "$HOSTSETUP_GIT_CALLS"
+  printf '\n' >> "$HOSTSETUP_GIT_CALLS"
+  exit 97
+fi
+printf 'consumed\n' >> "$HOSTSETUP_GIT_CALLS"
+exit 128
+`, 0o755)
 	command := exec.Command("bash", "-c", commands[0])
 	command.Dir = nonGit
-	command.Env = hostSetupCleanEnvironment()
+	command.Env = append(hostSetupCleanEnvironment(),
+		"PATH="+privateBin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"HOSTSETUP_EXPECT_GIT_DIR="+physicalNonGit,
+		"HOSTSETUP_GIT_CALLS="+gitCalls)
 	output, err := command.Output()
 	if err != nil {
 		t.Fatalf("generated Stop launcher returned an error instead of a safe verdict: %v", err)
+	}
+	calls, err := os.ReadFile(gitCalls)
+	if err != nil || string(calls) != "consumed\n" {
+		t.Fatalf("generated Stop launcher Git calls = %q, %v; want one negative discovery", calls, err)
 	}
 	var verdict struct {
 		Decision      string `json:"decision"`
