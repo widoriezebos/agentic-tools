@@ -27,9 +27,12 @@ import {
   type Risk,
   type Score,
 } from "./opening";
+import { laneTitle } from "./lanes";
 import { Panel } from "./Panel";
 import { Button, Hint } from "../shell/controls";
+import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
 import { useSession } from "../shell/identity";
+import { TokenField } from "../shell/TokenField";
 import { failureMessage } from "../shell/workspace";
 
 /**
@@ -51,6 +54,17 @@ import { failureMessage } from "../shell/workspace";
  * engine's own rule and the ids this board already carries before the act is
  * sent, because a refusal read under the field is worth more than the same
  * refusal read after a round trip.
+ *
+ * Neither of the two fields behind More is free text any more, and one of
+ * them never should have been. Unblocks names a goal the ledger already
+ * carries, so it is a picker over what this page has loaded rather than a box
+ * to guess an id into: what is chosen is a goal, what is chosen is on screen,
+ * and a goal that has already ended is refused here rather than by the engine
+ * after the act. Labels stays free words — a label is invented the first time
+ * it is used — but it shows what the board already carries and marks a word
+ * it does not, so a typo is visible before it is a label nobody meant. Both
+ * fields are the shell's, because the priority sheet and the record sheets
+ * ask for the same two things.
  *
  * There is no banner about proof. An act that needs a human opens the sign-in
  * sheet by itself and sends the same act again, as every act on this board
@@ -104,6 +118,14 @@ export function OpenSheet({
    * engine allows, which is rare and deliberate.
    */
   const [overriding, setOverriding] = useState(false);
+  /**
+   * What the Unblocks field itself refuses, or "". It is the picker's own
+   * sentence rather than the sheet's, because the picker is the only thing
+   * that knows what was typed, what was chosen, and what the board carries;
+   * the sheet keeps it so that the act can be held until the field is
+   * answered, and shows it under that field rather than in the foot.
+   */
+  const [blocksRefusal, setBlocksRefusal] = useState("");
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
   const { session, askToSignIn } = useSession();
@@ -115,7 +137,18 @@ export function OpenSheet({
   // a hint behind it, because a human who presses Open goal without touching
   // the field means the name they can read in it.
   const asked: Intake = { ...intake, id: named ? intake.id : slugFrom(intake.intent) };
-  const taken = [...backlog.rows, ...backlog.closed].map((row) => row.ref.id);
+  // Every goal the page has already loaded, which is every live one and every
+  // closed one: what the id is checked against, what the picker offers, and
+  // where the labels this board already uses come from.
+  const loaded = [...backlog.rows, ...backlog.closed];
+  const taken = loaded.map((row) => row.ref.id);
+  const goals: PickableGoal[] = loaded.map((row) => ({
+    id: row.ref.id,
+    intent: row.intent,
+    lane: laneTitle(row.lane),
+    concluded: row.lane === "done" || row.lane === "abandoned" ? row.lane : "",
+  }));
+  const knownLabels = [...new Set(loaded.flatMap((row) => row.labels))].sort();
   const cannot = unopenable(backlog.ledger.state);
   const blocked = blockedForOpen(asked, risk);
   const refuseId = idRefusal(asked.id, taken);
@@ -131,7 +164,7 @@ export function OpenSheet({
   }
 
   const send = () => {
-    if (blocked !== "" || cannot !== "" || refuseId !== "") {
+    if (blocked !== "" || cannot !== "" || refuseId !== "" || blocksRefusal !== "") {
       return;
     }
     setSending(true);
@@ -188,7 +221,11 @@ export function OpenSheet({
       aside={cannot === "" ? undefined : <p className="ms-act-cannot">{cannot}</p>}
       onClose={onClose}
       act={
-        <Button primary disabled={cannot !== "" || blocked !== "" || refuseId !== "" || sending} onClick={send}>
+        <Button
+          primary
+          disabled={cannot !== "" || blocked !== "" || refuseId !== "" || blocksRefusal !== "" || sending}
+          onClick={send}
+        >
           {sending ? "Opening…" : "Open goal"}
         </Button>
       }
@@ -329,32 +366,35 @@ export function OpenSheet({
         <Field
           id="ms-open-labels"
           label="Labels"
-          hint="Lowercase words the board narrows by, separated by spaces or commas."
+          hint="Lowercase words the board narrows by, separated by spaces or commas. What the board already uses is suggested; anything else is marked new."
         >
-          <input
+          <TokenField
             id="ms-open-labels"
-            type="text"
             value={intake.labels}
+            known={knownLabels}
             placeholder="e.g. ui board"
-            aria-describedby="ms-open-labels-hint"
-            onChange={(event) => {
-              setIntake({ ...intake, labels: event.target.value });
+            onChange={(labels) => {
+              setIntake({ ...intake, labels });
             }}
           />
         </Field>
         <Field
           id="ms-open-blocks"
           label="Unblocks"
-          hint="The goal this one clears the way for. It parks with this one recorded as its blocker, and returns when this one is done."
+          hint="This goal parks with the chosen one recorded as its blocker, and returns when that one is done."
+          refuse={blocksRefusal}
         >
-          <input
+          <GoalPicker
             id="ms-open-blocks"
-            type="text"
-            value={intake.blocks}
+            goals={goals}
+            chosen={intake.blocks}
+            // A goal cannot unblock itself, and the id in the field above is
+            // what this goal is about to be called.
+            exclude={asked.id}
             placeholder="e.g. refund-queue"
-            aria-describedby="ms-open-blocks-hint"
-            onChange={(event) => {
-              setIntake({ ...intake, blocks: event.target.value });
+            onChoose={(blocks, why) => {
+              setIntake({ ...intake, blocks });
+              setBlocksRefusal(why);
             }}
           />
         </Field>

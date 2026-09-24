@@ -1799,3 +1799,153 @@ body {
     animation: none;
   }
 }
+
+/* ------------------------------------- a goal chosen, and words made visible -- */
+
+/*
+ * The two fields that stopped being free text.
+ *
+ * Both are a control with a list under it rather than a menu floating over
+ * one: a sheet's body is a scroll box, and a list positioned over it is a
+ * list clipped by it the moment the field is near the bottom. In the flow the
+ * list pushes the hint down, stays whole, and needs no layer of its own.
+ */
+.ms-pick,
+.ms-tokens {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-pick-list,
+.ms-tokens-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface);
+}
+
+.ms-pick-option,
+.ms-tokens-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+}
+
+.ms-pick-option--active,
+.ms-pick-option:hover,
+.ms-tokens-option--active,
+.ms-tokens-option:hover {
+  background: var(--ms-surface-3);
+}
+
+/* A goal that has already ended is listed, because learning that it has is
+   the answer; it is grey because it is not a choice that can be made. */
+.ms-pick-option--closed,
+.ms-pick-option--closed .ms-pick-option-id {
+  color: var(--ms-text-3);
+}
+
+.ms-pick-option-id {
+  flex: none;
+  font-size: 12px;
+  color: var(--ms-text-2);
+}
+
+.ms-pick-option-words {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* What was chosen, in place of the field that chose it. */
+.ms-pick-chosen {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 4px 4px 8px;
+  border-radius: 6px;
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ms-pick-dot {
+  flex: none;
+  color: var(--ms-text-3);
+}
+
+.ms-pick-words {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ms-tokens-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ms-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 2px 2px 8px;
+  border-radius: 6px;
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* A word the board has never carried, said quietly beside the word itself:
+   a typo is visible before it is a label nobody meant. */
+.ms-token-new {
+  font-size: 11px;
+  color: var(--ms-text-3);
+}
+
+.ms-pick-clear,
+.ms-token-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ms-text-2);
+  cursor: pointer;
+}
+
+.ms-pick-clear:hover,
+.ms-token-clear:hover {
+  background: var(--ms-border);
+  color: var(--ms-text);
+}

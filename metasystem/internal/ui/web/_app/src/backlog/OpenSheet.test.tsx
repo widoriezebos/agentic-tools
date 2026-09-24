@@ -234,6 +234,26 @@ describe("what is disclosed", () => {
     expect(markup).toContain('id="ms-open-labels"');
     expect(markup).toContain('id="ms-open-blocks"');
   });
+
+  // Neither field is free text any more: both are comboboxes over what this
+  // page has already loaded, and neither is the plain box it used to be.
+  it("asks for the blocker and the labels through the two shell fields", () => {
+    const markup = sheet();
+    expect(markup.split('role="combobox"').length - 1).toBe(2);
+    expect(markup).toContain('aria-controls="ms-open-blocks-list"');
+    expect(markup).toContain('aria-controls="ms-open-labels-list"');
+    expect(markup).not.toMatch(/<input[^>]*id="ms-open-blocks"[^>]*value="[^"]/);
+    // The list is a human's own request: nothing is open when the sheet is.
+    expect(markup).not.toContain('role="listbox"');
+  });
+
+  // The consequence of naming a blocker, said before it is named rather than
+  // after the act: this is what the sheet promises the engine will do.
+  it("says what recording a blocker does, under the field that records it", () => {
+    expect(sheet()).toContain(
+      "This goal parks with the chosen one recorded as its blocker, and returns when that one is done.",
+    );
+  });
 });
 
 describe("the foot", () => {
