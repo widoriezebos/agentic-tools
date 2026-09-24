@@ -21,9 +21,11 @@ import (
 // mark has no referent yet (an unborn branch, an absent ledger), so
 // comparisons stay total.
 func CurrentMarks(repoRoot string) (Marks, error) {
-	return currentMarksWithReader(repoRoot, func(root string, args ...string) ([]byte, error) {
-		return exec.Command("git", append([]string{"-C", root}, args...)...).Output()
-	})
+	return currentMarksWithReader(repoRoot, readMarksGit)
+}
+
+func readMarksGit(root string, args ...string) ([]byte, error) {
+	return exec.Command("git", append([]string{"-C", root}, args...)...).Output()
 }
 
 func currentMarksWithReader(repoRoot string, read func(string, ...string) ([]byte, error)) (Marks, error) {

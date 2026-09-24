@@ -107,6 +107,10 @@ func TestEngineBindingWitnessInventory(t *testing.T) {
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
 			if ok && function.Recv == nil && function.Name.Name != "TestMain" && strings.HasPrefix(function.Name.Name, "Test") {
+				if function.Name.Name == "TestLandedRearmScriptedGitProcess" {
+					// The independently selected parent scan excludes this test because it only runs as a subprocess helper.
+					continue
+				}
 				actual[function.Name.Name] = true
 			}
 		}

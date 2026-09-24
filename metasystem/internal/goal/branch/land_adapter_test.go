@@ -17,7 +17,9 @@ func TestPrepareLandingGitAdapter(t *testing.T) {
 		f := newLandFixture(t)
 		beforeWorktrees := git(t, f.root, "worktree", "list", "--porcelain")
 		out := filepath.Join(t.TempDir(), "prepared")
-		result, err := branch.PrepareLanding(landRequest(t, f, out))
+		request := landRequest(t, f, out)
+		request.Repo = filepath.Join(f.root, "metasystem")
+		result, err := branch.PrepareLanding(request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,6 +82,15 @@ func TestPrepareLandingGitAdapter(t *testing.T) {
 		projected, err := landing.ProjectWorkspaceTree(filepath.Join(f.root, "metasystem"), result.Candidate)
 		if err != nil || projected != f.projected {
 			t.Fatalf("projected tree = %s, error %v; want %s", projected, err, f.projected)
+		}
+		verified, err := branch.VerifyLandedSeries(f.root, result.Landing)
+		if err != nil || len(verified) != 3 {
+			t.Fatalf("verified landing series = %+v, error %v", verified, err)
+		}
+		for index, item := range verified {
+			if item.Commit != commits[index] || item.Goal != "goal-a" || item.Units != []string{"u1", "u2", "u3"}[index] || item.Actual != item.Expected {
+				t.Fatalf("verified landing %d = %+v", index, item)
+			}
 		}
 		receipts, err := exec.Command("git", "-C", f.root, "show", result.Landing+":metasystem/memory/receipts.log").Output()
 		if err != nil {

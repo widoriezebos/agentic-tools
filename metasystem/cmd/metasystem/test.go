@@ -2341,7 +2341,11 @@ func testingGoalRisk(root, id string) (testpolicy.GoalRisk, uint64, error) {
 	if err != nil {
 		return testpolicy.GoalRisk{}, 0, err
 	}
-	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	return testingGoalRiskWithEndpoint(endpoint, id, time.Now().UTC())
+}
+
+func testingGoalRiskWithEndpoint(endpoint goal.Endpoint, id string, now time.Time) (testpolicy.GoalRisk, uint64, error) {
+	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
 		return testpolicy.GoalRisk{}, 0, err
 	}

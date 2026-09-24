@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge"
 )
@@ -280,9 +281,9 @@ func (f *landingFacts) Range(repo, endpoint, tip, goal string) ([]Commit, error)
 	for _, node := range f.chain(endpoint, tip) {
 		item := Commit{ID: node.id, Kind: node.kind, Unit: node.unit}
 		if node.kind == Unit {
-			item.Units, item.Digest = []string{node.unit}, digestRawEntries(node.raw)
+			item.Units, item.Digest = strings.Split(node.unit, "+"), digestRawEntries(node.raw)
 		} else if node.kind == Read {
-			item.Units = []string{node.unit}
+			item.Units = strings.Split(node.unit, "+")
 		}
 		commits = append(commits, item)
 	}
@@ -295,7 +296,7 @@ func (f *landingFacts) Kind(repo, commit, goal string) (KindInfo, error) {
 	node := f.nodes[commit]
 	for id := node.parent; id != ""; id = f.nodes[id].parent {
 		if f.nodes[id].kind == Unit && f.nodes[id].unit == node.unit {
-			return KindInfo{Kind: Read, Unit: node.unit, Units: []string{node.unit}, CommitID: id}, nil
+			return KindInfo{Kind: Read, Unit: node.unit, Units: strings.Split(node.unit, "+"), CommitID: id}, nil
 		}
 	}
 	f.t.Fatalf("read %s has no unit", commit)
@@ -342,7 +343,7 @@ func (f *landingFacts) TreeEntry(string, string, string) (string, error) {
 
 func (f *landingFacts) requireRepo(repo, goal string) {
 	f.t.Helper()
-	if repo != f.repo || goal != "goal-a" {
+	if (repo != f.repo && repo != filepath.Join(f.repo, "metasystem")) || goal != "goal-a" {
 		f.t.Fatalf("repository arguments = %s %s", repo, goal)
 	}
 }
@@ -986,7 +987,16 @@ func (f *landingFacts) expectPass(count int) {
 			}
 		}
 		f.expectApply()
-		f.expect("index", "contract-paths", "transition")
+		if bytes.Contains(f.nodes[unit].raw, []byte(contractgit.TestingContractPath)) {
+			f.expect("contract-file", "contract-file", "contract-file", "contract-file")
+		}
+		f.expect("index", "contract-paths")
+		if bytes.Contains(f.nodes[unit].raw, []byte(contractgit.TestingContractPath)) {
+			f.expect("contract-file", "contract-file", "contract-file", "contract-file")
+			f.expect("transition", "transition", "transition", "transition", "transition", "transition")
+		} else {
+			f.expect("transition")
+		}
 		for _, fold := range folds {
 			f.expect("raw:" + fold)
 		}
@@ -1287,4 +1297,246 @@ func TestLandThroughIgnoresStopFenceReason(t *testing.T) {
 		t.Fatalf("history word was not accepted: %v", err)
 	}
 	f.consumed()
+}
+
+func TestGLENestedInstallationLandingProjection(t *testing.T) {
+	t.Parallel()
+	f, tip, projected := newCompositionFacts(t)
+	receipt := filepath.Join(t.TempDir(), "receipt.json")
+	f.writeReceipt(receipt, projected, "attempt-deep")
+	request := f.request(f.base, tip, filepath.Join(t.TempDir(), "prepared"), receipt)
+	request.Repo = filepath.Join(f.repo, "metasystem")
+	f.expectSuccess(tip, 3)
+	result, err := prepareLanding(request, f.repository())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.consumed()
+	if result.Candidate == "" || result.Landing == "" {
+		t.Fatalf("incomplete landing result: %+v", result)
+	}
+	if got := f.projected(result.Candidate); got != projected {
+		t.Fatalf("nested projection = %s; want %s", got, projected)
+	}
+}
+
+func TestGLEProjectRootLandingProjection(t *testing.T) {
+	t.Parallel()
+	f, tip, projected := newCompositionFacts(t)
+	receipt := filepath.Join(t.TempDir(), "receipt.json")
+	f.writeReceipt(receipt, projected, "attempt-deep")
+	request := f.request(f.base, tip, filepath.Join(t.TempDir(), "prepared"), receipt)
+	if request.Repo != f.repo {
+		t.Fatalf("project-root caller changed: %s", request.Repo)
+	}
+	f.expectSuccess(tip, 3)
+	result, err := prepareLanding(request, f.repository())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.consumed()
+	if result.Candidate == "" || result.Landing == "" {
+		t.Fatalf("incomplete landing result: %+v", result)
+	}
+	if got := f.projected(result.Candidate); got != projected {
+		t.Fatalf("project-root projection = %s; want %s", got, projected)
+	}
+}
+
+func landingContractFixture() testpolicy.Contract {
+	return testpolicy.Contract{SchemaVersion: 1,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Fallback:    "residual",
+		Surfaces: []testpolicy.Surface{
+			landingContractSurface("base", "base-group"),
+			{ID: "residual", Paths: []string{}, DependsOn: []string{}, Standard: []string{"base-group"}, Deep: []string{}, Critical: []string{}},
+		},
+		Groups: []testpolicy.Group{landingContractGroup("base-group", 1000)}, Always: testpolicy.Always{Canary: []string{}, Standard: []string{}},
+		Unknown: []string{"base-group"}, Cadence: []string{}}
+}
+
+func landingContractGroup(id string, target int64) testpolicy.Group {
+	return testpolicy.Group{ID: id, Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"go.mod"}, Outputs: []string{},
+		Tools: []testpolicy.Tool{}, Obligations: []string{}, Platforms: []string{"any"}, TargetMS: target,
+		Packages: []string{"./example"}, Tests: json.RawMessage(`["TestExample"]`)}
+}
+
+func landingContractSurface(id, group string) testpolicy.Surface {
+	return testpolicy.Surface{ID: id, Paths: []string{id + "/**"}, DependsOn: []string{}, Standard: []string{group}, Deep: []string{}, Critical: []string{}}
+}
+
+func landingContractAddition(contract testpolicy.Contract, name string, target int64) testpolicy.Contract {
+	id := name + "-group"
+	contract.Groups = append(contract.Groups, landingContractGroup(id, target))
+	contract.Surfaces = append(contract.Surfaces, landingContractSurface(name, id))
+	for index := range contract.Surfaces {
+		if contract.Surfaces[index].ID == contract.Fallback {
+			contract.Surfaces[index].Standard = append(contract.Surfaces[index].Standard, id)
+		}
+	}
+	contract.Unknown = append(contract.Unknown, id)
+	return contract
+}
+
+func landingContractBytes(t *testing.T, contract testpolicy.Contract) []byte {
+	t.Helper()
+	data, err := contractmerge.Render(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestBranchLandingSyncMergesTestingContractBySurface(t *testing.T) {
+	t.Parallel()
+	const path = "metasystem/testing.json"
+	baseContract := landingContractFixture()
+	baseBytes := landingContractBytes(t, baseContract)
+	goalBytes := landingContractBytes(t, landingContractAddition(landingContractFixture(), "goal", 1100))
+	mainBytes := landingContractBytes(t, landingContractAddition(landingContractFixture(), "main", 1200))
+	f := newLandingFacts(t, map[string]string{
+		".gitattributes":                 "metasystem/testing.json merge=metasystem-testing\n",
+		path:                             string(baseBytes),
+		"metasystem/memory/receipts.log": "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n",
+	})
+	f.composition, f.stamp = true, "2026-09-17T10:00:00Z"
+	unit := f.unit(f.base, "testing", path, string(goalBytes))
+	tip := f.read(unit, unit, "testing")
+	endpoint := f.add(f.base, "endpoint", "", map[string][]byte{path: mainBytes})
+	f.base = endpoint
+	f.units, f.folds = []string{unit}, [][]string{{tip}}
+	f.writeFiles(f.repo, f.nodes[tip].files)
+	receipt := filepath.Join(t.TempDir(), "receipt.json")
+	f.writeReceipt(receipt, strings.Repeat("0", 40), "discover-sync")
+	request := f.request(endpoint, tip, filepath.Join(t.TempDir(), "discover"), receipt)
+	f.expectPending(tip, 1)
+	f.expectProjection()
+	f.expect("close")
+	_, discoveryErr := prepareLanding(request, f.repository())
+	f.consumed()
+	const marker = "candidate workspace "
+	markerAt := strings.LastIndex(fmt.Sprint(discoveryErr), marker)
+	if markerAt < 0 {
+		t.Fatalf("sync candidate discovery = %v", discoveryErr)
+	}
+	candidate := strings.TrimSpace(fmt.Sprint(discoveryErr)[markerAt+len(marker):])
+	f.writeReceipt(receipt, candidate, "branch-sync")
+	request.Out = filepath.Join(t.TempDir(), "prepared")
+	f.expectSuccess(tip, 1)
+	result, err := prepareLanding(request, f.repository())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.consumed()
+	merged, err := testpolicy.Decode(f.snapshot(result.Candidate)[path])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groups []string
+	for _, group := range merged.Groups {
+		groups = append(groups, group.ID)
+	}
+	want := []string{"base-group", "main-group", "goal-group"}
+	if !reflect.DeepEqual(groups, want) {
+		t.Fatalf("synced groups = %v", groups)
+	}
+	for _, surface := range merged.Surfaces {
+		if surface.ID == "residual" {
+			if !reflect.DeepEqual(surface.Standard, want) {
+				t.Fatalf("synced residual groups = %v", surface.Standard)
+			}
+			return
+		}
+	}
+	t.Fatal("residual surface is absent")
+}
+
+// verificationReader returns only the Git bytes needed to verify commits in
+// this graph. A request outside that parent chain is a fixture failure.
+func (f *landingFacts) verificationReader(tip string) landingGitReader {
+	f.t.Helper()
+	allowed := map[string]bool{f.base: true}
+	for _, id := range f.landed(tip) {
+		allowed[id] = true
+	}
+	return func(repo string, args ...string) ([]byte, error) {
+		f.t.Helper()
+		if repo != f.repo {
+			f.t.Fatalf("verification repository = %s; want %s", repo, f.repo)
+		}
+		f.call("verify:" + strings.Join(args, " "))
+		switch {
+		case len(args) == 4 && args[0] == "show" && args[1] == "-s" && args[2] == "--format=%(trailers:only,unfold=true)" && allowed[args[3]]:
+			message := f.messages[args[3]]
+			_, body, ok := strings.Cut(string(message), "\n\n")
+			if !ok {
+				return []byte("\n"), nil
+			}
+			var trailers strings.Builder
+			for _, line := range strings.Split(body, "\n") {
+				if _, _, valid := strings.Cut(line, ": "); valid {
+					trailers.WriteString(line + "\n")
+				}
+			}
+			return []byte(trailers.String()), nil
+		case len(args) == 5 && args[0] == "rev-list" && args[1] == "--parents" && args[2] == "-n" && args[3] == "1" && allowed[args[4]]:
+			node := f.nodes[args[4]]
+			if node.parent == "" {
+				return nil, fmt.Errorf("commit %s has no parent", node.id)
+			}
+			return []byte(node.id + " " + node.parent + "\n"), nil
+		case len(args) == 7 && args[0] == "diff-tree" && args[1] == "-r" && args[2] == "-z" && args[3] == "--no-renames" && args[4] == "--full-index" && allowed[args[6]]:
+			node := f.nodes[args[6]]
+			if args[5] == node.id+"^" && node.parent != "" {
+				return append([]byte(nil), node.raw...), nil
+			}
+		case len(args) == 2 && args[0] == "rev-parse" && strings.HasSuffix(args[1], "^"):
+			id := strings.TrimSuffix(args[1], "^")
+			if allowed[id] && f.nodes[id].parent != "" {
+				return []byte(f.nodes[id].parent + "\n"), nil
+			}
+		}
+		f.t.Fatalf("undeclared verification request: %q", args)
+		return nil, nil
+	}
+}
+
+func TestGoalLandingKeepsBuildUnitList(t *testing.T) {
+	t.Parallel()
+	f := newLandingFacts(t, map[string]string{"metasystem/memory/receipts.log": "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n"})
+	f.composition, f.stamp = true, "2026-09-17T10:00:00Z"
+	unit := f.unit(f.base, "5+6", "metasystem/multi.go", "multi\n")
+	tip := f.read(unit, unit, "5+6")
+	f.units, f.folds = []string{unit}, [][]string{{tip}}
+	f.writeFiles(f.repo, f.nodes[tip].files)
+	receipt := filepath.Join(t.TempDir(), "receipt.json")
+	f.writeReceipt(receipt, f.projected(f.nodes[tip].tree), "attempt-multi")
+	f.expectSuccess(tip, 1)
+	result, err := prepareLanding(f.request(f.base, tip, filepath.Join(t.TempDir(), "prepared"), receipt), f.repository())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.consumed()
+	message := string(f.messages[result.Landing])
+	reader := f.verificationReader(result.Landing)
+	f.expect("verify:show -s --format=%(trailers:only,unfold=true) "+result.Landing,
+		"verify:rev-list --parents -n 1 "+result.Landing,
+		"verify:diff-tree -r -z --no-renames --full-index "+result.Landing+"^ "+result.Landing)
+	verified, verifyErr := verifyLandedWithGit(f.repo, result.Landing, reader)
+	f.consumed()
+	if result.LastUnit != "6" || !strings.Contains(message, "Goal-Unit: goal-a/5+6") || verifyErr != nil || verified.Units != "5+6" {
+		t.Fatalf("multi-unit landing=%+v message=%q verified=%+v err=%v", result, message, verified, verifyErr)
+	}
+	f.expect("verify:show -s --format=%(trailers:only,unfold=true) "+result.Landing,
+		"verify:show -s --format=%(trailers:only,unfold=true) "+result.Landing,
+		"verify:rev-parse "+result.Landing+"^",
+		"verify:show -s --format=%(trailers:only,unfold=true) "+f.base,
+		"verify:show -s --format=%(trailers:only,unfold=true) "+result.Landing,
+		"verify:rev-list --parents -n 1 "+result.Landing,
+		"verify:diff-tree -r -z --no-renames --full-index "+result.Landing+"^ "+result.Landing)
+	series, seriesErr := verifyLandedSeriesWithGit(f.repo, result.Landing, reader)
+	f.consumed()
+	if seriesErr != nil || len(series) != 1 || series[0].Units != "5+6" || series[0].Actual != series[0].Expected {
+		t.Fatalf("multi-unit series=%+v err=%v", series, seriesErr)
+	}
 }

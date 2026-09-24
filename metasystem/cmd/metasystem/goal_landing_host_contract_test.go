@@ -153,6 +153,14 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 					"TestTemporaryGoalProofEnforcesReviewExpiryAndHorizon",
 				}
 			}
+			if old.ID == "landing-command-standard" && name == "TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot" {
+				// The replacement tests retain deleted-package selection and the
+				// configured contract and project-root guarantees for this group.
+				requiredNames = []string{
+					"TestDeletedGoPackagesSelectNearestExistingDirectory",
+					"TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD",
+				}
+			}
 			if nowSelectsAll {
 				automaticallyCovered = append(automaticallyCovered, requiredNames...)
 			} else {

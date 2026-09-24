@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -762,20 +763,34 @@ func TestLedgerAttentionCrashStageDoesNotResurrectHumanRetirement(t *testing.T) 
 }
 
 func TestTickRecordsLedgerStateWriteFailureAndRunsLaterDuties(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	previous := ledgerAttentionWriter
-	ledgerAttentionWriter = func(string, string, string) (bool, error) { return false, nil }
-	t.Cleanup(func() { ledgerAttentionWriter = previous })
-	result, err := RunTick(bed.watcher, TickConfig{}, fakeCensus{})
-	if err != nil {
+	bed := newAttentionPolicyBed(t)
+	fixture := newTickContinuationFixture(t, bed, true)
+	result, completed, err := fixture.run(t)
+	if err != nil || !completed {
 		t.Fatalf("ledger-attention failure stopped the steward tick: %v", err)
 	}
 	if result.LedgerAttention.FailureKind != ledgerAttentionStateWriteFailed || result.Health.Schema == 0 {
 		t.Fatalf("tick did not retain failure and later health duties: %+v", result)
 	}
-	record, err := loadComponentEvidence(ComponentEvidencePath(bed.watcher, "ledger-attention"))
+	if want := []string{"endpoint", "accepted", "machine", "project:base"}; !reflect.DeepEqual(bed.calls, want) {
+		t.Fatalf("ledger baseline calls = %v, want %v", bed.calls, want)
+	}
+	fixture.checkWork()
+	if fixture.writes != 1 || fixture.markReads != 2 || fixture.machineReads != 3 || fixture.healthReads != 1 {
+		t.Fatalf("continuation reads: writes=%d marks=%d machine=%d health=%d", fixture.writes, fixture.markReads, fixture.machineReads, fixture.healthReads)
+	}
+	persisted, err := LoadEvidence(EvidencePath(bed.root))
+	declared := &decisionTickRepository{t: t, root: bed.root, head: strings.Repeat("a", 40), files: bed.worlds["base"]}
+	if err != nil || persisted != result.Evidence || persisted.Marks != declared.currentMarks() {
+		t.Fatalf("persisted progress evidence: got=%+v returned=%+v declared=%+v err=%v", persisted, result.Evidence, declared.currentMarks(), err)
+	}
+	record, err := loadComponentEvidence(ComponentEvidencePath(bed.root, "ledger-attention"))
 	if err != nil || record.Result != ComponentError || record.Outcome != ledgerAttentionStateWriteFailed {
 		t.Fatalf("component evidence mislabeled the state refusal: %+v %v", record, err)
+	}
+	tick, err := loadComponentEvidence(ComponentEvidencePath(bed.root, "steward-tick"))
+	if err != nil || tick.Result != ComponentOK || tick.Outcome != "PASS_COMPLETE" || tick.LastSuccess.IsZero() {
+		t.Fatalf("later duties did not complete the steward tick: %+v %v", tick, err)
 	}
 }
 

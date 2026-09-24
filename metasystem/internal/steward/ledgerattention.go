@@ -79,7 +79,6 @@ type LedgerAttentionReport struct {
 }
 
 var ledgerAttentionFetchBudget = 60 * time.Second
-var ledgerAttentionWriter = atomicfile.WriteText
 
 type ledgerAttentionStateWriter func(path, contents, anchor string) (bool, error)
 
@@ -113,7 +112,7 @@ func loadLedgerAttentionState(repoRoot string) (ledgerAttentionState, bool, erro
 }
 
 func saveLedgerAttentionState(repoRoot string, state ledgerAttentionState) error {
-	return saveLedgerAttentionStateWithWriter(repoRoot, state, ledgerAttentionWriter)
+	return saveLedgerAttentionStateWithWriter(repoRoot, state, atomicfile.WriteText)
 }
 
 func saveLedgerAttentionStateWithWriter(repoRoot string, state ledgerAttentionState, writer ledgerAttentionStateWriter) error {
@@ -309,7 +308,7 @@ func stateWriteFailureReport(repoRoot string, err error) LedgerAttentionReport {
 }
 
 func failedLedgerAttention(repoRoot string, state ledgerAttentionState, now time.Time, cause error) LedgerAttentionReport {
-	return failedLedgerAttentionWithWriter(repoRoot, state, now, cause, ledgerAttentionWriter)
+	return failedLedgerAttentionWithWriter(repoRoot, state, now, cause, atomicfile.WriteText)
 }
 
 func failedLedgerAttentionWithWriter(repoRoot string, state ledgerAttentionState, now time.Time, cause error, writer ledgerAttentionStateWriter) LedgerAttentionReport {
@@ -456,7 +455,7 @@ func recordAcceptedLedgerTransition(repoRoot, machine string, state *ledgerAtten
 }
 
 func recordAcceptedLedgerTransitionWithRepository(repoRoot, machine string, state *ledgerAttentionState, accepted string, now time.Time, repository *ledgerAttentionRepository) error {
-	return recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine, state, accepted, now, repository, ledgerAttentionWriter)
+	return recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine, state, accepted, now, repository, atomicfile.WriteText)
 }
 
 func recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine string, state *ledgerAttentionState, accepted string, now time.Time, repository *ledgerAttentionRepository, writer ledgerAttentionStateWriter) error {
@@ -480,7 +479,7 @@ func RunLedgerAttention(repoRoot string, now time.Time) LedgerAttentionReport {
 }
 
 func runLedgerAttentionWithRepository(repoRoot string, now time.Time, repository *ledgerAttentionRepository) LedgerAttentionReport {
-	return runLedgerAttentionWithRepositoryAndWriter(repoRoot, now, repository, ledgerAttentionWriter)
+	return runLedgerAttentionWithRepositoryAndWriter(repoRoot, now, repository, atomicfile.WriteText)
 }
 
 func runLedgerAttentionWithRepositoryAndWriter(repoRoot string, now time.Time, repository *ledgerAttentionRepository, writer ledgerAttentionStateWriter) LedgerAttentionReport {

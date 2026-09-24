@@ -275,10 +275,15 @@ func restoreProofAdmissionSeams(t *testing.T) {
 }
 
 func TestCandidateGoalSelectsThePlanRisk(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
 	high := &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 3, Accumulation: 3, Basis: "Candidate risk requires cross-cutting proof."}
-	candidate := addProofCandidateGoal(t, root, "candidate-high", "", high)
-	risk, revision, err := testingGoalRisk(root, candidate.Id)
+	candidate := repository.addCandidate(t, "candidate-high", "", high)
+	endpoint, err := repository.reads().ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	risk, revision, err := testingGoalRiskWithEndpoint(endpoint, candidate.Id, now)
 	if err != nil || revision != goal.BudgetEpisodeRevision(candidate) || risk.Accumulation != 3 {
 		t.Fatalf("candidate risk=%+v revision=%d err=%v", risk, revision, err)
 	}

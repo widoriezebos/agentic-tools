@@ -2674,6 +2674,10 @@ func runGoalExtendBudget(args []string) int {
 }
 
 func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int {
+	return runGoalSetBudgetWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
+}
+
+func runGoalSetBudgetWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("set-budget", args)
 	f, ok := parseHumanSyncFlags(values, "set-budget", args)
 	if !ok {
@@ -2691,21 +2695,28 @@ func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int
 		box = goalbudget.FormatBox(*parsed)
 	}
 	fmt.Fprintln(os.Stderr, "hint:", values.budgetCommand(box))
-	if box != "" && stoppedGoalForSetBudget(f) {
-		return runGoalStoppedSetBudget(values, f, prove)
+	if box != "" && stoppedGoalForSetBudgetWithInputs(f, commandNow, dependencies.endpoint) {
+		return runGoalStoppedSetBudgetWithInputs(values, f, prove, commandNow, dependencies, binding)
 	}
-	return runGoalBudgetPrepared(values, f, "", prove)
+	return runGoalBudgetPreparedWithInputs(values, f, "", prove, commandNow, dependencies, binding)
 }
 
 func stoppedGoalForSetBudget(flags *syncFlags) bool {
+	return stoppedGoalForSetBudgetWithInputs(flags, goalCommandNow, goal.ResolveEndpoint)
+}
+
+func stoppedGoalForSetBudgetWithInputs(flags *syncFlags, commandNow func(string) (time.Time, error), resolveEndpoint func(string) (goal.Endpoint, error)) bool {
 	if !converted(flags.root) || flags.id == "" {
 		return false
 	}
-	endpoint, err := goal.ResolveEndpoint(flags.root)
+	if resolveEndpoint == nil || commandNow == nil {
+		return false
+	}
+	endpoint, err := resolveEndpoint(flags.root)
 	if err != nil {
 		return false
 	}
-	now, err := goalCommandNow(flags.root)
+	now, err := commandNow(flags.root)
 	if err != nil {
 		return false
 	}
@@ -2718,16 +2729,20 @@ func stoppedGoalForSetBudget(flags *syncFlags) bool {
 }
 
 func runGoalStoppedSetBudget(values *humanVerbValues, flags *syncFlags, prove goalAuthorityProver) int {
+	return runGoalStoppedSetBudgetWithInputs(values, flags, prove, goalCommandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
+}
+
+func runGoalStoppedSetBudgetWithInputs(values *humanVerbValues, flags *syncFlags, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	budget, err := flags.budgetTuple(true)
 	if err != nil {
-		return runGoalBudgetPrepared(values, flags, "", prove)
+		return runGoalBudgetPreparedWithInputs(values, flags, "", prove, commandNow, dependencies, binding)
 	}
 	values.box = budget
-	classification, err := classifyGoalAuthorityFirst("set-budget", flags)
+	classification, err := classifyGoalAuthorityFirstWithFacts("set-budget", flags, dependencies.authorityFacts)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the goal authority classification before retrying"})
 	}
-	proof, err := proveGoalHumanAuthority("set-budget", flags, prove)
+	proof, err := proveGoalHumanAuthorityAt("set-budget", flags, prove, commandNow)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy))
 	}
@@ -2735,7 +2750,7 @@ func runGoalStoppedSetBudget(values *humanVerbValues, flags *syncFlags, prove go
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
 	}
 	values.by = flags.by
-	req, err := syncReqClassified(flags.root, flags.by, flags.lineage, &proof, classification)
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(flags.root, flags.by, flags.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}

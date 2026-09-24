@@ -221,7 +221,54 @@ func TestGoalBudgetFindsItsBoxOnEitherSideOfFlags(t *testing.T) {
 }
 
 func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
-	root, now := proofExtensionGoalFixture(t)
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	backlog := filepath.Join(root, "plans", "goals", "backlog.md")
+	if err := os.WriteFile(backlog, repository.rawFile(t, "metasystem/plans/goals/backlog.md"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	guard := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reads := repository.reads()
+	dependencies := syncRequestDependencies{
+		authorityFacts: goalAuthorityReadFacts{
+			repositoryTop: repository.receiptTop,
+			ledgerIdentity: func(root string) string {
+				if root != repository.root {
+					t.Fatalf("ledger identity root = %q", root)
+				}
+				record, problems := goal.ParseRoot(repository.rawFile(t, "metasystem/plans/goals/backlog.md"))
+				if record == nil || len(problems) != 0 {
+					t.Fatalf("accepted ledger identity: record=%+v problems=%v", record, problems)
+				}
+				return record.Identity
+			},
+		},
+		endpoint: reads.ResolveEndpoint,
+		machine:  reads.ResolveMachine,
+		ensureGuard: func(root string) error {
+			if root != repository.root {
+				return fmt.Errorf("guard root %q differs from %q", root, repository.root)
+			}
+			_, err := os.Stat(guard)
+			return err
+		},
+		ownerLineage: func() string { return "m1" },
+	}
+	commandNow := func(root string) (time.Time, error) {
+		if root != repository.root {
+			return time.Time{}, fmt.Errorf("clock root %q differs from %q", root, repository.root)
+		}
+		return now, nil
+	}
+	bindingWithReads := func(root, id string, now time.Time) (dispatchcore.GoalBinding, error) {
+		return dispatchcore.ResolveGoalBindingWithReads(root, id, now, reads)
+	}
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "")
 	announceProofFixtureHolder(t, root)
 	leasePath := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
@@ -245,11 +292,11 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalSetBudget([]string{
+		return runGoalSetBudgetWithInputs([]string{
 			"--root", root, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority",
 			"--elapsed-limit", "8h", "--attempt-limit", "2", "--reserved-job-minutes-limit", "1200",
 			"--active-job-limit", "1", "--review-round-limit", "3",
-		})
+		}, humanauthority.ProveOrTemporaryGoalAuthority, commandNow, dependencies, bindingWithReads)
 	})
 	if code != 0 || !strings.Contains(stderr, "hint: metasystem goal budget ") ||
 		!strings.Contains(stderr, "--id standing-validation ") ||
@@ -257,22 +304,42 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 		!strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("holder set-budget: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+	binding, err := bindingWithReads(root, "standing-validation", now)
 	if err != nil || binding.Capability.ClaimEpoch != 5 {
 		t.Fatalf("set-budget binding = %+v, %v; want epoch 5", binding, err)
 	}
-	attempt, decision, joined, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+	attempt, decision, joined, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	}))
+	})
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("proof admission after holder rebudget: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
-	guard := filepath.Join(root, "artifacts", "agents", "host-admission-fixture", "admission.lock")
-	if _, err := os.Stat(guard); err != nil {
+	admissionGuard := filepath.Join(root, "artifacts", "agents", "host-admission-fixture", "admission.lock")
+	if _, err := os.Stat(admissionGuard); err != nil {
 		t.Fatalf("root-scoped proof admission guard: %v", err)
 	}
 
+	t.Run("stopped goal uses the same repository through a durable transaction", func(t *testing.T) {
+		fixture := newGoalBudgetResumeFixture(t, true, nil)
+		stoppedRoot := fixture.root()
+		writeFixtureEnrollment(t, stoppedRoot, "Wido")
+		before := fixture.project()
+		code, output, errors := captureCommandOutput(t, true, true, func() int {
+			return runGoalSetBudgetWithInputs([]string{
+				"--root", stoppedRoot, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority", "--lineage", "m1",
+				"--elapsed-limit", "6h", "--attempt-limit", "5", "--reserved-job-minutes-limit", "250",
+				"--active-job-limit", "2", "--review-round-limit", "3",
+			}, fixedFixtureGoalAuthority, fixture.commandNow, fixture.dependencies(), fixture.binding)
+		})
+		if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+			t.Fatalf("stopped set-budget: code=%d stdout=%q stderr=%q", code, output, errors)
+		}
+		after := fixture.project()
+		if fixture.repo.publications != 1 || after.Revision != before.Revision+1 || after.StopFence != nil || after.Budget == nil || after.Budget.ElapsedLimit != "6h" {
+			t.Fatalf("stopped transaction did not lift the fence: before=%+v after=%+v publications=%d", before, after, fixture.repo.publications)
+		}
+	})
 }
 
 func TestStoppingRequestFallsBackToTerminalGrade(t *testing.T) {
