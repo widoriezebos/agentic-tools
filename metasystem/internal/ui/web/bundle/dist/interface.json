@@ -187,6 +187,11 @@
       "text": "The questions opened about this goal that nobody has answered yet."
     },
     {
+      "id": "project-scope",
+      "term": "What this page is showing",
+      "text": "Scope is a filter, not two lists. Project is the records whose head names no goal, which are the small set that shapes everything and what this page opens on. Goals is the rest, grouped under the goal each one names. All is both, flat. Find searches every scope whichever one is chosen."
+    },
+    {
       "id": "overview",
       "term": "Overview",
       "text": "What needs you, and what changed since you last looked, with links to the records behind it."

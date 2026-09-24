@@ -1,21 +1,32 @@
 import { RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 
 import { failureMessage, loadPane, type DocumentFile, type Pane as PanePayload, type Problem } from "./api";
 import {
   briefingFor,
+  countText,
   documentGroups,
   DOCUMENTS_TAB,
   DOCUMENTS_TITLE,
+  FIND_LABEL,
+  FIND_PLACEHOLDER,
+  found,
+  FOUND_NOTE,
+  goalGroups,
   kindTitle,
   listedIn,
   newActionFor,
   NO_SLICE_PLAN,
+  noMatchLine,
   nothingLine,
   pageSections,
+  projectWideLine,
   QUESTIONS_TAB,
   QUESTIONS_TITLE,
+  SCOPE_LABEL,
+  SCOPES,
+  scopeNote,
   sliceCount,
   SLICES_TAB,
   SLICES_TITLE,
@@ -25,9 +36,12 @@ import {
   type Briefing,
   type DesignRuns,
   type DocumentGroup,
+  type GoalGroup,
   type NewAction,
   type PageSection,
   type Row,
+  type ScopeCount,
+  type ScopeFilter,
   type SlicePlan,
 } from "./pane";
 import "./reading.css";
@@ -55,7 +69,15 @@ import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
 import { useSession } from "../shell/identity";
 import { failureMessage as actFailureMessage } from "../shell/workspace";
-import { readBacklogView, readGoalTab, readProjectTab, writeGoalTab, writeProjectTab } from "../storage";
+import {
+  readBacklogView,
+  readGoalTab,
+  readProjectScope,
+  readProjectTab,
+  writeGoalTab,
+  writeProjectScope,
+  writeProjectTab,
+} from "../storage";
 
 /**
  * Project: a briefing on what this project is, not a list of its files.
@@ -198,7 +220,17 @@ function Columns({
   onLedger: (backlog: Backlog) => void;
   onReload: () => void;
 }) {
-  const briefing = useMemo(() => briefingFor(pane, goal), [pane, goal]);
+  // What this page is showing, and what is being looked for in it.
+  //
+  // The scope is the Project page's and only the Project page's: a goal page
+  // is one goal's records by definition, so there is nothing there to narrow.
+  // The remembered value is read once, for the same reason the tab is, and
+  // written where a human chooses it.
+  const [showing, setShowing] = useState<ScopeFilter>(() => (goal === null ? readProjectScope() : "all"));
+  const [typed, setTyped] = useState("");
+  const searching = typed.trim() !== "";
+
+  const briefing = useMemo(() => briefingFor(pane, goal, showing), [pane, goal, showing]);
   const sections = useMemo(() => pageSections(briefing), [briefing]);
   const groups = useMemo(() => documentGroups(pane.documents), [pane]);
   const [sheet, setSheet] = useState<Request | null>(null);
@@ -313,6 +345,41 @@ function Columns({
     );
   };
 
+  /**
+   * The three tabs the scope control narrows, each with the rows this view
+   * shows and the rows Find can reach.
+   *
+   * The designs are flattened here as well as kept in their runs: grouping by
+   * goal and searching are both over one list of rows, and what governs
+   * against what is finished is a reading of the flat list rather than a
+   * second selection.
+   */
+  const everyDesign = [...briefing.designs.open, ...briefing.designs.runs.flatMap((run) => run.rows)];
+  const narrowedTabs: Record<
+    string,
+    { title: string; across: Row[]; shown: Row[]; counted: ScopeCount; action?: (row: Row) => ReactNode }
+  > = {
+    [tabForKind("decision")]: {
+      title: kindTitle("decision"),
+      across: briefing.across.decisions,
+      shown: briefing.decisions,
+      counted: briefing.scopes.decisions,
+    },
+    [tabForKind("design")]: {
+      title: kindTitle("design"),
+      across: briefing.across.designs,
+      shown: everyDesign,
+      counted: briefing.scopes.designs,
+    },
+    [QUESTIONS_TAB]: {
+      title: QUESTIONS_TITLE,
+      across: briefing.across.questions,
+      shown: briefing.questions,
+      counted: briefing.scopes.questions,
+      action: answer,
+    },
+  };
+
   // The section behind each tab, by the name the strip and the address call
   // it. The strip's order is pageSections' own, so a section the payload does
   // not produce is absent from both the strip and this.
@@ -321,20 +388,35 @@ function Columns({
     if (book !== undefined) {
       return <BookBlock book={book} nothing={nothing(id)} />;
     }
-    if (id === tabForKind("decision")) {
+    const listing = narrowedTabs[id] as (typeof narrowedTabs)[string] | undefined;
+    if (listing !== undefined) {
+      // Find crosses every scope, so what it searches is the whole tab and
+      // not the view the control left. Clearing it puts the control's view
+      // back, which is why the two are read here rather than folded into one
+      // list somewhere upstream.
+      const rows = searching ? found(listing.across, typed) : listing.shown;
+      const note = searching ? FOUND_NOTE : scopeNote(showing, listing.counted);
+      // A row's goal chip is shown where the listing mixes scopes and would
+      // otherwise say nothing about which is which. Under Project every row
+      // has no goal, under Goals the group says it, and on a goal page every
+      // row names the goal whose page it is.
+      const chips = searching || (goal === null && showing === "all");
       return (
-        <Block title={kindTitle("decision")} count={briefing.decisions.length}>
-          {briefing.decisions.length === 0 ? nothing(id) : <Rows rows={briefing.decisions} />}
-        </Block>
-      );
-    }
-    if (id === tabForKind("design")) {
-      return <Designs designs={briefing.designs} nothing={nothing(id)} />;
-    }
-    if (id === QUESTIONS_TAB) {
-      return (
-        <Block title={QUESTIONS_TITLE} count={briefing.questions.length}>
-          {briefing.questions.length === 0 ? nothing(id) : <Rows rows={briefing.questions} action={answer} />}
+        <Block title={listing.title} count={countText(rows.length, note)}>
+          {rows.length === 0 ? (
+            searching ? (
+              <p className="ms-project-none">{noMatchLine(typed)}</p>
+            ) : (
+              nothing(id)
+            )
+          ) : goal === null && !searching && showing === "goals" ? (
+            <Groups groups={goalGroups(pane, rows)} action={listing.action} />
+          ) : !chips && id === tabForKind("design") ? (
+            <DesignRows designs={briefing.designs} />
+          ) : (
+            <Rows rows={rows} action={listing.action} chips={chips} />
+          )}
+          {goal !== null && <ProjectWide tab={id} count={listing.counted.own} />}
         </Block>
       );
     }
@@ -387,6 +469,18 @@ function Columns({
           onSelect={select}
           action={
             <>
+              {goal === null && (
+                <>
+                  <Find typed={typed} onTyped={setTyped} />
+                  <ScopeControl
+                    showing={showing}
+                    onShowing={(chosen) => {
+                      setShowing(chosen);
+                      writeProjectScope(chosen);
+                    }}
+                  />
+                </>
+              )}
               {newButton(trailing.newAction)}
               <IconButton
                 label={trailing.refresh}
@@ -453,6 +547,137 @@ function Columns({
 }
 
 /**
+ * Find, on the strip, crossing every scope.
+ *
+ * It is the box the board already has, in the place the same question is
+ * asked from: what is on this tab that says this. It narrows the tab and not
+ * the control — a human who remembers a design and not which goal it named
+ * should not have to guess the scope before they can look for it — and
+ * clearing it puts the control's own view back untouched.
+ */
+function Find({ typed, onTyped }: { typed: string; onTyped: (typed: string) => void }) {
+  const field = useId();
+  return (
+    <div className="ms-board-filter">
+      <label htmlFor={field}>{FIND_LABEL}</label>
+      <input
+        id={field}
+        type="search"
+        className="ms-board-find"
+        value={typed}
+        placeholder={FIND_PLACEHOLDER}
+        onChange={(event) => {
+          onTyped(event.target.value);
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * What this page is showing: the project's own records, the ones under goals,
+ * or both.
+ *
+ * It is a radio group and not three buttons that happen to look pressed: the
+ * three are one answer to one question, exactly one of them holds at a time,
+ * and a keyboard reaches the group once and moves within it with the arrows,
+ * which is what the roles say and what the browser then does for free.
+ */
+function ScopeControl({
+  showing,
+  onShowing,
+}: {
+  showing: ScopeFilter;
+  onShowing: (showing: ScopeFilter) => void;
+}) {
+  return (
+    <div className="ms-project-scope">
+      <div className="ms-board-views" role="radiogroup" aria-label={SCOPE_LABEL}>
+        {SCOPES.map((one) => (
+          <Button
+            key={one.id}
+            role="radio"
+            aria-checked={showing === one.id}
+            tabIndex={showing === one.id ? 0 : -1}
+            onClick={() => {
+              onShowing(one.id);
+            }}
+          >
+            {one.title}
+          </Button>
+        ))}
+      </div>
+      <Help id="project-scope" />
+    </div>
+  );
+}
+
+/**
+ * The goal-scoped records, under the goals they name.
+ *
+ * Every group is collapsed, because the point of the Goals scope is to see
+ * what the goals are before reading what is under one of them: a page that
+ * opened forty groups at once would be the flat list with headings in it.
+ * The goal's title opens the goal's own page, where the same records stand
+ * beside the ledger's reason for the goal; the summary's count says how many
+ * are under it without opening anything.
+ */
+function Groups({ groups, action }: { groups: GoalGroup[]; action?: (row: Row) => ReactNode }) {
+  return (
+    <>
+      {groups.map((group) => (
+        <details key={group.id} className="ms-project-run ms-project-group">
+          {/* The title is the way to the goal's own page, where the same
+              records stand beside the ledger's reason for the goal. It is a
+              link inside the summary rather than a line under it: a group
+              headed by a goal is a goal, and a human who wants it wants it
+              from its own heading. Everything else on the line toggles. */}
+          <summary className="ms-project-run-summary">
+            <NavLink className="ms-project-group-title" to={group.to}>
+              {group.title}
+            </NavLink>
+            <span className="ms-mono ms-project-group-id">{group.id}</span>
+            <span className="ms-project-count">{group.rows.length}</span>
+          </summary>
+          <Rows rows={group.rows} action={action} />
+        </details>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The one muted line a goal page's tab ends with: the records of this kind
+ * that are about the project as a whole, and the way to them.
+ *
+ * A goal page shows its own records and should: the doctrine of this slice is
+ * that scope is a filter with a default, not that every page shows
+ * everything. But the decisions the goal rests on are one page away, and a
+ * page that never said so would teach a human that they do not exist. The
+ * link opens the Project tab with the control already on Project, which is
+ * the scope the line counted.
+ */
+function ProjectWide({ tab, count: total }: { tab: string; count: number }) {
+  const line = projectWideLine(tab, total);
+  if (line === "") {
+    return null;
+  }
+  return (
+    <p className="ms-project-wide">
+      <NavLink
+        className="ms-briefing-link"
+        to={projectPath(tab)}
+        onClick={() => {
+          writeProjectScope("project");
+        }}
+      >
+        {line}
+      </NavLink>
+    </p>
+  );
+}
+
+/**
  * One action, where a human is already looking. It is a button because it acts
  * rather than navigates, and it reads as a link because in an empty state it
  * is the only thing on the line.
@@ -504,7 +729,12 @@ function Block({
   children,
 }: {
   title: string;
-  count?: number;
+  /**
+   * The quiet figure beside the name. It is a string as often as a number: a
+   * narrowed tab says how many it is showing and how many it is not, in one
+   * breath, and two elements with a gap between them do not say "and".
+   */
+  count?: number | string;
   note?: string;
   action?: ReactNode;
   children: ReactNode;
@@ -845,12 +1075,19 @@ function BookBlock({ book, nothing }: { book: BookBriefing; nothing: ReactNode }
   );
 }
 
-/** The designs: what governs, open; what is finished, in one run each. */
-function Designs({ designs, nothing }: { designs: DesignRuns; nothing: ReactNode }) {
-  const total = designs.open.length + designs.runs.reduce((sum, run) => sum + run.rows.length, 0);
+/**
+ * The designs: what governs, open; what is finished, in one run each.
+ *
+ * It is the body of the tab and not the whole block, because the head above it
+ * is the same head every narrowed tab has — the kind, what this scope shows,
+ * and what it is leaving out — and a second block would say the count twice.
+ * The runs are this listing's own grouping and stand only where the listing is
+ * this one: grouped by goal, or narrowed by Find, the rows are a flat list
+ * whose order is the thing being read.
+ */
+function DesignRows({ designs }: { designs: DesignRuns }) {
   return (
-    <Block title={kindTitle("design")} count={total}>
-      {total === 0 && nothing}
+    <>
       {designs.open.length > 0 && <Rows rows={designs.open} />}
       {designs.runs.map((run) => (
         <details key={run.status} className="ms-project-run">
@@ -860,7 +1097,7 @@ function Designs({ designs, nothing }: { designs: DesignRuns; nothing: ReactNode
           <Rows rows={run.rows} />
         </details>
       ))}
-    </Block>
+    </>
   );
 }
 
@@ -959,11 +1196,20 @@ function Problems({ problems }: { problems: Problem[] }) {
   );
 }
 
-function Rows({ rows, action }: { rows: Row[]; action?: (row: Row) => ReactNode }) {
+function Rows({
+  rows,
+  action,
+  chips = false,
+}: {
+  rows: Row[];
+  action?: (row: Row) => ReactNode;
+  /** True where the listing mixes scopes and each row has to say which it is in. */
+  chips?: boolean;
+}) {
   return (
     <ul className="ms-project-rows">
       {rows.map((row) => (
-        <RecordRow key={row.key} row={row} action={action?.(row)} />
+        <RecordRow key={row.key} row={row} action={action?.(row)} chips={chips} />
       ))}
     </ul>
   );
@@ -975,7 +1221,7 @@ function Rows({ rows, action }: { rows: Row[]; action?: (row: Row) => ReactNode 
  * itself in a tooltip, so a long path never breaks the row across the screen a
  * character at a time.
  */
-function RecordRow({ row, action }: { row: Row; action?: ReactNode }) {
+function RecordRow({ row, action, chips = false }: { row: Row; action?: ReactNode; chips?: boolean }) {
   // The board's own menu, on a record's row: right-click, Shift+F10 and the
   // Menu key, with the one act a listing offers. A row is a thing to ask
   // about, and a listing that offered it as a button on every line would be a
@@ -1025,6 +1271,21 @@ function RecordRow({ row, action }: { row: Row; action?: ReactNode }) {
       </span>
       <span className="ms-project-row-status">
         {row.status !== "" && <Chip>{row.status}</Chip>}
+        {/* The scope chip: which goal this row is under, where the listing
+            mixes scopes. It is the goal's id and not its title, because a
+            listing of mixed rows is read down a column and an id is the same
+            width in every row; it opens the goal's own page. A row with no
+            goal is the project's own, and says so in the same place. */}
+        {chips &&
+          (row.goals.length === 0 ? (
+            <span className="ms-project-row-scope">the project</span>
+          ) : (
+            row.goals.map((id) => (
+              <NavLink key={id} className="ms-mono ms-project-row-scope" to={goalPath(id)}>
+                {id}
+              </NavLink>
+            ))
+          ))}
         {row.note !== "" && <span className="ms-project-row-note">{row.note}</span>}
       </span>
       <span className="ms-project-row-act">{action}</span>

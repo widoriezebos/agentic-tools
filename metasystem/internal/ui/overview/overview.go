@@ -253,6 +253,33 @@ type Designs struct {
 	Progress []Progress `json:"progress"`
 }
 
+// Scope is one kind of record counted by what it is about: the project's own
+// — the ones whose head names no goal — and the ones that name at least one.
+//
+// A record naming three goals is one record here and not three: this counts
+// records, and standing under each goal it names is a grouping rather than a
+// count.
+type Scope struct {
+	Own        int `json:"own"`
+	UnderGoals int `json:"underGoals"`
+}
+
+// Scoped is the three kinds the Project page's scope control narrows, each
+// counted both ways.
+//
+// The tiles show the project's own count with the rest named beneath it,
+// because scope is a filter with a sensible default rather than two lists: the
+// project's own records are the small set that shapes everything, and a tile
+// that counted four hundred designs said only that the project is large.
+// Intent and doctrine are not here: a chapter of either is about the project
+// as a whole by definition, so both sides of the count would be the same
+// number and nothing.
+type Scoped struct {
+	Decisions Scope `json:"decisions"`
+	Designs   Scope `json:"designs"`
+	Questions Scope `json:"questions"`
+}
+
 // Memory is what the project's records hold, as counts that open their tabs.
 type Memory struct {
 	Intent    Book    `json:"intent"`
@@ -260,6 +287,9 @@ type Memory struct {
 	Decisions Tally   `json:"decisions"`
 	Designs   Designs `json:"designs"`
 	Questions int     `json:"questions"`
+	// Scoped is the same three kinds counted by what they are about, which is
+	// what the tiles read their figures from.
+	Scoped Scoped `json:"scoped"`
 }
 
 // Health is one calm line, or the problems.
@@ -718,7 +748,47 @@ func memory(in Inputs) Memory {
 		Decisions: tally(pane.Records, kindDecision),
 		Designs:   designs(pane),
 		Questions: openQuestions(pane.Questions).Count,
+		Scoped: Scoped{
+			Decisions: scopeOf(pane.Records, kindDecision),
+			Designs:   scopeOf(pane.Records, kindDesign),
+			Questions: questionScope(pane.Questions),
+		},
 	}
+}
+
+// scopeOf counts one kind of record by what it is about. A head with no Goals
+// line is the project as a whole, which is the grammar's own rule and not a
+// missing field.
+func scopeOf(records []project.Record, kind string) Scope {
+	counted := Scope{}
+	for _, record := range records {
+		if record.Kind != kind {
+			continue
+		}
+		if len(record.Goals) == 0 {
+			counted.Own++
+			continue
+		}
+		counted.UnderGoals++
+	}
+	return counted
+}
+
+// questionScope counts the register's open rows the same way. Answered rows
+// are not counted at all, because the tile beside this one is the open ones.
+func questionScope(questions []project.Question) Scope {
+	counted := Scope{}
+	for _, question := range questions {
+		if question.Status != "open" {
+			continue
+		}
+		if len(question.Goals) == 0 {
+			counted.Own++
+			continue
+		}
+		counted.UnderGoals++
+	}
+	return counted
 }
 
 // book is a book's reading order as a number, and its index's own first

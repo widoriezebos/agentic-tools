@@ -2,20 +2,33 @@ import { describe, expect, it } from "vitest";
 
 import type { DocumentPayload, Pane, ProjectRecord } from "./api";
 import {
+  ABOUT_PROJECT,
   aboutOf,
+  aboutRow,
   briefingFor,
+  countLine,
+  countText,
   crumbsFor,
   designNote,
   designWork,
   documentGroups,
+  DEFAULT_SCOPE,
+  found,
+  goalGroups,
   marksDone,
   newActionFor,
   NO_SLICE_PLAN,
   nothingLine,
+  noMatchLine,
   pageSections,
+  projectWideLine,
   railFor,
   REFRESH,
   ROOT_GROUP,
+  SCOPES,
+  scopeEditable,
+  scopeNote,
+  scopeOf,
   shortID,
   sliceCount,
   sliceLine,
@@ -353,6 +366,9 @@ describe("the briefing", () => {
         to: "/project/doc/metasystem/docs/decisions/0001.md",
         summary: "The engine ships as one Go binary.",
         status: "accepted",
+        // What the head says this record is about, carried as the head wrote
+        // it: the scope control narrows by it, and the row's chip names it.
+        goals: ["goal-ledger"],
         // Only a design says anything about the work it names; a decision
         // names no work, so its row carries no clause.
         note: "",
@@ -739,5 +755,265 @@ describe("a goal's slice plan", () => {
       },
     ]);
     expect(slicesOf(slicePlan(pane, "old-idea"))).toEqual([]);
+  });
+});
+
+
+/* ------------------------------------------------- scope is a filter -- */
+
+/**
+ * The same project with records on both sides of the line: three decisions,
+ * four designs and three open questions, some naming goals and some naming
+ * none, so every scope has something in it and no count is the same number
+ * twice.
+ *
+ * It is a fixture of its own rather than more rows on the one above, because
+ * the one above pins what every other reading of this module answers and a
+ * row added to it would move a dozen counts that have nothing to do with
+ * scope.
+ */
+const scoped: Pane = {
+  ...pane,
+  records: [
+    record({
+      kind: "decision", id: "decision-wide", title: "One binary",
+      path: "metasystem/docs/decisions/0001.md", home: "metasystem/docs/decisions",
+      summary: "The engine ships as one Go binary.",
+    }),
+    record({
+      kind: "decision", id: "decision-also-wide", title: "Loopback only",
+      path: "metasystem/docs/decisions/0002.md", home: "metasystem/docs/decisions",
+    }),
+    record({
+      kind: "decision", id: "decision-under", goals: ["goal-ledger"], title: "The accepted ref",
+      path: "metasystem/docs/decisions/0003.md", home: "metasystem/docs/decisions",
+    }),
+    record({
+      kind: "design", id: "design-wide", title: "The application shell",
+      path: "plans/designs/shell.md",
+    }),
+    record({
+      kind: "design", id: "design-pane", goals: ["interface-shell"], title: "The Project pane",
+      path: "plans/designs/pane.md",
+    }),
+    record({
+      kind: "design", id: "design-both", goals: ["goal-ledger", "interface-shell"],
+      title: "The ledger", path: "plans/designs/ledger.md",
+    }),
+    record({
+      kind: "design", id: "design-unknown", goals: ["no-such-goal"], title: "A design naming a goal nobody planted",
+      path: "plans/designs/nowhere.md",
+    }),
+  ],
+  questions: [
+    { id: "Q-1", opened: "2026-09-22", question: "Where does intent live?", goals: [], status: "open" },
+    { id: "Q-2", opened: "2026-09-22", question: "Who accepts?", goals: ["goal-ledger"], status: "open" },
+    { id: "Q-3", opened: "2026-09-22", question: "Is seat the word?", goals: ["interface-shell"], status: "open" },
+  ],
+};
+
+describe("the scope a page is showing", () => {
+  it("offers the three in the order the control does, and defaults to the project's own", () => {
+    expect(SCOPES.map((one) => one.id)).toEqual(["project", "goals", "all"]);
+    expect(SCOPES.map((one) => one.title)).toEqual(["Project", "Goals", "All"]);
+    expect(DEFAULT_SCOPE).toBe("project");
+  });
+
+  // A browser holding a word from a build that offered a fourth scope has no
+  // preference this build can honour, and gets the default rather than a page
+  // that shows nothing.
+  it("reads a remembered word, and answers a word it does not know with the default", () => {
+    expect(scopeOf("goals")).toBe("goals");
+    expect(scopeOf("all")).toBe("all");
+    expect(scopeOf("everything")).toBe(DEFAULT_SCOPE);
+    expect(scopeOf(null)).toBe(DEFAULT_SCOPE);
+  });
+
+  it("opens on the records whose head names no goal", () => {
+    const briefing = briefingFor(scoped, null, "project");
+    expect(titles(briefing.decisions)).toEqual(["One binary", "Loopback only"]);
+    expect(titles(briefing.designs.open)).toEqual(["The application shell"]);
+    expect(titles(briefing.questions)).toEqual(["Where does intent live?"]);
+  });
+
+  it("shows the goal-scoped ones under Goals, and both under All", () => {
+    expect(titles(briefingFor(scoped, null, "goals").decisions)).toEqual(["The accepted ref"]);
+    expect(titles(briefingFor(scoped, null, "all").decisions)).toEqual([
+      "One binary",
+      "Loopback only",
+      "The accepted ref",
+    ]);
+  });
+
+  // The counts are of records and not of namings: a design about two goals is
+  // one design under goals, and it stands under each of the two only where
+  // the grouping puts it.
+  it("counts each kind both ways, over the whole project, whatever is being shown", () => {
+    for (const showing of SCOPES) {
+      const briefing = briefingFor(scoped, null, showing.id);
+      expect({ showing: showing.id, ...briefing.scopes.decisions }).toEqual({
+        showing: showing.id, own: 2, underGoals: 1,
+      });
+      expect({ showing: showing.id, ...briefing.scopes.designs }).toEqual({
+        showing: showing.id, own: 1, underGoals: 3,
+      });
+      expect({ showing: showing.id, ...briefing.scopes.questions }).toEqual({
+        showing: showing.id, own: 1, underGoals: 2,
+      });
+    }
+  });
+
+  // The head of a tab is one sentence and not two numbers with a gap between
+  // them: twelve of these, and forty-three more that this view is not showing.
+  it("says what it is showing and what it is leaving out, in one line", () => {
+    expect(scopeNote("project", { own: 12, underGoals: 43 })).toBe("43 under goals");
+    expect(countLine("Designs", 12, scopeNote("project", { own: 12, underGoals: 43 }))).toBe(
+      "Designs 12 · 43 under goals",
+    );
+    expect(countText(12, "43 under goals")).toBe("12 · 43 under goals");
+  });
+
+  // All leaves nothing out, and neither does a scope whose other side is
+  // empty: "0 under goals" is furniture rather than a fact.
+  it("says nothing where there is nothing left out", () => {
+    expect(scopeNote("all", { own: 12, underGoals: 43 })).toBe("");
+    expect(scopeNote("project", { own: 12, underGoals: 0 })).toBe("");
+    expect(scopeNote("goals", { own: 0, underGoals: 43 })).toBe("");
+    expect(scopeNote("goals", { own: 12, underGoals: 43 })).toBe("12 project-wide");
+    expect(countLine("Designs", 12, "")).toBe("Designs 12");
+  });
+
+  // Narrowing the view does not answer a question: what is waiting is what is
+  // waiting in this project, and the control is about what is being read.
+  it("counts what needs a human over everything, not over the scope shown", () => {
+    for (const showing of SCOPES) {
+      expect({ showing: showing.id, ...briefingFor(scoped, null, showing.id).needsYou }).toEqual({
+        showing: showing.id, questions: 3, designs: 4,
+      });
+    }
+  });
+
+  // A goal page has no scope: it is one goal's records by definition, and the
+  // records that name no goal are not among the records that name this one.
+  it("narrows the project's page and leaves a goal page alone", () => {
+    for (const showing of SCOPES) {
+      expect(titles(briefingFor(scoped, "goal-ledger", showing.id).decisions)).toEqual(["The accepted ref"]);
+    }
+  });
+});
+
+describe("the goal-scoped records, grouped under their goals", () => {
+  const groups = goalGroups(scoped, briefingFor(scoped, null, "goals").across.designs);
+
+  // The ledger's order, which is every other listing of goals in this
+  // interface; a goal the ledger does not carry keeps its place at the end
+  // under the id it is named by, rather than being dropped with the records
+  // that name it.
+  it("is in the ledger's own order, with what the ledger does not carry last", () => {
+    expect(groups.map((group) => group.id)).toEqual(["goal-ledger", "interface-shell", "no-such-goal"]);
+    expect(groups.map((group) => group.to)).toEqual([
+      "/backlog/goal/goal-ledger",
+      "/backlog/goal/interface-shell",
+      "/backlog/goal/no-such-goal",
+    ]);
+  });
+
+  // A record about two goals is about each of them: filing it under the first
+  // would hide it from the human who came to the second.
+  it("puts a record under each goal it names", () => {
+    expect(titles(groups[0].rows)).toEqual(["The ledger"]);
+    expect(titles(groups[1].rows)).toEqual(["The Project pane", "The ledger"]);
+  });
+
+  it("carries no group for a goal nothing on this tab is about", () => {
+    const decisions = goalGroups(scoped, briefingFor(scoped, null, "goals").across.decisions);
+    expect(decisions.map((group) => group.id)).toEqual(["goal-ledger"]);
+    expect(goalGroups(scoped, [])).toEqual([]);
+  });
+});
+
+describe("Find, which crosses every scope", () => {
+  // The rows Find searches are the whole tab's and not the view's: a human who
+  // remembers a design and not which goal it named should not have to guess
+  // the scope before they can look for it.
+  const everyDesign = briefingFor(scoped, null, "project").across.designs;
+
+  it("reaches rows the control is not showing", () => {
+    expect(titles(found(everyDesign, "ledger"))).toEqual(["The ledger"]);
+    expect(titles(found(everyDesign, "pane"))).toEqual(["The Project pane"]);
+  });
+
+  it("looks in the title, the first words, the path and the goals a row names", () => {
+    expect(titles(found(everyDesign, "interface-shell"))).toEqual(["The Project pane", "The ledger"]);
+    expect(titles(found(everyDesign, "plans/designs/shell.md"))).toEqual(["The application shell"]);
+  });
+
+  // Every word has to be somewhere, in any order and in any of them, and case
+  // is nothing: a human typing either is typing what they remember.
+  it("wants every word, in any order, in any case", () => {
+    expect(titles(found(everyDesign, "LEDGER the"))).toEqual(["The ledger"]);
+    expect(titles(found(everyDesign, "ledger pane"))).toEqual([]);
+  });
+
+  it("is not a search at all when nothing was typed", () => {
+    expect(found(everyDesign, "").length).toBe(everyDesign.length);
+    expect(found(everyDesign, "   ").length).toBe(everyDesign.length);
+  });
+
+  it("says what found nothing, in the words that were typed", () => {
+    expect(noMatchLine("  wobble ")).toBe("Nothing on this tab matches “wobble”, in any scope.");
+  });
+});
+
+describe("the line a goal page's tab ends with", () => {
+  it("counts the project's own records of that tab's kind, and leads to them", () => {
+    expect(projectWideLine("decisions", 12)).toBe("12 project-wide decisions →");
+    expect(projectWideLine("designs", 1)).toBe("1 project-wide design →");
+    expect(projectWideLine("questions", 4)).toBe("4 project-wide open questions →");
+  });
+
+  // Nothing to say is said with nothing, and a tab with no such line is a tab
+  // whose kind has none: neither is a line saying "0".
+  it("says nothing where there is none, and nothing on a tab that has no such kind", () => {
+    expect(projectWideLine("designs", 0)).toBe("");
+    expect(projectWideLine("documents", 12)).toBe("");
+    expect(projectWideLine("intent", 12)).toBe("");
+  });
+
+  it("is built from the counts the briefing carries on the goal page itself", () => {
+    const briefing = briefingFor(scoped, "goal-ledger", "project");
+    expect(projectWideLine("decisions", briefing.scopes.decisions.own)).toBe("2 project-wide decisions →");
+  });
+});
+
+describe("what a record says it is about, on its own page", () => {
+  it("is the project as a whole where the head names no goal", () => {
+    expect(aboutRow(scoped, [])).toEqual({ project: true, goals: [], named: false });
+    expect(ABOUT_PROJECT).toBe("this project");
+  });
+
+  // One goal gets its title beside its id, because there is room for it and
+  // because an id alone does not say what the record is about. Several do not:
+  // three ids and three titles is a paragraph in a facts row.
+  it("names one goal with its title, and several by their ids alone", () => {
+    const one = aboutRow(scoped, ["goal-ledger"]);
+    expect({ project: one.project, named: one.named, ids: one.goals.map((goal) => goal.id) }).toEqual({
+      project: false, named: true, ids: ["goal-ledger"],
+    });
+    const two = aboutRow(scoped, ["goal-ledger", "interface-shell"]);
+    expect({ project: two.project, named: two.named, ids: two.goals.map((goal) => goal.id) }).toEqual({
+      project: false, named: false, ids: ["goal-ledger", "interface-shell"],
+    });
+  });
+
+  // A chapter of either book is about the project as a whole by definition,
+  // and the grammar refuses a Goals line on one: an Edit that could only ever
+  // be refused is a control that lies.
+  it("is editable on every kind but the two books", () => {
+    expect(scopeEditable("decision")).toBe(true);
+    expect(scopeEditable("design")).toBe(true);
+    expect(scopeEditable("intent")).toBe(false);
+    expect(scopeEditable("doctrine")).toBe(false);
+    expect(scopeEditable("")).toBe(false);
   });
 });

@@ -349,6 +349,9 @@ func runUI(verb string, args []string) int {
 					AddRecordGoal: func(id, goal string) (project.Document, error) {
 						return project.AddGoal(projectRoots(roots), id, goal, time.Now().UTC())
 					},
+					SetRecordGoals: func(id string, goals []string) (project.Document, error) {
+						return project.SetGoals(projectRoots(roots), id, goals, time.Now().UTC())
+					},
 					AskQuestion: func(asked project.NewQuestion) (project.Asked, error) {
 						return project.AskQuestion(projectRoots(roots), asked, time.Now())
 					},

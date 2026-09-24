@@ -602,6 +602,31 @@
 .ms-briefing > .ms-tabs-strip {
   grid-column: 1 / -1;
   margin-bottom: 0;
+  /*
+   * The trailing cluster takes a line of its own rather than eating the tabs.
+   *
+   * This strip's cluster holds Find, the scope control and the one act, which
+   * beside six tabs is more than the reading column is wide. The tabs keep
+   * their own sideways scroll, so without this the cluster would take what it
+   * needs and the last tabs would sit past the strip's edge — a section of the
+   * page hidden behind a control. Wrapping is by content: the two stay on one
+   * line wherever both fit, and the cluster drops beneath them where they do
+   * not.
+   */
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+/*
+ * On its own line the cluster runs the width of the strip, and wraps within
+ * itself at a phone's width so nothing in it is past an edge either. The
+ * bound is what makes the wrap happen: without it the cluster is as wide as
+ * its content and overflows the strip rather than taking a second line.
+ */
+.ms-briefing > .ms-tabs-strip > .ms-tabs-action {
+  flex-wrap: wrap;
+  max-width: 100%;
+  margin-left: auto;
 }
 
 /*
@@ -1461,4 +1486,138 @@
     grid-column: 1 / -1;
     text-align: left;
   }
+}
+
+/* ------------------------------------------------------------- the scope -- */
+
+/*
+ * The scope control, on the strip, with the term that explains it.
+ *
+ * It stands in the trailing cluster before the act, because it chooses what
+ * is read where the act writes something new. At a narrow width the cluster
+ * takes a line of its own under the tabs rather than pushing either of them
+ * past an edge; the rule for that is with the other widths at the foot.
+ */
+.ms-project-scope {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+/*
+ * One goal's group in the Goals scope: what the goal is called, its id, and
+ * how many records stand under it. The title takes what is left and is
+ * clipped at its end, so a long intent never breaks the summary onto a second
+ * line and pushes the count out of reach.
+ */
+/*
+ * A group says it opens, because five collapsed goals with nothing under them
+ * read as a list of goals rather than as five things to open. The strip's
+ * other runs are a single row that says "3 done" and need no such mark; these
+ * are the page's whole content in this scope.
+ */
+.ms-project-group > .ms-project-run-summary::before {
+  content: "\25B8";
+  flex: 0 0 auto;
+  width: 10px;
+  color: var(--ms-text-3);
+}
+
+.ms-project-group[open] > .ms-project-run-summary::before {
+  content: "\25BE";
+}
+
+.ms-project-group-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-project-group-title:hover,
+.ms-project-group-title:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-project-group-id {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+}
+
+/*
+ * Which scope a row is in, where the listing mixes them: the goal's id, or
+ * the words for a record that names none. It stands with the status, quieter
+ * than it, because the status is what the record claims about itself and this
+ * is only where it lives.
+ */
+.ms-project-row-scope {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+a.ms-project-row-scope:hover,
+a.ms-project-row-scope:focus-visible {
+  color: var(--ms-accent);
+  text-decoration: underline;
+}
+
+/*
+ * The one line a goal page's tab ends with: what is project-wide, and the way
+ * to it. It is under the rows and set off from them, because it is a fact
+ * about somewhere else.
+ */
+.ms-project-wide {
+  margin: 12px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--ms-border);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* ---------------------------------------- what a record says it is about -- */
+
+/*
+ * The About row states a record's scope and offers the one act that changes
+ * it. The words for a record that names no goal are prose and not a link,
+ * because "this project" is where the reader already is.
+ */
+.ms-facts-about-project {
+  color: var(--ms-text-2);
+}
+
+.ms-facts-about-goal {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  min-width: 0;
+}
+
+.ms-facts-about-title {
+  color: var(--ms-text-2);
+}
+
+/*
+ * The picker, while it is open: a field that takes the width it can get, and
+ * the two acts beside it. It wraps, because a record may name several goals
+ * and the chips above the field take a line of their own once it does.
+ */
+.ms-facts-about-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0 8px;
+  min-width: 0;
+}
+
+.ms-facts-about-edit .ms-pick {
+  flex: 1 1 240px;
 }

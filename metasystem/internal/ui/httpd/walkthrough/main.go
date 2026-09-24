@@ -188,6 +188,9 @@ func main() {
 		AddRecordGoal: func(id, goal string) (project.Document, error) {
 			return project.AddGoal(roots, id, goal, time.Now().UTC())
 		},
+		SetRecordGoals: func(id string, goals []string) (project.Document, error) {
+			return project.SetGoals(roots, id, goals, time.Now().UTC())
+		},
 		PreviewDocument: project.PreviewDocument,
 		// The landing page's marker, over the fixture checkout, through the
 		// same package the engine wires: a walkthrough that kept the visit in
@@ -276,7 +279,13 @@ const (
 	walkthroughRecord   = "plans/designs/reading.md"
 	walkthroughPartly   = "plans/designs/reader.md"
 	walkthroughLanded   = "plans/designs/shell.md"
-	walkthroughText     = `# Reading and editing in place
+	// The intent index, which the canned pane already names. It is planted so
+	// that the walkthrough has one record of a kind that is about the project
+	// as a whole by definition: its page states that scope and offers no act
+	// to change it, which is the half of the About row that cannot be shown
+	// from a design.
+	walkthroughBook = "docs/intent/index.md"
+	walkthroughText = `# Reading and editing in place
 
 A document is read here as a chapter of a book rather than as a file, and from
 this slice it is edited here too: the article becomes a text area holding the
@@ -314,6 +323,21 @@ A document is read as a chapter of a book rather than as a file.
 Change the status above to something the grammar does not carry, and the save
 is refused with the problem the check verb would print.
 `
+	walkthroughBookText = `# Intent
+
+- Kind: intent
+- Id: intent-index
+- Status: accepted
+
+The MetaSystem is the machinery a human runs a fleet of agents with. It exists
+so that one person can hold the intent while the work is done by many hands.
+
+## What this is for
+
+A record of this kind is about the project as a whole, and the grammar refuses
+a Goals line on one: there is no goal an intent is narrowed to.
+`
+
 	walkthroughPartlyText = `# The document reader
 
 - Kind: design
@@ -370,6 +394,7 @@ func fixtureCheckout(calm bool) string {
 		{"plans/goals/g1-s13.md", "# g1-s13\n\n- State: queued\n- Intent: The goal page reads the whole record\n"},
 		{"records/goals/g1-s9.md", "# g1-s9\n\n- State: done\n- Intent: The application shell, the rail and the header\n"},
 		{"records/goals/g1-s10.md", "# g1-s10\n\n- State: done\n- Intent: The backlog's data path and the list\n"},
+		{walkthroughBook, walkthroughBookText},
 		{walkthroughDocument, walkthroughText},
 		{walkthroughRecord, walkthroughHead},
 		{walkthroughPartly, walkthroughPartlyText},
@@ -760,14 +785,40 @@ func (l *ledger) project() project.Pane {
 				ChangedAt: stampedAgo(20 * time.Hour),
 				Slices:    []string{},
 			}),
-			// Two decisions: one about the project as a whole, which is what a
-			// head with no Goals line means, and one about a goal, so the
-			// Decisions tab has rows on the Project page and on a goal's.
+			// The designs about the project as a whole, which is what a head
+			// with no Goals line means. They are what the Designs tab opens
+			// on: the scope control's default is the project's own records,
+			// and a tab whose kind had none of them would open empty on
+			// every walkthrough.
+			{
+				Kind: "design", ID: "design-interface", Status: "accepted", Goals: []string{},
+				Title: "The interface", Path: "plans/designs/interface.md", Home: "plans/designs",
+				Summary:   "The one standing design every slice of the interface is held to.",
+				ChangedAt: stampedAgo(4 * 24 * time.Hour),
+				Slices:    []string{},
+			},
+			{
+				Kind: "design", ID: "design-grammar", Status: "draft", Goals: []string{},
+				Title: "The record grammar", Path: "plans/designs/grammar.md", Home: "plans/designs",
+				Summary:   "What a head declares, and what each key means.",
+				ChangedAt: stampedAgo(26 * time.Hour),
+				Slices:    []string{},
+			},
+			// Three decisions: two about the project as a whole and one about
+			// a goal, so the Decisions tab has rows in every scope and on a
+			// goal's own page.
 			{
 				Kind: "decision", ID: "decision-one-binary", Status: "accepted", Goals: []string{},
 				Title: "One binary", Path: "docs/decisions/0001-one-binary.md", Home: "docs/decisions",
 				Summary:   "The engine ships as one executable, and the interface is served from it.",
 				ChangedAt: stampedAgo(31 * 24 * time.Hour),
+				Slices:    []string{},
+			},
+			{
+				Kind: "decision", ID: "decision-loopback", Status: "accepted", Goals: []string{},
+				Title: "Loopback only", Path: "docs/decisions/0003-loopback.md", Home: "docs/decisions",
+				Summary:   "The interface is served to the machine it runs on and to nowhere else.",
+				ChangedAt: stampedAgo(18 * 24 * time.Hour),
 				Slices:    []string{},
 			},
 			{
@@ -828,6 +879,7 @@ func (l *ledger) project() project.Pane {
 		},
 		Problems: []project.Problem{},
 		Documents: []project.File{
+			{Path: walkthroughBook, Title: "Intent"},
 			{Path: walkthroughDocument, Title: "Reading and editing in place"},
 			{Path: walkthroughRecord, Title: "The reading pane"},
 			{Path: walkthroughPartly, Title: "The document reader"},

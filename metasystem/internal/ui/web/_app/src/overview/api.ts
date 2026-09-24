@@ -66,12 +66,24 @@ export type Progress = { id: string; title: string; path: string; done: number; 
 
 export type Designs = { total: number; done: number; inFlight: number; progress: Progress[] };
 
+/**
+ * One kind of record counted by what it is about: the project's own — the ones
+ * whose head names no goal — and the ones that name at least one. A record
+ * naming three goals is one record here and not three.
+ */
+export type Scope = { own: number; underGoals: number };
+
+/** The three kinds the Project page's scope control narrows, counted both ways. */
+export type Scoped = { decisions: Scope; designs: Scope; questions: Scope };
+
 export type Memory = {
   intent: Book;
   doctrine: Book;
   decisions: Tally;
   designs: Designs;
   questions: number;
+  /** The same three kinds by scope, which is what the tiles show. */
+  scoped: Scoped;
 };
 
 /**

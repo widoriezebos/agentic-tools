@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M39Z1P1MG9ZWF0CRMREC8D4D
-- Status: accepted
+- Status: done
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE 01M348YTJ2EY11F37Y5KBVNSER
 
 Revision 1, 2026-09-24, Claude on Fable, on Wido's finding that a design made on a goal page also appears, unmarked, on the Project page: "We will have too many designs at project level then ... I don't want to be overwhelmed with designs at project level. I do want to see the designs that are applicable to the goal that I'm looking at." Ruled "I agree. Go." Frontend, the Overview's composition and the Partner's index; the record grammar is unchanged: a record's scope is its `Goals:` line, a question's its `goals` column, and none means the project as a whole.

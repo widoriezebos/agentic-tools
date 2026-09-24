@@ -520,11 +520,35 @@ function destinationOf(item: Item): string | undefined {
  * What the project has written down, as five tiles: an icon, a number and a
  * word, each one the way into the tab that holds it. The vision sentence is
  * not here — it lives on Project, where there is room to read it.
+ *
+ * Three of the five count the project's own records — the ones whose head
+ * names no goal — with the rest named beneath them, because scope is a filter
+ * with a sensible default rather than two lists, and the same rule holds
+ * wherever counts appear. A tile that counted four hundred designs said only
+ * that the project is large; one that counts the twelve that shape everything
+ * says what the project's own memory holds, and the line under it says the
+ * rest is there. The two books have no such line: a chapter of either is about
+ * the project as a whole by definition.
  */
-type MemoryTile = { id: string; icon: LucideIcon; value: number; word: string; note: string; to: string };
+type MemoryTile = {
+  id: string;
+  icon: LucideIcon;
+  value: number;
+  word: string;
+  note: string;
+  /** How many more of this kind are under goals, or "" where none are. */
+  under: string;
+  to: string;
+};
+
+/** The line beneath a tile's figure: the rest of this kind, or nothing. */
+export function underGoalsLine(count: number): string {
+  return count === 0 ? "" : `+${String(count)} under goals`;
+}
 
 function Memory({ page }: { page: OverviewPayload }) {
   const memory = page.memory;
+  const scoped = memory.scoped;
   const tiles: MemoryTile[] = [
     {
       id: "intent",
@@ -532,6 +556,7 @@ function Memory({ page }: { page: OverviewPayload }) {
       value: memory.intent.chapters,
       word: "Intent",
       note: "",
+      under: "",
       to: projectPath("intent"),
     },
     {
@@ -540,43 +565,51 @@ function Memory({ page }: { page: OverviewPayload }) {
       value: memory.doctrine.chapters,
       word: "Doctrine",
       note: "",
+      under: "",
       to: projectPath("doctrine"),
     },
     {
       id: "decisions",
       icon: Gavel,
-      value: memory.decisions.total,
+      value: scoped.decisions.own,
       word: "Decisions",
-      note: memory.decisions.drafts > 0 ? `${String(memory.decisions.drafts)} draft` : "",
+      // The draft count is the whole shelf's, because it is a fact about the
+      // decisions rather than about this scope of them, and the page that
+      // opens from here says which are which.
+      note: memory.decisions.drafts > 0 ? `${String(memory.decisions.drafts)} draft in all` : "",
+      under: underGoalsLine(scoped.decisions.underGoals),
       to: projectPath("decisions"),
     },
     {
       id: "designs",
       icon: PenTool,
-      value: memory.designs.total,
+      value: scoped.designs.own,
       word: "Designs",
-      note: `${String(memory.designs.done)} done`,
+      note: memory.designs.done > 0 ? `${String(memory.designs.done)} done in all` : "",
+      under: underGoalsLine(scoped.designs.underGoals),
       to: projectPath("designs"),
     },
     {
       id: "questions",
       icon: MessageCircle,
-      value: memory.questions,
+      value: scoped.questions.own,
       word: "Open questions",
       note: "",
+      under: underGoalsLine(scoped.questions.underGoals),
       to: projectPath("questions"),
     },
   ];
   return (
     <Block id="memory" title="The project's memory" help="overview-memory">
       <ul className="ms-overview-memory">
-        {tiles.map(({ id, icon: Icon, value, word, note, to }) => (
+        {tiles.map(({ id, icon: Icon, value, word, note, under, to }) => (
           <li key={id} className="ms-overview-memory-item">
             <NavLink className="ms-overview-memory-tile" to={to}>
               <Icon className="ms-overview-memory-icon" size={16} strokeWidth={1.75} aria-hidden="true" />
               <span className="ms-overview-memory-figure">{value}</span>
               <span className="ms-overview-memory-word">{word}</span>
               {note !== "" && <span className="ms-overview-memory-note">{note}</span>}
+              {under !== "" && <span className="ms-overview-memory-under">{under}</span>}
             </NavLink>
           </li>
         ))}

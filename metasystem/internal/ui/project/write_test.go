@@ -708,6 +708,184 @@ func TestAddGoalNamesAConcludedGoal(t *testing.T) {
 	testutil.Expect(t, "the project refuses nothing", pane.Problems, []Problem{})
 }
 
+/* ------------------------------ the scope, stated by the human who owns it -- */
+
+// Scope is a fact a human can change, from the page that states it: the Goals
+// line says exactly what was chosen, in the order it was chosen, and every
+// other byte of the file comes back as it was.
+func TestSetGoalsRewritesTheGoalsLineAndTouchesNothingElse(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	path := "metasystem/plans/designs/pane/reading.md"
+	before := fileAt(t, roots, path)
+
+	document, err := SetGoals(roots, "design-reading", []string{"two-homes", "ledger-sync"}, readAt)
+
+	testutil.Require(t, "say what it is about", err, nil)
+	testutil.Expect(t, "the head the reader is answered with",
+		document.Record.Goals, []string{"two-homes", "ledger-sync"})
+	after := fileAt(t, roots, path)
+	testutil.Expect(t, "the Goals line is the one line that changed",
+		strings.Replace(after, "- Goals: two-homes ledger-sync\n", "- Goals: reading-pane\n", 1), before)
+	testutil.Expect(t, "the head's other lines are byte-identical",
+		headLinesOf(after, "Goals"), headLinesOf(before, "Goals"))
+	testutil.Expect(t, "the line count is the same",
+		strings.Count(after, "\n"), strings.Count(before, "\n"))
+}
+
+// Naming no goal is a statement and not an omission: the record is about the
+// project as a whole, which the grammar says with no Goals line at all rather
+// than with an empty one.
+func TestSetGoalsWithNoneTakesTheLineOut(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	path := "metasystem/plans/designs/pane/reading.md"
+	before := fileAt(t, roots, path)
+
+	document, err := SetGoals(roots, "design-reading", []string{}, readAt)
+
+	testutil.Require(t, "say it is about the project", err, nil)
+	testutil.Expect(t, "the head names no goal", document.Record.Goals, []string{})
+	after := fileAt(t, roots, path)
+	testutil.Expect(t, "the Goals line is gone", strings.Contains(after, "- Goals:"), false)
+	testutil.Expect(t, "and it is the only line that went", after,
+		strings.Replace(before, "- Goals: reading-pane\n", "", 1))
+	// The project still reads: a record about the project as a whole is what
+	// most of the decisions in this checkout are.
+	pane, err := ReadPane(roots, readAt)
+	testutil.Require(t, "read the pane back", err, nil)
+	testutil.Expect(t, "the project refuses nothing", pane.Problems, []Problem{})
+}
+
+// A head that declares no goals is given a Goals line where the grammar writes
+// one, exactly as the machine's own act writes it.
+func TestSetGoalsWritesAGoalsLineWhereTheHeadDeclaresNone(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	path := "metasystem/docs/decisions/0001-one-binary.md"
+	before := fileAt(t, roots, path)
+	testutil.Require(t, "the head declares no goals", strings.Contains(before, "Goals"), false)
+
+	document, err := SetGoals(roots, "decision-one-binary", []string{"ledger-sync"}, readAt)
+
+	testutil.Require(t, "say what it is about", err, nil)
+	testutil.Expect(t, "the head the reader is answered with", document.Record.Goals, []string{"ledger-sync"})
+	testutil.Expect(t, "the line is written under Status", fileAt(t, roots, path),
+		strings.Replace(before, "- Status: accepted\n", "- Status: accepted\n- Goals: ledger-sync\n", 1))
+}
+
+// A record that already says it is about the project and is told so again is
+// a write that changes nothing rather than a refusal: the human asked for what
+// the file already says.
+func TestSetGoalsWithNoneOnARecordThatNamesNoneChangesNothing(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	path := "metasystem/docs/decisions/0001-one-binary.md"
+	before := fileAt(t, roots, path)
+
+	document, err := SetGoals(roots, "decision-one-binary", []string{}, readAt)
+
+	testutil.Require(t, "say it again", err, nil)
+	testutil.Expect(t, "the head names no goal", document.Record.Goals, []string{})
+	testutil.Expect(t, "and the file is what it was", fileAt(t, roots, path), before)
+}
+
+// The same goal named twice is one goal, and space around an id is not part
+// of it: what the picker sends is what a human chose, and the line the writer
+// leaves says each of them once.
+func TestSetGoalsWritesEachGoalOnceAndTrimmed(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+
+	document, err := SetGoals(roots, "design-reading",
+		[]string{" ledger-sync ", "ledger-sync", "", "two-homes"}, readAt)
+
+	testutil.Require(t, "say what it is about", err, nil)
+	testutil.Expect(t, "each goal once, in the order they were named",
+		document.Record.Goals, []string{"ledger-sync", "two-homes"})
+}
+
+// A concluded goal is a goal: the picker offers it, the resolver accepts it,
+// and a record may be about work that has already shipped.
+func TestSetGoalsNamesAConcludedGoal(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+
+	document, err := SetGoals(roots, "design-reading", []string{"two-homes"}, readAt)
+
+	testutil.Require(t, "name the concluded goal", err, nil)
+	testutil.Expect(t, "the head names it", document.Record.Goals, []string{"two-homes"})
+	pane, err := ReadPane(roots, readAt)
+	testutil.Require(t, "read the pane back", err, nil)
+	testutil.Expect(t, "the project refuses nothing", pane.Problems, []Problem{})
+}
+
+// The three refusals, each leaving the file exactly as it was: a goal the
+// ledger does not carry, a chapter of a book, and an id nothing declares.
+func TestSetGoalsRefusals(t *testing.T) {
+	t.Parallel()
+
+	for _, refused := range []struct {
+		what, id, path string
+		goals          []string
+		kind           RefusalKind
+		message        string
+	}{
+		{
+			what: "a goal the ledger does not carry", id: "design-reading", goals: []string{"logistics"},
+			path: "metasystem/plans/designs/pane/reading.md", kind: RefusalBad,
+			message: `the goal "logistics" is not in the ledger`,
+		},
+		{
+			what: "one goal the ledger has and one it does not", id: "design-reading",
+			goals: []string{"ledger-sync", "logistics"},
+			path:  "metasystem/plans/designs/pane/reading.md", kind: RefusalBad,
+			message: `the goal "logistics" is not in the ledger`,
+		},
+		{
+			what: "a chapter of a book", id: "intent-index", goals: []string{"ledger-sync"},
+			path: "metasystem/docs/intent/index.md", kind: RefusalBad,
+			message: "an intent or doctrine record names goals",
+		},
+		{
+			what: "a chapter of a book told it is about the project", id: "intent-index", goals: []string{},
+			path: "metasystem/docs/intent/index.md", kind: RefusalBad,
+			message: "an intent or doctrine record names goals",
+		},
+		{
+			what: "an id nothing declares", id: "design-nothing", goals: []string{"ledger-sync"},
+			path: "metasystem/plans/designs/pane/reading.md", kind: RefusalAbsent,
+			message: "no record declares the id design-nothing",
+		},
+	} {
+		t.Run(refused.what, func(t *testing.T) {
+			t.Parallel()
+			roots := selfHostedFixture(t)
+			seed(t, roots)
+			before := fileAt(t, roots, refused.path)
+
+			_, err := SetGoals(roots, refused.id, refused.goals, readAt)
+
+			refusal := refusalOf(t, err)
+			testutil.Expect(t, "the kind", refusal.Kind, refused.kind)
+			testutil.Expect(t, "the reason", refusal.Message, refused.message)
+			testutil.Expect(t, "nothing was written", fileAt(t, roots, refused.path), before)
+		})
+	}
+}
+
 // headLinesOf is a record's head as its lines, without the one named: what
 // "every other line is byte-identical" is asserted over.
 func headLinesOf(text, without string) []string {

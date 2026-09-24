@@ -448,6 +448,68 @@ func TestTheProjectsMemory(t *testing.T) {
 	testutil.Expect(t, "open questions", page.Memory.Questions, 2)
 }
 
+// The memory tiles count the project's own records — the ones whose head names
+// no goal — and say how many more are under goals beneath them.
+//
+// Scope is a filter with a sensible default rather than two lists, and the
+// same rule holds wherever counts appear: a tile that counted four hundred
+// designs said only that the project is large, where one that counts the five
+// that shape everything says what the project's own memory holds.
+func TestTheMemoryTilesCountByScope(t *testing.T) {
+	t.Parallel()
+
+	page := composed(t, func(in *Inputs) {
+		// One open question about a goal, so every kind has both sides.
+		in.Project.Questions = append(in.Project.Questions, project.Question{
+			ID: "q-scoped", Opened: ago(time.Hour), Question: "Scoped", Status: "open",
+			Goals: []string{"g1-s12"},
+		})
+	})
+
+	testutil.Expect(t, "decisions by scope", page.Memory.Scoped.Decisions, Scope{Own: 1, UnderGoals: 1})
+	// A design naming two goals is one design under goals and not two: this
+	// counts records, and standing under each goal it names is a grouping.
+	testutil.Expect(t, "designs by scope", page.Memory.Scoped.Designs, Scope{Own: 1, UnderGoals: 4})
+	testutil.Expect(t, "open questions by scope", page.Memory.Scoped.Questions, Scope{Own: 2, UnderGoals: 1})
+
+	// The whole-shelf counts beside them are unchanged: the tiles read their
+	// figure from the scoped counts and their note from these, and neither is
+	// derived from the other.
+	testutil.Expect(t, "the decisions tally still counts the shelf", page.Memory.Decisions,
+		Tally{Total: 2, Drafts: 1})
+	testutil.Expect(t, "and the design shelf still counts itself", page.Memory.Designs.Total, 5)
+}
+
+// An answered question is on neither side of the line. The tile beside this
+// one is the open questions, and counting the answered ones into it would put
+// a number on the page that nothing on the Project page agrees with.
+func TestTheQuestionScopeCountsOnlyTheOpenRows(t *testing.T) {
+	t.Parallel()
+
+	page := composed(t, func(in *Inputs) {
+		in.Project.Questions = []project.Question{
+			{ID: "q-open", Opened: ago(time.Hour), Question: "Open", Status: "open", Goals: []string{}},
+			{ID: "q-shut", Opened: ago(time.Hour), Question: "Answered", Status: "answered",
+				Goals: []string{"g1-s12"}},
+		}
+	})
+
+	testutil.Expect(t, "open questions by scope", page.Memory.Scoped.Questions, Scope{Own: 1, UnderGoals: 0})
+}
+
+// A project with nothing in it counts nothing, rather than counting the
+// absence of a Goals line on records that are not there.
+func TestAnEmptyProjectCountsNothingByScope(t *testing.T) {
+	t.Parallel()
+
+	page := composed(t, func(in *Inputs) {
+		in.Project.Records = []project.Record{}
+		in.Project.Questions = []project.Question{}
+	})
+
+	testutil.Expect(t, "by scope", page.Memory.Scoped, Scoped{})
+}
+
 func TestABookWithNoIndexIsSaidRatherThanInvented(t *testing.T) {
 	t.Parallel()
 

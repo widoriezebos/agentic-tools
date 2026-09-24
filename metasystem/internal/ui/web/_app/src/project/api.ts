@@ -4,9 +4,9 @@
  *
  * The two reads are made once per page view and again on Reload, and nowhere
  * else: no stream, no socket, no timer, and no window event refetches either
- * of them. The five writes are made when a human confirms one, and never on
+ * of them. The six writes are made when a human confirms one, and never on
  * their own; the save and the render below are made when a human asks for
- * them, in an editor they opened. All nine go through the one request below,
+ * them, in an editor they opened. All ten go through the one request below,
  * so there is a single place where this build reaches the network;
  * src/cuts.test.ts holds that by counting call sites, so a second request
  * written under any other name fails the guard rather than the review.
@@ -18,7 +18,7 @@ const RECORDS = "/api/project/records";
 const QUESTIONS = "/api/project/questions";
 /** The suffix both status routes share; the id is the segment before it. */
 const STATUS = "/status";
-/** Naming one more ledger goal on a record; the id is the segment before it. */
+/** What a record is about; the id is the segment before it. */
 const GOALS = "/goals";
 /** Saving one document: the read route's own id, with this after it. */
 const EDIT = "/edit";
@@ -252,7 +252,7 @@ export async function loadDocument(id: string, signal?: AbortSignal): Promise<Do
   return request<DocumentPayload>(DOCUMENTS + encodeSegments(id), undefined, signal);
 }
 
-/* -------------------------------------------------------- the five writes -- */
+/* --------------------------------------------------------- the six writes -- */
 
 /**
  * What a human asked the interface to create. Everything else about the
@@ -292,6 +292,19 @@ export async function setQuestionStatus(id: string, status: string): Promise<Ask
  */
 export async function addRecordGoal(id: string, goal: string): Promise<DocumentPayload> {
   return request<DocumentPayload>(`${RECORDS}/${encodeURIComponent(id)}${GOALS}`, { add: goal });
+}
+
+/**
+ * Say what a record is about, as the whole list.
+ *
+ * It is the same resource as the act above and a different statement: that one
+ * is the machine writing down a goal it has just minted, and this is a human
+ * saying what this record is for. An empty list is a statement too — the
+ * record is about the project as a whole — so the field is sent whatever it
+ * holds, and the route reads its presence rather than its length.
+ */
+export async function setRecordGoals(id: string, goals: string[]): Promise<DocumentPayload> {
+  return request<DocumentPayload>(`${RECORDS}/${encodeURIComponent(id)}${GOALS}`, { set: goals });
 }
 
 /* ------------------------------------------ editing one document in place -- */
