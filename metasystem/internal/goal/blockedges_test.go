@@ -39,7 +39,7 @@ func channelProofForTest(t *testing.T, root string, now time.Time) *humanauthori
 	t.Helper()
 	proof, err := humanauthority.VerifiedChannelAnswerProof(root, governance.RecordedChannelAuthority{
 		Outcome:  governance.AuthorityOutcomeVerifiedChannelAnswer,
-		Provider: "slack", UserID: "Wido", MessageRef: "1/2", ContextID: "thread-1", Step: 42,
+		Provider: "slack", UserID: "UWIDO", MessageRef: "1/2", ContextID: "thread-1", Step: 42,
 	}, now)
 	if err != nil {
 		t.Fatalf("mint a verified channel answer proof: %v", err)
@@ -678,6 +678,13 @@ func TestANameWithoutAProofIsASeatOnAMultiTargetOpen(t *testing.T) {
 // The early lift is admitted by the approval gate approve uses, so a verified
 // channel answer reaches it as well as a signed-in session, and its
 // provenance lands on the History line the way an approval's does.
+//
+// The answer's handle is an account on somebody else's service and the act is
+// recorded under the name the person is called here, and the two differ —
+// which is the ordinary case and not a substitution. Nothing in this
+// repository maps one to the other, so the channel class settles that a
+// person acted and not which, and the name stands. A comparison here would
+// refuse every channel act whose author is not named after their Slack id.
 func TestEarlyUnblockIsAdmittedByAVerifiedChannelAnswer(t *testing.T) {
 	t.Parallel()
 	_, root, _ := twoClones(t)
@@ -690,7 +697,11 @@ func TestEarlyUnblockIsAdmittedByAVerifiedChannelAnswer(t *testing.T) {
 	}
 
 	request := personReq(root, "01J5X00000000000000000BZ02", "mac-a")
-	result, err := Unblock(request, "waits-channel", "dep-channel", channelProofForTest(t, root, request.Now))
+	answered := channelProofForTest(t, root, request.Now)
+	if answered.ChannelUser == request.Actor.Human {
+		t.Fatal("the fixture must name the account and the person differently, or it proves nothing")
+	}
+	result, err := Unblock(request, "waits-channel", "dep-channel", answered)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("a verified channel answer could not run an early unblock: %+v %v", result, err)
 	}
@@ -700,8 +711,13 @@ func TestEarlyUnblockIsAdmittedByAVerifiedChannelAnswer(t *testing.T) {
 	}
 	last := tree.Live["waits-channel"].History[len(tree.Live["waits-channel"].History)-1]
 	if last.Verb != "unblock" || last.AuthorityOutcome != AuthorityOutcomeVerifiedChannelAnswer ||
-		last.ChannelProvider != "slack" || last.ChannelUser != "Wido" || last.ChannelRef != "1/2" {
+		last.ChannelProvider != "slack" || last.ChannelUser != "UWIDO" || last.ChannelRef != "1/2" {
 		t.Fatalf("the channel answer's provenance is not on the line: %+v", last)
+	}
+	// Both halves are on the record and neither was rewritten to match the
+	// other: the account that answered, and the person it is recorded under.
+	if last.Actor != "human:Wido" {
+		t.Fatalf("the act is not recorded under the person who made it: %q", last.Actor)
 	}
 	assertFilesParse(t, tree)
 }

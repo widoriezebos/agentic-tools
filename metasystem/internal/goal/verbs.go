@@ -1082,6 +1082,9 @@ func humanHand(r VerbRequest, proof *humanauthority.Proof) (admitted *humanautho
 	if classErr != nil {
 		return nil, false, nil
 	}
+	// The name must be the proof's own where the proof names one. Where it
+	// does not — a channel account, a relayed word — the name stands, and
+	// what the proof settles is that a person acted rather than which.
 	if named := humanOfProof(r.Endpoint.Root, proof); named != "" && named != r.Actor.Human {
 		return nil, false, fmt.Errorf("the proof names %s and the act is attributed to %s; an act is recorded under the person who made it", named, r.Actor.Human)
 	}
@@ -1089,25 +1092,34 @@ func humanHand(r VerbRequest, proof *humanauthority.Proof) (admitted *humanautho
 }
 
 // humanOfProof is the person an admitted proof names, or "" where its class
-// names nobody a --by could be checked against.
+// names nobody a --by can be checked against.
 //
-// Three classes name somebody: the enrolled terminal records the person it
-// was enrolled for, and the signed-in session and the verified channel answer
-// both carry the handle the act came from. The recorded relay names none — it
-// carries the words that were relayed and not who relayed them, which is the
-// whole reason it is temporary — so there the name stands on its own, as it
-// always has.
+// Two classes name somebody in the same words a --by is written in. The
+// enrolled terminal records the person it was enrolled for. The signed-in
+// session carries the handle the person signed in as, which is that person's
+// name: the seat mints the proof from it.
 //
-// A fixture proof is deliberately not read from the enrollment: it proves a
-// checkout that declared the fake runtime and nothing about a person, so
-// there is nobody in it to compare a name with.
+// The rest name nobody this comparison can use, and are outside it:
+//
+//   - A channel answer carries a provider's user id — U123, an account on
+//     somebody else's service. It identifies the account that answered and
+//     says nothing about what that account's owner is called here, and this
+//     repository holds no mapping between the two. Comparing them would not
+//     be binding a name to a proof; it would be refusing every channel act
+//     whose author is not named after their Slack id.
+//   - The recorded relay carries the words that were relayed and not who
+//     relayed them, which is the whole reason it is temporary.
+//   - A fixture proof proves a checkout that declared the fake runtime and
+//     nothing about a person, so there is nobody in it to compare with.
+//
+// For all of those the name stands on its own, as it always has. What proves
+// the act is still the proof; what this function decides is only whether the
+// proof also settles who the act is recorded under.
 func humanOfProof(root string, proof *humanauthority.Proof) string {
 	if proof == nil {
 		return ""
 	}
-	if proof.Outcome == humanauthority.OutcomeSession ||
-		proof.Outcome == humanauthority.OutcomeVerifiedChannel ||
-		proof.Outcome == humanauthority.OutcomeChannel {
+	if proof.Outcome == humanauthority.OutcomeSession {
 		return proof.ChannelUser
 	}
 	if !proof.EnrolledTerminalFor(root) {
