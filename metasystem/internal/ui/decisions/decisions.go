@@ -185,6 +185,15 @@ type Need struct {
 	// from the window's own day, and a row nothing dated is never new. See
 	// newSince.
 	New bool `json:"new"`
+	// sinceIsDay says Since was made from a calendar date rather than read as
+	// an instant somebody recorded: a ruling review's due date and an
+	// approval's review-by date are days, and dayStamp writes them as
+	// midnight so that they sort beside the instants every other row carries.
+	// Midnight is not when that day began for this human, so the newness test
+	// reads them back as the days they were. It is not part of the payload —
+	// the page reads Since as the stamp it is — and nothing but newSince
+	// looks at it.
+	sinceIsDay bool
 	// Words, Context, Owner, Class and Due are the register row a ruling
 	// review names, carried on the row rather than joined by the reader: the
 	// review's own record is the id, the owner and the schedule, and what the
@@ -400,7 +409,7 @@ func Compose(in Inputs, now time.Time) Page {
 	inbox := needsYou(in, now)
 	waiting := 0
 	for index := range inbox {
-		inbox[index].New = newSince(inbox[index].Since, in.Since)
+		inbox[index].New = newSince(inbox[index].Since, inbox[index].sinceIsDay, in.Since)
 		// Every field is written, including the ones a particular row has
 		// nothing for: a reader never has to tell an absent list from an
 		// empty one.
@@ -438,11 +447,19 @@ func Compose(in Inputs, now time.Time) Page {
 // nothing dated is never new: the record does not say when it began, and a
 // page that guessed would be marking rows new on no evidence. And a window
 // nothing set makes nothing new, for the same reason.
-func newSince(since string, from time.Time) bool {
+//
+// Two of the calendar dates arrive here already written as an instant, because
+// they sort beside the instants: byDay says the day is still what was
+// recorded, and it is compared as one. Without it a ruling due today reads as
+// midnight and a window that opened this morning calls it old.
+func newSince(since string, byDay bool, from time.Time) bool {
 	if since == "" || from.IsZero() {
 		return false
 	}
 	if at, dated := instant(since); dated {
+		if byDay {
+			return !dayOf(at).Before(dayOf(from))
+		}
 		return at.After(from)
 	}
 	if day, err := time.Parse(rulings.DateLayout, since); err == nil {
@@ -549,10 +566,11 @@ func renewals(rows []backlog.Row) []Need {
 	sortByRank(expired)
 	for index := range expired {
 		row := expired[index]
+		since, fromDay := expiredAt(*row.Approved)
 		need := Need{
 			Kind: KindRenewal, ID: row.ID, Title: titleOf(row),
 			Asked: "Renew the approval of " + titleOf(row) + ": " + row.Approved.ExpiredWhy,
-			By:    row.Approved.By, Since: expiredAt(*row.Approved),
+			By:    row.Approved.By, Since: since, sinceIsDay: fromDay,
 			Where: Where{Kind: WhereGoal, ID: row.ID},
 		}
 		if row.Claim == nil {
@@ -576,11 +594,15 @@ func renewals(rows []backlog.Row) []Need {
 // enrolled, the standing authority horizon passing — names no date of its
 // own here, so the row is dated from the approval itself rather than from an
 // instant this page would have to invent.
-func expiredAt(approval backlog.Approval) string {
+//
+// The second result says which of the two it answered with: a review date is
+// a day written as midnight, and the newness test has to know that before it
+// compares it to a window that opened after midnight.
+func expiredAt(approval backlog.Approval) (string, bool) {
 	if stamped := dayStamp(approval.ReviewBy); stamped != "" {
-		return stamped
+		return stamped, true
 	}
-	return approval.At
+	return approval.At, false
 }
 
 // asks is this seat's open channel questions, shown as recorded.
@@ -866,10 +888,11 @@ func rulingReviews(register rulings.Register, at string, now time.Time) []Need {
 			continue
 		}
 		row := worded[review.ID]
+		due := dayStamp(review.Due)
 		needs = append(needs, Need{
 			Kind: KindRulingReview, ID: review.ID, Title: review.ID,
 			Asked: "Review " + review.ID + ", due " + review.Due + ": adopt, revise or withdraw",
-			By:    review.Owner, Since: dayStamp(review.Due),
+			By:    review.Owner, Since: due, sinceIsDay: due != "",
 			Silence: "it stays in force as written",
 			Where:   Where{Kind: WhereRegister, ID: at},
 			// The schedule is the review's own; the words and the context are

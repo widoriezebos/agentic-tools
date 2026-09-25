@@ -13,8 +13,10 @@ import (
 //
 // The dates the kinds carry are uneven and this page is honest about that
 // rather than exact: a goal's opening instant is an instant, a question's
-// opened column is a calendar date, and some rows carry nothing at all. Each
-// of the three is a rule a human can be told, and each of the three is here.
+// opened column is a calendar date, a ruling review's due date and an
+// approval's review-by date are calendar dates the row carries as midnight so
+// that they sort beside the instants, and some rows carry nothing at all. Each
+// of the four is a rule a human can be told, and each of the four is here.
 
 // window is the boundary these tests compare against: a day and a half before
 // the instant everything else is composed at.
@@ -84,6 +86,80 @@ func TestACalendarDateIsNewFromTheWindowsOwnDay(t *testing.T) {
 	if len(want) != 0 {
 		t.Errorf("the inbox lost a question: %v", want)
 	}
+}
+
+// A ruling review and a renewal are dated from calendar dates too — the
+// register's due date and the approval's review-by date — but the row carries
+// each as midnight, so that a date which has passed sorts beside the instants
+// every other row carries. Midnight is not when that day began for this human,
+// so they are still read as the days they were: a review due today is new to
+// somebody whose last visit ended at nine this morning, and comparing midnight
+// as an instant would tell them today's review is old.
+func TestADateCarriedAsMidnightIsNewFromTheWindowsOwnDay(t *testing.T) {
+	t.Parallel()
+
+	// Nine in the morning of the day the page is composed on. The window
+	// opening AFTER midnight is the whole of what this covers.
+	morning := time.Date(2026, 9, 25, 9, 0, 0, 0, time.UTC)
+
+	in := everyKind()
+	in.Since = morning
+	// R-2 is the one review whose date has passed; it is due today.
+	in.Register.Reviews[0].Due = "2026-09-25"
+	// g1-s42 is the unclaimed expired approval; its review date is today.
+	in.Rows[2].Approved.ReviewBy = "2026-09-25"
+	in.Rows[2].Approved.ExpiredWhy = "the review date 2026-09-25 has passed"
+	page := Compose(in, observed)
+
+	review := needOf(t, page, KindRulingReview)
+	if review.ID != "R-2" {
+		t.Fatalf("the review is not the one whose date passed: %+v", review)
+	}
+	if !review.New {
+		t.Errorf("a review due on the window's own day is not new: since %q", review.Since)
+	}
+	renewal := needByID(t, page, KindRenewal, "g1-s42")
+	if !renewal.New {
+		t.Errorf("a renewal whose review date is the window's own day is not new: since %q", renewal.Since)
+	}
+	// And each still carries the instant it carried before: the stamp is what
+	// the page reads and what the past-due tier sorts on.
+	if review.Since != "2026-09-25T00:00:00Z" || renewal.Since != "2026-09-25T00:00:00Z" {
+		t.Errorf("a date stopped being carried as an instant: review %q, renewal %q",
+			review.Since, renewal.Since)
+	}
+}
+
+// The day before the window is before it, which is the other half of the rule:
+// reading these by day must not make every date that ever passed new.
+func TestADateTheDayBeforeTheWindowIsNotNew(t *testing.T) {
+	t.Parallel()
+
+	in := everyKind()
+	in.Since = time.Date(2026, 9, 25, 9, 0, 0, 0, time.UTC)
+	in.Register.Reviews[0].Due = "2026-09-24"
+	in.Rows[2].Approved.ReviewBy = "2026-09-24"
+	page := Compose(in, observed)
+
+	if review := needOf(t, page, KindRulingReview); review.New {
+		t.Errorf("a review due the day before the window is new: since %q", review.Since)
+	}
+	if renewal := needByID(t, page, KindRenewal, "g1-s42"); renewal.New {
+		t.Errorf("a renewal dated the day before the window is new: since %q", renewal.Since)
+	}
+}
+
+// needByID is one row of a kind by its id, for the kinds the inbox carries
+// more than one of.
+func needByID(t *testing.T, page Page, kind, id string) Need {
+	t.Helper()
+	for _, need := range page.NeedsYou {
+		if need.Kind == kind && need.ID == id {
+			return need
+		}
+	}
+	t.Fatalf("the inbox carries no %s row for %s: %+v", kind, id, page.NeedsYou)
+	return Need{}
 }
 
 func TestARowNothingDatedIsNeverNewAndNeitherIsAnyRowWithoutAWindow(t *testing.T) {
