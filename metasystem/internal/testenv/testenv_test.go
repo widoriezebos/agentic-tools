@@ -240,7 +240,7 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = live.cleanup() })
+	t.Cleanup(func() { _ = live.cleanupReporting(io.Discard) })
 	dead, err := createRegistryHomeUnder(os.MkdirTemp, root)
 	if err != nil {
 		t.Fatal(err)
@@ -270,17 +270,18 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 		}
 		return path
 	}
-	removed := []string{
+	// Sidecars of an authenticated dead registry go once their log is unlocked.
+	removed := []string{file(filepath.Base(dead.path)+".custodian-456.log", false)}
+	// Neither age nor an absent home proves who owns a sidecar.
+	kept := []string{
 		file(registryHomePrefix+"old.custodian.log", true),
 		file(registryHomePrefix+"old.custodian-123.log", true),
-	}
-	kept := []string{
-		file(registryHomePrefix+"young.custodian.log", false),
 		file(registryHomePrefix+"young.custodian-123.log", false),
+		file(registryHomePrefix+"young.custodian.log", false),
+		file(filepath.Base(live.path)+".custodian-123.log", false),
 		file(registryHomePrefix+"old.custodian-x.log", true),
 		file(registryHomePrefix+"old.txt", true),
 		file("other.custodian-1.log", true),
-		file(filepath.Base(dead.path)+".custodian-456.log", false),
 	}
 	oldDirectory := filepath.Join(root, registryHomePrefix+"old.custodian-789.log")
 	checkTestenv(t, os.Mkdir(oldDirectory, 0o700))
@@ -291,8 +292,8 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 	checkTestenv(t, os.Symlink(linkTarget, logSymlink))
 	kept = append(kept, logSymlink, linkTarget)
 
-	removeDeadRegistryHomes(root)
-	removeDeadRegistryHomes(root)
+	removeDeadRegistryHomes(root, io.Discard)
+	removeDeadRegistryHomes(root, io.Discard)
 	if _, err := os.Stat(dead.path); !os.IsNotExist(err) {
 		t.Fatalf("dead registry survived cleanup: %v", err)
 	}
@@ -316,37 +317,46 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 	}
 }
 
-func TestAgedSweepRemovesFixtureRecordFiles(t *testing.T) {
+func TestSweepKeepsSidecarsWithoutAuthenticatedDeadHome(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
+	live, err := createRegistryHomeUnder(os.MkdirTemp, root)
+	checkTestenv(t, err)
+	t.Cleanup(func() { _ = live.cleanupReporting(io.Discard) })
 	old := time.Now().Add(-8 * 24 * time.Hour)
-	makeFile := func(name string, age bool) string {
+	makeFile := func(name string) string {
 		path := filepath.Join(root, name)
-		checkTestenv(t, os.WriteFile(path, nil, 0o600))
-		if age {
-			checkTestenv(t, os.Chtimes(path, old, old))
-		}
+		checkTestenv(t, os.WriteFile(path, []byte("diagnostic\n"), 0o600))
+		checkTestenv(t, os.Chtimes(path, old, old))
 		return path
 	}
-	removed := makeFile(registryHomePrefix+"old.fixture-refs-123", true)
 	kept := []string{
-		makeFile(registryHomePrefix+"young.fixture-refs-123", false),
-		makeFile(registryHomePrefix+"old.fixture-refs-not-pid", true),
+		// An aged pair of a live registry, its log unlocked.
+		makeFile(filepath.Base(live.path) + ".fixture-refs-123"),
+		makeFile(filepath.Base(live.path) + ".custodian-123.log"),
+		// Aged records of a live registry without a log.
+		makeFile(filepath.Base(live.path) + ".fixture-refs-124"),
+		// An aged pair whose registry home is absent and so unknown.
+		makeFile(registryHomePrefix + "old.fixture-refs-123"),
+		makeFile(registryHomePrefix + "old.custodian-123.log"),
+		makeFile(registryHomePrefix + "old.fixture-refs-not-pid"),
 	}
 	directory := filepath.Join(root, registryHomePrefix+"old.fixture-refs-456")
 	checkTestenv(t, os.Mkdir(directory, 0o700))
 	checkTestenv(t, os.Chtimes(directory, old, old))
-	target := makeFile("record-link-target", true)
+	target := makeFile("record-link-target")
 	link := filepath.Join(root, registryHomePrefix+"old.fixture-refs-789")
 	checkTestenv(t, os.Symlink(target, link))
-	kept = append(kept, directory, target, link)
-	removeDeadRegistryHomes(root)
-	if _, err := os.Lstat(removed); !os.IsNotExist(err) {
-		t.Fatalf("old fixture record survived cleanup: %v", err)
-	}
+	kept = append(kept, live.path, directory, target, link)
+	var report bytes.Buffer
+	removeDeadRegistryHomes(root, &report)
 	for _, path := range kept {
 		if _, err := os.Lstat(path); err != nil {
 			t.Errorf("cleanup removed kept path %s: %v", filepath.Base(path), err)
 		}
+	}
+	if report.Len() != 0 {
+		t.Fatalf("sweep reported sidecars it does not own: %q", report.String())
 	}
 }
 
@@ -598,6 +608,8 @@ func TestDeadRegistryHomeIsRemovedByAnotherProcessMain(t *testing.T) {
 		t.Fatalf("live owner's registry home is missing before the kill: %v", err)
 	}
 	stopRegistryOwnerProcess(t, command)
+	// The killed owner's custodian keeps the home until it has settled.
+	waitRegistryCustodiansExited(t, home)
 	runRegistryScavenger(t)
 	if _, err := os.Stat(home); !os.IsNotExist(err) {
 		t.Fatalf("dead registry home survived another process's Main: %v", err)
@@ -667,6 +679,37 @@ func stopRegistryOwnerProcess(t *testing.T, command *exec.Cmd) {
 	}
 	if err := command.Wait(); err == nil {
 		t.Fatal("killed registry owner exited successfully")
+	}
+}
+
+// waitRegistryCustodiansExited waits until no custodian log beside home is
+// still locked by its running custodian.
+func waitRegistryCustodiansExited(t *testing.T, home string) {
+	t.Helper()
+	bound, err := FixtureExitWaitBound()
+	checkTestenv(t, err)
+	deadline := time.Now().Add(bound)
+	for {
+		logs, err := filepath.Glob(home + ".custodian-*.log")
+		checkTestenv(t, err)
+		held := 0
+		for _, path := range logs {
+			log, err := os.Open(path)
+			if err != nil {
+				continue
+			}
+			if lockWouldBlock(unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB)) {
+				held++
+			}
+			_ = log.Close()
+		}
+		if held == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d custodian logs beside %s stayed locked for %s", held, home, bound)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

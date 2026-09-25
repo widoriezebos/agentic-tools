@@ -1585,7 +1585,10 @@ LEDGER
   # intent and doctrine books bind metasystem/docs/... chapters that do not
   # exist here and its question register names goals this one-goal ledger
   # lacks. The leg is an application: it owns minimal synthetic memory.
-  rm -rf "$leg_seed/docs/intent" "$leg_seed/docs/doctrine"
+  # Copied decision and design records bind the kit's goals the same way, so
+  # they do not survive the reset to the synthetic ledger either.
+  rm -rf "$leg_seed/docs/intent" "$leg_seed/docs/doctrine" \
+    "$leg_seed/docs/decisions" "$leg_seed/plans/designs"
   mkdir -p "$leg_seed/docs/intent" "$leg_seed/docs/doctrine" "$leg_seed/memory"
   printf '%s\n' '# Intent' '' '- Kind: intent' '- Id: 01FIXTUREBRAINLEGINTENT' '- Status: accepted' '' \
     'This disposable application exists only to land one fixture change.' >"$leg_seed/docs/intent/index.md"

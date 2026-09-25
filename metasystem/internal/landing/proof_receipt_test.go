@@ -275,6 +275,62 @@ func TestLegacyReceiptPreservesNestedSuiteFailureEvidenceBeforeCandidateCleanup(
 	}
 }
 
+func TestReceiptCloseRemovesCandidateWhenEvidencePreservationFails(t *testing.T) {
+	t.Parallel()
+	f := newObserveFixture(t)
+	f.git("add", ".")
+	tree, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparation, err := PrepareTestReceipt(f.root, tree, "true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := preparation.ExecutionRoot()
+	failure := filepath.Join(candidate, "artifacts", "agents", "suite-failures", "failure.log")
+	if err := os.MkdirAll(filepath.Dir(failure), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(failure, []byte("log\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The control evidence directory is a regular file: a real IO failure.
+	blocked := filepath.Join(f.root, "artifacts", "agents", "suite-failures")
+	if err := os.MkdirAll(filepath.Dir(blocked), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blocked, []byte("not a directory\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = preparation.Close()
+	if err == nil || !strings.Contains(err.Error(), "preserve detached suite-failure evidence") {
+		t.Fatalf("preservation failure was not reported: %v", err)
+	}
+	if _, statErr := os.Stat(candidate); !os.IsNotExist(statErr) {
+		t.Fatalf("candidate survived a failed preservation: %s (%v)", candidate, statErr)
+	}
+	if again := preparation.Close(); again == nil || again.Error() != err.Error() {
+		t.Fatalf("second Close=%v, want the original %v", again, err)
+	}
+}
+
+func TestReceiptEvidenceCapOnlyLowersTheGroupCap(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if _, max := receiptEvidenceLimits(root); max != proofrun.DetachedEvidenceGroupMaxBytes {
+		t.Fatalf("default cap=%d", max)
+	}
+	for conf, want := range map[string]int64{"suite.evidence-copy-max-mb=1\n": 1024 * 1024, "suite.evidence-copy-max-mb=512\n": proofrun.DetachedEvidenceGroupMaxBytes} {
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, max := receiptEvidenceLimits(root); max != want {
+			t.Fatalf("%q cap=%d want %d", conf, max, want)
+		}
+	}
+}
+
 func TestReceiptPreparationSurvivesCanonicalRecordMotion(t *testing.T) {
 	const path = "records/steward/narration.txt"
 	content := []byte("record motion\n")

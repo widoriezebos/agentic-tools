@@ -32,6 +32,25 @@ import (
 type Workspace struct {
 	Dir       string
 	RawSource func(RawRequest) RawResult
+	// Materialize, when set, binds every Git child of this workspace to a
+	// caller-owned scratch root; nil keeps the defaults other callers use.
+	Materialize *Materialization
+}
+
+// Materialization is the caller's ownership of a materializing workspace:
+// InheritFiles reach every native Git child as ExtraFiles (fd 3 onward),
+// HooksPath replaces repository hooks (an empty directory turns them off)
+// and TempDir holds this invocation's isolated indexes.
+type Materialization struct {
+	InheritFiles []*os.File
+	HooksPath    string
+	TempDir      string
+}
+
+// at is this workspace's plumbing rooted at another directory.
+func (w Workspace) at(dir string) Workspace {
+	w.Dir = dir
+	return w
 }
 
 // RawRequest describes the complete Git invocation made by a workspace.
@@ -43,6 +62,8 @@ type RawRequest struct {
 	Stdin     []byte
 	Timeout   boundedexec.Bound
 	Operation string
+	// InheritFiles are passed to the native child as ExtraFiles.
+	InheritFiles []*os.File
 }
 
 // RawResult separates a Git exit from a command that could not run.
@@ -164,11 +185,19 @@ func (w Workspace) gitAt(dir string, env []string, args ...string) ([]byte, erro
 }
 
 func (w Workspace) rawRequest(dir string, env []string, stdin []byte, operation string, args ...string) RawRequest {
-	full := append(append([]string{"-C", dir}, configPins...), args...)
+	full := append([]string{"-C", dir}, configPins...)
+	var inherit []*os.File
+	if w.Materialize != nil {
+		if w.Materialize.HooksPath != "" {
+			full = append(full, "-c", "core.hooksPath="+w.Materialize.HooksPath)
+		}
+		inherit = w.Materialize.InheritFiles
+	}
+	full = append(full, args...)
 	return RawRequest{
 		Args: full, Dir: dir, Env: ScrubbedEnviron(env...), Stdin: stdin,
 		Timeout:   boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Local),
-		Operation: operation,
+		Operation: operation, InheritFiles: inherit,
 	}
 }
 
@@ -180,6 +209,7 @@ func (w Workspace) runRaw(request RawRequest, nativeStdin io.Reader, nativeStdou
 	}
 	cmd := exec.Command("git", request.Args...)
 	cmd.Env = request.Env
+	cmd.ExtraFiles = request.InheritFiles
 	if nativeStdin != nil {
 		cmd.Stdin = nativeStdin
 	} else if request.Stdin != nil {
@@ -297,8 +327,12 @@ func (w Workspace) HeadTree() (string, error) {
 }
 
 // isolatedIndex returns the env for a throwaway index and its cleanup.
-func isolatedIndex() ([]string, func(), error) {
-	dir, err := os.MkdirTemp("", "metasystem-gittree.")
+func (w Workspace) isolatedIndex() ([]string, func(), error) {
+	parent := ""
+	if w.Materialize != nil {
+		parent = w.Materialize.TempDir
+	}
+	dir, err := os.MkdirTemp(parent, "metasystem-gittree.")
 	if err != nil {
 		return nil, nil, fmt.Errorf("gittree: %w", err)
 	}
@@ -316,7 +350,7 @@ func isolatedIndex() ([]string, func(), error) {
 // layout; worktree changes outside a nested workspace are not the
 // workspace's to project.
 func (w Workspace) Snapshot(baseline string) (string, error) {
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}
@@ -348,7 +382,7 @@ func (w Workspace) FilterTree(tree string, paths []string) (string, error) {
 	if len(paths) == 0 {
 		return tree, nil
 	}
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}
@@ -381,7 +415,7 @@ func (w Workspace) FilterTreePrefixes(tree string, paths []string) (string, erro
 	if len(paths) == 0 {
 		return tree, nil
 	}
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}
@@ -464,7 +498,7 @@ func PathsCollide(left, right string) bool {
 // partial apply may leave unreachable loose objects in the object
 // database; those are invisible to every tree and reclaimed by gc.)
 func (w Workspace) Apply(baseTree string, patch []byte) (string, error) {
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}
