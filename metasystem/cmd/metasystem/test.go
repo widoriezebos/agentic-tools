@@ -118,7 +118,7 @@ func requireTestingWorkerCapabilities(ctx context.Context, engine string, enviro
 	command.Env = testingEnvironment(environment)
 	data, err := command.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%w: trusted destination engine %q does not support worker-policy protocol %d (%v: %s); stage, prove, and install the backend compatibility release before enabling testing.workers or resources.workers", errTestingWorkerPolicyUnsupported,
+		return fmt.Errorf("%w: trusted destination engine %q does not support test worker protocol %d (%v: %s); stage, prove, and install the backend compatibility release matching this frontend first", errTestingWorkerPolicyUnsupported,
 			engine, proofrun.TestWorkerProtocolVersion, err, strings.TrimSpace(string(data)))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -1096,6 +1096,9 @@ type candidateDetachedWorkspace interface {
 type candidateEngineIO struct {
 	runGit func(*exec.Cmd) error
 	open   func(gittree.Workspace, string) (candidateDetachedWorkspace, error)
+	// rename publishes a stage into the v2 namespace; nil is os.Rename.
+	rename func(string, string) error
+	native bool
 }
 
 func nativeCandidateEngineIO() candidateEngineIO {
@@ -1104,6 +1107,7 @@ func nativeCandidateEngineIO() candidateEngineIO {
 		open: func(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
 			return workspace.NewDetachedWorktree(tree)
 		},
+		native: true,
 	}
 }
 
@@ -1173,6 +1177,9 @@ func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot st
 	buildIdentity, err := candidateEngineBuildIdentityUsing(ctx, workspace, installationPrefix, candidateTree, environment, io)
 	if err != nil {
 		return nil, err
+	}
+	if scratch := proofrun.ScratchRunFromContext(ctx); scratch != nil {
+		return prepareScratchCandidateEngine(ctx, scratch, controlRoot, workspace, installationPrefix, candidateTree, environment, beforeColdBuild, io, buildIdentity)
 	}
 	cacheRoot := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines")
 	if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
@@ -1253,6 +1260,162 @@ func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot st
 	return nil, fmt.Errorf("published candidate engine artifact failed validation")
 }
 
+// candidateEngineV2Retained bounds the v2 namespace; legacy entries beside
+// it are never read or evicted.
+const candidateEngineV2Retained = 8
+
+// prepareScratchCandidateEngine is the run-rooted engine path: a cold build
+// compiles inside the run's scratch root and publishes to
+// candidate-engines/v2/<identity> by a same-filesystem rename under the
+// identity lock; warm or cold, the caller receives a validated private copy
+// inside its own root before any v2 eviction runs.
+func prepareScratchCandidateEngine(ctx context.Context, scratch *proofrun.ScratchRun, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, beforeColdBuild func() error, io candidateEngineIO, buildIdentity string) (*candidateEngineBuild, error) {
+	cacheRoot := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", "v2")
+	if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
+		return nil, fmt.Errorf("create candidate engine cache: %w", err)
+	}
+	lockFile, err := os.OpenFile(filepath.Join(cacheRoot, buildIdentity+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("reserve candidate engine identity: %w", err)
+	}
+	defer lockFile.Close()
+	cacheWaitStarted := time.Now()
+	for {
+		if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			break
+		} else if err != unix.EWOULDBLOCK && err != unix.EAGAIN {
+			return nil, fmt.Errorf("reserve candidate engine identity: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	queued := time.Since(cacheWaitStarted).Milliseconds()
+	entry := filepath.Join(cacheRoot, buildIdentity)
+	source := validatedCandidateEngine(entry, buildIdentity)
+	if source == nil {
+		if beforeColdBuild != nil {
+			if err := beforeColdBuild(); err != nil {
+				return nil, err
+			}
+		}
+		lease, err := proofrun.AcquireHostResources(ctx, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", nil)
+		if err != nil {
+			return nil, fmt.Errorf("admit candidate engine build: %w", err)
+		}
+		defer lease.Close()
+		queued += lease.Waited().Milliseconds()
+		built, err := buildCandidateEngine(proofrun.WithHostResourceLease(ctx, lease), workspace, installationPrefix, candidateTree, environment, io)
+		if err != nil {
+			return nil, err
+		}
+		defer built.Close()
+		if built.Commit != buildIdentity {
+			return nil, fmt.Errorf("candidate engine build identity changed during preparation")
+		}
+		entry, err = publishScratchCandidateEngine(scratch.Dir("engine"), entry, buildIdentity, built, io.rename)
+		if err != nil {
+			return nil, err
+		}
+		if source = validatedCandidateEngine(entry, buildIdentity); source == nil {
+			return nil, fmt.Errorf("published candidate engine artifact failed validation")
+		}
+	}
+	private := filepath.Join(scratch.Dir("engine"), "metasystem")
+	if err := copyCandidateEngineArtifact(source.Path, private); err != nil {
+		return nil, fmt.Errorf("copy candidate engine into the run: %w", err)
+	}
+	if digest, err := fileSHA256(private); err != nil || digest != source.Digest {
+		return nil, fmt.Errorf("candidate engine copy failed validation: %v", err)
+	}
+	if entry != filepath.Join(cacheRoot, buildIdentity) {
+		return &candidateEngineBuild{Path: private, Digest: source.Digest, Commit: buildIdentity, QueueDurationMS: queued}, nil
+	}
+	now := time.Now()
+	_ = os.Chtimes(filepath.Join(entry, "record.json"), now, now)
+	evictCandidateEnginesV2(cacheRoot, buildIdentity)
+	return &candidateEngineBuild{Path: private, Digest: source.Digest, Commit: buildIdentity, QueueDurationMS: queued}, nil
+}
+
+// publishScratchCandidateEngine stages the built engine inside the run root
+// and renames it to entry. On EXDEV the run keeps the stage as its private
+// source (engine.unpublished) and nothing is staged outside its root; the
+// returned path is where the validated engine now lives.
+func publishScratchCandidateEngine(stageParent, entry, buildIdentity string, built *candidateEngineBuild, rename func(string, string) error) (string, error) {
+	stage, err := os.MkdirTemp(stageParent, "stage-")
+	if err != nil {
+		return "", err
+	}
+	if err := copyCandidateEngineArtifact(built.Path, filepath.Join(stage, "metasystem")); err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(candidateEngineCacheRecord{Version: 1, BuildIdentity: buildIdentity, Digest: built.Digest})
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(stage, "record.json"), encoded, 0o600); err != nil {
+		return "", err
+	}
+	if err := os.RemoveAll(entry); err != nil {
+		return "", fmt.Errorf("discard invalid candidate engine artifact: %w", err)
+	}
+	if rename == nil {
+		rename = os.Rename
+	}
+	if err := rename(stage, entry); errors.Is(err, unix.EXDEV) {
+		fmt.Fprintln(os.Stderr, "metasystem test run: engine.unpublished: candidate engine stays private to this run:", err)
+		return stage, nil
+	} else if err != nil {
+		return "", fmt.Errorf("publish candidate engine artifact: %w", err)
+	}
+	return entry, nil
+}
+
+// evictCandidateEnginesV2 keeps the newest entries by record mtime; an entry
+// is removed only while its own identity lock is taken exclusively, and lock
+// files are never removed.
+func evictCandidateEnginesV2(cacheRoot, own string) {
+	entries, err := os.ReadDir(cacheRoot)
+	if err != nil {
+		return
+	}
+	type aged struct {
+		name string
+		at   time.Time
+	}
+	var candidates []aged
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(cacheRoot, entry.Name(), "record.json"))
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, aged{entry.Name(), info.ModTime()})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].at.After(candidates[j].at) })
+	// Oldest first, until the actual survivors fit; a held (live) entry and
+	// the caller's own are skipped, never removed.
+	survivors := len(candidates)
+	for index := len(candidates) - 1; index >= 0 && survivors > candidateEngineV2Retained; index-- {
+		candidate := candidates[index]
+		if candidate.name == own {
+			continue
+		}
+		lock, err := os.OpenFile(filepath.Join(cacheRoot, candidate.name+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+		if err != nil {
+			continue
+		}
+		if unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB) == nil && os.RemoveAll(filepath.Join(cacheRoot, candidate.name)) == nil {
+			survivors--
+		}
+		_ = lock.Close()
+	}
+}
+
 func validatedCandidateEngine(entry, buildIdentity string) *candidateEngineBuild {
 	var record candidateEngineCacheRecord
 	encoded, err := os.ReadFile(filepath.Join(entry, "record.json"))
@@ -1294,7 +1457,20 @@ func copyCandidateEngineArtifact(source, target string) error {
 // worker and every detached group it launches.
 func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, options ...candidateEngineIO) (*candidateEngineBuild, error) {
 	io := selectedCandidateEngineIO(options)
-	detached, err := io.open(workspace, candidateTree)
+	scratch := proofrun.ScratchRunFromContext(ctx)
+	open := io.open
+	if scratch != nil && io.native {
+		// The tuple is recorded before git worktree add; Git children inherit
+		// the writer lock and run with repository hooks off.
+		open = func(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
+			plan, err := scratch.PlanWorktree(workspace, "engine")
+			if err != nil {
+				return nil, err
+			}
+			return plan.Create(tree)
+		}
+	}
+	detached, err := open(workspace, candidateTree)
 	if err != nil {
 		return nil, fmt.Errorf("candidate engine build failed while materializing tree %s: %w", candidateTree, err)
 	}
@@ -1304,7 +1480,11 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 		closeErr := removeDetached()
 		return nil, fmt.Errorf("candidate engine build failed while resolving the materialized candidate commit: %v (cleanup: %v)", err, closeErr)
 	}
-	directory, err := os.MkdirTemp("", "metasystem-candidate-engine.*")
+	outputParent := ""
+	if scratch != nil {
+		outputParent = scratch.Dir("engine")
+	}
+	directory, err := os.MkdirTemp(outputParent, "metasystem-candidate-engine.*")
 	if err != nil {
 		closeErr := removeDetached()
 		return nil, fmt.Errorf("candidate engine build failed while allocating its private output: %v (cleanup: %v)", err, closeErr)
@@ -1326,6 +1506,12 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 	command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh", "--trimpath", "--out", build.Path)
 	command.Dir = installationRoot
 	command.Env = candidateEngineBuildEnvironment(environment, candidateCommit)
+	if scratch != nil {
+		// The run's compiler caches and temp live in its root; module and
+		// user caches stay inherited.
+		command.Env = append(command.Env, "GOCACHE="+scratch.Dir("gocache"), "STATICCHECK_CACHE="+scratch.Dir("staticcheck"),
+			"GOTMPDIR="+scratch.Dir("engine"), "TMPDIR="+scratch.Dir("engine"))
+	}
 	proofrun.AttachHostResourceLease(ctx, command)
 	command.WaitDelay = 5 * time.Second
 	var combined bytes.Buffer
@@ -1396,14 +1582,31 @@ func candidateEngineBuildIdentityUsing(ctx context.Context, workspace gittree.Wo
 	return commitCandidateEngineTree(ctx, workspace.Dir, engineTree, message, io)
 }
 
+// scratchGitCommand is a native Git child of a managed run: hooks off and the
+// run's writer lock inherited. Unmanaged callers get the plain command.
+func scratchGitCommand(ctx context.Context, args ...string) *exec.Cmd {
+	scratch := proofrun.ScratchRunFromContext(ctx)
+	if scratch == nil {
+		return exec.CommandContext(ctx, "git", args...)
+	}
+	command := exec.CommandContext(ctx, "git", append([]string{"-c", "core.hooksPath=" + scratch.Dir("no-hooks")}, args...)...)
+	command.ExtraFiles = []*os.File{scratch.Writer()}
+	return command
+}
+
 func engineProjectionTree(ctx context.Context, root, tree string, paths []string, io candidateEngineIO) (string, error) {
-	directory, err := os.MkdirTemp("", "metasystem-engine-projection.*")
+	parent := ""
+	if scratch := proofrun.ScratchRunFromContext(ctx); scratch != nil {
+		// A killed run leaves its projection indexes inside its own root.
+		parent = scratch.Dir("engine")
+	}
+	directory, err := os.MkdirTemp(parent, "metasystem-engine-projection.*")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(directory)
 	run := func(index string, stdin []byte, args ...string) ([]byte, error) {
-		command := exec.CommandContext(ctx, "git", append([]string{"-C", root, "-c", "core.fileMode=true", "-c", "core.useReplaceRefs=false"}, args...)...)
+		command := scratchGitCommand(ctx, append([]string{"-C", root, "-c", "core.fileMode=true", "-c", "core.useReplaceRefs=false"}, args...)...)
 		command.Env = gittree.ScrubbedEnviron("GIT_INDEX_FILE=" + index)
 		command.Stdin = bytes.NewReader(stdin)
 		var stdout, stderr bytes.Buffer
@@ -1443,7 +1646,7 @@ func engineProjectionTree(ctx context.Context, root, tree string, paths []string
 
 func commitCandidateEngineTree(ctx context.Context, root, tree, message string, io candidateEngineIO) (string, error) {
 	gitLine := func(environment []string, args ...string) (string, error) {
-		command := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
+		command := scratchGitCommand(ctx, append([]string{"-C", root}, args...)...)
 		command.Env = environment
 		var combined bytes.Buffer
 		command.Stdout, command.Stderr = &combined, &combined
@@ -1491,8 +1694,19 @@ func bindMaterializedCandidateCommit(ctx context.Context, workspace gittree.Work
 	if err != nil || unborn {
 		return "", fmt.Errorf("resolve temporary candidate HEAD: %v", err)
 	}
-	command := exec.CommandContext(ctx, "git", "-C", root, "update-ref", "--no-deref", "HEAD", commit, current)
+	args := []string{"-C", root}
+	var inherit []*os.File
+	if materialize := workspace.Materialize; materialize != nil {
+		// A materializing child inherits the run's writer lock and runs no
+		// repository hook (reference-transaction included).
+		if materialize.HooksPath != "" {
+			args = append(args, "-c", "core.hooksPath="+materialize.HooksPath)
+		}
+		inherit = materialize.InheritFiles
+	}
+	command := exec.CommandContext(ctx, "git", append(args, "update-ref", "--no-deref", "HEAD", commit, current)...)
 	command.Env = gittree.ScrubbedEnviron()
+	command.ExtraFiles = inherit
 	var combined bytes.Buffer
 	command.Stdout, command.Stderr = &combined, &combined
 	if err := io.runGit(command); err != nil {
@@ -1502,7 +1716,7 @@ func bindMaterializedCandidateCommit(ctx context.Context, workspace gittree.Work
 	return commit, nil
 }
 
-func runTestRun(args []string) int {
+func runTestRun(args []string) (exit int) {
 	commandStarted := time.Now().UTC()
 	request, _, status := parseTestingSelection("test run", args, true)
 	if status != 0 {
@@ -1525,6 +1739,21 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return proofrun.ExitAdmissionRefused
 	}
+	// Every disposable byte of this invocation lands in one recorded root,
+	// removed after its writers provably drained; earlier crashed roots are
+	// recovered first, never this run's own.
+	scratch, err := proofrun.CreateScratchRun(controlRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run: scratch root:", err)
+		return 1
+	}
+	defer func() { exit = finishTestingScratch(scratch, exit) }()
+	for _, outcome := range proofrun.ReconcileScratch(controlRoot, proofrun.ScratchOptions{Self: scratch.ID()}) {
+		if outcome.Action != proofrun.ReconcileScratchPending {
+			fmt.Fprintf(os.Stderr, "metasystem test run: %s: %s: %s\n", outcome.AttemptID, outcome.Action, outcome.Reason)
+		}
+	}
+	scratchContext := proofrun.WithScratchRun(context.Background(), scratch)
 	semanticCommandStarted := commandClock()
 	commandAdmission := testingCommandAdmission{now: commandClock, admitRun: admitTestingRun, admitProof: admitProofLaunch}
 	limits, err := resolveTestingPreparationWorkerPolicy(&prepared)
@@ -1556,7 +1785,7 @@ func runTestRun(args []string) int {
 		return proofrun.ExitAdmissionRefused
 	}
 	defer unmark()
-	buildContext, cancelBuild := context.WithCancel(context.Background())
+	buildContext, cancelBuild := context.WithCancel(scratchContext)
 	candidateEngine, err := prepareCandidateEngineWithColdPreflight(buildContext, controlRoot, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix,
 		prepared.CandidateTree, inheritedTestingEnvironment(prepared.Environment, os.Environ()), func() error {
 			return refuseKnownColdBuildBudget(prepared, request)
@@ -1572,13 +1801,18 @@ func runTestRun(args []string) int {
 	}
 	defer candidateEngine.Close()
 	planDigest := proofrun.TestPlanDigest(prepared.EffectiveContract, prepared.Plan, prepared.CandidateTree)
-	manifestDigest, err := testingCandidateManifest(gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.CandidateTree)
+	manifestDigest, err := testingCandidateManifest(gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.CandidateTree, scratch)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run: capture candidate manifest:", err)
 		return proofrun.ExitAdmissionRefused
 	}
 	preRequest := testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
-	metadataContext, cancelMetadata := context.WithCancel(context.Background())
+	if err := bindTestingScratch(&preRequest, scratch, nil, nil); err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run: scratch environment:", err)
+		return proofrun.ExitAdmissionRefused
+	}
+	scratchEnvironment := preRequest.ScratchEnvironment
+	metadataContext, cancelMetadata := context.WithCancel(scratchContext)
 	metadataLease, leaseErr := proofrun.AcquireHostResources(metadataContext, controlRoot, prepared.ConfPath, "heavy", nil)
 	if leaseErr != nil {
 		cancelMetadata()
@@ -1693,7 +1927,15 @@ func runTestRun(args []string) int {
 		return decision.ExitStatus
 	}
 	prepared.GoalID, prepared.AccountingRevision = attempt.AccountedGoal(), attempt.AccountedRevision()
+	if err := scratch.RecordAttempt(attempt.AttemptID); err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run: record scratch attempt:", err)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
+	}
 	preRequest = testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
+	if err := bindTestingScratch(&preRequest, scratch, nil, scratchEnvironment); err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run: scratch environment:", err)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
+	}
 	preRequest.FreshnessEpisode, preRequest.FreshnessBinding, preRequest.FreshnessExpiresAt = request.FreshEpisode, freshBinding, request.FreshExpiresAt
 	preRequest.FreshGroups = freshGroups
 	preRequest.FreshnessCandidateProjection = freshnessProjection
@@ -1773,6 +2015,11 @@ func runTestRun(args []string) int {
 		defer nativeLease.Close()
 		runRequest.QueueDurationMS += nativeLease.Waited().Milliseconds()
 	}
+	// The worker sees the writer after the host lease files (LaunchSuite).
+	if err := bindTestingScratch(&runRequest, scratch, scratch.Locator(proofrun.ScratchWriterFD(nativeLease.Files())), scratchEnvironment); err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run: scratch environment:", err)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
+	}
 	if err := writePrivateJSON(packetPath, runRequest); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
@@ -1788,7 +2035,7 @@ func runTestRun(args []string) int {
 		Banner: "TESTING-CONTRACT plan=" + planDigest, Silence: limits.silence, SectionCap: limits.sectionCap,
 		EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Second, TermGrace: 5 * time.Second,
 		KillGrace: time.Second, Command: []string{workerEngine, "test", "worker", "--packet", packetPath, "--packet-sha256", packetDigest, "--result", workerResultPath},
-		Environment: workerEnvironment, HostResourceFiles: nativeLease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Environment: workerEnvironment, HostResourceFiles: nativeLease.Files(), ScratchWriter: scratch.Writer(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
 		Now: commandClock,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			result, readErr := readTestingWorkerResult(workerResultPath)
@@ -1948,8 +2195,17 @@ func testingWorkerEnvironment(environment []string) ([]string, error) {
 	return identity.ExportRunOwner(environment)
 }
 
-func testingCandidateManifest(workspace gittree.Workspace, candidateTree string) (string, error) {
-	detached, err := workspace.NewDetachedWorktree(candidateTree)
+func testingCandidateManifest(workspace gittree.Workspace, candidateTree string, scratch *proofrun.ScratchRun) (string, error) {
+	var detached *gittree.DetachedWorktree
+	var err error
+	if scratch != nil {
+		var plan *gittree.WorktreePlan
+		if plan, err = scratch.PlanWorktree(workspace, "engine"); err == nil {
+			detached, err = plan.Create(candidateTree)
+		}
+	} else {
+		detached, err = workspace.NewDetachedWorktree(candidateTree)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -2051,10 +2307,27 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	request.Environment = proofrun.TestingEnvironment(request.Environment, map[string]string{
 		proofWitnessExecutionRootEnv: attempt.ExecutionRoot,
 	})
+	workerBase := context.Background()
+	if request.Scratch != nil {
+		// A managed run: authenticate the inherited writer and the run
+		// against this attempt before any byte lands, then bind it so every
+		// command, custodian and Git child inherits the writer.
+		scratch, err := proofrun.OpenScratchRun(canonicalControl, attemptID, *request.Scratch)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+			return 3
+		}
+		request.BindScratch(scratch, request.Scratch)
+		if err := proofrun.ValidateScratchEnvironment(request, scratch); err != nil {
+			fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+			return 3
+		}
+		workerBase = proofrun.WithScratchRun(workerBase, scratch)
+	}
 	// The worker's context carries no deadline: the reservation is a
 	// figure, not a kill rule (proof-groups-detect-hangs-by-progress-not-
 	// the-clock, decision 3). A recorded cancellation intent cancels it.
-	workerContext, cancel := context.WithCancel(context.Background())
+	workerContext, cancel := context.WithCancel(workerBase)
 	defer cancel()
 	go cancelOnRecordedIntent(workerContext, cancel, canonicalControl, attemptID)
 	if err := runFrozenPolicyProtectionCorpus(workerContext, request); err != nil {
@@ -2158,10 +2431,20 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
-	return verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
+	// Revalidation materializes the candidate like a run does, so it owns a
+	// fresh scratch run of its own for exactly that long.
+	scratch, err := proofrun.CreateScratchRun(prepared.proofControlRoot())
+	if err != nil {
+		return proofrun.TestResult{}, fmt.Errorf("scratch root: %w", err)
+	}
+	result, verifyErr := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
 		clock: commandClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
-		workspace: gittree.Workspace{Dir: prepared.ProjectRoot}, candidateIO: nativeCandidateEngineIO(),
+		workspace: gittree.Workspace{Dir: prepared.ProjectRoot}, candidateIO: nativeCandidateEngineIO(), scratch: scratch,
 	})
+	if cleanupErr := scratch.Cleanup(nil); cleanupErr != nil {
+		return proofrun.TestResult{}, errors.Join(verifyErr, cleanupErr)
+	}
+	return result, verifyErr
 }
 
 type retainedTestingVerification struct {
@@ -2170,6 +2453,7 @@ type retainedTestingVerification struct {
 	workspace     gittree.Workspace
 	candidateIO   candidateEngineIO
 	openCandidate func(string, string) (proofrun.CandidateWorkspace, error)
+	scratch       *proofrun.ScratchRun
 }
 
 func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared testingPreparation, dependencies retainedTestingVerification) (proofrun.TestResult, error) {
@@ -2193,7 +2477,13 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
-	identityContext, cancelIdentity := context.WithCancel(context.Background())
+	identityBase := context.Background()
+	if dependencies.scratch != nil {
+		// The identity projection's indexes and Git children belong to the
+		// verification's own scratch run, like a run's do.
+		identityBase = proofrun.WithScratchRun(identityBase, dependencies.scratch)
+	}
+	identityContext, cancelIdentity := context.WithCancel(identityBase)
 	candidateEngineBuildIdentity, err := candidateEngineBuildIdentityUsing(identityContext, dependencies.workspace,
 		prepared.Prefix, prepared.CandidateTree, prepared.Environment, dependencies.candidateIO)
 	cancelIdentity()
@@ -2206,7 +2496,15 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 	}
 	runRequest := testingRunRequest(prepared, "", "", "", candidateEngineDigest, candidateEngineBuildIdentity)
 	runRequest.WithCandidateOpener(dependencies.openCandidate)
-	metadataContext, cancelMetadata := context.WithCancel(context.Background())
+	metadataBase := context.Background()
+	if dependencies.scratch != nil {
+		runRequest.BindScratch(dependencies.scratch, nil)
+		if err := proofrun.PrepareScratchEnvironment(&runRequest, dependencies.scratch); err != nil {
+			return proofrun.TestResult{}, err
+		}
+		metadataBase = proofrun.WithScratchRun(metadataBase, dependencies.scratch)
+	}
+	metadataContext, cancelMetadata := context.WithCancel(metadataBase)
 	identities, err := dependencies.revalidate(metadataContext, runRequest, attempts)
 	cancelMetadata()
 	if err != nil {
@@ -2536,7 +2834,9 @@ func testingEnvironment(environment []string) []string {
 	allowed := map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "TMP": true, "TEMP": true,
 		"GOCACHE": true, "GOMODCACHE": true, "GOTMPDIR": true, "STATICCHECK_CACHE": true, "GOPATH": true, "GOROOT": true, "GOFLAGS": true, "GOWORK": true,
 		"CGO_ENABLED": true, "GOTOOLCHAIN": true, "GOEXPERIMENT": true, "JAVA_HOME": true, "LANG": true,
-		"LC_ALL": true, "SYSTEMROOT": true, "TZ": true, identity.RunOwnerEnv: true}
+		"LC_ALL": true, "SYSTEMROOT": true, "TZ": true, identity.RunOwnerEnv: true,
+		// Go env file selection, snapshotted by PrepareScratchEnvironment.
+		"GOENV": true, "XDG_CONFIG_HOME": true}
 	var result []string
 	for _, entry := range environment {
 		name, _, ok := strings.Cut(entry, "=")
@@ -2679,6 +2979,33 @@ func fileSHA256(path string) (string, error) {
 // contradiction and is refused; in a real launch PrepareSuccess reads the
 // result first and turns a missing one into a failed exit, so this guard is
 // the commit's own defence.
+// bindTestingScratch binds a launcher request to the run's scratch root and
+// its managed environment; preparation, execution and verification all bind
+// through here so their identities agree.
+// The first binding of a run snapshots its environment once; every later
+// request of the run carries that exact descriptor and only validates it, so
+// the configuration identities were derived from is the one executed.
+func bindTestingScratch(request *proofrun.TestRunRequest, scratch *proofrun.ScratchRun, locator *proofrun.ScratchLocator, prepared *proofrun.ScratchEnvironment) error {
+	request.BindScratch(scratch, locator)
+	if prepared == nil {
+		return proofrun.PrepareScratchEnvironment(request, scratch)
+	}
+	request.ScratchEnvironment = prepared
+	return proofrun.ValidateScratchEnvironment(*request, scratch)
+}
+
+// finishTestingScratch removes this run's scratch root; a writer that has not
+// drained keeps the root and its record for recovery and fails the command.
+func finishTestingScratch(scratch *proofrun.ScratchRun, status int) int {
+	if err := scratch.Cleanup(nil); err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
+		if status == 0 || status == proofrun.ExitReusableSuccess {
+			return 1
+		}
+	}
+	return status
+}
+
 func testingTerminalCommit(workerResultPath string, retained **proofrun.TestResult) func(proofrun.CompletionContext, json.RawMessage) error {
 	return testingTerminalCommitWithReads(workerResultPath, retained, nil)
 }

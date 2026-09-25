@@ -599,7 +599,7 @@ func registryHomeForProcess(mkdirTemp func(string, string) (string, error)) (*re
 }
 
 func createRegistryHome(mkdirTemp func(string, string) (string, error)) (*registryHomeLease, error) {
-	removeDeadRegistryHomes("/tmp")
+	removeDeadRegistryHomes("/tmp", os.Stderr)
 	registry, primaryErr := createRegistryHomeUnder(mkdirTemp, "/tmp")
 	if primaryErr == nil {
 		return registry, nil
@@ -607,7 +607,7 @@ func createRegistryHome(mkdirTemp func(string, string) (string, error)) (*regist
 
 	fallbackRoot := os.TempDir()
 	if fallbackRoot != "/tmp" {
-		removeDeadRegistryHomes(fallbackRoot)
+		removeDeadRegistryHomes(fallbackRoot, os.Stderr)
 	}
 	registry, fallbackErr := createRegistryHomeUnder(mkdirTemp, "")
 	if fallbackErr == nil {
@@ -743,6 +743,14 @@ func openRegistryOwner(home string) (*os.File, error) {
 }
 
 func (registry *registryHomeLease) cleanup() error {
+	return registry.cleanupReporting(os.Stderr)
+}
+
+// cleanupReporting removes an owned registry home once every inherited user
+// has left and every custodian beside it has settled. A custodian still
+// running, or sidecars whose settlement is unproven, keep the home and its
+// owner marker for a later sweep.
+func (registry *registryHomeLease) cleanupReporting(output io.Writer) error {
 	if registry == nil || registry.lock == nil {
 		return nil
 	}
@@ -756,25 +764,49 @@ func (registry *registryHomeLease) cleanup() error {
 		}
 		return errors.Join(fmt.Errorf("lock registry home for cleanup: %w", err), closeErr)
 	}
-	removeErr := os.RemoveAll(registry.path)
-	return errors.Join(removeErr, registry.lock.Close())
+	return errors.Join(removeSettledRegistryHome(registry.path, output), registry.lock.Close())
 }
 
-func removeDeadRegistryHomes(root string) {
+// removeSettledRegistryHome removes the sidecars of home's finished custodians
+// and then home itself once none remain pending. Only sidecars whose stem is
+// exactly home are considered. The caller holds home's owner lock exclusively,
+// which is the only proof of ownership the sidecars' names are trusted under.
+func removeSettledRegistryHome(home string, output io.Writer) error {
+	entries, err := os.ReadDir(filepath.Dir(home))
+	if err != nil {
+		return fmt.Errorf("list registry sidecars: %w", err)
+	}
+	pids := map[string]bool{}
+	for _, entry := range entries {
+		if stem, pid, ok := fixtureCustodianSidecar(entry.Name()); ok && stem == filepath.Base(home) {
+			pids[pid] = true
+		}
+	}
+	settled := true
+	var errs []error
+	for pid := range pids {
+		finished, err := removeFixtureCustodianSidecars(home, pid, output)
+		settled = settled && finished
+		if err != nil {
+			errs = append(errs, fmt.Errorf("remove registry sidecars pid=%s: %w", pid, err))
+		}
+	}
+	if settled {
+		errs = append(errs, os.RemoveAll(home))
+	}
+	return errors.Join(errs...)
+}
+
+// removeDeadRegistryHomes removes registry homes whose owner lock is free,
+// together with their settled sidecars. Sidecars are only ever handled through
+// their authenticated home: neither age nor an absent home proves ownership.
+func removeDeadRegistryHomes(root string, output io.Writer) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return
 	}
-	oldestKept := time.Now().Add(-7 * 24 * time.Hour)
 	for _, entry := range entries {
 		path := filepath.Join(root, entry.Name())
-		if isFixtureCustodianLog(entry.Name()) || isFixtureCustodianRecords(entry.Name()) {
-			info, err := entry.Info()
-			if err == nil && info.Mode().IsRegular() && info.ModTime().Before(oldestKept) {
-				_ = os.Remove(path)
-			}
-			continue
-		}
 		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), registryHomePrefix) {
 			continue
 		}
@@ -786,9 +818,136 @@ func removeDeadRegistryHomes(root string) {
 			_ = owner.Close()
 			continue
 		}
-		_ = os.RemoveAll(path)
+		if err := removeSettledRegistryHome(path, output); err != nil {
+			fmt.Fprintf(output, "remove dead registry home %s: %v\n", path, err)
+		}
 		_ = owner.Close()
 	}
+}
+
+const fixtureCustodianLogReportLimit = 64 << 10
+
+// removeFixtureCustodianSidecars removes the log that startFixtureCustodian
+// created beside home for the owner whose PID names it, once its custodian
+// has settled. The custodian inherits the log as stderr together with the
+// exclusive lock taken on it, so the lock is free only once the custodian and
+// every process sharing that stderr have exited. A free lock proves exit, not
+// settlement: the custodian removes its own records only after its fixtures
+// have drained, so records that remain are evidence of failed or unfinished
+// settlement and keep the pair pending. A settled log that is not quiet is
+// reported first, bounded to its last 64 KiB. It reports whether the pair is
+// settled; a held lock, symlinks, and non-regular files stay pending too.
+func removeFixtureCustodianSidecars(home, pid string, output io.Writer) (bool, error) {
+	return removeFixtureCustodianSidecarsLocking(home, pid, output, func(log *os.File) error {
+		return unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+	})
+}
+
+func removeFixtureCustodianSidecarsLocking(home, pid string, output io.Writer, lock func(*os.File) error) (bool, error) {
+	logPath := home + ".custodian-" + pid + ".log"
+	recordsPath := home + ".fixture-refs-" + pid
+	fd, err := unix.Open(logPath, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err == unix.ELOOP {
+		return false, nil
+	} else if err == unix.ENOENT {
+		// Without a log only absent records are settled: a running custodian
+		// whose log was unlinked still reads them.
+		return fixtureCustodianRecordsAbsent(recordsPath)
+	} else if err != nil {
+		return false, fmt.Errorf("open custodian log: %w", err)
+	}
+	log := os.NewFile(uintptr(fd), logPath)
+	defer log.Close()
+	opened, err := log.Stat()
+	if err != nil || !opened.Mode().IsRegular() {
+		return false, err
+	}
+	if err := lock(log); err != nil {
+		if lockWouldBlock(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("lock custodian log: %w", err)
+	}
+	if pathInfo, err := os.Lstat(logPath); err != nil || !os.SameFile(opened, pathInfo) {
+		return false, err
+	}
+	if absent, err := fixtureCustodianRecordsAbsent(recordsPath); !absent || err != nil {
+		return false, err
+	}
+	// The custodian may have appended its last diagnostics before releasing
+	// the lock, so the size is taken only now.
+	info, err := log.Stat()
+	if err != nil {
+		return false, err
+	}
+	offset := max(0, info.Size()-fixtureCustodianLogReportLimit)
+	tail := make([]byte, info.Size()-offset)
+	read, err := log.ReadAt(tail, offset)
+	if err != nil && err != io.EOF {
+		return false, fmt.Errorf("read custodian log: %w", err)
+	}
+	tail = tail[:read]
+	if offset > 0 || !quietFixtureCustodianLogContents(string(tail)) {
+		if !strings.HasSuffix(string(tail), "\n") {
+			tail = append(tail, '\n')
+		}
+		if _, err := fmt.Fprintf(output, "fixture custodian log %s (last %d of %d bytes):\n%s", logPath, read, info.Size(), tail); err != nil {
+			return false, fmt.Errorf("report custodian log: %w", err)
+		}
+	}
+	return removeRegularSidecar(logPath)
+}
+
+func fixtureCustodianRecordsAbsent(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	return false, err
+}
+
+// removeRegularSidecar removes path if it is a regular file and reports
+// whether it is now absent; anything else is kept.
+func removeRegularSidecar(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil || !info.Mode().IsRegular() {
+		return false, err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	return true, nil
+}
+
+// quietFixtureCustodianLogContents applies the custodian's own quiet-log rule
+// using the owner named on the log's watch line.
+func quietFixtureCustodianLogContents(contents string) bool {
+	first, _, _ := strings.Cut(contents, "\n")
+	value, found := strings.CutPrefix(first, "fixture-custodian owner=")
+	value, suffixFound := strings.CutSuffix(value, " action=watch")
+	if !found || !suffixFound {
+		return false
+	}
+	owner, err := identity.ParseRef(value)
+	return err == nil && quietFixtureCustodianContents(contents, owner)
+}
+
+// fixtureCustodianSidecar splits a PID-named records or log file into its
+// registry stem and the owner PID from its name.
+func fixtureCustodianSidecar(name string) (stem, pid string, ok bool) {
+	if isFixtureCustodianRecords(name) {
+		marker := strings.LastIndex(name, ".fixture-refs-")
+		return name[:marker], name[marker+len(".fixture-refs-"):], true
+	}
+	if isFixtureCustodianLog(name) && !strings.HasSuffix(name, ".custodian.log") {
+		trimmed := strings.TrimSuffix(name, ".log")
+		marker := strings.LastIndex(trimmed, ".custodian-")
+		return trimmed[:marker], trimmed[marker+len(".custodian-"):], true
+	}
+	return "", "", false
 }
 
 func isFixtureCustodianRecords(name string) bool {

@@ -299,6 +299,32 @@ func TestRunPreflightsStrictRetainedBaselineBeforePreparationOrReservation(t *te
 	}
 }
 
+func TestWorkerCapabilitiesRefusePreviousProtocolBeforeLaunch(t *testing.T) {
+	t.Parallel()
+	capabilitiesEngine := func(protocolVersion int) string {
+		capabilities := currentTestingWorkerCapabilities()
+		capabilities.ProtocolVersion = protocolVersion
+		data, err := json.Marshal(capabilities)
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine := filepath.Join(t.TempDir(), "engine")
+		if err := testexec.WriteFile(engine, []byte("#!/bin/sh\nprintf '%s\\n' "+shellQuote(string(data))+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return engine
+	}
+	if err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(proofrun.TestWorkerProtocolVersion), []string{"PATH=/usr/bin:/bin"}); err != nil {
+		t.Fatalf("current worker capabilities refused: %v", err)
+	}
+	// The landed worker speaks protocol 1 and strict-decodes the
+	// Scratch request fields as unknown, so it must be refused before preparation.
+	err := requireTestingWorkerCapabilities(t.Context(), capabilitiesEngine(1), []string{"PATH=/usr/bin:/bin"})
+	if !errors.Is(err, errTestingWorkerPolicyUnsupported) || !strings.Contains(err.Error(), "install the matching backend compatibility release") {
+		t.Fatalf("previous worker protocol refusal=%v", err)
+	}
+}
+
 func TestWorkerPolicyWireStaysLegacyUntilNegotiated(t *testing.T) {
 	t.Parallel()
 	legacy := proofrun.TestRunRequest{PreparedGroups: map[string]proofrun.PreparedGroupExecution{"group": {}}}

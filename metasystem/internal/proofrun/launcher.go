@@ -51,6 +51,9 @@ type LaunchOptions struct {
 	Command            []string
 	Environment        []string
 	HostResourceFiles  []*os.File
+	// ScratchWriter is the run's scratch writer lock; the suite and its
+	// custodian inherit it after the host resource files.
+	ScratchWriter *os.File
 	// RequireCustody anchors a public launch even when it borrows a legacy
 	// parent's capacity without inheritable resource descriptors.
 	RequireCustody    bool
@@ -243,6 +246,11 @@ func LaunchSuite(options LaunchOptions) int {
 	suite := exec.Command(options.Command[0], options.Command[1:]...)
 	suite.Dir = options.Root
 	suite.ExtraFiles = append(suite.ExtraFiles, options.HostResourceFiles...)
+	custodyFiles := options.HostResourceFiles
+	if options.ScratchWriter != nil {
+		suite.ExtraFiles = append(suite.ExtraFiles, options.ScratchWriter)
+		custodyFiles = append(append([]*os.File{}, options.HostResourceFiles...), options.ScratchWriter)
+	}
 	suite.Env = append(childEnvironment,
 		"METASYSTEM_PROOF_CONTROL_ROOT="+controlRoot,
 		"METASYSTEM_PROOF_RECORD_KEY="+options.Suite,
@@ -271,7 +279,7 @@ func LaunchSuite(options LaunchOptions) int {
 				return 1
 			}
 		}
-		custody, err = startResourceCustody(options, launcherExact.Ref(), donePath, options.HostResourceFiles, spools)
+		custody, err = startResourceCustody(options, launcherExact.Ref(), donePath, custodyFiles, spools)
 		if err != nil {
 			if resourceFiles {
 				_ = MarkHostResourcesClean(options.HostResourceFiles)

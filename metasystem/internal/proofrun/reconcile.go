@@ -96,6 +96,14 @@ func ReconcileAttempts(root string, options ReconcileOptions) ([]ReconcileOutcom
 		}
 		outcomes = append(outcomes, outcome)
 	}
+	// Scratch roots are recovered after the attempts: a root whose attempt
+	// was just terminalized above has its process records settled now.
+	for _, outcome := range ReconcileScratch(root, ScratchOptions{Prober: options.Prober, GroupMembers: options.GroupMembers}) {
+		if outcome.Action != ReconcileScratchPending {
+			emit(fmt.Sprintf("proof %s: %s: %s", outcome.AttemptID, outcome.Action, outcome.Reason))
+		}
+		outcomes = append(outcomes, outcome)
+	}
 	return outcomes, nil
 }
 

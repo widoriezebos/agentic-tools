@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -619,7 +620,7 @@ func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint,
 	return 0
 }
 
-func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(string) (goal.Endpoint, error), commandNow func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
+func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(string) (goal.Endpoint, error), commandNow func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), presence func(string, goal.Endpoint) (seat.Copy, error), requiredLabels ...string) int {
 	e, err := resolve(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -644,7 +645,7 @@ func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(st
 	// nobody is moving because its holder has gone quiet is context for the
 	// frontier and never part of it. Standard error, so the orientation line
 	// an agent reads is exactly the line it read before.
-	for _, line := range silentHolderLines(root, p.Tree, machine, now) {
+	for _, line := range silentHolderLines(root, e, p.Tree, machine, now, presence) {
 		fmt.Fprintln(os.Stderr, line)
 	}
 	frontier, frontierErr := goal.Next(p, machine, requiredLabels...)
@@ -802,7 +803,7 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 				return 1
 			}
 		}
-		return nextSyncedWithInputs(*root, machine, *fetch, dependencies.endpoint, commandNow, goal.Project, labels...)
+		return nextSyncedWithInputs(*root, machine, *fetch, dependencies.endpoint, commandNow, goal.Project, dependencies.presence, labels...)
 	}
 	if len(labels) > 0 || machineProvided || *fetch {
 		fmt.Fprintln(os.Stderr, "goal next --label, --machine, and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")

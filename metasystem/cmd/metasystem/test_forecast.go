@@ -35,6 +35,7 @@ type forecastTestingDependencies struct {
 	candidateIO   candidateEngineIO
 	openCandidate func(string, string) (proofrun.CandidateWorkspace, error)
 	now           func() time.Time
+	scratch       *proofrun.ScratchRun
 }
 
 // forecastTestingSelection uses the same protected selection and retained
@@ -60,9 +61,20 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 	if err != nil {
 		return costSelectionEvidence{}, err
 	}
-	return forecastTestingSelectionPrepared(selection, proofCapMinutes, request, prepared, forecastTestingDependencies{
+	// Revalidation materializes the candidate and a managed environment like
+	// test verify does, so it owns a fresh scratch run for exactly that long.
+	scratch, err := proofrun.CreateScratchRun(prepared.proofControlRoot())
+	if err != nil {
+		return costSelectionEvidence{}, fmt.Errorf("scratch root: %w", err)
+	}
+	evidence, forecastErr := forecastTestingSelectionPrepared(selection, proofCapMinutes, request, prepared, forecastTestingDependencies{
 		workspace: gittree.Workspace{Dir: prepared.ProjectRoot}, candidateIO: nativeCandidateEngineIO(), now: commandClock,
+		scratch: scratch,
 	})
+	if cleanupErr := scratch.Cleanup(nil); cleanupErr != nil {
+		return costSelectionEvidence{}, errors.Join(forecastErr, cleanupErr)
+	}
+	return evidence, forecastErr
 }
 
 func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes uint64, request testingSelectionRequest,
@@ -76,6 +88,9 @@ func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes u
 		return costSelectionEvidence{}, err
 	}
 	ctx := context.Background()
+	if dependencies.scratch != nil {
+		ctx = proofrun.WithScratchRun(ctx, dependencies.scratch)
+	}
 	buildIdentity, err := candidateEngineBuildIdentityUsing(ctx, dependencies.workspace, prepared.Prefix, prepared.CandidateTree, prepared.Environment, dependencies.candidateIO)
 	if err != nil {
 		return costSelectionEvidence{}, err
@@ -87,6 +102,14 @@ func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes u
 	}
 	run := testingRunRequest(prepared, "", "", "", engineDigest, buildIdentity)
 	run.WithCandidateOpener(dependencies.openCandidate)
+	if dependencies.scratch != nil {
+		// A managed run's retained environment digest names its scratch
+		// paths as stable tokens; only a prepared descriptor reproduces it.
+		run.BindScratch(dependencies.scratch, nil)
+		if err := proofrun.PrepareScratchEnvironment(&run, dependencies.scratch); err != nil {
+			return costSelectionEvidence{}, err
+		}
+	}
 	run.FreshnessEpisode, run.FreshnessExpiresAt = selection.FreshEpisode, selection.FreshExpiresAt
 	freshGroups, _ := testingFreshGroups(prepared, request)
 	run.FreshGroups = freshGroups

@@ -1,6 +1,7 @@
 cmd/metasystem/goal_landing_portable_lifecycle_test.go	4	Two pauses poll exact owner or private-guard state; two tickers observe real proof planning and admitted attempts, with success determined by recorded state and native evidence.
 cmd/metasystem/goal_landing_workers_public_test.go	4	Three deadlines cap readiness, launcher registration, and cancellation of real child processes; the 10ms pause polls a recorded running process, and success requires observed process events rather than elapsed time.
 cmd/metasystem/proof_run_test.go	1	The ticker polls for a real public proof child file; success requires the published file or the exact child result.
+cmd/metasystem/test_scratch_public_test.go	4	Three deadlines are failure ceilings on the real CLI wait, its post-SIGKILL join, and the blocked launcher join; the 50ms pause polls recovery of a drained run root, and success requires the process result or the observed removal.
 cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
 internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
 internal/identity/fixture_custodian_witness_test.go	2	The timers are failure ceilings around a real command and its forced reap; successful observation comes from the command result.
@@ -17,6 +18,6 @@ internal/steward/runner_git_process_fixture_test.go	2	Two bounded polls observe 
 internal/steward/runner_test.go	2	The installed runner fixture succeeds on kernel identity and health state, and the sleeps only avoid busy-spinning while observing it.
 internal/supervise/arming_test.go	3	Two sleeps keep fixture subjects alive until killed, while the third only paces observation of a real owner's kernel death.
 internal/testenv/protection_test.go	1	The context is passed to a fake that checks for a deadline and returns immediately without waiting.
-internal/testenv/testenv_test.go	1	The timer is only a failure ceiling after a fixture custodian receives SIGKILL; success comes from Wait returning.
+internal/testenv/testenv_test.go	2	The timer is only a failure ceiling after a fixture custodian receives SIGKILL, and the 10ms sleep paces polling of inherited custodian log locks; success comes from Wait returning or the observed lock release.
 internal/testutil/fixture_test.go	4	The ticker and deadlines bound observation of real fixture process exit states while success comes from the kernel fact.
 internal/usage/cursor_test.go	1	The ticker spaces fixture writes, and all assertions count samples only after the writer reports completion.

@@ -246,7 +246,7 @@ func (e stagedEntry) indexInfoLine() string {
 // writeTreeOf loads logical entries into a fresh isolated index and
 // write-trees them. The real index is never opened for writing.
 func (w Workspace) writeTreeOf(entries []stagedEntry) (string, error) {
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}
@@ -395,7 +395,7 @@ func (w Workspace) SnapshotSeeded(seedCommit, expectedTree string, declaredPaths
 	if err != nil {
 		return "", err
 	}
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}
@@ -542,7 +542,7 @@ func (w Workspace) SnapshotRelevant(expectedTree string, declaredPaths []string)
 			return "", fmt.Errorf("gittree relevant snapshot: declared input %s crosses gitlink mode 160000", path)
 		}
 	}
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}

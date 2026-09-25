@@ -142,10 +142,12 @@ func (preparation *ReceiptPreparation) Close() error {
 		return preparation.closeErr
 	}
 	preparation.closed = true
+	// The candidate is always closed, even when preservation failed; the
+	// preservation failure stays first in the joined error.
 	_, _, err := proofrun.PreserveDetachedSuiteFailures(preparation.root, preparation.candidate.Dir,
 		"landing-receipt", preparation.evidenceTimeout, preparation.evidenceMax)
-	if err == nil {
-		err = preparation.frozen.Close()
+	if closeErr := preparation.frozen.Close(); closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close isolated candidate: %w", closeErr))
 	}
 	preparation.closeErr = err
 	return err
@@ -163,7 +165,8 @@ func receiptEvidenceLimits(root string) (time.Duration, int64) {
 			maxMegabytes = parsed
 		}
 	}
-	return time.Duration(timeoutSeconds) * time.Second, int64(maxMegabytes) * 1024 * 1024
+	// The bundle is diagnostic: configuration may only lower the fixed cap.
+	return time.Duration(timeoutSeconds) * time.Second, min(int64(maxMegabytes)*1024*1024, proofrun.DetachedEvidenceGroupMaxBytes)
 }
 
 func (preparation *ReceiptPreparation) Complete(attempt proofrun.Attempt, completedAt time.Time) (TestReceipt, error) {

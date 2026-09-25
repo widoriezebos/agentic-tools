@@ -35,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -547,6 +548,7 @@ type syncRequestDependencies struct {
 	ownerLineage   func() string
 	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
+	presence       func(string, goal.Endpoint) (seat.Copy, error)
 }
 
 func defaultSyncRequestDependencies() syncRequestDependencies {
@@ -558,6 +560,7 @@ func defaultSyncRequestDependencies() syncRequestDependencies {
 		ownerLineage:   func() string { return os.Getenv("METASYSTEM_OWNER_LINEAGE") },
 		proveHuman:     proveSyncReqHumanAuthority,
 		proveTerminal:  proveSyncReqTerminalAuthority,
+		presence:       readTickPresence,
 	}
 }
 

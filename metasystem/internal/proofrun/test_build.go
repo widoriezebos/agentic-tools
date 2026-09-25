@@ -33,8 +33,10 @@ import (
 
 const (
 	// TestWorkerProtocolVersion is the request/result negotiation protocol
-	// implemented by the worker-capabilities command.
-	TestWorkerProtocolVersion = 1
+	// implemented by the worker-capabilities command. Version 2 adds the
+	// optional Scratch and ScratchEnvironment request fields, which strict
+	// version-1 workers refuse as unknown.
+	TestWorkerProtocolVersion = 2
 	// TestWorkerPolicyVersion identifies the worker-allocation inputs bound
 	// into prepared execution identities and retained results.
 	TestWorkerPolicyVersion = 1
@@ -45,8 +47,12 @@ const (
 )
 
 type TestRunRequest struct {
-	ProjectRoot        string
-	openCandidate      func(projectRoot, candidateTree string) (candidateWorkspace, error)
+	ProjectRoot   string
+	openCandidate func(projectRoot, candidateTree string) (candidateWorkspace, error)
+	// Scratch is the serialized binding of a managed run's scratch root;
+	// scratch is the authenticated handle bound in this process.
+	Scratch            *ScratchLocator `json:",omitempty"`
+	scratch            *ScratchRun
 	EngineRearm        *EngineRearm
 	InstallationPrefix string
 	CandidateTree      string
@@ -56,6 +62,9 @@ type TestRunRequest struct {
 	Plan               testpolicy.Plan
 	AttemptID          string
 	Environment        []string
+	// ScratchEnvironment is the launcher-prepared managed group environment
+	// (PrepareScratchEnvironment); nil keeps the legacy unmanaged behavior.
+	ScratchEnvironment *ScratchEnvironment `json:",omitempty"`
 	LogRoot            string
 	ProgressPath       string
 	Reused             map[string]GroupResult
@@ -120,7 +129,30 @@ func (request TestRunRequest) candidateWorkspace() (candidateWorkspace, error) {
 	if request.openCandidate != nil {
 		return request.openCandidate(request.ProjectRoot, request.CandidateTree)
 	}
+	if request.scratch != nil {
+		// Recorded before add, created under the run root with the writer
+		// lock inherited and hooks off; Close flips the tuple.
+		plan, err := request.scratch.PlanWorktree(gittree.Workspace{Dir: request.ProjectRoot}, "groups")
+		if err != nil {
+			return nil, err
+		}
+		detached, err := plan.Create(request.CandidateTree)
+		if err != nil {
+			return nil, err
+		}
+		return detached, nil
+	}
+	if request.Scratch != nil {
+		return nil, fmt.Errorf("managed scratch run %s is not bound in this process", request.Scratch.Run)
+	}
 	return (gittree.Workspace{Dir: request.ProjectRoot}).NewDetachedWorktree(request.CandidateTree)
+}
+
+// BindScratch binds a managed run: every candidate worktree of this request
+// is recorded in run before git worktree add. locator is what a worker
+// receives in its packet; nil keeps the binding process-local.
+func (request *TestRunRequest) BindScratch(run *ScratchRun, locator *ScratchLocator) {
+	request.scratch, request.Scratch = run, locator
 }
 
 // PreparedGroupExecution is immutable metadata collected once before
@@ -1594,6 +1626,27 @@ func newTestResult(request TestRunRequest, semanticNow time.Time) TestResult {
 			QueueDurationMS: request.QueueDurationMS}, semanticNow: semanticNow}
 }
 
+// appendSuiteFailureEvidenceLine records the preserved bundle in the group
+// log. A missing log stays missing, as the verdict finalizer treats it.
+func appendSuiteFailureEvidenceLine(result *GroupResult, groupID, bundle string) {
+	logFile, err := os.OpenFile(result.LogPath, os.O_WRONLY|os.O_APPEND, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err == nil {
+		// strconv.Quote keeps every path byte recoverable while staying on one line.
+		line := "SUITE-FAILURE-EVIDENCE " + strings.Join(strings.Fields(groupID), " ") + " path=" + strconv.Quote(bundle)
+		_, err = io.WriteString(logFile, "\n"+line+"\n")
+		err = errors.Join(err, logFile.Close())
+	}
+	if err != nil {
+		if result.NotRunReason != "" {
+			result.NotRunReason += "; "
+		}
+		result.NotRunReason += "suite-failure evidence line not written: " + err.Error()
+	}
+}
+
 func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group) (result GroupResult) {
 	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	started := time.Now()
@@ -1668,25 +1721,40 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		// The detached evidence copy is bounded by bytes, never by the clock:
 		// a sixty-second bound turned a group invalid on a slow disk under
 		// load (proof-groups-detect-hangs-by-progress-not-the-clock, slice 2).
-		timeout, maxBytes := time.Duration(0), request.EvidenceMaxBytes
-		if maxBytes < 1 {
-			maxBytes = 512 * 1024 * 1024
+		// One group's bundle is diagnostic, so the shared watchdog ceiling
+		// only ever lowers the group cap.
+		timeout, maxBytes := time.Duration(0), DetachedEvidenceGroupMaxBytes
+		if request.EvidenceMaxBytes > 0 && request.EvidenceMaxBytes < maxBytes {
+			maxBytes = request.EvidenceMaxBytes
 		}
 		controlRoot := request.ControlRoot
 		if controlRoot == "" {
 			controlRoot = request.ProjectRoot
 		}
-		_, _, preserveErr := PreserveDetachedSuiteFailures(controlRoot, detached.Workspace().Dir, group.ID, timeout, maxBytes)
-		if preserveErr == nil {
-			preserveErr = detached.Close()
-		}
+		_, bundle, preserveErr := PreserveDetachedSuiteFailures(controlRoot, detached.Workspace().Dir, group.ID, timeout, maxBytes)
+		// The candidate is always closed, even when preservation failed; a
+		// failed preservation must not leak the candidate it was reading.
+		var cleanupErr error
 		if preserveErr != nil {
+			cleanupErr = fmt.Errorf("preserve detached suite-failure evidence before cleanup: %w", preserveErr)
+		}
+		if closeErr := detached.Close(); closeErr != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("close detached candidate: %w", closeErr))
+		}
+		if cleanupErr != nil {
 			result.Status = "invalid"
 			result.CollectionComplete = false
 			if result.NotRunReason != "" {
 				result.NotRunReason += "; "
 			}
-			result.NotRunReason += "preserve detached suite-failure evidence before cleanup: " + preserveErr.Error()
+			result.NotRunReason += strings.ReplaceAll(cleanupErr.Error(), "\n", "; ")
+		}
+		// The group log names the bundle; this runs before the log finalizer
+		// above, which appends the verdict and computes the final digest.
+		if bundle != "" && result.LogPath != "" && result.Status != "passed" && result.Status != "reused" {
+			if _, statErr := os.Lstat(bundle); statErr == nil {
+				appendSuiteFailureEvidenceLine(&result, group.ID, bundle)
+			}
 		}
 	}()
 	root := detached.Workspace().Dir
@@ -1704,7 +1772,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		return result
 	}
 	result.InputDigest = inputDigest
-	result.EnvironmentDigest = digestGroupEnvironment(group, environment)
+	result.EnvironmentDigest = digestScratchGroupEnvironment(request, group, environment)
 	plannedTools, argv, expected, availabilityErr := map[string]string{}, []string(nil), []NativeTestIdentity(nil), error(nil)
 	if hasPrepared {
 		if prepared.InputDigest != inputDigest || prepared.EnvironmentDigest != result.EnvironmentDigest {
@@ -2098,7 +2166,7 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 					continue
 				}
 				inputDigest, digestErr := digestGroupInputsWithImplicit(root, group, environment, implicit)
-				if digestErr != nil || inputDigest != source.InputDigest || digestGroupEnvironment(group, environment) != source.EnvironmentDigest ||
+				if digestErr != nil || inputDigest != source.InputDigest || digestScratchGroupEnvironment(request, group, environment) != source.EnvironmentDigest ||
 					verifyPreparedExecutables(ctx, cwd, environment, group, source.Argv, source.ExecutableDigests) != nil {
 					continue
 				}
@@ -2143,7 +2211,7 @@ func PrepareGroupExecutionIdentities(ctx context.Context, request TestRunRequest
 	defer detached.Close()
 	root := detached.Workspace().Dir
 	launches := 0
-	discoveryCache := &goDiscoveryCache{catalogs: map[string]goPackageCatalog{}}
+	discoveryCache := &goDiscoveryCache{catalogs: map[string]goPackageCatalog{}, scratch: request.ScratchEnvironment}
 	for _, id := range request.Plan.SelectedGroups {
 		group, ok := groups[id]
 		if !ok {
@@ -2157,7 +2225,7 @@ func PrepareGroupExecutionIdentities(ctx context.Context, request TestRunRequest
 		if digestErr != nil {
 			return nil, nil, launches, digestErr
 		}
-		environmentDigest := digestGroupEnvironment(group, environment)
+		environmentDigest := digestScratchGroupEnvironment(request, group, environment)
 		identities[id] = groupExecutionIdentity(request, group, cwd, inputDigest, environmentDigest, toolIdentities, expected)
 		item := PreparedGroupExecution{
 			InputDigest: inputDigest, EnvironmentDigest: environmentDigest,
@@ -2698,6 +2766,9 @@ func groupTestEnvironment(request TestRunRequest, group testpolicy.Group) []stri
 	}
 	if group.Adapter == "section" {
 		environment = dropTestEnvironmentName(environment, "METASYSTEM_BIN")
+	}
+	if request.ScratchEnvironment != nil {
+		environment = overlayScratchEnvironment(environment, request.ScratchEnvironment, group)
 	}
 	if TestWorkerPolicyActive(request) {
 		workers, err := EffectiveGroupWorkers(request, group)
