@@ -585,26 +585,31 @@ func newLedger(calm bool) *ledger {
 	// that has stopped admitting work with nobody holding the goal, the same
 	// with a seat holding it, and a claim a breach fence stopped. Without
 	// them the inbox can only ever show seven of its ten kinds.
-	renew := add(ranked(walkthroughGoal("g1-s31", goal.StateApproved, "The Decisions section renews an approval"), 2, 16))
-	renew.Approved = &goal.ApprovalRecord{
-		By: "human:Wido", At: stampedAgo(21 * 24 * time.Hour),
-		Authority: goal.ApprovalAuthorityRelayed, ReviewBy: "2026-09-06", Revision: 3,
-	}
-	renew.Budget = &goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720, ActiveJobLimit: 1, ReviewRoundLimit: 2}
+	//
+	// The calm workspace has none of them, because each one is by definition
+	// something waiting on a human and calm is the page with nothing waiting.
+	if !calm {
+		renew := add(ranked(walkthroughGoal("g1-s31", goal.StateApproved, "The Decisions section renews an approval"), 2, 16))
+		renew.Approved = &goal.ApprovalRecord{
+			By: "human:Wido", At: stampedAgo(21 * 24 * time.Hour),
+			Authority: goal.ApprovalAuthorityRelayed, ReviewBy: "2026-09-06", Revision: 3,
+		}
+		renew.Budget = &goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720, ActiveJobLimit: 1, ReviewRoundLimit: 2}
 
-	held := add(ranked(walkthroughGoal("g1-s32", goal.StateClaimed, "The register reader answers two callers"), 2, 17))
-	held.Approved = &goal.ApprovalRecord{
-		By: "human:Wido", At: stampedAgo(20 * 24 * time.Hour),
-		Authority: goal.ApprovalAuthorityRelayed, ReviewBy: "2026-09-06", Revision: 4,
-	}
-	held.Budget = &goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720, ActiveJobLimit: 1, ReviewRoundLimit: 2}
-	held.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(11 * time.Hour)}
+		held := add(ranked(walkthroughGoal("g1-s32", goal.StateClaimed, "The register reader answers two callers"), 2, 17))
+		held.Approved = &goal.ApprovalRecord{
+			By: "human:Wido", At: stampedAgo(20 * 24 * time.Hour),
+			Authority: goal.ApprovalAuthorityRelayed, ReviewBy: "2026-09-06", Revision: 4,
+		}
+		held.Budget = &goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720, ActiveJobLimit: 1, ReviewRoundLimit: 2}
+		held.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(11 * time.Hour)}
 
-	fenced := add(ranked(walkthroughGoal("g1-s33", goal.StateClaimed, "The notification stream reconnects by itself"), 2, 18))
-	fenced.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(26 * time.Hour)}
-	fenced.StopFence = &goal.StopFence{
-		StopID: "stop-g1-s33", Revision: 5, ClosedAt: stampedAgo(3 * time.Hour),
-		Reason: "ELAPSED_LIMIT: the claim ran past its four-hour box",
+		fenced := add(ranked(walkthroughGoal("g1-s33", goal.StateClaimed, "The notification stream reconnects by itself"), 2, 18))
+		fenced.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(26 * time.Hour)}
+		fenced.StopFence = &goal.StopFence{
+			StopID: "stop-g1-s33", Revision: 5, ClosedAt: stampedAgo(3 * time.Hour),
+			Reason: "ELAPSED_LIMIT: the claim ran past its four-hour box",
+		}
 	}
 
 	dropped := add(walkthroughGoal("g1-s7", goal.StateAbandoned, "A second bundler beside the first"))
@@ -615,9 +620,26 @@ func newLedger(calm bool) *ledger {
 	add(ranked(walkthroughGoal("g1-s99", "surveying", "A state this build has no lane for"), 3, 3))
 
 	if calm {
+		// Decisions counts a person's own park as something waiting on them,
+		// which it is. The calm workspace is the page with nothing waiting,
+		// so the park is lifted the way a human would lift it — before the
+		// admission below, so the goal it returns to comes back approved
+		// rather than as one more thing nobody has authorized.
+		unpark(tree, "g1-s22")
 		admitEverything(tree)
 	}
 	return &ledger{tree: tree}
+}
+
+// unpark lifts one park the way goal unpark would: the record loses its park
+// and returns to the state it was approved into.
+func unpark(tree *goal.TreeGoals, id string) {
+	file := tree.Live[id]
+	if file == nil || file.Parked == nil {
+		return
+	}
+	file.Parked = nil
+	file.State = goal.StateQueued
 }
 
 // admitEverything is the calm workspace's ledger: every queued goal carries a
