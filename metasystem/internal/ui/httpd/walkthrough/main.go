@@ -213,6 +213,12 @@ func main() {
 		// to prove, and this ledger has no endpoint to publish to.
 		Park:   func(_ *session.Session, id, because string) error { return state.park(id, because) },
 		Unpark: func(_ *session.Session, id string) error { return state.unpark(id) },
+		// The goal editor's first gate. The fixture edits its own canned
+		// rows: what it proves in a browser is the sheet prefilled from the
+		// row, the fields it sends, the three states that refuse it and the
+		// words they refuse in — the verb's own allowlist and its session
+		// line are the engine's tests' to prove.
+		Edit: func(_ *session.Session, id string, edited act.Edited) error { return state.edit(id, edited) },
 		SetPriority: func(_ *session.Session, id string, priority uint8, sequence *uint64) error {
 			return state.setPriority(id, priority, sequence)
 		},
@@ -1404,6 +1410,53 @@ func (l *ledger) unpark(id string) error {
 	file.State = goal.StateQueued
 	if file.Approved != nil {
 		file.State = goal.StateApproved
+	}
+	return nil
+}
+
+// edit is the fixture's own goal edit, holding the three rules the page
+// reads: only a queued goal nobody has approved is edited here, each of the
+// other three states refuses in the engine's own sentence, and the label
+// grammar is the engine's. Only the fields the sheet sent are written, so a
+// walkthrough can show that an untouched field is left exactly as it was.
+func (l *ledger) edit(id string, edited act.Edited) error {
+	if edited.Intent == nil && edited.NextStep == nil && edited.Labels == nil {
+		return &act.Refusal{Kind: act.KindRequest, Code: "no-change",
+			Message: "an edit changes at least one of the intent, the next step or the labels"}
+	}
+	file := l.tree.Live[id]
+	if file == nil {
+		return refused("goal %s is not live; the archive edits through reopen", id)
+	}
+	switch {
+	case file.Approved != nil || file.State == goal.StateApproved:
+		return refused("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
+	case file.State == goal.StateClaimed:
+		pair := "another pair"
+		if file.Claimed != nil {
+			pair = file.Claimed.Machine + "+" + file.Claimed.Lineage
+		}
+		return refused("goal %s is claimed by %s; edit it at a terminal", id, pair)
+	case file.State == goal.StateParked:
+		return refused("goal %s is parked: return it to the queue to edit it", id)
+	case file.State != goal.StateQueued:
+		return refused("goal %s is %s; only a queued goal is edited from the interface", id, file.State)
+	}
+	if edited.Labels != nil {
+		if err := goal.ValidateLabels(*edited.Labels); err != nil {
+			return refused("%s", err.Error())
+		}
+	}
+	if edited.Intent != nil {
+		file.Intent = *edited.Intent
+	}
+	if edited.NextStep != nil {
+		file.NextStep = *edited.NextStep
+	}
+	if edited.Labels != nil {
+		labels := append([]string(nil), (*edited.Labels)...)
+		sort.Strings(labels)
+		file.Labels = labels
 	}
 	return nil
 }

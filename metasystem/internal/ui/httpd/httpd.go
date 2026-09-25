@@ -151,6 +151,12 @@ type Info struct {
 	// that cannot act, which the route says.
 	Park   func(signed *session.Session, id, because string) error
 	Unpark func(signed *session.Session, id string) error
+	// Edit rewrites the intent, the next step and the labels of a goal nobody
+	// has approved yet, from the goal's own page or the board's card menu.
+	// Only the fields a human changed are carried, so a terminal edit of an
+	// untouched field survives the save; the state the goal must be in is the
+	// mutation's own allowlist rather than this server's check.
+	Edit func(signed *session.Session, id string, edited act.Edited) error
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.

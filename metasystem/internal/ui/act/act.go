@@ -1,12 +1,13 @@
 // Package act is the interface server's human hand on the ledger.
 //
-// Eight verbs reach it, and every one of them is a verb a human performs on
+// Nine verbs reach it, and every one of them is a verb a human performs on
 // their own backlog: goal approve and goal unapprove admit and withdraw work,
 // goal park and goal unpark pause it and let it go again, goal set-priority
 // places a goal in a band and orders it there, goal open is
-// the intake act that creates one, and goal block and goal unblock write and
-// remove the edges that say which goal waits for which. Nothing here shells
-// out. A
+// the intake act that creates one, goal block and goal unblock write and
+// remove the edges that say which goal waits for which, and goal edit
+// rewrites the three fields of a goal nobody has approved yet. Nothing here
+// shells out. A
 // child of this server has no terminal in its ancestry and would be refused
 // by the very check that makes these acts a human's, so the engine is called
 // in-process, through the same internal/goal request path the command edge
@@ -368,6 +369,58 @@ func (a Authority) Open(opened Opened) error {
 	result, publishErr := goal.OpenRisked(request, opened.ID, opened.Intent, goal.OriginHuman,
 		opened.NextStep, opened.Blocks, opened.BlockedBy, opened.Risk, opened.Tier, opened.Why, nil, &a.proof, opened.Labels...)
 	return a.settle(request, result, publishErr, "goal open")
+}
+
+// Edited is what a browser may change on a goal nobody has approved yet: its
+// intent, its next step, and its labels.
+//
+// Every field is a pointer because absence and emptiness are two different
+// statements. A field nobody touched in the sheet is not sent at all, so a
+// terminal edit of that same field survives this save; a label list a human
+// emptied is sent as an empty list, and clears the labels. There is no tier
+// here and no risk, no dependency, no why and no evidence: tier and risk
+// enter the approval digest and dependencies change other goals' readiness,
+// and neither is a direct edit the master design admits.
+type Edited struct {
+	Intent   *string
+	NextStep *string
+	Labels   *[]string
+}
+
+// Edit publishes goal edit for one queued goal, under the allowlist the
+// mutation itself holds.
+//
+// The flag is set here and always: this hand edits a queued unapproved goal
+// or it edits nothing, and a goal approved or claimed between the page's read
+// and this act is refused at the tip in the engine's own words rather than
+// being displaced. Only the three fields travel, and only the ones the sheet
+// says changed.
+func (a Authority) Edit(id string, edited Edited) error {
+	if strings.TrimSpace(id) == "" {
+		return refuse(KindRequest, "no-goal", "an edit names one live goal")
+	}
+	if edited.Intent == nil && edited.NextStep == nil && edited.Labels == nil {
+		return refuse(KindRequest, "no-change",
+			"an edit changes at least one of the intent, the next step or the labels")
+	}
+	if edited.Intent != nil && strings.TrimSpace(*edited.Intent) == "" {
+		return refuse(KindRequest, "no-intent", "a goal's intent says what done looks like, in one line")
+	}
+	if edited.NextStep != nil && strings.TrimSpace(*edited.NextStep) == "" {
+		return refuse(KindRequest, "no-next-step",
+			"a goal's next step states intent, constraints and freedoms, never a script of the how")
+	}
+	request, err := a.request()
+	if err != nil {
+		return err
+	}
+	result, publishErr := goal.Edit(request, id, goal.EditFields{
+		QueuedOnly: true,
+		Intent:     edited.Intent,
+		NextStep:   edited.NextStep,
+		Labels:     edited.Labels,
+	})
+	return a.settle(request, result, publishErr, "goal edit")
 }
 
 // Block publishes goal block: the dependent waits for the blocker from now on.

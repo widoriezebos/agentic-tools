@@ -111,9 +111,11 @@ func writeRouteOf(path string) (written, bool) {
 	if route, ok := partnerRouteOf(path); ok {
 		return route, true
 	}
-	// The backlog's six acts are writes under the same policy, and are
-	// routed here so that the method, the host, the site and the origin are
-	// judged for them exactly as they are for the Project's four.
+	// The backlog's acts are writes under the same policy, and are routed
+	// here so that the method, the host, the site and the origin are judged
+	// for them exactly as they are for the Project's four. A goal's own
+	// "/edit" is reached here and not by editID above: that one cuts the
+	// document prefix, and a goal id never lives under it.
 	return actRouteOf(path)
 }
 
@@ -228,6 +230,8 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.parkGoal(w, r, route.id)
 	case routeUnpark:
 		h.unparkGoal(w, r, route.id)
+	case routeEditGoal:
+		h.editGoal(w, r, route.id)
 	case routeSignIn:
 		h.signIn(w, r)
 	case routeSignOut:
