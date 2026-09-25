@@ -60,6 +60,11 @@ func main() {
 	// way to stand in front of the one thing the fleet event exists for: a
 	// page that is already open learning that presence moved.
 	fleetEvery := flag.Duration("fleet-every", 0, "announce a fixture presence attempt this often; zero announces none")
+	// Which launch is the newest one, and so which card the Fleet page shows.
+	// The page shows one card — the newest launch still worth one — so a
+	// fixture that could only ever be newest in one order could only ever
+	// show one of the two states the card has.
+	launched := flag.String("launch", "running", "which launch is newest on this fixture: running, failed or none")
 	// The calm workspace. Overview's good outcome is a page that says nothing
 	// needs you, and a fixture that can only show the busy one can only show
 	// half of what the section is for. Calm proves its human, admits every
@@ -172,7 +177,7 @@ func main() {
 		},
 		// The fleet, invented: three machines, one of each standing, joined
 		// to the claims the canned ledger carries. -proven is the armed seat.
-		Fleet: fixtureFleet(*proven),
+		Fleet: fixtureFleet(*proven, *launched),
 		// Launching, invented: this fixture clones nothing and spawns
 		// nothing, so the act answers with the running record the page
 		// already shows. What it proves in a browser is the sheet, its

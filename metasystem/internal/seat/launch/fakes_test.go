@@ -29,7 +29,7 @@ const (
 	headCommit  = "9c1f2ab3d4e5f60718293a4b5c6d7e8f90123456"
 )
 
-func fromBinary() string { return filepath.Join(fromRoot, install, "bin", "metasystem") }
+// destBinary is the engine the launch installs in the clone.
 func destBinary() string { return filepath.Join(destRoot, install, "bin", "metasystem") }
 func destInstall() string {
 	return filepath.Join(destRoot, install)

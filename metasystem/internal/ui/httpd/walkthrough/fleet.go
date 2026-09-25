@@ -162,6 +162,21 @@ func fixtureLaunches(now time.Time) []launch.Record {
 	}
 }
 
+// fixtureLaunchesNewest is the same two launches with the one this fixture was
+// told to show first. The page draws the newest launch still worth a card, so
+// this is how both of the card's states are reachable in a browser.
+func fixtureLaunchesNewest(now time.Time, newest string) []launch.Record {
+	records := fixtureLaunches(now)
+	switch newest {
+	case "none":
+		return nil
+	case "failed":
+		return []launch.Record{records[1], records[0]}
+	default:
+		return records
+	}
+}
+
 // fixtureLaunchOf is what this fixture answers a launch act with: the running
 // record, told what the sheet asked for. It clones nothing.
 func fixtureLaunchOf(asked launch.Request, now time.Time) launch.Record {
@@ -184,7 +199,7 @@ func fixtureLaunchOf(asked launch.Request, now time.Time) launch.Record {
 
 // fixtureFleet is the Fleet page this fixture serves, composed from the canned
 // presence above and the observation the board was drawn from.
-func fixtureFleet(proven bool) func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error) {
+func fixtureFleet(proven bool, launched string) func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error) {
 	return func(observed snapshot.Observation, board backlog.Board, now time.Time) (fleet.Page, error) {
 		in := fleet.Inputs{
 			This: fixtureThis, Presence: fixturePresence(now, proven),
@@ -197,7 +212,10 @@ func fixtureFleet(proven bool) func(snapshot.Observation, backlog.Board, time.Ti
 			Previous: fixtureStandings(now),
 			Window:   seat.DefaultStaleMinutes * time.Minute,
 		}
-		in.Launches = fixtureLaunches(now)
+		in.Launches = fixtureLaunchesNewest(now, launched)
+		in.Launching = fleet.Launching{
+			Parent: "/Users/wido/LocalStorage/GitHub", Repository: "agentic-tools",
+		}
 		if proven {
 			in.Health = fixtureHealth(now)
 			in.Publication = &seat.PublicationState{
