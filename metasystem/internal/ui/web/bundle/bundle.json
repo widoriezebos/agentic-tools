@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:dacd7a74e58d2f0638096b1e072d78a146db7453e2ad824dc3db07a67e4b633e",
+  "sourceDigest": "sha256:d1f67311ce4e03b69dd3fb5aa7f89d40135f0a5f726a6a6648b241580393d34f",
   "source": [
     {
       "path": ".npmrc",
@@ -260,23 +260,23 @@
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "5ca976554783f0589f0e34c71756d95b5f0eba54fd24d62fd7549f52afb38fbe"
+      "sha256": "ac4f6691037f45653f5c4f8b79968217203a3d6dc5819e192996c0a5df2b0543"
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
-      "sha256": "48773ebd4f46cfccd446bde738c67715c0841c8a7ba06b17a2c26fb2023bbbc5"
+      "sha256": "8554148abe64a508918662eb77056847f12f18e121b0b9a8e35f95fbf06eb726"
     },
     {
       "path": "src/fleet/LaunchCard.tsx",
-      "sha256": "41c046c2cbf05e90a644ce1bc45600fd3acf7042d8fc092e649f5d7f4c10f5f4"
+      "sha256": "925c2d9a73a64a19a61dfe389cebc5bf95aa3b5c236c95b5cef78ac43effdbbc"
     },
     {
       "path": "src/fleet/LaunchSheet.tsx",
-      "sha256": "786003faa42af1d7e3350ee60527dded41eb78bdbcbf99880c063bb0342279e7"
+      "sha256": "e1c14ce02083485c6cac691a302f93a7fa82b28c1f97897825165b814c221a9c"
     },
     {
       "path": "src/fleet/api.ts",
-      "sha256": "0bf1c66c4fd3e1979a98e6cd3da1874ea657674fddd8acb9935bb9ac3ca91202"
+      "sha256": "092dc01ca77ca9054ce66c4def04a2ea51be4a9c60085491b2a782d7c077e418"
     },
     {
       "path": "src/fleet/capture.ts",
@@ -292,11 +292,11 @@
     },
     {
       "path": "src/fleet/launching.test.ts",
-      "sha256": "4ef527d8da6baa1dd0c7a910a3698b1125a9a25a483b6a0f3cec8d8e7dd8caa3"
+      "sha256": "b81e9555a0d1b41bc7c8137738256f0855126ce6cd047b9a9c87fad80ae702d1"
     },
     {
       "path": "src/fleet/launching.ts",
-      "sha256": "ba68f83d00897ed31290324e78c294e8aee4363f1737e10f36e17c013e64d52d"
+      "sha256": "2127ac2cff107407d53305d520c486bb912e1cb2009102bcdb96ae15dfd377e1"
     },
     {
       "path": "src/fleet/rendering.test.tsx",
@@ -806,7 +806,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "43358528c23889a49982fc3908e4ab5f671b761105a4a734bb27cc0c5cbda3e1"
+      "sha256": "72070cfed935f07721567c0b8e33e43407c173795824cafde0f116159d00814a"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
