@@ -12,6 +12,7 @@ import { Rail } from "./Rail";
 import { RefreshProvider } from "./refresh";
 import { Sheet } from "./Sheet";
 import { WorkAreaProvider } from "./workmodal";
+import { ApplicationPane } from "../application/ApplicationPane";
 import { BacklogPane } from "../backlog/BacklogPane";
 import { DecisionsPane } from "../decisions/DecisionsPane";
 import { FleetPane } from "../fleet/FleetPane";
@@ -271,6 +272,10 @@ function Frame() {
           open channel questions and the rulings register at once, so it is a
           route of its own as well. */}
       <Route path="/decisions" element={<DecisionsPane />} />
+      {/* Application reads the workspace, the ledger, the known-issues
+          register, this seat's own presence record and the project's
+          documents at once, so it is a route of its own as well. */}
+      <Route path="/application" element={<ApplicationPane />} />
       {/* The sections this build does not project. Which they are is the
           section table's own field, so the routes, the empty register and
           what the Partner is told about availability cannot disagree.

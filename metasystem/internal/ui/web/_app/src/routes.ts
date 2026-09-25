@@ -107,8 +107,8 @@ export const sections: readonly Section[] = [
     path: "/application",
     title: "Application",
     icon: Package,
-    shows: "What has been released, with the evidence for each claim and where that evidence was produced.",
-    projected: false,
+    shows: "What this workspace has concluded, week by week, in the ledger's own words; the known problems, open ones first; and the documents that say what it is.",
+    projected: true,
   },
   {
     id: "settings",

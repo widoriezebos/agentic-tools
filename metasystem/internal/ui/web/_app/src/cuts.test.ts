@@ -178,6 +178,13 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // requests and the backlog read they need are backlog/api.ts's call site
   // and not a second one.
   ["decisions/api.ts", 1, ["/api/decisions"]],
+  // Application. One read when the pane mounts and one when a human presses
+  // the section's refresh, both through the one request below. The page holds
+  // no timer and no second reader: the ledger's conclusions, the known-issues
+  // register, this seat's own engine build and the document links are all
+  // composed on the server, so there is one resource here and not four. The
+  // page publishes nothing, so there is no act beside it either.
+  ["application/api.ts", 1, ["/api/application"]],
 ];
 
 /**

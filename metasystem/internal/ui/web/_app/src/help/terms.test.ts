@@ -98,7 +98,7 @@ describe("the sections' help", () => {
     expect(sectionHelp("project")).toBe("project");
     expect(sectionHelp("backlog")).toBe("backlog");
     expect(sectionHelp("fleet")).toBe("fleet");
-    expect(sectionHelp("application")).toBe("application");
+    expect(sectionHelp("application")).toBe("application-section");
     // The rail's Decisions is what the machinery asks a human to rule on, and
     // not the project's record of what was decided; they are two terms.
     expect(sectionHelp("decisions")).toBe("decisions-section");
