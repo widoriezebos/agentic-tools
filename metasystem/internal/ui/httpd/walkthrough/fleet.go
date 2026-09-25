@@ -35,6 +35,15 @@ const (
 	fixtureThis = "m1u"
 )
 
+// announceFixturePresence stands in for the fetch owner this fixture has
+// none of: it tells every open stream that a presence attempt finished, on a
+// cadence, so a Fleet page that is already open can be watched re-reading.
+func announceFixturePresence(watch *fleet.Watch, every time.Duration) {
+	for range time.Tick(every) {
+		watch.Announce()
+	}
+}
+
 // fixturePresence is the presence copy, invented.
 func fixturePresence(now time.Time, proven bool) seat.Copy {
 	copied := seat.Copy{Records: map[string]seat.Record{}, Malformed: map[string]string{}}

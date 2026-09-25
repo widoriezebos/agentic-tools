@@ -52,6 +52,12 @@ func main() {
 	// history; this is what makes the live path — the stream, the toasts, the
 	// bell's count — something a human can stand in front of and watch.
 	notifyEvery := flag.Duration("notify-every", 0, "append a fixture notification this often; zero appends none")
+	// The fleet's own live path. This fixture fetches no presence, so nothing
+	// would ever announce on its watch; with this flag it announces on a
+	// cadence, which is what a mounted Fleet page re-reads on. It is the only
+	// way to stand in front of the one thing the fleet event exists for: a
+	// page that is already open learning that presence moved.
+	fleetEvery := flag.Duration("fleet-every", 0, "announce a fixture presence attempt this often; zero announces none")
 	// The calm workspace. Overview's good outcome is a page that says nothing
 	// needs you, and a fixture that can only show the busy one can only show
 	// half of what the section is for. Calm proves its human, admits every
@@ -138,6 +144,10 @@ func main() {
 	if *notifyEvery > 0 {
 		go appendFixtureNotifications(journal, *notifyEvery)
 	}
+	presenceWatch := fleet.NewWatch()
+	if *fleetEvery > 0 {
+		go announceFixturePresence(presenceWatch, *fleetEvery)
+	}
 	info := httpd.Info{
 		Checkout: "/walkthrough", StartedAt: time.Now().UTC().Format(time.RFC3339),
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
@@ -147,10 +157,9 @@ func main() {
 		// to the claims the canned ledger carries. -proven is the armed seat.
 		Fleet: fixtureFleet(*proven),
 		// The browsers holding the stream open, which the fleet event rides
-		// back to. This fixture fetches no presence, so nothing announces on
-		// it; it exists so the stream registers a connection the way the
-		// engine's own server does.
-		Watch: fleet.NewWatch(),
+		// back to. It is the same registration the engine's own server uses
+		// as its connection signal; -fleet-every is what announces on it.
+		Watch: presenceWatch,
 		// What the board's Refresh runs before it observes. This fixture has
 		// no remote to reach, so the look is recorded rather than made: what
 		// it proves in a browser is that pressing Refresh runs one and that

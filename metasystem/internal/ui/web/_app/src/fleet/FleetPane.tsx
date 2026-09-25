@@ -98,6 +98,13 @@ export function FleetPane() {
   // The server's own signal, and the reconnect that may have missed one. A
   // re-read keeps whatever is on screen until the answer arrives, because a
   // page that blanked itself every minute would be a page nobody could read.
+  //
+  // A cold load reads twice: once on mount, and once when the stream opens a
+  // moment later. That is deliberate. The open is not known to be the first
+  // one — a page navigated to while the stream was already up sees only
+  // reconnects — and a reconnect is exactly when attempts may have been
+  // missed, so the second read is kept rather than a first-open flag added
+  // that would silently skip a real reconnect.
   useEffect(() => {
     const stopFleet = onFleetEvent(again);
     const stopOpen = onStreamOpen(again);

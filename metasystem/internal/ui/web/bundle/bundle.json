@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:1e6cb80b45e39228e7464a4b23b0b163f3a6d0bffd7f5a3ae4018250db5ae1b2",
+  "sourceDigest": "sha256:159d64fa725d2bd3da90f12d3631290b084bc72c7daf5a6bdba52457318918bd",
   "source": [
     {
       "path": ".npmrc",
@@ -260,7 +260,7 @@
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "815559683391c8d019c180dae3d5b1ceb375454356136775ee071af563f21a6f"
+      "sha256": "ce596d0c9656ee637025b5c3ec4bbcf24a192fce68adb142e684b634ba0be79c"
     },
     {
       "path": "src/fleet/api.ts",
