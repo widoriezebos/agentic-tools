@@ -175,7 +175,9 @@ it verified (`goal unpark --id <goal> --under <entry> --verified "<what
 holds now>"`, R-105-m1e); never a blocker's park.
 
 Under R-60-m1, the reviewer stops critique at the first round with no material
-finding. A material finding must change what gets built and name that
+finding, and under R-124 a finding is material only when the slice does not
+work or is not safe without it; everything else is deferred, never folded
+with new mechanism. A material finding must change what gets built and name that
 artifact; a finding that fails the artifact test is demoted at registration.
 For design critique, one round is the norm since 2026-09-17 (step 2 of the loop); the round-2 rules below apply only when a fold changed a rule. For design critique, Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `goal accept-risk` and a re-scope by `goal edit`. There is no third design round and none can be bought.
 When code-critique or warden rounds are spent, `job critique-register-close`

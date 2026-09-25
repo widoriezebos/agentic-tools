@@ -35,14 +35,16 @@ Apply this test to every finding, and give it to the critic verbatim so findings
 - **Outside step 1: record it in the design's deferred list, do not action it, never let it keep the loop alive.** A hole step 1 does not open — a scale the first slice does not reach, a failure no user can yet trigger, a second decision-maker who does not yet exist — is real and is not material; it goes to the deferred list with the field it will build on. A loop without this anchor converges on a power plant: the memory-system design (`plans/memory-system-r6.md` in the host repository, 2026-09-22) took three rounds of 16, 12 and 11 findings and 470 lines before the human cut it to 110 lines and two four-hour slices, and every one of those findings had been material under the unanchored test.
 - **Not material: record it, do not action it, never let it block.** The document contradicts itself in prose while the implementation is unambiguous; counts, arithmetic, naming, ordering; restating something stated elsewhere; anything an implementer would resolve identically either way.
 
-Require the critic's verdict line to count only material findings.
+**The second test, decisive (R-124, Wido 2026-09-25): does step 1 WORK, and is it SAFE, without this finding?** A finding is material only when step 1 does not work without it (the slice fails at its own first use, or answers wrong) or is not safe without it (authority a human did not give, data lost or overwritten, a silent false answer). A finding that makes step 1 more complete, more robust at a scale or a corner its first use does not reach, more consistent, or more elegant, is real and goes to the deferred list, "later, when it hurts", with the field it will build on. The critic states the answer to this test on every finding. The designer folds only the findings that fail it, and a fold never adds a mechanism to answer a finding that passes it: answering rigor with machinery is the failure mode this rule exists to stop.
+
+Require the critic's verdict line to count only material findings, and to say for each which of the two tests it fails.
 
 ## The Loop
 
 1. The critic reads the full design and reports findings, each sorted material or not, with the evidence that supports it.
 2. The designer adjudicates every finding: **accept** amends the design; **refute** is recorded with its reasoning. Both are legitimate outcomes; a critique loop where nothing is ever refuted is not being read critically.
 3. **Read the findings body, never just the verdict line.** A summary that says "no blocking findings" above a body that lists one is itself a finding; the body governs.
-4. Stop the loop the first round that produces no material finding. Do not run another round for prose consistency.
+4. Stop the loop the first round in which every remaining finding passes the works-without-it test, whatever their number: a round of ten findings that step 1 works and is safe without closes the loop, and those ten go to the deferred list. A round with no finding at all closes it too. Do not run another round for prose consistency, and never for rigor beyond step 1.
 
 ## Declare the Failsafe Round at Loop Start
 

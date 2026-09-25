@@ -82,7 +82,7 @@ goal's budget in the brief before review:
 2. If corrections were required, send one focused follow-up to the same implementer. The builder runs checks that reproduce each finding and cover the affected behavior; the selected acceptance checks run once when their evidence is consumed for the exact candidate.
 3. While the reviewer's declared budget has a round left, recompute the whole diff and check it for scope and brief conformance. The substantive confirmation read focuses on the corrections, their consumers and prior findings. Expand that read when a correction changes the design or unrelated behavior.
 
-As the reviewer's R-60-m1 rule, stop at the first round with zero material findings.
+As the reviewer's R-60-m1 rule, stop at the first round with zero material findings. And as R-124 (Wido, 2026-09-25) refines it: a finding is material only when the slice does not WORK or is not SAFE without the fix; a finding that adds rigor, a corner, a consistency or a proof the slice's first use does not need goes to the design's "later, when it hurts" list under its Built section, not into a fix round. One fix round is the norm; the reviewer says on every finding whether the slice works and is safe without it, and the design owner certifies when nothing that fails that test remains.
 
 Only a finding that changes what gets built can keep the chain open, and it
 must name the artifact it would change; a finding that fails the artifact
