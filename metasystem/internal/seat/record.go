@@ -203,20 +203,20 @@ func ParseRecord(data []byte) (Record, error) {
 // parseWorking reads the keys this engine knows and ignores the rest.
 //
 // It is lenient where the record is allowed to be silent and strict where it
-// is not. A goal, a phase role and a job id are what the block cannot be
-// drawn without, so a `working` missing one of those is a malformed record.
-// Everything else — a round limit, a cap, a deadline, a box, a chain — is
-// null when the records could not supply it, which is the whole rule this
-// key was written under, and a key this engine has never heard of is ignored
-// exactly as every other reader ignores one.
+// is not. A phase role and a job id are what the block cannot be drawn
+// without, so a `working` missing either is a malformed record. The goal is
+// NOT among them: a goal-free critique is lawful work, and the composer emits
+// it, so a reader that demanded a goal would refuse records this engine
+// writes. Everything else — a round limit, a cap, a deadline, a box, a chain
+// — is null when the records could not supply it, which is the whole rule
+// this key was written under, and a key this engine has never heard of is
+// ignored exactly as every other reader ignores one.
 func parseWorking(data json.RawMessage) (*Working, error) {
 	var working Working
 	if err := json.Unmarshal(data, &working); err != nil {
 		return nil, fmt.Errorf("the presence record's working is neither an object nor null: %v", err)
 	}
 	switch {
-	case strings.TrimSpace(working.Goal) == "":
-		return nil, fmt.Errorf("the presence record's working names no goal")
 	case strings.TrimSpace(working.Phase.Role) == "":
 		return nil, fmt.Errorf("the presence record's working names no phase role")
 	case strings.TrimSpace(working.Job.ID) == "":

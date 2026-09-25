@@ -532,9 +532,15 @@ function WorkingBlock({ working, now }: { working: Working; now: Date }) {
     <div className="ms-fleet-working">
       <p className="ms-fleet-work-line">
         <span className="ms-fleet-work-name">Goal</span>
-        <NavLink className="ms-fleet-goal" to={goalPath(working.goal)}>
-          {working.goal}
-        </NavLink>
+        {/* A goal-free critique is lawful work, and a chip naming an empty
+            goal would open a page nobody could find. */}
+        {working.goal === "" ? (
+          <span className="ms-fleet-quiet">this work names no goal</span>
+        ) : (
+          <NavLink className="ms-fleet-goal" to={goalPath(working.goal)}>
+            {working.goal}
+          </NavLink>
+        )}
       </p>
       <p className="ms-fleet-work-line">
         <span className="ms-fleet-work-name">This job</span>

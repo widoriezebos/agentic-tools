@@ -151,8 +151,13 @@ func workingLines(row Machine, working seat.Working, now time.Time) []string {
 	if working.Job.StartedAt != nil {
 		job += ", started " + *working.Job.StartedAt
 	}
-	lines := []string{"- Goal: " + working.Goal, job,
-		"- Box: " + seat.BoxWords(working.Box)}
+	// A goal-free critique is lawful work, and a line naming an empty goal
+	// would read as a goal nobody could find.
+	goal := "- Goal: " + working.Goal
+	if working.Goal == "" {
+		goal = "- Goal: this work names no goal"
+	}
+	lines := []string{goal, job, "- Box: " + seat.BoxWords(working.Box)}
 	if working.Box != nil && working.Box.Problem == "" {
 		lines = append(lines, "  - "+seat.ReservedMeaning)
 	}
