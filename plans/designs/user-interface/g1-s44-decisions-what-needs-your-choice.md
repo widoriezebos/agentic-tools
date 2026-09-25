@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3BXKREHBQD2F88G0MKZJY67
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-25: "put your UX cap on again and think about what we want to
@@ -235,3 +235,25 @@ on mount, Refresh and after an act); opening the register at the exact
 row; and "no recorded consequence" on alerts, which is folded anyway
 because it costs nothing. Corrections folded: the act routes' real paths;
 the existing `decisions-section` help term rewritten rather than a new one.
+
+## Built (2026-09-25)
+
+Landed on ui-development and main in one merge. Built by Claude on Opus,
+read by Codex on Sol under R-124: one material finding, a ruling with both
+a due date and an event lost the event on its card, fixed in one commit;
+three deferred because step 1 works and is safe without them.
+
+Later, when it hurts: the alert inbox reads one journal page of two hundred
+entries before filtering the last seven days, so an unusually busy week
+could hide older alerts; a renewal's `since` is the review date or the
+approval instant, not the effective expiry instant the engine computes;
+mentions link goal ids only, since no ruling names a record id today.
+
+Departures the read accepted: a seat's ask carries `where.kind: channel`
+and shows the fleet-channel instruction as text; `deadline` is empty for
+every source this build reads, the field and its ordering tier exist for
+one that carries one; the register's defects are one quiet line that
+opens; only the two reader-level steward tests moved, the sweep's own
+stayed; the walkthrough fixture gained three ledger rows and two rule
+corrections so a browser can show all ten kinds; the testing contract's
+fallback union was repaired for surfaces that had landed before.
