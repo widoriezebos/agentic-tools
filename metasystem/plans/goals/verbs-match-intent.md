@@ -3,13 +3,13 @@
 - State: queued
 - Priority: 3
 - Sequence: 2
-- Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the human's verbs are authority acts and a routing mistake would misrecord one, though every path stays human-only at the enrolled terminal and every transaction underneath stays as it is; novelty 2: a new front on existing transactions, with aliases and a migration; exposure 3: every human act and every seat workflow on every machine; accumulation 2: every day the surface stays as it is adds another refusal recipe to a memory file somewhere"
+- Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Severity 3: public human and agent commands cross approval, stop, completion, review and landing boundaries; a routing or proof defect can record an unauthorized act or hide committed state. Novelty 2: an intent boundary composes existing owners and adds named retry without replacing governance. Exposure 3: the surface is used by people and agents across installed repositories. Accumulation 2: repeated confusing commands and recovery sequences impose daily costs. Independent design and code critique plus actual isolated authority/lifecycle and workflow proof are required."
 - Tier: 3
 - Intent: Wido 2026-09-25: design and build the most intuitive, powerful, forgiving human and agent verbs possible, organized by human/agent intent rather than internal structure. Deliver a complete public command surface: discoverable help, whole-workflow commands, consistent names and flags, contextual defaults, executable recovery guidance, safe retries and advanced capabilities. Reuse existing transaction, authority, job and landing owners and preserve their guarantees. The September 6 audit and available real Claude/Codex session failures are design evidence. Incorporate the delivered human-goal-verbs-forgiving, stop/status/arm and verb-ergonomics work; map the queued startup, repository-root, human-goal-defect and landing requirements. DONE: the full reviewed intent surface is implemented, documented and proven end to end including failure/retry paths, with material review findings resolved. Minimize total implementation and maintenance complexity without reducing the complete redesign's scope.
 - Origin: main
 - Next step: Implementation active under Wido 2026-09-25 authorization and machinery bypass. Root-authored accepted design and standing ruling R-126-m1e are committed at 4ebc7c157; Fable critique closed after two rounds. First goal-command implementation 61f8b153d received independent Sol review: four practical authority/result defects plus root actor-default finding are accepted and in one correction pass with the same Opus builder. Named UnitRunner retry d2e2a354f is under independent review and will ship only with the public build consumer. Parallel Opus builds cover process/questions, planning/advanced goal acts, build/wait/test/settings, and review/fold/close/land. Full four-slice release remains required; no slice is certified yet. Runtime proof uses a fresh physical Git fixture, no live authority mutations. See plans/handoff-verbs-match-intent.md and accepted design for exact jobs/evidence. Ignore unrelated stop-hook task as Wido explicitly instructed.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 16
+- Revision: 17
 - BudgetExceptions: 0
 
 History:
@@ -29,4 +29,5 @@ History:
 - 2026-09-25T14:51:59Z YP53FVJ2S5QTGSWM0H59Z1GDT3-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T15:25:26Z KHQA85EW4SSKHK2JB5KZ1C6VZD-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T15:59:37Z M7MVB1S0FBMSAYQVGBX9QBA835-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
-Integrity: sha256=12e21806ec75082acd8d64b58c3e84fa04c7299b891a68edad8c0f63506fbdde
+- 2026-09-25T16:02:50Z VWJVX5GQCHCWAEEZEWDW7N8Y8C-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+Integrity: sha256=19a633d143e067e4e3497d9aee5c9ad11666b168c9c1b72e10446cc1bb7e5272
