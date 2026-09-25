@@ -223,6 +223,20 @@ type Machine struct {
 	Generation int      `json:"generation"`
 	Holds      []Held   `json:"holds"`
 	This       bool     `json:"this"`
+	// Working is what this machine is doing, in the detail the row's
+	// disclosure opens to: the goal, the phase and its round, the job and its
+	// cap, the goal's box, and the chain.
+	//
+	// It is a list because this seat's row is not like the others. A machine
+	// elsewhere carries what its presence record published, which is one
+	// chain; on this host the interface reads the job records itself and can
+	// see every job in flight, so its own row carries all of them, newest
+	// first. Empty is idle.
+	Working []seat.Working `json:"working"`
+	// WorkingProblem is the local jobs reader's own explanation, carried
+	// rather than shown as idle. Only this seat's row can have one: it is the
+	// only row read from records rather than from a published record.
+	WorkingProblem string `json:"workingProblem"`
 }
 
 /* ------------------------------------------------------- the composition -- */
@@ -265,6 +279,15 @@ type Inputs struct {
 	// Running and RunningProblem are seat.NewestChain over the local jobs.
 	Running        *seat.Chain
 	RunningProblem string
+	// Jobs is this host's own delegate job records, which only this seat can
+	// read. This seat's row is composed from them rather than from whatever
+	// its last tick happened to publish, because they are newer and because
+	// they carry every job in flight rather than the newest chain alone.
+	Jobs seat.JobSet
+	// Box projects one goal's consumption for those working blocks. A nil
+	// reader is a build that cannot project one, and the blocks then carry no
+	// box rather than an invented one.
+	Box seat.BoxReader
 	// Launches is the launch records this host holds, already reconciled by
 	// the caller: a running record whose process is dead is read as failed,
 	// and this package never decides that for itself.
@@ -300,12 +323,24 @@ func Compose(in Inputs, now time.Time) Page {
 			Machine: line.Machine, Standing: string(line.Standing),
 			Reason: reasonOf(line), AgeSeconds: line.AgeSeconds,
 			Since: since, This: line.This, Holds: []Held{},
+			Working: []seat.Working{},
 		}
 		if line.Record != nil {
 			row.Seen = line.Record.TickAt
 			row.Engine = line.Record.Engine
 			row.Generation = line.Record.Generation
 			row.Running = runningOf(line.Record.Chain)
+			if line.Record.Working != nil {
+				row.Working = []seat.Working{*line.Record.Working}
+			}
+		}
+		// This seat's row is the one the interface can read for itself, and a
+		// record from the last tick is older than the records that tick read.
+		if line.This {
+			row.Working, row.WorkingProblem = seat.WorkingInFlight(in.Jobs, in.Box)
+			if row.Working == nil {
+				row.Working = []seat.Working{}
+			}
 		}
 		flag := ""
 		if unavailable == "" && in.PresenceProblem == "" {

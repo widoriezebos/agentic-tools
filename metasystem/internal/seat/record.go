@@ -66,7 +66,12 @@ type Record struct {
 	ArmedLineage   string `json:"armedLineage"`
 	TickSeconds    int    `json:"tickSeconds"`
 	Chain          *Chain `json:"chain"`
-	TickAt         string `json:"tickAt"`
+	// Working is what that chain is a phase of: the goal, the round and its
+	// limit, the cap and when it ends, the goal's box, and the chain's
+	// members. It is null when the machine holds no claim and runs no job.
+	// Every field of it is still an identifier, a number or a time.
+	Working *Working `json:"working"`
+	TickAt  string   `json:"tickAt"`
 }
 
 // Encode renders the record as the single file a presence commit carries.
@@ -100,8 +105,14 @@ type rawRecord struct {
 	// Chain is read raw, because a pointer would make a present null
 	// indistinguishable from an absent key, and the reader must refuse the
 	// one while accepting the other.
-	Chain  json.RawMessage `json:"chain"`
-	TickAt *string         `json:"tickAt"`
+	Chain json.RawMessage `json:"chain"`
+	// Working is read raw for the reason Chain is, but its ABSENCE is
+	// lawful where Chain's is not: it is the key this schema gained, and
+	// every record written before it has none. A reader that refused those
+	// would read a live machine as dead, which is the one thing the
+	// schema-addition rule exists to prevent.
+	Working json.RawMessage `json:"working"`
+	TickAt  *string         `json:"tickAt"`
 }
 
 // ParseRecord validates the keys this engine knows and ignores the rest. It
@@ -179,7 +190,51 @@ func ParseRecord(data []byte) (Record, error) {
 		}
 		record.Chain = chain
 	}
+	if raw.Working != nil && string(raw.Working) != "null" {
+		working, err := parseWorking(raw.Working)
+		if err != nil {
+			return malformed("%v", err)
+		}
+		record.Working = working
+	}
 	return record, nil
+}
+
+// parseWorking reads the keys this engine knows and ignores the rest.
+//
+// It is lenient where the record is allowed to be silent and strict where it
+// is not. A phase role and a job id are what the block cannot be drawn
+// without, so a `working` missing either is a malformed record. The goal is
+// NOT among them: a goal-free critique is lawful work, and the composer emits
+// it, so a reader that demanded a goal would refuse records this engine
+// writes. Everything else — a round limit, a cap, a deadline, a box, a chain
+// — is null when the records could not supply it, which is the whole rule
+// this key was written under, and a key this engine has never heard of is
+// ignored exactly as every other reader ignores one.
+func parseWorking(data json.RawMessage) (*Working, error) {
+	var working Working
+	if err := json.Unmarshal(data, &working); err != nil {
+		return nil, fmt.Errorf("the presence record's working is neither an object nor null: %v", err)
+	}
+	switch {
+	case strings.TrimSpace(working.Phase.Role) == "":
+		return nil, fmt.Errorf("the presence record's working names no phase role")
+	case strings.TrimSpace(working.Job.ID) == "":
+		return nil, fmt.Errorf("the presence record's working names no job")
+	}
+	if len(working.Chain) > WorkingChainMembers {
+		return nil, fmt.Errorf("the presence record's working carries %d chain members, above the bound of %d",
+			len(working.Chain), WorkingChainMembers)
+	}
+	for _, stamp := range []*string{working.Job.StartedAt, working.Job.CapEndsAt} {
+		if stamp == nil {
+			continue
+		}
+		if _, err := parsePresenceTime(*stamp); err != nil {
+			return nil, fmt.Errorf("the presence record's working has a time %q: %v", *stamp, err)
+		}
+	}
+	return &working, nil
 }
 
 // rawChain tells an absent chain field from a present empty one, exactly as

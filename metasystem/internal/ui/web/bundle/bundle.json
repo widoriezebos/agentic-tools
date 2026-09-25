@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:97cb0e217e63d9b86ee27873610f939ca66bf9684e1d2c1d412099c172f14adc",
+  "sourceDigest": "sha256:ec9ca3d921eeab2a8b9f2f7c5589044882972ffe050c01fda16ed9f68b07e594",
   "source": [
     {
       "path": ".npmrc",
@@ -292,11 +292,11 @@
     },
     {
       "path": "src/fleet/FleetPane.test.tsx",
-      "sha256": "86a46d176acdef607cc50b80ece308beb5bc97113a8c1c52042742f6445529c9"
+      "sha256": "52f1dc674908f87221ae5f22b810e9019a96979bd207ecff4a5addfb9cb354fa"
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "ac4f6691037f45653f5c4f8b79968217203a3d6dc5819e192996c0a5df2b0543"
+      "sha256": "acf4f31b87deace14cacbf37391dbcb7c1f7adf80166d63c9f3f810aea48593a"
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
@@ -312,23 +312,23 @@
     },
     {
       "path": "src/fleet/api.ts",
-      "sha256": "092dc01ca77ca9054ce66c4def04a2ea51be4a9c60085491b2a782d7c077e418"
+      "sha256": "dcc2a9fa367948a1e48f39c0077c88ca8097d69b1ea304a5cbbbdf9347d85114"
     },
     {
       "path": "src/fleet/capture.ts",
-      "sha256": "563008ae80d611a023f2d3112a7bd5d6a984a3cdce5b3a3cddbeeb0e84780406"
+      "sha256": "7d40c84d82691ece50a1a400b356d10a022f51fcca434672be962dea1593af3f"
     },
     {
       "path": "src/fleet/fleet.css",
-      "sha256": "2c64c466f9cf5fdaa8fcbbecb1668b0537214b8e621817f35e8c414047c74509"
+      "sha256": "8d30400f8183b738070b986422aa670b49e624ae1e2d1eb7c446941b11037e00"
     },
     {
       "path": "src/fleet/fleet.ts",
-      "sha256": "488150c9cd43d2fa28f8b2f84f26ffcecf4c1be233115387a21c1ae6e767b9c1"
+      "sha256": "8736172899e462f0a67385c0dccfcdfce52e281df3a5d424531a88dbb9c11d9e"
     },
     {
       "path": "src/fleet/launching.test.ts",
-      "sha256": "b81e9555a0d1b41bc7c8137738256f0855126ce6cd047b9a9c87fad80ae702d1"
+      "sha256": "1a8cba8255ff23be3b519e61a77ecdb3901349a3b110b5af452dfe134526ad1d"
     },
     {
       "path": "src/fleet/launching.ts",
@@ -336,7 +336,11 @@
     },
     {
       "path": "src/fleet/rendering.test.tsx",
-      "sha256": "b76008121e361323ce240941c5db83c4b6e95987b05a487fdd37a6de68fad343"
+      "sha256": "c5f84c9b54f5625dacc44d9abe3ea5d22eb756049d5587ffdd08b6e7660dd19e"
+    },
+    {
+      "path": "src/fleet/working.test.tsx",
+      "sha256": "3c91cc3414abec0c971f82242509feb56fed94b5b4a7cf4cdfa95b61e1c8a4a4"
     },
     {
       "path": "src/fonts.css",
@@ -356,7 +360,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "51f1ea646a034a17c17bd57094a646e797e5ab9b537b3982356e69cc0dc9ca2f"
+      "sha256": "a7728f1142c33326439febfa791c507443356f9c5571e1eccdaa52e953b920eb"
     },
     {
       "path": "src/index.css",
@@ -500,7 +504,7 @@
     },
     {
       "path": "src/partner/api.ts",
-      "sha256": "047a76d3c6cdabbfaa3b56f550d0e923b8cb73ba2f60a98414f886559e875719"
+      "sha256": "c7201e296809200be59f6ef66d51d520506d0e4b8f2faf105568b0f8b5c7c753"
     },
     {
       "path": "src/partner/asking.test.ts",
@@ -792,7 +796,7 @@
     },
     {
       "path": "src/storage.ts",
-      "sha256": "21c36abc3cba5e0986257abe960e6bb6894b147cf21c9eba46cef159e83d7d36"
+      "sha256": "ed6db9d89e7e3f698aa248c15b689a24a30e7332422c8983cc736e849dbd13df"
     },
     {
       "path": "src/theme.test.ts",
@@ -838,11 +842,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "b7d053298c680b9123613210dda51b5c8fd10a3645bcc78b0b1dfecaf1ad77e8"
+      "sha256": "c06e9ebe57300b87ab055aa4db7a0b0b4857636074cd3f145733992bb4a81f64"
     },
     {
       "path": "assets/index.js",
-      "sha256": "e0ac494d4602a510390560d0d7282341c53aa039208c76ba235c80467010c0fa"
+      "sha256": "f6e25187d1ca68f2d44fbd765125c23fcf4af1ddb1c6ff8ed25794d233bdb9f7"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
@@ -866,7 +870,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "07be0f4b65a2247240334e8eb195c31a518b6a620d913019dee205c5e6ccb50c"
+      "sha256": "17ea6ac9c477f34a77e2574a47f4a927ebd5ea90b2cde0f13634c7fd2b2a29fb"
     },
     {
       "path": "theme.js",

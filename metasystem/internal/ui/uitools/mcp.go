@@ -138,11 +138,14 @@ func Catalogue() []Tool {
 		{
 			Name: OpFleet,
 			Description: "The fleet's standings: which machines have published presence, when each was last seen, " +
-				"what each is running, and which goals are held by a machine that has gone quiet. " +
+				"the phase each is in, and which goals are held by a machine that has gone quiet. " +
+				"Name a machine for what it is working on in detail: the goal, the job and the cap it " +
+				"reserved, the goal's box, and the chain. " +
 				"It flags and never acts: a silent holder keeps its claim, and the words name what a human " +
 				"does at a terminal. Bounded; a result that leaves rows out carries a cursor.",
 			InputSchema: schema(map[string]any{
-				"cursor": cursorProperty,
+				"machine": map[string]any{"type": "string", "description": "One machine's work, opened. Empty reads the whole fleet."},
+				"cursor":  cursorProperty,
 			}, nil),
 		},
 		{

@@ -36,7 +36,7 @@ func (f *fakeRemote) Publish(write Write) (string, error) {
 
 func fixtureRecord(t *testing.T) Record {
 	t.Helper()
-	record, _, err := Compose("m1e", fixtureRunner(), JobSet{}, fixtureClock)
+	record, _, err := Compose("m1e", fixtureRunner(), JobSet{}, nil, fixtureClock)
 	if err != nil {
 		t.Fatal(err)
 	}

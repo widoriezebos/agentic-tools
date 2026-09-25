@@ -13,7 +13,7 @@ import { scopeOf, type ScopeFilter } from "./project/pane";
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The eighteen keys this build remembers, and nothing else.
+ * The nineteen keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -110,6 +110,19 @@ export const BACKLOG_DONE_KEY = "ms.ui.backlog.done";
  * and a mark the server held would be one of them overwriting the other.
  */
 export const NOTIFICATIONS_SEEN_KEY = "ms.ui.notifications.seen";
+
+/**
+ * Which machines' rows a viewer left open on the Fleet page.
+ *
+ * Per viewer and nowhere else, for the reason the notification mark is: two
+ * people at two browsers on the same workspace are watching different
+ * machines, and a mark the server held would be one of them closing the
+ * other's row. It is a plain list of nicknames separated by spaces, which a
+ * nickname can never contain, so it stays a value a person can read in their
+ * browser's storage inspector — and a machine that has since left the fleet
+ * is simply a name no row matches.
+ */
+export const FLEET_OPEN_KEY = "ms.ui.fleet.open";
 
 /**
  * The face, the size and the line spacing the conversation is read in.
@@ -321,6 +334,26 @@ export function readNotificationsSeen(store: Store | null = browserStore()): str
 
 export function writeNotificationsSeen(id: string, store: Store | null = browserStore()): void {
   write(NOTIFICATIONS_SEEN_KEY, id, store);
+}
+
+/**
+ * The machines whose rows this viewer left open, as a set.
+ *
+ * A stored value that is not a list of nicknames yields an empty set rather
+ * than a page that will not draw: view state is never worth an error a human
+ * has to read.
+ */
+export function readFleetOpen(store: Store | null = browserStore()): Set<string> {
+  const stored = read(FLEET_OPEN_KEY, store);
+  if (stored === null) {
+    return new Set();
+  }
+  return new Set(stored.split(" ").filter((name) => /^[A-Za-z0-9._-]+$/.test(name)));
+}
+
+/** Sorted, so the same set is always the same string in a viewer's storage. */
+export function writeFleetOpen(open: Set<string>, store: Store | null = browserStore()): void {
+  write(FLEET_OPEN_KEY, [...open].sort().join(" "), store);
 }
 
 /** The conversation's face, size and rhythm, or the defaults where none is stored. */

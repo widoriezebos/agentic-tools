@@ -64,7 +64,7 @@ func newPresenceBed(t *testing.T) presenceBed {
 func publishFrom(t *testing.T, root, remote, machine string, at time.Time, start Rung) PublishResult {
 	t.Helper()
 	transport := Git{Root: root, Remote: remote}
-	record, _, err := Compose(machine, fixtureRunner(), JobSet{}, at)
+	record, _, err := Compose(machine, fixtureRunner(), JobSet{}, nil, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestLocalModeUpdatesTheLocalRefAndPushesNothing(t *testing.T) {
 	t.Parallel()
 	bed := newPresenceBed(t)
 	local := Git{Root: bed.one, Remote: "local", Local: true}
-	record, _, err := Compose("m1e", fixtureRunner(), JobSet{}, fixtureClock)
+	record, _, err := Compose("m1e", fixtureRunner(), JobSet{}, nil, fixtureClock)
 	if err != nil {
 		t.Fatal(err)
 	}

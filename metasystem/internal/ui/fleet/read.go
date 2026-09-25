@@ -75,11 +75,11 @@ func ReadStandings(checkout string) map[string]seat.Observation {
 	return state.Machines
 }
 
-// ReadRunning is this seat's own newest delegate chain, with the jobs
-// reader's own explanation where it could not answer.
-func ReadRunning(checkout string) (*seat.Chain, string) {
-	return seat.NewestChain(seat.ReadJobs(checkout))
-}
+// This seat's own jobs are read by the caller now, once, because two things
+// are composed from them — the newest chain this seat's fact line says, and
+// every job in flight its row opens to — and two reads a moment apart could
+// disagree. seat.ReadJobs and seat.NewestChain are what it calls; a wrapper
+// here would only hide which of them failed.
 
 // ReadPresence reads one namespace of the presence copy and says where it
 // came from.

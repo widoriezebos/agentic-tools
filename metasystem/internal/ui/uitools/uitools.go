@@ -188,7 +188,7 @@ func (r Readers) Answer(operation string, args Args) Result {
 	case OpOverview:
 		return r.overview()
 	case OpFleet:
-		return r.fleet(args.Cursor())
+		return r.fleet(args.Text("machine"), args.Cursor())
 	case OpNotifications:
 		return r.notifications(args.Number("limit", notifications.DefaultLimit), args.Cursor())
 	case OpSearch:
@@ -475,13 +475,19 @@ func (r Readers) overview() Result {
 // presence copy has its own provenance and its own age, and the holders come
 // from the accepted tip. A stamp naming only one of them would let a reader
 // date a silence from a ledger read or a claim from a presence fetch.
-func (r Readers) fleet(cursor string) Result {
+// Named, it is one machine's row opened instead: the goal, the job in hand
+// and its cap, the goal's box and the chain — the same block the page's
+// disclosure shows, as lines.
+func (r Readers) fleet(machine, cursor string) Result {
 	if r.Fleet == nil {
 		return Result{Problem: "this build cannot read the fleet"}
 	}
 	page, err := r.Fleet()
 	if err != nil {
 		return Result{Problem: err.Error()}
+	}
+	if machine != "" {
+		return paged(page.Source(), page.MachineLines(machine, r.now()), cursor)
 	}
 	return paged(page.Source(), page.Lines(r.now()), cursor)
 }

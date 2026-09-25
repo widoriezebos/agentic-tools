@@ -97,7 +97,7 @@ func (r Report) machineLine(line MachineStanding) string {
 	fields = append(fields, age,
 		fmt.Sprintf("generation %d", record.Generation),
 		"engine "+shortEngine(record.Engine),
-		chainWords(record.Chain))
+		r.runningWords(record))
 	if len(line.Holds) > 0 {
 		holds := "holds " + strings.Join(line.Holds, ", ")
 		if line.Flag != "" {
@@ -129,6 +129,20 @@ func (r Report) ageOf(stamp string) time.Duration {
 		return 0
 	}
 	return r.now.Sub(at)
+}
+
+// runningWords is the phase sentence where the record carries one, and the
+// chain's older words where it does not.
+//
+// Both branches stay, because a fleet is not one build: a machine still
+// publishing the chain alone is answered from the chain, and a machine that
+// has this version says the phase, how long the job has run and the cap it
+// reserved.
+func (r Report) runningWords(record Record) string {
+	if record.Working != nil {
+		return PhaseWords(record.Working, r.now)
+	}
+	return chainWords(record.Chain)
 }
 
 func chainWords(chain *Chain) string {
