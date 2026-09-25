@@ -254,8 +254,12 @@ func (s *Sequencer) clone(record *Record) (stepRun, error) {
 	if err := s.persist(record); err != nil {
 		return stepRun{}, err
 	}
-	if _, err := s.git(destination, "remote", "set-url", "origin", s.OriginURL); err != nil {
-		return stepRun{}, err
+	// A seat whose ledger remote is local has no URL to point the clone at,
+	// and the clone's origin is this checkout, which is where its ledger is.
+	if s.OriginURL != "" {
+		if _, err := s.git(destination, "remote", "set-url", "origin", s.OriginURL); err != nil {
+			return stepRun{}, err
+		}
 	}
 	if err := s.copyKeys(destination); err != nil {
 		return stepRun{}, err

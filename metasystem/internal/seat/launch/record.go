@@ -201,6 +201,16 @@ func Save(checkout string, record Record) error {
 	if err != nil {
 		return err
 	}
+	return SaveAt(path, record, checkout)
+}
+
+// SaveAt writes one record to a named file.
+//
+// It exists because the interface writes the record BEFORE the verb runs and
+// then hands the verb the file it wrote: one launch has one record, and a
+// verb that minted a second id would leave the page watching a launch nobody
+// is running.
+func SaveAt(path string, record Record, anchor string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -209,8 +219,21 @@ func Save(checkout string, record Record) error {
 	if err != nil {
 		return err
 	}
-	_, err = atomicfile.WriteText(path, string(append(data, '\n')), checkout)
+	_, err = atomicfile.WriteText(path, string(append(data, '\n')), anchor)
 	return err
+}
+
+// LoadAt reads one record from a named file.
+func LoadAt(path string) (Record, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Record{}, err
+	}
+	var record Record
+	if err := json.Unmarshal(data, &record); err != nil {
+		return Record{}, fmt.Errorf("the launch record at %s is malformed: %w", path, err)
+	}
+	return record, nil
 }
 
 // Load reads one record by its launch id.
@@ -219,15 +242,7 @@ func Load(checkout, id string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Record{}, err
-	}
-	var record Record
-	if err := json.Unmarshal(data, &record); err != nil {
-		return Record{}, fmt.Errorf("the launch record %s is malformed: %w", id, err)
-	}
-	return record, nil
+	return LoadAt(path)
 }
 
 // List is every record on this host, newest first, so a page opened later
