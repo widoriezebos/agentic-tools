@@ -720,6 +720,15 @@ func fleetLines(page Page) string {
 		if machine.Seen != "" {
 			row += ", seen " + machine.Seen
 		}
+		if machine.Phase != "" {
+			row += ", " + machine.Phase
+		}
+		// Whether the human had the row open is part of what they were
+		// looking at: the phase sentence alone and the phase with the goal,
+		// the job, the box and the chain under it are two different screens.
+		if machine.Open {
+			row += ", opened"
+		}
 		if len(machine.Holds) > 0 {
 			row += ", holds " + strings.Join(machine.Holds, ", ")
 		}

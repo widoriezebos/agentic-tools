@@ -50,23 +50,112 @@ func fixturePresence(now time.Time, proven bool) seat.Copy {
 	copied := seat.Copy{Records: map[string]seat.Record{}, Malformed: map[string]string{}}
 	copied.Records[fixtureReachable] = fixtureRecord(fixtureReachable, now.Add(-2*time.Minute), "3f9c1e2a4b5c6d7e",
 		&seat.Chain{Root: "r-1", Job: "j-17", Role: "implementer", Round: 2, Goal: "g1-s15",
-			StartedAt: stamped(now.Add(-40 * time.Minute))})
+			StartedAt: stamped(now.Add(-40 * time.Minute))},
+		fixtureBuildWorking(now))
 	// A reservation that has not begun: its startedAt is null, and the row
 	// says "not started" rather than reading as work in flight.
 	copied.Records[fixtureSilent] = fixtureRecord(fixtureSilent, now.Add(-6*time.Hour), "8a01d77e1f2a3b4c",
-		&seat.Chain{Root: "r-2", Job: "j-22", Role: "critic", Goal: "g1-s19"})
+		&seat.Chain{Root: "r-2", Job: "j-22", Role: "critic", Goal: "g1-s19"},
+		fixtureCriticWorking(now))
 	if proven {
-		copied.Records[fixtureThis] = fixtureRecord(fixtureThis, now.Add(-30*time.Second), "5b9d958c0d1e2f30", nil)
+		copied.Records[fixtureThis] = fixtureRecord(fixtureThis, now.Add(-30*time.Second), "5b9d958c0d1e2f30", nil, nil)
 	}
 	return copied
 }
 
-func fixtureRecord(machine string, at time.Time, engine string, chain *seat.Chain) seat.Record {
+func fixtureRecord(machine string, at time.Time, engine string, chain *seat.Chain, working *seat.Working) seat.Record {
 	return seat.Record{
 		PresenceSchema: seat.RecordSchema, Machine: machine,
 		RepoIdentity: "walkthrough-" + machine, Generation: 4, Engine: engine,
-		ArmedLineage: seat.NoLease, TickSeconds: 600, TickAt: seat.FormatTime(at), Chain: chain,
+		ArmedLineage: seat.NoLease, TickSeconds: 600, TickAt: seat.FormatTime(at),
+		Chain: chain, Working: working,
 	}
+}
+
+// fixtureBuildWorking is a build in flight: a round with no denominator,
+// because a build has no round limit of its own, a cap that is part spent,
+// and a box with room left in it.
+func fixtureBuildWorking(now time.Time) *seat.Working {
+	return &seat.Working{
+		Goal:  "g1-s15",
+		Phase: seat.Phase{Role: "implementer", Round: 2},
+		Job: seat.WorkingJob{
+			ID: "j-17", Role: "implementer", Status: "running",
+			StartedAt: stamped(now.Add(-41 * time.Minute)), CapMinutes: minutes(120),
+			CapEndsAt: stamped(now.Add(79 * time.Minute)),
+		},
+		Box: fixtureBox(3, 10, 610, 720),
+		Chain: []seat.ChainMember{
+			{Job: "j-17", Role: "implementer", Round: 2, Status: "running",
+				StartedAt: stamped(now.Add(-41 * time.Minute)), CapMinutes: minutes(120)},
+			{Job: "j-12", Role: "code-critic", Round: 1, Status: "completed",
+				StartedAt: stamped(now.Add(-3 * time.Hour)), EndedAt: stamped(now.Add(-2 * time.Hour)),
+				CapMinutes: minutes(60)},
+			{Job: "r-1", Role: "implementer", Round: 1, Status: "completed",
+				StartedAt: stamped(now.Add(-6 * time.Hour)), EndedAt: stamped(now.Add(-4 * time.Hour)),
+				CapMinutes: minutes(90)},
+		},
+	}
+}
+
+// fixtureCriticWorking is a critic chain that has not started: its round
+// counts against the limit its root froze, and it has no cap end to name.
+func fixtureCriticWorking(now time.Time) *seat.Working {
+	return &seat.Working{
+		Goal:  "g1-s19",
+		Phase: seat.Phase{Role: "code-critic", Round: 1, RoundLimit: rounds(2)},
+		Job: seat.WorkingJob{
+			ID: "j-22", Role: "code-critic", Status: "pending", CapMinutes: minutes(60),
+		},
+		Box: fixtureBox(7, 10, 700, 720),
+		Chain: []seat.ChainMember{
+			{Job: "j-22", Role: "code-critic", Round: 1, Status: "pending", CapMinutes: minutes(60)},
+			{Job: "r-2", Role: "implementer", Round: 1, Status: "completed",
+				StartedAt: stamped(now.Add(-9 * time.Hour)), EndedAt: stamped(now.Add(-7 * time.Hour)),
+				CapMinutes: minutes(120)},
+		},
+	}
+}
+
+func fixtureBox(attempts, attemptLimit, reserved, reservedLimit int64) *seat.Box {
+	return &seat.Box{
+		Attempts: &attempts, AttemptLimit: &attemptLimit,
+		ReservedMinutes: &reserved, ReservedMinutesLimit: &reservedLimit,
+	}
+}
+
+func minutes(value int) *int { return &value }
+
+func rounds(value int) *int { return &value }
+
+// fixtureJobs is this host's own delegate job records: two chains in flight
+// on two goals, one build and one critic, with the finished members around
+// them. Only the machine itself can read these, which is why its own row
+// shows both and every other row shows the one chain its presence carried.
+func fixtureJobs(now time.Time) seat.JobSet {
+	return seat.JobSet{Records: []seat.JobRecord{
+		{Job: "r-3", Role: "implementer", Goal: "g1-s21", Round: 1, Status: "completed",
+			CreatedAt: seat.FormatTime(now.Add(-5 * time.Hour)),
+			StartedAt: seat.FormatTime(now.Add(-5 * time.Hour)),
+			EndedAt:   seat.FormatTime(now.Add(-4 * time.Hour)), CapMinutes: minutes(90)},
+		{Job: "j-31", Parent: "r-3", Role: "reviewer", Goal: "g1-s21", Round: 1, Status: "running",
+			CreatedAt: seat.FormatTime(now.Add(-8 * time.Minute)),
+			StartedAt: seat.FormatTime(now.Add(-8 * time.Minute)), CapMinutes: minutes(45)},
+		{Job: "r-4", Role: "code-critic", Goal: "g1-s26", Round: 2, Status: "running",
+			CreatedAt: seat.FormatTime(now.Add(-20 * time.Minute)),
+			StartedAt: seat.FormatTime(now.Add(-20 * time.Minute)), CapMinutes: minutes(60),
+			ReviewRoundLimit: rounds(3)},
+	}}
+}
+
+// fixtureBoxReader stands in for the projection this fixture has no ledger
+// for: one goal with a box and one without, which are the two shapes the
+// block draws differently.
+func fixtureBoxReader(id string) *seat.Box {
+	if id == "g1-s21" {
+		return fixtureBox(4, 10, 505, 720)
+	}
+	return nil
 }
 
 func stamped(at time.Time) *string {
@@ -227,6 +316,11 @@ func fixtureFleet(proven bool, launched string) func(snapshot.Observation, backl
 				Root: "r-3", Job: "j-31", Role: "reviewer", Round: 1, Goal: "g1-s21",
 				StartedAt: stamped(now.Add(-8 * time.Minute)),
 			}
+			// The job records only this host can read. Two chains are in
+			// flight on two goals, which is the thing a presence record
+			// cannot carry and this seat's own row can.
+			in.Jobs = fixtureJobs(now)
+			in.Box = fixtureBoxReader
 		}
 		return fleet.Compose(in, now), nil
 	}

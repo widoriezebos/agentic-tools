@@ -155,7 +155,13 @@ type FleetMachine struct {
 	Machine  string `json:"machine"`
 	Standing string `json:"standing"`
 	// Seen is the age words the row showed, in the browser's own clock.
-	Seen  string   `json:"seen,omitempty"`
+	Seen string `json:"seen,omitempty"`
+	// Phase is the sentence the Running column showed: what the machine is
+	// doing, how long the job has run and the cap it reserved.
+	Phase string `json:"phase,omitempty"`
+	// Open says the human had this row's disclosure open. It is what they
+	// were looking at, which is the whole of what this capture is for.
+	Open  bool     `json:"open,omitempty"`
 	Flag  string   `json:"flag,omitempty"`
 	Holds []string `json:"holds,omitempty"`
 }

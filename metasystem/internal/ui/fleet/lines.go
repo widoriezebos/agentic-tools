@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 )
 
@@ -28,7 +29,7 @@ func (p Page) Lines(now time.Time) []string {
 	}
 	lines = append(lines, "- This seat: "+p.thisLine())
 	for _, machine := range p.Machines {
-		lines = append(lines, "- "+p.machineLine(machine))
+		lines = append(lines, "- "+p.machineLine(machine, now))
 	}
 	// The launches come after the machines because that is what they are:
 	// a machine that is joining is not a seat of this fleet yet, and a launch
@@ -112,7 +113,60 @@ func (p Page) thisLine() string {
 	return strings.Join(parts, "; ")
 }
 
-func (p Page) machineLine(machine Machine) string {
+// MachineLines is one machine's disclosure, opened, as lines: the goal, the
+// job in hand, the goal's box and the chain. It is what a reader with no
+// screen gets when it asks about one machine rather than about the fleet.
+//
+// A machine elsewhere shows what its presence carried and is stamped with
+// when that was published, because it is a reading of a reading. This seat's
+// own block is read from the records here and needs no such stamp.
+func (p Page) MachineLines(machine string, now time.Time) []string {
+	for _, row := range p.Machines {
+		if row.Machine != machine {
+			continue
+		}
+		if row.WorkingProblem != "" {
+			return []string{"- " + row.Machine + ": " + row.WorkingProblem}
+		}
+		if len(row.Working) == 0 {
+			return []string{"- " + row.Machine + ": idle"}
+		}
+		lines := []string{}
+		for _, working := range row.Working {
+			lines = append(lines, workingLines(row, working, now)...)
+		}
+		return lines
+	}
+	return []string{"- this fleet has no machine called " + machine}
+}
+
+// workingLines is one thing a machine is doing, in the order the disclosure
+// shows it.
+func workingLines(row Machine, working seat.Working, now time.Time) []string {
+	job := "- This job: " + seat.PhaseWords(&working, now)
+	if cap := seat.CapWords(working.Job, now); cap != "" {
+		job += "; " + cap
+	}
+	job += "; status " + working.Job.Status
+	if working.Job.StartedAt != nil {
+		job += ", started " + *working.Job.StartedAt
+	}
+	lines := []string{"- Goal: " + working.Goal, job,
+		"- Box: " + seat.BoxWords(working.Box)}
+	if working.Box != nil && working.Box.Problem == "" {
+		lines = append(lines, "  - "+seat.ReservedMeaning)
+	}
+	lines = append(lines, "- Chain:")
+	for _, member := range working.Chain {
+		lines = append(lines, "  - "+member.Job+": "+seat.ChainWords(member))
+	}
+	if !row.This && row.Seen != "" {
+		lines = append(lines, "- As published "+row.Seen)
+	}
+	return lines
+}
+
+func (p Page) machineLine(machine Machine, now time.Time) string {
 	parts := []string{machine.Machine, machine.Standing}
 	if machine.Seen != "" {
 		parts = append(parts, "seen "+machine.Seen)
@@ -124,7 +178,7 @@ func (p Page) machineLine(machine Machine) string {
 		parts = append(parts, "engine "+shortEngine(machine.Engine)+
 			", generation "+strconv.Itoa(machine.Generation))
 	}
-	parts = append(parts, runningWords(machine.Running, ""))
+	parts = append(parts, phaseWords(machine, now))
 	if len(machine.Holds) > 0 {
 		goals := make([]string, 0, len(machine.Holds))
 		for _, held := range machine.Holds {
@@ -137,6 +191,27 @@ func (p Page) machineLine(machine Machine) string {
 		parts = append(parts, holds)
 	}
 	return strings.Join(parts, "; ")
+}
+
+// phaseWords is the one sentence a machine's row says about its work: the
+// phase, how long the job in hand has run and the cap it reserved.
+//
+// The chain's older words stay as the second branch, because a fleet is not
+// one build: a machine still publishing the chain alone is answered from the
+// chain rather than reported idle. This seat's row can carry several things
+// in flight, and the row names the newest and counts the rest.
+func phaseWords(machine Machine, now time.Time) string {
+	if machine.WorkingProblem != "" {
+		return machine.WorkingProblem
+	}
+	if len(machine.Working) == 0 {
+		return runningWords(machine.Running, "")
+	}
+	words := seat.PhaseWords(&machine.Working[0], now)
+	if len(machine.Working) > 1 {
+		words += " (and " + strconv.Itoa(len(machine.Working)-1) + " more in flight)"
+	}
+	return words
 }
 
 // runningWords says what one machine is running, keeping the pending
