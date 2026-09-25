@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Wido 2026-09-25: design and build the most intuitive, powerful, forgiving human and agent verbs possible, organized by human/agent intent rather than internal structure. Deliver a complete public command surface: discoverable help, whole-workflow commands, consistent names and flags, contextual defaults, executable recovery guidance, safe retries and advanced capabilities. Reuse existing transaction, authority, job and landing owners and preserve their guarantees. The September 6 audit and available real Claude/Codex session failures are design evidence. Incorporate the delivered human-goal-verbs-forgiving, stop/status/arm and verb-ergonomics work; map the queued startup, repository-root, human-goal-defect and landing requirements. DONE: the full reviewed intent surface is implemented, documented and proven end to end including failure/retry paths, with material review findings resolved. Minimize total implementation and maintenance complexity without reducing the complete redesign's scope.
 - Origin: main
-- Next step: Complete mode-aware selected critic dispatch proof, assemble its correction and explicit unit-lock release, then run final protected selected validation and public CLI acceptance before integrating the full intent-first redesign. Same-subject build/fold/review/actual-close/public batch admission is implemented and passed; root isolation-retry and real builder-child proof passed. R-126 is committed. Conversation-authorized machinery bypass; no formal approval is fabricated.
+- Next step: Complete final protected selected validation of the fully reviewed candidate 70d13aa39, then integrate the full intent-first verb redesign with runtime evidence and receipt. Rebuilt public CLI passed 72 commands; real selected-critic dispatch and builder-child/retry proofs passed. R-126 recorded. Conversation-authorized machinery bypass; formal approval is not fabricated.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 21
+- Revision: 22
 - BudgetExceptions: 0
 
 History:
@@ -34,4 +34,5 @@ History:
 - 2026-09-25T17:09:05Z VPFGBH7QWN6NHM5ZKYKW1DWF3H-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T18:12:18Z BMJ24PJ21S0SXAS0GVT2718KNR-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T18:34:35Z B9G0QHS32RRS9F6118FZJFWGTK-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
-Integrity: sha256=b62e1169ed569995149c39157a4c40dd0e87a41b4a4e1088d4395ee160ceda30
+- 2026-09-25T19:08:59Z MNF2H3PQ7G2HF3MZJS46SPHSV2-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+Integrity: sha256=6dcd5508c11a865ea52760cbbcf597e5e0dfdb8dcebfeed734e5b427ac7ab296
