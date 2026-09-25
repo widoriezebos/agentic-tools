@@ -1,7 +1,6 @@
 package steward
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -14,28 +13,24 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 )
 
 const rulingDigestCeiling = 5
 
-type rulingReview struct {
-	ID    string
-	Owner string
-	Class string
-	Due   string
-	Event string
-}
+// The register reader is internal/rulings now, with its acceptance rules and
+// its defect wording lifted whole. The sweep reads the same scheduled subset
+// it always read, under the same two names, so nothing below this line
+// changed when the browser's Decisions page became the reader's second
+// caller.
+type rulingReview = rulings.Review
 
 type dueRulingReview struct {
 	rulingReview
 	Evidence string
 }
 
-type rulingReviewDefect struct {
-	Label     string
-	Reason    string
-	Ownerless bool
-}
+type rulingReviewDefect = rulings.Defect
 
 type rulingSweepState struct {
 	Schema       int    `json:"schema"`
@@ -43,90 +38,8 @@ type rulingSweepState struct {
 	LastDigestAt string `json:"lastDigestAt,omitempty"`
 }
 
-func parseReviewCondition(value string) (class, due, event string, err error) {
-	if value == "" {
-		return "", "", "", nil
-	}
-	for _, token := range strings.Fields(value) {
-		key, val, found := strings.Cut(token, "=")
-		if !found || val == "" {
-			return "", "", "", fmt.Errorf("review condition token %q is not key=value", token)
-		}
-		switch key {
-		case "class":
-			class = val
-		case "due":
-			due = val
-		case "event":
-			event = val
-		default:
-			return "", "", "", fmt.Errorf("unknown review condition key %q", key)
-		}
-	}
-	if class != "temporary" && class != "experimental" && class != "delegated-authority" && class != "assumption-dependent" {
-		return "", "", "", fmt.Errorf("review class %q is not schedulable", class)
-	}
-	if due == "" && event == "" {
-		return "", "", "", fmt.Errorf("review condition needs due= or event=")
-	}
-	if due != "" {
-		if _, parseErr := time.Parse("2006-01-02", due); parseErr != nil {
-			return "", "", "", fmt.Errorf("review due date %q is invalid", due)
-		}
-	}
-	return class, due, event, nil
-}
-
 func readRulingReviewRegister(repoRoot string) ([]rulingReview, []rulingReviewDefect, error) {
-	file, err := os.Open(filepath.Join(repoRoot, "memory", "rulings.md"))
-	if os.IsNotExist(err) {
-		return nil, nil, nil
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	defer file.Close()
-	var reviews []rulingReview
-	var defects []rulingReviewDefect
-	scanner := bufio.NewScanner(file)
-	rowPosition := 0
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "| R-") {
-			continue
-		}
-		rowPosition++
-		fields := strings.Split(line, "|")
-		if len(fields) != 8 {
-			defects = append(defects, rulingReviewDefect{
-				Label:  fmt.Sprintf("row=%d", rowPosition),
-				Reason: fmt.Sprintf("wrong column count: got %d, want 6", len(fields)-2),
-			})
-			continue
-		}
-		id, owner, condition := strings.TrimSpace(fields[1]), strings.TrimSpace(fields[5]), strings.TrimSpace(fields[6])
-		if owner == "" {
-			defects = append(defects, rulingReviewDefect{Label: id, Reason: "no accountable owner", Ownerless: true})
-			continue
-		}
-		class, due, event, err := parseReviewCondition(condition)
-		if err != nil {
-			defects = append(defects, rulingReviewDefect{Label: id, Reason: err.Error()})
-			continue
-		}
-		if class != "" {
-			reviews = append(reviews, rulingReview{ID: id, Owner: owner, Class: class, Due: due, Event: event})
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, nil, err
-	}
-	return reviews, defects, nil
-}
-
-func readRulingReviews(repoRoot string) ([]rulingReview, error) {
-	reviews, _, err := readRulingReviewRegister(repoRoot)
-	return reviews, err
+	return rulings.ReadReviews(repoRoot)
 }
 
 func rulingSweepPath(repoRoot string) string {

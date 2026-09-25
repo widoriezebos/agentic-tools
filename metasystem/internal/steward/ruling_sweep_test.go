@@ -164,20 +164,3 @@ func TestRulingSweepLabelsMalformedColumnByRegisterRowPosition(t *testing.T) {
 		t.Fatalf("malformed row did not use its register-row position and column count: %s", text)
 	}
 }
-
-func TestRulingRegisterHasOwnersAndOnlyTypedScheduledReviews(t *testing.T) {
-	reviews, err := readRulingReviews(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reviews) == 0 {
-		t.Fatal("the register has no scheduled review conditions")
-	}
-}
-
-func TestRulingSweepIsOptionalInAnAdoptedRepository(t *testing.T) {
-	reviews, err := readRulingReviews(t.TempDir())
-	if err != nil || reviews != nil {
-		t.Fatalf("an adopted repository without the source register degraded its steward: %+v %v", reviews, err)
-	}
-}

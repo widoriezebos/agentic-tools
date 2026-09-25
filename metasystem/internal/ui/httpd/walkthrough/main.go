@@ -22,8 +22,10 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
@@ -240,6 +242,16 @@ func main() {
 			return project.SetGoals(roots, id, goals, time.Now().UTC())
 		},
 		PreviewDocument: project.PreviewDocument,
+		// What this seat has been asked and what this human has ruled. The
+		// asks are invented, because this fixture has no channel; the
+		// register is the file planted above, read by the reader the engine
+		// wires.
+		Asks: func() ([]channel.Question, error) {
+			return fixtureAsks(*calm, time.Now().UTC()), nil
+		},
+		Rulings: func() (rulings.Register, error) {
+			return rulings.Read(checkout)
+		},
 		// The landing page's marker, over the fixture checkout, through the
 		// same package the engine wires: a walkthrough that kept the visit in
 		// memory would never show the second visit's window, which is the
@@ -447,6 +459,9 @@ func fixtureCheckout(calm bool) string {
 		{walkthroughRecord, walkthroughHead},
 		{walkthroughPartly, walkthroughPartlyText},
 		{walkthroughLanded, landed},
+		// The rulings register, which the Decisions page reads through the
+		// same package the steward's sweep reads it with.
+		{"memory/rulings.md", fixtureRulings(calm, time.Now().UTC())},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -566,6 +581,37 @@ func newLedger(calm bool) *ledger {
 	add(concluded(walkthroughGoal("g1-s10", goal.StateDone, "The backlog's data path and the list"), now.Add(-4*24*time.Hour)))
 	add(concluded(walkthroughGoal("g1-s8", goal.StateDone, "The frontend toolchain and the committed bundle"), now.Add(-40*24*time.Hour)))
 
+	// Three rows the Decisions page reads and nothing else does: an approval
+	// that has stopped admitting work with nobody holding the goal, the same
+	// with a seat holding it, and a claim a breach fence stopped. Without
+	// them the inbox can only ever show seven of its ten kinds.
+	//
+	// The calm workspace has none of them, because each one is by definition
+	// something waiting on a human and calm is the page with nothing waiting.
+	if !calm {
+		renew := add(ranked(walkthroughGoal("g1-s31", goal.StateApproved, "The Decisions section renews an approval"), 2, 16))
+		renew.Approved = &goal.ApprovalRecord{
+			By: "human:Wido", At: stampedAgo(21 * 24 * time.Hour),
+			Authority: goal.ApprovalAuthorityRelayed, ReviewBy: "2026-09-06", Revision: 3,
+		}
+		renew.Budget = &goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720, ActiveJobLimit: 1, ReviewRoundLimit: 2}
+
+		held := add(ranked(walkthroughGoal("g1-s32", goal.StateClaimed, "The register reader answers two callers"), 2, 17))
+		held.Approved = &goal.ApprovalRecord{
+			By: "human:Wido", At: stampedAgo(20 * 24 * time.Hour),
+			Authority: goal.ApprovalAuthorityRelayed, ReviewBy: "2026-09-06", Revision: 4,
+		}
+		held.Budget = &goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720, ActiveJobLimit: 1, ReviewRoundLimit: 2}
+		held.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(11 * time.Hour)}
+
+		fenced := add(ranked(walkthroughGoal("g1-s33", goal.StateClaimed, "The notification stream reconnects by itself"), 2, 18))
+		fenced.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(26 * time.Hour)}
+		fenced.StopFence = &goal.StopFence{
+			StopID: "stop-g1-s33", Revision: 5, ClosedAt: stampedAgo(3 * time.Hour),
+			Reason: "ELAPSED_LIMIT: the claim ran past its four-hour box",
+		}
+	}
+
 	dropped := add(walkthroughGoal("g1-s7", goal.StateAbandoned, "A second bundler beside the first"))
 	dropped.Abandoned = &goal.AbandonRecord{By: "human:Wido", At: "2026-09-05T00:00:00Z", Because: "overtaken by g1-s8"}
 
@@ -574,9 +620,26 @@ func newLedger(calm bool) *ledger {
 	add(ranked(walkthroughGoal("g1-s99", "surveying", "A state this build has no lane for"), 3, 3))
 
 	if calm {
+		// Decisions counts a person's own park as something waiting on them,
+		// which it is. The calm workspace is the page with nothing waiting,
+		// so the park is lifted the way a human would lift it — before the
+		// admission below, so the goal it returns to comes back approved
+		// rather than as one more thing nobody has authorized.
+		unpark(tree, "g1-s22")
 		admitEverything(tree)
 	}
 	return &ledger{tree: tree}
+}
+
+// unpark lifts one park the way goal unpark would: the record loses its park
+// and returns to the state it was approved into.
+func unpark(tree *goal.TreeGoals, id string) {
+	file := tree.Live[id]
+	if file == nil || file.Parked == nil {
+		return
+	}
+	file.Parked = nil
+	file.State = goal.StateQueued
 }
 
 // admitEverything is the calm workspace's ledger: every queued goal carries a
@@ -709,10 +772,19 @@ func (l *ledger) admission() backlog.Admission {
 		Ready:    map[string]bool{}, Blocked: map[string]bool{}, Awaiting: map[string]bool{},
 		Refused: map[string]string{},
 	}
+	horizon := goal.NewApprovalHorizon(l.tree, time.Now().UTC())
 	for id, file := range l.tree.Live {
-		if file.State == goal.StateApproved {
-			admission.Ready[id] = true
+		if file.State != goal.StateApproved {
+			continue
 		}
+		// An approval the gate will not act on is an intake gap rather than
+		// admitted work: the engine's own frontier answers awaiting for it,
+		// and so does this, or the walkthrough could never show a renewal.
+		if expired, _ := file.ApprovalExpired(horizon); expired {
+			admission.Awaiting[id] = true
+			continue
+		}
+		admission.Ready[id] = true
 	}
 	return admission
 }
@@ -722,8 +794,11 @@ func (l *ledger) approve(id string, budget goalbudget.Budget) error {
 	if file == nil {
 		return fmt.Errorf("goal %s is not live", id)
 	}
-	if file.State != goal.StateQueued {
-		return fmt.Errorf("goal %s is %s; approve admits queued work", id, file.State)
+	// The engine's own admission, which is wider than queued: approve admits
+	// queued, parked and already-approved work, and re-ratifying an approval
+	// that has stopped admitting new work is exactly what a renewal is.
+	if file.State != goal.StateQueued && file.State != goal.StateApproved && file.State != goal.StateParked {
+		return fmt.Errorf("goal %s is %s; approve admits queued, parked, or already-approved work", id, file.State)
 	}
 	file.State = goal.StateApproved
 	file.Budget = &budget

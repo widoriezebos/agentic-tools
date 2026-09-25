@@ -159,6 +159,17 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // through the reader's own preview route, which is project/api.ts's call
   // site and not a second one.
   ["partner/api.ts", 1, ["/api/partner", "/api/partner/turns", "/api/partner/seeing", "/stop"]],
+  // Decisions. One read when the pane mounts, one when a human presses the
+  // section's refresh, and one after an act completes — all three through the
+  // one request below. The page holds no timer: everything on it is composed
+  // on the server, and an act is something a human just did rather than
+  // something to watch for.
+  //
+  // The acts themselves are not here. Approve and Withdraw open the board's
+  // own sheet over the board's own payload, so the approve and withdraw
+  // requests and the backlog read they need are backlog/api.ts's call site
+  // and not a second one.
+  ["decisions/api.ts", 1, ["/api/decisions"]],
 ];
 
 /**

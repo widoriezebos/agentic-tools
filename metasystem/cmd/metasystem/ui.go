@@ -15,10 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -517,6 +519,27 @@ func runUI(verb string, args []string) int {
 					// operator; the interface reads it and nothing else of
 					// the steward's, and never writes to it.
 					NotificationJournal: steward.NotificationJournalPath(roots.Checkout),
+					// What this seat has been asked and has not answered,
+					// and what this human has ruled. Both are read per
+					// request for the reason every other reader is: a
+					// question a seat opened while the server runs, and a
+					// ruling appended to the register by hand, are read
+					// without a restart. The register is read through the
+					// steward's own package, so the page and the sweep
+					// cannot disagree about what it says.
+					// The walk is tolerant by its own contract: one
+					// unreadable question file never hides the others, and
+					// its path comes back on a second channel. The page
+					// shows what could be read rather than refusing the
+					// whole block over one file, which is the contract this
+					// caller keeps.
+					Asks: func() ([]channel.Question, error) {
+						open, _ := channel.WalkOpenQuestions(roots.Checkout)
+						return open, nil
+					},
+					Rulings: func() (rulings.Register, error) {
+						return rulings.Read(roots.Checkout)
+					},
 					// The landing page's last-visit marker, beside this
 					// server's own lifecycle state. It is the one thing the
 					// interface writes for itself rather than for the

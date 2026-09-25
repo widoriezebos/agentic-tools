@@ -369,6 +369,9 @@ func pageLines(facts Facts, observed snapshot.Observation, page Page) (string, i
 		return bounded(goalLines(observed, page)), 0, 0
 	case page.Section == "Overview":
 		return bounded(overviewLines(facts)), 0, 0
+	case page.Section == "Decisions":
+		block, supplied, total := decisionsLines(page)
+		return bounded(block), supplied, total
 	case page.Fleet != nil:
 		return bounded(fleetLines(page)), 0, 0
 	case page.Section == "Project":
@@ -746,6 +749,40 @@ func fleetLines(page Page) string {
 		built.WriteString(row + "\n")
 	}
 	return built.String()
+}
+
+// decisionsLines is the Decisions page's inbox as the PAGE is showing it: one
+// row per thing waiting on a human, with the kind, the id and what is being
+// asked, in the page's own order.
+//
+// It is the page's list and not a second composition of it. Only the page
+// knows what it put on the screen, and a server that composed its own a
+// moment later would answer a question about a page nobody was looking at.
+//
+// A ruling's own words never travel. The register is a document of the
+// checkout, and the documents tool reads it whole; a capture that carried a
+// hundred and fifty rulings would spend the block on the one thing the
+// Partner can already fetch.
+func decisionsLines(page Page) (string, int, int) {
+	if len(page.Records) == 0 {
+		return "- The page did not say which rows its inbox is showing.\n", 0, 0
+	}
+	var built strings.Builder
+	named := 0
+	built.WriteString("- What needs this human's choice, as the page is showing it (" +
+		strconv.Itoa(len(page.Records)) + "):\n")
+	for at, row := range page.Records {
+		if at >= maxListed {
+			built.WriteString("  - and " + strconv.Itoa(len(page.Records)-maxListed) +
+				" more rows on the page.\n")
+			break
+		}
+		named++
+		built.WriteString("  - " + row + "\n")
+	}
+	built.WriteString("- What this human decided is on the tab named above; the rulings are rows of " +
+		"memory/rulings.md, which the documents tool reads whole.\n")
+	return built.String(), named, len(page.Records)
 }
 
 // projectLines is the records the open tab lists, named by the page and read
