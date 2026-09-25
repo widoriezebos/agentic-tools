@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/acp"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
 // The host: the many-turn owner on one acp.Conn.
@@ -60,6 +61,15 @@ type Update struct {
 	Text string
 	// Look is set on a look and nowhere else.
 	Look *Look
+	// Suggestion is words the Partner prepared for a field, on the look of the
+	// call that prepared them and nowhere else. It rides with that look rather
+	// than as a beat of its own, so a suggestion cannot reach a turn without
+	// the call it came from being accounted for.
+	//
+	// It is whole here and it is not offered here: this host has no capture, so
+	// it reads what the call prepared and the turn's owner decides whether the
+	// human handed that field over.
+	Suggestion *Suggestion
 }
 
 // The four update kinds.
@@ -96,6 +106,34 @@ type Look struct {
 	// human was looking at. It is listed first and separately, and it is not
 	// one of the things the count says the Partner looked at.
 	Page bool `json:"page,omitempty"`
+}
+
+// Suggestion is text the Partner prepared for one field of an editor the human
+// handed over, before the human has done anything with it.
+//
+// It is not an edit and it is not applied. The Partner answers in words and
+// calls the interface's suggest tool with the field's whole new value; the field
+// keeps what the human wrote until they press Use this. Nothing here saves
+// anything, and the record of an edit is still the human's own act.
+type Suggestion struct {
+	// Opening is the one opening of that editor this suggestion belongs to: the
+	// id the sheet minted when it mounted, stamped by the service from the
+	// capture. A suggestion belongs to an opening and not to a sheet's name, so
+	// closing that sheet and opening another of the same name over a different
+	// goal cannot wake it.
+	//
+	// The tool's caller does not supply it and could not: the model is told the
+	// sheet's name and its fields, never the opening's id.
+	Opening string `json:"opening"`
+	// Editor is the editor the field is in, as its head says it: "Edit goal".
+	Editor string `json:"editor"`
+	// Field is the field, as its own label says it: "Intent".
+	Field string `json:"field"`
+	// Text is the field's whole new value, as the Partner wrote it. It is kept
+	// whole rather than shortened as a look's excerpt is: an excerpt is
+	// something a human checks an answer against, and this is the words
+	// themselves.
+	Text string `json:"text"`
 }
 
 // The three outcomes a look can have.
@@ -212,11 +250,23 @@ type live struct {
 	sinkMu sync.Mutex
 	sink   func(Update)
 
-	// calls is what each running tool call is called, by its id. A completion
-	// carries the id and often nothing else, and "what was read" is the title
-	// the call started with.
+	// calls is what each running tool call is, by its id. A completion carries
+	// the id and often nothing else, so both halves of what a completion means
+	// — the line the page showed, and which of this interface's own operations
+	// it was — are remembered from the call that started it.
 	callsMu sync.Mutex
-	calls   map[string]string
+	calls   map[string]called
+}
+
+// called is one running tool call as its start described it.
+type called struct {
+	// what is the line the page showed while it ran, which is also what the
+	// look is named after.
+	what string
+	// operation is which of the interface's own operations it is, or empty for
+	// every other tool. A completion is read for a suggestion only when this
+	// says the call was the one that prepares them.
+	operation string
 }
 
 // NewHost builds a host for one runtime and checkout, spawning the runtime's
@@ -271,7 +321,7 @@ func (h *Host) open(ctx context.Context) (*live, error) {
 	session := &live{
 		endpoint: endpoint, closed: make(chan struct{}),
 		fence: make(chan struct{}), fenced: make(chan struct{}),
-		calls: map[string]string{},
+		calls: map[string]called{},
 	}
 	session.conn = acp.NewConn(endpoint.Reader, endpoint.Writer, endpoint.Journal)
 	go session.pump(h.checkout)
@@ -774,13 +824,17 @@ type toolCall struct {
 func (l *live) tool(started bool, body toolCall) {
 	id := strings.TrimSpace(body.ToolCallID)
 	what := strings.TrimSpace(body.Title)
+	// Which of the interface's own operations this is, read from the tool's own
+	// names the same way the permission point reads them, so a runtime that
+	// prefixes its tool names with the server's is understood here too.
+	operation, _ := toolOperation(body.Name, body.Meta.ClaudeCode.ToolName, body.Title)
 	if started {
 		if what == "" {
 			what = strings.TrimSpace(body.Name)
 		}
 		if id != "" {
 			l.callsMu.Lock()
-			l.calls[id] = what
+			l.calls[id] = called{what: what, operation: operation}
 			l.callsMu.Unlock()
 		}
 		if what != "" {
@@ -788,10 +842,20 @@ func (l *live) tool(started bool, body toolCall) {
 		}
 		return
 	}
-	if what == "" && id != "" {
+	if id != "" {
 		l.callsMu.Lock()
-		what = l.calls[id]
+		held, known := l.calls[id]
 		l.callsMu.Unlock()
+		if known {
+			if what == "" {
+				what = held.what
+			}
+			// A completion carries neither name nor title on some runtimes, so
+			// what the call was is what its start said it was.
+			if operation == "" {
+				operation = held.operation
+			}
+		}
 	}
 	switch body.Status {
 	case "completed", "failed":
@@ -805,26 +869,83 @@ func (l *live) tool(started bool, body toolCall) {
 		delete(l.calls, id)
 		l.callsMu.Unlock()
 	}
-	l.emit(Update{Kind: UpdateLook, Look: lookAt(what, body)})
+	// The one call whose result is more than a look.
+	prepared := operation == uitools.OpSuggest
+	update := Update{Kind: UpdateLook, Look: lookAt(what, body, prepared)}
+	if prepared && body.Status == "completed" {
+		update.Suggestion = suggestedIn(resultText(body))
+	}
+	l.emit(update)
 }
 
-// lookAt reads one completion into a look. The source and the outcome are the
-// tool server's own words where it answered: it stamps every result with what
-// it read from and says how much of the whole it supplied, so neither has to
-// be inferred here.
-func lookAt(what string, body toolCall) *Look {
+// resultText is what one completed call came back with, whole.
+func resultText(body toolCall) string {
 	text := ""
 	for _, block := range body.Content {
 		if block.Type == "content" && block.Content.Type == "text" {
 			text += block.Content.Text
 		}
 	}
+	return text
+}
+
+// suggestedIn reads one completed suggest call's result into a whole
+// suggestion, and answers nothing where the framing is not there: a refused
+// call, a result from a build that does not write this form, or anything else
+// this host should not read a suggestion out of.
+//
+// The framing is read once. The first header line names the editor and the
+// field, the first separator after it ends the framing, and everything from
+// there to the end is the text — so a suggestion that itself holds a line
+// reading "Source: …", or a second header, carries it as its own words rather
+// than having it read as framing.
+func suggestedIn(text string) *Suggestion {
+	lines := strings.Split(text, "\n")
+	for at, line := range lines {
+		if !strings.HasPrefix(line, uitools.SuggestionHeader) {
+			continue
+		}
+		editor, field, split := strings.Cut(strings.TrimPrefix(line, uitools.SuggestionHeader), uitools.SuggestionJoin)
+		editor, field = strings.TrimSpace(editor), strings.TrimSpace(field)
+		if !split || editor == "" || field == "" {
+			return nil
+		}
+		for after := at + 1; after < len(lines); after++ {
+			if strings.TrimSpace(lines[after]) != uitools.SuggestionSeparator {
+				continue
+			}
+			said := strings.Trim(strings.Join(lines[after+1:], "\n"), "\n")
+			if said == "" {
+				return nil
+			}
+			return &Suggestion{Editor: editor, Field: field, Text: said}
+		}
+		return nil
+	}
+	return nil
+}
+
+// lookAt reads one completion into a look. The source and the outcome are the
+// tool server's own words where it answered: it stamps every result with what
+// it read from and says how much of the whole it supplied, so neither has to
+// be inferred here.
+//
+// A call that prepared words rather than reading something is not stamped from
+// its own result at all. It read nothing, so it has no source; and its result
+// carries text the Partner wrote, in which a line beginning "Source: " is the
+// Partner's words and not this server's.
+func lookAt(what string, body toolCall, prepared bool) *Look {
+	text := resultText(body)
 	look := &Look{What: what, Outcome: LookRead}
 	if look.What == "" {
 		look.What = "an unnamed tool call"
 	}
 	if body.Status == "failed" {
 		look.Outcome = LookFailed
+	}
+	if prepared {
+		look.Excerpt = excerptOf(text)
+		return look
 	}
 	for _, line := range strings.Split(text, "\n") {
 		switch {
@@ -838,11 +959,16 @@ func lookAt(what string, body toolCall) *Look {
 			}
 		}
 	}
-	look.Excerpt = text
-	if len(look.Excerpt) > maxExcerpt {
-		look.Excerpt = look.Excerpt[:maxExcerpt] + "…"
-	}
+	look.Excerpt = excerptOf(text)
 	return look
+}
+
+// excerptOf is how much of one result the conversation keeps.
+func excerptOf(text string) string {
+	if len(text) > maxExcerpt {
+		return text[:maxExcerpt] + "…"
+	}
+	return text
 }
 
 // answer applies the permission point to one server request. Anything that is
