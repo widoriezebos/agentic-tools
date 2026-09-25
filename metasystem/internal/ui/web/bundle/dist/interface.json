@@ -41,10 +41,10 @@
       "id": "fleet",
       "title": "Fleet",
       "path": "/fleet",
-      "purpose": "The machines and seats working on this project: their sessions, jobs and health, with when each was last observed.",
-      "shows": "A row per machine and seat, with its sessions, the jobs it is running, its last census and its health, each stamped with when it was observed.",
-      "projected": false,
-      "availability": "This build does not project Fleet. This machine's sessions, jobs, census, and health are recorded and will be shown with observation times and gaps. Arrives with g1-s13."
+      "purpose": "The machines working on this project and whether each has been heard from lately, with the goals each one holds. A goal whose holder has gone quiet is flagged here; nothing on this page acts on it.",
+      "shows": "A row per machine: whether it has been heard from and when, what it is running, and which goals it holds, with this seat's own publishing and health above them.",
+      "projected": true,
+      "availability": "This build projects Fleet: the page reads the workspace and says what it read."
     },
     {
       "id": "decisions",
@@ -234,7 +234,7 @@
     {
       "id": "fleet",
       "term": "Fleet",
-      "text": "The machines and seats working on this project: their sessions, jobs and health, with when each was last observed."
+      "text": "The machines working on this project and whether each has been heard from lately, with the goals each one holds. A goal whose holder has gone quiet is flagged here; nothing on this page acts on it."
     },
     {
       "id": "decisions-section",
@@ -335,6 +335,36 @@
       "id": "holds",
       "term": "Holds",
       "text": "The goals that are waiting for this one. Each of them stays parked until this goal is done, so finishing it is what lets them be claimed."
+    },
+    {
+      "id": "presence",
+      "term": "Presence",
+      "text": "A small record each armed machine publishes every steward tick, saying that it is alive and what it is running. It carries no goals and no words, so it can be read by every seat and grants none of them anything."
+    },
+    {
+      "id": "standing",
+      "term": "Standing",
+      "text": "What this seat concludes about another machine from its presence record: reachable, unreachable or unknown. It is judged as the page is read, against this seat's own clock, and never stored."
+    },
+    {
+      "id": "reachable",
+      "term": "Reachable",
+      "text": "A machine whose presence record is recent enough to trust: it published within the window this seat judges by, which is the longer of half an hour and three of that machine's own ticks."
+    },
+    {
+      "id": "unreachable",
+      "term": "Unreachable",
+      "text": "A machine whose presence record has gone stale. It may be off, asleep, or unable to reach the remote; the record says only that nothing new has arrived, and the goals it holds stay held."
+    },
+    {
+      "id": "unknown",
+      "term": "Unknown",
+      "text": "A machine this seat cannot judge: one that has published no presence at all, one whose record cannot be read, or one dated further ahead than a clock difference explains."
+    },
+    {
+      "id": "rung",
+      "term": "Rung",
+      "text": "Which way a machine managed to publish its presence at the remote: a metasystem ref, a branch per machine, or a branch per machine without force. A higher rung means the remote refused the one before it."
     }
   ],
   "questions": [
