@@ -20,11 +20,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/application"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
@@ -594,6 +596,16 @@ func runUI(verb string, args []string) int {
 					// every destination naming it opens in the reader, which
 					// resolves against the checkout.
 					RegisterPath: registerFromCheckout(roots),
+					// The known-issues register, read from the INSTALLATION
+					// for the rulings register's reason: that is where the
+					// kit's memory home is on every layout this interface
+					// serves. And where it is from the checkout, so that
+					// "Open the register" opens in the reader, which resolves
+					// against the checkout.
+					KnownIssues: func() (knownissues.Register, error) {
+						return knownissues.Read(roots.Installation)
+					},
+					KnownIssuesPath: knownIssuesFromCheckout(roots),
 					// The landing page's last-visit marker, beside this
 					// server's own lifecycle state. It is the one thing the
 					// interface writes for itself rather than for the
@@ -611,6 +623,14 @@ func runUI(verb string, args []string) int {
 					// saw on the other.
 					VisitDecisions: func(human string, now time.Time) (time.Time, bool, error) {
 						return overview.VisitPage(roots.StateRoot, overview.PageDecisions, human, now)
+					},
+					// The Application page's own marker, under an entry of
+					// its own, for the reason Decisions keeps one: a human
+					// reads the three pages on three rhythms, and one marker
+					// for all of them would hide from them what they never
+					// saw on the others.
+					VisitApplication: func(human string, now time.Time) (time.Time, bool, error) {
+						return overview.VisitPage(roots.StateRoot, application.PageName, human, now)
 					},
 					// The Project Partner. The flag travels whether or not the
 					// runtime was admitted, because it decides the act routes'
@@ -745,6 +765,20 @@ func projectRoots(roots lifecycle.Roots) project.Roots {
 // improved by a path that walks out of the repository.
 func registerFromCheckout(roots lifecycle.Roots) string {
 	relative, err := filepath.Rel(roots.Checkout, rulings.Path(roots.Installation))
+	if err != nil {
+		return ""
+	}
+	slashed := filepath.ToSlash(relative)
+	if slashed == ".." || strings.HasPrefix(slashed, "../") {
+		return ""
+	}
+	return slashed
+}
+
+// knownIssuesFromCheckout is the same for the known-issues register, which is
+// read from the same memory home and opened through the same reader.
+func knownIssuesFromCheckout(roots lifecycle.Roots) string {
+	relative, err := filepath.Rel(roots.Checkout, knownissues.Path(roots.Installation))
 	if err != nil {
 		return ""
 	}

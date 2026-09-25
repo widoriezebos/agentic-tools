@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:3e2d1c9c7c3b7670adf85b77d961716223c02dcd72be71a4b73ed2187cb23af5",
+  "sourceDigest": "sha256:231a531a992eff37f872edb25d5d9b96e33f750d5a9c78bdcc5317fbc3b0f115",
   "source": [
     {
       "path": ".npmrc",
@@ -69,6 +69,30 @@
     {
       "path": "src/App.tsx",
       "sha256": "cfe511a8d8911712fae3b62f016618449c2652a6aa14548651fa6ab9a611449b"
+    },
+    {
+      "path": "src/application/ApplicationPane.test.tsx",
+      "sha256": "ebaac3037d5d2ffa95f02c5cf764abbb327ca8f1347553a4c644b2acec179053"
+    },
+    {
+      "path": "src/application/ApplicationPane.tsx",
+      "sha256": "4b0582b39736f87c93b4dea826bbed9bba096c3355304d8d3901d52a36c93b33"
+    },
+    {
+      "path": "src/application/api.ts",
+      "sha256": "7efe120e2330ead717fe964717d4a85b7ee8af5e7ae2ff351394b6f5e32b3f7d"
+    },
+    {
+      "path": "src/application/application.css",
+      "sha256": "48d09abbb472a09b789e56ca589bcba9c9e92a040f004ebf1985e4a0ad6a5217"
+    },
+    {
+      "path": "src/application/application.test.ts",
+      "sha256": "0b2597dececcf09762448e96cbc39f2bb2c2d285c969279f640115083c84717c"
+    },
+    {
+      "path": "src/application/application.ts",
+      "sha256": "b3ce3a5c3975774258ce87342554fd5af30bae486d933fabd98b1d4538511f93"
     },
     {
       "path": "src/backlog/ActSheet.tsx",
@@ -268,7 +292,7 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "96da9b437998b9f6340b6a4c016a7c6bcd79332587b42fcc8c42580cf6bbf0ed"
+      "sha256": "b0678f830109883f06d755383124d96c948945805c4eeed858aca9d3bdfe56ba"
     },
     {
       "path": "src/decisions/BulkSheet.tsx",
@@ -388,11 +412,11 @@
     },
     {
       "path": "src/help/terms.test.ts",
-      "sha256": "579a0fce543dc17c7ef9502b3db5c34d190d955ccdc47b2a250868ec8063001d"
+      "sha256": "610fa5f5b4c00eeb3f390b52df444d8a99fe31470dfa546158db5d5ebeaf9212"
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "15b6c430b24a5b0a68cad0336a8eb2eb929d84d3b845a34212526f3c6c729b5d"
+      "sha256": "b8ce809b783444680d93c71c6b40401ac5678a83f773a25c27cd0fdf0a963c03"
     },
     {
       "path": "src/index.css",
@@ -488,11 +512,11 @@
     },
     {
       "path": "src/panes/empties.test.ts",
-      "sha256": "656fc400849261ca2d8024cd3f113d47d5de8943a9b43b1268bdb397f3747bee"
+      "sha256": "9e08e232478fd22357e9731994f56950fae97942443988b3cb908510ee06ecc0"
     },
     {
       "path": "src/panes/empties.ts",
-      "sha256": "42236bce77847bc70a72440f526e89b4fde88b6f02092a5f96868430f880bddb"
+      "sha256": "c2c98877c1753bed2a2d48d1200314c20674ea4a05b5f20d69ac55bdb682e160"
     },
     {
       "path": "src/panes/sections.tsx",
@@ -712,7 +736,7 @@
     },
     {
       "path": "src/routes.ts",
-      "sha256": "34f5f78c99e1f4987e1f6858c943fd9bd50a09dff280331efcd958da37d324cb"
+      "sha256": "aaa6f20223f88bb065555cc2f39d70f96f6db7d083c3821de057aa1cb32d5ae7"
     },
     {
       "path": "src/shell/Composer.tsx",
@@ -748,7 +772,7 @@
     },
     {
       "path": "src/shell/Shell.tsx",
-      "sha256": "a25a87ddbab6dbd303980bdf9d4fc222288277265de9e5b644fdb3a6d8f98e30"
+      "sha256": "db32bd2a89122ecf3297a6a0fdb58c8a98f1c14f120edb460525ca4ccc032c13"
     },
     {
       "path": "src/shell/SignInControl.tsx",
@@ -874,11 +898,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "8fc461c51c6184856f70b1ac2d58ce856927d3a79e70065073e2c9046f75debc"
+      "sha256": "054926f028cccb128c1831499afaf0a1f7ff6379eb673c17e3b45f1b5210d7cc"
     },
     {
       "path": "assets/index.js",
-      "sha256": "49ee67ce779aa9e5dc2ec81e788dfe21e3cb5a687490d2eb2926b69822a278de"
+      "sha256": "314c6fd64598ddc204bd4a55e79e2a929a4f5e72b1602896af7fb4caa972b87f"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
@@ -902,7 +926,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "d71afc75bcafea915b205deb0ccef47f5260509e47212656ef934d0a91a4e14d"
+      "sha256": "0aa60431e16fa62d02984d54cb85cb0c92563092d5b7d8d19b666e32a3084e65"
     },
     {
       "path": "theme.js",

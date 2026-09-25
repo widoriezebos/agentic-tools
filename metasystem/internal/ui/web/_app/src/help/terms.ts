@@ -46,7 +46,11 @@ export type HelpId =
   | "silence"
   | "ruling"
   | "review-condition"
-  | "application"
+  | "application-section"
+  | "what-concluded"
+  | "known-problems"
+  | "concluded-new"
+  | "last-engine"
   | "settings"
   | "partner"
   | "lane-draft"
@@ -216,9 +220,25 @@ export const HELP: Record<HelpId, Term> = {
     term: "Review condition",
     text: "When a ruling comes back for a decision. Most rulings stand until a human says otherwise; a temporary, experimental, delegated-authority or assumption-dependent one carries a date or a named event, and the date is what this page can judge. An event is shown as written and judged by the steward, not here.",
   },
-  application: {
+  "application-section": {
     term: "Application",
-    text: "What has been built and released, and the evidence that it works.",
+    text: "What this workspace has concluded, what is known to be wrong with it, and what it says it is. The first is the ledger's own record of work that ended, week by week; the second is the known-issues register, open rows first; the third is one line of links into the reader.",
+  },
+  "what-concluded": {
+    term: "What concluded",
+    text: "Every goal the ledger has concluded, newest first, with the one sentence written when it concluded. It is the record of work that ended and not a statement of what the application can do now: a conclusion sometimes records an administrative end, such as a duplicate withdrawn or a requirement absorbed into another goal, and it dates the conclusion rather than a capability that still stands. What this build does today is read from its own documents and its behaviour, not from this list.",
+  },
+  "known-problems": {
+    term: "Known problems",
+    text: "The project's known-issues register, one row per defect or limitation, open rows first. A row is concluded when its status begins with FIXED, RESOLVED, RETIRED, CLOSED or ACCEPTED, and the word stays visible, because an accepted limitation still exists. Nothing here is interpreted beyond that word, and a row this build could not read as six columns is counted in its own line rather than dropped.",
+  },
+  "concluded-new": {
+    term: "Since your last visit",
+    text: "Concluded after your last visit to this page, by the dates the records themselves carry. Reading this page is the visit, and reading it again within half an hour goes on comparing against the same moment, so a refresh never hides what you have not read. A goal whose conclusion carries no date is never marked new. On a first visit it means the last day. This page keeps the mark separately from the Overview's and Decisions', so reading one never moves another's boundary.",
+  },
+  "last-engine": {
+    term: "Last published engine",
+    text: "The engine build this seat wrote into its own presence record the last time it ticked, with the generation and the moment it was published. It is a record at one tick and not a statement about what is running now: a seat that has not ticked since it was rebuilt still publishes the build it had then. A seat that has published nothing says so rather than showing a blank.",
   },
   settings: {
     term: "Settings",
@@ -386,7 +406,7 @@ const SECTION_HELP: Readonly<Record<string, HelpId>> = {
   backlog: "backlog",
   fleet: "fleet",
   decisions: "decisions-section",
-  application: "application",
+  application: "application-section",
 };
 
 export function sectionHelp(id: string | undefined): HelpId | null {
