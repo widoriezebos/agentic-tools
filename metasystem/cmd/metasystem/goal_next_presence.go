@@ -21,32 +21,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 )
 
-// silentHolderLines is one line per goal this machine does not hold whose
-// holder is unreachable or has published nothing.
-//
-// The remedy is named conditionally, because the two are not interchangeable:
-// `goal steal` reassigns a claim and refuses a fenced one, and `goal resume`
-// lifts a breach fence and keeps the owner where it is.
-//
-// The flag words come from the interface's own composer rather than from
-// seat.SilentHolder, so that this line, the board's card line and the Fleet
-// page say one thing about one machine; that is also why this file imports
-// the interface's fleet package for two functions and nothing else.
+// silentHolderLines reads this clone's presence copy and composes the lines.
 func silentHolderLines(root string, tree *goal.TreeGoals, machine string, now time.Time) []string {
-	if tree == nil {
-		return nil
-	}
-	claims := map[string][]string{}
-	for id, file := range tree.Live {
-		if file == nil || file.Claimed == nil || file.Claimed.Machine == "" {
-			continue
-		}
-		if file.Claimed.Machine == machine {
-			continue
-		}
-		claims[file.Claimed.Machine] = append(claims[file.Claimed.Machine], id)
-	}
-	if len(claims) == 0 {
+	if tree == nil || len(claimsOfOthers(tree, machine)) == 0 {
 		return nil
 	}
 	transport, err := seat.NewGit(root)
@@ -61,16 +38,49 @@ func silentHolderLines(root string, tree *goal.TreeGoals, machine string, now ti
 	if err != nil {
 		previous = seat.StandingsState{Machines: map[string]seat.Observation{}}
 	}
+	return silentHolders(tree, machine, copied, previous.Machines, now, seatPresenceWindow(root))
+}
+
+// claimsOfOthers is every live goal claimed by a machine that is not this one.
+func claimsOfOthers(tree *goal.TreeGoals, machine string) map[string][]string {
+	claims := map[string][]string{}
+	for id, file := range tree.Live {
+		if file == nil || file.Claimed == nil || file.Claimed.Machine == "" {
+			continue
+		}
+		if file.Claimed.Machine == machine {
+			continue
+		}
+		claims[file.Claimed.Machine] = append(claims[file.Claimed.Machine], id)
+	}
+	return claims
+}
+
+// silentHolders is the lines themselves, from facts a caller read.
+//
+// The remedy is named conditionally, because the two are not interchangeable:
+// `goal steal` reassigns a claim and refuses a fenced one, and `goal resume`
+// lifts a breach fence and keeps the owner where it is.
+//
+// The flag words come from the interface's own composer rather than from
+// seat.SilentHolder, so that this line, the board's card line and the Fleet
+// page say one thing about one machine; that is also why this file reaches
+// into the interface's fleet package for two functions and nothing else.
+func silentHolders(
+	tree *goal.TreeGoals, machine string,
+	copied seat.Copy, previous map[string]seat.Observation,
+	now time.Time, window time.Duration,
+) []string {
 	standings := seat.Fleet(seat.FleetInput{
-		This: machine, Copy: copied, Claims: claims,
-		Previous: previous.Machines, Now: now, Window: seatPresenceWindow(root),
+		This: machine, Copy: copied, Claims: claimsOfOthers(tree, machine),
+		Previous: previous, Now: now, Window: window,
 	})
 	lines := []string{}
 	for _, standing := range standings {
 		if standing.Standing == seat.Reachable || len(standing.Holds) == 0 {
 			continue
 		}
-		flag := fleet.Flag(standing, fleet.Since(previous.Machines, standing), now)
+		flag := fleet.Flag(standing, fleet.Since(previous, standing), now)
 		if flag == "" {
 			continue
 		}

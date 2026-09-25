@@ -90,17 +90,29 @@ func ReadRunning(checkout string) (*seat.Chain, string) {
 // LocalMode nothing was ever fetched and the publishing refs are read in
 // place.
 func ReadPresence(transport seat.Git, ownFetchSucceeded bool) (seat.Copy, string, string) {
-	namespace, source := seat.UINamespace, SourceInterface
-	switch {
-	case transport.Local:
-		source = SourceLocal
-	case !ownFetchSucceeded:
-		namespace, source = seat.TickNamespace, SourceTick
-	}
+	namespace, source := NamespaceFor(transport.Local, ownFetchSucceeded)
 	read, err := transport.Read(namespace)
 	if err != nil {
 		return seat.Copy{Records: map[string]seat.Record{}, Malformed: map[string]string{}},
 			source, err.Error()
 	}
 	return read, source, ""
+}
+
+// NamespaceFor is which namespace a page reads and what the page calls it.
+//
+// It is its own function because it is the whole of the fallback rule and
+// nothing about it needs a repository: in LocalMode the publishing refs are
+// read in place, before the first success of this server's own fetch the
+// tick's canonical copy stands in, and after it the interface's own namespace
+// is the answer.
+func NamespaceFor(local, ownFetchSucceeded bool) (namespace, source string) {
+	switch {
+	case local:
+		return seat.UINamespace, SourceLocal
+	case !ownFetchSucceeded:
+		return seat.TickNamespace, SourceTick
+	default:
+		return seat.UINamespace, SourceInterface
+	}
 }
