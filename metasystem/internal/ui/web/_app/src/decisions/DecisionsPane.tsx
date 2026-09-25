@@ -253,6 +253,10 @@ export function DecisionsPane() {
             setSelected([]);
             reload();
           }}
+          onStopped={() => {
+            setSelected([]);
+            reload();
+          }}
         />
       )}
       {acting !== null && acting.state === "failed" && (

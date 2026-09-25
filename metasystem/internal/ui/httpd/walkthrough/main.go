@@ -1352,22 +1352,30 @@ func (l *ledger) plantGoal(id, intent string) {
 // another pair claimed refuses rather than being displaced — which is the
 // refusal a walkthrough is the place to see — and an unpark returns the goal
 // to approved where its approval still stands and to queued otherwise.
+// refused is the shape the real act layer hands a route: a refusal the page
+// shows in the engine's words with the status that says what a human can do
+// about it, rather than a failure the page reports as a broken engine.
+func refused(format string, args ...any) error {
+	return &act.Refusal{Kind: act.KindEngine, Code: "refused", Message: fmt.Sprintf(format, args...)}
+}
+
 func (l *ledger) park(id, because string) error {
 	if strings.TrimSpace(because) == "" {
-		return fmt.Errorf("park needs its reason — a pause without a why is a stall in disguise")
+		return &act.Refusal{Kind: act.KindRequest, Code: "no-reason",
+			Message: "park needs its reason — a pause without a why is a stall in disguise"}
 	}
 	file := l.tree.Live[id]
 	if file == nil {
-		return fmt.Errorf("goal %s is not live; nothing to park", id)
+		return refused("goal %s is not live; nothing to park", id)
 	}
 	if file.State == goal.StateParked {
-		return fmt.Errorf("goal %s is already parked", id)
+		return refused("goal %s is already parked", id)
 	}
 	if file.State != goal.StateQueued && file.State != goal.StateApproved && file.State != goal.StateClaimed {
-		return fmt.Errorf("goal %s is %s; only queued, approved, or claimed goals park", id, file.State)
+		return refused("goal %s is %s; only queued, approved, or claimed goals park", id, file.State)
 	}
 	if file.State == goal.StateClaimed && file.Claimed != nil {
-		return fmt.Errorf("goal %s is claimed by %s+%s; parking another's claim is a human act",
+		return refused("goal %s is claimed by %s+%s; parking another's claim is a human act",
 			id, file.Claimed.Machine, file.Claimed.Lineage)
 	}
 	file.State = goal.StateParked
@@ -1380,15 +1388,15 @@ func (l *ledger) park(id, because string) error {
 func (l *ledger) unpark(id string) error {
 	file := l.tree.Live[id]
 	if file == nil {
-		return fmt.Errorf("goal %s is not live; nothing to unpark", id)
+		return refused("goal %s is not live; nothing to unpark", id)
 	}
 	if file.State != goal.StateParked {
-		return fmt.Errorf("goal %s is %s, not parked", id, file.State)
+		return refused("goal %s is %s, not parked", id, file.State)
 	}
 	if file.Parked != nil && file.Parked.Blocker != "" {
 		for _, blocker := range file.Blocked {
 			if held := l.tree.Live[blocker]; held != nil && held.State != goal.StateDone {
-				return fmt.Errorf("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e)", id, blocker)
+				return refused("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e)", id, blocker)
 			}
 		}
 	}

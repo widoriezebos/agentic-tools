@@ -177,7 +177,7 @@ describe("acting on what was selected", () => {
     const line = stoppedLine(plan[2], "goal g1-s42 is claimed by m2a+implementer.", 2, 4);
 
     expect(line).toContain("Stopped at g1-s42");
-    expect(line).toContain("goal g1-s42 is claimed by m2a+implementer.");
+    expect(line).toContain("goal g1-s42 is claimed by m2a+implementer. — whether it landed");
     expect(line).toContain("unresolved");
     expect(line).not.toContain("refused");
     expect(line).toContain("1 after it were not sent.");

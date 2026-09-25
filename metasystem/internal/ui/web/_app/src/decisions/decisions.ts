@@ -680,5 +680,8 @@ export function stoppedLine(at: Planned, reason: string, sent: number, total: nu
   // and the fourth refused of four, nothing followed it.
   const left = total - sent - 1;
   const rest = left <= 0 ? "" : ` ${String(left)} after it were not sent.`;
-  return `Stopped at ${at.id}: ${reason} Whether it landed is unresolved; the re-read below says what the ledger did.${rest}`;
+  // A dash rather than a full stop between the engine's sentence and this
+  // one: the engine's words end how the engine ends them, and a page that
+  // assumed a period would run two sentences together.
+  return `Stopped at ${at.id}: ${reason} — whether it landed is unresolved; the re-read below says what the ledger did.${rest}`;
 }

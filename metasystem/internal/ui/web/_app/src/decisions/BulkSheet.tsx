@@ -48,12 +48,20 @@ export function BulkSheet({
   backlog,
   onClose,
   onDone,
+  onStopped,
 }: {
   bulk: Bulk;
   backlog: Backlog;
   onClose: () => void;
-  /** The run finished or stopped; the page reads its own payload again. */
+  /** Every goal was sent: the sheet is done and the page reads again. */
   onDone: () => void;
+  /**
+   * The run stopped at a refusal. The page reads its payload again — the
+   * re-read is what says what landed — but the sheet STAYS OPEN, because the
+   * sentence saying which goal it stopped at and in what words is the whole
+   * of what a human has to act on.
+   */
+  onStopped: () => void;
 }) {
   const approving = bulk.act === "approve";
   const plan = approving
@@ -84,7 +92,7 @@ export function BulkSheet({
             askToSignIn();
           }
           setRun({ state: "stopped", line: stoppedLine(one, failureMessage(error), done, sending.length) });
-          onDone();
+          onStopped();
           return;
         }
         done += 1;
@@ -97,7 +105,7 @@ export function BulkSheet({
   return (
     <Panel
       eyebrow={approving ? "To Do → Ready for Work" : "To Do → Not now"}
-      title={approving ? `Approve ${String(sending.length)} goals` : `Not now for ${String(sending.length)} goals`}
+      title={approving ? `Approve ${goalsWord(sending.length)}` : `Not now for ${goalsWord(sending.length)}`}
       sheetName={approving ? "Approve selected" : "Not now for selected"}
       fields={[
         { name: "Goals", value: sending.map((one) => one.id).join(", ") },
@@ -161,6 +169,11 @@ function budgetOf(one: Planned, approving: boolean, because: string): string {
   return `${budget.elapsedLimit} · ${String(budget.attemptLimit)} attempts · ${String(budget.reservedJobMinutesLimit)} reserved min · ${String(budget.activeJobLimit)} active · ${String(budget.reviewRoundLimit)} rounds — from ${one.source}`;
 }
 
+/** "1 goal", "12 goals": the sheet's own head counts what it would send. */
+function goalsWord(sending: number): string {
+  return `${String(sending)} ${sending === 1 ? "goal" : "goals"}`;
+}
+
 function blockedFor(act: "approve" | "park", sending: number, because: string): string {
   if (sending === 0) {
     return "Nothing here can be sent: every goal selected needs its budget first.";
@@ -172,7 +185,7 @@ function blockedFor(act: "approve" | "park", sending: number, because: string): 
 }
 
 function noteFor(act: "approve" | "park", sending: number): string {
-  const goals = `${String(sending)} ${sending === 1 ? "goal" : "goals"}`;
+  const goals = goalsWord(sending);
   return act === "approve"
     ? `One publication per goal, in this order, over ${goals}. The first refusal stops the run.`
     : `One publication per goal, in this order, over ${goals}, each with the reason above. The first refusal stops the run.`;
