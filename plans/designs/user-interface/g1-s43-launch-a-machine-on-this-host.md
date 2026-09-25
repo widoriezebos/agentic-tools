@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3BQAVYXE2AT6F0JG9YB64PG
-- Status: draft
+- Status: accepted
 - Goals: browser-interface fleet-join-bootstrap
 
 Wido, 2026-09-25: "I want to be able to launch a new machine for the fleet,
@@ -32,8 +32,14 @@ UI is running." Author Fable. Every cite re-read at `b50abb959`.
    or with the human's own temporary word, `--temporary-human-word <word>
    --review-by <date>` (steward_verbs.go:662-663; the pair rule
    `ValidateTemporaryWordPair`, internal/humanauthority/authority.go:329-343),
-   which enrolls TEMPORARILY with the word on the identity until the date;
-   then `metasystem up`. Neither scripts/agents/join-fleet.sh nor
+   which enrolls TEMPORARILY with the word recorded on the identity (the
+   exception is R-29-m2; R-37-m3 is the re-arm of rebuilt engines); the
+   date is a review date the identity carries and nothing enforces
+   (`ValidateTemporaryWordPair` accepts a past date, authority.go:325-343;
+   the identity reader never compares it to the clock, identity.go:129).
+   `steward arm` mints the identity AND launches the runner (runner.go:837).
+   The browser session is not terminal authority: `OutcomeSession` has no
+   such standing (authority.go:42). Neither scripts/agents/join-fleet.sh nor
    `metasystem.conf.local.template` exists; that design chose a script
    because the engine does not exist before its first step builds it.
 3. **Local configuration travels by a manifest.** second-session.sh copies
@@ -44,8 +50,9 @@ UI is running." Author Fable. Every cite re-read at `b50abb959`.
    --manifest --harness-root`, which copies and audits isolation, and
    returns the new harness root. `metasystem.conf.local` carries the
    roster and the secrets (the channel's one-time-code secret, the evidence
-   root) and is copied wholesale between seats of one user on one host, as
-   second sessions already do; nothing in this design reads it.
+   root). second-session.sh copies only the adapter files, not this one; a
+   second session shares the primary's harness. Copying it to a new machine
+   is this design's own decision (D7), and nothing in this design reads it.
 4. **The interface's acts and their standing.** An act runs in the server
    under the human standing of the signed-in session
    (internal/ui/act/act.go:136, `SignedIn`; `humanauthority.OutcomeSession`
@@ -87,84 +94,129 @@ UI is running." Author Fable. Every cite re-read at `b50abb959`.
   skips every step whose precondition already holds. The fleet-join design
   chose a script because no engine exists before the first step; here the
   LAUNCHING seat's engine exists and composes for the new clone, whose own
-  freshly built engine takes over from the fetch onward. The verb runs the
-  fenced build script the way launch lanes run adapter scripts.
+  freshly built engine takes over from the fetch onward. The verb invokes
+  scripts/agents/go-build.sh as the kit's one designated build owner; the
+  layering rule (docs/architecture.md:101) admits caller-supplied adapter
+  and gate commands, not engine-owned shell orchestration, so the build
+  adds one sentence there naming this invocation as that owner's, and no
+  other shell runs under the verb.
 - D3. **The human's own word enrolls the machine, through the sheet.** The
   interface never invents an authorization. The signed-in human types the
   word in their own words and picks the review-by date, and the verb passes
   both to `steward arm --temporary-human-word --review-by` on the new
   clone: the lawful path for a human who is not at that checkout's terminal
-  (R-37-m3), unchanged. The launched machine is enrolled temporarily until
-  the date, exactly as a seat armed that way is today, and the page says so.
+  (R-37-m3), unchanged. The launched machine carries a temporary enrollment with a review due
+  on that date; the date stops nothing, a human re-approves at a terminal,
+  and the page says exactly that. The sheet refuses a date in the past,
+  which the engine's validator does not.
   Making the signed-in session itself a full enrollment is the bridge
   design's D5 and not this slice.
-- D4. **The launch is a long act with a record.** The server starts the
-  verb detached, the way `ui start` starts its server, and the verb writes
-  `artifacts/agents/ui/launches/<nickname>.json` after every step: the
-  step, its outcome, the owner's words, the time. The page reads that
-  record through the payload and re-reads on the `fleet` event, which the
-  server now also emits when a launch record changes. No timer.
-- D5. **One launch at a time on this host, and only signed in.** A second
-  launch while one runs is refused with the running one's nickname. The act
-  requires the signed-in session whether or not a Partner is configured,
-  because it spends disk, a build and the human's credentials.
+- D4. **The launch is a long act with a lock and a record.** The server
+  writes the record first, then starts the verb detached under its
+  ownership gate with a scrubbed environment (no `METASYSTEM_*` overrides,
+  section 3), and answers. The verb holds one host-scoped lock for its whole
+  life, `<host temp dir>/metasystem-seat-launch.lock` taken with flock the
+  way proof admission takes its own, so two interface checkouts or two
+  requests cannot launch at once; the record carries the launch id and the
+  verb's process identity (pid and start time). After every step the verb
+  rewrites the record atomically. Reconciliation: whenever the record is
+  read, on `/api/fleet` and at server start, a `running` record whose
+  process identity is dead is marked `failed` with `the launch process
+  died after <step>`, and its lock is stale by definition. The page reads
+  the record through the payload and re-reads on the `fleet` event, which
+  the server also emits when a record changes. No timer.
+- D5. **One launch at a time on this host, and only signed in.** The lock
+  refuses a second launch with the running one's nickname. The act requires
+  a signed-in session and nothing weaker: the act layer's `mayAct` still
+  admits boot authority without a Partner (httpd/acts.go:338), so this route
+  checks `OutcomeSession` itself and answers the existing `signIn: true`
+  shape otherwise. It spends disk, a build and the human's credentials.
 - D6. **Joining is the slice; running is the next.** A launched machine is
-  reachable and idle. Starting its session main, in a tmux window the human
-  can attach to or headless under the unattended machinery once that
-  lands, is g1-s44, and the launch card says how to start one by hand
-  meanwhile.
+  reachable and has no session. It is not quiet: when claimable work exists
+  and no session is joined, its steward raises `IDLE_BACKLOG_DEAD` and
+  queues that notification again after every delivery (verdict.go:111,
+  tick.go:368). The card says so in words beside the two commands a human
+  has: start a session by hand, or stop the machine with `metasystem stop
+  --repo <dest>/metasystem`. Starting the session from the page is g1-s44.
+- D7. **The roster and secrets are copied, once, as bytes.** A machine
+  needs this seat's roster and the fleet channel's one secret to be a seat
+  at all; the fleet-join design's template would stop the launch for a hand
+  edit, which is the wrong step for a button. So the verb copies this
+  seat's `metasystem.conf.local` to the clone as bytes, rewrites one key it
+  knows, the evidence root, through the engine, and never parses the rest;
+  the human edits the copy afterwards if the machine should differ.
 
 ## 3. The verb: `metasystem seat launch`
 
 ```
 metasystem seat launch --machine <nickname> [--from <this checkout>] \
-  --temporary-human-word '<the human's words>' --review-by <YYYY-MM-DD> \
-  [--destination <dir>] [--record <path>] [--json]
+  [--destination <dir>] \
+  [--temporary-human-word '<the human's words>' --review-by <YYYY-MM-DD>] \
+  [--resume <launch id>] [--record <path>] [--json]
 ```
 
-Refusals before any step, by name: `SEAT_LAUNCH_NICKNAME_INVALID` (the
-presence charset `[A-Za-z0-9._-]+`, and not this checkout's own nickname);
-`SEAT_LAUNCH_NICKNAME_TAKEN` when a sibling clone already carries it or a
-presence ref or a claim at the accepted tip names it; `SEAT_LAUNCH_DESTINATION_EXISTS`;
-`SEAT_LAUNCH_RUNNING` when a launch record on this host is not terminal;
-the word pair's own refusal. The steps, each a record entry with
-`outcome: pending | done | skipped | failed` and the owner's words:
+Preflight, before any step and before the lock, by name:
+`SEAT_LAUNCH_NICKNAME_INVALID`, judged by `seat.ValidateMachineName`
+(internal/seat/record.go:36: the charset, and never `.` or a `..`
+substring), and never this checkout's own nickname;
+`SEAT_LAUNCH_NICKNAME_TAKEN` when a sibling clone carries it, a presence
+ref names it, or a claim at the accepted tip names it; `SEAT_LAUNCH_DESTINATION_EXISTS`
+unless `--resume` names the launch that created it; `SEAT_LAUNCH_DESTINATION_INSIDE_A_CHECKOUT`;
+the word pair's own refusal. Then the lock (D4): `SEAT_LAUNCH_RUNNING`
+with the running launch's nickname and id. Then the steps, each a record
+entry with `outcome: pending | done | skipped | failed`, the owner's words
+and the time. Every subprocess runs on an owned process group under a
+bound, the ledger fetch's budget for git and network, ten minutes for the
+build, with a scrubbed environment: `METASYSTEM_*` variables of the
+launching process are dropped, so an inherited `METASYSTEM_EVIDENCE_ROOT`
+cannot outrank the copied file (config/resolve.go:164; the interface's
+spawn inherits its environment, lifecycle/launch.go:95).
 
-| step | precondition | command, from the launching seat | refusal |
+| step | precondition, verified as a postcondition on resume | command, from the launching seat | refusal |
 |---|---|---|---|
-| 1 clone | destination absent; its parent exists on this host | `git clone --quiet <this checkout> <dest>`; `git -C <dest> remote set-url origin <origin url>`; `git -C <dest> config metasystem.steward.landing-ref refs/remotes/origin/main`; every `goal.human.*` key copied | git's words |
-| 2 engine | `<dest>/metasystem/bin/metasystem` absent or its stamp is not `<dest>`'s HEAD | `<dest>/metasystem/scripts/agents/go-build.sh` | the build's or the gate fence's words |
-| 3 configuration | `<dest>/metasystem/metasystem.conf.local` absent | copy this seat's `metasystem.conf.local`, then rewrite `evidence.root` to `<this seat's evidence root>/../<nickname>` (read through `config get`, never by the verb's own parsing), create that directory; then `validate session-isolation` with the adapters' manifest for the local runtime files; then `<dest>/metasystem/bin/metasystem config validate --repo <dest>` | the validator's words |
-| 4 nickname | `metasystem.goal.machine` unset in `<dest>` | `git -C <dest> config metasystem.goal.machine <nickname>` | none |
-| 5 ledger | always | `<dest>/metasystem/bin/metasystem goal fetch --root <dest>`, then `goal next --root <dest>` for the one orientation line the record keeps | the fetch's words |
-| 6 enrollment | no identity at `<dest>` | `<dest>/metasystem/bin/metasystem steward arm --repo <dest>/metasystem --temporary-human-word '<word>' --review-by <date>` | the arm's words |
-| 7 supervision | the steward runner not alive there | `<dest>/metasystem/bin/metasystem up --repo <dest>/metasystem` | up's words |
-| 8 presence | after 7 | wait at most three ticks for `refs/metasystem/presence/<nickname>` (or the branch rung) to appear in this seat's presence copy, reading the copy on each `fleet` event; done when it does, failed with `no presence within three ticks; read <dest>'s health` otherwise | |
+| 1 clone | `<dest>` absent, or created by this launch and `git -C <dest> rev-parse HEAD` answers | `git clone --quiet <this checkout> <dest>`; `git -C <dest> remote set-url origin <origin url>`; copy `goal.sync-remote`, `goal.sync-branch`, `metasystem.steward.landing-ref`, `metasystem.steward.notify-command` and every `goal.human.*` key that this checkout sets; record the commit cloned | git's words |
+| 2 tracking | always | `git -C <dest> fetch --no-tags origin`, so `refs/remotes/origin/main` exists; the ledger fetch of step 6 deliberately does not refresh it (txn.go:151) | git's words |
+| 3 engine | `<dest>/metasystem/bin/metasystem` absent, or its stamp is not `<dest>`'s HEAD | `<dest>/metasystem/scripts/agents/go-build.sh` (D2); record the stamp built | the build's or the fence's words |
+| 4 configuration | `<dest>/metasystem/metasystem.conf.local` absent | write it atomically (temp file, rename): this seat's file as bytes, with `evidence.root` rewritten to the sibling of this seat's EFFECTIVE root, `filepath.Join(filepath.Dir(canonical(<root>)), <nickname>)`, where the root is read through `<this>/bin/metasystem config get evidence.root` under the scrubbed environment; the verb creates that directory, refuses when its canonical path equals this seat's root or resolves through a symlink elsewhere, and on resume accepts an existing directory only when this launch created it; then `validate session-isolation --source-root <this> --destination-root <dest> --manifest <adapter paths> --harness-root <this>/metasystem` for the runtime files; then `<dest>/metasystem/bin/metasystem config validate --conf <dest>/metasystem/metasystem.conf --repo <dest>` (config_verbs.go:145 takes the file by `--conf`; the roster in `.local` is not overlaid by today's validator, validate.go:74, and `--resolved` from the fleet-join design is not built: the roster copied from a running seat is complete by construction, and this is stated to the human) | the validator's words |
+| 5 nickname | `metasystem.goal.machine` unset in `<dest>`, or set to this launch's nickname | `git -C <dest> config metasystem.goal.machine <nickname>` | |
+| 6 ledger | always | `<dest>/metasystem/bin/metasystem goal fetch --root <dest>` (a fresh clone validates the canonical tree and creates its accepted ref, fetchadvance.go:51), then `goal next --root <dest>` for the one orientation line the record keeps | the fetch's words |
+| 7 enrollment | no identity at `<dest>`, or an identity whose enrolled digest is not the binary now installed (identity.go:403 is presence, not proof) | `<dest>/metasystem/bin/metasystem steward arm --repo <dest>/metasystem --temporary-human-word '<word>' --review-by <date>`; from a terminal without the pair, the caller's enrolled terminal, as `steward arm` does. Arming mints the identity and launches the runner (runner.go:837). The word is never written into the record | the arm's words; `SEAT_LAUNCH_WORD_REQUIRED` when a resume reaches this step without the pair |
+| 8 supervision | the supervision owner not alive at `<dest>` | `<dest>/metasystem/bin/metasystem up --repo <dest>/metasystem --recover-only --if-down`, the machinery-only form that authenticates the enrolled binary and starts what is missing without announcing a session (up.go:778); ordinary `up` announces a session and needs a runtime's ancestry (up.go:215, 693), which a detached child does not have | up's words |
+| 9 presence | after 8 | the verb reads presence itself through the seat transport, in a fetch namespace of its own (`refs/metasystem/presence-fetch/<ulid>`, deleted after), first at once and then on each tick of an injected clock, until a record for `<nickname>` with this launch's generation is read or three of the new machine's ticks have elapsed; done when read; otherwise outcome `armed` with the note `armed; presence not confirmed within three ticks: read <dest>'s health`, which is not a failure to arm. The interface's own copy is not consulted: its fetcher runs only while a browser is open and starts at most once a minute (fleet/fetch.go:306) | |
 
-Every step runs under a bound (the ledger fetch's budget for git and
-network steps, ten minutes for the build) on an owned process group, and
-the verb's own exit is the last step's outcome. `--json` prints the record.
-The verb runs from a terminal as well as from the interface, and a human at
-the terminal may omit the word pair, in which case step 6 uses their
-enrolled terminal like `steward arm` does today.
+`--resume <launch id>` reads that launch's record, verifies each done
+step's postcondition from the table, redoes what does not hold, and
+exempts from the preflight only the destination and the nickname the
+record says this launch created. The verb's exit is the last step's
+outcome; `--json` prints the record.
 
-The record, `artifacts/agents/ui/launches/<nickname>.json`:
+The record, `artifacts/agents/ui/launches/<launch id>.json`, one per
+launch, the nickname inside it:
 
 ```
-{ "schemaVersion": 1, "machine": "m1f", "destination": "/…/agentic-tools-m1f",
-  "startedAt": "...", "endedAt": "..." | null, "outcome": "running" | "done" | "failed",
-  "reviewBy": "2026-10-02", "steps": [ { "step": "clone", "outcome": "done", "at": "...", "words": "" }, ... ],
-  "orientation": "goal next's one line", "next": "cd /…/agentic-tools-m1f && claude" }
+{ "schemaVersion": 1, "launch": "<ulid>", "machine": "m1f",
+  "destination": "/…/agentic-tools-m1f", "clonedCommit": "…", "builtStamp": "…",
+  "process": { "pid": 0, "startedAt": 0 }, "startedAt": "...", "endedAt": "..." | null,
+  "outcome": "running" | "done" | "armed" | "failed",
+  "reviewBy": "2026-10-02", "created": { "destination": true, "nickname": true, "evidenceRoot": true },
+  "steps": [ { "step": "clone", "outcome": "done", "at": "...", "words": "" }, ... ],
+  "orientation": "goal next's one line",
+  "next": { "session": "cd /…/agentic-tools-m1f && claude", "stop": "metasystem stop --repo /…/agentic-tools-m1f/metasystem" } }
 ```
 
 ## 4. The act and the page
 
-`POST /api/fleet/launch` with `{machine, word, reviewBy}`: refuses without
-a signed-in session (`SIGN_IN_REQUIRED`, the act layer's existing words),
-validates the nickname and the pair with the same rules as the verb, refuses
-a running launch, then spawns `bin/metasystem seat launch` detached under
-the server's ownership gate with the record path, and answers 202 with the
-record's first shape. `GET /api/fleet` gains `launches`: every record on
+`POST /api/fleet/launch` with `{machine, destination, word, reviewBy}`, and
+`{resume: <launch id>, word?, reviewBy?}` for a retry: refuses without a
+signed-in session with the existing `signIn: true` answer (D5), validates
+the nickname with `seat.ValidateMachineName`, the destination and the pair
+(and a past date) with the verb's rules, writes the record with a fresh
+launch id before anything runs, spawns `bin/metasystem seat launch` detached
+under the server's ownership gate with the scrubbed environment, and
+answers 202 with the record. The lock inside the verb decides the race
+between two requests; the loser's record is marked failed with the
+winner's nickname. The word travels to the verb's argument list and
+nowhere else: not the record, not the capture, not a log. `GET /api/fleet` gains `launches`: every record on
 this host, newest first, so a page opened later still sees a running or a
 failed launch.
 
@@ -173,8 +225,9 @@ machine**. It opens a work-area sheet (the g1-s35 sheet, so the Partner
 stays usable) with:
 
 1. **Nickname**, proposed as the next free letter of this host's series
-   (`m1f` after `m1e`), editable, validated live against the charset and
-   against the machines the page already shows.
+   (`m1f` after `m1e`), editable, validated live by the same rule as
+   `seat.ValidateMachineName` and against the machines the page already
+   shows.
 2. **Where**: the destination path, proposed as the remote repository's
    name with the nickname appended, beside this checkout, and editable; an
    absolute path on this host, refused when it exists or lies inside another
@@ -184,10 +237,12 @@ stays usable) with:
    ledger", and one naming what it will not do, "it starts no session; it
    joins, publishes presence and waits".
 4. **Your authorization**: a text field for the word, in the human's own
-   words, with the help term explaining that the machine runs under this
-   word until the review-by date and a human re-approves it at a terminal
-   afterwards; and the review-by date, defaulting to seven days out,
-   editable.
+   words, with the help term explaining that the machine carries a
+   temporary enrollment with a review due on the date, that the date stops
+   nothing, and that a human re-approves or stops it at a terminal; and the
+   review-by date, defaulting to seven days out, editable, refused in the
+   past. This field is the one thing on the page the Partner's capture never
+   carries, and the sheet's draft is handed over like every g1-s35 sheet.
 5. **Launch**, disabled until the nickname and the word validate.
 
 On Launch the sheet becomes the launch card, which also lives in the fleet
@@ -195,11 +250,15 @@ block above the table while a launch is running or failed: the nickname,
 the destination, the steps as a vertical list each with its outcome and the
 owner's words under a failed one, the orientation line when the ledger
 step is done, and at the end either the machine's row appearing in the
-table (the card then folds to one line, "m1f joined 2 min ago, enrolled
-until 2 October", with the `next` command to start a session by hand), or
-the failed step with **Retry**, which runs the same verb again and skips
-what already holds. No Remove: a failed clone is a directory the human
-deletes, and the card says its path.
+table (the card then folds to one line, "m1f joined 2 min ago; temporary
+enrollment, review due 2 October", with the `next` commands), or
+the failed step with **Retry**, which resumes this launch by its id; a
+retry that has to reach enrollment again asks for the word and the date
+again in the card, because the record never held them. The card names the
+idle alerts a sessionless machine will raise (D6) beside the `next`
+commands. No Remove: a failed clone is a directory the human deletes, and
+the card says its path. An `armed` outcome shows as "armed; presence not
+yet seen" with the health command, distinct from failed.
 
 Help terms: `launch-machine`, `temporary-word`, `review-by`. The Partner's
 page capture on Fleet gains the launches shown. The Partner's `fleet` tool
@@ -213,7 +272,11 @@ human's own word, recorded on the identity the way the temporary path
 already records it; the interface adds no authority of its own. The verb
 never reads the secrets it copies. A launch costs one clone of this
 repository, one stamped build and one armed steward; the host's proof
-admission cap already bounds what several stewards may run at once. The
+admission cap bounds proof reservations under this account and nothing
+else: not builds, not disk, not the number of stewards, not git traffic.
+The lock bounds launches to one at a time, the verb checks free disk at
+the destination's parent against twice the size of this checkout before
+cloning, and the card says what a machine costs while it runs. The
 verb refuses to launch onto an existing directory, to reuse a nickname, or
 to run two launches at once. A launched machine that is never given a
 session sits idle and publishes presence, which the fleet page shows; the
@@ -229,10 +292,14 @@ copy afterwards. Automatic re-enrollment at the review-by date.
 
 ## 7. Verification and box
 
-Go: unit tests on the verb's sequencer with a fake runner: every step's
-command and precondition, stop at the first refusal with the owner's words
-verbatim, idempotent re-run skipping what holds, the record after each
-step, the refusals by name, the one-at-a-time rule; one narrow integration
+Go: unit tests on the verb's sequencer with a fake runner and an injected
+clock: every step's command and precondition, stop at the first refusal
+with the owner's words verbatim, resume verifying each postcondition and
+redoing what does not hold, the word never in the record, the refusals by
+name, the lock's one-at-a-time rule with two sequencers, the scrubbed
+environment, the evidence-root sibling and its refusals, the presence
+observation through a fake transport with the three-tick deadline and the
+`armed` outcome, the reconciliation of a record whose process is dead; one narrow integration
 test on `t.TempDir()`: clone from a local repository, the remote rewritten,
 the keys copied, the configuration copied and rewritten, the nickname set,
 the ledger fetched from a bare fixture, stopping before enrollment (arming
@@ -258,3 +325,29 @@ the interface does not yet read would report failed while being alive; the
 card's words send the human to the new machine's health line. Reject
 condition: Wido wants the machine to start working on launch, in which case
 g1-s44 comes first and this slice grows.
+
+## Dispositions (Astra read, 2026-09-25)
+
+Ten material findings, each checked against the code it cites and folded.
+
+| id | finding | fold |
+|---|---|---|
+| A1 | `steward arm` already launches the runner, and ordinary `up` announces a session a detached child cannot have | step 8 is `up --recover-only --if-down`; supervision readiness is checked apart from runner liveness |
+| A2 | `config validate` takes the file by `--conf` and never overlays the copied roster; `--resolved` is unbuilt | the command corrected; the roster's completeness rests on its source being a running seat, and the page says so |
+| A3 | no host-wide exclusion and no crash recovery | one flock-held host lock; process identity in the record; reconciliation of dead launches on every read |
+| A4 | Retry contradicted the refusals and could not prove completed steps; the word was gone | resume by launch id, postconditions verified per step, exemptions only for what the launch created, the word asked again |
+| A5 | the presence wait depended on a browser being open | the verb observes through the seat transport in its own namespace, on an injected clock; `armed` is an outcome distinct from failed |
+| A6 | "enrolled until the date" promised an expiry nothing enforces | "temporary enrollment, review due"; the sheet refuses a past date |
+| A7 | environment outranks the copied file and the sibling path could resolve wrong | a scrubbed environment for every step; the effective root read through the engine; canonical checks |
+| A8 | the clone missed the ledger endpoint keys and the remote-tracking fetch; Linux needs a notify command | the keys copied; a tracking fetch step; the built commit recorded |
+| A9 | a sessionless machine raises idle alerts repeatedly | said on the card beside the session and stop commands (D6) |
+| A10 | the nickname rule admitted names the publisher refuses | `seat.ValidateMachineName` at the verb, the route and the sheet |
+
+Also folded from the read: the `.local` copy is this design's own decision
+(D7), not second-session.sh's precedent; the build script's invocation is
+named as the designated build owner's (D2); the launch act checks the
+session outcome itself (D5); the authorization field is excluded from the
+Partner's capture; the admission cap's true scope and a disk check
+(section 5); R-29-m2 named as the temporary enrollment's ruling. Wido's
+naming rule of the same day, the remote repository's name as the default,
+is in D1.
