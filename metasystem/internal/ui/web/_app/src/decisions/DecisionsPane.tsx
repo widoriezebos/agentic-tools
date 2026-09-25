@@ -724,7 +724,12 @@ function NotNowList({
     return <p className="ms-decisions-none">You have paused nothing.</p>;
   }
   return (
-    <ul className="ms-decisions-lines">
+    <>
+      <p className="ms-decisions-quiet">
+        Return to queue lifts one pause.
+        <Help id="return-to-queue" />
+      </p>
+      <ul className="ms-decisions-lines">
       {parks.map((park) => (
         <li key={park.id} className="ms-decisions-line ms-decisions-line--act">
           <NavLink className="ms-decisions-row" to={goalPath(park.id)}>
@@ -746,8 +751,9 @@ function NotNowList({
             Return to queue
           </Button>
         </li>
-      ))}
-    </ul>
+        ))}
+      </ul>
+    </>
   );
 }
 
