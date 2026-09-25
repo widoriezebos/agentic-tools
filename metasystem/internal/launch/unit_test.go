@@ -163,7 +163,7 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 				add(fixture.worktree, "", check, "diff-index", "--cached", "--raw", "-z", "--ita-invisible-in-index", "HEAD", "--", ".")
 				add(fixture.worktree, "", check, "ls-files", "--resolve-undo", "-z", "--full-name", "--", ".")
 				add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
-				add(fixture.worktree, "", check, "diff", "--cached", "--raw", "HEAD", "--", ".")
+				add(fixture.worktree, "", check, "diff", "--cached", "--raw", "-z", "--no-abbrev", "HEAD", "--", ".")
 			}
 			check := isolatedGitEnvironment(fixture.worktree, objects, false)
 			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
@@ -244,7 +244,7 @@ func TestUnitRunRefusesMainBranch(t *testing.T) {
 	if err == nil || err.Error() != want {
 		t.Fatalf("error=%v want=%q", err, want)
 	}
-	wantRow := refusal.Row{Code: "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", Owner: "internal/launch", Site: "unit_run.go:227", Shape: refusal.Question}
+	wantRow := refusal.Row{Code: "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", Owner: "internal/launch", Site: "unit_run.go:255", Shape: refusal.Question}
 	for _, row := range refusal.Rows {
 		if row.Code == wantRow.Code {
 			if row != wantRow {

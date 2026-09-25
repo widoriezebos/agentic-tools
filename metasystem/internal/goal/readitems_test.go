@@ -378,11 +378,13 @@ func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
 		reason := "accepted before conclusion"
 		closeRequest := readItemRequest(endpoint, 133)
 		closeRequest.Actor.Human = "Wido"
+		closeRequest.Authority = testTerminalAuthority(t, endpoint.Root, closeRequest.Now)
 		if closed, closeErr := CloseReadItem(closeRequest, "parked-done", "critic-1", ReadItemClosure{Accepted: &reason}); closeErr != nil || closed.Outcome != OutcomeConfirmed {
 			t.Fatalf("close: %+v %v", closed, closeErr)
 		}
 		request = readItemRequest(endpoint, 134)
 		request.Actor.Human = "Wido"
+		request.Authority = testTerminalAuthority(t, request.Endpoint.Root, request.Now)
 		if done, doneErr := Done(request, "parked-done", "Done after review."); doneErr != nil || done.Outcome != OutcomeConfirmed {
 			t.Fatalf("done after close: %+v %v", done, doneErr)
 		}

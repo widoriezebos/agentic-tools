@@ -2493,7 +2493,7 @@ METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z "$ms" goal claim --root "$clone" --id b
 # canonical record bytes including its Integrity line.
 "$ms" goal open --root "$clone" --id archive-roundtrip --origin human --by Wido --fixture-human-authority \
 	--intent "Exercise concluded-goal archival." --next "Conclude it." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
-"$ms" goal done --root "$clone" --id archive-roundtrip --by Wido \
+"$ms" goal done --root "$clone" --id archive-roundtrip --by Wido --fixture-human-authority \
   --conclude "Archived in the records-owned location." >/dev/null
 archive_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$archive_tip:records/goals/archive-roundtrip.md" >"$tmp/archive-roundtrip.md"
@@ -2510,7 +2510,7 @@ grep -q ' reopen actor=' "$tmp/archive-reopened.md" \
 if git -C "$clone" cat-file -e "$reopen_tip:records/goals/archive-roundtrip.md" 2>/dev/null; then
   echo "goal reopen left the concluded record behind" >&2; exit 1
 fi
-"$ms" goal done --root "$clone" --id archive-roundtrip --by Wido \
+"$ms" goal done --root "$clone" --id archive-roundtrip --by Wido --fixture-human-authority \
   --conclude "Archived again after the recorded reopen." >/dev/null
 
 # Admission must stop charging a concluded goal even when its only conclusion
@@ -2536,7 +2536,7 @@ set -e
 grep -q 'BUDGET_REFUSED: goal admission-concluded revision=3 admission closed: elapsedLimit' <<<"$admission_before" \
   || { echo "the pre-conclusion refusal did not charge the exhausted goal: $admission_before" >&2; exit 1; }
 METASYSTEM_GOAL_NOW=2026-08-20T16:00:00Z \
-  "$ms" goal done --root "$clone" --id admission-concluded --by Wido \
+  "$ms" goal done --root "$clone" --id admission-concluded --by Wido --fixture-human-authority \
     --conclude "The records-owned conclusion must leave the admission budget." >/dev/null
 admission_record_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -e "$admission_record_tip:records/goals/admission-concluded.md"
@@ -2700,7 +2700,7 @@ grep -q "\"Landing\":{\"At\":\"$land_at\"" "$tmp/landing-list.txt" \
   || { echo "goal list does not show the landing slot" >&2; cat "$tmp/landing-list.txt" >&2; exit 1; }
 # The person concludes the landing goal; the archive keeps the land-ready
 # line and drops the slot with the claim.
-"$ms" goal done --root "$clone" --id ship-widget --by Wido \
+"$ms" goal done --root "$clone" --id ship-widget --by Wido --fixture-human-authority \
   --conclude "Landed by the person while next-widget was claimed." >/dev/null
 done_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$done_tip:records/goals/ship-widget.md" >"$tmp/ship-widget-done.md"

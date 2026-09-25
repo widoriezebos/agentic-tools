@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -65,8 +66,17 @@ type Engine struct {
 	birthEffects         birthRepositoryEffects
 	// Now supplies this engine's artifact clock. Nil keeps wall-clock
 	// behavior; fixtures set it without changing time for another engine.
-	Now     func() time.Time
-	emitter events.Emitter
+	Now func() time.Time
+	// Output and Errors receive Answer's report; nil keeps the process
+	// streams. A public command gives each engine its own.
+	Output io.Writer
+	Errors io.Writer
+	// AnchorEffect replaces the anchor commit for this engine only; nil
+	// anchors through mission.AnchorNamed. Fixtures without Git set it.
+	AnchorEffect func(statePath, ledgerPath, identityName string) error
+	// LastAnswer is what the most recent Answer on this engine committed.
+	LastAnswer AnswerEffects
+	emitter    events.Emitter
 	// unattendedCheckout is the MISSION-START fact:
 	// true when the checkout lease carried this mission's own lineage as
 	// the loop began — the unattended arming's signature. A live read at
@@ -168,6 +178,9 @@ func (e *Engine) anchor(statePath, ledgerPath, identityName string) error {
 	}
 	if e.anchorFn != nil {
 		return e.anchorFn(statePath, ledgerPath, identityName)
+	}
+	if e.AnchorEffect != nil {
+		return e.AnchorEffect(statePath, ledgerPath, identityName)
 	}
 	return e.anchorState(statePath, ledgerPath, identityName)
 }

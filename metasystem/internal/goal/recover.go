@@ -495,9 +495,9 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return splitRequest(r, target, members, ratification, nil)
 	case "release":
 		if cascade {
-			return releaseArcRequest(r, target), nil
+			return releaseArcRequestWithReason(r, target, in.Args["reason"]), nil
 		}
-		return releaseRequest(r, target), nil
+		return releaseRequestWithReason(r, target, in.Args["reason"]), nil
 	case "land-ready":
 		return landReadyRequest(r, target), nil
 	case "done":
@@ -541,6 +541,8 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 				riskBasis = value
 			case "next":
 				fields.NextStep = &value
+			case "nextAppend":
+				fields.NextStepAppend = &value
 			case "origin":
 				// Origin is immutable provenance: a stored
 				// origin delta is a pre-fold journal's residue.
@@ -565,7 +567,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		if r.Actor.Human == "" {
 			return PublishRequest{}, fmt.Errorf("the stored steal carries no human (--by); it cannot be replayed")
 		}
-		return stealRequest(r, target), nil
+		return stealRequestWithReason(r, target, in.Args["reason"]), nil
 	case "detach":
 		return detachRequest(r, target), nil
 	case "set-arc":

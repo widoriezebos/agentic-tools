@@ -1886,3 +1886,57 @@ func TestGoalLandingRetryIdentitySurvivesASecondClone(t *testing.T) {
 	fresh.consumed()
 	fresh.assertLanding(result, fixedOut, 2)
 }
+
+func TestGoalLandingCandidateOnlyMatchesPreparationWithoutEffects(t *testing.T) {
+	t.Parallel()
+	f, tip, projected := newCompositionFacts(t)
+	beforeRemote := f.remote
+	candidate := f.request(f.base, tip, "", "")
+	candidate.CandidateOnly = true
+	f.expectPending(tip, 3)
+	f.expect("close")
+	result, err := prepareLanding(candidate, f.repository())
+	if err != nil || result.Candidate != projected {
+		t.Fatalf("candidate = %+v, %v; want projected %s", result, err, projected)
+	}
+	f.consumed()
+	if f.remote != beforeRemote {
+		t.Fatal("a candidate-only composition pushed")
+	}
+	receiptPath := filepath.Join(t.TempDir(), "receipt.json")
+	f.writeReceipt(receiptPath, result.Candidate, "attempt-deep")
+	out := filepath.Join(t.TempDir(), "prepared")
+	f.expectSuccess(tip, 3)
+	prepared, err := prepareLanding(f.request(f.base, tip, out, receiptPath), f.repository())
+	if err != nil {
+		t.Fatalf("preparation refused the candidate-only tree's receipt: %v", err)
+	}
+	f.consumed()
+	if prepared.Landing == "" {
+		t.Fatalf("preparation = %+v", prepared)
+	}
+	for _, lost := range []bool{true} {
+		refused := candidate
+		refused.CheckClaim = func() error {
+			if lost {
+				return errors.New("claim no longer held")
+			}
+			return nil
+		}
+		if _, err := prepareLanding(refused, f.repository()); err == nil || !strings.Contains(err.Error(), "claim no longer held") {
+			t.Fatalf("candidate-only must keep the claim refusal: %v", err)
+		}
+	}
+	f.consumed()
+	unbound := candidate
+	unbound.ApprovedBy = "human:Nobody"
+	unbound.Out = filepath.Join(t.TempDir(), "unbound")
+	remoteBeforeRefusal := f.remote
+	f.expect("claim", "human")
+	_, err = prepareLanding(unbound, f.repository())
+	requireLandingRefusal(t, err, LandAuthorUnboundCode)
+	f.consumed()
+	if _, err := os.Stat(unbound.Out); !os.IsNotExist(err) || f.remote != remoteBeforeRefusal {
+		t.Fatalf("an unbound approver's candidate-only refusal left output or pushed: %v", err)
+	}
+}

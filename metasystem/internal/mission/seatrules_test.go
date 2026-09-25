@@ -17,7 +17,7 @@ func TestSeatRulesPresentInOrchestrationDoc(t *testing.T) {
 		{"S3 delegates fresh and bounded", "every delegate prompt starts with `Kind: design`, `build-read`, `critique`, or `other`", "`resumedAgentId` and `--follow-up` results are zero outside critique chains."},
 		{"S4 messages", "A `SendMessage` is at most 400 characters, covers one subject", "Check length and count per unit."},
 		{"S5 reads by path", "The main session never reads a tool result over 20,000 characters", "Results over 20,000 characters are zero."},
-		{"S6 first act", "Run `metasystem context resume` first when a handoff waits; otherwise read the `context-budget` line and run `goal next`", "Check the first tool calls."},
+		{"S6 first act", "Run `metasystem context resume` first when a handoff waits; otherwise read the `context-budget` line and run `metasystem goals --ready`", "Check the first tool calls."},
 		{"S7 handoff keeps lessons", "A handoff is recorded only after the seat's configured memory note holds this session's lessons, its reasoning in flight, and every declared delegate's output path. Claude defaults to its project memory directory; each other runtime configures `context.handoff.note-directory.<runtime>`.", "The note is a regular file in that directory, its modification time follows the session start and precedes the handoff record, and its digest changes when the write shares the session-start second with a previous handoff."},
 		{"S8 relayed provenance", "Every relayed number or rule names who said it and why.", "Each peer message carrying a number or rule names its source."},
 	}

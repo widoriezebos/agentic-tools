@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -177,7 +179,7 @@ func readDelegateNeverLaunched(outcome delegateOutcome) bool {
 	}
 }
 
-func readDelegate(binary, root, brief, goalID, commit, runtime, model string) (string, error) {
+func readDelegate(binary, root, brief, goalID, commit, runtime, model string, environment ...string) (string, error) {
 	if binary == "" {
 		return "", fmt.Errorf("delegate binary is unavailable")
 	}
@@ -190,7 +192,7 @@ func readDelegate(binary, root, brief, goalID, commit, runtime, model string) (s
 		args = append(args, "--model", model)
 	}
 	command := exec.Command(binary, args...)
-	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+root)
+	command.Env = append(append(os.Environ(), environment...), "METASYSTEM_DELEGATE_ROOT="+root)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()
@@ -212,6 +214,22 @@ func readDelegate(binary, root, brief, goalID, commit, runtime, model string) (s
 }
 
 func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencies) int {
+	result, code, err := goalBranchReadRun(args, dependencies)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return code
+	}
+	fmt.Printf("state=%s root-job=%s gate-run=%s", result.State, result.RootJob, result.GateRunID)
+	if result.AttestationCommit != "" {
+		fmt.Printf(" attestation=%s", result.AttestationCommit)
+	}
+	fmt.Println()
+	return 0
+}
+
+// goalBranchReadRun is the branch read owner with its typed result; the
+// exit code accompanies any error.
+func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (branch.BranchReadResult, int, error) {
 	flags := flag.NewFlagSet("goal branch read", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
@@ -221,14 +239,13 @@ func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencie
 	flags.Var(runtime, "runtime", "requested critic runtime (subject to roster authorization)")
 	flags.Var(model, "model", "requested critic model (subject to roster authorization)")
 	collect := flags.Bool("collect", false, "collect a closed critic root into an attestation")
+	selected := flags.String("selected-installation", "", "installation whose configured code-critic roster the critic dispatch resolves (a generated goal worktree's selected installation)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || *unit == "" {
-		fmt.Fprintln(os.Stderr, "goal branch read needs --goal and --unit")
-		return 2
+		return branch.BranchReadResult{}, 2, fmt.Errorf("goal branch read needs --goal and --unit")
 	}
 	endpoint, err := dependencies.Raw.endpoint(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return branch.BranchReadResult{}, 1, err
 	}
 	endpointTipReader := goalBranchEndpointTip
 	originTipReader := goalBranchOriginTip
@@ -243,21 +260,18 @@ func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencie
 	}
 	endpointTip, err := endpointTipReader(*root, endpoint)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return branch.BranchReadResult{}, 1, err
 	}
 	branchTip, present, err := originTipReader(*root, endpoint, *goalID)
 	if err != nil || !present {
 		if err == nil {
 			err = fmt.Errorf("origin has no goal/%s", *goalID)
 		}
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return branch.BranchReadResult{}, 1, err
 	}
 	commit, err := resolveCommit(*root, *unit)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return branch.BranchReadResult{}, 1, err
 	}
 	gate := dependencies.Gate
 	if gate == nil {
@@ -266,7 +280,11 @@ func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencie
 	delegate := dependencies.Delegate
 	if delegate == nil {
 		delegate = func(brief, goalID, commit, runtime, model string) (string, error) {
-			return readDelegate(dependencies.Binary, *root, brief, goalID, commit, runtime, model)
+			environment, err := criticDelegateEnvironment(*selected, *root, brief)
+			if err != nil {
+				return "", &branch.ReadNeverLaunchedError{Err: err}
+			}
+			return readDelegate(dependencies.Binary, *root, brief, goalID, commit, runtime, model, environment...)
 		}
 	}
 	var readRepository branch.BranchReadRepository
@@ -283,50 +301,46 @@ func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencie
 		BriefPath: brief.value, Runtime: runtime.value, Model: model.value,
 		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return branch.BranchReadResult{}, 1, err
 	}
-	fmt.Printf("state=%s root-job=%s gate-run=%s", result.State, result.RootJob, result.GateRunID)
-	if result.AttestationCommit != "" {
-		fmt.Printf(" attestation=%s", result.AttestationCommit)
-	}
-	fmt.Println()
-	return 0
+	return result, 0, nil
 }
 
 func runGoalBranchLandPush(args []string) int {
+	result, endpoint, code, err := goalBranchLandPushRun(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return code
+	}
+	fmt.Printf("landed %s endpoint=%s branch-deleted=%s\n", result.Landing, endpoint, result.Branch)
+	return 0
+}
+
+// goalBranchLandPushRun pushes one prepared landing and sweeps a goal's last
+// landing, returning the pushed landing and the endpoint branch it moved.
+func goalBranchLandPushRun(args []string) (branch.PreparedLanding, string, int, error) {
 	flags := flag.NewFlagSet("goal branch land-push", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	prepared := flags.String("prepared", "", "land-prep artifact directory")
 	if flags.Parse(args) != nil || *goalID == "" || *prepared == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "goal branch land-push needs --goal and --prepared")
-		return 2
+		return branch.PreparedLanding{}, "", 2, fmt.Errorf("goal branch land-push needs --goal and --prepared")
 	}
 	endpoint, err := goalBranchEndpoint(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return branch.PreparedLanding{}, "", 1, err
 	}
 	result, err := branch.LandPush(branch.LandPushRequest{Repo: *root, Remote: endpoint.Remote, EndpointRef: endpoint.Branch,
 		GoalID: *goalID, Prepared: *prepared, CheckClaim: goalBranchClaimCheck(*root, *goalID, endpoint)})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return branch.PreparedLanding{}, "", 1, err
 	}
 	if branch.IsLastLanding(*root, result.Landing, *goalID) {
-		transport := ""
-		if _, remoteErr := goalBranchGit(*root, "remote", "get-url", "transport"); remoteErr == nil {
-			transport = "transport"
-		}
-		if _, err := branch.Sweep(branch.SweepRequest{Repo: *root, Remote: endpoint.Remote, Transport: transport,
-			EndpointTip: result.Landing, GoalID: *goalID, CheckClaim: goalBranchClaimCheck(*root, *goalID, endpoint)}); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+		if err := goalBranchSweepLandedAt(*root, *goalID, result.Landing, endpoint); err != nil {
+			return result, endpoint.Branch, 1, err
 		}
 	}
-	fmt.Printf("landed %s endpoint=%s branch-deleted=%s\n", result.Landing, endpoint.Branch, result.Branch)
-	return 0
+	return result, endpoint.Branch, 0, nil
 }
 
 func runGoalBranchSweep(args []string) int {
@@ -502,6 +516,9 @@ func runGoalBranchVerify(args []string) int {
 }
 
 type goalBranchLandPrepDependencies struct {
+	// CandidateOnly asks the owner for the landing candidate a receipt must
+	// prove; --out and --test-receipt are then not read.
+	CandidateOnly   bool
 	Prepare         func(branch.LandRequest) (branch.LandResult, error)
 	LoadContract    func(string) (testpolicy.Contract, error)
 	AdmitDiagnostic func() error
@@ -521,6 +538,32 @@ func runGoalBranchLandPrep(args []string) int {
 }
 
 func runGoalBranchLandPrepWith(args []string, dependencies goalBranchLandPrepDependencies) int {
+	outcome, code, err := goalBranchLandPrepRun(args, dependencies)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return code
+	}
+	result := outcome.Result
+	if outcome.Classification != "" {
+		fmt.Printf("classification=%s landing=%s candidate=%s endpoint=%s attempt=%s proof=%d\n",
+			outcome.Classification, result.Landing, result.Candidate, result.Endpoint, result.Attempt, result.ProofNumber)
+		return 0
+	}
+	fmt.Printf("landing=%s candidate=%s endpoint=%s attempt=%s proof=%d\n",
+		result.Landing, result.Candidate, result.Endpoint, result.Attempt, result.ProofNumber)
+	return 0
+}
+
+// goalBranchLandPrepOutcome is one land-prep: the prepared landing and, for a
+// red receipt, the owner's classification of that red.
+type goalBranchLandPrepOutcome struct {
+	Result         branch.LandResult
+	Classification string
+}
+
+// goalBranchLandPrepRun prepares one hand landing through its owner and
+// returns the typed outcome; the exit code accompanies any error.
+func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDependencies) (goalBranchLandPrepOutcome, int, error) {
 	flags := flag.NewFlagSet("goal branch land-prep", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
@@ -528,47 +571,39 @@ func runGoalBranchLandPrepWith(args []string, dependencies goalBranchLandPrepDep
 	receipt := flags.String("test-receipt", "", "schema-3 landing test receipt")
 	last := flags.Bool("last", false, "the holder's word that this is the goal's complete unit set")
 	through := flags.String("through", "", "last unit commit of a human-approved partial prefix")
-	if flags.Parse(args) != nil || *goalID == "" || *out == "" || *receipt == "" || *last == (*through != "") || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "goal branch land-prep needs --goal, --out, --test-receipt, and exactly one of --last or --through")
-		return 2
+	if flags.Parse(args) != nil || *goalID == "" || !dependencies.CandidateOnly && (*out == "" || *receipt == "") || *last == (*through != "") || flags.NArg() != 0 {
+		return goalBranchLandPrepOutcome{}, 2, fmt.Errorf("goal branch land-prep needs --goal, --out, --test-receipt, and exactly one of --last or --through")
 	}
 	endpoint, err := goalBranchEndpoint(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return goalBranchLandPrepOutcome{}, 1, err
 	}
 	check := goalBranchClaimCheck(*root, *goalID, endpoint)
 	if err := branch.CheckHolder(check); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return goalBranchLandPrepOutcome{}, 1, err
 	}
 	endpointTip, err := goalBranchEndpointTip(*root, endpoint)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return goalBranchLandPrepOutcome{}, 1, err
 	}
 	branchTip, present, err := goalBranchOriginTip(*root, endpoint, *goalID)
 	if err != nil || !present {
 		if err == nil {
 			err = fmt.Errorf("origin has no goal/%s", *goalID)
 		}
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return goalBranchLandPrepOutcome{}, 1, err
 	}
 	projection, err := goal.Project(endpoint, true, time.Now().UTC())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return goalBranchLandPrepOutcome{}, 1, err
 	}
 	file := projection.Tree.Live[*goalID]
 	if file == nil || file.Approved == nil {
-		fmt.Fprintf(os.Stderr, "goal %s has no live approval\n", *goalID)
-		return 1
+		return goalBranchLandPrepOutcome{}, 1, fmt.Errorf("goal %s has no live approval", *goalID)
 	}
 	seat, err := goal.ResolveMachine(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return goalBranchLandPrepOutcome{}, 1, err
 	}
 	if dependencies.Prepare == nil {
 		dependencies.Prepare = branch.PrepareLanding
@@ -577,30 +612,26 @@ func runGoalBranchLandPrepWith(args []string, dependencies goalBranchLandPrepDep
 		Repo: *root, Remote: endpoint.Remote, EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID,
 		Out: *out, TestReceipt: *receipt, Last: *last, Through: *through, LandingReady: file.Landing != nil,
 		GoalPage: string(goal.RenderFile(file)), ApprovedBy: file.Approved.By, Seat: seat, CheckClaim: check,
+		CandidateOnly: dependencies.CandidateOnly,
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return goalBranchLandPrepOutcome{}, 1, err
 	}
 	if len(result.FailingGroups) != 0 {
 		if dependencies.LoadContract == nil {
-			fmt.Fprintln(os.Stderr, "landing red classification has no testing contract reader")
-			return 1
+			return goalBranchLandPrepOutcome{Result: result}, 1, fmt.Errorf("landing red classification has no testing contract reader")
 		}
 		contract, err := dependencies.LoadContract(*root)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return goalBranchLandPrepOutcome{Result: result}, 1, err
 		}
 		changeSet, err := branch.LandingChangeSet(*root, endpointTip, branchTip, *goalID, result.LastUnit)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return goalBranchLandPrepOutcome{Result: result}, 1, err
 		}
 		landingTree, err := goalBranchGit(*root, "rev-parse", "--verify", result.Landing+"^{tree}")
 		if err != nil || landingTree != result.Candidate {
-			fmt.Fprintf(os.Stderr, "local landing commit %s does not have candidate tree %s: %v\n", result.Landing, result.Candidate, err)
-			return 1
+			return goalBranchLandPrepOutcome{Result: result}, 1, fmt.Errorf("local landing commit %s does not have candidate tree %s: %v", result.Landing, result.Candidate, err)
 		}
 		admit := dependencies.AdmitDiagnostic
 		if admit == nil {
@@ -614,16 +645,11 @@ func runGoalBranchLandPrepWith(args []string, dependencies goalBranchLandPrepDep
 			AdmitDiagnostic: admit, Runner: dependencies.Runner, TrunkRed: dependencies.TrunkRed, Progress: dependencies.Progress,
 		})
 		if redErr != nil {
-			fmt.Fprintln(os.Stderr, redErr)
-			return 1
+			return goalBranchLandPrepOutcome{Result: result}, 1, redErr
 		}
-		fmt.Printf("classification=%s landing=%s candidate=%s endpoint=%s attempt=%s proof=%d\n",
-			redResult.Classification, result.Landing, result.Candidate, result.Endpoint, result.Attempt, result.ProofNumber)
-		return 0
+		return goalBranchLandPrepOutcome{Result: result, Classification: redResult.Classification}, 0, nil
 	}
-	fmt.Printf("landing=%s candidate=%s endpoint=%s attempt=%s proof=%d\n",
-		result.Landing, result.Candidate, result.Endpoint, result.Attempt, result.ProofNumber)
-	return 0
+	return goalBranchLandPrepOutcome{Result: result}, 0, nil
 }
 
 func runGoalBranchStatus(args []string) int { return runGoalBranchStatusWithRaw(args, nil) }
@@ -1092,4 +1118,91 @@ func runGoalBranchPush(args []string) int {
 	}
 	fmt.Printf("%s %s\n", result.State, result.Tip)
 	return 0
+}
+
+// goalBranchSweepLanded sweeps the merged goal branch after its last landing
+// was pushed: the sweep land-push runs, repeatable after it failed.
+func goalBranchSweepLanded(root, goalID, landing string) error {
+	endpoint, err := goalBranchEndpoint(root)
+	if err != nil {
+		return err
+	}
+	if !branch.IsLastLanding(root, landing, goalID) {
+		return nil
+	}
+	return goalBranchSweepLandedAt(root, goalID, landing, endpoint)
+}
+
+func goalBranchSweepLandedAt(root, goalID, landing string, endpoint goal.Endpoint) error {
+	transport := ""
+	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
+		transport = "transport"
+	}
+	_, err := branch.Sweep(branch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: transport,
+		EndpointTip: landing, GoalID: goalID, CheckClaim: goalBranchClaimCheck(root, goalID, endpoint)})
+	return err
+}
+
+// goalBranchPublishRead publishes a collected read's attestation through the
+// goal-branch push owner and returns the remote tip that now contains it.
+func goalBranchPublishRead(root, goalID, unit string) (branch.PublishReadResult, error) {
+	endpoint, err := goalBranchEndpoint(root)
+	if err != nil {
+		return branch.PublishReadResult{}, err
+	}
+	endpointTip, err := goalBranchEndpointTip(root, endpoint)
+	if err != nil {
+		return branch.PublishReadResult{}, err
+	}
+	commit, err := goalBranchGit(root, "rev-parse", "--verify", unit+"^{commit}")
+	if err != nil {
+		return branch.PublishReadResult{}, err
+	}
+	return branch.PublishCollectedRead(branch.PublishReadRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: endpointTip,
+		GoalID: goalID, UnitCommit: commit, CheckClaim: goalBranchClaimCheck(root, goalID, endpoint)})
+}
+
+// criticDelegateEnvironment carries the selected installation's configured
+// code-critic roster to a critic dispatched from another installation (a
+// generated goal worktree, whose tracked roster may be a template and which
+// never has the selected checkout's metasystem.conf.local). The roster is
+// resolved by the roster owner in the selected installation for the working
+// mode dispatch reads from the same frozen brief, and is passed as the
+// configuration owner's per-key process settings. Those outrank every file
+// entry, mode-scoped or not, so dispatch resolving that mode in the worktree
+// obtains exactly this pair as its configured default rather than an
+// override: an explicit --runtime/--model still escalates by the unchanged
+// roster policy. The selected installation's maximal-model mapping for that
+// runtime is carried as its exact value (empty when it has none), so the
+// worktree's hazard check admits or refuses the selected model by the
+// selected installation's authorization. An unreadable brief mode or a
+// selected roster that does not resolve is refused before any dispatch.
+func criticDelegateEnvironment(selected, root, brief string) ([]string, error) {
+	if selected == "" || filepath.Clean(selected) == filepath.Clean(root) {
+		return nil, nil
+	}
+	mode, err := dispatchcore.BriefModeOnly(brief)
+	if err != nil {
+		return nil, fmt.Errorf("the critic brief %s has no readable working mode: %w", brief, err)
+	}
+	conf := filepath.Join(selected, "metasystem.conf")
+	resolution, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{ConfPath: conf, Role: "code-critic", Mode: mode})
+	if err != nil {
+		return nil, fmt.Errorf("the selected installation's code-critic roster for mode %s does not resolve: %w", mode, err)
+	}
+	runtimes, _, err := config.Get(config.GetParams{Key: "metasystem.runtimes", ConfPath: conf})
+	if err != nil {
+		return nil, fmt.Errorf("the selected installation's metasystem.runtimes does not resolve: %w", err)
+	}
+	maximalKey := "runtime." + resolution.RosterRuntime + ".maximal-models"
+	maximal, _, err := config.Get(config.GetParams{Key: maximalKey, ConfPath: conf, Default: "", DefaultSet: true})
+	if err != nil {
+		return nil, fmt.Errorf("the selected installation's %s does not resolve: %w", maximalKey, err)
+	}
+	return []string{
+		config.EnvName("metasystem.runtimes") + "=" + runtimes,
+		config.EnvName("role.code-critic.runtime") + "=" + resolution.RosterRuntime,
+		config.EnvName("role.code-critic.model."+resolution.RosterRuntime) + "=" + resolution.RosterModel,
+		config.EnvName(maximalKey) + "=" + maximal,
+	}, nil
 }

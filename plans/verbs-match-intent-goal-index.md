@@ -7,7 +7,7 @@ satisfied by current code. Broad substring hits such as “verbatim” are exclu
 
 | Goal | Ledger state | Recorded intent (abridged) |
 | --- | --- | --- |
-| verbs-match-intent | queued; implementation authorized in this conversation | Full intuitive, powerful and forgiving command redesign around human/agent intent, with complete workflows and existing transaction owners. Live intent and next step refreshed 25 September. |
+| verbs-match-intent | queued; implementation authorized in this conversation | Full intuitive, powerful and forgiving command redesign around human/agent intent, with complete workflows and existing transaction owners. Live intent and next step refreshed 25 September. Complete implementation is reviewed, verified and integrated locally. All final correction checks passed; six baseline coverage-policy failures remain disclosed. The goal stays formally queued; no approval or conclusion was fabricated. See the design and verification record. |
 | critique-launch-verb-enforces-the-round-cap | queued | The critique launch verb enforces the two-round cap |
 | hp-enrollment-before-migration | queued | A checkout can enroll a terminal before its backlog is migrated, and the fleet-cutoff publication waits until the backlog exists, so migrate can take the enrolled grade and the bootstrap needs no exception |
 | hp-resume-takes-its-budget-from-the-ledger | queued | goal resume reads the standing approved budget from the ledger instead of demanding the five-member tuple retyped on the command line; a human who wants a different budget uses set-budget, and a mismatch refusal prints the standing values |

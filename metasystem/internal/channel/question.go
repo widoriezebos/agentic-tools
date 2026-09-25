@@ -277,11 +277,18 @@ func (contextBackground) Deadline() (time.Time, bool) { return time.Time{}, fals
 func (contextBackground) Done() <-chan struct{}       { return nil }
 func (contextBackground) Err() error                  { return nil }
 func (contextBackground) Value(any) any               { return nil }
-func renderQuestion(q Question) string {
-	tail := "Reply in this thread with your answer followed by your code"
+
+// ReplyInstructions is how the human answers q: in its authenticated
+// channel thread, never through a local command.
+func ReplyInstructions(q Question) string {
 	if q.Wants != "" {
-		tail = "Reply in this thread with this token verbatim, followed by your code:\n" + q.Wants
+		return "Reply in this thread with this token verbatim, followed by your code:\n" + q.Wants
 	}
+	return "Reply in this thread with your answer followed by your code"
+}
+
+func renderQuestion(q Question) string {
+	tail := ReplyInstructions(q)
 
 	full := renderQuestionParts(q, q.Facts, optionConsequences(q.Options), q.Recommendation, "", tail)
 	if len([]rune(full)) <= questionMessageRuneLimit {

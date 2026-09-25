@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -40,6 +41,15 @@ type UnitRunRecord struct {
 	PlanDirectory string      `json:"planDirectory"`
 	State         string      `json:"state"`
 	Rounds        []UnitRound `json:"rounds"`
+	// BuildModel and BuildEffort are the unit's own choice over the
+	// configured build lane; MaxRounds is its approved ceiling on rounds.
+	// All three are fixed when the run starts and kept for every round.
+	BuildModel  string `json:"buildModel,omitempty"`
+	BuildEffort string `json:"buildEffort,omitempty"`
+	MaxRounds   int    `json:"maxRounds,omitempty"`
+	// Subjects binds completed rounds to their committed goal-branch
+	// subjects; ReviewSubject is its only writer.
+	Subjects []UnitSubject `json:"subjects,omitempty"`
 }
 
 type UnitRound struct {
@@ -99,6 +109,15 @@ type UnitRunner struct {
 	Git        GitRunner
 	Root       string
 	AfterWrite func(UnitRunRecord) error
+	// BeforeModelLaunch, when set, is asked before each new build or read
+	// launch of any run it advances (new, resumed, follow-up or waited);
+	// its refusal starts nothing.
+	BeforeModelLaunch func(UnitRunRecord, StartSpec) error
+	// named is set only on the per-call copy AdvanceNamed hands to Advance.
+	named *namedBinding
+	// options is set only on the per-call copy AdvancePrepared makes; a new
+	// run records it.
+	options UnitOptions
 }
 
 func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
@@ -143,10 +162,16 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	if err != nil {
 		return UnitResult{}, err
 	}
-	defer lock.Close()
+	defer releaseUnitLock(lock)
 	if request.Resume != "" {
 		record, err = runner.read(record.ID)
 		if err != nil {
+			return UnitResult{}, err
+		}
+	}
+	if runner.named != nil {
+		runner.named.plan = plan
+		if err := runner.named.verify(runner); err != nil {
 			return UnitResult{}, err
 		}
 	}
@@ -156,6 +181,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		}
 	}
 	if request.FollowUp != "" {
+		if record.MaxRounds > 0 && len(record.Rounds) >= record.MaxRounds {
+			return UnitResult{}, fmt.Errorf("UNIT_ROUND_LIMIT unit=%s goal=%s run=%s rounds=%d limit=%d: the approved review-round limit is reached; a further round needs a larger approved box", record.Unit, record.Goal, record.ID, len(record.Rounds), record.MaxRounds)
+		}
 		if err := admitFollowUp(record, request.FollowUp); err != nil {
 			return UnitResult{}, err
 		}
@@ -234,6 +262,13 @@ func (runner *UnitRunner) newRun(plan UnitPlan) (UnitRunRecord, error) {
 	if err != nil {
 		return UnitRunRecord{}, err
 	}
+	return runner.newRunWithID(plan, id, filepath.Dir(plan.Path))
+}
+
+// newRunWithID writes round one of a run whose id was chosen before the
+// record exists, so a named unit can reserve the id first and a restart
+// after an interruption writes the same run again.
+func (runner *UnitRunner) newRunWithID(plan UnitPlan, id, planDirectory string) (UnitRunRecord, error) {
 	dir := runner.runDir(id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return UnitRunRecord{}, err
@@ -246,8 +281,9 @@ func (runner *UnitRunner) newRun(plan UnitPlan) (UnitRunRecord, error) {
 	if err != nil {
 		return UnitRunRecord{}, err
 	}
-	record := UnitRunRecord{ID: id, Unit: plan.Unit, Goal: plan.Goal, Worktree: plan.Worktree, Base: plan.Base, Plan: copyPath, PlanDirectory: filepath.Dir(plan.Path), State: "running"}
-	round := UnitRound{Number: 1, Directory: filepath.Join(dir, "round-1"), BuildModel: settings.BuildModel, ReadModel: choose(plan.Read.Model, settings.ReadModel)}
+	record := UnitRunRecord{ID: id, Unit: plan.Unit, Goal: plan.Goal, Worktree: plan.Worktree, Base: plan.Base, Plan: copyPath, PlanDirectory: planDirectory, State: "running",
+		BuildModel: runner.options.BuildModel, BuildEffort: runner.options.BuildEffort, MaxRounds: runner.options.MaxRounds}
+	round := UnitRound{Number: 1, Directory: filepath.Join(dir, "round-1"), BuildModel: choose(record.BuildModel, settings.BuildModel), ReadModel: choose(plan.Read.Model, settings.ReadModel)}
 	if err := os.MkdirAll(round.Directory, 0o700); err != nil {
 		return UnitRunRecord{}, err
 	}
@@ -269,7 +305,7 @@ func (runner *UnitRunner) addRound(record *UnitRunRecord, plan UnitPlan, followU
 	settings, _ := runner.Manager.resolvedSettings()
 	record.State = "running"
 	record.Rounds = append(record.Rounds, UnitRound{Number: number, Directory: directory, FollowUp: target,
-		BuildModel: settings.BuildModel, ReadModel: choose(plan.Read.Model, settings.ReadModel), Steps: []UnitStep{{Name: "build", State: StepPending, Model: settings.BuildModel}}})
+		BuildModel: choose(record.BuildModel, settings.BuildModel), ReadModel: choose(plan.Read.Model, settings.ReadModel), Steps: []UnitStep{{Name: "build", State: StepPending, Model: choose(record.BuildModel, settings.BuildModel)}}})
 	return runner.save(*record)
 }
 
@@ -287,7 +323,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
 	for index := 0; index < buildCount; index++ {
 		step := &round.Steps[index]
-		buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief,
+		buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
 			Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: step.Units}
 		if capped, stepErr := runner.advanceStep(record, round, index, buildSpec, deadline); stepErr != nil || capped {
 			return runner.result(*record, round, step, capped), stepErr
@@ -481,6 +517,9 @@ func (runner *UnitRunner) ensureBuildSteps(record *UnitRunRecord, round *UnitRou
 }
 
 func (runner *UnitRunner) runReadSteps(record *UnitRunRecord, round *UnitRound, plan UnitPlan, inputs []string, diffPath string, readStart int, deadline time.Time) (UnitResult, bool, error) {
+	if err := prepareReadOutputDirectories(plan.Read.Outputs); err != nil {
+		return UnitResult{}, false, err
+	}
 	for index := readStart; index < len(round.Steps); index++ {
 		step := &round.Steps[index]
 		if !strings.HasPrefix(step.Name, "read") || step.State != StepPending && step.State != StepStarting {
@@ -635,6 +674,16 @@ func (runner *UnitRunner) startStep(record *UnitRunRecord, round *UnitRound, ind
 	}
 	launchRecord, err := runner.Manager.Store.Read(step.LaunchID)
 	if errors.Is(err, fs.ErrNotExist) {
+		if runner.BeforeModelLaunch != nil && (spec.Kind == "build" || spec.Kind == "read") {
+			if err := runner.BeforeModelLaunch(*record, spec); err != nil {
+				return Record{}, fmt.Errorf("UNIT_LAUNCH_UNAUTHORIZED unit=%s goal=%s run=%s: %w", record.Unit, record.Goal, record.ID, err)
+			}
+		}
+		if runner.named != nil {
+			if err := runner.named.verify(runner); err != nil {
+				return Record{}, err
+			}
+		}
 		spec.ID = step.LaunchID
 		launchRecord, err = runner.Manager.Start(spec)
 	}
@@ -706,45 +755,51 @@ func (runner *UnitRunner) result(record UnitRunRecord, round *UnitRound, step *U
 }
 
 func (runner *UnitRunner) writeDiff(worktree, base, target string) error {
+	diff, err := runner.WorktreeDiff(worktree, base)
+	if err != nil {
+		return err
+	}
+	_, err = atomicfile.WriteText(target, string(diff), filepath.Dir(filepath.Dir(target)))
+	return err
+}
+
+// WorktreeDiff is the worktree's cumulative binary diff against base,
+// computed through a disposable index exactly as a round's worktree.diff.
+func (runner *UnitRunner) WorktreeDiff(worktree, base string) ([]byte, error) {
 	git := runner.Git
 	if git == nil {
 		git = OSGitRunner{}
 	}
 	temporary, err := os.MkdirTemp("", "metasystem-unit-diff.")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer os.RemoveAll(temporary)
 	indexPathData, err := git.Run(worktree, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	objectsData, err := git.Run(worktree, nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	index := filepath.Join(temporary, "index")
 	if data, readErr := os.ReadFile(strings.TrimSpace(string(indexPathData))); readErr == nil {
 		if err := os.WriteFile(index, data, 0o600); err != nil {
-			return err
+			return nil, err
 		}
 	} else {
-		return readErr
+		return nil, readErr
 	}
 	objectDir := filepath.Join(temporary, "objects")
 	if err := os.MkdirAll(objectDir, 0o700); err != nil {
-		return err
+		return nil, err
 	}
 	environment := []string{"GIT_INDEX_FILE=" + index, "GIT_OBJECT_DIRECTORY=" + objectDir, "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + strings.TrimSpace(string(objectsData))}
 	if _, err := git.Run(worktree, environment, "add", "-A", "--sparse", "--", "."); err != nil {
-		return err
+		return nil, err
 	}
-	diff, err := git.Run(worktree, environment, "diff", "--cached", "--binary", base, "--", ".")
-	if err != nil {
-		return err
-	}
-	_, err = atomicfile.WriteText(target, string(diff), filepath.Dir(filepath.Dir(target)))
-	return err
+	return git.Run(worktree, environment, "diff", "--cached", "--binary", base, "--", ".")
 }
 
 type repositorySnapshot struct {
@@ -862,7 +917,9 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	if _, err := git.Run(root, environment, "add", "-A", "--sparse", "--", "."); err != nil {
 		return repositorySnapshot{}, err
 	}
-	tree, err := git.Run(root, environment, "diff", "--cached", "--raw", "HEAD", "--", ".")
+	// Full object ids and NUL-delimited exact path bytes: the retained
+	// result names content exactly, whatever the path's characters.
+	tree, err := git.Run(root, environment, "diff", "--cached", "--raw", "-z", "--no-abbrev", "HEAD", "--", ".")
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
@@ -927,6 +984,10 @@ func (runner *UnitRunner) save(record UnitRunRecord) error {
 	}
 	return nil
 }
+
+// Status reads one unit run's record without advancing it.
+func (runner *UnitRunner) Status(id string) (UnitRunRecord, error) { return runner.read(id) }
+
 func (runner *UnitRunner) read(id string) (UnitRunRecord, error) {
 	if !idPattern.MatchString(id) {
 		return UnitRunRecord{}, fmt.Errorf("invalid unit run id %q", id)
@@ -949,13 +1010,57 @@ func (runner *UnitRunner) lock(id string) (*os.File, error) {
 	}
 	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		file.Close()
+		if !lockWouldBlock(err) {
+			return nil, fmt.Errorf("UNIT_LOCK_FAILED run=%s: %w", id, err)
+		}
 		return nil, fmt.Errorf("UNIT_RUN_BUSY")
 	}
 	return file, nil
+}
+
+// lockWouldBlock is the one flock refusal that means another holder has
+// the lock; any other error is reported as itself.
+func lockWouldBlock(err error) bool {
+	return errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)
+}
+
+// releaseUnitLock ends a unit's named or run lock explicitly, then closes
+// its descriptor. Closing alone ends the flock only when no duplicate of the
+// descriptor remains, and a child forked concurrently holds one until it
+// execs, so the next caller would be refused as busy after this one returned.
+func releaseUnitLock(file *os.File) {
+	_ = unix.Flock(int(file.Fd()), unix.LOCK_UN)
+	_ = file.Close()
 }
 func choose(value, fallback string) string {
 	if value != "" {
 		return value
 	}
 	return fallback
+}
+
+// prepareReadOutputDirectories recreates a declared read output's missing
+// directory before a read starts, as a private directory of this user. A
+// temporary directory may be cleaned between a run's rounds; an existing
+// directory is left as it is.
+func prepareReadOutputDirectories(outputs []string) error {
+	for _, output := range outputs {
+		directory := filepath.Dir(output)
+		if _, err := os.Lstat(directory); err == nil {
+			continue
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: %w", directory, err)
+		}
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: %w", directory, err)
+		}
+		info, err := os.Lstat(directory)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: not a private directory", directory)
+		}
+		if owner, ok := info.Sys().(*syscall.Stat_t); !ok || int(owner.Uid) != os.Getuid() || info.Mode().Perm()&0o077 != 0 {
+			return fmt.Errorf("UNIT_READ_OUTPUT_UNSAFE directory=%s: not a private directory of this user", directory)
+		}
+	}
+	return nil
 }

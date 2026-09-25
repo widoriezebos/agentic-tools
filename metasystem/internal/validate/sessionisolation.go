@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,9 @@ import (
 // the two sessions cannot share runtime state through a stray symlink.
 // It returns the new checkout's harness root, refusing when both
 // sessions would resolve one metasystem artifacts root.
+// isolationStagingSuffix names the staging entry of one copy in progress.
+const isolationStagingSuffix = ".metasystem-isolation-staging"
+
 func SessionIsolation(sourceRoot, destinationRoot, manifestPath, harnessRoot string) (string, error) {
 	source := resolvePath(sourceRoot)
 	destination := resolvePath(destinationRoot)
@@ -41,16 +45,38 @@ func SessionIsolation(sourceRoot, destinationRoot, manifestPath, harnessRoot str
 		if err != nil {
 			continue // nothing to copy
 		}
-		if _, err := os.Lstat(to); err == nil {
-			continue // never overwrite what the new worktree already has
+		// A copy is staged beside its destination and renamed into place,
+		// so an interrupted copy never leaves a partial destination; the
+		// staging entry of an interrupted earlier copy is this owner's own
+		// and is replaced.
+		staging := to + isolationStagingSuffix
+		if err := os.RemoveAll(staging); err != nil {
+			return "", err
+		}
+		if existing, err := os.Lstat(to); err == nil {
+			// Never overwrite what the new worktree already has. A file
+			// that is a strict prefix of its source is the signature of a
+			// copy interrupted before copies were staged: it is not
+			// silently kept as complete, nor overwritten.
+			if !info.IsDir() && existing.Mode().IsRegular() && existing.Size() < info.Size() {
+				have, haveErr := os.ReadFile(to)
+				want, wantErr := os.ReadFile(from)
+				if haveErr == nil && wantErr == nil && bytes.HasPrefix(want, have) {
+					return "", fmt.Errorf("isolation refused: %s looks like an interrupted copy of %s (a %d-byte prefix of %d bytes); remove %s if it is not your own edit, then repeat the command", to, from, len(have), len(want), to)
+				}
+			}
+			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
 			return "", err
 		}
 		if info.IsDir() {
-			err = copyTree(from, to)
+			err = copyTree(from, staging)
 		} else {
-			err = copyFile(from, to)
+			err = copyFile(from, staging)
+		}
+		if err == nil {
+			err = os.Rename(staging, to)
 		}
 		if err != nil {
 			return "", err

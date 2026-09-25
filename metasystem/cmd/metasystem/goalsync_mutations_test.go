@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -466,6 +467,78 @@ func TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch(t *testing.T
 			_, rendered := fixture.acceptedGoal()
 			if string(rendered) != string(before) || fixture.localCalls != 1 || fixture.endpointCalls != 1 || fixture.originCalls != 0 {
 				t.Fatalf("unreadable remote changed accepted state or raw reads: %d/%d/%d", fixture.localCalls, fixture.endpointCalls, fixture.originCalls)
+			}
+		})
+	}
+}
+
+func TestDoneAcceptsFixtureHumanAuthorityOnlyOnItsFakeRoot(t *testing.T) {
+	t.Parallel()
+	parsed, err := parseSyncFlagValues("done", []string{"--id", "standing-validation", "--by", "Wido", "--fixture-human-authority"})
+	if err != nil || !parsed.fixtureHumanAuthority || parsed.by != "Wido" {
+		t.Fatalf("the done parser did not carry the fixture proof: flags=%+v err=%v", parsed, err)
+	}
+	for _, test := range []struct {
+		name string
+		conf string
+	}{
+		{name: "exact fake root", conf: "metasystem.runtimes=fake\n"},
+		{name: "real root", conf: "metasystem.runtimes=real\n"},
+		{name: "root without a runtime choice"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newParkArcCommandFixture(t)
+			root := fixture.root()
+			fixture.amend(t, func(file *goal.GoalFile) {
+				file.Origin = goal.OriginHuman
+			})
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(test.conf+"metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, before := fixture.acceptedGoal()
+			accepted := fixture.repo.accepted
+			trySync := func(name string, args []string) (int, bool) {
+				return trySyncMutationWithCompletion(name, args, fixture.commandNow, fixture.dependencies(), fixture.parkBranchCheck, completionInputs{
+					localTip: func(repo, ref string) (string, bool, error) {
+						if repo != root || ref != "refs/heads/goal/standing-validation" {
+							t.Fatalf("local tip read: repo=%q ref=%q", repo, ref)
+						}
+						return "", false, nil
+					},
+					endpointTip: func(string, goal.Endpoint) (string, error) {
+						t.Fatal("branchless done fetched the endpoint")
+						return "", nil
+					},
+					reporter: func(metrics.Options) (metrics.Result, error) { return metrics.Result{}, nil },
+				})
+			}
+			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+				return runGoalDoneWithSync([]string{
+					"--root", root, "--id", "standing-validation", "--by", "Wido", "--lineage", "m1",
+					"--fixture-human-authority", "--conclude", "Concluded by the fixture human.",
+				}, trySync)
+			})
+			if test.conf != "metasystem.runtimes=fake\n" {
+				if code != 1 || stdout != "" || !strings.Contains(stderr, "goal done could not prove fixture human authority") ||
+					!strings.Contains(stderr, "not authorized for this root") {
+					t.Fatalf("fixture proof outside its fake root was not refused: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+				}
+				if _, after := fixture.acceptedGoal(); string(after) != string(before) || fixture.repo.accepted != accepted ||
+					fixture.repo.captures != 0 || fixture.repo.publications != 0 {
+					t.Fatalf("refused fixture done mutated the ledger: accepted %s->%s captures=%d publications=%d",
+						accepted, fixture.repo.accepted, fixture.repo.captures, fixture.repo.publications)
+				}
+				return
+			}
+			if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+				t.Fatalf("fixture human done did not carry its proof through the command edge: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			files := fixture.repo.commit(fixture.repo.accepted).files
+			archived, problems := goal.ParseFile(files["records/goals/standing-validation.md"])
+			if _, live := files["plans/goals/standing-validation.md"]; live || archived == nil || len(problems) != 0 ||
+				archived.State != goal.StateDone || fixture.repo.publications != 1 {
+				t.Fatalf("fixture human done state: live=%v archived=%+v problems=%v publications=%d", live, archived, problems, fixture.repo.publications)
 			}
 		})
 	}

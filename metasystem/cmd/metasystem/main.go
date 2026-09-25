@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -779,17 +780,26 @@ func dispatchWithRepositoryTop(args []string, repositoryTop func(string) (string
 
 func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 0 {
-		writeUsage(stderr, registered)
+		writeIntentRootHelp(stderr)
 		return 2
 	}
 	if args[0] == "help" {
 		if len(args) == 1 {
-			writeUsage(stdout, registered)
+			writeIntentRootHelp(stdout)
 			return 0
 		}
 		if len(args) != 2 {
 			fmt.Fprintln(stderr, "usage: metasystem help [FAMILY]")
+			fmt.Fprintln(stderr, "       metasystem help human|agent|internal|COMMAND")
 			return 2
+		}
+		if slices.Contains(intentHelpTopics, args[1]) {
+			writeIntentTopicHelp(stdout, args[1], registered)
+			return 0
+		}
+		if command, ok := findIntentCommand(args[1]); ok {
+			writeIntentHelpWithFamily(stdout, command, registered)
+			return 0
 		}
 		for _, fam := range registered {
 			if fam.name == args[1] {
@@ -798,6 +808,7 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 			}
 		}
 		fmt.Fprintf(stderr, "metasystem help: unknown family %q\n", args[1])
+		fmt.Fprintln(stderr, "metasystem help lists the commands; metasystem help internal lists every family")
 		return 2
 	}
 	if args[0] == "--help" || args[0] == "-h" {
@@ -805,9 +816,30 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 			fmt.Fprintln(stderr, "usage: metasystem help [FAMILY]")
 			return 2
 		}
-		writeUsage(stdout, registered)
+		writeIntentRootHelp(stdout)
 		return 0
 	}
+	if args[0] == "internal" {
+		// A pure alias: the technical catalogue exactly as its own calls.
+		if len(args) == 1 || args[1] == "--help" || args[1] == "-h" {
+			writeIntentTopicHelp(stdout, "internal", registered)
+			return 0
+		}
+		return dispatchInternal(args[1:], stdout, stderr, registered, repositoryTop)
+	}
+	if command, ok := findIntentCommand(args[0]); ok && len(args) == 2 && slices.Contains([]string{"--help", "-h"}, args[1]) {
+		writeIntentHelpWithFamily(stdout, command, registered)
+		return 0
+	}
+	if command, ok := findIntentCommand(args[0]); ok && (command.legacy == nil || !command.legacy(args[1:])) && !intentYieldsToLegacy(args, registered) {
+		return runIntent(command, args[1:], stdout, stderr, defaultIntentOwners())
+	}
+	return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+}
+
+// dispatchInternal routes the engine families and the existing top-level
+// calls with their own parsers, output and exit codes.
+func dispatchInternal(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
 		for _, fam := range registered {
 			if fam.name == args[0] {
@@ -862,7 +894,7 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 		return 2
 	}
 	fmt.Fprintf(stderr, "metasystem: unknown family %q\n", args[0])
-	writeUsage(stderr, registered)
+	writeIntentRootHelp(stderr)
 	return 2
 }
 
@@ -911,4 +943,13 @@ func writeUsage(w io.Writer, registered []family) {
 			fmt.Fprintf(w, "    %-14s %s\n", v.name, v.summary)
 		}
 	}
+}
+
+func isFamilyName(registered []family, name string) bool {
+	for _, fam := range registered {
+		if fam.name == name {
+			return true
+		}
+	}
+	return false
 }

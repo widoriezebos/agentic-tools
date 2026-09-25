@@ -566,6 +566,9 @@ type syncRequestDependencies struct {
 	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	presence       func(string, goal.Endpoint) (seat.Copy, error)
+	// report, when set, receives the owner's typed outcome instead of the
+	// printed one; the public intent commands render it themselves.
+	report *ownerReport
 }
 
 func defaultSyncRequestDependencies() syncRequestDependencies {
@@ -816,7 +819,7 @@ func runGoalReadItemsWithInputs(args []string, commandNow func(string) (time.Tim
 	}
 	switch args[0] {
 	case "add":
-		return runGoalReadItemsAdd(args[1:])
+		return runGoalReadItemsAddWithInputs(args[1:], commandNow, dependencies)
 	case "close":
 		return runGoalReadItemsCloseWithInputs(args[1:], commandNow, dependencies, resolveCodeCommit)
 	case "list":
@@ -827,24 +830,45 @@ func runGoalReadItemsWithInputs(args []string, commandNow func(string) (time.Tim
 	}
 }
 
-func readItemMutationRequest(verb, root, by, lineage string) (goal.VerbRequest, bool) {
-	return readItemMutationRequestWithInputs(verb, root, by, lineage, goalCommandNow, defaultSyncRequestDependencies())
-}
-
-func readItemMutationRequestWithInputs(verb, root, by, lineage string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, bool) {
+// readItemMutationRequestWithProof builds a read-item request carrying the
+// person's proof. A --by without an observed proof is proven here at the
+// enrolled terminal; a name alone never becomes the request's authority.
+func readItemMutationRequestWithProof(verb, root, by, lineage string, observed *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, bool) {
 	if !converted(root) {
-		fmt.Fprintln(os.Stderr, "goal read-items works the synced backlog; this checkout still carries the legacy ledger")
+		dependencies.complain("goal read-items works the synced backlog; this checkout still carries the legacy ledger")
 		return goal.VerbRequest{}, false
 	}
-	req, err := syncReqWithProofAtWithDependencies(verb, root, by, lineage, nil, commandNow, dependencies)
+	if by != "" && observed == nil {
+		now, err := commandNow(root)
+		if err != nil {
+			dependencies.complain(err)
+			return goal.VerbRequest{}, false
+		}
+		proof, err := dependencies.proveHuman(root, int64(os.Getppid()), nil, now)
+		if err == nil && !proof.ValidFor(root) {
+			err = fmt.Errorf("proof outcome %s is not a valid enrolled-human proof", proof.Outcome)
+		}
+		if err != nil {
+			dependencies.complain(fmt.Errorf("goal %s --by %s could not prove enrolled human ancestry: %w", verb, by, err))
+			return goal.VerbRequest{}, false
+		}
+		observed = &proof
+	}
+	req, err := syncReqWithProofAtWithDependencies(verb, root, by, lineage, observed, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return goal.VerbRequest{}, false
 	}
 	return req, true
 }
 
-func runGoalReadItemsAdd(args []string) int {
+func runGoalReadItemsAddWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	return runGoalReadItemsAddWithProof(args, nil, commandNow, dependencies)
+}
+
+// runGoalReadItemsAddWithProof is read-items add with the person's observed
+// proof, when a caller has already proven it.
+func runGoalReadItemsAddWithProof(args []string, observed *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	flags := flag.NewFlagSet("goal read-items add", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -855,7 +879,7 @@ func runGoalReadItemsAdd(args []string) int {
 	var items repeatedStrings
 	flags.Var(&items, "item", "read item (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *read == "" || (len(items) == 0) == (*itemsFile == "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
+		dependencies.complain("usage: metasystem goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
 		return 2
 	}
 	texts := []string(items)
@@ -863,20 +887,20 @@ func runGoalReadItemsAdd(args []string) int {
 		var err error
 		texts, err = readItemsFile(*itemsFile)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			dependencies.complain(err)
 			return 1
 		}
 		if len(texts) == 0 {
-			fmt.Fprintln(os.Stderr, "--items-file contains no read items")
+			dependencies.complain("--items-file contains no read items")
 			return 2
 		}
 	}
-	req, ok := readItemMutationRequest("read-items add", *root, *by, *lineage)
+	req, ok := readItemMutationRequestWithProof("read-items add", *root, *by, *lineage, observed, commandNow, dependencies)
 	if !ok {
 		return 1
 	}
 	result, err := goal.AddReadItems(req, *id, *read, texts)
-	return printSyncResult(result, err)
+	return dependencies.publish(result, err)
 }
 
 func readItemsFile(path string) ([]string, error) {
@@ -895,6 +919,12 @@ func readItemsFile(path string) ([]string, error) {
 }
 
 func runGoalReadItemsCloseWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
+	return runGoalReadItemsCloseWithProof(args, nil, commandNow, dependencies, resolveCodeCommit)
+}
+
+// runGoalReadItemsCloseWithProof is read-items close with the person's
+// observed proof, when a caller has already proven it.
+func runGoalReadItemsCloseWithProof(args []string, observed *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
 	flags := flag.NewFlagSet("goal read-items close", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -905,7 +935,7 @@ func runGoalReadItemsCloseWithInputs(args []string, commandNow func(string) (tim
 	moved := flags.String("moved", "", "open goal receiving the item")
 	accepted := flags.String("accepted", "", "reason this is not a defect")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *item == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
+		dependencies.complain("usage: metasystem goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
 		return 2
 	}
 	closure := goal.ReadItemClosure{}
@@ -919,7 +949,7 @@ func runGoalReadItemsCloseWithInputs(args []string, commandNow func(string) (tim
 			closure.Accepted = accepted
 		}
 	})
-	req, ok := readItemMutationRequestWithInputs("read-items close", *root, *by, *lineage, commandNow, dependencies)
+	req, ok := readItemMutationRequestWithProof("read-items close", *root, *by, *lineage, observed, commandNow, dependencies)
 	if !ok {
 		return 1
 	}
@@ -930,7 +960,7 @@ func runGoalReadItemsCloseWithInputs(args []string, commandNow func(string) (tim
 	} else {
 		result, err = goal.CloseReadItemWithResolver(req, *id, *item, closure, resolveCodeCommit)
 	}
-	return printSyncResult(result, err)
+	return dependencies.publish(result, err)
 }
 
 type readItemsGoalJSON struct {
@@ -1148,7 +1178,7 @@ func parseSyncFlagValuesWithOutput(name string, args []string, output io.Writer)
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "reopen" || name == "unblock" {
+	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "unpark" || name == "reopen" || name == "unblock" || name == "done" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
@@ -1208,25 +1238,29 @@ func runGoalDischargeReviewObligation(args []string) int {
 }
 
 func runGoalDischargeReviewObligationWithOwners(args []string, requestBuilder func(verb, root, by, lineage string) (goal.VerbRequest, error), discharge func(goal.VerbRequest, string, string, string, string, string, ...goal.DischargeEvidence) (goal.PublishResult, error)) int {
-	f, ok := parseSyncFlags("discharge-review-obligation", args)
+	return runGoalDischargeReviewObligationWithDependencies(args, requestBuilder, discharge, defaultSyncRequestDependencies())
+}
+
+func runGoalDischargeReviewObligationWithDependencies(args []string, requestBuilder func(verb, root, by, lineage string) (goal.VerbRequest, error), discharge func(goal.VerbRequest, string, string, string, string, string, ...goal.DischargeEvidence) (goal.PublishResult, error), dependencies syncRequestDependencies) int {
+	f, ok := dependencies.parseSyncFlags("discharge-review-obligation", args)
 	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || f.test == "" && (f.chain == goal.HumanCarriedChain || f.implementationChain == "" || f.artifact == "" || f.result == "" || f.critic == "") {
-		fmt.Fprintln(os.Stderr, "goal discharge-review-obligation needs --id, --finding, --chain, and --by; non-fixture obligations also need --test, while fixture obligations need --implementation-chain, --artifact, --result, and --critic")
+		dependencies.complain("goal discharge-review-obligation needs --id, --finding, --chain, and --by; non-fixture obligations also need --test, while fixture obligations need --implementation-chain, --artifact, --result, and --critic")
 		return 2
 	}
 	if f.chain == goal.HumanCarriedChain {
 		commit, commitErr := humanCarriedFindingCommit(f.finding)
 		if commitErr != nil {
-			fmt.Fprintln(os.Stderr, commitErr)
+			dependencies.complain(commitErr)
 			return 1
 		}
 		if err := dispatchcore.ValidateHumanCarriedCritic(f.root, f.test, commit); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			dependencies.complain(err)
 			return 1
 		}
 	}
 	req, err := requestBuilder("discharge-review-obligation", f.root, f.by, f.lineage)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	if req.CallerClass == lease.ClassHuman {
@@ -1234,7 +1268,7 @@ func runGoalDischargeReviewObligationWithOwners(args []string, requestBuilder fu
 	}
 	evidence := goal.DischargeEvidence{Root: f.root, ImplementationChain: f.implementationChain, Artifact: f.artifact, ResultRunID: f.result, CriticRoot: f.critic}
 	res, err := discharge(req, f.id, f.finding, f.chain, f.by, f.test, evidence)
-	return printSyncResult(res, err)
+	return dependencies.publish(res, err)
 }
 
 func runGoalAcceptRisk(args []string) int {
@@ -1251,6 +1285,7 @@ func runGoalAcceptRiskWithInputs(args []string, prove goalAuthorityProver, comma
 
 func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, commitMessage func(root, commit string) ([]byte, error)) int {
 	values := newHumanVerbValues("accept-risk", args)
+	values.report = dependencies.report
 	f, ok := parseHumanSyncFlags(values, "accept-risk", args)
 	if !ok {
 		return 2
@@ -1270,7 +1305,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	if f.chain != goal.HumanCarriedChain {
 		finding, err = dispatchcore.CritiqueRegisterDecisionFinding(f.root, f.chain, f.finding, f.id)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			dependencies.complain(err)
 			return 1
 		}
 	}
@@ -1291,12 +1326,12 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	if f.chain == goal.HumanCarriedChain {
 		commit, commitErr := humanCarriedFindingCommit(f.finding)
 		if commitErr != nil {
-			fmt.Fprintln(os.Stderr, commitErr)
+			dependencies.complain(commitErr)
 			return 1
 		}
 		carriedRisk = counselor.CarriedAcceptedRiskAppend{Goal: f.id, Finding: f.finding, By: f.by, Why: f.why, OpID: opid, Commit: commit, RecordedAt: req.Now, CommitMessage: commitMessage}
 		if err := counselor.ValidateCarriedAcceptedRisk(f.root, carriedRisk); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			dependencies.complain(err)
 			return 1
 		}
 	}
@@ -1305,9 +1340,11 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "read the current goal and critique finding before retrying"})
 	}
 	if res.Outcome != goal.OutcomeConfirmed {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		dependencies.outcomeBeforeRefusal(res)
 		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the current goal and critique finding before retrying"})
 	}
+	// The goal act has landed; a later refusal reports it as partial.
+	dependencies.landed(res)
 	opid, err = goal.AcceptedRiskDecisionOpIDWithResolver(f.root, f.id, f.finding, f.chain, req.Now, dependencies.endpoint)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "the goal act landed, but its accepted-risk record needs repair"})
@@ -1328,7 +1365,7 @@ func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, comman
 	if err := recordGoalApprovalProof(f.root, opid, "goal accept-risk", proof); err != nil {
 		return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 	}
-	return printSyncResult(res, nil)
+	return dependencies.publish(res, nil)
 }
 
 func humanCarriedFindingCommit(finding string) (string, error) {
@@ -1517,6 +1554,7 @@ type goalBindingResolver func(string, string, time.Time) (dispatchcore.GoalBindi
 
 func runGoalBudgetWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("budget", args)
+	values.report = dependencies.report
 	cleaned, box, err := extractGoalBudgetBox(args)
 	if err != nil {
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "give exactly one compact box after or before the flags"})
@@ -1532,6 +1570,7 @@ func runGoalBudgetWithInputs(args []string, prove goalAuthorityProver, commandNo
 func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values.bindSyncFlags(flags)
 	values.boxTyped = boxToken
+	values.report = dependencies.report
 	if !converted(flags.root) {
 		return refuseHumanVerb(values, 1, "works only with the synced backlog", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
 	}
@@ -1672,7 +1711,7 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 	}
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		if err == nil {
-			printJSON(map[string]any{"outcome": result.Outcome, "tip": result.Tip, "detail": result.Detail})
+			dependencies.showOutcome(result)
 		}
 		detail := result.Detail
 		if err != nil {
@@ -1692,6 +1731,7 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 		}
 		return refuseHumanVerb(values, 1, detail, budgetRemedyAfterRefusal(values, endpoint, now))
 	}
+	dependencies.landed(result)
 	operationID := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	if action == "goal resume" {
 		err = humanauthority.RecordResumeProof(flags.root, operationID, proof)
@@ -1709,9 +1749,9 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 		if after, readErr := goal.Project(endpoint, false, now); readErr == nil && after.Tree.Live[flags.id] != nil {
 			count = after.Tree.Live[flags.id].BudgetExceptions
 		}
-		fmt.Printf("goal budget: %s exceeds tier %d box %s; exception count %d\n", goalbudget.FormatBox(budget), tier, goalbudget.FormatBox(tierBox), count)
+		dependencies.note(true, fmt.Sprintf("goal budget: %s exceeds tier %d box %s; exception count %d", goalbudget.FormatBox(budget), tier, goalbudget.FormatBox(tierBox), count))
 	}
-	return printSyncResult(result, nil)
+	return dependencies.publish(result, nil)
 }
 
 func budgetExceedsCommandBox(budget, box goal.Budget) bool {
@@ -1764,7 +1804,7 @@ type completionInputs struct {
 }
 
 func trySyncMutationWithCompletion(name string, args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, parkBranchCheck func(string, goal.Endpoint) func(string, string) (string, error), completion completionInputs) (int, bool) {
-	f, ok := parseSyncFlags(name, args)
+	f, ok := dependencies.parseSyncFlags(name, args)
 	if !ok {
 		return 2, true
 	}
@@ -1773,41 +1813,41 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 	}
 	if name == "reopen" {
 		if f.id == "" {
-			fmt.Fprintln(os.Stderr, "goal reopen needs --id")
+			dependencies.complain("goal reopen needs --id")
 			return 2, true
 		}
-		endpoint, endpointErr := goal.ResolveEndpoint(f.root)
+		endpoint, endpointErr := dependencies.endpoint(f.root)
 		if endpointErr != nil {
-			fmt.Fprintln(os.Stderr, endpointErr)
+			dependencies.complain(endpointErr)
 			return 1, true
 		}
-		now, nowErr := goalCommandNow(f.root)
+		now, nowErr := commandNow(f.root)
 		if nowErr != nil {
-			fmt.Fprintln(os.Stderr, nowErr)
+			dependencies.complain(nowErr)
 			return 1, true
 		}
 		projection, projectErr := goal.Project(endpoint, false, now)
 		if projectErr != nil {
-			fmt.Fprintln(os.Stderr, projectErr)
+			dependencies.complain(projectErr)
 			return 1, true
 		}
 		if projection.Tree.Abandoned[f.id] != nil {
 			if f.by == "" {
-				fmt.Fprintln(os.Stderr, "goal reopen from abandoned needs --by at the enrolled terminal")
+				dependencies.complain("goal reopen from abandoned needs --by at the enrolled terminal")
 				return 2, true
 			}
-			proof, proofErr := proveGoalHumanAuthority("reopen", f, proveEnrolledGoalHumanAuthority)
+			proof, proofErr := proveGoalHumanAuthorityAt("reopen", f, proveEnrolledGoalHumanAuthority, commandNow)
 			if proofErr != nil {
-				fmt.Fprintln(os.Stderr, proofErr)
+				dependencies.complain(proofErr)
 				return 1, true
 			}
-			provenRequest, requestErr := syncReqWithProof("reopen", f.root, f.by, f.lineage, &proof)
+			provenRequest, requestErr := syncReqWithProofAtWithDependencies("reopen", f.root, f.by, f.lineage, &proof, commandNow, dependencies)
 			if requestErr != nil {
-				fmt.Fprintln(os.Stderr, requestErr)
+				dependencies.complain(requestErr)
 				return 1, true
 			}
 			res, runErr := goal.ReopenAbandoned(provenRequest, f.id, &proof)
-			return printSyncResult(res, runErr), true
+			return dependencies.publish(res, runErr), true
 		}
 	}
 	var req goal.VerbRequest
@@ -1815,15 +1855,14 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 	// A stopping act by a person takes the terminal grade (the enrollment
 	// walk without the write). An unpark under a power of attorney is the
 	// seat's own act and takes no proof: it is dispatched below to
-	// runGoalUnderAttorney, whose refusals (a --by beside --under, a proof
+	// runGoalUnderAttorneyWithInputs, whose refusals (a --by beside --under, a proof
 	// beside it) must be reached, so the walk is not run in front of it.
-	if (name == "park" || name == "unpark") && f.under == "" {
+	if ((name == "park" || name == "unpark") && f.under == "") || (name == "done" && f.by != "") {
 		var proof *humanauthority.Proof
 		if f.fixtureHumanAuthority {
 			observed, proofErr := proveFixtureGoalAuthority(name, f)
 			if proofErr != nil {
-				fmt.Fprintln(os.Stderr, proofErr)
-				return 1, true
+				return dependencies.fail(1, proofErr), true
 			}
 			proof = &observed
 		}
@@ -1832,13 +1871,12 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		req, err = syncReqWithProofAtWithDependencies(name, f.root, f.by, f.lineage, nil, commandNow, dependencies)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1, true
+		return dependencies.fail(1, err), true
 	}
 	req.ApprovedRef = f.approvedRef
 	need := func(val, flagName string) bool {
 		if val == "" {
-			fmt.Fprintf(os.Stderr, "goal %s needs --%s\n", name, flagName)
+			dependencies.fail(2, fmt.Errorf("goal %s needs --%s", name, flagName))
 			return false
 		}
 		return true
@@ -1846,11 +1884,11 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 	switch name {
 	case "open":
 		if len(f.unlabels) > 0 {
-			fmt.Fprintln(os.Stderr, "goal open does not accept --unlabel; remove labels with goal edit")
+			dependencies.complain("goal open does not accept --unlabel; remove labels with goal edit")
 			return 2, true
 		}
 		if f.risk == "" || strings.TrimSpace(f.basis) == "" {
-			fmt.Fprintln(os.Stderr, "answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis")
+			dependencies.complain("answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis")
 			return 2, true
 		}
 		if !need(f.id, "id") || !need(f.intent, "intent") || !need(f.next, "next") || f.tier > 3 {
@@ -1858,7 +1896,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		}
 		risk, riskErr := goal.ParseRiskRecord(f.risk, f.basis)
 		if riskErr != nil {
-			fmt.Fprintln(os.Stderr, riskErr)
+			dependencies.complain(riskErr)
 			return 2, true
 		}
 		// The open's own hand is proved whenever the command claims a person,
@@ -1868,7 +1906,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		if claimsAHuman(f) || f.tier != 0 && uint8(f.tier) < risk.DerivedTier() {
 			proven, proofErr := proveGoalHumanAuthority("open", f, humanauthority.ProveOrTemporaryGoalAuthority)
 			if proofErr != nil {
-				fmt.Fprintln(os.Stderr, proofErr)
+				dependencies.complain(proofErr)
 				return 1, true
 			}
 			proof = &proven
@@ -1876,26 +1914,26 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		if f.claim {
 			budget, budgetErr := f.budgetTuple(true)
 			if budgetErr != nil {
-				fmt.Fprintln(os.Stderr, budgetErr)
+				dependencies.complain(budgetErr)
 				return 2, true
 			}
 			if detail := brain.Fence(f.root, "claim", goal.ExistingLedgerIdentity(f.root)); detail != "" {
-				fmt.Fprintln(os.Stderr, detail)
+				dependencies.complain(detail)
 				return 1, true
 			}
 			res, err := goal.OpenClaim(req, f.id, f.intent, f.origin, f.next, *budget, f.labels...)
-			code := printSyncResult(res, err)
-			hintDesignIsARecord(os.Stderr, res.Outcome, f.id)
+			code := dependencies.publish(res, err)
+			hintDesignIsARecord(dependencies.noteWriter(), res.Outcome, f.id)
 			return code, true
 		}
 		budget, budgetErr := f.budgetTuple(false)
 		if budgetErr != nil {
-			fmt.Fprintln(os.Stderr, budgetErr)
+			dependencies.complain(budgetErr)
 			return 2, true
 		}
 		res, err := goal.OpenRisked(req, f.id, f.intent, f.origin, f.next, f.blocks, f.blockedBy, risk, uint8(f.tier), f.why, budget, proof, f.labels...)
-		code := printSyncResult(res, err)
-		hintDesignIsARecord(os.Stderr, res.Outcome, f.id)
+		code := dependencies.publish(res, err)
+		hintDesignIsARecord(dependencies.noteWriter(), res.Outcome, f.id)
 		return code, true
 	case "park":
 		if !need(f.id, "id") || !need(f.because, "because") {
@@ -1903,32 +1941,31 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		}
 		if f.arc != "" {
 			res, err := goal.ParkArc(req, f.id, f.because)
-			return printSyncResult(res, err), true
+			return dependencies.publish(res, err), true
 		}
 		req.ParkBranchCheck = parkBranchCheck(f.root, req.Endpoint)
 		res, err := goal.Park(req, f.id, f.because)
-		return printSyncResult(res, err), true
+		return dependencies.publish(res, err), true
 	case "unpark":
 		if !need(f.id, "id") {
 			return 2, true
 		}
 		if f.under != "" {
 			if f.arc != "" {
-				fmt.Fprintln(os.Stderr, "goal unpark --under lifts one goal's park; --arc is not taken")
+				dependencies.complain("goal unpark --under lifts one goal's park; --arc is not taken")
 				return 2, true
 			}
-			return runGoalUnderAttorney("unpark", f), true
+			return runGoalUnderAttorneyWithInputs("unpark", f, commandNow, dependencies), true
 		}
 		if f.verified != "" {
-			fmt.Fprintln(os.Stderr, "goal unpark --verified belongs to an unpark under a power of attorney: add --under <entry>")
-			return 2, true
+			return dependencies.fail(2, fmt.Errorf("goal unpark --verified belongs to an unpark under a power of attorney: add --under <entry>")), true
 		}
 		if f.arc != "" {
 			res, err := goal.UnparkArc(req, f.id)
-			return printSyncResult(res, err), true
+			return dependencies.publish(res, err), true
 		}
 		res, err := goal.Unpark(req, f.id)
-		return printSyncResult(res, err), true
+		return dependencies.publish(res, err), true
 	case "done":
 		if !need(f.id, "id") || !need(f.conclude, "conclude") {
 			return 2, true
@@ -1968,37 +2005,47 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			return err
 		}
 		res, err := goal.Done(req, f.id, f.conclude)
-		code := printSyncResult(res, err)
-		if completion.reporter != nil {
-			return reportAfterConfirmedDoneWithReporter(code, f.root, f.id, os.Stderr, completion.reporter), true
+		code := dependencies.publish(res, err)
+		if dependencies.report != nil {
+			if code == 0 {
+				if metricsErr := concludedGoalMetrics(f.root, f.id, completion.reporter); metricsErr != nil {
+					dependencies.report.secondary = append(dependencies.report.secondary, metricsErr)
+					dependencies.report.repair = []string{"metasystem", "metrics", "report", "--goal", f.id}
+					dependencies.report.repairReason = "write the goal's metrics report; run it from " + f.root
+				}
+			}
+			return code, true
 		}
-		return reportAfterConfirmedDone(code, f.root, f.id, os.Stderr), true
+		if completion.reporter != nil {
+			return reportAfterConfirmedDoneWithReporter(code, f.root, f.id, dependencies.noteWriter(), completion.reporter), true
+		}
+		return reportAfterConfirmedDone(code, f.root, f.id, dependencies.noteWriter()), true
 	case "reopen":
 		res, err := goal.Reopen(req, f.id)
-		return printSyncResult(res, err), true
+		return dependencies.publish(res, err), true
 	case "prune":
 		res, err := goal.Prune(req, f.keep)
-		return printSyncResult(res, err), true
+		return dependencies.publish(res, err), true
 	case "set-next":
 		if !need(f.id, "id") || !need(f.next, "next") {
 			return 2, true
 		}
 		res, err := goal.Edit(req, f.id, goal.EditFields{NextStep: &f.next})
-		return printSyncResult(res, err), true
+		return dependencies.publish(res, err), true
 	case "promote":
-		fmt.Fprintln(os.Stderr, "the synced backlog has no Current slot to promote into; claim the goal instead (goal claim --id ...)")
+		dependencies.complain("the synced backlog has no Current slot to promote into; claim the goal instead (goal claim --id ...)")
 		return 1, true
 	case "declare-free":
 		if !need(f.digest, "digest") {
 			return 2, true
 		}
 		res, err := goal.DeclareFree(req, f.origin, f.digest)
-		return printSyncResult(res, err), true
+		return dependencies.publish(res, err), true
 	case "reconcile":
 		if f.refreshOnly {
 			skipped, err := goal.RefreshOnly(f.root)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				dependencies.complain(err)
 				return 1, true
 			}
 			printJSON(map[string]any{"outcome": "confirmed", "skipped": skipped})
@@ -2015,7 +2062,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		}
 		res, err := goal.Reconcile(req)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			dependencies.complain(err)
 			return 1, true
 		}
 		printJSON(map[string]any{"outcome": res.Publish.Outcome, "tip": res.Publish.Tip, "rows": len(res.Rows), "skipped": res.Skipped})
@@ -2024,7 +2071,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		}
 		return 0, true
 	}
-	fmt.Fprintf(os.Stderr, "goal %s has no synced-world route\n", name)
+	dependencies.complainf("goal %s has no synced-world route\n", name)
 	return 1, true
 }
 
@@ -2034,42 +2081,46 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 }
 
 func runSyncOnlyWithRequest(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), requestBuilder func(string, string, string, string) (goal.VerbRequest, error), required ...string) func([]string) int {
+	return runSyncOnlyWithDependencies(name, run, requestBuilder, defaultSyncRequestDependencies(), required...)
+}
+
+func runSyncOnlyWithDependencies(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), requestBuilder func(string, string, string, string) (goal.VerbRequest, error), dependencies syncRequestDependencies, required ...string) func([]string) int {
 	return func(args []string) int {
-		f, ok := parseSyncFlags(name, args)
+		f, ok := dependencies.parseSyncFlags(name, args)
 		if !ok {
 			return 2
 		}
 		if name == "restamp" && f.by != "" {
-			fmt.Fprintln(os.Stderr, "goal restamp acts only for the caller's own pair and does not accept --by")
+			dependencies.complain("goal restamp acts only for the caller's own pair and does not accept --by")
 			return 2
 		}
 		if !converted(f.root) {
-			fmt.Fprintf(os.Stderr, "goal %s works the synced backlog; this checkout still carries the legacy ledger\n", name)
+			dependencies.complainf("goal %s works the synced backlog; this checkout still carries the legacy ledger\n", name)
 			return 1
 		}
 		for _, r := range required {
 			if r == "id" && f.id == "" {
-				fmt.Fprintf(os.Stderr, "goal %s needs --id\n", name)
+				dependencies.complainf("goal %s needs --id\n", name)
 				return 2
 			}
 			if r == "arc" && f.arc == "" {
-				fmt.Fprintf(os.Stderr, "goal %s needs --arc\n", name)
+				dependencies.complainf("goal %s needs --arc\n", name)
 				return 2
 			}
 			if r == "pin" && f.pin == "" {
-				fmt.Fprintf(os.Stderr, "goal %s needs --pin (a machine nickname, or - to clear)\n", name)
+				dependencies.complainf("goal %s needs --pin (a machine nickname, or - to clear)\n", name)
 				return 2
 			}
 			if r == "goal" && f.goal == "" {
-				fmt.Fprintf(os.Stderr, "goal %s needs --goal\n", name)
+				dependencies.complainf("goal %s needs --goal\n", name)
 				return 2
 			}
 			if r == "by" && f.by == "" {
-				fmt.Fprintf(os.Stderr, "goal %s needs --by\n", name)
+				dependencies.complainf("goal %s needs --by\n", name)
 				return 2
 			}
 			if r == "why" && strings.TrimSpace(f.why) == "" {
-				fmt.Fprintf(os.Stderr, "goal %s needs --why\n", name)
+				dependencies.complainf("goal %s needs --why\n", name)
 				return 2
 			}
 		}
@@ -2082,26 +2133,30 @@ func runSyncOnlyWithRequest(name string, run func(req goal.VerbRequest, f *syncF
 		}
 		req, err := builder(name, f.root, f.by, f.lineage)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			dependencies.complain(err)
 			return 1
 		}
 		req.ApprovedRef = f.approvedRef
 		res, runErr := run(req, f)
-		code := printSyncResult(res, runErr)
+		code := dependencies.publish(res, runErr)
 		if name == "claim" {
-			hintDesignIsARecord(os.Stderr, res.Outcome, f.id)
+			hintDesignIsARecord(dependencies.noteWriter(), res.Outcome, f.id)
 		}
 		return code
 	}
 }
 
-func runGoalReleaseWithRequest(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error)) int {
-	return runSyncOnlyWithRequest("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+func runGoalReleaseWithDependencies(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error), dependencies syncRequestDependencies) int {
+	return runSyncOnlyWithDependencies("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		if f.arc != "" {
 			return goal.ReleaseArc(req, f.id)
 		}
 		return goal.Release(req, f.id)
-	}, requestBuilder, "id")(args)
+	}, requestBuilder, dependencies, "id")(args)
+}
+
+func runGoalReleaseWithRequest(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error)) int {
+	return runGoalReleaseWithDependencies(args, requestBuilder, defaultSyncRequestDependencies())
 }
 
 func runGoalTrunkRed(args []string) int {
@@ -2109,13 +2164,17 @@ func runGoalTrunkRed(args []string) int {
 }
 
 func runGoalTrunkRedWithRequest(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error), branchRead func(string, ...string) (string, error)) int {
+	return runGoalTrunkRedWithDependencies(args, requestBuilder, branchRead, defaultSyncRequestDependencies())
+}
+
+func runGoalTrunkRedWithDependencies(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error), branchRead func(string, ...string) (string, error), dependencies syncRequestDependencies) int {
 	if len(args) == 0 || args[0] != "own" && args[0] != "close" {
-		fmt.Fprintln(os.Stderr, "goal trunk-red needs one of:\n  own --id <entry> --goal <fix-goal> [--branch <name>] [--by <human> [--to <machine>]]\n  close --id <entry> --by <human> --why <text>")
+		dependencies.complain("goal trunk-red needs one of:\n  own --id <entry> --goal <fix-goal> [--branch <name>] [--by <human> [--to <machine>]]\n  close --id <entry> --by <human> --why <text>")
 		return 2
 	}
 	sub := args[0]
 	if sub == "own" {
-		run := runSyncOnlyWithRequest("trunk-red own", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		run := runSyncOnlyWithDependencies("trunk-red own", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 			branchCommit := ""
 			if f.branch != "" {
 				commit, err := resolveTrunkRedBranchWithRead(req.Endpoint, f.branch, branchRead)
@@ -2126,12 +2185,12 @@ func runGoalTrunkRedWithRequest(args []string, requestBuilder func(string, strin
 			}
 			return goal.OwnTrunkRed(req, goal.TrunkRedOwnArgs{Entry: f.id, Goal: f.goal, Branch: f.branch,
 				BranchCommit: branchCommit, To: f.to, By: f.by})
-		}, requestBuilder, "id", "goal")
+		}, requestBuilder, dependencies, "id", "goal")
 		return run(args[1:])
 	}
-	run := runSyncOnlyWithRequest("trunk-red close", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	run := runSyncOnlyWithDependencies("trunk-red close", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.CloseTrunkRed(req, goal.TrunkRedCloseArgs{Entry: f.id, By: f.by, Why: strings.TrimSpace(f.why)})
-	}, requestBuilder, "id", "why")
+	}, requestBuilder, dependencies, "id", "why")
 	return run(args[1:])
 }
 
@@ -2214,22 +2273,26 @@ func claimsAHuman(f *syncFlags) bool {
 // provenGoalRequest assembles the request a goal verb runs under, with the
 // human proof where the command claims a person and without one otherwise.
 func provenGoalRequest(name string, f *syncFlags, prove goalAuthorityProver) (goal.VerbRequest, *humanauthority.Proof, error) {
+	return provenGoalRequestWithInputs(name, f, prove, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func provenGoalRequestWithInputs(name string, f *syncFlags, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, *humanauthority.Proof, error) {
 	if !claimsAHuman(f) {
-		request, err := syncReq(name, f.root, f.by, f.lineage)
+		request, err := syncReqWithProofAtWithDependencies(name, f.root, f.by, f.lineage, nil, commandNow, dependencies)
 		return request, nil, err
 	}
-	classification, err := classifyGoalAuthorityFirst(name, f)
+	classification, err := classifyGoalAuthorityFirstWithFacts(name, f, dependencies.authorityFacts)
 	if err != nil {
 		return goal.VerbRequest{}, nil, err
 	}
-	proof, err := proveGoalHumanAuthority(name, f, prove)
+	proof, err := proveGoalHumanAuthorityAt(name, f, prove, commandNow)
 	if err != nil {
 		return goal.VerbRequest{}, nil, err
 	}
 	if err := resolveGoalHuman(f, proof); err != nil {
 		return goal.VerbRequest{}, nil, err
 	}
-	request, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	request, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	return request, &proof, err
 }
 
@@ -2242,32 +2305,37 @@ func runGoalBlock(args []string) int {
 // — but a --by beside it is a person's claim, and a person's claim is proved
 // before the engine sees it.
 func runGoalBlockWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("block", args)
+	return runGoalBlockWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalBlockWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	f, ok := dependencies.parseSyncFlags("block", args)
 	if !ok {
 		return 2
 	}
 	if !converted(f.root) {
-		fmt.Fprintln(os.Stderr, "goal block works the synced backlog; this checkout still carries the legacy ledger")
+		dependencies.complain("goal block works the synced backlog; this checkout still carries the legacy ledger")
 		return 1
 	}
 	if f.id == "" || f.blocker == "" {
-		fmt.Fprintln(os.Stderr, "goal block needs --id <the goal that waits> and --blocker <the goal it waits for>")
+		dependencies.complain("goal block needs --id <the goal that waits> and --blocker <the goal it waits for>")
 		return 2
 	}
-	req, proof, err := provenGoalRequest("block", f, prove)
+	req, proof, err := provenGoalRequestWithInputs("block", f, prove, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	res, runErr := goal.Block(req, f.id, f.blocker, proof)
+	dependencies.landed(res)
 	if runErr == nil && res.Outcome == goal.OutcomeConfirmed && proof != nil {
 		operation := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 		if recordErr := recordGoalApprovalProof(f.root, operation, "goal block", *proof); recordErr != nil {
-			fmt.Fprintln(os.Stderr, "the act landed at tip "+res.Tip+", but its authority proof did not: "+recordErr.Error()+"; do not run it again")
+			dependencies.complain("the act landed at tip " + res.Tip + ", but its authority proof did not: " + recordErr.Error() + "; do not run it again")
 			return 1
 		}
 	}
-	return printSyncResult(res, runErr)
+	return dependencies.publish(res, runErr)
 }
 
 func runGoalUnblock(args []string) int {
@@ -2280,32 +2348,37 @@ func runGoalUnblock(args []string) int {
 // engine refuses the early case by name and takes the ordinary one, which is
 // an edge a completed goal no longer needs.
 func runGoalUnblockWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("unblock", args)
+	return runGoalUnblockWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalUnblockWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	f, ok := dependencies.parseSyncFlags("unblock", args)
 	if !ok {
 		return 2
 	}
 	if !converted(f.root) {
-		fmt.Fprintln(os.Stderr, "goal unblock works the synced backlog; this checkout still carries the legacy ledger")
+		dependencies.complain("goal unblock works the synced backlog; this checkout still carries the legacy ledger")
 		return 1
 	}
 	if f.id == "" || f.blocker == "" {
-		fmt.Fprintln(os.Stderr, "goal unblock needs --id <the goal that waits> and --blocker <the goal it no longer waits for>")
+		dependencies.complain("goal unblock needs --id <the goal that waits> and --blocker <the goal it no longer waits for>")
 		return 2
 	}
-	req, proof, err := provenGoalRequest("unblock", f, prove)
+	req, proof, err := provenGoalRequestWithInputs("unblock", f, prove, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	res, runErr := goal.Unblock(req, f.id, f.blocker, proof)
+	dependencies.landed(res)
 	if runErr == nil && res.Outcome == goal.OutcomeConfirmed && proof != nil {
 		operation := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 		if recordErr := recordGoalApprovalProof(f.root, operation, "goal unblock", *proof); recordErr != nil {
-			fmt.Fprintln(os.Stderr, "the act landed at tip "+res.Tip+", but its authority proof did not: "+recordErr.Error()+"; do not run it again")
+			dependencies.complain("the act landed at tip " + res.Tip + ", but its authority proof did not: " + recordErr.Error() + "; do not run it again")
 			return 1
 		}
 	}
-	return printSyncResult(res, runErr)
+	return dependencies.publish(res, runErr)
 }
 
 func runGoalSetPriority(args []string) int {
@@ -2325,6 +2398,10 @@ func configureAbandonFleetFloor(request *goal.VerbRequest) {
 }
 
 func runGoalAbandon(args []string) int {
+	return runGoalAbandonWithInputs(args, proveEnrolledGoalHumanAuthority, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalAbandonWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	flags := flag.NewFlagSet("goal abandon", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -2340,30 +2417,34 @@ func runGoalAbandon(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "goal abandon takes no positional arguments")
+		dependencies.complain("goal abandon takes no positional arguments")
 		return 2
 	}
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal abandon works only with the synced backlog; migrate this checkout first")
+		dependencies.complain("goal abandon works only with the synced backlog; migrate this checkout first")
 		return 1
 	}
 	shared := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
-	proof, err := proveGoalHumanAuthority("abandon", shared, proveEnrolledGoalHumanAuthority)
+	proof, err := proveGoalHumanAuthorityAt("abandon", shared, prove, commandNow)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
-	request, err := syncReqWithProof("abandon", *root, *by, *lineage, &proof)
+	request, err := syncReqWithProofAtWithDependencies("abandon", *root, *by, *lineage, &proof, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	configureAbandonFleetFloor(&request)
 	result, err := goal.Abandon(request, *id, goal.AbandonSpec{Because: *because, Carried: *carried, Waive: waive, Also: also}, &proof)
-	return printSyncResult(result, err)
+	return dependencies.publish(result, err)
 }
 
 func runGoalCarryAbandoned(args []string) int {
+	return runGoalCarryAbandonedWithInputs(args, proveEnrolledGoalHumanAuthority, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalCarryAbandonedWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	flags := flag.NewFlagSet("goal carry", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "abandoned goal id")
@@ -2375,26 +2456,26 @@ func runGoalCarryAbandoned(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "goal carry takes no positional arguments")
+		dependencies.complain("goal carry takes no positional arguments")
 		return 2
 	}
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal carry works only with the synced backlog; migrate this checkout first")
+		dependencies.complain("goal carry works only with the synced backlog; migrate this checkout first")
 		return 1
 	}
 	shared := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
-	proof, err := proveGoalHumanAuthority("carry", shared, proveEnrolledGoalHumanAuthority)
+	proof, err := proveGoalHumanAuthorityAt("carry", shared, prove, commandNow)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
-	request, err := syncReqWithProof("carry", *root, *by, *lineage, &proof)
+	request, err := syncReqWithProofAtWithDependencies("carry", *root, *by, *lineage, &proof, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	result, err := goal.CarryAbandoned(request, *id, *successor, &proof)
-	return printSyncResult(result, err)
+	return dependencies.publish(result, err)
 }
 
 func runGoalEngineFloor(args []string) int {
@@ -2457,44 +2538,44 @@ func runGoalSetPriorityWithAuthorityAndInputs(args []string, prove goalAuthority
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "goal set-priority takes no positional arguments")
+		dependencies.complain("goal set-priority takes no positional arguments")
 		return 2
 	}
 	if *id == "" || *by == "" || !prioritySet {
-		fmt.Fprintln(os.Stderr, "goal set-priority needs --id, --by, and --priority")
+		dependencies.complain("goal set-priority needs --id, --by, and --priority")
 		return 2
 	}
 	priorityValue, err := parseGoalRankDecimal("priority", priorityRaw, 8)
 	if err != nil || priorityValue < 1 || priorityValue > 3 {
-		fmt.Fprintf(os.Stderr, "goal set-priority priority %q is not 1, 2, or 3\n", priorityRaw)
+		dependencies.complainf("goal set-priority priority %q is not 1, 2, or 3\n", priorityRaw)
 		return 2
 	}
 	var sequence *uint64
 	if sequenceSet {
 		sequenceValue, parseErr := parseGoalRankDecimal("sequence", sequenceRaw, 64)
 		if parseErr != nil || sequenceValue == 0 {
-			fmt.Fprintf(os.Stderr, "goal set-priority sequence %q is not a positive unsigned 64-bit integer\n", sequenceRaw)
+			dependencies.complainf("goal set-priority sequence %q is not a positive unsigned 64-bit integer\n", sequenceRaw)
 			return 2
 		}
 		sequence = &sequenceValue
 	}
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal set-priority works only with the synced backlog; migrate this checkout first")
+		dependencies.complain("goal set-priority works only with the synced backlog; migrate this checkout first")
 		return 1
 	}
 	shared := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
 	proof, err := proveGoalHumanAuthority("set-priority", shared, prove)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	request, err := syncReqWithProofAtWithDependencies("set-priority", *root, *by, *lineage, &proof, goalCommandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	result, err := goal.SetPriority(request, *id, uint8(priorityValue), sequence, &proof)
-	return printSyncResult(result, err)
+	return dependencies.publish(result, err)
 }
 
 func parseGoalRankDecimal(name, value string, bitSize int) (uint64, error) {
@@ -2667,6 +2748,7 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 
 func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("approve", args)
+	values.report = dependencies.report
 	f, ok := parseHumanSyncFlags(values, "approve", args)
 	if !ok {
 		return 2
@@ -2704,10 +2786,9 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 	}
 	if f.under != "" {
 		if f.sweep || len(f.ids) == 0 {
-			fmt.Fprintln(os.Stderr, "goal approve --under takes repeatable --id and no --sweep")
-			return 2
+			return dependencies.fail(2, fmt.Errorf("goal approve --under takes repeatable --id and no --sweep"))
 		}
-		return runGoalUnderAttorney("approve", f)
+		return runGoalUnderAttorneyWithInputs("approve", f, commandNow, dependencies)
 	}
 	if !f.sweep && len(f.ids) == 0 {
 		return refuseHumanVerb(values, 2, "needs either repeatable --id or --sweep", humanVerbRemedy{words: "add the live goal's identifier with --id, or choose --sweep"})
@@ -2726,7 +2807,7 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 		} else if parsed, budgetErr := f.budgetTuple(true); budgetErr == nil {
 			hintBox = goalbudget.FormatBox(*parsed)
 		}
-		fmt.Fprintln(os.Stderr, "hint:", values.budgetCommand(hintBox))
+		dependencies.note(false, "hint: "+values.budgetCommand(hintBox))
 		return runGoalBudgetPreparedWithInputs(values, f, routeBox, prove, commandNow, dependencies, binding)
 	}
 	budget, err := f.approvalBudget()
@@ -2735,8 +2816,7 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 	}
 	classification, err := classifyGoalAuthorityFirstWithFacts("approve", f, dependencies.authorityFacts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return dependencies.fail(1, err)
 	}
 	proof, err := proveGoalHumanAuthorityAt("approve", f, prove, commandNow)
 	if err != nil {
@@ -2761,6 +2841,7 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "read the current goal state and give each live goal its box with goal budget"})
 	}
 	if res.Outcome == goal.OutcomeConfirmed {
+		dependencies.landed(res)
 		action := "goal approve"
 		if f.sweep {
 			action = "goal approve --sweep"
@@ -2769,17 +2850,17 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 		if proof.TemporaryResumeFor(f.root) {
-			fmt.Printf("goal approve: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+			dependencies.note(true, fmt.Sprintf("goal approve: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal", f.reviewBy))
 		}
 	}
 	if res.Outcome != goal.OutcomeConfirmed {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		dependencies.showOutcome(res)
 		if res.Outcome == goal.OutcomeAbandoned {
 			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "every target already has the same proven approval, so there is no new act to record"})
 		}
 		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the current goal state and give each live goal its box with goal budget"})
 	}
-	return printSyncResult(res, nil)
+	return dependencies.publish(res, nil)
 }
 
 func runGoalUnapprove(args []string) int {
@@ -2792,6 +2873,7 @@ func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int
 
 func runGoalUnapproveWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("unapprove", args)
+	values.report = dependencies.report
 	f, ok := parseHumanSyncFlags(values, "unapprove", args)
 	if !ok {
 		return 2
@@ -2804,7 +2886,7 @@ func runGoalUnapproveWithInputs(args []string, prove goalAuthorityProver, comman
 	}
 	classification, err := classifyGoalAuthorityFirstWithFacts("unapprove", f, dependencies.authorityFacts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	proof, err := proveGoalHumanAuthorityAt("unapprove", f, prove, commandNow)
@@ -2820,6 +2902,7 @@ func runGoalUnapproveWithInputs(args []string, prove goalAuthorityProver, comman
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	res, err := goal.Unapprove(req, f.id, f.because, &proof)
+	dependencies.landed(res)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "read the goal's current approval state before retrying"})
 	}
@@ -2828,14 +2911,14 @@ func runGoalUnapproveWithInputs(args []string, prove goalAuthorityProver, comman
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 		if proof.TemporaryResumeFor(f.root) {
-			fmt.Printf("goal unapprove: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+			dependencies.note(true, fmt.Sprintf("goal unapprove: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal", f.reviewBy))
 		}
 	}
 	if res.Outcome != goal.OutcomeConfirmed {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		dependencies.outcomeBeforeRefusal(res)
 		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the goal's current approval state before retrying"})
 	}
-	return printSyncResult(res, nil)
+	return dependencies.publish(res, nil)
 }
 
 func runGoalSetBudget(args []string) int {
@@ -2922,7 +3005,7 @@ func runGoalSetBudgetWithInputs(args []string, prove goalAuthorityProver, comman
 			fmt.Fprintln(os.Stderr, "goal set-budget --under needs a synced backlog plus --id")
 			return 2
 		}
-		return runGoalUnderAttorney("set-budget", f)
+		return runGoalUnderAttorneyWithInputs("set-budget", f, commandNow, dependencies)
 	}
 	box := ""
 	if parsed, err := f.budgetTuple(true); err == nil {
@@ -2998,32 +3081,34 @@ func runGoalStoppedSetBudgetWithInputs(values *humanVerbValues, flags *syncFlags
 	return printSyncResult(result, nil)
 }
 
-// runGoalUnderAttorney runs approve or set-budget as the seat's own act under
-// a recorded power of attorney: no --by, no human proof, the entry resolved
-// from the accepted tree and checked again inside the transaction.
-func runGoalUnderAttorney(name string, f *syncFlags) int {
+// runGoalUnderAttorneyWithInputs is the seat's own act under a recorded power
+// of attorney. The clock and the ledger endpoint come from the caller so the
+// attorney entry is read from the same accepted ledger the act publishes to.
+func runGoalUnderAttorneyWithInputs(name string, f *syncFlags, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	if f.by != "" || f.fixtureHumanAuthority || f.temporaryWord != "" || f.reviewBy != "" || f.approvedRef != "" {
-		fmt.Fprintf(os.Stderr, "goal %s --under is the seat's own act: it combines with neither --by, a human proof, nor --approved-ref\n", name)
-		return 2
+		return dependencies.fail(2, fmt.Errorf("goal %s --under is the seat's own act: it combines with neither --by, a human proof, nor --approved-ref", name))
 	}
 	if brainState := brain.Read(f.root, goal.ExistingLedgerIdentity(f.root)); brainState.State != brain.Undeclared {
-		fmt.Fprintf(os.Stderr, "this checkout is declared the brain; the brain never carries a human's word into goal %s, a power of attorney included. Wido runs, from an agent-free terminal: metasystem goal %s --root <checkout> --id <id> --by <name> <the verb's own flags>\n", name, name)
-		return 1
+		return dependencies.fail(1, fmt.Errorf("this checkout is declared the brain; the brain never carries a human's word into goal %s, a power of attorney included. Wido runs, from an agent-free terminal: metasystem goal %s --root <checkout> --id <id> --by <name> <the verb's own flags>", name, name))
 	}
-	now, err := goalCommandNow(f.root)
+	now, err := commandNow(f.root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return dependencies.fail(1, err)
 	}
-	entry, err := goal.ResolveAttorney(f.root, f.under, name, now)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	if dependencies.endpoint == nil {
+		return dependencies.fail(1, fmt.Errorf("goal endpoint reader is missing"))
 	}
-	req, err := syncReq(name, f.root, "", f.lineage)
+	endpoint, err := dependencies.endpoint(f.root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return dependencies.fail(1, err)
+	}
+	entry, err := goal.ResolveAttorneyForEndpoint(endpoint, f.under, name, now)
+	if err != nil {
+		return dependencies.fail(1, err)
+	}
+	req, err := syncReqWithProofAtWithDependencies(name, f.root, "", f.lineage, nil, commandNow, dependencies)
+	if err != nil {
+		return dependencies.fail(1, err)
 	}
 	req.Attorney = &entry
 	var res goal.PublishResult
@@ -3031,25 +3116,22 @@ func runGoalUnderAttorney(name string, f *syncFlags) int {
 	case "approve":
 		budget, budgetErr := f.approvalBudget()
 		if budgetErr != nil {
-			fmt.Fprintln(os.Stderr, budgetErr)
-			return 2
+			return dependencies.fail(2, budgetErr)
 		}
 		res, err = goal.Approve(req, f.ids, budget, nil)
 	case "set-budget":
 		budget, budgetErr := f.budgetTuple(true)
 		if budgetErr != nil {
-			fmt.Fprintln(os.Stderr, budgetErr)
-			return 2
+			return dependencies.fail(2, budgetErr)
 		}
 		res, err = goal.SetBudgetApproved(req, f.id, *budget, nil)
 	case "unpark":
 		if f.verified == "" {
-			fmt.Fprintln(os.Stderr, "goal unpark --under says what the seat verified holds now: --verified <one line>")
-			return 2
+			return dependencies.fail(2, fmt.Errorf("goal unpark --under says what the seat verified holds now: --verified <one line>"))
 		}
 		res, err = goal.UnparkUnderAttorney(req, f.id, f.verified)
 	}
-	return printSyncResult(res, err)
+	return dependencies.publish(res, err)
 }
 
 func runGoalGrant(args []string) int {
@@ -3059,17 +3141,21 @@ func runGoalGrant(args []string) int {
 // runGoalGrantWithAuthority records a power of attorney under the human's
 // own proof and prints the entry id the seat will name with --under.
 func runGoalGrantWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("grant", args)
+	return runGoalGrantWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalGrantWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	f, ok := dependencies.parseSyncFlags("grant", args)
 	if !ok {
 		return 2
 	}
 	if !converted(f.root) || f.by == "" || f.tiers == "" || f.verbs == "" || f.expires == "" {
-		fmt.Fprintln(os.Stderr, "goal grant needs a synced backlog plus --by, --tiers, --verbs and --expires")
+		dependencies.complain("goal grant needs a synced backlog plus --by, --tiers, --verbs and --expires")
 		return 2
 	}
 	tiers, err := goal.ParseTiers(f.tiers)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 2
 	}
 	var verbs []string
@@ -3078,37 +3164,34 @@ func runGoalGrantWithAuthority(args []string, prove goalAuthorityProver) int {
 			verbs = append(verbs, verb)
 		}
 	}
-	classification, err := classifyGoalAuthorityFirst("grant", f)
+	classification, err := classifyGoalAuthorityFirstWithFacts("grant", f, dependencies.authorityFacts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
-	proof, err := proveGoalHumanAuthority("grant", f, prove)
+	proof, err := proveGoalHumanAuthorityAt("grant", f, prove, commandNow)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
-	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	res, err := goal.Grant(req, &proof, tiers, verbs, f.expires)
+	dependencies.landed(res)
 	if err != nil {
-		return printSyncResult(res, err)
+		return dependencies.publish(res, err)
 	}
 	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	if res.Outcome == goal.OutcomeConfirmed {
 		if err := recordGoalApprovalProof(f.root, opid, "goal grant", proof); err != nil {
-			fmt.Fprintln(os.Stderr, "goal grant confirmed but could not record its authority proof:", err)
+			dependencies.complain("goal grant confirmed but could not record its authority proof:", err)
 			return 1
 		}
 	}
-	printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "entry": opid, "detail": res.Detail})
-	if res.Outcome != goal.OutcomeConfirmed {
-		return 1
-	}
-	return 0
+	return dependencies.publishGrant(res, opid)
 }
 
 func runGoalRevoke(args []string) int {
@@ -3116,40 +3199,45 @@ func runGoalRevoke(args []string) int {
 }
 
 func runGoalRevokeWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("revoke", args)
+	return runGoalRevokeWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalRevokeWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	f, ok := dependencies.parseSyncFlags("revoke", args)
 	if !ok {
 		return 2
 	}
 	if !converted(f.root) || f.by == "" || f.id == "" {
-		fmt.Fprintln(os.Stderr, "goal revoke needs a synced backlog plus --by and --id <entry>")
+		dependencies.complain("goal revoke needs a synced backlog plus --by and --id <entry>")
 		return 2
 	}
-	classification, err := classifyGoalAuthorityFirst("revoke", f)
+	classification, err := classifyGoalAuthorityFirstWithFacts("revoke", f, dependencies.authorityFacts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
-	proof, err := proveGoalHumanAuthority("revoke", f, prove)
+	proof, err := proveGoalHumanAuthorityAt("revoke", f, prove, commandNow)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
-	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	res, err := goal.Revoke(req, &proof, f.id)
+	dependencies.landed(res)
 	if err != nil {
-		return printSyncResult(res, err)
+		return dependencies.publish(res, err)
 	}
 	if res.Outcome == goal.OutcomeConfirmed {
 		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal revoke", proof); err != nil {
-			fmt.Fprintln(os.Stderr, "goal revoke confirmed but could not record its authority proof:", err)
+			dependencies.complain("goal revoke confirmed but could not record its authority proof:", err)
 			return 1
 		}
 	}
-	return printSyncResult(res, nil)
+	return dependencies.publish(res, nil)
 }
 
 func runGoalResume(args []string) int {
@@ -3175,6 +3263,7 @@ func runGoalResumeWithAuthorityFacts(args []string, prove goalAuthorityProver, c
 
 func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("resume", args)
+	values.report = dependencies.report
 	f, ok := parseHumanSyncFlags(values, "resume", args)
 	if !ok {
 		return 2
@@ -3192,8 +3281,7 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	values.box = budget
 	classification, err := classifyGoalAuthorityFirstWithFacts("resume", f, dependencies.authorityFacts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return dependencies.fail(1, err)
 	}
 	if commandNow == nil {
 		return refuseHumanVerb(values, 1, "goal command clock is missing", humanVerbRemedy{words: "provide a valid goal command clock"})
@@ -3271,62 +3359,67 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	defer held.Release()
 	res, err := goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: f.id, Budget: *budget, Authority: &proof})
 	if err == nil && res.Outcome == goal.OutcomeConfirmed {
+		dependencies.landed(res)
 		if err := humanauthority.RecordResumeProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), proof); err != nil {
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 	}
 	if err == nil && res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {
-		fmt.Printf("goal resume: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+		dependencies.note(true, fmt.Sprintf("goal resume: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal", f.reviewBy))
 	}
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the stopped goal's recorded cancellation batch before retrying"})
 	}
 	if res.Outcome != goal.OutcomeConfirmed {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		dependencies.showOutcome(res)
 		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: values.budgetCommand("keep")})
 	}
-	return printSyncResult(res, err)
+	return dependencies.publish(res, err)
 }
 
 func runGoalSplit(args []string) int {
-	f, ok := parseSyncFlags("split", args)
+	return runGoalSplitWithInputs(args, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalSplitWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	f, ok := dependencies.parseSyncFlags("split", args)
 	if !ok {
 		return 2
 	}
 	if !converted(f.root) {
-		fmt.Fprintln(os.Stderr, "goal split works the synced backlog; this checkout still carries the legacy ledger")
+		dependencies.complain("goal split works the synced backlog; this checkout still carries the legacy ledger")
 		return 1
 	}
 	if f.id == "" || f.members == "" {
-		fmt.Fprintln(os.Stderr, "goal split needs --id and --members")
+		dependencies.complain("goal split needs --id and --members")
 		return 2
 	}
 	draftBytes, err := os.ReadFile(f.members)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "goal split could not read its member draft:", err)
+		dependencies.complain("goal split could not read its member draft:", err)
 		return 1
 	}
 	members, err := goal.ParseMemberDraft(draftBytes, f.id)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "goal split draft refused:", err)
+		dependencies.complain("goal split draft refused:", err)
 		return 1
 	}
-	req, err := syncReq("split", f.root, f.by, f.lineage)
+	req, err := syncReqWithProofAtWithDependencies("split", f.root, f.by, f.lineage, nil, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	projection, err := goal.Project(req.Endpoint, false, req.Now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	parent := projection.Tree.Live[f.id]
 	if parent == nil {
 		if _, archived := projection.Tree.Archived(f.id); archived {
-			fmt.Fprintf(os.Stderr, "goal %s is in the archive; there is nothing to split\n", f.id)
+			dependencies.complainf("goal %s is in the archive; there is nothing to split\n", f.id)
 		} else {
-			fmt.Fprintf(os.Stderr, "goal %s does not exist\n", f.id)
+			dependencies.complainf("goal %s does not exist\n", f.id)
 		}
 		return 1
 	}
@@ -3336,7 +3429,7 @@ func runGoalSplit(args []string) int {
 	if f.by != "" {
 		observed, proofErr := humanauthority.Prove(f.root, int64(os.Getppid()), nil, time.Now().UTC())
 		if proofErr != nil {
-			fmt.Fprintln(os.Stderr, "SPLIT_RATIFY_REFUSED: goal split could not prove enrolled human ancestry:", proofErr)
+			dependencies.complain("SPLIT_RATIFY_REFUSED: goal split could not prove enrolled human ancestry:", proofErr)
 			return 1
 		}
 		proof = &observed
@@ -3344,16 +3437,16 @@ func runGoalSplit(args []string) int {
 	} else {
 		classification, classErr := classifyVerbCaller(f.root, int64(os.Getppid()))
 		if classErr != nil {
-			fmt.Fprintln(os.Stderr, "SPLIT_RATIFY_REFUSED: caller classification failed:", classErr)
+			dependencies.complain("SPLIT_RATIFY_REFUSED: caller classification failed:", classErr)
 			return 1
 		}
 		if parent.Origin != goal.OriginMain {
-			fmt.Fprintf(os.Stderr, "SPLIT_RATIFY_REFUSED: goal %s's split draft must be ratified by its origin tier — use --by from the enrolled human terminal for human-origin work, or run from the MAIN checkout-lease holder for main-origin work\n", f.id)
+			dependencies.complainf("SPLIT_RATIFY_REFUSED: goal %s's split draft must be ratified by its origin tier — use --by from the enrolled human terminal for human-origin work, or run from the MAIN checkout-lease holder for main-origin work\n", f.id)
 			return 1
 		}
 		ratification, err = mainSplitRatification(f.id, digest, classification)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			dependencies.complain(err)
 			return 1
 		}
 	}
@@ -3362,7 +3455,7 @@ func runGoalSplit(args []string) int {
 	if parent.State == goal.StateClaimed && parent.Claimed != nil && parent.Claimed.Machine == req.Actor.Machine && parent.Claimed.Lineage == req.Actor.Lineage {
 		held, err = goalrevision.Acquire(f.root, f.id, parent.Claimed.Revision, "goal-split")
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "goal split could not acquire the goal-revision lock:", err)
+			dependencies.complain("goal split could not acquire the goal-revision lock:", err)
 			return 1
 		}
 		defer held.Release()
@@ -3372,22 +3465,22 @@ func runGoalSplit(args []string) int {
 			if spend.Unknown != nil {
 				detail = spend.Unknown.Record + ": " + spend.Unknown.Reason
 			}
-			fmt.Fprintf(os.Stderr, "goal %s revision %d cannot prove zero work: %s\n", f.id, parent.Claimed.Revision, detail)
+			dependencies.complainf("goal %s revision %d cannot prove zero work: %s\n", f.id, parent.Claimed.Revision, detail)
 			return 1
 		}
 		if spend.Attempts != 0 || spend.ActiveJobs != 0 || spend.ReservedJobMinutes != 0 {
-			fmt.Fprintf(os.Stderr, "goal %s revision %d has recorded work (%d attempts, %d active jobs, %d reserved minutes); split is a before-slicing act — conclude the slice or take the parent to the human\n", f.id, parent.Claimed.Revision, spend.Attempts, spend.ActiveJobs, spend.ReservedJobMinutes)
+			dependencies.complainf("goal %s revision %d has recorded work (%d attempts, %d active jobs, %d reserved minutes); split is a before-slicing act — conclude the slice or take the parent to the human\n", f.id, parent.Claimed.Revision, spend.Attempts, spend.ActiveJobs, spend.ReservedJobMinutes)
 			return 1
 		}
 	}
 	if proof != nil {
 		if err := humanauthority.RecordProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal split", *proof); err != nil {
-			fmt.Fprintln(os.Stderr, "goal split could not record its authority proof:", err)
+			dependencies.complain("goal split could not record its authority proof:", err)
 			return 1
 		}
 	}
 	res, err := goal.Split(req, f.id, members, ratification, proof)
-	return printSyncResult(res, err)
+	return dependencies.publish(res, err)
 }
 
 func mainSplitRatification(id, digest string, classification lease.ClassifyResult) (goal.SplitRatification, error) {
@@ -3419,6 +3512,7 @@ func runGoalEnrollTerminalWith(args []string, enroll goalTerminalEnroller) int {
 
 func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnroller, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("enroll-terminal", args)
+	values.report = dependencies.report
 	flags := flag.NewFlagSet("goal enroll-terminal", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "checkout root")
@@ -3438,6 +3532,10 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run enrollment from a shell whose ancestry to its session leader is owned by you"})
 	}
+	if dependencies.report != nil {
+		// The local enrollment is committed; what follows publishes it.
+		dependencies.report.value = enrollment
+	}
 	req, err := syncReqWithProofAtWithDependencies("enroll-terminal", *root, "terminal", *lineage, nil, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
@@ -3448,6 +3546,10 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	// this machine's completed local enrollment valid and needs no root rewrite.
 	if err != nil || (res.Outcome != goal.OutcomeConfirmed && res.Outcome != goal.OutcomeConfirmedLate && res.Outcome != goal.OutcomeAbandoned) {
 		return refuseHumanVerb(values, 1, fmt.Sprint("the terminal enrolled locally but its fleet cutoff did not publish: ", err, " ", res.Detail), humanVerbRemedy{words: "the local enrollment stands; repair fleet synchronization without re-enrolling"})
+	}
+	if dependencies.report != nil {
+		dependencies.report.result = &res
+		return 0
 	}
 	printJSON(enrollment)
 	return 0
@@ -3471,6 +3573,7 @@ func runGoalSetObligationWithAuthorityFacts(args []string, prove goalAuthorityPr
 
 func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("set-obligation", args)
+	values.report = dependencies.report
 	flags := flag.NewFlagSet("goal set-obligation", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "checkout root")
@@ -3521,7 +3624,7 @@ func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, pro
 	}
 	classification, err := brainHumanWordClassificationWithFacts("set-obligation", *root, *by, nil, dependencies.authorityFacts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		dependencies.complain(err)
 		return 1
 	}
 	ancestryNow, err := commandNow(*root)
@@ -3576,6 +3679,7 @@ func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, pro
 			CorrelatedAssumptionRisk: *correlatedRisk, AuthorityScopeChange: *authorityScopeChange, DestructiveReach: *destructiveReach},
 	}
 	res, err := goal.SetObligation(req, *id, obligation, &proof)
+	dependencies.landed(res)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the goal's current claimed budget or obligation fields before retrying"})
 	}
@@ -3585,13 +3689,13 @@ func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, pro
 		}
 	}
 	if res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {
-		fmt.Printf("goal set-obligation: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", *reviewBy)
+		dependencies.note(true, fmt.Sprintf("goal set-obligation: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal", *reviewBy))
 	}
 	if res.Outcome != goal.OutcomeConfirmed {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		dependencies.outcomeBeforeRefusal(res)
 		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "repair the goal's current claimed budget or obligation fields before retrying"})
 	}
-	return printSyncResult(res, nil)
+	return dependencies.publish(res, nil)
 }
 
 func runGoalEditWithDependencies(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
@@ -3605,7 +3709,16 @@ func runGoalEditWithDependencies(args []string, commandNow func(string) (time.Ti
 }
 
 func goalEditEffect(req goal.VerbRequest, f *syncFlags, commandNow func(string) (time.Time, error)) (goal.PublishResult, error) {
+	return goalEditEffectAppending(req, f, commandNow, "")
+}
+
+// goalEditEffectAppending is the edit with text added to the next step
+// inside the edit's own transaction.
+func goalEditEffectAppending(req goal.VerbRequest, f *syncFlags, commandNow func(string) (time.Time, error), appendNext string) (goal.PublishResult, error) {
 	fields := goal.EditFields{Why: f.why, Evidence: f.evidence}
+	if appendNext != "" {
+		fields.NextStepAppend = &appendNext
+	}
 	var beforeDerived uint8
 	if f.tier != 0 && f.risk == "" {
 		return goal.PublishResult{}, fmt.Errorf("answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis")

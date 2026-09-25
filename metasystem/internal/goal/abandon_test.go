@@ -162,7 +162,9 @@ func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.
 		t.Fatalf("claim first blocker: %+v %v", result, err)
 	}
 	person.Ulid = "01J5X00000000000000000Q050"
-	done, err := Done(person, "done-blocker", "The first blocker is complete.")
+	personDone := person
+	personDone.Authority = testTerminalAuthority(t, personDone.Endpoint.Root, personDone.Now)
+	done, err := Done(personDone, "done-blocker", "The first blocker is complete.")
 	if err != nil || done.Outcome != OutcomeConfirmed {
 		t.Fatalf("finish first blocker: %+v %v", done, err)
 	}

@@ -403,8 +403,8 @@ func ParseDeclaredOutputs(path string) ([]string, error) {
 			return nil, fmt.Errorf("declared outputs line %d: path must use forward slashes", line)
 		}
 		ref, parseErr := critiqueModel.ParseArtifactRef(value)
-		if parseErr != nil || ref.Kind != critiqueModel.ArtifactPath {
-			return nil, fmt.Errorf("declared outputs line %d: path must begin metasystem/", line)
+		if (parseErr != nil || ref.Kind != critiqueModel.ArtifactPath) && !RepositoryDesignPath(value) {
+			return nil, fmt.Errorf("declared outputs line %d: path must begin metasystem/ or plans/designs/", line)
 		}
 		for _, segment := range strings.Split(value, "/") {
 			if segment == "." || segment == ".." {
@@ -1251,4 +1251,19 @@ func validateAfterCapPacket(composition map[string]any) error {
 		return fmt.Errorf("a continuation after a cap carries the prior-worktree slot and no prior return in its packet")
 	}
 	return nil
+}
+
+// RepositoryDesignPath reports whether a checkout-relative path lies in the
+// self-hosted checkout's own design home, plans/designs, which holds design
+// records beside the installation's metasystem/plans/designs.
+func RepositoryDesignPath(value string) bool {
+	if !strings.HasPrefix(value, "plans/designs/") || strings.Contains(value, "\\") {
+		return false
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
 }

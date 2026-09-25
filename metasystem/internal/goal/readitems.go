@@ -2,6 +2,7 @@ package goal
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"sort"
 	"strconv"
 	"strings"
@@ -91,12 +92,20 @@ func utcStamp(value string) bool {
 	return err == nil && parsed.Location() == time.UTC && strings.HasSuffix(value, "Z")
 }
 
-func authorizeReadItemChange(f *GoalFile, r VerbRequest) (string, error) {
-	if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
-		return "", fmt.Errorf("goal %s is claimed by %s+%s; editing another's claimed goal is a human act", f.Id, f.Claimed.Machine, f.Claimed.Lineage)
+func authorizeReadItemChange(f *GoalFile, r VerbRequest, verb string) (string, error) {
+	// Changing another pair's claimed goal or a parked goal is a person's act,
+	// and the person is proven, not merely named.
+	if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) {
+		missing := fmt.Sprintf("goal %s is claimed by %s+%s; editing another's claimed goal is a human act", f.Id, f.Claimed.Machine, f.Claimed.Lineage)
+		if err := r.requireHuman(humanAuthorityRow{Verb: verb, Name: "read items on another pair's claim", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+			return "", err
+		}
 	}
-	if f.State == StateParked && r.Actor.Human == "" {
-		return "", fmt.Errorf("goal %s is parked; editing a parked goal is a human act", f.Id)
+	if f.State == StateParked {
+		missing := fmt.Sprintf("goal %s is parked; editing a parked goal is a human act", f.Id)
+		if err := r.requireHuman(humanAuthorityRow{Verb: verb, Name: "read items on a parked goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+			return "", err
+		}
 	}
 	if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
 		return pairMarker(f.Claimed), nil
@@ -145,7 +154,7 @@ func AddReadItems(r VerbRequest, id, label string, texts []string) (PublishResul
 			if opidLanded(file, r) {
 				return nil, AlreadyApplied{}
 			}
-			displaced, err := authorizeReadItemChange(file, r)
+			displaced, err := authorizeReadItemChange(file, r, "read-items add")
 			if err != nil {
 				return nil, err
 			}
@@ -243,7 +252,7 @@ func closeReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure, re
 			if opidLanded(file, r) {
 				return nil, AlreadyApplied{}
 			}
-			displaced, err := authorizeReadItemChange(file, r)
+			displaced, err := authorizeReadItemChange(file, r, "read-items close")
 			if err != nil {
 				return nil, err
 			}
@@ -270,7 +279,7 @@ func closeReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure, re
 				if target == nil {
 					return nil, fmt.Errorf("move target %s is not an open goal", reference)
 				}
-				targetDisplaced, authErr := authorizeReadItemChange(target, r)
+				targetDisplaced, authErr := authorizeReadItemChange(target, r, "read-items close")
 				if authErr != nil {
 					return nil, authErr
 				}

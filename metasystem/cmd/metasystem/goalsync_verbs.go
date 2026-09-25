@@ -218,6 +218,24 @@ func runGoalSourceDigest(args []string) int {
 	return 0
 }
 
+// recoverGoalJournal runs the one recovery rule over the journal and returns
+// what it did to each stranded entry.
+func recoverGoalJournal(root string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) ([]goal.RecoveryReport, error) {
+	if err := dependencies.ensureGuard(root); err != nil {
+		return nil, err
+	}
+	endpoint, err := dependencies.endpoint(root)
+	if err != nil {
+		return nil, err
+	}
+	configureCarriedCounselor(&endpoint)
+	now, err := commandNow(root)
+	if err != nil {
+		return nil, err
+	}
+	return goal.RecoverWithPolicy(endpoint, goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: now}, root: root})
+}
+
 // runGoalRecover executes the one recovery rule over the journal —
 // the verb a stranded clone runs to move again.
 func runGoalRecover(args []string) int {
@@ -230,22 +248,7 @@ func runGoalRecover(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal recover: --root is required")
 		return 2
 	}
-	if err := ensureGuardEnrolled(*root); err != nil {
-		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
-		return 1
-	}
-	endpoint, err := goal.ResolveEndpoint(*root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
-		return 1
-	}
-	configureCarriedCounselor(&endpoint)
-	now, err := goalCommandNow(*root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
-		return 1
-	}
-	reports, err := goal.RecoverWithPolicy(endpoint, goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: now}, root: *root})
+	reports, err := recoverGoalJournal(*root, goalCommandNow, defaultSyncRequestDependencies())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
 		return 1

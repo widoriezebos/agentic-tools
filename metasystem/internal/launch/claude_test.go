@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -42,6 +43,37 @@ func TestClaudeHeadlessCommand(t *testing.T) {
 	want := []string{"-p", "--model", "chosen", "--dangerously-skip-permissions", "--output-format", "json", "--name", "design-alpha", "--resume", "session-1"}
 	require(t, err != nil || command.Program != "fake-claude" || command.Directory != root || command.Stdin != "brief text\n" || !reflect.DeepEqual(command.Args, want), "command=%+v err=%v", command, err)
 	require(t, command.StdoutPath != filepath.Join(state, "result.json") || command.LogPath != filepath.Join(state, "stderr.log") || command.StdoutPath == command.LogPath, "output paths=%+v", command)
+}
+
+// TestClaudeCommandForwardsTheRecordedEffort: the effort a launch was
+// started with, a caller's own or the configured one, reaches the Claude
+// argv; a record without one gets no --effort.
+func TestClaudeCommandForwardsTheRecordedEffort(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	m.Adapters["claude-headless"] = ClaudeHeadless{Binary: "claude"}
+	m.Supervisor = childStarter(m)
+	for _, row := range []struct{ requested, want string }{{"high", "high"}, {"", DefaultSettings().BuildEffort}} {
+		started, err := m.Start(StartSpec{Kind: "build", Tag: "alpha", WorkingDirectory: t.TempDir(), Brief: brief(t), Model: "claude-opus-5-5", Effort: row.requested})
+		if err != nil {
+			t.Fatal(err)
+		}
+		record, err := m.Store.Read(started.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		command, err := m.Adapters[record.Adapter].Command(record, t.TempDir())
+		want := []string{"-p", "--model", "claude-opus-5-5", "--effort", row.want, "--dangerously-skip-permissions", "--output-format", "json", "--name", "build-alpha"}
+		if err != nil || record.Adapter != "claude-headless" || !reflect.DeepEqual(command.Args, want) {
+			t.Fatalf("requested %q: adapter=%s argv=%v want=%v err=%v", row.requested, record.Adapter, command.Args, want, err)
+		}
+	}
+	record, _ := claudeRecord(t, "build")
+	delete(record.AdapterData, "effort")
+	command, err := (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir())
+	if err != nil || slices.Contains(command.Args, "--effort") {
+		t.Fatalf("a record without an effort: argv=%v err=%v", command.Args, err)
+	}
 }
 
 func TestReadModelWithContextSuffixPassesThroughToClaude(t *testing.T) {
@@ -403,7 +435,7 @@ func checkForbiddenNames(t *testing.T, path string, forbidden []string) {
 func TestProjectRulesNameTheLaunchVerbs(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(moduleRoot(t), "docs", "project-rules.md"))
 	text := string(data)
-	for _, phrase := range []string{"--kind design", "--kind read", "--kind critique", "metasystem launch round-task"} {
+	for _, phrase := range []string{"--kind design", "--kind read", "--kind critique", "metasystem internal launch round-task"} {
 		if err != nil || !strings.Contains(text, phrase) {
 			t.Fatalf("project rules missing %q: %v", phrase, err)
 		}

@@ -48,7 +48,7 @@ var smokeQuestions = []struct{ kind, text string }{
 	{"an unavailable section", "What would the Decisions section show me, and can I open it today?"},
 	{"an act", "What do I have to be for this interface to let me approve a goal?"},
 	{"can you write", "Can you edit this design with me and save it?"},
-	{"a verb", "What does the command `metasystem goal next` do?"},
+	{"a verb", "What does the command `metasystem goals --ready` do?"},
 	{"a ruling", "Is there a standing ruling about getting a design critiqued before it is built?"},
 	{"a concept", "What is a lease epoch?"},
 	{"the records", "Where does this checkout keep its decisions, and what is a decision for?"},

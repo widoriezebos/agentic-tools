@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // ResolveReadGate runs the fast gate once per goal unit in the detached unit
@@ -57,6 +59,12 @@ func TestResolveReadGateRecordsOneRunAndRefusesAChangedTree(t *testing.T) {
 	f.expect("BranchSubject", f.root, f.unit)
 	f.expect("CommonDir", f.root)
 	_, err = ResolveReadGate(request)
+	// Unlock explicitly: a Git child forked by a parallel test holds a
+	// duplicate of this descriptor until it execs, so Close alone can leave
+	// the lock held for the next resolution.
+	if unlockErr := unix.Flock(int(held.Fd()), unix.LOCK_UN); unlockErr != nil {
+		t.Fatal(unlockErr)
+	}
 	if closeErr := held.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}

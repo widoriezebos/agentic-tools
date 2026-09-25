@@ -22,9 +22,9 @@ Every delegation states the goal, the workspace it runs in, the inputs it may re
 
 No model context waits. A delegate that launches a job, a proof or a landing returns at once; a shell or Go waiter re-invokes the seat when the record is durable (`metasystem wait`, or the launcher's own poll outside any model context). A wait inside a model context is billed at the whole context per poll: the landing lanes and build chains of 2026-09-15 and 09-16 cost about 110M weighted tokens for 70 output tokens per call.
 
-Before dispatching a code read or critique, the seat prepares the reader's private copy and completes and reads `scripts/agents/templates/review-brief.md`: it records the copy's path and exact commit or diff, writes a focused numbered checklist whose items name file line ranges or fixture rows, and sets a numeric tool-call budget at which the reader stops and reports unchecked items. Each round uses a fresh reader and never resumes a reader from an earlier round. After findings are folded, conformance checks the whole recomputed diff; the confirmation read uses the template's scoped variant for the corrections, their consumers and prior findings, expanding if the design or unrelated behavior changed.
+A code read or critique starts with `metasystem review job J --tool-calls N`, `metasystem review unit RUN` for a built unit, or `metasystem review commit SHA --goal G`; the preliminary read inside `metasystem build` is feedback, not that review. The command freezes the subject, prepares the reader's private copy and records its path and exact commit or diff. The seat still completes and reads `scripts/agents/templates/review-brief.md`: it states the threat model and scope, writes a focused numbered checklist whose items name file line ranges or fixture rows, and sets a numeric tool-call budget at which the reader stops and reports unchecked items. Each round uses a fresh reader and never resumes a reader from an earlier round. After findings are folded, conformance checks the whole recomputed diff; the confirmation read uses the template's scoped variant for the corrections, their consumers and prior findings, expanding if the design or unrelated behavior changed.
 
-At a read's return, before landing the build, the seat records every non-breaking finding with `metasystem goal read-items add --id <goal> --read <label> --item "<text>"`; breaking findings still gate the landing.
+At a read's return, before landing the build, the seat records every non-breaking finding with `metasystem notes <goal> --read <read> --add "<text>"`; breaking findings still gate the landing. A note is never a certified finding. Closing one takes exactly one real disposition: `metasystem notes <goal> --close <item>` with `--fixed <commit>`, `--moved <goal>` or `--accepted <reason>`.
 
 Before dispatching a design author or a revision, the seat fills in `scripts/agents/templates/design-brief.md`: the context pack, a numeric tool-call budget, and a word-count page-size ceiling. Every revision goes to a fresh delegate and is never resumed; this is an exception to the follow-up resume described in the paragraph beginning "Corrections use". The seat writes one `type=design` receipt for each revision and records that delegate's tokens and calls as `design_tokens` and `design_calls`.
 
@@ -84,7 +84,7 @@ elapsed, active-job or review-round limits, and those limits themselves are
 unchanged. After one extension, a later exhaustion refuses with the marker and
 waits for a person's set-budget.
 
-For `metasystem test run`, `--goal X` names the candidate goal whose risk,
+For a proof run (`metasystem test`), `--goal X` names the candidate goal whose risk,
 proof plan, candidate tree, budget episode, retries, and reuse the run advances;
 it does not automatically name the claim that authorizes the seat. `--authority
 C` may name that claim explicitly, or admission resolves the machine's one live,
@@ -99,11 +99,11 @@ lens X pays attempt count and reserved job minutes, so a live charged attempt ca
 count under both lenses at once. Only a candidate that is also the authority may
 take its consumption-earned extension. When X differs from C, exhaustion at the
 candidate lens instead requires claiming X as its own authority or a person's
-one-step `goal set-budget` act.
+one-step `metasystem budget X BOX` act.
 
 Risk is four separate questions, never the shape of the change. A goal's
 Risk record scores severity, novelty, exposure and accumulation, each 1 to
-3 with a basis sentence, given to `goal open` and `goal edit` as `--risk
+3 with a basis sentence, given to `metasystem open` and `metasystem edit` as `--risk
 severity=<n>,novelty=<n>,exposure=<n>,accumulation=<n> --basis <text>` (the
 classification sweep takes the same four scores as `<s>,<n>,<e>,<a>` and
 renders the tier itself); `--tier` without the four answers is refused. The
@@ -113,7 +113,7 @@ multiplies the landing's cadence weight (`gate weight-add --goal`), and
 accumulation 2 or higher requires the full-width selected coverage once.
 Exposure alone had lifted three
 quarters of the backlog to tier 3 (goal tier-from-severity-and-novelty);
-`goal tier-probe` reports the backlog's recorded and derived tiers and the
+`metasystem goals --tiers` reports the backlog's recorded and derived tiers and the
 goals a person may lower. An override above the derivation is recorded
 with `--why`; an override below it, or a lowering after claim, is the human's
 act alone. A raise after claim is one transaction that re-binds the claim's
@@ -142,7 +142,7 @@ configuration, selected groups and cache conditions before interpreting a
 before/after change.
 
 A seat opens only the defect that blocks its claimed goal (R-93-m1e, Wido
-2026-09-11). Its `goal open` (origin main) names that goal with
+2026-09-11). Its `metasystem open` (origin main) names that goal with
 `--blocks <goal-id>`, and one publish does the whole move: the blocker opens
 queued, the blocked goal parks with the blocker recorded
 (`Parked: ... blocker=<id>`) and the edge written to `BlockedBy`, and the
@@ -156,42 +156,43 @@ without `--blocks`. An improvement a seat discovers that blocks nothing is a
 proposal appended to `memory/backlog-notes.md`, never a goal.
 
 Low-tier ceremony may run under a recorded power of attorney (R-95-m1e,
-Wido 2026-09-11). A person records one with `goal grant --by <name> --tiers 1,2
---verbs approve,set-budget --expires <date>` under their own proof (the
+Wido 2026-09-11). A person records one with `metasystem grant --by <name> --tiers 1,2
+--acts approve,budget --until <date>` under their own proof (the
 enrolled terminal, or the fixture grant in a bed; never a relayed word); it
 lives in the root record's `PowerOfAttorney:` section, lives at most seven
-days with the expiry day included, and `goal revoke` closes it early. A seat then
-runs `goal approve --under <entry>` or `goal set-budget --under <entry>` on
+days with the expiry day included, and `metasystem revoke <entry>` closes it early. A seat then
+runs `metasystem approve <goal> --under <entry>` or `metasystem budget <goal> <box> --under <entry>` on
 a tier-1 goal with no terminal and no `--by`: the act stays the seat's own
 on the ledger (`authority=attorney`, the entry named on the history line),
 stays within the goal's tier box, never rewrites an approval a person made
-(proven, relayed or channel), and is refused for any goal outside the entry's tiers or verbs, on the
+(proven, relayed or channel), and is refused for any goal outside the entry's tiers or acts, on the
 brain, or once the entry has expired or been revoked. The approval it
 records stands after the entry ends. An entry covers tier 1, tier 2 or
 both (tier 2 since tier-from-severity-and-novelty landed); tier 3 stays the
-person's own act. An entry naming `unpark` lets the seat lift a park a
-person recorded with `park` or `unapprove` on a tier-1 goal, saying what
-it verified (`goal unpark --id <goal> --under <entry> --verified "<what
-holds now>"`, R-105-m1e); never a blocker's park.
+person's own act. An entry naming `resume-parked` (stored as `unpark`) lets the seat lift a park a
+person recorded with `pause` or `unapprove` on a tier-1 goal, saying what
+it verified (`metasystem resume <goal> --under <entry> --verified "<what
+holds now>"`, R-105-m1e); never a blocker's park, and never a stopped
+claim, whose resume refuses `--under`.
 
 Under R-60-m1, the reviewer stops critique at the first round with no material
 finding, and under R-124 a finding is material only when the slice does not
 work or is not safe without it; everything else is deferred, never folded
 with new mechanism. A material finding must change what gets built and name that
 artifact; a finding that fails the artifact test is demoted at registration.
-For design critique, one round is the norm since 2026-09-17 (step 2 of the loop); the round-2 rules below apply only when a fold changed a rule. For design critique, Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `goal accept-risk` and a re-scope by `goal edit`. There is no third design round and none can be bought.
-When code-critique or warden rounds are spent, `job critique-register-close`
-defers each bounded open finding into a review obligation on the goal (discharged later by `goal
-discharge-review-obligation` against the chain, artifact and test that carry
+For design critique, one round is the norm since 2026-09-17 (step 2 of the loop); the round-2 rules below apply only when a fold changed a rule. For design critique, Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `metasystem decide` and a re-scope by `metasystem edit`. There is no third design round and none can be bought.
+When code-critique or warden rounds are spent, the register close (the internal owner
+`metasystem internal job critique-register-close`) defers each bounded open finding into a review obligation on the goal (discharged later by `metasystem
+resolve <goal> --review R --finding F --test NAME` against the chain, artifact and test that carry
 it) and closes the register; a severe or unproven finding closes only after a
-human records `goal accept-risk` for it. The reviewer never dispatches a
+human records `metasystem decide <goal> --finding F --review R --reason <text>` for it. The reviewer never dispatches a
 silent fourth round.
 Tier 1 has no critique and lands as a receipted direct fix bound to the
 candidate tree.
 A carried landing is the separate, human-only landing form: a verified human
-issues `goal carry` for one workspace tree and exactly one named refusal code
-or `group:<id>`, and `land.sh --carried <opid>` may carry only that fact. The
-landing writes the reservation and immutable commit trailers, then records one
+issues `metasystem internal goal carry` for one workspace tree and exactly one named refusal code
+or `group:<id>`, and `land.sh --carried <opid>` may carry only that fact; `metasystem land`
+never grants a carry. The landing writes the reservation and immutable commit trailers, then records one
 `human-carried` review obligation on the goal. Every use increments the goal's
 budget exceptions and the fleet's `CARRIED` counters; the configured open-word
 cap, any in-flight carry, and unpaid carried-review debt prevent stacking.
@@ -200,11 +201,31 @@ The tier boxes' reserved-minute members are the runaway guard;
 `landing.receipt-bound-min` bounds the receipt command.
 `channel.poll-timeout-sec` bounds each channel provider operation in seconds and defaults to 15.
 Channel answers end with the six-digit code, which is checked at the provider's send time when available and refused once it is more than one two-minute poll interval plus one 30-second code step old.
-The status post requests execution approval only for the queued goal marked with `goal edit --pin <machine> --label next`, and its thread reply names the exact `start <goal-id>` token before the code.
+The status post requests execution approval only for the queued goal marked with `metasystem pin <goal> <machine>` and the `next` label (`metasystem edit <goal> --label next`), and its thread reply names the exact `start <goal-id>` token before the code.
 
 ## Rostered Dispatch
 
-`metasystem.conf` owns the runtime and model roster. Dispatch a rostered role through `metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <MECHANICAL|DESIGN-BEARING|DESTRUCTIVE-REACH>` even when the selected runtime matches the main agent; `metasystem help` owns the full operator interface. `runtime=main` means the current session performs that role and is not dispatchable. Native subagents remain available for cheap, read-only exploration outside the roster.
+`metasystem.conf` owns the runtime and model roster. Rostered work starts from its intent even when the selected runtime matches the main agent, and each command resolves its roster role inside the adapter:
+
+- `metasystem build G UNIT --brief FILE [--lines N] [--read-tool-calls N] --check COMMAND...` prepares the unit plan in the goal's worktree and runs build, proof and a preliminary independent read inside the claimed goal's approved budget. `--lines` is the unit's honest changed-line estimate when no units table has its row, and `--read-tool-calls` the read's budget when the brief does not state it. The run ends at *awaiting judgement*. The preliminary read is feedback for the author, never landing evidence: a green one certifies nothing. A red proof stops the read. Repeating the same call resumes the same run; changed inputs need `fold unit` or a new unit name.
+- `metasystem review unit RUN` commits and publishes exactly the built result as the unit's goal-branch commit and requests the genuine committed review; that critic's closed read is the evidence landing consumes. `metasystem review design FILE --tool-calls N` and `review job J --tool-calls N` review a design or a finished job with the reviewer's approved tool-call budget; `metasystem review commit SHA --goal G` reviews an existing goal-branch commit and always names its goal. Findings return for the author's dispositions; review never accepts them itself.
+- `metasystem fold unit U --brief FILE` continues a unit; `metasystem fold review R --dispositions FILE --brief FILE` validates the dispositions against the actual findings and requests the implementation follow-up.
+- `metasystem close J --dispositions FILE` applies the author's dispositions (required for a review chain) and runs the full existing close sequence, or names the unresolved finding or unfinished job.
+- `metasystem land G` or `land job J` picks the route the recorded evidence admits and stops at a missing proof or approval rather than falling back to a weaker route. It never concludes the goal.
+
+One unit, from build to landing, on a claimed goal with an approved budget (the brief, estimate and check are real inputs, never placeholders):
+
+```sh
+metasystem build faster-proof proof-cache --brief plans/proof-cache-brief.md --lines 180 --read-tool-calls 30 --check go test -count=1 ./internal/proofrun/
+metasystem review unit <run>        # commit and publish the built result, request the committed review
+metasystem close <critic-job> --dispositions plans/proof-cache-r1-dispositions.md --repo <goal-checkout>
+metasystem review unit <run>        # collect the closed read and publish it
+metasystem land faster-proof
+```
+
+Each step prints its result and the next command, or the decision it needs. The committed critic runs in the goal's generated checkout, not in the one `build` ran from, so the close step is the exact command `review unit` printed, `--repo` naming that goal checkout included; run it as printed, then repeat `review unit <run>`. A finding that needs a fix goes through `fold` and a fresh `review unit` before landing.
+
+Each command stops at the first decision that is a person's or the author's and names it. `metasystem help agent` and `help VERB` own the grammar and advanced options. A role or operation with no public intent, such as dispatching a design author, uses the retained `metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <MECHANICAL|DESIGN-BEARING|DESTRUCTIVE-REACH>`; `metasystem help internal` lists that catalogue. `runtime=main` means the current session performs that role and is not dispatchable. Native subagents remain available for cheap, read-only exploration outside the roster.
 
 Critique follows the goal's tier, not the hazard class (critique-always): a chain on a tier-2 or tier-3 goal is refused closure until an independent critic in a fresh session has read its final round, whatever the chain's `--destructive-reach`; a tier-1 chain closes without one. The critic must prove the critique's own effort (maximal, xhigh), which a critic job carries only through its class's builder rows, so dispatch the critic of a MECHANICAL tier-2 or tier-3 chain with `--destructive-reach DESIGN-BEARING`; a critic dispatched at MECHANICAL is refused at close by name. The tier is frozen on the root record at admission (`--goal-tier`, recorded as `goalTier`); raising a goal's tier does not change an open chain's duty.
 
@@ -219,9 +240,9 @@ The foreground `metasystem wait` verb blocks on durable job, run, proof-attempt,
 
 A seat that ends its turn while work tracked by the harness is still running registers the process with `metasystem wait register --pid <pid> --label <text>`, optionally adding `--job <job-id>`. A seat waiting for a human answer registers `metasystem wait register --human --question <text> --timeout <duration>`; the human deadline is mandatory. Both forms have a maximum timeout of 24 hours, and local waits default to four hours. The stop gate then lets the seat stop and names the registered work or question and its deadline. `metasystem wait end --wait-id <id>` ends either registration explicitly.
 After a job transition, proof terminal, or confirmed ledger publication is durable, that publication owner sends a best-effort nonce-bound hint through the waiter's owner-only named pipe. The hint only schedules an earlier source read: a missing pipe, dropped hint, duplicate hint, or forged hint cannot supply an outcome, and the waiter still rereads within ten seconds when native delivery is unavailable. `job watch`, `run watch`, and `delegate --wait` are compatibility wrappers over this verb; they preserve their prior exit mappings, while `delegate --wait` falls back to its old record watch when an older installed engine has no `wait` family.
-`metasystem supervise status --repo <checkout>` reports the linked engine commit as `engineBuild`.
+`metasystem internal supervise status --repo <checkout>` reports the linked engine commit as `engineBuild`.
 
-Corrections use `metasystem delegate --follow-up <job> --brief <file>` to resume the recorded session. When a runtime cannot resume that exact session, the typed delegate path makes a fresh-context continuation whose packet embeds the prior brief, prior return, and focused correction; it records the loss of context instead of silently pretending it resumed.
+Corrections return to the work's own session: `metasystem fold unit U --brief FILE` for a unit and `metasystem fold review R --dispositions FILE --brief FILE` for an implementation chain after review. A critic chain's next round is a different path and keeps `metasystem internal delegate --follow-up <job> --brief <file>`. Each resumes the recorded session. When a runtime cannot resume that exact session, the typed delegate path makes a fresh-context continuation whose packet embeds the prior brief, prior return, and focused correction; it records the loss of context instead of silently pretending it resumed.
 
 A round the reaper cut off at its cap (`status=timeout`, `error=budget-cap`) is continued, not restarted. Its worktree keeps its work, and `follow-up` admits it for an implementer chain in a job worktree: the successor always composes fresh context (the killed session is never resumed), its packet carries the prior brief and a `prior-worktree` paragraph the engine writes (`metasystem job cap-continuation`: which round was cut off at which cap and when, the paths changed against the worktree head at composition, and that its `diffBoundary` must list every changed path of the chain), and its record carries `continuation=after-cap`. Critic chains keep the refusal (their register cannot fold a capped round), and so do shared-checkout chains and a chain whose worktree is gone; each refusal names its remedy. A composed packet also tells the round its cap and asks for its return before the margin (`dispatch.return-margin-min`, default 10 minutes) whenever the margin fits under the cap and the cap was not truncated by a mission's wall clock: the cap is authorized before the packet is composed, and the line is a function of the cap and the margin alone, so a repeated operation composes the same bytes.
 
@@ -238,7 +259,7 @@ Everything exchanged between orchestrator and delegate is a file; the launch tra
 | `artifacts/agents/worktrees/<job-id>/` | Disposable delegate worktree created by `--worktree`; writable roles never edit the shared checkout |
 | `artifacts/agents/capabilities/` | Immutable probe snapshots that gate dispatch |
 
-For implementation, `metasystem validate conformance --stage review --job <job-id>` computes and persists the actual base-to-working-tree `diff.patch` and its exact `reviewedTree`; the delegate's reported file boundary is only a claim. After critique, `--stage merge` binds the closed code-critic chain to the final committed tree. `metasystem validate critique-closed` owns the mechanical findings-to-dispositions join. `plans/README.md` owns evidence retention and the durable-mirror boundary.
+For implementation, `metasystem review job J` runs `metasystem validate conformance --stage review --job <job-id>`, which computes and persists the actual base-to-working-tree `diff.patch` and its exact `reviewedTree`; the delegate's reported file boundary is only a claim. After critique, `--stage merge` binds the closed code-critic chain to the final committed tree; `land` runs it where the route needs it. `metasystem validate critique-closed` owns the mechanical findings-to-dispositions join that `fold review` and `close` apply; running it alone is a diagnostic, not an extra step. `plans/README.md` owns evidence retention and the durable-mirror boundary.
 
 ## Mission Contracts
 
@@ -348,9 +369,9 @@ A launched run is a delegation to a process, and it gets the same skepticism. Ea
 
 - Launch anything that can outlive the current tool call or session detached, with the PID and instance tag recorded as the shared-machine rules below require. A mid-flight kill wastes the spend and can corrupt the run's own ledgers, invalidating even the completed part.
 - Confirm the run actually started before trusting it: probe its status once and check that its output location exists.
-- Arm supervision explicitly when provisioning a repository for its first run. Session-start hooks are the steady-state path and cannot cover first use, because a freshly adopted repository has never had a session; Mission Zero's preflight refused until it was armed by hand (IL-13).
+- Arm supervision explicitly when provisioning a repository for its first run: a person runs `metasystem start` in the checkout. Session-start hooks are the steady-state path and cannot cover first use, because a freshly adopted repository has never had a session; Mission Zero's preflight refused until it was armed by hand (IL-13).
 - Watch a liveness signal the process advances continuously during healthy work, and verify it is advancing before relying on it. Many healthy runs are silent for long stretches; stdout is usually the wrong signal, and absence of output is not absence of progress. Never kill a run on silence alone; prove it is dead through an independent signal first.
-- The rostered mechanism is armed with `metasystem up --repo <path-inside-repository>`. Session hooks pass `--session`, `--pid`, `--start-time`, and `--tag`; direct calls infer those values only from a proven agent-signature ancestor. Up writes the session announcement, classifies the one checkout lease, establishes or verifies the supervision owner, watcher, reaper, and steward runner, waits for their first generation-bound success, and prints typed component outcomes plus one aggregate outcome. A live holder keeps write authority; a second live session receives `advisor`, names the holder, and is directed to an isolated worktree without displacement. A provably dead owner is taken over automatically, and a live owner whose engine generation differs is stopped through the lawful intent path and replaced. `scripts/agents/arm-supervision.sh` is compatibility plumbing that execs this verb.
+- A person starts a checkout with `metasystem start`; an agent starts its own session with `metasystem start session`, which runs the agent startup described here. The hook and compatibility form of that startup is `metasystem up --repo <path-inside-repository>`. Session hooks pass `--session`, `--pid`, `--start-time`, and `--tag`; direct calls infer those values only from a proven agent-signature ancestor. Up writes the session announcement, classifies the one checkout lease, establishes or verifies the supervision owner, watcher, reaper, and steward runner, waits for their first generation-bound success, and prints typed component outcomes plus one aggregate outcome. A live holder keeps write authority; a second live session receives `advisor`, names the holder, and is directed to an isolated worktree without displacement. A provably dead owner is taken over automatically, and a live owner whose engine generation differs is stopped through the lawful intent path and replaced. `scripts/agents/arm-supervision.sh` is compatibility plumbing that execs this verb.
 - A lifecycle hook starts from the physical installation containing its script and identifies that checkout with inherited Git steering removed. A linked worktree always maps to the same installation beneath its primary checkout because the primary owns the watchdog and the engine arms no linked worktree. The installation must carry its own `bin/metasystem` even when `METASYSTEM_BIN` runs another engine. The running engine validates the installation through `metasystem path state-root <installation>`, and that answer is the one state world used by the hook and its Stop-deadline parent. A Stop with no installation engine is allowed with the degraded notice "Metasystem engine missing"; a Stop whose engine predates the verb is allowed with "Metasystem engine and hook are out of step". Both notices name the rebuild, and the steward owns repair. The declarations and renderer in `scripts/agents/stop-degraded-forms.sh` are the single source for every fixed degraded Stop notice. Run `bash scripts/agents/stop-degraded-forms.sh --sync` after changing them to refresh the self-contained hook block and the Claude bootstrap fallback. On SessionStart, either condition prints one notice that no role context was received and that a declared brain is uninstructed; it tells the seat to rebuild and start a new session without running brain boot, arming, or wait recovery. Every other SessionStart termination uses the same inline owner with a fixed notice or a validated intentional reason. A source audit and fault fixtures enforce that boundary, and a fallback independent of the engine and temporary storage reports unexpected termination or response-rendering failure.
 - Ring 3 remains optional and operator-owned. `metasystem up --print-scheduler-entry` prints, but never installs, an hourly recovery entry whose command is restricted to `up --recover-only --if-down`; recovery-only mode creates no session announcement or checkout lease authority and starts only missing repository rings after proving that its canonical binary path and SHA-256 digest match the engine enrolled by an explicit agent-free-terminal `steward arm` or `steward restart`. Recovery-only `up` only consults that standing enrollment; ordinary and advisor `up` re-arm the enrolled engine when it was rebuilt at its enrolled path from a commit reachable from the installation's configured remote-tracking ref (`metasystem.steward.landing-ref`), and refuse every other drift before announcements, leases, or supervision are touched.
 - The watcher reports DONE, STALE, CAPPED, and VANISHED once per job record and runs the repository process census every interval. Its CAPPED signal is an inactivity ceiling from the newest record or transcript mtime, not an absolute runtime limit. The reaper owns the absolute `capMin` from `startedAt`, process-loss and timeout transitions, owned process-group wind-down, and the ordered hash-verified mirror to `evidence.root`. The watcher alone is never an absolute backstop.
@@ -401,11 +422,11 @@ Efficiency never regresses functionality: no unit lowers a proof floor, removes 
 | rule | today | check |
 | --- | --- | --- |
 | S1 over the trigger | When the `context-budget` health line shows the last call at or over the trigger, the seat keeps working: every remaining multi-call step runs as a fresh bounded delegate; the main session makes at most three main-thread calls per turn (launch, read the return, act); it updates the configured lessons note and records the handoff at a quiet point with `metasystem context handoff --root <installation> --note <configured-note-path> --no-delegates` when no task remains, or replaces `--no-delegates` with one `--delegate id=<id>[,asked=<text-or-path>][,output=<path>]` per background task; no wait may be registering or pending; recording the handoff starts no successor today, so the seat ignores the gate's `end this session` display and keeps working; and it never stops or waits on Wido: a turn ends only by launching a delegate, registering a wait, or landing. | After the first sample at or over the trigger, no turn has more than three main-thread calls; a tool result contains `handoff recorded:`; no turn ends with a question to Wido; no allowed Stop occurs while the seat's claim has a next step. |
-| S2 turns bounded | At most 12 main-thread calls per turn; at most one background Bash per unit at a time; no Monitor; every wait goes through `metasystem job watch` or `metasystem wait`. | Calls between two Stop verdicts are at most 12; Monitor uses zero. |
+| S2 turns bounded | At most 12 main-thread calls per turn; at most one background Bash per unit at a time; no Monitor; every wait goes through `metasystem wait`. | Calls between two Stop verdicts are at most 12; Monitor uses zero. |
 | S3 delegates fresh and bounded | A design revision or correction is a fresh delegate (`design-delegates-run-fresh-and-bounded`); `delegate --follow-up` is only for critique rounds on the one critic chain (`skills/design-critique/SKILL.md:64-67`); every code read is fresh with the bounded review brief (`e700328e1`); every delegate prompt starts with `Kind: design`, `build-read`, `critique`, or `other` and names a call budget and a page ceiling; no other `SendMessage` goes to a delegate. | Every Agent prompt's first line is a `Kind:` line and contains the word budget; every design revision or correction is a fresh launch with no `resumedAgentId` and no `--follow-up`; `resumedAgentId` and `--follow-up` results are zero outside critique chains. |
 | S4 messages | A `SendMessage` is at most 400 characters, covers one subject, and is sent at a unit boundary or for a question that stops the sender; it is never an acknowledgement. | Check length and count per unit. |
 | S5 reads by path | The main session never reads a tool result over 20,000 characters; a large output is read by a delegate from its persisted file. | Results over 20,000 characters are zero. |
-| S6 first act | Run `metasystem context resume` first when a handoff waits; otherwise read the `context-budget` line and run `goal next`. | Check the first tool calls. |
+| S6 first act | Run `metasystem context resume` first when a handoff waits; otherwise read the `context-budget` line and run `metasystem goals --ready`. | Check the first tool calls. |
 | S7 handoff keeps lessons | A handoff is recorded only after the seat's configured memory note holds this session's lessons, its reasoning in flight, and every declared delegate's output path. Claude defaults to its project memory directory; each other runtime configures `context.handoff.note-directory.<runtime>`. | The note is a regular file in that directory, its modification time follows the session start and precedes the handoff record, and its digest changes when the write shares the session-start second with a previous handoff. |
 | S8 relayed provenance | Every relayed number or rule names who said it and why. | Each peer message carrying a number or rule names its source. |
 

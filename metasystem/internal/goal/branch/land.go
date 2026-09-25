@@ -40,6 +40,10 @@ type LandRequest struct {
 	CheckClaim                                   func() error
 	PushTransport                                PushTransport
 	Hooks                                        LandHooks
+	// CandidateOnly composes the pending landing and returns its projected
+	// candidate workspace tree, the tree a landing receipt must prove,
+	// without reading a receipt or writing artifacts.
+	CandidateOnly bool
 }
 
 type LandResult struct {
@@ -586,12 +590,14 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	if req.PushTransport == nil {
 		req.PushTransport = GitPushTransport{}
 	}
-	if !validName(req.GoalID) || req.Repo == "" || req.Remote == "" || req.Out == "" || req.TestReceipt == "" ||
+	if !validName(req.GoalID) || req.Repo == "" || req.Remote == "" || !req.CandidateOnly && (req.Out == "" || req.TestReceipt == "") ||
 		!hex40(req.EndpointTip) || !hex40(req.BranchTip) || req.Last == (req.Through != "") {
 		return LandResult{}, fmt.Errorf("land-prep needs a goal, endpoint, branch tip, output, receipt, and exactly one of --last or --through")
 	}
-	if err := requireLandOutputAbsent(req.Out); err != nil {
-		return LandResult{}, err
+	if !req.CandidateOnly {
+		if err := requireLandOutputAbsent(req.Out); err != nil {
+			return LandResult{}, err
+		}
 	}
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return LandResult{}, err
@@ -725,6 +731,9 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	projected, err := projectLandingWorkspaceWith(r, req.Repo, candidate)
 	if err != nil {
 		return LandResult{}, err
+	}
+	if req.CandidateOnly {
+		return LandResult{Endpoint: req.EndpointTip, Candidate: projected, LastUnit: lastUnit}, nil
 	}
 	evidence, err := readLandingReceiptWith(r, req.Repo, req.TestReceipt, projected)
 	if err != nil {

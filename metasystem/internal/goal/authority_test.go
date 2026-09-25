@@ -208,8 +208,15 @@ func TestHumanOriginGoalsAreHumanReserved(t *testing.T) {
 	if res, err := Unpark(humanUnpark, "human-owned"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human unpark: %+v %v", res, err)
 	}
+	// A typed name without a proof is not the human's conclusion.
+	namedDone := verbReqFor(a, "01J5X00000000000000000HG55", "mac-a")
+	namedDone.Actor.Human = "wido"
+	if res, err := Done(namedDone, "human-owned", "Wido closed it."); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "no human authority proof") {
+		t.Fatalf("named done without proof must refuse: %+v %v", res, err)
+	}
 	humanDone := verbReqFor(a, "01J5X00000000000000000HG60", "mac-a")
 	humanDone.Actor.Human = "wido"
+	humanDone.Authority = testTerminalAuthority(t, a.Root, humanDone.Now)
 	if res, err := Done(humanDone, "human-owned", "Wido closed it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human done: %+v %v", res, err)
 	}

@@ -136,3 +136,44 @@ func ChainMemberStatuses(jobsDir, root string, terminalOnly bool) ([]string, err
 	}
 	return lines, nil
 }
+
+// ChainRootOf names the root job of the chain one recorded job belongs to,
+// following its recorded parents. A job whose ancestry is missing or broken
+// belongs to no chain.
+func ChainRootOf(repoRoot, job string) (string, error) {
+	if !validJobID.MatchString(job) {
+		return "", fmt.Errorf("%q is not a job id", job)
+	}
+	jobsDir, _, _ := paths(repoRoot, job)
+	lookup := func(id string) (map[string]any, bool) {
+		if !validJobID.MatchString(id) {
+			return nil, false
+		}
+		record, err := readObject(filepath.Join(jobsDir, id+".json"))
+		return record, err == nil
+	}
+	root := lineageRoot(lookup, job)
+	if root == "" {
+		return "", fmt.Errorf("job %s has no readable chain: its record or an ancestor's is missing", job)
+	}
+	return root, nil
+}
+
+// ChainRecords returns the job records of root's chain, root first when it
+// is readable, for callers that read a chain's terminal state and newest
+// round without re-deriving its ancestry.
+func ChainRecords(repoRoot, root string) ([]map[string]any, error) {
+	members, err := chainMembers(filepath.Join(repoRoot, "artifacts", "agents", "jobs"), root)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]map[string]any, 0, len(members))
+	for _, member := range members {
+		if asString(member.record["jobId"]) == root {
+			records = append([]map[string]any{member.record}, records...)
+			continue
+		}
+		records = append(records, member.record)
+	}
+	return records, nil
+}

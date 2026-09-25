@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3CGR7CNZTS2NNTQCYRCF4JX
-- Status: accepted
+- Status: done
 - Goals: verbs-match-intent
 
 Review exit: closed at round 2 with zero material findings and seven named
@@ -553,16 +553,16 @@ their command examples; any substantive policy change needs its own reason.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| VMI-1 | HIGH | 3-5 | Help and routing expose only implemented intent grammar; Partner retains public plus full internal catalogue; compatibility remains callable | cmd/metasystem | intent catalogue and dispatch | TestIntentHelpAndCompatibility | rebuilt binary help human/agent, Partner catalogue union and old commands | PARTIAL | combine final table, collision help and Partner coverage |
-| VMI-2 | HIGH | 5 | Equivalent repository paths select one real world; foreign/missing roots refuse | stateroot plus intent boundary | ResolveLayout adapter | TestIntentRepositorySelection | top, installation, child, space and symlink paths | PARTIAL | repeat existing physical path proof on final binary |
-| VMI-3 | CRITICAL | 5-6 | Goal acts retain human proof, claim identity, exact approved budget and obligations | goal and humanauthority | intent goal routing | TestIntentGoalAuthorityAndState | isolated fake-authority public lifecycle plus real agent refusal | PARTIAL | integrate closed foundation/planning and repeat release fixtures |
-| VMI-4 | HIGH | 5,7 | Positional/flag variants are equivalent; conflicts fail before effects; remedies preserve literal inputs | cmd/metasystem | parser and existing refusal renderer | TestIntentArgumentsAndRemedies | bad flag, missing target, quoted reason and executable correction | PARTIAL | complete text-file/read-option coverage and executable examples |
-| VMI-5 | HIGH | 6 | Build composes existing steps, resumes once, never claims judgement/landing | launch.UnitRunner | plan preparation and existing run lock | TestIntentBuildResume | fake adapters drive build/proof/read and interrupted resume | PARTIAL | integrate closed named continuation and final worktree consumer |
-| VMI-6 | CRITICAL | 6 | Reviews bind their true subject; dispositions and closure retain independent evidence | dispatch and branch | review/fold/close composition | TestIntentReviewEvidenceKinds | design, chain and branch scenarios including unknown dispatch | PARTIAL | finish reviewed delivery corrections and actual critic closure proof |
-| VMI-7 | CRITICAL | 6-7 | Landing preserves route authority, exact proof, partial outcomes and retry | existing landing owners | intent land composition | TestIntentLandRecovery | admitted/refused/partial-push paths with existing fixtures | PARTIAL | finish delivery actual-owner projection/publication/retry proof |
-| VMI-8 | HIGH | 6 | Process/answer targets preserve authority; health/status share runner truth; live enrollment survives rebuild | stoptransition, up, missionrunner, channel | explicit target routing and shared process records | TestIntentProcessAndAnswerTargets | checkout start/status/health/rebuild/stop fixtures, mission answer, channel instructions | PARTIAL | repeat closed process fixture on final binary |
-| VMI-9 | HIGH | 4,8 | Complete authorized surface and advanced capabilities are discoverable and documented | cmd/metasystem and shipped docs | complete intent table and caller sweep | TestIntentPublicCoverage | task walkthroughs from fresh help, no internal steps required | PARTIAL | implement exhaustive coverage and final documentation grammar |
-| VMI-10 | CRITICAL | 6 | Built result reaches published unit and genuine review evidence through public tasks, without importing later edits or accepting findings | UnitRunner binding plus branch commit/push/read and full close | review unit and collected review publication | TestIntentBuiltUnitToLanding | build result to committed review, explicit close, collected publication and landing; retries after both commits and publications reuse identity; stale result refuses before effects | PARTIAL | finish connection candidate, independent code critique and whole flow |
+| VMI-1 | HIGH | 3-5 | Help and routing expose only implemented intent grammar; Partner retains public plus full internal catalogue; compatibility remains callable | cmd/metasystem | metasystem/cmd/metasystem/intent.go and ui_describe.go | metasystem/cmd/metasystem/intent_test.go: TestIntentHelpAndCompatibility; intent_coverage_test.go | root-release-public-runtime-3e59.json; final command-interface-smoke and TestIntentPublicCoverage | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-2 | HIGH | 5 | Equivalent repository paths select one real world; foreign/missing roots refuse | internal/stateroot and cmd/metasystem | metasystem/cmd/metasystem/intent.go: selectRoot; internal/stateroot | metasystem/cmd/metasystem/intent_test.go: TestIntentRepositorySelection; intent_process_fix_test.go | root-release-public-runtime-3e59.json; root-runtime-root-equivalence.json; final adopted-root fixtures | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-3 | CRITICAL | 5-6 | Goal acts retain human proof, claim identity, exact approved budget and obligations | internal/goal and internal/humanauthority | metasystem/cmd/metasystem/intent_goals.go; goalsync_owner_report.go | metasystem/cmd/metasystem/intent_test.go: TestIntentGoalAuthorityAndState; intent_planning_test.go | root-release-public-runtime-3e59.json; root-runtime-lifecycle-r2-records.json; root-runtime-parked-final.json | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-4 | HIGH | 5,7 | Positional/flag variants are equivalent; conflicts fail before effects; remedies preserve literal inputs | cmd/metasystem | metasystem/cmd/metasystem/intent.go; intent_planning.go | metasystem/cmd/metasystem/intent_test.go: TestIntentArgumentsAndRemedies; intent_text_files_test.go | root-release-public-runtime-3e59.json: literal correction argv, exact budgets and caller-relative files | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-5 | HIGH | 6 | Build composes existing steps, resumes once, never claims judgement/landing | internal/launch.UnitRunner | metasystem/cmd/metasystem/intent_work.go; internal/launch/unit_named.go and unit_run.go | metasystem/cmd/metasystem/intent_work_test.go; intent_work_continue_test.go; internal/launch/unit_lock_test.go | root-runtime-work-final.json; root-unit-lock-descriptor-probe.json; final whole-command run and retained c78 batch-tagged run | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-6 | CRITICAL | 6 | Reviews bind their true subject; dispositions and closure retain independent evidence | internal/dispatch and internal/goal/branch | metasystem/cmd/metasystem/intent_delivery.go; intent_unit_review.go; internal/dispatch/chain.go | metasystem/cmd/metasystem/intent_delivery_owner_test.go; goal_branch_real_delegate_test.go | root-connection-final-delegate.log; final goal-decision-standard and TestIntentConnectedJourneyRealClose | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-7 | CRITICAL | 6-7 | Landing preserves route authority, exact proof, partial outcomes and retry | internal/goal/branch and internal/landing/batch | metasystem/cmd/metasystem/intent_delivery.go; internal/goal/branch/land.go and read_publish.go | metasystem/cmd/metasystem/intent_delivery_owner_test.go; intent_connected_journey_test.go | verification-final-c78-repeat/native-result.json: TestIntentLandWholeOwnerGitAdapter, TestIntentLandBatchAdmissionGitAdapter and TestBatchLandingLifecycleEndToEnd | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-8 | HIGH | 6 | Process/answer targets preserve authority; health/status share runner truth; live enrollment survives rebuild | internal/stoptransition, internal/up, internal/missionrunner and internal/channel | metasystem/cmd/metasystem/intent_process.go; internal/ui/lifecycle/roots.go | metasystem/cmd/metasystem/intent_process_test.go; intent_process_fix_test.go | root-runtime-process-final.json; root-release-public-runtime-3e59.json; final whole-command lifecycle and question fixtures | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-9 | HIGH | 4,8 | Complete authorized surface and advanced capabilities are discoverable and documented | cmd/metasystem | metasystem/cmd/metasystem/intent.go and intent_*.go; README.md and metasystem/docs/working-with-agents.md | metasystem/cmd/metasystem/intent_coverage_test.go: TestIntentPublicCoverage | root-release-public-runtime-3e59.json; final TestIntentPublicCoverage and Partner catalogue fixtures | DONE | None; see plans/verbs-match-intent-verification.md |
+| VMI-10 | CRITICAL | 6 | Built result reaches published unit and genuine review evidence through public tasks, without importing later edits or accepting findings | internal/launch.UnitRunner, internal/goal/branch and internal/dispatch | metasystem/cmd/metasystem/intent_unit_review.go and intent_worktree.go; internal/goal/branch/read.go | metasystem/cmd/metasystem/intent_connected_journey_test.go; goal_branch_real_delegate_test.go; intent_connection_final_test.go | final TestIntentConnectedJourneyRealClose and TestIntentActualBuilderChild; root-connection-final-runtime.log and root-connection-final-delegate.log | DONE | None; see plans/verbs-match-intent-verification.md |
 
 Focused review obligations (status follows their parent row and the evidence below; a candidate test alone does not certify the integrated release):
 
@@ -609,37 +609,53 @@ for its own sake. Root adjudicates every finding. All bounded mechanical
 residue becomes a named proof obligation; no unsafe unresolved design is
 certified. Later code review is independent and includes brief conformance.
 
-Built: the complete release is being assembled in an isolated integration
-checkout. No product changes are yet integrated into the main checkout.
-Foundation/goal lifecycle, named-unit execution, goal planning, process
-controls/questions, and the initial documentation cutover have closed
-independent implementation reviews. Root inspected each bounded final
-correction and ran its focused proof. The combined foundation/process/docs
-candidate now includes the closed planning and work components. The final
-effort-forwarding and documentation corrections are being integrated.
+Built: the complete implementation from candidate
+3e59d41077fe4cbfba6ad00f5b09f20e5c9da1a8 is integrated locally by the commit containing this completion record.
+The live executable has not been replaced and no remote push was performed.
+All component code reviews are closed, including the bounded
+root corrections after the two independent connection reads. Root has read
+every final source/test delta and the integration conflict resolutions.
 
-Actual CLI evidence includes equivalent repository paths, approved budget
-and stopped/parked resume, forged-human refusal, truthful post-publication
-partial success, nested adopted UI state roots, and named-build repeats.
-Root's final named-continuation check changed a retained brief, observed
-both build-resume and wait refuse without launching, restored it and
-reused the existing result. These are isolated fixtures; production terminal
-ancestry and a live measured model review are not claimed.
+The runtime evidence includes exact budgets and human-proof refusals,
+stopped/parked resume, equivalent repository paths, nested UI roots,
+post-publication partial results and guarded named-build retries. Root's
+inherited-descriptor regression verifies explicit lock release; all five
+unit-lock scopes use it. An interrupted worktree-settings copy now completes
+on retry, and a real builder process observed its settings inside the
+generated worktree without starting a second child on a repeat.
 
-Delivery's second independent review found five material corrections:
-exact batch-member retry after branch deletion, attestation publication,
-terminal-versus-closed critic continuation, whole-owner landing/critic
-fixtures, and explicit model/effort controls. Publication and closure are
-implemented; root reproduced an older landed batch hiding fresh work, and
-its correction plus physical landing/recovery proof remain active.
-Automatic worktree preparation and the accepted review-unit connection
-have completed their first independent code review. Its seven material
-corrections are in progress, including claim checks on every launch,
-configuration in generated worktrees, exact amended subjects and interrupted
-collection recovery. The full 48-verb and 54-goal-act coverage boundary is
-implemented and under independent review. Final caller examples, selected
-shared validation and the final assembled runtime walks remain release gates.
-The matrix is PARTIAL until that integrated proof exists.
+The committed-review path now composes a lawful default mode for plain
+prose while preserving explicit modes. Root independently drove the actual
+branch-read owner, built delegate, dispatch script and Claude adapter to a
+real fixture child. It observed the selected mode's critic, its existing
+maximal-model authorization and worktree cwd, with no override or escalation.
+The former missing-mode and missing-authorization probes fail on the earlier
+candidate and pass unchanged after the corrections. Runtime/configuration
+owners remain unchanged; four resolved nonsecret settings cross the boundary.
+No actual local secret configuration was copied.
+
+One physical goal's actual built A/B and corrected A/current B subjects now
+flow through real register advance, full critic closure, read collection and
+publication into public batch admission. Repeated land preserves exact
+membership and performs no duplicate admission. Model execution, proof and
+fixture authority are declared synthetic at those boundaries; later batch
+sealing/push is proved separately by the existing lifecycle fixture.
+
+The 48-public-verb and 54-goal-act coverage boundary and documentation are
+complete. Necessary process-wide fixtures remain serial; after eligible
+tests were made parallel, the command-package serial baseline moved from
+536 to 541 under the human's machinery bypass. Assertions, coverage and
+other package baselines remain unchanged. All ten critical/high matrix rows are DONE from observed runtime evidence.
+The rebuilt CLI passed 72 public command checks. The complete native
+selection ran; ten affected or connected groups passed after fixture
+corrections. Both final static prerequisite groups and all five final
+affected native groups passed. All 38 installation sections completed,
+with 32 passing and six failing. The corrected audit/protocol sections and
+all ten adoption bodies passed on the final source. All 13 interrupted
+landing, goal-completion and supervision scenarios also passed. Six unrelated legacy
+coverage-ratchet failures were proven at baseline and remain disclosed. Evidence provenance and its limits are in
+`plans/verbs-match-intent-verification.md`. Live model review, production
+terminal ancestry and live delivery are not certified by fixture evidence.
 
 Full design findings and root dispositions are linked from
 `plans/verbs-match-intent-design-review.md`; the 23-goal inventory is

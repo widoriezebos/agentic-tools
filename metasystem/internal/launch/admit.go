@@ -423,3 +423,24 @@ func refusalNumbers(message string) map[string]int64 {
 	}
 	return result
 }
+
+// DeclaredUnitLines reads one unit's changed-line estimate from the units
+// table of a page, the same row build admission reads for that unit.
+func DeclaredUnitLines(page, unit string) (int64, error) {
+	data, err := os.ReadFile(page)
+	if err != nil {
+		return 0, err
+	}
+	_, lines, err := sizesFromTable(string(data), []string{unit})
+	return lines, err
+}
+
+// DeclaredUnits reads every row of a page's units table with its estimate.
+func DeclaredUnits(page string) ([]UnitSize, error) {
+	data, err := os.ReadFile(page)
+	if err != nil {
+		return nil, err
+	}
+	units, _, err := sizesFromTable(string(data), nil)
+	return units, err
+}
