@@ -101,6 +101,14 @@ func ReadJobs(root string) JobSet {
 			StartedAt: jobText(record, "startedAt"),
 			CreatedAt: jobText(record, "createdAt"),
 			Status:    jobText(record, "status"),
+			// What the records already carry and this reader dropped: when a
+			// job ended, the minutes it reserved, the deadline those minutes
+			// are enforced against, and the round limit a critic chain's root
+			// froze. None of them is a new fact; each was simply not read.
+			EndedAt:          jobText(record, "endedAt"),
+			CapMinutes:       jobNestedNumber(record, "capRequest", "minutes"),
+			CapDeadline:      jobText(record, "capDeadline"),
+			ReviewRoundLimit: jobOptionalNumber(record, "reviewRoundLimit"),
 		}
 		// A record that parses but cannot say which job it is, or what state
 		// it is in, cannot be reasoned about: it is unreadable in the only
@@ -127,6 +135,32 @@ func jobText(record map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// jobOptionalNumber tells a key the record does not carry from one carrying
+// zero. A round limit of none and a round limit of nought are different
+// things, and only the first of them is null.
+func jobOptionalNumber(record map[string]any, key string) *int {
+	value, present := record[key]
+	if !present {
+		return nil
+	}
+	number, ok := value.(float64)
+	if !ok {
+		return nil
+	}
+	held := int(number)
+	return &held
+}
+
+// jobNestedNumber reads one number out of one nested object, which is where
+// the reserved cap lives.
+func jobNestedNumber(record map[string]any, key, field string) *int {
+	nested, ok := record[key].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return jobOptionalNumber(nested, field)
 }
 
 func jobNumber(record map[string]any, key string) int {

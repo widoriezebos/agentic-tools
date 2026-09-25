@@ -35,6 +35,21 @@ type JobRecord struct {
 	StartedAt string
 	CreatedAt string
 	Status    string
+	// EndedAt is stamped when a job reaches a status it cannot leave, and is
+	// empty on every job still in flight.
+	EndedAt string
+	// CapMinutes is capRequest.minutes: the minutes this job reserved, which
+	// is what the goal's box counts an open job at. Null on a record that
+	// names none, because a cap is never assumed.
+	CapMinutes *int
+	// CapDeadline is the recorded enforcement deadline where dispatch wrote
+	// one; without it a cap ends at the start plus the minutes above, which
+	// is how the reap reaches the same verdict from the same record.
+	CapDeadline string
+	// ReviewRoundLimit is the limit dispatch froze on a critic chain's ROOT.
+	// It is null on every other record, which is what makes a build's phase
+	// show its round without a denominator.
+	ReviewRoundLimit *int
 }
 
 // JobSet is one read of the machine's delegate job records, naming whatever
@@ -144,7 +159,12 @@ func newerJob(candidate, best JobRecord) bool {
 // Compose builds this machine's record for one tick. The detail it returns
 // is the chain's own explanation when the job records could not be read; it
 // never stops the publish.
-func Compose(machine string, runner RunnerContext, jobs JobSet, tickAt time.Time) (Record, string, error) {
+//
+// The box reader is the one thing this composition cannot read for itself: a
+// goal's consumption is dispatch's projection over the accepted tip, and the
+// component that owns the tick supplies it. A nil reader composes a record
+// whose boxes are null, which is what a build with no projection can say.
+func Compose(machine string, runner RunnerContext, jobs JobSet, box BoxReader, tickAt time.Time) (Record, string, error) {
 	if err := ValidateMachineName(machine); err != nil {
 		return Record{}, "", err
 	}
@@ -164,6 +184,7 @@ func Compose(machine string, runner RunnerContext, jobs JobSet, tickAt time.Time
 		tickSeconds = 1
 	}
 	chain, detail := NewestChain(jobs)
+	working, _ := ComposeWorking(jobs, box)
 	return Record{
 		PresenceSchema: RecordSchema,
 		Machine:        machine,
@@ -173,6 +194,7 @@ func Compose(machine string, runner RunnerContext, jobs JobSet, tickAt time.Time
 		ArmedLineage:   lineage,
 		TickSeconds:    tickSeconds,
 		Chain:          chain,
+		Working:        working,
 		TickAt:         FormatTime(tickAt),
 	}, detail, nil
 }
