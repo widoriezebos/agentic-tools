@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3CAGZRWXJ87YWPQRQGRKJYJ
-- Status: draft
+- Status: accepted
 - Goals: browser-interface
 
 Wido, 2026-09-25: "why can't I edit a goal?", then "yeah, go ahead" to
@@ -19,7 +19,9 @@ direct act; every cite re-read at `b3f968a50`.
    (src/backlog/menu.ts:36-43, 57-77). The goal page slice fenced the
    editor out: "Not: any write; the goal editor (gate 4)"
    (g1-s11-goal-detail-design.md:21). The master design names the full
-   editor at line 510 and gates it fourth (user-interface-design.md:817),
+   editor at line 510; its fourth gate, "first complete edit", covers the
+   queued case and says it does not claim the whole editor
+   (user-interface-design.md:817),
    and at line 119 it names the one direct edit it admits without a
    proposal: a queued goal that is not approved, claimed or parked, and
    only `Intent`, `NextStep` and `Labels`, because `Blocked` changes
@@ -63,20 +65,26 @@ direct act; every cite re-read at `b3f968a50`.
   claim landing between the page's read and the act is refused, never
   displaced. The act layer sets it always and passes only the three
   fields; the terminal verb is untouched.
-- D2. **One route, three fields, whole.** `POST /api/backlog/goals/<id>/edit`
-  with `{intent, nextStep, labels}`, the sheet sending all three as the
-  new whole values; blank intent or next step refused as open refuses
-  them; a label outside the grammar refused with the engine's message;
+- D2. **One route, three fields, only the changed ones.** `POST
+  /api/backlog/goals/<id>/edit` with `{intent, nextStep, labels}`, each
+  optional; the sheet sends only the fields whose value differs from what
+  it was opened with, so a terminal edit of a field the human never
+  touched survives the save (the engine's fields are nullable for this,
+  verbs.go:3281-3291; the terminal supplies them selectively,
+  goalsync_mutations.go:3648-3673); an explicit empty label list is sent
+  as such, an untouched one is omitted; a sheet with nothing changed
+  refuses to send; blank intent or next step refused as open refuses them; a label outside the grammar refused with the engine's message;
   line breaks folded as open folds them. The policy of every act route.
 - D3. **The act layer carries it and the ledger names the session.**
   `act.Authority.Edit(id, Edited{Intent, NextStep, Labels})` beside
   `Open`, through `request()` and `settle`; the edit mutation calls
   `recordSessionAuthority` on the line it appends, as approve does.
-- D4. **Two doors to one sheet.** On the goal page, beside the goal's own
-  row, "Edit…" when the row is queued with no approval, claim or park;
-  otherwise the reason in words: "approved: withdraw the approval to edit
-  the intent", "claimed by <pair>: edit at a terminal", "parked: return it
-  to the queue to edit". On the board, the card menu offers "Edit…" under
+- D4. **Two doors to one sheet.** On the goal page, in the goal's header
+  beside its intent (ProjectPane.tsx:774-790), "Edit…" when the row's
+  `state` is queued with no approval; otherwise the reason in words from
+  the state, because `waiting` also covers an approved goal's dependency
+  wait: "approved: withdraw the approval to edit the intent", "claimed by
+  <pair>: edit at a terminal", "parked: return it to the queue to edit". On the board, the card menu offers "Edit…" under
   the same condition, between Ask and the lane moves. Both open the edit
   sheet: the board's `Panel` chrome, prefilled from the row, Intent and
   Next step with the open sheet's rules, Labels with the open sheet's
@@ -91,7 +99,8 @@ direct act; every cite re-read at `b3f968a50`.
 
 Go: engine tests that `QueuedOnly` admits a queued unapproved goal and
 refuses an approved, a claimed and a parked one with the three sentences,
-and that the line names the session; act tests for `Edit` with the three
+and that the line names the session; a test that a terminal change to
+the intent survives a browser save that changed only the next step; act tests for `Edit` with the three
 fields and a blank; route tests for policy, body and refusals; testing.json
 groups and surfaces for the touched paths. Frontend: the sheet's prefill,
 blank refusal, label grammar, send and re-read, refusal shown; the goal
@@ -116,7 +125,20 @@ an archived goal.
 High on D2 to D4: they copy the open act and the open sheet field for
 field. Medium on D1: a new flag on a verb the terminal and recovery
 replay share; it is additive and unset everywhere but the interface, and
-the tests name each refused state. Weakest: the goal page is the project
-view narrowed to a goal, not the detail page g1-s11 designed, so the
-button sits beside a row rather than in a header; that is where the page
-already acts from.
+the tests name each refused state. Weakest: the goal page is the project view narrowed to a goal, not the
+detail page g1-s11 designed; the button sits in the header that view
+already has, which is where the intent is read.
+
+## Dispositions (Astra read, 2026-09-25, under R-124)
+
+One material finding, two deferred; every code claim checked.
+
+| id | finding | fold |
+|---|---|---|
+| F1 | saving all three fields whole republishes untouched values, so a terminal edit of a field the human never changed is overwritten | the sheet sends only changed fields; the engine's nullable fields carry it; a test that a terminal intent change survives a browser next-step save |
+
+Folded because they cost nothing: the button's home is the goal header
+the page already has, not a row; the fourth gate's own words; the park
+and wait reasons read `state`. Astra verified the state guard is complete
+on a validated tree, that recovery replay and reconcile need no flag, and
+that naming the session on the edit line is sufficient.
