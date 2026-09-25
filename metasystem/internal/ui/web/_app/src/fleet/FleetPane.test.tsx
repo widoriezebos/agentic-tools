@@ -66,7 +66,9 @@ function held(over: Partial<Held> = {}): Held {
     machine: "m1c",
     standing: "unreachable",
     since: "2026-09-25T09:40:00Z",
-    flag: "held by m1c, unreachable since 09:40",
+    // The server's words carry no clock: the instant is the field above, and
+    // every surface renders it in the viewer's own zone.
+    flag: "held by m1c, unreachable",
     ...over,
   };
 }
@@ -98,6 +100,7 @@ function page(over: Partial<Page> = {}): Page {
       succeededAt: "2026-09-25T14:36:20Z",
       failedAt: "",
       problem: "",
+      metadataProblem: "",
     },
     claims: { tip: "5b9d958c1a2b3c4d", unavailable: "" },
     this: seat(),
@@ -129,7 +132,7 @@ describe("the fleet page", () => {
 
     expect(markup).toContain("Needs you");
     expect(markup).toContain("tests-parallel-and-deterministic");
-    expect(markup).toContain("held by m1c, unreachable since 09:40");
+    expect(markup).toContain(`held by m1c, unreachable since ${minuteTime(held().since)}`);
     expect(markup).toContain(NEEDS_YOU_REMEDY);
     expect(markup).toContain("goal steal");
     expect(markup).toContain("goal resume");
@@ -227,6 +230,7 @@ describe("the fleet page", () => {
           succeededAt: "2026-09-25T14:20:00Z",
           failedAt: "2026-09-25T14:36:20Z",
           problem: "presence fetch: the remote refused",
+          metadataProblem: "",
         },
       }),
     );
@@ -242,10 +246,10 @@ describe("the capture a question from this page carries", () => {
     expect(capture.source).toBe("the interface");
     expect(capture.total).toBe(2);
     expect(capture.machines?.map((row) => row.machine)).toEqual(["m1u", "m1c"]);
-    expect(capture.machines?.[1].flag).toBe("held by m1c, unreachable since 09:40");
+    expect(capture.machines?.[1].flag).toBe(`held by m1c, unreachable since ${minuteTime(held().since)}`);
     expect(capture.machines?.[1].holds).toEqual(["tests-parallel-and-deterministic"]);
     expect(capture.needsYou).toEqual([
-      "tests-parallel-and-deterministic is held by m1c, unreachable since 09:40",
+      `tests-parallel-and-deterministic is held by m1c, unreachable since ${minuteTime(held().since)}`,
     ]);
   });
 

@@ -1,5 +1,5 @@
 import type { Page } from "./api";
-import { copyLine, seenWords } from "./fleet";
+import { copyLine, flagWords, seenWords } from "./fleet";
 import type { FleetCapture } from "../partner/api";
 
 /**
@@ -28,12 +28,14 @@ export function captureOfFleet(page: Page, now: Date): FleetCapture {
     source: page.copy.source,
     fetchedAt: copyLine(page, now),
     problem: page.copy.problem,
-    needsYou: page.needsYou.slice(0, CAPTURED_MACHINES).map((held) => `${held.goal} is ${held.flag}`),
+    // The flag as the page rendered it, instant and all: the capture is what
+    // the human was looking at, not what the server composed.
+    needsYou: page.needsYou.slice(0, CAPTURED_MACHINES).map((held) => `${held.goal} is ${flagWords(held)}`),
     machines: page.machines.slice(0, CAPTURED_MACHINES).map((machine) => ({
       machine: machine.machine,
       standing: machine.standing,
       seen: seenWords(machine, now),
-      flag: machine.holds.find((held) => held.flag !== "")?.flag ?? "",
+      flag: flagWords(machine.holds.find((held) => held.flag !== "") ?? { flag: "", since: "" }),
       holds: machine.holds.slice(0, CAPTURED_HOLDS).map((held) => held.goal),
     })),
     total: page.machines.length,

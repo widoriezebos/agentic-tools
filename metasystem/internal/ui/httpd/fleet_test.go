@@ -146,7 +146,9 @@ func TestTheBoardCarriesTheHolderFromTheObservationItsRowsCameFrom(t *testing.T)
 	testutil.Expect(t, "naming the machine", held.Machine, "m1c")
 	testutil.Expect(t, "its standing", held.Standing, "unreachable")
 	testutil.Expect(t, "when the silence began", held.Since, seat.FormatTime(fleetNow.Add(-5*time.Hour)))
-	testutil.Expect(t, "and the words the card shows", held.Flag, "held by m1c, unreachable since 09:37")
+	// The words carry no clock: the instant is the field beside them, and
+	// the browser renders it in the viewer's own zone.
+	testutil.Expect(t, "and the words the card shows", held.Flag, "held by m1c, unreachable")
 	testutil.Require(t, "the fleet was composed once", seen.calls, 1)
 	testutil.Expect(t, "from the observation the rows were projected from",
 		seen.observations[0].Tip, observed.Tip)
@@ -190,8 +192,9 @@ func TestTheOverviewCarriesTheHolderBesideTheSeat(t *testing.T) {
 	testutil.Expect(t, "the seat is still named", claimed.Seat.Machine, "m1c")
 	testutil.Require(t, "and the holder beside it", claimed.Holder != nil, true)
 	testutil.Expect(t, "with its standing", claimed.Holder.Standing, "unreachable")
-	testutil.Expect(t, "and the flag the row shows", claimed.Holder.Flag,
-		"held by m1c, unreachable since 09:37")
+	testutil.Expect(t, "and the flag the row shows", claimed.Holder.Flag, "held by m1c, unreachable")
+	testutil.Expect(t, "with the instant beside it for the browser to render",
+		claimed.Holder.Since, seat.FormatTime(fleetNow.Add(-5*time.Hour)))
 }
 
 /* -------------------------------------------- the one event on the stream -- */

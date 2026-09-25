@@ -15,9 +15,10 @@ import {
   armedWords,
   copyLine,
   copyProblem,
+  emptyFleetWords,
+  flagWords,
   healthWords,
   NEEDS_YOU_REMEDY,
-  NO_PRESENCE,
   publicationWords,
   rolesAlive,
   rolesNeedingAttention,
@@ -174,7 +175,7 @@ function NeedsYou({ held }: { held: Held[] }) {
     <section className="ms-fleet-block ms-fleet-block--needs">
       <h2 className="ms-fleet-heading">
         Needs you
-        <Help id="standing" />
+        <Help id="fleet-needs-you" />
       </h2>
       <ul className="ms-fleet-needs">
         {held.map((one) => (
@@ -182,7 +183,7 @@ function NeedsYou({ held }: { held: Held[] }) {
             <NavLink className="ms-fleet-goal" to={goalPath(one.goal)}>
               {one.goal}
             </NavLink>
-            <span className="ms-fleet-needs-words">is {one.flag}</span>
+            <span className="ms-fleet-needs-words">is {flagWords(one)}</span>
           </li>
         ))}
       </ul>
@@ -199,12 +200,17 @@ function ThisSeatBlock({ seat, now }: { seat: ThisSeat; now: Date }) {
     <section className="ms-fleet-block">
       <h2 className="ms-fleet-heading">
         This seat
-        <Help id="seat" />
+        <Help id="this-seat" />
       </h2>
       <p className="ms-fleet-seat-name">{seatName(seat)}</p>
       <ul className="ms-fleet-facts">
         <li className="ms-fleet-fact">{armedWords(seat)}</li>
-        <li className="ms-fleet-fact">{publicationWords(seat, now)}</li>
+        <li className="ms-fleet-fact">
+          {publicationWords(seat, now)}
+          {/* The rung is a word only this line shows, so its explanation
+              belongs on this line and nowhere else. */}
+          {seat.publication !== null && seat.publication.rung > 0 && <Help id="rung" />}
+        </li>
         <li className="ms-fleet-fact">{runningWords(seat.running, seat.runningProblem)}</li>
         <li className="ms-fleet-fact">{healthWords(seat.health, now)}</li>
       </ul>
@@ -253,7 +259,7 @@ function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
         <Help id="fleet" />
       </h2>
       {page.machines.length === 0 ? (
-        <p className="ms-fleet-quiet">{NO_PRESENCE}</p>
+        <p className="ms-fleet-quiet">{emptyFleetWords(page)}</p>
       ) : (
         <table className="ms-fleet-table">
           <thead>
@@ -268,8 +274,14 @@ function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
                 <Help id="presence" />
               </th>
               <th scope="col">Running</th>
-              <th scope="col">Holds</th>
-              <th scope="col">Engine</th>
+              <th scope="col">
+                Holds
+                <Help id="machine-holds" />
+              </th>
+              <th scope="col">
+                Engine
+                <Help id="engine" />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -281,6 +293,10 @@ function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
       )}
       <p className="ms-fleet-provenance">{copyLine(page, now)}</p>
       {problem !== "" && <p className="ms-fleet-problem">{problem}</p>}
+      {/* The Partner's own file, where this server could not write it. The
+          page is fine and the tool's reading of it is not, which is a
+          different fact and says so quietly rather than as a failure. */}
+      {page.copy.metadataProblem !== "" && <p className="ms-fleet-quiet">{page.copy.metadataProblem}</p>}
     </section>
   );
 }
@@ -347,7 +363,7 @@ function HoldChip({ held }: { held: Held }) {
   return (
     <span className="ms-fleet-hold">
       <Hint label={`${laneTitle(held.lane)}${held.title === "" ? "" : ` · ${held.title}`}`}>{chip}</Hint>
-      {held.flag !== "" && <Chip marker>{held.flag}</Chip>}
+      {held.flag !== "" && <Chip marker>{flagWords(held)}</Chip>}
     </span>
   );
 }

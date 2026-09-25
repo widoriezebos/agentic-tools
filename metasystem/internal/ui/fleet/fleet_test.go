@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -161,10 +162,21 @@ func TestNeedsYouIsTheSilentAndTheAbsentHolders(t *testing.T) {
 	}
 	testutil.Expect(t, "the unreachable holder and the one that published nothing are named",
 		goals, []string{"tests-parallel-and-deterministic", "fleet-channel-gateway"})
-	testutil.Expect(t, "the dated silence says when it began",
-		page.NeedsYou[0].Flag, "held by m1c, unreachable since "+clockWords(ago(5*time.Hour), now))
+	// The words carry no clock. When the silence began is an instant beside
+	// them, so a page can render it in the viewer's own zone and a terminal
+	// can print it as it stands.
+	testutil.Expect(t, "the flag says what is wrong and names no time",
+		page.NeedsYou[0].Flag, "held by m1c, unreachable")
+	testutil.Expect(t, "the instant travels beside it",
+		page.NeedsYou[0].Since, ago(5*time.Hour))
+	testutil.Expect(t, "and a reader with no zone of its own joins the two",
+		FlagWithInstant(page.NeedsYou[0].Flag, page.NeedsYou[0].Since),
+		"held by m1c, unreachable since "+ago(5*time.Hour))
 	testutil.Expect(t, "the machine that published nothing has not gone silent",
 		page.NeedsYou[1].Flag, "held by m0b, which has published no presence")
+	testutil.Expect(t, "and it has no instant to name",
+		FlagWithInstant(page.NeedsYou[1].Flag, page.NeedsYou[1].Since),
+		"held by m0b, which has published no presence")
 }
 
 func TestDatedSilencesComeFirstAndOldestFirst(t *testing.T) {
@@ -364,8 +376,25 @@ func TestTheSourceStampsBothReadings(t *testing.T) {
 		"presence from the interface, fetched "+ago(40*time.Second)+"; claims from the accepted tip 5b9d958")
 }
 
-func TestASilenceThatBeganTodayIsAClockAndAnOlderOneCarriesItsDate(t *testing.T) {
+// No composed word on this page carries a clock. An instant rendered here
+// would be rendered in one zone and shown beside a browser rendering the same
+// instant in another, which is how "unreachable since 01:27" came to sit
+// beside "seen 03:27" for one moment in time.
+func TestNoFlagOnThisPageCarriesATimeOfDay(t *testing.T) {
 	t.Parallel()
-	testutil.Expect(t, "today is a time of day", clockWords(ago(5*time.Hour), now), "09:37")
-	testutil.Expect(t, "yesterday carries its date", clockWords(ago(30*time.Hour), now), "2026-09-24 08:37")
+	page := fleetOf(t, nil)
+	clock := regexp.MustCompile(`\d\d:\d\d`)
+
+	for _, machine := range page.Machines {
+		for _, held := range machine.Holds {
+			testutil.Expect(t, "the flag on "+held.Goal+" names no time of day",
+				clock.MatchString(held.Flag), false)
+		}
+	}
+	for _, held := range page.NeedsYou {
+		testutil.Expect(t, "nor does the needs-you flag on "+held.Goal,
+			clock.MatchString(held.Flag), false)
+	}
+	testutil.Expect(t, "and the instant beside it is RFC 3339",
+		machineNamed(page, "m1c").Holds[0].Since, ago(5*time.Hour))
 }

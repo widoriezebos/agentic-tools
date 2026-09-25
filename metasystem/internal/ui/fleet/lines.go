@@ -13,14 +13,20 @@ import (
 )
 
 // Lines is the whole reading, one row per line.
+//
+// Every instant is printed as it stands, in RFC 3339. This reader has no
+// viewer whose clock it could render into — it answers a tool call, and the
+// answer may be quoted anywhere — so an unambiguous instant is the honest
+// form, and the page renders the same instants in the browser's own zone.
 func (p Page) Lines(now time.Time) []string {
 	lines := []string{}
 	for _, held := range p.NeedsYou {
-		lines = append(lines, "- Needs you: "+held.Goal+" is "+held.Flag+"; a human steals or resumes it at a terminal")
+		lines = append(lines, "- Needs you: "+held.Goal+" is "+FlagWithInstant(held.Flag, held.Since)+
+			"; a human steals or resumes it at a terminal")
 	}
 	lines = append(lines, "- This seat: "+p.thisLine())
 	for _, machine := range p.Machines {
-		lines = append(lines, "- "+p.machineLine(machine, now))
+		lines = append(lines, "- "+p.machineLine(machine))
 	}
 	return lines
 }
@@ -77,10 +83,10 @@ func (p Page) thisLine() string {
 	return strings.Join(parts, "; ")
 }
 
-func (p Page) machineLine(machine Machine, now time.Time) string {
+func (p Page) machineLine(machine Machine) string {
 	parts := []string{machine.Machine, machine.Standing}
 	if machine.Seen != "" {
-		parts = append(parts, "seen "+clockWords(machine.Seen, now))
+		parts = append(parts, "seen "+machine.Seen)
 	}
 	if machine.Reason != "" {
 		parts = append(parts, machine.Reason)
@@ -96,7 +102,7 @@ func (p Page) machineLine(machine Machine, now time.Time) string {
 			goals = append(goals, held.Goal)
 		}
 		holds := "holds " + strings.Join(goals, ", ")
-		if flag := machine.Holds[0].Flag; flag != "" {
+		if flag := FlagWithInstant(machine.Holds[0].Flag, machine.Holds[0].Since); flag != "" {
 			holds += " (" + flag + ")"
 		}
 		parts = append(parts, holds)

@@ -6,7 +6,7 @@ import { actingAs } from "./acting";
 import { BacklogError, rankGoal, type Backlog, type Row } from "./api";
 import { boardBelow, boardColumns } from "./columns";
 import { windowTitle, WINDOWS, type Filters, type Window } from "./filters";
-import { dateAndTime } from "./format";
+import { dateAndTime, minuteTime } from "./format";
 import { DONE, laneFor, waitingFor, SPLIT_HELP, type LaneId } from "./lanes";
 import { CardMenu } from "./CardMenu";
 import { offersFor, opensMenu, type At, type OfferId } from "./menu";
@@ -890,8 +890,12 @@ function blockerOf(row: Row): string {
   // dependency park: a fenced card still says it is stopped, and a card that
   // is merely held by a machine nobody has heard from says that instead of
   // saying nothing. It is a flag and never an act.
+  //
+  // The server's words carry no clock — an instant is rendered differently by
+  // every reader — so the instant arrives beside them and is rendered here,
+  // in this browser's own zone, exactly as every other time on this card is.
   if (row.holder !== undefined && row.holder.flag !== "") {
-    return row.holder.flag;
+    return row.holder.since === "" ? row.holder.flag : `${row.holder.flag} since ${minuteTime(row.holder.since)}`;
   }
   // A dependency-created park carries a marker, and its reason is written
   // from the blockers themselves. The card says what has to happen rather
