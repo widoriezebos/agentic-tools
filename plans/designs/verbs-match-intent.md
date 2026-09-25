@@ -9,6 +9,13 @@ Review exit: closed at round 2 with zero material findings and seven named
 fixture obligations. Root accepts under Wido's explicit design/implementation
 authorization; independent critic Fable 5.1 agrees full scope and smallest
 sufficient design. Adjudication: `plans/verbs-match-intent-design-review.md`.
+Implementation exposed a full-workflow requirement failure: a built unit
+could not reach the branch evidence consumed by landing. Fable confirmed
+the focused connection is the smallest sufficient owner composition;
+root folded its one material correction through the existing unit-amend
+owner. The amended design is accepted with the named VMI-10 fixtures and
+mandatory independent implementation review. Dispositions are in
+`plans/verbs-match-intent-connection-review.md`.
 
 Author: root Codex. Authority: Wido, 25 September 2026: write the full
 design, have Fable or Opus 5.5 critique it, agree the smallest design that
@@ -153,7 +160,7 @@ applicable intent rather than dumped onto every goal command.
 | --- | --- |
 | `goals [--all] [--label LABEL]` | Read current backlog; `goal list` projection. `--all` includes archived goals. |
 | `show G` | Goal, state, budget, next step and linked design; goal/project readers. |
-| `open G --intent TEXT [--next TEXT]` | Create goal; existing human/agent intake law and blocker arguments apply. |
+| `open G --intent TEXT --next TEXT --risk ANSWERS --basis TEXT` | Create goal; existing human/agent intake law and blocker arguments apply. |
 | `edit G --intent TEXT --next TEXT` | Existing edits, plus `--next-append TEXT` against accepted state; no local-file merge. Only supplied fields change. |
 | `approve G... [--budget BOX]` | Human approves explicit goals; omitted BOX uses each tier's norm. Multiple goals use existing atomic approval, never a loop of partial approvals. |
 | `budget G BOX` | Existing compact budget operation. BOX is `norm`, `keep`, or the complete compact tuple. Read form `budget G` prints the same budget block as `show G`, using existing ProjectConsumption/ProjectBudget projections. |
@@ -170,7 +177,7 @@ applicable intent rather than dumped onto every goal command.
 | `brief G --out FILE` | Generate a usable brief scaffold from the goal and linked design; mark genuine missing decisions, do not invent them. |
 | `build G UNIT --brief FILE --check COMMAND...` | Prepare the existing unit plan, then advance build/proof/read to judgement. `--check` ends command option parsing and passes an argv, not shell text. Advanced repeatable proof commands use existing `--plan FILE`. |
 | `build --resume U`; `fold unit U --brief FILE` | Existing unit resume/follow-up; prior plan, proofs and reviews are reused by their owner. |
-| `review design FILE`; `review job J`; `review commit SHA` | Freeze and review the named subject through the respective owner; automatically prepare plumbing inputs and collect the result. |
+| `review design FILE`; `review job J`; `review commit SHA`; `review unit U` | Freeze and review the named subject through the respective owner; automatically prepare plumbing inputs and collect the result. Unit review commits and publishes the exact built result, then requests committed review. |
 | `fold review R --dispositions FILE --brief FILE` | Validate recorded dispositions and request the existing implementation follow-up. Does not decide findings itself. |
 | `close J --dispositions FILE` | Apply completed review records and perform the existing full close sequence, or report the unresolved finding/unfinished job. |
 | `land G [--through COMMIT]`; `land job J` | Complete the applicable existing landing sequence, detailed below. No implicit conclusion. |
@@ -203,7 +210,7 @@ with per-command help. Advanced power does not require internal storage names.
 | `claim G --take-over --reason TEXT`; `ready G` | goal steal / land-ready; displacement is explicit, never a claim fallback. |
 | `edit G --obligation STATE --owner NAME --recurrence VALUE ...` | goal set-obligation's existing recurrence, observations, ceilings, effects and typed-review fields, all listed by this command's help; no new file schema. |
 | `resolve G --review R --finding F --test NAME` | discharge-review-obligation; fixture-qualified alternative uses existing implementation-chain/artifact/result/critic proof fields. |
-| `notes G [--add TEXT\|--close ID]` | goal read-items. Findings stay findings, never certified by this convenience. |
+| `notes G --read R --add TEXT`; `notes G --close ID --fixed COMMIT\|--moved G2\|--accepted TEXT` | goal read-items. Findings stay findings, never certified by this convenience. |
 | `recover [G]` | existing goal journal recovery and this session's durable wait recovery; reports each owner's result separately. No generic repair engine. |
 | `red own ENTRY --goal G`; `red close ENTRY --reason TEXT` | existing trunk-red own/close. ENTRY is the retained incident id, not an assumed commit lookup. |
 
@@ -259,7 +266,7 @@ with a small interspersed-argument normalizer; no dependency or generic DSL.
 | `--name NAME` / `--by NAME` | Enrollment name / explicit actor attribution. Missing `--by` is filled only after matching human proof. Strip one `human:` prefix; reject repeated prefixes with a corrected example. |
 | `--goal G`, `--id ID` | Explicit equivalents of the command's target where applicable, never global selectors for unrelated stores. |
 | `--brief FILE`, `--design FILE`, `--dispositions FILE` | Semantic input files. Relative paths are relative to the original working directory, not a generated artifact directory. |
-| `--model MODEL`, `--effort VALUE` | Explicit supported runtime overrides. Defaults come from the existing roster. |
+| `--model MODEL`, `--effort VALUE` | Build accepts both; committed review (commit or built unit) accepts the owner-supported model override. Design/job review uses its roster, and review effort remains governed by its existing hazard class. Unsupported overrides refuse explicitly before dispatch. |
 | `--timeout DURATION` | How long this invocation waits. Timeout reports continuing work and its exact continuation; it does not kill it. |
 | `--json` | Existing machine-readable results or the named intent result projection. Never suppress failure status. |
 | `--plan FILE` | Expert use of an existing unit/test plan; no new plan schema. |
@@ -308,8 +315,9 @@ new norm approval token. VMI-3 asserts the resulting records.
 **Build.** The explicit unit name gives a reusable task identity. Generate
 the existing `UnitPlan` and build/read briefs beside that unit's retained
 inputs, binding the current goal branch, base commit, selected design and
-the caller's check argv. Require a current `goal/G` worktree, and print the
-existing branch-preparation command if absent; never move a dirty checkout.
+the caller's check argv. Reuse its current `goal/G` worktree. If absent,
+prepare a separate goal worktree through the small composition below;
+never move a dirty checkout or require a manual Git preparation sequence.
 Use the linked design/brief's declared unit-size row for existing build
 admission. If absent, require an honest `--lines N` estimate for the unit;
 do not fabricate the admission input (`internal/launch/admit.go:166-255`).
@@ -329,6 +337,101 @@ that same run store: concurrent identical calls must launch one run.
 Successful execution
 means awaiting judgement, with proof and review results named, not approved
 or landed. A red proof stops review as the current runner specifies.
+
+**Built unit to committed review.** The ordinary next action after a green
+build is `review unit U`. A UnitRunner read is preliminary feedback; its
+process success never constitutes accepted branch evidence. Source audit
+of candidates `b78baa39d` and `032ff31a8` found that build deliberately
+leaves changes uncommitted, while land consumes published Goal-Unit and
+Goal-Read commits. The public boundary must connect these existing owners:
+
+Before the first build, verify the current claim/lease through the existing
+branch authority owner. Enumerate registered goal worktrees. If none exists,
+use the existing endpoint and remote goal-branch resolvers to choose the
+base: reuse a validated local goal branch, otherwise the existing remote
+goal branch, otherwise the freshly resolved landing endpoint. Refuse
+divergent local/remote goal histories through the branch owner's validation;
+do not guess that the caller's HEAD is an acceptable base. Create the goal
+worktree at the deterministic sibling `<checkout>-<goal>` with Git's
+`worktree add`, without force or reset. A pre-existing occupied destination
+is reused only when the registered worktree belongs to this repository and
+the exact goal branch; otherwise report a path conflict. Concurrent creation
+re-reads Git's registration after a creation failure and reuses only that
+same valid worktree. The linked worktree uses the existing main-checkout
+lease resolution; do not create a second session, enrollment or authority.
+This new composition belongs to the public build boundary: no complete
+goal-worktree preparation owner currently exists. Failed creation retains
+and reports any branch/worktree created so retry can reconcile it. Resolve
+selected settings from the original installation; do not copy local secret
+configuration into a generated worktree.
+
+1. Resolve the UnitRun and its latest completed round. Require successful
+   proof and a retained result snapshot. Read findings remain visible for
+   the author; requesting committed review does not accept those findings.
+   `green`, `read-failed` and `read-compacted` may proceed when proof passed;
+   `proof-red`, `proof-wrote`, running and capped runs may not.
+   Bind goal, unit, worktree, original base, completed round and result tree.
+   Reject a running build, a red proof, changed result bytes, or unrelated
+   staged/worktree changes before staging or publication. An unchanged
+   result already committed by this operation is a retry, not stale work.
+2. Under the existing unit run lock, retain the intended result tree,
+   round and operation identity with the run before effects. Use the
+   existing claim check and worktree commit-token boundary. Stage only the
+   frozen result's paths, verify the staged tree equals the retained result,
+   then call `branch.CommitStaged` for its Goal-Unit commit. Never absorb
+   work added after the completed build or reset the caller's worktree.
+   The existing branch commit owner handles endpoint/claim validation.
+3. Retain the committed subject before publishing it through `branch.Push`.
+   Interrupted commit recording must reconcile the exact expected parent,
+   tree and Goal-Unit trailer before attempting a new commit. A mismatch is
+   an explicit state conflict. The same operation can publish a retained
+   commit on retry; it never creates another subject or reader because a
+   response was lost. Report committed-but-unpublished work as partial.
+4. Call `RunBranchRead` on that immutable subject in its actual goal
+   worktree. Use its existing frozen brief, dispatch identity, fast gate and
+   retained read record. Return the real critic job and findings or an
+   in-progress continuation. The preliminary UnitRunner read is not
+   converted into a certified critic record. Requesting a committed review
+   authorizes publication of this review branch, not landing or conclusion.
+5. A terminal reader still needs explicit author dispositions and real
+   closure. `close J --dispositions FILE` performs that existing sequence.
+   Then repeat `review unit U` to collect the actual closed read through
+   `CommitRead` and publish the resulting Goal-Read with `branch.Push`.
+   This collection/publication also belongs to `review commit SHA`.
+   If the reader has merely stopped, report the required close action;
+   never call terminal status certification. If collection commits but
+   publication fails, preserve the attestation and give the same retry.
+6. After published accepted evidence, the next action is `land G`. Its
+   existing admission remains unchanged. No implicit approval, dispositions,
+   accepted-risk word or goal conclusion is created by this connection.
+
+The UnitRun owner stores only its result-to-subject binding and retains its
+existing lock. Branch-read records own critic/collection state; branch push
+owns transport recovery. No parallel workflow ledger or new certificate is
+introduced. A later completed round of the same unit uses the existing
+`CommitRequest.Amend` path: replace that unit's subject, discard reads of
+the replaced subject, replay the suffix and publish through the owner's
+force-with-lease under the same claim. Keep the prior round's subject in
+the run for diagnosis. A changed subject needs its own committed review;
+never reuse the old attestation or invent a second unit name for a fix.
+The owner's replay or concurrent-tip refusal remains a truthful partial
+state; it never authorizes a reset. Bind the completed round's observed
+HEAD as the expected pre-commit tip; `plan.Base` is the cumulative diff
+base and need not equal that tip after a follow-up. The retained diff and
+snapshot are verified before staging; a snapshot's raw Tree field must
+not be misread as a Git tree object identifier.
+
+This preserves the already implemented UnitRunner feedback pass and adds
+one genuine committed review. Removing the preliminary read would require
+changing that runner's mandatory read contract and is deferred; silently
+promoting its output would weaken certification. The additional read must
+fit the existing approved goal budget; absence of capacity is a real
+decision, never an automatic budget increase.
+
+First connected slice: build result, review unit, explicit close, review
+unit collection, land. All are public tasks; callers need no internal
+worktree/commit/push/attestation sequence. No dirty checkout is moved
+automatically.
 
 **Review.** Target type determines evidence, not operator knowledge of a
 pipeline. A design file must be a discoverable design record; generate the
@@ -450,17 +553,18 @@ their command examples; any substantive policy change needs its own reason.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| VMI-1 | HIGH | 3-5 | Help and routing expose only implemented intent grammar; Partner retains public plus full internal catalogue; compatibility remains callable | cmd/metasystem | intent catalogue and dispatch | TestIntentHelpAndCompatibility | rebuilt binary help human/agent, Partner catalogue union and old commands | MISSING | slice 1 |
-| VMI-2 | HIGH | 5 | Equivalent repository paths select one real world; foreign/missing roots refuse | stateroot plus intent boundary | ResolveLayout adapter | TestIntentRepositorySelection | top, installation, child, space and symlink paths | MISSING | slice 1 |
-| VMI-3 | CRITICAL | 5-6 | Goal acts retain human proof, claim identity, exact approved budget and obligations | goal and humanauthority | intent goal routing | TestIntentGoalAuthorityAndState | isolated fake-authority public lifecycle plus real agent refusal | MISSING | slices 1-2 |
-| VMI-4 | HIGH | 5,7 | Positional/flag variants are equivalent; conflicts fail before effects; remedies preserve literal inputs | cmd/metasystem | parser and existing refusal renderer | TestIntentArgumentsAndRemedies | bad flag, missing target, quoted reason and executable correction | MISSING | every slice |
-| VMI-5 | HIGH | 6 | Build composes existing steps, resumes once, never claims judgement/landing | launch.UnitRunner | plan preparation and existing run lock | TestIntentBuildResume | fake adapters drive build/proof/read and interrupted resume | MISSING | slice 3 |
-| VMI-6 | CRITICAL | 6 | Reviews bind their true subject; dispositions and closure retain independent evidence | dispatch and branch | review/fold/close composition | TestIntentReviewEvidenceKinds | design, chain and branch scenarios including unknown dispatch | MISSING | slice 3 |
-| VMI-7 | CRITICAL | 6-7 | Landing preserves route authority, exact proof, partial outcomes and retry | existing landing owners | intent land composition | TestIntentLandRecovery | admitted/refused/partial-push paths with existing fixtures | MISSING | slice 3 |
-| VMI-8 | HIGH | 6 | Process/answer targets preserve authority; health/status share runner truth; live enrollment survives rebuild | stoptransition, up, missionrunner, channel | explicit target routing and shared process records | TestIntentProcessAndAnswerTargets | checkout start/status/health/rebuild/stop fixtures, mission answer, channel instructions | MISSING | slice 2 |
-| VMI-9 | HIGH | 4,8 | Complete authorized surface and advanced capabilities are discoverable and documented | cmd/metasystem and shipped docs | complete intent table and caller sweep | TestIntentPublicCoverage | task walkthroughs from fresh help, no internal steps required | MISSING | slice 4 |
+| VMI-1 | HIGH | 3-5 | Help and routing expose only implemented intent grammar; Partner retains public plus full internal catalogue; compatibility remains callable | cmd/metasystem | intent catalogue and dispatch | TestIntentHelpAndCompatibility | rebuilt binary help human/agent, Partner catalogue union and old commands | PARTIAL | combine final table, collision help and Partner coverage |
+| VMI-2 | HIGH | 5 | Equivalent repository paths select one real world; foreign/missing roots refuse | stateroot plus intent boundary | ResolveLayout adapter | TestIntentRepositorySelection | top, installation, child, space and symlink paths | PARTIAL | repeat existing physical path proof on final binary |
+| VMI-3 | CRITICAL | 5-6 | Goal acts retain human proof, claim identity, exact approved budget and obligations | goal and humanauthority | intent goal routing | TestIntentGoalAuthorityAndState | isolated fake-authority public lifecycle plus real agent refusal | PARTIAL | integrate closed foundation/planning and repeat release fixtures |
+| VMI-4 | HIGH | 5,7 | Positional/flag variants are equivalent; conflicts fail before effects; remedies preserve literal inputs | cmd/metasystem | parser and existing refusal renderer | TestIntentArgumentsAndRemedies | bad flag, missing target, quoted reason and executable correction | PARTIAL | complete text-file/read-option coverage and executable examples |
+| VMI-5 | HIGH | 6 | Build composes existing steps, resumes once, never claims judgement/landing | launch.UnitRunner | plan preparation and existing run lock | TestIntentBuildResume | fake adapters drive build/proof/read and interrupted resume | PARTIAL | integrate closed named continuation and final worktree consumer |
+| VMI-6 | CRITICAL | 6 | Reviews bind their true subject; dispositions and closure retain independent evidence | dispatch and branch | review/fold/close composition | TestIntentReviewEvidenceKinds | design, chain and branch scenarios including unknown dispatch | PARTIAL | finish reviewed delivery corrections and actual critic closure proof |
+| VMI-7 | CRITICAL | 6-7 | Landing preserves route authority, exact proof, partial outcomes and retry | existing landing owners | intent land composition | TestIntentLandRecovery | admitted/refused/partial-push paths with existing fixtures | PARTIAL | finish delivery actual-owner projection/publication/retry proof |
+| VMI-8 | HIGH | 6 | Process/answer targets preserve authority; health/status share runner truth; live enrollment survives rebuild | stoptransition, up, missionrunner, channel | explicit target routing and shared process records | TestIntentProcessAndAnswerTargets | checkout start/status/health/rebuild/stop fixtures, mission answer, channel instructions | PARTIAL | repeat closed process fixture on final binary |
+| VMI-9 | HIGH | 4,8 | Complete authorized surface and advanced capabilities are discoverable and documented | cmd/metasystem and shipped docs | complete intent table and caller sweep | TestIntentPublicCoverage | task walkthroughs from fresh help, no internal steps required | PARTIAL | implement exhaustive coverage and final documentation grammar |
+| VMI-10 | CRITICAL | 6 | Built result reaches published unit and genuine review evidence through public tasks, without importing later edits or accepting findings | UnitRunner binding plus branch commit/push/read and full close | review unit and collected review publication | TestIntentBuiltUnitToLanding | build result to committed review, explicit close, collected publication and landing; retries after both commits and publications reuse identity; stale result refuses before effects | PARTIAL | finish connection candidate, independent code critique and whole flow |
 
-Focused review obligations (all MISSING until implemented and observed):
+Focused review obligations (status follows their parent row and the evidence below; a candidate test alone does not certify the integrated release):
 
 | Finding | Parent | Named fixture and required observation |
 | --- | --- | --- |
@@ -471,6 +575,12 @@ Focused review obligations (all MISSING until implemented and observed):
 | VMI-R2-05 | VMI-7 | TestIntentLandRouteEvidence: configured admissible batch, retained hand evidence and missing proof take the stated routes without weaker fallback. |
 | VMI-R2-06 | VMI-4 | TestIntentTierlessApprovalRemedy: preserves refusal and names the missing four risk answers/basis; never prints executable placeholder N or suggests unsupported tier-only classification. |
 | VMI-R2-07 | VMI-5 | TestIntentGeneratedUnitPlan: generated build/read briefs and resolved independent read model satisfy ReadUnitPlan. |
+| VMI-CONN-01 | VMI-10 | TestIntentBuiltUnitToLanding: committed findings, fold and re-review amend the same unit, invalidate its old read, preserve replayed work and land exactly one current subject for that unit. |
+| VMI-CONN-02 | VMI-6 | Existing close fixture joins actual findings/dispositions/register before the full close owner; dispositions alone do not certify a finding. |
+| VMI-CONN-03 | VMI-10 | Terminal but unclosed critic gives the public close remedy and creates no attestation. |
+| VMI-CONN-04 | VMI-10 | Worktree preparation covers fresh endpoint, remote-only adoption through branch.Push, existing valid worktree, occupied foreign path and divergent history. |
+| VMI-CONN-05 | VMI-10 | Real builder entrypoint runs inside the generated worktree; use existing adapter-declared session-isolation manifest only if its local runtime configuration is required, never copy metasystem.conf.local. |
+| VMI-CONN-06 | VMI-10 | Read-failed with passed proof can request committed review; proof-wrote and changed result bytes refuse before staging. |
 
 Behavior tests use per-test dependency instances and Git stubs. Named native
 integration cases prove real path/process or Git transport where needed.
@@ -499,8 +609,39 @@ for its own sake. Root adjudicates every finding. All bounded mechanical
 residue becomes a named proof obligation; no unsafe unresolved design is
 certified. Later code review is independent and includes brief conformance.
 
-Built: implementation started in an isolated checkout after design acceptance.
-No slice is yet complete. The full Fable findings and root dispositions are
-linked from `plans/verbs-match-intent-design-review.md`; the goal inventory
-is `plans/verbs-match-intent-goal-index.md`. Follow progress in
-`plans/handoff-verbs-match-intent.md`.
+Built: the complete release is being assembled in an isolated integration
+checkout. No product changes are yet integrated into the main checkout.
+Foundation/goal lifecycle, named-unit execution, goal planning, process
+controls/questions, and the initial documentation cutover have closed
+independent implementation reviews. Root inspected each bounded final
+correction and ran its focused proof. The combined foundation/process/docs
+candidate now includes the closed planning and work components. The final
+effort-forwarding and documentation corrections are being integrated.
+
+Actual CLI evidence includes equivalent repository paths, approved budget
+and stopped/parked resume, forged-human refusal, truthful post-publication
+partial success, nested adopted UI state roots, and named-build repeats.
+Root's final named-continuation check changed a retained brief, observed
+both build-resume and wait refuse without launching, restored it and
+reused the existing result. These are isolated fixtures; production terminal
+ancestry and a live measured model review are not claimed.
+
+Delivery's second independent review found five material corrections:
+exact batch-member retry after branch deletion, attestation publication,
+terminal-versus-closed critic continuation, whole-owner landing/critic
+fixtures, and explicit model/effort controls. Publication and closure are
+implemented; root reproduced an older landed batch hiding fresh work, and
+its correction plus physical landing/recovery proof remain active.
+Automatic worktree preparation and the accepted review-unit connection
+have completed their first independent code review. Its seven material
+corrections are in progress, including claim checks on every launch,
+configuration in generated worktrees, exact amended subjects and interrupted
+collection recovery. The full 48-verb and 54-goal-act coverage boundary is
+implemented and under independent review. Final caller examples, selected
+shared validation and the final assembled runtime walks remain release gates.
+The matrix is PARTIAL until that integrated proof exists.
+
+Full design findings and root dispositions are linked from
+`plans/verbs-match-intent-design-review.md`; the 23-goal inventory is
+`plans/verbs-match-intent-goal-index.md`. Detailed evidence and component
+revisions are recorded in `plans/handoff-verbs-match-intent.md`.
