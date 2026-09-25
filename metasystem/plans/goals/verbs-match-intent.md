@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Wido 2026-09-25: design and build the most intuitive, powerful, forgiving human and agent verbs possible, organized by human/agent intent rather than internal structure. Deliver a complete public command surface: discoverable help, whole-workflow commands, consistent names and flags, contextual defaults, executable recovery guidance, safe retries and advanced capabilities. Reuse existing transaction, authority, job and landing owners and preserve their guarantees. The September 6 audit and available real Claude/Codex session failures are design evidence. Incorporate the delivered human-goal-verbs-forgiving, stop/status/arm and verb-ergonomics work; map the queued startup, repository-root, human-goal-defect and landing requirements. DONE: the full reviewed intent surface is implemented, documented and proven end to end including failure/retry paths, with material review findings resolved. Minimize total implementation and maintenance complexity without reducing the complete redesign's scope.
 - Origin: main
-- Next step: Finish final checks and commit the complete intent-based redesign locally. Reviewed candidate 3e59d4107 is applied on main (111 paths); final rebuilt public CLI passed72 commands, fast/static prerequisites and both corrected audit/protocol sections passed. Original198-group selection fully executed; bounded native/scenario correction checks and all10adoption bodies now running. Six unrelated coverage-ratchet failures proven at baseline and left unchanged. Root-authored design, Fable critique and rulingR-126 are complete; no formal authority or governed certificate is fabricated under the human-authorized machinery bypass.
+- Next step: Finish the user-authorized coverage repair and main integration, then push. The verb implementation is local commit 25f0e2e0. Latest fetched main d464c9b86 already registers the four missing floors; combine its UI changes with the verbs, measure current HTTP/session coverage, add meaningful tests above unchanged floors, independently review merge corrections, prove the combined coverage gate and push the verified main integration. Private source and evidence: /Users/wido/LocalStorage/agentic-tools-evidence/verbs-match-intent-20260925/coverage-main-integration-source. Machinery bypass and stop-hook ignore remain authorized; no floor reductions or fake proof authority.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 24
+- Revision: 26
 - BudgetExceptions: 0
 
 History:
@@ -37,4 +37,6 @@ History:
 - 2026-09-25T19:08:59Z MNF2H3PQ7G2HF3MZJS46SPHSV2-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T20:03:15Z HAHW53EEX11RD6HA17PYDK4PFK-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T20:44:52Z GR7F0BDBCQ9F017XQ56A8DF6SE-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
-Integrity: sha256=45cd3f548bf851f31e17cc24f1fbbb9912c5995a2c6898efee3e259ccb2d687d
+- 2026-09-25T21:05:17Z 5AWBBG4JJXNNWGH9PAVBARPBZV-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+- 2026-09-25T21:16:05Z 1MF11K76D9V193TEEGEBWKASG6-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+Integrity: sha256=7d8abc4ef1ff880776c8a05bcd55d4381e3ef14cfd0cb596f5f7c58713e187cb
