@@ -64,10 +64,19 @@ type Script struct {
 // Read is one tool call this server makes: what it is called, what came back,
 // and whether it ended as a completion or a failure.
 type Read struct {
+	// Name is the tool's own name on the wire, where the script sets one:
+	// "mcp__metasystem__suggest". A runtime carries it beside the title, and
+	// the host reads which operation a call is out of it.
+	Name   string
 	Title  string
 	Result string
 	// Failed makes the completion a failure rather than a completion.
 	Failed bool
+	// When narrows this call to the prompts that carry this text, where the
+	// script sets one. A fake that prepares a suggestion for one sheet's field
+	// should prepare it when that sheet was handed over rather than on every
+	// question a human asks from anywhere.
+	When string
 }
 
 // Servers is what the client actually sent this server: the tool servers it
@@ -261,7 +270,7 @@ func (s *server) dispatch(in frame) {
 		s.tripped()
 	case "session/prompt":
 		s.heard(in.Params)
-		go s.prompt(in.ID)
+		go s.prompt(in.ID, promptText(in.Params))
 	default:
 		s.fail(in.ID, "the fake server does not answer "+in.Method)
 	}
@@ -269,7 +278,7 @@ func (s *server) dispatch(in frame) {
 
 // prompt runs the script: the activity line, the refused permission request,
 // then the answer in its chunks, then the settled response.
-func (s *server) prompt(id json.RawMessage) {
+func (s *server) prompt(id json.RawMessage, asked string) {
 	s.cancelled.Store(false)
 	if s.script.Activity != "" {
 		s.notify("session/update", map[string]any{
@@ -281,14 +290,19 @@ func (s *server) prompt(id json.RawMessage) {
 		})
 	}
 	for at, read := range s.script.Reads {
+		if read.When != "" && !strings.Contains(asked, read.When) {
+			continue
+		}
 		id := "read-" + strconv.Itoa(at)
-		s.notify("session/update", map[string]any{
-			"sessionId": SessionID,
-			"update": map[string]any{
-				"sessionUpdate": "tool_call", "toolCallId": id,
-				"title": read.Title, "kind": "other", "status": "pending",
-			},
-		})
+		started := map[string]any{
+			"sessionUpdate": "tool_call", "toolCallId": id,
+			"title": read.Title, "kind": "other", "status": "pending",
+		}
+		if read.Name != "" {
+			started["name"] = read.Name
+			started["_meta"] = map[string]any{"claudeCode": map[string]any{"toolName": read.Name}}
+		}
+		s.notify("session/update", map[string]any{"sessionId": SessionID, "update": started})
 		status := "completed"
 		if read.Failed {
 			status = "failed"
@@ -392,6 +406,26 @@ func (s *server) tripped() {
 	case s.wake <- struct{}{}:
 	default:
 	}
+}
+
+// promptText is the prompt the client sent, whole, joining the text blocks the
+// protocol carries it in. It is read for every prompt, because a script may
+// narrow a call to the prompts that carry something.
+func promptText(params json.RawMessage) string {
+	var sent struct {
+		Prompt []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"prompt"`
+	}
+	if err := json.Unmarshal(params, &sent); err != nil {
+		return ""
+	}
+	parts := make([]string, 0, len(sent.Prompt))
+	for _, block := range sent.Prompt {
+		parts = append(parts, block.Text)
+	}
+	return strings.Join(parts, "")
 }
 
 // heard records the prompt the client sent, whole, joining the text blocks the
