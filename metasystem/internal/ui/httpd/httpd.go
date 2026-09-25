@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
@@ -220,6 +221,13 @@ type Info struct {
 	// a human what they never saw there. A nil one is a build that keeps no
 	// marker, and the route answers it as a first visit.
 	VisitApplication func(human string, now time.Time) (since time.Time, first bool, err error)
+	// Stickies is this account's notepad: the reminders a human jots while
+	// they work, kept per human under the account's registry home and outside
+	// every checkout, so that no seat and no critic reads them. It is a store
+	// rather than four functions because the four acts are one owner's, and
+	// splitting them here would let a build wire three of them. A nil store is
+	// an engine with no notepad, which the routes say.
+	Stickies *stickies.Store
 	// Now is this server's clock, so that a test can say when a page was
 	// composed. A nil Now is time.Now, which is what every run uses.
 	Now func() time.Time
@@ -345,6 +353,18 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// existed, so a request with the wrong verb learns which verb the resource
 	// takes and nothing else about this server.
 	route, isWrite := writeRouteOf(r.URL.Path)
+	// The notepad's collection is the one address this server both reads and
+	// writes, because a notepad is one list and every act on it answers the
+	// whole of it. The method says which act a request is; a request naming a
+	// third verb learns all three rather than one of them.
+	if r.URL.Path == stickiesPath {
+		if r.Method != http.MethodPost && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		route, isWrite = written{route: routeAddSticky}, r.Method == http.MethodPost
+	}
 	if isWrite && r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -392,6 +412,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == notificationsPath {
 		h.notifications(w, r)
+		return
+	}
+	if r.URL.Path == stickiesPath {
+		h.stickies(w, r)
 		return
 	}
 	// The stream is a read like any other and takes the same checks above;
