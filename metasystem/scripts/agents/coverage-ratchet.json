@@ -117,6 +117,7 @@
   "internal/ui/project": 84.2,
   "internal/ui/session": 89.5,
   "internal/ui/snapshot": 93.8,
+  "internal/ui/stickies": 94.0,
   "internal/ui/uitools": 84.7,
   "internal/ui/web": 93.8,
   "internal/ui/workspace": 100.0,

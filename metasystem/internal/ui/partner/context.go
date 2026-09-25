@@ -270,11 +270,58 @@ func displayedSource(page Page) string {
 // answered about as though it were already written down.
 func seenLines(facts Facts, observed snapshot.Observation, page Page) (string, int, int) {
 	block, supplied, total := pageLines(facts, observed, page)
-	block = draftLines(page) + block
+	block = draftLines(page) + block + stickyLines(page)
 	if quote := strings.TrimSpace(page.Quote); quote != "" {
 		return quoteLines(page) + block, supplied, total
 	}
 	return block, supplied, total
+}
+
+// maxStickiesCarried is how many of a human's own reminders one turn carries.
+// The notepad holds five hundred; a block that carried all of them would be a
+// context spent on a notepad rather than on the page. What is left out is
+// counted and said, as every other bound in this file says what it left out.
+const maxStickiesCarried = 25
+
+// stickyLines is the human's own notepad as the page was showing it.
+//
+// It goes last, after the page's own facts, because it is what the human wrote
+// to themselves rather than what the project says: a Partner reading this
+// block should reach the reminders knowing what page they are about. It is
+// marked for what it is every time, so it cannot be answered about as though
+// it were a record — a sticky is on no seat's input and in no ledger.
+func stickyLines(page Page) string {
+	if page.StickiesOpen == 0 && len(page.Stickies) == 0 {
+		return ""
+	}
+	var built strings.Builder
+	built.WriteString("- The human's own stickies — private reminders they wrote to themselves, not records and not the ledger's; " +
+		strconv.Itoa(page.StickiesOpen) + " open:\n")
+	carried := page.Stickies
+	if len(carried) > maxStickiesCarried {
+		carried = carried[:maxStickiesCarried]
+	}
+	for _, sticky := range carried {
+		said := strings.TrimSpace(sticky.Text)
+		if said == "" {
+			continue
+		}
+		line := "  - " + said
+		if len(sticky.About) > 0 {
+			line += " (about " + strings.Join(sticky.About, ", ") + ")"
+		}
+		if sticky.Done {
+			line += " — done"
+		}
+		built.WriteString(line + "\n")
+	}
+	if left := len(page.Stickies) - len(carried); left > 0 {
+		built.WriteString("  - (" + strconv.Itoa(left) + " more the page was showing are not in this block)\n")
+	}
+	if len(page.Stickies) == 0 {
+		built.WriteString("  - (none of them is about what is on this page; the panel shows them all)\n")
+	}
+	return built.String()
 }
 
 // Draft is a sheet as the human has filled it in, handed over by pressing

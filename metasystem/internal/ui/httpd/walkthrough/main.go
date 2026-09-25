@@ -142,6 +142,11 @@ func main() {
 	// Both handles, because -proven acts as Wido and an unproven seat acts
 	// under the handle this fixture was given, which is empty by default.
 	plantPageVisits(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
+	// The notepad, planted for every handle this fixture can act as, under a
+	// home of its own beside the fixture checkout. It is never the account's
+	// own home: the store resolves that one, and a walkthrough that wrote
+	// there would put fixture notes into a human's actual notepad.
+	notepad := fixtureStickies(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
 	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
 	state.roots = roots
 	authority := httpd.AuthorityInfo{Reason: agentReason}
@@ -179,6 +184,10 @@ func main() {
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
 		NotificationJournal: journal,
 		Observe:             state.observe,
+		// The human's own notepad, through the same store the engine wires,
+		// over a home this fixture invented: a walkthrough over a canned list
+		// would prove nothing about the store, the order or the counts.
+		Stickies: notepad,
 		// What this seat is. The real server resolves it from the layout and
 		// the adoption line; this one has neither, so it answers the same
 		// shape from the fixture's own facts — without it every page's header

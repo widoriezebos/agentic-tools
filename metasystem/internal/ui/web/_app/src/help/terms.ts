@@ -86,7 +86,8 @@ export type HelpId =
   | "chain"
   | "arc"
   | "waits-for"
-  | "holds";
+  | "holds"
+  | "stickies";
 
 /** The name the popover heads itself with, and what that name is for. */
 export type Term = { term: string; text: string };
@@ -387,6 +388,10 @@ export const HELP: Record<HelpId, Term> = {
   bound: {
     term: "Bound",
     text: "When a job's reserved minutes run out. It is a bound and not an estimate: nothing here predicts when work will finish, and a job that reaches its cap is stopped rather than finished. Read it as the latest this job can still be running, never as how long is left.",
+  },
+  stickies: {
+    term: "Stickies",
+    text: "Your own reminders, jotted while you work. They are yours and nobody else's: they live on this seat, outside the project's records and outside every checkout, so no agent and no reviewer reads them. A sticky can say what it is about — the goal or the document you were looking at — and then it comes back on that page. Open ones are newest first; what you mark done is kept, out of the way.",
   },
   chain: {
     term: "Chain",

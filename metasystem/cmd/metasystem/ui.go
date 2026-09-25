@@ -35,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
@@ -179,6 +180,22 @@ func runUI(verb string, args []string) int {
 		configuredHuman, humanErr := config.UIHuman(confPath)
 		if humanErr != nil {
 			return refuse(humanErr.Error())
+		}
+
+		// The human's own notepad, under the account's registry home rather
+		// than under this checkout's state root. A sticky is personal working
+		// material and never a record: keeping it inside the checkout would
+		// put it inside the Project Partner's native read grant and inside a
+		// critic's read root, and "no seat reads your stickies" would be false
+		// from the first one. A home this process cannot resolve is a build
+		// with no notepad, which the routes say — it costs a human their
+		// reminders and nothing about the rest of the interface, so it is not
+		// a reason to refuse to serve.
+		var notepad *stickies.Store
+		if home, homeErr := stickies.Home(); homeErr == nil {
+			notepad = stickies.New(home, roots.Checkout, time.Now)
+		} else {
+			fmt.Fprintln(os.Stderr, "interface notepad: unavailable: "+homeErr.Error())
 		}
 
 		// The ledger reader answers requests from the accepted ref as it
@@ -632,6 +649,10 @@ func runUI(verb string, args []string) int {
 					VisitApplication: func(human string, now time.Time) (time.Time, bool, error) {
 						return overview.VisitPage(roots.StateRoot, application.PageName, human, now)
 					},
+					// The notepad, resolved once above. It is the one piece of
+					// state this interface keeps OUTSIDE the checkout, which
+					// is the whole of why it is its own owner.
+					Stickies: notepad,
 					// The Project Partner. The flag travels whether or not the
 					// runtime was admitted, because it decides the act routes'
 					// policy and not only the Partner's own.

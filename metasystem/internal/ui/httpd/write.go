@@ -105,6 +105,12 @@ func writeRouteOf(path string) (written, bool) {
 	if id, ok := editID(path); ok {
 		return written{route: routeEditDocument, id: id}, true
 	}
+	// The notepad's two acts beneath the collection. The collection itself is
+	// not here: it is the one address this server both reads and writes, and
+	// ServeHTTP decides which by the method.
+	if route, ok := stickyRouteOf(path); ok {
+		return route, true
+	}
 	// The Partner's two writes take the same policy: one admits a turn, one
 	// stops the running one. They are acts of the human at the keyboard, not
 	// of the agent, and they carry no ledger authority of any kind.
@@ -212,6 +218,12 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.editDocument(w, r, route.id)
 	case routePreviewSource:
 		h.previewSource(w, r)
+	case routeAddSticky:
+		h.addSticky(w, r)
+	case routeEditSticky:
+		h.editSticky(w, r, route.id)
+	case routeRemoveSticky:
+		h.removeSticky(w, r, route.id)
 	case routeLaunch:
 		h.launchMachine(w, r)
 	case routeApprove:

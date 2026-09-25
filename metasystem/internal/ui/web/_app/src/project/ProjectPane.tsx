@@ -69,6 +69,7 @@ import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
+import { StickiesBlock } from "../stickies/Block";
 import { useSession } from "../shell/identity";
 import { failureMessage as actFailureMessage } from "../shell/workspace";
 import {
@@ -461,6 +462,11 @@ function Columns({
           {pane.problems.length > 0 && <Problems problems={pane.problems} />}
           {briefing.goal !== null && <GoalBlock briefing={briefing} ledger={ledger} onEdited={onReload} />}
           {goal !== null && <Dependencies goal={goal} ledger={ledger} onLedger={onLedger} />}
+          {/* What the human wrote to themselves about this goal, under its
+              header where they will meet it again. It is the notepad's own
+              list narrowed to this goal, so it cannot disagree with the
+              panel's. */}
+          {goal !== null && <StickiesBlock named={{ kind: "goal", id: goal }} />}
         </div>
       )}
       <div className="ms-briefing">
