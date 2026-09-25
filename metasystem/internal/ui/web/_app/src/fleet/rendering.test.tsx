@@ -52,6 +52,8 @@ const machine: Machine = {
   generation: 4,
   holds: [held],
   this: false,
+  working: [],
+  workingProblem: "",
 };
 
 const read: Copy = {

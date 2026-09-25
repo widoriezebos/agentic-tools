@@ -1,26 +1,39 @@
+import { ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink } from "react-router";
 
 import {
   failureMessage,
   loadFleet,
+  type Box,
   type Held,
   type Launch,
   type Machine,
   type Page as FleetPayload,
   type Role,
   type ThisSeat,
+  type Working,
 } from "./api";
 import "./fleet.css";
 import {
   armedWords,
+  attemptsLeftWords,
+  attemptWords,
+  barShare,
+  capWords,
+  chainWhen,
+  chainWords,
   copyLine,
   copyProblem,
   emptyFleetWords,
   flagWords,
   healthWords,
+  jobWords,
   NEEDS_YOU_REMEDY,
+  NO_BOX,
   publicationWords,
+  reservedWords,
+  RESERVED_MEANING,
   rolesAlive,
   rolesNeedingAttention,
   runningWords,
@@ -29,6 +42,8 @@ import {
   seenWords,
   shortEngine,
   sinceWords,
+  workingSource,
+  workingWords,
 } from "./fleet";
 import { minuteTime } from "../backlog/format";
 import { laneTitle } from "../backlog/lanes";
@@ -39,6 +54,7 @@ import { goalPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Hint } from "../shell/controls";
 import { useOffersRefresh } from "../shell/refresh";
+import { readFleetOpen, writeFleetOpen } from "../storage";
 import { captureOfFleet } from "./capture";
 import { LaunchCard } from "./LaunchCard";
 import { LaunchSheet } from "./LaunchSheet";
@@ -153,16 +169,31 @@ export function Blocks({ page }: { page: FleetPayload }) {
   // The instant every age on this page is measured against: one clock, read
   // once as the page renders, so two rows cannot be a second apart.
   const now = useMemo(() => new Date(), [page]);
+  // Which rows this viewer left open. It is read once, here, because the
+  // capture below has to say which rows were open as well: what a human was
+  // looking at is the phase sentence alone or the phase with the goal, the
+  // job, the box and the chain under it, and those are two different screens.
+  const [open, setOpen] = useState(() => readFleetOpen());
+  const toggle = useCallback((machine: string) => {
+    setOpen((was) => {
+      const next = new Set(was);
+      if (!next.delete(machine)) {
+        next.add(machine);
+      }
+      writeFleetOpen(next);
+      return next;
+    });
+  }, []);
   // What this page is about, for a question asked from it. The rows travel
   // because only the page knows what was on screen; the standings travel as
   // the page judged nothing and displayed them.
-  useAbout(aboutLine("Fleet", ""), { returnTo: "/fleet", fleet: captureOfFleet(page, now) });
+  useAbout(aboutLine("Fleet", ""), { returnTo: "/fleet", fleet: captureOfFleet(page, now, open) });
 
   return (
     <section className="ms-fleet">
       {page.needsYou.length > 0 && <NeedsYou held={page.needsYou} />}
       <ThisSeatBlock seat={page.this} now={now} />
-      <TheFleet page={page} now={now} />
+      <TheFleet page={page} now={now} open={open} onToggle={toggle} />
     </section>
   );
 }
@@ -254,7 +285,17 @@ function RoleRow({ role }: { role: Role }) {
  * a flagged goal, then the reachable, then the silent, then the unknown. The
  * server decided that order; the table draws it.
  */
-function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
+function TheFleet({
+  page,
+  now,
+  open,
+  onToggle,
+}: {
+  page: FleetPayload;
+  now: Date;
+  open: Set<string>;
+  onToggle: (machine: string) => void;
+}) {
   const problem = copyProblem(page);
   // The launch this block shows, if any: the newest one still worth a card.
   // It is state rather than a derived value because two things change it —
@@ -330,7 +371,10 @@ function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
                 Seen
                 <Help id="presence" />
               </th>
-              <th scope="col">Running</th>
+              <th scope="col">
+                Running
+                <Help id="phase" />
+              </th>
               <th scope="col">
                 Holds
                 <Help id="machine-holds" />
@@ -343,7 +387,13 @@ function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
           </thead>
           <tbody>
             {page.machines.map((machine) => (
-              <MachineRow key={machine.machine} machine={machine} now={now} />
+              <MachineRow
+                key={machine.machine}
+                machine={machine}
+                now={now}
+                open={open.has(machine.machine)}
+                onToggle={onToggle}
+              />
             ))}
           </tbody>
         </table>
@@ -358,55 +408,228 @@ function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
   );
 }
 
-function MachineRow({ machine, now }: { machine: Machine; now: Date }) {
+/**
+ * One machine, and under it what that machine is doing.
+ *
+ * The disclosure is a second row rather than a `<details>`, which is what the
+ * rest of this build uses. A table row cannot contain another row, and the
+ * block has to open in the row's own width — under the machine and across all
+ * six columns — rather than inside one cell. So the control is a button that
+ * says whether it is expanded and what it controls, and the block is a row
+ * the table draws beneath this one. Its open state is remembered per viewer
+ * either way, which a native disclosure would have had to be told anyway.
+ */
+function MachineRow({
+  machine,
+  now,
+  open,
+  onToggle,
+}: {
+  machine: Machine;
+  now: Date;
+  open: boolean;
+  onToggle: (machine: string) => void;
+}) {
   const seen = seenWords(machine, now);
   const title = seenTitle(machine);
   const since = sinceWords(machine);
+  const disclosed = `ms-fleet-work-${machine.machine}`;
   return (
-    <tr className="ms-fleet-row">
-      <td className="ms-fleet-cell ms-fleet-cell--machine">
-        <span className="ms-fleet-label">Machine</span>
-        <span className="ms-mono">{machine.machine}</span>
-        {machine.this && <span className="ms-fleet-here">this seat</span>}
-      </td>
-      <td className="ms-fleet-cell ms-fleet-cell--standing">
-        <span className="ms-fleet-label">Standing</span>
-        <Hint label={machine.reason}>
-          <span className={`ms-fleet-pill ms-fleet-pill--${machine.standing}`}>{machine.standing}</span>
-        </Hint>
-      </td>
-      <td className="ms-fleet-cell">
-        <span className="ms-fleet-label">Seen</span>
-        {title === "" ? <span>{seen}</span> : <Hint label={title}>{<span>{seen}</span>}</Hint>}
-        {since !== "" && <span className="ms-fleet-since">{since}</span>}
-      </td>
-      <td className="ms-fleet-cell">
-        <span className="ms-fleet-label">Running</span>
-        <span>{runningWords(machine.running, "")}</span>
-      </td>
-      <td className="ms-fleet-cell ms-fleet-cell--holds">
-        <span className="ms-fleet-label">Holds</span>
-        {machine.holds.length === 0 ? (
-          <span className="ms-fleet-quiet">nothing</span>
-        ) : (
-          <span className="ms-fleet-chips">
-            {machine.holds.map((held) => (
-              <HoldChip key={held.goal} held={held} />
-            ))}
+    <>
+      <tr className={open ? "ms-fleet-row ms-fleet-row--open" : "ms-fleet-row"}>
+        <td className="ms-fleet-cell ms-fleet-cell--machine">
+          <span className="ms-fleet-label">Machine</span>
+          <button
+            type="button"
+            className="ms-fleet-disclose"
+            aria-expanded={open}
+            aria-controls={disclosed}
+            aria-label={`What ${machine.machine} is doing`}
+            onClick={() => {
+              onToggle(machine.machine);
+            }}
+          >
+            <ChevronRight className="ms-fleet-chevron" size={14} strokeWidth={2} aria-hidden="true" />
+          </button>
+          <span className="ms-mono">{machine.machine}</span>
+          {machine.this && <span className="ms-fleet-here">this seat</span>}
+        </td>
+        <td className="ms-fleet-cell ms-fleet-cell--standing">
+          <span className="ms-fleet-label">Standing</span>
+          <Hint label={machine.reason}>
+            <span className={`ms-fleet-pill ms-fleet-pill--${machine.standing}`}>{machine.standing}</span>
+          </Hint>
+        </td>
+        <td className="ms-fleet-cell">
+          <span className="ms-fleet-label">Seen</span>
+          {title === "" ? <span>{seen}</span> : <Hint label={title}>{<span>{seen}</span>}</Hint>}
+          {since !== "" && <span className="ms-fleet-since">{since}</span>}
+        </td>
+        <td className="ms-fleet-cell">
+          <span className="ms-fleet-label">Running</span>
+          <span>{workingWords(machine, now)}</span>
+        </td>
+        <td className="ms-fleet-cell ms-fleet-cell--holds">
+          <span className="ms-fleet-label">Holds</span>
+          {machine.holds.length === 0 ? (
+            <span className="ms-fleet-quiet">nothing</span>
+          ) : (
+            <span className="ms-fleet-chips">
+              {machine.holds.map((held) => (
+                <HoldChip key={held.goal} held={held} />
+              ))}
+            </span>
+          )}
+        </td>
+        <td className="ms-fleet-cell ms-fleet-cell--engine">
+          <span className="ms-fleet-label">Engine</span>
+          {machine.engine === "" ? (
+            <span className="ms-fleet-quiet">unknown</span>
+          ) : (
+            <span className="ms-mono">
+              {shortEngine(machine.engine)} · generation {machine.generation}
+            </span>
+          )}
+        </td>
+      </tr>
+      <tr className="ms-fleet-opened" id={disclosed} hidden={!open}>
+        <td className="ms-fleet-open-cell" colSpan={6}>
+          <Work machine={machine} now={now} />
+        </td>
+      </tr>
+    </>
+  );
+}
+
+/**
+ * What one machine is doing, opened: the goal, the job in hand, the goal's
+ * box and the chain.
+ *
+ * This seat's row can carry several things in flight, because only this host
+ * can read its own job records; every other row carries the one chain its
+ * presence published, and says when that was.
+ */
+function Work({ machine, now }: { machine: Machine; now: Date }) {
+  if (machine.workingProblem !== "") {
+    return <p className="ms-fleet-problem">{machine.workingProblem}</p>;
+  }
+  if (machine.working.length === 0) {
+    return <p className="ms-fleet-quiet">This machine is running nothing.</p>;
+  }
+  return (
+    <div className="ms-fleet-work">
+      {machine.working.map((working) => (
+        <WorkingBlock key={working.job.id} working={working} now={now} />
+      ))}
+      <p className="ms-fleet-quiet">{workingSource(machine, now)}</p>
+    </div>
+  );
+}
+
+function WorkingBlock({ working, now }: { working: Working; now: Date }) {
+  const cap = capWords(working.job, now);
+  return (
+    <div className="ms-fleet-working">
+      <p className="ms-fleet-work-line">
+        <span className="ms-fleet-work-name">Goal</span>
+        <NavLink className="ms-fleet-goal" to={goalPath(working.goal)}>
+          {working.goal}
+        </NavLink>
+      </p>
+      <p className="ms-fleet-work-line">
+        <span className="ms-fleet-work-name">This job</span>
+        <span>
+          {working.phase.role}
+          {working.phase.round > 0 && ` round ${String(working.phase.round)}`}
+          {working.phase.round > 0 && working.phase.roundLimit !== null && ` of ${String(working.phase.roundLimit)}`}
+        </span>
+        <Chip>{working.job.status}</Chip>
+        <span>{jobWords(working.job, now)}</span>
+        {cap !== "" && (
+          <span className="ms-fleet-bound">
+            {cap}
+            <Help id="bound" />
           </span>
         )}
-      </td>
-      <td className="ms-fleet-cell ms-fleet-cell--engine">
-        <span className="ms-fleet-label">Engine</span>
-        {machine.engine === "" ? (
-          <span className="ms-fleet-quiet">unknown</span>
-        ) : (
-          <span className="ms-mono">
-            {shortEngine(machine.engine)} · generation {machine.generation}
+      </p>
+      <div className="ms-fleet-work-line ms-fleet-work-line--box">
+        <span className="ms-fleet-work-name">
+          Box
+          <Help id="box" />
+        </span>
+        <BoxBlock box={working.box} />
+      </div>
+      <div className="ms-fleet-work-line ms-fleet-work-line--chain">
+        <span className="ms-fleet-work-name">
+          Chain
+          <Help id="chain" />
+        </span>
+        <ul className="ms-fleet-chain">
+          {working.chain.map((member) => (
+            <li key={member.job} className="ms-fleet-chain-row">
+              <span className="ms-mono ms-fleet-chain-job">{member.job}</span>
+              <span>{chainWords(member)}</span>
+              <Chip>{member.status}</Chip>
+              <span className="ms-fleet-quiet">{chainWhen(member)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The goal's box: two numbers, two bars, and what a reserved minute counts.
+ *
+ * A goal with none says so; a projection that could not be made says its own
+ * reason and draws no bars, because a bar at nought would say the goal has
+ * spent nothing.
+ */
+function BoxBlock({ box }: { box: Box | null }) {
+  if (box === null) {
+    return <span className="ms-fleet-quiet">{NO_BOX}</span>;
+  }
+  if (box.problem !== "") {
+    return <span className="ms-fleet-quiet">{box.problem}</span>;
+  }
+  const attempts = attemptWords(box);
+  const reserved = reservedWords(box);
+  return (
+    <span className="ms-fleet-box">
+      {attempts !== "" && (
+        <span className="ms-fleet-measure">
+          <span className="ms-fleet-measure-words">
+            {attempts} · {attemptsLeftWords(box)}
           </span>
-        )}
-      </td>
-    </tr>
+          <Bar share={barShare(box.attempts ?? 0, box.attemptLimit ?? 0)} />
+        </span>
+      )}
+      {reserved !== "" && (
+        <span className="ms-fleet-measure">
+          <span className="ms-fleet-measure-words">{reserved}</span>
+          <Bar share={barShare(box.reservedMinutes ?? 0, box.reservedMinutesLimit ?? 0)} />
+        </span>
+      )}
+      <span className="ms-fleet-quiet">{RESERVED_MEANING}</span>
+    </span>
+  );
+}
+
+/**
+ * One bar, in the tokens this interface already has.
+ *
+ * The share is drawn in twentieths, as one of twenty-one classes the
+ * stylesheet defines, because nothing on this page carries a style attribute
+ * and a bar is a width. A twentieth is a pixel or two at the width these bars
+ * are, which is finer than an eye reads and finer than the number beside it.
+ */
+function Bar({ share }: { share: number }) {
+  const twentieths = Math.round(share * 20);
+  return (
+    <span className="ms-fleet-bar" aria-hidden="true">
+      <span className={`ms-fleet-bar-fill ms-fleet-bar-fill--${String(twentieths)}`} />
+    </span>
   );
 }
 

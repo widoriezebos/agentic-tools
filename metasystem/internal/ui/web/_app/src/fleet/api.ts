@@ -95,6 +95,64 @@ export type ThisSeat = {
   runningProblem: string;
 };
 
+/**
+ * What a job is a phase of. `roundLimit` is null for a build, which shows its
+ * round without a denominator because a build has no round limit of its own;
+ * for a critic it is the limit its chain's root froze.
+ */
+export type Phase = { role: string; round: number; roundLimit: number | null };
+
+/**
+ * The job in hand. `capEndsAt` is when the minutes it reserved run out — the
+ * recorded deadline, or the start plus the cap — and it is the one instant
+ * anything on this page looks forward to. It names the cap and never
+ * completion.
+ */
+export type WorkingJob = {
+  id: string;
+  role: string;
+  status: string;
+  startedAt: string | null;
+  capMinutes: number | null;
+  capEndsAt: string | null;
+};
+
+/**
+ * The goal's box, as the engine's own projection counts it.
+ *
+ * Every number is nullable and `problem` is why. A projection that could not
+ * be made carries its reason and no figures, because zeros would say the goal
+ * has spent nothing — which is the one thing an unknown projection does not
+ * know. The whole box is null where the goal carries none at all.
+ */
+export type Box = {
+  attempts: number | null;
+  attemptLimit: number | null;
+  reservedMinutes: number | null;
+  reservedMinutesLimit: number | null;
+  problem: string;
+};
+
+/** One job of the chain. It carries its cap and never a consumed charge. */
+export type ChainMember = {
+  job: string;
+  role: string;
+  round: number;
+  status: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  capMinutes: number | null;
+};
+
+/** One thing a machine is doing, whole: what the row's disclosure opens to. */
+export type Working = {
+  goal: string;
+  phase: Phase;
+  job: WorkingJob;
+  box: Box | null;
+  chain: ChainMember[];
+};
+
 /** One goal a machine holds, with the flag its holder's standing raises. */
 export type Held = {
   goal: string;
@@ -124,6 +182,20 @@ export type Machine = {
   generation: number;
   holds: Held[];
   this: boolean;
+  /**
+   * What this machine is doing, in the detail the row opens to.
+   *
+   * It is a list because this seat's row is not like the others. A machine
+   * elsewhere carries what its presence record published, which is one chain;
+   * on this host the server reads the job records itself and sends every job
+   * in flight, newest first. Empty is idle.
+   */
+  working: Working[];
+  /**
+   * The local jobs reader's own explanation, carried rather than shown as
+   * idle. Only this seat's row can have one.
+   */
+  workingProblem: string;
 };
 
 /** One step of a launch, as the verb recorded it. */

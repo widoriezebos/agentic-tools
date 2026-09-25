@@ -329,6 +329,266 @@
   color: var(--ms-marker-fg);
 }
 
+/* --------------------------------------------- what a seat is doing -- */
+
+/*
+ * The control at the row's start, and the row it opens.
+ *
+ * The block opens UNDER the machine and across the whole table, which is a
+ * second row and not a box inside a cell: what a machine is doing is four
+ * things with a list among them, and none of that fits a column. The chevron
+ * turns rather than changing shape, so the row it belongs to is never in
+ * doubt.
+ *
+ * Nothing in here is a new colour. The block sits on surface-2 the way every
+ * other nested reading on this page does, the bars take the accent over
+ * surface-3, and the words take the same three text tokens the table does.
+ */
+.ms-fleet-disclose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ms-text-3);
+  cursor: pointer;
+}
+
+.ms-fleet-disclose:hover {
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+}
+
+.ms-fleet-chevron {
+  transition: transform 120ms ease;
+}
+
+.ms-fleet-row--open .ms-fleet-chevron {
+  transform: rotate(90deg);
+}
+
+.ms-fleet-open-cell {
+  padding: 0 10px 12px 0;
+  border-bottom: 1px solid var(--ms-border);
+}
+
+.ms-fleet-work {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+  min-width: 0;
+}
+
+.ms-fleet-working {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Only this seat's row has a second one, and the rule says where one ends. */
+.ms-fleet-working + .ms-fleet-working {
+  padding-top: 10px;
+  border-top: 1px solid var(--ms-border);
+}
+
+.ms-fleet-work-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-fleet-work-line--box,
+.ms-fleet-work-line--chain {
+  align-items: flex-start;
+}
+
+.ms-fleet-work-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-width: 72px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+/* The one forward-looking words on this page, quiet, with the term that says
+   they are a bound and not a forecast. */
+.ms-fleet-bound {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ms-text-3);
+}
+
+.ms-fleet-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-fleet-measure {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ms-fleet-measure-words {
+  color: var(--ms-text-2);
+}
+
+.ms-fleet-bar {
+  display: block;
+  width: 180px;
+  max-width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ms-surface-3);
+  overflow: hidden;
+}
+
+.ms-fleet-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ms-accent);
+}
+
+/*
+ * Twenty-one widths, in twentieths.
+ *
+ * A bar is a width, and no element in this build carries a style attribute,
+ * so the widths are named classes. A twentieth is a pixel or two at the width
+ * these bars are drawn at — finer than an eye reads, and far coarser than the
+ * number printed above it, which is what a human acts on.
+ */
+.ms-fleet-bar-fill--0 {
+  width: 0;
+}
+
+.ms-fleet-bar-fill--1 {
+  width: 5%;
+}
+
+.ms-fleet-bar-fill--2 {
+  width: 10%;
+}
+
+.ms-fleet-bar-fill--3 {
+  width: 15%;
+}
+
+.ms-fleet-bar-fill--4 {
+  width: 20%;
+}
+
+.ms-fleet-bar-fill--5 {
+  width: 25%;
+}
+
+.ms-fleet-bar-fill--6 {
+  width: 30%;
+}
+
+.ms-fleet-bar-fill--7 {
+  width: 35%;
+}
+
+.ms-fleet-bar-fill--8 {
+  width: 40%;
+}
+
+.ms-fleet-bar-fill--9 {
+  width: 45%;
+}
+
+.ms-fleet-bar-fill--10 {
+  width: 50%;
+}
+
+.ms-fleet-bar-fill--11 {
+  width: 55%;
+}
+
+.ms-fleet-bar-fill--12 {
+  width: 60%;
+}
+
+.ms-fleet-bar-fill--13 {
+  width: 65%;
+}
+
+.ms-fleet-bar-fill--14 {
+  width: 70%;
+}
+
+.ms-fleet-bar-fill--15 {
+  width: 75%;
+}
+
+.ms-fleet-bar-fill--16 {
+  width: 80%;
+}
+
+.ms-fleet-bar-fill--17 {
+  width: 85%;
+}
+
+.ms-fleet-bar-fill--18 {
+  width: 90%;
+}
+
+.ms-fleet-bar-fill--19 {
+  width: 95%;
+}
+
+.ms-fleet-bar-fill--20 {
+  width: 100%;
+}
+
+.ms-fleet-chain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ms-fleet-chain-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-fleet-chain-job {
+  flex: none;
+  color: var(--ms-text-3);
+}
+
 /*
  * One card per machine, standing first.
  *
@@ -336,6 +596,10 @@
  * cell shows the label it was carrying invisibly. The standing is ordered to
  * the top because it is the answer the card exists to give; the machine's
  * name follows it, and the rest reads down in the order the columns were in.
+ *
+ * An opened row is the bottom of the card above it rather than a card of its
+ * own: the two square the corners they meet at and share one border, because
+ * a machine and what it is doing are one thing a human is reading.
  */
 @media (max-width: 599px) {
   .ms-fleet-table,
@@ -390,6 +654,37 @@
 
   .ms-fleet-cell--standing .ms-fleet-label {
     display: none;
+  }
+
+  .ms-fleet-row--open {
+    margin-bottom: 0;
+    border-radius: 8px 8px 0 0;
+  }
+
+  /* The :not() keeps a closed row hidden: the rule above turns table rows
+     into blocks, and a display of its own would outrank the hidden attribute
+     the row is closed with. */
+  .ms-fleet-opened:not([hidden]) {
+    display: block;
+    margin: 0 0 10px;
+    border: 1px solid var(--ms-border);
+    border-top: 0;
+    border-radius: 0 0 8px 8px;
+    background: var(--ms-surface);
+  }
+
+  .ms-fleet-open-cell {
+    display: block;
+    padding: 0 12px 10px;
+    border-bottom: 0;
+  }
+
+  .ms-fleet-work-name {
+    min-width: 0;
+  }
+
+  .ms-fleet-bar {
+    width: 100%;
   }
 }
 

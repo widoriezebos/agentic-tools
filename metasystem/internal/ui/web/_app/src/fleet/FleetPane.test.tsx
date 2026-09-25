@@ -86,6 +86,8 @@ function machine(over: Partial<Machine> = {}): Machine {
     generation: 4,
     holds: [held()],
     this: false,
+    working: [],
+    workingProblem: "",
     ...over,
   };
 }
