@@ -50,6 +50,9 @@ type goPackageCatalog struct {
 
 type goDiscoveryCache struct {
 	catalogs map[string]goPackageCatalog
+	// scratch lets groups whose environments differ only in owner-generated
+	// managed paths share one catalog load.
+	scratch *ScratchEnvironment
 }
 
 type goListPackage struct {
@@ -264,7 +267,11 @@ func discoverGoTestsCached(ctx context.Context, cwd string, environment []string
 	if err != nil {
 		return goDiscovery{}, false, err
 	}
-	key := canonicalGoPath(moduleRoot) + "\x00" + digestEnvironment(environment) + "\x00" + strings.Join(buildTags, ",") + "\x00" + strconv.FormatBool(race)
+	keyed := environment
+	if cache != nil {
+		keyed = scratchDiscoveryEnvironment(cache.scratch, environment)
+	}
+	key := canonicalGoPath(moduleRoot) + "\x00" + digestEnvironment(keyed) + "\x00" + strings.Join(buildTags, ",") + "\x00" + strconv.FormatBool(race)
 	if cache != nil {
 		if catalog, ok := cache.catalogs[key]; ok {
 			return discoveryFromGoCatalog(catalog, cwd, packages, false)

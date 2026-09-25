@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
 
 var syncRequestTestNow = time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)
@@ -89,6 +90,10 @@ func (f *syncRequestFacts) dependencies() syncRequestDependencies {
 			f.endpointCalls++
 			f.events = append(f.events, "endpoint")
 			return goal.Endpoint{Root: root, Remote: "local", Branch: "refs/heads/main", Repository: syncRequestUnexpectedRepository{t: f.t}}, nil
+		},
+		presence: func(root string, _ goal.Endpoint) (seat.Copy, error) {
+			f.checkRoot(root)
+			return seat.Copy{}, nil
 		},
 		machine: func(root string) (string, error) {
 			f.checkRoot(root)

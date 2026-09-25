@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
 
 func trunkRedNextFixture(t *testing.T) (*proofAdmissionRepository, goal.Projection) {
@@ -174,7 +175,7 @@ func renderTrunkRedNext(t *testing.T, repository *proofAdmissionRepository, mach
 		return endpoint, nil
 	}
 	out, code := captureStdout(t, func() int {
-		return nextSyncedWithInputs(root, machine, false, resolve, goalCommandNow, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, labels...)
+		return nextSyncedWithInputs(root, machine, false, resolve, goalCommandNow, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, func(string, goal.Endpoint) (seat.Copy, error) { return seat.Copy{}, nil }, labels...)
 	})
 	if code != 0 {
 		t.Fatalf("goal next code=%d output=%q", code, out)

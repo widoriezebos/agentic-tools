@@ -2,6 +2,7 @@ package proofrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -626,4 +627,126 @@ func writeTestResultFile(t *testing.T, path string, data []byte, mode os.FileMod
 	if err := testexec.WriteFile(path, data, mode); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type failingCloseCandidate struct {
+	candidateWorkspace
+	err error
+}
+
+func (candidate failingCloseCandidate) Close() error {
+	return errors.Join(candidate.candidateWorkspace.Close(), candidate.err)
+}
+
+func TestDetachedSuiteFailureEvidenceBoundsFailedGroupBundle(t *testing.T) {
+	t.Parallel()
+	root, outside := filepath.Join(t.TempDir(), "control  root\twith\nnewline"), t.TempDir()
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(outside, "secret")
+	if err := os.WriteFile(secret, []byte("outside-bytes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tree := strings.Repeat("7", 40)
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		".gitignore": testSnapshotFile("artifacts/\n", 0o644),
+		"source.txt": testSnapshotFile("source\n", 0o644),
+	}, 1)
+	script := fmt.Sprintf("set -eu; d=artifacts/agents/suite-failures/nested; mkdir -p \"$d\"; printf 'small-log\\n' >\"$d/failure.log\"; "+
+		"head -c 2097152 /dev/zero >\"$d/blob.bin\"; ln -s %s \"$d/outside\"; pwd >\"$d/candidate-root\"; exit 7", strconv.Quote(secret))
+	group := testpolicy.Group{ID: "bounded-evidence", Kind: "static", Adapter: "command", CWD: ".",
+		Inputs: []string{"source.txt"}, Outputs: []string{"artifacts/agents/suite-failures"}, Platforms: []string{"any"}, TargetMS: 1000,
+		Argv: []string{"bash", "-c", script}, Format: "exit-status"}
+	result := runTestGroup(context.Background(), TestRunRequest{ControlRoot: root, ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open,
+		LogRoot: filepath.Join(root, "artifacts", "test-logs")}, group)
+	if result.Status != "failed" || strings.Contains(result.NotRunReason, "preserve") {
+		t.Fatalf("intentional diagnostic truncation changed the verdict: status=%s reason=%s", result.Status, result.NotRunReason)
+	}
+	logBytes, err := os.ReadFile(result.LogPath)
+	if err != nil || digestBytes(logBytes) != result.LogDigest {
+		t.Fatalf("group log digest=%s want %s err=%v", digestBytes(logBytes), result.LogDigest, err)
+	}
+	bundle := ""
+	for _, line := range strings.Split(string(logBytes), "\n") {
+		if quoted, ok := strings.CutPrefix(line, "SUITE-FAILURE-EVIDENCE bounded-evidence path="); ok {
+			if bundle, err = strconv.Unquote(quoted); err != nil {
+				t.Fatalf("encoded bundle path %q: %v", quoted, err)
+			}
+		}
+	}
+	if !strings.HasPrefix(bundle, filepath.Join(root, "artifacts", "agents", "suite-failures")+string(filepath.Separator)) {
+		t.Fatalf("failure bundle path=%q in log:\n%s", bundle, logBytes)
+	}
+	copied := filepath.Join(bundle, "source-001-suite-failures", "nested")
+	if data, err := os.ReadFile(filepath.Join(copied, "failure.log")); err != nil || string(data) != "small-log\n" {
+		t.Fatalf("bundle log=%q err=%v", data, err)
+	}
+	for _, omitted := range []string{"blob.bin", "outside"} {
+		if _, err := os.Lstat(filepath.Join(copied, omitted)); !os.IsNotExist(err) {
+			t.Fatalf("bundle kept %s: %v", omitted, err)
+		}
+	}
+	note, err := os.ReadFile(filepath.Join(bundle, "copy-note.txt"))
+	if err != nil || !strings.Contains(string(note), "blob.bin (2097152 bytes over the 1048576-byte per-file cap)") ||
+		!strings.Contains(string(note), "outside (symlink not followed)") {
+		t.Fatalf("copy note=%q err=%v", note, err)
+	}
+	if data, err := os.ReadFile(secret); err != nil || string(data) != "outside-bytes\n" {
+		t.Fatalf("candidate cleanup touched the symlink target: %q, %v", data, err)
+	}
+	candidate, err := os.ReadFile(filepath.Join(copied, "candidate-root"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(strings.TrimSpace(string(candidate))); !os.IsNotExist(err) {
+		t.Fatalf("detached candidate remains after cleanup: %s (%v)", candidate, err)
+	}
+}
+
+func TestDetachedCleanupClosesCandidateWhenEvidenceCollectionFails(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	tree := strings.Repeat("8", 40)
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		".gitignore": testSnapshotFile("artifacts/\n", 0o644),
+		"source.txt": testSnapshotFile("source\n", 0o644),
+	}, 1)
+	// The control evidence directory is a regular file, so preservation
+	// fails with a real IO error; the candidate's own Close fails as well.
+	blocked := filepath.Join(root, "artifacts", "agents", "suite-failures")
+	if err := os.MkdirAll(filepath.Dir(blocked), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blocked, []byte("not a directory\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	open := func(projectRoot, candidateTree string) (CandidateWorkspace, error) {
+		candidate, err := snapshot.open(projectRoot, candidateTree)
+		if err != nil {
+			return nil, err
+		}
+		return failingCloseCandidate{candidateWorkspace: candidate, err: errors.New("injected close failure")}, nil
+	}
+	script := "set -eu; d=artifacts/agents/suite-failures; mkdir -p \"$d\"; printf 'small-log\\n' >\"$d/failure.log\"; exit 7"
+	group := testpolicy.Group{ID: "blocked-evidence", Kind: "static", Adapter: "command", CWD: ".",
+		Inputs: []string{"source.txt"}, Outputs: []string{"artifacts/agents/suite-failures"}, Platforms: []string{"any"}, TargetMS: 1000,
+		Argv: []string{"bash", "-c", script}, Format: "exit-status"}
+	result := runTestGroup(context.Background(), TestRunRequest{ControlRoot: root, ProjectRoot: root, CandidateTree: tree, openCandidate: open,
+		LogRoot: filepath.Join(root, "test-logs")}, group)
+	if result.Status != "invalid" || result.CollectionComplete || result.NativeExitStatus == nil || *result.NativeExitStatus != 7 {
+		t.Fatalf("collection failure result status=%s complete=%v exit=%v", result.Status, result.CollectionComplete, result.NativeExitStatus)
+	}
+	for _, want := range []string{"preserve detached suite-failure evidence before cleanup", "not a directory", "close detached candidate", "injected close failure"} {
+		if !strings.Contains(result.NotRunReason, want) {
+			t.Fatalf("reason lacks %q: %s", want, result.NotRunReason)
+		}
+	}
+	if strings.Contains(result.NotRunReason, "\n") {
+		t.Fatalf("reason=%q", result.NotRunReason)
+	}
+	if logBytes, err := os.ReadFile(result.LogPath); err != nil || strings.Contains(string(logBytes), "SUITE-FAILURE-EVIDENCE") {
+		t.Fatalf("log names a bundle that was not preserved: %q, %v", logBytes, err)
+	}
+	// The snapshot factory's cleanup proves Close ran once and removed the candidate.
 }

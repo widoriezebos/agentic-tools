@@ -526,6 +526,16 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry",
       "reason": "owns the batch process environment lock and authorized clock while invoking the public test command"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/gittree",
+      "test": "TestRunRawPassesInheritFilesAndHooksPathToTheNativeChild",
+      "reason": "sets process-wide PATH so RunRaw resolves the stand-in git that proves the native child argv and inherited descriptor"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv",
+      "test": "TestRegistrySidecarCleanupWaitsForInheritedLeaseAndCustodian",
+      "reason": "sets the process-wide inherited supervision registry home and owner nonce"
     }
   ]
 }

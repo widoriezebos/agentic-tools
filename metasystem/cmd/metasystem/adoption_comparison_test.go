@@ -270,6 +270,13 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 			len(original.Groups[0].Observed) != 1 || original.Groups[0].Observed[0].Name != "TestAdoptedAppGreeting" || original.Groups[0].Observed[0].Status != "passed" {
 			t.Fatalf("adopted app proof lacked one real passing Go test: %+v", original)
 		}
+		// Both real test runs removed their scratch roots and records.
+		for _, pattern := range []string{filepath.Join(target, "artifacts", "agents", "proof-runs", "scratch", "*"),
+			filepath.Join(target, "*", "artifacts", "agents", "proof-runs", "scratch", "*")} {
+			if left, _ := filepath.Glob(pattern); len(left) != 0 {
+				t.Fatalf("test run left scratch behind: %v", left)
+			}
+		}
 		return target
 	}
 

@@ -22,15 +22,11 @@ import (
 )
 
 // silentHolderLines reads this clone's presence copy and composes the lines.
-func silentHolderLines(root string, tree *goal.TreeGoals, machine string, now time.Time) []string {
+func silentHolderLines(root string, endpoint goal.Endpoint, tree *goal.TreeGoals, machine string, now time.Time, presence func(string, goal.Endpoint) (seat.Copy, error)) []string {
 	if tree == nil || len(claimsOfOthers(tree, machine)) == 0 {
 		return nil
 	}
-	transport, err := seat.NewGit(root)
-	if err != nil {
-		return nil
-	}
-	copied, err := transport.Read(seat.TickNamespace)
+	copied, err := presence(root, endpoint)
 	if err != nil {
 		return nil
 	}
@@ -39,6 +35,12 @@ func silentHolderLines(root string, tree *goal.TreeGoals, machine string, now ti
 		previous = seat.StandingsState{Machines: map[string]seat.Observation{}}
 	}
 	return silentHolders(tree, machine, copied, previous.Machines, now, seatPresenceWindow(root))
+}
+
+// readTickPresence is the steward tick's presence copy in this clone, read
+// through the ledger endpoint the verb already resolved.
+func readTickPresence(root string, endpoint goal.Endpoint) (seat.Copy, error) {
+	return seat.Git{Root: root, Remote: endpoint.Remote, Local: endpoint.LocalMode()}.Read(seat.TickNamespace)
 }
 
 // claimsOfOthers is every live goal claimed by a machine that is not this one.

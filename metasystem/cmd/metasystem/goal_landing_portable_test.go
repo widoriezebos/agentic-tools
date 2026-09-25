@@ -45,6 +45,13 @@ func newPortableProofFixture(t *testing.T) *portableProofFixture {
 }
 
 func newPortableProofFixtureWithSource(t *testing.T, baselineSource string) *portableProofFixture {
+	return newPortableProofFixtureWithSetup(t, baselineSource, nil)
+}
+
+// newPortableProofFixtureWithSetup lets setup edit the fixture's files and
+// contract before the baseline commit and engine enrollment, so its edits
+// belong to the trusted base rather than to a later candidate.
+func newPortableProofFixtureWithSetup(t *testing.T, baselineSource string, setup func(*portableProofFixture)) *portableProofFixture {
 	t.Helper()
 	root := t.TempDir()
 	fixture := &portableProofFixture{t: t, root: root, baselineSource: baselineSource,
@@ -75,6 +82,9 @@ func newPortableProofFixtureWithSource(t *testing.T, baselineSource string) *por
 	fixture.write("scripts/check.sh", portableCommandCheck, 0o755)
 	buildScript := fmt.Sprintf(portableCandidateBuild, strconv.Quote(fixture.buildCounter), strconv.Quote(fixture.engine))
 	fixture.write("scripts/agents/go-build.sh", buildScript, 0o755)
+	if setup != nil {
+		setup(fixture)
+	}
 	fixture.writeGoal()
 	fixture.git("add", ".")
 	fixture.git("commit", "-qm", "portable command application")
