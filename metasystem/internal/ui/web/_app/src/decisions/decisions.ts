@@ -668,6 +668,73 @@ export function progressLine(done: number, total: number): string {
 }
 
 /**
+ * How far a run of one-publication-per-goal has got.
+ *
+ * Three states and no fourth. "ready" has sent nothing; "running" is in
+ * flight; "stopped" is a run that met an answer it could not read, and it is
+ * TERMINAL — see maySend.
+ */
+export type RunState =
+  | { state: "ready" }
+  | { state: "running"; done: number; total: number }
+  | { state: "stopped"; line: string };
+
+/**
+ * Whether the sheet may be dismissed.
+ *
+ * Not while a run is in flight. The loop publishes whether or not anything is
+ * on screen, so a sheet a human could close mid-run would go on writing to
+ * the ledger behind a page that had stopped saying so — and the progress line
+ * is the only place that says how far it has got.
+ */
+export function mayDismiss(run: RunState): boolean {
+  return run.state !== "running";
+}
+
+/**
+ * Whether the act button may send.
+ *
+ * Only from "ready". A stopped run is over: its earlier goals were published
+ * and a second press would send them again from the first, which is the one
+ * way this sheet could publish the same act twice. The way on is a new
+ * selection from the page's re-read, which is what the note says.
+ */
+export function maySend(run: RunState, blocked: string): boolean {
+  return blocked === "" && run.state === "ready";
+}
+
+/** What the sheet says once a run has stopped. */
+export const RUN_IS_OVER =
+  "This run is over. The page below has read the ledger again; select what is still waiting and start a new run.";
+
+/**
+ * One publication per goal, in order, stopping at the first answer that is
+ * not one.
+ *
+ * The loop is here rather than in the component so that what it sends, in
+ * what order, and where it stops are facts a test can state without a server.
+ * It never retries and never continues past a failure: the goals after the
+ * one that failed are not sent at all.
+ */
+export async function runInOrder<T>(
+  plan: readonly T[],
+  send: (one: T) => Promise<void>,
+  onSent: (done: number) => void,
+): Promise<{ sent: number; stoppedAt: T | null; reason: unknown }> {
+  let sent = 0;
+  for (const one of plan) {
+    try {
+      await send(one);
+    } catch (reason: unknown) {
+      return { sent, stoppedAt: one, reason };
+    }
+    sent += 1;
+    onSent(sent);
+  }
+  return { sent, stoppedAt: null, reason: null };
+}
+
+/**
  * What a run says when an answer failed.
  *
  * It names the goal and gives the engine's own words, and it says the goal is

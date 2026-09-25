@@ -11,10 +11,14 @@ import {
   headerLine,
   isNarrowed,
   labelsIn,
+  mayDismiss,
+  maySend,
   NEEDS_ITS_BUDGET,
   noNarrowing,
   parkPlan,
   progressLine,
+  runInOrder,
+  RUN_IS_OVER,
   queueCount,
   rowLabels,
   SEATS,
@@ -22,6 +26,7 @@ import {
   shownQueue,
   stoppedLine,
   YOURS,
+  type RunState,
 } from "./decisions";
 import type { Budget, Row } from "../backlog/api";
 
@@ -55,6 +60,11 @@ function need(id: string, over: Partial<Row> = {}, since = "2026-09-01T00:00:00Z
     where: { kind: "goal", id }, act: "approve", command: "",
     row: row({ ref: { kind: "goal", id, revision: 3 }, openedAt: since, ...over }),
   };
+}
+
+/** One queue row, named, for the run tests below. */
+function goal(id: string): Need {
+  return need(id);
 }
 
 const queue: Need[] = [
@@ -186,5 +196,99 @@ describe("acting on what was selected", () => {
   it("says nothing about goals after the last one when the last one failed", () => {
     const plan = parkPlan(queue);
     expect(stoppedLine(plan[3], "no.", 3, 4)).not.toContain("were not sent");
+  });
+});
+
+describe("a run in flight", () => {
+  // Closing would not stop the loop: it publishes one goal at a time whether
+  // or not anything is on screen, and the progress line is the only place
+  // that says how far it has got. So the sheet refuses to be dismissed, and
+  // Cancel and Escape both come back through the same guard.
+  it("cannot be dismissed while it publishes", () => {
+    expect(mayDismiss({ state: "ready" })).toBe(true);
+    expect(mayDismiss({ state: "running", done: 3, total: 12 })).toBe(false);
+    expect(mayDismiss({ state: "stopped", line: "…" })).toBe(true);
+  });
+
+  it("sends nothing more when a close is attempted, and is not closed either", async () => {
+    const sent: string[] = [];
+    let closed = false;
+    // The one way out of the sheet, guarded exactly as the panel guards it.
+    const dismiss = (run: RunState) => {
+      if (mayDismiss(run)) {
+        closed = true;
+      }
+    };
+    const plan = parkPlan([goal("g1-s40"), goal("g1-s41"), goal("g1-s42")]);
+    let run: RunState = { state: "running", done: 0, total: plan.length };
+
+    const outcome = await runInOrder(
+      plan,
+      async (one) => {
+        // A human presses Cancel, and hits Escape, part-way through.
+        dismiss(run);
+        sent.push(one.id);
+        await Promise.resolve();
+      },
+      (done) => {
+        run = { state: "running", done, total: plan.length };
+      },
+    );
+
+    expect(closed).toBe(false);
+    // The run was neither cut short nor made to send anything twice.
+    expect(sent).toEqual(["g1-s40", "g1-s41", "g1-s42"]);
+    expect(outcome.sent).toBe(3);
+    expect(outcome.stoppedAt).toBe(null);
+  });
+});
+
+describe("a run that stopped", () => {
+  // The whole point of the stop rule: what was published is published once,
+  // what failed is attempted once, and what came after is never sent.
+  it("sends each goal before the failure once, the failed one once, and nothing after", async () => {
+    const sent: string[] = [];
+    const plan = parkPlan([goal("g1-s40"), goal("g1-s41"), goal("g1-s42"), goal("g1-s43")]);
+
+    const outcome = await runInOrder(
+      plan,
+      async (one) => {
+        sent.push(one.id);
+        await Promise.resolve();
+        if (one.id === "g1-s42") {
+          throw new Error("goal g1-s42 is claimed by m2a+implementer.");
+        }
+      },
+      () => undefined,
+    );
+
+    expect(sent).toEqual(["g1-s40", "g1-s41", "g1-s42"]);
+    expect(outcome.sent).toBe(2);
+    expect(outcome.stoppedAt?.id).toBe("g1-s42");
+  });
+
+  // And it is terminal. Pressing the button again would send g1-s40 and
+  // g1-s41 a second time, from the first — the one way this sheet could
+  // publish the same act twice — so it never re-enables.
+  it("never sends a second run from the same sheet", async () => {
+    const stopped: RunState = { state: "stopped", line: "Stopped at g1-s42: …" };
+
+    expect(maySend({ state: "ready" }, "")).toBe(true);
+    expect(maySend({ state: "running", done: 1, total: 4 }, "")).toBe(false);
+    expect(maySend(stopped, "")).toBe(false);
+    // Not even once whatever else is true: a stop outranks an empty blocker.
+    expect(maySend(stopped, "")).toBe(false);
+    expect(RUN_IS_OVER).toContain("select what is still waiting and start a new run");
+
+    // And the loop itself is never entered again: the sheet's send guard is
+    // what a second press meets.
+    const sent: string[] = [];
+    if (maySend(stopped, "")) {
+      await runInOrder(parkPlan([goal("g1-s40")]), async (one) => {
+        sent.push(one.id);
+        await Promise.resolve();
+      }, () => undefined);
+    }
+    expect(sent).toEqual([]);
   });
 });

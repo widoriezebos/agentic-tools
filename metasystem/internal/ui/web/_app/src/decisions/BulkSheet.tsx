@@ -3,11 +3,16 @@ import { useState } from "react";
 import type { Need } from "./api";
 import {
   approvePlan,
+  mayDismiss,
+  maySend,
   parkPlan,
   progressLine,
+  runInOrder,
+  RUN_IS_OVER,
   sendable,
   stoppedLine,
   type Planned,
+  type RunState,
 } from "./decisions";
 import { approveGoal, BacklogError, parkGoal, type Backlog } from "../backlog/api";
 import { Panel } from "../backlog/Panel";
@@ -29,6 +34,13 @@ import { failureMessage } from "../shell/workspace";
  * UNRESOLVED rather than as refused, and the page's own re-read — which
  * reports the accepted ref as observed — is what says what the ledger did.
  *
+ * Two things follow from the loop being real publications rather than one
+ * request. While it runs the sheet cannot be dismissed, because closing would
+ * not stop it and the progress line is the only place that says how far it
+ * has got. And once it has stopped it is over: pressing the button again
+ * would send the goals that already landed a second time, from the first, so
+ * the way on is a new selection from the page's re-read.
+ *
  * The approve list carries the budget each goal would be approved with and
  * where that budget came from, in `prefillFor`'s own words, so a human reads
  * here exactly what the single-goal sheet would have shown them. A goal whose
@@ -37,11 +49,6 @@ import { failureMessage } from "../shell/workspace";
  */
 
 export type Bulk = { act: "approve" | "park"; goals: Need[] };
-
-type Run =
-  | { state: "ready" }
-  | { state: "running"; done: number; total: number }
-  | { state: "stopped"; line: string };
 
 export function BulkSheet({
   bulk,
@@ -69,36 +76,44 @@ export function BulkSheet({
     : parkPlan(bulk.goals);
   const sending = sendable(plan);
   const [reason, setReason] = useState("");
-  const [run, setRun] = useState<Run>({ state: "ready" });
+  const [run, setRun] = useState<RunState>({ state: "ready" });
   const { askToSignIn } = useSession();
   const because = reason.trim();
   const blocked = blockedFor(bulk.act, sending.length, because);
 
   const send = () => {
+    if (!maySend(run, blocked)) {
+      return;
+    }
     setRun({ state: "running", done: 0, total: sending.length });
     void (async () => {
-      let done = 0;
-      for (const one of sending) {
-        try {
+      const outcome = await runInOrder(
+        sending,
+        async (one) => {
           await (approving
             ? approveGoal(one.id, one.budget as NonNullable<typeof one.budget>)
             : parkGoal(one.id, because));
-        } catch (error: unknown) {
-          // A server that found no human says the remedy is in this page, so
-          // the sign-in sheet opens on it. The run still stops: the goals
-          // after this one were not sent, and a human presses the button
-          // again once they are signed in.
-          if (error instanceof BacklogError && error.signIn) {
-            askToSignIn();
-          }
-          setRun({ state: "stopped", line: stoppedLine(one, failureMessage(error), done, sending.length) });
-          onStopped();
-          return;
-        }
-        done += 1;
-        setRun({ state: "running", done, total: sending.length });
+        },
+        (done) => {
+          setRun({ state: "running", done, total: sending.length });
+        },
+      );
+      if (outcome.stoppedAt === null) {
+        onDone();
+        return;
       }
-      onDone();
+      // A server that found no human says the remedy is in this page, so the
+      // sign-in sheet opens on it. The run is over either way: the goals
+      // after this one were not sent, and what continues is a new selection
+      // from the page's re-read rather than this sheet a second time.
+      if (outcome.reason instanceof BacklogError && outcome.reason.signIn) {
+        askToSignIn();
+      }
+      setRun({
+        state: "stopped",
+        line: stoppedLine(outcome.stoppedAt, failureMessage(outcome.reason), outcome.sent, sending.length),
+      });
+      onStopped();
     })();
   };
 
@@ -113,11 +128,14 @@ export function BulkSheet({
       ]}
       unproven=""
       refusal={run.state === "stopped" ? run.line : ""}
-      note={blocked === "" ? noteFor(bulk.act, sending.length) : blocked}
+      note={noteNow(bulk.act, sending.length, blocked, run)}
       form
+      // Closing is refused while the loop is publishing; Cancel and Escape
+      // both come back through here, so neither can dismiss a live run.
+      busy={!mayDismiss(run)}
       onClose={onClose}
       act={
-        <Button primary disabled={blocked !== "" || run.state === "running"} onClick={send}>
+        <Button primary disabled={!maySend(run, blocked)} onClick={send}>
           {approving ? "Approve" : "Not now"}
         </Button>
       }
@@ -182,6 +200,17 @@ function blockedFor(act: "approve" | "park", sending: number, because: string): 
     return "A park needs its reason: a pause without a why is a stall in disguise.";
   }
   return "";
+}
+
+/**
+ * What the foot says, in the order a human needs it: why the button is
+ * refused, then that the run is over, then what the run will do.
+ */
+function noteNow(act: "approve" | "park", sending: number, blocked: string, run: RunState): string {
+  if (run.state === "stopped") {
+    return RUN_IS_OVER;
+  }
+  return blocked === "" ? noteFor(act, sending) : blocked;
 }
 
 function noteFor(act: "approve" | "park", sending: number): string {

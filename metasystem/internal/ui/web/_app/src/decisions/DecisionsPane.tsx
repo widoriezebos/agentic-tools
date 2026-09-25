@@ -1,5 +1,5 @@
 import { CircleCheck } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink } from "react-router";
 
 import {
@@ -54,6 +54,7 @@ import { goalPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Skeleton } from "../shell/controls";
 import { useSession } from "../shell/identity";
+import type { SessionStatus } from "../shell/session";
 import { useOffersRefresh } from "../shell/refresh";
 
 /**
@@ -105,6 +106,12 @@ export function DecisionsPane() {
   const [narrowing, setNarrowing] = useNarrowing();
   const [selected, setSelected] = useState<string[]>([]);
   const [opened, setOpened] = useState<string[]>([]);
+  // Who is signed in NOW, rather than who was signed in when this payload was
+  // composed. A human who opens the page signed out, signs in through the
+  // sheet and presses Not now would otherwise meet a disabled button until
+  // they thought to press Refresh.
+  const { session } = useSession();
+  const signedIn = signedInNow(session);
 
   useEffect(() => {
     const aborter = new AbortController();
@@ -126,6 +133,21 @@ export function DecisionsPane() {
     setRead({ state: "loading" });
     setAttempt((previous) => previous + 1);
   }, []);
+
+  // And the payload itself is read again when the session settles into
+  // signed-in, because signIn is one of the things it carries: the sign-in
+  // row at the top of the first block comes from the payload, and a page that
+  // left it standing after a human signed in would be telling them to do
+  // something they have already done. Only on the transition — a page that
+  // re-read on every render of a signed-in session would never stop reading.
+  const wasSignedIn = useRef(signedIn);
+  useEffect(() => {
+    const justSignedIn = signedIn && !wasSignedIn.current;
+    wasSignedIn.current = signedIn;
+    if (justSignedIn) {
+      reload();
+    }
+  }, [signedIn, reload]);
 
   // The sheet is opened over the whole backlog payload, exactly as the board
   // opens it: the authority, the project's budget law and the rows it
@@ -215,6 +237,7 @@ export function DecisionsPane() {
       {read.state === "read" && (
         <Blocks
           page={read.page}
+          signedIn={signedIn}
           tab={tab}
           onTab={setTab}
           onAct={open}
@@ -294,6 +317,7 @@ export function DecisionsPane() {
  */
 export function Blocks({
   page,
+  signedIn,
   tab = "rulings",
   onTab = () => undefined,
   onAct = () => undefined,
@@ -308,6 +332,12 @@ export function Blocks({
   onOpen = () => undefined,
 }: {
   page: DecisionsPayload;
+  /**
+   * Whether a human is signed in NOW. The payload's own signIn is what this
+   * page was composed against; a sign-in that happened since is not in it,
+   * and the two acts this page publishes are gated on the live answer.
+   */
+  signedIn?: boolean;
   tab?: TabId;
   onTab?: (id: TabId) => void;
   onAct?: (request: Request) => void;
@@ -324,6 +354,7 @@ export function Blocks({
   const now = new Date();
   const asked = askedOf(page.needsYou);
   const waiting = waitingOf(page.needsYou);
+  const acting = signedIn ?? !page.signIn;
   return (
     <div className="ms-decisions">
       <p className="ms-decisions-header">
@@ -336,10 +367,10 @@ export function Blocks({
         </a>
         <span className="ms-visually-hidden">{headerLine(page.counts)}</span>
       </p>
-      <AskedOf page={page} asked={asked} now={now} onAct={onAct} onReturn={onReturn} />
+      <AskedOf page={page} asked={asked} acting={acting} now={now} onAct={onAct} onReturn={onReturn} />
       <QueueBlock
         waiting={waiting}
-        signedIn={!page.signIn}
+        signedIn={acting}
         narrowing={narrowing}
         onNarrow={onNarrow}
         selected={selected}
@@ -350,9 +381,14 @@ export function Blocks({
         onBulk={onBulk}
         now={now}
       />
-      <Decided page={page} tab={tab} onTab={onTab} onAct={onAct} onReturn={onReturn} />
+      <Decided page={page} acting={acting} tab={tab} onTab={onTab} onAct={onAct} onReturn={onReturn} />
     </div>
   );
+}
+
+/** Whether the live session is one a human has signed into. */
+function signedInNow(status: SessionStatus): boolean {
+  return status.state === "known" && status.session.signedIn;
 }
 
 /**
@@ -383,12 +419,14 @@ function captureLines(narrowing: Narrowing, selected: number, opened: number): s
 function AskedOf({
   page,
   asked,
+  acting,
   now,
   onAct,
   onReturn,
 }: {
   page: DecisionsPayload;
   asked: Need[];
+  acting: boolean;
   now: Date;
   onAct: (request: Request) => void;
   onReturn: (id: string) => void;
@@ -430,7 +468,7 @@ function AskedOf({
               key={`${need.kind}-${need.id}`}
               need={need}
               now={now}
-              signedIn={!page.signIn}
+              signedIn={acting}
               onAct={onAct}
               onReturn={onReturn}
             />
@@ -554,12 +592,14 @@ const TAB_TERMS: Readonly<Partial<Record<TabId, HelpId>>> = {
 
 function Decided({
   page,
+  acting,
   tab,
   onTab,
   onAct,
   onReturn,
 }: {
   page: DecisionsPayload;
+  acting: boolean;
   tab: TabId;
   onTab: (id: TabId) => void;
   onAct: (request: Request) => void;
@@ -572,7 +612,7 @@ function Decided({
     decisions: <Items items={decided.decisions} empty="This project has recorded no decisions yet." />,
     answered: <Items items={decided.answered} empty="No question of the register has been answered yet." />,
     approved: <Approvals approved={decided.approved} onAct={onAct} />,
-    "not-now": <NotNowList parks={decided.notNow} signedIn={!page.signIn} onReturn={onReturn} />,
+    "not-now": <NotNowList parks={decided.notNow} signedIn={acting} onReturn={onReturn} />,
   };
   return (
     <section className="ms-decisions-block" id="decisions-decided">

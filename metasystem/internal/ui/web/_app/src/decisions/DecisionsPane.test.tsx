@@ -513,3 +513,63 @@ describe("not now", () => {
     expect(markup).toContain('disabled=""');
   });
 });
+
+describe("signing in while the page is open", () => {
+  // The payload carries signIn as it stood when the page was read. A human
+  // who opens Decisions signed out, signs in through "Sign in to act" and
+  // presses Not now must not meet a disabled button: the two acts this page
+  // publishes are gated on the LIVE session, not on the stale payload.
+  const RETURN_OFF = '<button type="button" class="ms-button" disabled="">Return to queue</button>';
+  const RETURN_ON = '<button type="button" class="ms-button">Return to queue</button>';
+  const NOT_NOW_OFF = '<button type="button" class="ms-button" disabled="">Not now</button>';
+  const NOT_NOW_ON = '<button type="button" class="ms-button">Not now</button>';
+
+  function withSession(payload: Page, live: boolean | undefined, tab: TabId = "not-now"): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <Blocks page={payload} signedIn={live} tab={tab} />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("takes the payload's answer when nothing else is known", () => {
+    expect(withSession(page({ signIn: true }), undefined)).toContain(RETURN_OFF);
+    expect(withSession(page(), undefined)).toContain(RETURN_ON);
+  });
+
+  it("enables Return to queue the moment the session says a human is signed in", () => {
+    const stale = page({ signIn: true });
+
+    expect(withSession(stale, false)).toContain(RETURN_OFF);
+    // The same stale payload, and the buttons are live.
+    expect(withSession(stale, true)).toContain(RETURN_ON);
+    expect(withSession(stale, true)).not.toContain(RETURN_OFF);
+  });
+
+  it("enables Not now on the queue rows too, on the same live answer", () => {
+    const queued = page({
+      signIn: true,
+      needsYou: [need({ id: "g1-s40", title: "A goal nobody has authorized" })],
+      counts: { needsYou: 1, asked: 0, waiting: 1, rulings: 0 },
+    });
+
+    expect(withSession(queued, false, "rulings")).toContain(NOT_NOW_OFF);
+    expect(withSession(queued, true, "rulings")).toContain(NOT_NOW_ON);
+    expect(withSession(queued, true, "rulings")).not.toContain(NOT_NOW_OFF);
+  });
+
+  it("leaves a seat's park in the inbox on the same live answer", () => {
+    const seatPark = page({
+      signIn: true,
+      needsYou: [
+        need({ kind: "parked", id: "g1-s37", title: "A goal a seat parked", act: "unpark", row: null }),
+      ],
+      counts: { needsYou: 1, asked: 1, waiting: 0, rulings: 0 },
+    });
+
+    expect(withSession(seatPark, false, "rulings")).toContain(RETURN_OFF);
+    expect(withSession(seatPark, true, "rulings")).toContain(RETURN_ON);
+  });
+});
