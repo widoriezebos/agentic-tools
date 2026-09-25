@@ -492,6 +492,11 @@
       "text": "When a job's reserved minutes run out. It is a bound and not an estimate: nothing here predicts when work will finish, and a job that reaches its cap is stopped rather than finished. Read it as the latest this job can still be running, never as how long is left."
     },
     {
+      "id": "stickies",
+      "term": "Stickies",
+      "text": "Your own reminders, jotted while you work. They are yours and nobody else's: they live on this seat, outside the project's records and outside every checkout, so no agent and no reviewer reads them. A sticky can say what it is about — the goal or the document you were looking at — and then it comes back on that page. Open ones are newest first; what you mark done is kept, out of the way."
+    },
+    {
       "id": "chain",
       "term": "Chain",
       "text": "The jobs that belong to one piece of work, newest first: a build, the critic that reviewed it, the round that answered the findings. Each carries the cap it reserved and when it ran, and never a consumed charge — settling what a job actually spent belongs to the engine that dispatched it."
