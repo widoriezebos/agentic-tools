@@ -87,6 +87,9 @@ func (w *Watch) Join() (<-chan struct{}, func()) {
 }
 
 // Connected reports whether any browser holds the stream open.
+//
+// It answers about the instant it was asked and nothing after it, which is
+// why nothing decides whether to fetch from it: see Admit.
 func (w *Watch) Connected() bool {
 	if w == nil {
 		return false
@@ -94,6 +97,27 @@ func (w *Watch) Connected() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return len(w.watchers) > 0
+}
+
+// Admit runs decide while no stream can join or leave, hands it the
+// connection as it stands, and answers what it decided.
+//
+// The connection signal and the decision that reads it are one act. Asking
+// Connected and then taking the attempt slot is two, and the last browser can
+// leave between them — which is exactly the case the rule exists to prevent:
+// no attempt after the last disconnect. So the removal and the admission are
+// ordered under this one lock.
+//
+// decide must not fetch. It decides, and the attempt runs after this returns,
+// because holding every stream's registration for the length of a bounded git
+// call would block a browser arriving or leaving for up to a minute.
+func (w *Watch) Admit(decide func(connected bool) bool) bool {
+	if w == nil {
+		return decide(false)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return decide(len(w.watchers) > 0)
 }
 
 // Announce tells every open stream that a presence attempt finished, whatever
@@ -122,13 +146,30 @@ func (w *Watch) Announce() {
 // Metadata is what the fetch owner writes down after every attempt, for the
 // Partner's tool, which runs in another process and owns no fetcher of its
 // own.
+//
+// Run is what makes it readable at all. The file outlives the server that
+// wrote it: nothing the fetch owner knows survives a restart, and the refs a
+// previous server brought into the interface's namespace are still there. A
+// tool that read this file after a restart would cite a success no running
+// server has made, and would read the interface's own namespace while the
+// page — which knows better — had fallen back to the tick's copy. So the file
+// names the run that wrote it, and a reader that cannot show it belongs to
+// the run it is talking to treats it as another server's.
 type Metadata struct {
 	Schema      int    `json:"schema"`
+	Run         string `json:"run,omitempty"`
 	Namespace   string `json:"namespace"`
 	AttemptedAt string `json:"attemptedAt,omitempty"`
 	SucceededAt string `json:"succeededAt,omitempty"`
 	FailedAt    string `json:"failedAt,omitempty"`
 	Problem     string `json:"problem,omitempty"`
+}
+
+// OfRun reports whether this metadata was written by the run named here. An
+// unnamed run on either side is not a match: a reader that cannot say which
+// server it is talking to has no business citing that server's fetches.
+func (m Metadata) OfRun(run string) bool {
+	return run != "" && m.Run == run
 }
 
 // MetadataPath is where the fetch owner writes that file.
@@ -169,15 +210,23 @@ type Owner struct {
 	// Attempt is one bounded presence fetch into the interface's namespace.
 	// It is the seat package's transport and never the snapshot loop's.
 	Attempt func() error
-	// Connected is the connection signal: at least one browser holding the
-	// notifications stream open.
-	Connected func() bool
+	// Admit is the connection signal and the attempt slot, taken together:
+	// it runs the decision while no stream can join or leave, so an attempt
+	// can never start after the last disconnect. Watch.Admit is what the
+	// server passes.
+	Admit func(decide func(connected bool) bool) bool
 	// Announce is called after every attempt, success or failure or nothing
 	// found, so a mounted page learns there is something to re-read.
 	Announce func()
-	// Record writes the metadata file. A record that fails costs the tool a
-	// reading and the page nothing, so it is noted and not raised.
+	// Record writes the metadata file. A record that fails does not fail the
+	// fetch — the copy is in the namespace either way — but it is not
+	// silence: the tool is reading a file that has stopped moving, and the
+	// page says so rather than leaving a reader to wonder.
 	Record func(Metadata) error
+	// RunID is this server run's own identifier, written into every metadata
+	// file so a reader can tell this run's fetches from a previous one's. It
+	// is not the Run method below, which is the loop.
+	RunID string
 	// Now is this owner's clock.
 	Now func() time.Time
 	// Interval is the floor between attempt starts; zero takes MinInterval.
@@ -190,6 +239,10 @@ type Owner struct {
 	succeeded time.Time
 	failed    time.Time
 	problem   string
+	// recorded is the last metadata write's own trouble, kept apart from the
+	// fetch's: one says the copy could not be brought in, the other that the
+	// Partner's tool cannot be told it was.
+	recorded string
 }
 
 // State is what the owner knows, as the page's copy block.
@@ -200,10 +253,11 @@ func (o *Owner) State() Copy {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return Copy{
-		AttemptedAt: instant(o.attempted),
-		SucceededAt: instant(o.succeeded),
-		FailedAt:    instant(o.failed),
-		Problem:     o.problem,
+		AttemptedAt:     instant(o.attempted),
+		SucceededAt:     instant(o.succeeded),
+		FailedAt:        instant(o.failed),
+		Problem:         o.problem,
+		MetadataProblem: o.recorded,
 	}
 }
 
@@ -220,18 +274,22 @@ func (o *Owner) Succeeded() bool {
 // it did. It is the whole of the owner's policy, so a test drives the rules
 // with an injected clock and a fake connection signal and never a wall.
 func (o *Owner) Consider() bool {
-	now := o.now()
-	if !o.begin(now) {
+	started := o.now()
+	if !o.begin(started) {
 		return false
 	}
 	err := o.Attempt()
-	o.end(now, err)
+	// The clock is read again here. A bounded fetch may take the whole of its
+	// budget, and stamping the success with the instant the attempt STARTED
+	// would date the copy a minute earlier than it is — which is exactly the
+	// number the page's "presence fetched 40 s ago" is measured from.
+	o.end(started, o.now(), err)
 	if o.Record != nil {
 		state := o.State()
-		_ = o.Record(Metadata{
-			Namespace: seat.UINamespace, AttemptedAt: state.AttemptedAt,
+		o.recordWrote(o.Record(Metadata{
+			Run: o.RunID, Namespace: seat.UINamespace, AttemptedAt: state.AttemptedAt,
 			SucceededAt: state.SucceededAt, FailedAt: state.FailedAt, Problem: state.Problem,
-		})
+		}))
 	}
 	if o.Announce != nil {
 		o.Announce()
@@ -241,40 +299,61 @@ func (o *Owner) Consider() bool {
 
 // begin takes the one attempt slot, under the three rules, and reports
 // whether this caller got it.
+//
+// The connected rule is decided inside Admit rather than before it, so that a
+// browser leaving cannot slip between "somebody is watching" and "this
+// attempt is now in flight".
 func (o *Owner) begin(now time.Time) bool {
-	if o.Attempt == nil {
+	if o.Attempt == nil || o.Admit == nil {
 		return false
 	}
-	if o.Connected == nil || !o.Connected() {
-		return false
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.inFlight {
-		return false
-	}
-	if !o.started.IsZero() && now.Sub(o.started) < o.interval() {
-		return false
-	}
-	o.inFlight = true
-	o.started = now
-	return true
+	return o.Admit(func(connected bool) bool {
+		if !connected {
+			return false
+		}
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		if o.inFlight {
+			return false
+		}
+		if !o.started.IsZero() && now.Sub(o.started) < o.interval() {
+			return false
+		}
+		o.inFlight = true
+		o.started = now
+		return true
+	})
 }
 
 // end records what the attempt found. A failure leaves the last success and
 // the refs it brought exactly where they were.
-func (o *Owner) end(now time.Time, err error) {
+//
+// started is when the attempt began and finished is when it came back: the
+// attempt is dated from the one, and what it found from the other.
+func (o *Owner) end(started, finished time.Time, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.inFlight = false
-	o.attempted = now
+	o.attempted = started
 	if err != nil {
-		o.failed = now
+		o.failed = finished
 		o.problem = err.Error()
 		return
 	}
-	o.succeeded = now
+	o.succeeded = finished
 	o.problem = ""
+}
+
+// recordWrote keeps the last metadata write's outcome, so a tool reading a
+// file that has stopped moving is something the page can say.
+func (o *Owner) recordWrote(err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if err == nil {
+		o.recorded = ""
+		return
+	}
+	o.recorded = "the Partner's presence metadata could not be written: " + err.Error()
 }
 
 func (o *Owner) interval() time.Duration {

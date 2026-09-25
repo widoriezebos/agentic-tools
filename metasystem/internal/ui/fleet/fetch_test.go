@@ -50,10 +50,14 @@ func newDriver() *driver {
 			}
 			return fail
 		},
-		Connected: func() bool {
+		// The driver's own Admit: it reads its connection and decides under
+		// one lock, exactly as Watch.Admit does, so these tests drive the
+		// rules and TestAdmissionAndDepartureAreOneAct proves the real one.
+		Admit: func(decide func(connected bool) bool) bool {
 			drive.mu.Lock()
-			defer drive.mu.Unlock()
-			return drive.connected
+			connected := drive.connected
+			drive.mu.Unlock()
+			return decide(connected)
 		},
 		Announce: func() {
 			drive.mu.Lock()
@@ -130,6 +134,8 @@ func TestAFailureCountsAgainstTheMinuteTheSameWay(t *testing.T) {
 	testutil.Expect(t, "the failure is kept apart from the success",
 		drive.owner.State(), Copy{AttemptedAt: seat.FormatTime(now), FailedAt: seat.FormatTime(now),
 			Problem: "presence fetch: the remote refused"})
+	testutil.Expect(t, "and the metadata was written, so nothing is said about it",
+		drive.owner.State().MetadataProblem, "")
 	testutil.Expect(t, "and this server has never succeeded", drive.owner.Succeeded(), false)
 }
 

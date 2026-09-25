@@ -47,12 +47,16 @@ func fleetReader(
 			// immediate problem, and it displaces the last fetch's.
 			copied.Problem = problem
 		}
+		// The read failure travels as well as being said. An empty copy that
+		// was read and one that could not be read look the same, and the
+		// second must not be judged as every machine having published
+		// nothing — a verdict that would flag every claim on the board.
 		machine, enrolled := seat.Machine(roots.Checkout)
 		publication, publicationProblem := fleet.ReadPublication(roots.Checkout)
 		running, runningProblem := fleet.ReadRunning(roots.Checkout)
 		return fleet.Compose(fleet.Inputs{
 			This: machine, NoNickname: !enrolled,
-			Presence: presence, Copy: copied,
+			Presence: presence, PresenceProblem: problem, Copy: copied,
 			Observation: observed, Board: board,
 			Previous:    fleet.ReadStandings(roots.Checkout),
 			Window:      seatPresenceWindow(roots.Installation),
@@ -72,8 +76,9 @@ func fleetReader(
 // Fetch: that function returns one error, and a failure there blanks the
 // ledger tip and backs the whole loop off toward five minutes, so a presence
 // remote that is down would cost this clone its ledger freshness as well.
-func fleetFetcher(roots lifecycle.Roots, watch *fleet.Watch) *fleet.Owner {
+func fleetFetcher(roots lifecycle.Roots, watch *fleet.Watch, run string) *fleet.Owner {
 	return &fleet.Owner{
+		RunID: run,
 		Attempt: func() error {
 			transport, err := seat.NewGit(roots.Checkout)
 			if err != nil {
@@ -81,8 +86,8 @@ func fleetFetcher(roots lifecycle.Roots, watch *fleet.Watch) *fleet.Owner {
 			}
 			return transport.Fetch(seat.UINamespace)
 		},
-		Connected: watch.Connected,
-		Announce:  watch.Announce,
+		Admit:    watch.Admit,
+		Announce: watch.Announce,
 		// The metadata file is for the Partner's tool, which runs in another
 		// process and owns no fetcher. A write that fails costs that tool one
 		// provenance line and this server nothing, so it is dropped rather
