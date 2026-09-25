@@ -8,8 +8,9 @@
 Wido, 2026-09-25, on the live page: "it is a very big list of things that
 is hard to navigate, grasp, manage. So what do I want/need here and how can
 a better UX help me with that. I need better UX. Design and then implement".
-Author Fable. Step 2 of the Decisions section, on g1-s44 as built at
-`093be9aaf`; every cite re-read at that commit and every number read from
+Then, on the authority question in section 5: "yes, park and unpark I
+want", recorded as R-125-m1u. Author Fable. Step 2 of the Decisions
+section, on g1-s44 as built at `093be9aaf`; every cite re-read at that commit and every number read from
 the live payload of this checkout at 10:48 UTC.
 
 ## 1. What exists and binds
@@ -58,9 +59,17 @@ the live payload of this checkout at 10:48 UTC.
    (verbs.go:314-332), and a browser session proof carries no grade
    (internal/humanauthority/authority.go:168-173, 308-320). Park also needs
    the branch-safety check the command edge supplies (verbs.go:2640-2642;
-   cmd/metasystem/goalsync_mutations.go:51). Approve admits the session
-   proof through its own classification (internal/goal/approval.go:503-520),
-   which is why the sheet works today.
+   cmd/metasystem/goalsync_mutations.go:51-82), whose two tip readers,
+   git wrapper and operation id live in cmd/metasystem/goal_branch.go:26-33,
+   692-735 and 1033-1039 over `goalbranch.CheckParkBranch`
+   (internal/goal/branch/status.go:118). Approve admits the session proof
+   through its own classification (internal/goal/approval.go:404-409),
+   which is why the sheet works today, and it names the session on the
+   history line through `recordSessionAuthority` (approval.go:426), which
+   park and unpark do not call (its callers: approval.go:426, order.go:149,
+   verbs.go:1854 and 1897). A park's `By` is `human:<name>` for any actor
+   with a human (verbs.go:203-208), so a session's park is a human park.
+   R-125-m1u admits the session for park and unpark.
 6. **The board already has a filter model and a budget prefill.** `Filters{text,
    priority, tier, seat, arc}` with `matchesText` over id and intent
    (src/backlog/filters.ts:48-121); `prefillFor(row, budgetDefaults, rows)`
@@ -94,14 +103,11 @@ Decisions:
   title, at most two lines; right, the age, a tier chip where tier is
   above zero as the board's row shows it (src/backlog/GoalRow.tsx:103), a
   "yours" chip for `origin: human`, the labels as chips, at most three and
-  "+n", and Approve. The row's silence is said once, in the block's head:
+  "+n", Approve, and Not now. The row's silence is said once, in the block's head:
   "If you do nothing, these stay in To Do and no seat may claim them." The
   derived `asked` sentence is not shown. Opening a row shows the whole
   intent, the next step, the budget tuple in words, what blocks it, its
-  priority band, the goal link, and the terminal way to say not now,
-  `metasystem goal park --id <id> --because "<why>"`, in a code span, as
-  parked rows already show their unpark. Open state is page state, not
-  stored.
+  priority band and the goal link. Open state is page state, not stored.
 - D4. **Queue tools, three of them.** A Find box over id, intent and
   labels, the board's `matchesText` extended to labels; label chips drawn
   from the rows shown, each with its count, one selected at a time,
@@ -109,16 +115,23 @@ Decisions:
   backlog order (default, the board's) or newest first by `openedAt`. The
   block's count reads "122 waiting · 16 shown" when narrowed. Nothing is
   persisted.
-- D5. **Select and approve.** A checkbox per row, "Select all shown" in the
-  block's head, and one button, "Approve 12 selected", opening one sheet.
-  The sheet lists the selected goals, each with the budget it would be
+- D5. **Select and act.** A checkbox per row, "Select all shown" in the
+  block's head, and two buttons, "Approve 12 selected" and "Not now for 12
+  selected", each opening one sheet. The approve sheet lists the selected goals, each with the budget it would be
   approved with and the source's words from `prefillFor`; a goal whose
   prefill is null is listed as "needs its budget first: approve it alone"
   and is not sent. One Approve sends the rest in order, one POST per goal,
   as the routes are, with "7 of 12" while it runs; the first refusal stops
   the run and the sheet says which landed and what was refused, in the
-  engine's words; then the page reads its payload again. Sign-in is as
-  today; the single-row Approve keeps the existing sheet.
+  engine's words; then the page reads its payload again. The not-now sheet
+  is the same list with one reason field, required, applied to every goal,
+  the same run and the same stop rule. Sign-in is as today; the single-row
+  Approve keeps the existing sheet and the single-row Not now is the
+  not-now sheet with one goal.
+- D8. **Not now, and back, from the page** (R-125-m1u). A queue row and
+  the selected rows can be parked with a reason; a Not now row and a
+  seat-park row in the inbox can be returned to the queue. Section 5 says
+  how the engine admits it, the act layer carries it and the page asks it.
 - D6. **The register is read from where the steward writes it.** The
   installation root, `rulings.Read(roots.Installation)`. The build reads
   `up`'s steward launch and, where it proves the channel and the journal
@@ -161,51 +174,99 @@ is the pattern of the Fleet row in g1-s45, a button with `aria-expanded`.
 The bulk sheet is the board's `Panel` chrome with a list inside, one line
 per goal: title, the budget in the tuple's five words, the source's
 words, or the exclusion line. Decided gains the "Not now" tab, a list of
-the Overview's item rows with the reason as the note and the unpark
-command in a code span. Empty states: "Nothing is asked of you" and
+the Overview's item rows with the reason as the note and a "Return to
+queue" button, which sends unpark for that one goal and re-reads; the
+seat-park rows of the inbox carry the same button instead of the unpark
+command. Empty states: "Nothing is asked of you" and
 "Nothing waits for your approval". Phone width: the queue row stacks,
 the checkbox stays left, the tools wrap. No timers; one EventSource; the
 page reads on mount, Refresh and after an act or a run of acts.
 
 Help terms: `needs-your-choice` rewritten for the two blocks; new
 `asked-of-you`, `waiting-for-approval` (what an approval is and that the
-row's budget is the one the approval carries), `not-now`, `approve-selected`
-(one act per goal, stops at the first refusal). The Partner's page capture
+row's budget is the one the approval carries), `not-now` (a park with its
+reason, a human act, and what returns it), `act-selected` (one act per
+goal, stops at the first refusal), `return-to-queue`. The Partner's page capture
 adds the block open, the narrowing in force and the selected count.
 
-## 5. Not here, step 3 and later
+## 5. Not now and back: park and unpark from the page
 
-Not now from the page, single or selected: it needs the engine to admit
-the session proof at the grade park and unpark require, and the branch
-check lifted out of the command edge; that is an authority decision, not
-a page. Persisted narrowing. Grouping by goal family or arc. Keyboard
+Under R-125-m1u, in three layers, each the smallest that works:
+
+1. **The engine admits the session for two verbs.** `requireHuman`
+   (verbs.go:314-332) gains one clause after the grade checks: when the
+   row's verb is `park` or `unpark` and the proof is `SessionValidFor` the
+   endpoint's root, the requirement is met. A table of two verbs, cited to
+   the ruling; no other verb's rows change, so a landing or a handover
+   still refuses a session. The park and unpark mutations call
+   `recordSessionAuthority` on the history line they append, as approve
+   does, so the ledger names the session as the hand. The `Parked.By` a
+   session writes is `human:<name>` already.
+2. **The act layer carries park and unpark.** `act.Authority.Park(id,
+   because)` and `Unpark(id)` beside `Withdraw`, publishing `goal.Park` and
+   `goal.Unpark` through the same `request()` and `settle`. `request()`
+   sets `ParkBranchCheck` from the check the command edge builds today,
+   which moves into a package both can import: the two tip readers, the
+   scrubbed git wrapper and the operation id (goal_branch.go:26-33,
+   692-735, 1033-1039) become `internal/goal/branch`'s own, and
+   cmd/metasystem keeps one-line wrappers. Behaviour unchanged: the check
+   fetches the endpoint's main and the goal's branch per park, refuses an
+   endpoint that is not `refs/heads/main`, and its summary lands on the
+   next step as it does from the terminal. A run of twelve parks is
+   twenty-four fetches; the sheet's progress line is what covers that in
+   step 2.
+3. **Two routes.** `/api/backlog/goals/<id>/park` with body `{because}`,
+   refused empty as the engine refuses it, and `/api/backlog/goals/<id>/unpark`
+   with an empty object, both the policy of every act route (`mayAct`,
+   `decode`, `answerAct`, acts.go:239-249) and answering the board as the
+   others do. The board's own six acts are untouched; the board does not
+   grow a park button in this step.
+
+What park refuses on this page stays the engine's: a goal already parked,
+a claimed goal of another pair, a blocker park lifted early, an endpoint
+the branch check cannot read; each refusal is shown in the engine's words
+and stops a run. The walkthrough fixture proves a park and an unpark end to
+end where its endpoint allows the branch check, and otherwise shows the
+refusal as the sheet would; the screenshot says which.
+
+## 6. Not here, step 3 and later
+
+Bulk unpark. Park from the Backlog board. Persisted narrowing. Grouping by goal family or arc. Keyboard
 triage. One publish for many approvals. A Find box on the Approved tab.
 The rest of g1-s44's section 6.
 
-## 6. Verification and box
+## 7. Verification and box
 
 Go: composition tests on the split counts, a human park in `notNow` and
 a seat park in the inbox, the schema number; a test on the wiring that
-the register reader is handed the installation root. Frontend: pane tests
+the register reader is handed the installation root; engine tests that a
+session proof is admitted for a human-origin park and a human-park unpark
+and still refused for another terminal-grade row, and that both history
+lines name the session; act tests for Park and Unpark with a fixture
+endpoint and an injected branch check; route tests for the two routes'
+policy and refusals; the branch check's moved tests move with it. Frontend: pane tests
 on the two blocks and their counts, a queue row opening, Find over a
 label, a label chip narrowing, the order toggle, select-all over the
 shown rows only, the bulk sheet excluding a null prefill, sending in
-order, stopping at a refusal and re-reading; the guards stay green. The
+order, stopping at a refusal and re-reading; the not-now sheet refusing an
+empty reason and sending; Return to queue; the guards stay green. The
 walkthrough fixture grows to thirty approvals with labels, tiers and both
 origins, three human parks and one seat park, and the screenshots at 1280
 and 400 are the evidence: the header, the queue narrowed, a row open, the
-bulk sheet, the Not now tab. Budgets as always. Box: one build lane
+approve sheet, the not-now sheet, the Not now tab. Budgets as always. Box: one build lane
 (Claude on Opus), one code read (Codex on Sol) with one fix round under
-R-124, after Astra's read; two attempts, 120 to 180 job-minutes.
+R-124, after Astra's read; two attempts, 150 to 240 job-minutes.
 
-## 7. Self-grade
+## 8. Self-grade
 
 High on D1 to D4 and D7: they rearrange what the payload already carries
 and reuse the board's filter and row idioms. Medium on D5: it is the first
 act on this interface that runs more than one publish, and the stop-at-
 first-refusal rule is the whole of its safety; the engine's per-goal
 refusals are the words shown. Medium on D6: the root is proven wrong for
-the register; the other two readers move only on proof. Weakest: the
-triage act a human most wants, not now, stays in the terminal until the
-authority question is decided; the row says so in a code span rather than
-offering a button that would refuse.
+the register; the other two readers move only on proof. Medium on D8: the
+admission is two verbs wide and cited to the ruling, but it is the first
+time a session proof meets a terminal-grade row, and the branch check
+moves packages; the tests named in section 7 are what hold it. Weakest:
+the cost of a run of parks, two fetches each, is accepted rather than
+measured.
