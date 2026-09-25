@@ -22,8 +22,10 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
@@ -240,6 +242,16 @@ func main() {
 			return project.SetGoals(roots, id, goals, time.Now().UTC())
 		},
 		PreviewDocument: project.PreviewDocument,
+		// What this seat has been asked and what this human has ruled. The
+		// asks are invented, because this fixture has no channel; the
+		// register is the file planted above, read by the reader the engine
+		// wires.
+		Asks: func() ([]channel.Question, error) {
+			return fixtureAsks(*calm, time.Now().UTC()), nil
+		},
+		Rulings: func() (rulings.Register, error) {
+			return rulings.Read(checkout)
+		},
 		// The landing page's marker, over the fixture checkout, through the
 		// same package the engine wires: a walkthrough that kept the visit in
 		// memory would never show the second visit's window, which is the
@@ -447,6 +459,9 @@ func fixtureCheckout(calm bool) string {
 		{walkthroughRecord, walkthroughHead},
 		{walkthroughPartly, walkthroughPartlyText},
 		{walkthroughLanded, landed},
+		// The rulings register, which the Decisions page reads through the
+		// same package the steward's sweep reads it with.
+		{"memory/rulings.md", fixtureRulings(calm, time.Now().UTC())},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

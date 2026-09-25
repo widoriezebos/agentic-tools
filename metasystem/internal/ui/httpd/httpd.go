@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
@@ -153,6 +155,19 @@ type Info struct {
 	// are the notifications package's. An empty path is an engine with no
 	// journal, which those routes say.
 	NotificationJournal string
+	// Asks answers this seat's open channel questions: what a seat has asked
+	// the human and nobody has answered. It is called per request for the
+	// reason the readers are, and it is this seat's own files — a fleet
+	// where another seat holds a question shows only this seat's, which the
+	// page says. A nil Asks is a build with no channel reader, which costs
+	// the Decisions page its ask rows and nothing else.
+	Asks func() ([]channel.Question, error)
+	// Rulings answers the standing rulings register, whole rows and all. It
+	// is the same read the steward's sweep makes, through the same package,
+	// so the page and the digest cannot disagree about what the register
+	// says. A nil Rulings is a build with no register reader, which costs
+	// the Decisions page its Rulings tab and nothing else.
+	Rulings func() (rulings.Register, error)
 	// Visit records that a human is looking at the landing page and answers
 	// the window it compares against: the end of their previous visit, or a
 	// day back on a first one. It is a function rather than a root because
@@ -351,6 +366,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == overviewPath {
 		h.overview(w, r)
+		return
+	}
+	if r.URL.Path == decisionsPath {
+		h.decisions(w, r)
 		return
 	}
 	if r.URL.Path == fleetPath {
