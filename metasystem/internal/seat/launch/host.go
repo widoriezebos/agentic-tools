@@ -10,6 +10,7 @@ package launch
 // process's METASYSTEM_* variables removed.
 
 import (
+	"bytes"
 	"debug/buildinfo"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -139,38 +141,45 @@ func (OSHost) Stamp(binary string) (string, error) {
 	return "", nil
 }
 
-// Enrolled reports whether the installation carries a steward identity for
-// the engine now installed there, which is the steward's own verification and
-// not a file's existence.
-func (OSHost) Enrolled(installation string) bool {
-	_, err := steward.VerifyEnrolledBinary(installation)
-	return err == nil
+// Enrolled is the identity the installation carries for the engine now
+// installed there, which is the steward's own verification and not a file's
+// existence.
+func (OSHost) Enrolled(installation string) (Identity, bool) {
+	installed, err := steward.VerifyEnrolledBinary(installation)
+	if err != nil {
+		return Identity{}, false
+	}
+	return Identity{RepoIdentity: installed.RepoIdentity, Generation: installed.Generation}, true
 }
 
-// SupervisionAlive reads the steward's LAST RECORDED verdict for the
-// supervision owner.
+// SupervisionUp reads the supervision owner lock and asks the kernel whether
+// the process it names is alive.
 //
-// It is a past observation and it is used as one: nothing here is allowed to
-// conclude that supervision is up on the strength of a stale file, so
-// anything but a recorded "alive" answers false and the step runs `up
-// --recover-only --if-down`, which starts only what is missing.
-func (OSHost) SupervisionAlive(installation string) bool {
-	data, err := os.ReadFile(steward.HealthRecordPath(installation))
+// It is deliberately not the steward's recorded health verdict. That verdict
+// is written by a tick, and the whole of this step happens before a newly
+// armed machine has ticked: reading it would mean waiting on a file nobody
+// has written yet, or reading a stale one from a previous generation. The
+// lock and the pid in it are the present tense.
+func (OSHost) SupervisionUp(installation string) bool {
+	data, err := os.ReadFile(filepath.Join(installation, "artifacts", "agents", "supervision", "lock.d", "owner.json"))
 	if err != nil {
 		return false
 	}
-	var record struct {
-		Verdict steward.HealthVerdict `json:"verdict"`
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var owner struct {
+		Pid          int64  `json:"pid"`
+		PidStartedAt int64  `json:"pidStartedAt"`
+		PidTicks     int64  `json:"pidStartTicks"`
+		BootID       string `json:"bootId"`
 	}
-	if json.Unmarshal(data, &record) != nil {
+	if decoder.Decode(&owner) != nil || owner.Pid < 1 || owner.PidStartedAt < 1 {
 		return false
 	}
-	for _, role := range record.Verdict.Roles {
-		if role.Role == steward.RoleSupervisionOwner {
-			return role.Status == steward.HealthAlive
-		}
-	}
-	return false
+	return identity.AliveRef(identity.KernelProber{}, identity.Ref{
+		Pid: owner.Pid, StartedAtSec: owner.PidStartedAt,
+		StartTicks: owner.PidTicks, BootID: owner.BootID,
+	}) == identity.Alive
 }
 
 // Free is the bytes available to this user at a directory.

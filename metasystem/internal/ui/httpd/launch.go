@@ -56,7 +56,12 @@ type launchBody struct {
 	Destination string `json:"destination"`
 	Word        string `json:"word"`
 	ReviewBy    string `json:"reviewBy"`
-	Resume      string `json:"resume"`
+	// Today is the day the browser was on when it asked, as a plain
+	// YYYY-MM-DD. The review date is judged against it and not against this
+	// server's own day: the two can differ for several hours of every day,
+	// and the date a human answered is the one on their screen.
+	Today  string `json:"today"`
+	Resume string `json:"resume"`
 }
 
 func (h *handler) launchMachine(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +107,7 @@ func (h *handler) launchMachine(w http.ResponseWriter, r *http.Request) {
 	}
 	record, err := h.info.Launch(signed, launch.Request{
 		Machine: body.Machine, Destination: body.Destination,
-		Word: body.Word, ReviewBy: body.ReviewBy, Resume: body.Resume,
+		Word: body.Word, ReviewBy: body.ReviewBy, ClientToday: body.Today, Resume: body.Resume,
 	})
 	if err != nil {
 		var refusal *launch.Refusal

@@ -26,20 +26,53 @@ type SeatPresence struct {
 	Transport seat.Git
 }
 
-// Look fetches once and reports whether a record for the machine is there.
+// Look fetches once and answers the record published under that machine.
 //
-// A fetch that failed is not a machine that is silent: the error travels, and
-// the caller tries again on its next tick.
-func (p SeatPresence) Look(namespace, machine string) (bool, error) {
+// The record travels rather than a yes: what the caller is confirming is that
+// THIS launch's machine published, and only the record's own repository
+// identity and generation say that. A fetch that failed is not a machine that
+// is silent: the error travels, and the caller tries again on its next tick.
+func (p SeatPresence) Look(namespace, machine string) (seat.Record, bool, error) {
 	if err := p.Transport.Fetch(namespace); err != nil {
-		return false, err
+		return seat.Record{}, false, err
 	}
 	copied, err := p.Transport.Read(namespace)
 	if err != nil {
-		return false, err
+		return seat.Record{}, false, err
 	}
-	_, found := copied.Records[machine]
-	return found, nil
+	published, found := copied.Records[machine]
+	return published, found, nil
+}
+
+// Taken is every nickname the fleet's presence already names, read through
+// one fetch of this reader's own namespace.
+//
+// It fetches rather than reading whatever copy is on disk, and it surfaces
+// both failures rather than answering with an empty fleet. A launch judges a
+// nickname against this answer, and an empty answer from a fetch that failed
+// would read as a free name — which is the one mistake this check exists to
+// prevent.
+func (p SeatPresence) Taken(namespace string) ([]string, error) {
+	defer func() { _ = p.Forget(namespace) }()
+	if err := p.Transport.Fetch(namespace); err != nil {
+		return nil, refuse(CodeFleetUnreadable,
+			"this seat could not bring in the fleet's presence, so it cannot say which nicknames are taken: %v", err)
+	}
+	copied, err := p.Transport.Read(namespace)
+	if err != nil {
+		return nil, refuse(CodeFleetUnreadable,
+			"this seat could not read the fleet's presence, so it cannot say which nicknames are taken: %v", err)
+	}
+	names := make([]string, 0, len(copied.Records)+len(copied.Malformed))
+	for name := range copied.Records {
+		names = append(names, name)
+	}
+	// A record this seat could not parse is still a machine that published
+	// under that name, so the name is spoken for.
+	for name := range copied.Malformed {
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 // Forget deletes the namespace this launch fetched into.

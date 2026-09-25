@@ -40,11 +40,17 @@ const SchemaVersion = 1
 // runner is up, and only the confirmation that it has published presence is
 // missing. A page that called that failed would send a human to delete a
 // working machine.
+// Starting is the record as the interface writes it, before the verb it
+// spawned has said which process it is. Nothing reconciles a starting record:
+// there is no process identity in it to judge, and a reader that treated the
+// absence of one as a dead process would call every launch dead in the
+// moments between the act's answer and the verb's first write.
 const (
-	OutcomeRunning = "running"
-	OutcomeDone    = "done"
-	OutcomeArmed   = "armed"
-	OutcomeFailed  = "failed"
+	OutcomeStarting = "starting"
+	OutcomeRunning  = "running"
+	OutcomeDone     = "done"
+	OutcomeArmed    = "armed"
+	OutcomeFailed   = "failed"
 )
 
 // The outcomes one step takes. Skipped is a precondition that already held,
@@ -290,13 +296,20 @@ type Alive func(process Process) bool
 // rewrites the record after every step, and a verb that was killed between
 // two of them leaves a record that says running forever. A record it rewrites
 // is written back to disk, so the page and the next reader agree.
+//
+// It judges only records that carry a process identity. A record still says
+// `starting` until the verb writes its own pid into it, and a reader that
+// read the absence of an identity as a dead process would mark every launch
+// failed in the moments between the act answering and the child's first
+// write. A spawn that never happened is the act's own to record, and it
+// records it as failed with the reason.
 func Reconcile(checkout string, alive Alive, now time.Time) ([]Record, error) {
 	records, err := List(checkout)
 	if err != nil {
 		return nil, err
 	}
 	for index, record := range records {
-		if record.Outcome != OutcomeRunning || alive(record.Process) {
+		if record.Outcome != OutcomeRunning || record.Process.PID <= 0 || alive(record.Process) {
 			continue
 		}
 		ended := now.UTC().Format(time.RFC3339)

@@ -37,6 +37,11 @@ type Request struct {
 	// written into the record, the capture or a log.
 	Word     string
 	ReviewBy string
+	// ClientToday is the day the caller was on when it asked, as a plain
+	// YYYY-MM-DD. It travels because a browser and its server can be on
+	// different dates for several hours of every day, and the review date is
+	// judged against the day the human who chose it was looking at.
+	ClientToday string
 	// Resume names the launch this run continues, or "" for a fresh one.
 	Resume string
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
@@ -20,8 +21,13 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 	}
 	want := []string{
 		"git clone --quiet " + fromRoot + " " + destRoot,
+		// The remote and the keys are read before they are written, so the
+		// same code repairs a half-made clone on a resume and writes a fresh
+		// one here.
+		"git -C " + destRoot + " remote get-url origin",
 		"git -C " + destRoot + " remote set-url origin " + originURL,
 		"git -C " + fromRoot + " config --local --list -z",
+		"git -C " + destRoot + " config --local --list -z",
 		"git -C " + destRoot + " config goal.sync-remote origin",
 		"git -C " + destRoot + " config goal.human.wido Wido <wido@example.invalid>",
 		"git -C " + destRoot + " rev-parse HEAD",
@@ -38,6 +44,9 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 		"metasystem goal next --root " + destRoot,
 		"metasystem steward arm --repo " + destInstall() + " --temporary-human-word " + humanWord + " --review-by " + reviewBy,
 		"metasystem up --repo " + destInstall() + " --recover-only --if-down",
+		// The wait is counted in the NEW machine's ticks, so its own cadence
+		// is read from the clone rather than assumed from this seat's.
+		"git -C " + destInstall() + " config --get metasystem.steward.tick-seconds",
 	}
 	got := built.runner.keys()
 	if len(got) != len(want) {
@@ -160,10 +169,16 @@ func TestAResumeSkipsEveryStepWhosePostconditionHolds(t *testing.T) {
 	built.host.exists[destRoot] = true
 	built.host.exists[destBinary()] = true
 	built.host.exists[filepath.Join(destInstall(), "metasystem.conf.local")] = true
+	built.host.exists[filepath.Join(destInstall(), "artifacts", "agents", "ui", "local-config-paths")] = true
 	built.host.enrolled = true
 	built.host.supervision = true
 	built.runner.said["git -C "+destRoot+" config --get metasystem.goal.machine"] = machineName + "\n"
 	delete(built.runner.refused, "git -C "+destRoot+" config --get metasystem.goal.machine")
+	// The clone this launch made already carries the fleet's remote and its
+	// keys, which is what the clone step's postcondition asks about.
+	built.runner.said["git -C "+destRoot+" remote get-url origin"] = originURL + "\n"
+	built.runner.said["git -C "+destRoot+" config --local --list -z"] =
+		built.runner.said["git -C "+fromRoot+" config --local --list -z"]
 
 	carried := fresh()
 	carried.Created = Created{Destination: true, Nickname: true, EvidenceRoot: true}
@@ -357,6 +372,210 @@ func TestAMachineThatPublishesNothingIsArmedAndNotFailed(t *testing.T) {
 	}
 }
 
+// A clone whose HEAD answers is not a finished step: the origin and the keys
+// come after it, and a launch killed between them leaves both undone.
+func TestAResumeRepairsACloneWhoseOriginAndKeysNeverLanded(t *testing.T) {
+	t.Parallel()
+	asked := request()
+	asked.Resume = launchID
+	built := newWorld(asked)
+	built.host.exists[destRoot] = true
+	built.host.exists[destBinary()] = true
+	carried := fresh()
+	carried.Created = Created{Destination: true}
+
+	record, err := built.sequencer.Run(carried)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	step, _ := record.StepOf(StepClone)
+	if step.Outcome != StepDone || !strings.Contains(step.Words, "origin") {
+		t.Fatalf("clone = %+v, want the missing origin repaired", step)
+	}
+	if !built.runner.ranCommand("git -C " + destRoot + " remote set-url origin " + originURL) {
+		t.Fatal("a clone with the wrong origin was left pointing at this checkout")
+	}
+	if !built.runner.ranCommand("git -C " + destRoot + " config goal.sync-remote origin") {
+		t.Fatal("a clone with no endpoint keys was left without them")
+	}
+	if built.runner.ranCommand("git clone --quiet " + fromRoot + " " + destRoot) {
+		t.Fatal("the repair cloned over the clone it was repairing")
+	}
+}
+
+// The configuration step is four operations. A resume may skip only the one
+// that would overwrite a human's edit; the checks run again, because a launch
+// killed before them has never had its configuration checked at all.
+func TestAResumeChecksTheConfigurationItDidNotCopyAgain(t *testing.T) {
+	t.Parallel()
+	asked := request()
+	asked.Resume = launchID
+	built := newWorld(asked)
+	built.host.exists[destRoot] = true
+	built.host.exists[destBinary()] = true
+	built.host.exists[filepath.Join(destInstall(), "metasystem.conf.local")] = true
+	carried := fresh()
+	carried.Created = Created{Destination: true, EvidenceRoot: true}
+
+	record, err := built.sequencer.Run(carried)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if step, _ := record.StepOf(StepConfiguration); step.Outcome != StepSkipped {
+		t.Fatalf("configuration = %+v, want skipped", step)
+	}
+	if len(built.host.copied) != 0 {
+		t.Fatal("a resume copied over the configuration a human may have edited")
+	}
+	if len(built.host.manifests) != 1 {
+		t.Fatalf("wrote %d manifests, want the absent one written", len(built.host.manifests))
+	}
+	for _, key := range []string{
+		"metasystem validate session-isolation --source-root " + fromRoot + " --destination-root " + destRoot +
+			" --manifest " + filepath.Join(destInstall(), "artifacts", "agents", "ui", "local-config-paths") +
+			" --harness-root " + filepath.Join(fromRoot, install),
+		"metasystem config validate --conf " + filepath.Join(destInstall(), "metasystem.conf") + " --repo " + destRoot,
+	} {
+		if !built.runner.ranCommand(key) {
+			t.Fatalf("a resume did not run %q", key)
+		}
+	}
+}
+
+// The record says this launch made the evidence root before anything after it
+// can fail, so a retry meets a directory its own record accounts for.
+func TestTheEvidenceRootIsRecordedBeforeTheRestOfTheStepCanFail(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.runner.refused["metasystem config validate --conf "+
+		filepath.Join(destInstall(), "metasystem.conf")+" --repo "+destRoot] = "the configuration is invalid"
+	record, err := built.sequencer.Run(fresh())
+	if err == nil {
+		t.Fatal("the configuration step did not fail")
+	}
+	if !record.Created.EvidenceRoot {
+		t.Fatal("the record does not say this launch created the evidence root")
+	}
+	for _, written := range built.written {
+		if written.Created.EvidenceRoot {
+			return
+		}
+	}
+	t.Fatal("no write of the record carried the evidence root this launch created")
+}
+
+// A clone that already carries somebody else's nickname is not this launch's
+// to rename.
+func TestAClonesOwnNicknameIsNeverOverwritten(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.runner.said["git -C "+destRoot+" config --get metasystem.goal.machine"] = "m1c\n"
+	delete(built.runner.refused, "git -C "+destRoot+" config --get metasystem.goal.machine")
+
+	_, err := built.sequencer.Run(fresh())
+	refusal := refusalOf(t, err)
+	if refusal.Code != CodeNicknameTaken {
+		t.Fatalf("code = %s, want %s", refusal.Code, CodeNicknameTaken)
+	}
+	if built.runner.ranCommand("git -C " + destRoot + " config metasystem.goal.machine " + machineName) {
+		t.Fatal("a live machine's nickname was taken away from it")
+	}
+}
+
+// Supervision is read from the owner lock, and the step proves it after it
+// runs rather than assuming that up's return means a live owner.
+func TestSupervisionIsProvedAfterTheRecoveryCommand(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.host.supervisionAfterUp = false
+	_, err := built.sequencer.Run(fresh())
+	refusal := refusalOf(t, err)
+	if refusal.Code != CodeSupervisionDown {
+		t.Fatalf("code = %s, want %s", refusal.Code, CodeSupervisionDown)
+	}
+	if !built.runner.ranCommand("metasystem up --repo " + destInstall() + " --recover-only --if-down") {
+		t.Fatal("the recovery command never ran")
+	}
+}
+
+func TestSupervisionAlreadyUpSkipsTheRecoveryCommand(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.host.supervision = true
+	record, err := built.sequencer.Run(fresh())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if step, _ := record.StepOf(StepSupervision); step.Outcome != StepSkipped {
+		t.Fatalf("supervision = %+v, want skipped", step)
+	}
+	if built.runner.ranCommand("metasystem up --repo " + destInstall() + " --recover-only --if-down") {
+		t.Fatal("the recovery command ran although the owner lock was already alive")
+	}
+}
+
+// A record under the nickname is not enough: it has to be this machine's,
+// which the repository identity and the generation say and a name does not.
+func TestPresenceUnderTheNicknameIsNotConfirmedWithoutTheIdentity(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.presence.foreign = true
+	record, err := built.sequencer.Run(fresh())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if record.Outcome != OutcomeArmed {
+		t.Fatalf("outcome = %q, want %q: another machine's record must not confirm this one", record.Outcome, OutcomeArmed)
+	}
+}
+
+// The wait is counted in the new machine's own ticks, read from the clone
+// after its configuration was written.
+func TestThePresenceWaitTicksOnTheClonesOwnCadence(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.presence.appearsAt = -1
+	built.runner.said["git -C "+destInstall()+" config --get metasystem.steward.tick-seconds"] = "120\n"
+
+	if _, err := built.sequencer.Run(fresh()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	for _, waited := range built.clock.waited {
+		if waited != 2*time.Minute {
+			t.Fatalf("waited %v, want the clone's own 120 seconds", built.clock.waited)
+		}
+	}
+	if len(built.clock.waited) != 3 {
+		t.Fatalf("waited %v, want three of them", built.clock.waited)
+	}
+}
+
+func TestThePresenceWaitFallsBackToThisSeatsCadence(t *testing.T) {
+	t.Parallel()
+	built := newWorld(request())
+	built.presence.appearsAt = -1
+	// A clone that names no cadence: git answers with an exit code.
+	built.runner.refused["git -C "+destInstall()+" config --get metasystem.steward.tick-seconds"] = ""
+
+	if _, err := built.sequencer.Run(fresh()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(built.clock.waited) == 0 || built.clock.waited[0] != built.sequencer.PresenceTick {
+		t.Fatalf("waited %v, want this seat's own tick", built.clock.waited)
+	}
+}
+
+// The cadence key travels with the endpoint keys, so the clone has one of its
+// own to be waited on.
+func TestTheCadenceKeyIsOneOfTheKeysAMachineInherits(t *testing.T) {
+	t.Parallel()
+	listed := "metasystem.steward.tick-seconds\n120\x00core.bare\nfalse\x00"
+	keys := copied(listed)
+	if len(keys) != 1 || keys[0].name != "metasystem.steward.tick-seconds" || keys[0].value != "120" {
+		t.Fatalf("copied = %+v, want the cadence and nothing that is not the fleet's", keys)
+	}
+}
+
 func TestTheRecordCarriesWhatTheMachineIsAndWhatToDoWithIt(t *testing.T) {
 	t.Parallel()
 	built := newWorld(request())
@@ -393,9 +612,12 @@ func TestTheRecordIsRewrittenAfterEveryStep(t *testing.T) {
 	if _, err := built.sequencer.Run(fresh()); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	// One write before anything runs, one for the destRoot this launch is
-	// about to create, one after each of the nine steps, and one at the end.
-	if len(built.written) != 12 {
+	// One write before anything runs, one for the destination this launch is
+	// about to create, one for the evidence root it creates, one after each
+	// of the nine steps, and one at the end. The two mid-step writes are the
+	// point: a launch killed after making either must come back to a record
+	// that says it made it.
+	if len(built.written) != 13 {
 		t.Fatalf("wrote the record %d times", len(built.written))
 	}
 	if len(built.written[0].Steps) != 0 || built.written[0].Outcome != OutcomeRunning {

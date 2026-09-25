@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func askFor(machine, where string) Request {
@@ -107,20 +106,30 @@ func TestADestinationThatIsNotAbsoluteIsRefused(t *testing.T) {
 	}
 }
 
-func TestAPastReviewDateIsThisSidesRefusalAndNotTheEngines(t *testing.T) {
+// The review date is judged against the day the CLIENT was on, which is the
+// one rule both boundaries use: a browser and its server are on different
+// dates for several hours of every day, and the date a human answered is the
+// one that was on their screen.
+func TestAReviewDateIsJudgedAgainstTheDayTheCallerWasOn(t *testing.T) {
 	t.Parallel()
-	now := time.Date(2026, 9, 25, 11, 0, 0, 0, time.UTC)
-	if !PastReviewDate("2026-09-24", now) {
+	const today = "2026-09-25"
+	if !ReviewDateBefore("2026-09-24", today) {
 		t.Fatal("yesterday reads as a review that is not yet due")
 	}
-	if PastReviewDate("2026-09-25", now) {
-		t.Fatal("today reads as a review already overdue")
+	// The server is one day more permissive than the sheet on purpose: a
+	// request written a minute before midnight is not refused for arriving a
+	// minute after it.
+	if ReviewDateBefore(today, today) {
+		t.Fatal("the caller's own day reads as a date before it")
 	}
-	if PastReviewDate("2026-10-02", now) {
+	if ReviewDateBefore("2026-10-02", today) {
 		t.Fatal("a week out reads as a review already overdue")
 	}
-	if PastReviewDate("not a date", now) {
+	if ReviewDateBefore("not a date", today) || ReviewDateBefore("2026-09-24", "not a date") {
 		t.Fatal("a malformed date is the word pair validator's refusal and not this one")
+	}
+	if !ValidDay(today) || ValidDay("25/09/2026") || ValidDay("") {
+		t.Fatal("a day is one plain YYYY-MM-DD and nothing else")
 	}
 }
 

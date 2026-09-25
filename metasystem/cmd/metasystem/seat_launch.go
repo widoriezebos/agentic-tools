@@ -81,37 +81,52 @@ func runSeatLaunch(args []string) int {
 		request.Destination = proposed
 	}
 
-	facts, err := seatLaunchFacts(request, record)
-	if err != nil {
+	// From here on this run owns the record, and every way out writes what
+	// stopped it into the file the page reads. A refusal that left the record
+	// as the interface wrote it would be a launch the page shows as starting
+	// for ever — and the reconciliation would later call it a dead process
+	// rather than the refusal it actually was.
+	record.Process = launch.Identify(os.Getpid())
+	stop := func(err error) int {
 		fmt.Fprintln(os.Stderr, "seat launch:", err)
-		return 1
-	}
-	if err := launch.Preflight(request, facts); err != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
+		record.Outcome = launch.OutcomeFailed
+		ended := time.Now().UTC().Format(time.RFC3339)
+		record.EndedAt = &ended
+		record.SetStep(launch.Step{
+			Step: launch.StepClone, Outcome: launch.StepFailed, At: ended, Words: err.Error(),
+		})
+		_ = launch.SaveAt(path, record, request.From)
 		return 1
 	}
 
+	facts, err := seatLaunchFacts(request, record)
+	if err != nil {
+		return stop(err)
+	}
+	if err := launch.Preflight(request, facts); err != nil {
+		return stop(err)
+	}
+
+	// The loser of the host lock writes the winner's nickname and id into its
+	// own record, so the page shows a refusal a human can read rather than a
+	// launch that never moved.
 	held, err := launch.Take(launch.LockPath(), request.Machine, record.Launch)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
-		return 1
+		return stop(err)
 	}
 	defer func() { _ = held.Release() }()
 
 	namespace, err := launch.NewNamespace()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
-		return 1
+		return stop(err)
 	}
 	transport, err := seat.NewGit(request.From)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
-		return 1
+		return stop(err)
 	}
 	installation, err := seatLaunchInstallation(request.From)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "seat launch:", err)
-		return 1
+		return stop(err)
 	}
 	sequencer := &launch.Sequencer{
 		Request: request, Installation: installation,
@@ -124,12 +139,12 @@ func runSeatLaunch(args []string) int {
 		// takes its own, because a cold module cache is minutes and not
 		// seconds.
 		GitBudget: seat.TransportBudget, BuildBudget: seatLaunchBuildBudget,
-		// The new machine's cadence is this seat's: the configuration that
-		// sets it is the configuration this launch copies.
+		// This seat's cadence stands in only until the clone has one of its
+		// own: the presence step reads the new machine's key after the
+		// configuration step has put it there.
 		PresenceTick:  time.Duration(steward.TickSeconds(filepath.Join(request.From, installation))) * time.Second,
 		PresenceTicks: seatLaunchPresenceTicks,
 	}
-	record.Process = launch.Identify(os.Getpid())
 	record.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	finished, runErr := sequencer.Run(record)
 	if *asJSON {
@@ -200,19 +215,34 @@ func seatLaunchFacts(request launch.Request, record launch.Record) (launch.Facts
 	if err != nil {
 		return launch.Facts{}, err
 	}
-	// The tick's canonical copy, read in place and never fetched: the
-	// question is which nicknames this fleet already knows, and a fetch here
-	// would move a ref the steward owns.
-	namespace := seat.TickNamespace
-	if transport.Local {
-		namespace = seat.UINamespace
+	// The fleet's presence, fetched into this read's own namespace and read
+	// from it. A launch is rare and expensive, so one bounded fetch is
+	// proportionate — and a copy some other reader last brought in could be
+	// an hour old, which is long enough for another seat to have taken the
+	// nickname this one is about to publish under.
+	//
+	// Both failures are refusals and neither is an empty fleet. A fetch that
+	// failed and a copy that could not be read look exactly like a host where
+	// every nickname is free, and that is the one answer this check must
+	// never give.
+	namespace, err := launch.NewNamespace()
+	if err != nil {
+		return launch.Facts{}, err
 	}
-	if copied, err := transport.Read(namespace); err == nil {
-		for name := range copied.Records {
-			taken[name] = true
+	published, err := launch.SeatPresence{Transport: transport}.Taken(namespace)
+	if err != nil {
+		return launch.Facts{}, err
+	}
+	for _, name := range published {
+		taken[name] = true
+	}
+	claims, unavailable := seat.Claims(request.From)
+	if unavailable != "" {
+		return launch.Facts{}, &launch.Refusal{
+			Code:    launch.CodeFleetUnreadable,
+			Message: "this seat could not read the accepted ledger, so it cannot say which nicknames hold claims: " + unavailable,
 		}
 	}
-	claims, _ := seat.Claims(request.From)
 	for name := range claims {
 		taken[name] = true
 	}

@@ -48,6 +48,16 @@ const (
 	// CodeIDInvalid is a launch id that is not the one path segment a record
 	// is named by.
 	CodeIDInvalid = "SEAT_LAUNCH_ID_INVALID"
+	// CodeFleetUnreadable is a presence copy this seat could not bring in or
+	// could not read. A launch judges a nickname against the fleet, and a
+	// fleet it cannot read is not a fleet it may guess about.
+	CodeFleetUnreadable = "SEAT_LAUNCH_FLEET_UNREADABLE"
+	// CodeSupervisionDown is `up --recover-only --if-down` returning with no
+	// live process holding the new machine's supervision owner lock.
+	CodeSupervisionDown = "SEAT_LAUNCH_SUPERVISION_DOWN"
+	// CodeIdentityUnreadable is a clone whose enrolled identity cannot be
+	// read after arming, so no presence record can be recognised as its own.
+	CodeIdentityUnreadable = "SEAT_LAUNCH_IDENTITY_UNREADABLE"
 )
 
 // Refusal is one of the codes above with the sentence a human acts on.
@@ -66,18 +76,36 @@ func refuse(code, format string, args ...any) *Refusal {
 // reviewByLayout is the date form steward arm's own validator takes.
 const reviewByLayout = "2006-01-02"
 
-// PastReviewDate reports whether a review-by date is already behind us.
+// ValidDay reports whether a string is one plain YYYY-MM-DD day.
+func ValidDay(day string) bool {
+	_, err := time.Parse(reviewByLayout, day)
+	return err == nil
+}
+
+// ReviewDateBefore reports whether a review-by date falls before the day the
+// client was on when it sent it.
 //
-// It is this side's rule and not the engine's: ValidateTemporaryWordPair
-// accepts a past date, and the identity reader never compares the date to a
-// clock. A date in the past is therefore a review that is due the moment the
-// machine joins, which is not what a human choosing one means, so the sheet
-// and the route refuse it here. The verb does not: a caller at a terminal who
-// means it is the engine's business and not this package's.
-func PastReviewDate(reviewBy string, now time.Time) bool {
-	date, err := time.Parse(reviewByLayout, reviewBy)
-	if err != nil {
+// The day is the CLIENT's and never this process's. A browser and its server
+// can be in different zones, and for several hours a day they are on
+// different dates — so a server judging "is this in the past" against its own
+// UTC day would refuse a date a human is looking at on their own screen, or
+// accept one the sheet had already refused. One rule, judged against one day,
+// and the day travels with the request.
+//
+// The two sides are deliberately not identical. The sheet asks for a date
+// LATER than today, because a review due today is a review due the moment the
+// machine joins; the server refuses only a date EARLIER than the client's
+// today, so a request written a minute before midnight is not refused for
+// arriving a minute after it.
+//
+// It is this side's rule either way and not the engine's:
+// ValidateTemporaryWordPair accepts a past date, and the identity reader never
+// compares the date to a clock.
+func ReviewDateBefore(reviewBy, clientToday string) bool {
+	if !ValidDay(reviewBy) || !ValidDay(clientToday) {
 		return false
 	}
-	return date.Before(now.UTC().Truncate(24 * time.Hour))
+	// Both are zero-padded YYYY-MM-DD, so their lexical order is their order
+	// in time and no zone is involved in the comparison at all.
+	return reviewBy < clientToday
 }

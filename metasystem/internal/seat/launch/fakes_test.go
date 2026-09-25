@@ -13,20 +13,24 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 )
 
 // The paths every test's world is built from. They are names and not
 // directories: nothing here touches a filesystem.
 const (
-	fromRoot    = "/w/agentic-tools"
-	destRoot    = "/w/agentic-tools-m1f"
-	install     = "metasystem"
-	machineName = "m1f"
-	originURL   = "https://github.com/widoriezebos/agentic-tools.git"
-	humanWord   = "Wido says launch m1f on this host"
-	reviewBy    = "2026-10-02"
-	launchID    = "01M3BQAVYXE2AT6F0JG9YB64PG"
-	headCommit  = "9c1f2ab3d4e5f60718293a4b5c6d7e8f90123456"
+	fromRoot     = "/w/agentic-tools"
+	destRoot     = "/w/agentic-tools-m1f"
+	install      = "metasystem"
+	machineName  = "m1f"
+	originURL    = "https://github.com/widoriezebos/agentic-tools.git"
+	humanWord    = "Wido says launch m1f on this host"
+	reviewBy     = "2026-10-02"
+	launchID     = "01M3BQAVYXE2AT6F0JG9YB64PG"
+	repoIdentity = "repo-agentic-tools"
+	generation   = 4
+	headCommit   = "9c1f2ab3d4e5f60718293a4b5c6d7e8f90123456"
 )
 
 // destBinary is the engine the launch installs in the clone.
@@ -98,27 +102,44 @@ func (r *fakeRunner) ranCommand(key string) bool {
 type copiedConf struct{ source, destRoot, evidenceRoot string }
 
 type fakeHost struct {
-	exists      map[string]bool
-	canonical   map[string]string
-	present     map[string]bool
-	stamp       map[string]string
-	enrolled    bool
-	supervision bool
-	free        uint64
-	size        uint64
-	copied      []copiedConf
-	manifests   []string
-	madeDirs    []string
+	exists    map[string]bool
+	canonical map[string]string
+	present   map[string]bool
+	stamp     map[string]string
+	// enrolled is an installation that already carries an identity;
+	// enrolledAfterArm makes it carry one from the second reading on, which
+	// is what `steward arm` does between the enrollment step's precondition
+	// and the presence step's question.
+	enrolled         bool
+	enrolledAfterArm bool
+	enrolledAsked    int
+	identity         Identity
+	// supervision is what the owner lock says. supervisionAfterUp makes it
+	// alive from the second reading on, which is what running `up` does, so
+	// the step's own postcondition is provable.
+	supervision        bool
+	supervisionAfterUp bool
+	supervisionAsked   int
+	free               uint64
+	size               uint64
+	copied             []copiedConf
+	manifests          []string
+	madeDirs           []string
 }
 
 func newHost() *fakeHost {
 	return &fakeHost{
-		exists:    map[string]bool{},
-		canonical: map[string]string{"/w/evidence/m1u": "/w/evidence/m1u", "/w/evidence/m1f": "/w/evidence/m1f"},
-		present:   map[string]bool{},
-		stamp:     map[string]string{destBinary(): headCommit},
-		free:      1 << 40,
-		size:      1 << 30,
+		exists:           map[string]bool{},
+		canonical:        map[string]string{"/w/evidence/m1u": "/w/evidence/m1u", "/w/evidence/m1f": "/w/evidence/m1f"},
+		present:          map[string]bool{},
+		stamp:            map[string]string{destBinary(): headCommit},
+		identity:         Identity{RepoIdentity: repoIdentity, Generation: generation},
+		enrolledAfterArm: true,
+		// Running `up` is what makes the owner lock live, so a fake whose
+		// answer never changed would make the step's postcondition unprovable.
+		supervisionAfterUp: true,
+		free:               1 << 40,
+		size:               1 << 30,
 	}
 }
 
@@ -152,9 +173,25 @@ func (h *fakeHost) MakeManifest(path string) error {
 
 func (h *fakeHost) Stamp(binary string) (string, error) { return h.stamp[binary], nil }
 
-func (h *fakeHost) Enrolled(string) bool { return h.enrolled }
+// Enrolled answers the enrollment step's precondition on the first ask and
+// the presence step's question afterwards, because `steward arm` is what
+// happens between them: a fake whose answer never changed could prove either
+// that the step runs or that presence is recognised, but never both.
+func (h *fakeHost) Enrolled(string) (Identity, bool) {
+	h.enrolledAsked++
+	if h.enrolled || (h.enrolledAfterArm && h.enrolledAsked > 1) {
+		return h.identity, true
+	}
+	return Identity{}, false
+}
 
-func (h *fakeHost) SupervisionAlive(string) bool { return h.supervision }
+func (h *fakeHost) SupervisionUp(string) bool {
+	h.supervisionAsked++
+	if h.supervisionAfterUp && h.supervisionAsked > 1 {
+		return true
+	}
+	return h.supervision
+}
 
 func (h *fakeHost) Free(string) (uint64, error) { return h.free, nil }
 
@@ -167,15 +204,29 @@ type fakePresence struct {
 	looks     int
 	forgotten []string
 	problem   error
+	// foreign publishes under the nickname with another machine's identity.
+	foreign bool
 }
 
-func (p *fakePresence) Look(_, _ string) (bool, error) {
+func (p *fakePresence) Look(_, machine string) (seat.Record, bool, error) {
 	look := p.looks
 	p.looks++
 	if p.problem != nil {
-		return false, p.problem
+		return seat.Record{}, false, p.problem
 	}
-	return p.appearsAt >= 0 && look >= p.appearsAt, nil
+	if p.appearsAt < 0 || look < p.appearsAt {
+		return seat.Record{}, false, nil
+	}
+	published := seat.Record{
+		PresenceSchema: seat.RecordSchema, Machine: machine,
+		RepoIdentity: repoIdentity, Generation: generation,
+	}
+	if p.foreign {
+		// Another machine's record under the same nickname: a name re-used,
+		// which is exactly what the identity pair is there to catch.
+		published.RepoIdentity, published.Generation = "somebody-else", generation+1
+	}
+	return published, true, nil
 }
 
 func (p *fakePresence) Forget(namespace string) error {

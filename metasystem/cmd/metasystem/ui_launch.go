@@ -57,12 +57,21 @@ func launchStarter(roots lifecycle.Roots) func(*session.Session, launch.Request)
 			return launch.Record{}, &launch.Refusal{Code: launch.CodeWordInvalid, Message: err.Error()}
 		}
 		// The one rule this side has that the engine's validator does not: a
-		// review date already behind us is a review due the moment the
-		// machine joins, which is not what choosing a date means.
-		if asked.ReviewBy != "" && launch.PastReviewDate(asked.ReviewBy, time.Now()) {
+		// review date already behind the human who chose it is a review due
+		// the moment the machine joins. It is judged against the CLIENT's own
+		// day, which travels with the request: this server and the browser
+		// can be on different dates for several hours of every day, and the
+		// date on screen is the one a human answered.
+		if !launch.ValidDay(asked.ClientToday) {
 			return launch.Record{}, &launch.Refusal{
 				Code:    launch.CodeReviewDatePast,
-				Message: "the review-by date " + asked.ReviewBy + " has already passed; choose a date this machine's enrollment can be reviewed by",
+				Message: "this request does not say what day it was made on, so the review date cannot be judged against it",
+			}
+		}
+		if launch.ReviewDateBefore(asked.ReviewBy, asked.ClientToday) {
+			return launch.Record{}, &launch.Refusal{
+				Code:    launch.CodeReviewDatePast,
+				Message: "the review-by date " + asked.ReviewBy + " is before " + asked.ClientToday + "; choose a date this machine's enrollment can be reviewed by",
 			}
 		}
 		record, path, err := launchRecordFor(roots, &asked)
@@ -76,10 +85,26 @@ func launchStarter(roots lifecycle.Roots) func(*session.Session, launch.Request)
 		if err := launch.Preflight(asked, facts); err != nil {
 			return launch.Record{}, err
 		}
+		// The record is written before anything runs, so a page opened a
+		// second later already has something to read — and it says `starting`
+		// until the verb writes its own process identity into it. A record
+		// with no identity is nothing to reconcile: judging it by a pid it
+		// does not carry would mark every launch dead in the moment between
+		// this answer and the child's first write.
 		if err := launch.SaveAt(path, record, roots.Checkout); err != nil {
 			return launch.Record{}, err
 		}
 		if err := spawnLaunch(roots, asked, record, path); err != nil {
+			// A launch that could not be started is a failed launch and not a
+			// starting one. Nothing else will ever write this record, so the
+			// reason is written here.
+			ended := time.Now().UTC().Format(time.RFC3339)
+			record.Outcome = launch.OutcomeFailed
+			record.EndedAt = &ended
+			record.SetStep(launch.Step{
+				Step: launch.StepClone, Outcome: launch.StepFailed, At: ended, Words: err.Error(),
+			})
+			_ = launch.SaveAt(path, record, roots.Checkout)
 			return launch.Record{}, err
 		}
 		return record, nil
@@ -104,7 +129,11 @@ func launchRecordFor(roots lifecycle.Roots, asked *launch.Request) (launch.Recor
 		if asked.ReviewBy == "" {
 			asked.ReviewBy = record.ReviewBy
 		}
-		record.Outcome = launch.OutcomeRunning
+		// A retry is a fresh start of the same launch: the previous run's
+		// process identity is not this one's, and leaving it in place would
+		// let the reconciliation judge this retry by a pid that has gone.
+		record.Outcome = launch.OutcomeStarting
+		record.Process = launch.Process{}
 		record.EndedAt = nil
 		record.ReviewBy = asked.ReviewBy
 		return record, path, nil
@@ -127,7 +156,7 @@ func launchRecordFor(roots lifecycle.Roots, asked *launch.Request) (launch.Recor
 	return launch.Record{
 		SchemaVersion: launch.SchemaVersion, Launch: id,
 		Machine: asked.Machine, Destination: asked.Destination,
-		Outcome: launch.OutcomeRunning, ReviewBy: asked.ReviewBy,
+		Outcome: launch.OutcomeStarting, ReviewBy: asked.ReviewBy,
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 		Steps:     []launch.Step{},
 	}, path, nil
