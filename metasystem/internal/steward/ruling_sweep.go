@@ -42,11 +42,6 @@ func readRulingReviewRegister(repoRoot string) ([]rulingReview, []rulingReviewDe
 	return rulings.ReadReviews(repoRoot)
 }
 
-func readRulingReviews(repoRoot string) ([]rulingReview, error) {
-	reviews, _, err := readRulingReviewRegister(repoRoot)
-	return reviews, err
-}
-
 func rulingSweepPath(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "ruling-review-sweep.json")
 }
