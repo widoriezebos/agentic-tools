@@ -258,6 +258,30 @@ describe("what you decided", () => {
     expect(markup).toContain("<summary");
   });
 
+  // A row whose review condition is a date AND an event keeps both on the
+  // card. The register carries them — R-29-m2 is due on a date and on a
+  // terminal re-arm, whichever comes first — and the date used to win.
+  it("keeps the event on a card whose row also carries a due date", () => {
+    const both = page();
+    const markup = rendered({
+      ...both,
+      decided: {
+        ...both.decided,
+        rulings: [
+          ruling({
+            id: "R-29-m2",
+            due: "2026-09-19",
+            event: "terminal-re-arm",
+            condition: "class=temporary due=2026-09-19 event=terminal-re-arm",
+            duePassed: true,
+          }),
+        ],
+      },
+    });
+
+    expect(markup).toContain("review passed 6 days ago · or on terminal-re-arm");
+  });
+
   it("lists the register's broken rows rather than hiding them", () => {
     const markup = rendered(page());
 

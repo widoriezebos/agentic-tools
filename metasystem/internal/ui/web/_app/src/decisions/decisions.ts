@@ -275,17 +275,24 @@ export function shownRulings(
  * unobservable, and a page that guessed would be calling a ruling overdue on
  * no evidence. A ruling with no schedulable condition shows the words the
  * register carries, or nothing where it carries none.
+ *
+ * A row can carry both, and the register does: R-29-m2 is due on a date AND
+ * on a terminal re-arm, whichever comes first, which is also how the sweep
+ * reads it. So the two are said together rather than the date winning and the
+ * event disappearing off the card — the event is half of what the human wrote
+ * down, and a card that dropped it would be showing a condition nobody set.
  */
 export function reviewChip(ruling: Ruling, now: Date): string {
+  const said: string[] = [];
   if (ruling.due !== "") {
-    return ruling.duePassed
-      ? `review passed ${overdueWords(ruling.due, now)}`
-      : `review due ${dayWords(ruling.due)}`;
+    said.push(
+      ruling.duePassed ? `review passed ${overdueWords(ruling.due, now)}` : `review due ${dayWords(ruling.due)}`,
+    );
   }
   if (ruling.event !== "") {
-    return `review on ${ruling.event}`;
+    said.push(said.length === 0 ? `review on ${ruling.event}` : `or on ${ruling.event}`);
   }
-  return ruling.condition;
+  return said.length === 0 ? ruling.condition : said.join(" · ");
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

@@ -231,6 +231,22 @@ describe("a ruling's review condition", () => {
     expect(reviewChip(event, now)).toBe("review on first-measured-report-exists");
   });
 
+  // The register carries rows with both — R-29-m2 is due on a date and on a
+  // terminal re-arm, whichever comes first. The date used to win and the
+  // event vanished off the card.
+  it("says both where the row carries a date and an event", () => {
+    const both = ruling({
+      due: "2026-10-02",
+      event: "terminal-re-arm",
+      condition: "class=temporary due=2026-10-02 event=terminal-re-arm",
+      duePassed: false,
+    });
+    expect(reviewChip(both, now)).toBe("review due 2 Oct · or on terminal-re-arm");
+    expect(reviewChip({ ...both, due: "2026-09-14", duePassed: true }, now)).toBe(
+      "review passed 11 days ago · or on terminal-re-arm",
+    );
+  });
+
   it("shows a condition the grammar refuses exactly as the register wrote it", () => {
     const prose = ruling({ class: "", due: "", event: "", condition: "standing", duePassed: false });
     expect(reviewChip(prose, now)).toBe("standing");

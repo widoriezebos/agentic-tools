@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:a276444b5f8bbd3c6f872e7c53bb8ec3d59449ca7fdedac7cc637a9fee39914d",
+  "sourceDigest": "sha256:5cc00cec81562eaec06c565d6961aff19839c43d464fabda16d165b108d43621",
   "source": [
     {
       "path": ".npmrc",
@@ -256,7 +256,7 @@
     },
     {
       "path": "src/decisions/DecisionsPane.test.tsx",
-      "sha256": "5fd1689625c1461dd4a3c85bb8d0763be8b666f7ffcb0defc3eb1d748d4749b1"
+      "sha256": "8e0867917b36a2da192ef42a64e77edb168d6e6bdaa5c29b0f77f409f01684f5"
     },
     {
       "path": "src/decisions/DecisionsPane.tsx",
@@ -272,11 +272,11 @@
     },
     {
       "path": "src/decisions/decisions.test.ts",
-      "sha256": "a61a9f7211e19c501ba3deee64f3b20aee440a2c0cc1ea2cfeb84ce6dc3b2586"
+      "sha256": "835c8e3b767a9986252e2798350f9baf635ee95552fc27d727e6f582e324d764"
     },
     {
       "path": "src/decisions/decisions.ts",
-      "sha256": "a0231faa649aba62cce299c74e22acdbc16ceae6dc870bbd9cc30e793d7e9341"
+      "sha256": "563c70c1c8337faa79f7cc5189b50a9ddcb71f5d245d46e68191bc8580af634c"
     },
     {
       "path": "src/fleet/FleetPane.test.tsx",
@@ -830,7 +830,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "44dd3c5f9a7318de413c4b9b8190f71f9de0dd23eeeac4fe2b59f379b3cf789c"
+      "sha256": "56e0c9e26913f6eb30fd29265dfed436086816b3bebccd9fc05af99c63293441"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
