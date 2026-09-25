@@ -4,7 +4,9 @@ import type { Launch, Machine } from "./api";
 import {
   blockedForLaunch,
   cardFor,
+  clientToday,
   destinationRefusal,
+  earliestReviewBy,
   failedStep,
   foldedLine,
   launchHeadline,
@@ -13,7 +15,6 @@ import {
   proposedDestination,
   proposedNickname,
   proposedReviewBy,
-  retryAsksForTheWord,
   reviewByRefusal,
   reviewDay,
   showsCard,
@@ -136,9 +137,9 @@ describe("the review date", () => {
     expect(proposedReviewBy(new Date(2026, 8, 25))).toBe("2026-10-02");
   });
 
-  it("refuses a date already behind us, which the engine's validator does not", () => {
-    expect(reviewByRefusal("2026-09-24", new Date(2026, 8, 25))).toContain("already overdue");
-    expect(reviewByRefusal("2026-09-25", new Date(2026, 8, 25))).toBe("");
+  it("refuses a date that is not later than today, which the engine's validator does not", () => {
+    expect(reviewByRefusal("2026-09-24", new Date(2026, 8, 25))).toContain("due the moment the machine joins");
+    expect(reviewByRefusal("2026-09-25", new Date(2026, 8, 25))).toContain("due the moment the machine joins");
     expect(reviewByRefusal("2026-10-02", new Date(2026, 8, 25))).toBe("");
   });
 
@@ -168,7 +169,7 @@ describe("why the Launch button is disabled", () => {
   it("carries each field's own refusal up to the button", () => {
     expect(blockedForLaunch({ ...whole, machine: "m1e" }, ["m1e"], "m1u", now)).toContain("already a machine");
     expect(blockedForLaunch({ ...whole, reviewBy: "2026-09-24" }, [], "m1u", new Date(2026, 8, 25))).toContain(
-      "already overdue",
+      "due the moment the machine joins",
     );
   });
 });
@@ -178,6 +179,7 @@ describe("the card a launch becomes", () => {
     expect(showsCard(launch({ outcome: "running" }))).toBe(true);
     expect(showsCard(launch({ outcome: "failed" }))).toBe(true);
     expect(showsCard(launch({ outcome: "armed" }))).toBe(true);
+    expect(showsCard(launch({ outcome: "starting" }))).toBe(true);
     expect(showsCard(launch({ outcome: "done" }))).toBe(false);
   });
 
@@ -188,6 +190,7 @@ describe("the card a launch becomes", () => {
   });
 
   it("heads itself with what is happening, and armed is not a failure", () => {
+    expect(launchHeadline(launch({ outcome: "starting" }))).toBe("Launching m1f");
     expect(launchHeadline(launch({ outcome: "running" }))).toBe("Launching m1f");
     expect(launchHeadline(launch({ outcome: "done" }))).toBe("m1f joined");
     expect(launchHeadline(launch({ outcome: "armed" }))).toBe("m1f armed; presence not yet seen");
@@ -216,19 +219,16 @@ describe("the card a launch becomes", () => {
   });
 });
 
-describe("a retry", () => {
-  it("asks for the word again while the machine still has to be enrolled", () => {
-    expect(retryAsksForTheWord(launch({ outcome: "failed" }))).toBe(true);
-    expect(
-      retryAsksForTheWord(
-        launch({
-          outcome: "failed",
-          steps: [
-            { step: "enrollment", outcome: "done", at: "", words: "" },
-            { step: "supervision", outcome: "failed", at: "", words: "up refused" },
-          ],
-        }),
-      ),
-    ).toBe(false);
+describe("the day that travels with a launch", () => {
+  it("is this browser's own day, and the earliest review date is the one after it", () => {
+    const now = new Date(2026, 8, 25, 23, 50);
+    expect(clientToday(now)).toBe("2026-09-25");
+    expect(earliestReviewBy(now)).toBe("2026-09-26");
+  });
+
+  it("refuses a review due today, because that is due the moment the machine joins", () => {
+    const now = new Date(2026, 8, 25);
+    expect(reviewByRefusal("2026-09-25", now)).toContain("due the moment the machine joins");
+    expect(reviewByRefusal("2026-09-26", now)).toBe("");
   });
 });

@@ -159,7 +159,12 @@ export type Launch = {
   process: { pid: number; startedAt: number };
   startedAt: string;
   endedAt: string | null;
-  /** running, done, armed or failed. Armed is not a failure. */
+  /**
+   * starting, running, done, armed or failed. `starting` is a launch this
+   * server wrote down whose verb has not yet named its own process; `armed`
+   * is a machine that is up and has not been seen publishing yet, and is not
+   * a failure.
+   */
   outcome: string;
   reviewBy: string;
   created: LaunchCreated;
@@ -189,6 +194,13 @@ export type LaunchRequest = {
   destination?: string;
   word: string;
   reviewBy: string;
+  /**
+   * The day this browser is on, as a plain YYYY-MM-DD. The server judges the
+   * review date against it rather than against its own day: the two differ
+   * for several hours of every day, and the date a human answered is the one
+   * that was on their screen.
+   */
+  today: string;
   resume?: string;
 };
 

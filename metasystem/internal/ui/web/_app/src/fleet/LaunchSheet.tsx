@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { launchMachine, ResourceError, type Launch, type Launching, type Machine } from "./api";
 import {
   blockedForLaunch,
+  clientToday,
   destinationRefusal,
   earliestReviewBy,
   IDLE_WARNING,
@@ -89,6 +90,10 @@ export function LaunchSheet({
       destination: draft.destination.trim(),
       word: draft.word,
       reviewBy: draft.reviewBy,
+      // The day this browser is on. The server judges the review date
+      // against it rather than against its own, so one rule decides at both
+      // ends whatever zone either is in.
+      today: clientToday(new Date()),
     })
       .then((started) => {
         setSending(false);

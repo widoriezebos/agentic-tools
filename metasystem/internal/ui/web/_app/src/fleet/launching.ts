@@ -117,8 +117,29 @@ export function proposedReviewBy(now: Date): string {
   return isoDay(then);
 }
 
-/** Today, as the field's own minimum. */
+/**
+ * The earliest date the field takes: tomorrow, in this browser's own day.
+ *
+ * A review due today is a review due the moment the machine joins, which is
+ * not what choosing a date means. The server is one day more permissive — it
+ * refuses only a date BEFORE the day this browser says it is on — so that a
+ * request written a minute before midnight is not refused for arriving a
+ * minute after it.
+ */
 export function earliestReviewBy(now: Date): string {
+  const tomorrow = new Date(now.getTime());
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return isoDay(tomorrow);
+}
+
+/**
+ * The day this browser is on, which travels with every launch.
+ *
+ * The server judges the review date against it rather than against its own
+ * UTC day: the two are different dates for several hours of every day, and
+ * the date a human answered is the one that was on their screen.
+ */
+export function clientToday(now: Date): string {
   return isoDay(now);
 }
 
@@ -131,10 +152,13 @@ function isoDay(day: Date): string {
 /**
  * Why this review date cannot be the machine's, or "" when it can.
  *
- * A date in the past is this side's refusal and not the engine's: the
- * validator the arming verb runs accepts one, and nothing ever compares the
- * date to a clock afterwards. A review already overdue the moment a machine
- * joins is not what choosing a date means.
+ * A date that is not later than today is this side's refusal and not the
+ * engine's: the validator the arming verb runs accepts one, and nothing ever
+ * compares the date to a clock afterwards. A review already due the moment a
+ * machine joins is not what choosing a date means.
+ *
+ * Today is this browser's own day, and the same day travels with the request
+ * so the server judges the date against it. One rule, one day.
  */
 export function reviewByRefusal(date: string, now: Date): string {
   const wanted = date.trim();
@@ -145,7 +169,7 @@ export function reviewByRefusal(date: string, now: Date): string {
     return "A review date is a day, as YYYY-MM-DD.";
   }
   if (wanted < earliestReviewBy(now)) {
-    return "A date in the past is a review already overdue the moment the machine joins.";
+    return "A review due today or earlier is a review due the moment the machine joins; choose a later day.";
   }
   return "";
 }
@@ -218,6 +242,7 @@ export const TEMPORARY_RULE =
 /** The card's headline: what is being made, and how it is going. */
 export function launchHeadline(record: Launch): string {
   switch (record.outcome) {
+    case "starting":
     case "running":
       return `Launching ${record.machine}`;
     case "done":
@@ -234,9 +259,20 @@ export function failedStep(record: Launch): LaunchStep | null {
   return record.steps.find((step) => step.outcome === "failed") ?? null;
 }
 
-/** Whether this launch is one the card shows at all. */
+/**
+ * Whether this launch is one the card shows at all.
+ *
+ * `starting` is a launch the server has written down and whose verb has not
+ * yet named its own process. It is on screen from that moment, because the
+ * act answers with it and a human who pressed Launch is owed a card.
+ */
 export function showsCard(record: Launch): boolean {
-  return record.outcome === "running" || record.outcome === "failed" || record.outcome === "armed";
+  return (
+    record.outcome === "starting" ||
+    record.outcome === "running" ||
+    record.outcome === "failed" ||
+    record.outcome === "armed"
+  );
 }
 
 /** The newest launch worth a card, or null when there is none. */
@@ -272,17 +308,17 @@ export function stepTitle(step: LaunchStep): string {
 }
 
 /**
- * Whether a retry of this launch will have to ask for the word again.
+ * What a retry asks for, which is the word and the date, every time.
  *
- * It will, unless the machine is already enrolled: the record never held the
- * word, by design, so a resume that reaches the arming step has nothing to
- * arm with and the verb refuses. A launch whose enrollment step is done or
- * skipped will not reach it, and the card asks for nothing.
+ * The page cannot know whether a resume will reach the arming step: the
+ * sequencer decides that from the clone's own identity and the binary
+ * installed there, and a record's own enrollment step says only what happened
+ * last time. A retry that guessed wrong would either refuse for a word it did
+ * not need or be refused for one it did, so the card asks once and the verb
+ * ignores it when the machine is already enrolled.
  */
-export function retryAsksForTheWord(record: Launch): boolean {
-  const enrolled = record.steps.find((step) => step.step === "enrollment");
-  return enrolled === undefined || (enrolled.outcome !== "done" && enrolled.outcome !== "skipped");
-}
+export const RETRY_ASKS_AGAIN =
+  "The record never held your authorization, and a retry may have to enroll the machine, so it asks again.";
 
 /** What the card says a human does with a failed clone, which is delete it. */
 export function failedRemedy(record: Launch): string {

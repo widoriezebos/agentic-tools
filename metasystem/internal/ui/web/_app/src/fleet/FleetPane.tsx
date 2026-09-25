@@ -263,7 +263,12 @@ function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
   const [started, setStarted] = useState<Launch | null>(null);
   const [opening, setOpening] = useState(false);
   const [dismissed, setDismissed] = useState("");
-  const shown = started ?? cardFor(page.launches);
+  // The act's own answer is what the card is drawn from until the server's
+  // reading catches up with it — and not one moment longer. A payload that
+  // carries this launch replaces it, so the card follows the record the verb
+  // is rewriting rather than the one the act answered with minutes ago.
+  const fromServer = page.launches.find((one) => one.launch === started?.launch) ?? null;
+  const shown = fromServer ?? started ?? cardFor(page.launches);
   const card = shown === null || shown.launch === dismissed ? null : shown;
   const joined = card !== null && page.machines.some((machine) => machine.machine === card.machine);
 

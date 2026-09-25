@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 
 import { launchMachine, ResourceError, type Launch, type LaunchStep } from "./api";
 import {
+  clientToday,
   earliestReviewBy,
   failedRemedy,
   failedStep,
@@ -10,7 +11,7 @@ import {
   IDLE_WARNING,
   launchHeadline,
   proposedReviewBy,
-  retryAsksForTheWord,
+  RETRY_ASKS_AGAIN,
   reviewByRefusal,
   reviewDay,
   stepTitle,
@@ -134,7 +135,6 @@ function Commands({ record }: { record: Launch }) {
  */
 function Retry({ record, onStarted }: { record: Launch; onStarted: (started: Launch) => void }) {
   const now = useRef(new Date()).current;
-  const asks = retryAsksForTheWord(record);
   const [word, setWord] = useState("");
   const [reviewBy, setReviewBy] = useState(() => (record.reviewBy === "" ? proposedReviewBy(now) : record.reviewBy));
   const [sending, setSending] = useState(false);
@@ -142,12 +142,12 @@ function Retry({ record, onStarted }: { record: Launch; onStarted: (started: Lau
   const { askToSignIn } = useSession();
   const retried = useRef(false);
   const dateRefused = reviewByRefusal(reviewBy, now);
-  const blocked = asks && (word.trim() === "" || dateRefused !== "");
+  const blocked = word.trim() === "" || reviewBy.trim() === "" || dateRefused !== "";
 
   const send = () => {
     setSending(true);
     setRefusal("");
-    launchMachine({ resume: record.launch, word, reviewBy })
+    launchMachine({ resume: record.launch, word, reviewBy, today: clientToday(new Date()) })
       .then((started) => {
         setSending(false);
         onStarted(started);
@@ -166,37 +166,33 @@ function Retry({ record, onStarted }: { record: Launch; onStarted: (started: Lau
   return (
     <div className="ms-launch-retry">
       <p className="ms-launch-hint">{failedRemedy(record)}</p>
-      {asks && (
-        <>
-          <div className="ms-launch-field">
-            <label htmlFor="ms-retry-word">Your authorization, again</label>
-            <textarea
-              id="ms-retry-word"
-              rows={2}
-              value={word}
-              onChange={(event) => {
-                setWord(event.target.value);
-              }}
-            />
-            <p className="ms-launch-hint">
-              The record never held it, so this launch asks again. {TEMPORARY_RULE}
-            </p>
-          </div>
-          <div className="ms-launch-field">
-            <label htmlFor="ms-retry-review">Review by</label>
-            <input
-              id="ms-retry-review"
-              type="date"
-              min={earliestReviewBy(now)}
-              value={reviewBy}
-              onChange={(event) => {
-                setReviewBy(event.target.value);
-              }}
-            />
-            {dateRefused !== "" && <p className="ms-launch-refusal">{dateRefused}</p>}
-          </div>
-        </>
-      )}
+      <div className="ms-launch-field">
+        <label htmlFor="ms-retry-word">Your authorization, again</label>
+        <textarea
+          id="ms-retry-word"
+          rows={2}
+          value={word}
+          onChange={(event) => {
+            setWord(event.target.value);
+          }}
+        />
+        <p className="ms-launch-hint">
+          {RETRY_ASKS_AGAIN} {TEMPORARY_RULE}
+        </p>
+      </div>
+      <div className="ms-launch-field">
+        <label htmlFor="ms-retry-review">Review by</label>
+        <input
+          id="ms-retry-review"
+          type="date"
+          min={earliestReviewBy(now)}
+          value={reviewBy}
+          onChange={(event) => {
+            setReviewBy(event.target.value);
+          }}
+        />
+        {dateRefused !== "" && <p className="ms-launch-refusal">{dateRefused}</p>}
+      </div>
       {refusal !== "" && <p className="ms-launch-refusal">{refusal}</p>}
       <div className="ms-launch-actions">
         <Button primary disabled={blocked || sending} onClick={send}>

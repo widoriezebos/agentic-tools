@@ -107,7 +107,7 @@ describe("a launch that stopped", () => {
     const markup = rendered(stopped);
     expect(markup).toContain("Retry");
     expect(markup).toContain("Your authorization, again");
-    expect(markup).toContain("The record never held it");
+    expect(markup).toContain("The record never held your authorization");
   });
 
   it("removes nothing, and says what the directory is", () => {
