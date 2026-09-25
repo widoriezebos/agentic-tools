@@ -77,10 +77,15 @@ func silentHolders(
 	})
 	lines := []string{}
 	for _, standing := range standings {
-		if standing.Standing == seat.Reachable || len(standing.Holds) == 0 {
+		// Only the two cases a human has an act for: a machine that has
+		// stopped answering, and one that holds a goal while having published
+		// no presence at all. A malformed record and a clock too far ahead
+		// are reading problems, and printing "a human reassigns it with goal
+		// steal" for one would offer the wrong remedy for the wrong fault.
+		if !fleet.NeedsHuman(standing) {
 			continue
 		}
-		flag := fleet.Flag(standing, fleet.Since(previous, standing), now)
+		flag := fleet.FlagWithInstant(fleet.Flag(standing), fleet.Since(previous, standing))
 		if flag == "" {
 			continue
 		}

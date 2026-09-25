@@ -60,9 +60,11 @@ func TestGoalNextFlagsASilentHolderAndNamesTheStealRemedy(t *testing.T) {
 
 	lines := silentHolders(tree, "m1u", copied, previous, presenceNow, presenceWindow())
 
+	// A terminal has no viewer whose clock it could render into, so it
+	// prints the instant as it stands.
 	testutil.Expect(t, "one line per held goal", lines, []string{
-		"goal tests-parallel-and-deterministic is held by m1c, unreachable since 09:37; " +
-			"a human reassigns it with goal steal",
+		"goal tests-parallel-and-deterministic is held by m1c, unreachable since " +
+			seat.FormatTime(presenceNow.Add(-5*time.Hour)) + "; a human reassigns it with goal steal",
 	})
 }
 
@@ -102,7 +104,8 @@ func TestGoalNextNamesResumeForAFencedClaim(t *testing.T) {
 	lines := silentHolders(presenceTree(fenced), "m1u", copied, previous, presenceNow, presenceWindow())
 
 	testutil.Expect(t, "a fenced claim is resumed and never stolen", lines, []string{
-		"goal fenced-work is held by m1c, unreachable since 09:37; a human lifts the fence with goal resume",
+		"goal fenced-work is held by m1c, unreachable since " +
+			seat.FormatTime(presenceNow.Add(-5*time.Hour)) + "; a human lifts the fence with goal resume",
 	})
 }
 
@@ -138,4 +141,23 @@ func TestGoalNextNamesNoSinceOnACheckoutWithNoStandings(t *testing.T) {
 	testutil.Expect(t, "the silence is named without a date it cannot vouch for", lines, []string{
 		"goal tests-parallel-and-deterministic is held by m1c, unreachable; a human reassigns it with goal steal",
 	})
+}
+
+// A malformed record and a clock too far ahead are reading problems, not
+// silences. Printing "a human reassigns it with goal steal" for one would
+// offer the wrong remedy for the wrong fault, so neither prints a line —
+// which is also exactly the set the Fleet page puts under Needs you.
+func TestGoalNextPrintsNothingForAReadingProblem(t *testing.T) {
+	t.Parallel()
+	tree := presenceTree(heldGoal("malformed-holder", "m0b"), heldGoal("clock-ahead", "m2a"))
+	ahead := presenceRecord("m2a", 0)
+	ahead.TickAt = seat.FormatTime(presenceNow.Add(4 * time.Hour))
+	copied := seat.Copy{
+		Records:   map[string]seat.Record{"m2a": ahead},
+		Malformed: map[string]string{"m0b": "SEAT_PRESENCE_MALFORMED: the presence record has no tickAt"},
+	}
+
+	lines := silentHolders(tree, "m1u", copied, map[string]seat.Observation{}, presenceNow, presenceWindow())
+
+	testutil.Expect(t, "neither reading problem asks for a human act", lines, []string{})
 }
