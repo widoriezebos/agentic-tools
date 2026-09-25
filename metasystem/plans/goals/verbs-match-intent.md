@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Wido 2026-09-25: design and build the most intuitive, powerful, forgiving human and agent verbs possible, organized by human/agent intent rather than internal structure. Deliver a complete public command surface: discoverable help, whole-workflow commands, consistent names and flags, contextual defaults, executable recovery guidance, safe retries and advanced capabilities. Reuse existing transaction, authority, job and landing owners and preserve their guarantees. The September 6 audit and available real Claude/Codex session failures are design evidence. Incorporate the delivered human-goal-verbs-forgiving, stop/status/arm and verb-ergonomics work; map the queued startup, repository-root, human-goal-defect and landing requirements. DONE: the full reviewed intent surface is implemented, documented and proven end to end including failure/retry paths, with material review findings resolved. Minimize total implementation and maintenance complexity without reducing the complete redesign's scope.
 - Origin: main
-- Next step: Finish the remaining release validation and integrate candidate c78a9c7c0. Full command package, connected workflow, 72-command rebuilt CLI walkthrough and final fast/static gates passed. Initial selected run completed all160 native groups; identified test-fixture gaps were corrected with no product-policy change. Affected native groups and38 shell sections are running, including adoption race/coverage proof. R-126 and the complete root-authored/Fable-critiqued design are recorded. Conversation-authorized machinery bypass; no formal approval is fabricated.
+- Next step: Finish final checks and commit the complete intent-based redesign locally. Reviewed candidate 3e59d4107 is applied on main (111 paths); final rebuilt public CLI passed72 commands, fast/static prerequisites and both corrected audit/protocol sections passed. Original198-group selection fully executed; bounded native/scenario correction checks and all10adoption bodies now running. Six unrelated coverage-ratchet failures proven at baseline and left unchanged. Root-authored design, Fable critique and rulingR-126 are complete; no formal authority or governed certificate is fabricated under the human-authorized machinery bypass.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 23
+- Revision: 24
 - BudgetExceptions: 0
 
 History:
@@ -36,4 +36,5 @@ History:
 - 2026-09-25T18:34:35Z B9G0QHS32RRS9F6118FZJFWGTK-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T19:08:59Z MNF2H3PQ7G2HF3MZJS46SPHSV2-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T20:03:15Z HAHW53EEX11RD6HA17PYDK4PFK-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
-Integrity: sha256=84fb1004edee64d2dcfad3c75e38ce86c330d1558f540f9da3fa760e395943fd
+- 2026-09-25T20:44:52Z GR7F0BDBCQ9F017XQ56A8DF6SE-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+Integrity: sha256=45cd3f548bf851f31e17cc24f1fbbb9912c5995a2c6898efee3e259ccb2d687d
