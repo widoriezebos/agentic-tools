@@ -66,6 +66,8 @@ function machineRow(name: string): Machine {
     generation: 4,
     holds: [],
     this: false,
+    working: [],
+    workingProblem: "",
   };
 }
 

@@ -183,7 +183,7 @@ func seatPresenceFailed(repoRoot string, report SeatPresenceReport, detail strin
 // publishSeatPresence composes this machine's record and climbs the ladder.
 func publishSeatPresence(repoRoot string, transport seat.Git, fleetCopy seat.Copy, machine string,
 	runner seat.RunnerContext, now time.Time, report SeatPresenceReport) (SeatPresenceReport, *seat.Record) {
-	record, detail, err := seat.Compose(machine, runner, seat.ReadJobs(repoRoot), now)
+	record, detail, err := seat.Compose(machine, runner, seat.ReadJobs(repoRoot), SeatBox(repoRoot, now), now)
 	if err != nil {
 		report.Outcome, report.Detail = seat.OutcomeFailed, err.Error()
 		return report, nil

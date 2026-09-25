@@ -1,5 +1,5 @@
 import type { Page } from "./api";
-import { copyLine, flagWords, seenWords } from "./fleet";
+import { copyLine, flagWords, seenWords, workingWords } from "./fleet";
 import { failedStep, showsCard } from "./launching";
 import type { FleetCapture } from "../partner/api";
 
@@ -24,7 +24,7 @@ export const CAPTURED_MACHINES = 24;
 /** How many of one machine's holds travel with it. */
 export const CAPTURED_HOLDS = 8;
 
-export function captureOfFleet(page: Page, now: Date): FleetCapture {
+export function captureOfFleet(page: Page, now: Date, open: Set<string> = new Set()): FleetCapture {
   return {
     source: page.copy.source,
     fetchedAt: copyLine(page, now),
@@ -36,6 +36,12 @@ export function captureOfFleet(page: Page, now: Date): FleetCapture {
       machine: machine.machine,
       standing: machine.standing,
       seen: seenWords(machine, now),
+      // The phase as the row said it, and whether the human had the row
+      // open: the sentence alone and the sentence with the goal, the job,
+      // the box and the chain under it are two different screens, and this
+      // capture is what was on one of them.
+      phase: workingWords(machine, now),
+      open: open.has(machine.machine),
       flag: flagWords(machine.holds.find((held) => held.flag !== "") ?? { flag: "", since: "" }),
       holds: machine.holds.slice(0, CAPTURED_HOLDS).map((held) => held.goal),
     })),

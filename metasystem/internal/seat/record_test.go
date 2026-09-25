@@ -25,7 +25,7 @@ func TestComposeBuildsTheRecordFromIdentityAndJobs(t *testing.T) {
 		{Job: "job-mid", Parent: "job-old", Role: "critic", Goal: "goal-a", Round: 2, Status: "completed", CreatedAt: "2026-09-24T09:15:00Z", StartedAt: "2026-09-24T09:15:05Z"},
 		{Job: "job-new", Parent: "job-mid", Role: "critic", Goal: "goal-a", Round: 2, Status: "running", CreatedAt: "2026-09-24T09:30:00Z", StartedAt: "2026-09-24T09:30:05Z"},
 	}}
-	record, detail, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
+	record, detail, err := Compose("m1e", fixtureRunner(), jobs, nil, fixtureClock)
 	if err != nil || detail != "" {
 		t.Fatalf("compose = detail %q err %v", detail, err)
 	}
@@ -49,7 +49,7 @@ func TestComposeBuildsTheRecordFromIdentityAndJobs(t *testing.T) {
 func TestComposeLeavesTheChainNullWhenNothingIsInFlight(t *testing.T) {
 	t.Parallel()
 	jobs := JobSet{Records: []JobRecord{{Job: "job-done", Role: "implementer", Status: "completed", CreatedAt: "2026-09-24T09:00:00Z"}}}
-	record, detail, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
+	record, detail, err := Compose("m1e", fixtureRunner(), jobs, nil, fixtureClock)
 	if err != nil || detail != "" || record.Chain != nil {
 		t.Fatalf("idle compose = chain %+v detail %q err %v", record.Chain, detail, err)
 	}
@@ -60,7 +60,7 @@ func TestPendingSetupReservationComposesAChainWithNoStartedAt(t *testing.T) {
 	jobs := JobSet{Records: []JobRecord{
 		{Job: "job-reserved", Role: "implementer", Goal: "goal-b", Status: "pending-setup", CreatedAt: "2026-09-24T09:31:00Z"},
 	}}
-	record, _, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
+	record, _, err := Compose("m1e", fixtureRunner(), jobs, nil, fixtureClock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestACorruptJobRecordYieldsANullChainWithANamedDetail(t *testing.T) {
 		Records:    []JobRecord{{Job: "job-live", Role: "implementer", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"}},
 		Unreadable: []string{"artifacts/agents/jobs/job-torn.json: the job record is not readable JSON"},
 	}
-	record, detail, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
+	record, detail, err := Compose("m1e", fixtureRunner(), jobs, nil, fixtureClock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestAComposedChainAlwaysSatisfiesTheReader(t *testing.T) {
 	jobs := JobSet{Records: []JobRecord{
 		{Job: "job-live", Role: "implementer", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"},
 	}}
-	record, detail, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
+	record, detail, err := Compose("m1e", fixtureRunner(), jobs, nil, fixtureClock)
 	if err != nil || detail != "" {
 		t.Fatalf("compose = detail %q err %v", detail, err)
 	}
@@ -176,7 +176,7 @@ func TestAComposedChainAlwaysSatisfiesTheReader(t *testing.T) {
 func TestComposeRefusesAnUnpublishableNicknameAndAnUnarmedGeneration(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"m1/e", "m1 e", "..", "a..b", "", "m1é"} {
-		if _, _, err := Compose(name, fixtureRunner(), JobSet{}, fixtureClock); err == nil ||
+		if _, _, err := Compose(name, fixtureRunner(), JobSet{}, nil, fixtureClock); err == nil ||
 			!strings.Contains(err.Error(), "SEAT_MACHINE_NICKNAME_INVALID") {
 			t.Errorf("compose(%q) = %v; want the nickname refusal", name, err)
 		}
@@ -188,7 +188,7 @@ func TestComposeRefusesAnUnpublishableNicknameAndAnUnarmedGeneration(t *testing.
 	}
 	unarmed := fixtureRunner()
 	unarmed.Generation = 0
-	if _, _, err := Compose("m1e", unarmed, JobSet{}, fixtureClock); err == nil {
+	if _, _, err := Compose("m1e", unarmed, JobSet{}, nil, fixtureClock); err == nil {
 		t.Fatal("an unarmed generation composed a record")
 	}
 }
@@ -336,7 +336,7 @@ func TestEncodeAndParseRoundTrip(t *testing.T) {
 	t.Parallel()
 	record, _, err := Compose("m1e", fixtureRunner(), JobSet{Records: []JobRecord{
 		{Job: "job-live", Role: "implementer", Goal: "goal-a", Round: 2, Status: "running", CreatedAt: "2026-09-24T09:30:00Z", StartedAt: "2026-09-24T09:30:05Z"},
-	}}, fixtureClock)
+	}}, nil, fixtureClock)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -420,6 +420,26 @@
       "id": "rung",
       "term": "Rung",
       "text": "Which way a machine managed to publish its presence at the remote: a metasystem ref, a branch per machine, or a branch per machine without force. A higher rung means the remote refused the one before it."
+    },
+    {
+      "id": "phase",
+      "term": "Phase",
+      "text": "What a machine is in the middle of: the role of the job it is running, the round that job is on, and the goal it serves. A critic's round counts against the limit its chain froze; a build has no round limit of its own, so it shows a round and no denominator."
+    },
+    {
+      "id": "box",
+      "term": "Box",
+      "text": "What a goal is allowed to spend, and what it has spent: attempts, and the job minutes its delegates have reserved. An open job is counted at its full cap rather than at what it has used so far, so a box can look nearly spent and then give minutes back when a job ends early."
+    },
+    {
+      "id": "bound",
+      "term": "Bound",
+      "text": "When a job's reserved minutes run out. It is a bound and not an estimate: nothing here predicts when work will finish, and a job that reaches its cap is stopped rather than finished. Read it as the latest this job can still be running, never as how long is left."
+    },
+    {
+      "id": "chain",
+      "term": "Chain",
+      "text": "The jobs that belong to one piece of work, newest first: a build, the critic that reviewed it, the round that answered the findings. Each carries the cap it reserved and when it ran, and never a consumed charge — settling what a job actually spent belongs to the engine that dispatched it."
     }
   ],
   "questions": [

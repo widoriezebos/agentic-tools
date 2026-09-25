@@ -1,4 +1,4 @@
-import type { Health, Machine, Page, Role, Running, ThisSeat } from "./api";
+import type { Box, ChainMember, Health, Machine, Page, Role, Running, ThisSeat, Working, WorkingJob } from "./api";
 import { ageBetween, dateAndTime, minuteTime, UNKNOWN } from "../backlog/format";
 
 /**
@@ -102,6 +102,218 @@ export function runningWords(running: Running | null, problem: string): string {
   }
   const words = parts.join(" ");
   return running.startedAt === null ? `${words} (not started)` : words;
+}
+
+/**
+ * How every duration on this page reads.
+ *
+ * Minutes, always, because minutes are what the records carry: a cap is a
+ * count of them and so is a box's reservation. Never a day — a budget's day
+ * is eight hours in this kit, so a duration printed in days would read as two
+ * different lengths depending on who read it. That is why this exists beside
+ * `ageBetween`, which rolls up into hours and days for ages nobody is
+ * measuring a budget with.
+ */
+export function minutesWords(minutes: number): string {
+  return `${String(minutes)} min`;
+}
+
+/** Whole minutes between two instants, floored, and never negative. */
+function minutesBetween(from: string, to: Date): number {
+  const at = Date.parse(from);
+  if (Number.isNaN(at)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor((to.getTime() - at) / 60000));
+}
+
+/** Whole minutes to an instant, rounded up, which is how a bound rounds. */
+function minutesUntil(to: string, from: Date): number | null {
+  const at = Date.parse(to);
+  if (Number.isNaN(at)) {
+    return null;
+  }
+  return Math.ceil((at - from.getTime()) / 60000);
+}
+
+/**
+ * The one sentence the Running column says: what the machine is in the middle
+ * of, how long that job has run, and the cap it reserved.
+ */
+export function phaseWords(working: Working, now: Date): string {
+  const parts = [working.phase.role];
+  if (working.phase.round > 0) {
+    parts.push(
+      working.phase.roundLimit === null
+        ? `round ${String(working.phase.round)}`
+        : `round ${String(working.phase.round)} of ${String(working.phase.roundLimit)}`,
+    );
+  }
+  if (working.goal !== "") {
+    parts.push(`on ${working.goal}`);
+  }
+  return `${parts.join(" ")} · ${jobWords(working.job, now)}`;
+}
+
+/**
+ * What the row says about a machine's work: the phase where the payload
+ * carries one, and the chain's older words where it does not.
+ *
+ * Both branches stay, because a fleet is not one build. A machine still
+ * publishing the chain alone is answered from the chain rather than reported
+ * idle, and this seat's own row can have several things in flight — it names
+ * the newest and counts the rest.
+ */
+export function workingWords(machine: Machine, now: Date): string {
+  if (machine.workingProblem !== "") {
+    return machine.workingProblem;
+  }
+  const [first, ...rest] = machine.working;
+  if (first === undefined) {
+    return runningWords(machine.running, "");
+  }
+  const words = phaseWords(first, now);
+  return rest.length === 0 ? words : `${words} (and ${String(rest.length)} more in flight)`;
+}
+
+/**
+ * The three statuses a job still in flight can be in, and the one of them in
+ * which it is actually being worked.
+ *
+ * The other two are reservations. The engine stamps a start on a record it
+ * creates pending, so the status and not the stamp is what says whether
+ * anything is running — and a minute count taken from that stamp would say a
+ * job had been running for forty minutes while the line beside it said
+ * pending.
+ */
+const IN_FLIGHT = new Set(["pending-setup", "pending", "running"]);
+const RUNNING = "running";
+
+/**
+ * Where the job in hand stands and the cap it reserved. The status decides:
+ * a reservation says what it is, a job that has ended says how it ended, and
+ * only a running job is counted in minutes.
+ */
+export function jobWords(job: WorkingJob, now: Date): string {
+  if (job.status === "") {
+    return "not started";
+  }
+  const cap = job.capMinutes === null ? "" : `, cap ${minutesWords(job.capMinutes)}`;
+  if (!IN_FLIGHT.has(job.status)) {
+    // A job that has ended is what its status says. The cap it reserved is a
+    // bound on work that is over, and the chain carries it.
+    return job.status;
+  }
+  if (job.status !== RUNNING) {
+    return `${job.status}${cap}`;
+  }
+  if (job.startedAt === null) {
+    return `${RUNNING}${cap}`;
+  }
+  return `running ${minutesWords(minutesBetween(job.startedAt, now))}${cap}`;
+}
+
+/**
+ * The one forward-looking sentence on this page, and it names the CAP rather
+ * than completion: the kit measures and bounds and never forecasts. It is
+ * empty where no deadline can be named.
+ */
+export function capWords(job: WorkingJob, now: Date): string {
+  if (job.capEndsAt === null) {
+    return "";
+  }
+  const remaining = minutesUntil(job.capEndsAt, now);
+  if (remaining === null) {
+    return "";
+  }
+  return remaining > 0
+    ? `its cap ends in ${minutesWords(remaining)}`
+    : `its cap ended ${minutesWords(-remaining)} ago`;
+}
+
+/** The box's attempts in words, or "" where it carries no attempt count. */
+export function attemptWords(box: Box): string {
+  if (box.attempts === null || box.attemptLimit === null) {
+    return "";
+  }
+  return `attempt ${String(box.attempts)} of ${String(box.attemptLimit)}`;
+}
+
+/** What is left of the box's attempts, which is the second thing it bounds. */
+export function attemptsLeftWords(box: Box): string {
+  if (box.attempts === null || box.attemptLimit === null) {
+    return "";
+  }
+  return `${String(Math.max(0, box.attemptLimit - box.attempts))} attempts left`;
+}
+
+/** The box's reserved minutes in words, or "" where it carries none. */
+export function reservedWords(box: Box): string {
+  if (box.reservedMinutes === null || box.reservedMinutesLimit === null) {
+    return "";
+  }
+  return `${String(box.reservedMinutes)} of ${minutesWords(box.reservedMinutesLimit)} reserved`;
+}
+
+/**
+ * How full a bar is, as a share between nothing and full.
+ *
+ * It clamps at one end only: a spend past its limit draws a full bar, because
+ * a bar longer than its track says nothing a number beside it does not
+ * already say, and the number is what a human acts on.
+ */
+export function barShare(used: number, limit: number): number {
+  if (limit <= 0) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, used / limit));
+}
+
+/** What a reserved minute counts, said wherever the number is. */
+export const RESERVED_MEANING = "Reserved minutes count open jobs at their full cap.";
+
+/** The sentence a goal with no box of its own gets. */
+export const NO_BOX = "no box on this goal";
+
+/** One member of the chain in words: what it was and how it stands. */
+export function chainWords(member: ChainMember): string {
+  const parts = [member.role];
+  if (member.round > 0) {
+    parts.push(`round ${String(member.round)}`);
+  }
+  return parts.join(" ");
+}
+
+/** When a chain member ran, in this browser's own clock. */
+export function chainWhen(member: ChainMember): string {
+  const parts: string[] = [];
+  if (member.startedAt !== null) {
+    parts.push(`started ${minuteTime(member.startedAt)}`);
+  }
+  if (member.endedAt !== null) {
+    parts.push(`ended ${minuteTime(member.endedAt)}`);
+  }
+  if (member.capMinutes !== null) {
+    parts.push(`cap ${minutesWords(member.capMinutes)}`);
+  }
+  return parts.join(" · ");
+}
+
+/**
+ * Where the block a row opens to came from.
+ *
+ * This seat reads its own job records, so its block is as current as the
+ * page. Every other machine's is what its last tick published, and saying so
+ * is the difference between a reading and a reading of a reading.
+ */
+export function workingSource(machine: Machine, now: Date): string {
+  if (machine.this) {
+    return "read from this host's own job records";
+  }
+  if (machine.seen === "") {
+    return "as published, at an instant this seat does not have";
+  }
+  return `as published ${ageBetween(machine.seen, now.toISOString())} ago`;
 }
 
 /** The engine stamp a human compares by eye. */

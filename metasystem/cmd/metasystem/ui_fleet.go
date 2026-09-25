@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -64,7 +65,12 @@ func fleetReader(
 		// nothing — a verdict that would flag every claim on the board.
 		machine, enrolled := seat.Machine(roots.Checkout)
 		publication, publicationProblem := fleet.ReadPublication(roots.Checkout)
-		running, runningProblem := fleet.ReadRunning(roots.Checkout)
+		// The job records are read ONCE and both readings come off that one
+		// read: the newest chain this seat's fact line says, and every job in
+		// flight its row opens to. Two reads a moment apart could name one
+		// job as newest and then list a set it is not in.
+		jobs := seat.ReadJobs(roots.Checkout)
+		running, runningProblem := seat.NewestChain(jobs)
 		// The launches this host holds, reconciled on the way in: a running
 		// record whose process is dead is marked failed here, because a read
 		// of the records is the only moment anything learns that a launch
@@ -80,6 +86,7 @@ func fleetReader(
 			Publication: publication, PublicationProblem: publicationProblem,
 			Health:  fleet.ReadHealth(roots.Checkout),
 			Running: running, RunningProblem: runningProblem,
+			Jobs: jobs, Box: steward.SeatBox(roots.Checkout, now),
 			Launches: launches, Launching: launching,
 		}, now), nil
 	}
