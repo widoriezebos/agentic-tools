@@ -32,6 +32,7 @@ import {
 } from "./opening";
 import { laneTitle } from "./lanes";
 import { Panel } from "./Panel";
+import { FieldSuggestions, useOpening } from "../partner/Suggestion";
 import { Button, Hint } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
 import { useSession } from "../shell/identity";
@@ -105,6 +106,9 @@ export function OpenSheet({
   onDone: (opened: Backlog, id: string) => void;
 }) {
   const [intake, setIntake] = useState<Intake>(() => intakeFor(intent));
+  // This opening of this sheet, minted once, which is what a suggestion for one
+  // of its fields belongs to.
+  const opening = useOpening();
   const [risk, setRisk] = useState<Risk>(emptyRisk);
   /** Whether a human has named the goal, after which nothing suggests an id. */
   const [named, setNamed] = useState(false);
@@ -207,6 +211,45 @@ export function OpenSheet({
       });
   };
 
+  /**
+   * Put the Partner's words in one of the fields a human writes here, and
+   * answer what was there. The id is the one with a second half: this sheet
+   * derives an id from the intent until somebody names it, and words put in the
+   * field by hand or by a press are a naming either way.
+   */
+  const putWords = (field: string, text: string): string => {
+    switch (field) {
+      case "Id": {
+        const was = asked.id;
+        setNamed(text !== "");
+        setIntake({ ...intake, id: text });
+        return was;
+      }
+      case "Intent": {
+        const was = intake.intent;
+        setIntake({ ...intake, intent: text });
+        return was;
+      }
+      case "Next step": {
+        const was = intake.nextStep;
+        setIntake({ ...intake, nextStep: text });
+        return was;
+      }
+      case "Why these answers": {
+        const was = risk.basis;
+        setRisk({ ...risk, basis: text });
+        return was;
+      }
+      case "Labels": {
+        const was = intake.labels;
+        setIntake({ ...intake, labels: text });
+        return was;
+      }
+      default:
+        return "";
+    }
+  };
+
   const answer = (key: Score["key"], value: Answer) => {
     setRisk({ ...risk, [key]: value });
   };
@@ -237,6 +280,15 @@ export function OpenSheet({
         { name: "Blocks", value: intake.blocks.join(", ") },
         { name: "Blocked by", value: intake.blockedBy.join(", ") },
       ]}
+      opening={opening}
+      // The fields of this sheet a human writes in their own words. The tier is
+      // chosen from a menu and derived from the four answers, and a blocker is
+      // picked from the goals this board carries, so neither is text the
+      // Partner writes; the why behind an overridden tier is only on screen
+      // while that override stands, and a suggestion for a field nobody can see
+      // is a suggestion nobody can use.
+      writable={["Id", "Intent", "Next step", "Why these answers", "Labels"]}
+      set={putWords}
       unproven=""
       refusal={engineRefusedField === "" ? refusal : ""}
       note={cannot === "" ? (blocked === "" ? openNote(authority.human) : blocked) : ""}
@@ -259,7 +311,13 @@ export function OpenSheet({
         </Button>
       }
     >
-      <Field id="ms-open-id" label="Id" hint={ID_RULE} refuse={refuseId}>
+      <Field
+        id="ms-open-id"
+        label="Id"
+        hint={ID_RULE}
+        refuse={refuseId}
+        beside={<FieldSuggestions opening={opening} field="Id" value={asked.id} />}
+      >
         <input
           id="ms-open-id"
           type="text"
@@ -273,7 +331,12 @@ export function OpenSheet({
         />
       </Field>
 
-      <Field id="ms-open-intent" label="Intent" hint={INTENT_RULE}>
+      <Field
+        id="ms-open-intent"
+        label="Intent"
+        hint={INTENT_RULE}
+        beside={<FieldSuggestions opening={opening} field="Intent" value={intake.intent} />}
+      >
         <textarea
           id="ms-open-intent"
           rows={2}
@@ -286,7 +349,12 @@ export function OpenSheet({
         />
       </Field>
 
-      <Field id="ms-open-nextStep" label="Next step" hint={NEXT_STEP_RULE}>
+      <Field
+        id="ms-open-nextStep"
+        label="Next step"
+        hint={NEXT_STEP_RULE}
+        beside={<FieldSuggestions opening={opening} field="Next step" value={intake.nextStep} />}
+      >
         <textarea
           id="ms-open-nextStep"
           rows={2}
@@ -313,6 +381,7 @@ export function OpenSheet({
           id="ms-open-basis"
           label="Why these answers"
           hint="One line saying why those four answers are the answers."
+          beside={<FieldSuggestions opening={opening} field="Why these answers" value={risk.basis} />}
         >
           <input
             id="ms-open-basis"
@@ -396,6 +465,7 @@ export function OpenSheet({
           id="ms-open-labels"
           label="Labels"
           hint="Lowercase words the board narrows by, separated by spaces or commas. What the board already uses is suggested; anything else is marked new."
+          beside={<FieldSuggestions opening={opening} field="Labels" value={intake.labels} />}
         >
           <TokenField
             id="ms-open-labels"
@@ -462,6 +532,7 @@ function Field({
   label,
   hint,
   refuse = "",
+  beside,
   children,
 }: {
   id: string;
@@ -469,11 +540,16 @@ function Field({
   hint: string;
   /** What this field itself refuses, before anything is sent, or "". */
   refuse?: string;
+  /** What stands at the end of the label's own line: the Partner's count. */
+  beside?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="ms-act-field">
-      <label htmlFor={id}>{label}</label>
+      <div className="ms-act-label">
+        <label htmlFor={id}>{label}</label>
+        {beside}
+      </div>
       {children}
       <p className="ms-act-hint" id={`${id}-hint`}>
         {hint}

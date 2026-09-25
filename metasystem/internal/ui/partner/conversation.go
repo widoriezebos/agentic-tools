@@ -262,6 +262,11 @@ type Message struct {
 	// page the human was looking at first, as its own entry, and then every
 	// tool call with its completion. It is on a Partner's message only.
 	Looked []Look `json:"looked,omitempty"`
+	// Suggestions is what this answer offered the human for the fields of the
+	// editor they handed over, in the order they were admitted. They are kept
+	// with the answer rather than applied anywhere: the card a human presses Use
+	// this on is rendered from here, and what a field holds is the human's.
+	Suggestions []Suggestion `json:"suggestions,omitempty"`
 	// Key is the client-minted turn key, on a human's message only. It is
 	// what makes a retry after a lost answer the same turn rather than a
 	// second one, and it is kept in the file so a restart cannot forget it.

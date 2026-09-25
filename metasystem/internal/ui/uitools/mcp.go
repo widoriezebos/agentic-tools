@@ -194,6 +194,28 @@ func Catalogue() []Tool {
 				"cursor": cursorProperty,
 			}, nil),
 		},
+		{
+			Name: OpSuggest,
+			Description: "Offer the human text for one field of the editor they handed over: the editor's name as its " +
+				"head says it, the field's name as its label says it, and the field's whole new value. " +
+				"Call it when the human asks you to write or improve a field, once per field, beside the answer " +
+				"you give in words. It writes nothing and applies nothing: the human sees a card and decides " +
+				"whether to use it, and the field's value stays theirs until they do.",
+			InputSchema: schema(map[string]any{
+				"editor": map[string]any{
+					"type":        "string",
+					"description": "The editor the field is in, as its head says it, for example Edit goal.",
+				},
+				"field": map[string]any{
+					"type":        "string",
+					"description": "The field, as its own label says it, for example Intent. One field per call.",
+				},
+				"text": map[string]any{
+					"type":        "string",
+					"description": "The field's whole new value, at most 4000 characters. Not a diff and not an instruction.",
+				},
+			}, []string{"editor", "field", "text"}),
+		},
 	}
 }
 
@@ -214,7 +236,8 @@ const Instructions = "These tools read this MetaSystem workspace exactly as its 
 	"and the kit's own meanings from the glossary, command catalogue, rulings register and routes that own them. " +
 	"Every result names the source it read from and says how much of the whole it supplied; " +
 	"when a result carries a cursor, call the same tool again with it to read the rest. " +
-	"Nothing here writes."
+	"Nothing here writes. The one tool that reads nothing, suggest, offers the human words for a field of " +
+	"an editor they handed over; it applies nothing, and the human decides."
 
 /* ------------------------------------------------------------- the frames -- */
 

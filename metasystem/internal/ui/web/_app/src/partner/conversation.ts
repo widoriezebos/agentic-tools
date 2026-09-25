@@ -1,4 +1,4 @@
-import type { Index, Look, Message, Outcome, PartnerEvent, Page, Snapshot } from "./api";
+import type { Index, Look, Message, Outcome, PartnerEvent, Page, Snapshot, Suggestion } from "./api";
 
 /**
  * The conversation, as one value the drawer and the focused page both read.
@@ -29,9 +29,17 @@ export type Live = {
   doing: string;
   /** What this answer has been read from so far, in the order it was read. */
   looked: Look[];
+  /**
+   * What this answer has offered so far for the fields of the editor the human
+   * handed over. They arrive while the answer is still arriving, which is the
+   * whole point: the card is under the words before the words have finished.
+   */
+  suggestions: Suggestion[];
 };
 
-export const nothingRunning: Live = { turn: "", seq: 0, text: "", activity: [], doing: "", looked: [] };
+export const nothingRunning: Live = {
+  turn: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [],
+};
 
 export type State = "loading" | "ready" | "unavailable";
 
@@ -124,6 +132,7 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
           activity: snapshot.activity ?? [],
           doing: snapshot.doing,
           looked: snapshot.looked ?? [],
+          suggestions: snapshot.suggestions ?? [],
         }
       : nothingRunning,
   };
@@ -160,6 +169,10 @@ export function received(store: Store, event: PartnerEvent): Store {
       return event.look === undefined
         ? { ...store, live }
         : { ...store, live: { ...live, looked: [...live.looked, event.look] } };
+    case "suggestion":
+      return event.suggestion === undefined
+        ? { ...store, live }
+        : { ...store, live: { ...live, suggestions: [...live.suggestions, event.suggestion] } };
     case "done":
       return settled(store, live, "complete", event);
     case "stopped":
@@ -188,6 +201,7 @@ function settled(store: Store, live: Live, outcome: Outcome, event: PartnerEvent
     detail: event.text,
     activity: live.activity,
     looked: live.looked,
+    suggestions: live.suggestions,
   };
   return { ...store, messages: [...store.messages, answered], live: nothingRunning };
 }

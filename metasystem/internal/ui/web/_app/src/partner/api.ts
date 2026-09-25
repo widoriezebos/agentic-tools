@@ -160,6 +160,28 @@ export type Look = {
   page?: boolean;
 };
 
+/**
+ * Words the Partner offered for one field of the editor the human handed over.
+ *
+ * It is an offer and nothing else: no field was written, nothing was saved, and
+ * the value the human typed stands until they press Use this. The card in the
+ * transcript is rendered from this, and the field it names says one is waiting.
+ */
+export type Suggestion = {
+  /**
+   * The one opening of that editor this belongs to: the id the sheet minted
+   * when it mounted. A suggestion belongs to an opening and not to a sheet's
+   * name, so closing goal A's edit sheet and opening goal B's cannot wake it.
+   */
+  opening: string;
+  /** The editor, as its head says it: "Edit goal". */
+  editor: string;
+  /** The field, as its own label says it: "Intent". */
+  field: string;
+  /** The field's whole new value, as the Partner wrote it. */
+  text: string;
+};
+
 /** What the conversation can point at, for the links in an answer. */
 export type Index = {
   goals: string[] | null;
@@ -192,6 +214,12 @@ export type Message = {
   activity?: string[];
   /** What this answer was read from: the page first, then every tool call. */
   looked?: Look[] | null;
+  /**
+   * What this answer offered for the fields of the editor the human handed
+   * over, in the order the server admitted them. The cards under the answer
+   * are rendered from here.
+   */
+  suggestions?: Suggestion[] | null;
   key?: string;
   page?: Page;
 };
@@ -210,13 +238,23 @@ export type Snapshot = {
   doing: string;
   /** What the running turn has read so far. */
   looked: Look[] | null;
+  /** What the running turn has offered so far, so a reload keeps the cards. */
+  suggestions: Suggestion[] | null;
   /** The goals and records an answer's names can be resolved against. */
   index: Index | null;
   readOnly: string;
   messages: Message[] | null;
 };
 
-export type EventKind = "text" | "activity" | "doing" | "look" | "done" | "error" | "stopped";
+export type EventKind =
+  | "text"
+  | "activity"
+  | "doing"
+  | "look"
+  | "suggestion"
+  | "done"
+  | "error"
+  | "stopped";
 
 /** One beat of a running turn, as the stream carries it. */
 export type PartnerEvent = {
@@ -227,6 +265,12 @@ export type PartnerEvent = {
   at: string;
   /** One completed read, on a look beat and nowhere else. */
   look?: Look;
+  /**
+   * One admitted suggestion, on a suggestion beat and nowhere else. It arrives
+   * as the server admits it, so the card is under the answer before the answer
+   * has finished arriving.
+   */
+  suggestion?: Suggestion;
 };
 
 /**

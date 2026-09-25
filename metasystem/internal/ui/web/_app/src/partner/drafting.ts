@@ -20,8 +20,26 @@ export type Field = { name: string; value: string };
 export type SheetDraft = {
   /** What the sheet is called, as its head says it: "New goal". */
   sheet: string;
+  /**
+   * The one opening of that sheet this draft came from: the id it minted when
+   * it mounted. Goal A's edit sheet and goal B's are two openings of a sheet of
+   * one name, and a suggestion prepared for one must never reach the other, so
+   * what a suggestion belongs to is this rather than the name.
+   */
+  opening: string;
   /** Its fields in the order the sheet asks them, the empty ones dropped. */
   fields: Field[];
+  /**
+   * Every field of this sheet the Partner may offer words for, including the
+   * ones with nothing in them yet, in the order the sheet asks them.
+   *
+   * It is not the fields above with the names taken off. Those drop what is
+   * empty — and an empty next step is exactly the field a human asks for words
+   * for — and they include what the sheet hands over to be read rather than
+   * written into: the goal an edit is of is context, not a field anybody may
+   * rewrite. The sheet that owns the state says which are which.
+   */
+  writable: string[];
 };
 
 /** How much of one field's value the chip shows before it trails off. */
@@ -31,18 +49,31 @@ const CHIP_FIELD = 40;
 const CHIP_FIELDS = 2;
 
 /**
- * The draft as it will travel: the sheet's name, and the fields that have
- * something in them. An empty field says nothing, so it is not carried — the
- * Partner reading "Intent:" followed by nothing would be reading a claim the
- * human never made.
+ * The draft as it will travel: the sheet's name, the opening it came from, the
+ * fields that have something in them, and the ones that may be written into.
+ *
+ * An empty field says nothing, so its value is not carried — the Partner
+ * reading "Intent:" followed by nothing would be reading a claim the human
+ * never made. Its name still travels among the writable ones, because a field
+ * nobody has filled in is a field the Partner can be asked for words for.
  */
-export function draftOf(sheet: string, fields: Field[]): SheetDraft {
+export function draftOf(opening: string, sheet: string, fields: Field[], writable: string[] = []): SheetDraft {
   return {
     sheet,
+    opening,
     fields: fields
       .map((field) => ({ name: field.name, value: field.value.trim() }))
       .filter((field) => field.value !== ""),
+    writable: writable.filter((name) => name.trim() !== ""),
   };
+}
+
+/**
+ * What one field of a draft holds, as the sheet reads it now, or "" for a field
+ * that is empty or is not this sheet's.
+ */
+export function valueIn(draft: SheetDraft, field: string): string {
+  return draft.fields.find((one) => one.name === field)?.value ?? "";
 }
 
 /** True where there is something to offer: a sheet with a field filled in. */

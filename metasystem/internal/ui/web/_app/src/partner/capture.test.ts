@@ -4,6 +4,9 @@ import { captureOf, chipOf, readingMoved, seeingLine, sheetNote, shownRows } fro
 import { draftOf } from "./drafting";
 import type { Chosen } from "./subject";
 
+/** One opening of a sheet, which every draft in these tests is from. */
+const OPENING = "opening-1";
+
 /**
  * One capture per question.
  *
@@ -239,7 +242,7 @@ describe("the capture a sheet makes", () => {
   // An open sheet is not an offered one: the fields travel only because the
   // human pressed "Ask about this".
   it("carries the fields only once they have been offered", () => {
-    const offered = draftOf("New goal", [
+    const offered = draftOf(OPENING, "New goal", [
       { name: "Id", value: "refund-worker" },
       { name: "Intent", value: "Refunds are issued within a day." },
     ]);

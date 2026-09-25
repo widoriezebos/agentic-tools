@@ -500,6 +500,11 @@
       "id": "chain",
       "term": "Chain",
       "text": "The jobs that belong to one piece of work, newest first: a build, the critic that reviewed it, the round that answered the findings. Each carries the cap it reserved and when it ran, and never a consumed charge — settling what a job actually spent belongs to the engine that dispatched it."
+    },
+    {
+      "id": "suggestion",
+      "term": "Suggestion",
+      "text": "Words your Project Partner offered for one field of the sheet you are filling in. It is an offer and nothing else: the field keeps what you wrote until you press Use this, and Undo puts back what was there for as long as the field still holds the suggestion. Saving is still yours, and the Partner never saves."
     }
   ],
   "questions": [
@@ -638,6 +643,19 @@
         {
           "text": "What changed today?",
           "scope": "since local midnight, through the changes this server knows"
+        }
+      ]
+    },
+    {
+      "subject": "draft",
+      "questions": [
+        {
+          "text": "Suggest a better wording",
+          "scope": "the fields of the sheet you handed over, as they stand; what comes back is a suggestion you decide about"
+        },
+        {
+          "text": "Suggest the next step",
+          "scope": "the sheet you handed over, as it stands; what comes back is a suggestion you decide about"
         }
       ]
     }

@@ -33,9 +33,14 @@ type Event struct {
 	At   string `json:"at"`
 	// Look is one completed read, on a look beat and nowhere else.
 	Look *Look `json:"look,omitempty"`
+	// Suggestion is words the Partner prepared for a field of the editor this
+	// turn's human handed over, on a suggestion beat and nowhere else. It is
+	// carried as it is admitted, so the card appears under the answer while the
+	// answer is still arriving.
+	Suggestion *Suggestion `json:"suggestion,omitempty"`
 }
 
-// The seven event kinds.
+// The eight event kinds.
 const (
 	EventText     = "text"
 	EventActivity = "activity"
@@ -44,6 +49,11 @@ const (
 	EventDone     = "done"
 	EventError    = "error"
 	EventStopped  = "stopped"
+	// EventSuggestion is one admitted suggestion. It is a beat of its own
+	// rather than part of the answer's text because it is not the answer: the
+	// words are the Partner's offer for one field, and the page renders them as
+	// a card with Use this beside it.
+	EventSuggestion = "suggestion"
 )
 
 // Snapshot is what GET /api/partner answers: everything a page needs to render
@@ -70,6 +80,10 @@ type Snapshot struct {
 	// Looked is what the running turn has read so far, so a reload mid-answer
 	// shows the list rather than starting it over.
 	Looked []Look `json:"looked"`
+	// Suggestions is what the running turn has offered so far, for the reason
+	// Looked is here: a reload in the middle of an answer must show the cards
+	// that have already arrived rather than lose them until the turn ends.
+	Suggestions []Suggestion `json:"suggestions"`
 	// Index is what the conversation can point at: the goals the accepted tip
 	// carries and the records the checkout declares. It is read here, with the
 	// conversation, because the page has no other reader for it and an answer
@@ -115,15 +129,23 @@ type Service struct {
 // turn is the running turn's state, which the snapshot reads and the events
 // are numbered against.
 type turn struct {
-	id       string
-	human    string
-	key      string
+	id    string
+	human string
+	key   string
+	// page is the capture this turn was asked with, held to its bounds. It is
+	// the one thing that says which editor opening the human handed over and
+	// which of its fields they may be written into, so it is what a suggestion
+	// is admitted against.
+	page     Page
 	seq      int
 	text     strings.Builder
 	activity []string
 	doing    string
 	looked   []Look
-	stopping bool
+	// suggestions is what this turn has offered and the service admitted, in
+	// the order they were admitted.
+	suggestions []Suggestion
+	stopping    bool
 	// done closes when the turn has been written down and its terminal event
 	// published. Stop waits for it, so the snapshot the stop route answers
 	// with is the settled one rather than the one the turn was in when the
@@ -236,6 +258,7 @@ func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
 		answer.Activity = append([]string{}, running.activity...)
 		answer.Doing = running.doing
 		answer.Looked = append([]Look{}, running.looked...)
+		answer.Suggestions = append([]Suggestion{}, running.suggestions...)
 	}
 	s.mu.Unlock()
 	answer.Messages = conversation.Messages(limit)
@@ -307,7 +330,7 @@ func (s *Service) Submit(ctx context.Context, human, key, text string, page Page
 		return "", ErrBusy
 	}
 	id := mintTurn()
-	running := &turn{id: id, human: human, key: key, done: make(chan struct{})}
+	running := &turn{id: id, human: human, key: key, page: page, done: make(chan struct{})}
 	s.current = running
 	s.spokeLast = human
 	s.mu.Unlock()
@@ -394,6 +417,43 @@ func lookedAtPage(seen Seen) *Look {
 	}
 }
 
+// admit decides whether one prepared suggestion is offered to the human.
+//
+// This is the one place that can decide it, because this is the one place that
+// holds the capture. The tool server has no capture and the host has no turn;
+// what the human handed over — which editor opening, and which of its fields
+// may be written into — is in the capture this turn was asked with, and nothing
+// else in this process knows it.
+//
+// A suggestion for a field the human did not hand over is not offered, and the
+// refusal is said rather than swallowed: a human who asked for a better wording
+// and got none has to be able to see that the Partner offered one for something
+// they never handed over. An empty field is admitted like any other — a next
+// step nobody has written yet is exactly the field a human asks for words for —
+// because the writable names travel whether or not there is anything in them.
+func (s *Service) admit(running *turn, prepared Suggestion) {
+	s.mu.Lock()
+	draft := running.page.Draft
+	s.mu.Unlock()
+	if draft == nil || draft.Opening == "" ||
+		draft.Sheet != prepared.Editor || !draft.Writes(prepared.Field) {
+		s.record(running, Event{Kind: EventActivity, Text: notOffered(prepared.Field)})
+		return
+	}
+	prepared.Opening = draft.Opening
+	s.record(running, Event{Kind: EventSuggestion, Suggestion: &prepared})
+}
+
+// notOffered is what the conversation says about a suggestion that was not
+// offered, in the words a human reads.
+func notOffered(field string) string {
+	said := strings.TrimSpace(field)
+	if said == "" {
+		said = "an unnamed field"
+	}
+	return "a suggestion for " + said + " was not offered: no such field was handed over"
+}
+
 // freshLine says what a fresh session was given, so a human can see why the
 // Partner might have forgotten something.
 func freshLine(given int) string {
@@ -414,6 +474,12 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 		case UpdateLook:
 			if update.Look != nil {
 				s.record(running, Event{Kind: EventLook, Look: update.Look})
+			}
+			// The call that prepared words is accounted for as a look like any
+			// other, and then the words are admitted or refused against the
+			// capture this turn was asked with.
+			if update.Suggestion != nil {
+				s.admit(running, *update.Suggestion)
 			}
 		}
 	})
@@ -438,11 +504,12 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 	text := running.text.String()
 	activity := append([]string{}, running.activity...)
 	looked := append([]Look{}, running.looked...)
+	suggestions := append([]Suggestion{}, running.suggestions...)
 	s.mu.Unlock()
 
 	answered := Message{ID: mintTurn(), Turn: running.id, Role: RolePartner, Text: text,
 		At: s.now().UTC().Format(time.RFC3339), Outcome: result.Outcome,
-		Detail: result.Detail, Activity: activity, Looked: looked}
+		Detail: result.Detail, Activity: activity, Looked: looked, Suggestions: suggestions}
 	_ = conversation.Append(answered)
 
 	// Nothing is running BEFORE the terminal beat goes out, deliberately. A
@@ -486,6 +553,10 @@ func (s *Service) record(running *turn, event Event) {
 	case EventLook:
 		if event.Look != nil {
 			running.looked = append(running.looked, *event.Look)
+		}
+	case EventSuggestion:
+		if event.Suggestion != nil {
+			running.suggestions = append(running.suggestions, *event.Suggestion)
 		}
 	}
 	watchers := make([]chan Event, 0, len(s.watchers))

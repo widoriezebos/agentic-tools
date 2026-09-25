@@ -16,6 +16,7 @@ import {
 } from "./decisions";
 import { approveGoal, BacklogError, parkGoal, type Backlog } from "../backlog/api";
 import { Panel } from "../backlog/Panel";
+import { FieldSuggestions, useOpening } from "../partner/Suggestion";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
@@ -76,10 +77,23 @@ export function BulkSheet({
     : parkPlan(bulk.goals);
   const sending = sendable(plan);
   const [reason, setReason] = useState("");
+  // This opening of this sheet, minted once. Not now has one field the Partner
+  // may write; approving in bulk has none.
+  const opening = useOpening();
   const [run, setRun] = useState<RunState>({ state: "ready" });
   const { askToSignIn } = useSession();
   const because = reason.trim();
   const blocked = blockedFor(bulk.act, sending.length, because);
+
+  /** Put the Partner's words in the one field this sheet has a human write. */
+  const putWords = (field: string, text: string): string => {
+    if (approving || field !== "Reason") {
+      return "";
+    }
+    const was = reason;
+    setReason(text);
+    return was;
+  };
 
   const send = () => {
     if (!maySend(run, blocked)) {
@@ -126,6 +140,11 @@ export function BulkSheet({
         { name: "Goals", value: sending.map((one) => one.id).join(", ") },
         { name: "Reason", value: because },
       ]}
+      opening={opening}
+      // Approving in bulk is a confirmation of what the list already shows, and
+      // it has no field at all. Not now asks for one reason, on every goal.
+      writable={approving ? [] : ["Reason"]}
+      set={putWords}
       unproven=""
       refusal={run.state === "stopped" ? run.line : ""}
       note={noteNow(bulk.act, sending.length, blocked, run)}
@@ -147,7 +166,10 @@ export function BulkSheet({
     >
       {!approving && (
         <div className="ms-act-field">
-          <label htmlFor="ms-decisions-because">Reason, on every goal</label>
+          <div className="ms-act-label">
+            <label htmlFor="ms-decisions-because">Reason, on every goal</label>
+            <FieldSuggestions opening={opening} field="Reason" value={reason} />
+          </div>
           <input
             id="ms-decisions-because"
             type="text"

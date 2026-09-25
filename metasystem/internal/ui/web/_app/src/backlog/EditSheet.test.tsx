@@ -159,6 +159,43 @@ function chrome(busy: boolean): string {
 
 const SOURCE = readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", "EditSheet.tsx"), "utf8");
 
+/**
+ * What this sheet tells the Project Partner it may write into.
+ *
+ * Three of its four handed-over fields are the human's own words and the fourth
+ * is the goal being edited, so the three are registered as writable and the goal
+ * is not. The list, the setter and the link beside each label are read from one
+ * table, because a field named in one and missing from another would be a
+ * suggestion offered for something nothing can write.
+ */
+describe("the fields the Partner may be offered words for", () => {
+  it("registers the three the human writes, with the setter and the link that go with them", () => {
+    expect(SOURCE).toContain('const WRITABLE_FIELDS: Record<string, keyof EditDraft> = {');
+    expect(SOURCE).toContain('Intent: "intent"');
+    expect(SOURCE).toContain('"Next step": "nextStep"');
+    expect(SOURCE).toContain('Labels: "labels"');
+    expect(SOURCE).toContain("writable={Object.keys(WRITABLE_FIELDS)}");
+    expect(SOURCE).toContain("set={putWords}");
+    expect(SOURCE).toContain("opening={opening}");
+    for (const field of ["Intent", "Next step", "Labels"]) {
+      expect(SOURCE).toContain(`<FieldSuggestions opening={opening} field="${field}"`);
+    }
+  });
+
+  // The goal is handed over to be read. A suggestion for it would be an offer to
+  // rewrite the thing being edited.
+  it("does not register the goal it is editing", () => {
+    expect(SOURCE).not.toContain('Goal: "');
+    expect(SOURCE).not.toContain('field="Goal"');
+  });
+
+  // And the label's own row is on screen, which is where the count stands.
+  it("puts each label in a row that has room for the count beside it", () => {
+    const markup = sheet();
+    expect(markup.match(/class="ms-act-label"/g)).toHaveLength(3);
+  });
+});
+
 describe("a save in flight", () => {
   // Escape and Cancel are one guarded act inside the panel, so the button's
   // own state is what says whether that guard is shut.

@@ -334,9 +334,38 @@ func stickyLines(page Page) string {
 type Draft struct {
 	// Sheet is what the sheet is called, as its head says it: "New goal".
 	Sheet string `json:"sheet"`
+	// Opening is the one opening of that sheet this draft came from: the id the
+	// sheet minted when it mounted. Two openings of a sheet of the same name
+	// are two drafts of two different things — goal A's edit sheet and goal B's
+	// — and a suggestion prepared for one must never be usable in the other, so
+	// what a suggestion belongs to is this and not the name.
+	Opening string `json:"opening,omitempty"`
 	// Fields are what the human has written, in the order the sheet asks
 	// them, with the empty ones already dropped by the page.
 	Fields []DraftField `json:"fields,omitempty"`
+	// Writable is every field of this sheet the Partner may offer words for,
+	// including the ones with nothing in them yet, in the order the sheet asks
+	// them. It is not the same list as Fields and cannot be derived from it:
+	// Fields drops what is empty, and a sheet hands over descriptive context —
+	// the goal an edit is of — that is context and not a field anybody may
+	// write into. The sheet that owns the state says which are which.
+	Writable []string `json:"writable,omitempty"`
+}
+
+// Writes reports whether this draft handed over a field of that name as one the
+// Partner may offer words for. The comparison is the field's own label, as the
+// page spells it and as the Partner was told it.
+func (d Draft) Writes(field string) bool {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return false
+	}
+	for _, known := range d.Writable {
+		if strings.TrimSpace(known) == field {
+			return true
+		}
+	}
+	return false
 }
 
 // DraftField is one field of a sheet: what it is called, and what is in it.
@@ -382,7 +411,34 @@ func draftLines(page Page) string {
 		}
 		built.WriteString("  - " + name + ": " + value + "\n")
 	}
+	if written := writableLine(page.Draft.Writable); written != "" {
+		built.WriteString(written)
+	}
 	return built.String()
+}
+
+// writableLine is which of the sheet's fields the Partner may offer words for.
+//
+// It is here because the fields above it cannot answer it. The empty ones are
+// not listed above at all — a field with nothing in it says nothing, so it does
+// not travel as a value — and the ones that are listed include the sheet's
+// descriptive context, which is handed over to be read and not to be written
+// into. A Partner asked to suggest a next step that nobody has written yet has
+// to be told the field is there; a Partner that offered words for the goal an
+// edit is of would be offering to rewrite the thing being edited.
+func writableLine(writable []string) string {
+	named := []string{}
+	for _, field := range writable {
+		if said := strings.TrimSpace(field); said != "" {
+			named = append(named, said)
+		}
+	}
+	if len(named) == 0 {
+		return ""
+	}
+	return "  - You may offer the human words for these fields of that sheet, and no others: " +
+		strings.Join(named, ", ") +
+		". One of them may be empty and still be offered words for. Everything else above is context to read.\n"
 }
 
 // quoteLines is the selected passage, with where it came from.

@@ -62,8 +62,8 @@ type permissionRequest struct {
 // "other", no location, and a title that is the tool's name. That is not a
 // runtime misbehaving — it is what an application tool looks like — so the
 // point names the exception rather than widening the rule around it: a call
-// whose tool name is this server's, followed by one of the eight operations,
-// is admitted, and everything else is refused exactly as before.
+// whose tool name is this server's, followed by one of its operations, is
+// admitted, and everything else is refused exactly as before.
 //
 // The separators below are every way a runtime has been seen to join a server
 // to a tool. Claude presents mcp__metasystem__board; the prefix is stripped
@@ -101,6 +101,18 @@ func toolOperation(names ...string) (string, bool) {
 	return "", false
 }
 
+// admitted is what the conversation says about one admitted call to this
+// server. All but one of its operations are readings; the one that is not reads
+// nothing at all and prepares words for a human to decide about, and a line
+// calling that a read would be this point saying something happened that did
+// not.
+func admitted(operation string) string {
+	if operation == uitools.OpSuggest {
+		return "Allowed the interface's own tools to prepare a suggestion: nothing was read and nothing was written"
+	}
+	return "Allowed a read through the interface's own tools: " + operation
+}
+
 // decision is what the point decided about one request, and the sentence the
 // conversation shows for it.
 type decision struct {
@@ -134,8 +146,7 @@ func judge(params json.RawMessage, sessionID, checkout string) decision {
 		if answer.Outcome != "selected" {
 			return refusal(request.Options, what)
 		}
-		return decision{answer: answer, allowed: true,
-			activity: "Allowed a read through the interface's own tools: " + operation}
+		return decision{answer: answer, allowed: true, activity: admitted(operation)}
 	}
 	if request.ToolCall.Kind != "read" {
 		return refusal(request.Options, what)

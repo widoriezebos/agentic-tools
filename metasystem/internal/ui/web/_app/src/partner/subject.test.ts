@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { chipLabel, effectiveSubject, kindWord, registerFor, type Chosen } from "./subject";
-import { suggestionsFor, registers, HOW_TO_ASK } from "./suggestions";
+import { suggestionsFor, registers, DRAFT_REGISTER, HOW_TO_ASK } from "./suggestions";
 
 /**
  * What "this" means, and for how long.
@@ -87,6 +87,21 @@ describe("which questions are suggested", () => {
     ]);
     expect(suggestionsFor("lane").map((one) => one.text)).toEqual(["What is in here, and why?"]);
     expect(suggestionsFor("decision").map((one) => one.text)).toEqual(["What did it decide, and why?"]);
+  });
+
+  /**
+   * The two a handed-over sheet is worth asking, which are the only two in the
+   * register that ask the Partner to write rather than to explain. They are
+   * beside the draft's own chip, so they leave when it does.
+   */
+  it("offers the two that ask the Partner to write, for a sheet handed over", () => {
+    expect(suggestionsFor(DRAFT_REGISTER).map((one) => one.text)).toEqual([
+      "Suggest a better wording",
+      "Suggest the next step",
+    ]);
+    for (const question of suggestionsFor(DRAFT_REGISTER)) {
+      expect(question.scope).toContain("you decide about");
+    }
   });
 
   // A question this page cannot scope is not suggested at all, so a register

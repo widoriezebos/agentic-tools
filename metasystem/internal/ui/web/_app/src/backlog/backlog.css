@@ -703,6 +703,19 @@
   flex: 0 0 auto;
 }
 
+/*
+ * A field's label, with what the Project Partner has waiting for that field at
+ * the end of the same line. The row exists so the count sits beside the name
+ * rather than above the input, which is where a second stacked element would
+ * land in this column.
+ */
+.ms-act-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .ms-act-field label {
   font-size: 12px;
   line-height: 16px;

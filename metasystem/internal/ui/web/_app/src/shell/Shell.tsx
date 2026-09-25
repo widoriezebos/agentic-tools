@@ -117,7 +117,7 @@ function Frame() {
   // Ask on a card, and Cmd/Ctrl+J, ask for the composer by counting. The
   // drawer opens for them, because a composer nobody can see is a composer
   // that must never be given the caret.
-  const { wanted } = usePartner();
+  const { wanted, revealed } = usePartner();
 
   // The stored height is read once, as the layout this group opens with; from
   // there the group owns the arithmetic and a drag is what changes it.
@@ -153,6 +153,22 @@ function Frame() {
       writeDockOpen(true);
     }
   }, [wanted]);
+
+  // Opening at a card. A field's "n suggestions" link asks for the drawer the
+  // same way Ask asks for it, and for the same reason — a card nobody can see
+  // is a card nobody can press — but it does NOT take the caret: the human is
+  // typing in the sheet, and the link is beside the field they are in.
+  const shown = useRef(0);
+  useEffect(() => {
+    if (revealed === shown.current) {
+      return;
+    }
+    shown.current = revealed;
+    if (revealed > 0) {
+      setDrawerOpen(true);
+      writeDockOpen(true);
+    }
+  }, [revealed]);
 
   useEffect(() => {
     applyTheme(document.documentElement, effectiveTheme(theme, systemDark));
