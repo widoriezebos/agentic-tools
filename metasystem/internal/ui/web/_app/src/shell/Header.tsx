@@ -8,6 +8,7 @@ import { WorkspaceIdentity } from "./WorkspaceIdentity";
 import { Help } from "../help/Help";
 import type { HelpId } from "../help/terms";
 import { NotificationsBell } from "../notifications/Bell";
+import { StickiesButton } from "../stickies/Button";
 
 /**
  * The header: who this workspace is on the left, where you are in the middle,
@@ -17,8 +18,11 @@ import { NotificationsBell } from "../notifications/Bell";
  * whole page.
  *
  * The bell comes first in that cluster because it is the only control there
- * that changes on its own: the other two say what is already true, and this
- * one is where something new arrives.
+ * that changes on its own: the others say what is already true, and this one
+ * is where something new arrives. The notepad's button stands next to it — the
+ * same kind of thing, a small standing count read at a glance — and its number
+ * is how many stickies are open rather than how many are new, because a
+ * notepad has nothing arriving on it.
  *
  * The section's name carries the help for the section: it is the one place
  * every page names what it is, so it is where "what is this for" belongs.
@@ -83,6 +87,7 @@ export function Header({
       </div>
       <div className="ms-header-right">
         <NotificationsBell />
+        <StickiesButton />
         <SignInControl />
         <IconButton
           label="Project Partner drawer"

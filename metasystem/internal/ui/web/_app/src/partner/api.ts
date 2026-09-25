@@ -123,7 +123,25 @@ export type Page = {
   draft?: SheetDraft;
   /** The address this capture returns to, composed by the page that made it. */
   return?: string;
+  /**
+   * The human's own stickies as the page was showing them: what the panel
+   * showed while it stood open, and otherwise the ones about the thing on the
+   * page. They travel because they are nowhere else — the notepad is outside
+   * every checkout precisely so that no seat reads it.
+   */
+  stickies?: CapturedSticky[];
+  /** How many are open, carried whether or not any sticky is. */
+  stickiesOpen?: number;
 };
+
+/**
+ * One sticky as a capture carries it: what it says, and what it is about.
+ *
+ * No id and no instants. A sticky in a capture is something the human wrote to
+ * themselves and is looking at; the Partner neither acts on one nor dates one,
+ * and a capture is not a copy of the notepad.
+ */
+export type CapturedSticky = { text: string; about: string[]; done?: boolean };
 
 /**
  * One thing the Partner read, with how it ended.

@@ -67,6 +67,7 @@ import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
+import { StickiesBlock } from "../stickies/Block";
 import { useWorkspaceState, type WorkspaceState } from "../shell/identity";
 import { titleFor, type Identity } from "../title";
 
@@ -620,6 +621,11 @@ function Read({
                 />
               )}
               {document.state !== "readable" && <p className="ms-project-reason">{document.reason}</p>}
+              {/* What the human wrote to themselves about this document, under
+                  its head where they will meet it again, and never over the
+                  editor: a note about a file is not a note about the draft of
+                  it somebody is in the middle of typing. */}
+              <StickiesBlock named={{ kind: "record", id: document.id }} />
               <Markdown blocks={lead === null ? document.blocks : document.blocks.slice(1)} from={document.id} />
             </>
           ) : (

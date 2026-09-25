@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router";
 
-import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn, type Page } from "./api";
+import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn, type CapturedSticky, type Page } from "./api";
 import {
   attach,
   attachedDraft,
@@ -25,6 +25,8 @@ import { busy, emptyStore, loaded, received, refused, retrying, unavailable, ask
 import type { Chosen } from "./subject";
 import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
 import { useAboutLine, useSubject } from "../shell/about";
+import { captured } from "../stickies/stickies";
+import { useStickies } from "../stickies/store";
 
 /**
  * The conversation, held once for the whole page.
@@ -218,6 +220,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const openFields = useRef(new Map<string, () => SheetDraft>());
   const location = useLocation();
   const subject = useSubject();
+  const stickies = useStickies();
   const label = useAboutLine("");
 
   const read = useCallback((signal?: AbortSignal) => {
@@ -268,6 +271,11 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // The innermost sheet is the one a human is standing in, and the one the
   // capture names.
   const sheet = sheets.at(-1) ?? "";
+  // The human's own notepad, as the page is showing it. It is read here rather
+  // than described by each pane, because what travels depends on something no
+  // pane knows: whether the panel is open over it.
+  const notepad = captured(stickies.notepad, stickies.panelIsOpen, subject);
+  const noted = JSON.stringify(notepad);
   const compose = useCallback(
     (list: readonly Attachment[]) =>
       captureOf({
@@ -275,11 +283,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         page: subject,
         label,
         sheet,
+        notepad: JSON.parse(noted) as { stickies: CapturedSticky[]; open: number },
         chosen: subjectIn(list),
         passage: passageIn(list),
         draft: draftIn(list),
       }),
-    [location.pathname, subject, label, sheet],
+    [location.pathname, subject, label, sheet, noted],
   );
   const capture = useMemo(() => compose(attachments), [compose, attachments]);
 

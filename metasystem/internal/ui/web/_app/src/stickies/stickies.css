@@ -1,0 +1,272 @@
+/*
+ * The notepad.
+ *
+ * A sticky is drawn in the marker tokens — the ochre the sign-in bar and the
+ * board's markers already use — because that is the one colour in this
+ * interface that already means "a human wrote this". Nothing here invents a
+ * colour: every value is a token from src/tokens.css, so a sticky exists in
+ * both themes and no contrast test ever misses it.
+ *
+ * The panel itself is the notifications panel's chrome, so its body shares
+ * that sheet's rhythm rather than setting a second one.
+ */
+
+.ms-stickies-button {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* The count sits on the button's shoulder, outside it, so it carries its own
+   name: inside, the button's label would swallow the number. It wears the
+   marker rather than the accent, because what it counts is notes. */
+.ms-stickies-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--ms-marker);
+  color: var(--ms-accent-fg);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.ms-sheet-body--stickies {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+/* The composer: the first thing in the panel, because a sticky is written in
+   two seconds or it is not written at all. */
+.ms-stickies-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-stickies-label {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-stickies-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  resize: vertical;
+}
+
+.ms-stickies-about {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A chip the composer is about, with the way to take it off. */
+.ms-stickies-chosen {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 10px;
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-stickies-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ms-stickies-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-stickies-hint,
+.ms-stickies-seat,
+.ms-stickies-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-stickies-empty {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+}
+
+.ms-stickies-problem {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-danger);
+  overflow-wrap: anywhere;
+}
+
+.ms-stickies-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One note. */
+.ms-sticky {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--ms-marker);
+  border-radius: 6px;
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}
+
+/* Struck off: the same note, stepped back, so the disclosure reads as a pile
+   of things already dealt with rather than as a second list of work. */
+.ms-sticky--done {
+  border-color: var(--ms-border);
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+}
+
+.ms-sticky-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ms-sticky--done .ms-sticky-text {
+  text-decoration: line-through;
+}
+
+.ms-sticky-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-sticky-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--ms-marker);
+  border-radius: 10px;
+  color: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ms-sticky-chip:hover,
+.ms-sticky-chip:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-sticky-age {
+  font-size: 12px;
+  line-height: 16px;
+  opacity: 0.8;
+}
+
+.ms-sticky-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ms-stickies-done {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-stickies-done-head {
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+/* The block a page carries: the same notes, quieter, under a page's own head
+   rather than in a panel of their own. */
+.ms-sticky-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.ms-sticky-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-sticky-block-title {
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-sticky-block-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-sticky--small {
+  padding: 8px 10px;
+}
