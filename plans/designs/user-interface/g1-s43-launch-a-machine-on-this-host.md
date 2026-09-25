@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3BQAVYXE2AT6F0JG9YB64PG
-- Status: accepted
+- Status: done
 - Goals: browser-interface fleet-join-bootstrap
 
 Wido, 2026-09-25: "I want to be able to launch a new machine for the fleet,
@@ -353,3 +353,40 @@ Partner's capture; the admission cap's true scope and a disk check
 (section 5); R-29-m2 named as the temporary enrollment's ruling. Wido's
 naming rule of the same day, the remote repository's name as the default,
 is in D1.
+
+## Built (2026-09-25)
+
+Landed on ui-development and main in one merge. Built by Claude on Opus,
+read by Codex on Sol: seventeen findings, of which ten were folded in one
+round under R-124's test, the works-without-it test, and the rest deferred.
+
+Folded: the word and date required at the interface boundary on every
+launch and retry; the route checks the session proof itself; presence is
+confirmed only for the identity this launch enrolled, and the preflight
+surfaces a fleet copy it cannot read; supervision's recovery form always
+runs after arming and is checked live; the tick cadence travels to the
+clone and the wait reads it there; the lock loser writes the winner into
+its own record; a `starting` outcome until the child has its identity, so
+reconciliation never judges a record without one; the card follows the
+server's record; Retry always asks for the word and the date; the launch
+group selects the second-session fixture that checks the manifest against
+the adapters. Also committed before the round narrowed, and kept because
+they were green: resume verifying the clone's remote and keys, the
+configuration step's three operations, the evidence-root flag persisted at
+once, a foreign nickname refused on resume, the ledger fetch in the
+integration test, and one date rule at both boundaries with the client's
+date sent along.
+
+Later, when it hurts: the sheet's non-secret draft handed to the Partner
+through the ask sheet; records shared across two interface checkouts on one
+host (today each checkout lists its own; the lock names the other's
+launch); the machine's session started from the page (g1-s44).
+
+One substitution the reviewer's finding did not foresee: the route checks
+the session proof against the session store's own root, the state root,
+because that is the root the store mints proofs for in the self-hosted
+layout.
+
+Not proved by the build, by design: a real launch on this host. That is the
+rollout proof: launch a machine from the page, watch its row turn
+reachable, read its health.
