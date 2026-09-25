@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Need, Page, Ruling } from "./api";
 import { Blocks } from "./DecisionsPane";
+import { noNarrowing } from "./decisions";
 import type { Row } from "../backlog/api";
 import type { TabId } from "./decisions";
 
@@ -113,9 +114,8 @@ const everyKind: Need[] = [
   }),
   need({
     kind: "parked", id: "g1-s45", title: "The Fleet section reads the census",
-    asked: "Unpark The Fleet section reads the census? parked by human:Wido 2026-09-24T05:00:00Z: the census format is still being decided",
-    by: "human:Wido", silence: "it stays parked", act: "", row: null,
-    command: "metasystem goal unpark --id g1-s45",
+    asked: "Unpark The Fleet section reads the census? parked by m2a+implementer 2026-09-24T05:00:00Z: the implementer paused it to finish g1-s48 first",
+    by: "m2a+implementer", silence: "it stays parked", act: "unpark", row: null,
     where: { kind: "goal", id: "g1-s45" },
   }),
   need({
@@ -147,7 +147,7 @@ const everyKind: Need[] = [
 
 function page(over: Partial<Page> = {}): Page {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     readAt: "2026-09-25T11:00:00Z",
     signIn: false,
     needsYou: everyKind,
@@ -164,8 +164,26 @@ function page(over: Partial<Page> = {}): Page {
         { id: "g1-s49", title: "Approved and ready to claim", by: "human:Wido", at: "2026-09-25T09:00:00Z", authority: "proven", expired: false, row: row({ ref: { kind: "goal", id: "g1-s49", revision: 4 }, lane: "ready", state: "approved" }) },
         { id: "g1-s9", title: "The shell, the rail and the header", by: "human:Wido", at: "2026-08-20T09:00:00Z", authority: "proven", expired: false, row: row({ ref: { kind: "goal", id: "g1-s9", revision: 9 }, lane: "done", state: "done", where: "archived" }) },
       ],
+      notNow: [
+        {
+          id: "g1-s34", title: "The queue narrows by label and by origin", by: "human:Wido",
+          at: "2026-09-13T08:23:22Z", because: "not before the board's own filters settle",
+          blocker: "", where: { kind: "goal", id: "g1-s34" },
+        },
+        {
+          id: "g1-s36", title: "The register opens from the review card", by: "human:Wido",
+          at: "2026-09-11T08:23:22Z", because: "waiting for g1-s24; the census format decides the path",
+          blocker: "g1-s24", where: { kind: "goal", id: "g1-s36" },
+        },
+      ],
     },
-    counts: { needsYou: everyKind.length, rulings: 148 },
+    counts: {
+      needsYou: everyKind.length,
+      asked: everyKind.filter((one) => one.kind !== "approval").length,
+      waiting: everyKind.filter((one) => one.kind === "approval").length,
+      rulings: 148,
+    },
+    register: "metasystem/memory/rulings.md",
     ...over,
   };
 }
@@ -180,17 +198,35 @@ function rendered(payload: Page, tab: TabId = "rulings"): string {
   );
 }
 
-describe("what needs your choice", () => {
+describe("what is asked of you", () => {
   it("says of every kind what is asked and what silence does", () => {
     const markup = rendered(page());
 
-    for (const one of everyKind) {
+    // Every kind but the approvals, which are the queue below and say their
+    // silence once, in its head, rather than on every row.
+    for (const one of everyKind.filter((kind) => kind.kind !== "approval")) {
       expect(markup).toContain(one.asked);
       expect(markup).toContain(`if you do nothing: ${one.silence}`);
     }
     // The whole list, never a capped group: no row says "and N more".
     expect(markup).not.toContain("more →");
-    expect(markup).toContain(String(everyKind.length));
+  });
+
+  it("does not repeat an approval's derived sentence, which said the title twice", () => {
+    const markup = rendered(page());
+
+    expect(markup).not.toContain("for execution");
+    // The title is still there, once, as the queue row a human reads.
+    expect(markup).toContain("The pane reads a document as a chapter");
+  });
+
+  it("counts the two blocks in the header, each a way into its own", () => {
+    const markup = rendered(page());
+
+    expect(markup).toContain("10 asked of you");
+    expect(markup).toContain("1 waiting for your approval");
+    expect(markup).toContain('href="#decisions-asked"');
+    expect(markup).toContain('href="#decisions-waiting"');
   });
 
   it("carries the asker's recommendation where the record has one, and no other row invents one", () => {
@@ -216,15 +252,23 @@ describe("what needs your choice", () => {
   it("names the terminal command where the terminal is the way", () => {
     const markup = rendered(page());
 
-    expect(markup).toContain("metasystem goal unpark --id g1-s45");
     expect(markup).toContain("metasystem goal resume --id g1-s48");
   });
 
-  it("says so plainly when nothing is waiting", () => {
-    const markup = rendered(page({ needsYou: [], counts: { needsYou: 0, rulings: 148 } }));
+  // A seat's park is still asked of a human, because a human has not seen it
+  // — but the way out of it is a button now, not a command to copy.
+  it("offers a seat's park the button that returns it, and no command", () => {
+    const markup = rendered(page());
 
-    expect(markup).toContain("Nothing is waiting on you.");
-    expect(markup).not.toContain("if you do nothing");
+    expect(markup).toContain("Return to queue");
+    expect(markup).not.toContain("metasystem goal unpark");
+  });
+
+  it("says so plainly when each block is empty", () => {
+    const markup = rendered(page({ needsYou: [], counts: { needsYou: 0, asked: 0, waiting: 0, rulings: 148 } }));
+
+    expect(markup).toContain("Nothing is asked of you.");
+    expect(markup).toContain("Nothing waits for your approval.");
   });
 
   it("puts signing in at the top, as its own row, when nothing proves a human", () => {
@@ -312,7 +356,11 @@ describe("what you decided", () => {
 
   it("says what each empty tab is empty of", () => {
     const empty = page();
-    const bare = { ...empty, decided: { rulings: [], defects: [], decisions: [], answered: [], approved: [] }, counts: { needsYou: 0, rulings: 0 } };
+    const bare = {
+      ...empty,
+      decided: { rulings: [], defects: [], decisions: [], answered: [], approved: [], notNow: [] },
+      counts: { needsYou: 0, asked: 0, waiting: 0, rulings: 0 },
+    };
 
     expect(rendered(bare, "decisions")).toContain("This project has recorded no decisions yet.");
     expect(rendered(bare, "answered")).toContain("No question of the register has been answered yet.");
@@ -328,5 +376,140 @@ describe("the phone", () => {
   it("renders one markup, which the stylesheet stacks", () => {
     expect(rendered(page())).toBe(rendered(page()));
     expect(rendered(page())).toContain("ms-decisions-need-way");
+  });
+});
+
+describe("the queue", () => {
+  const queued = [
+    need({ id: "g1-s40", title: "The queue narrows by label", row: row({ ref: { kind: "goal", id: "g1-s40", revision: 3 }, intent: "The queue narrows by label and by origin", labels: ["browser-interface"], origin: "human", tier: 2, openedAt: "2026-09-22T00:00:00Z" }) }),
+    need({ id: "g1-s41", title: "The fleet page reads a chain", row: row({ ref: { kind: "goal", id: "g1-s41", revision: 3 }, intent: "The fleet page reads a seat's whole chain", labels: ["headless-fleet"], origin: "main", tier: 0, openedAt: "2026-09-24T00:00:00Z" }) }),
+  ];
+  const withQueue = (over: Partial<Page> = {}) =>
+    page({
+      needsYou: queued,
+      counts: { needsYou: 2, asked: 0, waiting: 2, rulings: 148 },
+      ...over,
+    });
+
+  it("says its silence once, in the block's head, rather than on every row", () => {
+    const markup = rendered(withQueue());
+
+    expect(markup).toContain("If you do nothing, these stay in To Do and no seat may claim them.");
+    expect(markup.match(/stay in To Do and no seat may claim them/g)).toHaveLength(1);
+  });
+
+  it("shows the row's age, its tier above zero, whose it is, and its labels", () => {
+    const markup = rendered(withQueue());
+
+    expect(markup).toContain(">tier 2<");
+    // Tier zero is a record that declares none, so no chip claims one.
+    expect(markup).not.toContain(">tier 0<");
+    expect(markup).toContain(">yours<");
+    expect(markup).toContain(">browser-interface<");
+    expect(markup).toContain(">headless-fleet<");
+  });
+
+  it("opens a row in place, with the whole intent and what a decision needs", () => {
+    const shut = rendered(withQueue());
+    const open = renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <Blocks page={withQueue()} tab="rulings" opened={["g1-s40"]} />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(shut).toContain('aria-expanded="false"');
+    expect(shut).not.toContain("The queue narrows by label and by origin");
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("The queue narrows by label and by origin");
+    expect(open).toContain("no budget recorded");
+    expect(open).toContain("priority 2, position 1");
+  });
+
+  it("draws a label chip per label on screen, with its count", () => {
+    const markup = rendered(withQueue());
+
+    expect(markup).toContain("browser-interface 1");
+    expect(markup).toContain("headless-fleet 1");
+    expect(markup).toContain(">yours</button>");
+    expect(markup).toContain("seats&#x27;</button>");
+  });
+
+  it("counts what a bulk act would act on, and acts on nothing at zero", () => {
+    const none = rendered(withQueue());
+    const some = renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <Blocks page={withQueue()} tab="rulings" selected={["g1-s40"]} />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(none).toContain("Approve 0 selected");
+    expect(none).toContain("Not now for 0 selected");
+    expect(none.match(/disabled=""/g)?.length).toBeGreaterThan(1);
+    expect(some).toContain("Approve 1 selected");
+    expect(some).toContain("Not now for 1 selected");
+  });
+
+  // A tick on a row the narrowing then hid is a tick on a row a human can no
+  // longer see. Acting on it would be the one thing a queue must never do.
+  it("acts only on rows that are ticked AND on screen", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <Blocks
+            page={withQueue()}
+            tab="rulings"
+            selected={["g1-s40", "g1-s41"]}
+            narrowing={{ ...noNarrowing, label: "headless-fleet" }}
+          />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("Approve 1 selected");
+    expect(markup).toContain("2 waiting · 1 shown");
+    expect(markup).not.toContain("The queue narrows by label<");
+  });
+
+  it("says so when the tools leave nothing on screen", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <Blocks page={withQueue()} tab="rulings" narrowing={{ ...noNarrowing, find: "nothing says this" }} />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("No goal in the queue matches.");
+    expect(markup).toContain("2 waiting · 0 shown");
+  });
+});
+
+describe("not now", () => {
+  it("lists the parks this human made, with the reason and the way back", () => {
+    const markup = rendered(page(), "not-now");
+
+    expect(markup).toContain("not before the board&#x27;s own filters settle");
+    expect(markup).toContain("The register opens from the review card");
+    // A blocker park says what it is waiting for, because it lifts by itself.
+    expect(markup).toContain("waits for g1-s24");
+    expect(markup.match(/>Return to queue</g)).toHaveLength(3);
+  });
+
+  it("says so plainly when this human has paused nothing", () => {
+    const empty = page();
+    const bare = { ...empty, decided: { ...empty.decided, notNow: [] } };
+
+    expect(rendered(bare, "not-now")).toContain("You have paused nothing.");
+  });
+
+  it("offers no way back at all when nothing proves a human", () => {
+    const markup = rendered(page({ signIn: true }), "not-now");
+
+    expect(markup).toContain("Return to queue");
+    expect(markup).toContain('disabled=""');
   });
 });

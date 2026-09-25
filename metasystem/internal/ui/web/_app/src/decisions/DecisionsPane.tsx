@@ -8,31 +8,42 @@ import {
   type Approved,
   type Item,
   type Need,
+  type NotNow,
   type Page as DecisionsPayload,
   type Ruling,
   type Where as Reference,
 } from "./api";
+import { BulkSheet, type Bulk } from "./BulkSheet";
 import "./decisions.css";
 import {
   ANY_CLASS,
+  ANY_ORIGIN,
   actLabel,
   approvalLine,
   askedLine,
+  askedOf,
   classesIn,
   defectLine,
   destinationFor,
+  headerLine,
+  isNarrowed,
   kindLabel,
+  noNarrowing,
   NO_CLASS,
   reviewChip,
   shownRulings,
   tabs,
+  waitingOf,
   whenLine,
   wayThrough,
   withdrawable,
+  YOURS,
+  type Narrowing,
   type TabId,
 } from "./decisions";
+import { QueueBlock, useNarrowing } from "./QueueBlock";
 import { ActSheet, type Request } from "../backlog/ActSheet";
-import { loadBacklog, type Backlog } from "../backlog/api";
+import { loadBacklog, unparkGoal, type Backlog } from "../backlog/api";
 import { minuteTime } from "../backlog/format";
 import { Help } from "../help/Help";
 import { useNotifications } from "../notifications/store";
@@ -77,11 +88,23 @@ type Acting =
   | { state: "failed"; request: Request; message: string }
   | { state: "ready"; request: Request; backlog: Backlog };
 
+/** The same, for a sheet opened over several goals at once. */
+type Bulking =
+  | { state: "loading"; bulk: Bulk }
+  | { state: "failed"; bulk: Bulk; message: string }
+  | { state: "ready"; bulk: Bulk; backlog: Backlog };
+
 export function DecisionsPane() {
   const [read, setRead] = useState<PaneState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [acting, setActing] = useState<Acting | null>(null);
+  const [bulk, setBulk] = useState<Bulking | null>(null);
   const [tab, setTab] = useState<TabId>("rulings");
+  // The queue's own state, all of it this visit's: what is narrowed, what is
+  // ticked and what is open. None of it is stored — see QueueBlock.
+  const [narrowing, setNarrowing] = useNarrowing();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [opened, setOpened] = useState<string[]>([]);
 
   useEffect(() => {
     const aborter = new AbortController();
@@ -121,6 +144,52 @@ export function DecisionsPane() {
       });
   }, []);
 
+  // A bulk sheet needs the same payload for the same reason: it prefills one
+  // budget per goal from the project's law and the rows it is opened over.
+  const openBulk = useCallback((asked: Bulk) => {
+    setBulk({ state: "loading", bulk: asked });
+    loadBacklog()
+      .then((backlog) => {
+        setBulk({ state: "ready", bulk: asked, backlog });
+      })
+      .catch((error: unknown) => {
+        setBulk({ state: "failed", bulk: asked, message: failureMessage(error) });
+      });
+  }, []);
+
+  // Return to queue is one goal and one publication, so it needs nothing but
+  // the id: it sends unpark and the page reads its payload again, which is
+  // what says the goal came back.
+  const [returning, setReturning] = useState("");
+  const returnToQueue = useCallback(
+    (id: string) => {
+      setReturning("");
+      unparkGoal(id)
+        .then(() => {
+          reload();
+        })
+        .catch((error: unknown) => {
+          setReturning(failureMessage(error));
+        });
+    },
+    [reload],
+  );
+
+  // A row's act: the single-goal Approve keeps the board's own sheet, and the
+  // single-goal Not now is the not-now sheet with one goal in it.
+  const actOnRow = useCallback(
+    (need: Need, act: "approve" | "park") => {
+      if (act === "park") {
+        openBulk({ act: "park", goals: [need] });
+        return;
+      }
+      if (need.row !== null) {
+        open({ move: "approve", goal: need.row });
+      }
+    },
+    [open, openBulk],
+  );
+
   const hint = read.state === "read" ? `Read at ${minuteTime(read.page.readAt)} · Refresh` : "Refresh";
   useOffersRefresh(reload, hint);
 
@@ -132,13 +201,60 @@ export function DecisionsPane() {
     () => (read.state === "read" ? read.page.needsYou.map((need) => `${need.kind} · ${need.id} · ${need.asked}`) : []),
     [read],
   );
-  useAbout(aboutLine("Decisions", tab), { tab, records, returnTo: "/decisions" });
+  // What the capture adds now that the page has two blocks and a queue a
+  // human works: which block they are in, what is narrowing it, and how many
+  // rows they have ticked. A Partner asked "what am I looking at" answers
+  // from these three and not from a guess about the whole payload.
+  const filters = useMemo(() => captureLines(narrowing, selected.length, opened.length), [narrowing, selected, opened]);
+  useAbout(aboutLine("Decisions", tab), { tab, records, filters, returnTo: "/decisions" });
 
   return (
     <Pane title="Decisions">
       {read.state === "loading" && <Loading />}
       {read.state === "failed" && <Failure message={read.message} onRetry={reload} />}
-      {read.state === "read" && <Blocks page={read.page} tab={tab} onTab={setTab} onAct={open} />}
+      {read.state === "read" && (
+        <Blocks
+          page={read.page}
+          tab={tab}
+          onTab={setTab}
+          onAct={open}
+          onRowAct={actOnRow}
+          onBulk={(act, goals) => {
+            openBulk({ act, goals });
+          }}
+          onReturn={returnToQueue}
+          narrowing={narrowing}
+          onNarrow={setNarrowing}
+          selected={selected}
+          onSelect={setSelected}
+          opened={opened}
+          onOpen={setOpened}
+        />
+      )}
+      {returning !== "" && (
+        <p className="ms-decisions-refusal" role="alert">
+          {returning}
+        </p>
+      )}
+      {bulk !== null && bulk.state === "failed" && (
+        <p className="ms-decisions-refusal" role="alert">
+          The backlog could not be read, so the sheet could not open: {bulk.message}
+        </p>
+      )}
+      {bulk !== null && bulk.state === "ready" && (
+        <BulkSheet
+          bulk={bulk.bulk}
+          backlog={bulk.backlog}
+          onClose={() => {
+            setBulk(null);
+          }}
+          onDone={() => {
+            setBulk(null);
+            setSelected([]);
+            reload();
+          }}
+        />
+      )}
       {acting !== null && acting.state === "failed" && (
         <p className="ms-decisions-refusal" role="alert">
           The backlog could not be read, so the sheet could not open: {acting.message}
@@ -177,34 +293,112 @@ export function Blocks({
   tab = "rulings",
   onTab = () => undefined,
   onAct = () => undefined,
+  onRowAct = () => undefined,
+  onBulk = () => undefined,
+  onReturn = () => undefined,
+  narrowing = noNarrowing,
+  onNarrow = () => undefined,
+  selected = [],
+  onSelect = () => undefined,
+  opened = [],
+  onOpen = () => undefined,
 }: {
   page: DecisionsPayload;
   tab?: TabId;
   onTab?: (id: TabId) => void;
   onAct?: (request: Request) => void;
+  onRowAct?: (need: Need, act: "approve" | "park") => void;
+  onBulk?: (act: "approve" | "park", goals: Need[]) => void;
+  onReturn?: (id: string) => void;
+  narrowing?: Narrowing;
+  onNarrow?: (next: Narrowing) => void;
+  selected?: readonly string[];
+  onSelect?: (ids: string[]) => void;
+  opened?: readonly string[];
+  onOpen?: (ids: string[]) => void;
 }) {
+  const now = new Date();
+  const asked = askedOf(page.needsYou);
+  const waiting = waitingOf(page.needsYou);
   return (
     <div className="ms-decisions">
-      <NeedsYou page={page} onAct={onAct} />
-      <Decided page={page} tab={tab} onTab={onTab} onAct={onAct} />
+      <p className="ms-decisions-header">
+        <a className="ms-decisions-header-link" href="#decisions-asked">
+          {String(page.counts.asked)} asked of you
+        </a>
+        <span className="ms-decisions-header-dot">·</span>
+        <a className="ms-decisions-header-link" href="#decisions-waiting">
+          {String(page.counts.waiting)} waiting for your approval
+        </a>
+        <span className="ms-visually-hidden">{headerLine(page.counts)}</span>
+      </p>
+      <AskedOf page={page} asked={asked} now={now} onAct={onAct} onReturn={onReturn} />
+      <QueueBlock
+        waiting={waiting}
+        signedIn={!page.signIn}
+        narrowing={narrowing}
+        onNarrow={onNarrow}
+        selected={selected}
+        onSelect={onSelect}
+        opened={opened}
+        onOpen={onOpen}
+        onAct={onRowAct}
+        onBulk={onBulk}
+        now={now}
+      />
+      <Decided page={page} tab={tab} onTab={onTab} onAct={onAct} onReturn={onReturn} />
     </div>
   );
 }
 
+/**
+ * The capture's own lines: which block is being worked, what is narrowing it
+ * and how much is ticked. They are the page's state rather than its payload,
+ * which is why nothing else can answer them.
+ */
+function captureLines(narrowing: Narrowing, selected: number, opened: number): string[] {
+  const lines = [`queue order: ${narrowing.order === "newest" ? "newest first" : "backlog order"}`];
+  if (narrowing.find.trim() !== "") {
+    lines.push(`find: ${narrowing.find.trim()}`);
+  }
+  if (narrowing.label !== "") {
+    lines.push(`label: ${narrowing.label}`);
+  }
+  if (narrowing.origin !== ANY_ORIGIN) {
+    lines.push(`origin: ${narrowing.origin === YOURS ? "yours" : "seats'"}`);
+  }
+  if (!isNarrowed(narrowing)) {
+    lines.push("nothing is narrowed");
+  }
+  lines.push(`${String(selected)} selected`, `${String(opened)} rows open`);
+  return lines;
+}
+
 /* ---------------------------------------------------- needs your choice -- */
 
-function NeedsYou({ page, onAct }: { page: DecisionsPayload; onAct: (request: Request) => void }) {
+function AskedOf({
+  page,
+  asked,
+  now,
+  onAct,
+  onReturn,
+}: {
+  page: DecisionsPayload;
+  asked: Need[];
+  now: Date;
+  onAct: (request: Request) => void;
+  onReturn: (id: string) => void;
+}) {
   const { askToSignIn } = useSession();
-  const now = new Date();
   return (
-    <section className="ms-decisions-block" id="decisions-needs-you">
+    <section className="ms-decisions-block" id="decisions-asked">
       <div className="ms-decisions-head">
-        <h2 className="ms-decisions-title">Needs your choice</h2>
-        <Help id="needs-your-choice" />
+        <h2 className="ms-decisions-title">Asked of you</h2>
+        <Help id="asked-of-you" />
         {/* Two terms, because the block has two ideas in it: what belongs
             here at all, and the sentence every row ends with. */}
         <Help id="silence" />
-        <span className="ms-decisions-count">{page.counts.needsYou}</span>
+        <span className="ms-decisions-count">{page.counts.asked}</span>
       </div>
       {page.signIn && (
         <div className="ms-decisions-signin">
@@ -220,15 +414,22 @@ function NeedsYou({ page, onAct }: { page: DecisionsPayload; onAct: (request: Re
           <span className="ms-decisions-signin-words">Nothing proves a human on this seat yet.</span>
         </div>
       )}
-      {page.needsYou.length === 0 ? (
+      {asked.length === 0 ? (
         <p className="ms-decisions-calm">
           <CircleCheck className="ms-decisions-calm-icon" size={16} strokeWidth={1.75} aria-hidden="true" />
-          Nothing is waiting on you.
+          Nothing is asked of you.
         </p>
       ) : (
         <ul className="ms-decisions-inbox">
-          {page.needsYou.map((need) => (
-            <NeedCard key={`${need.kind}-${need.id}`} need={need} now={now} onAct={onAct} />
+          {asked.map((need) => (
+            <NeedCard
+              key={`${need.kind}-${need.id}`}
+              need={need}
+              now={now}
+              signedIn={!page.signIn}
+              onAct={onAct}
+              onReturn={onReturn}
+            />
           ))}
         </ul>
       )}
@@ -244,11 +445,15 @@ function NeedsYou({ page, onAct }: { page: DecisionsPayload; onAct: (request: Re
 function NeedCard({
   need,
   now,
+  signedIn,
   onAct,
+  onReturn,
 }: {
   need: Need;
   now: Date;
+  signedIn: boolean;
   onAct: (request: Request) => void;
+  onReturn: (id: string) => void;
 }) {
   const row = need.row;
   return (
@@ -265,7 +470,19 @@ function NeedCard({
         )}
       </div>
       <div className="ms-decisions-need-way">
-        {need.act !== "" && row !== null ? (
+        {need.act === "unpark" ? (
+          // A seat's park. A human has not seen it, so it is still asked of
+          // them — and the way out of it is the same button the Not now tab
+          // carries, rather than a command to copy into a terminal.
+          <Button
+            disabled={!signedIn}
+            onClick={() => {
+              onReturn(need.id);
+            }}
+          >
+            Return to queue
+          </Button>
+        ) : need.act !== "" && row !== null ? (
           <Button
             primary
             onClick={() => {
@@ -328,6 +545,7 @@ function Way({ where }: { where: Reference }) {
 const TAB_TERMS: Readonly<Partial<Record<TabId, HelpId>>> = {
   rulings: "ruling",
   decisions: "decisions",
+  "not-now": "not-now",
 };
 
 function Decided({
@@ -335,11 +553,13 @@ function Decided({
   tab,
   onTab,
   onAct,
+  onReturn,
 }: {
   page: DecisionsPayload;
   tab: TabId;
   onTab: (id: TabId) => void;
   onAct: (request: Request) => void;
+  onReturn: (id: string) => void;
 }) {
   const decided = page.decided;
   const strip = tabs(page);
@@ -348,6 +568,7 @@ function Decided({
     decisions: <Items items={decided.decisions} empty="This project has recorded no decisions yet." />,
     answered: <Items items={decided.answered} empty="No question of the register has been answered yet." />,
     approved: <Approvals approved={decided.approved} onAct={onAct} />,
+    "not-now": <NotNowList parks={decided.notNow} signedIn={!page.signIn} onReturn={onReturn} />,
   };
   return (
     <section className="ms-decisions-block" id="decisions-decided">
@@ -473,6 +694,56 @@ function RulingCard({ ruling, now }: { ruling: Ruling; now: Date }) {
         </details>
       )}
     </li>
+  );
+}
+
+/**
+ * Not now: the parks this human made, with the whole of what they said.
+ *
+ * Each row is the Overview's own item row with the reason as its note, and a
+ * button that returns the goal to the queue — one goal, one publication, and
+ * then the page reads its payload again. A blocker park names what it is
+ * waiting for, because it returns by itself when that lands and the row
+ * should say so rather than look like a pause somebody forgot.
+ */
+function NotNowList({
+  parks,
+  signedIn,
+  onReturn,
+}: {
+  parks: NotNow[];
+  signedIn: boolean;
+  onReturn: (id: string) => void;
+}) {
+  const now = new Date();
+  if (parks.length === 0) {
+    return <p className="ms-decisions-none">You have paused nothing.</p>;
+  }
+  return (
+    <ul className="ms-decisions-lines">
+      {parks.map((park) => (
+        <li key={park.id} className="ms-decisions-line ms-decisions-line--act">
+          <NavLink className="ms-decisions-row" to={goalPath(park.id)}>
+            <span className="ms-mono ms-decisions-row-id">{park.id}</span>
+            <span className="ms-decisions-row-title">{park.title === "" ? park.id : park.title}</span>
+            <span className="ms-decisions-row-note">{park.because}</span>
+            <span className="ms-decisions-row-note">
+              {park.by}
+              {park.blocker === "" ? "" : ` · waits for ${park.blocker}`}
+            </span>
+            <span className="ms-mono ms-decisions-row-tail">{whenLine(park.at, now)}</span>
+          </NavLink>
+          <Button
+            disabled={!signedIn}
+            onClick={() => {
+              onReturn(park.id);
+            }}
+          >
+            Return to queue
+          </Button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

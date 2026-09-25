@@ -1,7 +1,7 @@
-import type { Approved, Need, Page, Ruling, Where } from "./api";
-import type { Row } from "../backlog/api";
+import type { Approved, Counts, Need, Page, Ruling, Where } from "./api";
+import type { Budget, Row } from "../backlog/api";
 import { dateAndTime, minuteTime } from "../backlog/format";
-import { transitions } from "../backlog/moves";
+import { prefillFor, transitions, type BudgetSource } from "../backlog/moves";
 import { documentPath, goalPath, projectPath } from "../routes";
 
 /**
@@ -186,10 +186,10 @@ function wholeDaysBetween(at: Date, now: Date): number {
 
 /* -------------------------------------------------------------- decided -- */
 
-/** The four tabs of what was decided, in the order the design names them. */
-export type TabId = "rulings" | "decisions" | "answered" | "approved";
+/** The tabs of what was decided, in the order the design names them. */
+export type TabId = "rulings" | "decisions" | "answered" | "approved" | "not-now";
 
-export const tabOrder: readonly TabId[] = ["rulings", "decisions", "answered", "approved"];
+export const tabOrder: readonly TabId[] = ["rulings", "decisions", "answered", "approved", "not-now"];
 
 export type TabName = { id: TabId; title: string };
 
@@ -207,6 +207,10 @@ export function tabs(page: Page): TabName[] {
     { id: "decisions", title: `Decisions ${String(decided.decisions.length)}` },
     { id: "answered", title: `Answered ${String(decided.answered.length)}` },
     { id: "approved", title: `Approved ${String(decided.approved.length)}` },
+    // Not now is a decided thing and belongs here: a human who wrote down a
+    // reason and a date has decided, and counting it as undecided was the
+    // one place this page told them otherwise.
+    { id: "not-now", title: `Not now ${String(decided.notNow.length)}` },
   ];
 }
 
@@ -414,4 +418,267 @@ export function defectLine(defects: readonly string[]): string | null {
   }
   const count = defects.length;
   return `${String(count)} ${count === 1 ? "row" : "rows"} of the register could not be read`;
+}
+
+/* ------------------------------------------------------------- the queue -- */
+
+/**
+ * The second block: the goals nobody has authorized.
+ *
+ * Everything below is a statement about what a human sees that a test can
+ * point at. Nothing here reaches the network, reads a clock on its own or
+ * renders anything; the pane holds the state and this decides what it means.
+ */
+
+/** The inbox split in two: everything that is not an approval, and the approvals. */
+export function askedOf(needs: readonly Need[]): Need[] {
+  return needs.filter((need) => need.kind !== "approval");
+}
+
+export function waitingOf(needs: readonly Need[]): Need[] {
+  return needs.filter((need) => need.kind === "approval");
+}
+
+/**
+ * The header, in words rather than one number.
+ *
+ * Two jobs share this page and the header is where a human chooses which one
+ * they are here for, so it says both counts and what each one is.
+ */
+export function headerLine(counts: Counts): string {
+  return `${String(counts.asked)} asked of you · ${String(counts.waiting)} waiting for your approval`;
+}
+
+/** How the queue is ordered: the backlog's own rank, or newest first. */
+export type QueueOrder = "backlog" | "newest";
+
+/** The origin chips, which are "yours" and "seats'" and nothing else. */
+export const ANY_ORIGIN = "any";
+export const YOURS = "human";
+export const SEATS = "main";
+
+/** What narrows the queue. None of it is persisted: it is a sitting's state. */
+export type Narrowing = { find: string; label: string; origin: string; order: QueueOrder };
+
+export const noNarrowing: Narrowing = { find: "", label: "", origin: ANY_ORIGIN, order: "backlog" };
+
+export function isNarrowed(narrowing: Narrowing): boolean {
+  return narrowing.find.trim() !== "" || narrowing.label !== "" || narrowing.origin !== ANY_ORIGIN;
+}
+
+/**
+ * The Find box reads the id, the intent and the labels.
+ *
+ * It is the board's `matchesText` extended by the labels, because a label is
+ * what a human types when they mean a family of work, and the board's own box
+ * would answer nothing for it.
+ */
+export function matchesQueueText(need: Need, text: string): boolean {
+  const wanted = text.trim().toLowerCase();
+  if (wanted === "") {
+    return true;
+  }
+  const row = need.row;
+  const intent = row === null ? need.title : row.intent;
+  const labels = (row === null ? [] : row.labels).join(" ");
+  return `${need.id} ${intent} ${labels}`.toLowerCase().includes(wanted);
+}
+
+/** A goal's origin, as the payload's row carries it. */
+export function originOf(need: Need): string {
+  return need.row === null ? "" : need.row.origin;
+}
+
+/** The labels of the rows on screen, with how many carry each, commonest first. */
+export function labelsIn(needs: readonly Need[]): { label: string; count: number }[] {
+  const counted = new Map<string, number>();
+  for (const need of needs) {
+    for (const label of need.row === null ? [] : need.row.labels) {
+      counted.set(label, (counted.get(label) ?? 0) + 1);
+    }
+  }
+  return [...counted.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => (a.count === b.count ? a.label.localeCompare(b.label) : b.count - a.count));
+}
+
+/** The rows the tools leave on screen, in the order the toggle asks for. */
+export function shownQueue(needs: readonly Need[], narrowing: Narrowing): Need[] {
+  const shown = needs.filter((need) => {
+    if (!matchesQueueText(need, narrowing.find)) {
+      return false;
+    }
+    if (narrowing.label !== "" && !(need.row === null ? [] : need.row.labels).includes(narrowing.label)) {
+      return false;
+    }
+    if (narrowing.origin === YOURS) {
+      return originOf(need) === YOURS;
+    }
+    if (narrowing.origin === SEATS) {
+      return originOf(need) !== YOURS;
+    }
+    return true;
+  });
+  if (narrowing.order !== "newest") {
+    return shown;
+  }
+  // Newest first by when the goal was opened. It is a second order over the
+  // server's rather than a re-rank: the server's order is the backlog's own,
+  // and that is what the default shows.
+  return [...shown].sort((a, b) => {
+    const left = a.row === null ? a.since : a.row.openedAt;
+    const right = b.row === null ? b.since : b.row.openedAt;
+    if (left === right) {
+      return 0;
+    }
+    return left > right ? -1 : 1;
+  });
+}
+
+/**
+ * The count in the block's head. It says what was narrowed away rather than
+ * quietly showing fewer rows than the number beside the title.
+ */
+export function queueCount(total: number, shown: number): string {
+  const waiting = `${String(total)} waiting`;
+  return shown === total ? waiting : `${waiting} · ${String(shown)} shown`;
+}
+
+/** How many labels a row shows before it says "+n". */
+export const SHOWN_LABELS = 3;
+
+export function rowLabels(need: Need): { shown: string[]; more: number } {
+  const labels = need.row === null ? [] : need.row.labels;
+  return { shown: labels.slice(0, SHOWN_LABELS), more: Math.max(0, labels.length - SHOWN_LABELS) };
+}
+
+/** A budget tuple in the five words the sheet names them by, or "". */
+export function budgetWords(budget: Budget | undefined): string {
+  if (budget === undefined) {
+    return "";
+  }
+  return [
+    `${budget.elapsedLimit} elapsed`,
+    `${String(budget.attemptLimit)} attempts`,
+    `${String(budget.reservedJobMinutesLimit)} reserved job minutes`,
+    `${String(budget.activeJobLimit)} active jobs`,
+    `${String(budget.reviewRoundLimit)} review rounds`,
+  ].join(" · ");
+}
+
+/** What an opened row says about the budget the goal already carries. */
+export function budgetLine(need: Need): string {
+  const words = budgetWords(need.row === null ? undefined : need.row.budget);
+  return words === "" ? "no budget recorded" : words;
+}
+
+/** What is holding a goal up, in one line, or "" where nothing is. */
+export function blockedLine(need: Need): string {
+  const row = need.row;
+  if (row === null) {
+    return "";
+  }
+  if (row.openBlockers.length > 0) {
+    return `waits for ${row.openBlockers.join(", ")}`;
+  }
+  return row.blockedBy.length === 0 ? "" : `waits for ${row.blockedBy.join(", ")}, all done`;
+}
+
+/** Which band a goal stands in, and where in it. */
+export function bandLine(need: Need): string {
+  const row = need.row;
+  if (row === null || row.priority < 1) {
+    return "no priority band";
+  }
+  const place = row.sequence > 0 ? `, position ${String(row.sequence)}` : "";
+  return `priority ${String(row.priority)}${place}`;
+}
+
+/* ------------------------------------------------------ select and act -- */
+
+/**
+ * One line of a bulk sheet: the goal, and either the budget it would be
+ * approved with or the reason it is not being sent.
+ *
+ * A goal whose prefill is null is listed and excluded rather than silently
+ * dropped or sent with five empty fields: the human sees it named, and
+ * approves it alone where the sheet can ask them for the tuple.
+ */
+export type Planned = { id: string; title: string; budget: Budget | null; source: string; excluded: string };
+
+/** The words the approve sheet uses for where a prefilled budget came from. */
+const SOURCE_WORDS: Readonly<Record<BudgetSource, string>> = {
+  goal: "the tuple this goal already carries",
+  project: "the project's budget law for this goal's tier",
+  "last-approved": "the goal approved most recently",
+  none: "nothing: this project declares no budget law and no goal has been approved yet",
+};
+
+export const NEEDS_ITS_BUDGET = "needs its budget first: approve it alone";
+
+/**
+ * What an "Approve n selected" would send, in the order it would send them.
+ *
+ * The budget is `prefillFor`'s, exactly as the single-goal sheet computes it,
+ * so a human who reads one sheet has read the other.
+ */
+export function approvePlan(
+  selected: readonly Need[],
+  defaults: Partial<Record<string, Budget>>,
+  rows: readonly Row[],
+): Planned[] {
+  return selected.map((need) => {
+    const row = need.row;
+    if (row === null) {
+      return { id: need.id, title: need.title, budget: null, source: "", excluded: NEEDS_ITS_BUDGET };
+    }
+    const prefill = prefillFor(row, defaults, rows);
+    if (prefill.budget === null) {
+      return { id: need.id, title: need.title, budget: null, source: "", excluded: NEEDS_ITS_BUDGET };
+    }
+    return {
+      id: need.id, title: need.title, budget: prefill.budget,
+      source: SOURCE_WORDS[prefill.source], excluded: "",
+    };
+  });
+}
+
+/** The same list for a park, where nothing is excluded: a park takes no budget. */
+export function parkPlan(selected: readonly Need[]): Planned[] {
+  return selected.map((need) => ({
+    id: need.id, title: need.title, budget: null, source: "", excluded: "",
+  }));
+}
+
+/** The goals a run would actually send. */
+export function sendable(plan: readonly Planned[]): Planned[] {
+  return plan.filter((one) => one.excluded === "");
+}
+
+/** What the button says, which is the count it would act on. */
+export function actLabelFor(act: "approve" | "park", selected: number): string {
+  return act === "approve"
+    ? `Approve ${String(selected)} selected`
+    : `Not now for ${String(selected)} selected`;
+}
+
+/** How far a run has got, while it runs. */
+export function progressLine(done: number, total: number): string {
+  return `${String(done)} of ${String(total)}`;
+}
+
+/**
+ * What a run says when an answer failed.
+ *
+ * It names the goal and gives the engine's own words, and it says the goal is
+ * UNRESOLVED rather than refused: a failed answer can follow a publication
+ * that landed, so only the page's next read can say what the ledger did. The
+ * goals after it were not sent at all, which is the stop rule.
+ */
+export function stoppedLine(at: Planned, reason: string, sent: number, total: number): string {
+  // The goal that failed is not one of the goals after it: with three sent
+  // and the fourth refused of four, nothing followed it.
+  const left = total - sent - 1;
+  const rest = left <= 0 ? "" : ` ${String(left)} after it were not sent.`;
+  return `Stopped at ${at.id}: ${reason} Whether it landed is unresolved; the re-read below says what the ledger did.${rest}`;
 }
