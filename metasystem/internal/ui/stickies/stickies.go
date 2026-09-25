@@ -161,10 +161,23 @@ func refuse(kind RefusalKind, message string) *Refusal {
 // environment variable naming a run-scoped home — moves this file too. A test
 // that redirected one and not the other would be a test writing into the real
 // account's home, which is the one thing a test of this file must never do.
+//
+// A selected path that is not absolute is refused rather than used. Where the
+// account has no home directory the kit can read, the registry falls back to a
+// relative `.metasystem/armed-checkouts.jsonl`, and a relative path resolves
+// against the working directory — which for this server is the checkout it
+// serves. Notes would then land inside the one place this whole package exists
+// to keep them out of, silently, on the machine least able to notice it. So
+// such a build has no notepad at all, and the page says so.
 func Home() (string, error) {
 	selected, err := registry.DefaultPath()
 	if err != nil {
 		return "", err
+	}
+	if !filepath.IsAbs(selected) {
+		return "", fmt.Errorf(
+			"the account's registry home resolved to %q, which is not an absolute path, so a notepad under it would land inside whatever directory this server was started in",
+			selected)
 	}
 	return filepath.Dir(selected), nil
 }

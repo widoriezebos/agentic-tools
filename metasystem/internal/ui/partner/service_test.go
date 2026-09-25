@@ -50,6 +50,52 @@ func TestATurnIsAdmittedStreamedAndWrittenDown(t *testing.T) {
 	testutil.Expect(t, "the answer keeps no activity of its own", len(snapshot.Messages[1].Activity), 0)
 }
 
+// A capture is held to its bounds at this boundary, before the transcript
+// keeps it.
+//
+// The human's notepad lives outside every checkout so that no seat reads it. A
+// message, though, is written INSIDE the checkout's state root and kept — so a
+// capture that arrived carrying forty private reminders and was written down
+// whole would put the notepad in the one place it exists to stay out of, and
+// the block's own bound, which is applied later over what is already stored,
+// would not have stopped it. The page caps what it sends; this is the check
+// that does not take the page's word for it.
+func TestACaptureIsBoundedBeforeTheTranscriptKeepsIt(t *testing.T) {
+	t.Parallel()
+	service, _ := serviceOn(t, fakeacp.Script{Chunks: []string{"noted"}})
+	events, stop := service.Subscribe()
+	defer stop()
+
+	many := make([]partner.Sticky, 0, 40)
+	for count := 0; count < 40; count++ {
+		many = append(many, partner.Sticky{Text: "one of forty"})
+	}
+	sent := partner.Page{Section: "Fleet", Path: "/fleet", Sheet: "Stickies",
+		StickiesOpen: 40, Stickies: many}
+
+	_, err := service.Submit(context.Background(), "Wido", "key-1", "what did I want to remember?", sent)
+	testutil.Require(t, "admitted", err, nil)
+	collect(t, events, partner.EventDone)
+
+	snapshot, err := service.Snapshot("Wido", 100)
+	testutil.Require(t, "read back", err, nil)
+	testutil.Require(t, "two messages", len(snapshot.Messages), 2)
+	kept := snapshot.Messages[0].Page
+	testutil.Require(t, "the question kept its page", kept != nil, true)
+	testutil.Expect(t, "how many stickies the transcript kept", len(kept.Stickies), 25)
+	testutil.Expect(t, "that it says how many it cut", kept.StickiesCut, 15)
+	testutil.Expect(t, "that the open count is untouched", kept.StickiesOpen, 40)
+	// And the sheet composes the same bound, through the same method, so what a
+	// human is shown before asking is what the question would carry.
+	testutil.Expect(t, "what the sheet says is missing",
+		strings.Contains(service.See(sent, composedAtService).Block,
+			"15 more the page was showing are not in this block"), true)
+}
+
+// composedAtService is when the capture above is composed. It is a fixed
+// instant: nothing here waits for a clock.
+var composedAtService = time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+
 // The same key twice is the same turn once, so a retry after a lost answer
 // never asks the Partner twice.
 func TestTheSameKeyIsTheSameTurn(t *testing.T) {

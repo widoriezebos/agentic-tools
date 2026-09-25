@@ -80,6 +80,51 @@ func TestTheStickiesInOneTurnAreBoundedAndSayWhatIsMissing(t *testing.T) {
 		strings.Contains(block, "5 more the page was showing are not in this block"), true)
 }
 
+// The boundary's own bound: forty stickies on the wire are twenty-five in the
+// capture, and the twenty-five are the first of them.
+//
+// The page caps what it sends, and this is the check that does not take the
+// page's word for it. It matters more than the block's bound does: a capture
+// is WRITTEN DOWN, in this checkout's state root, with the message it was
+// asked from — so a capture that arrived whole would put a whole notepad of
+// private reminders inside the checkout the notepad exists to stay out of.
+func TestACaptureIsHeldToTheBoundBeforeAnythingKeepsIt(t *testing.T) {
+	t.Parallel()
+
+	many := make([]Sticky, 0, 40)
+	for count := 0; count < 40; count++ {
+		many = append(many, Sticky{Text: "one of forty"})
+	}
+
+	bounded := Page{Section: "Fleet", Path: "/fleet", StickiesOpen: 40, Stickies: many}.Bound()
+
+	testutil.Expect(t, "how many the capture carries", len(bounded.Stickies), maxStickiesCarried)
+	testutil.Expect(t, "how many it says it cut", bounded.StickiesCut, 40-maxStickiesCarried)
+	testutil.Expect(t, "that the open count is untouched", bounded.StickiesOpen, 40)
+	testutil.Expect(t, "that a capture inside the bound is left alone",
+		Page{Stickies: many[:maxStickiesCarried]}.Bound().StickiesCut, 0)
+}
+
+// What the boundary cut is said, not swallowed: the block counts what it left
+// out and what never reached it as one number, so a Partner reading a capped
+// notepad knows it is capped.
+func TestTheBlockSaysWhatTheBoundaryCutAsWellAsWhatItLeftOut(t *testing.T) {
+	t.Parallel()
+
+	many := make([]Sticky, 0, 40)
+	for count := 0; count < 40; count++ {
+		many = append(many, Sticky{Text: "one of forty"})
+	}
+
+	block := See(Facts{}, Page{Section: "Fleet", Path: "/fleet",
+		StickiesOpen: 40, Stickies: many}.Bound(), composedAt).Block
+
+	testutil.Expect(t, "how many lines were carried",
+		strings.Count(block, "  - one of forty"), maxStickiesCarried)
+	testutil.Expect(t, "that it says what is missing",
+		strings.Contains(block, "15 more the page was showing are not in this block"), true)
+}
+
 // A done sticky says it is done, so a Partner reading a panel with the
 // disclosure open does not report a struck-off reminder as outstanding.
 func TestADoneStickySaysSo(t *testing.T) {

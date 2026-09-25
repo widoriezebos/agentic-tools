@@ -17,9 +17,11 @@ import { StickiesProvider } from "./stickies/store";
  * and the toasts stand over everything, and only the bell is a control in the
  * header.
  *
- * The notepad is beside it for the same reason and one more: a goal page and
- * the document reader each show the stickies about them, so the list has to be
- * above every route as well as above the panel that writes it.
+ * The notepad is beside it for the first half of that reason: a goal page and
+ * the document reader each show the stickies about them, so the list has to
+ * stand above every route. Its PANEL does not stand here — it is rendered
+ * inside the shell, where the page's subject, the conversation and the work
+ * area are, because it needs all three and this is above them.
  */
 export function App() {
   return (

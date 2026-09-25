@@ -10,7 +10,6 @@ import {
   type Change,
   type Notepad,
 } from "./api";
-import { StickiesPanel } from "./Panel";
 import { emptyNotepad } from "./stickies";
 
 /**
@@ -18,10 +17,17 @@ import { emptyNotepad } from "./stickies";
  *
  * There is one list, and the header's button, the panel, the goal page's block
  * and the Partner's capture all read it from here — four surfaces onto one
- * fact, rather than four requests and four opinions. It is the shape the
- * notifications provider already has, and for the same reason: the panel is a
- * sheet rendered beside the shell's children, so nothing below has to know it
- * exists in order to be underneath it.
+ * fact, rather than four requests and four opinions.
+ *
+ * The list stands above the shell, because a goal page and the document reader
+ * each show the stickies about them. The PANEL does not: it is rendered inside
+ * the shell, beside the rest of what stands over the work area, because it
+ * needs three things this provider is above and therefore cannot give it — the
+ * page's own subject, so the composer's chip is the goal being looked at; the
+ * conversation, so an open sheet is named in the capture; and the work area,
+ * so the sheet is modal for the work area alone and the Partner drawer stays
+ * live underneath. A panel rendered here had none of the three, and "open the
+ * panel and ask" — J4's own gesture — could not be performed at all.
  *
  * The notepad is read once, when the page loads. Everything after that is an
  * act the human made, and every act answers the whole notepad, so there is
@@ -35,6 +41,14 @@ type Stickies = {
   problem: string;
   /** True while the panel stands open, which the capture reads. */
   panelIsOpen: boolean;
+  /**
+   * True while the "Done (n)" disclosure stands open. It is held here rather
+   * than in the element because the capture depends on it: what the Partner is
+   * given is what the human can SEE, and struck-off stickies folded away
+   * behind the disclosure are not that.
+   */
+  doneIsOpen: boolean;
+  showDone: (open: boolean) => void;
   /**
    * Open the panel, optionally with the composer already about something —
    * which is what "Add a sticky" on a goal page does.
@@ -70,6 +84,8 @@ export const StickiesContext = createContext<Stickies>({
   loaded: false,
   problem: "",
   panelIsOpen: false,
+  doneIsOpen: false,
+  showDone: () => {},
   openPanel: () => {},
   closePanel: () => {},
   opening: null,
@@ -87,6 +103,7 @@ export function StickiesProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [problem, setProblem] = useState("");
   const [open, setOpen] = useState(false);
+  const [doneOpen, setDoneOpen] = useState(false);
   const [opening, setOpening] = useState<About | null>(null);
 
   // The notepad, once.
@@ -108,13 +125,20 @@ export function StickiesProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // The panel opens with the struck-off ones folded away, every time, and the
+  // state here is put back to that on both edges. The disclosure itself goes
+  // with the sheet when the sheet closes, so a remembered true would be this
+  // store claiming the human can see something no longer on their screen —
+  // and the capture believes this store.
   const openPanel = useCallback((about?: About) => {
     setOpening(about ?? null);
+    setDoneOpen(false);
     setOpen(true);
   }, []);
 
   const closePanel = useCallback(() => {
     setOpen(false);
+    setDoneOpen(false);
     setOpening(null);
   }, []);
 
@@ -152,6 +176,8 @@ export function StickiesProvider({ children }: { children: ReactNode }) {
       loaded,
       problem,
       panelIsOpen: open,
+      doneIsOpen: doneOpen,
+      showDone: setDoneOpen,
       openPanel,
       closePanel,
       opening,
@@ -159,13 +185,8 @@ export function StickiesProvider({ children }: { children: ReactNode }) {
       change,
       remove,
     }),
-    [notepad, loaded, problem, open, openPanel, closePanel, opening, jot, change, remove],
+    [notepad, loaded, problem, open, doneOpen, openPanel, closePanel, opening, jot, change, remove],
   );
 
-  return (
-    <StickiesContext.Provider value={value}>
-      {children}
-      <StickiesPanel />
-    </StickiesContext.Provider>
-  );
+  return <StickiesContext.Provider value={value}>{children}</StickiesContext.Provider>;
 }

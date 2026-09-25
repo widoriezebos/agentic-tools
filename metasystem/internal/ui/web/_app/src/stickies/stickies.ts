@@ -104,6 +104,33 @@ export function chipPath(named: About): string {
 }
 
 /**
+ * What the composer opens about: what "Add a sticky" asked for, else the thing
+ * on the screen, else nothing.
+ *
+ * It is here rather than inside the composer because the answer depends on
+ * something no field can see: the panel has to be rendered where the page says
+ * what it is about. Opened from the header on a goal page there is no opening
+ * chip at all, so the whole of the chip is the page's subject — which is only
+ * the goal's if the panel stands inside the shell's own subject provider.
+ */
+export function composerAbout(opening: About | null, subject: Subject): About[] {
+  const offered = opening ?? aboutThePage(subject);
+  return offered === null ? [] : [offered];
+}
+
+/**
+ * How many stickies one capture carries.
+ *
+ * It is the server's own bound, written here too because this is where the
+ * cutting has to happen: a capture is kept — the turn's message is written into
+ * the checkout's state root with the page it was asked from — so a notepad of
+ * five hundred sent whole would be five hundred private reminders stored inside
+ * the one place the notepad is deliberately not. The server holds the same
+ * bound and does not take this file's word for it.
+ */
+export const MAX_CAPTURED = 25;
+
+/**
  * What the Partner is given about the notepad, from one capture.
  *
  * D5, with Astra's F2 folded in: while the panel is open the capture carries
@@ -112,15 +139,24 @@ export function chipPath(named: About): string {
  * question. Closed, it carries what the page shows: the goal page's or the
  * document's. The open count travels either way, so "you have four open
  * stickies, none about this page" is an answer the Partner can give.
+ *
+ * What the panel SHOWS is not the whole notepad. The struck-off ones sit behind
+ * a disclosure, and a capture that carried them while they were folded away
+ * would be telling the Partner things the human cannot see on their own screen
+ * — which is the opposite of what this capture is for. So the disclosure's own
+ * state is asked for, and done stickies travel only while it stands open.
  */
 export function captured(
   notepad: Notepad,
   panelIsOpen: boolean,
+  doneIsOpen: boolean,
   subject: Subject,
 ): { stickies: { text: string; about: string[]; done?: boolean }[]; open: number } {
-  const shown = panelIsOpen ? notepad.stickies : about(notepad, aboutThePage(subject));
+  const shown = panelIsOpen
+    ? [...openStickies(notepad), ...(doneIsOpen ? doneStickies(notepad) : [])]
+    : about(notepad, aboutThePage(subject));
   return {
-    stickies: shown.map((sticky) => {
+    stickies: shown.slice(0, MAX_CAPTURED).map((sticky) => {
       const said: { text: string; about: string[]; done?: boolean } = {
         text: sticky.text,
         about: sticky.about.map(saidAs),

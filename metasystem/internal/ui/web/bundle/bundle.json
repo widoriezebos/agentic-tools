@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:cdbaa3ec7c8858bbc273978a2da819e4ff5446dcf29a09cc408980038e8fa37c",
+  "sourceDigest": "sha256:18655cf8c9e8fb6b92b70728105c8c0054361494fbaa7587307138ae42ab6689",
   "source": [
     {
       "path": ".npmrc",
@@ -68,7 +68,7 @@
     },
     {
       "path": "src/App.tsx",
-      "sha256": "ddf23f49be8da4e4cf04163cdb118d3e21fbef70a53ccd549eb2829b2d7363a0"
+      "sha256": "99a35020ee344e6417589807ff07780ad6b886d4c76c17021687bb52c0f77dbf"
     },
     {
       "path": "src/application/ApplicationPane.test.tsx",
@@ -628,7 +628,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "356b83db61d12938c1e2ac09d9fa501742f93ac652e07293b2be8fc0eaa1e71e"
+      "sha256": "c2b67d7eceb1ba74d2edb3e35bd7934d862fc31ffae05271d048f8567e39bc5f"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -772,7 +772,7 @@
     },
     {
       "path": "src/shell/Shell.tsx",
-      "sha256": "db32bd2a89122ecf3297a6a0fdb58c8a98f1c14f120edb460525ca4ccc032c13"
+      "sha256": "69fed0d04d771e3e7717d001a1f82687091bf208c2393a3f8b298d3c80b39f8d"
     },
     {
       "path": "src/shell/SignInControl.tsx",
@@ -856,7 +856,7 @@
     },
     {
       "path": "src/stickies/Panel.tsx",
-      "sha256": "175d1303f9cea0d2a9fb39e3a9dae0e7f7b3e437f0b4c5c62e682848138ec2d8"
+      "sha256": "1657642e195603725a8cbcf6efe645c4ce4cc64bc47e0d058efd234fa0949ce3"
     },
     {
       "path": "src/stickies/api.ts",
@@ -868,15 +868,15 @@
     },
     {
       "path": "src/stickies/stickies.test.tsx",
-      "sha256": "99fecdc03fb550e67cf242e26c51f69979fd5e13013758df008975aec3b13144"
+      "sha256": "1f843836eeb2e7a135d0882b8c0e03361427e40829d42a3fdd68c7dc1701f9e5"
     },
     {
       "path": "src/stickies/stickies.ts",
-      "sha256": "35d69ae047145f2ea1ff0e4b75f5c63c42c498c6e4836bb93be79ebb18dadd48"
+      "sha256": "c9cfe9cec984ad588cc689b288019ebcc35e4eab7596928bfa630b77b83716bf"
     },
     {
       "path": "src/stickies/store.tsx",
-      "sha256": "f388f7a681c76f4eab8e36352f92d7232d45ae666568f89f3825ad335149291e"
+      "sha256": "12c333cf19d8ecae13f2641b4ddab322e2e391e457230ee8f7ac350a5046c802"
     },
     {
       "path": "src/storage.test.ts",
@@ -930,11 +930,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "4ad902797e12e5a02c6bce026b8f0acb96765e4f41be2af7936922f0070b44c8"
+      "sha256": "a82e19d0ffc5e12e676defcb28fb97fde7e55d4664e316d4cab72d1787f35321"
     },
     {
       "path": "assets/index.js",
-      "sha256": "48e6e1f6d861b72cba83b3ad95d635a0ae396c9ac2441441ed904227335f439e"
+      "sha256": "d357494d8aaeb14ba33d352f329e9f0a05b11330f5b92b16e755e52db05b7242"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

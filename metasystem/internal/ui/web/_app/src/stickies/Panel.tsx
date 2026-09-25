@@ -6,9 +6,9 @@ import { NavLink } from "react-router";
 import type { About, Sticky } from "./api";
 import { useStickies } from "./store";
 import {
-  aboutThePage,
   chipPath,
   chipWords,
+  composerAbout,
   doneLabel,
   doneStickies,
   openStickies,
@@ -46,7 +46,7 @@ import { useSubject } from "../shell/about";
 const NOTHING_YET = "Nothing yet. Write what you want to remember; it stays on this seat and no agent reads it.";
 
 export function StickiesPanel() {
-  const { notepad, loaded, problem, panelIsOpen, closePanel } = useStickies();
+  const { notepad, loaded, problem, panelIsOpen, doneIsOpen, showDone, closePanel } = useStickies();
   const open = openStickies(notepad);
   const done = doneStickies(notepad);
 
@@ -84,7 +84,16 @@ export function StickiesPanel() {
         </ul>
       )}
       {done.length > 0 && (
-        <details className="ms-stickies-done">
+        // Whether it is folded open is the store's, not this element's, because
+        // the capture reads it: what the Partner is told is what the human can
+        // see, and a struck-off sticky behind a closed disclosure is not that.
+        <details
+          className="ms-stickies-done"
+          open={doneIsOpen}
+          onToggle={(event) => {
+            showDone(event.currentTarget.open);
+          }}
+        >
           <summary className="ms-stickies-done-head">{doneLabel(done.length)}</summary>
           <ul className="ms-stickies-rows">
             {done.map((sticky) => (
@@ -110,10 +119,7 @@ function Composer() {
   const { opening, jot } = useStickies();
   const subject = useSubject();
   const [text, setText] = useState("");
-  const [about, setAbout] = useState<About[]>(() => {
-    const offered = opening ?? aboutThePage(subject);
-    return offered === null ? [] : [offered];
-  });
+  const [about, setAbout] = useState<About[]>(() => composerAbout(opening, subject));
   const [picking, setPicking] = useState(false);
   const [goals, setGoals] = useState<PickableGoal[] | null>(null);
   const [refusal, setRefusal] = useState("");

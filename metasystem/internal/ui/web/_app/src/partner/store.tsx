@@ -274,7 +274,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // The human's own notepad, as the page is showing it. It is read here rather
   // than described by each pane, because what travels depends on something no
   // pane knows: whether the panel is open over it.
-  const notepad = captured(stickies.notepad, stickies.panelIsOpen, subject);
+  const notepad = captured(stickies.notepad, stickies.panelIsOpen, stickies.doneIsOpen, subject);
   const noted = JSON.stringify(notepad);
   const compose = useCallback(
     (list: readonly Attachment[]) =>
