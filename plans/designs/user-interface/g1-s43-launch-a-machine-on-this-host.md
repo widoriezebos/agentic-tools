@@ -69,9 +69,14 @@ UI is running." Author Fable. Every cite re-read at `b50abb959`.
 
 ## 2. Decisions
 
-- D1. **A launched machine is a clone beside this checkout**,
-  `<parent of this checkout>/agentic-tools-<nickname>`, cloned from this
-  checkout's own objects (fast, offline, no credential prompt) with its
+- D1. **A launched machine is a clone beside this checkout**, by default
+  `<parent of this checkout>/<repository>-<nickname>`, where `<repository>`
+  is the name of the ledger remote's repository read from the origin URL
+  (`agentic-tools` for `https://github.com/widoriezebos/agentic-tools.git`;
+  another project gets its own name, Wido 2026-09-25: the remote's name is
+  the right default, never a fixed word). The destination is a default the
+  human may change in the sheet, kept on this host. The clone comes from
+  this checkout's own objects (fast, offline, no credential prompt) with its
   `origin` set to this checkout's origin URL, then fetched from origin so
   it reads the fleet's tip. Never a worktree (1.1). Same host by
   construction: the interface's server runs here and writes here.
@@ -127,7 +132,7 @@ the word pair's own refusal. The steps, each a record entry with
 
 | step | precondition | command, from the launching seat | refusal |
 |---|---|---|---|
-| 1 clone | destination absent | `git clone --quiet <this checkout> <dest>`; `git -C <dest> remote set-url origin <origin url>`; `git -C <dest> config metasystem.steward.landing-ref refs/remotes/origin/main`; every `goal.human.*` key copied | git's words |
+| 1 clone | destination absent; its parent exists on this host | `git clone --quiet <this checkout> <dest>`; `git -C <dest> remote set-url origin <origin url>`; `git -C <dest> config metasystem.steward.landing-ref refs/remotes/origin/main`; every `goal.human.*` key copied | git's words |
 | 2 engine | `<dest>/metasystem/bin/metasystem` absent or its stamp is not `<dest>`'s HEAD | `<dest>/metasystem/scripts/agents/go-build.sh` | the build's or the gate fence's words |
 | 3 configuration | `<dest>/metasystem/metasystem.conf.local` absent | copy this seat's `metasystem.conf.local`, then rewrite `evidence.root` to `<this seat's evidence root>/../<nickname>` (read through `config get`, never by the verb's own parsing), create that directory; then `validate session-isolation` with the adapters' manifest for the local runtime files; then `<dest>/metasystem/bin/metasystem config validate --repo <dest>` | the validator's words |
 | 4 nickname | `metasystem.goal.machine` unset in `<dest>` | `git -C <dest> config metasystem.goal.machine <nickname>` | none |
@@ -170,8 +175,10 @@ stays usable) with:
 1. **Nickname**, proposed as the next free letter of this host's series
    (`m1f` after `m1e`), editable, validated live against the charset and
    against the machines the page already shows.
-2. **Where**: the destination path, shown and not editable, "beside this
-   checkout".
+2. **Where**: the destination path, proposed as the remote repository's
+   name with the nickname appended, beside this checkout, and editable; an
+   absolute path on this host, refused when it exists or lies inside another
+   checkout.
 3. **What it gets**: one sentence naming what is copied, "this seat's
    roster and local configuration, its runtime settings, and the fleet's
    ledger", and one naming what it will not do, "it starts no session; it
