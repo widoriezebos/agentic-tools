@@ -886,6 +886,13 @@ function blockerOf(row: Row): string {
   if (row.fence !== undefined) {
     return `stopped ${dateAndTime(row.fence.closedAt)}: ${row.fence.reason}`;
   }
+  // A holder that has gone quiet, immediately after a fence and before a
+  // dependency park: a fenced card still says it is stopped, and a card that
+  // is merely held by a machine nobody has heard from says that instead of
+  // saying nothing. It is a flag and never an act.
+  if (row.holder !== undefined && row.holder.flag !== "") {
+    return row.holder.flag;
+  }
   // A dependency-created park carries a marker, and its reason is written
   // from the blockers themselves. The card says what has to happen rather
   // than repeating the record's own sentence back: "waiting for A and B to be

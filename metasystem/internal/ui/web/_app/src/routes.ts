@@ -91,8 +91,8 @@ export const sections: readonly Section[] = [
     path: "/fleet",
     title: "Fleet",
     icon: Server,
-    shows: "A row per machine and seat, with its sessions, the jobs it is running, its last census and its health, each stamped with when it was observed.",
-    projected: false,
+    shows: "A row per machine: whether it has been heard from and when, what it is running, and which goals it holds, with this seat's own publishing and health above them.",
+    projected: true,
   },
   {
     id: "decisions",

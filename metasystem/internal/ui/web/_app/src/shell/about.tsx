@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import type { FleetCapture } from "../partner/api";
+
 /**
  * What the page is about, said once, where the drawer and the Partner can read
  * it.
@@ -68,6 +70,15 @@ export type Subject = {
    * a record's checkout-relative path, or a question's id.
    */
   records?: string[];
+  /**
+   * The fleet as this page is showing it: the machines on screen with their
+   * standings and flags, and where the presence copy came from.
+   *
+   * It travels for the board's reason. A standing is a judgement made against
+   * a clock, and the server composing its own a minute later would answer a
+   * question about a reading nobody was looking at.
+   */
+  fleet?: FleetCapture;
 };
 
 /** One column of the board as the page is showing it. */

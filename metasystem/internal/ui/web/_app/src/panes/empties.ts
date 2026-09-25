@@ -45,15 +45,6 @@ export type Empty = {
 
 export const empties: readonly Empty[] = [
   {
-    id: "fleet",
-    kind: "not projected",
-    heading: "Fleet is not projected yet",
-    body: "This machine's sessions, jobs, census, and health are recorded and will be shown with observation times and gaps.",
-    note: "Arrives with g1-s13",
-    link: null,
-    action: null,
-  },
-  {
     id: "decisions",
     kind: "not projected",
     heading: "Decisions are not projected yet",

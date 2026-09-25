@@ -445,6 +445,10 @@ function ClaimedCard({ claimed }: { claimed: Claimed }) {
       </Where>
       <p className="ms-overview-card-facts">
         <Chip>{seat}</Chip>
+        {/* The flag beside the seat, where the server could read a standing
+            for that machine. It says what is known and asks for nothing: the
+            Fleet page is where a human goes to act on it. */}
+        {claimed.holder !== undefined && claimed.holder.flag !== "" && <Chip marker>{claimed.holder.flag}</Chip>}
         {claimed.phase !== "" && <Chip>{claimed.phase}</Chip>}
         {when !== "" && <span className="ms-mono ms-overview-card-since">since {when}</span>}
       </p>

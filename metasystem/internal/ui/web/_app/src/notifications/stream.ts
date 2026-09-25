@@ -34,9 +34,22 @@ import type { PartnerEvent } from "../partner/api";
 
 const STREAM = "/api/notifications/stream";
 
-/** The two events the server names on this stream. */
+/** The three events the server names on this stream. */
 const EVENT = "notification";
 const PARTNER = "partner";
+/**
+ * The presence fetch owner finished an attempt — a success, a failure, or a
+ * look that found nothing new.
+ *
+ * It rides here for the same reason the Partner's beats do. Presence changes
+ * because another machine ticked, at a moment nobody on this side chose, and
+ * a Fleet page that is already mounted would otherwise show the reading it
+ * loaded with until somebody pressed Refresh. The event carries no payload
+ * and no id: the page re-reads /api/fleet, which is the one place the answer
+ * is composed, and an id of its own would name something the notification
+ * journal cannot find on a reconnect.
+ */
+const FLEET = "fleet";
 
 /**
  * The listeners that are not the notification store's.
@@ -49,12 +62,24 @@ const PARTNER = "partner";
  */
 const partnerListeners = new Set<(event: PartnerEvent) => void>();
 const openListeners = new Set<() => void>();
+const fleetListeners = new Set<() => void>();
 
 /** Listen for the Partner's beats. The returned function stops listening. */
 export function onPartnerEvent(listener: (event: PartnerEvent) => void): () => void {
   partnerListeners.add(listener);
   return () => {
     partnerListeners.delete(listener);
+  };
+}
+
+/**
+ * Listen for a finished presence attempt. The returned function stops
+ * listening, which is what a Fleet page that has left the screen calls.
+ */
+export function onFleetEvent(listener: () => void): () => void {
+  fleetListeners.add(listener);
+  return () => {
+    fleetListeners.delete(listener);
   };
 }
 
@@ -107,6 +132,14 @@ export function openNotificationStream(arrived: (notification: Notification) => 
       held(beat);
     }
   };
+  // A presence attempt finished. Nothing is parsed, because nothing is sent:
+  // the event says "there is something to read again", and the page does the
+  // reading.
+  const fleet = () => {
+    for (const held of fleetListeners) {
+      held();
+    }
+  };
   const opened = () => {
     for (const held of openListeners) {
       held();
@@ -114,10 +147,12 @@ export function openNotificationStream(arrived: (notification: Notification) => 
   };
   source.addEventListener(EVENT, listener as EventListener);
   source.addEventListener(PARTNER, partner as EventListener);
+  source.addEventListener(FLEET, fleet);
   source.addEventListener("open", opened);
   return () => {
     source.removeEventListener(EVENT, listener as EventListener);
     source.removeEventListener(PARTNER, partner as EventListener);
+    source.removeEventListener(FLEET, fleet);
     source.removeEventListener("open", opened);
     source.close();
   };

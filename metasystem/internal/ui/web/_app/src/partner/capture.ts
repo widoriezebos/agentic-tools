@@ -98,6 +98,12 @@ export function captureOf(from: Capturing): Page {
   if (page_.records !== undefined && page_.records.length > 0) {
     page.records = page_.records;
   }
+  // The fleet's own rows, for the reason the board's are: the standings were
+  // judged as this page was composed, and a reading taken afterwards would be
+  // a different answer to the question that was asked.
+  if (page_.fleet !== undefined) {
+    page.fleet = page_.fleet;
+  }
   put(page, "return", returnTo(from));
   return page;
 }

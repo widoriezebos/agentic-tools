@@ -26,6 +26,35 @@ const STOP = "/stop";
 /** One column of the board as the page is showing it. */
 export type Lane = { id: string; title: string; total: number; goals: string[] };
 
+/** One row of the Fleet table as the page displayed it. */
+export type FleetMachine = {
+  machine: string;
+  standing: string;
+  /** The age words the row showed, in this browser's own clock. */
+  seen?: string;
+  flag?: string;
+  holds?: string[];
+};
+
+/**
+ * The Fleet page as it was on screen: where the presence copy came from, the
+ * machines shown with their standings and flags, and the goals the page said
+ * need a human.
+ *
+ * It travels for the board's reason and it is bounded for the board's reason:
+ * only the page knows what was displayed, and a capture is not a listing
+ * tool. `total` is the whole the machines were taken from, so a block can say
+ * what it left out.
+ */
+export type FleetCapture = {
+  source?: string;
+  fetchedAt?: string;
+  problem?: string;
+  machines?: FleetMachine[];
+  needsYou?: string[];
+  total?: number;
+};
+
 /**
  * The capture: what the page was showing at the moment a question was sent.
  *
@@ -54,6 +83,8 @@ export type Page = {
   lanes?: Lane[];
   /** What the open project tab lists, by each row's own key. */
   records?: string[];
+  /** The fleet as the page was showing it, where the page is Fleet. */
+  fleet?: FleetCapture;
   label?: string;
   /** A selected passage, whole, with where it came from. */
   quote?: string;

@@ -138,6 +138,13 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // composed on the server from what that server already reads, so there is
   // one resource here and not five.
   ["overview/api.ts", 1, ["/api/overview"]],
+  // The fleet. One read when the pane mounts, one when a human presses the
+  // section's refresh, and one when the server says a presence attempt
+  // finished — which arrives on the stream named below and is not a request
+  // this file makes. The page holds no timer: presence changes because
+  // another machine ticked, and being told is the one stream this guard
+  // already allows.
+  ["fleet/api.ts", 1, ["/api/fleet"]],
   // The Project Partner. Three requests through one call site: the
   // conversation, read when the page loads and again on every reconnect of the
   // one stream below; a send, when a human presses Send; and a stop, when they
