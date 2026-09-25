@@ -33,6 +33,12 @@ func runUITools(args []string) int {
 	flags := flag.NewFlagSet("ui tools", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout the tools read (default: the checkout that contains the installation)")
 	installation := flags.String("metasystem-root", "", "metasystem installation")
+	// Which interface server run started this tool server. The fleet tool
+	// reads the presence-fetch metadata that run leaves behind, and that file
+	// outlives the run that wrote it; without this name the tool could cite a
+	// previous server's success while the page, which keeps its fetch state
+	// only in memory, had fallen back to the tick's copy.
+	presenceRun := flags.String("presence-run", "", "the interface server run whose presence fetches this tool may cite")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -50,7 +56,7 @@ func runUITools(args []string) int {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return 1
 	}
-	if err := uitools.Serve(os.Stdin, os.Stdout, toolReaders(roots)); err != nil {
+	if err := uitools.Serve(os.Stdin, os.Stdout, toolReaders(roots, *presenceRun)); err != nil {
 		fmt.Fprintln(os.Stderr, "the interface's tool server stopped reading: "+err.Error())
 		return 1
 	}
@@ -61,7 +67,7 @@ func runUITools(args []string) int {
 // are the interface server's readers, built here again rather than passed
 // across a process boundary: this process is the engine, and the engine reads
 // the ledger and the checkout the same way wherever it runs.
-func toolReaders(roots lifecycle.Roots) uitools.Readers {
+func toolReaders(roots lifecycle.Roots, presenceRun string) uitools.Readers {
 	now := func() time.Time { return time.Now().UTC() }
 	ledger := snapshot.New(roots.StateRoot, time.Now)
 	journal := steward.NotificationJournalPath(roots.Checkout)
@@ -90,12 +96,23 @@ func toolReaders(roots lifecycle.Roots) uitools.Readers {
 		// namespace.
 		Fleet: func() (fleet.Page, error) {
 			state, _, err := fleet.LoadMetadata(roots.Checkout)
-			copied := fleet.Copy{
-				AttemptedAt: state.AttemptedAt, SucceededAt: state.SucceededAt,
-				FailedAt: state.FailedAt, Problem: state.Problem,
-			}
-			if err != nil {
+			// Only the run that started this tool server may be cited. A
+			// file from another run describes fetches no live server has
+			// made, into a namespace this run has not refreshed, so it is
+			// read as no metadata at all and the tool falls back to the
+			// tick's copy exactly as the page does.
+			mine := err == nil && state.OfRun(presenceRun)
+			copied := fleet.Copy{}
+			switch {
+			case err != nil:
 				copied.Problem = "the interface's presence fetch metadata could not be read: " + err.Error()
+			case mine:
+				copied = fleet.Copy{
+					AttemptedAt: state.AttemptedAt, SucceededAt: state.SucceededAt,
+					FailedAt: state.FailedAt, Problem: state.Problem,
+				}
+			case state.Run != "":
+				copied.Problem = "the interface's presence fetch metadata was written by another server run"
 			}
 			observed := ledger.Observe()
 			board := backlog.Board{}
@@ -103,7 +120,7 @@ func toolReaders(roots lifecycle.Roots) uitools.Readers {
 				board = backlog.Project(observed.Tree, observed.Horizon, observed.Admission)
 			}
 			return fleetReader(roots,
-				func() bool { return state.SucceededAt != "" },
+				func() bool { return mine && state.SucceededAt != "" },
 				func() fleet.Copy { return copied },
 			)(observed, board, now())
 		},

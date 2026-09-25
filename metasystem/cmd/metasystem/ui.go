@@ -205,8 +205,17 @@ func runUI(verb string, args []string) int {
 		// it attempts nothing while no browser holds the notifications stream
 		// open, and at most once a minute when one does. Nothing it knows
 		// survives this process: the page says so until its first attempt.
+		// This run's own identifier. The metadata file the fetch owner writes
+		// for the Partner's tool outlives this process; nothing the owner
+		// knows does. So the file names the run that wrote it, and the tool
+		// is handed the same name, which is how it tells this server's
+		// fetches from a previous server's.
+		presenceRun, runErr := goal.NewOperationULID()
+		if runErr != nil {
+			return refuse(runErr.Error())
+		}
 		presenceWatch := fleet.NewWatch()
-		presence := fleetFetcher(roots, presenceWatch)
+		presence := fleetFetcher(roots, presenceWatch, presenceRun)
 		presenceContext, stopPresence := context.WithCancel(ctx)
 		defer stopPresence()
 		presenceStopped := make(chan struct{})
@@ -255,7 +264,7 @@ func runUI(verb string, args []string) int {
 				// session/new. A seat that cannot name its own executable gets
 				// a Partner that reads the page and nothing beyond it, which is
 				// the previous slice's Partner rather than no Partner at all.
-				if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation); toolsErr != nil {
+				if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation, presenceRun); toolsErr != nil {
 					fmt.Fprintln(os.Stderr, "interface Partner: "+toolsErr.Error())
 				} else {
 					admitted.Tools = tools
