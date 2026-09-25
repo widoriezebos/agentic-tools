@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:a7f449177a9a5f9717d9d32d0f3cd170bbf6bbf2be7c4d6da72ba0105de9e5fb",
+  "sourceDigest": "sha256:dacd7a74e58d2f0638096b1e072d78a146db7453e2ad824dc3db07a67e4b633e",
   "source": [
     {
       "path": ".npmrc",
@@ -252,35 +252,55 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "43eacb71899a27b1a2ceb8fa66ed7d0d42c613782dc9fae9291c5fb488c711f5"
+      "sha256": "8613e4c9973704475de0f958d5288e177875003a00f99eeb26b6feccbf2ed8c8"
     },
     {
       "path": "src/fleet/FleetPane.test.tsx",
-      "sha256": "d39b5245b961259838c1dc0f6614e8af4af6ea693baa5da03468acc883c1b44e"
+      "sha256": "86a46d176acdef607cc50b80ece308beb5bc97113a8c1c52042742f6445529c9"
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "6c2e36a07b82ddc1d98310104c4e7e802d044a73a1300d20c789b4d3c376e2bc"
+      "sha256": "5ca976554783f0589f0e34c71756d95b5f0eba54fd24d62fd7549f52afb38fbe"
+    },
+    {
+      "path": "src/fleet/LaunchCard.test.tsx",
+      "sha256": "48773ebd4f46cfccd446bde738c67715c0841c8a7ba06b17a2c26fb2023bbbc5"
+    },
+    {
+      "path": "src/fleet/LaunchCard.tsx",
+      "sha256": "41c046c2cbf05e90a644ce1bc45600fd3acf7042d8fc092e649f5d7f4c10f5f4"
+    },
+    {
+      "path": "src/fleet/LaunchSheet.tsx",
+      "sha256": "786003faa42af1d7e3350ee60527dded41eb78bdbcbf99880c063bb0342279e7"
     },
     {
       "path": "src/fleet/api.ts",
-      "sha256": "dce33be3361cf9bed7e704dc1b0a95c1e8154cd0a7e9896faba68188baeb103f"
+      "sha256": "0bf1c66c4fd3e1979a98e6cd3da1874ea657674fddd8acb9935bb9ac3ca91202"
     },
     {
       "path": "src/fleet/capture.ts",
-      "sha256": "800e5ced030614ba915cad5a719ea81db4cd0ec8a340409968e7032070dd780b"
+      "sha256": "563008ae80d611a023f2d3112a7bd5d6a984a3cdce5b3a3cddbeeb0e84780406"
     },
     {
       "path": "src/fleet/fleet.css",
-      "sha256": "d0bc7cf2ceef679c59efed64450c1b71a69281a6e87ba150a9b8692561623d24"
+      "sha256": "2c64c466f9cf5fdaa8fcbbecb1668b0537214b8e621817f35e8c414047c74509"
     },
     {
       "path": "src/fleet/fleet.ts",
       "sha256": "488150c9cd43d2fa28f8b2f84f26ffcecf4c1be233115387a21c1ae6e767b9c1"
     },
     {
+      "path": "src/fleet/launching.test.ts",
+      "sha256": "4ef527d8da6baa1dd0c7a910a3698b1125a9a25a483b6a0f3cec8d8e7dd8caa3"
+    },
+    {
+      "path": "src/fleet/launching.ts",
+      "sha256": "ba68f83d00897ed31290324e78c294e8aee4363f1737e10f36e17c013e64d52d"
+    },
+    {
       "path": "src/fleet/rendering.test.tsx",
-      "sha256": "0654ec3d49133177470462382aa63af461f0acfa6824f9254249bb3d63e8aaf1"
+      "sha256": "b76008121e361323ce240941c5db83c4b6e95987b05a487fdd37a6de68fad343"
     },
     {
       "path": "src/fonts.css",
@@ -300,7 +320,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "c7854d0f70d27e504df87ed9b11c92bd527c88872bf787ba9d7e1a6bcf0e5dba"
+      "sha256": "9da514ab36be0b98d2f6f099764d7c6610f8a0f8afab1d5971e1a34a8e52b24a"
     },
     {
       "path": "src/index.css",
@@ -444,7 +464,7 @@
     },
     {
       "path": "src/partner/api.ts",
-      "sha256": "2f6eb2c53d4e701a6eb938ddd010ae683fa5226b744d86c5cf56ff48ba572250"
+      "sha256": "047a76d3c6cdabbfaa3b56f550d0e923b8cb73ba2f60a98414f886559e875719"
     },
     {
       "path": "src/partner/asking.test.ts",
@@ -782,11 +802,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "d22af49569c000b06096edeef0bc48b05933bc17ab80eec07440f0aee45f7f97"
+      "sha256": "22d76e1fb3bd6a3da63fa267286ebe3534aa4271be4c22553113473d9a7d7a68"
     },
     {
       "path": "assets/index.js",
-      "sha256": "5e376e7daf7d65e0921baa40b3dd746236c08cd5505d8030b469d075afbd484f"
+      "sha256": "43358528c23889a49982fc3908e4ab5f671b761105a4a734bb27cc0c5cbda3e1"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
@@ -810,7 +830,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "973c6f61323558ff7b2b3e0abe00d42210aca4113b8322c8cdfd2409b63e2174"
+      "sha256": "f465ee3e14cd61d38311c6124c609d2b5128cc804bf60bb041698f4f9d79ab13"
     },
     {
       "path": "theme.js",
