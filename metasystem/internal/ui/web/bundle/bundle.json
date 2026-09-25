@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:34a1444360074865bb1892e33a4b36b087ab3aca234613fd722bd9aa9e50d290",
+  "sourceDigest": "sha256:1f7d1fa98964aacd5da72df6618bb96ea142fe08a03a3d7520d57b05a520b673",
   "source": [
     {
       "path": ".npmrc",
@@ -92,11 +92,11 @@
     },
     {
       "path": "src/backlog/EditSheet.test.tsx",
-      "sha256": "32d7038c8c192afdb6356ce81faef3659824143b1bacef6bcab60b25854b1d98"
+      "sha256": "c56c622f087cc8bc9bfac23a5e889e8c82feca411535320680b301c787649895"
     },
     {
       "path": "src/backlog/EditSheet.tsx",
-      "sha256": "2d4721bcb2fb5dd7bbf933788df144117ba83367bb020e49cb52838c0de25856"
+      "sha256": "d2868bc7fd20aa19716fd3f50ac84ced0a3090c0713c6ac6c8a00b7281edaf20"
     },
     {
       "path": "src/backlog/GoalRow.tsx",
@@ -862,7 +862,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "d868bab494e83c1c7a31c0fcd15f0b5a52f2db4965aaf89149676f13bce048cb"
+      "sha256": "d5796b8c54edf366cc5f0092163d183005efd026510e75e8694b1d2943b6b7ea"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
