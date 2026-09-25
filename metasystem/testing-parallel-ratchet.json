@@ -536,6 +536,11 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv",
       "test": "TestRegistrySidecarCleanupWaitsForInheritedLeaseAndCustodian",
       "reason": "sets the process-wide inherited supervision registry home and owner nonce"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies",
+      "test": "TestTheHomeFollowsTheRegistrysOwnFixtureSeam",
+      "reason": "sets the process-wide supervision registry home to prove the notepad follows the registry's own fixture seam, which is what keeps every other test in the package out of the real account's home"
     }
   ]
 }
