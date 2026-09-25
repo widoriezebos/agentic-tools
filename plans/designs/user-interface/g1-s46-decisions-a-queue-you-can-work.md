@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3C34HPPYNJ6Z0JFZNTTTVXV
-- Status: draft
+- Status: accepted
 - Goals: browser-interface
 
 Wido, 2026-09-25, on the live page: "it is a very big list of things that
@@ -132,9 +132,10 @@ Decisions:
   prefill is null is listed as "needs its budget first: approve it alone"
   and is not sent. One Approve sends the rest in order, one POST per goal,
   as the routes are, with "7 of 12" while it runs; the first failed answer stops the run and the sheet says at which goal
-  and with what words, the engine's; a failed answer can follow a publish,
-  so the page's re-read, not the sheet's count, is what says what landed;
-  then the page reads its payload again. The not-now sheet
+  and with what words, the engine's; a failed answer can follow a publish, so the page's re-read, which
+  reports the accepted ref as observed, not the sheet's count, is what
+  says what landed, and a goal whose answer failed is named as
+  unresolved, not as refused; then the page reads its payload again. The not-now sheet
   is the same list with one reason field, required, applied to every goal,
   the same run and the same stop rule. Sign-in is as today; the single-row
   Approve keeps the existing sheet and the single-row Not now is the
@@ -210,12 +211,17 @@ adds the block open, the narrowing in force and the selected count.
 
 Under R-125-m1u, in three layers, each the smallest that works:
 
-1. **The engine admits the session for two verbs.** `requireHuman`
-   (verbs.go:314-332) gains one clause after the grade checks: when the
-   row's verb is `park` or `unpark` and the proof is `SessionValidFor` the
-   endpoint's root, the requirement is met. A table of two verbs, cited to
-   the ruling; no other verb's rows change, so a landing or a handover
-   still refuses a session. The park and unpark mutations call
+1. **The engine admits the session at three rows.** `humanAuthorityRow`
+   gains a flag, set at exactly the rows the ruling names: the park of a
+   human-origin goal (verbs.go:2647-2651), the unpark of a human park to
+   queued and to approved (verbs.go:2772-2784); `requireHuman`
+   (verbs.go:314-332) gains one clause after the grade checks: a flagged
+   row is met by a proof that is `SessionValidFor` the endpoint's root.
+   The two other rows those verbs carry keep their grades: the park of
+   another pair's claim (verbs.go:2654) and the early lifting of a seat's
+   blocker park (verbs.go:2787) still refuse a session, so a queue goal
+   claimed between the read and the act is refused, not displaced. No
+   other verb changes. The park and unpark mutations call
    `recordSessionAuthority` on the history line they append, as approve
    does, so the ledger names the session as the hand. The `Parked.By` a
    session writes is `human:<name>` already.
@@ -226,12 +232,14 @@ Under R-125-m1u, in three layers, each the smallest that works:
    which moves into a package both can import: the two tip readers, the
    scrubbed git wrapper and the operation id (goal_branch.go:26-33,
    692-735, 1033-1039) become `internal/goal/branch`'s own, and
-   cmd/metasystem keeps one-line wrappers. Behaviour unchanged: the check
-   fetches the endpoint's main and the goal's branch per park, refuses an
-   endpoint that is not `refs/heads/main`, and its summary lands on the
-   next step as it does from the terminal. A run of twelve parks is
-   twenty-four fetches; the sheet's progress line is what covers that in
-   step 2.
+   cmd/metasystem keeps one-line wrappers. Behaviour unchanged: where the goal has a local branch or a named
+   unit commit the check reads the endpoint's main and the goal's branch
+   from the remote and refuses an endpoint that is not `refs/heads/main`;
+   where it has neither it answers without a remote read
+   (internal/goal/branch/status.go:130); its summary lands on the next
+   step as it does from the terminal. A run of parks over branch-backed
+   goals is two fetches each beside the publish's own; the sheet's
+   progress line is what covers that in step 2.
 3. **Two routes.** `/api/backlog/goals/<id>/park` with body `{because}`,
    refused empty as the engine refuses it, and `/api/backlog/goals/<id>/unpark`
    with an empty object, both the policy of every act route (`mayAct`,
@@ -239,12 +247,16 @@ Under R-125-m1u, in three layers, each the smallest that works:
    others do. The board's own six acts are untouched; the board does not
    grow a park button in this step.
 
-What park refuses on this page stays the engine's: a goal already parked,
-a claimed goal of another pair, a blocker park lifted early, an endpoint
-the branch check cannot read; each refusal is shown in the engine's words
-and stops a run. The walkthrough fixture proves a park and an unpark end to
-end where its endpoint allows the branch check, and otherwise shows the
-refusal as the sheet would; the screenshot says which.
+What park and unpark refuse on this page stays the engine's: a goal
+already parked, a claimed goal of another pair, a seat's blocker park
+lifted early, an endpoint the branch check cannot read; each refusal is
+shown in the engine's words and stops a run. An unpark returns a goal to
+approved where its approval still stands and to queued otherwise
+(approval.go:381); a human's own park may be lifted before its blockers
+finish. The walkthrough's acts are canned and its ledger has no
+publishable endpoint (walkthrough/main.go:195, 430), so its screenshots
+are evidence of the page and of a refusal shown, and the engine, act and
+branch-check proof is in their own Go fixtures.
 
 ## 6. Not here, step 3 and later
 
@@ -265,8 +277,10 @@ the review card's destination opens; engine tests that a
 session proof is admitted for a human-origin park and a human-park unpark
 and still refused for another terminal-grade row, and that both history
 lines name the session; act tests for Park and Unpark with a fixture
-endpoint and an injected branch check; route tests for the two routes'
-policy and refusals; the branch check's moved tests move with it. Frontend: pane tests
+endpoint and an injected branch check; route tests for the two routes' policy and refusals; engine tests that
+the park of another pair's claim and the early unpark of a seat's blocker
+park still refuse a session, one of them with the claim landing between
+the page's read and the act; the branch check's moved tests move with it. Frontend: pane tests
 on the two blocks and their counts, a queue row opening, Find over a
 label, a label chip narrowing, the order toggle, select-all over the
 shown rows only, the bulk sheet excluding a null prefill, sending in
@@ -312,3 +326,19 @@ budget recorded" where the row carries none; a failed answer can follow a
 publish, so the re-read is what says what landed; the Fleet disclosure
 described as built. Deferred, step 2 works without them: rank parity of
 zero-ranked rows with the board.
+
+## Dispositions (Astra second read, 2026-09-25, on section 5, under R-124)
+
+One material finding, four deferred; every code claim checked.
+
+| id | finding | fold |
+|---|---|---|
+| F1 | a verb-wide admission would also admit the park of another pair's claim and the early lifting of a seat's blocker park, rows the ruling does not name; a queue goal claimed between the read and the act could be displaced | the admission is a flag on the three named rows only; the two other rows keep their grades; tests for both refusals, one with the claim landing between read and act |
+
+Folded because they cost nothing: the branch check reads the remote only
+where the goal has a branch or a named unit commit; the walkthrough
+cannot publish a park, so its screenshots are page and refusal evidence
+and the proof lives in Go fixtures; unpark returns to approved where an
+approval stands; a human's own park may be lifted early; a failed answer
+after a publish is named unresolved and the re-read reports the accepted
+ref as observed. Nothing deferred beyond the first read's list.
