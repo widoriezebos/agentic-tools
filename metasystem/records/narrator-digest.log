@@ -3811,3 +3811,4 @@ Specimen fact: I built the changed engine from the implementer worktree (go buil
 Review linkage: goal plans/goals/stop-refusal-fits-on-one-screen.md (opid=4TDZJ12K9WGK59WRRT365G9ASH-m1-c6925449).
 Limitation — Register citation resolution: The accepted-risk register reader validates that each specimen fact has non-empty durable-reference citations of allowed kinds, but it does not dereference commit, goal, ruling, job, or record targets during intake. Enrichment: Add cross-record citation resolution that checks each target before an entry can count.
 2026-09-25T01:24:36Z HIGHLIGHT — A landing moved the repository storyline to commit 3f5d75dd8818. (source: commit 3f5d75dd88184e436e8b93cae3025e478fb74627)
+2026-09-25T03:57:30Z HIGHLIGHT — A landing moved the repository storyline to commit 6ffa62d01a5f. (source: commit 6ffa62d01a5f0a242f7846763dcff824d6790c17)

@@ -2517,8 +2517,16 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   [[ ! -e "$repo/artifacts/agents/steward/runner.json" ]] \
     || { echo "the watcher repair launched a steward under the closed fence" >&2; exit 1; }
   acceptance_process_snapshot "$tmp/stop-fence.processes.during-watcher" stop-fence-
-  awk -v watcher_pid="$fence_watcher_pid" '$1 != watcher_pid { print }' \
-    "$tmp/stop-fence.processes.during-watcher" >"$tmp/stop-fence.processes.during-watcher-without-self"
+  # Besides its own row, the watcher may only be caught mid read-only signature
+  # probe of this fixture's adapter; the after snapshot below stays unfiltered.
+  FENCE_WATCHER_PID="$fence_watcher_pid" \
+    FENCE_WATCHER_PROBE="bash $repo/scripts/agents/adapters/fake.sh signature" \
+    awk '
+      { command = $0; sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[0-9]+[ \t]/, "", command) }
+      $1 == ENVIRON["FENCE_WATCHER_PID"] { next }
+      $2 == ENVIRON["FENCE_WATCHER_PID"] && command == ENVIRON["FENCE_WATCHER_PROBE"] { next }
+      { print }
+    ' "$tmp/stop-fence.processes.during-watcher" >"$tmp/stop-fence.processes.during-watcher-without-self"
   cmp -s "$tmp/stop-fence.processes.before" "$tmp/stop-fence.processes.during-watcher-without-self" \
     || { echo "the bounded watcher created a process under the closed fence" >&2; diff -u "$tmp/stop-fence.processes.before" "$tmp/stop-fence.processes.during-watcher-without-self" >&2 || true; exit 1; }
   stop_owned_pid "stop-fence watcher" "$fence_watcher_pid" "$fence_watcher_start"
