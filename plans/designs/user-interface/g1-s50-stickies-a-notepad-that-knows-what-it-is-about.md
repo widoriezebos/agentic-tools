@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3CZM7BF6JTCRG6RDAN2YGAW
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-25: "I want a notepad of sorts where I can put reminders.
@@ -187,3 +187,29 @@ picker adapted so a concluded goal can be named; the Fleet metadata
 sentence corrected; "no autonomous seat or examiner input; only the
 declared Partner capture". Astra confirmed one file keyed by human under
 one lock is enough for two tabs and a restart.
+
+## Built (2026-09-25)
+
+Landed on ui-development and main; the panel went live before the read
+and the read's fixes landed as a second merge. Built by Claude on Opus,
+read by Codex on Sol under R-124: three material findings, fixed in one
+round. The Partner capture carried the whole notepad while the panel was
+open, done stickies behind the folded disclosure included and unbounded;
+it carries what is visible, at most 25, and the server truncates to the
+same bound and says what it cut. The panel was rendered beside the shell,
+outside the page-subject, Partner and work-area providers, so opened from
+the header it had no chip for the page and blocked the drawer; it sits
+inside the shell beside the selection sheet. A relative registry home,
+the registry's fallback when the account's home cannot be resolved, would
+have put the store inside the checkout; it is refused and the build says
+it has no notepad.
+
+Later, when it hurts: nothing deferred by the read.
+
+Departures the read accepted: the four routes take a `notepadHand`
+policy whose sentence says the write lands outside the checkout, since
+`checkoutHand`'s says the opposite; the GET is listed in the describe
+table beside the writes; the panel does not name itself as the open
+sheet, like the notifications panel; a `t.Setenv` test is hand-pinned in
+the parallel ratchet; the coverage floor is the host's measurement in
+both baselines.
