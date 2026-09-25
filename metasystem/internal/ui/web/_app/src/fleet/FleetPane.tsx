@@ -5,6 +5,7 @@ import {
   failureMessage,
   loadFleet,
   type Held,
+  type Launch,
   type Machine,
   type Page as FleetPayload,
   type Role,
@@ -39,6 +40,9 @@ import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Hint } from "../shell/controls";
 import { useOffersRefresh } from "../shell/refresh";
 import { captureOfFleet } from "./capture";
+import { LaunchCard } from "./LaunchCard";
+import { LaunchSheet } from "./LaunchSheet";
+import { cardFor } from "./launching";
 
 /**
  * Fleet: who is doing what, and whether execution is healthy.
@@ -252,12 +256,60 @@ function RoleRow({ role }: { role: Role }) {
  */
 function TheFleet({ page, now }: { page: FleetPayload; now: Date }) {
   const problem = copyProblem(page);
+  // The launch this block shows, if any: the newest one still worth a card.
+  // It is state rather than a derived value because two things change it —
+  // the act's own answer, which arrives before the next read does, and a
+  // human dismissing a machine that has joined.
+  const [started, setStarted] = useState<Launch | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [dismissed, setDismissed] = useState("");
+  const shown = started ?? cardFor(page.launches);
+  const card = shown === null || shown.launch === dismissed ? null : shown;
+  const joined = card !== null && page.machines.some((machine) => machine.machine === card.machine);
+
   return (
     <section className="ms-fleet-block">
       <h2 className="ms-fleet-heading">
         The fleet
         <Help id="fleet" />
+        <span className="ms-fleet-actions">
+          <Button
+            onClick={() => {
+              setOpening(true);
+            }}
+          >
+            Launch a machine
+          </Button>
+        </span>
       </h2>
+      {opening && (
+        <LaunchSheet
+          machines={page.machines}
+          launches={page.launches}
+          thisSeat={page.this.machine}
+          where={page.launching}
+          onClose={() => {
+            setOpening(false);
+          }}
+          onStarted={(record) => {
+            setOpening(false);
+            setDismissed("");
+            setStarted(record);
+          }}
+        />
+      )}
+      {card !== null && (
+        <LaunchCard
+          record={card}
+          joined={joined}
+          now={now}
+          onStarted={setStarted}
+          onDismiss={() => {
+            setDismissed(card.launch);
+            setStarted(null);
+          }}
+        />
+      )}
       {page.machines.length === 0 ? (
         <p className="ms-fleet-quiet">{emptyFleetWords(page)}</p>
       ) : (

@@ -72,6 +72,8 @@ function page(over: Partial<Page> = {}): Page {
     this: seat,
     needsYou: [held],
     machines: [machine],
+    launches: [],
+    launching: { parent: "/w", repository: "agentic-tools" },
     ...over,
   };
 }

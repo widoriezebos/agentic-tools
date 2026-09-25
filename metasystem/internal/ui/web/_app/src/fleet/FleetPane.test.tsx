@@ -109,6 +109,8 @@ function page(over: Partial<Page> = {}): Page {
       machine({ machine: "m1u", standing: "reachable", seen: "2026-09-25T14:36:30Z", holds: [], this: true }),
       machine(),
     ],
+    launches: [],
+    launching: { parent: "/w", repository: "agentic-tools" },
     ...over,
   };
 }

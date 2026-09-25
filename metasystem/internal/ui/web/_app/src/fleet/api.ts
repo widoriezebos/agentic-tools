@@ -16,6 +16,7 @@
 import type { LaneId } from "../backlog/lanes";
 
 const FLEET = "/api/fleet";
+const LAUNCH = "/api/fleet/launch";
 
 /** What this seat concludes about one machine, from its presence record. */
 export type Standing = "reachable" | "unreachable" | "unknown";
@@ -125,6 +126,51 @@ export type Machine = {
   this: boolean;
 };
 
+/** One step of a launch, as the verb recorded it. */
+export type LaunchStep = {
+  step: string;
+  /** pending, done, skipped, failed or armed — a word and never a boolean. */
+  outcome: string;
+  at: string;
+  /** The owner's own sentence, where the step refused or has something to say. */
+  words: string;
+};
+
+/** The two commands a human has for a machine that joined. */
+export type LaunchNext = { session: string; stop: string };
+
+/** What a launch made, and so what a retry of it may reuse. */
+export type LaunchCreated = { destination: boolean; nickname: boolean; evidenceRoot: boolean };
+
+/**
+ * One launch, as the verb's own record carries it.
+ *
+ * The human's authorization is not a field here and never was: the word
+ * reaches the arming verb's argument list and nothing else, which is why a
+ * retry that has to enroll asks for it again.
+ */
+export type Launch = {
+  schemaVersion: number;
+  launch: string;
+  machine: string;
+  destination: string;
+  clonedCommit: string;
+  builtStamp: string;
+  process: { pid: number; startedAt: number };
+  startedAt: string;
+  endedAt: string | null;
+  /** running, done, armed or failed. Armed is not a failure. */
+  outcome: string;
+  reviewBy: string;
+  created: LaunchCreated;
+  steps: LaunchStep[];
+  orientation: string;
+  next: LaunchNext;
+};
+
+/** The two facts a destination is proposed from, which only the server knows. */
+export type Launching = { parent: string; repository: string };
+
 export type Page = {
   schemaVersion: number;
   readAt: string;
@@ -133,27 +179,81 @@ export type Page = {
   this: ThisSeat;
   needsYou: Held[];
   machines: Machine[];
+  launches: Launch[];
+  launching: Launching;
+};
+
+/** What the sheet sends, or what a retry sends. */
+export type LaunchRequest = {
+  machine?: string;
+  destination?: string;
+  word: string;
+  reviewBy: string;
+  resume?: string;
 };
 
 /** A response that was not what was asked for, with the server's own words. */
 export class ResourceError extends Error {
   readonly status: number;
+  /** The code the act refused under, where it refused under one. */
+  readonly code: string;
+  /**
+   * Whether the remedy is in this page rather than in a terminal: the server
+   * found no signed-in human behind the act. The page opens the sign-in sheet
+   * on it, exactly as the board's acts do.
+   */
+  readonly signIn: boolean;
 
-  constructor(resource: string, status: number, reason = "") {
+  constructor(resource: string, status: number, reason = "", code = "", signIn = false) {
     super(reason === "" ? `${resource} answered ${String(status)}` : reason);
     this.name = "ResourceError";
     this.status = status;
+    this.code = code;
+    this.signIn = signIn;
   }
 }
 
-type Refusal = { error?: string };
+type Refusal = { error?: string; code?: string; signIn?: boolean };
+
+/**
+ * The one request. A body makes it the act, and an act is a POST of JSON;
+ * without one it is the read.
+ *
+ * Both go through here for the reason the backlog's do: there is exactly one
+ * place in this file that reaches the network, so a second way to the server
+ * cannot be added without the cut guard seeing it.
+ */
+async function request(resource: string, body?: unknown, signal?: AbortSignal): Promise<unknown> {
+  const acting = body !== undefined;
+  const response = await fetch(resource, {
+    signal,
+    method: acting ? "POST" : "GET",
+    headers: acting
+      ? { Accept: "application/json", "Content-Type": "application/json" }
+      : { Accept: "application/json" },
+    body: acting ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    const refusal = await reasonOf(response);
+    throw new ResourceError(resource, response.status, refusal.error ?? "", refusal.code ?? "", refusal.signIn === true);
+  }
+  return await response.json();
+}
 
 export async function loadFleet(signal?: AbortSignal): Promise<Page> {
-  const response = await fetch(FLEET, { signal, headers: { Accept: "application/json" } });
-  if (!response.ok) {
-    throw new ResourceError(FLEET, response.status, (await reasonOf(response)).error ?? "");
-  }
-  return (await response.json()) as Page;
+  return (await request(FLEET, undefined, signal)) as Page;
+}
+
+/**
+ * The one act this section makes: a machine of this fleet joins on this host.
+ *
+ * It answers 202 with the record the server wrote before anything ran, so the
+ * card has something to draw at once. Everything after that reaches the page
+ * through the read above, which re-runs on the `fleet` event the record's own
+ * changes cause.
+ */
+export async function launchMachine(asked: LaunchRequest, signal?: AbortSignal): Promise<Launch> {
+  return (await request(LAUNCH, asked, signal)) as Launch;
 }
 
 /** A body that is not the refusal shape says nothing, which is not an error. */

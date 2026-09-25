@@ -144,7 +144,13 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // this file makes. The page holds no timer: presence changes because
   // another machine ticked, and being told is the one stream this guard
   // already allows.
-  ["fleet/api.ts", 1, ["/api/fleet"]],
+  // Launching a machine joins that read at the one call site it already had:
+  // an act is the same request with a body, so there is still exactly one
+  // place in this build that reaches the network from here. The act answers
+  // 202 and starts a launch that runs for minutes; what happens after it
+  // reaches the page on the same stream, because a launch record that changed
+  // is a cause of the fleet event, which is why there is still no timer here.
+  ["fleet/api.ts", 1, ["/api/fleet", "/api/fleet/launch"]],
   // The Project Partner. Three requests through one call site: the
   // conversation, read when the page loads and again on every reconnect of the
   // one stream below; a send, when a human presses Send; and a stop, when they
