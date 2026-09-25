@@ -19,6 +19,15 @@
 //     fact it cannot.
 //   - Nothing here writes. There is no operation that could, and the process
 //     that serves these tools opens the checkout read-only.
+//
+// One operation reads nothing: `suggest` takes words the Partner has written
+// for a field of the editor the human handed over and hands them back in a
+// fixed form, so that the interface can offer them to the human as a card. It
+// keeps all three rules. It writes nothing and cannot: this process has no
+// capture, no session and no way to reach the human's browser, so it validates
+// its arguments and says what it prepared. Whether the suggestion is offered
+// at all is decided by the human's own server, against the draft the human
+// handed over, and whether it is used is decided by the human.
 package uitools
 
 import (
@@ -42,14 +51,16 @@ import (
 // presents them as mcp__metasystem__board — composes that prefix from this.
 const ServerName = "metasystem"
 
-// The eleven operations. They are named here, once, because two things depend
+// The twelve operations. They are named here, once, because two things depend
 // on the same list: the tool catalogue this server publishes, and the
 // permission rule that admits calls to it.
 //
-// Nine read this workspace. The last two read what the workspace is made of:
+// Nine read this workspace. The next two read what the workspace is made of:
 // the interface's own manifest, and the kit's own glossary, verbs, rulings and
 // routes. They answer from owners rather than from anything written for the
-// Partner, which is what keeps one account of each fact.
+// Partner, which is what keeps one account of each fact. The last reads
+// nothing at all: it prepares words for a field of an open editor, which the
+// human then decides about.
 const (
 	OpBoard         = "board"
 	OpGoal          = "goal"
@@ -62,6 +73,7 @@ const (
 	OpSearch        = "search"
 	OpInterface     = "interface"
 	OpKit           = "kit"
+	OpSuggest       = "suggest"
 )
 
 // Operations is every operation this server answers, in the order the
@@ -69,6 +81,7 @@ const (
 var Operations = []string{
 	OpBoard, OpGoal, OpDocument, OpRecords, OpQuestions,
 	OpOverview, OpFleet, OpNotifications, OpSearch, OpInterface, OpKit,
+	OpSuggest,
 }
 
 // Names reports whether a bare operation name is one this server answers.
@@ -108,9 +121,15 @@ type Result struct {
 	// remains.
 	Cursor string
 	Body   string
-	// Problem is the reader's own words where the read failed. A result with a
+	// Problem is the reader's own words where the read failed, or the tool's
+	// own words where a call was refused on its arguments. A result with a
 	// problem carries no rows and is never a look.
 	Problem string
+	// Prepared is the whole result text of the one operation that reads
+	// nothing: the fixed form a suggestion travels in, or the refusal that
+	// stands in for it. A result that carries it wears no source, because it
+	// read nothing, and counts no rows, because there was no whole.
+	Prepared string
 }
 
 // Failed reports whether this result is a read that did not happen.
@@ -120,6 +139,9 @@ func (r Result) Failed() bool { return r.Problem != "" }
 // what it read. The header is first so that a Partner quoting the body has
 // already read what the body is a reading of.
 func (r Result) Text() string {
+	if r.Prepared != "" {
+		return r.Prepared
+	}
 	var built strings.Builder
 	if r.Source != "" {
 		built.WriteString("Source: " + r.Source + "\n")
@@ -197,6 +219,8 @@ func (r Readers) Answer(operation string, args Args) Result {
 		return r.describe(args.Text("part"), args.Cursor())
 	case OpKit:
 		return r.kit(args.Text("topic"), args.Cursor())
+	case OpSuggest:
+		return suggest(args.Text("editor"), args.Text("field"), args.Text("text"))
 	default:
 		return Result{Problem: "this server answers " + strings.Join(Operations, ", ") + ", not " + operation}
 	}
