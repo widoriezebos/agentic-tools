@@ -3,12 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { Need } from "./api";
 import {
   ANY_ORIGIN,
-  actLabelFor,
   approvePlan,
   bandLine,
   blockedLine,
   budgetLine,
-  headerLine,
   isNarrowed,
   labelsIn,
   mayDismiss,
@@ -20,7 +18,6 @@ import {
   runInOrder,
   RUN_IS_OVER,
   queueCount,
-  rowLabels,
   SEATS,
   sendable,
   shownQueue,
@@ -59,6 +56,7 @@ function need(id: string, over: Partial<Row> = {}, since = "2026-09-01T00:00:00Z
     since, deadline: "", silence: "", recommend: "",
     where: { kind: "goal", id }, act: "approve", command: "",
     row: row({ ref: { kind: "goal", id, revision: 3 }, openedAt: since, ...over }),
+    new: false, words: "", context: "", owner: "", class: "", due: "", path: "", goals: [],
   };
 }
 
@@ -73,14 +71,6 @@ const queue: Need[] = [
   need("g1-s42", { labels: ["headless-fleet"], origin: "main" }, "2026-09-24T00:00:00Z"),
   need("g1-s43", { labels: [], origin: "main", tier: 0 }, "2026-09-10T00:00:00Z"),
 ];
-
-describe("the header", () => {
-  it("says both counts in words, because two jobs share this page", () => {
-    expect(headerLine({ needsYou: 132, asked: 10, waiting: 122, rulings: 160 })).toBe(
-      "10 asked of you · 122 waiting for your approval",
-    );
-  });
-});
 
 describe("the queue's three tools", () => {
   it("finds over the id, the intent and the labels", () => {
@@ -127,12 +117,6 @@ describe("the queue's three tools", () => {
 });
 
 describe("a queue row", () => {
-  it("shows three labels and then says how many more", () => {
-    const many = need("g1-s50", { labels: ["a", "b", "c", "d", "e"] });
-    expect(rowLabels(many)).toEqual({ shown: ["a", "b", "c"], more: 2 });
-    expect(rowLabels(queue[2])).toEqual({ shown: ["headless-fleet"], more: 0 });
-  });
-
   it("says what opening it says: the budget, the band, and what holds it", () => {
     expect(budgetLine(need("g1-s60", { budget: box }))).toBe(
       "4h elapsed · 6 attempts · 720 reserved job minutes · 1 active jobs · 2 review rounds",
@@ -148,11 +132,6 @@ describe("a queue row", () => {
 });
 
 describe("acting on what was selected", () => {
-  it("names the count on each button", () => {
-    expect(actLabelFor("approve", 12)).toBe("Approve 12 selected");
-    expect(actLabelFor("park", 12)).toBe("Not now for 12 selected");
-  });
-
   it("carries the budget prefillFor would have shown, and its source's words", () => {
     const plan = approvePlan([queue[0]], { "2": box }, []);
     expect(plan[0].budget).toEqual(box);

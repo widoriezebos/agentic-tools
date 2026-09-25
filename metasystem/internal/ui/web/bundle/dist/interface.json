@@ -247,9 +247,14 @@
       "text": "Everything waiting on a human and nobody else, complete rather than capped, in two blocks: what is asked of you, which is a few things with a few different consequences, and what is waiting for your approval, which is the queue of work nobody has authorized yet."
     },
     {
-      "id": "asked-of-you",
-      "term": "Asked of you",
-      "text": "The few things that are not approvals: a seat's question, an open question of the register, a draft, a design whose work has landed, an approval that expired, a goal a seat paused or a fence stopped, a ruling whose review has come due, and what the steward addressed to you. Each one is its own decision with its own consequence of silence."
+      "id": "inbox",
+      "term": "Inbox",
+      "text": "Everything waiting on a human and nobody else, in one group per kind: a seat's question, an open question of the register, a draft, a design whose work has landed, an approval that expired, a goal a seat paused or a fence stopped, a ruling whose review has come due, what the steward addressed to you, and the queue of goals nobody has authorized. A group says how many, how old the newest one is, and how many are new; one group is open at a time, and what you leave open is what opens next time."
+    },
+    {
+      "id": "new-here",
+      "term": "New",
+      "text": "Recorded after your last visit to this page, by the dates the records themselves carry. Reading this page is the visit, and reading it again within half an hour goes on comparing against the same moment, so a refresh never hides what you have not read. The dates are uneven and this is honest rather than exact: an instant is compared as an instant, a date without a time counts as new from the day your window opened, and a record that carries no date at all is never marked new. On a first visit it means the last day. Decisions keeps this mark separately from the Overview's, so reading one never moves the other's boundary."
     },
     {
       "id": "waiting-for-approval",

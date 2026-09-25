@@ -53,10 +53,31 @@ const firstWindow = 24 * time.Hour
 // visitsSchema is the shape of the file this build writes and reads.
 const visitsSchema = 1
 
-// Visits is the whole file: one row per human.
+// PageDecisions is what the Decisions page's own entry is called in the file.
+// It is spelled here, beside the owner of the file, so the server and every
+// fixture name one entry rather than two spellings of one page.
+const PageDecisions = "decisions"
+
+// Visits is the whole file: the landing page's row per human, and a row per
+// human under every other page that keeps one.
+//
+// Two maps rather than one keyed by page and human, because the two things
+// they hold are different things. Humans is the landing page's, written since
+// this file existed, and it must not move: a second page advancing it would
+// move Overview's own comparison boundary and hide from a human what they
+// never saw there. Pages is every other page's, nested so that a page's key
+// can be anything a page is called and a human's can be anything a human is
+// called, with no separator between them for either one to contain.
+//
+// Pages is an addition and not a new shape: a file written before it reads
+// back with Pages empty, which is a first visit for every page, and a file
+// written with it reads back in a build that has never heard of it exactly as
+// it did before. That is why the schema did not change.
 type Visits struct {
 	SchemaVersion int               `json:"schemaVersion"`
 	Humans        map[string]Marker `json:"humans"`
+	// Pages is one map of markers per page, by the page's own name.
+	Pages map[string]map[string]Marker `json:"pages,omitempty"`
 }
 
 // Marker is one human's last-visit marker: the visit in progress, and the end
@@ -127,6 +148,46 @@ func Visit(root, human string, now time.Time) (since time.Time, first bool, err 
 		held.Humans = map[string]Marker{}
 	}
 	held.Humans[human] = next
+	if writeErr := writeVisits(root, held); writeErr != nil {
+		return since, first, writeErr
+	}
+	return since, first, readErr
+}
+
+// VisitPage is Visit for a page that is not the landing page: the same rule,
+// the same file and the same owner, under an entry of this page's own.
+//
+// The entry is its own because a visit is a visit to a PAGE. A human who
+// reads Decisions every morning and Overview once a week has two boundaries,
+// and one marker for both would mean that opening either moved the other's:
+// Overview would stop showing them the week they missed, because Decisions
+// had already "seen" it. So every page that compares against a last visit
+// keeps a row per human under its own name, and Overview's row is left where
+// it is.
+//
+// A page nobody has visited is a first visit, exactly as a human nobody has
+// seen is: the window is a day back, and first says so.
+func VisitPage(root, page, human string, now time.Time) (since time.Time, first bool, err error) {
+	visiting.Lock()
+	defer visiting.Unlock()
+
+	at := now.UTC()
+	held, readErr := readVisits(root)
+	row, known := held.Pages[page][human]
+	next := advance(row, known, at)
+	since, first = windowOf(next, at)
+
+	held.SchemaVersion = visitsSchema
+	if held.Humans == nil {
+		held.Humans = map[string]Marker{}
+	}
+	if held.Pages == nil {
+		held.Pages = map[string]map[string]Marker{}
+	}
+	if held.Pages[page] == nil {
+		held.Pages[page] = map[string]Marker{}
+	}
+	held.Pages[page][human] = next
 	if writeErr := writeVisits(root, held); writeErr != nil {
 		return since, first, writeErr
 	}

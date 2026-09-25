@@ -195,6 +195,13 @@ type Info struct {
 	// answers as a first visit rather than as a refusal — the marker is
 	// preference state, and losing it changes a window and nothing else.
 	Visit func(human string, now time.Time) (since time.Time, first bool, err error)
+	// VisitDecisions is the same for the Decisions page, under an entry of
+	// that page's own. It is a second function rather than a page name on the
+	// one above because the two are two markers: a human reads Decisions and
+	// Overview on different rhythms, and a page that advanced the other's
+	// entry would hide from them what they never saw there. A nil one is a
+	// build that keeps no marker, and the route answers it as a first visit.
+	VisitDecisions func(human string, now time.Time) (since time.Time, first bool, err error)
 	// Now is this server's clock, so that a test can say when a page was
 	// composed. A nil Now is time.Now, which is what every run uses.
 	Now func() time.Time

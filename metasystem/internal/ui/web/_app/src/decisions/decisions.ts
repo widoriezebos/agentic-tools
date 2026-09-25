@@ -26,31 +26,6 @@ import { documentPath, goalPath, projectPath } from "../routes";
 /* ----------------------------------------------------------- needs you -- */
 
 /**
- * What each kind of waiting thing is called on its chip.
- *
- * The chip is the kind and not the act: a row already says what is being
- * asked in its own sentence, and a chip that repeated the sentence would be
- * noise. A kind this build has no word for shows the server's own, which is
- * the master's rule for an unresolved reference rather than a blank chip.
- */
-const KIND_LABELS: Readonly<Record<string, string>> = {
-  approval: "approval",
-  renewal: "renewal",
-  ask: "ask",
-  question: "question",
-  parked: "parked",
-  stopped: "stopped",
-  draft: "draft",
-  landed: "landed",
-  "ruling-review": "review",
-  alert: "alert",
-};
-
-export function kindLabel(kind: string): string {
-  return KIND_LABELS[kind] ?? kind;
-}
-
-/**
  * Where one row opens.
  *
  * Three of them are not addresses at all, which is why this is not a path: the
@@ -117,11 +92,6 @@ function openingWords(kind: string): string {
     default:
       return "Open it";
   }
-}
-
-/** The label on the act button, for the two acts this interface has. */
-export function actLabel(act: Need["act"]): string {
-  return act === "approve" ? "Approve" : "Withdraw approval";
 }
 
 /**
@@ -423,31 +393,12 @@ export function defectLine(defects: readonly string[]): string | null {
 /* ------------------------------------------------------------- the queue -- */
 
 /**
- * The second block: the goals nobody has authorized.
+ * The queue group: the goals nobody has authorized.
  *
  * Everything below is a statement about what a human sees that a test can
  * point at. Nothing here reaches the network, reads a clock on its own or
  * renders anything; the pane holds the state and this decides what it means.
  */
-
-/** The inbox split in two: everything that is not an approval, and the approvals. */
-export function askedOf(needs: readonly Need[]): Need[] {
-  return needs.filter((need) => need.kind !== "approval");
-}
-
-export function waitingOf(needs: readonly Need[]): Need[] {
-  return needs.filter((need) => need.kind === "approval");
-}
-
-/**
- * The header, in words rather than one number.
- *
- * Two jobs share this page and the header is where a human chooses which one
- * they are here for, so it says both counts and what each one is.
- */
-export function headerLine(counts: Counts): string {
-  return `${String(counts.asked)} asked of you · ${String(counts.waiting)} waiting for your approval`;
-}
 
 /** How the queue is ordered: the backlog's own rank, or newest first. */
 export type QueueOrder = "backlog" | "newest";
@@ -542,14 +493,6 @@ export function shownQueue(needs: readonly Need[], narrowing: Narrowing): Need[]
 export function queueCount(total: number, shown: number): string {
   const waiting = `${String(total)} waiting`;
   return shown === total ? waiting : `${waiting} · ${String(shown)} shown`;
-}
-
-/** How many labels a row shows before it says "+n". */
-export const SHOWN_LABELS = 3;
-
-export function rowLabels(need: Need): { shown: string[]; more: number } {
-  const labels = need.row === null ? [] : need.row.labels;
-  return { shown: labels.slice(0, SHOWN_LABELS), more: Math.max(0, labels.length - SHOWN_LABELS) };
 }
 
 /** A budget tuple in the five words the sheet names them by, or "". */
@@ -653,13 +596,6 @@ export function parkPlan(selected: readonly Need[]): Planned[] {
 /** The goals a run would actually send. */
 export function sendable(plan: readonly Planned[]): Planned[] {
   return plan.filter((one) => one.excluded === "");
-}
-
-/** What the button says, which is the count it would act on. */
-export function actLabelFor(act: "approve" | "park", selected: number): string {
-  return act === "approve"
-    ? `Approve ${String(selected)} selected`
-    : `Not now for ${String(selected)} selected`;
 }
 
 /** How far a run has got, while it runs. */

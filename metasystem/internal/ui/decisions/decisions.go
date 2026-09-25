@@ -39,11 +39,14 @@ import (
 
 // SchemaVersion is the shape of the decisions resource a reader parses.
 //
-// Two, since the inbox became two blocks: the counts carry the split, the
-// decided side carries the parks a person made, and the payload names where
-// the register is. Nothing was renamed, so a reader of the first shape reads
-// every field it read before.
-const SchemaVersion = 2
+// Three, since the inbox became an inbox: every row says whether it is new
+// since the last visit here, the page names the window it decided that over,
+// and the three kinds whose row used to need a second read now carry what
+// they need — a ruling review the register row's own words, a draft and a
+// landed design the record's path, and a landed design the goals it named
+// with where each stands. Additions only: nothing was renamed and nothing was
+// removed, so a reader of the second shape reads every field it read before.
+const SchemaVersion = 3
 
 // The kinds of thing that wait on a human. Each one is a row of the design's
 // own table, and each one carries its own silence line.
@@ -173,6 +176,57 @@ type Need struct {
 	// Row is the whole backlog row, carried for the rows whose act is the
 	// board's sheet, which prefills from it.
 	Row *backlog.Row `json:"row"`
+	// New is true when this row was recorded after the start of the window
+	// this page was composed over, which is the end of the reader's previous
+	// visit HERE. It is by recorded dates and is honest about them: the dates
+	// the kinds carry are uneven — an instant on a goal, a calendar date on a
+	// question, a file time on a landed design, and sometimes nothing at all —
+	// so an instant is compared as an instant, a calendar date counts as new
+	// from the window's own day, and a row nothing dated is never new. See
+	// newSince.
+	New bool `json:"new"`
+	// Words, Context, Owner, Class and Due are the register row a ruling
+	// review names, carried on the row rather than joined by the reader: the
+	// review's own record is the id, the owner and the schedule, and what the
+	// human actually ruled is in the register beside it under the same id.
+	// Every other kind writes them empty.
+	Words   string `json:"words"`
+	Context string `json:"context"`
+	Owner   string `json:"owner"`
+	Class   string `json:"class"`
+	Due     string `json:"due"`
+	// Path is where the record this row is about lives, relative to the
+	// checkout, for the two kinds that are about a record. Where names the
+	// same file as a destination; this is the line the open row shows, and a
+	// reader that had to take it out of a destination would be reading an
+	// address the server said was not one.
+	Path string `json:"path"`
+	// Goals are the ledger goals a landed design named, each with where it
+	// stands, which is the evidence for marking it done. Written as an empty
+	// list on every other kind rather than as nothing.
+	Goals []GoalState `json:"goals"`
+}
+
+// GoalState is one goal a record names and where the ledger says it stands.
+type GoalState struct {
+	ID string `json:"id"`
+	// State is the projection's own word for the goal, or "" where this
+	// checkout carries no goal under that id at all.
+	State string `json:"state"`
+}
+
+// Visit is the window a page's "new" was decided against: the end of this
+// human's previous visit to THIS page, or a day back on a first one.
+//
+// It is carried so that the page can say what it means by new rather than
+// leaving a reader to infer a boundary from the dots.
+type Visit struct {
+	// Since is the start of the window in RFC3339, or "" where the page was
+	// composed over no window at all — in which case nothing is new.
+	Since string `json:"since"`
+	// First says this is the first visit this file has recorded, whose window
+	// is a day back rather than a previous visit.
+	First bool `json:"first"`
 }
 
 // Ruling is one row of the register as the page renders it: whole, with the
@@ -289,6 +343,9 @@ type Page struct {
 	NeedsYou []Need  `json:"needsYou"`
 	Decided  Decided `json:"decided"`
 	Counts   Counts  `json:"counts"`
+	// Visit is the window every row's New was decided against, so the page can
+	// say what it means by new rather than leaving it to be inferred.
+	Visit Visit `json:"visit"`
 	// Register is where the rulings register is, relative to the checkout,
 	// which is what the document reader opens paths against. Every register
 	// destination in this payload names it, so "open the register" opens.
@@ -325,6 +382,16 @@ type Inputs struct {
 	// one path both ends can use. An empty path takes the kit's own layout.
 	RegisterPath string
 	Human        Standing
+	// Since is the start of the window "new" is decided against: the end of
+	// this human's previous visit to THIS page, which the caller takes from
+	// the visit owner under this page's own entry. A zero instant is a page
+	// composed over no window, and nothing on it is new — which is what a
+	// build with no marker store answers, rather than a page on which
+	// everything ever recorded is new.
+	Since time.Time
+	// First says the window is a first visit's day rather than a previous
+	// visit's end. It is carried through to the payload so the page can say so.
+	First bool
 }
 
 // Compose is the whole page, from the six answers above, as they stood at
@@ -332,8 +399,15 @@ type Inputs struct {
 func Compose(in Inputs, now time.Time) Page {
 	inbox := needsYou(in, now)
 	waiting := 0
-	for _, need := range inbox {
-		if need.Kind == KindApproval {
+	for index := range inbox {
+		inbox[index].New = newSince(inbox[index].Since, in.Since)
+		// Every field is written, including the ones a particular row has
+		// nothing for: a reader never has to tell an absent list from an
+		// empty one.
+		if inbox[index].Goals == nil {
+			inbox[index].Goals = []GoalState{}
+		}
+		if inbox[index].Kind == KindApproval {
 			waiting++
 		}
 	}
@@ -347,8 +421,40 @@ func Compose(in Inputs, now time.Time) Page {
 			NeedsYou: len(inbox), Asked: len(inbox) - waiting, Waiting: waiting,
 			Rulings: len(in.Register.Rows),
 		},
+		Visit:    Visit{Since: stamp(in.Since), First: in.First},
 		Register: registerOf(in),
 	}
+}
+
+// newSince is whether a row recorded at since is new against a window that
+// began at from.
+//
+// It is by recorded dates and says so, because the dates are uneven and no
+// amount of arithmetic makes them even. A goal carries the instant it was
+// opened, and an instant is compared as an instant. A question carries a
+// calendar date, which is a day in nobody's particular zone, so it is new when
+// it is the window's own day or later — the alternative is reading a day as
+// midnight UTC and telling a human that this morning's question is old. A row
+// nothing dated is never new: the record does not say when it began, and a
+// page that guessed would be marking rows new on no evidence. And a window
+// nothing set makes nothing new, for the same reason.
+func newSince(since string, from time.Time) bool {
+	if since == "" || from.IsZero() {
+		return false
+	}
+	if at, dated := instant(since); dated {
+		return at.After(from)
+	}
+	if day, err := time.Parse(rulings.DateLayout, since); err == nil {
+		return !day.UTC().Before(dayOf(from))
+	}
+	return false
+}
+
+// dayOf is the calendar day a window began on, at its start, in UTC.
+func dayOf(at time.Time) time.Time {
+	utc := at.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // registerOf is where the register is from the checkout, which is what every
@@ -668,6 +774,7 @@ func drafts(records []project.Record) []Need {
 			By:    record.Kind, Since: record.ChangedAt,
 			Silence: "it stays a draft, shown as one on Project",
 			Where:   Where{Kind: WhereRecord, ID: record.Path},
+			Path:    record.Path,
 		})
 	}
 	return needs
@@ -698,9 +805,27 @@ func landed(pane project.Pane) []Need {
 			By:    "every goal landed", Since: record.ChangedAt,
 			Silence: "it stays marked " + recordedStatus(record),
 			Where:   Where{Kind: WhereRecord, ID: record.Path},
+			Path:    record.Path,
+			// The goals it named, with where each stands. They are the whole
+			// of the evidence for marking it done, and the row carries them
+			// so the human reads the evidence beside the act rather than
+			// taking the claim "every goal landed" on trust.
+			Goals: goalsNamed(record.Goals, states),
 		})
 	}
 	return needs
+}
+
+// goalsNamed is the goals a record names, in the order it names them, each
+// with the state the projection gives it — or nothing where this checkout has
+// no goal under that id, which is a record naming work that is not here rather
+// than work that has not started.
+func goalsNamed(named []string, states map[string]string) []GoalState {
+	listed := make([]GoalState, 0, len(named))
+	for _, id := range named {
+		listed = append(listed, GoalState{ID: id, State: states[id]})
+	}
+	return listed
 }
 
 // recordedStatus is what the record says it is, or the plain statement that it
@@ -726,17 +851,32 @@ func recordedStatus(record project.Record) string {
 // appends one line to the steward's digest; the row itself is never touched,
 // so the ruling stays in force exactly as written.
 func rulingReviews(register rulings.Register, at string, now time.Time) []Need {
+	// The register's rows by id, so that a review carries what was actually
+	// ruled. The review record is the schedule — the id, the owner, the class
+	// and the date — and the words are in the row beside it under the same id.
+	// A row that carries the id and not the words is the one thing this page
+	// used to make a human open the register to read.
+	worded := map[string]rulings.Row{}
+	for _, row := range register.Rows {
+		worded[row.ID] = row
+	}
 	needs := []Need{}
 	for _, review := range register.Reviews {
 		if !rulings.DuePassed(review.Due, now) {
 			continue
 		}
+		row := worded[review.ID]
 		needs = append(needs, Need{
 			Kind: KindRulingReview, ID: review.ID, Title: review.ID,
 			Asked: "Review " + review.ID + ", due " + review.Due + ": adopt, revise or withdraw",
 			By:    review.Owner, Since: dayStamp(review.Due),
 			Silence: "it stays in force as written",
 			Where:   Where{Kind: WhereRegister, ID: at},
+			// The schedule is the review's own; the words and the context are
+			// the register row's. A review whose row the reader could not read
+			// carries the schedule and empty words rather than nothing at all.
+			Words: row.Words, Context: row.Context,
+			Owner: review.Owner, Class: review.Class, Due: review.Due,
 		})
 	}
 	return needs

@@ -126,6 +126,10 @@ func main() {
 	// canned payload would prove none of that.
 	checkout := fixtureCheckout(*calm)
 	fmt.Println("checkout " + checkout)
+	// A previous visit to Decisions, so the inbox opens with half of it new.
+	// Both handles, because -proven acts as Wido and an unproven seat acts
+	// under the handle this fixture was given, which is empty by default.
+	plantDecisionsVisit(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
 	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
 	state.roots = roots
 	authority := httpd.AuthorityInfo{Reason: agentReason}
@@ -271,6 +275,14 @@ func main() {
 		// whole of what the rule is for.
 		Visit: func(human string, now time.Time) (time.Time, bool, error) {
 			return overview.Visit(checkout, human, now)
+		},
+		// The Decisions page's own marker, under its own entry. The fixture
+		// plants a previous visit for it below, so half the inbox arrives new
+		// on the first load rather than none of it: a walkthrough that showed
+		// an inbox with no dots on it would be showing the one state the rule
+		// is not for.
+		VisitDecisions: func(human string, now time.Time) (time.Time, bool, error) {
+			return overview.VisitPage(checkout, overview.PageDecisions, human, now)
 		},
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
