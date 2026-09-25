@@ -233,6 +233,36 @@ describe("known problems", () => {
     expect(markup).toContain("Status");
   });
 
+  // Adoption ships a second column set, and the fifth column is a different
+  // question in it: an open row labelled "Fix direction or lever" over a
+  // "Reopen when" cell would be the page telling the human that the register
+  // says something it does not.
+  it("labels an open row with its own register's column names", () => {
+    const adopted = page({
+      problems: {
+        ...page().problems,
+        columns: ["Id", "Date", "Issue", "Consequence", "Reopen when", "Status"],
+      },
+    });
+    const markup = rendered(adopted, { openProblem: "KI-25" });
+
+    expect(markup).toContain(">Consequence</span>");
+    expect(markup).toContain(">Reopen when</span>");
+    expect(markup).not.toContain("Cost when it bites");
+    expect(markup).not.toContain("Fix direction or lever");
+  });
+
+  // A register with no table in it names no columns, and the block falls back
+  // to its own names rather than drawing an empty label.
+  it("falls back to its own names where the register carried no header", () => {
+    const headless = page({ problems: { ...page().problems, columns: [] } });
+    const markup = rendered(headless, { openProblem: "KI-25" });
+
+    expect(markup).toContain(">Cost when it bites</span>");
+    expect(markup).toContain(">Fix direction or lever</span>");
+    expect(markup).toContain(">Status</span>");
+  });
+
   // An accepted limitation still exists, so its word travels onto the line.
   it("shows the concluded rows when they are asked for, with the status word kept visible", () => {
     const markup = rendered(page(), { concluded: true });

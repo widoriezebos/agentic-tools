@@ -485,6 +485,7 @@ function Problems({
             <ProblemRow
               key={problem.id}
               problem={problem}
+              columns={register.columns}
               open={open === problem.id}
               onOpen={() => {
                 onOpen(open === problem.id ? "" : problem.id);
@@ -516,6 +517,7 @@ function Problems({
             <ProblemRow
               key={problem.id}
               problem={problem}
+              columns={register.columns}
               open={open === problem.id}
               onOpen={() => {
                 onOpen(open === problem.id ? "" : problem.id);
@@ -529,14 +531,41 @@ function Problems({
 }
 
 /**
+ * The name the register's header gave one of its columns, or the one this
+ * block falls back to where the register carried no header to read.
+ *
+ * The header is used as supplied because the two column sets do not agree: the
+ * fifth is "Fix direction or lever" in the kit's own register and "Reopen
+ * when" in the one adoption ships, and a block that printed its own title over
+ * either would be telling the human that the register says something it does
+ * not. The fallback is only for a register with no table in it at all, whose
+ * rows are none and whose labels are therefore never drawn.
+ */
+function columnName(columns: string[], at: number, absent: string): string {
+  const named = columns[at];
+  return named === undefined || named.trim() === "" ? absent : named;
+}
+
+/**
  * One problem: the id, the symptom's first sentence and the date on a line,
- * and the cost, the lever and the whole status when it is open.
+ * and the fourth, fifth and sixth columns whole when it is open, each under
+ * the name its own register's header gave it.
  *
  * A concluded row keeps its status word on the line, because an accepted
  * limitation still exists and "ACCEPTED" is a different thing to know about a
  * problem than "FIXED".
  */
-function ProblemRow({ problem, open, onOpen }: { problem: Problem; open: boolean; onOpen: () => void }) {
+function ProblemRow({
+  problem,
+  columns,
+  open,
+  onOpen,
+}: {
+  problem: Problem;
+  columns: string[];
+  open: boolean;
+  onOpen: () => void;
+}) {
   return (
     <li className={open ? "ms-application-row-item ms-application-row-item--open" : "ms-application-row-item"}>
       <button type="button" className="ms-application-row-open" aria-expanded={open} onClick={onOpen}>
@@ -552,18 +581,18 @@ function ProblemRow({ problem, open, onOpen }: { problem: Problem; open: boolean
           <p className="ms-application-open-words">{problem.what}</p>
           {problem.consequence !== "" && (
             <p className="ms-application-open-fact">
-              <span className="ms-application-open-name">Cost when it bites</span>
+              <span className="ms-application-open-name">{columnName(columns, 3, "Cost when it bites")}</span>
               {problem.consequence}
             </p>
           )}
           {problem.lever !== "" && (
             <p className="ms-application-open-fact">
-              <span className="ms-application-open-name">Fix direction or lever</span>
+              <span className="ms-application-open-name">{columnName(columns, 4, "Fix direction or lever")}</span>
               {problem.lever}
             </p>
           )}
           <p className="ms-application-open-fact">
-            <span className="ms-application-open-name">Status</span>
+            <span className="ms-application-open-name">{columnName(columns, 5, "Status")}</span>
             {problem.status}
           </p>
         </div>
