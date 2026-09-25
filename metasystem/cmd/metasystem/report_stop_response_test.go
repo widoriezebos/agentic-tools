@@ -136,7 +136,7 @@ func stopResponseCommandRoot(t *testing.T, runtime string) string {
 }
 func forStopResponseCases(t *testing.T, run func(*testing.T, string, bool)) {
 	t.Helper()
-	for _, runtime := range []string{"claude", "codex"} {
+	for _, runtime := range []string{"claude", "codex", "devin"} {
 		for _, blocked := range []bool{false, true} {
 			t.Run(runtime+map[bool]string{false: "/allowed", true: "/blocked"}[blocked], func(t *testing.T) {
 				run(t, runtime, blocked)
