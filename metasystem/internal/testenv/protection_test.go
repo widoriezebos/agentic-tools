@@ -116,6 +116,7 @@ func child() {
 				return nil
 			},
 			cleanupContext: testFixtureContext,
+			birth:          func(int) (time.Time, bool) { return time.Unix(1, 0), true },
 			exitContext:    testFixtureContext,
 		})
 		recorder.runCleanups()
@@ -131,6 +132,7 @@ func child() {
 			signal:         func(int, syscall.Signal) error { return nil },
 			wait:           func(context.Context, int) error { return context.DeadlineExceeded },
 			cleanupContext: testFixtureContext,
+			birth:          func(int) (time.Time, bool) { return time.Unix(1, 0), true },
 			exitContext:    testFixtureContext,
 		})
 		survivor.runCleanups()
@@ -146,6 +148,7 @@ func child() {
 			signal:         func(int, syscall.Signal) error { return syscall.ESRCH },
 			wait:           func(context.Context, int) error { return nil },
 			cleanupContext: testFixtureContext,
+			birth:          func(int) (time.Time, bool) { return time.Unix(1, 0), true },
 			exitContext:    testFixtureContext,
 		})
 		wrongGroup.runCleanups()
@@ -175,11 +178,94 @@ func child() {
 				}
 				return ctx, cancel
 			},
+			birth:       func(int) (time.Time, bool) { return time.Unix(1, 0), true },
 			exitContext: testFixtureContext,
 		})
 		freshContexts.runCleanups()
 		if !secondRan || created != 2 || len(freshContexts.errors) != 1 || !strings.Contains(freshContexts.errors[0], `verb="first stop"`) {
 			t.Fatalf("fresh cleanup contexts: second-ran=%t created=%d errors=%v", secondRan, created, freshContexts.errors)
+		}
+	})
+	t.Run("fixture process group gone after orderly cleanup gets no stale signal", func(t *testing.T) {
+		reap := func(groupRemains bool) ([]string, []string) {
+			recorder := &fixtureProcessGroupRecorder{}
+			stopped := false
+			var staleSignals []string
+			reapFixtureProcessGroups(recorder, []FixtureProcessGroup{{
+				Verb: "steward run", Resolve: func() (int, bool, error) { return 42, true, nil },
+			}}, []FixtureCleanup{{Verb: "steward disarm", Run: func(context.Context) error {
+				stopped = true
+				return nil
+			}}}, fixtureProcessGroupOps{
+				groupID: func(pid int) (int, error) {
+					if stopped {
+						return 0, syscall.ESRCH
+					}
+					return pid, nil
+				},
+				signal: func(target int, signal syscall.Signal) error {
+					if stopped && signal != 0 {
+						staleSignals = append(staleSignals, fmt.Sprintf("target=%d signal=%v", target, signal))
+						return syscall.EPERM
+					}
+					return nil
+				},
+				wait: func(_ context.Context, target int) error {
+					if target != -42 || !stopped {
+						return fmt.Errorf("unexpected wait target=%d stopped=%t", target, stopped)
+					}
+					if groupRemains {
+						return context.DeadlineExceeded
+					}
+					return nil
+				},
+				cleanupContext: testFixtureContext,
+				birth:          func(int) (time.Time, bool) { return time.Unix(1, 0), true },
+				exitContext:    testFixtureContext,
+			})
+			recorder.runCleanups()
+			return staleSignals, recorder.errors
+		}
+		if signals, errors := reap(false); len(signals) != 0 || len(errors) != 0 {
+			t.Fatalf("disappeared group: stale signals=%v cleanup errors=%v", signals, errors)
+		}
+		signals, errors := reap(true)
+		if got := strings.Join(errors, "\n"); len(signals) != 0 || !strings.Contains(got, "outlived its leader") || !strings.Contains(got, "pid=42") {
+			t.Fatalf("leaderless surviving group: stale signals=%v cleanup errors=%q", signals, got)
+		}
+
+		for _, reused := range []bool{true, false} {
+			recorder := &fixtureProcessGroupRecorder{}
+			stopped, waited := false, false
+			var signals []string
+			reapFixtureProcessGroups(recorder, []FixtureProcessGroup{{
+				Verb: "steward run", Resolve: func() (int, bool, error) { return 42, true, nil },
+			}}, []FixtureCleanup{{Verb: "steward disarm", Run: func(context.Context) error {
+				stopped = true
+				return nil
+			}}}, fixtureProcessGroupOps{
+				groupID: func(pid int) (int, error) { return pid, nil },
+				signal: func(target int, signal syscall.Signal) error {
+					signals = append(signals, fmt.Sprintf("target=%d signal=%v", target, signal))
+					return nil
+				},
+				birth: func(int) (time.Time, bool) {
+					if stopped && reused {
+						return time.Unix(2, 0), true
+					}
+					return time.Unix(1, 0), true
+				},
+				wait:           func(context.Context, int) error { waited = true; return nil },
+				cleanupContext: testFixtureContext,
+				exitContext:    testFixtureContext,
+			})
+			recorder.runCleanups()
+			if reused && (len(signals) != 0 || waited || len(recorder.errors) != 0) {
+				t.Fatalf("reused leader pid: signals=%v waited=%t errors=%v", signals, waited, recorder.errors)
+			}
+			if !reused && (strings.Join(signals, ",") != "target=-42 signal=killed" || !waited || len(recorder.errors) != 0) {
+				t.Fatalf("owned leader surviving orderly cleanup: signals=%v waited=%t errors=%v", signals, waited, recorder.errors)
+			}
 		}
 	})
 	t.Run("supervision operator trap reaps its steward group", func(t *testing.T) {

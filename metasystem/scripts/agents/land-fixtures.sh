@@ -2081,12 +2081,13 @@ if [[ "$fixture_scenario" == abandonment-route-stack ]]; then
       --goal ship-widget --direct-fix register-carriage -m "lower lawful commit"
   ) >"$leg_root/stack-l1.out" 2>&1 || { echo "two-commit stack lower commit failed" >&2; sed -n '1,180p' "$leg_root/stack-l1.out" >&2; exit 1; }
   move_goal_out_of_claimed_state "$leg_peer"
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal open --root "$leg_local" \
-    --id ship-gadget --origin human --intent "Ship the second fixture gadget." --next "Land its record." \
-    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "The fixture is local and disposable." >/dev/null
   saved_stack_config=$leg_root/metasystem.conf.stack-approve
   cp "$leg_local/metasystem.conf" "$saved_stack_config"
   printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal open --root "$leg_local" \
+    --id ship-gadget --origin human --by Wido --intent "Ship the second fixture gadget." --next "Land its record." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "The fixture is local and disposable." \
+    --fixture-human-authority >/dev/null
   "$source_engine" goal approve --root "$leg_local" --id ship-gadget --by Wido \
     --lineage fixture-lineage --elapsed-limit 4h --attempt-limit 4 \
     --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
