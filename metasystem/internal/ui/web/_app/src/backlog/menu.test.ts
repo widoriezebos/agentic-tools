@@ -62,7 +62,9 @@ const ids = (of: Row) => offersFor(of, all).map((offer) => offer.id);
 
 describe("what a card offers", () => {
   it("names the lane's own verb, the steps its band allows, and the goal", () => {
-    expect(labels(middle)).toEqual(["Ask about this", "Approve…", "Move up", "Move down", "Set priority…", "Open goal"]);
+    expect(labels(middle)).toEqual([
+      "Ask about this", "Edit…", "Approve…", "Move up", "Move down", "Set priority…", "Open goal",
+    ]);
     expect(labels(approved)).toEqual([
       "Ask about this", "Withdraw approval…", "Move up", "Move down", "Set priority…", "Open goal",
     ]);
@@ -81,8 +83,8 @@ describe("what a card offers", () => {
   // A band runs across the lanes, so the goal with nowhere to step down is
   // the last of the band and not the last card of any column.
   it("leaves out a step the band has nowhere to take", () => {
-    expect(ids(first)).toEqual(["ask", "approve", "down", "rank", "open"]);
-    expect(ids(last)).toEqual(["ask", "approve", "up", "down", "rank", "open"]);
+    expect(ids(first)).toEqual(["ask", "edit", "approve", "down", "rank", "open"]);
+    expect(ids(last)).toEqual(["ask", "edit", "approve", "up", "down", "rank", "open"]);
     expect(ids(held)).not.toContain("down");
   });
 
@@ -90,7 +92,9 @@ describe("what a card offers", () => {
   // offered because a claim does not fix a rank. The consequence of doing it
   // is the sheet's to say, not the menu's.
   it("offers a re-rank on claimed work and no lane move", () => {
-    // Last in the band, so no step down either.
+    // Last in the band, so no step down either. No Edit… either: the ledger
+    // takes a direct edit of a queued goal and of no other, and a seat's
+    // claimed goal is edited where that seat is.
     expect(ids(held)).toEqual(["ask", "up", "rank", "open"]);
   });
 

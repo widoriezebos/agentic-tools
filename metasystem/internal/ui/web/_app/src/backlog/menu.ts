@@ -20,13 +20,14 @@
  */
 
 import type { Row } from "./api";
+import { editable } from "./editing";
 import { transitions } from "./moves";
 import { stepFor } from "./reorder";
 
 /** What one row of the menu is: which act, and what it is called. */
 export type Offer = { id: OfferId; label: string };
 
-export type OfferId = "ask" | "approve" | "withdraw" | "up" | "down" | "rank" | "open";
+export type OfferId = "ask" | "edit" | "approve" | "withdraw" | "up" | "down" | "rank" | "open";
 
 /**
  * What each act is called where a human chooses it. An ellipsis means a sheet
@@ -34,6 +35,7 @@ export type OfferId = "ask" | "approve" | "withdraw" | "up" | "down" | "rank" | 
  */
 const LABELS: Record<OfferId, string> = {
   ask: "Ask about this",
+  edit: "Edit…",
   approve: "Approve…",
   withdraw: "Withdraw approval…",
   up: "Move up",
@@ -59,6 +61,14 @@ export function offersFor(row: Row, all: readonly Row[]): Offer[] {
   // act every object offers and the one a human reaches for without knowing
   // what else this card can do.
   const offered: OfferId[] = ["ask"];
+  // Editing comes between Ask and the lane moves, because it is the act a
+  // human reaches for about the goal itself rather than about where it
+  // stands. It is offered on the one card the ledger will take it from: a
+  // goal still queued that nobody has approved. Every other card is absent
+  // rather than dim — a disabled row promises an act that is not there.
+  if (editable(row)) {
+    offered.push("edit");
+  }
   for (const transition of transitions) {
     if (transition.from === row.lane) {
       offered.push(transition.move);
