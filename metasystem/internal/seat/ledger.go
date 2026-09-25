@@ -106,7 +106,7 @@ func ReadJobs(root string) JobSet {
 			// are enforced against, and the round limit a critic chain's root
 			// froze. None of them is a new fact; each was simply not read.
 			EndedAt:          jobText(record, "endedAt"),
-			CapMinutes:       jobNestedNumber(record, "capRequest", "minutes"),
+			CapMinutes:       jobCapMinutes(record),
 			CapDeadline:      jobText(record, "capDeadline"),
 			ReviewRoundLimit: jobOptionalNumber(record, "reviewRoundLimit"),
 		}
@@ -135,6 +135,22 @@ func jobText(record map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// jobCapMinutes is the minutes a job reserved, read the way dispatch's own
+// canonical reader reads them (internal/dispatch/hazard.go:632-633).
+//
+// `capMin` is the field EVERY writer records and the one the reap reaches its
+// budget verdict from: the ordinary build and its follow-ups write it alone
+// (internal/dispatch/build.go:637, 981; brief.go:536), and only the
+// claim-launch path writes `capRequest.minutes` beside it as a second copy of
+// the same number (claim.go:762-763). Reading the second alone would have
+// left every build job with no cap at all.
+func jobCapMinutes(record map[string]any) *int {
+	if minutes := jobOptionalNumber(record, "capMin"); minutes != nil {
+		return minutes
+	}
+	return jobNestedNumber(record, "capRequest", "minutes")
 }
 
 // jobOptionalNumber tells a key the record does not carry from one carrying
