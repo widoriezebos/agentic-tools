@@ -7,7 +7,9 @@ import { activeSection, projectSections, sections, type Section } from "../route
 import type { ThemePreference } from "../theme";
 
 /**
- * The rail: the Project Partner above the six project sections, Settings at the foot,
+ * The rail: the six project sections, Settings at the foot. The Project
+ * Partner has no row here: its drawer is on every page, and the drawer's
+ * expand button is the way to its whole conversation (Wido, 2026-09-25),
  * and the theme control beneath it.
  *
  * Collapsed, a row keeps its label in the DOM and hides it from the screen, so
@@ -15,7 +17,6 @@ import type { ThemePreference } from "../theme";
  * the eye.
  */
 
-const brain = sections[0];
 const settings = sections[sections.length - 1];
 
 export function Rail({
@@ -59,10 +60,6 @@ export function Rail({
         </div>
       )}
       <nav id="sections" aria-label="Sections" className="ms-rail-sections">
-        <div className="ms-rail-nav">
-          <RailItem section={brain} expanded={expanded} onNavigate={onNavigate} />
-        </div>
-        <hr className="ms-rail-rule" />
         <div className="ms-rail-nav">
           {projectSections.map((section) => (
             <RailItem key={section.id} section={section} expanded={expanded} onNavigate={onNavigate} />
