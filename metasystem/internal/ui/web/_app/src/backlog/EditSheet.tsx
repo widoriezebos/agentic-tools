@@ -100,6 +100,11 @@ export function EditSheet({
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}
       note={blocked === "" ? editNote(goal.ref.id, edit) : blocked}
+      // A save in flight goes on whether or not this sheet is on screen, so
+      // while it is in flight the sheet cannot be dismissed: Cancel is
+      // disabled and Escape does nothing. Without this a human who pressed
+      // Cancel would watch the sheet close and the edit land anyway.
+      busy={sending}
       onClose={onClose}
       act={
         <Button primary disabled={blocked !== "" || sending} onClick={send}>

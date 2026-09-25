@@ -1,9 +1,13 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { Backlog, Row } from "./api";
 import { EditSheet } from "./EditSheet";
+import { Panel } from "./Panel";
 
 /**
  * The edit sheet as one screen.
@@ -121,5 +125,52 @@ describe("the edit sheet", () => {
     const markup = sheet();
     expect(markup).toContain("What done looks like: the outcome, not the work.");
     expect(markup).toContain("never a script of the how");
+  });
+});
+
+/**
+ * A save in flight cannot be dismissed.
+ *
+ * The publication goes on whether or not this sheet is on screen, so a human
+ * who pressed Cancel while one was running would watch the sheet close and
+ * the edit land anyway - the one outcome nothing on the page would explain.
+ * The panel already guards its single way out; what this covers is the two
+ * halves of that: the guard does what it says, and this sheet opts into it.
+ */
+function chrome(busy: boolean): string {
+  return renderToStaticMarkup(
+    <TooltipPrimitive.Provider>
+      <Panel
+        form
+        eyebrow="Queued, not yet approved"
+        title="Edit goal"
+        unproven=""
+        refusal=""
+        note=""
+        busy={busy}
+        act={<button type="button">Save</button>}
+        onClose={() => undefined}
+      >
+        <p>fields</p>
+      </Panel>
+    </TooltipPrimitive.Provider>,
+  );
+}
+
+const SOURCE = readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", "EditSheet.tsx"), "utf8");
+
+describe("a save in flight", () => {
+  // Escape and Cancel are one guarded act inside the panel, so the button's
+  // own state is what says whether that guard is shut.
+  it("closes nothing: the panel's one way out is shut while it is busy", () => {
+    expect(chrome(true)).toMatch(/<button[^>]*disabled[^>]*>Cancel<\/button>/);
+    expect(chrome(false)).not.toMatch(/<button[^>]*disabled[^>]*>Cancel<\/button>/);
+  });
+
+  // And this sheet asks for that guard. Nothing rendered statically can say
+  // so - `sending` is false until a human presses Save, and there is no
+  // document here to press it in - so the wiring is read where it is written.
+  it("is what this sheet reports to the panel", () => {
+    expect(SOURCE).toContain("busy={sending}");
   });
 });
