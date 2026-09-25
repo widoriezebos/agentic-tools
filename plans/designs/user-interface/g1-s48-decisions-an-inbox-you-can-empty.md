@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3CE0Q0D1M7XKZ3Z6Q6E7ZQF
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-25, on the page as g1-s46 left it: "I think it is still a
@@ -208,3 +208,24 @@ question writes are checkout writes that need no ledger proof, and the
 page asks for sign-in before them anyway; the overlapping-write corner
 between a status write and an open editor; the selection bar's desktop
 placement, observed in a sitting first.
+
+## Built (2026-09-25)
+
+Landed on ui-development and main; the page went live before the read
+because Wido was waiting on it, and the read's fix landed as a second
+merge. Built by Claude on Opus, read by Codex on Sol under R-124: one
+material finding, a ruling review or a renewal due on the window's own
+day was marked not new because its date had been written as a midnight
+instant, fixed with a private day mark on the item so the instant keeps
+its meaning for ordering and the page's age words; two deferred.
+
+Later, when it hurts: the visit is recorded before the readers that can
+fail, so a failed read can advance the marker; the Partner's capture
+names the stored group rather than the one resolved for the page.
+
+Departures the read accepted: the open group can be closed to none; the
+silence line is kept in every open row; Decided's count is the sum of
+its tabs; label chips are capped at four with a "+n"; two defects the
+browser found were fixed in the build, the first press on an open group
+doing nothing and the phone selection bar never sticking; the rulings
+group is the one quiet group with a standing sentence.
