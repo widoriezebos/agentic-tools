@@ -247,7 +247,7 @@ func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
 // sending anything. It is the sheet's own answer, through the composer the
 // turn uses, so the two cannot be two readings of the same page.
 func (s *Service) See(page Page, now time.Time) Seen {
-	return See(s.reading(), page, now.UTC())
+	return See(s.reading(), page.Bound(), now.UTC())
 }
 
 // Busy is the refusal a second send gets while a turn runs.
@@ -265,6 +265,10 @@ func (s *Service) Submit(ctx context.Context, human, key, text string, page Page
 	if text == "" {
 		return "", errors.New("a turn needs a question")
 	}
+	// The capture is held to its bounds before anything is done with it, and
+	// above all before it is written into the transcript: what a message keeps
+	// is what this server was prepared to keep.
+	page = page.Bound()
 	conversation, err := s.conversation(human)
 	if err != nil {
 		return "", err

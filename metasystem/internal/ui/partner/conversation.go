@@ -131,6 +131,40 @@ type Page struct {
 	// is always carried, so "you have four open stickies, none about this
 	// page" is an answer the Partner can give.
 	StickiesOpen int `json:"stickiesOpen,omitempty"`
+	// StickiesCut is how many the page was showing that this capture does not
+	// carry, because it arrived past the bound Bound holds it to. It is
+	// counted rather than dropped in silence, so the block says what is
+	// missing instead of offering a truncated notepad as a whole one.
+	StickiesCut int `json:"stickiesCut,omitempty"`
+}
+
+// Bound holds a capture to what this server will carry and keep.
+//
+// The stickies are the one part of a capture that is read from nowhere else.
+// The notepad lives outside every checkout precisely so no seat reaches it, so
+// what the browser sends is all there is — and what the browser sends is
+// written down: a turn's message keeps the page it was asked from, in this
+// checkout's state root, for as long as the conversation lasts. A capture that
+// arrived carrying a whole notepad would therefore put a whole notepad of
+// private reminders inside the checkout the notepad is kept out of, and the
+// block's own bound — applied later, over what is already stored — would not
+// have stopped it.
+//
+// The page caps what it sends to the same number. This is the boundary that
+// does not take the page's word for it, and it is the same number on purpose:
+// two bounds that could differ are two bounds that eventually do.
+//
+// It truncates rather than refuses. The question is the human's, and losing it
+// because their notepad is long is the wrong half to throw away; what was cut
+// is counted, and the block says so in the line it already has for the bound.
+func (p Page) Bound() Page {
+	if over := len(p.Stickies) - maxStickiesCarried; over > 0 {
+		kept := make([]Sticky, maxStickiesCarried)
+		copy(kept, p.Stickies)
+		p.Stickies = kept
+		p.StickiesCut += over
+	}
+	return p
 }
 
 // Sticky is one of the human's own reminders as the page was showing it: what

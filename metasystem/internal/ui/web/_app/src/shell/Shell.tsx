@@ -28,6 +28,7 @@ import { SettingsPane } from "../panes/Settings";
 import { DocumentPane } from "../project/DocumentPane";
 import { GoalPane, ProjectPane } from "../project/ProjectPane";
 import { activeSection, HOME_PATH, projectSections } from "../routes";
+import { StickiesPanel } from "../stickies/Panel";
 import {
   DEFAULT_DOCK_HEIGHT,
   MINIMUM_DOCK_HEIGHT,
@@ -416,6 +417,16 @@ function Frame() {
           It is mounted once, above every pane, because a selection is the
           page's and not any one pane's. */}
       <AskSelection />
+      {/* The notepad's panel. The list itself is held above the shell, where
+          a goal page and the reader can read it; the panel is here, inside the
+          three things it needs and the shell alone provides. The page's
+          subject, so the composer opens about the goal being looked at rather
+          than about nothing. The conversation, so the capture knows this sheet
+          is open over the work area. And the work area, so the sheet is modal
+          for that box alone and the Partner drawer stays live beneath it —
+          without which "open the panel and ask", which is how a note about no
+          subject reaches a question at all, is a gesture nobody can make. */}
+      <StickiesPanel />
     </WorkAreaProvider>
   );
 }

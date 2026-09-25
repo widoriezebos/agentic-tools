@@ -315,7 +315,10 @@ func stickyLines(page Page) string {
 		}
 		built.WriteString(line + "\n")
 	}
-	if left := len(page.Stickies) - len(carried); left > 0 {
+	// What is missing is what this block left out plus what the boundary cut
+	// off the capture before it ever got here, so the count is the whole of
+	// what the page was showing and this block does not carry.
+	if left := len(page.Stickies) - len(carried) + page.StickiesCut; left > 0 {
 		built.WriteString("  - (" + strconv.Itoa(left) + " more the page was showing are not in this block)\n")
 	}
 	if len(page.Stickies) == 0 {

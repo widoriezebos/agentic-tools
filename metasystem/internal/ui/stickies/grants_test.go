@@ -182,6 +182,46 @@ func TestTheHomeFollowsTheRegistrysOwnFixtureSeam(t *testing.T) {
 		strings.HasPrefix(Path(home, "/tmp/workspaces/example"), redirected+string(filepath.Separator)), true)
 }
 
+// A home that is not an absolute path is no home at all.
+//
+// The registry answers a relative `.metasystem/armed-checkouts.jsonl` where
+// the account has no home directory it can read, and a relative path resolves
+// against the working directory — which for this server is the checkout it
+// serves. A notepad kept there would be inside the Partner's native read grant
+// and inside a critic's read root, which is the one thing this package exists
+// to prevent, and it would happen silently. So the home is refused, and the
+// seat serves with no notepad rather than with notes in the repository.
+//
+// Both ways to a relative path are taken: the fixture seam set to one, which
+// the registry refuses itself, and the seam cleared beside an account with no
+// home directory, which the registry answers with no error of its own — that
+// second one is the fall this guard is here for.
+func TestARelativeRegistryHomeIsRefusedRatherThanResolvedInTheCheckout(t *testing.T) {
+	// Not parallel: it sets environment variables for its own process.
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", filepath.Join("relative", "home"))
+
+	_, seamErr := Home()
+
+	if seamErr == nil {
+		t.Fatalf("a relative fixture seam was accepted as the account's registry home")
+	}
+
+	// The registry's own fallback: no seam, and no home directory to read.
+	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", "")
+	t.Setenv("HOME", "")
+
+	home, err := Home()
+
+	if err == nil {
+		t.Fatalf("a home of %q was accepted, which resolves inside whatever directory this server was started in", home)
+	}
+	testutil.Expect(t, "what the notepad answers with", home, "")
+	testutil.Expect(t, "that the refusal says what it refused",
+		strings.Contains(err.Error(), ".metasystem"), true)
+	testutil.Expect(t, "that it says why",
+		strings.Contains(err.Error(), "not an absolute path"), true)
+}
+
 // Two checkouts are two notepads, and one checkout is one notepad however it
 // is spelled. The key is the workspace's own name with a digest of its whole
 // path after it, so it is readable and still cannot collide.
