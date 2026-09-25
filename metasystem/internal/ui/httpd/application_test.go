@@ -47,6 +47,27 @@ func applicationObservation() snapshot.Observation {
 	}
 }
 
+// The checkout of a self-hosted workspace and the installation inside it, so
+// that the route's own derivation of one from the other is what the documents
+// the page links are chosen under.
+const (
+	applicationCheckout     = "/work/repository"
+	applicationInstallation = "/work/repository/metasystem"
+)
+
+// The project's documents as the Project reader lists them for that layout:
+// the repository's own README at the root, and the MetaSystem's under the
+// installation.
+func applicationPane() project.Pane {
+	pane := describedPane()
+	pane.Documents = []project.File{
+		{Path: "README.md", Title: "Agentic tools"},
+		{Path: "metasystem/README.md", Title: "MetaSystem"},
+		{Path: "metasystem/docs/glossary.md", Title: "Glossary"},
+	}
+	return pane
+}
+
 // applicationInfo is a server that can answer the page: a workspace, a ledger,
 // a project, the register, this seat's own presence row, a marker and a clock.
 func applicationInfo(t *testing.T) (Info, *int) {
@@ -58,10 +79,11 @@ func applicationInfo(t *testing.T) (Info, *int) {
 			return workspace.Workspace{
 				SchemaVersion: workspace.SchemaVersion,
 				Subject:       "MetaSystem", Mode: workspace.ModeSelfHosted,
+				Checkout: applicationCheckout, Installation: applicationInstallation,
 			}, nil
 		},
 		Observe: func() snapshot.Observation { return applicationObservation() },
-		Project: func() (project.Pane, error) { return describedPane(), nil },
+		Project: func() (project.Pane, error) { return applicationPane(), nil },
 		Now:     func() time.Time { return applicationNow },
 		Fleet: func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error) {
 			return fleet.Page{
@@ -137,6 +159,71 @@ func TestApplicationPayload(t *testing.T) {
 	// the visit.
 	testutil.Expect(t, "the visit was recorded", *visits, 1)
 	testutil.Expect(t, "and the page says it was a first one", page.Visit.First, true)
+}
+
+// The documents this page links are the subject's own, under the root the
+// described layout puts them at: the route derives where the installation lies
+// from the checkout it was described with, so a self-hosted workspace links
+// the MetaSystem's README and glossary and not the repository's root one.
+func TestApplicationLinksTheDocumentsOfTheDescribedLayout(t *testing.T) {
+	t.Parallel()
+
+	info, _ := applicationInfo(t)
+	selfHosted := applicationPage(t, New(info, loopback(), testBundle()), "self-hosted")
+	testutil.Expect(t, "the self-hosted links", selfHosted.Docs, []application.Document{
+		{Title: "README", Path: "metasystem/README.md"},
+		{Title: "Glossary", Path: "metasystem/docs/glossary.md"},
+	})
+
+	adopted, _ := applicationInfo(t)
+	adopted.Describe = func() (workspace.Workspace, error) {
+		return workspace.Workspace{
+			SchemaVersion: workspace.SchemaVersion,
+			Subject:       "agentic-tools-ui", Mode: workspace.ModeAdopted,
+			Checkout: applicationCheckout, Installation: applicationInstallation,
+		}, nil
+	}
+	adopted.Project = func() (project.Pane, error) {
+		pane := describedPane()
+		pane.Documents = []project.File{
+			{Path: "README.md", Title: "The application"},
+			{Path: "docs/concepts.md", Title: "Concepts"},
+			{Path: "metasystem/docs/glossary.md", Title: "Glossary"},
+		}
+		return pane, nil
+	}
+	page := applicationPage(t, New(adopted, loopback(), testBundle()), "adopted")
+	testutil.Expect(t, "the adopted links", page.Docs, []application.Document{
+		{Title: "README", Path: "README.md"},
+		{Title: "Concepts", Path: "docs/concepts.md"},
+	})
+}
+
+// Where the installation lies from the checkout, for every layout the route
+// can be described with.
+//
+// A destination in this payload is opened by the document reader, which
+// resolves against the checkout, so an installation the reader could have no
+// path to is no path at all: the page then links the checkout's own documents
+// rather than a destination that would refuse.
+func TestInstallationFromCheckoutIsWhatTheDocumentReaderCouldOpen(t *testing.T) {
+	t.Parallel()
+
+	for _, layout := range []struct {
+		named               string
+		checkout, installed string
+		want                string
+	}{
+		{"the installation inside the checkout", "/work/repository", "/work/repository/metasystem", "metasystem"},
+		{"one directory serving itself", "/work/repository", "/work/repository", "."},
+		{"an installation beside the checkout", "/work/repository", "/work/kit", ""},
+		{"an installation above the checkout", "/work/repository", "/work", ""},
+		{"roots that cannot be made relative", "repository", "/work/kit", ""},
+	} {
+		testutil.Expect(t, layout.named, installationFromCheckout(workspace.Workspace{
+			Checkout: layout.checkout, Installation: layout.installed,
+		}), layout.want)
+	}
 }
 
 // The build this page names is this seat's own row of the fleet, read through
