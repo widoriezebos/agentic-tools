@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3C1ESG2QVDTY8YWVMJ5PJTC
-- Status: accepted
+- Status: done
 - Goals: browser-interface seat-mutual-awareness
 
 Wido, 2026-09-25: insight into what a machine is currently working on, the
@@ -206,3 +206,27 @@ eight entries, no byte promise); the tick's cost per call, a scan of the
 job directory and the goal's attempts and runs, accepted until measured;
 two descriptions corrected in section 1 (the last folded round, the budget
 episode); the refresh wording.
+
+## Built (2026-09-25)
+
+Landed on ui-development and main in one merge. Built by Claude on Opus,
+read by Codex on Sol under R-124: three material findings, fixed in one
+round. The box's `problem` carried the projection's raw words, which can
+name a path on the machine, into a record the tick publishes; it now
+carries one of seven bounded classes chosen from what the projection
+could not read, and the same bound was put on two neighbouring sentences
+in the same field. The cap was read from `capRequest.minutes` alone while
+the ordinary build writers record `capMin`; it reads `capMin` first. A
+pending job with a start stamp read as running; the words follow the
+status on both sides.
+
+Later, when it hurts: this seat's jobs listed flat rather than grouped by
+goal; minute counts never rolling into hours.
+
+Departures the read accepted: the cap wears its unit; the record's
+`working.box.problem` is bounded text, the one exception to the record's
+no-free-text rule, documented at the function; the disclosure is a button
+with `aria-expanded` and a second table row, because a row cannot hold a
+row; `parseWorking` accepts work that names no goal, which a goal-free
+critique is; `fleet.ReadRunning` was removed once its only caller read
+the jobs itself.
