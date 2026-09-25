@@ -102,7 +102,11 @@ Shell sits above all three and below none: scripts call verbs, verbs
 never call scripts (the two exceptions are deliberate: `boundedexec`
 runs adapter/gate commands the caller names, and the mission runner
 launches host adapters — both run programs handed to them, neither
-encodes shell knowledge).
+encodes shell knowledge). `seat launch` invokes
+`scripts/agents/go-build.sh` as the kit's one designated build owner,
+because a new machine's engine must be built by the same fenced,
+pinned, stamped path every other build goes through; it is the only
+shell that verb runs.
 
 ## Package map
 
