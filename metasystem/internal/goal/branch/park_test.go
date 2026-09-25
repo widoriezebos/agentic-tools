@@ -19,6 +19,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
+// Not parallel: it puts a mock git first on this process's PATH, which is
+// process-wide state, exactly as it was at the command edge it moved from.
 func TestGoalBranchGitKeepsStderrOutOfObjectIDs(t *testing.T) {
 	root := t.TempDir()
 	want := strings.Repeat("a", 40)
@@ -51,6 +53,7 @@ func TestGoalBranchGitKeepsStderrOutOfObjectIDs(t *testing.T) {
 // refs/heads/main refuses before either read, and only for the goal that
 // actually needs the remote read.
 func TestParkCheckReadsTheRemoteOnlyForABranchBackedGoal(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	endpoint := goal.Endpoint{Root: repo, Remote: "origin", Branch: "refs/heads/main"}
 	tip := strings.Repeat("7", 40)
@@ -115,6 +118,7 @@ func TestParkCheckReadsTheRemoteOnlyForABranchBackedGoal(t *testing.T) {
 // The disposable ref a tip read opens is deleted whether the fetch answered
 // or not: a check that left refs behind would accumulate one per park.
 func TestEndpointTipDeletesItsDisposableRef(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		fetchErr error

@@ -206,6 +206,13 @@ func main() {
 			return state.approve(id, budget)
 		},
 		Withdraw: func(_ *session.Session, id, reason string) error { return state.withdraw(id, reason) },
+		// Not now, and back. The fixture parks and unparks its own canned
+		// rows: what it proves in a browser is the queue's two sheets, the
+		// Not now tab and the button that returns a goal — the verb itself,
+		// its authority row and its branch check are the engine's own tests'
+		// to prove, and this ledger has no endpoint to publish to.
+		Park:   func(_ *session.Session, id, because string) error { return state.park(id, because) },
+		Unpark: func(_ *session.Session, id string) error { return state.unpark(id) },
 		SetPriority: func(_ *session.Session, id string, priority uint8, sequence *uint64) error {
 			return state.setPriority(id, priority, sequence)
 		},
@@ -612,6 +619,45 @@ func newLedger(calm bool) *ledger {
 		}
 	}
 
+	// The queue itself: enough unapproved goals that the page is the thing
+	// the design is about — a list a human works in sittings rather than
+	// reads in one — with the four facts the queue row and its tools read.
+	// Labels so the chips have something to draw and narrow by, both origins
+	// so the "yours" chip and the origin chips do, tiers above and at zero so
+	// the tier chip appears on some rows and not others, and priority bands
+	// so backlog order is not the order they were written in.
+	for _, queued := range walkthroughQueue {
+		row := ranked(walkthroughGoal(queued.id, goal.StateQueued, queued.intent), queued.priority, queued.sequence)
+		row.Tier, row.Origin, row.Labels = queued.tier, queued.origin, queued.labels
+		row.OpenedAt = stampedAgo(queued.openedDaysAgo * 24 * time.Hour)
+		add(row)
+	}
+
+	// Three parks a person made and one a seat made. The three are the Not
+	// now tab — one of them a blocker park a human directed, which is named
+	// with its blocker and returns by itself — and the seat's park is the one
+	// that stays in the inbox, because a human has not seen it.
+	if !calm {
+		pause := func(id, intent, because string, ago time.Duration, by, blocker string) *goal.GoalFile {
+			row := add(ranked(walkthroughGoal(id, goal.StateParked, intent), 2, 40))
+			row.Parked = &goal.ParkRecord{
+				By: by, At: stampedAgo(ago), Because: because, Blocker: blocker,
+			}
+			if blocker != "" {
+				row.Blocked = []string{blocker}
+			}
+			return row
+		}
+		pause("g1-s34", "The queue narrows by label and by origin",
+			"not before the board's own filters settle", 40*time.Hour, "human:Wido", "")
+		pause("g1-s35", "The approve sheet takes many goals at once",
+			"after the single-goal sheet has been used for a week", 11*24*time.Hour, "human:Wido", "")
+		pause("g1-s36", "The register opens from the review card",
+			"waiting for g1-s24; the census format decides the path", 6*24*time.Hour, "human:Wido", "g1-s24")
+		pause("g1-s37", "The notification panel groups by day",
+			"the implementer paused it to finish g1-s33 first", 5*time.Hour, "m2a+implementer", "")
+	}
+
 	dropped := add(walkthroughGoal("g1-s7", goal.StateAbandoned, "A second bundler beside the first"))
 	dropped.Abandoned = &goal.AbandonRecord{By: "human:Wido", At: "2026-09-05T00:00:00Z", Because: "overtaken by g1-s8"}
 
@@ -679,6 +725,54 @@ func touch(file *goal.GoalFile, verb string, ago time.Duration) *goal.GoalFile {
 		At: stampedAgo(ago), Opid: "op-" + verb + "-" + file.Id, Verb: verb, Actor: "m1e+coordinator",
 	})
 	return file
+}
+
+// walkthroughQueue is the queue block's own rows: thirty goals nobody has
+// authorized, which is what makes the second block a queue rather than a
+// list. The numbers are the live page's in miniature — most of them tier 2
+// and 3, a little over half opened by a human, the labels repeating so a chip
+// narrows to a family rather than to one row — and the ages spread over three
+// months so the age column and the newest-first order mean something.
+var walkthroughQueue = []struct {
+	id            string
+	intent        string
+	priority      uint8
+	sequence      uint64
+	tier          uint8
+	origin        string
+	labels        []string
+	openedDaysAgo time.Duration
+}{
+	{"g1-s40", "The queue row opens in place and shows the whole intent", 1, 2, 2, "human", []string{"browser-interface"}, 3},
+	{"g1-s41", "The header counts what is asked of you and what waits", 1, 3, 2, "human", []string{"browser-interface"}, 4},
+	{"g1-s42", "Selecting many goals approves them one publication at a time", 1, 4, 3, "human", []string{"browser-interface", "robustness"}, 6},
+	{"g1-s43", "The label chips are drawn from the rows on screen", 2, 20, 2, "main", []string{"browser-interface"}, 8},
+	{"g1-s44", "The seat census answers which machines are alive", 2, 21, 3, "main", []string{"headless-fleet"}, 9},
+	{"g1-s45", "A machine publishes its phase with every tick", 2, 22, 3, "main", []string{"headless-fleet"}, 12},
+	{"g1-s46", "The fleet page reads a seat's whole chain", 2, 23, 2, "human", []string{"headless-fleet"}, 13},
+	{"g1-s47", "A stopped seat says why it stopped, in the engine's words", 2, 24, 3, "main", []string{"headless-fleet", "robustness"}, 15},
+	{"g1-s48", "The channel gateway retries a refused delivery", 2, 25, 3, "main", []string{"headless-fleet"}, 16},
+	{"g1-s49", "A seat's ask carries its options and their consequences", 2, 26, 2, "human", []string{"seat-communication"}, 18},
+	{"g1-s50", "The human answers an ask from the channel with a code", 2, 27, 3, "human", []string{"seat-communication"}, 19},
+	{"g1-s51", "An unanswered ask ages into the steward's digest", 2, 28, 2, "main", []string{"seat-communication"}, 21},
+	{"g1-s52", "The budget law is declared per tier and read per goal", 2, 29, 3, "human", []string{"budgets"}, 23},
+	{"g1-s53", "A goal that outruns its box stops rather than slows", 2, 30, 3, "main", []string{"budgets", "robustness"}, 25},
+	{"g1-s54", "Reserved job minutes count open jobs at their full cap", 2, 31, 2, "main", []string{"budgets"}, 27},
+	{"g1-s55", "The ledger's accepted ref advances under one lock", 2, 32, 3, "main", []string{"robustness"}, 30},
+	{"g1-s56", "A crashed publication is recovered from its journal", 2, 33, 3, "main", []string{"robustness"}, 33},
+	{"g1-s57", "Two seats on one host are told apart by lineage", 2, 34, 2, "human", []string{"robustness", "headless-fleet"}, 36},
+	{"g1-s58", "The document reader anchors a heading from a link", 3, 1, 1, "human", []string{"browser-interface"}, 40},
+	{"g1-s59", "A record is written from the browser into its home", 3, 2, 2, "human", []string{"browser-interface"}, 44},
+	{"g1-s60", "The Project pane reads the checkout's declared records", 3, 3, 0, "main", nil, 48},
+	{"g1-s61", "A design's landing is read out of its goals", 3, 4, 0, "main", nil, 52},
+	{"g1-s62", "The retro reads its receipts and proposes one change", 3, 5, 2, "human", []string{"memory"}, 56},
+	{"g1-s63", "A ruling's review condition is swept once a day", 3, 6, 2, "main", []string{"memory"}, 60},
+	{"g1-s64", "The register refuses a row it cannot read, by name", 3, 7, 0, "main", []string{"memory"}, 64},
+	{"g1-s65", "The steward's journal keeps one line per delivery", 3, 8, 0, "main", nil, 70},
+	{"g1-s66", "An adopted application supplies its own test command", 3, 9, 3, "human", []string{"testing"}, 76},
+	{"g1-s67", "The suite runs in parallel inside its worker grant", 3, 10, 3, "human", []string{"testing"}, 82},
+	{"g1-s68", "A test that needs real git says which adapter it proves", 3, 11, 2, "main", []string{"testing"}, 88},
+	{"g1-s69", "The coverage floor holds at the package it was set on", 3, 12, 0, "main", []string{"testing"}, 94},
 }
 
 func walkthroughGoal(id, state, intent string) *goal.GoalFile {
@@ -1251,6 +1345,59 @@ func (l *ledger) plantGoal(id, intent string) {
 	full := filepath.Join(l.roots.StateRoot, "plans", "goals", id+".md")
 	_ = os.WriteFile(full, []byte("# "+id+"\n\n- State: queued\n- Intent: "+intent+"\n"), 0o644)
 	l.opened = append(l.opened, id)
+}
+
+// park and unpark are the fixture's own, holding the engine's rules that the
+// page reads: a reason is required, a goal already parked refuses, a goal
+// another pair claimed refuses rather than being displaced — which is the
+// refusal a walkthrough is the place to see — and an unpark returns the goal
+// to approved where its approval still stands and to queued otherwise.
+func (l *ledger) park(id, because string) error {
+	if strings.TrimSpace(because) == "" {
+		return fmt.Errorf("park needs its reason — a pause without a why is a stall in disguise")
+	}
+	file := l.tree.Live[id]
+	if file == nil {
+		return fmt.Errorf("goal %s is not live; nothing to park", id)
+	}
+	if file.State == goal.StateParked {
+		return fmt.Errorf("goal %s is already parked", id)
+	}
+	if file.State != goal.StateQueued && file.State != goal.StateApproved && file.State != goal.StateClaimed {
+		return fmt.Errorf("goal %s is %s; only queued, approved, or claimed goals park", id, file.State)
+	}
+	if file.State == goal.StateClaimed && file.Claimed != nil {
+		return fmt.Errorf("goal %s is claimed by %s+%s; parking another's claim is a human act",
+			id, file.Claimed.Machine, file.Claimed.Lineage)
+	}
+	file.State = goal.StateParked
+	file.Parked = &goal.ParkRecord{
+		By: "human:Wido", At: time.Now().UTC().Format(time.RFC3339), Because: because,
+	}
+	return nil
+}
+
+func (l *ledger) unpark(id string) error {
+	file := l.tree.Live[id]
+	if file == nil {
+		return fmt.Errorf("goal %s is not live; nothing to unpark", id)
+	}
+	if file.State != goal.StateParked {
+		return fmt.Errorf("goal %s is %s, not parked", id, file.State)
+	}
+	if file.Parked != nil && file.Parked.Blocker != "" {
+		for _, blocker := range file.Blocked {
+			if held := l.tree.Live[blocker]; held != nil && held.State != goal.StateDone {
+				return fmt.Errorf("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e)", id, blocker)
+			}
+		}
+	}
+	file.Parked = nil
+	file.State = goal.StateQueued
+	if file.Approved != nil {
+		file.State = goal.StateApproved
+	}
+	return nil
 }
 
 func (l *ledger) withdraw(id, reason string) error {

@@ -38,7 +38,12 @@ import (
 )
 
 // SchemaVersion is the shape of the decisions resource a reader parses.
-const SchemaVersion = 1
+//
+// Two, since the inbox became two blocks: the counts carry the split, the
+// decided side carries the parks a person made, and the payload names where
+// the register is. Nothing was renamed, so a reader of the first shape reads
+// every field it read before.
+const SchemaVersion = 2
 
 // The kinds of thing that wait on a human. Each one is a row of the design's
 // own table, and each one carries its own silence line.
@@ -55,10 +60,15 @@ const (
 	KindAlert        = "alert"
 )
 
-// The two acts this page offers, which are the board's own and no others.
+// The acts this page offers. Two are the board's own; two are this page's,
+// admitted from a browser under R-125-m1u and offered nowhere else.
 const (
 	ActApprove  = "approve"
 	ActWithdraw = "withdraw"
+	// ActPark is "Not now": a pause with the reason the human types.
+	ActPark = "park"
+	// ActUnpark returns a paused goal to the queue.
+	ActUnpark = "unpark"
 )
 
 // The kinds a Where can name. A destination is said as what kind of thing it
@@ -82,8 +92,22 @@ const (
 // Overview's own window over the same journal.
 const alertWindow = 7 * 24 * time.Hour
 
-// The register path the reader opens, which is where a ruling is edited.
+// The register path the reader opens, where the caller names none.
+//
+// It is the kit's own layout — the register beside the installation's memory
+// — and it is right only where the checkout and the installation are the same
+// directory. Every caller that knows both roots hands the real one in through
+// Inputs.RegisterPath, because the reader that opens it opens it relative to
+// the CHECKOUT, and a path that named the installation's copy would open
+// nothing on the layout this interface most often serves.
 const registerPath = "memory/rulings.md"
+
+// humanPark is the engine's own test of a park a person made: the park's By
+// is "human:<name>" for any actor with a human behind it (verbs.go:203-208),
+// and the unpark verb tells a person's park from a seat's by this same prefix
+// (verbs.go:2772). A row it answers true for is a decision this human already
+// made, so it is not something waiting on them.
+const humanPark = "human:"
 
 // The journal sources that are addressed to a human rather than recorded at
 // one. It is the Overview's own list, because it is the same journal.
@@ -208,6 +232,26 @@ type Approved struct {
 type Row = backlog.Row
 
 // Decided is what this human has already said, four ways.
+// NotNow is one goal a person paused, with the whole of what they said: the
+// reason, who paused it, when, and the blocker where the park names one.
+//
+// It is a decided thing rather than a waiting one. The inbox used to count it
+// as "needs your choice", which said that a human who wrote down a reason and
+// a date had not decided anything.
+type NotNow struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	By    string `json:"by"`
+	At    string `json:"at"`
+	// Because is the reason the park recorded, which is the whole of why.
+	Because string `json:"because"`
+	// Blocker is the goal this park waits for, where a human directed the
+	// park at one. A blocker park returns by itself when its blockers finish,
+	// which is why the row names what it is waiting for.
+	Blocker string `json:"blocker"`
+	Where   Where  `json:"where"`
+}
+
 type Decided struct {
 	Rulings []Ruling `json:"rulings"`
 	// Defects are the register's own broken rows, in the steward's words,
@@ -216,12 +260,21 @@ type Decided struct {
 	Decisions []Item     `json:"decisions"`
 	Answered  []Item     `json:"answered"`
 	Approved  []Approved `json:"approved"`
+	// NotNow is every park a person made, newest first.
+	NotNow []NotNow `json:"notNow"`
 }
 
-// Counts is what the page shows as figures: the whole inbox, and the whole
-// register.
+// Counts is what the page shows as figures: the whole inbox, its two blocks,
+// and the whole register.
+//
+// NeedsYou is the inbox as listed, and Asked and Waiting are its two halves —
+// everything that is not an approval, and the approvals. They always sum to
+// NeedsYou, because the page splits the one list the server composed rather
+// than composing two.
 type Counts struct {
 	NeedsYou int `json:"needsYou"`
+	Asked    int `json:"asked"`
+	Waiting  int `json:"waiting"`
 	Rulings  int `json:"rulings"`
 }
 
@@ -236,6 +289,10 @@ type Page struct {
 	NeedsYou []Need  `json:"needsYou"`
 	Decided  Decided `json:"decided"`
 	Counts   Counts  `json:"counts"`
+	// Register is where the rulings register is, relative to the checkout,
+	// which is what the document reader opens paths against. Every register
+	// destination in this payload names it, so "open the register" opens.
+	Register string `json:"register"`
 }
 
 // Standing is who the server is acting as, reduced to the one fact this page
@@ -259,23 +316,48 @@ type Inputs struct {
 	// files: a fleet where another seat holds a question shows only this
 	// seat's, and the row says where the rest of them reach a human.
 	Asks []channel.Question
-	// Register is one read of memory/rulings.md, whole rows and all.
+	// Register is one read of the rulings register, whole rows and all.
 	Register rulings.Register
-	Human    Standing
+	// RegisterPath is where that register is RELATIVE TO THE CHECKOUT, which
+	// is not where it was read from: the reader takes the installation root,
+	// because that is where the kit keeps its memory, and the document reader
+	// opens against the checkout. The caller knows both roots and derives the
+	// one path both ends can use. An empty path takes the kit's own layout.
+	RegisterPath string
+	Human        Standing
 }
 
 // Compose is the whole page, from the six answers above, as they stood at
 // now. It reads no file, opens no connection and keeps nothing.
 func Compose(in Inputs, now time.Time) Page {
 	inbox := needsYou(in, now)
+	waiting := 0
+	for _, need := range inbox {
+		if need.Kind == KindApproval {
+			waiting++
+		}
+	}
 	return Page{
 		SchemaVersion: SchemaVersion,
 		ReadAt:        stamp(now),
 		SignIn:        !in.Human.Proven,
 		NeedsYou:      inbox,
 		Decided:       decided(in, now),
-		Counts:        Counts{NeedsYou: len(inbox), Rulings: len(in.Register.Rows)},
+		Counts: Counts{
+			NeedsYou: len(inbox), Asked: len(inbox) - waiting, Waiting: waiting,
+			Rulings: len(in.Register.Rows),
+		},
+		Register: registerOf(in),
 	}
+}
+
+// registerOf is where the register is from the checkout, which is what every
+// destination naming it must say.
+func registerOf(in Inputs) string {
+	if in.RegisterPath != "" {
+		return in.RegisterPath
+	}
+	return registerPath
 }
 
 /* ------------------------------------------------------ needs your choice -- */
@@ -293,7 +375,7 @@ func needsYou(in Inputs, now time.Time) []Need {
 	needs = append(needs, stopped(in.Rows)...)
 	needs = append(needs, drafts(in.Project.Records)...)
 	needs = append(needs, landed(in.Project)...)
-	needs = append(needs, rulingReviews(in.Register, now)...)
+	needs = append(needs, rulingReviews(in.Register, registerOf(in), now)...)
 	needs = append(needs, alerts(in.Journal, now)...)
 	order(needs)
 	return needs
@@ -504,15 +586,20 @@ func questions(register []project.Question) []Need {
 	return needs
 }
 
-// parked is the goals a person parked: the state is parked and the park names
-// no blocker.
+// parked is the goals a SEAT parked: the state is parked, the park names no
+// blocker, and the park is not a person's.
 //
-// The blocker is what tells the two apart. An approved goal an open
-// dependency holds is in the Waiting lane too and its Waiting carries no
-// blocker either (project.go's own else branch), but its state is approved
-// rather than parked — it is waiting on work, not on a human. A dependency
-// park carries the blocker it waits for, and returns by itself when that
-// blocker lands.
+// The blocker is what tells a seat's pause from a dependency's. An approved
+// goal an open dependency holds is in the Waiting lane too and its Waiting
+// carries no blocker either (project.go's own else branch), but its state is
+// approved rather than parked — it is waiting on work, not on a human. A
+// dependency park carries the blocker it waits for, and returns by itself
+// when that blocker lands.
+//
+// The prefix is what tells a seat's pause from a person's. A park a person
+// made is a decision they already took, with their reason on it, so it is in
+// Not now rather than here; a seat's park stays, because a human has not seen
+// it. The row carries the act that returns it either way.
 //
 // Silence: goal.Store.Unpark is the only verb that lifts a park with no
 // blocker, and nothing runs it on its own, so it stays parked.
@@ -522,13 +609,19 @@ func parked(rows []backlog.Row) []Need {
 		if row.State != goal.StateParked || row.Waiting == nil || row.Waiting.Blocker != "" {
 			continue
 		}
+		if strings.HasPrefix(row.Waiting.By, humanPark) {
+			continue
+		}
 		needs = append(needs, Need{
 			Kind: KindParked, ID: row.ID, Title: titleOf(row),
 			Asked: "Unpark " + titleOf(row) + "? parked by " + row.Waiting.By + " " + row.Waiting.Since + ": " + row.Waiting.Reason,
 			By:    row.Waiting.By, Since: row.Waiting.Since,
 			Silence: "it stays parked",
 			Where:   Where{Kind: WhereGoal, ID: row.ID},
-			Command: "metasystem goal unpark --id " + row.ID,
+			// The act rather than the command: a signed-in session may lift a
+			// seat's park from here (R-125-m1u), and a command shown beside a
+			// button that does the same thing is one more thing to read.
+			Act: ActUnpark,
 		})
 	}
 	return needs
@@ -632,7 +725,7 @@ func recordedStatus(record project.Record) string {
 // Silence: no verb of this engine writes the register. The sweep reads it and
 // appends one line to the steward's digest; the row itself is never touched,
 // so the ruling stays in force exactly as written.
-func rulingReviews(register rulings.Register, now time.Time) []Need {
+func rulingReviews(register rulings.Register, at string, now time.Time) []Need {
 	needs := []Need{}
 	for _, review := range register.Reviews {
 		if !rulings.DuePassed(review.Due, now) {
@@ -643,7 +736,7 @@ func rulingReviews(register rulings.Register, now time.Time) []Need {
 			Asked: "Review " + review.ID + ", due " + review.Due + ": adopt, revise or withdraw",
 			By:    review.Owner, Since: dayStamp(review.Due),
 			Silence: "it stays in force as written",
-			Where:   Where{Kind: WhereRegister, ID: registerPath},
+			Where:   Where{Kind: WhereRegister, ID: at},
 		})
 	}
 	return needs
@@ -778,7 +871,50 @@ func decided(in Inputs, now time.Time) Decided {
 		Decisions: decisionRecords(in.Project.Records),
 		Answered:  answeredQuestions(in.Project.Questions),
 		Approved:  approvedGoals(in.Rows, in.Closed),
+		NotNow:    notNow(in.Rows),
 	}
+}
+
+// notNow is every park a person made, newest first.
+//
+// Every one of them, blocker parks included: a human who parks a goal behind
+// another goal has decided the same thing as one who parks it for a reason —
+// not now — and the row says what it is waiting for so the difference is
+// read rather than hidden. It leaves by itself when the blockers finish,
+// which is the engine's rule and not this page's.
+//
+// Newest first, because a human reading what they paused reads what they
+// paused last; an undated park sorts after every dated one rather than
+// claiming a position this page would have to invent.
+func notNow(rows []backlog.Row) []NotNow {
+	parks := []NotNow{}
+	for _, row := range rows {
+		if row.State != goal.StateParked || row.Waiting == nil {
+			continue
+		}
+		if !strings.HasPrefix(row.Waiting.By, humanPark) {
+			continue
+		}
+		parks = append(parks, NotNow{
+			ID: row.ID, Title: titleOf(row), By: row.Waiting.By,
+			At: row.Waiting.Since, Because: row.Waiting.Reason,
+			Blocker: row.Waiting.Blocker,
+			Where:   Where{Kind: WhereGoal, ID: row.ID},
+		})
+	}
+	sort.SliceStable(parks, func(i, j int) bool {
+		if parks[i].At == parks[j].At {
+			return false
+		}
+		if parks[i].At == "" {
+			return false
+		}
+		if parks[j].At == "" {
+			return true
+		}
+		return parks[i].At > parks[j].At
+	})
+	return parks
 }
 
 // register is every row the reader could read whole, newest first, with the
