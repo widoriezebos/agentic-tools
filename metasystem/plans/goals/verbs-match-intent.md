@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Wido 2026-09-25: design and build the most intuitive, powerful, forgiving human and agent verbs possible, organized by human/agent intent rather than internal structure. Deliver a complete public command surface: discoverable help, whole-workflow commands, consistent names and flags, contextual defaults, executable recovery guidance, safe retries and advanced capabilities. Reuse existing transaction, authority, job and landing owners and preserve their guarantees. The September 6 audit and available real Claude/Codex session failures are design evidence. Incorporate the delivered human-goal-verbs-forgiving, stop/status/arm and verb-ergonomics work; map the queued startup, repository-root, human-goal-defect and landing requirements. DONE: the full reviewed intent surface is implemented, documented and proven end to end including failure/retry paths, with material review findings resolved. Minimize total implementation and maintenance complexity without reducing the complete redesign's scope.
 - Origin: main
-- Next step: Finish final checks and commit the complete intent-based redesign locally. Reviewed candidate 3e59d4107 is applied on main (111 paths); final rebuilt public CLI passed72 commands, fast/static prerequisites and both corrected audit/protocol sections passed. Original198-group selection fully executed; bounded native/scenario correction checks and all10adoption bodies now running. Six unrelated coverage-ratchet failures proven at baseline and left unchanged. Root-authored design, Fable critique and rulingR-126 are complete; no formal authority or governed certificate is fabricated under the human-authorized machinery bypass.
+- Next step: WAITING ON THE HUMAN: The complete intent-based verb redesign is integrated locally at commit 25f0e2e04267fe626b5622e95e0c71b756d48aae. No implementation work remains. Root-authored design and Fable agreement are complete, R-126 is recorded, and all ten critical/high obligations are DONE. Final 72 CLI cases, seven native groups, two audit/protocol sections, all ten adoption bodies and thirteen corrected scenarios passed; earlier broad results retain their revisions. Six baseline coverage-policy failures remain disclosed in plans/verbs-match-intent-verification.md. The code has not been pushed or installed into the running checkout. Formal conclusion of this human-opened goal and installation timing remain human actions; no ledger approval, claim or governed certificate was fabricated under the authorized machinery bypass.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 24
+- Revision: 25
 - BudgetExceptions: 0
 
 History:
@@ -37,4 +37,5 @@ History:
 - 2026-09-25T19:08:59Z MNF2H3PQ7G2HF3MZJS46SPHSV2-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T20:03:15Z HAHW53EEX11RD6HA17PYDK4PFK-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T20:44:52Z GR7F0BDBCQ9F017XQ56A8DF6SE-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
-Integrity: sha256=45cd3f548bf851f31e17cc24f1fbbb9912c5995a2c6898efee3e259ccb2d687d
+- 2026-09-25T21:05:17Z 5AWBBG4JJXNNWGH9PAVBARPBZV-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+Integrity: sha256=ccb02810c7c277f6ceab8174b33f81ca6b4c6ab440ff82248529c9cbf64c0b72
