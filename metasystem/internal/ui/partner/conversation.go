@@ -113,6 +113,40 @@ type Page struct {
 	// subject it was showing. The page owns its own address grammar, so the
 	// server keeps the string rather than reassembling one.
 	Return string `json:"return,omitempty"`
+	// Stickies is the human's own notepad as the page was showing it: what the
+	// panel showed while it stood open, and otherwise the stickies about the
+	// thing on the page.
+	//
+	// Astra's F2 is why the second half is there. A note about no subject —
+	// "the Fleet page's wording is off" — is on no page at all, so a capture
+	// that only ever carried a page's own stickies would never carry it, and
+	// J4's own example would fail. Opening the panel and asking is how a human
+	// reaches every one of them.
+	//
+	// They travel because they are nowhere else: the notepad is outside every
+	// checkout precisely so that no seat reads it, so a Partner that was not
+	// told them could not find them and must not try.
+	Stickies []Sticky `json:"stickies,omitempty"`
+	// StickiesOpen is how many are open, whether or not any of them travel. It
+	// is always carried, so "you have four open stickies, none about this
+	// page" is an answer the Partner can give.
+	StickiesOpen int `json:"stickiesOpen,omitempty"`
+}
+
+// Sticky is one of the human's own reminders as the page was showing it: what
+// it says, and what it is about.
+//
+// It carries no instants and no id. A sticky in a capture is something the
+// human wrote to themselves and is looking at; the Partner neither acts on one
+// nor dates one, and a capture is not a copy of the notepad.
+type Sticky struct {
+	Text string `json:"text"`
+	// About is what it is about, as the page spells it: "goal g1-s45", or a
+	// document's own path.
+	About []string `json:"about,omitempty"`
+	// Done says this one has been struck off. The panel shows done stickies
+	// behind a disclosure, so one only travels when a human had it open.
+	Done bool `json:"done,omitempty"`
 }
 
 // FleetCapture is the Fleet page as it was on screen: where the presence copy
