@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3CAGZRWXJ87YWPQRQGRKJYJ
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-25: "why can't I edit a goal?", then "yeah, go ahead" to
@@ -142,3 +142,24 @@ the page already has, not a row; the fourth gate's own words; the park
 and wait reasons read `state`. Astra verified the state guard is complete
 on a validated tree, that recovery replay and reconcile need no flag, and
 that naming the session on the edit line is sufficient.
+
+## Built (2026-09-25)
+
+Landed on ui-development and main in one merge. Built by Claude on Opus,
+read by Codex on Sol under R-124: one material finding, the sheet could
+be dismissed while a save was in flight, fixed in one round with the
+panel's busy guard; two deferred because step 1 works and is safe
+without them.
+
+Later, when it hurts: the walkthrough's canned edit refuses in the order
+approval, claim, park, where the engine reads the state first; the
+route's new test file has no surface path of its own in testing.json
+and falls to the interface group.
+
+Departures the read accepted: the state is read before the approval in
+the engine, because an approval survives a claim and a park; the
+walkthrough already held a goal in each of the four states, so none were
+added; a state outside the four shows neither the button nor a reason;
+the nil-engine guard lives in the handler so an engine without the
+editor still approves and parks; testing.json was not edited, the plan
+forbids it, and the touched paths fall under existing surfaces.
