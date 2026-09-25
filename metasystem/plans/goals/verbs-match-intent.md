@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Wido 2026-09-25: design and build the most intuitive, powerful, forgiving human and agent verbs possible, organized by human/agent intent rather than internal structure. Deliver a complete public command surface: discoverable help, whole-workflow commands, consistent names and flags, contextual defaults, executable recovery guidance, safe retries and advanced capabilities. Reuse existing transaction, authority, job and landing owners and preserve their guarantees. The September 6 audit and available real Claude/Codex session failures are design evidence. Incorporate the delivered human-goal-verbs-forgiving, stop/status/arm and verb-ergonomics work; map the queued startup, repository-root, human-goal-defect and landing requirements. DONE: the full reviewed intent surface is implemented, documented and proven end to end including failure/retry paths, with material review findings resolved. Minimize total implementation and maintenance complexity without reducing the complete redesign's scope.
 - Origin: main
-- Next step: Implementation authorized by Wido on 25 September; ignore unrelated stop hook. R-126 records intent-first public verbs. Root-authored full design plus Fable connection amendment accepted in plans/designs/verbs-match-intent.md. Foundation, process, planning, named build and initial docs have closed independent reviews and root focused proof. Private integration is combining them; delivery final corrections and automatic-worktree/review-unit connection remain active. Finish independent connection review, exhaustive public/help/docs coverage, selected shared validation and full assembled runtime walk before integrating into main or claiming complete. Evidence and exact jobs/commits: plans/handoff-verbs-match-intent.md.
+- Next step: Complete mode-aware selected critic dispatch proof, assemble its correction and explicit unit-lock release, then run final protected selected validation and public CLI acceptance before integrating the full intent-first redesign. Same-subject build/fold/review/actual-close/public batch admission is implemented and passed; root isolation-retry and real builder-child proof passed. R-126 is committed. Conversation-authorized machinery bypass; no formal approval is fabricated.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 19
+- Revision: 21
 - BudgetExceptions: 0
 
 History:
@@ -32,4 +32,6 @@ History:
 - 2026-09-25T16:02:50Z VWJVX5GQCHCWAEEZEWDW7N8Y8C-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T16:43:52Z RN13MGNR1X8CKCHBSF7RYFK793-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-25T17:09:05Z VPFGBH7QWN6NHM5ZKYKW1DWF3H-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
-Integrity: sha256=fe04d91a40229f58f6025fd6f9cde101ba93a4d63e2645335a86c55651c36c4f
+- 2026-09-25T18:12:18Z BMJ24PJ21S0SXAS0GVT2718KNR-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+- 2026-09-25T18:34:35Z B9G0QHS32RRS9F6118FZJFWGTK-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+Integrity: sha256=b62e1169ed569995149c39157a4c40dd0e87a41b4a4e1088d4395ee160ceda30
