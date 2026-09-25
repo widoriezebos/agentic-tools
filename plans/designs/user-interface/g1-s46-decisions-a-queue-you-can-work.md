@@ -48,7 +48,14 @@ the live payload of this checkout at 10:48 UTC.
    `memory/` exists only under the installation. The channel and the
    steward's journal are read from the checkout root too (ui.go:521, 536);
    neither file exists under either root today, so nothing is shown wrong
-   there yet.
+   there yet. `up` launches the steward with the checkout root too
+   (cmd/metasystem/up.go:193; internal/up/up.go:494;
+   internal/steward/runner.go:899), so the steward's own review sweep
+   reads the same absent file on this layout; the journal and the channel
+   are written under the checkout (steward/notify.go:378, runner.go:245).
+   The review cards the register would yield name `memory/rulings.md` as
+   their destination (decisions.go:646), which the document reader opens
+   relative to the checkout (internal/ui/project/document.go:130).
 5. **The engine's acts from a browser.** The interface publishes approve,
    unapprove, set-priority, open, block and unblock, one goal per POST
    (internal/ui/httpd/acts.go:16-46), each through `act.Authority` with the
@@ -95,10 +102,13 @@ Decisions:
   header's count becomes two counts in words. Asked-of-you rows keep the
   g1-s44 card unchanged; it is the right shape for ten things with ten
   different consequences.
-- D2. **A person's park is a decision.** A parked row whose `by` starts
-  with `human:` leaves the inbox for a Decided tab named "Not now", with its
-  reason, who parked it and when, the goal link and the unpark command. A
-  seat's park stays in the inbox as today, because a human has not seen it.
+- D2. **A person's park is a decision.** A parked row whose `Waiting.By`
+  starts with `human:`, the engine's own test of a human park
+  (verbs.go:2772), leaves the inbox for a Decided tab named "Not now",
+  with its reason, who parked it and when, and the goal link; a blocker
+  park a human directed is one too, named with its blocker, and leaves by
+  itself when the blockers finish. A seat's park stays in the inbox as
+  today, because a human has not seen it.
 - D3. **The queue row is one line that opens.** Left, a checkbox; then the
   title, at most two lines; right, the age, a tier chip where tier is
   above zero as the board's row shows it (src/backlog/GoalRow.tsx:103), a
@@ -106,8 +116,8 @@ Decisions:
   "+n", Approve, and Not now. The row's silence is said once, in the block's head:
   "If you do nothing, these stay in To Do and no seat may claim them." The
   derived `asked` sentence is not shown. Opening a row shows the whole
-  intent, the next step, the budget tuple in words, what blocks it, its
-  priority band and the goal link. Open state is page state, not stored.
+  intent, the next step, the budget tuple in words or "no budget recorded",
+  what blocks it, its priority band and the goal link. Open state is page state, not stored.
 - D4. **Queue tools, three of them.** A Find box over id, intent and
   labels, the board's `matchesText` extended to labels; label chips drawn
   from the rows shown, each with its count, one selected at a time,
@@ -121,9 +131,10 @@ Decisions:
   approved with and the source's words from `prefillFor`; a goal whose
   prefill is null is listed as "needs its budget first: approve it alone"
   and is not sent. One Approve sends the rest in order, one POST per goal,
-  as the routes are, with "7 of 12" while it runs; the first refusal stops
-  the run and the sheet says which landed and what was refused, in the
-  engine's words; then the page reads its payload again. The not-now sheet
+  as the routes are, with "7 of 12" while it runs; the first failed answer stops the run and the sheet says at which goal
+  and with what words, the engine's; a failed answer can follow a publish,
+  so the page's re-read, not the sheet's count, is what says what landed;
+  then the page reads its payload again. The not-now sheet
   is the same list with one reason field, required, applied to every goal,
   the same run and the same stop rule. Sign-in is as today; the single-row
   Approve keeps the existing sheet and the single-row Not now is the
@@ -132,11 +143,14 @@ Decisions:
   the selected rows can be parked with a reason; a Not now row and a
   seat-park row in the inbox can be returned to the queue. Section 5 says
   how the engine admits it, the act layer carries it and the page asks it.
-- D6. **The register is read from where the steward writes it.** The
-  installation root, `rulings.Read(roots.Installation)`. The build reads
-  `up`'s steward launch and, where it proves the channel and the journal
-  are written under that same root, moves those two readers with it;
-  otherwise it leaves them and says so.
+- D6. **The register is read from where it is, and opened from there.**
+  `rulings.Read(roots.Installation)`, because the kit's memory home is
+  under the installation on every layout the interface serves; the channel
+  and journal readers stay at the checkout, where the steward writes them.
+  The payload carries the register's checkout-relative path, derived from
+  the two roots, and every register destination uses it, so "open the
+  register" opens. The steward's own sweep root is separate work, noted in
+  section 6.
 - D7. **The Approved tab is untouched** apart from the Not now tab beside
   it. Rulings, Decisions, Answered as they are.
 
@@ -157,8 +171,10 @@ Additions only; nothing renamed:
 `needsYou` keeps its kinds and order; the parked kind excludes rows whose
 `Waiting.By` has the prefix `human:`, and those rows compose `notNow`,
 newest first, from `Waiting{Reason, Since, By}` (internal/backlog/project.go:59-65).
-`counts.needsYou` is the inbox as listed; `asked` and `waiting` are its
-two blocks. The approval `Need` gains nothing: the row it carries has every
+`register` is the register's checkout-relative path, `metasystem/memory/rulings.md`
+here, and the `where` of every ruling review and register destination
+names it. `counts.needsYou` is the inbox as listed; `asked` and `waiting`
+are its two blocks. The approval `Need` gains nothing: the row it carries has every
 field D3 and D4 read. The page splits by kind.
 
 ## 4. The page
@@ -170,7 +186,8 @@ the silence sentence, Find, the label and origin chips, the order toggle,
 "Select all shown" and the approve-selected button, which is disabled with
 the count at zero; then the rows of D3, in the board's `ms-goal-*` idiom
 where a class fits and the page's own tokens otherwise. A row's disclosure
-is the pattern of the Fleet row in g1-s45, a button with `aria-expanded`.
+is the Fleet row's pattern as g1-s45 built it, opening a full-width block
+under the row.
 The bulk sheet is the board's `Panel` chrome with a list inside, one line
 per goal: title, the budget in the tuple's five words, the source's
 words, or the exclusion line. Decided gains the "Not now" tab, a list of
@@ -231,15 +248,20 @@ refusal as the sheet would; the screenshot says which.
 
 ## 6. Not here, step 3 and later
 
-Bulk unpark. Park from the Backlog board. Persisted narrowing. Grouping by goal family or arc. Keyboard
+The steward's review sweep reading the register from the checkout root
+on this layout, where the file is under the installation: separate work,
+not this page's. Server and board rank order of zero-ranked rows made
+identical through `inRankOrder`. Bulk unpark. Park from the Backlog board.
+Persisted narrowing. Grouping by goal family or arc. Keyboard
 triage. One publish for many approvals. A Find box on the Approved tab.
 The rest of g1-s44's section 6.
 
 ## 7. Verification and box
 
 Go: composition tests on the split counts, a human park in `notNow` and
-a seat park in the inbox, the schema number; a test on the wiring that
-the register reader is handed the installation root; engine tests that a
+a seat park in the inbox, the schema number; a test on the wiring that the register reader is handed the installation
+root and the payload the checkout-relative path, and a fixture check that
+the review card's destination opens; engine tests that a
 session proof is admitted for a human-origin park and a human-park unpark
 and still refused for another terminal-grade row, and that both history
 lines name the session; act tests for Park and Unpark with a fixture
@@ -270,3 +292,23 @@ time a session proof meets a terminal-grade row, and the branch check
 moves packages; the tests named in section 7 are what hold it. Weakest:
 the cost of a run of parks, two fetches each, is accepted rather than
 measured.
+
+## Dispositions (Astra read, 2026-09-25, under R-124)
+
+Read of the first draft, before section 5 was added. Two material
+findings, six deferred; every code claim checked before folding.
+
+| id | finding | fold |
+|---|---|---|
+| F1 | reading the installation register yields review cards whose destination, `memory/rulings.md`, the document reader opens relative to the checkout, where it does not exist | the payload carries the register's checkout-relative path and every register destination uses it |
+| F2 | the terminal park and unpark commands shown lacked `--by`, so copying them refuses a human act | moot: section 5 replaces every shown command with the act itself |
+
+Astra's root trace corrected D6's premise: `up` launches the steward with
+the checkout root, so the steward's sweep reads the same absent file on
+this layout, and the journal and channel are checkout-relative; the
+register reader alone moves, the sweep is separate work. Folded because
+they cost nothing: a human-directed blocker park belongs in Not now; "no
+budget recorded" where the row carries none; a failed answer can follow a
+publish, so the re-read is what says what landed; the Fleet disclosure
+described as built. Deferred, step 2 works without them: rank parity of
+zero-ranked rows with the board.
