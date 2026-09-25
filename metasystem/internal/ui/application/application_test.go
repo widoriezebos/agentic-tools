@@ -8,6 +8,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
 // The clock every test below composes against, and the window "new" is decided
@@ -50,14 +51,20 @@ func closedRows() []backlog.Row {
 
 func composed(over func(*Inputs)) Page {
 	in := Inputs{
-		Subject: "MetaSystem", Mode: "self-hosted",
+		Subject: "MetaSystem", Mode: workspace.ModeSelfHosted,
 		Engine: &Engine{Build: "5b9d958", Generation: 4, PublishedAt: "2026-09-25T10:45:00Z"},
 		Closed: closedRows(),
+		// The self-hosted layout: the repository's own README at the checkout
+		// root, and the MetaSystem's documents under the installation. Neither
+		// root carries a concepts document, so the rule that only a listed
+		// path is linked still bites.
 		Documents: []project.File{
-			{Path: "README.md", Title: "MetaSystem"},
-			{Path: "docs/glossary.md", Title: "Glossary"},
-			{Path: "docs/journey.md", Title: "The journey"},
+			{Path: "README.md", Title: "Agentic tools"},
+			{Path: "metasystem/README.md", Title: "MetaSystem"},
+			{Path: "metasystem/docs/glossary.md", Title: "Glossary"},
+			{Path: "metasystem/docs/journey.md", Title: "The journey"},
 		},
+		Installation: "metasystem",
 		RegisterPath: "metasystem/memory/known-issues.md",
 		Since:        window,
 	}
@@ -194,15 +201,52 @@ func TestComposeWritesEveryListOfAnEmptyRegister(t *testing.T) {
 	})
 }
 
-// The documents this page links, in its own order, and only the ones this
-// checkout has: an application with no concepts document gets no link to one.
-func TestComposeLinksOnlyTheDocumentsTheLayoutHas(t *testing.T) {
+// The documents this page links, in its own order, and only the ones the
+// Project reader lists: an application with no concepts document gets no link
+// to one.
+//
+// Self-hosted, the subject is the MetaSystem, and its README, concepts and
+// glossary are the installation's. The checkout's own root README is a
+// document about the repository that carries the installation, and it is not
+// linked here.
+func TestComposeLinksTheInstallationsDocumentsWhereTheWorkspaceIsSelfHosted(t *testing.T) {
 	t.Parallel()
 	page := composed(nil)
 	testutil.Expect(t, "the links", page.Docs, []Document{
-		{Title: "README", Path: "README.md"},
-		{Title: "Glossary", Path: "docs/glossary.md"},
+		{Title: "README", Path: "metasystem/README.md"},
+		{Title: "Glossary", Path: "metasystem/docs/glossary.md"},
 	})
+}
+
+// Adopted, the subject is the application the checkout holds, so its documents
+// are the checkout root's. The kit's own glossary under the installation is
+// the machinery's, and this page is not about the machinery.
+func TestComposeLinksTheApplicationRootsDocumentsWhereTheWorkspaceIsAdopted(t *testing.T) {
+	t.Parallel()
+	page := composed(func(in *Inputs) {
+		in.Mode = workspace.ModeAdopted
+		in.Documents = []project.File{
+			{Path: "README.md", Title: "The application"},
+			{Path: "docs/concepts.md", Title: "Concepts"},
+			{Path: "metasystem/docs/glossary.md", Title: "Glossary"},
+		}
+	})
+	testutil.Expect(t, "the links", page.Docs, []Document{
+		{Title: "README", Path: "README.md"},
+		{Title: "Concepts", Path: "docs/concepts.md"},
+	})
+}
+
+// A self-hosted layout whose checkout and installation are one directory — the
+// kit's own, and the walkthrough's — links the root paths, because that is
+// where the installation is.
+func TestComposeLinksTheRootPathsWhereTheInstallationIsTheCheckout(t *testing.T) {
+	t.Parallel()
+	page := composed(func(in *Inputs) {
+		in.Installation = "."
+		in.Documents = []project.File{{Path: "README.md", Title: "MetaSystem"}}
+	})
+	testutil.Expect(t, "the links", page.Docs, []Document{{Title: "README", Path: "README.md"}})
 }
 
 func TestComposeLinksNothingWhereTheCheckoutHasNoneOfThem(t *testing.T) {

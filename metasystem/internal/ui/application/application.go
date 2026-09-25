@@ -27,6 +27,7 @@
 package application
 
 import (
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
 // SchemaVersion is the shape of the application resource a reader parses.
@@ -50,8 +52,9 @@ const PageName = "application"
 // knows both roots hands the real one in.
 const registerPath = "memory/known-issues.md"
 
-// The documents this page links to, in the order it lists them, and the name
-// each link carries.
+// The documents this page links to, in the order it lists them, the name each
+// link carries, and where they lie UNDER THE SUBJECT'S OWN ROOT rather than
+// under the checkout.
 //
 // The name is written here rather than taken from the file's own first
 // heading: "README" is what a human is looking for, and a heading that reads
@@ -59,6 +62,9 @@ const registerPath = "memory/known-issues.md"
 // than what the document is. Only the ones this checkout actually has are
 // listed — an adopted application with no glossary gets no glossary link
 // rather than a link that would refuse.
+//
+// The root is documentRoot's, because these paths are the subject's and the
+// subject is not always at the checkout's root.
 var documentsShown = []Document{
 	{Title: "README", Path: "README.md"},
 	{Title: "Concepts", Path: "docs/concepts.md"},
@@ -171,6 +177,11 @@ type Inputs struct {
 	// Documents is the checkout's Markdown documents as the Project pane
 	// lists them; this page links the few of them it names.
 	Documents []project.File
+	// Installation is where the MetaSystem installation is relative to the
+	// CHECKOUT, which is the root every destination in this payload opens
+	// against. It is "" or "." where the two are the same directory, and it
+	// is what a self-hosted workspace's documents are under.
+	Installation string
 	// Since is the start of the window New is decided against, from this
 	// page's own visit entry. A zero instant is a page composed over no
 	// window, and nothing on it is new.
@@ -190,7 +201,7 @@ func Compose(in Inputs, now time.Time) Page {
 		Counts:        countsOf(landed, now),
 		Landed:        landed,
 		Problems:      problemsOf(in),
-		Docs:          documentsOf(in.Documents),
+		Docs:          documentsOf(in.Documents, documentRoot(in.Mode, in.Installation)),
 		Visit:         Visit{Since: stamp(in.Since), First: in.First},
 	}
 }
@@ -279,17 +290,39 @@ func problemsOf(in Inputs) Problems {
 	return problems
 }
 
-// documentsOf is the few documents this page links, in its own order, and
-// only the ones this checkout has.
-func documentsOf(files []project.File) []Document {
+// documentRoot is where the SUBJECT's own documents are, relative to the
+// checkout, for the layout this workspace runs in.
+//
+// Self-hosted, the subject is the MetaSystem itself, and the MetaSystem's
+// README, concepts and glossary are the installation's. The checkout's own
+// root README describes the repository that carries the installation, which is
+// a different document about a different thing, and linking it here would put
+// the machinery's home page under a heading that says what the product is.
+//
+// Adopted, the subject is the application the checkout holds, so its documents
+// are the checkout root's; the installation's are the kit's, and the kit is
+// not what this page is about.
+func documentRoot(mode, installation string) string {
+	if mode != workspace.ModeSelfHosted {
+		return ""
+	}
+	return installation
+}
+
+// documentsOf is the few documents this page links, in its own order, under
+// the root the layout puts the subject at, and only the ones the Project
+// reader lists as documents — a path it does not list is a link that would
+// refuse.
+func documentsOf(files []project.File, root string) []Document {
 	held := map[string]bool{}
 	for _, file := range files {
 		held[file.Path] = true
 	}
 	shown := []Document{}
 	for _, candidate := range documentsShown {
-		if held[candidate.Path] {
-			shown = append(shown, candidate)
+		at := path.Join(root, candidate.Path)
+		if held[at] {
+			shown = append(shown, Document{Title: candidate.Title, Path: at})
 		}
 	}
 	return shown

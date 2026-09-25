@@ -17,11 +17,14 @@ package httpd
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/application"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
 // applicationPath is the application resource, matched exactly: what lies
@@ -85,6 +88,11 @@ func (h *handler) application(w http.ResponseWriter, r *http.Request) {
 		Engine:    h.engineOf(observed, now),
 		Closed:    plainRows(board.Closed),
 		Documents: pane.Documents,
+		// And where the installation is from the checkout, because on a
+		// self-hosted layout the subject's own documents are the
+		// installation's and the checkout's root ones describe the
+		// repository that carries it.
+		Installation: installationFromCheckout(described),
 		// Where the register is from the checkout, which is the one root a
 		// destination in this payload can be opened against.
 		RegisterPath: h.info.KnownIssuesPath,
@@ -100,6 +108,27 @@ func (h *handler) application(w http.ResponseWriter, r *http.Request) {
 		in.Register = read
 	}
 	_ = json.NewEncoder(w).Encode(application.Compose(in, now))
+}
+
+// installationFromCheckout is where the installation lies relative to the
+// checkout, which is the one root a destination in this payload can be opened
+// against, as the known-issues path is.
+//
+// The two roots are the workspace's own, read per request, so a layout
+// described differently while the server runs is followed without a restart.
+// An installation that is not under the checkout has no such path, and answers
+// "": there is nothing the document reader could open, and the page links the
+// checkout's own documents rather than a path that would refuse.
+func installationFromCheckout(described workspace.Workspace) string {
+	relative, err := filepath.Rel(described.Checkout, described.Installation)
+	if err != nil {
+		return ""
+	}
+	slashed := filepath.ToSlash(relative)
+	if slashed == ".." || strings.HasPrefix(slashed, "../") {
+		return ""
+	}
+	return slashed
 }
 
 // engineOf is this seat's own row of the fleet, reduced to the engine build it
