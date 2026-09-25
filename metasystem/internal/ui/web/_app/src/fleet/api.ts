@@ -33,7 +33,18 @@ export type Copy = {
   attemptedAt: string;
   succeededAt: string;
   failedAt: string;
+  /**
+   * The last fetch's own failure, kept while the refs it brought before still
+   * stand — or a namespace this seat could not read at all, which displaces
+   * it, and which leaves the machine list empty because nothing was read.
+   */
   problem: string;
+  /**
+   * The last write of the file the Partner's tool reads, where it failed. Its
+   * own field because it is its own fact: this page's copy is fine and the
+   * tool's reading of it is not.
+   */
+  metadataProblem: string;
 };
 
 /** The one accepted tip every holder on this page was read from. */

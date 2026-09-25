@@ -30,7 +30,6 @@ package fleet
 
 import (
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -84,8 +83,14 @@ type Copy struct {
 	SucceededAt string `json:"succeededAt"`
 	FailedAt    string `json:"failedAt"`
 	// Problem is the last failure's own words, kept while the previously
-	// fetched refs still stand and are still reported.
+	// fetched refs still stand and are still reported. It also carries a
+	// namespace this seat could not read at all, which displaces it: a copy
+	// nothing could read is the more immediate trouble.
 	Problem string `json:"problem"`
+	// MetadataProblem is the last write of the Partner's own metadata file,
+	// where it failed. It is its own field because it is its own fact: the
+	// page's copy is fine and the tool's reading of it is not.
+	MetadataProblem string `json:"metadataProblem"`
 }
 
 // Claims is the one captured accepted tip every holder on this page was read
@@ -211,6 +216,17 @@ type Inputs struct {
 	NoNickname bool
 	// Presence is the joined presence copy, read from one namespace.
 	Presence seat.Copy
+	// PresenceProblem is a namespace this seat could not read at all, as
+	// opposed to one it read and found empty.
+	//
+	// The difference decides the page. An empty copy that was read is
+	// evidence: every machine the ledger names has published nothing, and the
+	// goals they hold need a human. A copy that could not be read is the
+	// absence of evidence, and judging the same machines absent from it would
+	// flag every claim on the board as held by a machine that has published
+	// no presence — which is false, and which would reach the board and the
+	// Overview as well.
+	PresenceProblem string
 	// Copy is what the fetch owner knows about that copy.
 	Copy Copy
 	// Observation is the one captured accepted ledger, and Board its
@@ -236,6 +252,13 @@ type Inputs struct {
 func Compose(in Inputs, now time.Time) Page {
 	now = now.UTC()
 	claims, unavailable := claimsOf(in.Observation, in.Board)
+	// A copy this seat could not read says nothing about any machine. The
+	// claims are withheld from the judgement rather than joined to an empty
+	// copy, so no machine is reported absent, no hold is flagged, and the
+	// copy block carries the reason instead.
+	if in.PresenceProblem != "" {
+		claims = map[string][]string{}
+	}
 	standings := seat.Fleet(seat.FleetInput{
 		This: in.This, Copy: in.Presence, Claims: claims, ClaimsUnavailable: unavailable,
 		Previous: in.Previous, Now: now, Window: in.Window,
@@ -259,15 +282,15 @@ func Compose(in Inputs, now time.Time) Page {
 			row.Running = runningOf(line.Record.Chain)
 		}
 		flag := ""
-		if unavailable == "" {
-			flag = Flag(line, since, now)
+		if unavailable == "" && in.PresenceProblem == "" {
+			flag = Flag(line)
 		}
 		for _, goal := range line.Holds {
 			one := held[goal]
 			one.Goal, one.Machine = goal, line.Machine
 			one.Standing, one.Since, one.Flag = string(line.Standing), since, flag
 			row.Holds = append(row.Holds, one)
-			if needsYou(line) {
+			if NeedsHuman(line) {
 				needs = append(needs, one)
 			}
 		}
@@ -361,14 +384,20 @@ func reasonOf(line seat.MachineStanding) string {
 }
 
 // Flag is the one sentence a claim's row carries when its holder has gone
-// silent, composed after the Since normalisation above rather than taken from
-// seat.SilentHolder, whose "no presence record" branch fires for any machine
-// without a frozen since and is false for an unreachable machine holding a
-// perfectly valid record.
+// silent, taken over seat.SilentHolder, whose "no presence record" branch
+// fires for any machine without a frozen since and is false for an
+// unreachable machine holding a perfectly valid record.
+//
+// It carries NO clock. When a silence began is an instant, and an instant is
+// rendered differently by each reader: a page shows the viewer's own local
+// time, a terminal prints RFC 3339. Baking one of them into the words made
+// the same instant read as two different times on one screen — the flag in
+// UTC and the seen column in the browser's zone. So the instant travels
+// beside these words, in Held.Since, and whoever shows them renders it.
 //
 // A machine known only by the absence of a record has not "gone silent": it
 // has published nothing, which is a different thing and is said differently.
-func Flag(line seat.MachineStanding, since string, now time.Time) string {
+func Flag(line seat.MachineStanding) string {
 	if line.Standing == seat.Reachable || len(line.Holds) == 0 {
 		return ""
 	}
@@ -382,16 +411,29 @@ func Flag(line seat.MachineStanding, since string, now time.Time) string {
 			return "held by " + line.Machine + ", " + line.Reason
 		}
 	}
-	if since == "" {
-		return "held by " + line.Machine + ", unreachable"
-	}
-	return "held by " + line.Machine + ", unreachable since " + clockWords(since, now)
+	return "held by " + line.Machine + ", unreachable"
 }
 
-// needsYou selects the holds a human may want to act on: a machine that has
+// FlagWithInstant is the flag a reader with no zone of its own prints: the
+// words, with the instant the silence began in RFC 3339 where one is known.
+// A screen renders that instant in the viewer's own zone instead.
+func FlagWithInstant(flag, since string) string {
+	if flag == "" || since == "" {
+		return flag
+	}
+	return flag + " since " + since
+}
+
+// NeedsHuman selects the holds a human may want to act on: a machine that has
 // gone silent with a valid record, and a machine that holds a goal while
 // having published no presence at all.
-func needsYou(line seat.MachineStanding) bool {
+//
+// It is exported because `goal next` prints exactly this set at a terminal. A
+// malformed record and a clock too far ahead are flagged where they are seen
+// and named for what they are, but neither is a machine that has stopped
+// answering, and a remedy printed for one would be a remedy for a reading
+// problem.
+func NeedsHuman(line seat.MachineStanding) bool {
 	if len(line.Holds) == 0 {
 		return false
 	}
@@ -513,29 +555,6 @@ func armedWord(in Inputs, now time.Time) string {
 }
 
 /* ---------------------------------------------------------------- words -- */
-
-// clockWords says an instant the way the flag does: the time of day, with the
-// date before it only where it was not today, because a silence that began
-// this morning and one that began last week must not read alike.
-func clockWords(at string, now time.Time) string {
-	parsed, err := time.Parse(time.RFC3339, at)
-	if err != nil {
-		return at
-	}
-	parsed = parsed.UTC()
-	clock := twoDigits(parsed.Hour()) + ":" + twoDigits(parsed.Minute())
-	if parsed.Year() == now.Year() && parsed.YearDay() == now.YearDay() {
-		return clock
-	}
-	return parsed.Format("2006-01-02") + " " + clock
-}
-
-func twoDigits(value int) string {
-	if value < 10 {
-		return "0" + strconv.Itoa(value)
-	}
-	return strconv.Itoa(value)
-}
 
 // ledeRunes is how much of a goal's intent a chip carries, which is what
 // Overview's own rows carry.

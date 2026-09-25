@@ -70,6 +70,21 @@ export function sinceWords(machine: Machine): string {
   return `since ${minuteTime(machine.since)}`;
 }
 
+/**
+ * A flag with its instant rendered into it.
+ *
+ * The server's words carry no clock, and the instant travels beside them.
+ * That is what keeps one moment in time from reading as two different times
+ * on one screen: the flag and the seen column are now rendered by the same
+ * clock, this browser's, rather than one of them in UTC on the server.
+ */
+export function flagWords(held: { flag: string; since: string }): string {
+  if (held.flag === "" || held.since === "") {
+    return held.flag;
+  }
+  return `${held.flag} since ${minuteTime(held.since)}`;
+}
+
 /** What one machine is running, in words. */
 export function runningWords(running: Running | null, problem: string): string {
   if (problem !== "") {
@@ -173,3 +188,17 @@ export function needsYouLine(held: { goal: string; flag: string }): string {
 /** The empty fleet's own sentence. */
 export const NO_PRESENCE =
   "No seat has published presence yet. A seat publishes from its steward tick once it runs this version and is armed.";
+
+/**
+ * What a fleet with no rows in it means, which is two different things.
+ *
+ * A copy that was read and found empty says nobody has published. A copy that
+ * could not be read says nothing at all about anybody, and a page that
+ * offered the first sentence for the second would be a page stating a fact it
+ * has no evidence for.
+ */
+export function emptyFleetWords(page: Page): string {
+  return page.copy.problem === ""
+    ? NO_PRESENCE
+    : `The presence copy could not be read, so this page can say nothing about any machine: ${page.copy.problem}`;
+}
