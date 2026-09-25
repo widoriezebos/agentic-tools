@@ -193,17 +193,6 @@ adopt_prepare_nested_src() {
 
 if (( ! fixture_bed_child )); then
   source "$root/scripts/agents/fixture-bed-scenarios.sh"
-  # This bed's scenarios are engine builds and tree copies, not process
-  # trees, so on a wide box four run beside each other (an explicit
-  # METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY still wins).
-  if [[ ! "${METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY:-}" =~ ^[1-9][0-9]*$ ]]; then
-    adopt_cores=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1)
-    [[ "$adopt_cores" =~ ^[1-9][0-9]*$ ]] || adopt_cores=1
-    adopt_slots=$((adopt_cores / 4))
-    (( adopt_slots >= 1 )) || adopt_slots=1
-    (( adopt_slots <= 4 )) || adopt_slots=4
-    export METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY=$adopt_slots
-  fi
   adopt_parent_cleanup() {
     [[ -z "$witness_state" ]] || rm -rf "$witness_state" 2>/dev/null || true
     rm -rf "$tmp" 2>/dev/null || true
