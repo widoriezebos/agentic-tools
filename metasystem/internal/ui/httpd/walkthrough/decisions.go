@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/application"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 )
 
@@ -27,8 +28,9 @@ import (
 // the rule is not for.
 const lastVisit = 20 * 24 * time.Hour
 
-// plantDecisionsVisit records a visit to Decisions twenty days ago, for each
-// handle this fixture can act under.
+// plantPageVisits records a previous visit to each page that keeps an entry of
+// its own, for each handle this fixture can act under: Decisions twenty days
+// ago and Application four days ago.
 //
 // It records it through the owner of the file rather than by writing the file,
 // so the walkthrough's window is the window the rule produces: the read a
@@ -38,7 +40,7 @@ const lastVisit = 20 * 24 * time.Hour
 // The landing page's own entry is not touched, which is the point of the
 // entry being its own: Overview goes on comparing against the last time
 // somebody read Overview.
-func plantDecisionsVisit(checkout string, handles []string, now time.Time) {
+func plantPageVisits(checkout string, handles []string, now time.Time) {
 	seen := map[string]bool{}
 	for _, human := range handles {
 		if seen[human] {
@@ -49,6 +51,7 @@ func plantDecisionsVisit(checkout string, handles []string, now time.Time) {
 		// could not be written costs the walkthrough its dots and nothing
 		// else.
 		_, _, _ = overview.VisitPage(checkout, overview.PageDecisions, human, now.Add(-lastVisit))
+		_, _, _ = overview.VisitPage(checkout, application.PageName, human, now.Add(-applicationLastVisit))
 	}
 }
 

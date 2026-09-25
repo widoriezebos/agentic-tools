@@ -25,9 +25,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/application"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
@@ -101,10 +103,20 @@ func main() {
 	smokeEngine := flag.String("smoke-engine", "bin/metasystem", "the metasystem executable that serves the Partner's read tools")
 	smokeKit := flag.String("smoke-kit", ".", "the metasystem installation whose glossary, rulings, routes and skills the fixture copies")
 	smokeOut := flag.String("smoke-out", "partner-smoke.md", "where the smoke run writes its answers")
+	// Which column set the known-issues register is planted with. There are
+	// two in the world — the kit's own and the one an adoption ships — and the
+	// fifth column's title is the one a reader must never rename, so a
+	// walkthrough that could only plant one could only show half of what the
+	// Application page's reader does.
+	register := flag.String("register", registerKit,
+		"which known-issues column set this fixture plants: kit or adopted")
 	flag.Parse()
 	if *smoke != "" {
 		runSmoke(*smoke, *smokeModel, *smokeEngine, *smokeKit, *smokeOut)
 		return
+	}
+	if *register != registerKit && *register != registerAdopted {
+		log.Fatalf("-register takes kit or adopted, not %q", *register)
 	}
 	if *freshness != string(snapshot.FreshnessCurrent) &&
 		*freshness != string(snapshot.FreshnessBehind) &&
@@ -124,12 +136,12 @@ func main() {
 	// in-place editor have something real to open: the editor writes to disk,
 	// reads it back, and answers what is there, and a walkthrough over a
 	// canned payload would prove none of that.
-	checkout := fixtureCheckout(*calm)
+	checkout := fixtureCheckout(*calm, *register)
 	fmt.Println("checkout " + checkout)
 	// A previous visit to Decisions, so the inbox opens with half of it new.
 	// Both handles, because -proven acts as Wido and an unproven seat acts
 	// under the handle this fixture was given, which is empty by default.
-	plantDecisionsVisit(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
+	plantPageVisits(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
 	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
 	state.roots = roots
 	authority := httpd.AuthorityInfo{Reason: agentReason}
@@ -283,6 +295,17 @@ func main() {
 		// is not for.
 		VisitDecisions: func(human string, now time.Time) (time.Time, bool, error) {
 			return overview.VisitPage(checkout, overview.PageDecisions, human, now)
+		},
+		// The known-issues register and the Application page's own marker,
+		// both over the fixture checkout and through the packages the engine
+		// wires: a walkthrough that canned either would prove nothing about
+		// the reader or about the window.
+		KnownIssues: func() (knownissues.Register, error) {
+			return knownissues.Read(checkout)
+		},
+		KnownIssuesPath: "memory/known-issues.md",
+		VisitApplication: func(human string, now time.Time) (time.Time, bool, error) {
+			return overview.VisitPage(checkout, application.PageName, human, now)
 		},
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
@@ -452,7 +475,7 @@ The rail, the header and the work area are one shell every section is read in.
 // resolver reads: a configuration file, an agents directory, a one-goal
 // ledger, and a design home. It is thrown away with the temporary directory,
 // so a walkthrough that saves over a file changes nothing a human keeps.
-func fixtureCheckout(calm bool) string {
+func fixtureCheckout(calm bool, register string) string {
 	// The calm workspace's finished design is marked done on disk, because
 	// the two designs below are read back from the file rather than from the
 	// pane: a design whose goals have all landed and which nobody has closed
@@ -487,6 +510,16 @@ func fixtureCheckout(calm bool) string {
 		// The rulings register, which the Decisions page reads through the
 		// same package the steward's sweep reads it with.
 		{"memory/rulings.md", fixtureRulings(calm, time.Now().UTC())},
+		// The known-issues register, which the Application page reads through
+		// the same reader the engine wires, under whichever column set was
+		// asked for.
+		{"memory/known-issues.md", fixtureKnownIssues(register, time.Now().UTC())},
+		// The three documents the Application page's "What it is" links, so
+		// that its links open a real document in the reader rather than a
+		// 404: the page names them and the reader renders them.
+		{"README.md", walkthroughReadme},
+		{"docs/concepts.md", walkthroughConcepts},
+		{"docs/glossary.md", walkthroughGlossary},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -602,6 +635,10 @@ func newLedger(calm bool) *ledger {
 	// written down, because a fixed date drifts out of every window the day
 	// after it is written and the walkthrough would then show an empty lane.
 	now := time.Now().UTC()
+	// And the Application page's own six weeks of them, which is what makes
+	// its block weeks rather than a list. They are their own generation of
+	// ids, so nothing here is both live and concluded at once.
+	addConcludedWeeks(tree, now)
 	add(concluded(walkthroughGoal("g1-s9", goal.StateDone, "The application shell, the rail and the header"), now.Add(-6*time.Hour)))
 	add(concluded(walkthroughGoal("g1-s10", goal.StateDone, "The backlog's data path and the list"), now.Add(-4*24*time.Hour)))
 	add(concluded(walkthroughGoal("g1-s8", goal.StateDone, "The frontend toolchain and the committed bundle"), now.Add(-40*24*time.Hour)))
@@ -1126,6 +1163,11 @@ func (l *ledger) project() project.Pane {
 			{Path: walkthroughRecord, Title: "The reading pane"},
 			{Path: walkthroughPartly, Title: "The document reader"},
 			{Path: walkthroughLanded, Title: "The application shell"},
+			// The three the Application page's "What it is" names. They are
+			// planted in the fixture checkout, so the links open them.
+			{Path: "README.md", Title: "walkthrough"},
+			{Path: "docs/concepts.md", Title: "Concepts"},
+			{Path: "docs/glossary.md", Title: "Glossary"},
 		},
 	}
 	if l.calm {
