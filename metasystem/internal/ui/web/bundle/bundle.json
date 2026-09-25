@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:ae413eaf4ca061c1ddd26951d71f2b56e203aa2841e7aae23993f780306e730a",
+  "sourceDigest": "sha256:bb6ca7ddc39312835c2264f18b4a13aad9465ce76cc7ef05742aa2cc523d064b",
   "source": [
     {
       "path": ".npmrc",
@@ -824,7 +824,7 @@
     },
     {
       "path": "src/shell/controls.tsx",
-      "sha256": "d5be871d0b902a99ea7cd3cb665e51ff66be0c32ff31c0650208369a7a63c19d"
+      "sha256": "19767941abac42313453137b6957060caa84fc3d9377e535238e4beac9fcecc9"
     },
     {
       "path": "src/shell/identity.tsx",
