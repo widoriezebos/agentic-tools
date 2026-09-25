@@ -519,14 +519,22 @@ function Work({ machine, now }: { machine: Machine; now: Date }) {
   return (
     <div className="ms-fleet-work">
       {machine.working.map((working) => (
-        <WorkingBlock key={working.job.id} working={working} now={now} />
+        <WorkingBlock
+          key={working.job.id}
+          working={working}
+          // The goal's title, where this page already has one. It is carried
+          // on the holds the row was composed with, so a goal this machine
+          // does not hold has a chip and no title rather than an invented one.
+          title={machine.holds.find((held) => held.goal === working.goal)?.title ?? ""}
+          now={now}
+        />
       ))}
       <p className="ms-fleet-quiet">{workingSource(machine, now)}</p>
     </div>
   );
 }
 
-function WorkingBlock({ working, now }: { working: Working; now: Date }) {
+function WorkingBlock({ working, title, now }: { working: Working; title: string; now: Date }) {
   const cap = capWords(working.job, now);
   return (
     <div className="ms-fleet-working">
@@ -541,6 +549,7 @@ function WorkingBlock({ working, now }: { working: Working; now: Date }) {
             {working.goal}
           </NavLink>
         )}
+        {title !== "" && <span className="ms-fleet-quiet">{title}</span>}
       </p>
       <p className="ms-fleet-work-line">
         <span className="ms-fleet-work-name">This job</span>
@@ -550,6 +559,9 @@ function WorkingBlock({ working, now }: { working: Working; now: Date }) {
           {working.phase.round > 0 && working.phase.roundLimit !== null && ` of ${String(working.phase.roundLimit)}`}
         </span>
         <Chip>{working.job.status}</Chip>
+        {working.job.startedAt !== null && (
+          <span className="ms-fleet-quiet">started {minuteTime(working.job.startedAt)}</span>
+        )}
         <span>{jobWords(working.job, now)}</span>
         {cap !== "" && (
           <span className="ms-fleet-bound">

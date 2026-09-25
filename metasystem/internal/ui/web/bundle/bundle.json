@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:8af627d950a13f8ee5fdb211aecb308835ab9fe8978cd8cfe3dfe6fc76e37c7d",
+  "sourceDigest": "sha256:01044697ed119bb078fd1490e32f1c8738e52755c40539eb721a33a60539963e",
   "source": [
     {
       "path": ".npmrc",
@@ -284,7 +284,7 @@
     },
     {
       "path": "src/fleet/FleetPane.tsx",
-      "sha256": "ad5761a98087a9f6f3a46744549e5f3f3cf7d72803906fbfc17ea7429a579c4b"
+      "sha256": "acf4f31b87deace14cacbf37391dbcb7c1f7adf80166d63c9f3f810aea48593a"
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
@@ -328,7 +328,7 @@
     },
     {
       "path": "src/fleet/working.test.tsx",
-      "sha256": "46832f083f8ae8ff3ae1a95d515f0f37ba35274dfe015450f9624b40f060d7f1"
+      "sha256": "2034c317e97388c57729339e1bb6b2d7bd634456d56671876a962c579e4e16c1"
     },
     {
       "path": "src/fonts.css",
@@ -834,7 +834,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "1857d88ecda792771a46aa62f5139a167cc2175e6c817df84fe76cc307392856"
+      "sha256": "292e001848c87409ff384acd2af6799e5cc4753f57f6dc0475db00cdf8e6140a"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

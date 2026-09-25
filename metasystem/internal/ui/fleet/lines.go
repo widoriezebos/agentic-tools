@@ -152,10 +152,17 @@ func workingLines(row Machine, working seat.Working, now time.Time) []string {
 		job += ", started " + *working.Job.StartedAt
 	}
 	// A goal-free critique is lawful work, and a line naming an empty goal
-	// would read as a goal nobody could find.
+	// would read as a goal nobody could find. The title comes off the holds
+	// this row was composed with, so a goal the machine does not hold gets
+	// its id and no title rather than an invented one.
 	goal := "- Goal: " + working.Goal
 	if working.Goal == "" {
 		goal = "- Goal: this work names no goal"
+	}
+	for _, held := range row.Holds {
+		if held.Goal == working.Goal && held.Title != "" {
+			goal += " · " + held.Title
+		}
 	}
 	lines := []string{goal, job, "- Box: " + seat.BoxWords(working.Box)}
 	if working.Box != nil && working.Box.Problem == "" {

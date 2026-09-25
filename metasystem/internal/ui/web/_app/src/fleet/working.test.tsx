@@ -22,6 +22,7 @@ import {
   workingWords,
 } from "./fleet";
 import { Blocks } from "./FleetPane";
+import { minuteTime } from "../backlog/format";
 import { FLEET_OPEN_KEY, readFleetOpen, writeFleetOpen, type Store } from "../storage";
 
 /**
@@ -288,6 +289,7 @@ describe("what the row opens to", () => {
     expect(markup).toContain("Goal");
     expect(markup).toContain("This job");
     expect(markup).toContain("attempt 3 of 10 · 7 attempts left");
+    expect(markup).toContain(`started ${minuteTime(at(-41))}`);
     expect(markup).toContain("610 of 720 min reserved");
     expect(markup).toContain(RESERVED_MEANING);
     expect(markup).toContain("j-12");
@@ -336,6 +338,21 @@ describe("what the row opens to", () => {
 
     expect(markup).toContain(reason);
     expect(markup).not.toContain("ms-fleet-bar-fill");
+  });
+
+  it("carries the goal's title beside its chip where this page has one", () => {
+    const held = {
+      goal: "g1-s15",
+      title: "Say what a seat is doing.",
+      lane: "in-progress" as const,
+      machine: "m1e",
+      standing: "reachable" as const,
+      since: "",
+      flag: "",
+    };
+    const markup = rendered(page([machine({ holds: [held] })]));
+
+    expect(markup).toContain("Say what a seat is doing.");
   });
 
   it("says where it came from: this seat's records, or when it was published", () => {

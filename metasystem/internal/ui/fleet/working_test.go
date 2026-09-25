@@ -148,7 +148,8 @@ func TestANamedMachineOpensItsBlockAsLines(t *testing.T) {
 	})
 	joined := strings.Join(page.MachineLines("m1e", now), "\n")
 	for _, want := range []string{
-		"- Goal: finish-test-repairs",
+		// The goal, with the title the row was composed with.
+		"- Goal: finish-test-repairs · Finish the test repairs and integrate them.",
 		"its cap ends in 79 min",
 		"- Box: attempt 3 of 10 · 610 of 720 min reserved · 7 attempts left",
 		seat.ReservedMeaning,
