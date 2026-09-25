@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3BGYMY8N8MTWSZQ9RBT6Q47
-- Status: draft
+- Status: accepted
 - Goals: browser-interface seat-mutual-awareness
 
 Slice 2 of the bridge (seat-mutual-awareness revision 7, section 10) and the
@@ -82,12 +82,31 @@ first's consumer. Author Fable, 2026-09-25. Every cite re-read at
   the board's card line, the Overview's In Progress rows, and `goal next`'s
   words. Nothing here steals, resumes or parks.
 - D3. The interface fetches presence itself, into `refs/metasystem/presence-ui`,
-  on its own goroutine, once a minute at most and only while a browser is
-  connected, and swallows its own failures into the page's copy line. The
-  snapshot loop is not touched.
-- D4. The interface never writes the steward's files. `since` comes from
-  the tick's standings file when there is one and is absent otherwise; the
-  page says "since unknown here" rather than inventing an instant.
+  from one fetch owner started and stopped under the server's ownership
+  gate (cmd/metasystem/ui.go:178), beside the snapshot loop and never
+  through it. The owner's rules: one attempt in flight; at least sixty
+  seconds between attempt starts, counting failures and reconnects; an
+  attempt only while at least one browser holds the notifications
+  EventSource open, which is the server's one explicit connection signal
+  (the snapshot loop's "connected" is its own private observe-within-30s
+  state, snapshot.go:116, loop.go:313, and is not read for this); no
+  attempt after the last disconnect. It records last attempt, last success
+  and last failure separately; a failure preserves the last success; a
+  successful fetch that brought nothing is a success with an empty copy,
+  distinct from never having fetched; nothing survives a server restart,
+  and until the first attempt the page says so. Its metadata is written
+  to artifacts/agents/ui/presence-fetch.json after every attempt, for the
+  Partner's tool (section 6), which runs in another process and must own no
+  fetcher of its own.
+- D4. The interface never writes the steward's files. `since` is kept only
+  when the tick's standings file holds an observation for that machine
+  whose standing equals the one the page just judged; otherwise `since` is
+  unknown, because `seat.Fleet` would otherwise mint the request's own
+  instant as a first observation (standing.go:195, 218). The flag words
+  are regenerated after that normalisation, never taken from
+  `SilentHolder`'s empty-time branch, whose "no presence record" is false
+  for an unreachable machine with a valid record. Undated silences sort
+  after dated ones in "oldest silence first".
 - D5. The page is composed on the server, like Overview: the browser draws
   one payload and judges nothing.
 
@@ -121,17 +140,39 @@ the seat package's bounded transport, and records `fetchedAt` or
 interface's namespace has never been fetched, the page reads the tick's
 copy and says `source: the tick`; in LocalMode it reads the local refs.
 
-Standings come from `seat.Fleet` with `Previous` from the tick's
-standings file read read-only, so `since` agrees with the notifications
-the steward sent. Holds are joined with titles and lanes from the
-snapshot's own board projection so a goal chip opens the same goal page the
-board opens. `needsYou` is every hold whose machine is unreachable or
-unknown, oldest silence first.
+One captured ledger. Claims, `claims.tip`, titles and lanes all come from
+one `snapshot.Observation` and its board projection, taken once per
+request, never from `seat.Claims(root)`, which captures its own tip and
+returns neither the tip nor the projection (ledger.go:29); two captures
+could name a holder from one commit and a title from another. Standings
+come from `seat.Fleet` and are then normalised per D4. Holds are joined
+with titles and lanes from that same projection so a goal chip opens the
+same goal page the board opens. `needsYou` is every hold whose machine is
+unreachable, or unknown by absence, dated silences first and oldest first,
+undated after.
 
-`this` is composed from the checkout's nickname, the publication state and
-the steward health verdict where they exist; `armed` is whether the health
-verdict names a live steward runner. Every field is written; absent facts
-are null or empty, never missing.
+The copy block says what the fetch owner knows: `attemptedAt`,
+`succeededAt`, `problem`, and `source`, which is `the interface` after a
+success, `the tick` while the interface has not yet succeeded and reads the
+tick's copy (with `succeededAt` unknown, because the tick's standings
+`ReadAt` is an observation time and not a fetch time, transition.go:102),
+or `local refs` in LocalMode.
+
+`this` is composed from the checkout's nickname, the publication state
+(`seat.LoadPublicationState`, which already tells absent from unreadable,
+state.go:62) and the steward's health file, which is the LAST RECORDED
+verdict and is presented as such: the payload carries `health.observedAt`
+and the page says "last recorded 12 min ago"; `armed` is not a boolean but
+a word, `armed` when that verdict's steward-runner role was alive, `not
+armed` when the verdict says so or no verdict exists, `stale` when the
+verdict is older than three ticks, and an unreadable or malformed file is
+named as such rather than read as absent (health.go:139, 219). `running`
+for this seat comes from the local jobs, `NewestChain(ReadJobs(root))`,
+with its unreadable explanation carried rather than shown as idle; for
+every machine `running` keeps the published chain's nullable `startedAt`,
+so a pending job says "not started" and the companion's disposition A10
+stays honoured. Every field is written; absent facts are null or empty,
+never missing.
 
 ## 4. The page
 
@@ -164,57 +205,104 @@ the terms register (`fleet`, `presence`, `standing`, `seat`):
 
 Empty fleet: "No seat has published presence yet. A seat publishes from its
 steward tick once it runs this version and is armed." The page re-reads
-its payload on the ledger stream's events like Backlog does, and never on a
-timer of its own. At phone width the table stacks into cards, one per
-machine, standing first.
+its payload on one new event of the existing EventSource, `fleet`, which
+the server emits after every presence attempt, success, failure or
+unchanged, and on reconnect; the stream today carries notifications and
+Partner events only (stream.ts:37, notifications.go:172), and Backlog
+reads on mount and on Refresh, so without this event a mounted Fleet page
+would never learn of new presence. The event carries no payload and takes
+no replay id; the page reads `/api/fleet` again. Never a timer of its own.
+At phone width the table stacks into cards, one per machine, standing
+first.
 
-The page capture the Partner sees names the section "Fleet" and lists the
-machines with their standing and flags, so "why is m1c unreachable" is a
-question the Partner can answer from the rows it was shown, and the
-`fleet` tool below gives it the rest.
+The words for `unknown` keep the reason apart: "no presence record" when
+the ref is absent, "presence unreadable: <refusal>" when malformed, and
+"clock ahead by <d>" for a record from the future; "seen" comes from the
+record when there is one, whatever the standing. A machine known only by
+absence has not "gone silent": its flag says "held by m0b, which has
+published no presence". The human's remedies are named conditionally,
+because they are not interchangeable: `goal steal` reassigns a claim and
+refuses a fenced one; `goal resume` lifts a breach fence and keeps the
+owner (stop.go:464, 494; verbs.go:3583). The section's own sentence in
+`routes.ts:94` and the `fleet` term in `terms.ts:143` are rewritten to
+promise what the page shows, standings and holds, and no longer sessions
+or a census.
+
+The page capture the Partner sees is a Fleet capture of its own, not the
+backlog fallback the server composes for a section it does not know
+(context.go:364): both capture schemas (src/partner/api.ts, partner/conversation.go)
+gain a bounded `fleet` shape, the machines shown with standing, age and
+flags and the copy's provenance, the capture composer (capture.ts) fills
+it on `/fleet`, and the server's context gains a Fleet branch that says
+what was displayed and from which reading, distinct from any later tool
+reading. "Why is m1c unreachable" is then a question the Partner answers
+from the rows it was shown, and the `fleet` tool below gives it the rest.
 
 ## 5. The flag on every surface
 
-- **Board**: a backlog row gains `holder: { machine, standing, since, flag }`
-  when its claim's machine is in the presence copy or unknown by absence.
-  `blockerOf` shows the flag as the card's line for In Progress cards that
-  have no fence and no park: "held by m1c, unreachable since 09:40". The
-  join is done in the httpd layer where the board projection and the fleet
-  standings both exist; the backlog package is not taught about presence.
-- **Overview**: `Work.InProgress` rows gain the same `holder` and the row
+- **Board**: the backlog payload today exposes `[]backlog.Row` directly
+  (httpd/backlog.go:40); it gains a UI-owned row type wrapping the backlog
+  row with `holder: { machine, standing, since, flag }` for a claimed row
+  whose machine has a standing, so the backlog package is not taught about
+  presence and the join happens in the httpd layer from the same
+  observation the page was composed from. `blockerOf` shows the flag as the
+  card's line immediately after a fence and before a dependency park, so a
+  fenced card still says it is stopped and a held card that is merely
+  silent says "held by m1c, unreachable since 09:40".
+- **Overview**: `Work.InProgress` rows gain the same `holder`, filled in
+  Overview's own composition from the same standing lookup, since that
+  composition copies selected fields by hand (overview.go:615); the row
   shows the flag beside the seat.
-- **`goal next`**: after the verdict, one line on stderr per claim of another
-  machine whose presence in the tick's copy is unreachable or absent, "goal
-  X is held by m1c, unreachable since 09:40; a human decides with goal steal
-  or goal resume", read from the tick's copy without fetching; nothing
-  changes in the verdict itself.
+- **`goal next`**: inside `runGoalNext` (cmd/metasystem/goal.go:622-740)
+  the tree it already holds, `p.Tree`, is joined to the tick's copy without
+  fetching, and one line goes to stderr per claim of another machine whose
+  standing is unreachable, "goal X is held by m1c, unreachable since 09:40;
+  a human reassigns it with goal steal", or absent, "... which has
+  published no presence"; `NextVerdict`, stdout and the exit code do not
+  change.
 
 ## 6. The Partner's `fleet` tool
 
-One read tool, `fleet`, returning the report's text (this seat first, then
-the machines) and the needs-you lines, from the same package the page uses,
-with the copy's age as its source line the way every other tool names its
-source. Added to the manifest's tool catalogue and to the Partner's
-vocabulary (`standing`, `presence`, `reachable`, `unreachable`,
-`unknown`, `rung`).
+One read tool, `fleet`, registered where the catalogue lives, in
+`uitools` (`Operations`, `Answer`, `Catalogue`, uitools.go:52-96, mcp.go:88;
+the manifest publishes sections and terms, not tools), using the bounded
+result machinery every tool uses, and returning the report's text (this
+seat first, then the machines) and the needs-you lines. The tool server
+runs in its own process (cmd/metasystem/ui_tools.go:59) and owns no
+fetcher: it reads the interface's namespace `refs/metasystem/presence-ui`
+and the fetch owner's metadata file of D3, and its source line stamps both
+the presence copy's provenance and the claims tip. The Partner's vocabulary
+gains `standing`, `presence`, `reachable`, `unreachable`, `unknown` and
+`rung`.
 
 ## 7. Authority, cost, what is not here
 
 Nothing on these surfaces acts; the words name the human acts that exist at
 a terminal. The interface's fetch is one bounded git call a minute while a
-browser is open and none otherwise. Not here: seats on this host outside the
+browser is open and none otherwise. Its remaining shared side effects with
+the snapshot loop's fetch are git's own: both write `FETCH_HEAD` and may
+trigger auto maintenance; the ledger reads its private operation ref and
+never `FETCH_HEAD` (attention.go:681, 747), so this is churn, not a race
+over a selected tip, and the build's two-callers test says so. Not here: seats on this host outside the
 ledger, sessions and delegates per seat beyond the one chain in flight,
 capacity, an act to steal or resume from the page, a notification of its own
 (the steward's transitions already reach the bell when this seat is armed).
 
 ## 8. Verification and box
 
-Server: unit tests on the new package with fakes (a presence copy, claims,
-a board projection, the health file) covering the composition, the ordering,
-the needs-you selection, the unarmed checkout, a failed fetch keeping the
-old copy, and the once-a-minute rule with an injected clock; a test that
-the fetcher never runs through the snapshot loop; the board and overview
-joins; the `goal next` lines. Browser: `FleetPane` tests on the payload
+Server: unit tests on the new package with fakes (a presence copy, one
+observation with its board projection, the health file, the publication
+state) covering the composition, the ordering, the needs-you selection
+with dated and undated silences, the `since` normalisation of D4 on an
+unarmed checkout and on a transition the tick has not seen, the unarmed
+and stale and unreadable health cases, a failed fetch keeping the old copy
+and the last success, the never-fetched and successful-empty copies, the
+sixty-second and one-in-flight and connected-only rules of the fetch owner
+with an injected clock and a fake connection signal, the `fleet` stream
+event after each attempt, the metadata file written for the tool; a test
+that the fetcher never runs through the snapshot loop and that two callers
+run side by side; the board and overview joins from one observation; the
+`goal next` lines; the tool's registration and its bounded result. Browser: `FleetPane` tests on the payload
 shapes (needs-you present and absent, unarmed seat, empty fleet, phone
 width stacking); the existing guards (`cuts`, `literals`, `tokens`) stay
 green; the walkthrough fixture gains presence for three machines
@@ -239,3 +327,23 @@ by D4 and said so; if that reads as a gap in practice, the fix is arming
 the seat, not a second standings file. Reject condition: Wido wants the
 fleet page to act, in which case this is a different, human-authority
 design.
+
+## Dispositions (Astra read, 2026-09-25)
+
+Ten material findings, each checked against the code it cites and folded.
+
+| id | finding | fold |
+|---|---|---|
+| A1 | "connected" had no usable owner; the minute rule needed an attempt clock | one fetch owner under the server's ownership gate, the EventSource lifetime as the connection signal, one in flight, sixty seconds between starts (D3) |
+| A2 | the stream carries no freshness event, so a mounted Fleet page would never update | one `fleet` event on the existing EventSource after every attempt and on reconnect (section 4) |
+| A3 | the tick's `Previous` makes `seat.Fleet` mint the request's own `since` | `since` kept only when the tick's observation matches the judged standing; flag words regenerated (D4) |
+| A4 | the tick's `ReadAt` is an observation time, so a fallback could call old refs freshly fetched | last attempt, last success and last failure kept apart; never-fetched and successful-empty distinguished (D3, section 3) |
+| A5 | claims from one capture and titles from another; backlog rows exposed raw | everything from one observation; a UI-owned row type carries `holder`; Overview fills it in its own composition; `goal next` joins `p.Tree` (sections 3 and 5) |
+| A6 | the health file is a past verdict presented as current | `observedAt` carried and shown; armed, not armed, stale, unreadable told apart (section 3) |
+| A7 | `unknown` collapsed absent, malformed and clock-ahead; steal and resume are not interchangeable | distinct words per reason; remedies named conditionally (section 4) |
+| A8 | `running` lost the pending distinction of A10 | nullable `startedAt` kept; this seat's source named (section 3) |
+| A9 | the tool runs in another process and the catalogue lives in uitools | no tool-owned fetcher, a metadata file, registration through Operations, Answer and Catalogue (section 6) |
+| A10 | a Fleet capture did not exist and the route's sentence promised sessions and a census | a bounded Fleet capture in both schemas and the composer; the sentence and the term rewritten (section 4) |
+
+The git side effects the two fetchers still share, `FETCH_HEAD` and auto
+maintenance, are named in section 7 as churn, not a race.
