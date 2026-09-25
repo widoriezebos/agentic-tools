@@ -1,0 +1,176 @@
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+
+import type { Backlog, Row } from "./api";
+import { EditSheet } from "./EditSheet";
+import { Panel } from "./Panel";
+
+/**
+ * The edit sheet as one screen.
+ *
+ * The claims here are claims about what is rendered and cannot be read from a
+ * table: that the three fields open filled in from the row rather than empty,
+ * that the button is disabled while nothing has changed, and that the sheet
+ * says what it will publish and what it will leave alone.
+ */
+
+function row(over: Partial<Row> = {}): Row {
+  return {
+    ref: { kind: "goal", id: "ui-1", revision: 1 },
+    where: "plans/goals/ui-1.md",
+    lane: "to-do",
+    phase: "",
+    state: "queued",
+    intent: "The board reads the ledger.",
+    nextStep: "Take it to a working end state.",
+    concluded: "",
+    origin: "human",
+    priority: 2,
+    sequence: 1,
+    tier: 1,
+    labels: ["board", "ui"],
+    arc: "",
+    pinned: "",
+    blockedBy: [],
+    holds: [],
+    openBlockers: [],
+    sliced: false,
+    decomposed: false,
+    openedAt: "",
+    doneAt: "",
+    lastChangeAt: "",
+    lastVerb: "open",
+    gaps: [],
+    ...over,
+  };
+}
+
+function backlog(): Backlog {
+  return {
+    schemaVersion: 1,
+    observedAt: "2026-09-25T08:00:00Z",
+    ledger: {
+      state: "read",
+      tip: "abc1234",
+      committedAt: "2026-09-25T07:00:00Z",
+      freshness: { state: "current", since: "2026-09-25T07:59:00Z", detail: "" },
+      stale: false,
+      staleAfterSeconds: 900,
+      syncMode: "",
+      stateRoot: "",
+      message: "",
+      problems: [],
+      fetch: {
+        outcome: "current",
+        startedAt: "",
+        finishedAt: "",
+        tip: "abc1234",
+        detail: "",
+        message: "",
+        failures: 0,
+        cadence: "",
+        nextAt: "",
+        succeededAt: "",
+        succeededTip: "abc1234",
+      },
+    },
+    admission: { answered: true, message: "" },
+    workingTree: { liveFiles: 1, archivedFiles: 0 },
+    authority: { proven: true, human: "Wido", reason: "" },
+    budgetDefaults: {},
+    counts: {},
+    draft: { statement: "" },
+    rows: [row()],
+    closed: [],
+  };
+}
+
+function sheet(goal: Row = row()): string {
+  return renderToStaticMarkup(
+    <TooltipPrimitive.Provider>
+      <EditSheet goal={goal} backlog={backlog()} onClose={() => undefined} onDone={() => undefined} />
+    </TooltipPrimitive.Provider>,
+  );
+}
+
+describe("the edit sheet", () => {
+  it("opens filled in from the row, all three fields", () => {
+    const markup = sheet();
+    expect(markup).toContain("The board reads the ledger.");
+    expect(markup).toContain("Take it to a working end state.");
+    // The labels arrive as the chips the token field makes of them.
+    expect(markup).toContain("board");
+    expect(markup).toContain("ui");
+  });
+
+  it("names the goal it is about, and says it is not yet approved", () => {
+    const markup = sheet();
+    expect(markup).toContain("ui-1");
+    expect(markup).toContain("Queued, not yet approved");
+    expect(markup).toContain("Edit goal");
+  });
+
+  it("will not save a sheet in which nothing has changed", () => {
+    const markup = sheet();
+    expect(markup).toContain("Nothing has changed yet.");
+    // The primary button is disabled while there is nothing to send.
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>Save<\/button>/);
+  });
+
+  it("quotes the intake rules under the two lines rather than inventing its own", () => {
+    const markup = sheet();
+    expect(markup).toContain("What done looks like: the outcome, not the work.");
+    expect(markup).toContain("never a script of the how");
+  });
+});
+
+/**
+ * A save in flight cannot be dismissed.
+ *
+ * The publication goes on whether or not this sheet is on screen, so a human
+ * who pressed Cancel while one was running would watch the sheet close and
+ * the edit land anyway - the one outcome nothing on the page would explain.
+ * The panel already guards its single way out; what this covers is the two
+ * halves of that: the guard does what it says, and this sheet opts into it.
+ */
+function chrome(busy: boolean): string {
+  return renderToStaticMarkup(
+    <TooltipPrimitive.Provider>
+      <Panel
+        form
+        eyebrow="Queued, not yet approved"
+        title="Edit goal"
+        unproven=""
+        refusal=""
+        note=""
+        busy={busy}
+        act={<button type="button">Save</button>}
+        onClose={() => undefined}
+      >
+        <p>fields</p>
+      </Panel>
+    </TooltipPrimitive.Provider>,
+  );
+}
+
+const SOURCE = readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", "EditSheet.tsx"), "utf8");
+
+describe("a save in flight", () => {
+  // Escape and Cancel are one guarded act inside the panel, so the button's
+  // own state is what says whether that guard is shut.
+  it("closes nothing: the panel's one way out is shut while it is busy", () => {
+    expect(chrome(true)).toMatch(/<button[^>]*disabled[^>]*>Cancel<\/button>/);
+    expect(chrome(false)).not.toMatch(/<button[^>]*disabled[^>]*>Cancel<\/button>/);
+  });
+
+  // And this sheet asks for that guard. Nothing rendered statically can say
+  // so - `sending` is false until a human presses Save, and there is no
+  // document here to press it in - so the wiring is read where it is written.
+  it("is what this sheet reports to the panel", () => {
+    expect(SOURCE).toContain("busy={sending}");
+  });
+});

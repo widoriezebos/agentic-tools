@@ -9,6 +9,7 @@ import { windowTitle, WINDOWS, type Filters, type Window } from "./filters";
 import { dateAndTime, minuteTime } from "./format";
 import { DONE, laneFor, waitingFor, SPLIT_HELP, type LaneId } from "./lanes";
 import { CardMenu } from "./CardMenu";
+import { EditSheet } from "./EditSheet";
 import { offersFor, opensMenu, type At, type OfferId } from "./menu";
 import { moveFor, refusalFor, targetsFrom } from "./moves";
 import { RankSheet } from "./RankSheet";
@@ -130,6 +131,10 @@ export function Board({
   // for: the two differ whenever the band shifted under the request.
   const [noted, setNoted] = useState<{ lane: LaneId; line: string } | null>(null);
   const [asking, setAsking] = useState<{ goal: Row; placement: Placement } | null>(null);
+  // The goal whose three fields are open for editing, or null. It is the
+  // board's own state and not a card's, because the sheet outlives the menu
+  // that opened it and belongs to the board the way the rank sheet does.
+  const [editing, setEditing] = useState<Row | null>(null);
   const navigate = useNavigate();
   // Whether the board may act, and as whom: the browser session where one is
   // signed in, and the server's own boot proof otherwise.
@@ -300,6 +305,7 @@ export function Board({
             onChooseRank={(row) => {
               setAsking({ goal: row, placement: { priority: row.priority, sequence: row.sequence } });
             }}
+            onEdit={setEditing}
             showing={showing}
             onFaded={onFaded}
             tip={tip}
@@ -332,6 +338,19 @@ export function Board({
             setAsking(null);
             setNoted({ lane: asking.goal.lane, line: landedNote(id, after.rows) });
             onMoved(after);
+          }}
+        />
+      )}
+      {editing !== null && (
+        <EditSheet
+          goal={editing}
+          backlog={backlog}
+          onClose={() => {
+            setEditing(null);
+          }}
+          onDone={(edited) => {
+            setEditing(null);
+            onMoved(edited);
           }}
         />
       )}
@@ -440,6 +459,7 @@ function Column({
   onAct,
   onStep,
   onChooseRank,
+  onEdit,
   onOpen,
   showing,
   onFaded,
@@ -470,6 +490,8 @@ function Column({
   onAct: (asked: Asked) => void;
   onStep: (row: Row, direction: "up" | "down") => void;
   onChooseRank: (row: Row) => void;
+  /** The goal whose three fields a human asked to edit. */
+  onEdit: (row: Row) => void;
   onOpen: (row: Row) => void;
   /** The goal a link sent this page to show, while its ring is up, or "". */
   showing: string;
@@ -546,6 +568,7 @@ function Column({
             onAct={onAct}
             onStep={onStep}
             onChooseRank={onChooseRank}
+            onEdit={onEdit}
             onOpen={onOpen}
             shown={row.ref.id === showing}
             onFaded={onFaded}
@@ -569,6 +592,7 @@ function Card({
   onAct,
   onStep,
   onChooseRank,
+  onEdit,
   onOpen,
   shown,
   onFaded,
@@ -591,6 +615,8 @@ function Card({
   onAct: (asked: Asked) => void;
   onStep: (row: Row, direction: "up" | "down") => void;
   onChooseRank: (row: Row) => void;
+  /** The goal whose three fields a human asked to edit. */
+  onEdit: (row: Row) => void;
   onOpen: (row: Row) => void;
   /** True while this is the card a link sent the page to show. */
   shown: boolean;
@@ -642,6 +668,9 @@ function Card({
         return;
       case "rank":
         onChooseRank(row);
+        return;
+      case "edit":
+        onEdit(row);
         return;
       case "open":
         onOpen(row);

@@ -537,6 +537,23 @@ func runUI(verb string, args []string) int {
 						advance()
 						return nil
 					},
+					// The one direct edit the master design admits: the
+					// intent, the next step and the labels of a goal nobody
+					// has approved. The state it must be in is the
+					// mutation's own allowlist, so a goal approved or
+					// claimed since the page read it is refused here rather
+					// than rewritten.
+					Edit: func(signed *session.Session, id string, edited act.Edited) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Edit(id, edited); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
 					BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 						return tierBudgets(roots.Installation)
 					},

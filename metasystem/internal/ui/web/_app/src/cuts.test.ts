@@ -81,7 +81,9 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // two mirrored ones.
   // The Decisions queue's park and unpark are here for the same reason: they
   // are not board moves, but they are the same request to the same
-  // collection, and a second fetching file would be a second cut.
+  // collection, and a second fetching file would be a second cut. The goal
+  // editor's own "/edit" joins them: it is the same collection, the same
+  // call site, and the same id between the prefix and the suffix.
   // The query is Refresh's and nobody else's: it asks the server to fetch the
   // canonical branch once before it answers. It is the same resource and the
   // same call site — a read a human asked for, not a read anything repeats.
@@ -100,6 +102,7 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       "/unblock",
       "/park",
       "/unpark",
+      "/edit",
     ],
   ],
   // The Project section's writes join its two reads at the one call site it

@@ -58,6 +58,7 @@ export type HelpId =
   | "lane-abandoned"
   | "lane-split"
   | "lane-unknown"
+  | "edit-goal"
   | "priority"
   | "tier"
   | "seat"
@@ -269,6 +270,10 @@ export const HELP: Record<HelpId, Term> = {
   "lane-unknown": {
     term: "Unknown",
     text: "A goal record this build cannot place in any lane. It is disclosed under the board with the reason it carries, never hidden and never a column of its own.",
+  },
+  "edit-goal": {
+    term: "Edit",
+    text: "Rewrites a goal's intent, next step and labels. Only a goal still queued that nobody has approved is edited here: an approval is a human's word on a particular intent, so changing one means withdrawing the approval first, a claimed goal is edited at the seat working it, and a paused one returns to the queue first. Only the fields you change are sent, so an edit made elsewhere in the meantime survives.",
   },
   priority: {
     term: "Priority",
