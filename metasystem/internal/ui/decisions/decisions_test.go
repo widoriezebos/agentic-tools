@@ -86,6 +86,16 @@ func everyKind() Inputs {
 		Reason: "blocked by g1-s46", Since: ago(20 * time.Hour), By: "human:Wido", Blocker: "g1-s46",
 	}
 
+	// A seat's park is the one that stays in the inbox, because a human has
+	// not seen it. It is told from a person's by the By prefix, which is the
+	// engine's own test of a human park.
+	seatPark := row("g1-s50", "A goal a seat parked", backlog.LaneWaiting)
+	seatPark.State = goal.StateParked
+	seatPark.Waiting = &backlog.Waiting{
+		Reason: "the implementer paused it to finish g1-s48 first", Since: ago(30 * time.Hour),
+		By: "m2a+implementer", From: goal.StateApproved,
+	}
+
 	fenced := row("g1-s48", "Work a breach fence stopped", backlog.LaneWaiting)
 	fenced.State = goal.StateClaimed
 	fenced.Claim = &backlog.Claim{Machine: "m2a", Lineage: "implementer", At: ago(9 * time.Hour)}
@@ -96,7 +106,7 @@ func everyKind() Inputs {
 	ready.Approved = &backlog.Approval{By: "human:Wido", At: ago(2 * time.Hour), Authority: "proven"}
 
 	return Inputs{
-		Rows:   []backlog.Row{awaiting, second, renew, claimed, park, dependency, blockerPark, fenced, ready},
+		Rows:   []backlog.Row{awaiting, second, renew, claimed, park, dependency, blockerPark, seatPark, fenced, ready},
 		Closed: []backlog.Row{},
 		Project: project.Pane{
 			Goals: []project.Goal{
@@ -266,6 +276,13 @@ func TestOnlyTheActsTheInterfaceHasAreOffered(t *testing.T) {
 			if !claimed && (need.Act != ActApprove || need.Row == nil) {
 				t.Errorf("an unclaimed renewal was not offered the sheet: %+v", need)
 			}
+		case KindParked:
+			// A seat's park carries the act that returns it to the queue,
+			// which a signed-in session may make (R-125-m1u). It carries no
+			// row: nothing about it is prefilled from the board.
+			if need.Act != ActUnpark || need.Row != nil {
+				t.Errorf("a seat's park was not offered the act that returns it: %+v", need)
+			}
 		default:
 			if need.Act != "" || need.Row != nil {
 				t.Errorf("%s offered an act this interface does not have: %+v", need.Kind, need)
@@ -314,8 +331,11 @@ func TestTheRowsThatAreDecidedAtATerminalNameTheirCommand(t *testing.T) {
 			commands[need.Kind] = need.Command
 		}
 	}
+	// The parked row used to name a terminal command. It names an act now:
+	// a signed-in session may return a seat's park from the page itself
+	// (R-125-m1u), and a command beside a button that does the same thing is
+	// one more thing to read.
 	want := map[string]string{
-		KindParked:  "metasystem goal unpark --id g1-s45",
 		KindStopped: "metasystem goal resume --id g1-s48",
 	}
 	for kind, command := range want {
@@ -328,11 +348,11 @@ func TestTheRowsThatAreDecidedAtATerminalNameTheirCommand(t *testing.T) {
 	}
 }
 
-// Parked is the state and the empty blocker together. An approved goal an
-// open dependency holds is in the same lane with the same empty blocker and
-// is not a person's park; a dependency park names its blocker and returns by
-// itself.
-func TestParkedIsThePersonsOwnParkAndNotADependencyWait(t *testing.T) {
+// The inbox's parked row is a SEAT's park and nothing else. A person's park
+// is a decision they already made and is in Not now; an approved goal an open
+// dependency holds is in the same lane with the same empty blocker and is not
+// a park at all; a dependency park names its blocker.
+func TestParkedIsASeatsParkAndNotAPersonsOrADependencyWait(t *testing.T) {
 	t.Parallel()
 	page := Compose(everyKind(), observed)
 	parked := []string{}
@@ -341,12 +361,106 @@ func TestParkedIsThePersonsOwnParkAndNotADependencyWait(t *testing.T) {
 			parked = append(parked, need.ID)
 		}
 	}
-	if strings.Join(parked, ",") != "g1-s45" {
-		t.Fatalf("the parked rows are not the person's own parks: %v", parked)
+	if strings.Join(parked, ",") != "g1-s50" {
+		t.Fatalf("the parked rows are not the seat's own parks: %v", parked)
 	}
 	need := needOf(t, page, KindParked)
-	if need.Asked != "Unpark A goal a person parked? parked by human:Wido "+ago(30*time.Hour)+": the census format is still being decided" {
+	if need.Asked != "Unpark A goal a seat parked? parked by m2a+implementer "+ago(30*time.Hour)+": the implementer paused it to finish g1-s48 first" {
 		t.Fatalf("the park's own words did not reach the row: %q", need.Asked)
+	}
+	if need.Act != ActUnpark {
+		t.Fatalf("the seat park offers %q, want the act that returns it", need.Act)
+	}
+}
+
+// A person's park leaves the inbox for Not now, with the whole of what they
+// said, newest first — and a blocker park a human directed is one too, named
+// with the blocker it waits for.
+func TestAPersonsParkIsDecidedAndNamesWhatItWaitsFor(t *testing.T) {
+	t.Parallel()
+	page := Compose(everyKind(), observed)
+	got := []string{}
+	for _, park := range page.Decided.NotNow {
+		got = append(got, park.ID)
+	}
+	// g1-s47 was parked ten hours after g1-s45, so it is first.
+	if strings.Join(got, ",") != "g1-s47,g1-s45" {
+		t.Fatalf("Not now is not the person's own parks newest first: %v", got)
+	}
+	plain := page.Decided.NotNow[1]
+	if plain.Title != "A goal a person parked" || plain.By != "human:Wido" ||
+		plain.At != ago(30*time.Hour) || plain.Because != "the census format is still being decided" {
+		t.Fatalf("the park's own words did not reach the row: %+v", plain)
+	}
+	if plain.Blocker != "" {
+		t.Fatalf("a park with no blocker named one: %q", plain.Blocker)
+	}
+	if plain.Where.Kind != WhereGoal || plain.Where.ID != "g1-s45" {
+		t.Fatalf("the row does not open its goal: %+v", plain.Where)
+	}
+	if page.Decided.NotNow[0].Blocker != "g1-s46" {
+		t.Fatalf("a human-directed blocker park did not name its blocker: %+v", page.Decided.NotNow[0])
+	}
+	for _, need := range page.NeedsYou {
+		if need.ID == "g1-s45" || need.ID == "g1-s47" {
+			t.Fatalf("a park this human already made is still counted as waiting on them: %+v", need)
+		}
+	}
+}
+
+// The header's two counts are the one list split, so they always sum to it.
+func TestTheTwoCountsAreTheInboxSplitAndSumToIt(t *testing.T) {
+	t.Parallel()
+	page := Compose(everyKind(), observed)
+	approvals := 0
+	for _, need := range page.NeedsYou {
+		if need.Kind == KindApproval {
+			approvals++
+		}
+	}
+	if page.Counts.Waiting != approvals {
+		t.Errorf("waiting = %d, want the %d approvals", page.Counts.Waiting, approvals)
+	}
+	if page.Counts.Asked != len(page.NeedsYou)-approvals {
+		t.Errorf("asked = %d, want the %d rows that are not approvals",
+			page.Counts.Asked, len(page.NeedsYou)-approvals)
+	}
+	if page.Counts.Asked+page.Counts.Waiting != page.Counts.NeedsYou {
+		t.Errorf("the two blocks do not sum to the inbox: %d + %d != %d",
+			page.Counts.Asked, page.Counts.Waiting, page.Counts.NeedsYou)
+	}
+	if page.SchemaVersion != 2 {
+		t.Errorf("schema = %d, want 2", page.SchemaVersion)
+	}
+}
+
+// The register is where the caller says it is, and every destination naming
+// it says the same thing, so "open the register" opens.
+func TestTheRegisterPathTravelsAndEveryDestinationUsesIt(t *testing.T) {
+	t.Parallel()
+	in := everyKind()
+	in.RegisterPath = "metasystem/memory/rulings.md"
+	page := Compose(in, observed)
+	if page.Register != "metasystem/memory/rulings.md" {
+		t.Fatalf("the payload names the register at %q", page.Register)
+	}
+	reviews := 0
+	for _, need := range page.NeedsYou {
+		if need.Kind != KindRulingReview {
+			continue
+		}
+		reviews++
+		if need.Where.Kind != WhereRegister || need.Where.ID != page.Register {
+			t.Errorf("a review card opens %+v, want the register the payload names", need.Where)
+		}
+	}
+	if reviews == 0 {
+		t.Fatal("no review card was composed, so nothing was proven")
+	}
+	// A caller that names no path leaves the kit's own layout, which is what
+	// every reader saw before this field existed.
+	if plain := Compose(everyKind(), observed); plain.Register != "memory/rulings.md" {
+		t.Errorf("an unnamed register answered %q", plain.Register)
 	}
 }
 
@@ -461,7 +575,7 @@ func TestTheOrderIsDeadlinesThenPastDueThenApprovalsThenTheOldest(t *testing.T) 
 		// Then everything else, oldest first.
 		"question/Q-1",
 		"draft/d-open",
-		"parked/g1-s45",
+		"parked/g1-s50",
 		"landed/d-landed",
 		"ask/ask-1",
 		"stopped/g1-s48",

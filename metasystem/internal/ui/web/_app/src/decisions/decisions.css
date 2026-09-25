@@ -1,6 +1,7 @@
 /*
- * Decisions: one list of what waits on a human, then four tabs of what they
- * decided.
+ * Decisions: two blocks of what waits on a human — the few things asked of
+ * them, and the queue of work nobody has authorized — then the tabs of what
+ * they decided.
  *
  * The inbox is cards rather than lines, because every row here carries four
  * sentences a human reads before choosing — what is asked, who asks, what
@@ -531,5 +532,306 @@ a.ms-decisions-row:hover {
 
   .ms-decisions-row-note {
     max-width: 100%;
+  }
+}
+
+/* ------------------------------------------------------------ the queue -- */
+
+/*
+ * The second block is lines, not cards, because it is a hundred rows a human
+ * works through rather than ten they read. One line each, the title truncated
+ * at two lines and never at one word, and everything a decision might need
+ * behind the row's own disclosure — which is the title itself, so the thing
+ * read is the thing pressed.
+ */
+
+.ms-decisions-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.ms-decisions-header-link {
+  color: var(--ms-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--ms-border);
+  padding-bottom: 1px;
+}
+
+.ms-decisions-header-link:hover {
+  color: var(--ms-accent);
+  border-bottom-color: var(--ms-accent);
+}
+
+.ms-decisions-header-dot {
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-quiet {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-decisions-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-decisions-chip {
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-2);
+  background: var(--ms-surface-2);
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.ms-decisions-chip:hover {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+.ms-decisions-chip--on {
+  background: var(--ms-marker-bg);
+  border-color: var(--ms-marker);
+  color: var(--ms-marker-fg);
+}
+
+.ms-decisions-bulk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-decisions-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  cursor: pointer;
+}
+
+.ms-decisions-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.ms-decisions-queue-row {
+  border-bottom: 1px solid var(--ms-border);
+  min-width: 0;
+}
+
+.ms-decisions-queue-row:last-child {
+  border-bottom: 0;
+}
+
+.ms-decisions-queue-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  min-width: 0;
+}
+
+.ms-decisions-queue-open {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--ms-text);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ms-decisions-queue-open:hover .ms-decisions-queue-title {
+  color: var(--ms-accent);
+}
+
+.ms-decisions-queue-id {
+  font-size: 11px;
+  color: var(--ms-text-3);
+  flex: 0 0 auto;
+}
+
+.ms-decisions-queue-title {
+  font-size: 13px;
+  line-height: 19px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.ms-decisions-queue-facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.ms-decisions-queue-age {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-decisions-queue-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+/* What opens takes the row's whole width, under it, as the Fleet row's does. */
+.ms-decisions-queue-more {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px 34px;
+  border-top: 1px solid var(--ms-border);
+  padding-top: 10px;
+  min-width: 0;
+}
+
+.ms-decisions-queue-intent {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ms-text);
+}
+
+.ms-decisions-queue-next {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-decisions-queue-facts-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+/* -------------------------------------------------------- the bulk sheet -- */
+
+.ms-decisions-plan {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-decisions-planned {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.ms-decisions-planned--out {
+  border-color: var(--ms-marker);
+  background: var(--ms-marker-bg);
+}
+
+.ms-decisions-planned-id {
+  font-size: 11px;
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-planned-title {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ms-text);
+}
+
+.ms-decisions-planned-budget {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-planned-out {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-marker-fg);
+}
+
+.ms-decisions-progress {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * At phone width the queue row stacks: the checkbox stays at the left of the
+ * title, and the chips and the two buttons wrap under them rather than
+ * squeezing a title into one word.
+ */
+@media (max-width: 719px) {
+  .ms-decisions-queue-line {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .ms-decisions-queue-open {
+    flex: 1 1 200px;
+  }
+
+  .ms-decisions-queue-facts,
+  .ms-decisions-queue-acts {
+    padding-left: 22px;
+  }
+
+  .ms-decisions-queue-more {
+    padding-left: 10px;
   }
 }

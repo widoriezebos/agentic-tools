@@ -279,6 +279,12 @@ type humanAuthorityRow struct {
 	Verb    string
 	Name    string
 	Missing string
+	// Session marks the rows a signed-in browser session may meet, which
+	// R-125-m1u names exactly three of: the park of a human-origin goal, and
+	// the unpark of a human's park to queued and to approved. Every other row
+	// of every verb keeps its grade, so a session proof — which carries no
+	// grade at all — still refuses there.
+	Session bool
 }
 
 // humanAuthorityRequired identifies the conditional point where a verb's
@@ -323,6 +329,14 @@ func (r VerbRequest) requireHuman(row humanAuthorityRow, grade string) error {
 		return nil
 	}
 	if grade == humanauthority.GradeEnrolled && r.Authority.ValidFor(r.Endpoint.Root) {
+		return nil
+	}
+	// R-125-m1u: a row the ruling names is met by a freshly minted session
+	// proof for this checkout, whatever grade the row otherwise asks. It is
+	// the only place a session proof meets a terminal-grade row, and it is
+	// per row rather than per verb: the park of another pair's claim and the
+	// early lifting of a seat's blocker park are not flagged and still refuse.
+	if row.Session && r.Authority.SessionValidFor(r.Endpoint.Root) {
 		return nil
 	}
 	if r.Authority.TerminalValidFor(r.Endpoint.Root) && got == humanauthority.GradeTerminal && grade == humanauthority.GradeEnrolled {
@@ -2646,7 +2660,7 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 			}
 			if f.Origin == OriginHuman {
 				missing := fmt.Sprintf("goal %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", id)
-				if err := r.requireHuman(humanAuthorityRow{Verb: "park", Name: "park of a human-origin goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+				if err := r.requireHuman(humanAuthorityRow{Verb: "park", Name: "park of a human-origin goal", Missing: missing, Session: true}, humanauthority.GradeTerminal); err != nil {
 					return nil, err
 				}
 			}
@@ -2680,6 +2694,9 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 				Actor: r.Actor.historyActor(), Targets: []string{id},
 				Displaced: displaced, Keep: -1, Reason: because,
 			})
+			// A park a signed-in browser made says so on its own line, as an
+			// approval does: the ledger names the hand that acted.
+			recordSessionAuthority(&f.History[len(f.History)-1], r.Authority)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
@@ -2778,7 +2795,7 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 					rowName = "unpark of a human park to approved"
 				}
 				missing := fmt.Sprintf("goal %s was parked by %s; lifting a human's pause is a human act, or the seat's under a power of attorney that names unpark (goal unpark --under <entry> --verified <what holds now>)", id, f.Parked.By)
-				if err := r.requireHuman(humanAuthorityRow{Verb: "unpark", Name: rowName, Missing: missing}, grade); err != nil {
+				if err := r.requireHuman(humanAuthorityRow{Verb: "unpark", Name: rowName, Missing: missing, Session: true}, grade); err != nil {
 					return nil, err
 				}
 			}
@@ -2809,6 +2826,7 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 			f.State = restingState(f)
 			f.Parked = nil
 			touch(f, r, "unpark", []string{id})
+			recordSessionAuthority(&f.History[len(f.History)-1], r.Authority)
 			if r.Attorney != nil {
 				recordAttorney(f, entry.ID)
 				f.History[len(f.History)-1].Reason = "verified: " + verified

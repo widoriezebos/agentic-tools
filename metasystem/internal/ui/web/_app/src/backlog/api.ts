@@ -35,6 +35,14 @@ const PRIORITY = "/priority";
 /** The two edge acts. The id before them is always the goal that WAITS. */
 const BLOCK = "/block";
 const UNBLOCK = "/unblock";
+/**
+ * The Decisions queue's two. They are not board moves — the board grows no
+ * park button — but they are the same kind of request to the same collection,
+ * so they ride the one call site this build reaches the network from rather
+ * than opening a second one.
+ */
+const PARK = "/park";
+const UNPARK = "/unpark";
 
 /** What could be read of the accepted ledger. */
 export type LedgerState = "read" | "absent" | "no-ledger" | "broken" | "unreadable" | "refused";
@@ -351,4 +359,21 @@ export async function blockGoal(dependent: string, blocker: string): Promise<Bac
 export async function unblockGoal(dependent: string, blocker: string): Promise<Backlog> {
   const act = edgeAct(dependent, blocker, "unblock");
   return request(act.resource, act.body);
+}
+
+/**
+ * goal park, for one goal, with the reason the human typed.
+ *
+ * The reason is never invented here and never defaulted: the engine refuses a
+ * park without one, and a page that supplied a sentence would be writing a
+ * why nobody wrote. It travels as it was typed, trimmed, and an empty one is
+ * refused where every other refusal is — at the engine, in its own words.
+ */
+export async function parkGoal(id: string, because: string): Promise<Backlog> {
+  return request(`${GOALS}${encodeURIComponent(id)}${PARK}`, { because });
+}
+
+/** goal unpark, for one goal. The engine decides what it returns to. */
+export async function unparkGoal(id: string): Promise<Backlog> {
+  return request(`${GOALS}${encodeURIComponent(id)}${UNPARK}`, {});
 }

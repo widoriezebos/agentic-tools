@@ -122,7 +122,8 @@ type Info struct {
 	// than through the ancestry of the process that started the server. A nil
 	// store is a build that cannot sign anyone in, which the routes say.
 	Sessions *session.Store
-	// The backlog's six acts, each one the human working their own backlog
+	// The backlog's six acts and the Decisions queue's two, each one the human
+	// working their own backlog
 	// in their own checkout: admitting work, withdrawing that admission,
 	// placing a goal in a priority band, opening a new goal at intake, and
 	// saying which goal waits for which.
@@ -144,6 +145,12 @@ type Info struct {
 	// relation the page acted from, so both directions reach one mutation.
 	Block   func(signed *session.Session, dependent, blocker string) error
 	Unblock func(signed *session.Session, dependent, blocker string) error
+	// Park pauses one goal with its reason and Unpark lifts a park. They are
+	// the Decisions queue's "Not now" and its undo, admitted from a browser
+	// under R-125-m1u; the board offers neither. A nil field is an engine
+	// that cannot act, which the route says.
+	Park   func(signed *session.Session, id, because string) error
+	Unpark func(signed *session.Session, id string) error
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.
@@ -168,6 +175,12 @@ type Info struct {
 	// says. A nil Rulings is a build with no register reader, which costs
 	// the Decisions page its Rulings tab and nothing else.
 	Rulings func() (rulings.Register, error)
+	// RegisterPath is where that register is relative to the CHECKOUT, which
+	// is not where Rulings read it from: the kit keeps its memory under the
+	// installation, and the document reader opens paths against the checkout.
+	// The caller knows both roots and derives the one path this payload can
+	// carry. An empty path leaves the composer its own default.
+	RegisterPath string
 	// Visit records that a human is looking at the landing page and answers
 	// the window it compares against: the end of their previous visit, or a
 	// day back on a first one. It is a function rather than a root because

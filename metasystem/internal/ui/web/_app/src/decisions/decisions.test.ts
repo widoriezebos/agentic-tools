@@ -145,10 +145,10 @@ describe("the act on a row", () => {
   });
 });
 
-describe("the four tabs", () => {
+describe("the tabs of what was decided", () => {
   it("are the design's, in its order, each with its own count in its name", () => {
     const page: Page = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       readAt: "2026-09-25T11:00:00Z",
       signIn: false,
       needsYou: [],
@@ -158,12 +158,16 @@ describe("the four tabs", () => {
         decisions: [{ id: "d-1", title: "A decision", note: "accepted", at: "", where: { kind: "record", id: "a.md" } }],
         answered: [],
         approved: [],
+        notNow: [],
       },
-      counts: { needsYou: 0, rulings: 148 },
+      counts: { needsYou: 0, asked: 0, waiting: 0, rulings: 148 },
+      register: "metasystem/memory/rulings.md",
     };
     expect(tabs(page).map((tab) => tab.id)).toEqual([...tabOrder]);
     // The register's count is the whole register, not the page of it shown.
-    expect(tabs(page).map((tab) => tab.title)).toEqual(["Rulings 148", "Decisions 1", "Answered 0", "Approved 0"]);
+    expect(tabs(page).map((tab) => tab.title)).toEqual([
+      "Rulings 148", "Decisions 1", "Answered 0", "Approved 0", "Not now 0",
+    ]);
   });
 });
 

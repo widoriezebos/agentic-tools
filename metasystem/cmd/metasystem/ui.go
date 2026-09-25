@@ -511,6 +511,32 @@ func runUI(verb string, args []string) int {
 						advance()
 						return nil
 					},
+					// Not now, and back. Admitted from a signed-in browser
+					// under R-125-m1u, at the three rows that ruling names
+					// and at no others; every other refusal is the engine's
+					// and reaches the page in its own words.
+					Park: func(signed *session.Session, id, because string) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Park(id, because); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					Unpark: func(signed *session.Session, id string) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Unpark(id); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
 					BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 						return tierBudgets(roots.Installation)
 					},
@@ -537,9 +563,20 @@ func runUI(verb string, args []string) int {
 						open, _ := channel.WalkOpenQuestions(roots.Checkout)
 						return open, nil
 					},
+					// The register is read from the INSTALLATION, because
+					// that is where the kit's memory home is on every layout
+					// this interface serves: a checkout that is not the
+					// installation has no memory/ of its own, and reading
+					// there answered an empty register for a file that exists.
+					// The channel and the journal stay at the checkout, where
+					// the steward writes them.
 					Rulings: func() (rulings.Register, error) {
-						return rulings.Read(roots.Checkout)
+						return rulings.Read(roots.Installation)
 					},
+					// And where that register is from the checkout, so that
+					// every destination naming it opens in the reader, which
+					// resolves against the checkout.
+					RegisterPath: registerFromCheckout(roots),
 					// The landing page's last-visit marker, beside this
 					// server's own lifecycle state. It is the one thing the
 					// interface writes for itself rather than for the
@@ -664,4 +701,30 @@ func tierBudgets(installation string) (map[string]goalbudget.Budget, error) {
 // its own triple, which is the conversion this wiring exists for.
 func projectRoots(roots lifecycle.Roots) project.Roots {
 	return project.Roots{Checkout: roots.Checkout, Installation: roots.Installation, StateRoot: roots.StateRoot}
+}
+
+// registerFromCheckout is where the rulings register is RELATIVE TO THE
+// CHECKOUT, which is the root the document reader opens a path against.
+//
+// The register itself is read from the installation, because that is the
+// kit's memory home; the reader that opens a destination is the checkout's.
+// On the self-hosted layout the two are the same directory and this answers
+// "memory/rulings.md"; on the layout this interface most often serves — a
+// checkout whose installation is a directory inside it — it answers
+// "metasystem/memory/rulings.md", which is the path that opens.
+//
+// Where the installation is not under the checkout at all, no
+// checkout-relative path names that file, so this answers nothing and the
+// composer keeps its own default: a destination that cannot open is not
+// improved by a path that walks out of the repository.
+func registerFromCheckout(roots lifecycle.Roots) string {
+	relative, err := filepath.Rel(roots.Checkout, rulings.Path(roots.Installation))
+	if err != nil {
+		return ""
+	}
+	slashed := filepath.ToSlash(relative)
+	if slashed == ".." || strings.HasPrefix(slashed, "../") {
+		return ""
+	}
+	return slashed
 }

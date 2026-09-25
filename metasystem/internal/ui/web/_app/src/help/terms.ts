@@ -37,6 +37,11 @@ export type HelpId =
   | "fleet"
   | "decisions-section"
   | "needs-your-choice"
+  | "asked-of-you"
+  | "waiting-for-approval"
+  | "not-now"
+  | "act-selected"
+  | "return-to-queue"
   | "silence"
   | "ruling"
   | "review-condition"
@@ -171,7 +176,27 @@ export const HELP: Record<HelpId, Term> = {
   },
   "needs-your-choice": {
     term: "Needs your choice",
-    text: "Everything waiting on a human and nobody else, complete rather than capped: work nobody has authorized, approvals that expired, a seat's own question, open questions, parked and stopped goals, drafts, designs whose work has landed, rulings whose review has come due, and what the steward addressed to you.",
+    text: "Everything waiting on a human and nobody else, complete rather than capped, in two blocks: what is asked of you, which is a few things with a few different consequences, and what is waiting for your approval, which is the queue of work nobody has authorized yet.",
+  },
+  "asked-of-you": {
+    term: "Asked of you",
+    text: "The few things that are not approvals: a seat's question, an open question of the register, a draft, a design whose work has landed, an approval that expired, a goal a seat paused or a fence stopped, a ruling whose review has come due, and what the steward addressed to you. Each one is its own decision with its own consequence of silence.",
+  },
+  "waiting-for-approval": {
+    term: "Waiting for your approval",
+    text: "The goals nobody has authorized, which is a queue rather than a list: many, mostly weeks old, fine to wait. Approving one admits it so a seat may claim it, and the approval carries the budget shown beside it — the tuple the goal already has, or the project's law for its tier.",
+  },
+  "not-now": {
+    term: "Not now",
+    text: "A goal you paused, with the reason you gave and the date you gave it. It is a decision rather than something waiting on you, so it is here and not in the inbox. Return to queue lifts the pause; a pause that names a blocker lifts by itself when that blocker is done.",
+  },
+  "act-selected": {
+    term: "Acting on what you selected",
+    text: "One publication per goal, sent in the order shown, because this engine has no act over many goals. The first refusal stops the run and says which goal it stopped at in the engine's own words; the goals after it were never sent, and the page reads the ledger again to say what landed.",
+  },
+  "return-to-queue": {
+    term: "Return to queue",
+    text: "Lifts one pause. The goal goes back to approved where its approval still stands, and to the queue otherwise. A pause a seat made can be lifted here too; one that waits for a blocker returns by itself when every blocker is done.",
   },
   silence: {
     term: "If you do nothing",

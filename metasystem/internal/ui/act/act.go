@@ -1,8 +1,9 @@
 // Package act is the interface server's human hand on the ledger.
 //
-// Six verbs reach it, and every one of them is a verb a human performs on
+// Eight verbs reach it, and every one of them is a verb a human performs on
 // their own backlog: goal approve and goal unapprove admit and withdraw work,
-// goal set-priority places a goal in a band and orders it there, goal open is
+// goal park and goal unpark pause it and let it go again, goal set-priority
+// places a goal in a band and orders it there, goal open is
 // the intake act that creates one, and goal block and goal unblock write and
 // remove the edges that say which goal waits for which. Nothing here shells
 // out. A
@@ -31,6 +32,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -238,6 +240,45 @@ func (a Authority) Withdraw(id, because string) error {
 	return a.settle(request, result, publishErr, "goal unapprove")
 }
 
+// Park pauses one goal with the reason a human gave, and Unpark lifts a
+// park. They are the interface's "Not now" and its undo, admitted under
+// R-125-m1u: the engine takes this hand's session proof at the three rows the
+// ruling names and at no others, so a goal another pair claimed between the
+// page's read and this act is refused rather than displaced.
+//
+// The reason is required, exactly as the engine requires it: a pause without
+// a why is a stall in disguise, and a default invented here would be a why
+// nobody wrote.
+func (a Authority) Park(id, because string) error {
+	if strings.TrimSpace(id) == "" {
+		return refuse(KindRequest, "no-goal", "a park names one live goal")
+	}
+	if strings.TrimSpace(because) == "" {
+		return refuse(KindRequest, "no-reason", "park needs its reason — a pause without a why is a stall in disguise")
+	}
+	request, err := a.request()
+	if err != nil {
+		return err
+	}
+	result, publishErr := goal.Park(request, id, because)
+	return a.settle(request, result, publishErr, "goal park")
+}
+
+// Unpark returns a parked goal to the state it rests in: approved where its
+// approval still stands, queued otherwise. The engine decides which, and
+// refuses a park this hand may not lift.
+func (a Authority) Unpark(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return refuse(KindRequest, "no-goal", "an unpark names one live goal")
+	}
+	request, err := a.request()
+	if err != nil {
+		return err
+	}
+	result, publishErr := goal.Unpark(request, id)
+	return a.settle(request, result, publishErr, "goal unpark")
+}
+
 // SetPriority publishes goal set-priority for one goal: the band it is to be
 // in, and where in that band it stands.
 //
@@ -431,7 +472,12 @@ func (a Authority) request() (goal.VerbRequest, error) {
 	}
 	request := goal.VerbRequest{
 		Endpoint: endpoint,
-		Actor:    goal.Actor{Machine: machine, Lineage: a.lineage, Human: a.human},
+		// The branch-safety check a park runs, which is the command edge's
+		// own: a goal whose branch is not on origin is a goal a park would
+		// strand. It is carried on every request because it costs nothing
+		// until a park calls it, and only a park does.
+		ParkBranchCheck: goalbranch.ParkCheck(a.root, endpoint),
+		Actor:           goal.Actor{Machine: machine, Lineage: a.lineage, Human: a.human},
 		// The proof travels as the request's authority, never as a name: a
 		// human name without this object authorizes nothing.
 		Authority:   &a.proof,

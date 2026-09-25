@@ -69,7 +69,10 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		Rows:    plainRows(board.Rows),
 		Closed:  plainRows(board.Closed),
 		Journal: journal,
-		Human:   decisions.Standing{Proven: h.state(r).SignedIn},
+		// Where the register is from the checkout, which is the one root a
+		// destination in this payload can be opened against.
+		RegisterPath: h.info.RegisterPath,
+		Human:        decisions.Standing{Proven: h.state(r).SignedIn},
 	}
 	if h.info.Asks != nil {
 		asked, asksErr := h.info.Asks()

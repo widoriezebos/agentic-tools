@@ -55,6 +55,7 @@ export function Panel({
   modal = DEFAULT_MODALITY,
   sheetName,
   fields = [],
+  busy = false,
   onClose,
   children,
 }: {
@@ -86,6 +87,16 @@ export function Panel({
   modal?: Modality;
   /** What the capture calls this sheet while it is open. Its title, by default. */
   sheetName?: string;
+  /**
+   * Work is in flight that closing would not stop.
+   *
+   * A sheet that publishes one act per goal goes on publishing whether or not
+   * it is on screen, so while it is busy this panel cannot be dismissed:
+   * Cancel is disabled and Escape does nothing. The scrim never closed
+   * anything. The sheet says when it is busy; this only stops a human
+   * dismissing the one place that says so.
+   */
+  busy?: boolean;
   /** The fields "Ask about this" hands over, in the order the sheet asks them. */
   fields?: Field[];
   onClose: () => void;
@@ -108,10 +119,17 @@ export function Panel({
     };
   }, [opener]);
 
+  // The one way out, guarded once so Escape and Cancel cannot disagree.
+  const dismiss = () => {
+    if (!busy) {
+      onClose();
+    }
+  };
+
   const keys = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.stopPropagation();
-      onClose();
+      dismiss();
       return;
     }
     // Focus is held inside only while this is modal for the whole window.
@@ -181,7 +199,9 @@ export function Panel({
           )}
           <div className="ms-act-buttons">
             {act}
-            <Button onClick={onClose}>Cancel</Button>
+            <Button disabled={busy} onClick={dismiss}>
+              Cancel
+            </Button>
           </div>
           {note !== "" && <p className="ms-act-note">{note}</p>}
         </div>

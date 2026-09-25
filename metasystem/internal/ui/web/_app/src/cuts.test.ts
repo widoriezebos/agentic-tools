@@ -79,6 +79,9 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // The two edge routes name the goal that WAITS, whichever end of the
   // relation the page acted from, so a goal page reads one call site and not
   // two mirrored ones.
+  // The Decisions queue's park and unpark are here for the same reason: they
+  // are not board moves, but they are the same request to the same
+  // collection, and a second fetching file would be a second cut.
   // The query is Refresh's and nobody else's: it asks the server to fetch the
   // canonical branch once before it answers. It is the same resource and the
   // same call site — a read a human asked for, not a read anything repeats.
@@ -95,6 +98,8 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       "/priority",
       "/block",
       "/unblock",
+      "/park",
+      "/unpark",
     ],
   ],
   // The Project section's writes join its two reads at the one call site it
