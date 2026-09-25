@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3CPKG2AMTDPEB7P206QZBBD
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-25: "do a full UX design (come from human wants, needs,
@@ -232,3 +232,31 @@ Deferred, step 1 works without them: four expanded weeks may push Known
 problems far down, to be observed in a sitting; the fifth column's title
 differs between the two sets and is shown as supplied; the register holds
 44 rows, not 46.
+
+## Built (2026-09-25)
+
+Landed on ui-development and main; the page went live before the read
+because Wido was waiting to look at it, and the read's fixes landed as a
+second merge. Built by Claude on Opus, read by Codex on Sol under R-124:
+three material findings, fixed in one round. The full gate's coverage
+ratchet knew nothing of six interface packages, four of them from earlier
+slices this day, so the full gate would have refused the tree; all six
+now carry floors in both baselines, measured on this host, and the rule
+is recorded so a slice that adds a package registers its floor. "What it
+is" linked the repository's README on the self-hosted layout where the
+MetaSystem's own README, concepts and glossary live under the
+installation; the links follow the layout. An open problem row labelled
+its fifth field "Fix direction or lever" whatever the register's header
+said; the labels are the register's own.
+
+Later, when it hurts: four expanded weeks may push Known problems far
+down; the full gate itself, which needs a goal-bound proof launch, has
+not been run against this tree from this seat.
+
+Departures the read accepted: the register's checkout-relative path
+travels in the payload for "Open the register"; the help term is
+`application-section`; the page has its own row and open-row components
+in the inbox's idiom rather than the inbox's typed ones; "What it is"
+carries no help term; undated conclusions form a final group; the
+walkthrough takes a `-register` flag to show either column set; fixture
+ids are `g0-s…` so nothing is both live and concluded.
