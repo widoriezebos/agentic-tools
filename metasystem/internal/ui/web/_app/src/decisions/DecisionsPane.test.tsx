@@ -21,6 +21,14 @@ import type { Row } from "../backlog/api";
  * what an open row holds and what it offers, the register's own words.
  */
 
+/**
+ * The instant these renders read as now: the payload's own readAt, handed to
+ * the views rather than taken from the wall, so that an age the page says —
+ * "yesterday", "5 days", "review passed 6 days ago" — is asserted against the
+ * day the fixtures were written and holds on any day the test runs.
+ */
+const now = new Date("2026-09-25T11:00:00Z");
+
 /** A row of the ledger, as much of one as an open row reads. */
 function row(over: Partial<Row> = {}): Row {
   return {
@@ -248,6 +256,7 @@ function rendered(payload: Page, shown: Shown = {}): string {
           narrowing={shown.narrowing ?? noNarrowing}
           selected={shown.selected ?? []}
           signedIn={shown.signedIn}
+          now={now}
         />
       </TooltipPrimitive.Provider>
     </MemoryRouter>,
@@ -461,7 +470,7 @@ describe("an open row", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
         <TooltipPrimitive.Provider>
-          <Views page={page()} acts={refused} chosen="parked" openRow="g1-s45" />
+          <Views page={page()} acts={refused} chosen="parked" openRow="g1-s45" now={now} />
         </TooltipPrimitive.Provider>
       </MemoryRouter>,
     );
