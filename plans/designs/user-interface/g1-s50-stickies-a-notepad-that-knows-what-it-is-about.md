@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3CZM7BF6JTCRG6RDAN2YGAW
-- Status: draft
+- Status: accepted
 - Goals: browser-interface
 
 Wido, 2026-09-25: "I want a notepad of sorts where I can put reminders.
@@ -16,8 +16,15 @@ day. Author Fable. Step 1; every cite re-read at `8b7d09b7e`.
 1. **The interface keeps per-human state in the state root, outside git.**
    Overview's last-visit marker lives in `artifacts/agents/ui/visits.json`
    under one mutex with atomic writes (internal/ui/overview/visit.go:93-135);
-   the directory is ignored by git; the Fleet page keeps its fetch
-   metadata beside it (fleet/fetch.go:177). The human a request acts as
+   the directory is ignored by git but lies inside the checkout on both
+   layouts (user-interface-design.md, Workspace identity), where the
+   Partner's permission owner grants native reads (internal/ui/partner/permission.go:145)
+   and critics receive the repository as a read root
+   (scripts/agents/permissions/critic.json:2; internal/dispatch/envelope.go:46);
+   the Fleet page keeps its fetch metadata under the checkout root
+   (cmd/metasystem/ui_fleet.go:120). The kit resolves a registry home
+   for the account, outside any checkout, for seat registration
+   (internal/registry). The human a request acts as
    is known to the server: the signed-in session's, else the boot
    authority's, else the seat's configured handle
    (internal/ui/httpd/session.go:88-100).
@@ -68,34 +75,42 @@ Jobs:
 
 Decisions:
 
-- D1. **A sticky is private state, not a record.** One file,
-  `artifacts/agents/ui/stickies.json`, in the state root beside the
-  visit marker, one owner package with the same mutex and atomic write;
+- D1. **A sticky is private state, not a record, and lives outside the
+  checkout.** One file, `stickies.json`, in a workspace-keyed directory
+  under the account's registry home the kit already resolves
+  (internal/registry), never under the checkout or the state root, so
+  neither the Partner's native reads nor a critic's read root reaches it;
+  the build proves both by reading the grants. One owner package with
+  the visit marker's mutex and the kit's atomic writer
+  (internal/atomicfile);
   keyed by human; each sticky `{id, text, about: [{kind, id}], createdAt,
   updatedAt, doneAt}`; text at most 2000 characters, one human at most
-  500 stickies, both refused beyond with the words. Seats never read it;
-  the examiner's boundary is untouched because the file is neither a
-  record nor in git.
+  500 stickies, both refused beyond with the words. No seat or examiner has autonomous input from it; the only exposure
+  is the human's own view and the declared Partner capture of D5.
 - D2. **The panel is the notepad.** A sticky-note icon in the header
   beside the bell, with the count of open stickies; it opens a side
   panel in the notifications panel's chrome: the composer at the top,
   then open stickies newest first, then "Done (n)" behind a disclosure.
   A sticky is a card in the marker tokens the sign-in bar uses, so it
   reads as a note: the text, the about chips as links, the age, "Done"
-  and "Edit" and "Remove". Enter in the composer saves; Escape closes
-  the panel.
+  and "Edit" and "Remove". Enter in the composer saves and Shift+Enter breaks a line, as the
+  Partner's composer does; Escape closes the panel.
 - D3. **About is one click.** The composer offers the thing on screen as a
   chip already on: the goal on a goal page, the document on a document
-  page, nothing elsewhere; and "Add a goal…" through `GoalPicker`. A
+  page, nothing elsewhere; and "Add a goal…" through `GoalPicker`, adapted as the document
+  reader adapts it so a concluded goal can be named too. A
   sticky may be about several things. Records other than goals are
   picked only from their own page in step 1.
 - D4. **Stickies come back where they belong.** A goal page shows the open
   stickies about that goal under its header, with "Add a sticky" opening
   the panel with the goal chip on; the document reader the same for its
   path. The panel itself is the whole list.
-- D5. **The Partner sees the panel.** The page capture carries the open
-  stickies about the page's subject and the panel's count; a `stickies`
-  tool and acting on them are step 2.
+- D5. **The Partner sees what the human sees.** While the panel is open
+  the page capture carries the stickies it shows, text and about;
+  otherwise it carries the stickies shown on the page, the goal page's or
+  the document's; and always the open count. So "what did I want to
+  remember about the Fleet page" is answered by opening the panel and
+  asking. A `stickies` tool and acting on them are step 2.
 - D6. **Acts are the human's own, not the ledger's.** Create, edit, mark
   done or undone, remove: each a POST with the checkout-write policy, each
   answering the whole list; no sign-in demanded beyond the human the
@@ -116,8 +131,8 @@ POST /api/stickies/<id>           { "text"?: "…", "about"?: [ … ], "done"?: 
 POST /api/stickies/<id>/remove    {}                                         → the same
 ```
 
-`about.kind` is `goal` or `record`; an unknown kind or an empty id is
-refused. Order: open by `createdAt` descending, done by `doneAt`
+`about.kind` is `goal` or `record`, a record being a document path as
+the reader names it; an unknown kind or an empty id is refused. Order: open by `createdAt` descending, done by `doneAt`
 descending. The store's file is the whole truth; a missing file is no
 stickies. Route ids `stickies`, `add-sticky`, `edit-sticky`,
 `remove-sticky` in the describe table with `checkoutHand`.
@@ -133,8 +148,10 @@ owner brings at gate 5.
 ## 5. Verification and box
 
 Go: the store's create, edit, done, remove, order and both bounds, a
-missing file, per-human separation, the atomic write; the routes'
-policy, bodies and refusals. Frontend: the bell-side button and count,
+missing file, per-human separation, the atomic write, the home outside
+the checkout and a test that the Partner's permission owner and the
+critic's read root do not cover it; the routes' policy, bodies and
+refusals. Frontend: the bell-side button and count,
 the panel's composer with Enter and Escape, the about chip from a goal
 page and from a document page, the picker adding a goal, done and edit
 and remove, "Done (n)", the goal page's block and its "Add a sticky", the
@@ -153,3 +170,20 @@ bell set. Medium on D3 and D4: the "thing on screen" is derived from the
 route, which is exact for goals and documents and absent elsewhere.
 Weakest: private state on one host, which the master defers to the
 working-material owner; the page says a sticky lives on this seat.
+Medium on D1's home: the registry home is the one place outside every
+checkout the kit already owns, and the proof is a read of two grants.
+
+## Dispositions (Astra read, 2026-09-25, under R-124)
+
+Two material findings, four deferred; every code claim checked.
+
+| id | finding | fold |
+|---|---|---|
+| F1 | the state root is inside the checkout, which the Partner's native reads and a critic's read root cover, so "seats never read it" would be false from the first note | the store lives under the account's registry home, outside every checkout; the build proves neither grant reaches it |
+| F2 | a note about no subject, the Fleet page say, never reached the Partner, so J4's own example failed | the capture carries what the panel shows while it is open, else what the page shows |
+
+Folded because they cost nothing: Shift+Enter for a line break; the goal
+picker adapted so a concluded goal can be named; the Fleet metadata
+sentence corrected; "no autonomous seat or examiner input; only the
+declared Partner capture". Astra confirmed one file keyed by human under
+one lock is enough for two tabs and a restart.
