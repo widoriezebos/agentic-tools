@@ -33,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
 const agentReason = "the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem ui restart to act as yourself"
@@ -148,11 +149,26 @@ func main() {
 	if *fleetEvery > 0 {
 		go announceFixturePresence(presenceWatch, *fleetEvery)
 	}
+	startedAt := time.Now().UTC().Format(time.RFC3339)
 	info := httpd.Info{
-		Checkout: "/walkthrough", StartedAt: time.Now().UTC().Format(time.RFC3339),
+		Checkout: "/walkthrough", StartedAt: startedAt,
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
 		NotificationJournal: journal,
 		Observe:             state.observe,
+		// What this seat is. The real server resolves it from the layout and
+		// the adoption line; this one has neither, so it answers the same
+		// shape from the fixture's own facts — without it every page's header
+		// reads "Workspace unknown" over a 500, which is the one thing on
+		// these pages that is about the fixture rather than the interface.
+		Describe: func() (workspace.Workspace, error) {
+			return workspace.Workspace{
+				SchemaVersion: workspace.SchemaVersion,
+				Subject:       "walkthrough", Mode: workspace.ModeAdopted,
+				Checkout: checkout, Installation: checkout, StateRoot: checkout,
+				EngineBuild: "walkthrough", StartedAt: startedAt,
+				ExecutableDigest: "sha256:walkthrough", SourceHead: "c5d517f",
+			}, nil
+		},
 		// The fleet, invented: three machines, one of each standing, joined
 		// to the claims the canned ledger carries. -proven is the armed seat.
 		Fleet: fixtureFleet(*proven),
