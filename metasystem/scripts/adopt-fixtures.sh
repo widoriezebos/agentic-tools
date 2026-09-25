@@ -920,12 +920,15 @@ if adopt_leg default; then
   # This standalone refusal runs inside an outer proof. Give only its nested
   # launcher a private, config-authorized admission directory; the adopted
   # target still uses its actual Claude runtime and registration inventory.
+  # The launcher admits only a directory under its own temporary root, which
+  # is this scenario's bed TMPDIR, not the inherited progress tree under $tmp.
+  pruned_admission_dir=$(mktemp -d "${TMPDIR:?adopt default leg requires the fixture bed TMPDIR}/pruned-host-admission.XXXXXX")
   pruned_admission_root="$tmp/pruned-admission-authority"
   mkdir -p "$pruned_admission_root"
   printf 'metasystem.runtimes=fake\n' >"$pruned_admission_root/metasystem.conf"
   if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
       harness_fixture_without_outer_proof env -u METASYSTEM_VALIDATE_RELAUNCHED \
-      METASYSTEM_PROOF_ADMISSION_TEST_DIR="$tmp/pruned-host-admission" \
+      METASYSTEM_PROOF_ADMISSION_TEST_DIR="$pruned_admission_dir" \
       METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$pruned_admission_root" \
       bash "$pruned_tgt/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
       >"$tmp/dangling.out" 2>&1; then
