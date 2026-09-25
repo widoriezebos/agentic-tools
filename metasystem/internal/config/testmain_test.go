@@ -7,4 +7,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
-func TestMain(m *testing.M) { os.Exit(testenv.Main(m)) }
+// TestMain clears the seat presence keys the seat tests own, once, before
+// any parallel test starts, so an operator's shell cannot decide their input.
+func TestMain(m *testing.M) {
+	for _, key := range []string{SeatPresenceStaleMinutesKey, SeatPresenceNamespaceKey} {
+		_ = os.Unsetenv(EnvName(key))
+	}
+	os.Exit(testenv.Main(m))
+}

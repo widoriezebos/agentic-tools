@@ -174,6 +174,7 @@ func TestTailorConfInsertsMissingDurableKeys(t *testing.T) {
 // or an explicit empty model that launch settings refuse; none drops every
 // lane binding. Unrelated lane settings stay.
 func TestTailorConfRebindsLaneRuntimesAndModels(t *testing.T) {
+	t.Parallel()
 	const lanes = `launch.build.runtime=claude
 launch.build.model=claude-opus-5-5
 launch.build.effort=xhigh

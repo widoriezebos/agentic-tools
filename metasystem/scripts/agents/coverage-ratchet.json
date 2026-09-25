@@ -83,6 +83,7 @@
   "internal/returnschema": 76.3,
   "internal/run": 72.6,
   "internal/runtimes": 85.1,
+  "internal/seat": 75.0,
   "internal/spend": 87.3,
   "internal/stateroot": 86.0,
   "internal/steward": 74.0,

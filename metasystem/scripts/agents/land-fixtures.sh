@@ -847,6 +847,9 @@ arm_receipt_runner() { # checkout, engine
   mkdir -p "$registry"
   printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_file"
   prepare_receipt_environment "$identity_file" "$registry" "$checkout"
+  # Arming refuses without a delivery channel; only darwin has a platform
+  # fallback, so the fixture checkout names its own acknowledging notifier.
+  git -C "$checkout" config --local metasystem.steward.notify-command true
   if ! receipt_env_run "$engine" steward arm --repo "$checkout" >"$arm_log" 2>&1; then
     echo "land $fixture_scenario fixture: steward arm --repo failed for $checkout" >&2
     sed -n '1,240p' "$arm_log" >&2
@@ -1991,7 +1994,7 @@ SH
   commit_push_rc=$?
   set -e
   [[ $commit_push_rc == 1 ]] || { echo "commit --push range refusal exited $commit_push_rc" >&2; sed -n '1,180p' "$commit_push_output" >&2; exit 1; }
-  grep -Fq 'held refused: range-not-linear:' "$commit_push_output"
+  grep -Fq 'held refused: range-not-linear:' "$commit_push_output" || { echo "commit --push range refusal did not name range-not-linear" >&2; sed -n '1,180p' "$commit_push_output" >&2; exit 1; }
   [[ ! -s "$commit_push_pushes" ]] || {
     echo "commit --push ran git push after held refused:" >&2
     cat "$commit_push_pushes" >&2
@@ -2055,7 +2058,7 @@ SH
   rejected_rc=$?
   set -e
   [[ $rejected_rc == 1 ]] || { echo "commit --push rejection exited $rejected_rc" >&2; sed -n '1,180p' "$rejected_output" >&2; exit 1; }
-  grep -Fq 'held: ok 1 commit(s)' "$rejected_output"
+  grep -Fq 'held: ok 1 commit(s)' "$rejected_output" || { echo "commit --push rejection did not hold its commit first" >&2; sed -n '1,180p' "$rejected_output" >&2; exit 1; }
   grep -Fq '[rejected]' "$rejected_output"
   grep -Fq 'landing push failed at origin; the commit stands locally' "$rejected_output"
 
@@ -2076,7 +2079,7 @@ if [[ "$fixture_scenario" == abandonment-route-stack ]]; then
     cd "$leg_local"
     METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/commit.sh \
       --goal ship-widget --direct-fix register-carriage -m "lower lawful commit"
-  ) >"$leg_root/stack-l1.out" 2>&1
+  ) >"$leg_root/stack-l1.out" 2>&1 || { echo "two-commit stack lower commit failed" >&2; sed -n '1,180p' "$leg_root/stack-l1.out" >&2; exit 1; }
   move_goal_out_of_claimed_state "$leg_peer"
   METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal open --root "$leg_local" \
     --id ship-gadget --origin human --intent "Ship the second fixture gadget." --next "Land its record." \
@@ -2106,7 +2109,7 @@ if [[ "$fixture_scenario" == abandonment-route-stack ]]; then
   stack_rc=$?
   set -e
   [[ $stack_rc -ne 0 ]] || { echo "two-commit stack unexpectedly landed" >&2; exit 1; }
-  grep -Fq "held refused: goal-item-not-held: $stack_l1: goal ship-widget is abandoned at " "$stack_output"
+  grep -Fq "held refused: goal-item-not-held: $stack_l1: goal ship-widget is abandoned at " "$stack_output" || { echo "two-commit stack refusal did not name the abandoned lower item" >&2; sed -n '1,180p' "$stack_output" >&2; exit 1; }
   [[ ! -s "$stack_pushes" ]] || { echo "two-commit stack reached push" >&2; exit 1; }
 
   echo "abandonment-route-stack passed"
@@ -2125,7 +2128,7 @@ if [[ "$fixture_scenario" == abandonment-route-positive ]]; then
     cd "$leg_local"
     METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$positive_message" \
       --skip-transport --goal ship-widget --direct-fix register-carriage "$positive_record"
-  ) >"$positive_output" 2>&1
+  ) >"$positive_output" 2>&1 || { echo "abandonment positive route land failed" >&2; sed -n '1,180p' "$positive_output" >&2; exit 1; }
   positive_commit=$(git -C "$leg_local" rev-parse HEAD)
   grep -Fq 'held: ok 1 commit(s) above ' "$positive_output" || {
     echo "positive control did not report the held pass:" >&2
