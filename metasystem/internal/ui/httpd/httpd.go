@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
@@ -187,6 +188,17 @@ type Info struct {
 	// The caller knows both roots and derives the one path this payload can
 	// carry. An empty path leaves the composer its own default.
 	RegisterPath string
+	// KnownIssues answers the known-issues register, whole rows and all. It is
+	// the same read for every caller, through one package, so the page and
+	// anything else that reads it cannot disagree about what the register
+	// says. A nil KnownIssues is a build with no register reader, which costs
+	// the Application page its problems block and nothing else.
+	KnownIssues func() (knownissues.Register, error)
+	// KnownIssuesPath is where that register is relative to the CHECKOUT, for
+	// the reason RegisterPath is: the kit keeps its memory under the
+	// installation, and the document reader opens paths against the checkout.
+	// An empty path leaves the composer its own default.
+	KnownIssuesPath string
 	// Visit records that a human is looking at the landing page and answers
 	// the window it compares against: the end of their previous visit, or a
 	// day back on a first one. It is a function rather than a root because
@@ -202,6 +214,12 @@ type Info struct {
 	// entry would hide from them what they never saw there. A nil one is a
 	// build that keeps no marker, and the route answers it as a first visit.
 	VisitDecisions func(human string, now time.Time) (since time.Time, first bool, err error)
+	// VisitApplication is the same for the Application page, under an entry of
+	// that page's own, for the reason Decisions keeps one: three pages read on
+	// three rhythms, and a page that advanced another's entry would hide from
+	// a human what they never saw there. A nil one is a build that keeps no
+	// marker, and the route answers it as a first visit.
+	VisitApplication func(human string, now time.Time) (since time.Time, first bool, err error)
 	// Now is this server's clock, so that a test can say when a page was
 	// composed. A nil Now is time.Now, which is what every run uses.
 	Now func() time.Time
@@ -400,6 +418,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == fleetPath {
 		h.fleet(w)
+		return
+	}
+	if r.URL.Path == applicationPath {
+		h.application(w, r)
 		return
 	}
 	if r.URL.Path == partnerPath {
