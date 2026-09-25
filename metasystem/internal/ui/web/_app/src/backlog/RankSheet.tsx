@@ -81,6 +81,11 @@ export function RankSheet({
         { name: "Position in that priority", value: sequence },
       ]}
       goal={goal}
+      // This sheet offers the Partner nothing to write. A band is chosen from
+      // three, and a position in it is a number; neither is words, and a
+      // suggestion that replaced one with prose would be a suggestion the
+      // engine refuses.
+      writable={[]}
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}
       note={blocked === "" ? note(goal) : blocked}

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { seeing, type Seeing as Composed } from "./api";
 import { seeingLine } from "./capture";
-import { AttachmentChip } from "./Chips";
+import { AttachmentChip, DraftQuestions } from "./Chips";
 import { usePartner } from "./store";
 import { Sheet } from "../shell/Sheet";
 
@@ -51,7 +51,7 @@ export function Seeing() {
  * transcript, because everything a human touches belongs to one object.
  */
 export function SeeingRow() {
-  const { attachments, detach, moved, refresh } = usePartner();
+  const { attachments, detach, moved, refresh, sheetDraft } = usePartner();
   const [open, setOpen] = useState(false);
   return (
     <div className="ms-composer-seeing">
@@ -74,6 +74,10 @@ export function SeeingRow() {
           }}
         />
       ))}
+      {/* A sheet was handed over, so the two questions that ask the Partner to
+          write stand beside its chip. They are the ordinary suggested
+          questions: with an empty composer each one sends. */}
+      {sheetDraft !== null && <DraftQuestions />}
       {/* The page moved on since the Partner last looked; the control brings
           its view up to date for the next question, and the words say whose
           view that is (Wido, 2026-09-24: not "refresh", not "what I see"). */}

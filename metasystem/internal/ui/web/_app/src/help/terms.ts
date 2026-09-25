@@ -87,7 +87,8 @@ export type HelpId =
   | "arc"
   | "waits-for"
   | "holds"
-  | "stickies";
+  | "stickies"
+  | "suggestion";
 
 /** The name the popover heads itself with, and what that name is for. */
 export type Term = { term: string; text: string };
@@ -396,6 +397,11 @@ export const HELP: Record<HelpId, Term> = {
   chain: {
     term: "Chain",
     text: "The jobs that belong to one piece of work, newest first: a build, the critic that reviewed it, the round that answered the findings. Each carries the cap it reserved and when it ran, and never a consumed charge — settling what a job actually spent belongs to the engine that dispatched it.",
+  },
+  suggestion: {
+    term: "Suggestion",
+    text:
+      "Words your Project Partner offered for one field of the sheet you are filling in. It is an offer and nothing else: the field keeps what you wrote until you press Use this, and Undo puts back what was there for as long as the field still holds the suggestion. Saving is still yours, and the Partner never saves.",
   },
 };
 

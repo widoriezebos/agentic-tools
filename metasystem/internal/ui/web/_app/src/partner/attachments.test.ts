@@ -19,6 +19,9 @@ import {
 import { draftOf } from "./drafting";
 import type { Chosen } from "./subject";
 
+/** One opening of a sheet, which every draft in these tests is from. */
+const OPENING = "opening-1";
+
 /**
  * How long a chip lives, and who decides.
  *
@@ -49,8 +52,8 @@ const PASSAGE: Chosen = {
   anchor: "the-seam",
 };
 
-const DRAFT = draftOf("New goal", [{ name: "Id", value: "refund-worker" }]);
-const STATUS = draftOf("Change status", [{ name: "Status", value: "doing" }]);
+const DRAFT = draftOf(OPENING, "New goal", [{ name: "Id", value: "refund-worker" }]);
+const STATUS = draftOf(OPENING, "Change status", [{ name: "Status", value: "doing" }]);
 
 /** The three, in the order a human makes them: a card, a selection, a sheet. */
 function three(): readonly Attachment[] {
@@ -88,17 +91,19 @@ describe("what replaces what", () => {
   });
 
   it("replaces the draft of the same sheet, and only that one", () => {
-    const list = attach(attach(three(), attachedDraft(STATUS)), attachedDraft(draftOf("New goal", [
+    const list = attach(attach(three(), attachedDraft(STATUS)), attachedDraft(draftOf(OPENING, "New goal", [
       { name: "Id", value: "refund-worker" },
       { name: "Intent", value: "Refunds are issued within a day." },
     ])));
     expect(list).toHaveLength(4);
     expect(list[2].content).toEqual({
       sheet: "New goal",
+      opening: OPENING,
       fields: [
         { name: "Id", value: "refund-worker" },
         { name: "Intent", value: "Refunds are issued within a day." },
       ],
+      writable: [],
     });
     expect(list[3].content).toEqual(STATUS);
   });
@@ -145,7 +150,7 @@ describe("the × on a chip", () => {
 });
 
 describe("a draft, brought up to date from its own sheet", () => {
-  const written = draftOf("New goal", [{ name: "Id", value: "refund-worker-2" }]);
+  const written = draftOf(OPENING, "New goal", [{ name: "Id", value: "refund-worker-2" }]);
 
   it("replaces what was handed over with what the sheet says now", () => {
     expect(draftIn(refreshDraft(three(), written))?.fields[0].value).toBe("refund-worker-2");

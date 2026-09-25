@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 
 import { actingAs } from "./acting";
+import { FieldSuggestions, useOpening } from "../partner/Suggestion";
 import { BacklogError, editGoal, type Backlog, type Row } from "./api";
-import { blockedForEdit, changedIn, draftOf, editNote, labelRefusal } from "./editing";
+import { blockedForEdit, changedIn, draftOf, editNote, labelRefusal, type EditDraft } from "./editing";
 import { INTENT_RULE, NEXT_STEP_RULE } from "./opening";
 import { Panel } from "./Panel";
 import { Button } from "../shell/controls";
@@ -28,11 +29,32 @@ import { failureMessage } from "../shell/workspace";
  * the body rather than present with a stale copy of it, which is the whole
  * difference between an edit and an overwrite.
  *
+ * All three are fields the Project Partner may be offered words for, and the
+ * sheet is the one place that can say so: it owns the draft, so it owns both
+ * the list and the setter that writes into it. The goal this edit is of is
+ * handed over beside them and is not writable — it is what is being edited,
+ * not a field anybody rewrites here.
+ *
  * Every refusal but the two blanks and the label grammar is the engine's own
  * and is shown in its own words: an approval or a claim that landed since the
  * page read the row is refused at the tip, and the sheet says so with the
  * fields still filled in and nothing moved.
  */
+/**
+ * The three fields of this sheet the Partner may offer words for, in the order
+ * the sheet asks them, each beside the draft key it writes into.
+ *
+ * It is written once, here, because three things read it: what the sheet tells
+ * the store is writable, the setter that writes into one of them, and the link
+ * each label carries. A field named in one and missing from another would be a
+ * suggestion offered for something nothing can write.
+ */
+const WRITABLE_FIELDS: Record<string, keyof EditDraft> = {
+  Intent: "intent",
+  "Next step": "nextStep",
+  Labels: "labels",
+};
+
 export function EditSheet({
   goal,
   backlog,
@@ -50,6 +72,9 @@ export function EditSheet({
   // cannot drift apart while a human types.
   const [opened] = useState(() => draftOf(goal));
   const [draft, setDraft] = useState(opened);
+  // This opening of this sheet, minted once. It is what a suggestion for one of
+  // these fields belongs to.
+  const opening = useOpening();
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
   const { session, askToSignIn } = useSession();
@@ -61,6 +86,24 @@ export function EditSheet({
   // What this board already carries, which is what a half-typed label is
   // suggested from and what marks one nobody has used before.
   const known = [...new Set([...backlog.rows, ...backlog.closed].flatMap((row) => row.labels))].sort();
+
+  /**
+   * Put the Partner's words in one of the three, and answer what was there.
+   *
+   * It replaces the field's whole value, which is what a suggestion is: the
+   * field as the Partner would write it. What comes back is what the human had,
+   * and it is read here at the moment of the press rather than remembered
+   * earlier, so Undo puts back what was actually replaced.
+   */
+  const putWords = (field: string, text: string): string => {
+    const at = WRITABLE_FIELDS[field];
+    if (at === undefined) {
+      return "";
+    }
+    const was = draft[at];
+    setDraft({ ...draft, [at]: text });
+    return was;
+  };
 
   const send = () => {
     if (blocked !== "") {
@@ -97,6 +140,9 @@ export function EditSheet({
         { name: "Next step", value: draft.nextStep },
         { name: "Labels", value: draft.labels },
       ]}
+      opening={opening}
+      writable={Object.keys(WRITABLE_FIELDS)}
+      set={putWords}
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}
       note={blocked === "" ? editNote(goal.ref.id, edit) : blocked}
@@ -113,7 +159,10 @@ export function EditSheet({
       }
     >
       <div className="ms-act-field">
-        <label htmlFor="ms-edit-intent">Intent</label>
+        <div className="ms-act-label">
+          <label htmlFor="ms-edit-intent">Intent</label>
+          <FieldSuggestions opening={opening} field="Intent" value={draft.intent} />
+        </div>
         <textarea
           id="ms-edit-intent"
           rows={2}
@@ -129,7 +178,10 @@ export function EditSheet({
       </div>
 
       <div className="ms-act-field">
-        <label htmlFor="ms-edit-nextStep">Next step</label>
+        <div className="ms-act-label">
+          <label htmlFor="ms-edit-nextStep">Next step</label>
+          <FieldSuggestions opening={opening} field="Next step" value={draft.nextStep} />
+        </div>
         <textarea
           id="ms-edit-nextStep"
           rows={2}
@@ -145,7 +197,10 @@ export function EditSheet({
       </div>
 
       <div className="ms-act-field">
-        <label htmlFor="ms-edit-labels">Labels</label>
+        <div className="ms-act-label">
+          <label htmlFor="ms-edit-labels">Labels</label>
+          <FieldSuggestions opening={opening} field="Labels" value={draft.labels} />
+        </div>
         <TokenField
           id="ms-edit-labels"
           value={draft.labels}
