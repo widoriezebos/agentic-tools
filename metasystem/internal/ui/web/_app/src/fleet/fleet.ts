@@ -177,15 +177,40 @@ export function workingWords(machine: Machine, now: Date): string {
 }
 
 /**
- * How long the job in hand has run and the cap it reserved. A reservation
- * that has not begun says so rather than reading as work in flight.
+ * The three statuses a job still in flight can be in, and the one of them in
+ * which it is actually being worked.
+ *
+ * The other two are reservations. The engine stamps a start on a record it
+ * creates pending, so the status and not the stamp is what says whether
+ * anything is running — and a minute count taken from that stamp would say a
+ * job had been running for forty minutes while the line beside it said
+ * pending.
+ */
+const IN_FLIGHT = new Set(["pending-setup", "pending", "running"]);
+const RUNNING = "running";
+
+/**
+ * Where the job in hand stands and the cap it reserved. The status decides:
+ * a reservation says what it is, a job that has ended says how it ended, and
+ * only a running job is counted in minutes.
  */
 export function jobWords(job: WorkingJob, now: Date): string {
-  if (job.startedAt === null) {
+  if (job.status === "") {
     return "not started";
   }
-  const words = `running ${minutesWords(minutesBetween(job.startedAt, now))}`;
-  return job.capMinutes === null ? words : `${words}, cap ${minutesWords(job.capMinutes)}`;
+  const cap = job.capMinutes === null ? "" : `, cap ${minutesWords(job.capMinutes)}`;
+  if (!IN_FLIGHT.has(job.status)) {
+    // A job that has ended is what its status says. The cap it reserved is a
+    // bound on work that is over, and the chain carries it.
+    return job.status;
+  }
+  if (job.status !== RUNNING) {
+    return `${job.status}${cap}`;
+  }
+  if (job.startedAt === null) {
+    return `${RUNNING}${cap}`;
+  }
+  return `running ${minutesWords(minutesBetween(job.startedAt, now))}${cap}`;
 }
 
 /**

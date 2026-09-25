@@ -328,19 +328,38 @@ func PhaseWords(working *Working, now time.Time) string {
 	return words + " · " + JobWords(working.Job, now)
 }
 
-// JobWords is how long the job in hand has run and the cap it reserved. A
-// reservation that has not begun says so, rather than reading as work in
-// flight.
+// JobWords is where the job in hand stands and the cap it reserved.
+//
+// The STATUS decides, not the timestamp. A build record is created `pending`
+// with a startedAt stamped at the same instant (internal/dispatch/build.go:624,
+// 665), so a minute count taken from that stamp says a job has been running
+// for forty minutes while the block beside it says pending. A job that has not
+// reached `running` says what it is; a terminal one says how it ended; only a
+// running job is counted in minutes.
+//
+// The recorded stamp is untouched by this: it is still what the block shows
+// as the start and what the cap's own end is computed from.
 func JobWords(job WorkingJob, now time.Time) string {
-	started, err := parsePresenceTime(stampOf(job.StartedAt))
-	if err != nil {
+	if job.Status == "" {
 		return "not started"
 	}
-	words := "running " + MinutesWords(wholeMinutes(now.UTC().Sub(started)))
+	cap := ""
 	if job.CapMinutes != nil {
-		words += ", cap " + MinutesWords(int64(*job.CapMinutes))
+		cap = ", cap " + MinutesWords(int64(*job.CapMinutes))
 	}
-	return words
+	switch {
+	case !nonTerminalStatuses[job.Status]:
+		// A job that has ended is what its status says. The cap it reserved
+		// is a bound on work that is over, and the chain carries it.
+		return job.Status
+	case job.Status != RunningStatus:
+		return job.Status + cap
+	}
+	started, err := parsePresenceTime(stampOf(job.StartedAt))
+	if err != nil {
+		return RunningStatus + cap
+	}
+	return "running " + MinutesWords(wholeMinutes(now.UTC().Sub(started))) + cap
 }
 
 // CapWords is the one forward-looking sentence this surface says, and it

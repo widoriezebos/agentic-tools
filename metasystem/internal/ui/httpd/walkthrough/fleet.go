@@ -141,7 +141,11 @@ func fixtureJobs(now time.Time) seat.JobSet {
 		{Job: "j-31", Parent: "r-3", Role: "reviewer", Goal: "g1-s21", Round: 1, Status: "running",
 			CreatedAt: seat.FormatTime(now.Add(-8 * time.Minute)),
 			StartedAt: seat.FormatTime(now.Add(-8 * time.Minute)), CapMinutes: minutes(45)},
-		{Job: "r-4", Role: "code-critic", Goal: "g1-s26", Round: 2, Status: "running",
+		// A build record is created `pending` with a startedAt stamped at the
+		// same instant (internal/dispatch/build.go:624, 665). This is that
+		// shape: the row says pending, and no minute count is taken from a
+		// stamp that says nothing about work having begun.
+		{Job: "r-4", Role: "code-critic", Goal: "g1-s26", Round: 2, Status: "pending",
 			CreatedAt: seat.FormatTime(now.Add(-20 * time.Minute)),
 			StartedAt: seat.FormatTime(now.Add(-20 * time.Minute)), CapMinutes: minutes(60),
 			ReviewRoundLimit: rounds(3)},

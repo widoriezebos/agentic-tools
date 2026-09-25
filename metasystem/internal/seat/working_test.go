@@ -110,8 +110,56 @@ func TestAReservationThatHasNotStartedNamesNoStartAndNoCapEnd(t *testing.T) {
 	if working == nil || working.Job.StartedAt != nil || working.Job.CapEndsAt != nil {
 		t.Fatalf("an unstarted job = %+v; a cap that has not begun ends at no instant", working)
 	}
-	if PhaseWords(working, fixtureClock) != "code-critic round 1 on goal-a · not started" {
+	if PhaseWords(working, fixtureClock) != "code-critic round 1 on goal-a · pending-setup, cap 60 min" {
 		t.Fatalf("phase words = %q", PhaseWords(working, fixtureClock))
+	}
+}
+
+func TestAPendingJobIsNeverCountedInMinutesHoweverItIsStamped(t *testing.T) {
+	t.Parallel()
+	// Dispatch creates a build record `pending` with a startedAt stamped at
+	// the same instant (internal/dispatch/build.go:624, 665). Counting from
+	// that stamp said a job had been running for forty minutes while the
+	// block beside it said pending.
+	jobs := JobSet{Records: []JobRecord{
+		{Job: "job-new", Role: "implementer", Goal: "goal-a", Round: 1, Status: "pending",
+			CreatedAt: "2026-09-24T08:59:00Z", StartedAt: "2026-09-24T08:59:00Z", CapMinutes: intOf(120)},
+	}}
+	working, _ := ComposeWorking(jobs, workingBox)
+	if working == nil {
+		t.Fatal("no working")
+	}
+	if words := JobWords(working.Job, fixtureClock); words != "pending, cap 120 min" {
+		t.Fatalf("a pending job = %q", words)
+	}
+	// The stamp and the cap's own end are untouched: they are what the block
+	// shows as the start and the bound.
+	if working.Job.StartedAt == nil || *working.Job.StartedAt != "2026-09-24T08:59:00Z" {
+		t.Fatalf("startedAt = %v", working.Job.StartedAt)
+	}
+	if working.Job.CapEndsAt == nil || *working.Job.CapEndsAt != "2026-09-24T10:59:00Z" {
+		t.Fatalf("capEndsAt = %v", working.Job.CapEndsAt)
+	}
+}
+
+func TestAJobThatHasEndedSaysHowItEnded(t *testing.T) {
+	t.Parallel()
+	for _, status := range []string{"completed", "failed", "cancelled", "timeout"} {
+		job := WorkingJob{
+			ID: "job-done", Role: "implementer", Status: status,
+			StartedAt: presenceStamp("2026-09-24T08:00:00Z"), CapMinutes: intOf(90),
+		}
+		if words := JobWords(job, fixtureClock); words != status {
+			t.Fatalf("a %s job = %q", status, words)
+		}
+	}
+}
+
+func TestARunningJobWithNoStartIsStillRunningRatherThanCounted(t *testing.T) {
+	t.Parallel()
+	job := WorkingJob{ID: "job-odd", Role: "implementer", Status: "running", CapMinutes: intOf(45)}
+	if words := JobWords(job, fixtureClock); words != "running, cap 45 min" {
+		t.Fatalf("words = %q", words)
 	}
 }
 

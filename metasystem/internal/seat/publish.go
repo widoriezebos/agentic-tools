@@ -63,6 +63,12 @@ type JobSet struct {
 // still in flight (internal/dispatch/record.go:56-60).
 var nonTerminalStatuses = map[string]bool{"pending-setup": true, "pending": true, "running": true}
 
+// RunningStatus is the one of those three in which a job is actually being
+// worked. The other two are reservations: dispatch stamps a startedAt on a
+// record it creates `pending` (build.go:624, 665), so the status and not the
+// stamp is what says whether anything is running.
+const RunningStatus = "running"
+
 // NewestChain picks the newest non-terminal delegate job: newest by
 // createdAt, ties by job id, with the greater id winning so two readers of
 // the same records never disagree.

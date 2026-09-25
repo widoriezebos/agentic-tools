@@ -13,6 +13,7 @@ import {
   attemptWords,
   barShare,
   capWords,
+  jobWords,
   minutesWords,
   NO_BOX,
   phaseWords,
@@ -179,7 +180,33 @@ describe("the phase sentence", () => {
       job: { id: "j-22", role: "code-critic", status: "pending", startedAt: null, capMinutes: 60, capEndsAt: null },
     });
 
-    expect(phaseWords(held, now)).toBe("implementer round 2 on g1-s15 · not started");
+    expect(phaseWords(held, now)).toBe("implementer round 2 on g1-s15 · pending, cap 60 min");
+  });
+
+  /**
+   * The engine creates a build record pending with a start stamped at the
+   * same instant, so a minute count taken from that stamp said a job had been
+   * running for forty-one minutes while the line beside it said pending.
+   */
+  it("never counts a pending job in minutes, however it is stamped", () => {
+    const stamped = working({
+      job: { ...working().job, status: "pending" },
+    });
+
+    expect(jobWords(stamped.job, now)).toBe("pending, cap 120 min");
+    // The stamp and the bound are untouched by the wording.
+    expect(stamped.job.startedAt).toBe(at(-41));
+    expect(capWords(stamped.job, now)).toBe("its cap ends in 79 min");
+  });
+
+  it("says how a job that has ended, ended", () => {
+    for (const status of ["completed", "failed", "cancelled", "timeout"]) {
+      expect(jobWords({ ...working().job, status }, now)).toBe(status);
+    }
+  });
+
+  it("says a running job with no start is running rather than counting from nothing", () => {
+    expect(jobWords({ ...working().job, status: "running", startedAt: null }, now)).toBe("running, cap 120 min");
   });
 
   it("is idle where a machine carries nothing", () => {
