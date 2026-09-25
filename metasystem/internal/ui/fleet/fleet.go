@@ -35,6 +35,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
@@ -71,6 +72,11 @@ type Page struct {
 	// Machines is one row per machine: this seat first, then machines with a
 	// flagged hold, then reachable, then unreachable, then unknown.
 	Machines []Machine `json:"machines"`
+	// Launches is every launch record on this host, newest first, so a page
+	// opened after a launch began still sees a running or a failed one. It is
+	// never composed from: a launch is a record the verb writes, and this
+	// page carries it rather than judging it.
+	Launches []launch.Record `json:"launches"`
 }
 
 // Copy is what the fetch owner knows about the presence copy this page was
@@ -246,6 +252,10 @@ type Inputs struct {
 	// Running and RunningProblem are seat.NewestChain over the local jobs.
 	Running        *seat.Chain
 	RunningProblem string
+	// Launches is the launch records this host holds, already reconciled by
+	// the caller: a running record whose process is dead is read as failed,
+	// and this package never decides that for itself.
+	Launches []launch.Record
 }
 
 // Compose is the whole page, from the inputs above, as they stood at now.
@@ -312,7 +322,18 @@ func Compose(in Inputs, now time.Time) Page {
 		This:          thisSeat(in, now),
 		NeedsYou:      needs,
 		Machines:      machines,
+		Launches:      launches(in.Launches),
 	}
+}
+
+// launches is the list as the payload carries it: never nil, so a browser
+// reads an empty array rather than a null it has to tell from an absent
+// field.
+func launches(records []launch.Record) []launch.Record {
+	if records == nil {
+		return []launch.Record{}
+	}
+	return records
 }
 
 // claimsOf reads the holders out of ONE observation's board projection, so a

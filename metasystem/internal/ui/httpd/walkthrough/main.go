@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
@@ -172,6 +173,14 @@ func main() {
 		// The fleet, invented: three machines, one of each standing, joined
 		// to the claims the canned ledger carries. -proven is the armed seat.
 		Fleet: fixtureFleet(*proven),
+		// Launching, invented: this fixture clones nothing and spawns
+		// nothing, so the act answers with the running record the page
+		// already shows. What it proves in a browser is the sheet, its
+		// validation and the card — not the verb, which is the engine's own
+		// tests' to prove.
+		Launch: func(_ *session.Session, asked launch.Request) (launch.Record, error) {
+			return fixtureLaunchOf(asked, time.Now().UTC()), nil
+		},
 		// The browsers holding the stream open, which the fleet event rides
 		// back to. It is the same registration the engine's own server uses
 		// as its connection signal; -fleet-every is what announces on it.

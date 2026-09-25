@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 )
 
 // Lines is the whole reading, one row per line.
@@ -28,7 +30,34 @@ func (p Page) Lines(now time.Time) []string {
 	for _, machine := range p.Machines {
 		lines = append(lines, "- "+p.machineLine(machine))
 	}
+	// The launches come after the machines because that is what they are:
+	// a machine that is joining is not a seat of this fleet yet, and a launch
+	// that failed is a directory on this host rather than a machine. Only the
+	// two a human can still act on are printed — a launch that finished is
+	// the row above it.
+	for _, record := range p.Launches {
+		if record.Outcome != launch.OutcomeRunning && record.Outcome != launch.OutcomeFailed {
+			continue
+		}
+		lines = append(lines, "- Launch: "+launchLine(record))
+	}
 	return lines
+}
+
+// launchLine is one launch in words: what it is making, how far it got, and
+// the owner's words where it stopped.
+func launchLine(record launch.Record) string {
+	parts := []string{record.Machine, record.Outcome, "into " + record.Destination}
+	for _, step := range record.Steps {
+		if step.Outcome == launch.StepFailed {
+			parts = append(parts, "stopped at "+step.Step+": "+step.Words)
+			break
+		}
+	}
+	if record.Outcome == launch.OutcomeRunning && len(record.Steps) > 0 {
+		parts = append(parts, "at "+record.LastStep())
+	}
+	return strings.Join(parts, "; ")
 }
 
 // Source is what a reading of this page is stamped with: where the presence

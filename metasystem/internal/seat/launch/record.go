@@ -144,7 +144,7 @@ func Dir(checkout string) string {
 // rather than reaching the filesystem with it.
 func Path(checkout, id string) (string, error) {
 	if !ValidLaunchID(id) {
-		return "", fmt.Errorf("SEAT_LAUNCH_ID_INVALID: %q is not a launch id", id)
+		return "", refuse(CodeIDInvalid, "%q is not a launch id", id)
 	}
 	return filepath.Join(Dir(checkout), id+".json"), nil
 }

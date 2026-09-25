@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
@@ -216,6 +217,20 @@ func runUI(verb string, args []string) int {
 		}
 		presenceWatch := fleet.NewWatch()
 		presence := fleetFetcher(roots, presenceWatch, presenceRun)
+		// A launch that died while no server was running is reconciled once,
+		// here, so the first page load after a restart reads it as failed
+		// rather than as a launch nobody is running. Reading the records is
+		// the only moment anything learns that a launch died.
+		_, _ = launch.Reconcile(roots.Checkout, launch.Live, time.Now().UTC())
+		// A launch record that changed is a cause of the `fleet` event, and
+		// it rides the poll tick the presence owner already has: a launch
+		// rewrites its record after every step, and a page that learned of it
+		// only on the fetch cadence would show a clone finishing a minute
+		// after it did.
+		launchWatch := &fleet.LaunchWatch{
+			Fingerprint: func() string { return fleet.FingerprintOf(launch.Dir(roots.Checkout)) },
+			Announce:    presenceWatch.Announce,
+		}
 		presenceContext, stopPresence := context.WithCancel(ctx)
 		defer stopPresence()
 		presenceStopped := make(chan struct{})
@@ -227,6 +242,16 @@ func runUI(verb string, args []string) int {
 			ticks := time.NewTicker(fleet.PollInterval)
 			defer ticks.Stop()
 			presence.Run(presenceContext, ticks.C)
+		}()
+		launchStopped := make(chan struct{})
+		go func() {
+			defer close(launchStopped)
+			if !owned.Wait(presenceContext) {
+				return
+			}
+			ticks := time.NewTicker(fleet.PollInterval)
+			defer ticks.Stop()
+			launchWatch.Run(presenceContext, ticks.C)
 		}()
 
 		// advance carries this clone's accepted ref forward at once, which a
@@ -366,6 +391,11 @@ func runUI(verb string, args []string) int {
 					// own.
 					Fleet: fleetReader(roots, presence.Succeeded, presence.State),
 					Watch: presenceWatch,
+					// One machine of this fleet joining on this host. It is
+					// the signed-in human's act and nothing weaker, which the
+					// route checks for itself: a launch spends disk, a build
+					// and their own authorization.
+					Launch: launchStarter(roots),
 					Project: func() (project.Pane, error) {
 						return project.ReadPane(projectRoots(roots), time.Now().UTC())
 					},
@@ -527,12 +557,14 @@ func runUI(verb string, args []string) int {
 				<-loopStopped
 				stopPresence()
 				<-presenceStopped
+				<-launchStopped
 			},
 		})
 		stopLoop()
 		<-loopStopped
 		stopPresence()
 		<-presenceStopped
+		<-launchStopped
 		if err != nil {
 			return refuse(lifecycle.ServeFailure(roots.StateRoot, err))
 		}

@@ -335,6 +335,17 @@ var Rows = []Row{
 	{Code: "SEAT_MACHINE_NICKNAME_INVALID", Owner: "internal/seat", Site: "record.go:43", Shape: Question},
 	{Code: "SEAT_PRESENCE_MALFORMED", Owner: "internal/seat", Site: "record.go:114", Shape: Question},
 	{Code: "SEAT_PRESENCE_CONFLICT", Owner: "internal/seat", Site: "publish.go:286", Shape: Question},
+	{Code: "SEAT_LAUNCH_NICKNAME_INVALID", Owner: "internal/seat/launch", Site: "preflight.go:75", Shape: Question},
+	{Code: "SEAT_LAUNCH_NICKNAME_TAKEN", Owner: "internal/seat/launch", Site: "preflight.go:89", Shape: Question},
+	{Code: "SEAT_LAUNCH_DESTINATION_EXISTS", Owner: "internal/seat/launch", Site: "preflight.go:101", Shape: Question},
+	{Code: "SEAT_LAUNCH_DESTINATION_INSIDE_A_CHECKOUT", Owner: "internal/seat/launch", Site: "preflight.go:118", Shape: Question},
+	{Code: "SEAT_LAUNCH_RUNNING", Owner: "internal/seat/launch", Site: "lock.go:51", Shape: Question},
+	{Code: "SEAT_LAUNCH_DISK_SHORT", Owner: "internal/seat/launch", Site: "sequence.go:291", Shape: Question},
+	{Code: "SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE", Owner: "internal/seat/launch", Site: "sequence.go:472", Shape: Question},
+	{Code: "SEAT_LAUNCH_WORD_REQUIRED", Owner: "internal/seat/launch", Site: "sequence.go:566", Shape: Question},
+	{Code: "SEAT_LAUNCH_WORD_INVALID", Owner: "cmd/metasystem", Site: "ui_launch.go:42", Shape: Question},
+	{Code: "SEAT_LAUNCH_REVIEW_DATE_PAST", Owner: "cmd/metasystem", Site: "ui_launch.go:49", Shape: Question},
+	{Code: "SEAT_LAUNCH_ID_INVALID", Owner: "internal/seat/launch", Site: "record.go:147", Shape: Question},
 }
 
 var Exclusions = []Exclusion{

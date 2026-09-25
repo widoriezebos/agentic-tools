@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -54,6 +55,12 @@ func fleetReader(
 		machine, enrolled := seat.Machine(roots.Checkout)
 		publication, publicationProblem := fleet.ReadPublication(roots.Checkout)
 		running, runningProblem := fleet.ReadRunning(roots.Checkout)
+		// The launches this host holds, reconciled on the way in: a running
+		// record whose process is dead is marked failed here, because a read
+		// of the records is the only moment anything learns that a launch
+		// died. A directory that cannot be read is a page with no launches
+		// on it rather than a page that will not load.
+		launches, _ := launch.Reconcile(roots.Checkout, launch.Live, now)
 		return fleet.Compose(fleet.Inputs{
 			This: machine, NoNickname: !enrolled,
 			Presence: presence, PresenceProblem: problem, Copy: copied,
@@ -63,6 +70,7 @@ func fleetReader(
 			Publication: publication, PublicationProblem: publicationProblem,
 			Health:  fleet.ReadHealth(roots.Checkout),
 			Running: running, RunningProblem: runningProblem,
+			Launches: launches,
 		}, now), nil
 	}
 }

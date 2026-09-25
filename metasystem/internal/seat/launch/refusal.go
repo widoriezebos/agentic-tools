@@ -39,6 +39,15 @@ const (
 	// CodeWordRequired is a resume that reaches enrollment without the word
 	// and the date, which the record never held.
 	CodeWordRequired = "SEAT_LAUNCH_WORD_REQUIRED"
+	// CodeWordInvalid is a word and a date that do not travel together, or a
+	// date that is not one, in the arming validator's own words.
+	CodeWordInvalid = "SEAT_LAUNCH_WORD_INVALID"
+	// CodeReviewDatePast is a review-by date already behind us, which is this
+	// side's refusal and not the engine's.
+	CodeReviewDatePast = "SEAT_LAUNCH_REVIEW_DATE_PAST"
+	// CodeIDInvalid is a launch id that is not the one path segment a record
+	// is named by.
+	CodeIDInvalid = "SEAT_LAUNCH_ID_INVALID"
 )
 
 // Refusal is one of the codes above with the sentence a human acts on.

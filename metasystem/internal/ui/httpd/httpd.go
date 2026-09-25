@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/manifest"
@@ -60,6 +61,15 @@ type Info struct {
 	// cannot answer for the fleet, which the route says and which costs the
 	// board and the Overview their holder flags and nothing else.
 	Fleet func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error)
+	// Launch starts one machine of this fleet joining on this host: it
+	// judges the request the verb's own way, writes the launch record before
+	// anything runs, and spawns `seat launch` detached under the server's
+	// ownership gate with a scrubbed environment. It answers with the record
+	// as it was written, and everything after it reaches the page through
+	// the fleet resource. A launch.Refusal carries the status the route
+	// answers with; anything else is a 500. A nil Launch is an engine that
+	// cannot launch a machine, which the route says.
+	Launch func(signed *session.Session, asked launch.Request) (launch.Record, error)
 	// Watch is the bridge between the open notification streams and the
 	// presence fetch owner: the streams are the owner's connection signal,
 	// and the one `fleet` event rides back to them after every attempt. A nil
