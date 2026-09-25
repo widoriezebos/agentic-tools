@@ -216,9 +216,11 @@ under the server's ownership gate with the scrubbed environment, and
 answers 202 with the record. The lock inside the verb decides the race
 between two requests; the loser's record is marked failed with the
 winner's nickname. The word travels to the verb's argument list and
-nowhere else: not the record, not the capture, not a log. `GET /api/fleet` gains `launches`: every record on
-this host, newest first, so a page opened later still sees a running or a
-failed launch.
+nowhere else: not the record, not the capture, not a log. `GET /api/fleet` gains `launches`: every record this
+interface checkout started, newest first, so a page opened later still sees
+a running or a failed launch. Records live per interface checkout; the
+host lock is what two checkouts share, and its refusal names the other
+checkout's launch by nickname and id.
 
 On the Fleet page, in the fleet block's header, one button: **Launch a
 machine**. It opens a work-area sheet (the g1-s35 sheet, so the Partner
