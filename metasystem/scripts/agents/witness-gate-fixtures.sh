@@ -115,12 +115,13 @@ if [[ -n "${METASYSTEM_PROOF_CONTROL_ROOT:-}" || -n "${METASYSTEM_PROOF_ATTEMPT:
     exec bash "$root/scripts/agents/go-gate-impl.sh" "$@"
   fi
   source "$root/scripts/agents/fixture-budget.sh"
-  harness_fixture_exec_without_outer_proof env \
+  harness_fixture_exec_without_outer_proof env METASYSTEM_GATE_WITNESS="${METASYSTEM_GATE_WITNESS:-}" \
     METASYSTEM_PROOF_AUTH_BIN="$root/scripts/agents/fixture-worker-auth.sh" \
     bash "$root/scripts/agents/go-gate-impl.sh" "$@"
 fi
 source "$root/scripts/agents/fixture-budget.sh"
-harness_fixture_exec_without_outer_proof bash "$root/scripts/agents/go-gate-impl.sh" "$@"
+harness_fixture_exec_without_outer_proof env METASYSTEM_GATE_WITNESS="${METASYSTEM_GATE_WITNESS:-}" \
+  bash "$root/scripts/agents/go-gate-impl.sh" "$@"
 SH
   cat >"$leg_tree/scripts/agents/fixture-worker-auth.sh" <<'SH'
 #!/usr/bin/env bash
@@ -143,6 +144,21 @@ SH
   cat >"$leg_bin/go" <<'GO'
 #!/usr/bin/env bash
 set -euo pipefail
+case "${1:-}" in
+  build|run|list)
+    go_command=$1
+    shift
+    if [[ ${1:-} == -p* ]]; then
+      [[ ${1:-} =~ ^-p=[1-9][0-9]*$ ]] \
+        || { echo "fixture go: unsupported parallelism option: ${1:-}" >&2; exit 86; }
+      shift
+    fi
+    for go_argument in "$@"; do
+      [[ $go_argument != -p* ]] \
+        || { echo "fixture go: unsupported parallelism option: $go_argument" >&2; exit 86; }
+    done
+    set -- "$go_command" "$@" ;;
+esac
 case "${1:-}" in
   build)
     [[ $# -eq 4 && ${2:-} == -o && -n ${3:-} && ${4:-} == ./cmd/metasystem ]] \
@@ -516,10 +532,11 @@ git -C "$dirty_project" commit -qm baseline
 (
   cd "$leg_tree"
   export PATH="$leg_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine"
+  export WITNESS_FIXTURE_EXPECT_GOMODCACHE="${GOMODCACHE:-}"
   root=$(pwd -P)
   cd "$root"
   delivery_contract=0
-  WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh
+  WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh || exit 1
   [[ -z "${METASYSTEM_GATE_WITNESS_EXPORT:-}" ]] || exit 1
   grep -Eq '"manifestDigest":"[a-f0-9]{64}"' "$METASYSTEM_GATE_WITNESS"
   grep -Fq '"summary":"full gate in frozen proof tree"' "$METASYSTEM_GATE_WITNESS"
@@ -536,7 +553,7 @@ printf 'dirty parent input\n' >"$dirty_project/application.txt"
   root=$(pwd -P)
   cd "$root"
   delivery_contract=0
-  WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh
+  WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh || exit 1
   [[ -z "${METASYSTEM_GATE_WITNESS_EXPORT:-}" ]]
   grep -Eq '"manifestDigest":"[a-f0-9]{64}"' "$METASYSTEM_GATE_WITNESS"
   "$source_engine" gate witness-verify --root "$root" --witness "$METASYSTEM_GATE_WITNESS" >/dev/null

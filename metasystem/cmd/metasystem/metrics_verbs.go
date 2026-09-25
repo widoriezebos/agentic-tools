@@ -11,21 +11,20 @@ import (
 
 var generateMetricsReport = metrics.Report
 
-func reportConcludedGoal(root, id string, warnings io.Writer) {
-	result, err := generateMetricsReport(metrics.Options{Root: root, GoalID: id})
-	if err == nil {
-		return
-	}
-	target := result.Target
-	if target == "" {
-		target = metrics.GoalReportTarget(root, id)
-	}
-	fmt.Fprintf(warnings, "warning: goal %s concluded, but its metrics report could not be written to %s: %v\n", id, target, err)
+func reportAfterConfirmedDone(code int, root, id string, warnings io.Writer) int {
+	return reportAfterConfirmedDoneWithReporter(code, root, id, warnings, generateMetricsReport)
 }
 
-func reportAfterConfirmedDone(code int, root, id string, warnings io.Writer) int {
+func reportAfterConfirmedDoneWithReporter(code int, root, id string, warnings io.Writer, reporter func(metrics.Options) (metrics.Result, error)) int {
 	if code == 0 {
-		reportConcludedGoal(root, id, warnings)
+		result, err := reporter(metrics.Options{Root: root, GoalID: id})
+		if err != nil {
+			target := result.Target
+			if target == "" {
+				target = metrics.GoalReportTarget(root, id)
+			}
+			fmt.Fprintf(warnings, "warning: goal %s concluded, but its metrics report could not be written to %s: %v\n", id, target, err)
+		}
 	}
 	return code
 }

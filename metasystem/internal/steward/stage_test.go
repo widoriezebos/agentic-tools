@@ -9,7 +9,8 @@ import (
 
 // stagedRepo carries the role and permissions files staging digests.
 func stagedRepo(t *testing.T) string {
-	root := gitRepoWithCurrentGoal(t)
+	root := t.TempDir()
+	writeLedger(t, root, "# Goals\n\n## Current goal: fix-it — Repair the thing\n- Origin: main\n- Next step: Repair it.\n")
 	write := func(rel, body string) {
 		path := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

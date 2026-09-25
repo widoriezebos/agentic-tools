@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
 
 func rearmGit(t *testing.T, root string, args ...string) string {
@@ -29,117 +30,6 @@ func rearmGit(t *testing.T, root string, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
-}
-
-func failRearmGitSubcommand(t *testing.T, subcommand string) {
-	failRearmGitSubcommandWithStatus(t, subcommand, 128)
-}
-
-func failRearmGitSubcommandWithStatus(t *testing.T, subcommand string, status int) {
-	t.Helper()
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	wrapper := filepath.Join(dir, "git")
-	script := `#!/usr/bin/env bash
-set -euo pipefail
-for argument in "$@"; do
-  if [[ "$argument" == "${REARM_FAIL_GIT_SUBCOMMAND:?}" ]]; then
-    printf '%s\n' 'fatal: not a git repository (or any of the parent directories)' >&2
-    exit "${REARM_FAIL_GIT_STATUS:?}"
-  fi
-done
-exec "${REARM_REAL_GIT:?}" "$@"
-`
-	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("REARM_REAL_GIT", realGit)
-	t.Setenv("REARM_FAIL_GIT_SUBCOMMAND", subcommand)
-	t.Setenv("REARM_FAIL_GIT_STATUS", fmt.Sprint(status))
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
-func failRearmGitSubcommandOnce(t *testing.T, subcommand string) string {
-	t.Helper()
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	wrapper := filepath.Join(dir, "git")
-	marker := filepath.Join(dir, "failed")
-	calls := filepath.Join(dir, "calls")
-	script := `#!/usr/bin/env bash
-set -euo pipefail
-for argument in "$@"; do
-  if [[ "$argument" == "${REARM_FAIL_GIT_SUBCOMMAND:?}" ]]; then
-    printf '%s\n' "$*" >>"${REARM_GIT_CALLS:?}"
-    if [[ ! -e "${REARM_GIT_FAILED_ONCE:?}" ]]; then
-      : >"${REARM_GIT_FAILED_ONCE:?}"
-      printf '%s\n' 'fatal: not a git repository (or any of the parent directories)' >&2
-      exit 128
-    fi
-  fi
-done
-exec "${REARM_REAL_GIT:?}" "$@"
-`
-	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("REARM_REAL_GIT", realGit)
-	t.Setenv("REARM_FAIL_GIT_SUBCOMMAND", subcommand)
-	t.Setenv("REARM_GIT_FAILED_ONCE", marker)
-	t.Setenv("REARM_GIT_CALLS", calls)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return calls
-}
-
-func stallRearmGitSubcommandOnce(t *testing.T, subcommand string) (string, string) {
-	t.Helper()
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	wrapper := filepath.Join(dir, "git")
-	marker := filepath.Join(dir, "stalled")
-	calls := filepath.Join(dir, "calls")
-	started := filepath.Join(dir, "started")
-	release := filepath.Join(dir, "release")
-	if err := syscall.Mkfifo(started, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := syscall.Mkfifo(release, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	script := `#!/usr/bin/env bash
-set -euo pipefail
-for argument in "$@"; do
-  if [[ "$argument" == "${REARM_STALL_GIT_SUBCOMMAND:?}" ]]; then
-    printf '%s\n' "$*" >>"${REARM_GIT_CALLS:?}"
-    if [[ ! -e "${REARM_GIT_STALLED_ONCE:?}" ]]; then
-      : >"${REARM_GIT_STALLED_ONCE:?}"
-      printf started >"${REARM_GIT_STARTED_FIFO:?}"
-      IFS= read -r answer <"${REARM_GIT_RELEASE_FIFO:?}"
-    fi
-  fi
-done
-exec "${REARM_REAL_GIT:?}" "$@"
-`
-	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("REARM_REAL_GIT", realGit)
-	t.Setenv("REARM_STALL_GIT_SUBCOMMAND", subcommand)
-	t.Setenv("REARM_GIT_STALLED_ONCE", marker)
-	t.Setenv("REARM_GIT_CALLS", calls)
-	t.Setenv("REARM_GIT_STARTED_FIFO", started)
-	t.Setenv("REARM_GIT_RELEASE_FIFO", release)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return calls, started
 }
 
 func writeRearmFile(t *testing.T, path, content string) {
@@ -164,6 +54,7 @@ func initRearmRepo(t *testing.T) string {
 	t.Helper()
 	root := canonicalPath(t.TempDir())
 	rearmGit(t, root, "init", "-q", "-b", "trunk")
+	rearmGit(t, root, "config", "--local", "maintenance.auto", "false")
 	rearmGit(t, root, "config", "user.name", "test")
 	rearmGit(t, root, "config", "user.email", "test@example.invalid")
 	rearmGit(t, root, "config", "metasystem.steward.notify-command", "true")
@@ -171,7 +62,7 @@ func initRearmRepo(t *testing.T) string {
 	return root
 }
 
-func TestSourceAtDestinationDecidesDriftByKindAndContent(t *testing.T) {
+func TestGitProjectionAdapterPreservesArchivedKindsModesAndSymlinks(t *testing.T) {
 	outer := canonicalPath(t.TempDir())
 	rearmGit(t, outer, "init", "-q", "-b", "trunk")
 	rearmGit(t, outer, "config", "user.name", "test")
@@ -190,14 +81,14 @@ func TestSourceAtDestinationDecidesDriftByKindAndContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalDiff, originalArchive := projectionDiffRunner, archivedEngineDigester
-	t.Cleanup(func() { projectionDiffRunner, archivedEngineDigester = originalDiff, originalArchive })
+	deps := defaultRearmResolverDeps()
+	originalDiff, originalArchive := deps.projectionDiff, deps.archivedEngineDigest
 	diffCalls, archiveCalls := 0, 0
-	projectionDiffRunner = func(ctx context.Context, root, from, to string, progress func()) ([]byte, error) {
+	deps.projectionDiff = func(ctx context.Context, root, from, to string, progress func()) ([]byte, error) {
 		diffCalls++
 		return originalDiff(ctx, root, from, to, progress)
 	}
-	archivedEngineDigester = func(ctx context.Context, root, commit string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
+	deps.archivedEngineDigest = func(ctx context.Context, root, commit string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
 		archiveCalls++
 		return originalArchive(ctx, root, commit, loaded, clock, seconds)
 	}
@@ -242,7 +133,7 @@ func TestSourceAtDestinationDecidesDriftByKindAndContent(t *testing.T) {
 			}
 			before, _ := os.ReadDir(tempRoot)
 			diffCalls, archiveCalls = 0, 0
-			err := compareEngineProjection(context.Background(), installation, source, destination, policy)
+			err := compareEngineProjectionWithDeps(deps, context.Background(), installation, source, destination, policy, SystemRearmClock(), RearmResolveSeconds(installation))
 			if (err == nil) != tc.equal || diffCalls != 1 || archiveCalls != map[bool]int{true: 2}[tc.indexOnly] {
 				t.Fatalf("comparison: err=%v diffs=%d archives=%d equal=%t", err, diffCalls, archiveCalls, tc.equal)
 			}
@@ -262,7 +153,7 @@ func TestSourceAtDestinationDecidesDriftByKindAndContent(t *testing.T) {
 
 func buildFakeRunner(t *testing.T, output, stamp string) {
 	t.Helper()
-	cmd := exec.Command("go", "build", "-modcacherw", "-buildvcs=false",
+	cmd := exec.Command("go", "build", "-buildvcs=false",
 		"-ldflags", "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+stamp,
 		"-o", output, "./testdata/fakerunner")
 	out, err := cmd.CombinedOutput()
@@ -279,19 +170,18 @@ type rearmBed struct {
 func newRearmBed(t *testing.T, startRunner bool) rearmBed {
 	t.Helper()
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
-	root := initRearmRepo(t)
+	root := canonicalPath(t.TempDir())
+	writeRearmFile(t, filepath.Join(root, "go.mod"), "module fixture.invalid/rearm\n")
+	writeRearmFile(t, filepath.Join(root, "cmd", "surface.txt"), "second\n")
 	reapStewardRunnerFixture(t, root)
-	first := commitRearmTree(t, root, "first")
-	second := commitRearmTree(t, root, "second")
-	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, second)
-	rearmGit(t, root, "config", "--local", landingRefConfigKey, ref)
+	first, second := fmt.Sprintf("%040x", 1), fmt.Sprintf("%040x", 2)
 	engine := filepath.Join(root, "metasystem")
 	replacement := filepath.Join(root, "metasystem.next")
 	buildFakeRunner(t, engine, first)
 	buildFakeRunner(t, replacement, second)
 	if startRunner {
-		if message, err := Arm(root, engine); err != nil || !strings.Contains(message, "armed") {
+		outcome, err := armWithRearmDeps(root, engine, false, false, false, "", humanMintDecision("human-terminal", "", "", EnrollmentHumanTerminal), rearmTestDeps(t))
+		if message := outcome.Message; err != nil || !strings.Contains(message, "armed") {
 			t.Fatalf("initial arm: %q %v", message, err)
 		}
 	} else {
@@ -315,14 +205,26 @@ func newRearmBed(t *testing.T, startRunner bool) rearmBed {
 
 func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
-	originalDiff, originalArchive := projectionDiffRunner, archivedEngineDigester
-	t.Cleanup(func() { projectionDiffRunner, archivedEngineDigester = originalDiff, originalArchive })
+	root := canonicalPath(t.TempDir())
+	source, destination, changed, unrelated := rearmID(1), rearmID(2), rearmID(3), rearmID(4)
+	deps := rearmTestDeps(t,
+		rearmBuild(root, source, source, 0), rearmAncestor(root, source, source, 0), rearmDiff(root, source, source, ""),
+		rearmBuild(root, source, source, 0), rearmAncestor(root, source, destination, 0), rearmDiff(root, source, destination, ""),
+		rearmBuild(root, source, source, 0), rearmAncestor(root, source, destination, 0),
+		rearmBuild(root, source, source, 0), rearmAncestor(root, source, destination, 0), rearmDiff(root, source, destination, ""),
+		rearmBuild(root, source, source, 0), rearmAncestor(root, source, destination, 0), rearmAncestor(root, source, destination, 0), rearmSkew(root, source, destination, ""), rearmDiff(root, source, destination, ""),
+		rearmBuild(root, source, source, 0), rearmAncestor(root, source, changed, 0), rearmDiff(root, source, changed, strings.TrimPrefix(rearmRawChange("cmd/surface.txt", rearmID(11), rearmID(12)), "\n")),
+		rearmBuild(root, source, source, 0), rearmAncestor(root, source, changed, 0), rearmAncestor(root, source, changed, 0), rearmSkew(root, source, changed, "cmd/surface.txt"),
+		rearmBuild(root, source, source, 0), rearmAncestor(root, source, unrelated, 1),
+	)
+	originalDiff := deps.projectionDiff
 	diffCalls, archiveCalls := 0, 0
-	projectionDiffRunner = func(ctx context.Context, root, from, to string, progress func()) ([]byte, error) {
+	deps.projectionDiff = func(ctx context.Context, root, from, to string, progress func()) ([]byte, error) {
 		diffCalls++
 		return originalDiff(ctx, root, from, to, progress)
 	}
-	archivedEngineDigester = func(ctx context.Context, root, commit string, policy behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
+	originalArchive := deps.archivedEngineDigest
+	deps.archivedEngineDigest = func(ctx context.Context, root, commit string, policy behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
 		archiveCalls++
 		return originalArchive(ctx, root, commit, policy, clock, seconds)
 	}
@@ -333,8 +235,6 @@ func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 		}
 		diffCalls, archiveCalls = 0, 0
 	}
-	root := initRearmRepo(t)
-	source := commitRearmTree(t, root, "enrolled source")
 	engine := filepath.Join(canonicalPath(t.TempDir()), "metasystem")
 	buildFakeRunner(t, engine, source)
 	digest, err := installDigest(engine)
@@ -352,12 +252,8 @@ func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pinned.Close()
-	writeRearmFile(t, filepath.Join(root, "plans", "goals", "peer.md"), "record-only peer update\n")
-	rearmGit(t, root, "add", ".")
-	rearmGit(t, root, "commit", "-qm", "peer record")
-	destination := rearmGit(t, root, "rev-parse", "HEAD")
 	for _, at := range []string{source, destination} {
-		if err := pinned.VerifySourceAtDestination(root, at); err != nil {
+		if err := pinned.verifySourceAtDestinationWithDeps(deps, SystemRearmClock(), root, at); err != nil {
 			t.Fatalf("lawful human enrollment at %s: %v", at, err)
 		}
 		assertFast()
@@ -366,113 +262,76 @@ func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 		t.Fatal("source verification manufactured machine enrollment provenance")
 	}
 	pinned.Install.MintedBy = "machine-rebuild"
-	if err := pinned.VerifySourceAtDestination(root, destination); err == nil || !strings.Contains(err.Error(), "missing its landed source") {
+	if err := pinned.verifySourceAtDestinationWithDeps(deps, SystemRearmClock(), root, destination); err == nil || !strings.Contains(err.Error(), "missing its landed source") {
 		t.Fatalf("incomplete machine provenance was accepted: %v", err)
 	}
 	pinned.Install.LandedCommit, pinned.Install.LandingRef = source, "refs/remotes/origin/trunk"
-	if err := pinned.VerifySourceAtDestination(root, destination); err != nil {
+	if err := pinned.verifySourceAtDestinationWithDeps(deps, SystemRearmClock(), root, destination); err != nil {
 		t.Fatalf("machine rearm lost record-only reuse: %v", err)
 	}
 	assertFast()
 	pinned.Install.LandedCommit = destination
-	if err := pinned.VerifySourceAtDestination(root, destination); err != nil {
+	if err := pinned.verifySourceAtDestinationWithDeps(deps, SystemRearmClock(), root, destination); err != nil {
 		t.Fatalf("machine rearm lost a newer record-only landed source: %v", err)
 	}
 	assertFast()
 	pinned.Install = human
-	changed := commitRearmTree(t, root, "different engine")
-	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") || !errors.Is(err, ErrProjectionDiffers) || !errors.Is(err, ErrNotOwned) {
+	if err := pinned.verifySourceAtDestinationWithDeps(deps, SystemRearmClock(), root, changed); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") || !errors.Is(err, ErrProjectionDiffers) || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("human enrollment accepted changed engine source: %v", err)
 	}
 	assertFast()
 	pinned.Install.MintedBy = "machine-rebuild"
 	pinned.Install.LandedCommit, pinned.Install.LandingRef = changed, "refs/remotes/origin/trunk"
-	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "engine or agent scripts changed") || !errors.Is(err, ErrNotOwned) {
+	if err := pinned.verifySourceAtDestinationWithDeps(deps, SystemRearmClock(), root, changed); err == nil || !strings.Contains(err.Error(), "engine or agent scripts changed") || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("machine enrollment accepted changed engine source: %v", err)
 	}
 	pinned.Install = human
-	rearmGit(t, root, "checkout", "--orphan", "unrelated")
-	unrelated := commitRearmTree(t, root, "unrelated source")
-	if err := pinned.VerifySourceAtDestination(root, unrelated); err == nil || !strings.Contains(err.Error(), "not landed") || !errors.Is(err, ErrNotOwned) {
+	if err := pinned.verifySourceAtDestinationWithDeps(deps, SystemRearmClock(), root, unrelated); err == nil || !strings.Contains(err.Error(), "not landed") || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("human enrollment accepted unrelated destination: %v", err)
 	}
 }
 
 func TestEnrollmentLandedSourceUsesEngineScriptSkewRule(t *testing.T) {
-	t.Run("ledger-only movement binds", func(t *testing.T) {
-		root := initRearmRepo(t)
-		source := commitRearmTree(t, root, "source")
-		writeRearmFile(t, filepath.Join(root, "plans", "goals", "peer.md"), "ledger only\n")
-		rearmGit(t, root, "add", ".")
-		rearmGit(t, root, "commit", "-qm", "ledger only")
-		landed := rearmGit(t, root, "rev-parse", "HEAD")
-		if err := verifyEnrollmentLandedSource(root, source, landed); err != nil {
-			t.Fatalf("ledger-only movement did not bind: %v", err)
-		}
-	})
-
-	t.Run("ledger-only second-parent movement binds", func(t *testing.T) {
-		root := initRearmRepo(t)
-		commitRearmTree(t, root, "base")
-		rearmGit(t, root, "checkout", "-qb", "landed-seat")
-		writeRearmFile(t, filepath.Join(root, "plans", "goals", "landed-seat.md"), "seat landing\n")
-		rearmGit(t, root, "add", ".")
-		rearmGit(t, root, "commit", "-qm", "seat landing")
-		source := rearmGit(t, root, "rev-parse", "HEAD")
-		rearmGit(t, root, "checkout", "-q", "trunk")
-		writeRearmFile(t, filepath.Join(root, "plans", "goals", "trunk.md"), "trunk ledger\n")
-		rearmGit(t, root, "add", ".")
-		rearmGit(t, root, "commit", "-qm", "trunk ledger")
-		rearmGit(t, root, "merge", "--no-ff", "-qm", "merge landed seat", "landed-seat")
-		landed := rearmGit(t, root, "rev-parse", "HEAD")
-		if err := verifyEnrollmentLandedSource(root, source, landed); err != nil {
-			t.Fatalf("ledger-only second-parent movement did not bind: %v", err)
-		}
-	})
-
-	t.Run("engine movement drifts", func(t *testing.T) {
-		root := initRearmRepo(t)
-		source := commitRearmTree(t, root, "source")
-		writeRearmFile(t, filepath.Join(root, "internal", "skew.go"), "package internal\n")
-		rearmGit(t, root, "add", ".")
-		rearmGit(t, root, "commit", "-qm", "changed engine")
-		landed := rearmGit(t, root, "rev-parse", "HEAD")
-		if err := verifyEnrollmentLandedSource(root, source, landed); err == nil || !strings.Contains(err.Error(), "engine or agent scripts changed") {
-			t.Fatalf("engine movement did not drift through the skew rule: %v", err)
-		}
-	})
-
-	t.Run("non-ancestor stamp drifts", func(t *testing.T) {
-		root := initRearmRepo(t)
-		commitRearmTree(t, root, "trunk")
-		rearmGit(t, root, "checkout", "-qb", "side")
-		source := commitRearmTree(t, root, "side source")
-		rearmGit(t, root, "checkout", "-q", "trunk")
-		landed := commitRearmTree(t, root, "landed")
-		if err := verifyEnrollmentLandedSource(root, source, landed); err == nil || !strings.Contains(err.Error(), "not its ancestor") {
-			t.Fatalf("non-ancestor stamp did not drift: %v", err)
-		}
-	})
+	for _, tc := range []struct {
+		name    string
+		status  int
+		changed string
+		want    string
+	}{
+		{"ledger-only movement binds", 0, "", ""},
+		{"ledger-only second-parent movement binds", 0, "", ""},
+		{"engine movement drifts", 0, "internal/skew.go", "engine or agent scripts changed"},
+		{"non-ancestor stamp drifts", 1, "", "not its ancestor"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := canonicalPath(t.TempDir())
+			source, landed := rearmID(1), rearmID(2)
+			expected := []testgit.Expectation{rearmAncestor(root, source, landed, tc.status)}
+			if tc.status == 0 {
+				expected = append(expected, rearmSkew(root, source, landed, tc.changed))
+			}
+			err := verifyEnrollmentLandedSourceWithDeps(rearmTestDeps(t, expected...), SystemRearmClock(), root, source, landed)
+			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("enrollment skew rule: %v", err)
+			}
+		})
+	}
 }
 
 func TestLandedBuildResolutionSeparatesAMissingObjectFromARepositoryFailure(t *testing.T) {
-	root := initRearmRepo(t)
-	landed := commitRearmTree(t, root, "landed")
+	root := canonicalPath(t.TempDir())
+	landed, missing := rearmID(1), strings.Repeat("f", 40)
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, landed)
-
-	if resolved, err := resolveLandedBuild(root, root, ref, landed); err != nil || resolved != landed {
+	deps := rearmTestDeps(t, rearmBuild(root, landed, landed, 0), rearmAncestor(root, landed, ref, 0), rearmBuild(root, missing, "", 1), rearmFailed(root, 128, "rev-parse", "--verify", "--quiet", landed+"^{commit}"))
+	if resolved, err := resolveLandedBuildWithDeps(deps, SystemRearmClock(), root, root, ref, landed); err != nil || resolved != landed {
 		t.Fatalf("known landed build did not resolve: resolved=%q err=%v", resolved, err)
 	}
-	missing := strings.Repeat("f", 40)
-	_, missingErr := resolveLandedBuild(root, root, ref, missing)
+	_, missingErr := resolveLandedBuildWithDeps(deps, SystemRearmClock(), root, root, ref, missing)
 	wantMissing := fmt.Sprintf("rebuilt engine carries unresolved build stamp %q; automatic re-arm is bounded to landed commits", missing)
 	if missingErr == nil || missingErr.Error() != wantMissing || !errors.Is(missingErr, ErrNotOwned) || errors.Is(missingErr, ErrJudgmentStalled) {
 		t.Fatalf("missing object changed its judgment: %v", missingErr)
 	}
-
-	failRearmGitSubcommand(t, "rev-parse")
-	_, failureErr := resolveLandedBuild(root, root, ref, landed)
+	_, failureErr := resolveLandedBuildWithDeps(deps, SystemRearmClock(), root, root, ref, landed)
 	if failureErr == nil || !strings.Contains(failureErr.Error(), "git rev-parse --verify --quiet") ||
 		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
 		errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
@@ -481,23 +340,17 @@ func TestLandedBuildResolutionSeparatesAMissingObjectFromARepositoryFailure(t *t
 }
 
 func TestLandedBuildResolutionSeparatesNotAnAncestorFromARepositoryFailure(t *testing.T) {
-	root := initRearmRepo(t)
-	base := commitRearmTree(t, root, "base")
-	rearmGit(t, root, "checkout", "-qb", "side", base)
-	side := commitRearmTree(t, root, "side")
-	rearmGit(t, root, "checkout", "-q", "trunk")
-	landed := commitRearmTree(t, root, "landed")
+	root := canonicalPath(t.TempDir())
+	side := rearmID(2)
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, landed)
-
-	_, notAncestorErr := resolveLandedBuild(root, root, ref, side)
+	deps := rearmTestDeps(t, rearmBuild(root, side, side, 0), rearmAncestor(root, side, ref, 1),
+		rearmBuild(root, side, side, 0), rearmFailed(root, 128, "merge-base", "--is-ancestor", side, ref))
+	_, notAncestorErr := resolveLandedBuildWithDeps(deps, SystemRearmClock(), root, root, ref, side)
 	wantNotAncestor := fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", side, ref)
 	if notAncestorErr == nil || notAncestorErr.Error() != wantNotAncestor || !errors.Is(notAncestorErr, ErrNotOwned) || errors.Is(notAncestorErr, ErrJudgmentStalled) {
 		t.Fatalf("non-ancestor changed its judgment: %v", notAncestorErr)
 	}
-
-	failRearmGitSubcommand(t, "merge-base")
-	_, failureErr := resolveLandedBuild(root, root, ref, side)
+	_, failureErr := resolveLandedBuildWithDeps(deps, SystemRearmClock(), root, root, ref, side)
 	if failureErr == nil || !strings.Contains(failureErr.Error(), "git merge-base --is-ancestor") ||
 		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
 		errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
@@ -506,79 +359,71 @@ func TestLandedBuildResolutionSeparatesNotAnAncestorFromARepositoryFailure(t *te
 }
 
 func TestEnrollmentBuildSourceCheckSeparatesNotAnAncestorFromARepositoryFailure(t *testing.T) {
-	root := initRearmRepo(t)
-	base := commitRearmTree(t, root, "base")
-	writeRearmFile(t, filepath.Join(root, "plans", "goals", "landed.md"), "landed record\n")
-	rearmGit(t, root, "add", ".")
-	rearmGit(t, root, "commit", "-qm", "landed record")
-	landed := rearmGit(t, root, "rev-parse", "HEAD")
-	if err := verifyEnrollmentBuildSource(root, base, base, landed); err != nil {
+	root := canonicalPath(t.TempDir())
+	base, landed, side := rearmID(1), rearmID(2), rearmID(3)
+	deps := rearmTestDeps(t,
+		rearmAncestor(root, base, landed, 0), rearmSkew(root, base, landed, ""),
+		rearmAncestor(root, side, landed, 1),
+		rearmFailed(root, 128, "merge-base", "--is-ancestor", side, landed),
+	)
+	if err := verifyEnrollmentBuildSourceWithDeps(deps, SystemRearmClock(), root, base, base, landed); err != nil {
 		t.Fatalf("known ancestor did not pass the enrollment check: %v", err)
 	}
-	rearmGit(t, root, "checkout", "-qb", "side", base)
-	side := commitRearmTree(t, root, "side")
-
-	notAncestorErr := verifyEnrollmentBuildSource(root, side, side, landed)
+	notAncestorErr := verifyEnrollmentBuildSourceWithDeps(deps, SystemRearmClock(), root, side, side, landed)
 	wantNotAncestor := fmt.Sprintf("enrollment records landed source %q but executable stamp source %q is not its ancestor", landed, side)
 	if notAncestorErr == nil || notAncestorErr.Error() != wantNotAncestor || !errors.Is(notAncestorErr, ErrNotOwned) || errors.Is(notAncestorErr, ErrJudgmentStalled) {
 		t.Fatalf("non-ancestor changed its enrollment judgment: %v", notAncestorErr)
 	}
-
 	t.Run("witness operational failure does not run the reverse comparison", func(t *testing.T) {
-		root := initRearmRepo(t)
-		landed := commitRearmTree(t, root, "landed")
-		source := commitRearmTree(t, root, "source descendant")
-		calls := failRearmGitSubcommandOnce(t, "merge-base")
-		err := verifyEnrollmentBuildSourceWithClock(SystemRearmClock(), root, "witness-aaaaaaaaaaaa", source, landed)
-		if err == nil || !strings.Contains(err.Error(), "git merge-base --is-ancestor") ||
-			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
-			errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
+		root := canonicalPath(t.TempDir())
+		landed, source := rearmID(2), rearmID(3)
+		deps := rearmTestDeps(t, rearmFailed(root, 128, "merge-base", "--is-ancestor", source, landed))
+		calls := 0
+		original := deps.deadlineGit
+		deps.deadlineGit = func(clock RearmClock, seconds int, step, root string, args ...string) (string, error) {
+			calls++
+			return original(clock, seconds, step, root, args...)
+		}
+		err := verifyEnrollmentBuildSourceWithDeps(deps, SystemRearmClock(), root, "witness-aaaaaaaaaaaa", source, landed)
+		if err == nil || !strings.Contains(err.Error(), "git merge-base --is-ancestor") || !strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
 			t.Fatalf("witness comparison replaced its repository failure with a reverse result: %v", err)
 		}
-		rawCalls, readErr := os.ReadFile(calls)
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		if got := strings.Count(string(rawCalls), "\n"); got != 1 {
-			t.Fatalf("witness repository failure ran %d recorded comparisons, want exactly one: %q", got, rawCalls)
+		if calls != 1 {
+			t.Fatalf("witness repository failure ran %d comparisons, want exactly one", calls)
 		}
 	})
-
 	t.Run("witness stall does not run the reverse comparison", func(t *testing.T) {
-		root := initRearmRepo(t)
-		landed := commitRearmTree(t, root, "landed")
-		source := commitRearmTree(t, root, "source descendant")
-		calls, started := stallRearmGitSubcommandOnce(t, "merge-base")
+		root := canonicalPath(t.TempDir())
+		landed, source := rearmID(2), rearmID(3)
+		stub := testgit.New(t, rearmExpected(root, "", ErrJudgmentStalled, "merge-base", "--is-ancestor", source, landed))
 		clock := newManualRearmClock()
+		calls := 0
+		deps := rearmTestDeps(t)
+		deps.deadlineGit = func(_ RearmClock, seconds int, step, gotRoot string, args ...string) (string, error) {
+			calls++
+			declared := stub.Run(testgit.Call{Dir: gotRoot, Args: args})
+			if !errors.Is(declared.Err, ErrJudgmentStalled) {
+				return "", declared.Err
+			}
+			return "", RunRearmStep(context.Background(), clock, time.Duration(seconds)*time.Second, step, func(ctx context.Context, progress func()) error { <-ctx.Done(); return ctx.Err() })
+		}
 		result := make(chan error, 1)
 		go func() {
-			result <- verifyEnrollmentBuildSourceWithClock(clock, root, "witness-aaaaaaaaaaaa", source, landed)
+			result <- verifyEnrollmentBuildSourceWithDeps(deps, clock, root, "witness-aaaaaaaaaaaa", source, landed)
 		}()
-		if _, err := os.ReadFile(started); err != nil {
-			t.Fatal(err)
-		}
 		timer := waitForRearmTimer(clock, 1)
 		clock.advance(21 * time.Second)
 		timer <- clock.Now()
 		err := <-result
-		if err == nil || err.Error() != "compare-enrollment-ancestry exceeded the configured 20-second bound (metasystem.steward.rearm-resolve-seconds)" ||
-			!errors.Is(err, ErrJudgmentStalled) || errors.Is(err, ErrNotOwned) {
+		if err == nil || err.Error() != "compare-enrollment-ancestry exceeded the configured 20-second bound (metasystem.steward.rearm-resolve-seconds)" || !errors.Is(err, ErrJudgmentStalled) || errors.Is(err, ErrNotOwned) {
 			t.Fatalf("witness comparison replaced its stall with a reverse result: %v", err)
 		}
-		rawCalls, readErr := os.ReadFile(calls)
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		if got := strings.Count(string(rawCalls), "\n"); got != 1 {
-			t.Fatalf("witness stall ran %d comparisons, want exactly one: %q", got, rawCalls)
+		if calls != 1 {
+			t.Fatalf("witness stall ran %d comparisons, want exactly one", calls)
 		}
 	})
-
-	failRearmGitSubcommand(t, "merge-base")
-	failureErr := verifyEnrollmentBuildSource(root, side, side, landed)
-	if failureErr == nil || !strings.Contains(failureErr.Error(), "git merge-base --is-ancestor") ||
-		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
-		errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
+	failureErr := verifyEnrollmentBuildSourceWithDeps(deps, SystemRearmClock(), root, side, side, landed)
+	if failureErr == nil || !strings.Contains(failureErr.Error(), "git merge-base --is-ancestor") || !strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") || errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
 		t.Fatalf("repository failure became an enrollment judgment: %v", failureErr)
 	}
 }
@@ -600,52 +445,67 @@ func TestEnrollmentSkewPathspecsMatchDispatch(t *testing.T) {
 }
 
 func TestWitnessResolverWalksPastTheSixtyFourthCandidate(t *testing.T) {
-	root := initRearmRepo(t)
-	first := commitRearmTree(t, root, "candidate-00")
-	policy, err := behaviorsurface.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest, err := policy.Digest(root, behaviorsurface.Engine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for candidate := 1; candidate < 65; candidate++ {
-		commitRearmTree(t, root, fmt.Sprintf("candidate-%02d", candidate))
-	}
+	root := t.TempDir()
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, "HEAD")
-	originalRunner, originalDigester := witnessGitCommandRunner, witnessTreeDigester
-	t.Cleanup(func() {
-		witnessGitCommandRunner, witnessTreeDigester = originalRunner, originalDigester
-	})
-	logCalls, batchCalls, archiveCalls := 0, 0, 0
-	witnessGitCommandRunner = func(ctx context.Context, root string, input []byte, progress func(), args ...string) ([]byte, error) {
-		if len(args) > 0 && args[0] == "log" {
-			logCalls++
-			if !strings.Contains("\x00"+strings.Join(args, "\x00")+"\x00", "\x00-z\x00") {
-				t.Fatal("witness history was not requested in NUL-delimited form")
-			}
+	targetDigest := strings.Repeat("a", 64)
+	otherDigest := strings.Repeat("b", 64)
+	commits, trees, blobs := make([]string, 65), make([]string, 65), make([]string, 65)
+	for candidate := range commits {
+		commits[candidate] = fmt.Sprintf("%040x", candidate+1)
+		trees[candidate] = fmt.Sprintf("%040x", candidate+101)
+		blobs[candidate] = fmt.Sprintf("%040x", candidate+201)
+	}
+	var history strings.Builder
+	for candidate := len(commits) - 1; candidate >= 0; candidate-- {
+		fmt.Fprintf(&history, "\x01%s %s", commits[candidate], trees[candidate])
+		if candidate > 0 {
+			fmt.Fprintf(&history, " %s\x00\n:100644 100644 %s %s M\x00cmd/surface.txt\x00", commits[candidate-1], blobs[candidate-1], blobs[candidate])
+		} else {
+			fmt.Fprintf(&history, "\x00\n:000000 100644 %s %s A\x00cmd/surface.txt\x00", strings.Repeat("0", 40), blobs[candidate])
 		}
-		if len(args) > 0 && args[0] == "cat-file" {
+	}
+	logCalls, nulLogCalls, batchCalls := 0, 0, 0
+	var archives []string
+	deps := rearmTestDeps(t,
+		rearmExpected(root, root+"\n", nil, "rev-parse", "--show-toplevel"),
+		rearmExpected(root, history.String(), nil, "log", "--topo-order", "--no-abbrev", "--raw", "-z", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--diff-merges=first-parent", "--format=%x01%H %T %P", ref),
+	)
+	originalRunner := deps.witnessGit
+	deps.witnessGit = func(ctx context.Context, gotRoot string, input []byte, progress func(), args ...string) ([]byte, error) {
+		if args[0] == "log" {
+			logCalls++
+			nulLogCalls++
+		}
+		if args[0] == "cat-file" {
 			batchCalls++
 		}
-		return originalRunner(ctx, root, input, progress, args...)
+		return originalRunner(ctx, gotRoot, input, progress, args...)
 	}
-	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
-		archiveCalls++
-		return originalDigester(ctx, toplevel, tree, loaded, clock, seconds)
+	deps.witnessTreeDigest = func(_ context.Context, toplevel, tree string, _ behaviorsurface.Policy, _ RearmClock, _ int) (string, error) {
+		if toplevel != root {
+			return "", fmt.Errorf("unexpected archive root: %q", toplevel)
+		}
+		archives = append(archives, tree)
+		if tree == commits[0] {
+			return targetDigest, nil
+		}
+		return otherDigest, nil
 	}
-	resolved, err := resolveWitnessStamp(root, root, ref, digest[:12])
-	if err != nil || resolved != first {
-		t.Fatalf("the sixty-fifth reachable candidate did not resolve: got=%s want=%s err=%v", resolved, first, err)
+	resolved, err := resolveWitnessStampWithDeps(deps, SystemRearmClock(), root, root, ref, targetDigest[:12])
+	if err != nil || resolved != commits[0] {
+		t.Fatalf("the sixty-fifth reachable candidate did not resolve: got=%s want=%s err=%v", resolved, commits[0], err)
 	}
-	if logCalls != 1 || batchCalls != 0 || archiveCalls != 65 {
-		t.Fatalf("65-candidate walk used log=%d batch=%d archives=%d, want 1, 0, 65", logCalls, batchCalls, archiveCalls)
+	if logCalls != 1 || nulLogCalls != 1 || batchCalls != 0 || len(archives) != 65 {
+		t.Fatalf("65-candidate walk used log=%d NUL-log=%d batch=%d archives=%d, want 1, 1, 0, 65", logCalls, nulLogCalls, batchCalls, len(archives))
+	}
+	for index, archived := range archives {
+		if want := commits[len(commits)-1-index]; archived != want {
+			t.Fatalf("archive %d used %s, want %s", index, archived, want)
+		}
 	}
 }
 
-func TestWitnessResolverMapsANestedInstallation(t *testing.T) {
+func TestGitWitnessAdapterPreservesNestedArchiveHistory(t *testing.T) {
 	outer := canonicalPath(t.TempDir())
 	rearmGit(t, outer, "init", "-q", "-b", "trunk")
 	rearmGit(t, outer, "config", "user.name", "test")
@@ -667,11 +527,48 @@ func TestWitnessResolverMapsANestedInstallation(t *testing.T) {
 	if err != nil || resolved != commit {
 		t.Fatalf("nested witness resolution: got=%s want=%s err=%v", resolved, commit, err)
 	}
+	oldPath := "metasystem/cmd/space name.txt"
+	newPath := "metasystem/cmd/renamed name.txt"
+	newlinePath := "metasystem/cmd/line\nbreak.txt"
+	writeRearmFile(t, filepath.Join(outer, filepath.FromSlash(oldPath)), "space\n")
+	writeRearmFile(t, filepath.Join(outer, filepath.FromSlash(newlinePath)), "newline\n")
+	rearmGit(t, outer, "add", ".")
+	rearmGit(t, outer, "commit", "-qm", "paths")
+	rearmGit(t, outer, "mv", oldPath, newPath)
+	rearmGit(t, outer, "commit", "-qm", "rename")
+	candidates, err := readWitnessCandidates(SystemRearmClock(), defaultRearmResolveSeconds, outer, "HEAD")
+	if err != nil || len(candidates) != 3 {
+		t.Fatalf("actual Git NUL history: candidates=%d err=%v", len(candidates), err)
+	}
+	paths := map[string]projectionDiffEntry{}
+	for _, entry := range candidates[0].changes {
+		paths[entry.path] = entry
+	}
+	if deleted, ok := paths[oldPath]; !ok || deleted.newMode != "000000" {
+		t.Fatalf("actual Git rename source path: %+v", deleted)
+	}
+	if added, ok := paths[newPath]; !ok || added.oldMode != "000000" {
+		t.Fatalf("actual Git rename destination path: %+v", added)
+	}
+	foundNewline := false
+	for _, entry := range candidates[1].changes {
+		foundNewline = foundNewline || entry.path == newlinePath
+	}
+	if !foundNewline {
+		t.Fatal("actual Git NUL history lost the newline path")
+	}
+	remoteTip := rearmGit(t, outer, "rev-parse", "HEAD")
+	rearmGit(t, outer, "update-ref", ref, remoteTip)
+	commitRearmTree(t, outer, "ordinary branch movement")
+	if got := rearmGit(t, outer, "rev-parse", ref); got != remoteTip {
+		t.Fatalf("ordinary branch movement advanced the remote-tracking ref: got=%s want=%s", got, remoteTip)
+	}
 }
 
 func TestWitnessResolverChoosesNewestMatchingCommit(t *testing.T) {
-	root := initRearmRepo(t)
-	commitRearmTree(t, root, "shared-engine")
+	root := canonicalPath(t.TempDir())
+	writeRearmFile(t, filepath.Join(root, "go.mod"), "module fixture.invalid/rearm\n")
+	writeRearmFile(t, filepath.Join(root, "cmd", "surface.txt"), "shared-engine\n")
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -680,55 +577,72 @@ func TestWitnessResolverChoosesNewestMatchingCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeRearmFile(t, filepath.Join(root, "docs", "first.txt"), "outside engine\n")
-	rearmGit(t, root, "add", ".")
-	rearmGit(t, root, "commit", "-q", "-m", "newest matching tree")
-	newest := rearmGit(t, root, "rev-parse", "HEAD")
+	first, newest, tree := rearmID(1), rearmID(2), rearmID(101)
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, newest)
-	resolved, err := resolveWitnessStamp(root, root, ref, digest[:12])
+	history := rearmHistory(newest, tree, first, rearmRawChange("docs/first.txt", strings.Repeat("0", 40), rearmID(201))) + rearmHistory(first, tree, "", rearmRawChange("cmd/surface.txt", strings.Repeat("0", 40), rearmID(202)))
+	deps := rearmTestDeps(t, rearmWitnessExpectations(root, ref, history)...)
+	deps.witnessTreeDigest = func(_ context.Context, gotRoot, spec string, _ behaviorsurface.Policy, _ RearmClock, _ int) (string, error) {
+		if gotRoot != root || spec != newest {
+			t.Fatalf("archive request: root=%q spec=%q", gotRoot, spec)
+		}
+		return digest, nil
+	}
+	resolved, err := resolveWitnessStampWithDeps(deps, SystemRearmClock(), root, root, ref, digest[:12])
 	if err != nil || resolved != newest {
 		t.Fatalf("newest matching commit was not selected: got=%s want=%s err=%v", resolved, newest, err)
 	}
 }
 
 func TestWitnessResolverRefusesUnlandedTreeDigest(t *testing.T) {
-	root := initRearmRepo(t)
-	trunk := commitRearmTree(t, root, "trunk")
-	rearmGit(t, root, "checkout", "-q", "-b", "side")
-	commitRearmTree(t, root, "unlanded-side")
+	root := canonicalPath(t.TempDir())
+	writeRearmFile(t, filepath.Join(root, "go.mod"), "module fixture.invalid/rearm\n")
+	writeRearmFile(t, filepath.Join(root, "cmd", "surface.txt"), "trunk\n")
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
+	trunkDigest, err := policy.Digest(root, behaviorsurface.Engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRearmFile(t, filepath.Join(root, "cmd", "surface.txt"), "unlanded-side\n")
 	digest, err := policy.Digest(root, behaviorsurface.Engine)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rearmGit(t, root, "checkout", "-q", "trunk")
+	trunk, tree := rearmID(1), rearmID(101)
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, trunk)
-	resolved, err := resolveWitnessStamp(root, root, ref, digest[:12])
+	history := rearmHistory(trunk, tree, "", rearmRawChange("cmd/surface.txt", strings.Repeat("0", 40), rearmID(201)))
+	expected := append([]testgit.Expectation{}, rearmWitnessExpectations(root, ref, history)...)
+	expected = append(expected, rearmWitnessExpectations(root, ref, history)...)
+	expected = append(expected, rearmWitnessExpectations(root, ref, history)...)
+	deps := rearmTestDeps(t, expected...)
+	deps.witnessTreeDigest = func(_ context.Context, gotRoot, spec string, _ behaviorsurface.Policy, _ RearmClock, _ int) (string, error) {
+		if gotRoot != root || spec != trunk {
+			t.Fatalf("archive request: root=%q spec=%q", gotRoot, spec)
+		}
+		return trunkDigest, nil
+	}
+	resolved, err := resolveWitnessStampWithDeps(deps, SystemRearmClock(), root, root, ref, digest[:12])
 	if err == nil || resolved != "" || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("unlanded witness digest resolved to %q: %v", resolved, err)
 	}
-	if _, err := resolveLandedBuild(root, root, ref, "witness-"+digest[:12]); err == nil || !errors.Is(err, ErrNotOwned) {
+	if _, err := resolveLandedBuildWithDeps(deps, SystemRearmClock(), root, root, ref, "witness-"+digest[:12]); err == nil || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("no-match witness verdict lost its class: %v", err)
 	}
-	original := witnessTreeDigester
-	t.Cleanup(func() { witnessTreeDigester = original })
 	_ = os.Remove(filepath.Join(root, "artifacts", "agents", "steward", witnessDigestCacheName))
-	witnessTreeDigester = func(context.Context, string, string, behaviorsurface.Policy, RearmClock, int) (string, error) {
+	deps.witnessTreeDigest = func(context.Context, string, string, behaviorsurface.Policy, RearmClock, int) (string, error) {
 		return "", errors.New("injected digest failure")
 	}
-	if _, err := resolveLandedBuild(root, root, ref, "witness-"+digest[:12]); err == nil || !strings.Contains(err.Error(), "injected digest failure") || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
+	if _, err := resolveLandedBuildWithDeps(deps, SystemRearmClock(), root, root, ref, "witness-"+digest[:12]); err == nil || !strings.Contains(err.Error(), "injected digest failure") || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
 		t.Fatalf("operational witness failure was misclassified: %v", err)
 	}
 }
 
 func TestWitnessResolverPersistsTreeDigestsAcrossResolutions(t *testing.T) {
-	root := initRearmRepo(t)
-	commit := commitRearmTree(t, root, "cached")
+	root := canonicalPath(t.TempDir())
+	writeRearmFile(t, filepath.Join(root, "go.mod"), "module fixture.invalid/rearm\n")
+	writeRearmFile(t, filepath.Join(root, "cmd", "surface.txt"), "cached\n")
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -737,60 +651,60 @@ func TestWitnessResolverPersistsTreeDigestsAcrossResolutions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	commit, tree := rearmID(1), rearmID(101)
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, commit)
+	history := rearmHistory(commit, tree, "", rearmRawChange("cmd/surface.txt", strings.Repeat("0", 40), rearmID(201)))
+	expected := append([]testgit.Expectation{}, rearmWitnessExpectations(root, ref, history)...)
+	expected = append(expected, rearmWitnessExpectations(root, ref, history)...)
+	deps := rearmTestDeps(t, expected...)
 	cachePath := filepath.Join(root, "artifacts", "agents", "steward", witnessDigestCacheName)
 	writeRearmFile(t, cachePath, "not json\n")
-	original := witnessTreeDigester
-	originalWriter := witnessDigestCacheWriter
-	t.Cleanup(func() {
-		witnessTreeDigester = original
-		witnessDigestCacheWriter = originalWriter
-	})
-	digestCalls := 0
-	cacheWrites := 0
-	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
+	digestCalls, cacheWrites := 0, 0
+	deps.witnessTreeDigest = func(_ context.Context, gotRoot, spec string, _ behaviorsurface.Policy, _ RearmClock, _ int) (string, error) {
 		digestCalls++
-		return original(ctx, toplevel, tree, loaded, clock, seconds)
+		if gotRoot != root || spec != commit {
+			t.Fatalf("archive request: root=%q spec=%q", gotRoot, spec)
+		}
+		return digest, nil
 	}
-	witnessDigestCacheWriter = func(path, anchor string, entries map[string]string) {
+	deps.writeWitnessCache = func(path, anchor string, entries map[string]string) {
 		cacheWrites++
 		writeWitnessDigestCache(path, anchor, entries)
 	}
-	resolved, err := resolveWitnessStamp(root, root, ref, digest[:12])
-	if err != nil || resolved != commit || digestCalls == 0 || cacheWrites != 1 {
+	resolved, err := resolveWitnessStampWithDeps(deps, SystemRearmClock(), root, root, ref, digest[:12])
+	if err != nil || resolved != commit || digestCalls != 1 || cacheWrites != 1 {
 		t.Fatalf("first resolution did not rebuild the unreadable cache once: got=%s digest-calls=%d cache-writes=%d err=%v", resolved, digestCalls, cacheWrites, err)
 	}
 	cacheBytes, err := os.ReadFile(cachePath)
 	if err != nil || !json.Valid(cacheBytes) {
 		t.Fatalf("persistent witness cache was not rewritten as JSON: %v %q", err, cacheBytes)
 	}
-	digestCalls = 0
-	cacheWrites = 0
-	resolved, err = resolveWitnessStamp(root, root, ref, digest[:12])
+	digestCalls, cacheWrites = 0, 0
+	resolved, err = resolveWitnessStampWithDeps(deps, SystemRearmClock(), root, root, ref, digest[:12])
 	if err != nil || resolved != commit || digestCalls != 0 || cacheWrites != 1 {
 		t.Fatalf("second resolution repeated a digest or wrote more than once: got=%s digest-calls=%d cache-writes=%d err=%v", resolved, digestCalls, cacheWrites, err)
 	}
 }
 
 func TestWitnessResolverWritesCacheOnceOnExpiry(t *testing.T) {
-	root := initRearmRepo(t)
-	commitRearmTree(t, root, "older")
-	newest := commitRearmTree(t, root, "newest")
+	root := canonicalPath(t.TempDir())
+	older, newest := rearmID(1), rearmID(2)
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, newest)
-	rearmGit(t, root, "config", "--local", rearmResolveSecondsConfig, "1")
-	originalDigester := witnessTreeDigester
-	originalWriter := witnessDigestCacheWriter
-	t.Cleanup(func() {
-		witnessTreeDigester = originalDigester
-		witnessDigestCacheWriter = originalWriter
-	})
-	digestCalls := 0
-	cacheWrites := 0
+	history := rearmHistory(newest, rearmID(102), older, rearmRawChange("cmd/surface.txt", rearmID(201), rearmID(202))) + rearmHistory(older, rearmID(101), "", rearmRawChange("cmd/surface.txt", strings.Repeat("0", 40), rearmID(201)))
+	deps := rearmTestDeps(t, rearmWitnessExpectations(root, ref, history)...)
+	deps.resolveSeconds = func(gotRoot string) int {
+		if gotRoot != root {
+			t.Fatalf("resolve cadence root %q", gotRoot)
+		}
+		return 1
+	}
+	digestCalls, cacheWrites := 0, 0
 	stalled := make(chan chan time.Time, 1)
-	witnessTreeDigester = func(_ context.Context, _, _ string, _ behaviorsurface.Policy, _ RearmClock, seconds int) (string, error) {
+	deps.witnessTreeDigest = func(_ context.Context, gotRoot, spec string, _ behaviorsurface.Policy, _ RearmClock, seconds int) (string, error) {
 		digestCalls++
+		if gotRoot != root || (digestCalls == 1 && spec != newest) || (digestCalls == 2 && spec != older) || seconds != 1 {
+			t.Fatalf("archive request root=%q spec=%q seconds=%d", gotRoot, spec, seconds)
+		}
 		if digestCalls == 1 {
 			return strings.Repeat("f", 64), nil
 		}
@@ -799,7 +713,7 @@ func TestWitnessResolverWritesCacheOnceOnExpiry(t *testing.T) {
 		<-timer
 		return "", classifiedJudgment(fmt.Sprintf("digest exceeded the configured %d-second bound (%s)", seconds, rearmResolveSecondsConfig), ErrJudgmentStalled)
 	}
-	witnessDigestCacheWriter = func(path, anchor string, entries map[string]string) {
+	deps.writeWitnessCache = func(path, anchor string, entries map[string]string) {
 		cacheWrites++
 		writeWitnessDigestCache(path, anchor, entries)
 	}
@@ -810,7 +724,7 @@ func TestWitnessResolverWritesCacheOnceOnExpiry(t *testing.T) {
 	}
 	result := make(chan resolution, 1)
 	go func() {
-		commit, err := resolveWitnessStampWithClock(clock, root, root, ref, "000000000000")
+		commit, err := resolveWitnessStampWithDeps(deps, clock, root, root, ref, "000000000000")
 		result <- resolution{commit, err}
 	}()
 	timer := <-stalled
@@ -827,120 +741,117 @@ func TestWitnessResolverWritesCacheOnceOnExpiry(t *testing.T) {
 }
 
 func TestLandingRefReadIgnoresGlobalConfigurationAndOrdinaryBranchMovement(t *testing.T) {
-	root := initRearmRepo(t)
-	first := commitRearmTree(t, root, "first")
+	root := canonicalPath(t.TempDir())
+	first := rearmID(1)
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "update-ref", ref, first)
 	global := filepath.Join(t.TempDir(), "gitconfig")
 	writeRearmFile(t, global, "[metasystem \"steward\"]\n\tlanding-ref = "+ref+"\n")
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	deps := rearmTestDeps(t,
+		rearmFailed(root, 1, "config", "--local", "--no-includes", "--get", landingRefConfigKey),
+		rearmFailed(root, 1, "config", "--local", "--no-includes", "--get", landingRefConfigKey),
+		rearmExpected(root, "\n", nil, "config", "--local", "--no-includes", "--get", landingRefConfigKey),
+		rearmExpected(root, "refs/heads/trunk\n", nil, "config", "--local", "--no-includes", "--get", landingRefConfigKey),
+		rearmExpected(root, ref+"\n", nil, "config", "--local", "--no-includes", "--get", landingRefConfigKey),
+		rearmExpected(root, first+"\n", nil, "rev-parse", "--verify", "--quiet", ref+"^{commit}"),
+		rearmExpected(root, ref+"\n", nil, "config", "--local", "--no-includes", "--get", landingRefConfigKey),
+		rearmExpected(root, first+"\n", nil, "rev-parse", "--verify", "--quiet", ref+"^{commit}"),
+	)
 	wantUnset := fmt.Sprintf("the installation owns no remote-tracking landing ref (%s is <unset>; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey)
-	if _, err := readOwnedLandingRef(root); err == nil || err.Error() != wantUnset {
+	if _, err := readOwnedLandingRefWithDeps(deps, root); err == nil || err.Error() != wantUnset {
 		t.Fatalf("a global landing-ref value changed the absent local value result: %v", err)
 	}
 	included := filepath.Join(t.TempDir(), "included-config")
 	writeRearmFile(t, included, "[metasystem \"steward\"]\n\tlanding-ref = "+ref+"\n")
-	rearmGit(t, root, "config", "--local", "include.path", included)
-	if _, err := readOwnedLandingRef(root); err == nil {
+	if _, err := readOwnedLandingRefWithDeps(deps, root); err == nil {
 		t.Fatal("an included landing-ref value satisfied the installation")
 	}
-	rearmGit(t, root, "config", "--local", "--unset-all", "include.path")
-	rearmGit(t, root, "config", "--local", landingRefConfigKey, "")
-	if _, err := readOwnedLandingRef(root); err == nil || err.Error() != wantUnset {
+	if _, err := readOwnedLandingRefWithDeps(deps, root); err == nil || err.Error() != wantUnset {
 		t.Fatalf("an empty local landing-ref value changed its result: %v", err)
 	}
 	localRef := "refs/heads/trunk"
-	rearmGit(t, root, "config", "--local", landingRefConfigKey, localRef)
 	wantMalformed := fmt.Sprintf("the installation owns no remote-tracking landing ref (%s is %s; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey, localRef)
-	if _, err := readOwnedLandingRef(root); err == nil || err.Error() != wantMalformed {
+	if _, err := readOwnedLandingRefWithDeps(deps, root); err == nil || err.Error() != wantMalformed {
 		t.Fatalf("a local branch ref was not refused with the expected remote-tracking shape: %v", err)
 	}
-	rearmGit(t, root, "config", "--local", landingRefConfigKey, ref)
-	commitRearmTree(t, root, "ordinary-branch-movement")
-	if got := rearmGit(t, root, "rev-parse", ref); got != first {
-		t.Fatalf("ordinary branch movement advanced the remote-tracking ref: got=%s want=%s", got, first)
+	if got, err := readOwnedLandingRefWithDeps(deps, root); err != nil || got != ref {
+		t.Fatalf("owned remote-tracking ref: %q %v", got, err)
+	}
+	// A local branch moving does not change the owned remote-tracking answer.
+	if got, err := readOwnedLandingRefWithDeps(deps, root); err != nil || got != ref {
+		t.Fatalf("ordinary branch movement advanced the remote-tracking ref: got=%s want=%s err=%v", got, ref, err)
 	}
 }
 
 func TestOwnedLandingRefReadSeparatesAnUnresolvedRefFromARepositoryFailure(t *testing.T) {
-	root := initRearmRepo(t)
-	landed := commitRearmTree(t, root, "landed")
+	root := canonicalPath(t.TempDir())
+	landed := rearmID(1)
 	ref := "refs/remotes/origin/trunk"
-	rearmGit(t, root, "config", "--local", landingRefConfigKey, ref)
-
-	_, unresolvedErr := readOwnedLandingRef(root)
+	config := func() testgit.Expectation {
+		return rearmExpected(root, ref+"\n", nil, "config", "--local", "--no-includes", "--get", landingRefConfigKey)
+	}
+	deps := rearmTestDeps(t, config(), rearmFailed(root, 1, "rev-parse", "--verify", "--quiet", ref+"^{commit}"),
+		config(), rearmExpected(root, landed+"\n", nil, "rev-parse", "--verify", "--quiet", ref+"^{commit}"),
+		config(), rearmFailed(root, 128, "rev-parse", "--verify", "--quiet", ref+"^{commit}"))
+	_, unresolvedErr := readOwnedLandingRefWithDeps(deps, root)
 	wantUnresolved := fmt.Sprintf("the installation owns no resolving remote-tracking landing ref (%s is %s)", landingRefConfigKey, ref)
 	if unresolvedErr == nil || unresolvedErr.Error() != wantUnresolved || errors.Is(unresolvedErr, ErrNotOwned) || errors.Is(unresolvedErr, ErrJudgmentStalled) {
 		t.Fatalf("unresolved ref changed its result: %v", unresolvedErr)
 	}
-	rearmGit(t, root, "update-ref", ref, landed)
-	if resolved, err := readOwnedLandingRef(root); err != nil || resolved != ref {
+	if resolved, err := readOwnedLandingRefWithDeps(deps, root); err != nil || resolved != ref {
 		t.Fatalf("resolving owned ref was not returned: resolved=%q err=%v", resolved, err)
 	}
-
-	failRearmGitSubcommand(t, "rev-parse")
-	_, failureErr := readOwnedLandingRef(root)
-	if failureErr == nil || !strings.Contains(failureErr.Error(), "git rev-parse --verify --quiet") ||
-		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
-		errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
+	_, failureErr := readOwnedLandingRefWithDeps(deps, root)
+	if failureErr == nil || !strings.Contains(failureErr.Error(), "git rev-parse --verify --quiet") || !strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") || errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
 		t.Fatalf("repository failure became an unresolved-ref result: %v", failureErr)
 	}
 }
 
 func TestMintPlanReportsARepositoryFailureAsAFailureNotAsDrift(t *testing.T) {
+	ref := "refs/remotes/origin/trunk"
 	t.Run("unresolved landing ref remains drift", func(t *testing.T) {
 		bed := newRearmBed(t, false)
-		ref := "refs/remotes/origin/trunk"
-		rearmGit(t, bed.root, "update-ref", "-d", ref)
-		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		deps := rearmTestDeps(t, rearmExpected(bed.root, ref+"\n", nil, "config", "--local", "--no-includes", "--get", landingRefConfigKey), rearmFailed(bed.root, 1, "rev-parse", "--verify", "--quiet", ref+"^{commit}"))
+		_, err := reArmRebuiltEngineWithDeps(deps, bed.root, bed.root, bed.engine)
 		want := fmt.Sprintf("%s: the installation owns no resolving remote-tracking landing ref (%s is %s)", ErrEnrollmentDrift, landingRefConfigKey, ref)
 		if err == nil || err.Error() != want || !errors.Is(err, ErrEnrollmentDrift) {
 			t.Fatalf("unresolved ref changed its mint-plan drift: %v", err)
 		}
 	})
-
 	t.Run("repository failure is a failed step", func(t *testing.T) {
 		bed := newRearmBed(t, false)
-		failRearmGitSubcommand(t, "merge-base")
-		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
-		if err == nil || !strings.Contains(err.Error(), "resolve landed build") || !strings.Contains(err.Error(), "git merge-base --is-ancestor") ||
-			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
-			errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
+		expected := append(rearmOwnedRef(bed.root, ref, bed.second), rearmBuild(bed.root, bed.second, bed.second, 0), rearmFailed(bed.root, 128, "merge-base", "--is-ancestor", bed.second, ref))
+		_, err := reArmRebuiltEngineWithDeps(rearmTestDeps(t, expected...), bed.root, bed.root, bed.engine)
+		if err == nil || !strings.Contains(err.Error(), "resolve landed build") || !strings.Contains(err.Error(), "git merge-base --is-ancestor") || !strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") || errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
 			t.Fatalf("repository failure became mint-plan drift: %v", err)
 		}
 	})
-
 	t.Run("landing ref config failure is a failed step", func(t *testing.T) {
 		bed := newRearmBed(t, false)
-		failRearmGitSubcommand(t, landingRefConfigKey)
-		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
-		if err == nil || !strings.Contains(err.Error(), "read owned landing ref") || !strings.Contains(err.Error(), "git config") ||
-			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
-			errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
+		deps := rearmTestDeps(t, rearmFailed(bed.root, 128, "config", "--local", "--no-includes", "--get", landingRefConfigKey))
+		_, err := reArmRebuiltEngineWithDeps(deps, bed.root, bed.root, bed.engine)
+		if err == nil || !strings.Contains(err.Error(), "read owned landing ref") || !strings.Contains(err.Error(), "git config") || !strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") || errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
 			t.Fatalf("landing-ref config failure became mint-plan drift: %v", err)
 		}
 	})
-
-	t.Run("checkout HEAD failure is a failed step", func(t *testing.T) {
-		bed := newRearmBed(t, false)
-		failRearmGitSubcommand(t, "HEAD^{commit}")
-		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
-		if err == nil || !strings.Contains(err.Error(), "resolve landed source at checkout HEAD") || !strings.Contains(err.Error(), "git rev-parse") ||
-			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
-			errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) {
-			t.Fatalf("checkout HEAD repository failure became mint-plan drift: %v", err)
-		}
-	})
-
-	t.Run("checkout HEAD negative answer remains drift", func(t *testing.T) {
-		bed := newRearmBed(t, false)
-		failRearmGitSubcommandWithStatus(t, "HEAD^{commit}", 1)
-		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
-		want := "ENROLLMENT_DRIFT: resolve landed source at checkout HEAD: git rev-parse --verify HEAD^{commit}: exit status 1 (fatal: not a git repository (or any of the parent directories))"
-		if err == nil || err.Error() != want || !errors.Is(err, ErrEnrollmentDrift) {
-			t.Fatalf("checkout HEAD negative answer changed its mint-plan drift: %v", err)
-		}
-	})
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{{"checkout HEAD failure is a failed step", 128}, {"checkout HEAD negative answer remains drift", 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			bed := newRearmBed(t, false)
+			expected := append(rearmOwnedRef(bed.root, ref, bed.second), rearmBuild(bed.root, bed.second, bed.second, 0), rearmAncestor(bed.root, bed.second, ref, 0), rearmFailed(bed.root, tc.status, "rev-parse", "--verify", "HEAD^{commit}"))
+			_, err := reArmRebuiltEngineWithDeps(rearmTestDeps(t, expected...), bed.root, bed.root, bed.engine)
+			if tc.status == 1 {
+				want := "ENROLLMENT_DRIFT: resolve landed source at checkout HEAD: git rev-parse --verify HEAD^{commit}: exit status 1 (fatal: not a git repository (or any of the parent directories))"
+				if err == nil || err.Error() != want || !errors.Is(err, ErrEnrollmentDrift) {
+					t.Fatalf("checkout HEAD negative answer changed its mint-plan drift: %v", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "resolve landed source at checkout HEAD") || !strings.Contains(err.Error(), "git rev-parse") || !strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") || errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) {
+				t.Fatalf("checkout HEAD repository failure became mint-plan drift: %v", err)
+			}
+		})
+	}
 }
 
 func TestIdentityPublicationKeepsAndClearsDurabilityDoubt(t *testing.T) {
@@ -1004,12 +915,10 @@ func TestIdentityPublicationKeepsAndClearsDurabilityDoubt(t *testing.T) {
 	if _, err := os.Stat(identityDurabilityPendingPath(path)); err != nil {
 		t.Fatalf("a verifier removed a marker owned by the arm path: %v", err)
 	}
-	rearmGit(t, root, "init", "-q", "-b", "trunk")
-	rearmGit(t, root, "config", "metasystem.steward.notify-command", "true")
-	_, armErr := arm(root, "/bin/true", false, false, false, "",
+	_, armErr := armWithRearmDeps(root, "/bin/true", false, false, false, "",
 		func(_ InstallIdentity, priorErr error, _ enrolledBytes) (mintPlan, error) {
 			return mintPlan{}, priorErr
-		})
+		}, rearmTestDeps(t))
 	if armErr == nil || !strings.Contains(armErr.Error(), "identity absent") {
 		t.Fatalf("orphan marker did not retain the existing no-identity outcome: %v", armErr)
 	}
@@ -1021,7 +930,7 @@ func TestIdentityPublicationKeepsAndClearsDurabilityDoubt(t *testing.T) {
 func TestRearmStageTransitionsAndDurability(t *testing.T) {
 	t.Run("BeforeMint to Minted", func(t *testing.T) {
 		bed := newRearmBed(t, false)
-		outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		outcome, err := bed.rearm(t)
 		if err != nil || outcome.Stage != StageMinted || outcome.Status != "re-armed" || outcome.StoppedRunnerPid != 0 {
 			t.Fatalf("direct mint transition: %+v %v", outcome, err)
 		}
@@ -1032,7 +941,7 @@ func TestRearmStageTransitionsAndDurability(t *testing.T) {
 		original := runnerStopWriter
 		runnerStopWriter = func(string, []byte, os.FileMode) error { return errors.New("injected marker write failure") }
 		t.Cleanup(func() { runnerStopWriter = original })
-		outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		outcome, err := bed.rearm(t)
 		if err == nil || outcome.Stage != StageStopAttempted || !strings.Contains(err.Error(), "write restart marker") {
 			t.Fatalf("marker-write transition: %+v %v", outcome, err)
 		}
@@ -1052,7 +961,7 @@ func TestRearmStageTransitionsAndDurability(t *testing.T) {
 			return original(target, text, anchor)
 		}
 		t.Cleanup(func() { identityWriter = original })
-		outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		outcome, err := bed.rearm(t)
 		if err == nil || outcome.Stage != StageStopped || !strings.Contains(err.Error(), "identity publication") {
 			t.Fatalf("stopped mint failure: %+v %v", outcome, err)
 		}
@@ -1073,11 +982,21 @@ func TestRearmStageTransitionsAndDurability(t *testing.T) {
 			return durable, err
 		}
 		t.Cleanup(func() { identityWriter = original })
-		outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		outcome, err := bed.rearm(t)
 		if err != nil || outcome.Stage != StageMinted || !outcome.DurabilityPending || outcome.Status != "re-armed" {
 			t.Fatalf("doubted mint transition: %+v %v", outcome, err)
 		}
-		verdict := checkStewardRunner(bed.root, time.Now(), processidentity.KernelProber{})
+		cadenceReads := 0
+		verdict := checkStewardRunnerWithCadence(bed.root, time.Now(), processidentity.KernelProber{}, func(root string) int {
+			cadenceReads++
+			if root != bed.root {
+				t.Fatalf("cadence read used root %q, want %q", root, bed.root)
+			}
+			return 600
+		})
+		if cadenceReads != 1 {
+			t.Fatalf("cadence read ran %d times, want once", cadenceReads)
+		}
 		if !strings.Contains(verdict.Reason, "(durability pending)") {
 			t.Fatalf("health hid identity durability doubt: %+v", verdict)
 		}
@@ -1103,12 +1022,12 @@ func TestConcurrentRearmsMintOneGeneration(t *testing.T) {
 	}
 	results := make(chan result, 2)
 	go func() {
-		outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		outcome, err := bed.rearm(t)
 		results <- result{outcome, err}
 	}()
 	<-entered
 	go func() {
-		outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		outcome, err := bed.alreadyCurrent(t)
 		results <- result{outcome, err}
 	}()
 	close(release)
@@ -1147,11 +1066,11 @@ func TestRearmAndTemporaryHumanArmPreserveTheHumanWord(t *testing.T) {
 		}
 		resultChannel := make(chan result, 1)
 		go func() {
-			outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+			outcome, err := bed.alreadyCurrent(t)
 			resultChannel <- result{outcome: outcome, err: err}
 		}()
 		<-entered
-		if _, err := ArmTemporary(bed.root, bed.engine, "approved-word", "2026-09-30"); err != nil {
+		if _, err := rearmHumanArm(t, bed.root, bed.engine, true, "approved-word", "2026-09-30", EnrollmentTemporaryWord); err != nil {
 			t.Fatal(err)
 		}
 		close(release)
@@ -1167,11 +1086,11 @@ func TestRearmAndTemporaryHumanArmPreserveTheHumanWord(t *testing.T) {
 
 	t.Run("temporary human arm follows the machine mint", func(t *testing.T) {
 		bed := newRearmBed(t, true)
-		machine, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		machine, err := bed.rearm(t)
 		if err != nil || machine.Status != "re-armed" {
 			t.Fatalf("machine re-arm: %+v %v", machine, err)
 		}
-		if _, err := ArmTemporary(bed.root, bed.engine, "approved-word", "2026-09-30"); err != nil {
+		if _, err := rearmHumanArm(t, bed.root, bed.engine, true, "approved-word", "2026-09-30", EnrollmentTemporaryWord); err != nil {
 			t.Fatal(err)
 		}
 		installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
@@ -1184,16 +1103,8 @@ func TestRearmAndTemporaryHumanArmPreserveTheHumanWord(t *testing.T) {
 
 func TestMachineRebuildCarriesFixtureEnrollmentForward(t *testing.T) {
 	bed := newRearmBed(t, false)
-	rearmGit(t, bed.root, "checkout", "-qb", "newer-remote-engine")
-	writeRearmFile(t, filepath.Join(bed.root, "cmd", "surface.txt"), "newer remote engine landing\n")
-	rearmGit(t, bed.root, "add", "cmd/surface.txt")
-	rearmGit(t, bed.root, "commit", "-qm", "newer remote engine landing")
-	remoteTip := rearmGit(t, bed.root, "rev-parse", "HEAD")
-	rearmGit(t, bed.root, "checkout", "-q", "trunk")
-	if checkoutHead := rearmGit(t, bed.root, "rev-parse", "HEAD"); checkoutHead != bed.second {
-		t.Fatalf("remote fixture moved checkout HEAD: got=%s want=%s", checkoutHead, bed.second)
-	}
-	rearmGit(t, bed.root, "update-ref", "refs/remotes/origin/trunk", remoteTip)
+	remoteTip := rearmID(3)
+	ref := "refs/remotes/origin/trunk"
 	installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
 	if err != nil {
 		t.Fatal(err)
@@ -1202,7 +1113,11 @@ func TestMachineRebuildCarriesFixtureEnrollmentForward(t *testing.T) {
 	if err := MintIdentity(RepoIdentityPath(bed.root), installed); err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+	expected := append(rearmOwnedRef(bed.root, ref, remoteTip), rearmBuild(bed.root, bed.second, bed.second, 0), rearmAncestor(bed.root, bed.second, ref, 0), rearmExpected(bed.root, bed.second+"\n", nil, "rev-parse", "--verify", "HEAD^{commit}"))
+	if remoteTip == bed.second {
+		t.Fatal("remote fixture did not move ahead of checkout HEAD")
+	}
+	outcome, err := reArmRebuiltEngineWithDeps(rearmTestDeps(t, expected...), bed.root, bed.root, bed.engine)
 	if err != nil || outcome.Status != "re-armed" {
 		t.Fatalf("machine re-arm with newer remote engine landing: %+v %v", outcome, err)
 	}
@@ -1224,14 +1139,25 @@ func TestWitnessStampedMachineEnrollmentSurvivesLedgerOnlyLanding(t *testing.T) 
 	}
 	stamp := "witness-" + digest[:12]
 	buildFakeRunner(t, bed.engine, stamp)
-	if outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine); err != nil || outcome.Status != "re-armed" {
+	ref := "refs/remotes/origin/trunk"
+	landed := rearmID(3)
+	tree := rearmID(101)
+	baseHistory := rearmHistory(bed.second, tree, "", rearmRawChange("cmd/surface.txt", strings.Repeat("0", 40), rearmID(201)))
+	nextHistory := rearmHistory(landed, tree, bed.second, rearmRawChange("plans/goals/peer.md", strings.Repeat("0", 40), rearmID(202))) + baseHistory
+	expected := append(rearmOwnedRef(bed.root, ref, bed.second), rearmWitnessExpectations(bed.root, ref, baseHistory)...)
+	expected = append(expected, rearmAncestor(bed.root, bed.second, ref, 0), rearmExpected(bed.root, bed.second+"\n", nil, "rev-parse", "--verify", "HEAD^{commit}"))
+	expected = append(expected, rearmWitnessExpectations(bed.root, landed, nextHistory)...)
+	expected = append(expected, rearmAncestor(bed.root, landed, landed, 0), rearmAncestor(bed.root, landed, bed.second, 1), rearmAncestor(bed.root, bed.second, landed, 0), rearmSkew(bed.root, bed.second, landed, ""), rearmDiff(bed.root, landed, landed, ""))
+	deps := rearmTestDeps(t, expected...)
+	deps.witnessTreeDigest = func(_ context.Context, root, spec string, _ behaviorsurface.Policy, _ RearmClock, _ int) (string, error) {
+		if root != bed.root || spec != bed.second {
+			t.Fatalf("witness archive used root=%q spec=%q", root, spec)
+		}
+		return digest, nil
+	}
+	if outcome, err := reArmRebuiltEngineWithDeps(deps, bed.root, bed.root, bed.engine); err != nil || outcome.Status != "re-armed" {
 		t.Fatalf("arm witness-stamped machine engine: %+v %v", outcome, err)
 	}
-	writeRearmFile(t, filepath.Join(bed.root, "plans", "goals", "peer.md"), "ledger-only landing\n")
-	rearmGit(t, bed.root, "add", "plans/goals/peer.md")
-	rearmGit(t, bed.root, "commit", "-qm", "ledger-only landing")
-	landed := rearmGit(t, bed.root, "rev-parse", "HEAD")
-	rearmGit(t, bed.root, "update-ref", "refs/remotes/origin/trunk", landed)
 	pinned, err := OpenEnrolledBinary(bed.root)
 	if err != nil {
 		t.Fatal(err)
@@ -1240,7 +1166,7 @@ func TestWitnessStampedMachineEnrollmentSurvivesLedgerOnlyLanding(t *testing.T) 
 	if pinned.Install.LandedCommit != bed.second || pinned.BuildStamp() != stamp {
 		t.Fatalf("witness enrollment was not valid before ledger movement: %+v stamp=%s", pinned.Install, pinned.BuildStamp())
 	}
-	if err := pinned.VerifySourceAtDestination(bed.root, landed); err != nil {
+	if err := pinned.verifySourceAtDestinationWithDeps(deps, SystemRearmClock(), bed.root, landed); err != nil {
 		t.Fatalf("witness-stamped enrollment drifted after ledger-only landing: %v", err)
 	}
 }
@@ -1271,7 +1197,7 @@ func TestHumanArmBesideALiveLegacyRunnerNamesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	pinned.Close()
-	message, err := Arm(bed.root, bed.engine)
+	message, err := rearmHumanArm(t, bed.root, bed.engine, false, "", "", EnrollmentHumanTerminal)
 	if err != nil || !strings.Contains(message, "already armed") || !strings.Contains(message, "steward restart") || !strings.Contains(message, "LEGACY") {
 		t.Fatalf("plain arm hid the clearing verb: %q %v", message, err)
 	}
@@ -1279,7 +1205,7 @@ func TestHumanArmBesideALiveLegacyRunnerNamesRestart(t *testing.T) {
 	if installed.Generation != 1 {
 		t.Fatalf("plain arm minted generation %d", installed.Generation)
 	}
-	if _, err := Restart(bed.root, bed.engine); err != nil {
+	if _, err := rearmHumanArm(t, bed.root, bed.engine, true, "", "", EnrollmentHumanTerminal); err != nil {
 		t.Fatal(err)
 	}
 	installed, err = VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
@@ -1295,7 +1221,7 @@ func TestHumanArmWithChangedEnrolledBytesReplacesLiveRunnerAndWitnessesGeneratio
 		t.Fatal("fixture runner was not alive before the human arm")
 	}
 
-	message, err := Arm(bed.root, bed.engine)
+	message, err := rearmHumanArm(t, bed.root, bed.engine, false, "", "", EnrollmentHumanTerminal)
 	if err != nil || !strings.Contains(message, fmt.Sprintf("replaced live runner pid %d", before.Pid)) ||
 		!strings.Contains(message, "human-terminal generation 2") {
 		t.Fatalf("human arm did not report the witnessed replacement: %q %v", message, err)
@@ -1346,7 +1272,7 @@ func TestSignalFailureNamesStopAttempted(t *testing.T) {
 		return original(pid, signal)
 	}
 	t.Cleanup(func() { runnerSignal = original })
-	outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+	outcome, err := bed.rearm(t)
 	if err == nil || outcome.Stage != StageStopAttempted || !strings.Contains(err.Error(), "stop runner pid") {
 		t.Fatalf("signal failure transition: %+v %v", outcome, err)
 	}

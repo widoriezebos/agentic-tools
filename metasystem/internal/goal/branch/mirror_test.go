@@ -1,128 +1,87 @@
 package branch_test
 
 import (
-	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
 
-type recordingFetchTransport struct {
+type observingMirrorTransport struct {
 	branch.GitPushTransport
-	destination *string
+	t                                *testing.T
+	repo, origin, transport, ref     string
+	destination, endpointTip, goalID string
+	tip                              string
+	fetched, pushed                  bool
 }
 
-func (r recordingFetchTransport) Fetch(repo, remote, ref, destination string) error {
-	*r.destination = destination
-	return r.GitPushTransport.Fetch(repo, remote, ref, destination)
+func (m *observingMirrorTransport) Fetch(repo, remote, ref, destination string) error {
+	m.t.Helper()
+	if m.fetched || repo != m.repo || remote != m.origin || ref != m.ref || destination != m.destination {
+		m.t.Fatalf("mirror fetch = (%q, %q, %q, %q)", repo, remote, ref, destination)
+	}
+	if err := m.GitPushTransport.Fetch(repo, remote, ref, destination); err != nil {
+		return err
+	}
+	if got := git(m.t, repo, "rev-parse", destination); got != m.tip {
+		m.t.Fatalf("fetched ref = %q, want %q", got, m.tip)
+	}
+	if _, err := branch.ValidateRange(repo, m.endpointTip, m.tip, m.goalID); err != nil {
+		m.t.Fatalf("fetched range is not visible: %v", err)
+	}
+	m.fetched = true
+	return nil
 }
 
-func mirrorRequest(f *branchFixture, transport string) branch.MirrorRequest {
-	return branch.MirrorRequest{Repo: f.root, Origin: "origin", Transport: transport, EndpointTip: f.base,
-		GoalID: "goal-a", OpID: "mirror-test", CheckClaim: claimAllowed}
+func (m *observingMirrorTransport) Push(repo, remote, ref, expected, tip string) (branch.CASOutcome, error) {
+	m.t.Helper()
+	if !m.fetched || m.pushed || repo != m.repo || remote != m.transport || ref != m.ref || expected != "" || tip != m.tip {
+		m.t.Fatalf("mirror push = (%q, %q, %q, %q, %q)", repo, remote, ref, expected, tip)
+	}
+	if got := goalRef(m.t, repo, "refs/metasystem/goals/fetch/"); got != "" {
+		m.t.Fatalf("temporary fetch ref remains before publication: %q", got)
+	}
+	m.pushed = true
+	return m.GitPushTransport.Push(repo, remote, ref, expected, tip)
 }
 
-func TestTransportMirrorAndLeasedDelete(t *testing.T) {
+func TestMirrorGitAdapterTransfersAndCleansRef(t *testing.T) {
 	t.Parallel()
 	f := newBranchFixture(t)
+	mirrorClone := cloneBranchFixture(t, f)
 	transport := filepath.Join(t.TempDir(), "transport.git")
 	git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
-	git(t, f.root, "remote", "add", "transport", transport)
-	commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	git(t, mirrorClone.root, "remote", "add", "transport", transport)
+	tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	if _, err := branch.Push(pushRequest(f, "mirror-origin-one")); err != nil {
 		t.Fatal(err)
 	}
-	first, err := branch.Mirror(mirrorRequest(f, "transport"))
-	if err != nil || git(t, transport, "rev-parse", "refs/heads/goal/goal-a") != first.Tip {
-		t.Fatalf("first mirror = %+v err=%v", first, err)
+	if got := remoteGoalTip(t, f); got != tip {
+		t.Fatalf("origin tip = %q, want %q", got, tip)
 	}
-	stage(t, f, "metasystem/code.go", "amended")
-	if _, err := branch.CommitStaged(branch.CommitRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
-		GoalID: "goal-a", Unit: "u1", OpID: "mirror-amend", Kind: branch.Unit, Amend: true, CheckClaim: claimAllowed}); err != nil {
-		t.Fatal(err)
+	if _, err := execGit(mirrorClone.root, "cat-file", "-e", tip+"^{commit}"); err == nil {
+		t.Fatalf("mirror clone already has origin tip %q", tip)
 	}
-	if _, err := branch.Push(pushRequest(f, "mirror-origin-two")); err != nil {
-		t.Fatal(err)
+	const ref = "refs/heads/goal/goal-a"
+	const opID = "mirror-adapter"
+	adapter := &observingMirrorTransport{t: t, repo: mirrorClone.root, origin: "origin", transport: "transport", ref: ref,
+		destination: "refs/metasystem/goals/fetch/" + opID, endpointTip: f.base, goalID: "goal-a", tip: tip}
+	result, err := branch.Mirror(branch.MirrorRequest{Repo: mirrorClone.root, Origin: "origin", Transport: "transport",
+		EndpointTip: f.base, GoalID: "goal-a", OpID: opID, CheckClaim: claimAllowed, PushTransport: adapter})
+	if err != nil || result != (branch.PushResult{State: "mirrored", Tip: tip}) || !adapter.fetched || !adapter.pushed {
+		t.Fatalf("adapter mirror = %+v, err=%v, fetched=%t, pushed=%t", result, err, adapter.fetched, adapter.pushed)
 	}
-	second, err := branch.Mirror(mirrorRequest(f, "transport"))
-	if err != nil || second.Tip == first.Tip || git(t, transport, "rev-parse", "refs/heads/goal/goal-a") != second.Tip {
-		t.Fatalf("amended mirror = %+v err=%v", second, err)
+	if got := git(t, transport, "rev-parse", ref); got != tip {
+		t.Fatalf("transport tip = %q, want %q", got, tip)
 	}
-
-	intruder := git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", f.base, "-m", "intruder")
-	moved := mirrorRequest(f, "transport")
-	moved.Hooks.AfterTransportRead = func() error {
-		git(t, f.root, "push", "-q", "--force", "transport", intruder+":refs/heads/goal/goal-a")
-		return nil
-	}
-	_, err = branch.Mirror(moved)
-	var refusal *branch.OpError
-	if !errors.As(err, &refusal) || refusal.Code != branch.LeaseMovedCode ||
-		git(t, transport, "rev-parse", "refs/heads/goal/goal-a") != intruder {
-		t.Fatalf("moved transport mirror = %v", err)
-	}
-
-	deleteExpected := intruder
-	other := git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", f.base, "-m", "other")
-	err = branch.Delete(branch.DeleteRequest{Repo: f.root, Remote: "transport", GoalID: "goal-a", Expected: deleteExpected,
-		CheckClaim: claimAllowed, AfterRemoteRead: func() error {
-			git(t, f.root, "push", "-q", "--force", "transport", other+":refs/heads/goal/goal-a")
-			return nil
-		}})
-	if !errors.As(err, &refusal) || refusal.Code != branch.LeaseMovedCode ||
-		git(t, transport, "rev-parse", "refs/heads/goal/goal-a") != other {
-		t.Fatalf("moved leased delete = %v", err)
+	if got := goalRef(t, mirrorClone.root, "refs/metasystem/goals/fetch/"); got != "" {
+		t.Fatalf("temporary fetch ref remains: %q", got)
 	}
 }
 
 func TestMirrorDeleteReconcilesUnknownOutcome(t *testing.T) {
 	t.Parallel()
-	t.Run("mirror operation id", func(t *testing.T) {
-		t.Parallel()
-		f := newBranchFixture(t)
-		transport := filepath.Join(t.TempDir(), "transport.git")
-		git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
-		git(t, f.root, "remote", "add", "transport", transport)
-		commitUnit(t, f, "u1", "metasystem/code.go", "one")
-		if _, err := branch.Push(pushRequest(f, "mirror-op-origin")); err != nil {
-			t.Fatal(err)
-		}
-		destination := ""
-		req := mirrorRequest(f, "transport")
-		req.OpID = "mirror-op"
-		req.PushTransport = recordingFetchTransport{destination: &destination}
-		if _, err := branch.Mirror(req); err != nil || !strings.HasSuffix(destination, "/mirror-op") {
-			t.Fatalf("mirror destination = %q, err=%v", destination, err)
-		}
-	})
-
-	t.Run("delete completed", func(t *testing.T) {
-		t.Parallel()
-		f := newBranchFixture(t)
-		tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
-		git(t, f.root, "push", "-q", "origin", tip+":refs/heads/goal/goal-a")
-		err := branch.Delete(branch.DeleteRequest{Repo: f.root, Remote: "origin", GoalID: "goal-a", Expected: tip,
-			CheckClaim: claimAllowed, PushTransport: unknownAfterLanding{}})
-		if err != nil || git(t, f.root, "ls-remote", "--refs", "origin", "refs/heads/goal/goal-a") != "" {
-			t.Fatalf("completed unknown delete = %v", err)
-		}
-	})
-
-	t.Run("delete not completed", func(t *testing.T) {
-		t.Parallel()
-		f := newBranchFixture(t)
-		tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
-		git(t, f.root, "push", "-q", "origin", tip+":refs/heads/goal/goal-a")
-		err := branch.Delete(branch.DeleteRequest{Repo: f.root, Remote: "origin", GoalID: "goal-a", Expected: tip,
-			CheckClaim: claimAllowed, PushTransport: unknownWithoutLanding{}})
-		var refusal *branch.OpError
-		if !errors.As(err, &refusal) || refusal.Code != branch.PushUnknownCode {
-			t.Fatalf("incomplete unknown delete = %v", err)
-		}
-	})
-
 	t.Run("sweep delete completed", func(t *testing.T) {
 		t.Parallel()
 		f := newBranchFixture(t)

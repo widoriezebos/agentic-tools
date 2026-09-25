@@ -212,6 +212,21 @@ func CaptureSnapshot(repoRoot string) (*Snapshot, error) {
 // commit when one exists, HEAD's goal tree otherwise (the
 // no-record fallback the design names).
 func BaseTip(repoRoot string) (string, error) {
+	return baseTipFor(Endpoint{Root: repoRoot}, checkoutHead)
+}
+
+func checkoutHead(root string) (string, error) {
+	out, err := gitIn(root, "rev-parse", "--verify", "HEAD")
+	return strings.TrimSpace(out), err
+}
+
+func anchorBase(root, commit string) error {
+	_, err := gitIn(root, "update-ref", baseAnchorRef, commit)
+	return err
+}
+
+func baseTipFor(e Endpoint, head func(string) (string, error)) (string, error) {
+	repoRoot := e.Root
 	rec, exists, err := ReadBase(repoRoot)
 	if err != nil {
 		return "", err
@@ -222,12 +237,17 @@ func BaseTip(repoRoot string) (string, error) {
 		}
 		// The recorded commit must still resolve — the anchor ref
 		// below keeps it reachable through gc.
-		if _, err := gitIn(repoRoot, "cat-file", "-e", rec.Commit+"^{commit}"); err != nil {
+		if e.Repository == nil {
+			_, err = gitIn(repoRoot, "cat-file", "-e", rec.Commit+"^{commit}")
+		} else {
+			_, err = readCommitGoals(e, rec.Commit)
+		}
+		if err != nil {
 			return "", fmt.Errorf("the materialized base %s is gone; a pull or checkout rewrites it: %w", short(rec.Commit), err)
 		}
 		return rec.Commit, nil
 	}
-	out, err := gitIn(repoRoot, "rev-parse", "--verify", "HEAD")
+	out, err := head(repoRoot)
 	if err != nil {
 		return "", fmt.Errorf("no materialized base and no HEAD: %w", err)
 	}
@@ -243,11 +263,16 @@ const baseAnchorRef = "refs/metasystem/goals/materialized-base"
 // the ordinary pull/checkout path: no hook needed, the next
 // session's read does the bookkeeping.
 func MaintainBase(repoRoot string) {
+	maintainBaseFor(Endpoint{Root: repoRoot}, checkoutHead, anchorBase)
+}
+
+func maintainBaseFor(e Endpoint, headFn func(string) (string, error), anchor func(string, string) error) {
+	repoRoot := e.Root
 	rec, exists, err := ReadBase(repoRoot)
 	if err != nil || (exists && rec.RefreshDue) {
 		return
 	}
-	headOut, err := gitIn(repoRoot, "rev-parse", "--verify", "HEAD")
+	headOut, err := headFn(repoRoot)
 	if err != nil {
 		return
 	}
@@ -255,7 +280,7 @@ func MaintainBase(repoRoot string) {
 	if exists && rec.Commit == head {
 		return
 	}
-	headFiles, err := ReadCommitGoals(repoRoot, head)
+	headFiles, err := readCommitGoals(e, head)
 	if err != nil {
 		return
 	}
@@ -268,16 +293,20 @@ func MaintainBase(repoRoot string) {
 			return
 		}
 	}
-	_ = RecordMaterialized(repoRoot, head)
+	_ = recordMaterializedFor(e, head, anchor)
 }
 
 // RecordMaterialized stamps the base after a refresh or a checkout
 // update of goal paths, anchoring the commit against gc.
 func RecordMaterialized(repoRoot, commit string) error {
-	if _, err := gitIn(repoRoot, "update-ref", baseAnchorRef, commit); err != nil {
+	return recordMaterializedFor(Endpoint{Root: repoRoot}, commit, anchorBase)
+}
+
+func recordMaterializedFor(e Endpoint, commit string, anchor func(string, string) error) error {
+	if err := anchor(e.Root, commit); err != nil {
 		return err
 	}
-	return WriteBase(repoRoot, BaseRecord{Commit: commit, WrittenAt: nowISO8601()})
+	return WriteBase(e.Root, BaseRecord{Commit: commit, WrittenAt: nowISO8601()})
 }
 
 // SnapshotDelta is one file's difference against the base tree.
@@ -289,7 +318,11 @@ type SnapshotDelta struct {
 // DiffAgainstBase names every ledger path whose snapshot bytes
 // differ from the base commit's tree.
 func DiffAgainstBase(repoRoot string, baseCommit string, snap *Snapshot) ([]SnapshotDelta, error) {
-	baseFiles, err := ReadCommitGoals(repoRoot, baseCommit)
+	return diffAgainstBaseFor(Endpoint{Root: repoRoot}, baseCommit, snap)
+}
+
+func diffAgainstBaseFor(e Endpoint, baseCommit string, snap *Snapshot) ([]SnapshotDelta, error) {
+	baseFiles, err := readCommitGoals(e, baseCommit)
 	if err != nil {
 		return nil, err
 	}
@@ -320,16 +353,21 @@ func DiffAgainstBase(repoRoot string, baseCommit string, snap *Snapshot) ([]Snap
 // written before the refresh and the refresh is idempotently
 // re-runnable when publication succeeded but the refresh died.
 func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string, err error) {
+	return refreshFor(Endpoint{Root: repoRoot}, publishedCommit, snap, anchorBase)
+}
+
+func refreshFor(e Endpoint, publishedCommit string, snap *Snapshot, anchor func(string, string) error) (skipped []string, err error) {
+	repoRoot := e.Root
 	if err := WriteBase(repoRoot, BaseRecord{
 		Commit: publishedCommit, WrittenAt: nowISO8601(), RefreshDue: true,
 		Snapshot: snap.Files,
 	}); err != nil {
 		return nil, err
 	}
-	if _, err := gitIn(repoRoot, "update-ref", baseAnchorRef, publishedCommit); err != nil {
+	if err := anchor(repoRoot, publishedCommit); err != nil {
 		return nil, err
 	}
-	published, err := ReadCommitGoals(repoRoot, publishedCommit)
+	published, err := readCommitGoals(e, publishedCommit)
 	if err != nil {
 		return nil, err
 	}
@@ -429,6 +467,11 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 // bytes differ from the published tree are preserved and named"
 // (the captured snapshot died with the process).
 func RefreshOnly(repoRoot string) (skipped []string, err error) {
+	return refreshOnlyFor(Endpoint{Root: repoRoot}, ResolveEndpoint, anchorBase)
+}
+
+func refreshOnlyFor(readEndpoint Endpoint, resolve func(string) (Endpoint, error), anchor func(string, string) error) (skipped []string, err error) {
+	repoRoot := readEndpoint.Root
 	// The same claim protocol as live reconciles: resolving a
 	// crashed window against a tip captured before a LIVE
 	// publisher's push could otherwise clear the only snapshot
@@ -455,7 +498,7 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 		// tip that carries it. Never landed → the hand edits are
 		// still the worktree's truth; clear the pending flag and say
 		// so — completing "from" the old base would erase them.
-		e, resolveErr := ResolveEndpoint(repoRoot)
+		e, resolveErr := resolve(repoRoot)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
@@ -463,12 +506,12 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 		if nonceErr != nil {
 			return nil, nonceErr
 		}
-		tip, capErr := CaptureTip(e, nonce)
-		CleanupRefs(e, nonce)
+		tip, capErr := e.repository().Capture(nonce)
+		_ = e.repository().Release(nonce)
 		if capErr != nil {
 			return nil, fmt.Errorf("the crashed publish cannot be resolved offline; retry with the remote reachable: %w", capErr)
 		}
-		present, trErr := TrailerPresent(e, tip, rec.Opid)
+		present, trErr := e.repository().TrailerPresent(tip, rec.Opid)
 		if trErr != nil {
 			return nil, trErr
 		}
@@ -485,28 +528,28 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 		// sync mode, or a rewound tip behind the accepted ref, must
 		// not become this checkout's files just because our trailer
 		// sits below it.
-		acceptedTip, hasAccepted, accErr := acceptedTipForGates(repoRoot)
+		acceptedTip, hasAccepted, accErr := e.repository().Accepted()
 		if accErr != nil {
 			return nil, accErr
 		}
 		if hasAccepted {
-			if gateErr := AcceptanceGates(repoRoot, acceptedTip, tip); gateErr != nil {
+			if gateErr := acceptanceGatesFor(e, acceptedTip, tip); gateErr != nil {
 				return nil, fmt.Errorf("the reconcile published, but the canonical tip fails the acceptance gates; repair the branch, then re-run --refresh-only: %w", gateErr)
 			}
 		}
 		if gateErr := SyncModeGate(e, tip); gateErr != nil {
 			return nil, fmt.Errorf("the reconcile published, but the canonical tip fails the sync-mode gate; repair the branch, then re-run --refresh-only: %w", gateErr)
 		}
-		if valErr := ValidateCommit(repoRoot, tip); valErr != nil {
+		if valErr := validateCommitFor(e, tip); valErr != nil {
 			return nil, fmt.Errorf("the reconcile published, but the canonical tip does not validate; repair the branch, then re-run --refresh-only: %w", valErr)
 		}
-		return Refresh(repoRoot, tip, &Snapshot{Files: rec.Snapshot})
+		return refreshFor(e, tip, &Snapshot{Files: rec.Snapshot}, anchor)
 	}
 	// The DURABLE snapshot restores the live session's exact
 	// protection: the completion runs the same refresh the
 	// crash interrupted, post-capture edits, creations, and
 	// deletions all distinguished.
-	return Refresh(repoRoot, rec.Commit, &Snapshot{Files: rec.Snapshot})
+	return refreshFor(readEndpoint, rec.Commit, &Snapshot{Files: rec.Snapshot}, anchor)
 }
 
 func nowISO8601() string {

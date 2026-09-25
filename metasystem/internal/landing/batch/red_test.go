@@ -2,6 +2,8 @@ package batch
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -27,9 +29,9 @@ func (owner *redLedger) Record(_ string, red TrunkRed) ([]EntryRef, error) {
 func (*redLedger) Clear(string, EntryRef, Green) error { return nil }
 func (*redLedger) Open() ([]OpenEntry, error)          { return nil, nil }
 
-func diagnosingBed(t *testing.T) (assemblyBed, Store) {
+func diagnosingBed(t *testing.T) (policyBed, Store) {
 	t.Helper()
-	bed := assemblyFixture(t)
+	bed := policyFixture(t)
 	bed.record.State = StateDiagnosing
 	bed.record.Proof = &Proof{Status: "failed", AttemptID: "tip-attempt"}
 	bed.record.Units[0].ChangedPaths = []string{"a.go"}
@@ -42,7 +44,8 @@ func diagnosingBed(t *testing.T) (assemblyBed, Store) {
 func TestBatchOwnerSearch(t *testing.T) {
 	failing := []RedGroup{{ID: "group", InputManifest: []string{"a.go"}}}
 	t.Run("W12a one named unit ejects after a fresh green base", func(t *testing.T) {
-		_, store := diagnosingBed(t)
+		bed, store := diagnosingBed(t)
+		strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{"prefix-b"}))
 		var requests []DiagnosticRequest
 		err := DiagnoseRed(store, testBatchID, "owner", failing, "", time.Unix(2, 0), RedSeams{Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
 			requests = append(requests, request)
@@ -50,12 +53,12 @@ func TestBatchOwnerSearch(t *testing.T) {
 		}})
 		must(t, err)
 		record := load(t, store)
-		if len(requests) != 1 || !requests[0].NeverReuse || requests[0].Tree != record.BaseTree || record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitJoined || record.State != StateOpen {
+		if len(requests) != 1 || !requests[0].NeverReuse || requests[0].Tree != record.BaseTree || record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitJoined || record.State != StateOpen || record.TipTree != "prefix-b" || !slices.Equal(record.PrefixTrees, []string{"prefix-b"}) {
 			t.Fatalf("requests=%+v record=%+v", requests, record)
 		}
 	})
 	t.Run("W12b named units run alone serially in join order", func(t *testing.T) {
-		bed := assemblyFixture(t)
+		bed := policyFixture(t)
 		unnamedTail := Unit{GoalID: "goal-c", Chain: "chain-c", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined, ChangedPaths: []string{"c.go"}}
 		bed.record.Units[0].ChangedPaths = []string{"a.go"}
 		bed.record.Units[1].ChangedPaths = []string{"b.go"}
@@ -64,6 +67,11 @@ func TestBatchOwnerSearch(t *testing.T) {
 		bed.record.Proof = &Proof{Status: "failed", AttemptID: "tip-attempt"}
 		store := NewStore(bed.root, nil)
 		must(t, store.Create(bed.record))
+		strictReassembly(t, &store,
+			expectedAssembly(bed.base, []string{"goal-c"}, []string{"chain-c"}, []string{"prefix-c"}),
+			expectedAssembly(bed.base, []string{"goal-a", "goal-c"}, []string{"chain-a", "chain-c"}, []string{"prefix-a", "prefix-ac"}),
+			expectedAssembly(bed.base, []string{"goal-a", "goal-c", "goal-b"}, []string{"chain-a", "chain-c", "chain-b"}, []string{"prefix-a", "prefix-ac", "prefix-acb"}),
+			expectedAssembly(bed.base, []string{"goal-a", "goal-c"}, []string{"chain-a", "chain-c"}, []string{"prefix-a", "prefix-ac"}))
 		groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go", "b.go"}}}
 		var requests []DiagnosticRequest
 		calls := 0
@@ -84,16 +92,22 @@ func TestBatchOwnerSearch(t *testing.T) {
 		if !slices.Equal(gotGoals, []string{"goal-b", "goal-c", "goal-a", "goal-b"}) ||
 			requests[0].Claim.Revision != 8 || requests[1].Claim.Revision != 9 || requests[1].Claim.AccountingRevision != 7 ||
 			requests[2].Claim.Revision != 7 || requests[3].Claim.Revision != 8 ||
-			record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || record.Units[2].State != UnitReturnPending || record.State != StateOpen {
+			record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || record.Units[2].State != UnitReturnPending || record.State != StateOpen ||
+			record.TipTree != "prefix-ac" || !slices.Equal(record.PrefixTrees, []string{"prefix-a", "prefix-ac"}) {
 			t.Fatalf("requests=%+v record=%+v", requests, record)
 		}
 	})
 	t.Run("W12c three named units eject C and name its landed partners", func(t *testing.T) {
-		_, store := diagnosingBed(t)
+		bed, store := diagnosingBed(t)
 		must(t, store.Update(testBatchID, func(record *Record) error {
 			record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined, ChangedPaths: []string{"c.go"}})
 			return nil
 		}))
+		strictReassembly(t, &store,
+			expectedAssembly(bed.base, []string{"goal-a"}, []string{"chain-a"}, []string{"prefix-a"}),
+			expectedAssembly(bed.base, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"prefix-a", "prefix-ab"}),
+			expectedAssembly(bed.base, []string{"goal-a", "goal-b", "goal-c"}, []string{"chain-a", "chain-b", "chain-c"}, []string{"prefix-a", "prefix-ab", "prefix-abc"}),
+			expectedAssembly(bed.base, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"prefix-a", "prefix-ab"}))
 		groups := []RedGroup{{ID: "group", InputManifest: []string{"*.go"}, LogPath: "logs/group.log", Failures: []Failure{{Name: "TestC"}}}}
 		calls := 0
 		err := DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
@@ -111,7 +125,8 @@ func TestBatchOwnerSearch(t *testing.T) {
 				t.Fatalf("failure %q does not contain %q; record=%+v", failure, want, record)
 			}
 		}
-		if calls != 4 || record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || record.Units[2].State != UnitReturnPending {
+		if calls != 4 || record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || record.Units[2].State != UnitReturnPending ||
+			record.TipTree != "prefix-ab" || !slices.Equal(record.PrefixTrees, []string{"prefix-a", "prefix-ab"}) {
 			t.Fatalf("calls=%d record=%+v", calls, record)
 		}
 	})
@@ -125,6 +140,7 @@ func TestBatchOwnerSearch(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, store := diagnosingBed(t)
+			strictReassembly(t, &store)
 			ledger := &redLedger{}
 			err := DiagnoseRed(store, testBatchID, "owner", test.groups, "", time.Unix(2, 0), RedSeams{
 				Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
@@ -149,21 +165,22 @@ func TestBatchOwnerSearch(t *testing.T) {
 
 func TestBatchEjectAndReassemble(t *testing.T) {
 	bed, store := diagnosingBed(t)
+	want := []string{"prefix-b"}
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, want))
 	if err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group", InputManifest: []string{"a.go"}}}, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
 		return DiagnosticResult{AttemptID: "base"}, nil
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	record := load(t, store)
-	want, err := assembleUnits(bed.root, bed.base, []Unit{bed.record.Units[1]})
-	must(t, err)
 	if record.TipTree != want[0] || !slices.Equal(record.PrefixTrees, want) || record.Proof != nil || record.Seal != nil {
 		t.Fatalf("reassembled=%+v want=%v", record, want)
 	}
 }
 
 func TestBatchSingleOwnerRedEjectsAndSurvivorsLand(t *testing.T) {
-	_, store := diagnosingBed(t)
+	bed, store := diagnosingBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{"prefix-b"}))
 	handBacks := 0
 	returns := ReturnSeams{
 		Read: func(string, string, string) (ReturnLedgerGoal, error) {
@@ -236,6 +253,7 @@ func TestBatchSingleOwnerRedEjectsAndSurvivorsLand(t *testing.T) {
 
 func TestBatchDiagnosticRefusalHoldsWithoutEjection(t *testing.T) {
 	_, store := diagnosingBed(t)
+	strictReassembly(t, &store)
 	var next string
 	err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group"}}, "", time.Unix(2, 0), RedSeams{
 		Run: func(DiagnosticRequest) (DiagnosticResult, error) {
@@ -262,7 +280,12 @@ func TestBatchDiagnosticRefusalRequiresLiveExactFenceBeforeEjection(t *testing.T
 		{name: "unreadable live ledger", readErr: errors.New("accepted ledger unreadable")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, store := diagnosingBed(t)
+			bed, store := diagnosingBed(t)
+			if test.confirmed {
+				strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-a"}, []string{"chain-a"}, []string{"prefix-a"}))
+			} else {
+				strictReassembly(t, &store)
+			}
 			called := 0
 			err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group"}}, "", time.Unix(2, 0), RedSeams{
 				Run: func(DiagnosticRequest) (DiagnosticResult, error) {
@@ -283,7 +306,8 @@ func TestBatchDiagnosticRefusalRequiresLiveExactFenceBeforeEjection(t *testing.T
 			}
 			if test.confirmed {
 				if record.State != StateOpen || record.Units[1].State != UnitReturnPending || record.Units[1].Outcome != UnitEjected ||
-					record.Units[1].Failure != "live exact stop fence" || record.Units[0].State != UnitJoined || record.Proof != nil || record.Seal != nil {
+					record.Units[1].Failure != "live exact stop fence" || record.Units[0].State != UnitJoined || record.Proof != nil || record.Seal != nil ||
+					record.TipTree != "prefix-a" || !slices.Equal(record.PrefixTrees, []string{"prefix-a"}) {
 					t.Fatalf("confirmed fence did not reassemble only the survivor: %+v", record)
 				}
 			} else if record.State != StateHeldUnclassified || record.Proof == nil ||
@@ -296,6 +320,7 @@ func TestBatchDiagnosticRefusalRequiresLiveExactFenceBeforeEjection(t *testing.T
 
 func TestBatchReopenNeedsNewTree(t *testing.T) {
 	bed, store := diagnosingBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"moved-a", "moved-ab"}))
 	ledger := &redLedger{}
 	groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go"}}}
 	must(t, DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
@@ -307,13 +332,15 @@ func TestBatchReopenNeedsNewTree(t *testing.T) {
 	if err := ReopenHeld(store, testBatchID, bed.moved, "owner", time.Unix(3, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if record := load(t, store); record.State != StateOpen || record.BaseTree != bed.moved || record.TrunkRed != nil {
+	if record := load(t, store); record.State != StateOpen || record.BaseTree != bed.moved || record.TrunkRed != nil ||
+		record.TipTree != "moved-ab" || !slices.Equal(record.PrefixTrees, []string{"moved-a", "moved-ab"}) {
 		t.Fatalf("reopened=%+v", record)
 	}
 }
 
 func TestTrunkRedHookAndNarrowHold(t *testing.T) {
 	_, store := diagnosingBed(t)
+	strictReassembly(t, &store)
 	groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go"}}}
 	err := DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
 		return DiagnosticResult{Groups: groups}, nil
@@ -340,5 +367,107 @@ func TestGLEPathDiagnosticManifestLiteralAttribution(t *testing.T) {
 	}
 	if diagnosticPathMatches(entry, "metasystem/pkg/aliteral.go") {
 		t.Fatal("discovered literal matched another filename")
+	}
+}
+
+func TestBatchDiagnosticAssemblyFailureHolds(t *testing.T) {
+	t.Parallel()
+	bed, store := diagnosingBed(t)
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c",
+			Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7},
+			State: UnitJoined, ChangedPaths: []string{"c.go"}})
+		return nil
+	}))
+	wantErr := errors.New("unnamed patch does not compose")
+	strictReassembly(t, &store, expectedReassembly{kind: "assemble", base: bed.base,
+		goals: []string{"goal-c"}, chains: []string{"chain-c"}, err: wantErr})
+	groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go", "b.go"}}}
+	requests := 0
+	must(t, DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{
+		Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
+			requests++
+			if request.Tree != bed.base || !request.NeverReuse {
+				t.Fatalf("base diagnostic request=%+v", request)
+			}
+			return DiagnosticResult{AttemptID: "base-green"}, nil
+		},
+	}))
+	record := load(t, store)
+	if requests != 1 || record.State != StateHeldUnclassified || record.Proof == nil ||
+		!strings.Contains(record.Proof.Failure, wantErr.Error()) ||
+		slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
+		t.Fatalf("requests=%d record=%+v", requests, record)
+	}
+}
+
+func TestBatchReopenAssemblyFailurePreservesHeldRecord(t *testing.T) {
+	t.Parallel()
+	bed, store := diagnosingBed(t)
+	groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go"}}}
+	ledger := &redLedger{}
+	must(t, DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{
+		Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+			return DiagnosticResult{AttemptID: "base-red", Groups: groups}, nil
+		},
+		MintOpid: func() (string, error) { return "op-1", nil }, Ledger: ledger,
+	}))
+	wantErr := errors.New("moved base unavailable")
+	strictReassembly(t, &store, expectedReassembly{kind: "assemble", base: bed.moved,
+		goals: []string{"goal-a", "goal-b"}, chains: []string{"chain-a", "chain-b"}, err: wantErr})
+	path := filepath.Join(store.root, "artifacts", "agents", "landing-batches", testBatchID+".json")
+	before, err := os.ReadFile(path)
+	must(t, err)
+	err = ReopenHeld(store, testBatchID, bed.moved, "owner", time.Unix(3, 0))
+	after, readErr := os.ReadFile(path)
+	must(t, readErr)
+	if !errors.Is(err, wantErr) || !slices.Equal(before, after) || load(t, store).State != StateHeldTrunkRed {
+		t.Fatalf("reopen error=%v record changed=%t", err, !slices.Equal(before, after))
+	}
+}
+
+func TestBatchDiagnosticNamedConflictEjectsInOrder(t *testing.T) {
+	t.Parallel()
+	bed, store := diagnosingBed(t)
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c",
+			Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7},
+			State: UnitJoined, ChangedPaths: []string{"c.go"}})
+		return nil
+	}))
+	conflict := &assemblyConflict{GoalID: "goal-b", Cause: errors.New("goal-b patch conflict")}
+	strictReassembly(t, &store,
+		expectedAssembly(bed.base, []string{"goal-a"}, []string{"chain-a"}, []string{"prefix-a"}),
+		expectedReassembly{kind: "assemble", base: bed.base, goals: []string{"goal-b"}, chains: []string{"chain-b"}, err: conflict},
+		expectedAssembly(bed.base, []string{"goal-c"}, []string{"chain-c"}, []string{"prefix-c"}),
+		expectedAssembly(bed.base, []string{"goal-c"}, []string{"chain-c"}, []string{"prefix-c"}))
+	groups := []RedGroup{{ID: "group", InputManifest: []string{"*.go"}, LogPath: "logs/group.log", Failures: []Failure{{Name: "TestA"}}}}
+	var requested []string
+	must(t, DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{
+		Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
+			requested = append(requested, request.GoalID)
+			if len(requested) == 2 {
+				return DiagnosticResult{AttemptID: "a-red", Groups: groups}, nil
+			}
+			return DiagnosticResult{AttemptID: "green"}, nil
+		},
+	}))
+	record := load(t, store)
+	if !slices.Equal(requested, []string{"goal-c", "goal-a", "goal-c"}) || record.State != StateOpen ||
+		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined ||
+		!strings.Contains(record.Units[0].Failure, "a-red") || !strings.Contains(record.Units[0].Failure, "TestA") ||
+		!strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") ||
+		!strings.Contains(record.Units[1].Failure, conflict.Error()) ||
+		record.TipTree != "prefix-c" || !slices.Equal(record.PrefixTrees, []string{"prefix-c"}) {
+		t.Fatalf("requests=%v record=%+v", requested, record)
+	}
+	var returns []string
+	for _, entry := range record.History {
+		if entry.Verb == "return-request" {
+			returns = append(returns, strings.Fields(entry.Detail)[0])
+		}
+	}
+	if !slices.Equal(returns, []string{"goal-a", "goal-b"}) {
+		t.Fatalf("return order=%v", returns)
 	}
 }

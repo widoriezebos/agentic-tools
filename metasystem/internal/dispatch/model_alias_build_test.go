@@ -1,8 +1,6 @@
 package dispatch
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -41,19 +39,7 @@ func TestFMA_R2_FollowupCanonicalRelay(t *testing.T) {
 
 func TestBuildRecordAliasProvenance(t *testing.T) {
 	root := sandbox(t)
-	for _, args := range [][]string{{"init", "-q"}, {"config", "user.name", "fixture"}, {"config", "user.email", "fixture@example.invalid"}} {
-		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(root, "tracked"), []byte("fixture\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "tracked"}, {"commit", "-qm", "fixture"}} {
-		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
+	facts := recordFacts(t, root, 1, "")
 	dir := t.TempDir()
 	permissions := writeJSONFile(t, dir, "permissions.json", map[string]any{})
 	capResolution := writeJSONFile(t, dir, "cap.json", map[string]any{
@@ -61,14 +47,14 @@ func TestBuildRecordAliasProvenance(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	output := filepath.Join(dir, "record.json")
-	err := BuildRecord(BuildRecordParams{
+	err := buildRecord(BuildRecordParams{
 		Output: output, Job: "alias-record", Role: "implementer", Root: root,
 		Runtime: "fake", Workspace: root, CapResolution: capResolution, Model: "fake-model",
 		AliasedFrom: "fake-source", RosterAliasedFrom: "fake-roster-source",
 		Permissions: permissions, Fallbacks: "[]", ReasoningEffort: "medium",
 		DestructiveReach: HazardMechanical, LaunchMode: LaunchModeSharedCheckout,
 		OutputStream: filepath.Join(dir, "record.jsonl"),
-	})
+	}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}

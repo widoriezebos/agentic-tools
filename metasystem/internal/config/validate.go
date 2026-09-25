@@ -25,6 +25,10 @@ import (
 var templateValue = regexp.MustCompile(`^<[^<>]+>$`)
 
 func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, err error) {
+	return validateWithRunner(confPath, repoRoot, runGit)
+}
+
+func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsent bool, problems []string, err error) {
 	content, readErr := os.ReadFile(confPath)
 	if readErr != nil {
 		return false, nil, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
@@ -443,7 +447,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	_, batchRootEnv := os.LookupEnv(EnvName(BatchRootKey))
 	_, batchWaitEnv := os.LookupEnv(EnvName(BatchMaxWaitKey))
 	if _, rootSet := values[BatchRootKey]; rootSet || batchRootLocal || batchRootEnv {
-		if _, batchErr := ResolveBatchLanding(confPath, repoRoot, func() time.Time { return time.Time{} }); batchErr != nil {
+		if _, batchErr := resolveBatchLandingWithRunner(confPath, repoRoot, func() time.Time { return time.Time{} }, runner); batchErr != nil {
 			add("%v", batchErr)
 		}
 	} else if _, waitSet := values[BatchMaxWaitKey]; waitSet || batchWaitLocal || batchWaitEnv {

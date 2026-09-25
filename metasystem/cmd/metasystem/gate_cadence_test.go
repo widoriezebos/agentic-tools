@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -158,13 +160,57 @@ func TestCadenceRevalidationDoesNotBuildBeforeClaim(t *testing.T) {
 	}
 }
 
+type cadenceDeclaredWorkspace struct {
+	workspace gittree.Workspace
+	closed    *int
+}
+
+func (candidate *cadenceDeclaredWorkspace) Workspace() gittree.Workspace { return candidate.workspace }
+func (candidate *cadenceDeclaredWorkspace) Close() error {
+	*candidate.closed++
+	return nil
+}
+
 func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *testing.T) {
-	t.Parallel()
+	const childEnvironment = "GO_WANT_CADENCE_WORKER_POLICY_CHILD"
+	if os.Getenv(childEnvironment) != "1" {
+		t.Parallel()
+		shim := t.TempDir()
+		denialLog := filepath.Join(t.TempDir(), "denied-git.log")
+		if err := os.WriteFile(denialLog, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := testexec.WriteFile(filepath.Join(shim, "git"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CADENCE_GIT_DENIAL_LOG\"\nexit 97\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		child := exec.Command(os.Args[0], "-test.run=^TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation$", "-test.count=1")
+		child.Env = append(os.Environ(), "PATH="+shim+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"CADENCE_GIT_DENIAL_LOG="+denialLog, childEnvironment+"=1")
+		output, err := child.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Git-denied cadence child: %v\n%s", err, output)
+		}
+		if !strings.Contains("\n"+string(output), "\nPASS\n") {
+			t.Fatalf("Git-denied cadence child did not report PASS: %q", output)
+		}
+		denied, err := os.ReadFile(denialLog)
+		if err != nil || string(denied) != "--version\n" {
+			t.Fatalf("unexpected Git calls in cadence child: %q, %v", denied, err)
+		}
+		t.Log("Git-denied cadence child passed with only its denial probe")
+		return
+	}
+	probe := exec.Command("git", "--version")
+	if err := probe.Run(); err == nil || probe.ProcessState == nil || probe.ProcessState.ExitCode() != 97 {
+		t.Fatalf("Git denial probe did not exit 97: %v", err)
+	}
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "source.txt"), []byte("current\n"), 0o600); err != nil {
+	source := []byte("current\n")
+	configuration := []byte("testing.workers=4\n" + proofrun.AdmissionCapKey + "=2\n")
+	if err := os.WriteFile(filepath.Join(root, "source.txt"), source, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("testing.workers=4\n"+proofrun.AdmissionCapKey+"=2\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), configuration, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	wantWorkers := 4
@@ -175,12 +221,24 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 		}
 		wantWorkers = min(wantWorkers, ceiling)
 	}
-	testingFixtureGit(t, root, "init", "-q", "-b", "main")
-	testingFixtureGit(t, root, "add", "source.txt", "metasystem.conf")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture")
-	tree, err := (gittree.Workspace{Dir: root}).HeadTree()
-	if err != nil {
-		t.Fatal(err)
+	tree := strings.Repeat("e", 40)
+	var beds []string
+	closed := 0
+	openCandidate := func(projectRoot, candidateTree string) (proofrun.CandidateWorkspace, error) {
+		if projectRoot != root || candidateTree != tree {
+			return nil, errors.New("unexpected cadence candidate tree or root")
+		}
+		bed := t.TempDir()
+		for name, data := range map[string][]byte{"source.txt": source, "metasystem.conf": configuration} {
+			if err := os.WriteFile(filepath.Join(bed, name), data, 0o600); err != nil {
+				return nil, err
+			}
+		}
+		beds = append(beds, bed)
+		return &cadenceDeclaredWorkspace{workspace: gittree.Workspace{Dir: bed, RawSource: func(call gittree.RawRequest) gittree.RawResult {
+			t.Errorf("Git requested in declared candidate bed: %v", call.Args)
+			return gittree.RawResult{Err: errors.New("Git denied"), ExitCode: 97}
+		}}, closed: &closed}, nil
 	}
 	share := min(2, wantWorkers)
 	group := testpolicy.Group{ID: "section/deep", Kind: "section", Adapter: "command", CWD: ".", Inputs: []string{"source.txt"},
@@ -201,6 +259,7 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 		t.Fatalf("resolved cadence policy workers=%d admission=%d err=%v", resolved.Workers, resolved.AdmissionMaximum, err)
 	}
 	request := testingRunRequest(resolved, "cadence-retained", "", "", engineDigest, buildIdentity)
+	request.WithCandidateOpener(openCandidate)
 	identities, metadata, launches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
 	if err != nil || launches != 0 {
 		t.Fatalf("prepare retained cadence metadata launches=%d err=%v", launches, err)
@@ -224,7 +283,8 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 		PendingTestGroups: map[string]string{group.ID: identities[group.ID]}, TestResult: &result}
 	repreparations := 0
 	dependencies := cadenceRevalidationDependencies{
-		readAttempts: func(string) ([]proofrun.Attempt, error) { return []proofrun.Attempt{attempt}, nil },
+		openCandidate: openCandidate,
+		readAttempts:  func(string) ([]proofrun.Attempt, error) { return []proofrun.Attempt{attempt}, nil },
 		buildIdentity: func(context.Context, gittree.Workspace, string, string, []string) (string, error) {
 			return buildIdentity, nil
 		},
@@ -247,6 +307,14 @@ func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *tes
 		}
 		if _, err := os.Stat(filepath.Join(root, "native-launched")); !os.IsNotExist(err) {
 			t.Fatalf("%s revalidation launched the retained native group: %v", name, err)
+		}
+		if closed != len(beds) {
+			t.Fatalf("%s detached candidate beds opened=%d closed=%d", name, len(beds), closed)
+		}
+		for _, bed := range beds {
+			if _, err := os.Stat(filepath.Join(bed, "native-launched")); !os.IsNotExist(err) {
+				t.Fatalf("%s revalidation launched the retained native group in %s: %v", name, bed, err)
+			}
 		}
 	}
 	assertReused("same-tree", prepared, 0)

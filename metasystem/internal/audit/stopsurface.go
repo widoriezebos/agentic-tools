@@ -98,11 +98,34 @@ type stopSurfaceKey struct {
 }
 
 type stopSurfaceInspection struct {
-	workspace gittree.Workspace
+	workspace stopSurfaceWorkspace
 	base      string
 	baseTree  string
 	added     []StopSurfaceLine
 	removed   []StopSurfaceLine
+}
+
+type stopSurfaceWorkspace interface {
+	ResolveCommit(string) (string, error)
+	HeadCommit() (string, bool, error)
+	RefMap() (map[string]string, error)
+	MergeBases(string, string) ([]string, error)
+	TreeOf(string) (string, error)
+	FileAt(string, string) ([]byte, bool, error)
+}
+
+type stopSurfaceDependencies struct {
+	workspace          stopSurfaceWorkspace
+	candidateInventory func(string) ([]byte, error)
+	treeInventory      func(string, string) ([]byte, error)
+}
+
+func gitStopSurfaceDependencies(root string) stopSurfaceDependencies {
+	return stopSurfaceDependencies{
+		workspace:          gittree.Workspace{Dir: root},
+		candidateInventory: gitStopSurfaceCandidateInventory,
+		treeInventory:      gitStopSurfaceTreeInventory,
+	}
 }
 
 type stopMoveDeclaration struct {
@@ -114,7 +137,11 @@ type stopMoveDeclaration struct {
 // AuditStopDecisionSurface compares the current files on disk with the
 // selected committed base and validates declarations added by this candidate.
 func AuditStopDecisionSurface(root string, options StopSurfaceOptions) (StopSurfaceResult, error) {
-	inspection, err := inspectStopDecisionSurface(root, options)
+	return auditStopDecisionSurface(root, options, gitStopSurfaceDependencies(root))
+}
+
+func auditStopDecisionSurface(root string, options StopSurfaceOptions, dependencies stopSurfaceDependencies) (StopSurfaceResult, error) {
+	inspection, err := inspectStopDecisionSurfaceWithDependencies(root, options, dependencies)
 	if err != nil {
 		return StopSurfaceResult{}, err
 	}
@@ -169,7 +196,11 @@ func AuditStopDecisionSurface(root string, options StopSurfaceOptions) (StopSurf
 // DeclareStopDecisionSurface writes one declaration for the complete current
 // removed set. The audit remains the authority that accepts the new file.
 func DeclareStopDecisionSurface(root string, options StopSurfaceOptions, goalID, reason string) (string, error) {
-	inspection, err := inspectStopDecisionSurface(root, options)
+	return declareStopDecisionSurface(root, options, goalID, reason, gitStopSurfaceDependencies(root))
+}
+
+func declareStopDecisionSurface(root string, options StopSurfaceOptions, goalID, reason string, dependencies stopSurfaceDependencies) (string, error) {
+	inspection, err := inspectStopDecisionSurfaceWithDependencies(root, options, dependencies)
 	if err != nil {
 		return "", err
 	}
@@ -208,9 +239,9 @@ func DeclareStopDecisionSurface(root string, options StopSurfaceOptions, goalID,
 	return relative, nil
 }
 
-func inspectStopDecisionSurface(root string, options StopSurfaceOptions) (stopSurfaceInspection, error) {
-	workspace := gittree.Workspace{Dir: root}
-	base, err := resolveStopSurfaceBase(workspace, options.Base)
+func inspectStopDecisionSurfaceWithDependencies(root string, options StopSurfaceOptions, dependencies stopSurfaceDependencies) (stopSurfaceInspection, error) {
+	workspace := dependencies.workspace
+	base, err := resolveStopSurfaceBaseWithWorkspace(workspace, options.Base)
 	if err != nil {
 		return stopSurfaceInspection{}, err
 	}
@@ -218,11 +249,11 @@ func inspectStopDecisionSurface(root string, options StopSurfaceOptions) (stopSu
 	if err != nil {
 		return stopSurfaceInspection{}, fmt.Errorf("stop decision surface base tree: %w", err)
 	}
-	baseFiles, err := discoverStopSurfaceFilesAtTree(root, baseTree)
+	baseFiles, err := discoverStopSurfaceFilesAtTreeWithInventory(root, baseTree, dependencies.treeInventory)
 	if err != nil {
 		return stopSurfaceInspection{}, fmt.Errorf("discover base stop decision surface: %w", err)
 	}
-	candidateFiles, err := discoverStopSurfaceFiles(root)
+	candidateFiles, err := discoverStopSurfaceFilesWithInventory(root, dependencies.candidateInventory)
 	if err != nil {
 		return stopSurfaceInspection{}, fmt.Errorf("discover candidate stop decision surface: %w", err)
 	}
@@ -252,7 +283,7 @@ func inspectStopDecisionSurface(root string, options StopSurfaceOptions) (stopSu
 	}, nil
 }
 
-func resolveStopSurfaceBase(workspace gittree.Workspace, requested string) (string, error) {
+func resolveStopSurfaceBaseWithWorkspace(workspace stopSurfaceWorkspace, requested string) (string, error) {
 	if requested != "" {
 		base, err := workspace.ResolveCommit(requested)
 		if err != nil {
@@ -286,6 +317,10 @@ func resolveStopSurfaceBase(workspace gittree.Workspace, requested string) (stri
 }
 
 func discoverStopSurfaceFiles(root string) ([]stopSurfaceFile, error) {
+	return discoverStopSurfaceFilesWithInventory(root, gitStopSurfaceCandidateInventory)
+}
+
+func gitStopSurfaceCandidateInventory(root string) ([]byte, error) {
 	command := exec.Command("git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--")
 	command.Env = gittree.ScrubbedEnviron()
 	output, err := command.CombinedOutput()
@@ -295,6 +330,14 @@ func discoverStopSurfaceFiles(root string) ([]stopSurfaceFile, error) {
 			return nil, fmt.Errorf("list candidate stop decision surface files: %w", err)
 		}
 		return nil, fmt.Errorf("list candidate stop decision surface files: %s: %w", detail, err)
+	}
+	return output, nil
+}
+
+func discoverStopSurfaceFilesWithInventory(root string, inventory func(string) ([]byte, error)) ([]stopSurfaceFile, error) {
+	output, err := inventory(root)
+	if err != nil {
+		return nil, err
 	}
 
 	files := []stopSurfaceFile{}
@@ -326,11 +369,19 @@ func discoverStopSurfaceFiles(root string) ([]stopSurfaceFile, error) {
 	return files, nil
 }
 
-func discoverStopSurfaceFilesAtTree(root, tree string) ([]stopSurfaceFile, error) {
+func gitStopSurfaceTreeInventory(root, tree string) ([]byte, error) {
 	command := exec.Command("git", "-C", root, "ls-tree", "-r", "-z", "--name-only", "--full-tree", tree)
 	output, err := command.Output()
 	if err != nil {
 		return nil, fmt.Errorf("list tree %s: %w", tree, err)
+	}
+	return output, nil
+}
+
+func discoverStopSurfaceFilesAtTreeWithInventory(root, tree string, inventory func(string, string) ([]byte, error)) ([]stopSurfaceFile, error) {
+	output, err := inventory(root, tree)
+	if err != nil {
+		return nil, err
 	}
 	files := []stopSurfaceFile{}
 	for _, raw := range bytes.Split(output, []byte{0}) {
@@ -605,7 +656,7 @@ func expandStopSurfaceDifference(left, right map[stopSurfaceKey]int) []StopSurfa
 	return lines
 }
 
-func newStopMoveDeclarations(root string, workspace gittree.Workspace, baseTree string, reader StopSurfaceGoalReader) ([]stopMoveDeclaration, []string, error) {
+func newStopMoveDeclarations(root string, workspace stopSurfaceWorkspace, baseTree string, reader StopSurfaceGoalReader) ([]stopMoveDeclaration, []string, error) {
 	directory := filepath.Join(root, filepath.FromSlash(stopMoveDirectory))
 	entries, err := os.ReadDir(directory)
 	if os.IsNotExist(err) {

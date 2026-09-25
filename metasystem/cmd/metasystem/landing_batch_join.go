@@ -316,8 +316,12 @@ func directoryTreesOverlap(left, right string) bool {
 // Go tests before join hands the member to the batch owner. The installed
 // contract path and each group's cwd are independent of the repository root.
 func productionBatchProtectedTests(root, baseTree, candidateTree string) error {
+	return productionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree, nil)
+}
+
+func productionBatchProtectedTestsWithRawSource(root, baseTree, candidateTree string, raw func(gittree.RawRequest) gittree.RawResult) error {
 	installationRoot := batch.ModuleRoot(root)
-	installation := gittree.Workspace{Dir: installationRoot}
+	installation := gittree.Workspace{Dir: installationRoot, RawSource: raw}
 	projectRoot, err := installation.TopLevel()
 	if err != nil {
 		return err
@@ -338,7 +342,7 @@ func productionBatchProtectedTests(root, baseTree, candidateTree string) error {
 		return fmt.Errorf("testing.contract must be a relative normalized path")
 	}
 	contractPath := filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), contractRel))
-	workspace := gittree.Workspace{Dir: projectRoot}
+	workspace := gittree.Workspace{Dir: projectRoot, RawSource: raw}
 	baseConfigPath := filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), "metasystem.conf"))
 	baseConfig, present, err := workspace.FileAt(baseTree, baseConfigPath)
 	if err != nil {

@@ -20,7 +20,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -131,6 +133,10 @@ func authorizedFixtureClockEnvironment(root string, environment []string) ([]str
 // that is widened here, and none of it passes through a root this verb
 // lets the caller choose.
 func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) {
+	return goalCallerWithRepositoryTop(root, callerPid, verb, stateroot.RepositoryTop)
+}
+
+func goalCallerWithRepositoryTop(root string, callerPid int64, verb string, repositoryTop func(string) (string, error)) (goal.Caller, error) {
 	if callerPid == 0 {
 		callerPid = int64(os.Getppid())
 	}
@@ -142,7 +148,7 @@ func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) 
 		}
 	}
 
-	view, err := classifyVerbCaller(root, callerPid)
+	view, err := classifyVerbCallerWith(root, callerPid, repositoryTop)
 	if err != nil {
 		return goal.Caller{}, fmt.Errorf("caller classification failed: %v", err)
 	}
@@ -184,7 +190,43 @@ func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) 
 // mutation, and the result on stdout.
 func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*string,
 	run func(*goal.Store, goal.Caller, []string) (goal.Result, error)) int {
-	if code, handled := trySyncMutation(name, args); handled {
+	return goalMutationWithSync(name, args, extra, run, trySyncMutation)
+}
+
+func goalMutationWithSync(name string, args []string, extra func(*flag.FlagSet) []*string,
+	run func(*goal.Store, goal.Caller, []string) (goal.Result, error),
+	trySync func(string, []string) (int, bool)) int {
+	return goalMutationWithInputs(name, args, extra, run, trySync, legacyMutationInputs{})
+}
+
+type legacyMutationInputs struct {
+	repositoryTop func(string) (string, error)
+	ensureGuard   func(string) error
+	reporter      func(metrics.Options) (metrics.Result, error)
+}
+
+func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet) []*string,
+	run func(*goal.Store, goal.Caller, []string) (goal.Result, error),
+	trySync func(string, []string) (int, bool), inputs legacyMutationInputs) int {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(os.Stdout, "Shared synced-goal options follow; each verb may accept fewer flags.")
+		_, err := parseSyncFlagValuesWithOutput(name, args, os.Stdout)
+		if err == flag.ErrHelp {
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, "goal "+name+" help:", err)
+		return 2
+	}
+	if inputs.repositoryTop == nil {
+		inputs.repositoryTop = stateroot.RepositoryTop
+	}
+	if inputs.ensureGuard == nil {
+		inputs.ensureGuard = ensureGuardEnrolled
+	}
+	if inputs.reporter == nil {
+		inputs.reporter = generateMetricsReport
+	}
+	if code, handled := trySync(name, args); handled {
 		return code
 	}
 	flags := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
@@ -197,7 +239,7 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	caller, err := goalCaller(*root, *callerPid, name)
+	caller, err := goalCallerWithRepositoryTop(*root, *callerPid, name, inputs.repositoryTop)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -206,7 +248,7 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	// pre-commit hook (the behavioral probe), and an unauthorized
 	// caller must not be able to trigger foreign hook code through a
 	// refused mutation.
-	if err := ensureGuardEnrolled(*root); err != nil {
+	if err := inputs.ensureGuard(*root); err != nil {
 		fmt.Fprintln(os.Stderr, "goal "+name+": "+err.Error())
 		return 1
 	}
@@ -225,7 +267,7 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 		fmt.Println("dropped: " + dropped)
 	}
 	if name == "done" && len(values) > 0 {
-		return reportAfterConfirmedDone(0, *root, values[0], os.Stderr)
+		return reportAfterConfirmedDoneWithReporter(0, *root, values[0], os.Stderr, inputs.reporter)
 	}
 	return 0
 }
@@ -259,7 +301,11 @@ func runGoalPromote(args []string) int {
 }
 
 func runGoalPark(args []string) int {
-	return goalMutation("park", args, func(f *flag.FlagSet) []*string {
+	return runGoalParkWithSync(args, trySyncMutation)
+}
+
+func runGoalParkWithSync(args []string, trySync func(string, []string) (int, bool)) int {
+	return goalMutationWithSync("park", args, func(f *flag.FlagSet) []*string {
 		return []*string{
 			f.String("id", "", "goal id"),
 			f.String("because", "", "why it parks"),
@@ -268,19 +314,27 @@ func runGoalPark(args []string) int {
 		}
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Park(c, v[0], v[1], v[2], v[3] == "true")
-	})
+	}, trySync)
 }
 
 func runGoalUnpark(args []string) int {
-	return goalMutation("unpark", args, func(f *flag.FlagSet) []*string {
+	return runGoalUnparkWithSync(args, trySyncMutation)
+}
+
+func runGoalUnparkWithSync(args []string, trySync func(string, []string) (int, bool)) int {
+	return goalMutationWithSync("unpark", args, func(f *flag.FlagSet) []*string {
 		return []*string{f.String("id", "", "parked goal id")}
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Unpark(c, v[0])
-	})
+	}, trySync)
 }
 
 func runGoalDone(args []string) int {
-	return goalMutation("done", args, func(f *flag.FlagSet) []*string {
+	return runGoalDoneWithSync(args, trySyncMutation)
+}
+
+func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, bool)) int {
+	return goalMutationWithSync("done", args, func(f *flag.FlagSet) []*string {
 		return []*string{
 			f.String("id", "", "the Current goal's id"),
 			f.String("concluded", "", "one concluding sentence"),
@@ -289,7 +343,7 @@ func runGoalDone(args []string) int {
 		}
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Done(c, v[0], v[1], v[2], v[3] == "true")
-	})
+	}, trySync)
 }
 
 func runGoalReopen(args []string) int {
@@ -337,6 +391,10 @@ func boolAsString(f *flag.FlagSet, name string) *string {
 // The summary keeps backlog reads bounded; explicit JSON preserves the
 // records needed by scripts and detailed inspection.
 func runGoalList(args []string) int {
+	return runGoalListWithResolver(args, goal.ResolveEndpoint)
+}
+
+func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
 	flags := flag.NewFlagSet("goal list", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	var output goalListOutput
@@ -361,7 +419,7 @@ func runGoalList(args []string) int {
 		return 1
 	}
 	if converted(*root) {
-		return listSynced(*root, output, *fetch, labels...)
+		return listSyncedWithResolver(*root, output, *fetch, resolve, labels...)
 	}
 	if len(labels) > 0 || *fetch {
 		fmt.Fprintln(os.Stderr, "goal list --label and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
@@ -454,8 +512,8 @@ func runGoalTierProbe(args []string) int {
 	return 0
 }
 
-func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLabels ...string) int {
-	e, err := goal.ResolveEndpoint(root)
+func listSyncedWithResolver(root string, output goalListOutput, fetchFirst bool, resolve func(string) (goal.Endpoint, error), requiredLabels ...string) int {
+	e, err := resolve(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -508,6 +566,10 @@ func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLab
 
 // History stays opt-in so inspecting one goal does not replay its ledger.
 func runGoalShow(args []string) int {
+	return runGoalShowWithResolver(args, goal.ResolveEndpoint)
+}
+
+func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
 	flags := flag.NewFlagSet("goal show", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -520,7 +582,7 @@ func runGoalShow(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal show reads the synced backlog; this checkout still carries the legacy ledger (goal list --json shows it whole)")
 		return 1
 	}
-	e, err := goal.ResolveEndpoint(*root)
+	e, err := resolve(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -557,18 +619,13 @@ func runGoalShow(args []string) int {
 	return 0
 }
 
-// nextSynced prints the ordered frontier line for one machine.
-func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string) int {
-	return nextSyncedWithProjector(root, machine, fetchFirst, goal.Project, requiredLabels...)
-}
-
-func nextSyncedWithProjector(root, machine string, fetchFirst bool, project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
-	e, err := goal.ResolveEndpoint(root)
+func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(string) (goal.Endpoint, error), commandNow func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
+	e, err := resolve(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	now, err := goalCommandNow(root)
+	now, err := commandNow(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -685,6 +742,10 @@ func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {
 // runGoalNext prints the one orientation line any runtime's main can read
 // by instruction — the universal fallback transport.
 func runGoalNext(args []string) int {
+	return runGoalNextWithInputs(args, defaultSyncRequestDependencies(), goalCommandNow)
+}
+
+func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, commandNow func(string) (time.Time, error)) int {
 	flags := flag.NewFlagSet("goal next", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	machineFlag := flags.String("machine", "", "machine nickname whose ordered frontier to inspect")
@@ -728,13 +789,13 @@ func runGoalNext(args []string) int {
 			}
 		} else {
 			var err error
-			machine, err = goal.ResolveMachine(*root)
+			machine, err = dependencies.machine(*root)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				return 1
 			}
 		}
-		return nextSynced(*root, machine, *fetch, labels...)
+		return nextSyncedWithInputs(*root, machine, *fetch, dependencies.endpoint, commandNow, goal.Project, labels...)
 	}
 	if len(labels) > 0 || machineProvided || *fetch {
 		fmt.Fprintln(os.Stderr, "goal next --label, --machine, and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
@@ -769,6 +830,10 @@ func runGoalNext(args []string) int {
 // Every representable state is exit 0; nonzero means I/O failure and the
 // hook's own fixed degraded message takes over.
 func runReportTurnVerdict(args []string) int {
+	return runReportTurnVerdictWithInputs(args, nil, nil)
+}
+
+func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
 	flags := flag.NewFlagSet("report turn-verdict", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	session := flags.String("session", "", "normalized session id")
@@ -806,7 +871,26 @@ func runReportTurnVerdict(args []string) int {
 		fmt.Fprintln(os.Stderr, "report turn-verdict: --facts-file and --completion-file must differ")
 		return 2
 	}
-	scan, completionCapture := report.ScanWithCompletion(*root)
+	var endpoint goal.Endpoint
+	var machine string
+	var err error
+	if resolve != nil {
+		endpoint, err = resolve(*root)
+		if err == nil {
+			machine, err = resolveMachine(*root)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+	var scan goal.ScanResult
+	var completionCapture report.StopCompletionCapture
+	if resolve == nil {
+		scan, completionCapture = report.ScanWithCompletion(*root)
+	} else {
+		scan, completionCapture = report.ScanWithCompletionAtEndpoint(*root, endpoint, machine)
+	}
 	now, err := goalCommandNow(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -842,9 +926,14 @@ func runReportTurnVerdict(args []string) int {
 		store.PrepareIdleContinuation = prepareSeatIdleContinuation(stateRoot)
 		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
 		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
-		store.ResolveIdleSeat = resolveSeatIdleActor(stateRoot, *mainId)
+		store.ResolveIdleSeat = resolveSeatIdleActorWithMachine(stateRoot, *mainId, resolveMachine)
 	}
-	verdict, err := store.TurnVerdict(scan, *session, *watchdog, *mainId, options)
+	var verdict goal.Verdict
+	if resolve == nil {
+		verdict, err = store.TurnVerdict(scan, *session, *watchdog, *mainId, options)
+	} else {
+		verdict, err = store.TurnVerdictAtEndpoint(endpoint, machine, scan, *session, *watchdog, *mainId, options)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -944,9 +1033,12 @@ func turnContextThousands(tokens int64) int64 {
 var turnVerdictFactsWriter = atomicfile.WriteText
 var turnVerdictCompletionWriter = atomicfile.WriteText
 
-func resolveSeatIdleActor(root, mainID string) func() (goal.Actor, int64, error) {
+func resolveSeatIdleActorWithMachine(root, mainID string, resolveMachine func(string) (string, error)) func() (goal.Actor, int64, error) {
+	if resolveMachine == nil {
+		resolveMachine = goal.ResolveMachine
+	}
 	return func() (goal.Actor, int64, error) {
-		machine, err := goal.ResolveMachine(root)
+		machine, err := resolveMachine(root)
 		if err != nil {
 			return goal.Actor{}, 0, fmt.Errorf("the seat machine could not be resolved: %w", err)
 		}

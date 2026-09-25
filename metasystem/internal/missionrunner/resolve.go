@@ -23,7 +23,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
@@ -109,9 +108,9 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// the resolution's compare-and-write pins to it, so a state that
 	// moves between this read and the write refuses instead of becoming
 	// the resolution's silent base.
-	_, verifiedHash, err := mission.VerifyStateWithAnchor(statePath, e.Root, ledgerPath)
+	_, verifiedHash, err := e.continuity().VerifyStateWithAnchor(statePath, e.Root, ledgerPath)
 	if err != nil {
-		if code, rerr := mission.Reconcile(statePath, e.Root, ledgerPath); rerr != nil || code != 0 {
+		if code, rerr := e.continuity().Reconcile(statePath, e.Root, ledgerPath); rerr != nil || code != 0 {
 			// The reconciliation refusal carries the ACTIONABLE repair —
 			// surface it, not the generic
 			// verification failure it explains.
@@ -122,7 +121,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			fmt.Fprintln(os.Stderr, err)
 			return exitFor(err)
 		}
-		if _, verifiedHash, err = mission.VerifyStateWithAnchor(statePath, e.Root, ledgerPath); err != nil {
+		if _, verifiedHash, err = e.continuity().VerifyStateWithAnchor(statePath, e.Root, ledgerPath); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return exitFor(err)
 		}
@@ -206,8 +205,8 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 
 	// The workspace's CURRENT filtered projection — the tree both
 	// variants rule about.
-	workspace := gittree.Workspace{Dir: e.Root}
-	observed, err := wallSnapshot(workspace, e.Mission)
+	workspace := e.wallWorkspace(e.Root)
+	observed, err := wallSnapshotWithWorkspace(workspace, e.Mission)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "resolve refused: cannot snapshot the workspace: %v\n", err)
 		return 3
@@ -319,7 +318,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// turn's silently grandfathered baseline. The residual instant
 	// between this check and the write is named: a single-writer human
 	// operation on a parked mission.
-	recheck, err := wallSnapshot(workspace, e.Mission)
+	recheck, err := wallSnapshotWithWorkspace(workspace, e.Mission)
 	if err != nil || recheck != observed {
 		fmt.Fprintf(os.Stderr, "resolve refused: the workspace changed during resolution (%s -> %s); re-run\n", observed, recheck)
 		return 3
@@ -392,7 +391,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		}
 		ledgerSHA = sha256Hex(string(adoptedBytes))
 	} else {
-		anchored, currentLedger, lerr := mission.AnchoredLedgerTruth(e.Root, state, ledgerPath)
+		anchored, currentLedger, lerr := e.wallReads().LedgerTruth(e.Root, state, ledgerPath)
 		if lerr != nil && !errors.Is(lerr, mission.ErrNoAnchor) {
 			fmt.Fprintf(os.Stderr, "resolve refused: cannot verify the mission ledger: %v\n", lerr)
 			return 3
@@ -503,7 +502,7 @@ func sha256Hex(s string) string {
 // verification proved — never a fresh file read, which would
 // self-select any bytes moved since.
 func (e *Engine) verifiedLedgerPin() (string, error) {
-	return mission.AnchoredLedgerSHA(e.Root, e.Mission)
+	return e.continuity().LedgerPin(e.Root, e.Mission)
 }
 
 // recordedSafeTree reports whether a tree is RECORDED as safe for this

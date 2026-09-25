@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,7 +12,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -31,63 +31,63 @@ func TestGLEPathMovedInputAttributionUsesManifestPatterns(t *testing.T) {
 	}
 }
 
+type deliverySnapshotFact struct {
+	t            *testing.T
+	candidate    string
+	declarations []string
+	tree         string
+	err          error
+	wantCalls    int
+	calls        int
+}
+
+func (fact *deliverySnapshotFact) snapshot(candidateTree string, declarations []string) (string, error) {
+	fact.t.Helper()
+	fact.calls++
+	if fact.calls > fact.wantCalls || candidateTree != fact.candidate || !slices.Equal(declarations, fact.declarations) {
+		fact.t.Fatalf("snapshot call %d: candidate=%q declarations=%v; want candidate=%q declarations=%v and %d calls",
+			fact.calls, candidateTree, declarations, fact.candidate, fact.declarations, fact.wantCalls)
+	}
+	return fact.tree, fact.err
+}
+
+func (fact *deliverySnapshotFact) assertConsumed() {
+	fact.t.Helper()
+	if fact.calls != fact.wantCalls {
+		fact.t.Fatalf("snapshot calls = %d, want %d", fact.calls, fact.wantCalls)
+	}
+}
+
 func TestGLEPathRootGoPackageExpansionPlansWithCompleteInputs(t *testing.T) {
+	const candidate = "candidate-root-tree"
+	const selected = "go-affected/root"
 	root := t.TempDir()
-	writeTestingFixtureFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/root\n\ngo 1.27\n"), 0o644)
-	writeTestingFixtureFile(t, filepath.Join(root, "root.go"), []byte("package root\nconst Value = 1\n"), 0o644)
-	writeTestingFixtureFile(t, filepath.Join(root, "root_test.go"), []byte("package root\nimport \"testing\"\nfunc TestRoot(t *testing.T) {}\n"), 0o644)
-	testingFixtureGit(t, root, "init", "-q")
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
-	workspace := gittree.Workspace{Dir: root}
-	base, err := workspace.HeadTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestingFixtureFile(t, filepath.Join(root, "root.go"), []byte("package root\nconst Value = 2\n"), 0o644)
-	testingFixtureGit(t, root, "add", "root.go")
-	candidate := strings.TrimSpace(testingFixtureGit(t, root, "write-tree"))
-	contract, err := testpolicy.Load(filepath.Join("..", "..", "testing.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for index := range contract.Groups {
-		if contract.Groups[index].ID == "go-affected" {
-			contract.Groups[index].CWD = "."
-			contract.Groups[index].Inputs = []string{"go.mod"}
-		}
-	}
-	expanded, err := proofrun.ExpandGoPackageGroups(contract, root, base, candidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var selected string
-	for _, group := range expanded.Groups {
-		if strings.HasPrefix(group.ID, "go-affected/") && slices.Equal(group.Packages, []string{"."}) {
-			selected = group.ID
-			if !slices.Contains(group.Inputs, "*") || !slices.Contains(group.Inputs, "*/**") {
-				t.Fatalf("root package inputs are incomplete: %v", group.Inputs)
-			}
-		}
-	}
-	if selected == "" {
-		t.Fatal("root Go package was not expanded")
-	}
+	contract := testpolicy.Contract{Groups: []testpolicy.Group{{
+		ID: selected, Packages: []string{"."}, Inputs: []string{"go.mod", "*", "*/**"},
+	}}}
 	plan := testpolicy.Plan{SelectedGroups: []string{selected}}
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
 	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
-		return testingPreparation{ProjectRoot: root, CandidateTree: candidate, EffectiveContract: expanded, Plan: plan}, nil
+		return testingPreparation{ProjectRoot: root, CandidateTree: candidate, EffectiveContract: contract, Plan: plan}, nil
 	}
 	status, stdout, _ := captureCommandOutput(t, true, true, func() int {
 		return runTestPlan([]string{"--root", root, "--purpose", "diagnostic", "--json"})
 	})
-	if status != 0 || !strings.Contains(stdout, selected) {
-		t.Fatalf("public root-package plan = status %d output %q", status, stdout)
+	var output testingPlanOutput
+	if err := json.Unmarshal([]byte(stdout), &output); status != 0 || err != nil ||
+		!slices.Equal(output.Plan.SelectedGroups, []string{selected}) ||
+		len(output.Groups) != 1 || output.Groups[0].ID != selected {
+		t.Fatalf("public root-package JSON plan = status %d output %q: %v", status, stdout, err)
 	}
-	writeTestingFixtureFile(t, filepath.Join(root, "nested", "new-input.txt"), []byte("unstaged\n"), 0o644)
-	if err := checkDeliveryInputParity(workspace, candidate, "", "testing.json", expanded, plan); err == nil || !strings.Contains(err.Error(), "delivery candidate differs") {
-		t.Fatalf("root package input closure missed nested unstaged file: %v", err)
+	fact := &deliverySnapshotFact{
+		t: t, candidate: candidate, declarations: []string{"*", "*/**", "go.mod", "metasystem.conf", "testing.json"},
+		tree: "working-root-tree", wantCalls: 1,
+	}
+	err := checkDeliveryInputParityWith(candidate, "", "testing.json", contract, plan, fact.snapshot)
+	fact.assertConsumed()
+	if err == nil || err.Error() != "delivery candidate differs from relevant working-tree inputs: candidate=candidate-root-tree working=working-root-tree" {
+		t.Fatalf("root package input closure did not refuse nested input: %v", err)
 	}
 }
 
@@ -106,17 +106,27 @@ func TestGLEPathMovedBaseReopensForDiscoveredLiteral(t *testing.T) {
 func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 	root := t.TempDir()
 	writeTestingFixtureFile(t, filepath.Join(root, "src", "real.go"), []byte("package src\n"), 0o644)
-	testingFixtureGit(t, root, "init")
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "input")
-	tree, err := (gittree.Workspace{Dir: root}).HeadTree()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tree := strings.Repeat("a", 40)
+	calls := 0
+	workspace := gittree.Workspace{Dir: root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		calls++
+		wantArgs := []string{"-C", root,
+			"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+			"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+			"-c", "gc.auto=0", "-c", "maintenance.auto=false",
+			"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", "."}
+		if calls != 1 || request.Dir != root || !slices.Equal(request.Args, wantArgs) || request.Stdin != nil {
+			t.Fatalf("raw tree request %d = %+v, want args %q at %q", calls, request, wantArgs, root)
+		}
+		return gittree.RawResult{Stdout: []byte("100644 blob " + strings.Repeat("b", 40) + "\tsrc/real.go\x00")}
+	}}
 	group := testpolicy.Group{ID: "app", Inputs: []string{"src/real.go", "src/futrue?.go"}}
 	contract := testpolicy.Contract{Groups: []testpolicy.Group{group}}
 	plan := testpolicy.Plan{SelectedGroups: []string{"app"}}
-	unmatched, err := unmatchedTestingInputs(gittree.Workspace{Dir: root}, tree, contract, plan)
+	unmatched, err := unmatchedTestingInputs(workspace, tree, contract, plan)
+	if calls != 1 {
+		t.Fatalf("raw tree calls = %d, want 1", calls)
+	}
 	if err != nil || len(unmatched) != 1 || unmatched[0].Group != "app" || unmatched[0].Pattern != "src/futrue?.go" {
 		t.Fatalf("candidate no-match report = %v, %v", unmatched, err)
 	}
@@ -147,104 +157,163 @@ func TestGLEPathPlanReportsOptionalNoMatch(t *testing.T) {
 }
 
 func TestGLEPathPublicDeliveryPlanRejectsDirtyWildcardInput(t *testing.T) {
+	const candidate = "candidate-wildcard-tree"
 	root := t.TempDir()
-	for name, body := range map[string]string{
-		"metasystem.conf": "testing.contract=testing.json\n",
-		"testing.json":    "{}\n",
-		"src/a.go":        "candidate\n",
-		"src/other.txt":   "candidate\n",
-	} {
-		writeTestingFixtureFile(t, filepath.Join(root, name), []byte(body), 0o644)
-	}
-	testingFixtureGit(t, root, "init")
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "candidate")
-	workspace := gittree.Workspace{Dir: root}
-	tree, err := workspace.HeadTree()
-	if err != nil {
-		t.Fatal(err)
-	}
 	contract := testpolicy.Contract{Groups: []testpolicy.Group{{ID: "app", Inputs: []string{"src/*.go"}}}}
 	plan := testpolicy.Plan{SelectedGroups: []string{"app"}}
-	writeTestingFixtureFile(t, filepath.Join(root, "src", "other.txt"), []byte("unrelated edit\n"), 0o644)
-	if err := checkDeliveryInputParity(workspace, tree, "", "testing.json", contract, plan); err != nil {
+	declarations := []string{"metasystem.conf", "src/*.go", "testing.json"}
+	unrelated := &deliverySnapshotFact{
+		t: t, candidate: candidate, declarations: declarations, tree: candidate, wantCalls: 1,
+	}
+	if err := checkDeliveryInputParityWith(candidate, "", "testing.json", contract, plan, unrelated.snapshot); err != nil {
 		t.Fatalf("unrelated working edit refused delivery: %v", err)
 	}
-	writeTestingFixtureFile(t, filepath.Join(root, "src", "a.go"), []byte("dirty matching edit\n"), 0o644)
+	unrelated.assertConsumed()
+	matching := &deliverySnapshotFact{
+		t: t, candidate: candidate, declarations: declarations, tree: "working-wildcard-tree", wantCalls: 1,
+	}
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
 	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
-		return testingPreparation{}, checkDeliveryInputParity(workspace, tree, "", "testing.json", contract, plan)
+		return testingPreparation{}, checkDeliveryInputParityWith(candidate, "", "testing.json", contract, plan, matching.snapshot)
 	}
 	status, _, stderr := captureCommandOutput(t, true, true, func() int {
 		return runTestPlan([]string{"--root", root, "--purpose", "delivery"})
 	})
+	matching.assertConsumed()
 	if status != 1 || !strings.Contains(stderr, "delivery candidate differs from relevant working-tree inputs") {
 		t.Fatalf("public delivery plan accepted dirty wildcard input: status=%d stderr=%q", status, stderr)
 	}
 }
 
 func TestGLEPathPublicDeliveryPlanRejectsUnstagedSelectedGoPackageSource(t *testing.T) {
+	const candidate = "candidate-newpkg-tree"
+	const selected = "go-affected/newpkg"
 	root := t.TempDir()
-	for name, body := range map[string]string{
-		"metasystem/go.mod":                "module example.invalid/host\n\ngo 1.27\n",
-		"metasystem/newpkg/newpkg.go":      "package newpkg\nconst Value = 1\n",
-		"metasystem/newpkg/newpkg_test.go": "package newpkg\nimport \"testing\"\nfunc TestValue(t *testing.T) {}\n",
-		"metasystem/metasystem.conf":       "testing.contract=testing.json\n",
-		"metasystem/testing.json":          "{}\n",
-	} {
-		writeTestingFixtureFile(t, filepath.Join(root, name), []byte(body), 0o644)
-	}
-	testingFixtureGit(t, root, "init", "-q")
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
-	workspace := gittree.Workspace{Dir: root}
-	base, err := workspace.HeadTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestingFixtureFile(t, filepath.Join(root, "metasystem/newpkg/newpkg.go"), []byte("package newpkg\nconst Value = 2\n"), 0o644)
-	testingFixtureGit(t, root, "add", "metasystem/newpkg/newpkg.go")
-	candidate := strings.TrimSpace(testingFixtureGit(t, root, "write-tree"))
-	contract, err := testpolicy.Load(filepath.Join("..", "..", "testing.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	expanded, err := proofrun.ExpandGoPackageGroups(contract, root, base, candidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	selected := ""
-	for _, group := range expanded.Groups {
-		if len(group.Packages) == 1 && group.Packages[0] == "./newpkg" && strings.HasPrefix(group.ID, "go-affected/") {
-			selected = group.ID
-			break
-		}
-	}
-	if selected == "" {
-		t.Fatal("changed Go package was not selected")
-	}
 	plan := testpolicy.Plan{SelectedGroups: []string{selected}}
-	writeTestingFixtureFile(t, filepath.Join(root, "metasystem/newpkg/unstaged.go"), []byte("package newpkg\nconst Unstaged = 1\n"), 0o644)
-	legacy := expanded
-	legacy.Groups = append([]testpolicy.Group(nil), expanded.Groups...)
-	for i := range legacy.Groups {
-		if legacy.Groups[i].ID == selected {
-			legacy.Groups[i].Inputs = []string{"metasystem/go.mod", "metasystem/go.sum"}
-		}
+	legacy := testpolicy.Contract{Groups: []testpolicy.Group{{
+		ID: selected, Packages: []string{"./newpkg"}, Inputs: []string{"metasystem/go.mod", "metasystem/go.sum"},
+	}}}
+	complete := testpolicy.Contract{Groups: []testpolicy.Group{{
+		ID: selected, Packages: []string{"./newpkg"},
+		Inputs: []string{"metasystem/go.mod", "metasystem/go.sum", "metasystem/newpkg/**"},
+	}}}
+	oldFact := &deliverySnapshotFact{
+		t: t, candidate: candidate,
+		declarations: []string{"metasystem/go.mod", "metasystem/go.sum", "metasystem/metasystem.conf", "metasystem/testing.json"},
+		tree:         candidate, wantCalls: 1,
 	}
-	if err := checkDeliveryInputParity(workspace, candidate, "metasystem/", "testing.json", legacy, plan); err != nil {
+	if err := checkDeliveryInputParityWith(candidate, "metasystem/", "testing.json", legacy, plan, oldFact.snapshot); err != nil {
 		t.Fatalf("old manifest unexpectedly detected the untracked package source: %v", err)
+	}
+	oldFact.assertConsumed()
+	completeFact := &deliverySnapshotFact{
+		t: t, candidate: candidate,
+		declarations: []string{"metasystem/go.mod", "metasystem/go.sum", "metasystem/metasystem.conf", "metasystem/newpkg/**", "metasystem/testing.json"},
+		tree:         "working-newpkg-tree", wantCalls: 1,
 	}
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
 	prepareTestingForCommand = func(testingSelectionRequest) (testingPreparation, error) {
-		return testingPreparation{}, checkDeliveryInputParity(workspace, candidate, "metasystem/", "testing.json", expanded, plan)
+		return testingPreparation{}, checkDeliveryInputParityWith(candidate, "metasystem/", "testing.json", complete, plan, completeFact.snapshot)
 	}
 	status, _, stderr := captureCommandOutput(t, true, true, func() int {
 		return runTestPlan([]string{"--root", root, "--purpose", "delivery"})
 	})
+	completeFact.assertConsumed()
 	if status != 1 || !strings.Contains(stderr, "delivery candidate differs from relevant working-tree inputs") {
 		t.Fatalf("public delivery plan accepted untracked selected-package source: status=%d stderr=%q", status, stderr)
+	}
+}
+
+func TestDeliveryInputParityBoundary(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("snapshot unavailable")
+	cases := []struct {
+		name         string
+		prefix       string
+		contract     testpolicy.Contract
+		plan         testpolicy.Plan
+		declarations []string
+		workingTree  string
+		snapshotErr  error
+		wantCalls    int
+		wantErr      string
+	}{
+		{
+			name: "selected base package and shared script refuse changed working inputs", prefix: "metasystem/",
+			contract: testpolicy.Contract{Groups: []testpolicy.Group{{
+				ID: "go-affected/base", Inputs: []string{"metasystem/scripts/**", "metasystem/base/**"},
+			}}},
+			plan:         testpolicy.Plan{SelectedGroups: []string{"go-affected/base"}},
+			declarations: []string{"metasystem/base/**", "metasystem/metasystem.conf", "metasystem/scripts/**", "metasystem/testing.json"},
+			workingTree:  "working-boundary-tree", wantCalls: 1,
+			wantErr: "delivery candidate differs from relevant working-tree inputs: candidate=candidate-boundary-tree working=working-boundary-tree",
+		},
+		{
+			name: "sorted union and deduplication", prefix: "metasystem/",
+			contract: testpolicy.Contract{Groups: []testpolicy.Group{
+				{ID: "one", Inputs: []string{"src/*.go", "shared", "src/*.go"}},
+				{ID: "two", Inputs: []string{"other", "shared"}},
+				{ID: "section", Adapter: "section"},
+				{ID: "command", Adapter: "command", CWD: "tools", Argv: []string{"./run.sh"}},
+			}},
+			plan: testpolicy.Plan{SelectedGroups: []string{"one", "two", "section", "command"}},
+			declarations: []string{
+				"metasystem/metasystem.conf", "metasystem/scripts/agents/validate-section-selector.sh",
+				"metasystem/testing.json", "other", "shared", "src/*.go", "tools/run.sh",
+			},
+			workingTree: "candidate-boundary-tree", wantCalls: 1,
+		},
+		{
+			name: "missing selected group", contract: testpolicy.Contract{Groups: []testpolicy.Group{{ID: "other"}}},
+			plan: testpolicy.Plan{SelectedGroups: []string{"missing"}}, wantErr: "selected testing group missing is absent",
+		},
+		{
+			name: "escaping relative executable", contract: testpolicy.Contract{Groups: []testpolicy.Group{{
+				ID: "command", Adapter: "command", CWD: "tools", Argv: []string{"../../escape"},
+			}}},
+			plan: testpolicy.Plan{SelectedGroups: []string{"command"}}, wantErr: "testing group command command executable escapes the project",
+		},
+		{
+			name: "snapshot error wrapping", contract: testpolicy.Contract{Groups: []testpolicy.Group{{ID: "app"}}},
+			plan:         testpolicy.Plan{SelectedGroups: []string{"app"}},
+			declarations: []string{"metasystem.conf", "testing.json"},
+			snapshotErr:  cause, wantCalls: 1, wantErr: "capture relevant candidate working inputs: snapshot unavailable",
+		},
+		{
+			name: "equal tree", contract: testpolicy.Contract{Groups: []testpolicy.Group{{ID: "app"}}},
+			plan:         testpolicy.Plan{SelectedGroups: []string{"app"}},
+			declarations: []string{"metasystem.conf", "testing.json"},
+			workingTree:  "candidate-boundary-tree", wantCalls: 1,
+		},
+		{
+			name: "mismatching tree", contract: testpolicy.Contract{Groups: []testpolicy.Group{{ID: "app"}}},
+			plan:         testpolicy.Plan{SelectedGroups: []string{"app"}},
+			declarations: []string{"metasystem.conf", "testing.json"},
+			workingTree:  "working-boundary-tree", wantCalls: 1,
+			wantErr: "delivery candidate differs from relevant working-tree inputs: candidate=candidate-boundary-tree working=working-boundary-tree",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			const candidate = "candidate-boundary-tree"
+			fact := &deliverySnapshotFact{
+				t: t, candidate: candidate, declarations: tc.declarations,
+				tree: tc.workingTree, err: tc.snapshotErr, wantCalls: tc.wantCalls,
+			}
+			err := checkDeliveryInputParityWith(candidate, tc.prefix, "testing.json", tc.contract, tc.plan, fact.snapshot)
+			fact.assertConsumed()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("parity returned unexpected error: %v", err)
+				}
+			} else if err == nil || err.Error() != tc.wantErr {
+				t.Fatalf("parity error = %v, want %q", err, tc.wantErr)
+			}
+			if tc.snapshotErr != nil && !errors.Is(err, tc.snapshotErr) {
+				t.Fatalf("snapshot cause was not wrapped: %v", err)
+			}
+		})
 	}
 }

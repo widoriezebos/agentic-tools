@@ -137,18 +137,19 @@ func TestBudgetProjectionRequiresExactDurableDischargePair(t *testing.T) {
 }
 
 func TestObserveGovernedRunUsesAcceptedObligationAndBudgetState(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	obligationRevision := installEnforcedObligation(t, root, 5)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
+	obligationRevision := installAcceptedEnforcedObligation(t, bed, 5)
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-	admission, err := EvaluateGovernedRunAdmission(root, run.GovernedAdmissionRequest{
+	admission, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
 		GoalID: "bounded", ObligationRevision: obligationRevision, StandingShared: true,
-	}, now)
+	}, now, bed.reads)
 	if err != nil {
 		t.Fatal(err)
 	}
 	record := &run.Record{GoalId: "bounded", StartedAt: now.Add(-time.Minute).Format(time.RFC3339), Governed: &admission.Attempt}
 
-	observation := ObserveGovernedRun(root, record, now)
+	observation := observeGovernedRunWithReads(root, record, now, "", bed.reads)
 	if observation.AssumptionState != run.AssumptionMatch || observation.ActiveJobs != 0 || observation.DurationSeconds != 60 {
 		t.Fatalf("governed observation did not use accepted obligation and current budget state: %+v", observation)
 	}
@@ -163,7 +164,7 @@ func TestObserveGovernedRunUsesAcceptedObligationAndBudgetState(t *testing.T) {
 		t.Fatalf("typed assumption drift was not reported deterministically: %+v", drift)
 	}
 
-	if unavailable := ObserveGovernedRun(root, nil, now); unavailable.AssumptionState != run.AssumptionUnavailable ||
+	if unavailable := observeGovernedRunWithReads(root, nil, now, "", bed.reads); unavailable.AssumptionState != run.AssumptionUnavailable ||
 		strings.Join(unavailable.DriftedFields, ",") != "governedAttempt" {
 		t.Fatalf("missing governed attempt did not fail closed: %+v", unavailable)
 	}
@@ -171,26 +172,27 @@ func TestObserveGovernedRunUsesAcceptedObligationAndBudgetState(t *testing.T) {
 	wrongAttempt := *record.Governed
 	wrongAttempt.GoalRevision++
 	wrongRevision.Governed = &wrongAttempt
-	if unavailable := ObserveGovernedRun(root, &wrongRevision, now); unavailable.AssumptionState != run.AssumptionUnavailable ||
+	if unavailable := observeGovernedRunWithReads(root, &wrongRevision, now, "", bed.reads); unavailable.AssumptionState != run.AssumptionUnavailable ||
 		strings.Join(unavailable.DriftedFields, ",") != "obligationRevision" {
 		t.Fatalf("stale governed binding did not fail closed: %+v", unavailable)
 	}
 	badStartedAt := *record
 	badStartedAt.StartedAt = "not-a-time"
-	if unavailable := ObserveGovernedRun(root, &badStartedAt, now); unavailable.AssumptionState != run.AssumptionUnavailable ||
+	if unavailable := observeGovernedRunWithReads(root, &badStartedAt, now, "", bed.reads); unavailable.AssumptionState != run.AssumptionUnavailable ||
 		strings.Join(unavailable.DriftedFields, ",") != "durationSeconds" {
 		t.Fatalf("unreadable governed duration did not fail closed: %+v", unavailable)
 	}
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "broken.json"), map[string]any{"jobId": "broken"})
-	if unavailable := ObserveGovernedRun(root, record, now); unavailable.AssumptionState != run.AssumptionUnavailable ||
+	if unavailable := observeGovernedRunWithReads(root, record, now, "", bed.reads); unavailable.AssumptionState != run.AssumptionUnavailable ||
 		strings.Join(unavailable.DriftedFields, ",") != "activeJobs" {
 		t.Fatalf("unknown active-job projection did not fail closed: %+v", unavailable)
 	}
 }
 
 func TestGovernedAdmissionRefusesDurableAssumptionBreaker(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	obligationRevision := installEnforcedObligation(t, root, 5)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
+	obligationRevision := installAcceptedEnforcedObligation(t, bed, 5)
 	if err := obligationstate.RecordTerminal(root, "bounded", 2, obligationRevision, obligationstate.TerminalAttempt{
 		RunID: "assumption-failed", Status: run.StatusRed,
 		StartedAt: "2026-08-28T10:20:00Z", EndedAt: "2026-08-28T10:25:00Z", PrunedAt: "2026-08-28T10:26:00Z",
@@ -200,24 +202,25 @@ func TestGovernedAdmissionRefusesDurableAssumptionBreaker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := EvaluateGovernedRunAdmission(root, run.GovernedAdmissionRequest{
+	_, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
 		GoalID: "bounded", ObligationRevision: obligationRevision, StandingShared: true,
-	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC), bed.reads)
 	if err == nil || !strings.Contains(err.Error(), "breaker=ASSUMPTION_FAILED is already terminal on run assumption-failed") {
 		t.Fatalf("durable assumption breaker did not close governed admission: %v", err)
 	}
 }
 
 func TestGovernedAdmissionRecordsCurrentWeightGenerationWithoutConsumedEpoch(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	obligationRevision := installEnforcedObligation(t, root, 5)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
+	obligationRevision := installAcceptedEnforcedObligation(t, bed, 5)
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "validation-weight.json"), map[string]any{
 		"schema": 1, "generation": 2, "consumedProofs": []any{},
 	})
 
-	admission, err := EvaluateGovernedRunAdmission(root, run.GovernedAdmissionRequest{
+	admission, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
 		GoalID: "bounded", ObligationRevision: obligationRevision, StandingShared: true,
-	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC), bed.reads)
 	if err != nil || admission.Attempt.WeightGeneration == nil || *admission.Attempt.WeightGeneration != 2 || admission.Attempt.BudgetEpoch != nil {
 		t.Fatalf("admission did not bind current generation independently of a consumed epoch: %+v %v", admission, err)
 	}

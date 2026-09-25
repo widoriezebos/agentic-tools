@@ -3,8 +3,8 @@ package stateroot
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -31,19 +31,56 @@ func installFixture(t *testing.T, template bool) (installation, app string) {
 	return installation, app
 }
 
-func withRoots(t *testing.T, installation, app string) {
+type topCall struct {
+	path string
+	root string
+	err  error
+}
+
+type topRecorder struct {
+	t    *testing.T
+	want []topCall
+	seen []string
+}
+
+func (r *topRecorder) expect(path, root string, err error) {
+	r.t.Helper()
+	r.want = append(r.want, topCall{path, root, err})
+}
+
+func (r *topRecorder) expectCanonical(path, root string, err error) {
+	r.t.Helper()
+	canonical, canonicalErr := filepath.EvalSymlinks(path)
+	if canonicalErr != nil {
+		r.t.Fatal(canonicalErr)
+	}
+	r.expect(canonical, root, err)
+}
+
+func (r *topRecorder) read(path string) (string, error) {
+	r.t.Helper()
+	r.seen = append(r.seen, string(append([]byte(nil), path...)))
+	if len(r.want) == 0 || r.want[0].path != path {
+		r.t.Fatalf("unexpected repository-top request %q; pending %v", path, r.want)
+	}
+	call := r.want[0]
+	r.want = r.want[1:]
+	return call.root, call.err
+}
+
+func resolverFixture(t *testing.T, installation string) (Resolver, *topRecorder) {
 	t.Helper()
-	priorExecutable := executablePath
-	priorTop := repositoryTop
-	executablePath = func() (string, error) { return filepath.Join(installation, "bin", "metasystem"), nil }
-	repositoryTop = func(string) (string, error) { return app, nil }
+	recorder := &topRecorder{t: t}
 	t.Cleanup(func() {
-		executablePath = priorExecutable
-		repositoryTop = priorTop
+		if len(recorder.want) != 0 {
+			t.Errorf("repository-top requests not consumed: %v; saw %v", recorder.want, recorder.seen)
+		}
 	})
+	return NewResolver(recorder.read, func() (string, error) { return filepath.Join(installation, "bin", "metasystem"), nil }), recorder
 }
 
 func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		kind Kind
 		rel  string
@@ -55,22 +92,31 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 	for _, template := range []bool{true, false} {
 		t.Run(map[bool]string{true: "template", false: "adopted"}[template], func(t *testing.T) {
 			installation, app := installFixture(t, template)
-			withRoots(t, installation, app)
+			resolver, top := resolverFixture(t, installation)
 			base := app
 			if template {
 				base = installation
 			}
-			gotBase, err := RootForInstallation(installation)
+			if !template {
+				top.expect(installation, app, nil)
+			}
+			gotBase, err := resolver.RootForInstallation(installation)
 			if err != nil || gotBase != base {
 				t.Fatalf("RootForInstallation() = %q, %v; want %q", gotBase, err, base)
 			}
 			for _, test := range tests {
-				got, err := StateRoot(test.kind)
+				if !template {
+					top.expect(installation, app, nil)
+				}
+				got, err := resolver.StateRoot(test.kind)
 				if err != nil || got != filepath.Join(base, filepath.FromSlash(test.rel)) {
 					t.Errorf("StateRoot(%q) = %q, %v; want %q", test.kind, got, err, filepath.Join(base, filepath.FromSlash(test.rel)))
 				}
 			}
-			got, err := StateRoot(Evidence)
+			if !template {
+				top.expect(installation, app, nil)
+			}
+			got, err := resolver.StateRoot(Evidence)
 			if err != nil || got != filepath.Join(app, "durable") {
 				t.Errorf("StateRoot(%q) = %q, %v; want configured durable root", Evidence, got, err)
 			}
@@ -79,6 +125,7 @@ func TestStateRootResolvesEveryKindInTemplateAndAdoptedModes(t *testing.T) {
 }
 
 func TestStateRootRefusesUnknownKindsAndInvalidInstallationFacts(t *testing.T) {
+	t.Parallel()
 	if got, err := RelativeRoot(Receipts); err != nil || got != "memory" {
 		t.Fatalf("RelativeRoot(%q) = %q, %v; want memory", Receipts, got, err)
 	}
@@ -88,15 +135,14 @@ func TestStateRootRefusesUnknownKindsAndInvalidInstallationFacts(t *testing.T) {
 	if _, err := StateRoot(Kind("unknown")); err == nil {
 		t.Fatal("an unknown state kind must refuse")
 	}
-	prior := executablePath
-	executablePath = func() (string, error) { return "", errors.New("unavailable") }
-	t.Cleanup(func() { executablePath = prior })
-	if _, err := StateRoot(Registers); err == nil {
+	resolver := NewResolver(func(string) (string, error) { t.Fatal("unexpected Git lookup"); return "", nil }, func() (string, error) { return "", errors.New("unavailable") })
+	if _, err := resolver.StateRoot(Registers); err == nil {
 		t.Fatal("an unavailable executable path must refuse")
 	}
 }
 
 func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	design := filepath.Join(root, "development", "metasystem-design.md")
 	if err := os.MkdirAll(filepath.Dir(design), 0o755); err != nil {
@@ -110,12 +156,8 @@ func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
 	if err := os.MkdirAll(template, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	priorTop := repositoryTop
-	repositoryTop = func(string) (string, error) {
-		return "", errors.New("template must not consult Git")
-	}
-	got, err := RootForInstallation(template)
-	repositoryTop = priorTop
+	resolver, top := resolverFixture(t, template)
+	got, err := resolver.RootForInstallation(template)
 	if err != nil || got != template {
 		t.Fatalf("exact template marker resolved to %q, %v; want %q", got, err, template)
 	}
@@ -125,33 +167,28 @@ func TestRootForInstallationUsesOnlyTheExactTemplateMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.Join(root, "application")
-	repositoryTop = func(seen string) (string, error) {
-		if seen != adopted {
-			t.Fatalf("repository lookup received %q; want %q", seen, adopted)
-		}
-		return want, nil
-	}
-	t.Cleanup(func() { repositoryTop = priorTop })
-	got, err = RootForInstallation(adopted)
+	top.expect(adopted, want, nil)
+	got, err = resolver.RootForInstallation(adopted)
 	if err != nil || got != want {
 		t.Fatalf("adopted installation resolved to %q, %v; want %q", got, err, want)
 	}
 }
 
 func TestRootForInstallationPropagatesAdoptedRepositoryFailure(t *testing.T) {
+	t.Parallel()
 	installation := filepath.Join(t.TempDir(), "metasystem")
 	if err := os.MkdirAll(installation, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	priorTop := repositoryTop
-	repositoryTop = func(string) (string, error) { return "", errors.New("not in a repository") }
-	t.Cleanup(func() { repositoryTop = priorTop })
-	if _, err := RootForInstallation(installation); err == nil || !strings.Contains(err.Error(), "not in a repository") {
+	resolver, top := resolverFixture(t, installation)
+	top.expect(installation, "", errors.New("not in a repository"))
+	if _, err := resolver.RootForInstallation(installation); err == nil || !strings.Contains(err.Error(), "not in a repository") {
 		t.Fatalf("adopted repository failure was hidden: %v", err)
 	}
 }
 
 func TestRootForCandidateCanonicalizesAndValidatesTheInstallation(t *testing.T) {
+	t.Parallel()
 	outer := t.TempDir()
 	installation := filepath.Join(outer, "metasystem")
 	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
@@ -179,18 +216,12 @@ func TestRootForCandidateCanonicalizesAndValidatesTheInstallation(t *testing.T) 
 }
 
 func TestRootForCandidateKeepsNestedAdoptedStateAtTheInstallation(t *testing.T) {
+	t.Parallel()
 	outer := t.TempDir()
 	installation := filepath.Join(outer, "vendor", "metasystem-runtime")
 	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	priorTop := repositoryTop
-	repositoryTop = func(string) (string, error) {
-		t.Fatal("candidate state-root resolution must not replace the authenticated installation with its Git scope")
-		return "", errors.New("unexpected repository lookup")
-	}
-	t.Cleanup(func() { repositoryTop = priorTop })
-
 	got, err := RootForCandidate(installation)
 	want, wantErr := filepath.EvalSymlinks(installation)
 	if wantErr != nil {
@@ -202,119 +233,88 @@ func TestRootForCandidateKeepsNestedAdoptedStateAtTheInstallation(t *testing.T) 
 }
 
 func TestRootForCandidateRefusesAPathWithoutInstallationShape(t *testing.T) {
+	t.Parallel()
 	if _, err := RootForCandidate(t.TempDir()); err == nil || !strings.Contains(err.Error(), "not a metasystem installation") {
 		t.Fatalf("candidate without an installation shape was accepted: %v", err)
 	}
 }
 
-func TestRepositoryTopIgnoresGitSteeringEnvironment(t *testing.T) {
-	primary := t.TempDir()
-	initPrimary := exec.Command("git", "-C", primary, "init", "-q", "-b", "main")
-	initPrimary.Env = scrubGitSteering(os.Environ())
-	if output, err := initPrimary.CombinedOutput(); err != nil {
-		t.Fatalf("initialize primary repository: %v: %s", err, output)
-	}
-	poison := t.TempDir()
-	initPoison := exec.Command("git", "-C", poison, "init", "-q", "-b", "main")
-	initPoison.Env = scrubGitSteering(os.Environ())
-	if output, err := initPoison.CombinedOutput(); err != nil {
-		t.Fatalf("initialize poison repository: %v: %s", err, output)
-	}
-	t.Setenv("GIT_DIR", filepath.Join(poison, ".git"))
-	t.Setenv("GIT_WORK_TREE", poison)
+type commandRecorder struct {
+	t      *testing.T
+	want   commandRequest
+	output []byte
+	err    error
+	seen   []commandRequest
+}
 
-	got, err := RepositoryTop(primary)
+func (r *commandRecorder) run(request commandRequest) ([]byte, error) {
+	r.t.Helper()
+	copyRequest := commandRequest{name: request.name, args: append([]string(nil), request.args...), env: append([]string(nil), request.env...)}
+	r.seen = append(r.seen, copyRequest)
+	if len(r.seen) != 1 || !reflect.DeepEqual(copyRequest, r.want) {
+		r.t.Fatalf("unexpected command request: %+v", copyRequest)
+	}
+	return append([]byte(nil), r.output...), r.err
+}
+
+func TestRepositoryTopBuildsCommandAndScrubsEverySteeringVariable(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "installation")
+	environment := []string{"UNRELATED=kept"}
+	for _, name := range []string{
+		"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+		"GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+		"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+		"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM",
+		"GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_REPLACE_REF_BASE",
+		"GIT_IMPLICIT_WORK_TREE", "GIT_NO_REPLACE_OBJECTS", "GIT_PREFIX",
+	} {
+		environment = append(environment, name+"=poison")
+	}
+	want := commandRequest{name: "git", args: []string{"-C", path, "rev-parse", "--show-toplevel"}, env: []string{"UNRELATED=kept"}}
+	success := &commandRecorder{t: t, want: want, output: []byte("  " + path + "\n")}
+	got, err := repositoryTopWith(path, environment, success.run)
+	if err != nil || got != path || len(success.seen) != 1 {
+		t.Fatalf("repository top = %q, %v; requests %v", got, err, success.seen)
+	}
+	relative := filepath.Join("relative", "repository with spaces")
+	wantAbsolute, err := filepath.Abs(relative)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := filepath.EvalSymlinks(primary)
-	if err != nil {
-		t.Fatal(err)
+	relativeSuccess := &commandRecorder{t: t, want: want, output: []byte("  " + relative + "\n")}
+	got, err = repositoryTopWith(path, environment, relativeSuccess.run)
+	if err != nil || got != wantAbsolute || len(relativeSuccess.seen) != 1 {
+		t.Fatalf("relative repository top = %q, %v; want %q; requests %v", got, err, wantAbsolute, relativeSuccess.seen)
 	}
-	if got != want {
-		t.Fatalf("RepositoryTop() = %q; want %q", got, want)
+	failure := &commandRecorder{t: t, want: want, output: []byte("fatal: inaccessible\n"), err: errors.New("exit status 128")}
+	_, err = repositoryTopWith(path, environment, failure.run)
+	if err == nil || !strings.Contains(err.Error(), "fatal: inaccessible") || len(failure.seen) != 1 {
+		t.Fatalf("combined output lost: %v; requests %v", err, failure.seen)
 	}
 }
 
 func TestEvidenceRootMustBeConfiguredAndAbsolute(t *testing.T) {
+	t.Parallel()
 	installation, app := installFixture(t, false)
-	withRoots(t, installation, app)
+	resolver, top := resolverFixture(t, installation)
 	if err := os.WriteFile(filepath.Join(app, "metasystem.conf"), []byte("evidence.root=relative\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := StateRoot(Evidence); err == nil {
+	top.expect(installation, app, nil)
+	if _, err := resolver.StateRoot(Evidence); err == nil {
 		t.Fatal("a relative durable evidence root must refuse")
 	}
 }
 
-func TestStateRootGitDiscoveryIgnoresSteeringEnvironment(t *testing.T) {
-	initRepository := func(path string) {
-		t.Helper()
-		command := exec.Command("git", "-C", path, "init", "-q", "-b", "main")
-		command.Env = scrubGitSteering(os.Environ())
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("initialize repository: %v: %s", err, output)
-		}
-	}
-	app := t.TempDir()
-	installation := filepath.Join(app, "metasystem")
-	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("evidence.root="+filepath.Join(app, "durable")+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	initRepository(app)
-
-	poison := t.TempDir()
-	initRepository(poison)
-	poisonGit := filepath.Join(poison, ".git")
-	values := map[string]string{
-		"GIT_DIR": poisonGit, "GIT_WORK_TREE": poison, "GIT_COMMON_DIR": poisonGit,
-		"GIT_INDEX_FILE": filepath.Join(poisonGit, "index"), "GIT_CEILING_DIRECTORIES": app,
-		"GIT_OBJECT_DIRECTORY":             filepath.Join(poisonGit, "objects"),
-		"GIT_ALTERNATE_OBJECT_DIRECTORIES": filepath.Join(poisonGit, "objects"),
-		"GIT_CONFIG":                       filepath.Join(poisonGit, "config"), "GIT_CONFIG_PARAMETERS": "poison",
-		"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_GLOBAL": filepath.Join(poisonGit, "config"),
-		"GIT_CONFIG_SYSTEM": filepath.Join(poisonGit, "config"), "GIT_CONFIG_NOSYSTEM": "1",
-		"GIT_GRAFT_FILE":   filepath.Join(poisonGit, "info", "grafts"),
-		"GIT_SHALLOW_FILE": filepath.Join(poisonGit, "shallow"), "GIT_REPLACE_REF_BASE": "refs/poison/",
-		"GIT_DISCOVERY_ACROSS_FILESYSTEM": "0", "GIT_IMPLICIT_WORK_TREE": "0",
-		"GIT_NO_REPLACE_OBJECTS": "1", "GIT_PREFIX": "poison/",
-	}
-	for name, value := range values {
-		t.Setenv(name, value)
-	}
-
-	priorExecutable := executablePath
-	executablePath = func() (string, error) { return filepath.Join(installation, "bin", "metasystem"), nil }
-	t.Cleanup(func() { executablePath = priorExecutable })
-	got, err := StateRoot(Registers)
-	canonicalApp, canonicalErr := filepath.EvalSymlinks(app)
-	if canonicalErr != nil {
-		t.Fatal(canonicalErr)
-	}
-	want := filepath.Join(canonicalApp, "memory")
-	if err != nil || got != want {
-		t.Fatalf("StateRoot(%q) with poisoned Git environment = %q, %v; want %q", Registers, got, err, want)
-	}
-}
-
 func TestResolveLayoutSupportsNestedAndAdoptedRepositoriesFromSubdirectories(t *testing.T) {
+	t.Parallel()
 	for _, nested := range []bool{false, true} {
 		t.Run(map[bool]string{false: "adopted", true: "nested"}[nested], func(t *testing.T) {
 			repo := filepath.Join(t.TempDir(), "repository with spaces")
 			if err := os.MkdirAll(repo, 0o755); err != nil {
 				t.Fatal(err)
-			}
-			command := exec.Command("git", "init", "-q", "-b", "main", repo)
-			for _, entry := range os.Environ() {
-				if !strings.HasPrefix(entry, "GIT_") {
-					command.Env = append(command.Env, entry)
-				}
-			}
-			if output, err := command.CombinedOutput(); err != nil {
-				t.Fatalf("git init: %v: %s", err, output)
 			}
 			installation := repo
 			if nested {
@@ -329,7 +329,9 @@ func TestResolveLayoutSupportsNestedAndAdoptedRepositoriesFromSubdirectories(t *
 			if err := os.MkdirAll(subdir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			layout, err := ResolveLayout(subdir)
+			resolver, top := resolverFixture(t, installation)
+			top.expectCanonical(subdir, repo, nil)
+			layout, err := resolver.ResolveLayout(subdir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -343,6 +345,7 @@ func TestResolveLayoutSupportsNestedAndAdoptedRepositoriesFromSubdirectories(t *
 }
 
 func TestResolveLayoutSupportsFreshAdoptedTargetBeforeGitInit(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(t.TempDir(), "fresh adopted target")
 	writeLayoutFile(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=claude\n")
 	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
@@ -352,7 +355,9 @@ func TestResolveLayoutSupportsFreshAdoptedTargetBeforeGitInit(t *testing.T) {
 	if err := os.MkdirAll(child, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	layout, err := ResolveLayout(child)
+	resolver, top := resolverFixture(t, root)
+	top.expectCanonical(child, "", errors.New("not in a repository"))
+	layout, err := resolver.ResolveLayout(child)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,14 +368,10 @@ func TestResolveLayoutSupportsFreshAdoptedTargetBeforeGitInit(t *testing.T) {
 }
 
 func TestResolveLayoutSelectsExplicitNestedAdoptedInstallation(t *testing.T) {
+	t.Parallel()
 	app := filepath.Join(t.TempDir(), "containing application")
 	if err := os.MkdirAll(app, 0o755); err != nil {
 		t.Fatal(err)
-	}
-	command := exec.Command("git", "init", "-q", "-b", "main", app)
-	command.Env = scrubGitSteering(os.Environ())
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
 	}
 
 	writeLayoutFile(t, filepath.Join(app, "metasystem.conf"), "metasystem.runtimes=claude\n")
@@ -387,7 +388,9 @@ func TestResolveLayoutSelectsExplicitNestedAdoptedInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nested, err := ResolveLayout(child)
+	resolver, top := resolverFixture(t, installation)
+	top.expectCanonical(child, app, nil)
+	nested, err := resolver.ResolveLayout(child)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +400,8 @@ func TestResolveLayoutSelectsExplicitNestedAdoptedInstallation(t *testing.T) {
 		t.Fatalf("nested adopted layout = %+v", nested)
 	}
 
-	parent, err := ResolveLayout(app)
+	top.expectCanonical(app, app, nil)
+	parent, err := resolver.ResolveLayout(app)
 	if err != nil {
 		t.Fatal(err)
 	}

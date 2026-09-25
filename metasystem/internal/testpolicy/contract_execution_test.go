@@ -46,6 +46,33 @@ func TestHostStaticReproofFixturePrerequisites(t *testing.T) {
 	}
 }
 
+func TestGoGateGroupsOwnWholeAttemptAllowance(t *testing.T) {
+	t.Parallel()
+	contract, err := Load(filepath.Join("..", "..", "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := groupMap(contract.Groups)
+	for _, id := range []string{"fast-static-build", "section/go-engine-gate"} {
+		workers := groups[id].Resources.Workers
+		if workers == nil || *workers != 0 {
+			t.Errorf("%s workers=%v, want explicit zero for the whole attempt allowance", id, workers)
+		}
+	}
+}
+
+func TestLandFixtureConsumesWholeAttemptWorkerAllowance(t *testing.T) {
+	t.Parallel()
+	contract, err := Load(filepath.Join("..", "..", "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workers := groupMap(contract.Groups)["section/land-fixtures"].Resources.Workers
+	if workers == nil || *workers != 0 {
+		t.Fatalf("section/land-fixtures workers=%v, want explicit zero for the whole attempt allowance", workers)
+	}
+}
+
 func TestLegacyContractWireOmitsExecutionFields(t *testing.T) {
 	t.Parallel()
 	contract := fixtureContract()

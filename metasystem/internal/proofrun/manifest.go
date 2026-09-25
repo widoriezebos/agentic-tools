@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 const recordLengthBytes = 8
@@ -43,6 +44,7 @@ type manifest struct {
 type completeManifestRoot struct {
 	projectRoot        string
 	installationPrefix string
+	stateRootPrefix    string
 	hasGit             bool
 }
 
@@ -80,7 +82,7 @@ func readCompleteManifest(root string) (manifest, completeManifestRoot, error) {
 	if err != nil {
 		return manifest{}, completeManifestRoot{}, err
 	}
-	result, err := readManifestAt(location.projectRoot, location.installationPrefix, true)
+	result, err := readManifestAtWithHook(location.projectRoot, location.installationPrefix, location.stateRootPrefix, true, nil)
 	if err == nil {
 		result.layout = completeLayoutRecord(location)
 	}
@@ -88,10 +90,10 @@ func readCompleteManifest(root string) (manifest, completeManifestRoot, error) {
 }
 
 func readManifestAt(root, installationPrefix string, complete bool) (manifest, error) {
-	return readManifestAtWithHook(root, installationPrefix, complete, nil)
+	return readManifestAtWithHook(root, installationPrefix, "", complete, nil)
 }
 
-func readManifestAtWithHook(root, installationPrefix string, complete bool, beforeEntry func(string, fs.DirEntry) error) (manifest, error) {
+func readManifestAtWithHook(root, installationPrefix, stateRootPrefix string, complete bool, beforeEntry func(string, fs.DirEntry) error) (manifest, error) {
 	canonical, err := filepath.Abs(root)
 	if err != nil {
 		return manifest{}, fmt.Errorf("resolve manifest root: %w", err)
@@ -133,7 +135,7 @@ func readManifestAtWithHook(root, installationPrefix string, complete bool, befo
 				return filepath.SkipDir
 			}
 			if complete {
-				excluded, err := completeDirectoryExcluded(rel, installationPrefix)
+				excluded, err := completeDirectoryExcluded(rel, installationPrefix, stateRootPrefix)
 				if err != nil {
 					return err
 				}
@@ -155,7 +157,7 @@ func readManifestAtWithHook(root, installationPrefix string, complete bool, befo
 			return nil
 		}
 		if complete {
-			included, err := completeInputIncluded(rel, installationPrefix)
+			included, err := completeInputIncluded(rel, installationPrefix, stateRootPrefix)
 			if err != nil {
 				return err
 			}
@@ -210,12 +212,16 @@ func completeLayoutRecord(location completeManifestRoot) []byte {
 	return append(framed, body...)
 }
 
-func completeDirectoryExcluded(rel, installationPrefix string) (bool, error) {
+func completeDirectoryExcluded(rel, installationPrefix, stateRootPrefix string) (bool, error) {
 	prefix := strings.Trim(filepath.ToSlash(installationPrefix), "/")
 	if prefix != "" && (rel == prefix || strings.HasPrefix(prefix, rel+"/")) {
 		return false, nil
 	}
-	included, err := completeInputIncluded(rel, installationPrefix)
+	goals := stateRootGoalsPath(stateRootPrefix)
+	if rel == goals || strings.HasPrefix(goals, rel+"/") {
+		return false, nil
+	}
+	included, err := completeInputIncluded(rel, installationPrefix, stateRootPrefix)
 	return !included, err
 }
 
@@ -255,7 +261,27 @@ func resolveCompleteManifestRoot(root string) (completeManifestRoot, error) {
 	} else {
 		prefix = filepath.ToSlash(prefix)
 	}
-	return completeManifestRoot{projectRoot: projectRoot, installationPrefix: prefix, hasGit: true}, nil
+	stateRoot, err := stateroot.RootForInstallation(canonical)
+	if err != nil {
+		return completeManifestRoot{}, fmt.Errorf("resolve frozen state root: %w", err)
+	}
+	stateRoot, err = filepath.EvalSymlinks(stateRoot)
+	if err != nil {
+		return completeManifestRoot{}, fmt.Errorf("resolve frozen state root: %w", err)
+	}
+	statePrefix, err := filepath.Rel(projectRoot, stateRoot)
+	if err != nil {
+		return completeManifestRoot{}, fmt.Errorf("resolve frozen state-root prefix: %w", err)
+	}
+	if statePrefix == ".." || strings.HasPrefix(statePrefix, ".."+string(filepath.Separator)) {
+		return completeManifestRoot{}, fmt.Errorf("frozen state root %s is outside project root %s", stateRoot, projectRoot)
+	}
+	if statePrefix == "." {
+		statePrefix = ""
+	} else {
+		statePrefix = filepath.ToSlash(statePrefix)
+	}
+	return completeManifestRoot{projectRoot: projectRoot, installationPrefix: prefix, stateRootPrefix: statePrefix, hasGit: true}, nil
 }
 
 func hasGitMarker(root string) bool {
@@ -270,12 +296,27 @@ func hasGitMarker(root string) bool {
 	}
 }
 
-func completeInputIncluded(rel, installationPrefix string) (bool, error) {
+func stateRootGoalsPath(stateRootPrefix string) string {
+	if stateRootPrefix == "" {
+		return "plans/goals"
+	}
+	return stateRootPrefix + "/plans/goals"
+}
+
+func completeGoalInputIncluded(rel, stateRootPrefix string) bool {
+	name, ok := strings.CutPrefix(rel, stateRootGoalsPath(stateRootPrefix)+"/")
+	return ok && name != "backlog.md" && !strings.Contains(name, "/") && strings.HasSuffix(name, ".md")
+}
+
+func completeInputIncluded(rel, installationPrefix, stateRootPrefix string) (bool, error) {
 	if isLocalConfiguration(rel) || rel == ".git" || strings.HasPrefix(rel, ".git/") {
 		return false, nil
 	}
 	if enginePolicyErr != nil {
 		return false, fmt.Errorf("load behavior-surface policy for frozen input: %w", enginePolicyErr)
+	}
+	if completeGoalInputIncluded(rel, stateRootPrefix) {
+		return true, nil
 	}
 	return enginePolicy.Includes(behaviorsurface.Landing, rel, installationPrefix)
 }

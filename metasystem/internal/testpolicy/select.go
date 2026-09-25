@@ -478,3 +478,22 @@ func appendStage(stages []Stage, id string, groups map[string]bool) []Stage {
 	}
 	return stages
 }
+
+// AutoPlanSelectsDeep reports whether an automatic plan already selected what
+// a deep request on the same change selects. Auto executes the required mode,
+// so an auto plan that executed deep chose the deep groups itself. The first
+// testing transition is the exception: it raises a standard selection to deep
+// without adding the contract's deep groups. It always selects every
+// migration group, so a plan missing one was not raised by it.
+func AutoPlanSelectsDeep(plan Plan) bool {
+	if plan.RequestedMode != ModeAuto || plan.ExecutedMode != ModeDeep {
+		return false
+	}
+	selected := set(plan.SelectedGroups)
+	for _, id := range firstTransitionGroups {
+		if !selected[id] {
+			return true
+		}
+	}
+	return false
+}

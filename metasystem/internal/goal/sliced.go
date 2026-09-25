@@ -14,7 +14,7 @@ func sliceStartRequest(r VerbRequest, id string) PublishRequest {
 		Intent:  Intent{Verb: "slice-start", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal slice-start " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -35,6 +35,6 @@ func sliceStartRequest(r VerbRequest, id string) PublishRequest {
 			touch(goal, r, "slice-start", []string{id})
 			return []Change{{Path: livePath(id), Content: RenderFile(goal)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }

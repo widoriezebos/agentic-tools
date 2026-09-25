@@ -10,6 +10,7 @@ import (
 )
 
 func TestNormalizeDelegateFreshRequiresExplicitGoalAndMapsOperation(t *testing.T) {
+	t.Parallel()
 	got, mode, err := normalizeDelegateArgs([]string{
 		"--role", "verifier", "--brief", "brief.md", "--goal", "none-explicit", "--destructive-reach", "MECHANICAL", "--op", "operation-a", "--source", "skills/verify/SKILL.md",
 	})
@@ -23,6 +24,7 @@ func TestNormalizeDelegateFreshRequiresExplicitGoalAndMapsOperation(t *testing.T
 }
 
 func TestNormalizeDelegateFreshForwardsReviewsForCriticRoles(t *testing.T) {
+	t.Parallel()
 	got, mode, err := normalizeDelegateArgs([]string{
 		"--reviews", "implementer-a", "--role", "code-critic", "--brief", "brief.md", "--goal", "goal-a", "--destructive-reach", "MECHANICAL",
 	})

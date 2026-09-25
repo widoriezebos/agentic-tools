@@ -15,12 +15,13 @@ import (
 )
 
 func TestGoalListSummaryKeepsLargeHistoriesOutAndOrdersEachBucket(t *testing.T) {
-	root := goalListHistoryFixture(t)
-	output, code := captureGoalOutput(t, func() int { return runGoalList([]string{"--root", root}) })
+	fixture := goalListHistoryFixture(t)
+	root := fixture.root()
+	output, code := captureGoalOutput(t, func() int { return runGoalListWithResolver([]string{"--root", root}, fixture.resolve) })
 	if code != 0 || len(output) > 64*1024 || strings.Contains(output, "history payload") {
 		t.Fatalf("summary code=%d bytes=%d includesHistory=%v", code, len(output), strings.Contains(output, "history payload"))
 	}
-	tip := strings.TrimSpace(goalSyncMutationGit(t, root, "rev-parse", "HEAD"))
+	tip := fixture.repo.accepted
 	if !strings.HasPrefix(output, "claimed=1 approved=1 queued=5 parked=1 done=1 abandoned=0 tip="+tip+"\n") {
 		t.Fatalf("summary lacks bucket counts or accepted tip: %s", output)
 	}
@@ -43,21 +44,26 @@ func TestGoalListSummaryKeepsLargeHistoriesOutAndOrdersEachBucket(t *testing.T) 
 	if !reflect.DeepEqual(rows, want) {
 		t.Fatalf("summary rows\ngot: %q\nwant: %q", rows, want)
 	}
-	withDone, code := captureGoalOutput(t, func() int { return runGoalList([]string{"--root", root, "--done"}) })
+	withDone, code := captureGoalOutput(t, func() int { return runGoalListWithResolver([]string{"--root", root, "--done"}, fixture.resolve) })
 	if code != 0 || !strings.HasPrefix(withDone, output) || !strings.HasSuffix(withDone, "0:0 done tier 3 done-one pin=- claim=- :: \n") {
 		t.Fatalf("--done did not append the archived bucket: code=%d output=%q", code, withDone)
 	}
+	captures, advances := fixture.repo.captures, fixture.repo.advances
 	filtered, code := captureGoalOutput(t, func() int {
-		return runGoalList([]string{"--root", root, "--fetch", "--label", "shared", "--label", "selected"})
+		return runGoalListWithResolver([]string{"--root", root, "--fetch", "--label", "shared", "--label", "selected"}, fixture.resolve)
 	})
 	if code != 0 || strings.Count(filtered, " :: ") != 1 || !strings.Contains(filtered, want[2]) || !strings.Contains(filtered, "queued=1") {
 		t.Fatalf("summary lost repeated-label filtering or local fetch: code=%d output=%q", code, filtered)
 	}
+	if fixture.repo.captures != captures+1 || fixture.repo.advances != advances || fixture.repo.accepted != tip || fixture.repo.canonical != tip || !strings.Contains(filtered, "tip="+tip) {
+		t.Fatalf("already-current fetch: captures=%d want=%d advances=%d want=%d canonical=%s accepted=%s summary=%q", fixture.repo.captures, captures+1, fixture.repo.advances, advances, fixture.repo.canonical, fixture.repo.accepted, filtered)
+	}
 }
 
 func TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag(t *testing.T) {
-	root := goalListHistoryFixture(t)
-	endpoint, err := goal.ResolveEndpoint(root)
+	fixture := goalListHistoryFixture(t)
+	root := fixture.root()
+	endpoint, err := fixture.resolve(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +72,9 @@ func TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, flags := range [][]string{{"--json"}, {"--json", "--pretty"}, {"--json", "--history"}} {
-		output, code := captureGoalOutput(t, func() int { return runGoalList(append([]string{"--root", root}, flags...)) })
+		output, code := captureGoalOutput(t, func() int {
+			return runGoalListWithResolver(append([]string{"--root", root}, flags...), fixture.resolve)
+		})
 		var envelope map[string]json.RawMessage
 		if code != 0 || json.Unmarshal([]byte(output), &envelope) != nil {
 			t.Fatalf("%v did not emit JSON: code=%d bytes=%d", flags, code, len(output))
@@ -123,11 +131,12 @@ func TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag(t *testing.T) {
 }
 
 func TestGoalShowKeepsPageFieldsAndRequiresHistoryFlag(t *testing.T) {
-	root := goalListHistoryFixture(t)
+	fixture := goalListHistoryFixture(t)
+	root := fixture.root()
 	for _, id := range []string{"standing-validation", "done-one"} {
 		args := []string{"--root", root, "--id", id}
-		plain, plainCode := captureGoalOutput(t, func() int { return runGoalShow(args) })
-		full, fullCode := captureGoalOutput(t, func() int { return runGoalShow(append(args, "--history")) })
+		plain, plainCode := captureGoalOutput(t, func() int { return runGoalShowWithResolver(args, fixture.resolve) })
+		full, fullCode := captureGoalOutput(t, func() int { return runGoalShowWithResolver(append(args, "--history"), fixture.resolve) })
 		var plainPage, fullPage map[string]json.RawMessage
 		if plainCode != 0 || fullCode != 0 || json.Unmarshal([]byte(plain), &plainPage) != nil || json.Unmarshal([]byte(full), &fullPage) != nil {
 			t.Fatalf("goal show failed for %s: default=%d history=%d", id, plainCode, fullCode)
@@ -199,9 +208,24 @@ func TestGoalListLegacyJSONRetainsAdoptionFacts(t *testing.T) {
 	}
 }
 
-func goalListHistoryFixture(t *testing.T) string {
+type goalListRepositoryFixture struct {
+	*obligationCommandFixture
+	resolutions int
+}
+
+func (f *goalListRepositoryFixture) resolve(root string) (goal.Endpoint, error) {
+	f.t.Helper()
+	if root != f.root() {
+		f.t.Fatalf("endpoint root = %q, want %q", root, f.root())
+	}
+	f.resolutions++
+	return goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: f.repo}, nil
+}
+
+func goalListHistoryFixture(t *testing.T) *goalListRepositoryFixture {
 	t.Helper()
-	root := syncedClaimedGoalFixture(t)
+	base := newObligationCommandFixture(t)
+	root := base.root()
 	standingPath := filepath.Join(root, "plans", "goals", "standing-validation.md")
 	data, err := os.ReadFile(standingPath)
 	if err != nil {
@@ -234,6 +258,7 @@ func goalListHistoryFixture(t *testing.T) string {
 		}
 		files = append(files, file)
 	}
+	changes := make([]goal.Change, 0, len(files))
 	for _, file := range files {
 		for i := 0; i < 64; i++ {
 			file.History = append(file.History, goal.HistoryLine{
@@ -247,18 +272,25 @@ func goalListHistoryFixture(t *testing.T) string {
 		if file.State == goal.StateDone {
 			path = filepath.Join(root, "records", "goals", file.Id+".md")
 		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		changes = append(changes, goal.Change{Path: filepath.ToSlash(relative), Content: goal.RenderFile(file)})
 	}
-	goalSyncMutationGit(t, root, "add", "plans/goals", "records/goals")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "large history fixture")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	return root
+	parent := base.repo.accepted
+	opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAC", "mac-cli", "m1")
+	tip, err := base.repo.Build(opid, parent, changes, "large history fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := base.repo.Publish(parent, tip); err != nil || outcome != goal.CASLanded {
+		t.Fatalf("publish history fixture: outcome=%v error=%v", outcome, err)
+	}
+	if err := base.repo.AcceptedCAS(parent, tip); err != nil {
+		t.Fatal(err)
+	}
+	return &goalListRepositoryFixture{obligationCommandFixture: base}
 }
 
 // A file keeps full-record assertions independent of the pipe buffer size.
@@ -322,11 +354,39 @@ func TestGoalListSummaryCarriesMarkersDropsControlsAndMarksCuts(t *testing.T) {
 }
 
 func TestGoalListRefusesRecordFlagsOnTheSummary(t *testing.T) {
-	root := goalListHistoryFixture(t)
+	fixture := goalListHistoryFixture(t)
+	root := fixture.root()
 	for _, args := range [][]string{{"--root", root, "--history"}, {"--root", root, "--pretty"}} {
-		output, code := captureGoalOutput(t, func() int { return runGoalList(args) })
+		output, code := captureGoalOutput(t, func() int { return runGoalListWithResolver(args, fixture.resolve) })
 		if code != 2 || strings.Contains(output, " :: ") {
 			t.Fatalf("%v printed a summary (code %d) instead of refusing: %q", args, code, output)
+		}
+	}
+	if fixture.resolutions != 0 {
+		t.Fatalf("invalid flags resolved the endpoint %d times", fixture.resolutions)
+	}
+}
+
+// The public list and show entrypoints read repository config when no test
+// resolver is supplied.
+func TestGoalListAndShowDefaultResolverUsesNativeGitConfig(t *testing.T) {
+	root := t.TempDir()
+	marker := filepath.Join(root, "plans", "goals", "backlog.md")
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte("# Backlog\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "init", "-q")
+	goalSyncMutationGit(t, root, "config", "goal.sync-branch", "main")
+	for _, run := range []func() int{
+		func() int { return runGoalList([]string{"--root", root}) },
+		func() int { return runGoalShow([]string{"--root", root, "--id", "missing"}) },
+	} {
+		stderr, code := captureStderr(t, run)
+		if code != 1 || !strings.Contains(stderr, "goal.sync-branch must be fully qualified") {
+			t.Fatalf("default resolver code=%d stderr=%q", code, stderr)
 		}
 	}
 }

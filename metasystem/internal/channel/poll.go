@@ -42,7 +42,13 @@ type cursorRecord struct {
 
 const channelPollInterval = 2 * time.Minute
 
+type pollEndpointResolver func(string) (goal.Endpoint, error)
+
 func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
+	return pollWithEndpoint(ctx, c, goal.ResolveEndpoint)
+}
+
+func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointResolver) (PollResult, error) {
 	var result PollResult
 	if c.MaxDispositions <= 0 {
 		c.MaxDispositions = 5
@@ -94,7 +100,7 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 		}
 		q := &questions[i]
 		if q.Answer != nil && q.Answer.Phase != "closed" {
-			if err = advanceAnswer(ctx, c, q); err != nil {
+			if err = advanceAnswerWithEndpoint(ctx, c, q, resolveEndpoint); err != nil {
 				var postErr receiptPostError
 				if errors.As(err, &postErr) {
 					result.Undelivered++
@@ -159,7 +165,7 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 		}
 		qid := byThread[in.ThreadID]
 		if qid == "" && status.GoalID != "" && in.ThreadID == statusRoot {
-			if err = disposeStatusReply(ctx, c, status, in); err != nil {
+			if err = disposeStatusReplyWithEndpoint(ctx, c, status, in, resolveEndpoint); err != nil {
 				return result, scrubErr(err, c)
 			}
 			result.Dispositions++
@@ -244,7 +250,7 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 		if err = fail(c, "matched"); err != nil {
 			return result, err
 		}
-		if err = advanceAnswer(ctx, c, &q); err != nil {
+		if err = advanceAnswerWithEndpoint(ctx, c, &q, resolveEndpoint); err != nil {
 			return result, scrubErr(err, c)
 		}
 		result.Dispositions++
@@ -287,7 +293,7 @@ func verifyInbound(c PollConfig, in Inbound, code string, hasCode bool) (int64, 
 	return step, ""
 }
 
-func disposeStatusReply(ctx context.Context, c PollConfig, status StatusState, in Inbound) error {
+func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status StatusState, in Inbound, resolveEndpoint pollEndpointResolver) error {
 	answer, code, hasCode := SplitTOTP(in.Text)
 	step, reason := verifyInbound(c, in, code, hasCode)
 	token := "start " + status.GoalID
@@ -315,7 +321,7 @@ func disposeStatusReply(ctx context.Context, c PollConfig, status StatusState, i
 		if err != nil {
 			return err
 		}
-		ep, err := goal.ResolveEndpoint(c.RepoRoot)
+		ep, err := resolveEndpoint(c.RepoRoot)
 		if err != nil {
 			return err
 		}
@@ -338,13 +344,13 @@ func disposeStatusReply(ctx context.Context, c PollConfig, status StatusState, i
 	return err
 }
 
-func advanceAnswer(ctx context.Context, c PollConfig, q *Question) error {
+func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, resolveEndpoint pollEndpointResolver) error {
 	a := q.Answer
 	if a == nil {
 		return nil
 	}
 	if a.Phase == "matched" {
-		ep, err := goal.ResolveEndpoint(c.RepoRoot)
+		ep, err := resolveEndpoint(c.RepoRoot)
 		if err != nil {
 			return err
 		}

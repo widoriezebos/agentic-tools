@@ -337,7 +337,7 @@ func closeStopRequest(r CloseStopRequest) PublishRequest {
 		Intent:  Intent{Verb: "breach-stop", Targets: []string{r.GoalID}, Args: intentArgs(r.VerbRequest, args)},
 		Message: "goal breach-stop " + r.GoalID,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -378,7 +378,7 @@ func closeStopRequest(r CloseStopRequest) PublishRequest {
 			touch(f, r.VerbRequest, "breach-stop", []string{r.GoalID})
 			return []Change{{Path: livePath(r.GoalID), Content: RenderFile(f)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -456,7 +456,7 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 		Intent:  Intent{Verb: "resume", Targets: []string{r.GoalID}, Args: intentArgs(r.VerbRequest, args)},
 		Message: "goal resume " + r.GoalID,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -500,6 +500,6 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 			f.Landing = landing
 			return []Change{{Path: livePath(r.GoalID), Content: RenderFile(f)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }

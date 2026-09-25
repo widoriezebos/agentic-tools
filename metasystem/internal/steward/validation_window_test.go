@@ -3,14 +3,12 @@ package steward
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
@@ -19,42 +17,81 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-func cadenceGoalBed(t *testing.T, file *goal.GoalFile) string {
+type cadenceGoalFixture struct {
+	root       string
+	repository *cadenceRepository
+	minted     int
+}
+
+func cadenceGoalBed(t *testing.T, file *goal.GoalFile) *cadenceGoalFixture {
 	t.Helper()
-	root := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		command.Env = gittree.ScrubbedEnviron()
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, output)
+	return &cadenceGoalFixture{root: t.TempDir(), repository: newCadenceRepository(t, file)}
+}
+
+func (f *cadenceGoalFixture) link(t *testing.T) func(string, validationWindowObservation, time.Time) error {
+	t.Helper()
+	return func(root string, observation validationWindowObservation, now time.Time) error {
+		if root != f.root {
+			t.Fatalf("cadence linker root=%q, want %q", root, f.root)
 		}
+		return linkCadenceFailureWithOwners(root, observation, now,
+			func(got string) bool {
+				if got != f.root {
+					t.Fatalf("new-world root=%q", got)
+				}
+				tree, problems := goal.ParseTreeFiles(copyCadenceFiles(f.repository.snapshot(f.repository.accepted)))
+				if len(problems) != 0 || tree.Root == nil || tree.Live["bounded"] == nil {
+					t.Fatalf("accepted cadence bytes are not a migrated goal tree: %v", problems)
+				}
+				return true
+			},
+			func(got string) (goal.Endpoint, error) {
+				if got != f.root {
+					t.Fatalf("resolve endpoint root=%q", got)
+				}
+				return goal.Endpoint{Root: f.root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: f.repository}, nil
+			},
+			func() (string, error) {
+				f.minted++
+				if f.minted != 1 {
+					t.Fatalf("cadence operation identity minted %d times", f.minted)
+				}
+				return cadenceTestULID, nil
+			})
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
-		t.Fatal(err)
+}
+
+func assertCadenceGoalLinked(t *testing.T, f *cadenceGoalFixture, runID, attemptID string, linkedAt time.Time) {
+	t.Helper()
+	files := f.repository.acceptedFiles()
+	tree, problems := goal.ParseTreeFiles(files)
+	if len(problems) != 0 {
+		t.Fatalf("accepted cadence goal no longer parses: %v", problems)
 	}
-	run("init", "-q", "-b", "main")
-	run("config", "user.name", "cadence-fixture")
-	run("config", "user.email", "cadence-fixture@example.invalid")
-	run("config", "metasystem.goal.machine", "bed-m1")
-	run("config", "goal.sync-remote", "local")
-	rootRecord := &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
-	for relative, data := range map[string][]byte{
-		"plans/goals/backlog.md": goal.RenderRoot(rootRecord),
-		"plans/goals/bounded.md": goal.RenderFile(file),
-	} {
-		path := filepath.Join(root, filepath.FromSlash(relative))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		run("add", relative)
+	file := tree.Live["bounded"]
+	if file == nil || file.Revision != 3 || len(file.History) != 2 || f.minted != 1 {
+		t.Fatalf("cadence link revision/history/identity: goal=%+v minted=%d", file, f.minted)
 	}
-	run("commit", "-q", "-m", "cadence bed")
-	run("update-ref", goal.AcceptedRef, "HEAD")
-	return root
+	before, _ := goal.ParseTreeFiles(f.repository.seed)
+	if goal.RenderHistoryLine(file.History[0]) != goal.RenderHistoryLine(before.Live["bounded"].History[0]) {
+		t.Fatalf("cadence link rewrote its parent history: %+v", file.History)
+	}
+	if file.Claimed == nil || file.Claimed.Machine != "bed-m1" || file.Claimed.Lineage != "coordinator" {
+		t.Fatalf("cadence link changed the claimed actor: %+v", file.Claimed)
+	}
+	last := file.History[1]
+	if last.Opid != f.repository.opid || last.At != linkedAt.UTC().Format(time.RFC3339) ||
+		last.Verb != "defer-findings" || last.Actor != "bed-m1+coordinator" ||
+		len(last.Targets) != 1 || last.Targets[0] != "bounded" {
+		t.Fatalf("cadence link history has the wrong actor or operation: %+v", last)
+	}
+	obligations := file.ReviewObligations
+	if len(obligations) != 1 || obligations[0].Finding != "cadence-"+runID || obligations[0].Chain != attemptID ||
+		obligations[0].State != "open" || obligations[0].Artifact != "retained cadence result "+runID ||
+		obligations[0].Test != "focused repair for testing attempt "+attemptID {
+		t.Fatalf("cadence did not retain the exact open correction obligation: %+v", obligations)
+	}
+	f.repository.verify()
 }
 
 func writeValidationRun(t *testing.T, root, id, status, log string, seq int64) {
@@ -158,78 +195,64 @@ func TestValidationWindowObservesOnlyResultBoundGovernedRuns(t *testing.T) {
 }
 
 func TestCadenceRedLinksOneExistingGoalReviewObligation(t *testing.T) {
-	root := cadenceGoalBed(t, &goal.GoalFile{
+	fixture := cadenceGoalBed(t, &goal.GoalFile{
 		Id: "bounded", State: goal.StateClaimed, Intent: "Repair bounded regressions", Origin: goal.OriginMain,
 		NextStep: "Apply the focused repair.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 		Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 		History: bedHistory("bounded", "claim"),
 	})
-	writeValidationRun(t, root, "cadence-red", run.StatusRed, "artifacts/cadence-red.log", 1)
-	attemptID := writeValidationAttempt(t, root, "cadence-red", cadenceCatchGroups[0])
+	writeValidationRun(t, fixture.root, "cadence-red", run.StatusRed, "artifacts/cadence-red.log", 1)
+	attemptID := writeValidationAttempt(t, fixture.root, "cadence-red", cadenceCatchGroups[0])
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
-	if !goal.NewWorld(root) {
-		t.Fatal("cadence fixture lost its accepted migrated goal tree")
-	}
-	if err := observeDirectValidationWindow(root, now); err != nil {
+	link := fixture.link(t)
+	if err := observeDirectValidationWindowWithLinker(fixture.root, now, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := linkCadenceFailure(root, validationWindowObservation{RunID: "cadence-red", AttemptID: attemptID,
+	if err := link(fixture.root, validationWindowObservation{RunID: "cadence-red", AttemptID: attemptID,
 		Missing: []string{cadenceCatchGroups[0]}}, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	tip := attentionGit(t, root, "rev-parse", goal.LocalLedgerBranch)
-	files, err := goal.ReadCommitGoals(root, tip)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tree, problems := goal.ParseTreeFiles(files)
-	if len(problems) > 0 {
-		t.Fatalf("linked cadence goal no longer parses: %v", problems)
-	}
-	obligations := tree.Live["bounded"].ReviewObligations
-	if len(obligations) != 1 || obligations[0].Finding != "cadence-cadence-red" || obligations[0].Chain != attemptID || obligations[0].State != "open" {
-		t.Fatalf("cadence red did not retain one linked correction obligation: %+v", obligations)
-	}
+	assertCadenceGoalLinked(t, fixture, "cadence-red", attemptID, now)
 }
 
 func TestCadenceObservationRetriesFailedGoalLink(t *testing.T) {
-	root := cadenceGoalBed(t, &goal.GoalFile{
+	fixture := cadenceGoalBed(t, &goal.GoalFile{
 		Id: "bounded", State: goal.StateClaimed, Intent: "Repair bounded regressions", Origin: goal.OriginMain,
 		NextStep: "Apply the focused repair.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 		Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 		History: bedHistory("bounded", "claim"),
 	})
-	writeValidationRun(t, root, "cadence-retry", run.StatusRed, "artifacts/cadence-retry.log", 1)
-	writeValidationAttempt(t, root, "cadence-retry", cadenceCatchGroups[0])
+	writeValidationRun(t, fixture.root, "cadence-retry", run.StatusRed, "artifacts/cadence-retry.log", 1)
+	attemptID := writeValidationAttempt(t, fixture.root, "cadence-retry", cadenceCatchGroups[0])
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
-	original := cadenceFailureLinker
-	t.Cleanup(func() { cadenceFailureLinker = original })
 	calls := 0
-	cadenceFailureLinker = func(string, validationWindowObservation, time.Time) error {
+	failedLink := func(root string, observation validationWindowObservation, at time.Time) error {
 		calls++
+		state, err := loadValidationWindow(root)
+		if err != nil || len(state.Observations) != 1 || state.Observations[0].RunID != observation.RunID ||
+			observation.RunID != "cadence-retry" || observation.AttemptID != attemptID ||
+			at != now || len(observation.Missing) != 1 || observation.Missing[0] != cadenceCatchGroups[0] {
+			t.Fatalf("cadence link ran before its exact observation was saved: state=%+v observation=%+v err=%v", state, observation, err)
+		}
 		return os.ErrPermission
 	}
-	if err := observeDirectValidationWindow(root, now); !os.IsPermission(err) {
+	if err := observeDirectValidationWindowWithLinker(fixture.root, now, failedLink); !os.IsPermission(err) {
 		t.Fatalf("first goal-link fault was not exposed: %v", err)
 	}
-	state, err := loadValidationWindow(root)
-	if err != nil || len(state.Observations) != 1 {
+	state, err := loadValidationWindow(fixture.root)
+	if err != nil || len(state.Observations) != 1 || state.Observations[0].RunID != "cadence-retry" ||
+		state.Observations[0].AttemptID != attemptID || len(state.Observations[0].Missing) != 1 {
 		t.Fatalf("first failure did not preserve its durable observation: %+v %v", state, err)
 	}
-	cadenceFailureLinker = original
-	if err := observeDirectValidationWindow(root, now.Add(time.Minute)); err != nil {
+	link := fixture.link(t)
+	if err := observeDirectValidationWindowWithLinker(fixture.root, now.Add(time.Minute), link); err != nil {
 		t.Fatalf("second pass did not recover the preserved goal link: %v", err)
 	}
 	if calls != 1 {
 		t.Fatalf("fault injection count = %d, want one failed link", calls)
 	}
-	tip := attentionGit(t, root, "rev-parse", goal.LocalLedgerBranch)
-	files, err := goal.ReadCommitGoals(root, tip)
-	if err != nil {
+	if err := link(fixture.root, state.Observations[0], now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	tree, problems := goal.ParseTreeFiles(files)
-	if len(problems) > 0 || len(tree.Live["bounded"].ReviewObligations) != 1 {
-		t.Fatalf("recovery did not create exactly one obligation: problems=%v goal=%+v", problems, tree.Live["bounded"])
-	}
+	assertCadenceGoalLinked(t, fixture, "cadence-retry", attemptID, now.Add(time.Minute))
 }

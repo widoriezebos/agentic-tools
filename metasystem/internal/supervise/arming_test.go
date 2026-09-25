@@ -1927,6 +1927,84 @@ func TestOwnerStopHonorsPublishedTeardownCeiling(t *testing.T) {
 	}
 }
 
+func TestStopOwnerObservesFinalPostKillBoundary(t *testing.T) {
+	isolatedArmingRegistry(t)
+	for _, scaleMilli := range []int{1000, 1} {
+		for _, finalLiveness := range []identity.Liveness{identity.Dead, identity.Alive, identity.Unknown} {
+			t.Run(fmt.Sprintf("scale-%d/final-%s", scaleMilli, finalLiveness), func(t *testing.T) {
+				root := t.TempDir()
+				if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				owner := ArmingOwner{Pid: 41, PidStartedAt: 100, InstanceTag: "owner-tag"}
+				if err := writeArmingHelperJSON(filepath.Join(SupervisionDir(root), "state.json"), stateDocument{
+					Owner:              stateIdentity{Pid: owner.Pid, PidStartedAt: owner.PidStartedAt, InstanceTag: owner.InstanceTag},
+					TeardownCeilingSec: 1, Components: map[string]stateComponent{},
+				}); err != nil {
+					t.Fatal(err)
+				}
+
+				now := time.Unix(1000, 0)
+				var postKillAt time.Time
+				boundaryProbes, inLoopProbes := 0, 0
+				crossedBoundary := false
+				priorNow, priorSleep := armingNow, armingSleep
+				priorLiveness, priorSignal := armingOwnerLiveness, armingOwnerSignal
+				armingNow = func() time.Time { return now }
+				armingSleep = func(duration time.Duration) {
+					if !postKillAt.IsZero() {
+						boundary := postKillAt.Add(scaledDuration(componentPostKillProofInterval, scaleMilli))
+						crossedBoundary = crossedBoundary || now.Before(boundary) && !now.Add(duration).Before(boundary)
+					}
+					now = now.Add(duration)
+				}
+				armingOwnerLiveness = func(ArmingOwner) identity.Liveness {
+					if postKillAt.IsZero() {
+						return identity.Alive
+					}
+					boundary := postKillAt.Add(scaledDuration(componentPostKillProofInterval, scaleMilli))
+					if now.Before(boundary) {
+						inLoopProbes++
+						return identity.Alive
+					}
+					boundaryProbes++
+					return finalLiveness
+				}
+				var signals []syscall.Signal
+				armingOwnerSignal = func(_ int64, signal syscall.Signal) error {
+					signals = append(signals, signal)
+					if signal == syscall.SIGKILL {
+						postKillAt = now
+					}
+					return nil
+				}
+				t.Cleanup(func() {
+					armingNow, armingSleep = priorNow, priorSleep
+					armingOwnerLiveness, armingOwnerSignal = priorLiveness, priorSignal
+				})
+
+				outcome, err := stopOwner(root, owner, scaleMilli, "test shutdown")
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantResult, wantReason := ShutdownNotStopped, fmt.Sprintf("owner pid %d did not stop after KILL", owner.Pid)
+				if finalLiveness == identity.Dead {
+					wantResult, wantReason = ShutdownStopped, "shutdown-escalated"
+				}
+				if outcome.Result != wantResult || outcome.Reason != wantReason || outcome.Signal != ShutdownSignalKill {
+					t.Fatalf("owner outcome = %+v, want result %s reason %q after KILL", outcome, wantResult, wantReason)
+				}
+				if len(signals) != 2 || signals[0] != syscall.SIGTERM || signals[1] != syscall.SIGKILL {
+					t.Fatalf("owner signals = %v, want [terminated killed]", signals)
+				}
+				if inLoopProbes == 0 || !crossedBoundary || boundaryProbes != 1 {
+					t.Fatalf("post-KILL probes in-loop=%d boundary=%d crossed=%t, want alive probes then one final probe", inLoopProbes, boundaryProbes, crossedBoundary)
+				}
+			})
+		}
+	}
+}
+
 func TestReadInventoryCarriesOwnerAndComponentFenceGeneration(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {

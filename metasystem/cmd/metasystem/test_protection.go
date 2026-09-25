@@ -73,72 +73,53 @@ func runFrozenSelectionProbe(ctx context.Context, request proofrun.TestRunReques
 	if err != nil {
 		return err
 	}
+	// A linked worktree would share the caller's live refs and local config,
+	// so a destination that advanced during the probes would replace the
+	// admitted policy base. Every probe therefore gets its own repository
+	// metadata over the caller's shared immutable object database, and the
+	// candidate engine reads a private ref pinned to the admitted commit.
+	// Nothing here changes a caller ref or configuration byte.
 	policyBaseCommit := request.PolicyBaseCommit
-	var projectRoot string
-	var cleanup func()
-	if baseContractPresent {
-		detached, detachErr := workspace.NewDetachedWorktree(baseTree)
-		if detachErr != nil {
-			return detachErr
-		}
-		projectRoot, err = canonicalPath(detached.Workspace().Dir)
+	if !baseContractPresent {
+		// The first transition has no base contract to protect. The real
+		// candidate commit (or a dangling commit over the exact candidate
+		// tree) stands in as the base, so its engine-source ancestry remains
+		// resolvable without inventing an unrelated commit.
+		policyBaseCommit, err = policyProbeCandidateCommit(ctx, request)
 		if err != nil {
-			_ = detached.Close()
-			return err
-		}
-		cleanup = func() { _ = detached.Close() }
-		actualPolicyBase, policyErr := trustedTestingPolicyBase(projectRoot, gittree.Workspace{Dir: projectRoot})
-		if policyErr != nil {
-			cleanup()
-			return fmt.Errorf("read protected probe destination without changing caller refs or configuration: %w", policyErr)
-		}
-		if actualPolicyBase != request.PolicyBaseCommit {
-			cleanup()
-			return fmt.Errorf("protected probe destination changed: got %s want %s", actualPolicyBase, request.PolicyBaseCommit)
-		}
-	} else {
-		// A linked worktree would share the caller's refs and local config,
-		// while the former freeze-and-init path invented a commit that could
-		// not be the source stamp of the authenticated engine. Give the first
-		// transition its own repository metadata but share the immutable object
-		// database. The real candidate commit (or a dangling commit over the
-		// exact candidate tree) and its engine-source ancestry therefore remain
-		// resolvable without changing any caller ref or configuration byte.
-		candidateCommit, commitErr := policyProbeCandidateCommit(ctx, request)
-		if commitErr != nil {
-			return commitErr
-		}
-		cloneParent, cloneErr := os.MkdirTemp("", "metasystem-policy-clone.")
-		if cloneErr != nil {
-			return cloneErr
-		}
-		projectRoot = filepath.Join(cloneParent, "source")
-		cleanup = func() { _ = os.RemoveAll(cloneParent) }
-		if _, cloneErr = runPolicyProbeGit(ctx, request.ProjectRoot, "clone", "-q", "--shared", "--no-checkout", request.ProjectRoot, projectRoot); cloneErr != nil {
-			cleanup()
-			return cloneErr
-		}
-		projectRoot, err = canonicalPath(projectRoot)
-		if err != nil {
-			cleanup()
-			return err
-		}
-		if _, cloneErr = runPolicyProbeGit(ctx, projectRoot, "checkout", "-q", "--detach", candidateCommit); cloneErr != nil {
-			cleanup()
-			return cloneErr
-		}
-		policyBaseCommit = candidateCommit
-		const isolatedPolicyRef = "refs/remotes/protection/base"
-		if _, err := runPolicyProbeGit(ctx, projectRoot, "update-ref", isolatedPolicyRef, policyBaseCommit); err != nil {
-			cleanup()
-			return err
-		}
-		if _, err := runPolicyProbeGit(ctx, projectRoot, "config", "--local", "metasystem.steward.landing-ref", isolatedPolicyRef); err != nil {
-			cleanup()
 			return err
 		}
 	}
-	defer cleanup()
+	cloneParent, err := os.MkdirTemp("", "metasystem-policy-clone.")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(cloneParent)
+	projectRoot := filepath.Join(cloneParent, "source")
+	if _, err := runPolicyProbeGit(ctx, request.ProjectRoot, "clone", "-q", "--shared", "--no-checkout", request.ProjectRoot, projectRoot); err != nil {
+		return err
+	}
+	projectRoot, err = canonicalPath(projectRoot)
+	if err != nil {
+		return err
+	}
+	if _, err := runPolicyProbeGit(ctx, projectRoot, "checkout", "-q", "--detach", policyBaseCommit); err != nil {
+		return err
+	}
+	const isolatedPolicyRef = "refs/remotes/protection/base"
+	if _, err := runPolicyProbeGit(ctx, projectRoot, "update-ref", isolatedPolicyRef, policyBaseCommit); err != nil {
+		return err
+	}
+	if _, err := runPolicyProbeGit(ctx, projectRoot, "config", "--local", "metasystem.steward.landing-ref", isolatedPolicyRef); err != nil {
+		return err
+	}
+	actualPolicyBase, err := trustedTestingPolicyBase(projectRoot, gittree.Workspace{Dir: projectRoot})
+	if err != nil {
+		return fmt.Errorf("read protected probe destination without changing caller refs or configuration: %w", err)
+	}
+	if actualPolicyBase != policyBaseCommit {
+		return fmt.Errorf("protected probe destination changed: got %s want %s", actualPolicyBase, policyBaseCommit)
+	}
 	installation := projectRoot
 	if request.InstallationPrefix != "" {
 		installation = filepath.Join(projectRoot, filepath.FromSlash(request.InstallationPrefix))

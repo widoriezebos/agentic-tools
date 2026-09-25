@@ -38,22 +38,52 @@ const (
 	Evidence  Kind = "evidence"
 )
 
-var executablePath = os.Executable
-
-var gitSteeringVariables = map[string]struct{}{
-	"GIT_DIR": {}, "GIT_WORK_TREE": {}, "GIT_COMMON_DIR": {},
-	"GIT_INDEX_FILE": {}, "GIT_CEILING_DIRECTORIES": {}, "GIT_DISCOVERY_ACROSS_FILESYSTEM": {},
-	"GIT_OBJECT_DIRECTORY": {}, "GIT_ALTERNATE_OBJECT_DIRECTORIES": {},
-	"GIT_CONFIG": {}, "GIT_CONFIG_PARAMETERS": {}, "GIT_CONFIG_COUNT": {},
-	"GIT_CONFIG_GLOBAL": {}, "GIT_CONFIG_SYSTEM": {}, "GIT_CONFIG_NOSYSTEM": {},
-	"GIT_GRAFT_FILE": {}, "GIT_SHALLOW_FILE": {}, "GIT_REPLACE_REF_BASE": {},
-	"GIT_IMPLICIT_WORK_TREE": {}, "GIT_NO_REPLACE_OBJECTS": {}, "GIT_PREFIX": {},
+// Resolver owns repository and executable discovery for one operation or fixture.
+type Resolver struct {
+	repositoryTop  func(string) (string, error)
+	executablePath func() (string, error)
 }
 
-var repositoryTop = func(installationRoot string) (string, error) {
-	command := exec.Command("git", "-C", installationRoot, "rev-parse", "--show-toplevel")
-	command.Env = scrubGitSteering(os.Environ())
-	output, err := command.CombinedOutput()
+// NewResolver binds discovery readers to one resolver.
+func NewResolver(top func(string) (string, error), executable func() (string, error)) Resolver {
+	return Resolver{repositoryTop: top, executablePath: executable}
+}
+
+func defaultResolver() Resolver { return NewResolver(osRepositoryTop, os.Executable) }
+
+type commandRequest struct {
+	name string
+	args []string
+	env  []string
+}
+
+func runCommand(request commandRequest) ([]byte, error) {
+	command := exec.Command(request.name, request.args...)
+	command.Env = request.env
+	return command.CombinedOutput()
+}
+
+func isGitSteeringVariable(name string) bool {
+	switch name {
+	case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR",
+		"GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+		"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+		"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM",
+		"GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_REPLACE_REF_BASE",
+		"GIT_IMPLICIT_WORK_TREE", "GIT_NO_REPLACE_OBJECTS", "GIT_PREFIX":
+		return true
+	}
+	return false
+}
+
+func osRepositoryTop(path string) (string, error) {
+	return repositoryTopWith(path, os.Environ(), runCommand)
+}
+
+func repositoryTopWith(path string, environment []string, run func(commandRequest) ([]byte, error)) (string, error) {
+	request := commandRequest{name: "git", args: []string{"-C", path, "rev-parse", "--show-toplevel"}, env: scrubGitSteering(environment)}
+	output, err := run(request)
 	if err != nil {
 		return "", fmt.Errorf("state root: installation is not inside a Git repository: %s", strings.TrimSpace(string(output)))
 	}
@@ -65,7 +95,7 @@ func scrubGitSteering(environment []string) []string {
 	for _, entry := range environment {
 		name, _, present := strings.Cut(entry, "=")
 		if present {
-			if _, steering := gitSteeringVariables[name]; steering {
+			if isGitSteeringVariable(name) {
 				continue
 			}
 		}
@@ -77,16 +107,18 @@ func scrubGitSteering(environment []string) []string {
 // StateRoot returns the absolute directory owned by kind. Template checkouts
 // keep their self-hosted state beneath the installation; adopted installations
 // resolve state against the containing application repository.
-func StateRoot(kind Kind) (string, error) {
+func StateRoot(kind Kind) (string, error) { return defaultResolver().StateRoot(kind) }
+
+func (r Resolver) StateRoot(kind Kind) (string, error) {
 	relative, err := relativeRoot(kind)
 	if err != nil {
 		return "", err
 	}
-	installationRoot, err := installationRoot()
+	installationRoot, err := r.installationRoot()
 	if err != nil {
 		return "", err
 	}
-	appRoot, err := RootForInstallation(installationRoot)
+	appRoot, err := r.RootForInstallation(installationRoot)
 	if err != nil {
 		return "", err
 	}
@@ -109,6 +141,10 @@ func StateRoot(kind Kind) (string, error) {
 // state lives. Template checkouts keep it in the metasystem installation;
 // adopted installations use the containing application repository.
 func RootForInstallation(installationRoot string) (string, error) {
+	return defaultResolver().RootForInstallation(installationRoot)
+}
+
+func (r Resolver) RootForInstallation(installationRoot string) (string, error) {
 	root, err := filepath.Abs(installationRoot)
 	if err != nil {
 		return "", fmt.Errorf("state root: locate installation: %w", err)
@@ -116,7 +152,7 @@ func RootForInstallation(installationRoot string) (string, error) {
 	if templateMode(root) {
 		return root, nil
 	}
-	return repositoryTop(root)
+	return r.repositoryTop(root)
 }
 
 // ResolveLayout locates a checked-in metasystem installation from a repository
@@ -124,6 +160,10 @@ func RootForInstallation(installationRoot string) (string, error) {
 // <repo>/metasystem installation, an adopted repository root, and an explicitly
 // selected adopted installation beneath its application's Git root.
 func ResolveLayout(repositoryPath string) (Layout, error) {
+	return defaultResolver().ResolveLayout(repositoryPath)
+}
+
+func (r Resolver) ResolveLayout(repositoryPath string) (Layout, error) {
 	if strings.TrimSpace(repositoryPath) == "" {
 		return Layout{}, fmt.Errorf("state root: repository path is required")
 	}
@@ -141,7 +181,7 @@ func ResolveLayout(repositoryPath string) (Layout, error) {
 	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
 		absolute = resolved
 	}
-	repository, err := repositoryTop(absolute)
+	repository, err := r.repositoryTop(absolute)
 	if err != nil {
 		// Adoption has always supported a fresh target before `git init`.
 		// In that one layout the installation and application repository root
@@ -234,7 +274,7 @@ func RootForCandidate(candidate string) (string, error) {
 // RepositoryTop returns the Git toplevel containing path after removing Git
 // steering variables that could redirect repository discovery.
 func RepositoryTop(path string) (string, error) {
-	return repositoryTop(path)
+	return osRepositoryTop(path)
 }
 
 // RelativeRoot returns the repository-relative directory owned by kind.
@@ -263,8 +303,8 @@ func relativeRoot(kind Kind) (string, error) {
 	}
 }
 
-func installationRoot() (string, error) {
-	executable, err := executablePath()
+func (r Resolver) installationRoot() (string, error) {
+	executable, err := r.executablePath()
 	if err != nil {
 		return "", fmt.Errorf("state root: locate executable: %w", err)
 	}

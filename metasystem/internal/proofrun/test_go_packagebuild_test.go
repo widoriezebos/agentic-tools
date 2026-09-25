@@ -14,31 +14,31 @@ import (
 
 func TestGoWholePackageWithoutTestsRequiresNativeBuildTerminal(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/packagebuild\n\ngo 1.27\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "plain", "plain.go"), []byte("package plain\nconst Value = 1\n"), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "good")
-	goodTree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	goodSnapshot := newTestSnapshotFactory(t, root, strings.Repeat("d", 40), map[string]testSnapshotEntry{
+		"go.mod":         testSnapshotFile("module example.invalid/packagebuild\n\ngo 1.27\n", 0o644),
+		"plain/plain.go": testSnapshotFile("package plain\nconst Value = 1\n", 0o644),
+	}, 1)
+	goodTree := goodSnapshot.tree
 	group := testpolicy.Group{ID: "plain-build", Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"go.mod", "plain/**"},
 		Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}}, Platforms: []string{"any"}, TargetMS: 1000,
 		Packages: []string{"plain"}, Tests: []byte(`"all"`)}
 	if err := CheckNativeDiscovery(context.Background(), root, root, testpolicy.Contract{SchemaVersion: testpolicy.SchemaVersion, Groups: []testpolicy.Group{group}}, os.Environ()); err == nil || !strings.Contains(err.Error(), "found no tests") {
 		t.Fatalf("schema-1 no-test package discovery = %v; want legacy refusal", err)
 	}
-	request := TestRunRequest{ProjectRoot: root, CandidateTree: goodTree, Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: filepath.Join(root, "logs")}
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: goodTree, Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false"), LogRoot: filepath.Join(root, "logs")}
+	request.openCandidate = goodSnapshot.open
 	request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
 	good := runTestGroup(context.Background(), request, group)
 	if good.Status != "passed" || !good.CollectionComplete || len(good.Expected) != 1 || good.Expected[0].Name != goPackageBuildIdentity ||
 		len(good.Observed) != 1 || good.Observed[0].Status != "passed" || good.NativeExitStatus == nil || *good.NativeExitStatus != 0 {
 		t.Fatalf("valid no-test package did not produce build evidence: %+v", good)
 	}
-	writeTestResultFile(t, filepath.Join(root, "plain", "plain.go"), []byte("package plain\nvar Value int = \"compile failure\"\n"), 0o644)
-	runTestResultGit(t, root, "add", "plain/plain.go")
-	badTree := runTestResultGit(t, root, "write-tree")
-	request.CandidateTree = badTree
+	badSnapshot := newTestSnapshotFactory(t, root, strings.Repeat("e", 40), map[string]testSnapshotEntry{
+		"go.mod":         testSnapshotFile("module example.invalid/packagebuild\n\ngo 1.27\n", 0o644),
+		"plain/plain.go": testSnapshotFile("package plain\nvar Value int = \"compile failure\"\n", 0o644),
+	}, 1)
+	request.CandidateTree = badSnapshot.tree
+	request.openCandidate = badSnapshot.open
 	bad := runTestGroup(context.Background(), request, group)
 	if bad.Status == "passed" || bad.NativeExitStatus == nil || *bad.NativeExitStatus == 0 {
 		t.Fatalf("compile failure claimed a successful no-test package: %+v", bad)
@@ -108,25 +108,23 @@ func TestGoWholePackageExamplesRemainNativeTests(t *testing.T) {
 
 func TestGoSchema2WholePackageNativeSkipsRemainVisibleAndAccepted(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/native-skips\n\ngo 1.27\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "mixed", "mixed.go"), []byte("package mixed\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "mixed", "mixed_test.go"), []byte(`package mixed
+	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("f", 40), map[string]testSnapshotEntry{
+		"go.mod":         testSnapshotFile("module example.invalid/native-skips\n\ngo 1.27\n", 0o644),
+		"mixed/mixed.go": testSnapshotFile("package mixed\n", 0o644),
+		"mixed/mixed_test.go": testSnapshotFile(`package mixed
 import "testing"
 func TestPass(t *testing.T) {}
 func TestSkip(t *testing.T) { t.Skip("deliberate") }
-`), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "onlyskip", "onlyskip.go"), []byte("package onlyskip\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "onlyskip", "onlyskip_test.go"), []byte(`package onlyskip
+`, 0o644),
+		"onlyskip/onlyskip.go": testSnapshotFile("package onlyskip\n", 0o644),
+		"onlyskip/onlyskip_test.go": testSnapshotFile(`package onlyskip
 import "testing"
 func TestSkip(t *testing.T) { t.Skip("deliberate") }
-`), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
-	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: filepath.Join(root, "logs")}
+`, 0o644),
+	}, 4)
+	tree := snapshot.tree
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false"), LogRoot: filepath.Join(root, "logs")}
+	request.openCandidate = snapshot.open
 	group := testpolicy.Group{ID: "native-skips", Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"go.mod", "mixed/**", "onlyskip/**"},
 		Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}}, Platforms: []string{"any"}, TargetMS: 1000,
 		Packages: []string{"mixed"}, Tests: []byte(`"all"`)}

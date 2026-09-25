@@ -23,6 +23,20 @@ import (
 type openWorkPlanReader func(string) ([]byte, error)
 type openWorkDirectoryReader func(string) ([]os.DirEntry, error)
 
+type scanGoalReads struct {
+	newWorld               func(string) bool
+	resolveEndpoint        func(string) (goal.Endpoint, error)
+	resolveMachine         func(string) (string, error)
+	existingLedgerIdentity func(string) string
+}
+
+func defaultScanGoalReads() scanGoalReads {
+	return scanGoalReads{
+		newWorld: goal.NewWorld, resolveEndpoint: goal.ResolveEndpoint,
+		resolveMachine: goal.ResolveMachine, existingLedgerIdentity: goal.ExistingLedgerIdentity,
+	}
+}
+
 var readOpenWorkPlan openWorkPlanReader = os.ReadFile
 var readOpenWorkDirectory openWorkDirectoryReader = os.ReadDir
 
@@ -135,35 +149,66 @@ func Scan(root string) goal.ScanResult {
 // separate presentation-only terminal record observation from those same
 // record reads. The returned capture is not part of ScanResult.
 func ScanWithCompletion(root string) (goal.ScanResult, StopCompletionCapture) {
+	return scanWithCompletionWithReads(root, defaultScanGoalReads())
+}
+
+// ScanWithCompletionAtEndpoint scans with the caller's accepted goal repository.
+func ScanWithCompletionAtEndpoint(root string, endpoint goal.Endpoint, machine string) (goal.ScanResult, StopCompletionCapture) {
+	canonical := resolveRepo(root)
+	if canonical != resolveRepo(endpoint.Root) {
+		return goal.ScanResult{Unreadable: []string{fmt.Sprintf("scan goal root %q does not match endpoint root %q", canonical, endpoint.Root)}}, StopCompletionCapture{}
+	}
+	if err := goal.ValidateMachineNickname(machine); err != nil {
+		return goal.ScanResult{Unreadable: []string{err.Error()}}, StopCompletionCapture{}
+	}
+	checkRoot := func(requested string) error {
+		if resolveRepo(requested) == canonical {
+			return nil
+		}
+		return fmt.Errorf("unexpected scan goal root %q", requested)
+	}
+	return scanWithCompletionWithReads(root, scanGoalReads{
+		newWorld:               func(string) bool { return goal.NewWorldAtEndpoint(endpoint) },
+		existingLedgerIdentity: func(string) string { return goal.ExistingLedgerIdentityAtEndpoint(endpoint) },
+		resolveEndpoint:        func(requested string) (goal.Endpoint, error) { return endpoint, checkRoot(requested) },
+		resolveMachine:         func(requested string) (string, error) { return machine, checkRoot(requested) },
+	})
+}
+
+func scanWithCompletionWithReads(root string, reads scanGoalReads) (goal.ScanResult, StopCompletionCapture) {
 	root = resolveRepo(root)
-	return scanWithProberAndStatusesAndCompletionAt(root, identity.KernelProber{}, inFlightStatuses(root), time.Now().UTC())
+	return scanWithProberAndStatusesAndCompletionAtWithReads(root, identity.KernelProber{}, inFlightStatusesWithReads(root, reads), time.Now().UTC(), reads)
 }
 
 // ScanForBrainDeclaration applies the brain's full in-flight set before a
 // declaration exists, so quiescence cannot overlook a pending-setup job.
 func ScanForBrainDeclaration(root string) goal.ScanResult {
-	root = resolveRepo(root)
-	return scanWithProberAndStatusesAt(root, identity.KernelProber{}, brainInFlightStatus, time.Now().UTC())
+	return scanForBrainDeclarationWithReads(root, defaultScanGoalReads())
 }
 
-func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
-	return scanWithProberAt(root, prober, time.Now().UTC())
+func scanForBrainDeclarationWithReads(root string, reads scanGoalReads) goal.ScanResult {
+	root = resolveRepo(root)
+	return scanWithProberAndStatusesAtWithReads(root, identity.KernelProber{}, brainInFlightStatus, time.Now().UTC(), reads)
 }
 
 func scanWithProberAt(root string, prober identity.Prober, now time.Time) goal.ScanResult {
-	root = resolveRepo(root)
-	return scanWithProberAndStatusesAt(root, prober, inFlightStatuses(root), now)
+	return scanWithProberAtWithReads(root, prober, now, defaultScanGoalReads())
 }
 
-func scanWithProberAndStatusesAt(root string, prober identity.Prober, statuses map[string]bool, now time.Time) goal.ScanResult {
-	scan, _ := scanWithProberAndStatusesAndCompletionAt(root, prober, statuses, now)
+func scanWithProberAtWithReads(root string, prober identity.Prober, now time.Time, reads scanGoalReads) goal.ScanResult {
+	root = resolveRepo(root)
+	return scanWithProberAndStatusesAtWithReads(root, prober, inFlightStatusesWithReads(root, reads), now, reads)
+}
+
+func scanWithProberAndStatusesAtWithReads(root string, prober identity.Prober, statuses map[string]bool, now time.Time, reads scanGoalReads) goal.ScanResult {
+	scan, _ := scanWithProberAndStatusesAndCompletionAtWithReads(root, prober, statuses, now, reads)
 	return scan
 }
 
-func scanWithProberAndStatusesAndCompletionAt(root string, prober identity.Prober, statuses map[string]bool, now time.Time) (goal.ScanResult, StopCompletionCapture) {
+func scanWithProberAndStatusesAndCompletionAtWithReads(root string, prober identity.Prober, statuses map[string]bool, now time.Time, reads scanGoalReads) (goal.ScanResult, StopCompletionCapture) {
 	var result goal.ScanResult
 	completion := StopCompletionCapture{Records: []StopCompletionRecord{}, Unavailable: []string{}}
-	goalIntents := readGoalIntentsAt(root, now)
+	goalIntents := readGoalIntentsAtWithReads(root, now, reads)
 
 	// Busy, three classes, all file facts.
 	jobItems, jobUnreadable := busyJobs(root, statuses, goalIntents)
@@ -222,7 +267,7 @@ func scanWithProberAndStatusesAndCompletionAt(root string, prober identity.Probe
 	for _, detail := range questionUnreadable {
 		result.Unreadable = append(result.Unreadable, "question scan: "+detail)
 	}
-	result = scanDraftsAt(root, result, now)
+	result = scanDraftsAtWithReads(root, result, now, reads)
 
 	// Plans: open steps, human waits, staleness — goals.md never counts
 	// (scanner disjointness: only the goal parser reads the ledger).
@@ -232,16 +277,16 @@ func scanWithProberAndStatusesAndCompletionAt(root string, prober identity.Probe
 	return result, completion
 }
 
-func scanDraftsAt(root string, result goal.ScanResult, now time.Time) goal.ScanResult {
-	if !goal.NewWorld(root) {
+func scanDraftsAtWithReads(root string, result goal.ScanResult, now time.Time, reads scanGoalReads) goal.ScanResult {
+	if !reads.newWorld(root) {
 		return result
 	}
-	machine, err := goal.ResolveMachine(root)
+	machine, err := reads.resolveMachine(root)
 	if err != nil {
 		result.Unreadable = append(result.Unreadable, "draft scan: "+err.Error())
 		return result
 	}
-	endpoint, err := goal.ResolveEndpoint(root)
+	endpoint, err := reads.resolveEndpoint(root)
 	if err != nil {
 		result.Unreadable = append(result.Unreadable, "draft scan: "+err.Error())
 		return result
@@ -598,9 +643,9 @@ func normalizeRoleTitle(role string) string {
 	return strings.TrimSpace(strings.NewReplacer("-", " ", "_", " ").Replace(role))
 }
 
-func readGoalIntentsAt(root string, now time.Time) map[string]string {
+func readGoalIntentsAtWithReads(root string, now time.Time, reads scanGoalReads) map[string]string {
 	intents := map[string]string{}
-	endpoint, err := goal.ResolveEndpoint(root)
+	endpoint, err := reads.resolveEndpoint(root)
 	if err != nil {
 		return intents
 	}

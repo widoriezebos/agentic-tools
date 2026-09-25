@@ -30,18 +30,27 @@ func runPerformanceSchedule(t *testing.T, fail bool) performanceScheduleRun {
 	var launches, faults []string
 	var unitBarrier sync.WaitGroup
 	unitBarrier.Add(3)
-	firstPerformanceStarted, releaseFirstPerformance := make(chan struct{}), make(chan struct{})
+	unitsCompleted := make(chan struct{})
+	firstPerformanceStarted := make(chan struct{})
+	releaseFirstPerformance := make(chan struct{})
+	coordinatorDone := make(chan struct{})
+	coordinatorContext, cancelCoordinator := context.WithCancel(context.Background())
+	var signalUnitsCompleted sync.Once
 	var releasePerformance sync.Once
-	previous, previousWait := runStageTestGroup, waitForStageGroups
-	waitCalls := 0
-	waitForStageGroups = func(groupWait *sync.WaitGroup) {
-		waitCalls++
-		if waitCalls == 2 {
-			releasePerformance.Do(func() { close(releaseFirstPerformance) })
+	go func() {
+		defer close(coordinatorDone)
+		select {
+		case <-unitsCompleted:
+		case <-coordinatorContext.Done():
+			return
 		}
-		groupWait.Wait()
-	}
-	runStageTestGroup = func(_ context.Context, _ TestRunRequest, group testpolicy.Group) GroupResult {
+		select {
+		case <-firstPerformanceStarted:
+			releasePerformance.Do(func() { close(releaseFirstPerformance) })
+		case <-coordinatorContext.Done():
+		}
+	}()
+	runGroup := func(_ context.Context, _ TestRunRequest, group testpolicy.Group) GroupResult {
 		if group.ID == "performance-b" {
 			<-firstPerformanceStarted
 		}
@@ -86,9 +95,25 @@ func runPerformanceSchedule(t *testing.T, fail bool) performanceScheduleRun {
 		}
 		return GroupResult{ID: group.ID, Kind: group.Kind, Status: status}
 	}
-	t.Cleanup(func() { runStageTestGroup, waitForStageGroups = previous, previousWait })
-	results, _, err := runStageGroups(context.Background(), TestRunRequest{Workers: 3, Concurrency: 3}, groups, ids, &progressWriter{}, fail)
-	runStageTestGroup, waitForStageGroups = previous, previousWait
+	afterAdmission := func(completed map[string]GroupResult) {
+		if _, ok := completed["unit-a"]; !ok {
+			return
+		}
+		if _, ok := completed["unit-b"]; !ok {
+			return
+		}
+		if _, ok := completed["unit-c"]; !ok {
+			return
+		}
+		signalUnitsCompleted.Do(func() { close(unitsCompleted) })
+	}
+	ctx := withStageGroupDependencies(context.Background(), stageGroupDependencies{
+		runGroup:       runGroup,
+		afterAdmission: afterAdmission,
+	})
+	results, _, err := runStageGroups(ctx, TestRunRequest{Workers: 3, Concurrency: 3}, groups, ids, &progressWriter{}, fail)
+	cancelCoordinator()
+	<-coordinatorDone
 	if err != nil {
 		t.Fatal(err)
 	}

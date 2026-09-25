@@ -49,21 +49,34 @@ export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/registry-home"
 mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 cleanup() {
-  local cleanup_engine
+  local harness_rc=$1 cleanup_rc=0 cleanup_engine
   if [[ -n "$paused_pid" ]]; then kill -CONT "$paused_pid" 2>/dev/null || true; fi
+  cleanup_engine=${enrolled_engine:-$ms}
+  if [[ -x "$cleanup_engine" && -f "$repo/artifacts/agents/steward/identity.json" ]]; then
+    "$cleanup_engine" steward disarm --repo "$repo" >&2 || {
+      echo "fingerprint harness cleanup steward disarm failed" >&2
+      cleanup_rc=1
+    }
+  fi
   if [[ -x "$repo/scripts/agents/arm-supervision.sh" ]]; then
-    cleanup_engine=${enrolled_engine:-$ms}
     METASYSTEM_BIN="$cleanup_engine" \
       "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >&2 \
-      || echo "fingerprint harness cleanup shutdown failed" >&2
+      || {
+        echo "fingerprint harness cleanup shutdown failed" >&2
+        cleanup_rc=1
+      }
   fi
-  if [[ -n "${METASYSTEM_KEEP_FINGERPRINT_FIXTURE:-}" ]]; then
+  if [[ -n "${METASYSTEM_KEEP_FINGERPRINT_FIXTURE:-}" ]] || (( cleanup_rc != 0 )); then
     echo "kept fingerprint harness fixture: $tmp" >&2
   else
     rm -rf "$tmp"
   fi
+  if (( harness_rc != 0 )); then
+    exit "$harness_rc"
+  fi
+  exit "$cleanup_rc"
 }
-trap cleanup EXIT
+trap 'cleanup $?' EXIT
 
 wait_until() { # description, command...
   local description=$1 started=$SECONDS deadline=$((SECONDS + fixture_ceiling_sec)) elapsed

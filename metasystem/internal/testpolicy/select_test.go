@@ -279,3 +279,53 @@ func TestDepthIsDecidedByTheChangeNotTheGoal(t *testing.T) {
 		}
 	})
 }
+
+func TestAutoPlanSelectsDeepOnlyWhenADeepRequestWouldMatch(t *testing.T) {
+	t.Parallel()
+	raised := fixtureContract()
+	raised.Surfaces[0].Risk = &RiskRaise{Severity: 2}
+	request := SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeAuto, Purpose: PurposeDelivery, BatchRequirements: []string{"app-unit"}}
+	auto, err := Select(raised, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.RequestedMode = ModeDeep
+	deep, err := Select(raised, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !AutoPlanSelectsDeep(auto) {
+		t.Fatalf("auto plan that executed deep was not recognised: %+v", auto)
+	}
+	relabelled := auto
+	relabelled.RequestedMode = ModeDeep
+	if !reflect.DeepEqual(relabelled, deep) {
+		t.Fatalf("auto deep plan differs from the deep request beyond the requested mode:\nauto=%+v\ndeep=%+v", auto, deep)
+	}
+	if AutoPlanSelectsDeep(deep) {
+		t.Fatal("an explicit deep request is not an auto plan")
+	}
+	standard, err := Select(fixtureContract(), SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+	if err != nil || AutoPlanSelectsDeep(standard) {
+		t.Fatalf("standard auto plan claimed deep: plan=%+v err=%v", standard, err)
+	}
+
+	transition := fixtureContract()
+	for _, id := range firstTransitionGroups {
+		transition.Groups = append(transition.Groups, Group{ID: id, Kind: "integration", Adapter: "command", CWD: ".",
+			Inputs: []string{"src/**"}, Platforms: []string{"any"}, TargetMS: 1, Argv: []string{"true"}, Format: "exit-status"})
+	}
+	raisedAuto, err := Select(transition, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+	if err == nil {
+		raisedAuto, err = RequireFirstTransition(transition, raisedAuto)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raisedAuto.ExecutedMode != ModeDeep || contains(raisedAuto.SelectedGroups, "app-deep") {
+		t.Fatalf("first transition no longer raises a standard selection to deep without its deep groups: %+v", raisedAuto)
+	}
+	if AutoPlanSelectsDeep(raisedAuto) {
+		t.Fatalf("first-transition plan claimed the deep selection it lacks: %+v", raisedAuto)
+	}
+}

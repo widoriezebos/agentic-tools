@@ -1,9 +1,9 @@
 package main
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,15 +15,6 @@ func setupCLIFixture(t *testing.T) (repo, installation string) {
 	installation = filepath.Join(repo, "metasystem")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
-	}
-	command := exec.Command("git", "init", "-q", "-b", "main", repo)
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "GIT_") {
-			command.Env = append(command.Env, entry)
-		}
-	}
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
 	}
 	setupCLIWrite(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n", 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "metasystem.conf"), "metasystem.runtimes=claude\n", 0o644)
@@ -38,6 +29,55 @@ func setupCLIFixture(t *testing.T) (repo, installation string) {
 	setupCLIWrite(t, filepath.Join(installation, "skills", "demo", "agents", "devin", "AGENT.md"), "devin\n", 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "skills", "demo", "agents", "openai.yaml"), "interface: {}\n", 0o644)
 	return repo, installation
+}
+
+type runtimeLayoutRecorder struct {
+	t    *testing.T
+	root string
+	want []string
+	seen []string
+}
+
+func newRuntimeLayoutRecorder(t *testing.T, root string) *runtimeLayoutRecorder {
+	t.Helper()
+	r := &runtimeLayoutRecorder{t: t, root: root}
+	t.Cleanup(func() {
+		if len(r.want) != 0 {
+			t.Errorf("layout requests not consumed: %v; saw %v", r.want, r.seen)
+		}
+	})
+	return r
+}
+
+func (r *runtimeLayoutRecorder) expect(path string) { r.want = append(r.want, path) }
+
+func (r *runtimeLayoutRecorder) resolve(path string) (stateroot.Layout, error) {
+	r.t.Helper()
+	r.seen = append(r.seen, string(append([]byte(nil), path...)))
+	if len(r.want) == 0 || r.want[0] != path {
+		r.t.Fatalf("unexpected layout request %q; pending %v", path, r.want)
+	}
+	r.want = r.want[1:]
+	var seenTop []string
+	layout, resolveErr := stateroot.NewResolver(func(seen string) (string, error) {
+		seenTop = append(seenTop, string(append([]byte(nil), seen...)))
+		if len(seenTop) != 1 {
+			r.t.Fatalf("repeated repository request %q", seen)
+		}
+		repositoryProbe := path
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			repositoryProbe = filepath.Dir(path)
+		}
+		canonical, err := filepath.EvalSymlinks(repositoryProbe)
+		if err != nil || seen != canonical {
+			r.t.Fatalf("unexpected repository request %q; want %q (%v)", seen, canonical, err)
+		}
+		return r.root, nil
+	}, nil).ResolveLayout(path)
+	if len(seenTop) != 1 {
+		r.t.Fatalf("repository requests = %v", seenTop)
+	}
+	return layout, resolveErr
 }
 
 func setupCLIWrite(t *testing.T, path, content string, mode os.FileMode) {
@@ -65,7 +105,11 @@ func runtimeHookFixture(t *testing.T, name string) string {
 
 func TestRuntimeSetupCLIConfiguresAllByDefaultChecksAndSelectsNone(t *testing.T) {
 	repo, _ := setupCLIFixture(t)
-	output, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", filepath.Join(repo, "metasystem", "skills")}) })
+	recorder := newRuntimeLayoutRecorder(t, repo)
+	recorder.expect(filepath.Join(repo, "metasystem", "skills"))
+	output, code := captureStdout(t, func() int {
+		return runRuntimeSetupWithResolver([]string{"--repo", filepath.Join(repo, "metasystem", "skills")}, recorder.resolve)
+	})
 	if code != 0 {
 		t.Fatalf("runtime setup exit = %d", code)
 	}
@@ -74,13 +118,16 @@ func TestRuntimeSetupCLIConfiguresAllByDefaultChecksAndSelectsNone(t *testing.T)
 			t.Fatalf("setup output omitted %s readiness dimensions: %s", runtime, output)
 		}
 	}
-	if _, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo, "--check"}) }); code != 0 {
+	recorder.expect(repo)
+	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver([]string{"--repo", repo, "--check"}, recorder.resolve) }); code != 0 {
 		t.Fatalf("setup check exit = %d", code)
 	}
 
 	emptyRepo, _ := setupCLIFixture(t)
+	emptyRecorder := newRuntimeLayoutRecorder(t, emptyRepo)
+	emptyRecorder.expect(emptyRepo)
 	emptyOutput, code := captureStdout(t, func() int {
-		return runRuntimeSetup([]string{"--repo", emptyRepo, "--runtimes", "none"})
+		return runRuntimeSetupWithResolver([]string{"--repo", emptyRepo, "--runtimes", "none"}, emptyRecorder.resolve)
 	})
 	if code != 0 || emptyOutput != "" {
 		t.Fatalf("none selection = exit %d output %q", code, emptyOutput)
@@ -92,16 +139,22 @@ func TestRuntimeSetupCLIConfiguresAllByDefaultChecksAndSelectsNone(t *testing.T)
 
 func TestRuntimeSetupCLIRejectsUnknownInputAndPendingCheck(t *testing.T) {
 	repo, _ := setupCLIFixture(t)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo, "--runtimes", "unknown"}) }); code != 1 {
+	recorder := newRuntimeLayoutRecorder(t, repo)
+	recorder.expect(repo)
+	if _, code := captureStdout(t, func() int {
+		return runRuntimeSetupWithResolver([]string{"--repo", repo, "--runtimes", "unknown"}, recorder.resolve)
+	}); code != 1 {
 		t.Fatalf("unknown runtime exit = %d, want 1", code)
 	}
-	if _, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo, "--check"}) }); code != 1 {
+	recorder.expect(repo)
+	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver([]string{"--repo", repo, "--check"}, recorder.resolve) }); code != 1 {
 		t.Fatalf("pending check exit = %d, want 1", code)
 	}
 }
 
 func TestFreshAdoptionSeparatesRuntimeAndTestingReadiness(t *testing.T) {
 	repo, installation := setupCLIFixture(t)
+	recorder := newRuntimeLayoutRecorder(t, repo)
 	contract := filepath.Join(installation, "testing.json")
 	conf := filepath.Join(installation, "metasystem.conf")
 	if err := os.WriteFile(conf, []byte("metasystem.runtimes=claude\ntesting.contract=testing.json\n"), 0o644); err != nil {
@@ -114,7 +167,10 @@ func TestFreshAdoptionSeparatesRuntimeAndTestingReadiness(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), `"tailoringRequired": true`) {
 		t.Fatalf("fresh testing contract is not explicitly incomplete: %q err=%v", data, err)
 	}
-	output, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo, "--runtimes", "none"}) })
+	recorder.expect(repo)
+	output, code := captureStdout(t, func() int {
+		return runRuntimeSetupWithResolver([]string{"--repo", repo, "--runtimes", "none"}, recorder.resolve)
+	})
 	if code != 0 || !strings.Contains(output, "TEST_CONTRACT_REQUIRED") || strings.Contains(output, "CONFIG_READY") {
 		t.Fatalf("readiness dimensions were conflated: exit=%d output=%q", code, output)
 	}
@@ -122,11 +178,13 @@ func TestFreshAdoptionSeparatesRuntimeAndTestingReadiness(t *testing.T) {
 
 func TestRuntimeSetupCLISupportsNestedAdoptedInstallationAndSubdirectory(t *testing.T) {
 	app, installation := setupCLIFixture(t)
+	recorder := newRuntimeLayoutRecorder(t, app)
 	if err := os.Remove(filepath.Join(app, "development", "metasystem-design.md")); err != nil {
 		t.Fatal(err)
 	}
+	recorder.expect(installation)
 	output, code := captureStdout(t, func() int {
-		return runRuntimeSetup([]string{"--repo", installation, "--runtimes", "claude,codex,devin"})
+		return runRuntimeSetupWithResolver([]string{"--repo", installation, "--runtimes", "claude,codex,devin"}, recorder.resolve)
 	})
 	if code != 0 {
 		t.Fatalf("nested adopted setup exit = %d", code)
@@ -135,8 +193,9 @@ func TestRuntimeSetupCLISupportsNestedAdoptedInstallationAndSubdirectory(t *test
 	if !strings.Contains(output, "repository="+wantInstallation+" installation="+wantInstallation) {
 		t.Fatalf("nested adopted setup reported the wrong owner: %s", output)
 	}
+	recorder.expect(filepath.Join(installation, "skills", "demo"))
 	if _, code := captureStdout(t, func() int {
-		return runRuntimeSetup([]string{"--repo", filepath.Join(installation, "skills", "demo"), "--runtimes", "claude,codex,devin", "--check"})
+		return runRuntimeSetupWithResolver([]string{"--repo", filepath.Join(installation, "skills", "demo"), "--runtimes", "claude,codex,devin", "--check"}, recorder.resolve)
 	}); code != 0 {
 		t.Fatalf("nested adopted setup check exit = %d", code)
 	}

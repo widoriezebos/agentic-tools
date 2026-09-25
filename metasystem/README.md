@@ -128,7 +128,7 @@ which role is two lines of configuration per role, nothing more:
 
 ```
 role.code-critic.runtime=claude
-role.code-critic.model.claude=claude-opus-5
+role.code-critic.model.claude=claude-opus-5-5
 ```
 
 The seven roles, in plain terms:

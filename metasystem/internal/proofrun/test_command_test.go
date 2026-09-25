@@ -233,13 +233,8 @@ func TestTestEnvironmentStandardInventoryMatchesObserved(t *testing.T) {
 		t.Fatal("test-environment-standard is absent from testing.json")
 	}
 	all, names, err := testpolicy.GoTests(group)
-	if err != nil || all {
-		t.Fatalf("test-environment-standard inventory: all=%v names=%v err=%v", all, names, err)
-	}
-	for _, name := range names {
-		if name == "TestPackageWalkExternalCheckout" {
-			t.Fatalf("opt-in test is part of the standard inventory: %v", names)
-		}
+	if err != nil || !all || len(names) != 0 {
+		t.Fatalf("test-environment-standard must use tests=all without named-selector residue: all=%v names=%v err=%v", all, names, err)
 	}
 
 	moduleRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -249,15 +244,6 @@ func TestTestEnvironmentStandardInventoryMatchesObserved(t *testing.T) {
 	args, expected, discovery, started, err := goArguments(context.Background(), group, moduleRoot, os.Environ())
 	if err != nil || !started {
 		t.Fatalf("discover test-environment-standard: started=%v err=%v", started, err)
-	}
-	selected := make(map[string]bool, len(names))
-	for _, name := range names {
-		selected[name] = true
-	}
-	for name := range discovery.Tests {
-		if name != "TestPackageWalkExternalCheckout" && !selected[name] {
-			t.Errorf("non-opt-in test is absent from test-environment-standard: %s", name)
-		}
 	}
 	if len(discovery.Tests["TestPackageWalkExternalCheckout"]) == 0 {
 		t.Error("opt-in TestPackageWalkExternalCheckout was not discovered")
@@ -271,10 +257,16 @@ func TestTestEnvironmentStandardInventoryMatchesObserved(t *testing.T) {
 		t.Fatalf("run test-environment-standard inventory: %v\n%s", err, output)
 	}
 	observed, missing, unexpected, complete := parseGoJSON(output, expected)
-	if !complete || len(missing) != 0 || len(unexpected) != 0 || nativeEvidenceFailed(observed) {
+	failed := false
+	for _, evidence := range observed {
+		if evidence.Status != "passed" && (evidence.Name != "TestPackageWalkExternalCheckout" || evidence.Status != "skipped") {
+			failed = true
+		}
+	}
+	if !complete || len(missing) != 0 || len(unexpected) != 0 || failed {
 		t.Fatalf("test-environment-standard inventory mismatch: expected=%v observed=%v missing=%v unexpected=%v complete=%v", expected, observed, missing, unexpected, complete)
 	}
-	t.Logf("engine inventory matched: expected roots=%d observed terminals=%d missing=%d unexpected=%d; every observed terminal passed", len(expected), len(observed), len(missing), len(unexpected))
+	t.Logf("engine inventory matched: expected roots=%d observed terminals=%d missing=%d unexpected=%d; every observed terminal passed or was the allowed opt-in skip", len(expected), len(observed), len(missing), len(unexpected))
 }
 
 func TestGoDiscoveryBindsDeclaredNamesToActualPackages(t *testing.T) {

@@ -347,6 +347,10 @@ func migrateHeldHealthNotifications(repoRoot string, episodes *[]AlertEpisode, n
 // boundary; every healthy verdict clears retained episodes without deleting
 // them.
 func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, now time.Time) (AlertEpisode, error) {
+	return updateAlertEpisodesWith(repoRoot, health, message, now, deliver)
+}
+
+func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message string, now time.Time, deliver func(string, string) error) (AlertEpisode, error) {
 	lock, err := lockAlerts(repoRoot, unix.LOCK_EX)
 	if err != nil {
 		return AlertEpisode{}, err
@@ -444,7 +448,7 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 		unlockAlerts(lock)
 		return episode, nil
 	}
-	if err := submitEpisode(repoRoot, &episode, now); err != nil {
+	if err := submitEpisode(repoRoot, &episode, now, deliver); err != nil {
 		unlockAlerts(lock)
 		return AlertEpisode{}, err
 	}
@@ -452,7 +456,7 @@ func UpdateAlertEpisodes(repoRoot string, health HealthVerdict, message string, 
 	return episode, nil
 }
 
-func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time) error {
+func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time, deliver func(string, string) error) error {
 	var attempt AlertAttempt
 	if len(episode.Attempts) > 0 && episode.Attempts[len(episode.Attempts)-1].Result == TransportPending {
 		// A pending journal entry means a process may have stopped after the
@@ -472,9 +476,9 @@ func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time) error 
 	// The alert names itself in the journal: source alert, and the episode
 	// id the acknowledgment verb takes, so the interface's row and the
 	// episode on disk are the same event.
-	transportErr := DeliverNotice(repoRoot, Notice{
+	transportErr := deliverNoticeWith(repoRoot, Notice{
 		Message: episode.Message, Source: NoticeAlert, Ref: episode.EpisodeID,
-	})
+	}, deliver)
 	completedAt := time.Now().UTC()
 	if len(episode.Attempts) < attempt.Sequence || episode.Attempts[attempt.Sequence-1].Result != TransportPending {
 		return fmt.Errorf("alert episode %s transport attempt changed before completion", episode.EpisodeID)
@@ -497,6 +501,10 @@ func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time) error 
 // UpdateSpendEpisodes joins one valid spend observation to the durable alert
 // store. Unknown observations are no-ops because absence was not proven.
 func UpdateSpendEpisodes(repoRoot string, observation SpendObservation, now time.Time) error {
+	return updateSpendEpisodesWith(repoRoot, observation, now, deliver)
+}
+
+func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now time.Time, deliver func(string, string) error) error {
 	if !observation.Valid {
 		return nil
 	}
@@ -559,7 +567,7 @@ func UpdateSpendEpisodes(repoRoot string, observation SpendObservation, now time
 		if episode.TransportResult == TransportSubmitted {
 			continue
 		}
-		if err := submitEpisode(repoRoot, episode, now); err != nil {
+		if err := submitEpisode(repoRoot, episode, now, deliver); err != nil {
 			return err
 		}
 	}

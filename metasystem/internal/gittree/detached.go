@@ -122,7 +122,7 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 	// entry ("failed to read .git/worktrees/worktree/commondir", cadence run
 	// 18, 2026-09-12, two proof groups of one receipt on a busy box).
 	detached := &DetachedWorktree{
-		control: Workspace{Dir: top},
+		control: Workspace{Dir: top, RawSource: w.RawSource},
 		parent:  parent,
 		top:     filepath.Join(parent, "worktree-"+strings.TrimPrefix(filepath.Base(parent), "metasystem-landing-receipt.")),
 	}
@@ -152,7 +152,7 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 			return nil, err
 		}
 	}
-	worktree := Workspace{Dir: detached.top}
+	worktree := Workspace{Dir: detached.top, RawSource: w.RawSource}
 	if _, err = worktree.git(nil, "read-tree", "--reset", "-u", candidateTop); err != nil {
 		return nil, fmt.Errorf("gittree detached worktree: checkout candidate: %w", err)
 	}
@@ -221,7 +221,7 @@ func (w Workspace) NewDetachedCommitWorktree(commit string) (_ *DetachedWorktree
 		return nil, errors.Join(fmt.Errorf("gittree detached worktree: resolve temporary directory: %w", err), cleanupErr)
 	}
 	detached := &DetachedWorktree{
-		control: Workspace{Dir: top},
+		control: Workspace{Dir: top, RawSource: w.RawSource},
 		parent:  parent,
 		top:     filepath.Join(parent, "worktree-"+strings.TrimPrefix(filepath.Base(parent), "metasystem-landing-advance.")),
 	}
@@ -268,7 +268,7 @@ func (d *DetachedWorktree) Rebase(upstream string, gitArgs ...string) (RebaseRes
 	if len(gitArgs) == 0 {
 		return RebaseResult{}, &contractgit.Refusal{Code: contractgit.DriverUnresolvedCode, Detail: "detached rebase has no metasystem merge-driver arguments; run the verb from an installed metasystem binary"}
 	}
-	workspace := Workspace{Dir: d.root}
+	workspace := Workspace{Dir: d.root, RawSource: d.control.RawSource}
 	args := append(append([]string{}, gitArgs...), "rebase", upstream)
 	stdout, stderr, code, err := workspace.gitProbe(d.top, nil, nil, args...)
 	if err != nil {
@@ -360,7 +360,7 @@ func (d *DetachedWorktree) graftSubtree(prefix, tree string) (string, error) {
 		return "", err
 	}
 	defer cleanup()
-	worktree := Workspace{Dir: d.top}
+	worktree := Workspace{Dir: d.top, RawSource: d.control.RawSource}
 	if _, err := worktree.git(env, "read-tree", "HEAD"); err != nil {
 		return "", fmt.Errorf("gittree detached worktree: seed candidate: %w", err)
 	}
@@ -384,7 +384,7 @@ func (d *DetachedWorktree) graftSubtree(prefix, tree string) (string, error) {
 // Workspace returns the candidate's workspace-relative root inside the
 // detached worktree.
 func (d *DetachedWorktree) Workspace() Workspace {
-	return Workspace{Dir: d.root}
+	return Workspace{Dir: d.root, RawSource: d.control.RawSource}
 }
 
 // Close removes the temporary worktree even when its command dirtied or

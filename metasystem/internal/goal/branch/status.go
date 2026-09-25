@@ -19,8 +19,23 @@ type Status struct {
 	Prefix  int
 }
 
+type statusDependencies struct {
+	validatedRange func(repo, endpointTip, tip, goalID string) ([]Commit, error)
+	kind           func(repo, commit, goalID string) (KindInfo, error)
+	attestation    func(repo, snapshot, endpointTip, goalID, unit, commit string) (Attestation, error)
+	localTip       func(repo, ref string) (string, bool, error)
+}
+
+func defaultStatusDependencies() statusDependencies {
+	return statusDependencies{ValidateRange, KindOf, ValidateAttestationAt, localBranchTip}
+}
+
 func InspectStatus(repo, endpointTip, tip, goalID string) (Status, error) {
-	commits, err := ValidateRange(repo, endpointTip, tip, goalID)
+	return inspectStatus(repo, endpointTip, tip, goalID, defaultStatusDependencies())
+}
+
+func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencies) (Status, error) {
+	commits, err := deps.validatedRange(repo, endpointTip, tip, goalID)
 	if err != nil {
 		return Status{}, err
 	}
@@ -37,7 +52,7 @@ func InspectStatus(repo, endpointTip, tip, goalID string) (Status, error) {
 				Unit: commit.Unit, Units: append([]string(nil), commit.Units...), Commit: commit.ID, Digest: commit.Digest, ReadState: "built",
 			})
 		case Read:
-			info, err := KindOf(repo, commit.ID, goalID)
+			info, err := deps.kind(repo, commit.ID, goalID)
 			if err != nil {
 				return Status{}, err
 			}
@@ -46,7 +61,7 @@ func InspectStatus(repo, endpointTip, tip, goalID string) (Status, error) {
 				continue
 			}
 			result.Units[index].ReadState = "needs read"
-			if _, err := ValidateAttestationAt(repo, tip, endpointTip, goalID, commit.Unit, info.CommitID); err == nil {
+			if _, err := deps.attestation(repo, tip, endpointTip, goalID, commit.Unit, info.CommitID); err == nil {
 				result.Units[index].ReadState = "read clean"
 			}
 		}
@@ -67,13 +82,13 @@ type ParkBranchState struct {
 
 type ParkBranchRemoteReader func() (endpointTip, originTip string, originPresent bool, err error)
 
-func nextNamesUnitCommit(repo, goalID, next string) bool {
+func nextNamesUnitCommit(repo, goalID, next string, deps statusDependencies) bool {
 	for _, field := range strings.Fields(next) {
 		field = strings.Trim(field, "()[]{}<>,.;:\"'")
 		if !hex40(field) {
 			continue
 		}
-		kind, err := KindOf(repo, field, goalID)
+		kind, err := deps.kind(repo, field, goalID)
 		if err == nil && kind.Kind == Unit {
 			return true
 		}
@@ -82,20 +97,43 @@ func nextNamesUnitCommit(repo, goalID, next string) bool {
 }
 
 func ShouldSweep(repo, goalID, next string) (bool, error) {
-	_, localPresent, err := localBranchTip(repo, goalBranchRef(goalID))
+	return shouldSweep(repo, goalID, next, defaultStatusDependencies())
+}
+
+// ShouldSweepWithLocalTip applies the branch policy to a caller's raw local ref.
+func ShouldSweepWithLocalTip(repo, goalID, next string, localTip func(repo, ref string) (string, bool, error)) (bool, error) {
+	deps := defaultStatusDependencies()
+	deps.localTip = localTip
+	return shouldSweep(repo, goalID, next, deps)
+}
+
+func shouldSweep(repo, goalID, next string, deps statusDependencies) (bool, error) {
+	_, localPresent, err := deps.localTip(repo, goalBranchRef(goalID))
 	if err != nil {
 		return false, err
 	}
-	return localPresent || nextNamesUnitCommit(repo, goalID, next), nil
+	return localPresent || nextNamesUnitCommit(repo, goalID, next, deps), nil
 }
 
 func CheckParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReader) (ParkBranchState, error) {
-	localTip, localPresent, err := localBranchTip(repo, goalBranchRef(goalID))
+	return checkParkBranch(repo, goalID, next, readRemote, defaultStatusDependencies())
+}
+
+// CheckParkBranchWithLocalTip uses the ordinary branch policy with a caller's
+// raw local-ref reader. All other status readers retain their defaults.
+func CheckParkBranchWithLocalTip(repo, goalID, next string, readRemote ParkBranchRemoteReader, localTip func(repo, ref string) (string, bool, error)) (ParkBranchState, error) {
+	deps := defaultStatusDependencies()
+	deps.localTip = localTip
+	return checkParkBranch(repo, goalID, next, readRemote, deps)
+}
+
+func checkParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReader, deps statusDependencies) (ParkBranchState, error) {
+	localTip, localPresent, err := deps.localTip(repo, goalBranchRef(goalID))
 	if err != nil {
 		return ParkBranchState{}, err
 	}
 	if !localPresent {
-		if nextNamesUnitCommit(repo, goalID, next) {
+		if nextNamesUnitCommit(repo, goalID, next, deps) {
 			return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "this checkout has no goal/%s; fetch it and check it out", goalID)
 		}
 		return ParkBranchState{}, nil
@@ -111,7 +149,7 @@ func CheckParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReade
 		}
 		return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "local goal/%s is %s while origin is %s; push the branch before parking", goalID, localTip, remote)
 	}
-	status, err := InspectStatus(repo, endpointTip, originTip, goalID)
+	status, err := inspectStatus(repo, endpointTip, originTip, goalID, deps)
 	if err != nil {
 		return ParkBranchState{}, err
 	}

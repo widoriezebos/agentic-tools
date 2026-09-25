@@ -12,6 +12,7 @@ import (
 )
 
 func TestPathsCollideAtPathComponents(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		left, right string
 		want        bool
@@ -94,6 +95,7 @@ func (f *treeFixture) entry(tree, path string) (Entry, bool) {
 
 // The snapshot must never touch the real index or the worktree.
 func TestSnapshotLeavesRealIndexUntouched(t *testing.T) {
+	t.Parallel()
 	f := newTreeFixture(t)
 	f.write("staged.txt", "staged but not committed\n")
 	f.git("add", "staged.txt")

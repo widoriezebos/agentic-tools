@@ -48,24 +48,26 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{}, err
 	}
 
-	acceptedOut, acceptedErr := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
-	accepted := strings.TrimSpace(acceptedOut)
+	accepted, present, acceptedErr := e.repository().Accepted()
+	if acceptedErr != nil {
+		return AdvanceResult{}, acceptedErr
+	}
 
-	if acceptedErr == nil && accepted == fetched {
+	if present && accepted == fetched {
 		return AdvanceResult{Tip: accepted, Detail: "already at the canonical tip"}, nil
 	}
 
 	// The ledger identity binds "same ledger" semantically:
 	// re-pointing config at a different remote or branch cannot
 	// silently select another ledger, whatever the strings say.
-	if acceptedErr == nil {
-		if err := AcceptanceGates(e.Root, accepted, fetched); err != nil {
+	if present {
+		if err := acceptanceGatesFor(e, accepted, fetched); err != nil {
 			return AdvanceResult{}, err
 		}
 	}
 
 	// The whole tree validates or nothing moves.
-	if err := ValidateCommit(e.Root, fetched); err != nil {
+	if err := validateCommitFor(e, fetched); err != nil {
 		return AdvanceResult{}, err
 	}
 
@@ -73,12 +75,12 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 	// restoring an older valid state is accepted — the tree is the
 	// truth — with the prefix diagnosis REPORTED, never gating.
 	detail := "accepted " + short(fetched)
-	if acceptedErr == nil {
-		if diagnosed, diagErr := PrefixDiagnosis(e.Root, accepted, fetched); diagErr == nil && len(diagnosed) > 0 {
+	if present {
+		if diagnosed, diagErr := prefixDiagnosisFor(e, accepted, fetched); diagErr == nil && len(diagnosed) > 0 {
 			detail += "; " + strings.Join(diagnosed, "; ")
 		}
 	}
-	if err := AdvanceAccepted(e.Root, fetched); err != nil {
+	if err := advanceAcceptedFor(e, fetched); err != nil {
 		return AdvanceResult{}, err
 	}
 	return AdvanceResult{Tip: fetched, Advanced: true, Detail: detail}, nil
@@ -92,32 +94,42 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 // all) is a rewind; a descendant whose root record is torn falls
 // through to the tree validator, which names the file and rule.
 func AcceptanceGates(root, accepted, fetched string) error {
-	acceptedIdentity, idErr := treeIdentity(root, accepted)
+	return acceptanceGatesFor(Endpoint{Root: root}, accepted, fetched)
+}
+
+func acceptanceGatesFor(e Endpoint, accepted, fetched string) error {
+	acceptedIdentity, idErr := treeIdentityFor(e, accepted)
 	if idErr != nil {
 		return fmt.Errorf("the accepted tree's identity cannot be read: %w", idErr)
 	}
-	fetchedIdentity, _ := treeIdentity(root, fetched)
+	fetchedIdentity, _ := treeIdentityFor(e, fetched)
 	if fetchedIdentity != "" && fetchedIdentity != acceptedIdentity {
 		return fmt.Errorf("foreign ledger refused: the fetched tree's identity %s is not this ledger's %s — config cannot silently change what the ledger is", fetchedIdentity, acceptedIdentity)
 	}
-	if _, ancErr := goalGit(root, nil, "merge-base", "--is-ancestor", accepted, fetched); ancErr != nil {
+	descends, ancErr := e.repository().IsAncestor(accepted, fetched)
+	if ancErr != nil {
+		return fmt.Errorf("the canonical branch's ancestry cannot be checked: %w", ancErr)
+	}
+	if !descends {
 		return fmt.Errorf("rewound canonical branch refused: %s does not descend from the accepted tip %s; the projection stays pinned — repair --accept-remote is the deliberate path", short(fetched), short(accepted))
 	}
-	if err := validateLegacyArchiveReadOnly(root, accepted, fetched); err != nil {
+	if err := validateLegacyArchiveFor(e, accepted, fetched); err != nil {
 		return err
 	}
 	return nil
 }
 
-// treeIdentity reads the root record's adoption identity at a
-// commit — the one fact that means "same ledger".
-func treeIdentity(root, commit string) (string, error) {
-	out, err := gitIn(root, "cat-file", "-p", commit+":./"+goalsPrefix+"backlog.md")
+func treeIdentityFor(e Endpoint, commit string) (string, error) {
+	files, err := readCommitFiles(e, commit, goalsPrefix+"backlog.md")
 	if err != nil {
 		return "", fmt.Errorf("no root record at %s: %w", short(commit), err)
 	}
-	rootRecord, problems := ParseRoot([]byte(out))
-	if len(problems) > 0 || rootRecord.Identity == "" {
+	out, present := files[goalsPrefix+"backlog.md"]
+	if !present {
+		return "", fmt.Errorf("no root record at %s", short(commit))
+	}
+	rootRecord, problems := ParseRoot(out)
+	if len(problems) > 0 || rootRecord == nil || rootRecord.Identity == "" {
 		return "", fmt.Errorf("the root record at %s does not parse to an identity", short(commit))
 	}
 	return rootRecord.Identity, nil

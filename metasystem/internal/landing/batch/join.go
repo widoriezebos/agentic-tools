@@ -122,6 +122,10 @@ func branchPatch(repo, commit string) ([]byte, error) {
 }
 
 func branchMemberPatch(repo string, member BranchMember) ([]byte, error) {
+	return branchMemberPatchWithReader(repo, member, branchPatch)
+}
+
+func branchMemberPatchWithReader(repo string, member BranchMember, readPatch func(string, string) ([]byte, error)) ([]byte, error) {
 	var patch bytes.Buffer
 	for _, build := range member.Builds {
 		commits := make([]string, 0, len(build.Folds)+1)
@@ -130,7 +134,7 @@ func branchMemberPatch(repo string, member BranchMember) ([]byte, error) {
 		}
 		commits = append(commits, build.Commit)
 		for _, commit := range commits {
-			transition, err := branchPatch(repo, commit)
+			transition, err := readPatch(repo, commit)
 			if err != nil {
 				return nil, err
 			}

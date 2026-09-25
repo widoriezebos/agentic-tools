@@ -27,13 +27,22 @@ import (
 // failed attempt, retried next tick, never a wedged tick.
 const notifyTimeout = 15 * time.Second
 
-var notifyPlatformOS = runtime.GOOS
-var notifyCommandContext = exec.CommandContext
-
-var deliverNotification = DeliverNotice
-var handoffDeliveryAfterSnapshot = func() {}
-
 type notifyKind int
+
+type notificationDependencies struct {
+	configuredCommand func(string) ([]byte, error)
+	platform          string
+	commandContext    func(context.Context, string, ...string) *exec.Cmd
+}
+
+func defaultNotificationDependencies() notificationDependencies {
+	return notificationDependencies{
+		configuredCommand: func(root string) ([]byte, error) {
+			return exec.Command("git", "-C", root, "config", "--get", "metasystem.steward.notify-command").Output()
+		},
+		platform: runtime.GOOS, commandContext: exec.CommandContext,
+	}
+}
 
 const (
 	notifyUnavailable notifyKind = iota
@@ -42,8 +51,8 @@ const (
 	notifyFixtureLog
 )
 
-func resolveNotify(repoRoot string) (string, notifyKind) {
-	out, err := exec.Command("git", "-C", repoRoot, "config", "--get", "metasystem.steward.notify-command").Output()
+func resolveNotifyWithDependencies(repoRoot string, deps notificationDependencies) (string, notifyKind) {
+	out, err := deps.configuredCommand(repoRoot)
 	if err == nil {
 		if cmd := strings.TrimSpace(string(out)); cmd != "" {
 			return cmd, notifyConfigured
@@ -53,7 +62,7 @@ func resolveNotify(repoRoot string) (string, notifyKind) {
 	if installed, err := VerifyIdentity(RepoIdentityPath(top), top); err == nil && installed.Enrollment == EnrollmentFixture {
 		return "", notifyFixtureLog
 	}
-	if notifyPlatformOS == "darwin" {
+	if deps.platform == "darwin" {
 		return "", notifyPlatform
 	}
 	return "", notifyUnavailable
@@ -61,7 +70,11 @@ func resolveNotify(repoRoot string) (string, notifyKind) {
 
 // NotifyCommand resolves the configured delivery command.
 func NotifyCommand(repoRoot string) (string, bool) {
-	command, kind := resolveNotify(repoRoot)
+	return notifyCommandWithDependencies(repoRoot, defaultNotificationDependencies())
+}
+
+func notifyCommandWithDependencies(repoRoot string, deps notificationDependencies) (string, bool) {
+	command, kind := resolveNotifyWithDependencies(repoRoot, deps)
 	return command, kind != notifyUnavailable
 }
 
@@ -103,16 +116,22 @@ func Deliver(repoRoot, message string) error {
 // all the same, with delivered false and the reason, because "we tried and the
 // channel was down" is exactly what a human needs to see.
 func DeliverNotice(repoRoot string, notice Notice) error {
-	err := deliver(repoRoot, notice.Message)
+	return deliverNoticeWith(repoRoot, notice, deliver)
+}
+
+func deliverNoticeWith(repoRoot string, notice Notice, transport func(string, string) error) error {
+	err := transport(repoRoot, notice.Message)
 	journalNotice(repoRoot, notice, err)
 	return err
 }
 
-// deliver is the delivery itself, unchanged: the resolved channel, the
-// platform notifier, or the fixture log, and nil only when one of them
-// accepted the message.
+// deliver selects the native transport without writing a journal entry.
 func deliver(repoRoot, message string) error {
-	command, kind := resolveNotify(repoRoot)
+	return deliverWithDependencies(repoRoot, message, defaultNotificationDependencies())
+}
+
+func deliverWithDependencies(repoRoot, message string, deps notificationDependencies) error {
+	command, kind := resolveNotifyWithDependencies(repoRoot, deps)
 	if kind == notifyUnavailable {
 		return fmt.Errorf("no notification channel is configured and this platform has no default; the operator cannot be reached")
 	}
@@ -125,9 +144,9 @@ func deliver(repoRoot, message string) error {
 	if kind == notifyPlatform {
 		title := "metasystem steward - " + canonicalPath(repoRoot)
 		script := fmt.Sprintf("display notification %q with title %q", message, title)
-		cmd = notifyCommandContext(ctx, "osascript", "-e", script)
+		cmd = deps.commandContext(ctx, "osascript", "-e", script)
 	} else {
-		cmd = notifyCommandContext(ctx, "/bin/sh", "-c", command)
+		cmd = deps.commandContext(ctx, "/bin/sh", "-c", command)
 		cmd.Env = append(cmd.Environ(), "STEWARD_MESSAGE="+message)
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -161,6 +180,19 @@ func appendFixtureNotification(repoRoot, message string) error {
 // the first failure stops the pass (the channel is down — one named
 // failure beats a burst of them). Returns how many were delivered.
 func DeliverPending(repoRoot string) (int, error) {
+	return deliverPendingWith(repoRoot, deliver)
+}
+
+func deliverPendingWith(repoRoot string, deliver func(string, string) error) (int, error) {
+	return deliverPendingWithDependencies(repoRoot, pendingDeliveryDependencies{transport: deliver})
+}
+
+type pendingDeliveryDependencies struct {
+	transport     func(string, string) error
+	afterSnapshot func()
+}
+
+func deliverPendingWithDependencies(repoRoot string, deps pendingDeliveryDependencies) (int, error) {
 	pending, err := PendingNotifications(repoRoot)
 	if err != nil {
 		return 0, err
@@ -180,8 +212,10 @@ func DeliverPending(repoRoot string) (int, error) {
 			continue
 		}
 		if strings.HasPrefix(n.Nonce, "handoff-") {
-			handoffDeliveryAfterSnapshot()
-			wasDelivered, err := deliverPendingHandoff(repoRoot, n)
+			if deps.afterSnapshot != nil {
+				deps.afterSnapshot()
+			}
+			wasDelivered, err := deliverPendingHandoff(repoRoot, n, deps.transport)
 			if err != nil {
 				return delivered, err
 			}
@@ -190,7 +224,7 @@ func DeliverPending(repoRoot string) (int, error) {
 			}
 			continue
 		}
-		if err := deliverPendingNotification(repoRoot, n); err != nil {
+		if err := deliverPendingNotification(repoRoot, n, deps.transport); err != nil {
 			return delivered, err
 		}
 		delivered++
@@ -198,7 +232,7 @@ func DeliverPending(repoRoot string) (int, error) {
 	return delivered, nil
 }
 
-func deliverPendingHandoff(repoRoot string, snapshot PendingNotification) (bool, error) {
+func deliverPendingHandoff(repoRoot string, snapshot PendingNotification, deliver func(string, string) error) (bool, error) {
 	authorized, err := handoffNoticeIsAuthorized(repoRoot, snapshot.Nonce)
 	if err != nil {
 		return false, err
@@ -209,7 +243,7 @@ func deliverPendingHandoff(repoRoot string, snapshot PendingNotification) (bool,
 		}
 		return false, nil
 	}
-	if err := deliverPendingNotification(repoRoot, snapshot); err != nil {
+	if err := deliverPendingNotification(repoRoot, snapshot, deliver); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -233,10 +267,10 @@ func handoffNoticeIsAuthorized(repoRoot, noticeNonce string) (bool, error) {
 	return false, nil
 }
 
-func deliverPendingNotification(repoRoot string, n PendingNotification) error {
-	if err := deliverNotification(repoRoot, Notice{
+func deliverPendingNotification(repoRoot string, n PendingNotification, deliver func(string, string) error) error {
+	if err := deliverNoticeWith(repoRoot, Notice{
 		Message: n.Message, Source: noticeSourceOf(n.Nonce), Ref: n.Nonce,
-	}); err != nil {
+	}, deliver); err != nil {
 		return err
 	}
 	// The intent acknowledges FIRST: a crash between these two

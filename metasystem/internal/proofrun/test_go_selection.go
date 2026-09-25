@@ -19,6 +19,16 @@ func ExpandGoPackageGroups(contract testpolicy.Contract, projectRoot, baseTree, 
 }
 
 func ExpandGoPackageGroupsWithEnvironment(contract testpolicy.Contract, projectRoot, baseTree, candidateTree string, baseEnvironment []string) (testpolicy.Contract, error) {
+	return expandGoPackageGroupsWithSelector(contract, projectRoot, baseTree, candidateTree, baseEnvironment, gopackages.SelectWithEnvironment)
+}
+
+// ExpandGoPackageGroupsWithSelector lets callers supply the package selector
+// while retaining the same group expansion used by native proof runs.
+func ExpandGoPackageGroupsWithSelector(contract testpolicy.Contract, projectRoot, baseTree, candidateTree string, baseEnvironment []string, selectPackages func(string, string, string, []string, []string) (gopackages.Selection, error)) (testpolicy.Contract, error) {
+	return expandGoPackageGroupsWithSelector(contract, projectRoot, baseTree, candidateTree, baseEnvironment, selectPackages)
+}
+
+func expandGoPackageGroupsWithSelector(contract testpolicy.Contract, projectRoot, baseTree, candidateTree string, baseEnvironment []string, selectPackages func(string, string, string, []string, []string) (gopackages.Selection, error)) (testpolicy.Contract, error) {
 	result := contract
 	result.Groups = append([]testpolicy.Group(nil), contract.Groups...)
 	result.Always.Standard = append([]string(nil), contract.Always.Standard...)
@@ -37,7 +47,7 @@ func ExpandGoPackageGroupsWithEnvironment(contract testpolicy.Contract, projectR
 		if !ok {
 			moduleRoot := filepath.Join(projectRoot, filepath.FromSlash(template.CWD))
 			var err error
-			selection, err = gopackages.SelectWithEnvironment(moduleRoot, baseTree, candidateTree, template.BuildTags, environment)
+			selection, err = selectPackages(moduleRoot, baseTree, candidateTree, template.BuildTags, environment)
 			if err != nil {
 				return testpolicy.Contract{}, fmt.Errorf("expand Go selector %s: %w", template.ID, err)
 			}

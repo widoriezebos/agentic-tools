@@ -23,6 +23,7 @@ type ReceiptLineParams struct {
 	CandidateTree string
 	Goal          string
 	DirectFix     string
+	RawSource     func(gittree.RawRequest) gittree.RawResult
 }
 
 // ReceiptLineDecision is the check's answer. Outcome is pass, exempt or
@@ -49,6 +50,13 @@ const (
 	receiptLineListedPaths = 6
 )
 
+type receiptLineWorkspace interface {
+	TopLevel() (string, error)
+	Prefix() (string, error)
+	FileAt(tree, path string) ([]byte, bool, error)
+	ChangedPaths(fromTree, toTree string) ([]string, error)
+}
+
 // ObserveReceiptLine decides whether a landing that changes code appends,
 // in the same commit, the RECEIPT line that describes it to the receipt
 // ledger (development/project-rules-local.md: bookkeeping-only commits
@@ -61,17 +69,43 @@ const (
 // the appended line must carry that goal; without one, any appended
 // RECEIPT line satisfies the check.
 func ObserveReceiptLine(params ReceiptLineParams) (ReceiptLineDecision, error) {
-	workspace := gittree.Workspace{Dir: params.RepoRoot}
-	location, err := locateReceiptLedger(workspace, params.RepoRoot)
+	workspace := gittree.Workspace{Dir: params.RepoRoot, RawSource: params.RawSource}
+	if params.RawSource != nil {
+		resolver := stateroot.NewResolver(func(root string) (string, error) {
+			return (gittree.Workspace{Dir: root, RawSource: params.RawSource}).TopLevel()
+		}, nil)
+		return observeReceiptLineWithDependencies(params, workspace,
+			func(root string) (string, error) {
+				return (gittree.Workspace{Dir: root, RawSource: params.RawSource}).HeadTree()
+			}, resolver.RootForInstallation, resolver.OwnerForInstallation)
+	}
+	headTree := func(root string) (string, error) {
+		baseTreeBytes, err := landingGit(root, "rev-parse", "HEAD^{tree}")
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(baseTreeBytes)), nil
+	}
+	return observeReceiptLineWithDependencies(params, workspace, headTree,
+		stateroot.RootForInstallation, stateroot.OwnerForInstallation)
+}
+
+func observeReceiptLineWithDependencies(
+	params ReceiptLineParams,
+	workspace receiptLineWorkspace,
+	headTree func(string) (string, error),
+	rootForInstallation func(string) (string, error),
+	ownerForInstallation func(string, string) (stateroot.Ownership, string, error),
+) (ReceiptLineDecision, error) {
+	location, err := locateReceiptLedger(workspace, params.RepoRoot, rootForInstallation)
 	if err != nil {
 		return ReceiptLineDecision{}, err
 	}
 	decision := ReceiptLineDecision{SchemaVersion: 1, Ledger: location.fromInstallation, Goal: params.Goal}
-	baseTreeBytes, err := landingGit(params.RepoRoot, "rev-parse", "HEAD^{tree}")
+	baseTree, err := headTree(params.RepoRoot)
 	if err != nil {
 		return ReceiptLineDecision{}, err
 	}
-	baseTree := strings.TrimSpace(string(baseTreeBytes))
 	baseLedger, present, err := workspace.FileAt(baseTree, location.repositoryPath)
 	if err != nil {
 		return ReceiptLineDecision{}, err
@@ -101,7 +135,7 @@ func ObserveReceiptLine(params ReceiptLineParams) (ReceiptLineDecision, error) {
 		return receiptLineExempt(decision, "exact-revert",
 			"an exact revert is the reverted commit's inverse tree and carries its receipt in the commit that follows"), nil
 	}
-	codePaths, err := receiptLineCodePaths(workspace, location, baseTree, changed)
+	codePaths, err := receiptLineCodePaths(workspace, location, baseTree, changed, ownerForInstallation)
 	if err != nil {
 		return ReceiptLineDecision{}, err
 	}
@@ -170,8 +204,8 @@ type receiptLedgerLocation struct {
 	fromInstallation string
 }
 
-func locateReceiptLedger(workspace gittree.Workspace, root string) (receiptLedgerLocation, error) {
-	appRoot, err := stateroot.RootForInstallation(root)
+func locateReceiptLedger(workspace receiptLineWorkspace, root string, rootForInstallation func(string) (string, error)) (receiptLedgerLocation, error) {
+	appRoot, err := rootForInstallation(root)
 	if err != nil {
 		return receiptLedgerLocation{}, err
 	}
@@ -254,7 +288,9 @@ func resolvedPath(value string) string {
 // The manifest is read from the landing base, as every other landing judge
 // reads it; application state outside the installation is a record by its
 // state root.
-func receiptLineCodePaths(workspace gittree.Workspace, location receiptLedgerLocation, baseTree string, changed []string) ([]string, error) {
+func receiptLineCodePaths(workspace receiptLineWorkspace, location receiptLedgerLocation, baseTree string, changed []string,
+	ownerForInstallation func(string, string) (stateroot.Ownership, string, error),
+) ([]string, error) {
 	prefix, err := workspace.Prefix()
 	if err != nil {
 		return nil, err
@@ -276,7 +312,7 @@ func receiptLineCodePaths(workspace gittree.Workspace, location receiptLedgerLoc
 		if location.appStateRecord(changedPath) {
 			continue
 		}
-		ownership, mode, err := stateroot.OwnerForInstallation(location.installation, changedPath)
+		ownership, mode, err := ownerForInstallation(location.installation, changedPath)
 		if err != nil {
 			return nil, fmt.Errorf("classify landing path %s: %w", changedPath, err)
 		}

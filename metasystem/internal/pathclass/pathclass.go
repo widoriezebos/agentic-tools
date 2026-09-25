@@ -377,9 +377,27 @@ func discoverInstallationRoot() (string, error) {
 }
 
 func discoverRepositoryRoot(installationRoot string) (string, error) {
-	command := exec.Command("git", "-C", installationRoot, "rev-parse", "--show-toplevel")
-	command.Env = scrubGitSteering(os.Environ())
-	output, err := command.CombinedOutput()
+	return discoverRepositoryRootWithRunner(installationRoot, runRepositoryRootGit)
+}
+
+type repositoryRootRequest struct {
+	Directory         string
+	Args, Environment []string
+}
+
+type repositoryRootRunner func(repositoryRootRequest) ([]byte, error)
+
+func runRepositoryRootGit(request repositoryRootRequest) ([]byte, error) {
+	command := exec.Command("git", append([]string{"-C", request.Directory}, request.Args...)...)
+	command.Env = request.Environment
+	return command.CombinedOutput()
+}
+
+func discoverRepositoryRootWithRunner(installationRoot string, runner repositoryRootRunner) (string, error) {
+	if runner == nil {
+		return "", fmt.Errorf("path class: a repository root runner is required")
+	}
+	output, err := runner(repositoryRootRequest{Directory: installationRoot, Args: []string{"rev-parse", "--show-toplevel"}, Environment: scrubGitSteering(os.Environ())})
 	if err != nil {
 		return "", fmt.Errorf("path class: installation is not inside a Git repository: %s", strings.TrimSpace(string(output)))
 	}

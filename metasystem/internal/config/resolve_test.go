@@ -1,11 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,26 +24,56 @@ func mapEnv(m map[string]string) func(string) (string, bool) {
 
 func noEnv(string) (string, bool) { return "", false }
 
-func initGit(t *testing.T, dir string) {
+func oneGitResult(t *testing.T, expected gitRequest, output []byte, resultErr error) gitRunner {
 	t.Helper()
-	if err := exec.Command("git", "init", "-q", dir).Run(); err != nil {
-		t.Fatal(err)
+	expected.Args = append([]string(nil), expected.Args...)
+	expected.Environment = append([]string(nil), expected.Environment...)
+	output = append([]byte(nil), output...)
+	var mu sync.Mutex
+	calls := 0
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if calls != 1 {
+			t.Errorf("Git runner received %d calls; want exactly one", calls)
+		}
+	})
+	return func(request gitRequest) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls != 1 || !reflect.DeepEqual(request, expected) {
+			t.Errorf("Git request %d = %+v; want %+v", calls, request, expected)
+			return nil, errors.New("unexpected Git request")
+		}
+		return append([]byte(nil), output...), resultErr
+	}
+}
+
+func expectedBatchGit(root string) gitRequest {
+	return gitRequest{Directory: resolvePath(root), Args: []string{"rev-parse", "--show-toplevel"}, Environment: []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}}
+}
+
+func noGitCalls(t *testing.T) gitRunner {
+	t.Helper()
+	return func(request gitRequest) ([]byte, error) {
+		t.Errorf("unexpected Git request: %+v", request)
+		return nil, errors.New("unexpected Git request")
 	}
 }
 
 func TestResolveBatchLandingConfiguration(t *testing.T) {
 	seat, landing := t.TempDir(), t.TempDir()
-	initGit(t, landing)
 	conf := filepath.Join(seat, "metasystem.conf")
 	putFile(t, conf, BatchRootKey+"="+landing+"\n")
 	now := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
-	settings, err := ResolveBatchLanding(conf, seat, func() time.Time { return now })
+	settings, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil))
 	if err != nil || settings.Root != resolvePath(landing) || settings.MaxWait != 45*time.Minute {
 		t.Fatalf("default batch settings: settings=%+v err=%v", settings, err)
 	}
 	for _, wait := range []string{"0s", "-1m", "30s", "6h1s"} {
 		putFile(t, conf, BatchRootKey+"="+landing+"\n"+BatchMaxWaitKey+"="+wait+"\n")
-		if _, err := ResolveBatchLanding(conf, seat, func() time.Time { return now }); err == nil || !strings.Contains(err.Error(), BatchMaxWaitKey) {
+		if _, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil)); err == nil || !strings.Contains(err.Error(), BatchMaxWaitKey) {
 			t.Fatalf("invalid wait %q accepted: %v", wait, err)
 		}
 	}
@@ -53,44 +84,53 @@ func TestResolveBatchLandingConfiguration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, test := range []struct{ name, root, want string }{
-		{"relative", "relative", "absolute"},
-		{"regular file", conf, "existing checkout"},
-		{"missing", filepath.Join(seat, "missing"), "existing checkout"},
-		{"seat checkout", seat, "non-seat checkout"},
-		{"fabricated checkout", fake, "existing checkout"},
-		{"checkout subdirectory", subdir, "existing checkout"},
+	for _, test := range []struct {
+		name, root, want string
+		output           []byte
+		commandErr       error
+		noCall           bool
+	}{
+		{name: "relative", root: "relative", want: "absolute", noCall: true},
+		{name: "regular file", root: conf, want: "existing checkout", commandErr: errors.New("not a checkout")},
+		{name: "missing", root: filepath.Join(seat, "missing"), want: "existing checkout", commandErr: errors.New("missing")},
+		{name: "seat checkout", root: seat, want: "non-seat checkout", noCall: true},
+		{name: "fabricated checkout", root: fake, want: "existing checkout", commandErr: errors.New("not a checkout")},
+		{name: "checkout subdirectory", root: subdir, want: "existing checkout", output: []byte(landing + "\n")},
 	} {
-		putFile(t, conf, BatchRootKey+"="+test.root+"\n")
-		if _, err := ResolveBatchLanding(conf, seat, func() time.Time { return now }); err == nil || !strings.Contains(err.Error(), test.want) {
-			t.Fatalf("%s root accepted: %v", test.name, err)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			putFile(t, conf, BatchRootKey+"="+test.root+"\n")
+			runner := noGitCalls(t)
+			if !test.noCall {
+				runner = oneGitResult(t, expectedBatchGit(test.root), test.output, test.commandErr)
+			}
+			if _, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, runner); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("%s root accepted: %v", test.name, err)
+			}
+		})
 	}
-	initGit(t, seat)
 	t.Setenv("GIT_DIR", filepath.Join(seat, ".git"))
 	t.Setenv("GIT_WORK_TREE", seat)
 	putFile(t, conf, BatchRootKey+"="+landing+"\n")
-	if settings, err := ResolveBatchLanding(conf, seat, func() time.Time { return now }); err != nil || settings.Root != resolvePath(landing) {
+	if settings, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil)); err != nil || settings.Root != resolvePath(landing) {
 		t.Fatalf("git steering escaped into batch root resolution: settings=%+v err=%v", settings, err)
 	}
 	putFile(t, filepath.Join(landing, "artifacts", "agents", "brain.json"), "{}\n")
 	putFile(t, conf, BatchRootKey+"="+landing+"\n")
-	if _, err := ResolveBatchLanding(conf, seat, func() time.Time { return now }); err == nil || !strings.Contains(err.Error(), "non-seat checkout") {
+	if _, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil)); err == nil || !strings.Contains(err.Error(), "non-seat checkout") {
 		t.Fatalf("brain seat accepted: %v", err)
 	}
 }
 
 func TestBatchLandingBoundaryUsesInjectedClock(t *testing.T) {
 	seat, landing := t.TempDir(), t.TempDir()
-	initGit(t, landing)
 	conf := filepath.Join(seat, "metasystem.conf")
 	putFile(t, conf, BatchRootKey+"="+landing+"\n"+BatchMaxWaitKey+"=2m\n")
 	joined := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
 	now := joined.Add(2*time.Minute - time.Nanosecond)
-	if _, err := ResolveBatchLanding(conf, seat, nil); err == nil {
+	if _, err := resolveBatchLandingWithRunner(conf, seat, nil, noGitCalls(t)); err == nil {
 		t.Fatal("nil clock accepted")
 	}
-	settings, err := ResolveBatchLanding(conf, seat, func() time.Time { return now })
+	settings, err := resolveBatchLandingWithRunner(conf, seat, func() time.Time { return now }, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +140,87 @@ func TestBatchLandingBoundaryUsesInjectedClock(t *testing.T) {
 	now = joined.Add(2 * time.Minute)
 	if !settings.MaxWaitElapsed(joined) {
 		t.Fatal("maximum wait did not elapse at the configured boundary")
+	}
+}
+
+func TestResolveExplicitBatchLandingWithRunner(t *testing.T) {
+	t.Parallel()
+	seat, landing := t.TempDir(), t.TempDir()
+	now := func() time.Time { return time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC) }
+	settings, err := resolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now,
+		oneGitResult(t, expectedBatchGit(landing), []byte("  "+landing+"\n"), nil))
+	if err != nil || settings.Root != resolvePath(landing) || settings.MaxWait != time.Minute {
+		t.Fatalf("explicit landing = %+v, %v", settings, err)
+	}
+	for _, test := range []struct {
+		name, root, want string
+		output           []byte
+		commandErr       error
+		noCall           bool
+	}{
+		{name: "relative root", root: "relative", want: "absolute", noCall: true},
+		{name: "seat root", root: seat, want: "non-seat checkout", noCall: true},
+		{name: "wrong top", root: landing, want: "existing checkout", output: []byte(seat + "\n")},
+		{name: "command failure", root: landing, want: "existing checkout", commandErr: errors.New("Git failed")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := noGitCalls(t)
+			if !test.noCall {
+				runner = oneGitResult(t, expectedBatchGit(test.root), test.output, test.commandErr)
+			}
+			if _, err := resolveExplicitBatchLandingWithRunner(test.root, seat, time.Minute, now, runner); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("explicit landing error = %v; want %q", err, test.want)
+			}
+		})
+	}
+	if _, err := batchLandingRootWithRunner(landing, seat, nil); err == nil || !strings.Contains(err.Error(), "runner is required") {
+		t.Fatalf("nil root runner error = %v", err)
+	}
+	if _, err := resolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now, nil); err == nil || !strings.Contains(err.Error(), "runner is required") {
+		t.Fatalf("nil explicit runner error = %v", err)
+	}
+	if _, err := resolveBatchLandingWithRunner(filepath.Join(seat, "missing.conf"), seat, now, nil); err == nil || !strings.Contains(err.Error(), BatchRootKey) {
+		t.Fatalf("configuration error before nil runner = %v", err)
+	}
+	conf := filepath.Join(seat, "metasystem.conf")
+	putFile(t, conf, BatchRootKey+"="+landing+"\n")
+	if _, err := resolveBatchLandingWithRunner(conf, seat, now, nil); err == nil || !strings.Contains(err.Error(), "runner is required") {
+		t.Fatalf("nil configured runner error = %v", err)
+	}
+	if _, err := resolveExplicitBatchLandingWithRunner(landing, seat, 0, now,
+		oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil)); err == nil || !strings.Contains(err.Error(), BatchMaxWaitKey) {
+		t.Fatalf("invalid explicit wait error = %v", err)
+	}
+}
+
+// The exported raw runner receives the same Git request as the production
+// runner, and a missing runner is refused rather than defaulting to Git.
+func TestResolveExplicitBatchLandingWithRawRunner(t *testing.T) {
+	t.Parallel()
+	seat, landing := t.TempDir(), t.TempDir()
+	now := func() time.Time { return time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC) }
+	if _, err := ResolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now, nil); err == nil || !strings.Contains(err.Error(), "runner is required") {
+		t.Fatalf("nil raw runner error = %v", err)
+	}
+	expected := expectedBatchGit(landing)
+	runner := oneGitResult(t, expected, []byte(landing+"\n"), nil)
+	settings, err := ResolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now, func(directory string, args, environment []string) ([]byte, error) {
+		return runner(gitRequest{Directory: directory, Args: args, Environment: environment})
+	})
+	if err != nil || settings.Root != resolvePath(landing) || settings.MaxWait != time.Minute {
+		t.Fatalf("raw runner landing = %+v, %v", settings, err)
+	}
+}
+
+// A landing checkout whose seat marker cannot be inspected is refused, not
+// assumed to be a non-seat checkout.
+func TestBatchLandingRootRefusesUninspectableSeatMarker(t *testing.T) {
+	t.Parallel()
+	seat, landing := t.TempDir(), t.TempDir()
+	putFile(t, filepath.Join(landing, "artifacts"), "not a directory")
+	_, err := batchLandingRootWithRunner(landing, seat, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil))
+	if err == nil || !strings.Contains(err.Error(), "inspect "+BatchRootKey+" as a non-seat checkout") {
+		t.Fatalf("uninspectable seat marker error = %v", err)
 	}
 }
 

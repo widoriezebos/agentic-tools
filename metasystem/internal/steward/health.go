@@ -285,6 +285,12 @@ func (v RoleVerdict) Line() string {
 // observation. The state and its rendered verdict share one atomic record so
 // a restart cannot observe a counter without the verdict that advanced it.
 func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (HealthVerdict, error) {
+	return observeHealthWithEvaluation(repoRoot, now, prober, evaluateHealthRoles)
+}
+
+type healthRoleEvaluator func(string, string, time.Time, identity.Prober, bool) ([]RoleVerdict, SpendObservation)
+
+func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity.Prober, evaluate healthRoleEvaluator) (HealthVerdict, error) {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
@@ -306,7 +312,7 @@ func ObserveHealth(repoRoot string, now time.Time, prober identity.Prober) (Heal
 	if stateUnreadable {
 		previous = healthRecord{}
 	}
-	roles, spendObservation := evaluateHealthRoles(repoRoot, repoRoot, now.UTC(), prober, false)
+	roles, spendObservation := evaluate(repoRoot, repoRoot, now.UTC(), prober, false)
 	if stopped, err := healthStopped(repoRoot, now.UTC(), roles, spendObservation, previous.State); err != nil {
 		return HealthVerdict{}, err
 	} else if stopped != nil {
@@ -464,8 +470,12 @@ func checkSpendFence(repoRoot string, now time.Time) (RoleVerdict, SpendObservat
 }
 
 func checkSpendFenceWithMeasure(repoRoot string, now time.Time, measure spendMeasureFunc) (RoleVerdict, SpendObservation) {
+	return checkSpendFenceWithMeasureAndMachine(repoRoot, now, measure, goal.ResolveMachine)
+}
+
+func checkSpendFenceWithMeasureAndMachine(repoRoot string, now time.Time, measure spendMeasureFunc, resolveMachine func(string) (string, error)) (RoleVerdict, SpendObservation) {
 	machine := "this machine"
-	if enrolled, err := goal.ResolveMachine(repoRoot); err == nil {
+	if enrolled, err := resolveMachine(repoRoot); err == nil {
 		machine = enrolled
 	}
 	ledger, err := measure(repoRoot, machine, now)
@@ -782,6 +792,10 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 }
 
 func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) RoleVerdict {
+	return checkStewardRunnerWithCadence(repoRoot, now, prober, TickSeconds)
+}
+
+func checkStewardRunnerWithCadence(repoRoot string, now time.Time, prober identity.Prober, tickSeconds func(string) int) RoleVerdict {
 	remedy := fmt.Sprintf("metasystem up --repo %q", repoRoot)
 	installed, durabilityPending, installationErr := installedEnrollment(repoRoot)
 	withEnrollment := func(verdict RoleVerdict) RoleVerdict {
@@ -840,7 +854,7 @@ func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) 
 			return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("runner pid %d attempt is stuck at %s (patience %s)", runner.Pid, age.Round(time.Second), patience), remedy))
 		}
 	}
-	return withEnrollment(componentFreshness(repoRoot, "steward-tick", RoleStewardRunner, generation, time.Duration(2*TickSeconds(repoRoot))*time.Second, now, remedy, &process,
+	return withEnrollment(componentFreshness(repoRoot, "steward-tick", RoleStewardRunner, generation, time.Duration(2*tickSeconds(repoRoot))*time.Second, now, remedy, &process,
 		fmt.Sprintf("runner pid %d and generation %d success are current", runner.Pid, generation)))
 }
 
@@ -1081,15 +1095,19 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger endpoint is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
 	}
 	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
-		if unknown, ok := dispatch.GoalRecordBudgetUnknown(err); ok {
+	return checkClaimedGoalBudgetsFromProjection(repoRoot, now, projection, endpoint.LocalMode(), err, nil)
+}
+
+func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, projection goal.Projection, localMode bool, projectionErr error, carryRepository goal.Repository) RoleVerdict {
+	if projectionErr != nil {
+		if unknown, ok := dispatch.GoalRecordBudgetUnknown(projectionErr); ok {
 			role := roleDead(RoleClaimedGoalBudget,
 				fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason),
 				"repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo "+strconv.Quote(repoRoot))
 			role.NoAutomaticRemedy = true
 			return role
 		}
-		if id, malformed := malformedBudgetGoal(err); malformed {
+		if id, malformed := malformedBudgetGoal(projectionErr); malformed {
 			role := roleDead(RoleClaimedGoalBudget,
 				fmt.Sprintf("claimed goal %s has a malformed structured budget tuple", id), goalBudgetRemedy(id))
 			role.NoAutomaticRemedy = true
@@ -1203,10 +1221,10 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit, exceptionEvidence))
 	}
 	codeTip := "refs/remotes/origin/main"
-	if endpoint.LocalMode() {
+	if localMode {
 		codeTip = "refs/heads/main"
 	}
-	carryCounts, carryErr := goal.CountCarries(repoRoot, projection.Tree, codeTip, now)
+	carryCounts, carryErr := goal.CountCarriesAtEndpoint(goal.Endpoint{Root: repoRoot, Repository: carryRepository}, projection.Tree, codeTip, now)
 	if carryErr != nil {
 		return roleUnknown(RoleClaimedGoalBudget, "the carried-landing counter is unreadable: "+carryErr.Error(), "repair the carried ledger or code history, then rerun metasystem health")
 	}
@@ -1242,11 +1260,15 @@ func checkStopCapabilityEpoch(repoRoot string, now time.Time) RoleVerdict {
 			"metasystem goal list --root "+strconv.Quote(repoRoot))
 	}
 	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
-		return roleUnknown(RoleStopCapabilityEpoch, "the goal store is unreadable: "+err.Error(),
+	return checkStopCapabilityEpochFromProjection(repoRoot, now, projection, err, goal.ResolveMachine)
+}
+
+func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, readMachine func(string) (string, error)) RoleVerdict {
+	if projectionErr != nil {
+		return roleUnknown(RoleStopCapabilityEpoch, "the goal store is unreadable: "+projectionErr.Error(),
 			"metasystem goal list --root "+strconv.Quote(repoRoot))
 	}
-	machine, err := goal.ResolveMachine(repoRoot)
+	machine, err := readMachine(repoRoot)
 	if err != nil {
 		return roleUnknown(RoleStopCapabilityEpoch, "the enrolled machine is unreadable: "+err.Error(),
 			"repair the machine enrollment, then rerun metasystem health")

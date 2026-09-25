@@ -195,7 +195,23 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 
 	// The binary runs against the real resource clock. Keep the goal's elapsed
 	// budget and its reserved proof deadline live for both admission probes.
-	root, now := proofExtensionGoalFixtureAt(t, time.Now().UTC().Truncate(time.Second))
+	now := time.Now().UTC().Truncate(time.Second)
+	repository := newProofAdmissionRepositoryFixture(t, now, true)
+	root, err := filepath.EvalSymlinks(repository.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := repository.commits[repository.accepted].files
+	for _, path := range []string{"plans/goals/backlog.md", "plans/goals/standing-validation.md", "memory/receipts.log"} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, accepted["metasystem/"+path], 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitFixture := newHostLoadGitFixture(t, root, repository.accepted, now, accepted)
 	fixture := pinProofBinaryFixture(t, root)
 	caller, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
@@ -224,11 +240,15 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 			"--command-class", name, "--progress", filepath.Join(root, name+"-progress.jsonl"),
 			"--log", filepath.Join(root, name+".log"), "--banner", name, "--result", resultPath, "--", "/usr/bin/true")
 		command.Env = append(command.Env,
-			"METASYSTEM_GOAL_NOW="+now.Format(time.RFC3339), "METASYSTEM_OWNER_LINEAGE=m1")
+			"METASYSTEM_GOAL_NOW="+now.Format(time.RFC3339), "METASYSTEM_OWNER_LINEAGE=m1",
+			"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+filepath.Join(root, "admission"),
+			"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
+		command.Env = append(command.Env, gitFixture.environment(name)...)
 		if ambient {
 			command.Env = append(command.Env, proofrun.TestHostLoadEnvironment+"=0")
 		}
 		output, runErr := command.CombinedOutput()
+		gitFixture.assertCalls(t, name)
 		status := 0
 		if runErr != nil {
 			var exit *exec.ExitError
@@ -332,17 +352,6 @@ func admissionReasonTokens(t *testing.T, reason string) map[string]string {
 		tokens[name] = value
 	}
 	return tokens
-}
-
-func proofFixtureEnvironmentWithoutHostLoad(environment []string) []string {
-	prefix := proofrun.TestHostLoadEnvironment + "="
-	filtered := make([]string, 0, len(environment))
-	for _, entry := range environment {
-		if !strings.HasPrefix(entry, prefix) {
-			filtered = append(filtered, entry)
-		}
-	}
-	return filtered
 }
 
 func TestLandFixtureConfigurationsPinProofAdmission(t *testing.T) {

@@ -107,7 +107,8 @@ func TestAnchorRefusesLedgerMoveWithoutStateWrite(t *testing.T) {
 // The pinned anchor binds exactly the verified position: moved state or
 // moved ledger bytes refuse.
 func TestAnchorPinsRefuseMovedPosition(t *testing.T) {
-	repo, state, ledger := anchoredMission(t)
+	b := newAnchorPolicyBed(t)
+	repo, state, ledger := b.repo, b.state, b.ledger
 	doc, _ := readStateDoc(state)
 	integrity, _ := doc["integrity"].(map[string]any)
 	hash, _ := integrity["hash"].(string)
@@ -116,14 +117,22 @@ func TestAnchorPinsRefuseMovedPosition(t *testing.T) {
 		t.Fatal(err)
 	}
 	lHash := sha256Hex(string(data))
-	if err := AnchorNamed(state, repo, ledger, "Wido", hash, lHash); err != nil {
+	next := b.nextFact("d")
+	q := b.queue()
+	q.expectPublication(next, "Wido")
+	if err := anchorNamedWithOperations(q.operations(), state, repo, ledger, "Wido", hash, lHash); err != nil {
 		t.Fatalf("matching pins must anchor: %v", err)
 	}
-	if err := AnchorNamed(state, repo, ledger, "Wido", strings.Repeat("0", 64), lHash); err == nil ||
+	b.fact = next
+	q = b.queue()
+	q.output("feature-x\n", "branch", "--show-current")
+	if err := anchorNamedWithOperations(q.operations(), state, repo, ledger, "Wido", strings.Repeat("0", 64), lHash); err == nil ||
 		!strings.Contains(err.Error(), "state moved past the verified position") {
 		t.Fatalf("a moved state pin must refuse, got %v", err)
 	}
-	if err := AnchorNamed(state, repo, ledger, "Wido", hash, strings.Repeat("0", 64)); err == nil ||
+	q = b.queue()
+	q.output("feature-x\n", "branch", "--show-current")
+	if err := anchorNamedWithOperations(q.operations(), state, repo, ledger, "Wido", hash, strings.Repeat("0", 64)); err == nil ||
 		!strings.Contains(err.Error(), "ledger moved past the verified bytes") {
 		t.Fatalf("a moved ledger pin must refuse, got %v", err)
 	}
@@ -200,50 +209,30 @@ func TestOneStepRecoveryShapes(t *testing.T) {
 }
 
 func TestVerifyAnchorDetectsLedgerTamper(t *testing.T) {
-	repo, state, ledger := anchoredMission(t)
+	b := newAnchorPolicyBed(t)
+	repo, state, ledger := b.repo, b.state, b.ledger
 	// Tamper the working-tree ledger after anchoring.
 	writeText(t, ledger, oneCycleLedger+"\ntampered\n")
-	if _, _, err := VerifyStateWithAnchor(state, repo, ledger); err == nil ||
+	q := b.queue()
+	q.expectTip(b.fact)
+	if _, _, err := verifyStateWithAnchorWithOperations(q.operations(), state, repo, ledger); err == nil ||
 		!strings.Contains(err.Error(), "Mission-Ledger-SHA256") {
 		t.Fatalf("a tampered ledger must fail anchor verification, got %v", err)
 	}
 }
 
 func TestReconcileEqualCyclesReturnsZero(t *testing.T) {
-	repo, state, ledger := anchoredMission(t)
-	code, err := Reconcile(state, repo, ledger)
+	b := newAnchorPolicyBed(t)
+	repo, state, ledger := b.repo, b.state, b.ledger
+	q := b.queue()
+	q.expectVerify(b.fact)
+	code, err := reconcileWithOperations(q.operations(), state, repo, ledger)
 	if err != nil {
 		t.Fatalf("reconcile errored: %v", err)
 	}
 	if code != 0 {
 		t.Fatalf("a state that matches its anchor should reconcile to 0, got %d", code)
 	}
-}
-
-// stagnationParkedMission extends anchoredMission: the mission is parked for
-// stop-loss with a stagnation ask on disk, and that park is anchored — the
-// exact position a crash during the reset transaction leaves behind.
-func stagnationParkedMission(t *testing.T) (repo, state, ledger, asksDir string) {
-	t.Helper()
-	repo, state, ledger = anchoredMission(t)
-	_, hash, _ := VerifyStateShape(state)
-	doc, _ := readStateDoc(state)
-	doc["status"] = "parked"
-	doc["parkReason"] = "stop-loss"
-	doc["waitingList"] = []any{"stop-loss"}
-	src := state + ".src"
-	if err := atomicWriteJSON(src, doc); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteState(state, src, hash); err != nil {
-		t.Fatal(err)
-	}
-	if err := Anchor(state, repo, ledger); err != nil {
-		t.Fatal(err)
-	}
-	asksDir = filepath.Join(filepath.Dir(state), "asks")
-	writeAsk(t, asksDir, "stop-loss", StopLossKindStagnation)
-	return repo, state, ledger, asksDir
 }
 
 func writeAsk(t *testing.T, asksDir, askID, kind string) {
@@ -261,11 +250,15 @@ func writeAsk(t *testing.T, asksDir, askID, kind string) {
 }
 
 func TestReconcileForgivesExactlyTheResetSuffix(t *testing.T) {
-	repo, state, ledger, _ := stagnationParkedMission(t)
+	b, _ := newStagnationAnchorPolicyBed(t)
+	repo, state, ledger := b.repo, b.state, b.ledger
 	if err := AppendReset(ledger, "stop-loss", "human funded the tail"); err != nil {
 		t.Fatal(err)
 	}
-	code, err := Reconcile(state, repo, ledger)
+	q := b.queue()
+	q.expectTip(b.fact)
+	q.expectPrefix(b.fact)
+	code, err := reconcileWithOperations(q.operations(), state, repo, ledger)
 	if err != nil || code != 0 {
 		t.Fatalf("a trailing reset suffix must be forgiven: code=%d err=%v", code, err)
 	}
@@ -277,7 +270,10 @@ func TestReconcileForgivesExactlyTheResetSuffix(t *testing.T) {
 	if err := AppendReset(ledger, "stop-loss", "answered again after a crash"); err != nil {
 		t.Fatal(err)
 	}
-	if code, err := Reconcile(state, repo, ledger); err != nil || code != 0 {
+	q = b.queue()
+	q.expectTip(b.fact)
+	q.expectPrefix(b.fact)
+	if code, err := reconcileWithOperations(q.operations(), state, repo, ledger); err != nil || code != 0 {
 		t.Fatalf("a double reset suffix must be forgiven: code=%d err=%v", code, err)
 	}
 }
@@ -314,9 +310,15 @@ func TestReconcileStillParksOnAnyOtherDivergence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, state, ledger, asksDir := stagnationParkedMission(t)
+			b, asksDir := newStagnationAnchorPolicyBed(t)
+			repo, state, ledger := b.repo, b.state, b.ledger
 			tc.distort(t, repo, state, ledger, asksDir)
-			code, err := Reconcile(state, repo, ledger)
+			q := b.queue()
+			q.expectTip(b.fact)
+			q.expectPrefix(b.fact)
+			q.expectLag(b.fact, false)
+			q.expectPark(b.fact, false)
+			code, err := reconcileWithOperations(q.operations(), state, repo, ledger)
 			if err != nil {
 				t.Fatalf("reconcile errored: %v", err)
 			}
@@ -334,13 +336,18 @@ func TestReconcileStillParksOnAnyOtherDivergence(t *testing.T) {
 func TestReconcileResetSuffixNeedsTheStagnationPark(t *testing.T) {
 	// The same reset suffix on a mission that is NOT stagnation-parked is
 	// divergence, not replayable state.
-	repo, state, ledger := anchoredMission(t)
+	b := newAnchorPolicyBed(t)
+	repo, state, ledger := b.repo, b.state, b.ledger
 	asksDir := filepath.Join(filepath.Dir(state), "asks")
 	writeAsk(t, asksDir, "stop-loss", StopLossKindStagnation)
 	if err := AppendReset(ledger, "stop-loss", "fine"); err != nil {
 		t.Fatal(err)
 	}
-	code, err := Reconcile(state, repo, ledger)
+	q := b.queue()
+	q.expectTip(b.fact)
+	q.expectLag(b.fact, false)
+	q.expectPark(b.fact, false)
+	code, err := reconcileWithOperations(q.operations(), state, repo, ledger)
 	if err != nil {
 		t.Fatalf("reconcile errored: %v", err)
 	}
@@ -350,10 +357,13 @@ func TestReconcileResetSuffixNeedsTheStagnationPark(t *testing.T) {
 }
 
 func TestReconcileParksOnLedgerBehindState(t *testing.T) {
-	repo, state, ledger := anchoredMission(t)
+	b := newAnchorPolicyBed(t)
+	repo, state, ledger := b.repo, b.state, b.ledger
 	// Truncate the ledger so its cycle count (0) is behind the state (1).
 	writeText(t, ledger, "# Mission Ledger\n\n- Cycle budget: 5\n- No-gain budget: 3\n")
-	code, err := Reconcile(state, repo, ledger)
+	q := b.queue()
+	q.expectPark(b.fact, false)
+	code, err := reconcileWithOperations(q.operations(), state, repo, ledger)
 	if err != nil {
 		t.Fatalf("reconcile errored: %v", err)
 	}
@@ -385,14 +395,23 @@ func advanceStateOneStep(t *testing.T, state string) {
 // The heal-crash lag: an anchor exactly one state
 // step behind, with identical ledger truth, re-anchors and reconciles.
 func TestReconcileHealsAnchorLag(t *testing.T) {
-	repo, state, ledger := anchoredMission(t)
+	b := newAnchorPolicyBed(t)
+	repo, state, ledger := b.repo, b.state, b.ledger
 	advanceStateOneStep(t, state)
-	code, err := Reconcile(state, repo, ledger)
+	next := b.nextFact("d")
+	q := b.queue()
+	q.expectTip(b.fact)
+	q.expectLag(b.fact, true)
+	q.expectPublication(next, "")
+	code, err := reconcileWithOperations(q.operations(), state, repo, ledger)
 	if code != 0 || err != nil {
 		t.Fatalf("a one-step anchor lag must heal: %d %v", code, err)
 	}
+	b.fact = next
 	// The heal re-anchored: verification now passes outright.
-	if _, _, err := VerifyStateWithAnchor(state, repo, ledger); err != nil {
+	q = b.queue()
+	q.expectVerify(b.fact)
+	if _, _, err := verifyStateWithAnchorWithOperations(q.operations(), state, repo, ledger); err != nil {
 		t.Fatalf("the healed state must verify: %v", err)
 	}
 }
@@ -403,16 +422,25 @@ func TestReconcileHealsAnchorLag(t *testing.T) {
 // write-grammar annotation lines only — that exact stamped shape heals;
 // a suffix with any other line still parks.
 func TestReconcileHealsTerminalDeliveryLag(t *testing.T) {
-	repo, state, ledger := anchoredMission(t)
+	b := newAnchorPolicyBed(t)
+	repo, state, ledger := b.repo, b.state, b.ledger
 	advanceStateOneStep(t, state)
 	if _, err := AppendAnnotations(ledger, 1, "", LandedUnconsumedAnnotation("chain-a", "1", "none")); err != nil {
 		t.Fatal(err)
 	}
-	code, err := Reconcile(state, repo, ledger)
+	next := b.nextFact("d")
+	q := b.queue()
+	q.expectTip(b.fact)
+	q.expectLag(b.fact, true)
+	q.expectPublication(next, "")
+	code, err := reconcileWithOperations(q.operations(), state, repo, ledger)
 	if code != 0 || err != nil {
 		t.Fatalf("terminal-delivery lag must heal: %d %v", code, err)
 	}
-	if _, _, err := VerifyStateWithAnchor(state, repo, ledger); err != nil {
+	b.fact = next
+	q = b.queue()
+	q.expectVerify(b.fact)
+	if _, _, err := verifyStateWithAnchorWithOperations(q.operations(), state, repo, ledger); err != nil {
 		t.Fatalf("the healed state must verify: %v", err)
 	}
 	// A suffix line outside the annotation grammar is NOT the delivery
@@ -425,7 +453,11 @@ func TestReconcileHealsTerminalDeliveryLag(t *testing.T) {
 	if err := os.WriteFile(ledger, append(data, []byte("- Sneaky line: not an annotation\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := Reconcile(state, repo, ledger); code != 3 {
+	q = b.queue()
+	q.expectTip(b.fact)
+	q.expectLag(b.fact, true)
+	q.expectPark(b.fact, true)
+	if code, _ := reconcileWithOperations(q.operations(), state, repo, ledger); code != 3 {
 		t.Fatalf("a non-delivery suffix must park, got %d", code)
 	}
 }

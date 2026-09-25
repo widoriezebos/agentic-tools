@@ -782,17 +782,14 @@ exit 91
 					t.Fatal(err)
 				}
 			}
-			command := exec.Command("git", "init", "-q", "-b", "main", root)
-			if output, err := command.CombinedOutput(); err != nil {
-				t.Fatalf("git init: %v: %s", err, output)
-			}
+			_, gitEnv, assertGit := newHookStartGitFixture(t, root, 1, false)
 			before := snapshotFixtureTree(t, root)
 			payload := fmt.Sprintf("{\"session_id\":\"engine-skew-%s\",\"source\":%q}\n", test.name, test.source)
-			stdout, stderr, status := runHookStartCommand(t, hook, "claude", payload, []string{
+			stdout, stderr, status := runHookStartCommand(t, hook, "claude", payload, append([]string{
 				"HOOK_START_TRACE=" + trace,
 				"HOOK_START_ENGINE_MODE=" + test.mode,
 				"METASYSTEM_BIN=" + override,
-			}, false)
+			}, gitEnv...), false)
 			if status != 0 || stdout != `{"systemMessage":"Metasystem engine does not answer path state-root: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild bin/metasystem with scripts/agents/go-build.sh, then start a new session."}`+"\n" || stderr != test.stderr {
 				t.Fatalf("engine skew = status %d stdout %q stderr %q", status, stdout, stderr)
 			}
@@ -808,6 +805,7 @@ exit 91
 			if string(traceBytes) != wantTrace {
 				t.Fatalf("resolver trace = %q, want %q", traceBytes, wantTrace)
 			}
+			assertGit()
 			if after := snapshotFixtureTree(t, root); after != before {
 				t.Fatalf("engine skew changed durable state\nbefore:\n%s\nafter:\n%s", before, after)
 			}
@@ -848,15 +846,12 @@ func TestHookStartIntentionalFullPathFixturesOnBash32(t *testing.T) {
 			writeExecutable(t, hook, readProductionHook(t))
 			trace := filepath.Join(t.TempDir(), "trace")
 			writeExecutable(t, filepath.Join(root, "bin", "metasystem"), fullPathFixtureEngine())
-			command := exec.Command("git", "init", "-q", "-b", "main", root)
-			if output, err := command.CombinedOutput(); err != nil {
-				t.Fatalf("git init: %v: %s", err, output)
-			}
+			_, gitEnv, assertGit := newHookStartGitFixture(t, root, 1, false)
 			before := snapshotFixtureTree(t, root)
-			stdout, stderr, status := runHookStartCommand(t, hook, "claude", `{"session_id":"full-path","source":"startup"}`+"\n", []string{
+			stdout, stderr, status := runHookStartCommand(t, hook, "claude", `{"session_id":"full-path","source":"startup"}`+"\n", append([]string{
 				"HOOK_START_TRACE=" + trace,
 				"HOOK_START_FULL_MODE=" + test.mode,
-			}, false)
+			}, gitEnv...), false)
 			if status != 0 || stdout != test.stdout || stderr != test.stderr {
 				t.Fatalf("full path = status %d stdout %q stderr %q", status, stdout, stderr)
 			}
@@ -888,6 +883,7 @@ func TestHookStartIntentionalFullPathFixturesOnBash32(t *testing.T) {
 			if test.context {
 				assertFullPathContextObject(t, stdout)
 			}
+			assertGit()
 			if after := snapshotFixtureTree(t, root); after != before {
 				t.Fatalf("fake-engine full path changed durable state\nbefore:\n%s\nafter:\n%s", before, after)
 			}
@@ -901,18 +897,15 @@ func TestHookStartForgedDelegateHintRefusesOnBash32(t *testing.T) {
 	writeExecutable(t, hook, readProductionHook(t))
 	trace := filepath.Join(t.TempDir(), "trace")
 	writeExecutable(t, filepath.Join(root, "bin", "metasystem"), fullPathFixtureEngine())
-	command := exec.Command("git", "init", "-q", "-b", "main", root)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
+	_, gitEnv, assertGit := newHookStartGitFixture(t, root, 0, false)
 	before := snapshotFixtureTree(t, root)
-	stdout, stderr, status := runHookStartCommand(t, hook, "claude", "{}\n", []string{
+	stdout, stderr, status := runHookStartCommand(t, hook, "claude", "{}\n", append([]string{
 		"HOOK_START_TRACE=" + trace,
 		"HOOK_START_FULL_MODE=healthy",
 		"METASYSTEM_HOOK_DELEGATE_STATE_ROOT=" + root,
 		"METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT=" + root,
 		"METASYSTEM_HOOK_DELEGATE_JOB=job-forged",
-	}, false)
+	}, gitEnv...), false)
 	wantStdout, wantStatus := directNoticeOutcome(t, "custody-unreadable")
 	if status != wantStatus || stdout != wantStdout || stderr != "" {
 		t.Fatalf("forged delegate hint = status %d stdout %q stderr %q; want status %d stdout %q", status, stdout, stderr, wantStatus, wantStdout)
@@ -926,6 +919,7 @@ func TestHookStartForgedDelegateHintRefusesOnBash32(t *testing.T) {
 		strings.Contains(traceText, "\nup ") || strings.Contains(traceText, "\nsession start ") {
 		t.Fatalf("forged delegate hint continued after custody refusal: %s", traceText)
 	}
+	assertGit()
 	if after := snapshotFixtureTree(t, root); after != before {
 		t.Fatalf("forged delegate hint changed durable state\nbefore:\n%s\nafter:\n%s", before, after)
 	}
@@ -952,7 +946,7 @@ func assertFullPathContextObject(t *testing.T, stdout string) {
 func TestHookStartFailureBranchFixturesOnBash32(t *testing.T) {
 	tests := []struct {
 		key, mode, runtime, mutation string
-		gitRoot, engine              bool
+		gitSucceeds, engine          bool
 		environment                  []string
 	}{
 		{"engine-missing", "healthy", "claude", "", true, false, nil},
@@ -1008,22 +1002,22 @@ func TestHookStartFailureBranchFixturesOnBash32(t *testing.T) {
 			if test.engine {
 				writeExecutable(t, enginePath, fullPathFixtureEngine())
 			}
-			if test.gitRoot {
-				command := exec.Command("git", "init", "-q", "-b", "main", root)
-				if output, err := command.CombinedOutput(); err != nil {
-					t.Fatalf("git init: %v: %s", err, output)
-				}
+			expectedGitCalls := 1
+			switch test.key {
+			case "invocation-invalid", "custody-unreadable", "installation-directory":
+				expectedGitCalls = 0
 			}
+			toolDir, gitEnv, assertGit := newHookStartGitFixture(t, root, expectedGitCalls, !test.gitSucceeds)
 			before := snapshotFixtureTree(t, root)
 			environment := append([]string{
 				"HOOK_START_TRACE=" + trace,
 				"HOOK_START_FULL_MODE=" + test.mode,
 			}, test.environment...)
 			if test.key == "brain-timeout" {
-				shimDir := t.TempDir()
-				writeExecutable(t, filepath.Join(shimDir, "ps"), "#!/bin/bash\nprintf '%s\\n' \"${HOOK_START_PS_COMMAND:?}\"\n")
-				environment = append(environment, "PATH="+shimDir+":"+os.Getenv("PATH"), "HOOK_START_PS_COMMAND="+enginePath)
+				writeExecutable(t, filepath.Join(toolDir, "ps"), "#!/bin/bash\nprintf '%s\\n' \"${HOOK_START_PS_COMMAND:?}\"\n")
+				environment = append(environment, "HOOK_START_PS_COMMAND="+enginePath)
 			}
+			environment = append(environment, gitEnv...)
 			stdout, stderr, status := runHookStartCommand(t, hook, test.runtime, "{}\n", environment, false)
 			wantStdout, wantStatus := directNoticeOutcome(t, test.key)
 			if test.key == "arming" && test.mode == "arming" {
@@ -1054,6 +1048,7 @@ func TestHookStartFailureBranchFixturesOnBash32(t *testing.T) {
 					t.Fatalf("brain failure skipped supervision arming or holder-matched wait recovery: %v: %s", err, traceBytes)
 				}
 			}
+			assertGit()
 			if after := snapshotFixtureTree(t, root); after != before {
 				t.Fatalf("failure branch changed durable state\nbefore:\n%s\nafter:\n%s", before, after)
 			}
@@ -1077,10 +1072,7 @@ func assertHookStartBrainFailureKeepsWaitLineOnBash32(t *testing.T, mode string,
 	trace := filepath.Join(t.TempDir(), "trace")
 	enginePath := filepath.Join(root, "bin", "metasystem")
 	writeExecutable(t, enginePath, fullPathFixtureEngine())
-	command := exec.Command("git", "init", "-q", "-b", "main", root)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
+	toolDir, gitEnv, assertGit := newHookStartGitFixture(t, root, 1, false)
 	before := snapshotFixtureTree(t, root)
 	environment = append([]string{
 		"HOOK_START_TRACE=" + trace,
@@ -1088,10 +1080,10 @@ func assertHookStartBrainFailureKeepsWaitLineOnBash32(t *testing.T, mode string,
 		"HOOK_START_WAIT_MATCHED=1",
 	}, environment...)
 	if mode == "brain-timeout" {
-		shimDir := t.TempDir()
-		writeExecutable(t, filepath.Join(shimDir, "ps"), "#!/bin/bash\nprintf '%s\\n' \"${HOOK_START_PS_COMMAND:?}\"\n")
-		environment = append(environment, "PATH="+shimDir+":"+os.Getenv("PATH"), "HOOK_START_PS_COMMAND="+enginePath)
+		writeExecutable(t, filepath.Join(toolDir, "ps"), "#!/bin/bash\nprintf '%s\\n' \"${HOOK_START_PS_COMMAND:?}\"\n")
+		environment = append(environment, "HOOK_START_PS_COMMAND="+enginePath)
 	}
+	environment = append(environment, gitEnv...)
 	stdout, stderr, status := runHookStartCommand(t, hook, "claude", `{"session_id":"brain-wait","source":"startup"}`+"\n", environment, false)
 	wantStdout, wantStatus := directNoticeOutcome(t, mode)
 	wantStdout = appendSystemMessage(wantStdout, "WAIT RECOVERY fixture row")
@@ -1110,6 +1102,7 @@ func assertHookStartBrainFailureKeepsWaitLineOnBash32(t *testing.T, mode string,
 	if brainAt < 0 || upAt < brainAt || waitAt < upAt {
 		t.Fatalf("brain failure did not reach arming and holder-matched wait recovery in order: %s", traceText)
 	}
+	assertGit()
 	if after := snapshotFixtureTree(t, root); after != before {
 		t.Fatalf("brain-failure wait fixture changed fake durable state\nbefore:\n%s\nafter:\n%s", before, after)
 	}
@@ -1155,19 +1148,17 @@ func TestHookStartPostPreparationFixturesOnBash32(t *testing.T) {
 			hook := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
 			writeExecutable(t, hook, source)
 			writeExecutable(t, filepath.Join(root, "bin", "metasystem"), fullPathFixtureEngine())
-			command := exec.Command("git", "init", "-q", "-b", "main", root)
-			if output, err := command.CombinedOutput(); err != nil {
-				t.Fatalf("git init: %v: %s", err, output)
-			}
+			_, gitEnv, assertGit := newHookStartGitFixture(t, root, 1, false)
 			before := snapshotFixtureTree(t, root)
 			trace := filepath.Join(t.TempDir(), "trace")
-			stdout, stderr, status := runHookStartCommand(t, hook, "claude", "{}\n", []string{
+			stdout, stderr, status := runHookStartCommand(t, hook, "claude", "{}\n", append([]string{
 				"HOOK_START_TRACE=" + trace,
 				"HOOK_START_FULL_MODE=" + test.mode,
-			}, false)
+			}, gitEnv...), false)
 			if status != test.status || stdout != test.stdout || stderr != test.stderr {
 				t.Fatalf("post-preparation = status %d stdout %q stderr %q", status, stdout, stderr)
 			}
+			assertGit()
 			if after := snapshotFixtureTree(t, root); after != before {
 				t.Fatalf("post-preparation fixture changed fake durable state\nbefore:\n%s\nafter:\n%s", before, after)
 			}
@@ -1513,6 +1504,78 @@ func writeExecutable(t *testing.T, path, content string) {
 	}
 	if err := testexec.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func newHookStartGitFixture(t *testing.T, root string, expectedCalls int, failIdentification bool) (string, []string, func()) {
+	t.Helper()
+	physicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolDir := t.TempDir()
+	transcript := filepath.Join(t.TempDir(), "git-calls")
+	writeExecutable(t, filepath.Join(toolDir, "git"), `#!/bin/bash
+trace=${HOOK_START_GIT_TRACE:?}
+printf 'call\0' >>"$trace"
+printf '%s\0' "$@" >>"$trace"
+if [[ $# -ne 6 || ${1-} != -C || ${2-} != "${HOOK_START_GIT_ROOT:?}" ||
+      ${3-} != rev-parse || ${4-} != --path-format=absolute ||
+      ${5-} != --git-dir || ${6-} != --git-common-dir ]]; then
+  exit 93
+fi
+for name in GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE \
+    GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM \
+    GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT \
+    GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM \
+    GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE \
+    GIT_IMPLICIT_WORK_TREE GIT_NO_REPLACE_OBJECTS GIT_PREFIX; do
+  if [[ ${!name+x} == x ]]; then
+    exit 93
+  fi
+done
+printf 'valid\0' >>"$trace"
+case ${HOOK_START_GIT_MODE:?} in
+  ordinary)
+    printf '%s\n%s\n' "$HOOK_START_GIT_ROOT/.git" "$HOOK_START_GIT_ROOT/.git" ;;
+  identification-failure)
+    exit 67 ;;
+  *) exit 93 ;;
+esac
+`)
+	mode := "ordinary"
+	if failIdentification {
+		mode = "identification-failure"
+	}
+	environment := []string{
+		"PATH=" + toolDir + ":" + os.Getenv("PATH"),
+		"HOOK_START_GIT_ROOT=" + physicalRoot,
+		"HOOK_START_GIT_TRACE=" + transcript,
+		"HOOK_START_GIT_MODE=" + mode,
+	}
+	for _, name := range strings.Fields(`GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
+GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM
+GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM
+GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE
+GIT_IMPLICIT_WORK_TREE GIT_NO_REPLACE_OBJECTS GIT_PREFIX`) {
+		environment = append(environment, name+"=hook-start-sentinel")
+	}
+	return toolDir, environment, func() {
+		t.Helper()
+		got, err := os.ReadFile(transcript)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		var want []byte
+		for range expectedCalls {
+			want = append(want, []byte("call\x00-C\x00"+physicalRoot+"\x00rev-parse\x00--path-format=absolute\x00--git-dir\x00--git-common-dir\x00valid\x00")...)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("Git call transcript = %q, want %q", got, want)
+		}
 	}
 }
 

@@ -11,21 +11,21 @@ func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
 	t.Parallel()
 	t.Run("approved work returns to queued", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
-		seedLedger(t, root)
-		if result, err := Open(verbReq(root, "01J5X00000000000000000RV00", "mac-a"), "revoke-waiting", "Approval may be withdrawn.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+		endpoint, _ := fakeGoalEndpoint(t)
+		root := endpoint.Root
+		if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000RV00", "mac-a"), "revoke-waiting", "Approval may be withdrawn.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open approval fixture: %+v %v", result, err)
 		}
-		approveGoalForTest(t, verbReq(root, "01J5X00000000000000000RV10", "mac-a"), "revoke-waiting", testBudget())
+		approveGoalForTest(t, verbReqFor(endpoint, "01J5X00000000000000000RV10", "mac-a"), "revoke-waiting", testBudget())
 
-		withdraw := verbReq(root, "01J5X00000000000000000RV20", "mac-a")
+		withdraw := verbReqFor(endpoint, "01J5X00000000000000000RV20", "mac-a")
 		withdraw.Actor.Human = "Wido"
 		proof := testHumanAuthority(t, root, withdraw.Now)
 		result, err := Unapprove(withdraw, "revoke-waiting", "the reviewed work must wait", proof)
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("withdraw approved work: %+v %v", result, err)
 		}
-		tree, err := loadTree(root, result.Tip)
+		tree, err := loadTreeFor(endpoint, result.Tip)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +38,7 @@ func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
 			t.Fatalf("unapproval history did not retain the human reason: %+v", last)
 		}
 
-		retry := verbReq(root, "01J5X00000000000000000RV30", "mac-a")
+		retry := verbReqFor(endpoint, "01J5X00000000000000000RV30", "mac-a")
 		retry.Actor.Human = "Wido"
 		result, err = Unapprove(retry, "revoke-waiting", "withdraw again", proof)
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "APPROVAL_REQUIRED") || !strings.Contains(result.Detail, "this unapprove is refused") {
@@ -48,23 +48,23 @@ func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
 
 	t.Run("claimed work is parked and its claimant is displaced", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
-		seedLedger(t, root)
-		if result, err := Open(verbReq(root, "01J5X00000000000000000RC00", "mac-a"), "revoke-running", "Withdraw a running approval.", OriginMain, "Run."); err != nil || result.Outcome != OutcomeConfirmed {
+		endpoint, _ := fakeGoalEndpoint(t)
+		root := endpoint.Root
+		if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000RC00", "mac-a"), "revoke-running", "Withdraw a running approval.", OriginMain, "Run."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open approval fixture: %+v %v", result, err)
 		}
-		claim := verbReq(root, "01J5X00000000000000000RC10", "mac-a")
+		claim := verbReqFor(endpoint, "01J5X00000000000000000RC10", "mac-a")
 		if result, err := claimApprovedForTest(t, claim, "revoke-running", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim approval fixture: %+v %v", result, err)
 		}
 
-		withdraw := verbReq(root, "01J5X00000000000000000RC20", "mac-b")
+		withdraw := verbReqFor(endpoint, "01J5X00000000000000000RC20", "mac-b")
 		withdraw.Actor.Human = "Wido"
 		result, err := Unapprove(withdraw, "revoke-running", "stop admitting new reservations", testHumanAuthority(t, root, withdraw.Now))
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("withdraw claimed work: %+v %v", result, err)
 		}
-		tree, err := loadTree(root, result.Tip)
+		tree, err := loadTreeFor(endpoint, result.Tip)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -85,7 +85,7 @@ func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
 
 func TestUnapproveRequiresCompleteHumanAuthority(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
+	root := t.TempDir()
 	request := verbReq(root, "01J5X00000000000000000RA00", "mac-a")
 	if _, err := Unapprove(request, "missing", "because", nil); err == nil || !strings.Contains(err.Error(), "human-only") {
 		t.Fatalf("agent-shaped unapproval did not refuse before publication: %v", err)
@@ -101,13 +101,13 @@ func TestUnapproveRequiresCompleteHumanAuthority(t *testing.T) {
 
 func TestApproveRefusalsAndProvenReratification(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if result, err := Open(verbReq(root, "01J5X00000000000000000RR00", "mac-a"), "ratify-once", "Ratify one exact payload.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000RR00", "mac-a"), "ratify-once", "Ratify one exact payload.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open approval fixture: %+v %v", result, err)
 	}
 
-	human := verbReq(root, "01J5X00000000000000000RR10", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000RR10", "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
 	if _, err := Approve(human, nil, ptrBudget(testBudget()), proof); err == nil || !strings.Contains(err.Error(), "at least one goal id") {
@@ -134,7 +134,7 @@ func TestApproveRefusalsAndProvenReratification(t *testing.T) {
 		t.Fatalf("identical proven approval was not an explicit no-op: %+v %v", result, err)
 	}
 
-	if result, err = Claim(verbReq(root, "01J5X00000000000000000RR50", "mac-a"), "ratify-once"); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err = Claim(verbReqFor(endpoint, "01J5X00000000000000000RR50", "mac-a"), "ratify-once"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim approved fixture: %+v %v", result, err)
 	}
 	human.Ulid = "01J5X00000000000000000RR60"
@@ -146,19 +146,19 @@ func TestApproveRefusalsAndProvenReratification(t *testing.T) {
 
 func TestApproveRecordsABoxWhileLeavingAParkStanding(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if result, err := Open(verbReq(root, "01J5X00000000000000000RP00", "mac-a"), "parked-ratification", "Keep the pause while changing the box.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000RP00", "mac-a"), "parked-ratification", "Keep the pause while changing the box.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open parked approval fixture: %+v %v", result, err)
 	}
-	human := verbReq(root, "01J5X00000000000000000RP10", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000RP10", "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
 	first := testBudget()
 	if result, err := Approve(human, []string{"parked-ratification"}, &first, proof); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("approve parked fixture: %+v %v", result, err)
 	}
-	park := verbReq(root, "01J5X00000000000000000RP20", "mac-a")
+	park := verbReqFor(endpoint, "01J5X00000000000000000RP20", "mac-a")
 	if result, err := Park(park, "parked-ratification", "wait for a dependency"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("park approved fixture: %+v %v", result, err)
 	}
@@ -170,7 +170,7 @@ func TestApproveRecordsABoxWhileLeavingAParkStanding(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("approve a parked goal with a new box: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestApproveRecordsABoxWhileLeavingAParkStanding(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "same proven approval") {
 		t.Fatalf("identical parked approval was not an explicit no-op: %+v %v", result, err)
 	}
-	tree, err = loadTree(root, result.Tip)
+	tree, err = loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,11 +197,11 @@ func TestApproveRecordsABoxWhileLeavingAParkStanding(t *testing.T) {
 		t.Fatalf("identical parked approval recorded a line or moved the park: %+v", file)
 	}
 
-	unpark := verbReq(root, "01J5X00000000000000000RP40", "mac-a")
+	unpark := verbReqFor(endpoint, "01J5X00000000000000000RP40", "mac-a")
 	if result, err = Unpark(unpark, "parked-ratification"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark ratified goal: %+v %v", result, err)
 	}
-	tree, err = loadTree(root, result.Tip)
+	tree, err = loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,13 +212,13 @@ func TestApproveRecordsABoxWhileLeavingAParkStanding(t *testing.T) {
 
 func TestEnrolledTerminalFoldsItsOperationIntoOverNormApproval(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	open := verbReq(root, "01J5X00000000000000000RN00", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	open := verbReqFor(endpoint, "01J5X00000000000000000RN00", "mac-a")
 	if result, err := OpenTiered(open, "terminal-over-norm", "Fold the terminal word into the norm claim.", OriginMain, "Check idempotency.", 1, nil); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open over-norm fixture: %+v %v", result, err)
 	}
-	human := verbReq(root, "01J5X00000000000000000RN10", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000RN10", "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
 	budget := testBudget()
@@ -227,7 +227,7 @@ func TestEnrolledTerminalFoldsItsOperationIntoOverNormApproval(t *testing.T) {
 	if err != nil || first.Outcome != OutcomeConfirmed {
 		t.Fatalf("real enrolled-terminal over-norm act was not folded in: result=%+v err=%v", first, err)
 	}
-	tree, err := loadTree(root, first.Tip)
+	tree, err := loadTreeFor(endpoint, first.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestEnrolledTerminalFoldsItsOperationIntoOverNormApproval(t *testing.T) {
 	if err != nil || second.Outcome != OutcomeAbandoned || !strings.Contains(second.Detail, "same proven approval") {
 		t.Fatalf("identical terminal-folded approval was not a no-op: %+v %v", second, err)
 	}
-	tree, err = loadTree(root, second.Tip)
+	tree, err = loadTreeFor(endpoint, second.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestApprovalRequiredNamesEveryClaimProducingPath(t *testing.T) {
 
 func TestExecutionGateRejectsIntentAndBudgetDigestEdits(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
+	root := t.TempDir()
 	seedGoalNormConfig(t, root)
 	approved := approvedGoalFixture(vGoal("digest-bound", StateQueued), testBudget())
 	tree := &TreeGoals{Root: vRoot(), Live: map[string]*GoalFile{approved.Id: approved}}
@@ -324,19 +324,19 @@ func TestApprovalRecordRejectsEveryIncompleteBindingClass(t *testing.T) {
 
 func TestRelayedSweepExpiresAtReviewDate(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	seedGoalNormConfig(t, root)
 	budget := testBudget()
 	waiting := vGoal("relay-sweep", StateQueued)
 	waiting.Budget = &budget
-	publishGoalFixtures(t, root, waiting)
+	publishGoalFixturesForEndpoint(t, endpoint, waiting)
 
-	human := verbReq(root, "01J5X00000000000000000RS00", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000RS00", "mac-a")
 	human.Now = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	human.Actor.Human = "Wido"
 	proof := testTemporaryGoalProof(t, root, "Wido approves this sweep", "2026-09-02")
-	listing, err := PreviewApprovalSweep(endpointFor(root), human.Now)
+	listing, err := PreviewApprovalSweep(endpoint, human.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestRelayedSweepExpiresAtReviewDate(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("relayed sweep: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,14 +353,14 @@ func TestRelayedSweepExpiresAtReviewDate(t *testing.T) {
 		t.Fatalf("relayed sweep did not record its temporary authority: %+v", file)
 	}
 
-	claim := verbReq(root, "01J5X00000000000000000RS10", "mac-a")
+	claim := verbReqFor(endpoint, "01J5X00000000000000000RS10", "mac-a")
 	claim.Now = time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	result, err = Claim(claim, waiting.Id)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "APPROVAL_EXPIRED") || !strings.Contains(result.Detail, "review date 2026-09-02 has passed") {
 		t.Fatalf("the relayed word admitted work after its review date: %+v %v", result, err)
 	}
 
-	second, err := PreviewApprovalSweep(endpointFor(root), claim.Now)
+	second, err := PreviewApprovalSweep(endpoint, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,18 +419,18 @@ func TestSweepListingBindsIntentBudgetAndDisplayedApproval(t *testing.T) {
 
 func TestProvenSweepWithNoEligibleChangesIsExplicitNoOp(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if result, err := Open(verbReq(root, "01J5X00000000000000000PN00", "mac-a"), "already-proven", "Already approved.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000PN00", "mac-a"), "already-proven", "Already approved.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open approval fixture: %+v %v", result, err)
 	}
-	request := verbReq(root, "01J5X00000000000000000PN10", "mac-a")
+	request := verbReqFor(endpoint, "01J5X00000000000000000PN10", "mac-a")
 	approveGoalForTest(t, request, "already-proven", testBudget())
-	listing, err := PreviewApprovalSweep(endpointFor(root), request.Now)
+	listing, err := PreviewApprovalSweep(endpoint, request.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	human := verbReq(root, "01J5X00000000000000000PN20", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000PN20", "mac-a")
 	human.Actor.Human = "Wido"
 	result, err := ApproveSweep(human, listing.Digest, testHumanAuthority(t, root, human.Now))
 	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "no absent or relayed approval") {
@@ -443,7 +443,7 @@ func TestProvenSweepWithNoEligibleChangesIsExplicitNoOp(t *testing.T) {
 
 func TestGoalNormCheckCoversWithinAndOverNormRemedies(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
+	root := t.TempDir()
 	seedGoalNormConfig(t, root)
 	within := Budget{ReservedJobMinutesLimit: 1200, ReviewRoundLimit: 3}
 	if err := requireWithinGoalNorm(root, 3, within, "within", ""); err != nil {
@@ -466,14 +466,14 @@ func TestGoalNormCheckCoversWithinAndOverNormRemedies(t *testing.T) {
 
 func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	seedGoalNormConfig(t, root)
-	if result, err := Open(verbReq(root, "01J5X00000000000000000NR00", "mac-a"), "covered-over-norm", "Run one approved exception.", OriginMain, "Wait for approval."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000NR00", "mac-a"), "covered-over-norm", "Run one approved exception.", OriginMain, "Wait for approval."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open over-norm fixture: %+v %v", result, err)
 	}
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1, ReviewRoundLimit: 3}
-	human := verbReq(root, "01J5X00000000000000000NR10", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000NR10", "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testFixtureHumanAuthority(t, root, human.Now)
 	result, err := Approve(human, []string{"covered-over-norm"}, &over, proof)
@@ -493,7 +493,7 @@ func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) 
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("covering token did not admit the over-norm approval: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) 
 	if claim == nil || claim.ApprovedRef != "R-401" || claim.Minutes != 1500 || claim.GoalRevision != 1 {
 		t.Fatalf("approval did not store the exact covering token: %+v", claim)
 	}
-	result, err = Claim(verbReq(root, "01J5X00000000000000000NR30", "mac-a"), "covered-over-norm")
+	result, err = Claim(verbReqFor(endpoint, "01J5X00000000000000000NR30", "mac-a"), "covered-over-norm")
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("stored covering token did not admit execution: %+v %v", result, err)
 	}
@@ -509,9 +509,8 @@ func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) 
 
 func TestFleetEnrollmentValidationAndIdempotence(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	request := verbReq(root, "01J5X00000000000000000EN00", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	request := verbReqFor(endpoint, "01J5X00000000000000000EN00", "mac-a")
 	if _, err := RecordFleetEnrollment(request, 0); err == nil || !strings.Contains(err.Error(), "positive generation") {
 		t.Fatalf("zero fleet generation did not refuse: %v", err)
 	}

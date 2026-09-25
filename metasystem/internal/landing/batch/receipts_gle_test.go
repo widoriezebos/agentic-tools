@@ -73,7 +73,8 @@ func TestGLEBatchReceiptReplansAndVerifiesBeforeReuse(t *testing.T) {
 
 func TestGLEBatchCachedReceiptCannotOutliveMemberFence(t *testing.T) {
 	t.Parallel()
-	_, store := prefixReceiptBed(t)
+	bed, store := prefixReceiptBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{testCommit(203)}))
 	prepared := load(t, store)
 	prepared.Seal = map[string]Claim{"goal-a": {Revision: 2, AccountingRevision: 1}}
 	must(t, store.Update(testBatchID, func(record *Record) error { record.Seal = prepared.Seal; return nil }))
@@ -136,7 +137,8 @@ func TestGLEBatchFreshEpisodeSurvivesRestartAndRenewsOnExpiryOrBaseMove(t *testi
 
 func TestGLEBatchFencedQueuedMemberReturnsAndReassemblesSurvivor(t *testing.T) {
 	t.Parallel()
-	_, store := prefixReceiptBed(t)
+	bed, store := prefixReceiptBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, []string{testCommit(203)}))
 	err := ComposePrefixReceipts(store, testBatchID, "owner", time.Unix(3, 0), PrefixReceiptSeams{Execute: func(string, string, []string) (PrefixRunResult, error) {
 		return PrefixRunResult{}, &PrefixFencedRefusal{Reason: "CANDIDATE_GOAL_REFUSED state=fenced"}
 	}})

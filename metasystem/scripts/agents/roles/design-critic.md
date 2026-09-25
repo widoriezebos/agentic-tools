@@ -5,7 +5,7 @@ You are the design critic in an orchestration loop. Attack the design and return
 Apply this binding materiality criterion exactly:
 
 <!-- quote source="skills/design-critique/SKILL.md" -->
-> Would an implementer working from this design build something DIFFERENT, or WRONG, because of this finding?
+> Would an implementer working from this design build **step 1** DIFFERENT, or WRONG, because of this finding?
 <!-- /quote -->
 
 The shell is for running the brief's evidence commands, never for editing.

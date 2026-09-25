@@ -115,8 +115,17 @@ func TestChannelFakeServeStopsAtInjectedExpiry(t *testing.T) {
 
 func TestWaitChannelAnswer(t *testing.T) {
 	root := t.TempDir()
-	runReceiptGit(t, root, "init", "-q", "-b", "main")
-	runReceiptGit(t, root, "config", "metasystem.goal.machine", "m")
+	resolveMachine := func(actualRoot string) (string, error) {
+		if actualRoot != root {
+			t.Fatalf("channel machine root %q, want %q", actualRoot, root)
+		}
+		return goal.ResolveMachineWithConfig(actualRoot, func(configRoot, key string) (string, error) {
+			if configRoot != root || key != "metasystem.goal.machine" {
+				t.Fatalf("channel machine lookup root=%q key=%q", configRoot, key)
+			}
+			return "m", nil
+		})
+	}
 	fakeDir, _ := commandFakeBed(t)
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("channel.destination.fleet.adapter=fake\nchannel.destination.fleet.fake.dir="+fakeDir+"\nchannel.human.slack.user-id=human-a\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -144,7 +153,7 @@ func TestWaitChannelAnswer(t *testing.T) {
 		return 23
 	}
 	code, _, problem := captureChannelOutput(t, func() int {
-		return runChannelWait([]string{"--root", root, "--question", questionA.ID, "--timeout", "60", "--poll-seconds", "7"})
+		return runChannelWaitWithMachine([]string{"--root", root, "--question", questionA.ID, "--timeout", "60", "--poll-seconds", "7"}, resolveMachine)
 	})
 	if code != 23 || problem != "" {
 		t.Fatalf("translated wait code=%d stderr=%q", code, problem)
@@ -165,12 +174,14 @@ func TestWaitChannelAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, _, problem = captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", legacy.ID}) })
+	code, _, problem = captureChannelOutput(t, func() int {
+		return runChannelWaitWithMachine([]string{"--root", root, "--question", legacy.ID}, resolveMachine)
+	})
 	if code != 67 || !strings.Contains(problem, "no ledgerCursor") {
 		t.Fatalf("legacy question code=%d stderr=%q", code, problem)
 	}
 	code, _, problem = captureChannelOutput(t, func() int {
-		return runChannelWait([]string{"--root", root, "--question", legacy.ID, "--after", strings.Repeat("c", 40)})
+		return runChannelWaitWithMachine([]string{"--root", root, "--question", legacy.ID, "--after", strings.Repeat("c", 40)}, resolveMachine)
 	})
 	if code != 23 || problem != "" || !strings.Contains(strings.Join(received, "\x00"), "--after\x00"+strings.Repeat("c", 40)) {
 		t.Fatalf("explicit legacy cursor was not translated: code=%d args=%v stderr=%q", code, received, problem)
@@ -190,7 +201,9 @@ func TestWaitChannelAnswer(t *testing.T) {
 		}
 		return 0
 	}
-	code, out, problem := captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", questionA.ID}) })
+	code, out, problem := captureChannelOutput(t, func() int {
+		return runChannelWaitWithMachine([]string{"--root", root, "--question", questionA.ID}, resolveMachine)
+	})
 	if code != 0 || problem != "" || !strings.Contains(out, "accepted answer text") {
 		t.Fatalf("accepted answer output code=%d stdout=%q stderr=%q", code, out, problem)
 	}
@@ -215,7 +228,9 @@ func TestWaitChannelAnswer(t *testing.T) {
 		}
 		return 0
 	}
-	code, out, problem = captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--resume", waitID}) })
+	code, out, problem = captureChannelOutput(t, func() int {
+		return runChannelWaitWithMachine([]string{"--root", root, "--resume", waitID}, resolveMachine)
+	})
 	if code != 0 || problem != "" || strings.TrimSpace(out) != "accepted answer text" {
 		t.Fatalf("channel resume code=%d stdout=%q stderr=%q", code, out, problem)
 	}
@@ -227,7 +242,9 @@ func TestWaitChannelAnswer(t *testing.T) {
 	}
 	called := false
 	channelWaitCommand = func([]string, func(context.Context) error) int { called = true; return 0 }
-	code, _, problem = captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", unconfigured, "--question", questionC.ID}) })
+	code, _, problem = captureChannelOutput(t, func() int {
+		return runChannelWaitWithMachine([]string{"--root", unconfigured, "--question", questionC.ID}, resolveMachine)
+	})
 	if code != 1 || called || !strings.Contains(problem, "requires a configured channel provider") {
 		t.Fatalf("unconfigured provider code=%d called=%t stderr=%q", code, called, problem)
 	}
@@ -262,7 +279,36 @@ func commandFakeBed(t *testing.T) (string, string) {
 
 func TestChannelStatusPostSeedsAnUnbootedBrainStatus(t *testing.T) {
 	dir, _ := commandFakeBed(t)
-	root := syncedClaimedGoalFixture(t)
+	fixtureNow := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, fixtureNow, false)
+	root := repository.root
+	t.Setenv("METASYSTEM_GOAL_NOW", fixtureNow.Format(time.RFC3339))
+	endpoint := goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: repository}
+	resolveEndpoint := func(actualRoot string) (goal.Endpoint, error) {
+		if actualRoot != root {
+			t.Fatalf("status endpoint root %q, want %q", actualRoot, root)
+		}
+		return endpoint, nil
+	}
+	resolveMachine := func(actualRoot string) (string, error) {
+		if actualRoot != root {
+			t.Fatalf("status machine root %q, want %q", actualRoot, root)
+		}
+		return goal.ResolveMachineWithConfig(actualRoot, func(configRoot, key string) (string, error) {
+			if configRoot != root || key != "metasystem.goal.machine" {
+				t.Fatalf("status machine lookup root=%q key=%q", configRoot, key)
+			}
+			return "mac-cli", nil
+		})
+	}
+	landingCalls := 0
+	landingLog := func(actualRoot string, windowStart time.Time) ([]byte, error) {
+		landingCalls++
+		if actualRoot != root || !windowStart.Equal(fixtureNow.Add(-4*time.Hour)) {
+			t.Fatalf("status landing log root=%q window=%s", actualRoot, windowStart)
+		}
+		return []byte{}, nil
+	}
 	conf, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +321,7 @@ func TestChannelStatusPostSeedsAnUnbootedBrainStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := brain.Record{
-		Schema: brain.Schema, Ledger: goal.ExistingLedgerIdentity(root), Machine: "mac-cli",
+		Schema: brain.Schema, Ledger: goal.ExistingLedgerIdentityAtEndpoint(endpoint), Machine: "mac-cli",
 		DeclaredBy: "Wido", DeclaredAt: "2026-09-07T00:00:00Z",
 	}
 	data, err := json.Marshal(record)
@@ -292,9 +338,25 @@ func TestChannelStatusPostSeedsAnUnbootedBrainStatus(t *testing.T) {
 		t.Fatalf("unbooted fixture unexpectedly had a status file: %v", err)
 	}
 
-	code, _, problem := captureChannelOutput(t, func() int { return runChannelStatus([]string{"--root", root, "--post"}) })
+	code, _, problem := captureChannelOutput(t, func() int {
+		return runChannelStatusWithInputs([]string{"--root", root, "--post"}, resolveMachine, resolveEndpoint, landingLog)
+	})
 	if code != 0 || problem != "" {
 		t.Fatalf("first status post failed: code=%d stderr=%q", code, problem)
+	}
+	if landingCalls != 1 {
+		t.Fatalf("status landing log calls=%d, want one", landingCalls)
+	}
+	posted := channel.LoadStatusState(root)
+	if !posted.LastPost.Equal(fixtureNow) || posted.ContentDigest == "" || posted.Ref.ID == "" {
+		t.Fatalf("first status post did not persist its provider result: %+v", posted)
+	}
+	wrongRoot := t.TempDir()
+	wrongReport, _, err := channel.ComposeStatusReportAtEndpoint(channel.ReportConfig{RepoRoot: wrongRoot, Machine: "mac-cli", Now: fixtureNow}, endpoint, func(string, time.Time) ([]byte, error) {
+		return []byte{}, nil
+	})
+	if err != nil || !strings.Contains(wrongReport, "Backlog order: unavailable — status endpoint root") {
+		t.Fatalf("status endpoint accepted a different root: report=%q err=%v", wrongReport, err)
 	}
 	status, err := brain.ReadStatus(root)
 	if err != nil || status.Line != brain.StatusLine(record) || status.LastPostedAt == "" {

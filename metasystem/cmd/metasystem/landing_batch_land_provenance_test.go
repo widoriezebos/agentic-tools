@@ -3,9 +3,11 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +17,7 @@ import (
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
 
 const batchProvenanceTestID = "01j5x00000000000000000baff"
@@ -266,7 +269,230 @@ func TestBatchChainCommitKeepsWouldRefuseVerdictBehavior(t *testing.T) {
 	}
 }
 
+func TestBatchLandingVerdictPolicyWithoutGit(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, verdict string
+		branch        bool
+		refused       bool
+	}{
+		{name: "branch would-refuse ejects", branch: true, verdict: "would-refuse code=chain-not-implementation", refused: true},
+		{name: "branch pass pushes", branch: true, verdict: "pass bar=a"},
+		{name: "chain keeps would-refuse behavior", verdict: "would-refuse code=chain-not-implementation"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if _, err := os.Stat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
+				t.Fatalf("fixture contains Git metadata: %v", err)
+			}
+
+			wrapper := filepath.Join(root, "scripts", "agents", "commit.sh")
+			argsFile := filepath.Join(root, "wrapper.args")
+			if err := os.MkdirAll(filepath.Dir(wrapper), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := testexec.WriteFile(wrapper, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" >> wrapper.args\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			store := batch.NewStore(root, nil).WithReassembly(
+				func(string, []batch.Unit) ([]string, error) { t.Fatal("unexpected survivor assembly"); return nil, nil },
+				func(string, string) error { t.Fatal("unexpected branch deletion"); return nil },
+				func(string, string, string, string, []batch.Unit) (string, error) {
+					t.Fatal("unexpected branch rebuild")
+					return "", nil
+				},
+			)
+			at := time.Unix(3, 0)
+			if _, err := batch.FindOrCreateOpen(store, "base-tree", batchProvenanceTestID, landingOwnerLineage, at); err != nil {
+				t.Fatal(err)
+			}
+			unit := batch.Unit{GoalID: "goal-a", Chain: "chain-a", State: batch.UnitJoined,
+				Claim:      batch.Claim{Machine: "seat", Lineage: "seat-lineage", Epoch: 1, Revision: 2, AccountingRevision: 2},
+				AuthorName: "Approver", AuthorEmail: "approver@example.invalid"}
+			if tc.branch {
+				unit.BranchTip = "source-tip"
+				unit.CommitIDs = []string{"source-commit"}
+				unit.Builds = []batch.BranchBuild{{Units: []string{"unit-a"}, Commit: "source-commit"}}
+			}
+			if err := store.Update(batchProvenanceTestID, func(record *batch.Record) error {
+				record.Units = []batch.Unit{unit}
+				record.TipTree = "tip-tree"
+				record.PrefixTrees = []string{"tip-tree"}
+				record.Proof = &batch.Proof{Status: "green", AttemptID: "green-proof"}
+				record.Transition(batch.StateLanding, at, "prove", landingOwnerLineage, "green")
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			record, err := store.Load(batchProvenanceTestID)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			reads := []struct {
+				args  []string
+				value string
+			}{
+				{[]string{"rev-parse", "HEAD"}, "base"},
+				{[]string{"rev-parse", "HEAD"}, "landed"},
+				{[]string{"rev-parse", "landed^"}, "base"},
+				{[]string{"rev-parse", "HEAD"}, "landed"},
+			}
+			if tc.branch {
+				reads = append(reads, struct {
+					args  []string
+					value string
+				}{
+					[]string{"show", "-s", "--format=%(trailers:key=Landing-Provenance-Verdict,valueonly)", "landed"}, tc.verdict,
+				})
+			}
+			readCount := 0
+			readGit := func(gitRoot string, args ...string) (string, error) {
+				if readCount >= len(reads) || gitRoot != root || !reflect.DeepEqual(args, reads[readCount].args) {
+					t.Fatalf("unexpected Git read %d: root=%q args=%v; chain trailer would be %q", readCount, gitRoot, args, tc.verdict)
+				}
+				if readCount == 0 {
+					if _, err := os.Stat(argsFile); !os.IsNotExist(err) {
+						t.Fatalf("wrapper ran before pre-HEAD read: %v", err)
+					}
+				} else if _, err := os.Stat(argsFile); err != nil {
+					t.Fatalf("wrapper has not run at Git read %d: %v", readCount, err)
+				}
+				value := reads[readCount].value
+				readCount++
+				return value, nil
+			}
+			seams := batchLandSeamsWithRead(root, batchProvenanceTestID, record, "base", landingOwnerLineage, readGit)
+			calls := map[string]int{}
+			call := func(name string) { calls[name]++ }
+			seams.Origin = func() (string, error) { call("origin"); return "base", nil }
+			seams.OriginTree = func(string) (string, error) { t.Fatal("unexpected origin tree read"); return "", nil }
+			seams.Prepare = func(base string) error {
+				if base != "base-tree" {
+					t.Fatalf("prepare base=%q", base)
+				}
+				call("prepare")
+				return nil
+			}
+			seams.Apply = func(got batch.Unit) error {
+				if got.GoalID != unit.GoalID {
+					t.Fatalf("apply unit=%q", got.GoalID)
+				}
+				call("apply")
+				return nil
+			}
+			seams.AppendReceipt = func(got batch.Unit, receipt batch.PrefixReceipt) error {
+				if got.GoalID != unit.GoalID || receipt.Tree != "tip-tree" {
+					t.Fatalf("chain receipt=%+v", receipt)
+				}
+				call("receipt")
+				return nil
+			}
+			seams.ApplyBuild = func(got batch.Unit, build batch.BranchBuild) error {
+				if got.GoalID != unit.GoalID || build.Commit != "source-commit" {
+					t.Fatalf("build=%+v", build)
+				}
+				call("apply-build")
+				return nil
+			}
+			seams.AppendBuildReceipt = func(got batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) error {
+				if got.GoalID != unit.GoalID || build.Commit != "source-commit" || receipt.Tree != "tip-tree" {
+					t.Fatalf("build receipt=%+v", receipt)
+				}
+				call("build-receipt")
+				return nil
+			}
+			seams.Held = func(base, tip string) error {
+				if base != "base-tree" || tip != "landed" {
+					t.Fatalf("held base=%q tip=%q", base, tip)
+				}
+				call("held")
+				return nil
+			}
+			seams.VerifySeries = func(units []batch.Unit, commits map[string]string) error {
+				if len(units) != 1 || units[0].GoalID != unit.GoalID || commits[unit.GoalID] != "landed" {
+					t.Fatalf("verify units=%+v commits=%v", units, commits)
+				}
+				call("verify")
+				return nil
+			}
+			seams.PublishBranch = func(expected, tip string) error {
+				if expected != "" || tip != "landed" {
+					t.Fatalf("publish expected=%q tip=%q", expected, tip)
+				}
+				call("publish")
+				return nil
+			}
+			seams.Push = func(base, tip string) error {
+				if base != "base-tree" || tip != "landed" {
+					t.Fatalf("push base=%q tip=%q", base, tip)
+				}
+				call("push")
+				return nil
+			}
+			seams.Reset = func(base string) error {
+				if base != "base-tree" {
+					t.Fatalf("reset base=%q", base)
+				}
+				call("reset")
+				return nil
+			}
+			seams.Cleanup = func() error { call("cleanup"); return nil }
+			seams.Abandon = func(string, string) error { t.Fatal("unexpected abandon"); return nil }
+			seams.SeriesOnOrigin = func(string, string) (bool, error) { t.Fatal("unexpected origin membership check"); return false, nil }
+			seams.RecoverPush = func(string, string, string) (batch.PushRecovery, error) {
+				t.Fatal("unexpected push recovery")
+				return batch.PushRecovery{}, nil
+			}
+
+			landErr := batch.LandSeries(store, batchProvenanceTestID, landingOwnerLineage, at, seams)
+			landedRecord, loadErr := store.Load(batchProvenanceTestID)
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			if tc.refused {
+				if landErr == nil || !strings.Contains(landErr.Error(), "BATCH_LAND_UNPROVENANCED") ||
+					landedRecord.State != batch.StateDissolved || landedRecord.Units[0].State != batch.UnitReturnPending ||
+					landedRecord.Units[0].Outcome != batch.UnitEjected || !strings.Contains(landedRecord.Units[0].Failure, tc.verdict) {
+					t.Fatalf("branch refusal error=%v record=%+v", landErr, landedRecord)
+				}
+			} else if landErr != nil || landedRecord.State != batch.StateLanding || landedRecord.Landing == nil || !landedRecord.Landing.PushComplete || landedRecord.Landing.Commits[unit.GoalID] != "landed" || landedRecord.Units[0].State != batch.UnitJoined {
+				t.Fatalf("passing landing error=%v record=%+v", landErr, landedRecord)
+			}
+			wantCalls := map[string]int{"origin": 1, "prepare": 1}
+			if tc.branch {
+				wantCalls["apply-build"], wantCalls["build-receipt"] = 1, 1
+			} else {
+				wantCalls["apply"], wantCalls["receipt"] = 1, 1
+			}
+			if tc.refused {
+				wantCalls["reset"] = 1
+			} else {
+				wantCalls["publish"], wantCalls["held"], wantCalls["verify"], wantCalls["push"], wantCalls["cleanup"] = 1, 1, 1, 1, 1
+			}
+			if !reflect.DeepEqual(calls, wantCalls) || readCount != len(reads) {
+				t.Fatalf("effects=%v want=%v Git reads=%d want=%d", calls, wantCalls, readCount, len(reads))
+			}
+			args, err := os.ReadFile(argsFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSpace(string(args)), "\n")
+			declaration := []string{"--chain", "chain-a"}
+			if tc.branch {
+				declaration = []string{"--attested", "source-commit", "--attested-snapshot", "source-tip", "--attested-base", "base"}
+			}
+			wantPrefix := append(declaration, "--goal", "goal-a", "--test-receipt", filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", batchProvenanceTestID+".json"), "-F")
+			if len(lines) != len(wantPrefix)+1 || !reflect.DeepEqual(lines[:len(wantPrefix)], wantPrefix) || !strings.HasPrefix(lines[len(wantPrefix)], filepath.Join(root, ".batch-commit-message-")) {
+				t.Fatalf("wrapper argv=%q want prefix=%q and message path", lines, wantPrefix)
+			}
+		})
+	}
+}
+
 func TestBatchRecoveryFindsProductionProvenanceShapes(t *testing.T) {
+	t.Parallel()
 	change := strings.Repeat("a", 64)
 	certified := strings.Repeat("b", 64)
 	for _, test := range []struct {
@@ -288,6 +514,7 @@ func TestBatchRecoveryFindsProductionProvenanceShapes(t *testing.T) {
 }
 
 func TestBatchRecoveryRequiresExactChainField(t *testing.T) {
+	t.Parallel()
 	change := strings.Repeat("c", 64)
 	for _, test := range []struct {
 		name, trailer string
@@ -384,6 +611,7 @@ func TestBatchMixedBranchAndChainMembersLandInBothOrders(t *testing.T) {
 }
 
 func TestBatchRecoveryResolvesEachChainToItsOwnCommit(t *testing.T) {
+	t.Parallel()
 	change := strings.Repeat("d", 64)
 	record, commits := recoverBatchProvenanceFixture(t,
 		[]string{"chain-a", "chain-b"},
@@ -398,6 +626,7 @@ func TestBatchRecoveryResolvesEachChainToItsOwnCommit(t *testing.T) {
 }
 
 func TestBatchRecoveryUsesNewestMatchingCommit(t *testing.T) {
+	t.Parallel()
 	change := strings.Repeat("e", 64)
 	record, commits := recoverBatchProvenanceFixture(t,
 		[]string{"repeated-chain"},
@@ -414,25 +643,14 @@ func TestBatchRecoveryUsesNewestMatchingCommit(t *testing.T) {
 func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers [][]string) (batch.Record, []string) {
 	t.Helper()
 	root := t.TempDir()
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	batchProvenanceGit(t, "init", "-q", "--bare", origin)
-	batchProvenanceGit(t, "init", "-q", "-b", "main", root)
-	batchProvenanceGit(t, "-C", root, "config", "user.name", "Fixture")
-	batchProvenanceGit(t, "-C", root, "config", "user.email", "fixture@example.invalid")
-	batchProvenanceGit(t, "-C", root, "commit", "--allow-empty", "-qm", "base")
-	batchProvenanceGit(t, "-C", root, "remote", "add", "origin", origin)
-	batchProvenanceGit(t, "-C", root, "push", "-q", "-u", "origin", "main")
-
-	commits := make([]string, 0, len(commitTrailers))
-	for index, trailers := range commitTrailers {
-		args := []string{"-C", root, "commit", "--allow-empty", "-qm", "landing fixture " + string(rune('a'+index))}
-		for _, trailer := range trailers {
-			args = append(args, "--trailer", trailer)
-		}
-		batchProvenanceGit(t, args...)
-		commits = append(commits, batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD"))
+	commits := make([]string, len(commitTrailers))
+	var log strings.Builder
+	for index := range commitTrailers {
+		commits[index] = fmt.Sprintf("%040x", index+1)
 	}
-	batchProvenanceGit(t, "-C", root, "push", "-q", "origin", "main")
+	for index := len(commitTrailers) - 1; index >= 0; index-- {
+		log.WriteString(commits[index] + "\x00" + strings.Join(commitTrailers[index], "\n") + "\n\x00")
+	}
 
 	units := make([]batch.Unit, 0, len(chains))
 	for index, chain := range chains {
@@ -444,27 +662,73 @@ func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers
 	store := batch.NewStore(root, nil)
 	record := batch.Record{
 		Schema: 1, BatchID: batchProvenanceTestID, State: batch.StateLanding, Units: units,
-		Landing: &batch.LandingProgress{PushComplete: true, PushedTip: batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD")},
+		Landing: &batch.LandingProgress{PushComplete: true, PushedTip: commits[len(commits)-1]},
 	}
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-
-	original := batchChildRunner
-	originalNext := batchRecoveryGoalNext
-	originalRearm := batchRecoveryRearm
-	t.Cleanup(func() {
-		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
-	})
-	batchChildRunner = func(string, string, ...string) error { return nil }
-	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
-	batchRecoveryRearm = func(string, string) error { return nil }
-	if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
+	expected := make([]testgit.Expectation, len(chains))
+	for index := range expected {
+		expected[index] = testgit.Expectation{
+			Call:   testgit.Call{Dir: root, Args: []string{"log", "--first-parent", "origin/main", "--format=%H%x00%B%x00"}},
+			Result: testgit.Result{Stdout: []byte(log.String())},
+		}
+	}
+	stub := testgit.New(t, expected...)
+	gitRead := func(dir string, args ...string) (string, error) {
+		result := stub.Run(testgit.Call{Dir: dir, Args: args})
+		return string(result.Stdout), result.Err
+	}
+	seams := batchRecoverySeamsWithGit(root, store, batchProvenanceTestID, time.Unix(3, 0), gitRead)
+	finalized := make(map[string]string)
+	seams.Finalize = func(unit batch.Unit, commit string) error {
+		validUnit, validCommit := false, false
+		for index, chain := range chains {
+			if unit.GoalID == "goal-"+string(rune('a'+index)) && unit.Chain == chain {
+				validUnit = true
+			}
+		}
+		for _, candidate := range commits {
+			validCommit = validCommit || candidate == commit
+		}
+		if !validUnit || !validCommit || finalized[unit.GoalID] != "" {
+			t.Fatalf("unexpected recovery finalization: unit=%+v commit=%q", unit, commit)
+		}
+		finalized[unit.GoalID] = commit
+		return nil
+	}
+	rearms, cleanups := 0, 0
+	seams.Rearm = func(tip string) error {
+		if tip != commits[len(commits)-1] {
+			t.Fatalf("rearm tip=%q, want %q", tip, commits[len(commits)-1])
+		}
+		rearms++
+		return nil
+	}
+	seams.Cleanup = func() error { cleanups++; return nil }
+	if err := batch.RecoverPushedSeries(store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0), seams); err != nil {
 		t.Fatal(err)
 	}
 	recovered, err := store.Load(batchProvenanceTestID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	landed := 0
+	for _, unit := range recovered.Units {
+		if unit.P6Done {
+			landed++
+			if finalized[unit.GoalID] != unit.LandedCommit {
+				t.Fatalf("finalized commit for %s=%q, durable commit=%q", unit.GoalID, finalized[unit.GoalID], unit.LandedCommit)
+			}
+		} else if finalized[unit.GoalID] != "" {
+			t.Fatalf("unrecognized unit %s was finalized", unit.GoalID)
+		}
+	}
+	if len(finalized) != landed || rearms != 0 && rearms != 1 || cleanups != rearms ||
+		(rearms == 1) != (landed == len(chains)) ||
+		(rearms == 1) != recovered.Landing.RearmComplete || (cleanups == 1) != recovered.Landing.CleanupDone ||
+		(recovered.State == batch.StateLanded) != (landed == len(chains)) {
+		t.Fatalf("recovery callbacks finalizations=%v rearm=%d cleanup=%d, record=%+v", finalized, rearms, cleanups, recovered)
 	}
 	return recovered, commits
 }

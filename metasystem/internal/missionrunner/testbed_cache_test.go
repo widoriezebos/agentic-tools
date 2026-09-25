@@ -25,7 +25,6 @@ var (
 	missionBedTemplateSeq  int
 	fullCycleTemplates     = map[string]*missionBedTemplate{}
 	wallRepoTemplate       *missionBedTemplate
-	nestedScopeTemplate    *missionBedTemplate
 	parkedSoloTemplates    = map[string]*missionBedTemplate{}
 )
 

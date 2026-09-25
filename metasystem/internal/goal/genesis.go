@@ -35,6 +35,12 @@ func AdoptionShaped(root string, ledgerBytes []byte) (shaped bool, reason string
 }
 
 func adoptionShapedWithEnvironment(root string, ledgerBytes []byte, environment []string) (shaped bool, reason string, err error) {
+	return adoptionShapedWithProbe(root, ledgerBytes, func(root string) (bool, error) {
+		return headTracksLedgerWithEnvironment(root, environment)
+	})
+}
+
+func adoptionShapedWithProbe(root string, ledgerBytes []byte, headTracks func(string) (bool, error)) (shaped bool, reason string, err error) {
 	if ledgerBytes != nil {
 		parsed, problems := Parse(ledgerBytes)
 		if len(problems) > 0 {
@@ -44,7 +50,7 @@ func adoptionShapedWithEnvironment(root string, ledgerBytes []byte, environment 
 			return false, "the ledger already carries goals but has no accepted baseline; only the lease holder may re-baseline an initialized project (a deleted goals-accepted.json is restored, not re-adopted)", nil
 		}
 	}
-	tracked, err := headTracksLedgerWithEnvironment(root, environment)
+	tracked, err := headTracks(root)
 	if err != nil {
 		return false, "", err
 	}

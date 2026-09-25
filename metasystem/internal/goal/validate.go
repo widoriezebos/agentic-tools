@@ -682,6 +682,39 @@ func ValidateCommit(root, commit string) error {
 		problems = append(problems, ValidateChannelTree(root, commit)...)
 	}
 	if len(problems) > 0 {
+		return commitProblems(commit, problems)
+	}
+	return nil
+}
+
+func validateCommitFor(e Endpoint, commit string) error {
+	if e.Repository == nil {
+		return ValidateCommit(e.Root, commit)
+	}
+	goalFiles, err := readCommitGoals(e, commit)
+	if err != nil {
+		return err
+	}
+	t, problems := ParseTreeFiles(goalFiles)
+	if len(problems) == 0 {
+		problems = ValidateTree(t)
+	}
+	if len(problems) == 0 {
+		channelFiles, readErr := readCommitFiles(e, commit, ChannelPrefix)
+		if readErr != nil {
+			problems = append(problems, channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed channel tree: %v", readErr)))
+		} else {
+			problems = append(problems, validateChannelFiles(channelFiles, goalFiles)...)
+		}
+	}
+	if len(problems) > 0 {
+		return commitProblems(commit, problems)
+	}
+	return nil
+}
+
+func commitProblems(commit string, problems []Problem) error {
+	if len(problems) > 0 {
 		lines := make([]string, len(problems))
 		for i, p := range problems {
 			lines[i] = string(p)

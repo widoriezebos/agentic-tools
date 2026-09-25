@@ -9,6 +9,7 @@ package goal
 // validation gates every acceptance, history is not authenticated.
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 )
@@ -33,28 +34,33 @@ func RepairAcceptRemote(e Endpoint, by string) (AdvanceResult, error) {
 	}
 	defer CleanupRefs(e, nonce)
 
-	acceptedOut, acceptedErr := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
-	accepted := strings.TrimSpace(acceptedOut)
+	accepted, present, acceptedErr := e.repository().Accepted()
+	if acceptedErr != nil {
+		return AdvanceResult{}, acceptedErr
+	}
+	if !present {
+		accepted = ""
+	}
 
 	// The repair waives DESCENT, never identity: accepting a foreign
 	// ledger is a different act with no sanctioned path.
-	if acceptedErr == nil {
-		acceptedIdentity, idErr := treeIdentity(e.Root, accepted)
+	if present {
+		acceptedIdentity, idErr := treeIdentityFor(e, accepted)
 		if idErr != nil {
 			return AdvanceResult{}, fmt.Errorf("the accepted tree's identity cannot be read: %w", idErr)
 		}
-		fetchedIdentity, idErr := treeIdentity(e.Root, fetched)
+		fetchedIdentity, idErr := treeIdentityFor(e, fetched)
 		if idErr != nil {
 			return AdvanceResult{}, fmt.Errorf("repair refused: the remote tip's identity cannot be read: %w", idErr)
 		}
 		if fetchedIdentity != acceptedIdentity {
 			return AdvanceResult{}, fmt.Errorf("repair refused: the remote tip is a foreign ledger (%s, not %s)", fetchedIdentity, acceptedIdentity)
 		}
-		if err := validateLegacyArchiveReadOnly(e.Root, accepted, fetched); err != nil {
+		if err := validateLegacyArchiveFor(e, accepted, fetched); err != nil {
 			return AdvanceResult{}, err
 		}
 	}
-	if err := ValidateCommit(e.Root, fetched); err != nil {
+	if err := validateCommitFor(e, fetched); err != nil {
 		return AdvanceResult{}, err
 	}
 
@@ -70,7 +76,7 @@ func RepairAcceptRemote(e Endpoint, by string) (AdvanceResult, error) {
 	if _, err := CreateEntry(e.Root, opid, "local", "repair", intent); err != nil {
 		return AdvanceResult{}, err
 	}
-	if err := setAcceptedTo(e.Root, fetched, accepted); err != nil {
+	if err := e.repository().AcceptedCAS(accepted, fetched); err != nil {
 		_ = MarkTerminal(e.Root, opid, OutcomeAbandoned, "the accepted ref did not move: "+err.Error())
 		return AdvanceResult{}, err
 	}
@@ -110,6 +116,30 @@ func validateLegacyArchiveReadOnly(root, before, after string) error {
 	return nil
 }
 
+func validateLegacyArchiveFor(e Endpoint, before, after string) error {
+	if e.Repository == nil {
+		return validateLegacyArchiveReadOnly(e.Root, before, after)
+	}
+	oldFiles, err := readCommitFiles(e, before, legacyDonePrefix)
+	if err != nil {
+		return fmt.Errorf("cannot compare the legacy concluded-goal location: %w", err)
+	}
+	newFiles, err := readCommitFiles(e, after, legacyDonePrefix)
+	if err != nil {
+		return fmt.Errorf("cannot compare the legacy concluded-goal location: %w", err)
+	}
+	for path, content := range newFiles {
+		old, present := oldFiles[path]
+		if !present {
+			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; new conclusions belong under %s", path, recordsGoalsRoot)
+		}
+		if !bytes.Equal(old, content) {
+			return fmt.Errorf("%s: the legacy concluded-goal location is read-only; reopen or prune the standing record through its verb", path)
+		}
+	}
+	return nil
+}
+
 // setAcceptedTo moves the accepted ref with the old-value assertion
 // when an old value exists — the repair's LOCAL postcondition is
 // "the ref equals the target", and a CAS loss surfaces rather than
@@ -133,11 +163,15 @@ func setAcceptedTo(root, newTip, oldTip string) error {
 // A DIAGNOSTIC, never a gate: the caller reports it and
 // accepts anyway.
 func PrefixDiagnosis(root, oldTip, newTip string) ([]string, error) {
-	oldFiles, err := ReadCommitGoals(root, oldTip)
+	return prefixDiagnosisFor(Endpoint{Root: root}, oldTip, newTip)
+}
+
+func prefixDiagnosisFor(e Endpoint, oldTip, newTip string) ([]string, error) {
+	oldFiles, err := readCommitGoals(e, oldTip)
 	if err != nil {
 		return nil, err
 	}
-	newFiles, err := ReadCommitGoals(root, newTip)
+	newFiles, err := readCommitGoals(e, newTip)
 	if err != nil {
 		return nil, err
 	}

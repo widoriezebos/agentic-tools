@@ -80,9 +80,10 @@ func TestTrunkRedRegisterParsesRendersAndJoinsEveryReader(t *testing.T) {
 		t.Fatalf("tree reader = %+v problems=%v", tree, treeProblems)
 	}
 
-	root := soloLedgerRepo(t)
-	published := publishTrunkRed(t, root, []TrunkRedEntry{late, early})
-	mustGit(t, root, "reset", "--hard", published.Tip)
+	endpoint := localTrunkRedEndpoint(t)
+	root := endpoint.Root
+	published := publishTrunkRedFor(t, endpoint, []TrunkRedEntry{late, early})
+	materializeTrunkRedSnapshot(t, endpoint, published.Tip)
 	snapshot, err := CaptureSnapshot(root)
 	if err != nil || string(snapshot.Files[trunkRedPath]) != string(rendered) {
 		t.Fatalf("snapshot = %+v err=%v", snapshot, err)
@@ -112,9 +113,10 @@ func trunkRedRecordFixture(identity, batch, attempt, base, seen string) TrunkRed
 
 func TestTrunkRedMutationBoundariesRejectInvalidAuthorityAndShape(t *testing.T) {
 	t.Parallel()
-	root := soloLedgerRepo(t)
-	request := trunkRedVerbReq(root, "01J5X0000000000000000000Q1", "mac-a")
-	tip := mustGit(t, root, "rev-parse", AcceptedRef)
+	endpoint := localTrunkRedEndpoint(t)
+	root := endpoint.Root
+	request := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000Q1", "mac-a")
+	tip := acceptedTipForEndpoint(t, endpoint)
 	t.Run("invalid records leave the accepted tip unchanged", func(t *testing.T) {
 		for name, args := range map[string]TrunkRedRecordArgs{
 			"empty batch":  trunkRedRecordFixture("tr-fast-empty-batch", "", "attempt", "base", request.stamp()),
@@ -125,7 +127,7 @@ func TestTrunkRedMutationBoundariesRejectInvalidAuthorityAndShape(t *testing.T) 
 				if _, err := RecordTrunkRed(request, args); err == nil {
 					t.Fatalf("%s record was accepted", name)
 				}
-				if got := mustGit(t, root, "rev-parse", AcceptedRef); got != tip {
+				if got := acceptedTipForEndpoint(t, endpoint); got != tip {
 					t.Fatalf("%s record moved accepted tip from %s to %s", name, tip, got)
 				}
 			})
@@ -137,7 +139,7 @@ func TestTrunkRedMutationBoundariesRejectInvalidAuthorityAndShape(t *testing.T) 
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("record fixture: %+v %v", result, err)
 	}
-	record := brain.Record{Schema: brain.Schema, Ledger: ExistingLedgerIdentity(root), Machine: "brain", DeclaredBy: "Wido", DeclaredAt: "2026-09-17T00:00:00Z"}
+	record := brain.Record{Schema: brain.Schema, Ledger: existingLedgerIdentityFor(endpoint), Machine: "brain", DeclaredBy: "Wido", DeclaredAt: "2026-09-17T00:00:00Z"}
 	data, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)
@@ -148,21 +150,21 @@ func TestTrunkRedMutationBoundariesRejectInvalidAuthorityAndShape(t *testing.T) 
 	if err := os.WriteFile(brain.Path(root), append(data, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	before := mustGit(t, root, "rev-parse", AcceptedRef)
-	own := trunkRedVerbReq(root, "01J5X0000000000000000000Q2", "mac-a")
+	before := acceptedTipForEndpoint(t, endpoint)
+	own := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000Q2", "mac-a")
 	if _, err := OwnTrunkRed(own, TrunkRedOwnArgs{Entry: identity, Goal: "solo-goal"}); err == nil || !strings.Contains(err.Error(), "act trunk-red own is fenced") {
 		t.Fatalf("brain-owned trunk-red mutation error=%v", err)
 	}
-	if after := mustGit(t, root, "rev-parse", AcceptedRef); after != before {
+	if after := acceptedTipForEndpoint(t, endpoint); after != before {
 		t.Fatalf("brain fence moved accepted tip from %s to %s", before, after)
 	}
 }
 
 func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 	t.Parallel()
-	root := soloLedgerRepo(t)
+	endpoint := localTrunkRedEndpoint(t)
 	identity := "tr-fast-0123456789ab"
-	first := trunkRedVerbReq(root, "01J5X0000000000000000000R1", "mac-a")
+	first := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R1", "mac-a")
 	first.Now = time.Date(2026, 9, 17, 1, 0, 0, 0, time.UTC)
 	result, err := RecordTrunkRed(first, trunkRedRecordFixture(identity, "batch-1", "attempt-1", "base-1", first.stamp()))
 	if err != nil || result.Outcome != OutcomeConfirmed {
@@ -172,7 +174,7 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 	if err != nil || replay.Outcome != OutcomeConfirmed || replay.Detail != "idempotent" {
 		t.Fatalf("record replay: %+v %v", replay, err)
 	}
-	second := trunkRedVerbReq(root, "01J5X0000000000000000000R2", "mac-a")
+	second := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R2", "mac-a")
 	second.Now = first.Now.Add(time.Hour)
 	secondArgs := trunkRedRecordFixture(identity, "batch-2", "attempt-2", "base-2", second.stamp())
 	secondArgs.Groups[0].Status = "not-run"
@@ -181,56 +183,56 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("second sighting: %+v %v", result, err)
 	}
-	projected, err := ProjectAt(root, result.Tip)
+	projected, err := trunkRedProjectAt(endpoint, result.Tip)
 	entry := projected.Tree.TrunkRed[0]
 	if err != nil || entry.ID != identity || len(entry.Sightings) != 2 || len(entry.Holds) != 2 || entry.Status != "not-run" || entry.Owner.How != "joiner" {
 		t.Fatalf("merged entry: %+v %v", entry, err)
 	}
 
-	clear := trunkRedVerbReq(root, "01J5X0000000000000000000R3", "mac-a")
+	clear := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R3", "mac-a")
 	clear.Now = second.Now.Add(time.Hour)
 	result, err = ClearTrunkRed(clear, TrunkRedClearArgs{Entry: identity, Attempt: "green-1", BaseCommit: "base-3", BaseTree: "tree-3", Group: "fast", ExpectedEntry: entry})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("clear: %+v %v", result, err)
 	}
-	third := trunkRedVerbReq(root, "01J5X0000000000000000000R4", "mac-a")
+	third := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R4", "mac-a")
 	third.Now = clear.Now.Add(time.Hour)
 	result, err = RecordTrunkRed(third, trunkRedRecordFixture(identity, "batch-3", "attempt-3", "base-4", third.stamp()))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("record after close: %+v %v", result, err)
 	}
-	projected, _ = ProjectAt(root, result.Tip)
+	projected, _ = trunkRedProjectAt(endpoint, result.Tip)
 	if len(projected.Tree.TrunkRed) != 2 || projected.Tree.TrunkRed[1].ID != identity+"-2" || projected.Tree.TrunkRed[0].Closed == nil {
 		t.Fatalf("closed identity suffix: %+v", projected.Tree.TrunkRed)
 	}
 
 	ownedID := identity + "-2"
-	own := trunkRedVerbReq(root, "01J5X0000000000000000000R5", "mac-a")
+	own := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R5", "mac-a")
 	own.Now = third.Now.Add(time.Hour)
 	result, err = OwnTrunkRed(own, TrunkRedOwnArgs{Entry: ownedID, Goal: "solo-goal", Branch: "fix/red", BranchCommit: "abc123"})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("take entry: %+v %v", result, err)
 	}
-	other := trunkRedVerbReq(root, "01J5X0000000000000000000R6", "mac-b")
+	other := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R6", "mac-b")
 	result, err = OwnTrunkRed(other, TrunkRedOwnArgs{Entry: ownedID, Goal: "solo-goal"})
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_OWNED_ELSEWHERE") {
 		t.Fatalf("other machine take: %+v %v", result, err)
 	}
-	human := trunkRedVerbReq(root, "01J5X0000000000000000000R7", "mac-b")
+	human := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R7", "mac-b")
 	human.Actor.Human = "Wido"
 	human.Now = own.Now.Add(time.Hour)
 	result, err = OwnTrunkRed(human, TrunkRedOwnArgs{Entry: ownedID, Goal: "solo-goal", To: "mac-c", By: "Wido"})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("human reassignment: %+v %v", result, err)
 	}
-	closeRequest := trunkRedVerbReq(root, "01J5X0000000000000000000R8", "mac-b")
+	closeRequest := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000R8", "mac-b")
 	closeRequest.Actor.Human = "Wido"
 	closeRequest.Now = human.Now.Add(time.Hour)
 	result, err = CloseTrunkRed(closeRequest, TrunkRedCloseArgs{Entry: ownedID, By: "Wido", Why: "the failure was external"})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("human close: %+v %v", result, err)
 	}
-	projected, _ = ProjectAt(root, result.Tip)
+	projected, _ = trunkRedProjectAt(endpoint, result.Tip)
 	closed := projected.Tree.TrunkRed[1]
 	if closed.Owner.Machine != "mac-c" || closed.Owner.How != "hand" || closed.Owner.By != "Wido" || closed.Closed == nil || closed.Closed.Why != "the failure was external" || len(closed.Holds) != 0 {
 		t.Fatalf("human-owned closed entry: %+v", closed)
@@ -239,9 +241,10 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 
 func TestTrunkRedRecoveryRebuildsRecordOwnAndClear(t *testing.T) {
 	t.Parallel()
-	root := soloLedgerRepo(t)
+	endpoint := localTrunkRedEndpoint(t)
+	root := endpoint.Root
 	identity := "tr-fast-recovery0001"
-	record := trunkRedVerbReq(root, "01J5X0000000000000000000S1", "mac-a")
+	record := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000S1", "mac-a")
 	record.Now = time.Date(2026, 9, 17, 8, 0, 0, 0, time.UTC)
 	recordRequest := trunkRedRecordRequest(record, trunkRedRecordFixture(identity, "batch-r", "attempt-r", "base-r", record.stamp()))
 	createDeadTrunkRedEntry(t, root, recordRequest)
@@ -249,7 +252,7 @@ func TestTrunkRedRecoveryRebuildsRecordOwnAndClear(t *testing.T) {
 		t.Fatalf("recover record: %+v %v", reports, err)
 	}
 
-	own := trunkRedVerbReq(root, "01J5X0000000000000000000S2", "mac-a")
+	own := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000S2", "mac-a")
 	ownRequest := trunkRedOwnRequest(own, TrunkRedOwnArgs{Entry: identity, Goal: "solo-goal"})
 	createDeadTrunkRedEntry(t, root, ownRequest)
 	if reports, err := Recover(own.Endpoint); err != nil || len(reports) == 0 {
@@ -260,7 +263,7 @@ func TestTrunkRedRecoveryRebuildsRecordOwnAndClear(t *testing.T) {
 		t.Fatalf("project owned entry: %+v %v", ownedProjection, err)
 	}
 
-	clear := trunkRedVerbReq(root, "01J5X0000000000000000000S3", "mac-a")
+	clear := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000S3", "mac-a")
 	clearRequest := trunkRedClearRequest(clear, TrunkRedClearArgs{Entry: identity, Attempt: "green-r", BaseCommit: "base-green", BaseTree: "tree-green", Group: "fast",
 		ExpectedEntry: ownedProjection.Tree.TrunkRed[0]})
 	createDeadTrunkRedEntry(t, root, clearRequest)
@@ -275,10 +278,11 @@ func TestTrunkRedRecoveryRebuildsRecordOwnAndClear(t *testing.T) {
 
 func TestTrunkRedRecoveryLegacyClearClosesOpenEntry(t *testing.T) {
 	t.Parallel()
-	root, request, _, at := legacyTrunkRedClearFixture(t)
+	endpoint, request, _, at := legacyTrunkRedClearFixtureFor(t)
+	root := endpoint.Root
 	createDeadTrunkRedEntry(t, root, request)
 
-	reports, err := Recover(requestEndpoint(root))
+	reports, err := Recover(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +290,7 @@ func TestTrunkRedRecoveryLegacyClearClosesOpenEntry(t *testing.T) {
 	if report.Action != ActionComplete || !strings.Contains(report.Detail, "confirmed") {
 		t.Fatalf("legacy clear recovery report: %+v", report)
 	}
-	entry := projectedTrunkRedEntry(t, root, at)
+	entry := projectedTrunkRedEntryFor(t, endpoint, at)
 	if entry.Closed == nil || entry.Closed.Attempt != request.Intent.Args["attempt"] ||
 		entry.Closed.BaseCommit != request.Intent.Args["baseCommit"] || entry.Closed.How != "green" ||
 		entry.Closed.Opid != request.Opid || len(entry.Holds) != 0 || entry.FixBranch.State != TrunkRedBranchMerged {
@@ -296,22 +300,23 @@ func TestTrunkRedRecoveryLegacyClearClosesOpenEntry(t *testing.T) {
 
 func TestTrunkRedRecoveryLegacyClearIgnoresChangedOwner(t *testing.T) {
 	t.Parallel()
-	root, request, entry, at := legacyTrunkRedClearFixture(t)
+	endpoint, request, entry, at := legacyTrunkRedClearFixtureFor(t)
+	root := endpoint.Root
 	createDeadTrunkRedEntry(t, root, request)
 
-	reassign := trunkRedVerbReq(root, "01J5X0000000000000000000V2", "mac-b")
+	reassign := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000V2", "mac-b")
 	reassign.Actor.Human = "Wido"
 	reassign.Now = at.Add(time.Hour)
 	result, err := OwnTrunkRed(reassign, TrunkRedOwnArgs{Entry: entry.ID, Goal: "solo-goal", To: "mac-b", By: "Wido"})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reassign entry: %+v %v", result, err)
 	}
-	if reports, err := Recover(requestEndpoint(root)); err != nil {
+	if reports, err := Recover(endpoint); err != nil {
 		t.Fatal(err)
 	} else if report := trunkRedRecoveryReport(t, reports, request.Opid); report.Action != ActionComplete || !strings.Contains(report.Detail, "confirmed") {
 		t.Fatalf("legacy clear recovery report: %+v", report)
 	}
-	recovered := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour))
+	recovered := projectedTrunkRedEntryFor(t, endpoint, at.Add(2*time.Hour))
 	if recovered.Owner.Machine != "mac-b" || recovered.Closed == nil || recovered.Closed.Opid != request.Opid {
 		t.Fatalf("legacy clear did not retain the changed owner and close the entry: %+v", recovered)
 	}
@@ -319,18 +324,19 @@ func TestTrunkRedRecoveryLegacyClearIgnoresChangedOwner(t *testing.T) {
 
 func TestTrunkRedRecoveryLegacyClearRejectsClosedEntry(t *testing.T) {
 	t.Parallel()
-	root, request, entry, at := legacyTrunkRedClearFixture(t)
+	endpoint, request, entry, at := legacyTrunkRedClearFixtureFor(t)
+	root := endpoint.Root
 	createDeadTrunkRedEntry(t, root, request)
 
-	other := trunkRedVerbReq(root, "01J5X0000000000000000000V3", "mac-b")
+	other := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000V3", "mac-b")
 	other.Now = at.Add(time.Hour)
 	result, err := ClearTrunkRed(other, TrunkRedClearArgs{Entry: entry.ID, Attempt: "other-attempt", BaseCommit: "other-base",
 		BaseTree: "other-tree", Group: entry.Group, ExpectedEntry: entry})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("other clear: %+v %v", result, err)
 	}
-	closedBefore := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)).Closed
-	if reports, err := Recover(requestEndpoint(root)); err != nil {
+	closedBefore := projectedTrunkRedEntryFor(t, endpoint, at.Add(2*time.Hour)).Closed
+	if reports, err := Recover(endpoint); err != nil {
 		t.Fatal(err)
 	} else if report := trunkRedRecoveryReport(t, reports, request.Opid); report.Action != ActionComplete || !strings.Contains(report.Detail, "rejected") {
 		t.Fatalf("legacy clear recovery report: %+v", report)
@@ -339,7 +345,7 @@ func TestTrunkRedRecoveryLegacyClearRejectsClosedEntry(t *testing.T) {
 	if err != nil || journal.Outcome != OutcomeRejected || !strings.Contains(journal.Evidence, "TRUNK_RED_CLOSED") {
 		t.Fatalf("legacy clear journal: %+v %v", journal, err)
 	}
-	closedAfter := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)).Closed
+	closedAfter := projectedTrunkRedEntryFor(t, endpoint, at.Add(2*time.Hour)).Closed
 	if closedAfter == nil || closedBefore == nil || *closedAfter != *closedBefore || closedAfter.Opid != other.opid() {
 		t.Fatalf("rejected legacy clear changed the existing closure: before=%+v after=%+v", closedBefore, closedAfter)
 	}
@@ -347,29 +353,32 @@ func TestTrunkRedRecoveryLegacyClearRejectsClosedEntry(t *testing.T) {
 
 func TestTrunkRedRecoveryPresentEmptyBindingIsRejected(t *testing.T) {
 	t.Parallel()
-	root, request, _, at := legacyTrunkRedClearFixture(t)
+	endpoint, request, _, at := legacyTrunkRedClearFixtureFor(t)
+	root := endpoint.Root
 	request.Intent.Args["expectedEntry"] = ""
 	createDeadTrunkRedEntry(t, root, request)
-	assertUnreadableTrunkRedBindingRejected(t, root, request, at)
+	assertUnreadableTrunkRedBindingRejectedFor(t, endpoint, request, at)
 }
 
 func TestTrunkRedRecoveryPresentMalformedBindingIsRejected(t *testing.T) {
 	t.Parallel()
-	root, request, _, at := legacyTrunkRedClearFixture(t)
+	endpoint, request, _, at := legacyTrunkRedClearFixtureFor(t)
+	root := endpoint.Root
 	request.Intent.Args["expectedEntry"] = "{not-json"
 	createDeadTrunkRedEntry(t, root, request)
-	assertUnreadableTrunkRedBindingRejected(t, root, request, at)
+	assertUnreadableTrunkRedBindingRejectedFor(t, endpoint, request, at)
 }
 
 func TestTrunkRedRecoveryLegacyClearPreservesStoredIntent(t *testing.T) {
 	t.Parallel()
-	root, stored, _, _ := legacyTrunkRedClearFixture(t)
+	endpoint, stored, _, _ := legacyTrunkRedClearFixtureFor(t)
+	root := endpoint.Root
 	createDeadTrunkRedEntry(t, root, stored)
 	entry, err := ReadEntry(root, stored.Opid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rebuilt, err := requestForEntry(requestEndpoint(root), entry)
+	rebuilt, err := requestForEntry(endpoint, entry)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,15 +400,15 @@ func TestTrunkRedRecoveryLegacyClearPreservesStoredIntent(t *testing.T) {
 
 func TestTrunkRedClearZeroExpectedEntryRemainsBound(t *testing.T) {
 	t.Parallel()
-	root, _, entry, at := legacyTrunkRedClearFixture(t)
-	clear := trunkRedVerbReq(root, "01J5X0000000000000000000V5", "mac-a")
+	endpoint, _, entry, at := legacyTrunkRedClearFixtureFor(t)
+	clear := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000V5", "mac-a")
 	clear.Now = at.Add(time.Hour)
 	result, err := ClearTrunkRed(clear, TrunkRedClearArgs{Entry: entry.ID, Attempt: "green-zero", BaseCommit: "base-zero",
 		BaseTree: "tree-zero", Group: entry.Group})
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_CHANGED") {
 		t.Fatalf("zero expected entry clear: %+v %v", result, err)
 	}
-	if projected := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)); projected.Closed != nil {
+	if projected := projectedTrunkRedEntryFor(t, endpoint, at.Add(2*time.Hour)); projected.Closed != nil {
 		t.Fatalf("zero expected entry clear closed the entry: %+v", projected)
 	}
 }
@@ -408,67 +417,38 @@ func TestTrunkRedLegacyClearRequestKeepsUnknownAndAlreadyApplied(t *testing.T) {
 	t.Parallel()
 	t.Run("unknown entry", func(t *testing.T) {
 		t.Parallel()
-		root, request, _, _ := legacyTrunkRedClearFixture(t)
+		endpoint, request, _, _ := legacyTrunkRedClearFixtureFor(t)
 		request.Intent.Args["entry"] = "tr-fast-missing"
 		request.Intent.Targets = []string{"tr-fast-missing"}
-		rebuilt, err := requestForEntry(requestEndpoint(root), Entry{Opid: request.Opid, Machine: request.Machine,
+		rebuilt, err := requestForEntry(endpoint, Entry{Opid: request.Opid, Machine: request.Machine,
 			Lineage: request.Lineage, Intent: request.Intent})
 		if err != nil {
 			t.Fatal(err)
 		}
-		tip := mustGit(t, root, "rev-parse", LocalLedgerBranch)
+		tip := acceptedTipForEndpoint(t, endpoint)
 		if _, err := rebuilt.Mutate(tip); err == nil || !strings.Contains(err.Error(), "TRUNK_RED_UNKNOWN") {
 			t.Fatalf("legacy clear of unknown entry: %v", err)
 		}
 	})
 	t.Run("same operation already closed", func(t *testing.T) {
 		t.Parallel()
-		root, request, entry, at := legacyTrunkRedClearFixture(t)
+		endpoint, request, entry, at := legacyTrunkRedClearFixtureFor(t)
 		entry.Closed = &TrunkRedClosure{At: at.Add(time.Hour).Format(time.RFC3339), Attempt: request.Intent.Args["attempt"],
 			BaseCommit: request.Intent.Args["baseCommit"], How: "green", Opid: request.Opid}
 		entry.Holds = []string{}
-		publishTrunkRedWithRequest(t, root, entry, "01J5X0000000000000000000V4")
-		rebuilt, err := requestForEntry(requestEndpoint(root), Entry{Opid: request.Opid, Machine: request.Machine,
+		publishTrunkRedWithRequestFor(t, endpoint, entry, "01J5X0000000000000000000V4")
+		rebuilt, err := requestForEntry(endpoint, Entry{Opid: request.Opid, Machine: request.Machine,
 			Lineage: request.Lineage, Intent: request.Intent})
 		if err != nil {
 			t.Fatal(err)
 		}
-		tip := mustGit(t, root, "rev-parse", LocalLedgerBranch)
+		tip := acceptedTipForEndpoint(t, endpoint)
 		_, err = rebuilt.Mutate(tip)
 		var already AlreadyApplied
 		if !errors.As(err, &already) {
 			t.Fatalf("legacy clear did not recognize its closure: %v", err)
 		}
 	})
-}
-
-func legacyTrunkRedClearFixture(t *testing.T) (string, PublishRequest, TrunkRedEntry, time.Time) {
-	t.Helper()
-	root := soloLedgerRepo(t)
-	at := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
-	entry := testTrunkRedEntry("tr-fast-legacy-clear", "tr-fast-legacy-clear", at.Format(time.RFC3339))
-	entry.FixGoal = "solo-goal"
-	entry.FixBranch = TrunkRedBranch{Name: "fix/legacy-clear", Commit: "abc123", State: TrunkRedBranchOpen}
-	publishTrunkRed(t, root, []TrunkRedEntry{entry})
-	clear := trunkRedVerbReq(root, "01J5X0000000000000000000V1", "mac-a")
-	clear.Now = at.Add(time.Hour)
-	request := trunkRedClearRequest(clear, TrunkRedClearArgs{Entry: entry.ID, Attempt: "green-legacy", BaseCommit: "base-green",
-		BaseTree: "tree-green", Group: entry.Group, BranchMerged: true, ExpectedEntry: entry})
-	delete(request.Intent.Args, "expectedEntry")
-	return root, request, entry, at
-}
-
-func requestEndpoint(root string) Endpoint {
-	return Endpoint{Root: root, Remote: "local", Branch: "refs/heads/main"}
-}
-
-func projectedTrunkRedEntry(t *testing.T, root string, at time.Time) TrunkRedEntry {
-	t.Helper()
-	projection, err := Project(requestEndpoint(root), false, at)
-	if err != nil || len(projection.Tree.TrunkRed) != 1 {
-		t.Fatalf("project trunk-red entry: %+v %v", projection.Tree.TrunkRed, err)
-	}
-	return projection.Tree.TrunkRed[0]
 }
 
 func trunkRedRecoveryReport(t *testing.T, reports []RecoveryReport, opid string) RecoveryReport {
@@ -480,40 +460,6 @@ func trunkRedRecoveryReport(t *testing.T, reports []RecoveryReport, opid string)
 	}
 	t.Fatalf("recovery report for %s not found: %+v", opid, reports)
 	return RecoveryReport{}
-}
-
-func assertUnreadableTrunkRedBindingRejected(t *testing.T, root string, request PublishRequest, at time.Time) {
-	t.Helper()
-	want := "the stored trunk-red clear has no readable entry binding; close it by hand"
-	reports, err := Recover(requestEndpoint(root))
-	if err != nil {
-		t.Fatal(err)
-	}
-	report := trunkRedRecoveryReport(t, reports, request.Opid)
-	if report.Action != ActionComplete || report.Detail != "not rebuildable: "+want {
-		t.Fatalf("unreadable binding recovery report: %+v", report)
-	}
-	journal, err := ReadEntry(root, request.Opid)
-	if err != nil || journal.Outcome != OutcomeRejected || journal.Evidence != want {
-		t.Fatalf("unreadable binding journal: %+v %v", journal, err)
-	}
-	if entry := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)); entry.Closed != nil {
-		t.Fatalf("unreadable binding closed the entry: %+v", entry)
-	}
-}
-
-func publishTrunkRedWithRequest(t *testing.T, root string, entry TrunkRedEntry, ulid string) {
-	t.Helper()
-	request := trunkRedVerbReq(root, ulid, "mac-a")
-	result, err := Publish(request.Endpoint, PublishRequest{Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
-		Intent: Intent{Verb: "trunk-red-fixture"}, Message: "publish trunk-red fixture",
-		Mutate: func(string) ([]Change, error) {
-			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed([]TrunkRedEntry{entry})}}, nil
-		},
-		Validate: func(commit string) error { return ValidateCommit(root, commit) }})
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("publish trunk-red fixture: %+v %v", result, err)
-	}
 }
 
 func createDeadTrunkRedEntry(t *testing.T, root string, request PublishRequest) {
@@ -528,23 +474,150 @@ func createDeadTrunkRedEntry(t *testing.T, root string, request PublishRequest) 
 	}
 }
 
-func trunkRedVerbReq(root, ulid, machine string) VerbRequest {
-	request := verbReq(root, ulid, machine)
-	request.Endpoint = Endpoint{Root: root, Remote: "local", Branch: "refs/heads/main"}
-	return request
+func localTrunkRedEndpoint(t *testing.T) Endpoint {
+	t.Helper()
+	store := newFakeGoalStore()
+	seed := store.commits[store.canonical]
+	rootRecord := vRoot()
+	rootRecord.SyncMode = SyncLocal
+	seed.files = vTree(rootRecord, []*GoalFile{approvedGoalFixture(vGoal("solo-goal", StateQueued), testBudget())}, nil)
+	store.commits[store.canonical] = seed
+	client := store.client()
+	client.accepted = store.canonical
+	return localTrunkRedClient(t, client)
 }
 
-func publishTrunkRed(t *testing.T, root string, entries []TrunkRedEntry) PublishResult {
+func localTrunkRedPeer(t *testing.T, endpoint Endpoint) Endpoint {
 	t.Helper()
-	request := trunkRedVerbReq(root, "01J5X0000000000000000000T1", "mac-a")
-	result, err := Publish(request.Endpoint, PublishRequest{Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
+	client := endpoint.Repository.(*fakeGoalRepository).store.client()
+	client.accepted = acceptedTipForEndpoint(t, endpoint)
+	return localTrunkRedClient(t, client)
+}
+
+func localTrunkRedClient(t *testing.T, client *fakeGoalRepository) Endpoint {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return Endpoint{Root: root, Remote: "local", Branch: "refs/heads/main", Repository: client}
+}
+
+func trunkRedVerbReqFor(endpoint Endpoint, ulid, machine string) VerbRequest {
+	return verbReqFor(endpoint, ulid, machine)
+}
+
+func trunkRedProjectAt(endpoint Endpoint, tip string, now ...time.Time) (Projection, error) {
+	tree, err := loadTreeFor(endpoint, tip)
+	if err != nil {
+		return Projection{}, err
+	}
+	at := time.Now().UTC()
+	if len(now) > 0 {
+		at = now[0]
+	}
+	return Projection{Root: endpoint.Root, Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, at)}, nil
+}
+
+func trunkRedBytesAt(endpoint Endpoint, tip string) (string, error) {
+	files, err := endpoint.Repository.Files(tip, trunkRedPath)
+	if err != nil {
+		return "", err
+	}
+	data, present := files[trunkRedPath]
+	if !present {
+		return "", errors.New("trunk-red file missing from commit")
+	}
+	return string(data), nil
+}
+
+func materializeTrunkRedSnapshot(t *testing.T, endpoint Endpoint, tip string) {
+	t.Helper()
+	files, err := endpoint.Repository.Files(tip, goalsPrefix, recordsGoalsPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range files {
+		path := filepath.Join(endpoint.Root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func publishTrunkRedFor(t *testing.T, endpoint Endpoint, entries []TrunkRedEntry) PublishResult {
+	t.Helper()
+	request := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000T1", "mac-a")
+	result, err := Publish(endpoint, PublishRequest{Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
 		Intent: Intent{Verb: "trunk-red-fixture"}, Message: "publish trunk-red fixture",
 		Mutate: func(string) ([]Change, error) {
 			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed(entries)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(root, commit) }})
+		Validate: func(commit string) error { return validateCommitFor(endpoint, commit) }})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("publish trunk-red fixture: %+v %v", result, err)
 	}
 	return result
+}
+
+func publishTrunkRedWithRequestFor(t *testing.T, endpoint Endpoint, entry TrunkRedEntry, ulid string) {
+	t.Helper()
+	request := trunkRedVerbReqFor(endpoint, ulid, "mac-a")
+	result, err := Publish(endpoint, PublishRequest{Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
+		Intent: Intent{Verb: "trunk-red-fixture"}, Message: "publish trunk-red fixture",
+		Mutate: func(string) ([]Change, error) {
+			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed([]TrunkRedEntry{entry})}}, nil
+		},
+		Validate: func(commit string) error { return validateCommitFor(endpoint, commit) }})
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("publish trunk-red fixture: %+v %v", result, err)
+	}
+}
+
+func legacyTrunkRedClearFixtureFor(t *testing.T) (Endpoint, PublishRequest, TrunkRedEntry, time.Time) {
+	t.Helper()
+	endpoint := localTrunkRedEndpoint(t)
+	at := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
+	entry := testTrunkRedEntry("tr-fast-legacy-clear", "tr-fast-legacy-clear", at.Format(time.RFC3339))
+	entry.FixGoal = "solo-goal"
+	entry.FixBranch = TrunkRedBranch{Name: "fix/legacy-clear", Commit: "abc123", State: TrunkRedBranchOpen}
+	publishTrunkRedFor(t, endpoint, []TrunkRedEntry{entry})
+	clear := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000V1", "mac-a")
+	clear.Now = at.Add(time.Hour)
+	request := trunkRedClearRequest(clear, TrunkRedClearArgs{Entry: entry.ID, Attempt: "green-legacy", BaseCommit: "base-green",
+		BaseTree: "tree-green", Group: entry.Group, BranchMerged: true, ExpectedEntry: entry})
+	delete(request.Intent.Args, "expectedEntry")
+	return endpoint, request, entry, at
+}
+
+func projectedTrunkRedEntryFor(t *testing.T, endpoint Endpoint, at time.Time) TrunkRedEntry {
+	t.Helper()
+	projection, err := Project(endpoint, false, at)
+	if err != nil || len(projection.Tree.TrunkRed) != 1 {
+		t.Fatalf("project trunk-red entry: %+v %v", projection.Tree.TrunkRed, err)
+	}
+	return projection.Tree.TrunkRed[0]
+}
+
+func assertUnreadableTrunkRedBindingRejectedFor(t *testing.T, endpoint Endpoint, request PublishRequest, at time.Time) {
+	t.Helper()
+	want := "the stored trunk-red clear has no readable entry binding; close it by hand"
+	reports, err := Recover(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := trunkRedRecoveryReport(t, reports, request.Opid)
+	if report.Action != ActionComplete || report.Detail != "not rebuildable: "+want {
+		t.Fatalf("unreadable binding recovery report: %+v", report)
+	}
+	journal, err := ReadEntry(endpoint.Root, request.Opid)
+	if err != nil || journal.Outcome != OutcomeRejected || journal.Evidence != want {
+		t.Fatalf("unreadable binding journal: %+v %v", journal, err)
+	}
+	if entry := projectedTrunkRedEntryFor(t, endpoint, at.Add(2*time.Hour)); entry.Closed != nil {
+		t.Fatalf("unreadable binding closed the entry: %+v", entry)
+	}
 }

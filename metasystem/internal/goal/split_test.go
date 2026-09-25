@@ -49,41 +49,41 @@ func TestSplitDraftGrammarIsClosedAndCanonical(t *testing.T) {
 
 func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if res, err := Open(verbReq(root, "01J5X00000000000000000S100", "mac-a"), "old-blocker", "External prerequisite.", OriginMain, "Finish it."); err != nil || res.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000S100", "mac-a"), "old-blocker", "External prerequisite.", OriginMain, "Finish it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open blocker: %+v %v", res, err)
 	}
-	if res, err := Open(verbReq(root, "01J5X00000000000000000S110", "mac-a"), "split-parent", "Large bounded intent.", OriginMain, "Decompose it.", "parent-label"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000S110", "mac-a"), "split-parent", "Large bounded intent.", OriginMain, "Decompose it.", "parent-label"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open parent: %+v %v", res, err)
 	}
 	blocked := []string{"old-blocker"}
-	if res, err := Edit(verbReq(root, "01J5X00000000000000000S120", "mac-a"), "split-parent", EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000S120", "mac-a"), "split-parent", EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("block parent: %+v %v", res, err)
 	}
-	if res, err := SetArc(verbReq(root, "01J5X00000000000000000S130", "mac-a"), "split-parent", "old-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := SetArc(verbReqFor(endpoint, "01J5X00000000000000000S130", "mac-a"), "split-parent", "old-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set old arc: %+v %v", res, err)
 	}
-	pinParent := verbReq(root, "01J5X00000000000000000S135", "mac-a")
+	pinParent := verbReqFor(endpoint, "01J5X00000000000000000S135", "mac-a")
 	pinParent.Actor.Human = "wido"
 	if res, err := SetPin(pinParent, "split-parent", "mac-a"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("pin parent: %+v %v", res, err)
 	}
-	if res, err := Open(verbReq(root, "01J5X00000000000000000S140", "mac-a"), "dependent", "Wait for the whole parent.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000S140", "mac-a"), "dependent", "Wait for the whole parent.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open dependent: %+v %v", res, err)
 	}
 	blocked = []string{"split-parent"}
-	if res, err := Edit(verbReq(root, "01J5X00000000000000000S150", "mac-a"), "dependent", EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000S150", "mac-a"), "dependent", EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("block dependent: %+v %v", res, err)
 	}
 
 	members := testMembers("split-parent")
-	request := verbReq(root, "01J5X00000000000000000S160", "mac-a")
+	request := verbReqFor(endpoint, "01J5X00000000000000000S160", "mac-a")
 	result, err := Split(request, "split-parent", members, mainRatification("split-parent", members), nil)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,14 +108,14 @@ func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
 		t.Fatalf("last old-arc member split did not raise debt: %+v %v", debts, err)
 	}
 
-	reopen, err := Reopen(verbReq(root, "01J5X00000000000000000S170", "mac-a"), "split-parent")
+	reopen, err := Reopen(verbReqFor(endpoint, "01J5X00000000000000000S170", "mac-a"), "split-parent")
 	if err != nil || reopen.Outcome != OutcomeRejected || !strings.Contains(reopen.Detail, "never returns") {
 		t.Fatalf("decomposed parent reopen did not refuse: %+v %v", reopen, err)
 	}
-	if pruned, err := Prune(verbReq(root, "01J5X00000000000000000S180", "mac-a"), 0); err != nil || pruned.Outcome != OutcomeConfirmed {
+	if pruned, err := Prune(verbReqFor(endpoint, "01J5X00000000000000000S180", "mac-a"), 0); err != nil || pruned.Outcome != OutcomeConfirmed {
 		t.Fatalf("prune: %+v %v", pruned, err)
 	}
-	recreated, err := Open(verbReq(root, "01J5X00000000000000000S190", "mac-a"), "split-parent", "Illicit resurrection.", OriginMain, "Stop.")
+	recreated, err := Open(verbReqFor(endpoint, "01J5X00000000000000000S190", "mac-a"), "split-parent", "Illicit resurrection.", OriginMain, "Stop.")
 	if err != nil || recreated.Outcome != OutcomeRejected || !strings.Contains(recreated.Detail, "retired") {
 		t.Fatalf("prune must not reopen the identifier: %+v %v", recreated, err)
 	}
@@ -123,30 +123,29 @@ func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
 
 func TestSliceStartIsImmutableAndBlocksSplit(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	seedGoalNormConfig(t, root)
-	if res, err := openClaimForTest(t, verbReq(root, "01J5X00000000000000000SA00", "mac-a"), "sliced-parent", "Already slicing.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	seedGoalNormConfig(t, endpoint.Root)
+	if res, err := openClaimForTest(t, verbReqFor(endpoint, "01J5X00000000000000000SA00", "mac-a"), "sliced-parent", "Already slicing.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open claim: %+v %v", res, err)
 	}
-	mark := verbReq(root, "01J5X00000000000000000SA10", "mac-a")
+	mark := verbReqFor(endpoint, "01J5X00000000000000000SA10", "mac-a")
 	result, err := MarkSliced(mark, "sliced-parent")
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("mark sliced: %+v %v", result, err)
 	}
-	second, err := MarkSliced(verbReq(root, "01J5X00000000000000000SA20", "mac-a"), "sliced-parent")
+	second, err := MarkSliced(verbReqFor(endpoint, "01J5X00000000000000000SA20", "mac-a"), "sliced-parent")
 	if err != nil || second.Outcome != OutcomeAbandoned || !strings.Contains(second.Detail, "already recorded") {
 		t.Fatalf("second marker must be a no-write no-op: %+v %v", second, err)
 	}
 	members := testMembers("sliced-parent")
-	split, err := Split(verbReq(root, "01J5X00000000000000000SA30", "mac-a"), "sliced-parent", members, mainRatification("sliced-parent", members), nil)
+	split, err := Split(verbReqFor(endpoint, "01J5X00000000000000000SA30", "mac-a"), "sliced-parent", members, mainRatification("sliced-parent", members), nil)
 	if err != nil || split.Outcome != OutcomeRejected || !strings.Contains(split.Detail, "first slice") {
 		t.Fatalf("sliced parent must refuse split by its durable coordinates: %+v %v", split, err)
 	}
-	if released, err := Release(verbReq(root, "01J5X00000000000000000SA40", "mac-a"), "sliced-parent"); err != nil || released.Outcome != OutcomeConfirmed {
+	if released, err := Release(verbReqFor(endpoint, "01J5X00000000000000000SA40", "mac-a"), "sliced-parent"); err != nil || released.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", released, err)
 	}
-	split, err = Split(verbReq(root, "01J5X00000000000000000SA50", "mac-a"), "sliced-parent", members, mainRatification("sliced-parent", members), nil)
+	split, err = Split(verbReqFor(endpoint, "01J5X00000000000000000SA50", "mac-a"), "sliced-parent", members, mainRatification("sliced-parent", members), nil)
 	if err != nil || split.Outcome != OutcomeRejected || !strings.Contains(split.Detail, "first slice") {
 		t.Fatalf("release must not erase ever-sliced: %+v %v", split, err)
 	}
@@ -154,13 +153,13 @@ func TestSliceStartIsImmutableAndBlocksSplit(t *testing.T) {
 
 func TestHumanCanRatifyAMainOriginSplitWithFreshProof(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if res, err := Open(verbReq(root, "01J5X00000000000000000SH00", "mac-a"), "human-ratifies-main", "Main-origin intent.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000SH00", "mac-a"), "human-ratifies-main", "Main-origin intent.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	members := testMembers("human-ratifies-main")
-	request := verbReq(root, "01J5X00000000000000000SH10", "mac-a")
+	request := verbReqFor(endpoint, "01J5X00000000000000000SH10", "mac-a")
 	request.Actor.Human = "wido"
 	proof := testHumanAuthority(t, root, request.Now)
 	ratification := SplitRatification{Tier: RatifierHuman, By: "wido", DraftSHA256: SplitDraftSHA256("human-ratifies-main", members)}
@@ -168,7 +167,7 @@ func TestHumanCanRatifyAMainOriginSplitWithFreshProof(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("fresh human proof did not ratify main-origin split: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil || tree.Done["human-ratifies-main"].Ratified.Tier != RatifierHuman || tree.Done["human-ratifies-main"].Ratified.By != "wido" {
 		t.Fatalf("human ratification token did not publish: %+v %v", tree.Done["human-ratifies-main"], err)
 	}
@@ -178,13 +177,19 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 	t.Parallel()
 	t.Run("foreign claim", func(t *testing.T) {
 		t.Parallel()
-		_, a, b := twoClones(t)
-		seedLedger(t, a)
-		if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000PF00", "mac-a"), "foreign-parent", "Foreign claim.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		a, b := fakeGoalEndpointPair(t)
+		if res, err := openClaimForTest(t, verbReqFor(a, "01J5X00000000000000000PF00", "mac-a"), "foreign-parent", "Foreign claim.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open claim: %+v %v", res, err)
 		}
+		if _, err := FetchAdvance(b); err != nil {
+			t.Fatal(err)
+		}
+		observed, _ := acceptedTreeForEndpoint(t, b)
+		if parent := observed.Live["foreign-parent"]; parent == nil || parent.Claimed == nil || parent.Claimed.Machine != "mac-a" {
+			t.Fatalf("other client did not observe the claimed parent: %+v", parent)
+		}
 		members := testMembers("foreign-parent")
-		result, err := Split(verbReq(b, "01J5X00000000000000000PF10", "mac-b"), "foreign-parent", members, mainRatification("foreign-parent", members), nil)
+		result, err := Split(verbReqFor(b, "01J5X00000000000000000PF10", "mac-b"), "foreign-parent", members, mainRatification("foreign-parent", members), nil)
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "park or steal") {
 			t.Fatalf("foreign claim did not refuse toward the authority transition: %+v %v", result, err)
 		}
@@ -197,24 +202,23 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 		}
 		t.Run(name+" arc collision", func(t *testing.T) {
 			t.Parallel()
-			_, root := oneClone(t)
-			seedLedger(t, root)
-			if res, err := Open(verbReq(root, "01J5X00000000000000000PC00", "mac-a"), "collision-parent", "Collision parent.", OriginMain, "Split."); err != nil || res.Outcome != OutcomeConfirmed {
+			endpoint, _ := fakeGoalEndpoint(t)
+			if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000PC00", "mac-a"), "collision-parent", "Collision parent.", OriginMain, "Split."); err != nil || res.Outcome != OutcomeConfirmed {
 				t.Fatalf("open parent: %+v %v", res, err)
 			}
-			if res, err := Open(verbReq(root, "01J5X00000000000000000PC10", "mac-a"), "arc-bearer", "Existing arc bearer.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+			if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000PC10", "mac-a"), "arc-bearer", "Existing arc bearer.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
 				t.Fatalf("open bearer: %+v %v", res, err)
 			}
-			if res, err := SetArc(verbReq(root, "01J5X00000000000000000PC20", "mac-a"), "arc-bearer", "collision-parent"); err != nil || res.Outcome != OutcomeConfirmed {
+			if res, err := SetArc(verbReqFor(endpoint, "01J5X00000000000000000PC20", "mac-a"), "arc-bearer", "collision-parent"); err != nil || res.Outcome != OutcomeConfirmed {
 				t.Fatalf("set collision arc: %+v %v", res, err)
 			}
 			if archived {
-				if res, err := Done(verbReq(root, "01J5X00000000000000000PC30", "mac-a"), "arc-bearer", "Archived bearer."); err != nil || res.Outcome != OutcomeConfirmed {
+				if res, err := Done(verbReqFor(endpoint, "01J5X00000000000000000PC30", "mac-a"), "arc-bearer", "Archived bearer."); err != nil || res.Outcome != OutcomeConfirmed {
 					t.Fatalf("archive bearer: %+v %v", res, err)
 				}
 			}
 			members := testMembers("collision-parent")
-			result, err := Split(verbReq(root, "01J5X00000000000000000PC40", "mac-a"), "collision-parent", members, mainRatification("collision-parent", members), nil)
+			result, err := Split(verbReqFor(endpoint, "01J5X00000000000000000PC40", "mac-a"), "collision-parent", members, mainRatification("collision-parent", members), nil)
 			if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "already in use by arc-bearer") {
 				t.Fatalf("%s arc collision did not refuse by bearer: %+v %v", name, result, err)
 			}
@@ -223,13 +227,13 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 
 	t.Run("human origin requires proof and propagates", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
-		seedLedger(t, root)
-		if res, err := Open(verbReq(root, "01J5X00000000000000000PH00", "mac-a"), "human-parent", "Human origin.", OriginHuman, "Split."); err != nil || res.Outcome != OutcomeConfirmed {
+		endpoint, _ := fakeGoalEndpoint(t)
+		root := endpoint.Root
+		if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000PH00", "mac-a"), "human-parent", "Human origin.", OriginHuman, "Split."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open: %+v %v", res, err)
 		}
 		members := testMembers("human-parent")
-		human := verbReq(root, "01J5X00000000000000000PH10", "mac-a")
+		human := verbReqFor(endpoint, "01J5X00000000000000000PH10", "mac-a")
 		human.Actor.Human = "wido"
 		ratification := SplitRatification{Tier: RatifierHuman, By: "wido", DraftSHA256: SplitDraftSHA256("human-parent", members)}
 		refused, err := Split(human, "human-parent", members, ratification, nil)
@@ -241,7 +245,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("proven human split: %+v %v", result, err)
 		}
-		tree, err := loadTree(root, result.Tip)
+		tree, err := loadTreeFor(endpoint, result.Tip)
 		if err != nil || tree.Live["human-parent-one"].Origin != OriginHuman || tree.Live["human-parent-two"].Origin != OriginHuman {
 			t.Fatalf("human origin did not propagate: %+v %v", tree, err)
 		}
@@ -250,12 +254,12 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 
 func TestSplitDebtFailureStaysPushedAndRecoveryCompletesIt(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if res, err := Open(verbReq(root, "01J5X00000000000000000SD00", "mac-a"), "debt-parent", "Exercise debt recovery.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000SD00", "mac-a"), "debt-parent", "Exercise debt recovery.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := SetArc(verbReq(root, "01J5X00000000000000000SD10", "mac-a"), "debt-parent", "old-debt-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := SetArc(verbReqFor(endpoint, "01J5X00000000000000000SD10", "mac-a"), "debt-parent", "old-debt-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set arc: %+v %v", res, err)
 	}
 	// Registers resolve below memory/. A file at that directory is a
@@ -264,7 +268,7 @@ func TestSplitDebtFailureStaysPushedAndRecoveryCompletesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	members := testMembers("debt-parent")
-	request := verbReq(root, "01J5X00000000000000000SD20", "mac-a")
+	request := verbReqFor(endpoint, "01J5X00000000000000000SD20", "mac-a")
 	result, splitErr := Split(request, "debt-parent", members, mainRatification("debt-parent", members), nil)
 	if splitErr == nil || result.Outcome != "" || !strings.Contains(splitErr.Error(), "old-arc retro debt") {
 		t.Fatalf("debt failure did not leave confirmation unresolved: %+v %v", result, splitErr)
@@ -276,7 +280,7 @@ func TestSplitDebtFailureStaysPushedAndRecoveryCompletesIt(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "memory")); err != nil {
 		t.Fatal(err)
 	}
-	reports, err := Recover(endpointFor(root))
+	reports, err := Recover(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,14 +296,13 @@ func TestSplitDebtFailureStaysPushedAndRecoveryCompletesIt(t *testing.T) {
 
 func TestDeadAbsentSliceStartAbandonsWithoutMarkingGoal(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	seedGoalNormConfig(t, root)
-	if res, err := openClaimForTest(t, verbReq(root, "01J5X00000000000000000SR00", "mac-a"), "recover-slice", "Recover safely.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	seedGoalNormConfig(t, endpoint.Root)
+	if res, err := openClaimForTest(t, verbReqFor(endpoint, "01J5X00000000000000000SR00", "mac-a"), "recover-slice", "Recover safely.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open claim: %+v %v", res, err)
 	}
 	opid := Opid("01J5X00000000000000000SR10", "mac-a", "lin-1")
-	entry, err := CreateEntry(root, opid, "mac-a", "lin-1", Intent{Verb: "slice-start", Targets: []string{"recover-slice"}})
+	entry, err := CreateEntry(endpoint.Root, opid, "mac-a", "lin-1", Intent{Verb: "slice-start", Targets: []string{"recover-slice"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,21 +310,21 @@ func TestDeadAbsentSliceStartAbandonsWithoutMarkingGoal(t *testing.T) {
 	entry.Owner.PidStartedAt = 1
 	entry.Owner.StartTicks = 0
 	entry.Owner.BootID = ""
-	if err := writeEntry(root, entry); err != nil {
+	if err := writeEntry(endpoint.Root, entry); err != nil {
 		t.Fatal(err)
 	}
-	reports, err := Recover(endpointFor(root))
+	reports, err := Recover(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(reports) != 1 || !strings.Contains(reports[0].Detail, "abandoned without marking") {
 		t.Fatalf("slice-start recovery took the wrong terminal path: %+v", reports)
 	}
-	terminal, err := ReadEntry(root, opid)
+	terminal, err := ReadEntry(endpoint.Root, opid)
 	if err != nil || terminal.Outcome != OutcomeAbandoned {
 		t.Fatalf("slice-start recovery did not terminalize abandoned: %+v %v", terminal, err)
 	}
-	projection, err := Project(endpointFor(root), false, verbReq(root, "01J5X00000000000000000SR20", "mac-a").Now)
+	projection, err := Project(endpoint, false, verbReqFor(endpoint, "01J5X00000000000000000SR20", "mac-a").Now)
 	if err != nil || projection.Tree.Live["recover-slice"].Sliced != nil {
 		t.Fatalf("absent slice-start recovery falsely marked the goal: %+v %v", projection.Tree.Live["recover-slice"], err)
 	}
@@ -329,21 +332,21 @@ func TestDeadAbsentSliceStartAbandonsWithoutMarkingGoal(t *testing.T) {
 
 func TestSplitPrechecksReadTheArchive(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
-	if result, err := Open(verbReq(root, "01J5X00000000000000001S000", "mac-a"), "split-parent", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000001S000", "mac-a"), "split-parent", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	abandonReq := verbReq(root, "01J5X00000000000000001S010", "mac-a")
+	abandonReq := verbReqFor(endpoint, "01J5X00000000000000001S010", "mac-a")
 	abandonReq.Actor.Human = "Wido"
 	abandoned, err := Abandon(abandonReq, "split-parent", AbandonSpec{Because: "do not split"}, goalHumanProof(t, root, abandonReq.Now))
 	if err != nil || abandoned.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon: %+v %v", abandoned, err)
 	}
 	members := []MemberDraft{{ID: "member-one", Intent: "one", NextStep: "go"}, {ID: "member-two", Intent: "two", NextStep: "go"}}
-	request, err := splitRequest(verbReq(root, "01J5X00000000000000001S020", "mac-a"), "split-parent", members, SplitRatification{}, nil)
+	request, err := splitRequest(verbReqFor(endpoint, "01J5X00000000000000001S020", "mac-a"), "split-parent", members, SplitRatification{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,14 +367,14 @@ func TestSplitPrechecksReadTheArchive(t *testing.T) {
 
 func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	seedGoalNormConfig(t, root)
-	if res, err := Open(verbReq(root, "01J5X00000000000000000GN00", "mac-a"), "large-goal", "Large goal.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000GN00", "mac-a"), "large-goal", "Large goal.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1201, ActiveJobLimit: 1, ReviewRoundLimit: 3}
-	request := verbReq(root, "01J5X00000000000000000GN10", "mac-a")
+	request := verbReqFor(endpoint, "01J5X00000000000000000GN10", "mac-a")
 	request.Actor.Human = "wido"
 	refused, err := Approve(request, []string{"large-goal"}, &over, testFixtureHumanAuthority(t, root, request.Now))
 	if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "GOAL_NORM_REFUSED") || !strings.Contains(refused.Detail, "split it into an arc of members within the box") {
@@ -383,33 +386,33 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "memory", "rulings.md"), []byte("| R-25b | goal=large-goal minutes=1600 reviewRounds=3 goalRevision=1 |\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	approved := verbReq(root, "01J5X00000000000000000GN20", "mac-a")
+	approved := verbReqFor(endpoint, "01J5X00000000000000000GN20", "mac-a")
 	approved.Actor.Human = "wido"
 	approved.ApprovedRef = "R-25b"
 	result, err := Approve(approved, []string{"large-goal"}, &over, testFixtureHumanAuthority(t, root, approved.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("strict approval did not admit set-budget: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil || tree.Live["large-goal"].NormApproval == nil || tree.Live["large-goal"].NormApproval.Minutes != 1600 {
 		t.Fatalf("approved admission did not publish its proof: %+v %v", tree.Live["large-goal"], err)
 	}
 	within := testBudget()
-	withinReq := verbReq(root, "01J5X00000000000000000GN30", "mac-a")
+	withinReq := verbReqFor(endpoint, "01J5X00000000000000000GN30", "mac-a")
 	withinReq.Actor.Human = "wido"
 	result, err = Approve(withinReq, []string{"large-goal"}, &within, testHumanAuthority(t, root, withinReq.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("within-norm replacement: %+v %v", result, err)
 	}
-	tree, _ = loadTree(root, result.Tip)
+	tree, _ = loadTreeFor(endpoint, result.Tip)
 	if tree.Live["large-goal"].NormApproval != nil {
 		t.Fatal("within-norm replacement must clear stale approval evidence")
 	}
-	if res, err := Open(verbReq(root, "01J5X00000000000000000GN40", "mac-a"), "at-norm", "Exactly bounded.", OriginMain, "Proceed."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000GN40", "mac-a"), "at-norm", "Exactly bounded.", OriginMain, "Proceed."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open at-norm: %+v %v", res, err)
 	}
 	atNorm := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3}
-	atNormReq := verbReq(root, "01J5X00000000000000000GN50", "mac-a")
+	atNormReq := verbReqFor(endpoint, "01J5X00000000000000000GN50", "mac-a")
 	atNormReq.Actor.Human = "wido"
 	if res, err := Approve(atNormReq, []string{"at-norm"}, &atNorm, testHumanAuthority(t, root, atNormReq.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the exact norm boundary must pass without approval: %+v %v", res, err)
@@ -418,32 +421,42 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 
 func TestOverNormApprovalComposesWithClaimAndSteal(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X00000000000000000NS00", "mac-a"), "over-steal", "Approved exception.", OriginMain, "Work."); err != nil || res.Outcome != OutcomeConfirmed {
+	a, b := fakeGoalEndpointPair(t)
+	if res, err := Open(verbReqFor(a, "01J5X00000000000000000NS00", "mac-a"), "over-steal", "Approved exception.", OriginMain, "Work."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if err := os.MkdirAll(filepath.Join(a, "memory"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(a.Root, "memory"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1, ReviewRoundLimit: 3}
-	if err := os.WriteFile(filepath.Join(a, "memory", "rulings.md"), []byte("| R-301 | goal=over-steal minutes=1500 reviewRounds=3 goalRevision=1 |\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(a.Root, "memory", "rulings.md"), []byte("| R-301 | goal=over-steal minutes=1500 reviewRounds=3 goalRevision=1 |\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	set := verbReq(a, "01J5X00000000000000000NS10", "mac-a")
+	set := verbReqFor(a, "01J5X00000000000000000NS10", "mac-a")
 	set.Actor.Human = "wido"
 	set.ApprovedRef = "R-301"
-	if res, err := Approve(set, []string{"over-steal"}, &over, testHumanAuthority(t, a, set.Now)); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Approve(set, []string{"over-steal"}, &over, testHumanAuthority(t, a.Root, set.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("approved over-norm set-budget: %+v %v", res, err)
 	}
-	claim := verbReq(a, "01J5X00000000000000000NS30", "mac-a")
+	claim := verbReqFor(a, "01J5X00000000000000000NS30", "mac-a")
 	if res, err := Claim(claim, "over-steal"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("approved stored claim: %+v %v", res, err)
 	}
-	steal := verbReq(b, "01J5X00000000000000000NS40", "mac-b")
+	if _, err := FetchAdvance(b); err != nil {
+		t.Fatal(err)
+	}
+	observed, _ := acceptedTreeForEndpoint(t, b)
+	if claimed := observed.Live["over-steal"]; claimed == nil || claimed.Claimed == nil || claimed.Claimed.Machine != "mac-a" || claimed.NormApproval == nil || claimed.NormApproval.Minutes != 1500 {
+		t.Fatalf("other client did not observe the approved claim: %+v", claimed)
+	}
+	steal := verbReqFor(b, "01J5X00000000000000000NS40", "mac-b")
 	steal.Actor.Human = "wido"
 	if res, err := Steal(steal, "over-steal"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the bound over-norm approval did not compose with steal: %+v %v", res, err)
+	}
+	stolen, _ := acceptedTreeForEndpoint(t, b)
+	if claim := stolen.Live["over-steal"].Claimed; claim == nil || claim.Machine != "mac-b" {
+		t.Fatalf("steal did not transfer the approved claim: %+v", claim)
 	}
 }
 
@@ -466,13 +479,12 @@ func TestGoalNormApprovalGrammarIsDistinctAndUnambiguous(t *testing.T) {
 
 func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000RC00", "mac-a"), "race-parent", "Race the boundary.", OriginMain, "Choose one.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	a, b := fakeGoalEndpointPair(t)
+	if res, err := openClaimForTest(t, verbReqFor(a, "01J5X00000000000000000RC00", "mac-a"), "race-parent", "Race the boundary.", OriginMain, "Choose one.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open claimed parent: %+v %v", res, err)
 	}
 	members := testMembers("race-parent")
-	splitVerb := verbReq(a, "01J5X00000000000000000RC10", "mac-a")
+	splitVerb := verbReqFor(a, "01J5X00000000000000000RC10", "mac-a")
 	req, err := splitRequest(splitVerb, "race-parent", members, mainRatification("race-parent", members), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -483,21 +495,21 @@ func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
 			return nil
 		}
 		markerRan = true
-		marked, markErr := MarkSliced(verbReq(b, "01J5X00000000000000000RC20", "mac-a"), "race-parent")
+		marked, markErr := MarkSliced(verbReqFor(b, "01J5X00000000000000000RC20", "mac-a"), "race-parent")
 		if markErr != nil || marked.Outcome != OutcomeConfirmed {
 			t.Fatalf("slice-start competitor: %+v %v", marked, markErr)
 		}
 		return nil
 	}
-	result, err := Publish(endpointFor(a), req)
+	result, err := Publish(a, req)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "first slice") {
 		t.Fatalf("split did not lose by the durable sliced fact: %+v %v", result, err)
 	}
-	advanced, err := FetchAdvance(endpointFor(a))
+	advanced, err := FetchAdvance(a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := loadTree(a, advanced.Tip)
+	tree, err := loadTreeFor(a, advanced.Tip)
 	if err != nil || tree.Live["race-parent"].Sliced == nil || tree.Done["race-parent"] != nil || tree.Live["race-parent-one"] != nil {
 		t.Fatalf("exactly slice-start won and no split bytes landed: %+v %v", tree, err)
 	}
@@ -505,21 +517,20 @@ func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
 
 func TestParkedEverSlicedParentStillRefusesSplit(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if res, err := openClaimForTest(t, verbReq(root, "01J5X00000000000000000PS00", "mac-a"), "parked-sliced", "Started work.", OriginMain, "Pause.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	if res, err := openClaimForTest(t, verbReqFor(endpoint, "01J5X00000000000000000PS00", "mac-a"), "parked-sliced", "Started work.", OriginMain, "Pause.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open claim: %+v %v", res, err)
 	}
-	if res, err := MarkSliced(verbReq(root, "01J5X00000000000000000PS10", "mac-a"), "parked-sliced"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := MarkSliced(verbReqFor(endpoint, "01J5X00000000000000000PS10", "mac-a"), "parked-sliced"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("mark sliced: %+v %v", res, err)
 	}
-	human := verbReq(root, "01J5X00000000000000000PS20", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000PS20", "mac-a")
 	human.Actor.Human = "wido"
 	if res, err := Park(human, "parked-sliced", "operator pause"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
 	members := testMembers("parked-sliced")
-	splitHuman := verbReq(root, "01J5X00000000000000000PS30", "mac-a")
+	splitHuman := verbReqFor(endpoint, "01J5X00000000000000000PS30", "mac-a")
 	splitHuman.Actor.Human = "wido"
 	result, err := Split(splitHuman, "parked-sliced", members, mainRatification("parked-sliced", members), nil)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "first slice") {
@@ -529,22 +540,22 @@ func TestParkedEverSlicedParentStillRefusesSplit(t *testing.T) {
 
 func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	for index, id := range []string{"history-large", "approval-carrier", "stale-large"} {
 		ulid := []string{"01J5X00000000000000000NH00", "01J5X00000000000000000NH10", "01J5X00000000000000000NH20"}[index]
-		if res, err := Open(verbReq(root, ulid, "mac-a"), id, "Approval fixture.", OriginMain, "Continue."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(verbReqFor(endpoint, ulid, "mac-a"), id, "Approval fixture.", OriginMain, "Continue."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
 	}
-	human := verbReq(root, "01J5X00000000000000000NH30", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000NH30", "mac-a")
 	human.Actor.Human = "wido"
 	reason := "goal=history-large minutes=1600 reviewRounds=3 goalRevision=1"
 	if res, err := Park(human, "approval-carrier", reason); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("record human history approval: %+v %v", res, err)
 	}
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1, ReviewRoundLimit: 3}
-	approved := verbReq(root, "01J5X00000000000000000NH40", "mac-a")
+	approved := verbReqFor(endpoint, "01J5X00000000000000000NH40", "mac-a")
 	approved.Actor.Human = "wido"
 	approved.ApprovedRef = human.opid()
 	if res, err := Approve(approved, []string{"history-large"}, &over, testHumanAuthority(t, root, approved.Now)); err != nil || res.Outcome != OutcomeConfirmed {
@@ -557,10 +568,10 @@ func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := "Advance the revision."
-	if res, err := Edit(verbReq(root, "01J5X00000000000000000NH50", "mac-a"), "stale-large", EditFields{NextStep: &next}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000NH50", "mac-a"), "stale-large", EditFields{NextStep: &next}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("advance stale goal: %+v %v", res, err)
 	}
-	stale := verbReq(root, "01J5X00000000000000000NH60", "mac-a")
+	stale := verbReqFor(endpoint, "01J5X00000000000000000NH60", "mac-a")
 	stale.Actor.Human = "wido"
 	stale.ApprovedRef = "R-251"
 	result, err := Approve(stale, []string{"stale-large"}, &over, testHumanAuthority(t, root, stale.Now))
@@ -623,25 +634,24 @@ func TestValidatorRefusesADecomposedParentMadeLiveAgain(t *testing.T) {
 // member is done.
 func TestSplitMovesABlockerParkToTheFirstMember(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
 	budget := testBudget()
-	if res, err := Open(verbReq(root, "01J5X00000000000000000SP00", "mac-a"), "held", "The seat's goal.", OriginHuman, "Build."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000SP00", "mac-a"), "held", "The seat's goal.", OriginHuman, "Build."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open held: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000SP01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000SP01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held: %+v %v", res, err)
 	}
-	if res, err := OpenRisked(verbReq(root, "01J5X00000000000000000SP02", "mac-a"), "split-parent", "A large blocker.", OriginMain, "Decompose it.", []string{"held"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(verbReqFor(endpoint, "01J5X00000000000000000SP02", "mac-a"), "split-parent", "A large blocker.", OriginMain, "Decompose it.", []string{"held"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open the blocker: %+v %v", res, err)
 	}
 	members := testMembers("split-parent")
-	result, err := Split(verbReq(root, "01J5X00000000000000000SP03", "mac-a"), "split-parent", members, mainRatification("split-parent", members), nil)
+	result, err := Split(verbReqFor(endpoint, "01J5X00000000000000000SP03", "mac-a"), "split-parent", members, mainRatification("split-parent", members), nil)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -650,16 +660,16 @@ func TestSplitMovesABlockerParkToTheFirstMember(t *testing.T) {
 		t.Fatalf("the split moves the edge and the marker to the members: state=%s parked=%+v blocked=%v", held.State, held.Parked, held.Blocked)
 	}
 	for index, member := range []string{"split-parent-one", "split-parent-two"} {
-		claim := verbReq(root, fmt.Sprintf("01J5X00000000000000000SP%d0", index+1), "mac-a")
+		claim := verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000SP%d0", index+1), "mac-a")
 		if res, err := claimApprovedForTest(t, claim, member, budget); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim %s: %+v %v", member, res, err)
 		}
-		result, err = Done(verbReq(root, fmt.Sprintf("01J5X00000000000000000SP%d1", index+1), "mac-a"), member, "Done.")
+		result, err = Done(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000SP%d1", index+1), "mac-a"), member, "Done.")
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("done %s: %+v %v", member, result, err)
 		}
 	}
-	if tree, err = loadTree(root, result.Tip); err != nil || tree.Live["held"].State != StateApproved || tree.Live["held"].Parked != nil {
+	if tree, err = loadTreeFor(endpoint, result.Tip); err != nil || tree.Live["held"].State != StateApproved || tree.Live["held"].Parked != nil {
 		t.Fatalf("the last member's done returns the held goal: %v %+v", err, tree.Live["held"])
 	}
 }

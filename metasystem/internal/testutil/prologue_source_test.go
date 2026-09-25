@@ -39,7 +39,11 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
-			if !strings.Contains(string(contents), ShellPrologue) {
+			expected := ShellPrologue
+			if fixture.name == "fake host" {
+				expected = strings.ReplaceAll(ShellPrologue, "exec /bin/sh", "exec /bin/bash")
+			}
+			if !strings.Contains(string(contents), expected) {
 				t.Fatalf("%s prologue differs from ShellPrologue", fixture.path)
 			}
 		})

@@ -12,25 +12,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
 // An ordinary authorization touching a guardrail-classed file refuses;
 // the same change through the warden's lane consumes normally.
 func TestWallRefusesGuardrailChangeOutsideTheWardenLane(t *testing.T) {
-	root := wallRepo(t)
-	writeText(t, filepath.Join(root, "goldens", "case.txt"), "golden\n")
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "goldens", "case.txt"), "weakened\n")
-	reviewed := snapshotTree(t, root)
+	bed := newWallPolicyBed(t)
+	writeText(t, filepath.Join(bed.root, "goldens", "case.txt"), "golden\n")
+	pre, reviewed := "pre", "reviewed"
+	writeText(t, filepath.Join(bed.root, "goldens", "case.txt"), "weakened\n")
 	guardrails, gviol := mission.ParseGuardrails(mission.ContractGuardrailSubject, "goldens/", protectedArtifactPath)
 	if gviol != "" {
 		t.Fatal(gviol)
 	}
 
-	plain := wallAuthorization(t, root, "demo", pre, reviewed, nil)
+	patch := wallPolicyPatch("golden reviewed")
+	plain := bed.authorization(pre, reviewed, []string{"goldens/case.txt"}, patch, true, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": plain}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, guardrails, "", legacySnapshot(root, "demo"))
+	inspection, err := bed.inspectWithGuardrails(pre, wallState(), certified, map[string]bool{}, guardrails, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,11 +39,15 @@ func TestWallRefusesGuardrailChangeOutsideTheWardenLane(t *testing.T) {
 		t.Fatalf("an ordinary authorization must never carry a guardrail change: %q", inspection.Violation)
 	}
 
-	laned := wallAuthorization(t, root, "demo", pre, reviewed, func(record map[string]any) {
+	laned := bed.authorization(pre, reviewed, []string{"goldens/case.txt"}, patch, true, func(record map[string]any) {
 		record["guardrailLane"] = true
 	})
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": laned}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, guardrails, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, reviewed)
+	bed.facts.expectEntries(reviewed, []string{"goldens/case.txt"}, map[string]gittree.Entry{"goldens/case.txt": wallPolicyFile})
+	bed.facts.expectEntries(reviewed, []string{"goldens/case.txt"}, map[string]gittree.Entry{"goldens/case.txt": wallPolicyFile})
+	bed.facts.expectSnapshot(reviewed, reviewed)
+	inspection, err = bed.inspectWithGuardrails(pre, wallState(), certified, map[string]bool{}, guardrails, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,17 +62,16 @@ func TestWallRefusesGuardrailChangeOutsideTheWardenLane(t *testing.T) {
 // The lane fact is inside the authenticated record: stamping it onto
 // the bytes after issuance breaks the digest and refuses as tamper.
 func TestWallGuardrailLaneCannotBeForgedAfterIssuance(t *testing.T) {
-	root := wallRepo(t)
-	writeText(t, filepath.Join(root, "goldens", "case.txt"), "golden\n")
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "goldens", "case.txt"), "weakened\n")
-	reviewed := snapshotTree(t, root)
+	bed := newWallPolicyBed(t)
+	writeText(t, filepath.Join(bed.root, "goldens", "case.txt"), "golden\n")
+	pre, reviewed := "pre", "reviewed"
+	writeText(t, filepath.Join(bed.root, "goldens", "case.txt"), "weakened\n")
 	guardrails, _ := mission.ParseGuardrails(mission.ContractGuardrailSubject, "goldens/", protectedArtifactPath)
 
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
-	patchRecord(t, root, "demo", digest, map[string]any{"guardrailLane": true})
+	digest := bed.authorization(pre, reviewed, []string{"goldens/case.txt"}, wallPolicyPatch("golden forged"), true, nil)
+	patchRecord(t, bed.root, "demo", digest, map[string]any{"guardrailLane": true})
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, guardrails, "", legacySnapshot(root, "demo"))
+	inspection, err := bed.inspectWithGuardrails(pre, wallState(), certified, map[string]bool{}, guardrails, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -55,8 +55,9 @@ func TestReadModelWithContextSuffixPassesThroughToClaude(t *testing.T) {
 	}
 	delete(record.AdapterData, "model")
 	command, err = (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir())
-	if err != nil || !reflect.DeepEqual(command.Args, want) {
-		t.Fatalf("fallback argv=%v want=%v err=%v", command.Args, want, err)
+	fallbackWant := []string{"-p", "--model", "claude-opus-5-5[1m]", "--dangerously-skip-permissions", "--output-format", "json", "--name", "read-alpha"}
+	if err != nil || !reflect.DeepEqual(command.Args, fallbackWant) {
+		t.Fatalf("fallback argv=%v want=%v err=%v", command.Args, fallbackWant, err)
 	}
 }
 

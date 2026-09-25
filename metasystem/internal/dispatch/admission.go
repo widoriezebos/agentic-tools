@@ -89,11 +89,15 @@ func (v GoalAdmissionVerdict) Refused() bool {
 // pre-reservation seam. It has no side effects: a refusal prevents publication
 // but never winds down an existing job.
 func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdmissionVerdict, error) {
+	return evaluateGoalAdmissionWithReads(repoRoot, stopLineage, now, concreteGoalAdmissionReads())
+}
+
+func evaluateGoalAdmissionWithReads(repoRoot, stopLineage string, now time.Time, reads goalAdmissionReads) (GoalAdmissionVerdict, error) {
 	var verdict GoalAdmissionVerdict
-	if !goal.NewWorld(repoRoot) {
+	if !reads.NewWorld(repoRoot) {
 		return verdict, nil
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	endpoint, err := reads.ResolveEndpoint(repoRoot)
 	if err != nil {
 		return verdict, err
 	}
@@ -118,7 +122,7 @@ func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdm
 	if !needsMachine {
 		return verdict, nil
 	}
-	machine, err := goal.ResolveMachine(repoRoot)
+	machine, err := reads.ResolveMachine(repoRoot)
 	if err != nil {
 		return verdict, err
 	}
@@ -199,14 +203,27 @@ const (
 // EvaluateGoalRevisionAdmission preserves admission for callers that do not
 // dispatch a critic chain.
 func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap uint64, now time.Time, hazards ...HazardClass) (GoalRevisionAdmission, error) {
-	return EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id, revision, proposedCap, now, "implementer", "fresh", hazards...)
+	return evaluateGoalRevisionAdmissionWithReads(repoRoot, id, revision, proposedCap, now, concreteGoalAdmissionReads(), hazards...)
+}
+
+func evaluateGoalRevisionAdmissionWithReads(repoRoot, id string, revision, proposedCap uint64, now time.Time, reads goalAdmissionReads, hazards ...HazardClass) (GoalRevisionAdmission, error) {
+	return evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id, revision, proposedCap, now, "implementer", "fresh", allBudgetMembers, reads, hazards...)
 }
 
 // EvaluateGoalRevisionAdmissionForDispatch binds the final fence and projected
 // cap decision to the exact accepted revision and dispatch context about to
 // publish a reservation.
 func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, proposedCap uint64, now time.Time, role, dispatchMode string, hazards ...HazardClass) (GoalRevisionAdmission, error) {
-	return evaluateGoalRevisionAdmissionForDispatch(repoRoot, id, revision, proposedCap, now, role, dispatchMode, allBudgetMembers, hazards...)
+	return evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id, revision, proposedCap, now, role, dispatchMode, allBudgetMembers, concreteGoalAdmissionReads(), hazards...)
+}
+
+// EvaluateGoalRevisionAdmissionForDispatchWithReads evaluates the same
+// dispatch policy against supplied repository facts.
+func EvaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id string, revision, proposedCap uint64, now time.Time, role, dispatchMode string, reads ProofAdmissionReads, hazards ...HazardClass) (GoalRevisionAdmission, error) {
+	if err := reads.Validate(); err != nil {
+		return GoalRevisionAdmission{}, err
+	}
+	return evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id, revision, proposedCap, now, role, dispatchMode, allBudgetMembers, reads.private(), hazards...)
 }
 
 // EvaluateProofAdmissionForDispatch evaluates the claimed authority's clock
@@ -215,28 +232,43 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 // the same goal.
 func EvaluateProofAdmissionForDispatch(repoRoot, authorityID string, authorityRevision uint64, candidate *goal.GoalFile,
 	candidateRevision, proposedCap uint64, now time.Time, role, dispatchMode string, hazards ...HazardClass) (ProofAdmissionVerdict, error) {
+	return evaluateProofAdmissionForDispatchWithReads(repoRoot, authorityID, authorityRevision, candidate,
+		candidateRevision, proposedCap, now, role, dispatchMode, concreteGoalAdmissionReads(), hazards...)
+}
+
+func EvaluateProofAdmissionForDispatchWithReads(repoRoot, authorityID string, authorityRevision uint64, candidate *goal.GoalFile,
+	candidateRevision, proposedCap uint64, now time.Time, role, dispatchMode string, reads ProofAdmissionReads, hazards ...HazardClass) (ProofAdmissionVerdict, error) {
+	if err := reads.Validate(); err != nil {
+		return ProofAdmissionVerdict{}, err
+	}
+	return evaluateProofAdmissionForDispatchWithReads(repoRoot, authorityID, authorityRevision, candidate,
+		candidateRevision, proposedCap, now, role, dispatchMode, reads.private(), hazards...)
+}
+
+func evaluateProofAdmissionForDispatchWithReads(repoRoot, authorityID string, authorityRevision uint64, candidate *goal.GoalFile,
+	candidateRevision, proposedCap uint64, now time.Time, role, dispatchMode string, reads goalAdmissionReads, hazards ...HazardClass) (ProofAdmissionVerdict, error) {
 	var result ProofAdmissionVerdict
 	if candidate == nil || candidate.Id == "" {
 		return result, fmt.Errorf("proof admission requires a candidate goal")
 	}
 	if candidate.Id == authorityID {
-		verdict, err := evaluateGoalRevisionAdmissionForDispatch(repoRoot, authorityID, authorityRevision, proposedCap,
-			now, role, dispatchMode, allBudgetMembers, hazards...)
+		verdict, err := evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, authorityID, authorityRevision, proposedCap,
+			now, role, dispatchMode, allBudgetMembers, reads, hazards...)
 		result.Authority = verdict
 		return result, err
 	}
 	var err error
-	result.Authority, err = evaluateGoalRevisionAdmissionForDispatch(repoRoot, authorityID, authorityRevision, proposedCap,
-		now, role, dispatchMode, authorityBudgetMembers, hazards...)
+	result.Authority, err = evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, authorityID, authorityRevision, proposedCap,
+		now, role, dispatchMode, authorityBudgetMembers, reads, hazards...)
 	if err != nil {
 		return result, err
 	}
-	result.Candidate, err = evaluateCandidateConsumptionAdmission(repoRoot, candidate, candidateRevision, proposedCap, now)
+	result.Candidate, err = evaluateCandidateConsumptionAdmissionWithReads(repoRoot, candidate, candidateRevision, proposedCap, now, reads)
 	return result, err
 }
 
-func evaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, proposedCap uint64, now time.Time,
-	role, dispatchMode string, lens admissionBudgetLens, hazards ...HazardClass) (GoalRevisionAdmission, error) {
+func evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id string, revision, proposedCap uint64, now time.Time,
+	role, dispatchMode string, lens admissionBudgetLens, reads goalAdmissionReads, hazards ...HazardClass) (GoalRevisionAdmission, error) {
 	verdict := GoalRevisionAdmission{GoalID: id, GoalRevision: revision}
 	if proposedCap == 0 {
 		return verdict, fmt.Errorf("goal revision admission requires a positive proposed cap")
@@ -257,7 +289,7 @@ func evaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 	if _, err := MinimumHazardConfiguration(hazard); err != nil {
 		return verdict, err
 	}
-	binding, err := ResolveGoalBinding(repoRoot, id, now)
+	binding, err := resolveGoalBindingWithReads(repoRoot, id, now, reads)
 	if err != nil {
 		return verdict, err
 	}
@@ -329,7 +361,7 @@ func evaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Breaches: breaches,
 			Reserved: reservedMinutesEvidence(projection)}
 		if lens == allBudgetMembers && binding.File.BudgetExtension == nil && consumptionBreachesOnly(breaches) {
-			verdict.Extension, err = budgetExtensionOffer(repoRoot, binding.File, binding.Tier, now)
+			verdict.Extension, err = budgetExtensionOfferWithReads(repoRoot, binding.File, binding.Tier, now, reads.Receipt)
 			if err != nil {
 				return verdict, err
 			}
@@ -344,7 +376,7 @@ func evaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 	return verdict, nil
 }
 
-func evaluateCandidateConsumptionAdmission(repoRoot string, candidate *goal.GoalFile, revision, proposedCap uint64, now time.Time) (GoalRevisionAdmission, error) {
+func evaluateCandidateConsumptionAdmissionWithReads(repoRoot string, candidate *goal.GoalFile, revision, proposedCap uint64, now time.Time, reads goalAdmissionReads) (GoalRevisionAdmission, error) {
 	verdict := GoalRevisionAdmission{GoalID: candidate.Id, GoalRevision: revision}
 	if proposedCap == 0 {
 		return verdict, fmt.Errorf("candidate consumption admission requires a positive proposed cap")
@@ -380,7 +412,7 @@ func evaluateCandidateConsumptionAdmission(repoRoot string, candidate *goal.Goal
 	if tier == 0 {
 		tier = 3
 	}
-	offer, err := budgetExtensionOffer(repoRoot, candidate, tier, now)
+	offer, err := budgetExtensionOfferWithReads(repoRoot, candidate, tier, now, reads.Receipt)
 	if err != nil {
 		return verdict, err
 	}

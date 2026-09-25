@@ -156,17 +156,17 @@ func TestUnapproveUnderASignedInSessionWithdrawsApproval(t *testing.T) {
 
 func TestSetPriorityUnderASignedInSession(t *testing.T) {
 	t.Parallel()
-	root := rankedGoalBed(t, map[string][2]uint64{"a": {1, 1}, "b": {1, 2}, "c": {1, 3}})
-	request := priorityVerbReq(root, "01J5X000000000000000000SP1", "mac-a")
-	if _, err := SetPriority(request, "c", 1, sequencePointer(2), parsedSessionProofForTest(t, root, request.Now)); err == nil ||
+	endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{"a": {1, 1}, "b": {1, 2}, "c": {1, 3}})
+	request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000SP1", "mac-a")
+	if _, err := SetPriority(request, "c", 1, sequencePointer(2), parsedSessionProofForTest(t, endpoint.Root, request.Now)); err == nil ||
 		!strings.Contains(err.Error(), "signed-in browser session") {
 		t.Fatalf("a parsed session proof document reordered the backlog: %v", err)
 	}
-	result, err := SetPriority(request, "c", 1, sequencePointer(2), sessionProofForTest(t, root, request.Now))
+	result, err := SetPriority(request, "c", 1, sequencePointer(2), sessionProofForTest(t, endpoint.Root, request.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-priority under a signed-in session: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}

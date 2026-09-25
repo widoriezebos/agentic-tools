@@ -31,6 +31,88 @@ func TestDefaultTestingWorkersSharesCapturedCapacityAcrossAdmission(t *testing.T
 	}
 }
 
+func TestMemoryConstrainedTestingWorkersUsesProvisionalSafetyFormula(t *testing.T) {
+	t.Parallel()
+	const gib = uint64(1024 * 1024 * 1024)
+	for _, specimen := range []struct {
+		name                            string
+		gomax, admission, wantCPU, want int
+		available                       uint64
+		known                           bool
+	}{
+		{name: "18 CPU host", gomax: 18, admission: 3, available: 18*gib + 66*gib/100, known: true, wantCPU: 6, want: 6},
+		{name: "4 CPU guest", gomax: 4, admission: 1, available: 7*gib + 18*gib/100, known: true, wantCPU: 4, want: 3},
+		{name: "below headroom", gomax: 8, admission: 1, available: gib / 2, known: true, wantCPU: 8, want: 1},
+		{name: "unknown memory", gomax: 18, admission: 3, available: 0, known: false, wantCPU: 6, want: 6},
+	} {
+		t.Run(specimen.name, func(t *testing.T) {
+			t.Parallel()
+			cpuWorkers := defaultTestingWorkers(specimen.gomax, specimen.admission)
+			if cpuWorkers != specimen.wantCPU {
+				t.Fatalf("CPU workers=%d want=%d", cpuWorkers, specimen.wantCPU)
+			}
+			if got := memoryConstrainedTestingWorkers(cpuWorkers, specimen.available, specimen.known); got != specimen.want {
+				t.Fatalf("resolved workers=%d want=%d", got, specimen.want)
+			}
+		})
+	}
+}
+
+func TestAbsentTestingWorkersProbesMemoryOnceBeforeInheritedCeiling(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, []byte(proofrun.AdmissionCapKey+"=3\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const gib = uint64(1024 * 1024 * 1024)
+	probes := 0
+	limits, err := resolveProofRunLimitsWithInputs(conf, func(name string) (string, bool) {
+		if name == proofrun.TestWorkersEnvironment {
+			return "4", true
+		}
+		return "", false
+	}, 18, 18, func() (uint64, string, bool) {
+		probes++
+		return 18*gib + 66*gib/100, "fixture", true
+	})
+	if err != nil || limits.workers != 4 || limits.admissionMaximum != 3 || probes != 1 {
+		t.Fatalf("limits=%+v probes=%d err=%v", limits, probes, err)
+	}
+}
+
+func TestExplicitTestingWorkersSkipsMemoryProbe(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("testing.workers=7\n"+proofrun.AdmissionCapKey+"=2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	probes := 0
+	limits, err := resolveProofRunLimitsWithInputs(conf, func(string) (string, bool) { return "", false }, 18, 18, func() (uint64, string, bool) {
+		probes++
+		return 0, "unexpected", true
+	})
+	if err != nil || limits.workers != 7 || probes != 0 {
+		t.Fatalf("limits=%+v probes=%d err=%v", limits, probes, err)
+	}
+}
+
+func TestWatchdogLimitValidationUsesNoHostProbeAndStillRejectsMalformedWorkers(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, []byte(proofrun.AdmissionCapKey+"=3\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProofRunLimitsWithInputs(conf, func(string) (string, bool) { return "", false }, 18, 18); err != nil {
+		t.Fatalf("watchdog validation error=%v", err)
+	}
+	if err := os.WriteFile(conf, []byte("testing.workers=many\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProofRunLimitsWithInputs(conf, func(string) (string, bool) { return "", false }, 18, 18); err == nil || !strings.Contains(err.Error(), "testing.workers must be a positive integer") {
+		t.Fatalf("malformed watchdog configuration error=%v", err)
+	}
+}
+
 func TestTestingWorkersAcceptsLargeExplicitValueAndReportsAdmission(t *testing.T) {
 	t.Parallel()
 	conf := filepath.Join(t.TempDir(), "metasystem.conf")

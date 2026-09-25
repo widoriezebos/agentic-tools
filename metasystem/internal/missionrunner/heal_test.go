@@ -1,11 +1,7 @@
 package missionrunner
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,89 +22,10 @@ const healContract = "# Intent\n\n```mission\n" +
 	"sealed.baseline.score=5\n" +
 	"```\n"
 
-// crashedMission builds a running mission whose runner died inside a turn:
-// the fence counters have spent spentCycles while the ledger holds only
-// ledgerCycles appended lines (equal counts model a clean resume). The
-// workspace is a real git repository so the heal can resolve HEAD; the
-// anchor is stubbed as in the other engine tests, because anchoring shells
-// out to the metasystem binary a unit test does not have.
-func crashedMission(t *testing.T, ledgerCycles, spentCycles int) (engine *Engine, statePath, ledgerPath, head string) {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	root := t.TempDir()
-	git := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return string(out)
-	}
-	git("init", "-q")
-	// The deployment's projection boundary: runtime state under
-	// artifacts/ stays outside the wall's shippable snapshot.
-	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/\nbin/\nmetasystem.conf\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "README"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git("add", ".gitignore", "README")
-	git("commit", "-q", "-m", "seed")
-	git("checkout", "-q", "-B", "main")
-	head = strings.TrimSpace(git("rev-parse", "HEAD"))
-
-	engine = NewEngine(root, "demo")
-	engine.anchorFn = func(string, string, string) error { return nil }
-	dir := engine.missionDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	contractPath := engine.approvedContractPath()
-	if err := os.WriteFile(contractPath, []byte(healContract), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256([]byte(healContract))
-	writeJSONFile(t, engine.fencesPath(), map[string]any{
-		"schemaVersion": 1, "missionId": "demo", "startedAt": "2026-08-11T00:00:00Z",
-		"cycles": spentCycles, "reservations": map[string]any{},
-		"approvedContractSha256": hex.EncodeToString(sum[:]),
-	})
-
-	statePath = filepath.Join(dir, "state.json")
-	ledgerPath = filepath.Join(dir, "ledger.md")
-	if err := mission.InitLedger(ledgerPath, 10, 5); err != nil {
-		t.Fatal(err)
-	}
-	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
-		t.Fatal(err)
-	}
-	for cycle := 1; cycle <= ledgerCycles; cycle++ {
-		if _, err := mission.AppendCycle(ledgerPath, cycle, "unresolved", testSHA, "score=5", "no"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if ledgerCycles > 0 {
-		// Bring the state to its last concluded cycle, as a real crash
-		// leaves it: the reserved cycle exists only in the fence counters.
-		proposed := deepCopyDoc(readTestDoc(t, statePath))
-		proposed["ledger"].(map[string]any)["cycles"] = ledgerCycles
-		proposed["fences"].(map[string]any)["cycles"] = ledgerCycles
-		if _, err := engine.writeState(statePath, proposed); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return engine, statePath, ledgerPath, head
-}
-
 func TestHealReservedCycleRecordsLostTurn(t *testing.T) {
-	engine, statePath, ledgerPath, head := crashedMission(t, 2, 3)
+	bed := crashedFileMission(t, 2, 3)
+	bed.expectHEAD()
+	engine, statePath, ledgerPath, head := bed.engine, bed.statePath, bed.ledgerPath, fileHealHEAD
 	healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath))
 	if err != nil || !healed {
 		t.Fatalf("crash window must heal: healed=%v err=%v", healed, err)
@@ -137,7 +54,9 @@ func TestHealReservedCycleRecordsLostTurn(t *testing.T) {
 }
 
 func TestHealReservedCycleIsIdempotent(t *testing.T) {
-	engine, statePath, ledgerPath, _ := crashedMission(t, 2, 3)
+	bed := crashedFileMission(t, 2, 3)
+	bed.expectHEAD()
+	engine, statePath, ledgerPath := bed.engine, bed.statePath, bed.ledgerPath
 	if healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath)); err != nil || !healed {
 		t.Fatalf("first heal: healed=%v err=%v", healed, err)
 	}
@@ -155,8 +74,10 @@ func TestHealReservedCycleIsIdempotent(t *testing.T) {
 }
 
 func TestHealReservedCycleNoopWithoutGap(t *testing.T) {
-	engine, statePath, ledgerPath, _ := crashedMission(t, 2, 2)
+	bed := crashedFileMission(t, 2, 2)
+	engine, statePath, ledgerPath := bed.engine, bed.statePath, bed.ledgerPath
 	before, _ := os.ReadFile(ledgerPath)
+	stateBytesBefore, _ := os.ReadFile(statePath)
 	stateBefore := readTestDoc(t, statePath)
 	healed, err := engine.healReservedCycle(statePath, ledgerPath, stateBefore)
 	if err != nil || healed {
@@ -166,13 +87,19 @@ func TestHealReservedCycleNoopWithoutGap(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("a clean resume must not touch the ledger")
 	}
+	stateBytesAfter, _ := os.ReadFile(statePath)
+	if string(stateBytesBefore) != string(stateBytesAfter) {
+		t.Fatal("a clean resume must not touch the state")
+	}
 	if cycles, _ := jsonInt(readTestDoc(t, statePath)["ledger"].(map[string]any)["cycles"]); cycles != 2 {
 		t.Fatal("a clean resume must not advance the state")
 	}
 }
 
 func TestHealReservedCycleConsumesDrainStall(t *testing.T) {
-	engine, statePath, ledgerPath, head := crashedMission(t, 2, 3)
+	bed := crashedFileMission(t, 2, 3)
+	bed.expectHEAD()
+	engine, statePath, ledgerPath, head := bed.engine, bed.statePath, bed.ledgerPath, fileHealHEAD
 	// The drain-stalled unpark left the durable label naming exactly this
 	// reserved cycle.
 	proposed := deepCopyDoc(readTestDoc(t, statePath))
@@ -207,7 +134,9 @@ func TestHealReservedCycleConsumesDrainStall(t *testing.T) {
 }
 
 func TestHealReservedCycleIgnoresMismatchedDrainStall(t *testing.T) {
-	engine, statePath, ledgerPath, _ := crashedMission(t, 2, 3)
+	bed := crashedFileMission(t, 2, 3)
+	bed.expectHEAD()
+	engine, statePath, ledgerPath := bed.engine, bed.statePath, bed.ledgerPath
 	// A label from some older stall that does not name this gap's cycle:
 	// the gap heals as a plain lost turn, exactly as shipped, and the label
 	// is not consumed.
@@ -234,8 +163,10 @@ func TestHealReservedCycleLeavesWiderGapsAlone(t *testing.T) {
 	// A gap of more than one cycle is not this crash's signature: the heal
 	// covers exactly the one reserve a runner life can leave unappended, and
 	// anything wider stays a human's call rather than fabricated history.
-	engine, statePath, ledgerPath, _ := crashedMission(t, 1, 3)
+	bed := crashedFileMission(t, 1, 3)
+	engine, statePath, ledgerPath := bed.engine, bed.statePath, bed.ledgerPath
 	before, _ := os.ReadFile(ledgerPath)
+	stateBefore, _ := os.ReadFile(statePath)
 	healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath))
 	if err != nil || healed {
 		t.Fatalf("a wider gap must not be healed: healed=%v err=%v", healed, err)
@@ -243,5 +174,9 @@ func TestHealReservedCycleLeavesWiderGapsAlone(t *testing.T) {
 	after, _ := os.ReadFile(ledgerPath)
 	if string(before) != string(after) {
 		t.Fatal("a wider gap must leave the ledger untouched")
+	}
+	stateAfter, _ := os.ReadFile(statePath)
+	if string(stateBefore) != string(stateAfter) {
+		t.Fatal("a wider gap must leave the state untouched")
 	}
 }

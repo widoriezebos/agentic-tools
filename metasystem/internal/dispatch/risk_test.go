@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,37 +10,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-func commitRiskBindingState(t *testing.T, root string, risk *goal.RiskRecord, tier uint8) {
-	t.Helper()
-	path := filepath.Join(root, "plans", "goals", "bounded.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("parse goal binding fixture: %v", problems)
-	}
-	file.Risk = risk
-	file.Tier = tier
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-qm", "risk binding state"}, {"update-ref", goal.AcceptedRef, "HEAD"}, {"update-ref", goal.LocalLedgerBranch, "HEAD"}} {
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-}
-
 func TestSTR4R1RaiseTransactionDispatchSnapshots(t *testing.T) {
-	root := revisionBindingBed(t, 2)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
 	now := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
 	low := goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "landed precedent"}
-	commitRiskBindingState(t, root, &low, 1)
-	before, err := ResolveGoalBinding(root, "bounded", now)
+	bed.commitRisk(t, &low, 1)
+	before, err := bed.binding("bounded", now)
 	if err != nil || before.Tier != 1 || before.GateWidth != "area" {
 		t.Fatalf("pre-raise binding = %+v, %v", before, err)
 	}
@@ -50,12 +25,12 @@ func TestSTR4R1RaiseTransactionDispatchSnapshots(t *testing.T) {
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	oldSetup := filepath.Join(t.TempDir(), "old.json")
-	if err := BuildSetup(root, oldSetup, "old-root", "implementer", "", "main", "7", "bounded", before.Revision, before.Tier, capFile, "bed-m1", ""); err != nil {
+	if err := buildSetupWithGoalReads(root, oldSetup, "old-root", "implementer", "", "main", "7", "bounded", before.Revision, before.Tier, capFile, "bed-m1", "", bed.reads); err != nil {
 		t.Fatal(err)
 	}
 	raised := goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 2, Basis: "accumulation discovered"}
-	commitRiskBindingState(t, root, &raised, 2)
-	after, err := ResolveGoalBinding(root, "bounded", now)
+	bed.commitRisk(t, &raised, 2)
+	after, err := bed.binding("bounded", now)
 	if err != nil || after.Tier != 2 || after.GateWidth != "full" {
 		t.Fatalf("post-raise binding = %+v, %v", after, err)
 	}
@@ -64,7 +39,7 @@ func TestSTR4R1RaiseTransactionDispatchSnapshots(t *testing.T) {
 		t.Fatalf("already-dispatched root changed after raise: %+v", oldRecord)
 	}
 	newSetup := filepath.Join(t.TempDir(), "new.json")
-	if err := BuildSetup(root, newSetup, "new-root", "implementer", "", "main", "7", "bounded", after.Revision, after.Tier, capFile, "bed-m1", ""); err != nil {
+	if err := buildSetupWithGoalReads(root, newSetup, "new-root", "implementer", "", "main", "7", "bounded", after.Revision, after.Tier, capFile, "bed-m1", "", bed.reads); err != nil {
 		t.Fatal(err)
 	}
 	newRecord := readJSONFile(t, newSetup)
@@ -74,16 +49,16 @@ func TestSTR4R1RaiseTransactionDispatchSnapshots(t *testing.T) {
 }
 
 func TestRiskGateAdmissionMarksThenEnforces(t *testing.T) {
-	root := revisionBindingBed(t, 2)
+	bed := newGoalAdmissionBed(t, 2)
 	now := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
-	commitRiskBindingState(t, root, nil, 3)
-	unanswered, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, HazardMechanical)
+	bed.commitRisk(t, nil, 3)
+	unanswered, err := bed.revisionAdmission("bounded", 2, 5, now, HazardMechanical)
 	if err != nil || !unanswered.Refused() || unanswered.PolicyRefusal != "RISK_UNANSWERED goal=bounded tier=3 next: goal edit --risk" {
 		t.Fatalf("unanswered-risk admission = %+v, %v", unanswered, err)
 	}
 	risk := goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
-	commitRiskBindingState(t, root, &risk, 3)
-	answered, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, HazardMechanical)
+	bed.commitRisk(t, &risk, 3)
+	answered, err := bed.revisionAdmission("bounded", 2, 5, now, HazardMechanical)
 	if err != nil || answered.Refused() {
 		t.Fatalf("answered-risk admission = %+v, %v", answered, err)
 	}

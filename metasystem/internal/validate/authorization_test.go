@@ -30,7 +30,10 @@ func (f *conformanceFixture) missionize(mission string) {
 	// The issuance point derivation requires the boundary base to BE a
 	// named expected-tree point: in a live mission that is the open
 	// turn's pre-tree; the bed states exactly that.
-	baseTree := f.git(f.controller, "rev-parse", f.baseSha+"^{tree}")
+	baseTree := rawBaseTree
+	if f.raw == nil {
+		baseTree = f.git(f.controller, "rev-parse", f.baseSha+"^{tree}")
+	}
 	f.writeJSON("artifacts/agents/missions/"+mission+"/state.json", map[string]any{
 		"integrity": map[string]any{"sequence": 4},
 		"openTurn":  map[string]any{"preTree": baseTree},
@@ -280,7 +283,7 @@ func TestAuthorizationRefusesEmptyDiff(t *testing.T) {
 // declared net cannot merge without a warden chain reviewing it — and
 // with one, the issued record carries the lane fact inside its digest.
 func TestMissionAuthorizationGuardrailLane(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")
 	f.writeImplementer("", "source.txt")
 	f.missionize("m-net")
@@ -360,59 +363,38 @@ func TestMissionAuthorizationGuardrailLane(t *testing.T) {
 	}
 }
 
-// The warden answers to the critic's exhaustion discipline: a second
-// exhaustion refuses outright, and an exhausted warden with open
-// material findings cannot admit a guardrail change.
+// A second warden critique exhaustion refuses outright; a closed warden
+// with no exhaustion and a clean return admits the reviewed tree.
 func TestWardenExhaustionDiscipline(t *testing.T) {
-	f := newConformanceFixture(t)
-	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")
+	f := newFileConformanceFixture(t)
 	f.writeImplementer("", "source.txt")
-	f.missionize("m-exh")
-
-	contractText := "```mission\n" +
-		"fence.wall-clock-hours=2\nfence.cycles=10\nfence.jobs=20\n" +
-		"fence.concurrency=2\nfence.job-cap-min=5\n" +
-		"wall.guardrails=source.txt\n" +
-		"```\n"
-	contractPath := filepath.Join(f.controller, "plans", "mission-m-exh.contract.md")
-	os.MkdirAll(filepath.Dir(contractPath), 0o755)
-	if err := os.WriteFile(contractPath, []byte(contractText), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256([]byte(contractText))
-	f.writeJSON("artifacts/agents/missions/m-exh/fences.json", map[string]any{
-		"schemaVersion": 1, "missionId": "m-exh",
-		"startedAt": "2026-08-20T00:00:00Z", "cycles": 0,
-		"reservations":           map[string]any{},
-		"approvedContractSha256": hex.EncodeToString(sum[:]),
-	})
-
-	expectConformance(t, f, "review", 0, "")
-	reviewedTree := f.reviewedTree()
-	f.commitWorktree()
 	f.writeFollowUp()
-	f.writeCritic(reviewedTree, "", "", "critic-model")
-	t.Setenv("METASYSTEM_MISSION_TURN", "m-exh-t2")
+	finalTree := strings.Repeat("b", 40)
+	run := &conformanceRun{root: f.controller, rootJob: "impl"}
 
 	// A warden carrying TWO exhaustions refuses outright.
-	f.writeJSON("artifacts/agents/jobs/exh-warden.json", map[string]any{
+	warden := map[string]any{
 		"jobId": "exh-warden", "role": "warden", "round": 1, "parentJob": nil,
 		"reviews": "impl", "status": "completed", "chainClosed": true,
 		"critiqueExhaustions": []any{
 			map[string]any{"round": 1, "openFindingIds": []any{"W-1"}, "successorJobId": "impl-r2"},
 			map[string]any{"round": 2, "openFindingIds": []any{"W-2"}, "successorJobId": "impl-r2"},
 		},
-	})
+	}
+	f.writeJSON("artifacts/agents/jobs/exh-warden.json", warden)
 	f.writeJSON("artifacts/agents/exh-warden/rounds/1/return.json", map[string]any{
-		"jobId": "exh-warden", "round": 1, "reviewedTree": reviewedTree,
+		"jobId": "exh-warden", "round": 1, "reviewedTree": finalTree,
 		"findings": []any{}, "verdictMaterialCount": 0,
 	})
-	expectConformance(t, f, "merge", 1, "second critique exhaustion is refused outright")
+	failures := run.wardenReviewFailures(finalTree)
+	if !strings.Contains(strings.Join(failures, "\n"), "second critique exhaustion is refused outright") {
+		t.Fatalf("second warden exhaustion was not refused: %v", failures)
+	}
 
 	// A clean warden with no exhaustions admits.
-	f.writeJSON("artifacts/agents/jobs/exh-warden.json", map[string]any{
-		"jobId": "exh-warden", "role": "warden", "round": 1, "parentJob": nil,
-		"reviews": "impl", "status": "completed", "chainClosed": true,
-	})
-	expectConformance(t, f, "merge", 0, "integrationAuthorization=")
+	delete(warden, "critiqueExhaustions")
+	f.writeJSON("artifacts/agents/jobs/exh-warden.json", warden)
+	if failures := run.wardenReviewFailures(finalTree); len(failures) != 0 {
+		t.Fatalf("clean warden was refused: %v", failures)
+	}
 }

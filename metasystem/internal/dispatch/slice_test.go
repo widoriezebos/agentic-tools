@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -119,7 +118,8 @@ func TestApprovedRefIsStoredAndImmutableOnTheReservation(t *testing.T) {
 }
 
 func TestSliceAdmissionAcceptsHumanGoalHistoryOperation(t *testing.T) {
-	root := revisionBindingBed(t, 2)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
 	path := filepath.Join(root, "plans", "goals", "bounded.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -138,12 +138,8 @@ func TestSliceAdmissionAcceptsHumanGoalHistoryOperation(t *testing.T) {
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "human approval"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-	verdict, err := EvaluateSliceAdmission(root, 241, humanRef, "bounded", 2)
+	bed.accept(t)
+	verdict, err := evaluateSliceAdmissionWithReads(root, 241, humanRef, "bounded", 2, bed.reads)
 	if err != nil || verdict.Refused() || verdict.ApprovalClaim == nil ||
 		verdict.ApprovalClaim.CapMinutes != 300 || verdict.ApprovalClaim.GoalRevision != 2 {
 		t.Fatalf("human goal-history approval did not admit the slice: %+v %v", verdict, err)

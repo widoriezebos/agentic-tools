@@ -142,8 +142,8 @@ func TestLoadReadRefusalsMissingAndDeduplicated(t *testing.T) {
 func TestSliceZeroEmitsNothing(t *testing.T) {
 	repo := t.TempDir()
 	writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-	setCriticSubject(t, repo, "critic", "implementer", "reviewed-tree")
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+	setCriticSubjectFiles(t, repo, "critic", "implementer", "reviewed-tree")
+	if outcome, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil || outcome != "advanced" {
 		t.Fatalf("advance = %q, %v", outcome, err)
 	}
 	if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {

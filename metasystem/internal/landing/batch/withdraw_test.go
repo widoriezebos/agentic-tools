@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,15 +10,14 @@ import (
 	"time"
 )
 
-func withdrawalBed(t *testing.T) (assemblyBed, Store) {
+func withdrawalBed(t *testing.T) (policyBed, Store) {
 	t.Helper()
-	bed := assemblyFixture(t)
+	bed := policyFixture(t)
 	for index := range bed.record.Units {
 		bed.record.Units[index].SeatRoot = "/seat"
 		bed.record.Units[index].SelectedGroups = []string{"shared", bed.record.Units[index].GoalID}
 	}
-	prefixes, err := assembleUnits(bed.root, bed.base, bed.record.Units)
-	must(t, err)
+	prefixes := []string{"prefix-a", "prefix-ab"}
 	bed.record.PrefixTrees, bed.record.TipTree = prefixes, prefixes[len(prefixes)-1]
 	bed.record.SelectedGroups = []string{"goal-a", "goal-b", "shared"}
 	store := NewStore(bed.root, nil)
@@ -28,9 +28,9 @@ func withdrawalBed(t *testing.T) (assemblyBed, Store) {
 func TestBatchWithdrawBeforeSealAndRefusesAfterSeal(t *testing.T) {
 	t.Run("before seal leaves the queue and owner returns custody", func(t *testing.T) {
 		bed, store := withdrawalBed(t)
+		want := []string{"prefix-b"}
+		strictReassembly(t, &store, expectedAssembly(bed.base, []string{"goal-b"}, []string{"chain-b"}, want))
 		record, err := RequestWithdrawal(store, "goal-a", "seat", "l", "/seat", "seat+l", time.Unix(2, 0))
-		must(t, err)
-		want, err := assembleUnits(bed.root, bed.base, []Unit{bed.record.Units[1]})
 		must(t, err)
 		if record.Units[0].State != UnitReturnPending || record.Units[0].Outcome != UnitWithdrawn ||
 			record.History[len(record.History)-1].Verb != "withdraw-requested" || record.TipTree != want[0] ||
@@ -54,6 +54,7 @@ func TestBatchWithdrawBeforeSealAndRefusesAfterSeal(t *testing.T) {
 
 	t.Run("after seal refuses with remedy and preserves bytes", func(t *testing.T) {
 		_, store := withdrawalBed(t)
+		strictReassembly(t, &store)
 		must(t, store.Update(testBatchID, func(record *Record) error { record.State = StateSealed; return nil }))
 		path := filepath.Join(store.root, "artifacts", "agents", "landing-batches", testBatchID+".json")
 		before, err := os.ReadFile(path)
@@ -82,6 +83,7 @@ func TestBatchWithdrawRefusesUnspecifiedCases(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, store := withdrawalBed(t)
+			strictReassembly(t, &store)
 			if test.change != nil {
 				must(t, store.Update(testBatchID, func(record *Record) error { test.change(record); return nil }))
 			}
@@ -90,5 +92,21 @@ func TestBatchWithdrawRefusesUnspecifiedCases(t *testing.T) {
 				t.Fatalf("refusal=%v", err)
 			}
 		})
+	}
+}
+
+func TestBatchWithdrawalAssemblyFailurePreservesRecord(t *testing.T) {
+	bed, store := withdrawalBed(t)
+	wantErr := errors.New("survivor assembly unavailable")
+	strictReassembly(t, &store, expectedReassembly{kind: "assemble", base: bed.base,
+		goals: []string{"goal-b"}, chains: []string{"chain-b"}, err: wantErr})
+	path := filepath.Join(store.root, "artifacts", "agents", "landing-batches", testBatchID+".json")
+	before, err := os.ReadFile(path)
+	must(t, err)
+	_, err = RequestWithdrawal(store, "goal-a", "seat", "l", "/seat", "seat+l", time.Unix(2, 0))
+	after, readErr := os.ReadFile(path)
+	must(t, readErr)
+	if !errors.Is(err, wantErr) || !slices.Equal(before, after) {
+		t.Fatalf("assembly error=%v record changed=%t", err, !slices.Equal(before, after))
 	}
 }

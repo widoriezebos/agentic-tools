@@ -1,13 +1,11 @@
 package testselect
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -223,26 +221,26 @@ func TestSelectGitChangedFilesMatchesExplicitList(t *testing.T) {
 	repository := t.TempDir()
 	moduleRoot := filepath.Join(repository, "nested", "module")
 	writeTestFile(t, filepath.Join(moduleRoot, "go.mod"), "module example.test/gitfixture\n\ngo 1.27\n")
-	writeTestFile(t, filepath.Join(moduleRoot, "a", "a.go"), "package a\n\nconst Value = 1\n")
-	writeTestFile(t, filepath.Join(moduleRoot, "b", "b.go"), "package b\n\nimport \"example.test/gitfixture/a\"\n\nconst Value = a.Value\n")
-	runGit(t, repository, "init", "-q")
-	fastImport(t, repository, "base", "", map[string]string{
-		"nested/module/go.mod": "module example.test/gitfixture\n\ngo 1.27\n",
-		"nested/module/a/a.go": "package a\n\nconst Value = 1\n",
-		"nested/module/b/b.go": "package b\n\nimport \"example.test/gitfixture/a\"\n\nconst Value = a.Value\n",
-	})
-	base := strings.TrimSpace(runGit(t, repository, "rev-parse", "refs/heads/main"))
 	writeTestFile(t, filepath.Join(moduleRoot, "a", "a.go"), "package a\n\nconst Value = 2\n")
-	fastImport(t, repository, "head", base, map[string]string{
-		"nested/module/a/a.go": "package a\n\nconst Value = 2\n",
-	})
-	head := strings.TrimSpace(runGit(t, repository, "rev-parse", "refs/heads/main"))
-
-	fromGit, err := Select(Request{ModuleRoot: moduleRoot, Base: base, Head: head})
+	writeTestFile(t, filepath.Join(moduleRoot, "b", "b.go"), "package b\n\nimport \"example.test/gitfixture/a\"\n\nconst Value = a.Value\n")
+	base, head := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	goListArgs := []string{"list", "-e", "-test", "-f", `{{.ImportPath}}|{{join .Deps ","}}`, "./..."}
+	goListOutput := []byte("example.test/gitfixture/a|\nexample.test/gitfixture/b|example.test/gitfixture/a\n")
+	gitRunner := &strictSelectRunner{t: t, steps: []selectCommand{
+		{moduleRoot, "git", []string{"rev-parse", "--show-prefix"}, []byte("nested/module/\n"), nil},
+		{moduleRoot, "git", []string{"diff", "--name-only", "--no-renames", base, head, "--"}, []byte("records/note.md\nnested/module/a/a.go\n"), nil},
+		{moduleRoot, "go", goListArgs, goListOutput, nil},
+	}}
+	t.Cleanup(gitRunner.checkConsumed)
+	fromGit, err := selectWithRunner(Request{ModuleRoot: moduleRoot, Base: base, Head: head}, gitRunner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	explicit, err := Select(Request{ModuleRoot: moduleRoot, Changed: []string{"a/a.go"}})
+	explicitRunner := &strictSelectRunner{t: t, steps: []selectCommand{
+		{moduleRoot, "go", goListArgs, goListOutput, nil},
+	}}
+	t.Cleanup(explicitRunner.checkConsumed)
+	explicit, err := selectWithRunner(Request{ModuleRoot: moduleRoot, Changed: []string{"a/a.go"}}, explicitRunner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,6 +248,39 @@ func TestSelectGitChangedFilesMatchesExplicitList(t *testing.T) {
 		t.Fatalf("git selection differs from explicit list:\ngit:      %#v\nexplicit: %#v", fromGit, explicit)
 	}
 	assertDecision(t, fromGit, "./b", Whole, "imports ./a")
+}
+
+type selectCommand struct {
+	dir, name string
+	args      []string
+	output    []byte
+	err       error
+}
+
+type strictSelectRunner struct {
+	t     *testing.T
+	steps []selectCommand
+	next  int
+}
+
+func (runner *strictSelectRunner) Run(dir, name string, args ...string) ([]byte, error) {
+	runner.t.Helper()
+	if runner.next >= len(runner.steps) {
+		runner.t.Fatalf("unexpected command: %s %s in %s", name, strings.Join(args, " "), dir)
+	}
+	want := runner.steps[runner.next]
+	if dir != want.dir || name != want.name || !reflect.DeepEqual(args, want.args) {
+		runner.t.Fatalf("command %d = (%q, %q, %q), want (%q, %q, %q)", runner.next, dir, name, args, want.dir, want.name, want.args)
+	}
+	runner.next++
+	return want.output, want.err
+}
+
+func (runner *strictSelectRunner) checkConsumed() {
+	runner.t.Helper()
+	if runner.next != len(runner.steps) {
+		runner.t.Errorf("used %d of %d declared commands", runner.next, len(runner.steps))
+	}
 }
 
 func TestNonTestImportsAreStandardLibrary(t *testing.T) {
@@ -324,55 +355,4 @@ func writeTestFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func runGit(t *testing.T, repository string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", repository}, args...)...)
-	command.Env = gitEnvironment()
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
-	}
-	return string(output)
-}
-
-func fastImport(t *testing.T, repository, message, from string, files map[string]string) {
-	t.Helper()
-	var stream bytes.Buffer
-	stream.WriteString("commit refs/heads/main\n")
-	stream.WriteString("author Test Author <test@example.com> 946684800 +0000\n")
-	stream.WriteString("committer Test Committer <test@example.com> 946684800 +0000\n")
-	fmt.Fprintf(&stream, "data %d\n%s\n", len(message), message)
-	if from != "" {
-		fmt.Fprintf(&stream, "from %s\n", from)
-	}
-	paths := make([]string, 0, len(files))
-	for path := range files {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		content := files[path]
-		fmt.Fprintf(&stream, "M 100644 inline %s\ndata %d\n%s\n", path, len(content), content)
-	}
-	stream.WriteString("\ndone\n")
-	command := exec.Command("git", "-C", repository, "fast-import", "--quiet")
-	command.Env = gitEnvironment()
-	command.Stdin = &stream
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git fast-import: %v: %s", err, output)
-	}
-}
-
-func gitEnvironment() []string {
-	return append(os.Environ(),
-		"GIT_AUTHOR_NAME=Test Author",
-		"GIT_AUTHOR_EMAIL=test@example.com",
-		"GIT_AUTHOR_DATE=2000-01-01T00:00:00Z",
-		"GIT_COMMITTER_NAME=Test Committer",
-		"GIT_COMMITTER_EMAIL=test@example.com",
-		"GIT_COMMITTER_DATE=2000-01-01T00:00:00Z",
-	)
 }

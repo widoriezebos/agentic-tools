@@ -26,6 +26,10 @@ var batchDiagnosisSeams = struct {
 }{commitForTree, batch.DiagnoseRed}
 
 func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
+	return executeBatchDiagnosisWithConfig(root, id, actor, at, nil)
+}
+
+func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, lookup func(string, string) (string, error)) error {
 	controlRoot := batch.ModuleRoot(root)
 	ledgerOwner, err := productionTrunkRedLedgerOwner(controlRoot)
 	if err != nil {
@@ -61,7 +65,11 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 			return "", false, nil
 		},
 		MintOpid: func() (string, error) {
-			machine, err := goal.ResolveMachine(controlRoot)
+			resolveMachine := goal.ResolveMachine
+			if lookup != nil {
+				resolveMachine = func(root string) (string, error) { return goal.ResolveMachineWithConfig(root, lookup) }
+			}
+			machine, err := resolveMachine(controlRoot)
 			if err != nil {
 				return "", err
 			}
@@ -99,14 +107,26 @@ var batchDiagnosticExecute = func(binary string, args []string, dir string, envi
 // clearingDiagnostic is the owner's trunk-red clearing run. That path hands the member's claim beside the
 // request, and the launcher reads the expected revisions from the request, so the claim goes in first.
 func clearingDiagnostic(root string) func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
+	return clearingDiagnosticWithLaunch(root, launchBatchDiagnostic)
+}
+
+func clearingDiagnosticWithLaunch(root string,
+	launch func(string, string, batch.DiagnosticRequest) (batch.DiagnosticResult, error),
+) func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
 	controlRoot := batch.ModuleRoot(root)
 	return func(batchID string, request batch.DiagnosticRequest, claim batch.Claim) (batch.DiagnosticResult, error) {
 		request.Claim = claim
-		return launchBatchDiagnostic(controlRoot, batchID, request)
+		return launch(controlRoot, batchID, request)
 	}
 }
 
 func launchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
+	return launchBatchDiagnosticWithExecute(root, batchID, request, batchDiagnosticExecute)
+}
+
+func launchBatchDiagnosticWithExecute(root, batchID string, request batch.DiagnosticRequest,
+	execute func(string, []string, string, []string) ([]byte, int, error),
+) (batch.DiagnosticResult, error) {
 	binary, err := os.Executable()
 	if err != nil {
 		return batch.DiagnosticResult{}, err
@@ -116,7 +136,7 @@ func launchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest
 		return batch.DiagnosticResult{}, err
 	}
 	args := batchDiagnosticArgs(root, request, resultPath)
-	output, status, runErr := batchDiagnosticExecute(binary, args, root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage))
+	output, status, runErr := execute(binary, args, root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage))
 	if runErr != nil && status == proofrun.ExitAdmissionRefused {
 		return batch.DiagnosticResult{}, &batch.DiagnosticRefusal{Status: strings.TrimSpace(string(output))}
 	}

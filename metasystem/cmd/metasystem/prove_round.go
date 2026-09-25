@@ -60,6 +60,10 @@ type ProofRoundRecord struct {
 // no group's inputs proves in seconds and the landing reuses the last
 // round's passed groups.
 func runDispatchProveRound(args []string) int {
+	return runDispatchProveRoundWithRawSource(args, nil)
+}
+
+func runDispatchProveRoundWithRawSource(args []string, raw func(gittree.RawRequest) gittree.RawResult) int {
 	flags := flag.NewFlagSet("job prove-round", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "MetaSystem installation root")
 	job := flags.String("job", "", "any job id of the chain")
@@ -76,7 +80,7 @@ func runDispatchProveRound(args []string) int {
 		fmt.Fprintln(os.Stderr, "job prove-round:", err)
 		return 1
 	}
-	proof, refusal, err := prepareProofRound(installation, *job)
+	proof, refusal, err := prepareProofRoundWithRawSource(installation, *job, raw)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "job prove-round:", err)
 		return 1
@@ -146,7 +150,7 @@ func runDispatchProveRound(args []string) int {
 // prepareProofRound resolves the chain and the tree to prove. A refusal is
 // a reason in plain words and no error: the record was readable, the round
 // is just not provable this way.
-func prepareProofRound(installation, job string) (ProofRoundRecord, string, error) {
+func prepareProofRoundWithRawSource(installation, job string, raw func(gittree.RawRequest) gittree.RawResult) (ProofRoundRecord, string, error) {
 	jobs := filepath.Join(installation, "artifacts", "agents", "jobs")
 	rootJob, err := usagepkg.RootJobID(jobs, job)
 	if err != nil {
@@ -204,7 +208,7 @@ func prepareProofRound(installation, job string) (ProofRoundRecord, string, erro
 	// The tree proved is the worktree as it stands: delegates never commit,
 	// so HEAD plus every working-tree change, tracked and untracked alike,
 	// is the round's work, exactly the snapshot conformance reviews.
-	proof.CandidateTree, err = (gittree.Workspace{Dir: workspace}).Snapshot("HEAD")
+	proof.CandidateTree, err = (gittree.Workspace{Dir: workspace, RawSource: raw}).Snapshot("HEAD")
 	if err != nil {
 		return ProofRoundRecord{}, "", err
 	}

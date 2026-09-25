@@ -222,7 +222,7 @@ assert_scratch_scoped_announcement_calls() {
 assert_scratch_scoped_announcement_calls
 
 assert_fixture_supervision_isolation() {
-  local root announcement announced_pid armed_registry armed_pid armed_source armed_in_bed direct_up_seen=0
+  local root announcement announced_pid read_status armed_registry armed_pid armed_source armed_in_bed direct_up_seen=0
   [[ "$METASYSTEM_SUPERVISION_REGISTRY_HOME" == "$fixture_registry_home" ]] \
     || { echo "supervision fixture scenario $fixture_scenario changed its run-scoped registry home" >&2; return 1; }
   [[ "$METASYSTEM_SUPERVISION_REGISTRY_HOME" != "$fixture_seat_registry_home" ]] \
@@ -247,7 +247,14 @@ assert_fixture_supervision_isolation() {
       case "${announcement##*/}" in
         *.protocol-cursor.json|reaped-after-claim.json|worktree-commit-token.json|worktree-lease.json) continue ;;
       esac
-      announced_pid=$("$ms" json get --file "$announcement" --field pid 2>/dev/null || true)
+      # A read or parse failure is its own finding: name the file, the
+      # reader's status, and its error rather than report an empty foreign pid.
+      read_status=0
+      announced_pid=$("$ms" json get --file "$announcement" --field pid 2>"$tmp/announcement-read.err") || read_status=$?
+      if (( read_status != 0 )); then
+        echo "supervision fixture scenario $fixture_scenario could not read the announced main pid from $announcement (json get status $read_status): $(cat "$tmp/announcement-read.err")" >&2
+        return 1
+      fi
       if ! fixture_pid_is_in_bed "$announced_pid" && ! awk -F '\t' -v pid="$announced_pid" '$2 == pid && $4 == 1 { found=1 } END { exit !found }' "$METASYSTEM_SUPERVISION_FIXTURE_AUDIT"; then
         echo "supervision fixture scenario $fixture_scenario announced main pid $announced_pid outside its scenario bed $fixture_bed_pid" >&2
         return 1
@@ -266,6 +273,30 @@ assert_fixture_supervision_isolation() {
       fi
       ;;
   esac
+}
+
+# The isolation scan must keep an unreadable announcement distinct from a
+# foreign one, and must still refuse a readable foreign pid.
+assert_announcement_read_diagnostics() {
+  local probe case_root expected rc
+  for probe in malformed:'{' no-pid:'{"session":"probe"}' foreign:'{"pid":1}'; do
+    case_root=$tmp/announcement-read-probe-${probe%%:*}
+    mkdir -p "$case_root/artifacts/agents/mains"
+    printf '%s\n' "${probe#*:}" >"$case_root/artifacts/agents/mains/probe.json"
+    rc=0
+    (fixture_harness_roots=("$case_root"); assert_fixture_supervision_isolation) \
+      2>"$case_root.err" || rc=$?
+    case "${probe%%:*}" in
+      foreign) expected="announced main pid 1 outside its scenario bed" ;;
+      *) expected="could not read the announced main pid from $case_root/artifacts/agents/mains/probe.json (json get status " ;;
+    esac
+    if (( rc == 0 )) || ! grep -Fq "$expected" "$case_root.err"; then
+      echo "announcement read probe ${probe%%:*} did not fail with its own diagnostic (rc=$rc)" >&2
+      cat "$case_root.err" >&2
+      exit 1
+    fi
+    rm -rf "$case_root" "$case_root.err"
+  done
 }
 
 fixture_pid_is_in_bed() { # pid
@@ -766,6 +797,14 @@ case "$fixture_scenario" in
 	awk '{ gsub(/<[^>]+>/, "fixture"); print }' "$measure_root/docs/project-rules.md" \
 	  >"$measure_root/docs/project-rules.md.fixture"
 	mv "$measure_root/docs/project-rules.md.fixture" "$measure_root/docs/project-rules.md"
+	# The copied indexes bind chapters under metasystem/docs/, which a
+	# standalone bed does not have, so the bed keeps its own short records.
+	printf '%s\n' '# Intent' '' '- Kind: intent' '- Id: 01WAITMEASUREINTENT' '- Status: accepted' '' \
+	  'This bed exists so a landing can be measured without touching a real checkout.' \
+	  >"$measure_root/docs/intent/index.md"
+	printf '%s\n' '# Doctrine' '' '- Kind: doctrine' '- Id: 01WAITMEASUREDOCTRINE' '- Status: accepted' '' \
+	  'A landing passes the same project check here as anywhere else.' \
+	  >"$measure_root/docs/doctrine/index.md"
 	landing_goal=wait-measure-goal
 	measure_goal=$measure_root/plans/goals/$landing_goal.md
 	mkdir -p "${measure_goal%/*}"
@@ -916,6 +955,8 @@ LAND_ENGINE
 	grep -Fq 'unavailable=0' "$measure_report" \
 	  || { echo "wait-measure-fake produced an unavailable sample" >&2; cat "$measure_report" >&2; exit 1; }
 	control_uncertainty=$(grep '"targetId":"job-control"' "$measure_report" | sed -n 's/.*"uncertaintyNanos":\([0-9][0-9]*\).*/\1/p')
+	# uncertaintyNanos omitempty denotes a zero-width interval.
+	control_uncertainty=${control_uncertainty:-0}
 	unhinted_uncertainty=$(grep '"targetId":"job-unhinted"' "$measure_report" | sed -n 's/.*"uncertaintyNanos":\([0-9][0-9]*\).*/\1/p')
 	[[ "$control_uncertainty" =~ ^[0-9]+$ && "$unhinted_uncertainty" =~ ^[0-9]+$ && "$unhinted_uncertainty" -gt "$control_uncertainty" ]] \
 	  || { echo "unhinted bracket was not wider: control=$control_uncertainty unhinted=$unhinted_uncertainty" >&2; cat "$measure_report" >&2; exit 1; }
@@ -1000,6 +1041,7 @@ make_repo() { # destination
     --set watch.interval-sec=1 \
     --set census.log-max-bytes=350
   git -C "$repo" init -q -b main
+  git -C "$repo" config --local metasystem.steward.notify-command true
   git -C "$repo" add .
   git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
   # Stage the engine the way production ships it: an untracked build artifact
@@ -1221,6 +1263,7 @@ done)
 operator_scope=$(cd "$operator_scope" && pwd -P)
 operator_harness=$(cd "$operator_harness" && pwd -P)
 git -C "$operator_scope" init -q -b main
+git -C "$operator_scope" config --local metasystem.steward.notify-command true
 git -C "$operator_scope" add metasystem
 git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
 fixture_harness_roots+=("$operator_harness")
@@ -2029,9 +2072,23 @@ if [[ "$fixture_scenario" == nested-compiled-installations ]]; then
     "$nested_local_scope" nested-local 'nested-local sentinel' 'local-only template installation Stop'
 fi
 
+  # The ownership assertion reads the holder's announcement while the holder
+  # still owns it; releasing first would let retirement race the scan.
+  kill -0 "$nested_main_pid" 2>/dev/null \
+    || { echo "nested sibling main exited before the final ownership assertion" >&2; exit 1; }
+  # The writer names an announcement <session>-<pid>.json; the driver armed
+  # session nested-holder with its own pid, so this is the one record to prove.
+  nested_announcement=$nested_installation/artifacts/agents/mains/nested-holder-$nested_main_pid.json
+  nested_read_status=0
+  nested_announced_pid=$("$ms" json get --file "$nested_announcement" --field pid) || nested_read_status=$?
+  (( nested_read_status == 0 )) \
+    || { echo "nested sibling main's announcement $nested_announcement is unreadable at the final ownership assertion (json get status $nested_read_status)" >&2; exit 1; }
+  [[ "$nested_announced_pid" == "$nested_main_pid" ]] \
+    || { echo "nested sibling main's announcement $nested_announcement names pid $nested_announced_pid, not $nested_main_pid" >&2; exit 1; }
+  assert_announcement_read_diagnostics
+  assert_fixture_supervision_isolation
   touch "$nested_arm_release"
   wait_for_child_exit "nested sibling main release" "$nested_main_pid"
-  assert_fixture_supervision_isolation
   echo "nested root resolver, linked worktree, engine skew, deadline, compiled installation, and hook freshness fixtures passed" >&2
 fixture_child_completed=1
 exit 0

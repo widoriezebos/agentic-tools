@@ -108,6 +108,10 @@ var batchLandOriginTree = func(root, commit string) (string, error) {
 var batchLandRecoverPush = recoverMovedBatchPush
 
 func batchLandSeams(root, id string, record batch.Record, baseCommit, actor string) batch.LandSeams {
+	return batchLandSeamsWithRead(root, id, record, baseCommit, actor, gitOutput)
+}
+
+func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, actor string, readGit func(root string, args ...string) (string, error)) batch.LandSeams {
 	controlRoot := batch.ModuleRoot(root)
 	return batch.LandSeams{
 		Prepare: func(_ string) error { return batch.PrepareLandingBranch(root, id, baseCommit) },
@@ -121,10 +125,10 @@ func batchLandSeams(root, id string, record batch.Record, baseCommit, actor stri
 				path = filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json")
 			}
 			message := fmt.Sprintf("land %s in batch %s\n\nOriginal join order; prefix tree %s.\n", unit.GoalID, id, receipt.Tree)
-			if err := batch.CommitWithWrapper(controlRoot, batch.ChainDeclaration(unit.Chain), unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+			if err := batch.CommitWithWrapperWithRead(controlRoot, batch.ChainDeclaration(unit.Chain), unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor, readGit); err != nil {
 				return "", err
 			}
-			return gitOutput(root, "rev-parse", "HEAD")
+			return readGit(root, "rev-parse", "HEAD")
 		},
 		ApplyBuild: func(_ batch.Unit, build batch.BranchBuild) error {
 			return batch.ApplyBranchBuild(root, root, build)
@@ -139,14 +143,14 @@ func batchLandSeams(root, id string, record batch.Record, baseCommit, actor stri
 			}
 			last := unit.GoalLast && len(unit.CommitIDs) != 0 && build.Commit == unit.CommitIDs[len(unit.CommitIDs)-1]
 			declaration := batch.AttestedDeclaration(build.Commit, unit.BranchTip, baseCommit)
-			if err := batch.CommitWithWrapper(controlRoot, declaration, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+			if err := batch.CommitWithWrapperWithRead(controlRoot, declaration, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor, readGit); err != nil {
 				return "", err
 			}
-			commit, err := gitOutput(root, "rev-parse", "HEAD")
+			commit, err := readGit(root, "rev-parse", "HEAD")
 			if err != nil {
 				return "", err
 			}
-			if err := batch.RequirePassingCommitVerdict(root, unit.GoalID, commit); err != nil {
+			if err := batch.RequirePassingCommitVerdictWithRead(root, unit.GoalID, commit, readGit); err != nil {
 				return "", err
 			}
 			return commit, nil
@@ -227,13 +231,18 @@ var batchRecoveryGoalNext = func(root, goalID string, at time.Time) (string, err
 }
 
 func recoverMovedBatchPush(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string) (batch.PushRecovery, error) {
+	return recoverMovedBatchPushWithInputs(root, id, record, actor, expectedBase, originCommit, baseTree, tip, gitOutput, func(cmd *exec.Cmd) error { return cmd.Run() })
+}
+
+func recoverMovedBatchPushWithInputs(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string,
+	readGit func(root string, args ...string) (string, error), runGit func(*exec.Cmd) error) (batch.PushRecovery, error) {
 	controlRoot := batch.ModuleRoot(root)
-	originTree, err := gitOutput(root, "rev-parse", originCommit+"^{tree}")
+	originTree, err := readGit(root, "rev-parse", originCommit+"^{tree}")
 	recovery := batch.PushRecovery{Origin: originCommit, BaseTree: originTree}
 	if err != nil {
 		return recovery, err
 	}
-	landed, err := batchSeriesOnEndpoint(root, originCommit, tip)
+	landed, err := batchSeriesOnEndpointWithRunner(root, originCommit, tip, runGit)
 	if err != nil {
 		return recovery, err
 	}
@@ -311,12 +320,16 @@ func reopenMovedBatchAfterRecoveryFailure(_, _, _, _ string, recovery batch.Push
 }
 
 func batchSeriesOnEndpoint(root, origin, tip string) (bool, error) {
+	return batchSeriesOnEndpointWithRunner(root, origin, tip, func(cmd *exec.Cmd) error { return cmd.Run() })
+}
+
+func batchSeriesOnEndpointWithRunner(root, origin, tip string, runGit func(*exec.Cmd) error) (bool, error) {
 	if origin == "" || tip == "" {
 		return false, nil
 	}
 	command := exec.Command("git", "-C", root, "merge-base", "--is-ancestor", tip, origin)
 	command.Env = gittree.ScrubbedEnviron()
-	err := command.Run()
+	err := runGit(command)
 	if err == nil {
 		return true, nil
 	}
@@ -376,7 +389,11 @@ func batchProofInputsMoved(record batch.Record, changed []string, installationPr
 }
 
 func rebasedPrefixTrees(root, base, tip string, units []batch.Unit) ([]string, error) {
-	output, err := gitOutput(root, "log", "--first-parent", "--reverse", "--format=%T", base+".."+tip)
+	return rebasedPrefixTreesWith(root, base, tip, units, gitOutput)
+}
+
+func rebasedPrefixTreesWith(root, base, tip string, units []batch.Unit, readGit func(string, ...string) (string, error)) ([]string, error) {
+	output, err := readGit(root, "log", "--first-parent", "--reverse", "--format=%T", base+".."+tip)
 	if err != nil {
 		return nil, err
 	}
@@ -412,11 +429,28 @@ func gitHead(root string) string {
 
 var batchPrefixReceiptExecutable = os.Executable
 
-func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
-	return executeBatchPrefixReceiptWithDecision(root, id, record, goalID, tree, batch.PrefixDecision{Groups: groups})
+type batchExecutionDependencies struct {
+	executable func() (string, error)
+	checkout   func(string, string) (string, func() error, error)
+	topLevel   func(string) (string, error)
+	readGit    func(string, ...string) (string, error)
+}
+
+func batchDetachedCheckout(root, tree string) (string, func() error, error) {
+	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
+	if err != nil {
+		return "", nil, err
+	}
+	return detached.Workspace().Dir, detached.Close, nil
 }
 
 func executeBatchPrefixReceiptWithDecision(root, id string, record batch.Record, goalID, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
+	return executeBatchPrefixReceiptWithDependencies(root, id, record, goalID, tree, decision, batchExecutionDependencies{
+		executable: batchPrefixReceiptExecutable, checkout: batchDetachedCheckout,
+	})
+}
+
+func executeBatchPrefixReceiptWithDependencies(root, id string, record batch.Record, goalID, tree string, decision batch.PrefixDecision, dependencies batchExecutionDependencies) (batch.PrefixRunResult, error) {
 	controlRoot := batch.ModuleRoot(root)
 	var unit batch.Unit
 	for _, candidate := range record.Units {
@@ -426,13 +460,13 @@ func executeBatchPrefixReceiptWithDecision(root, id string, record batch.Record,
 		}
 	}
 	resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+"-prefix-"+goalID+".json")
-	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
+	detachedRoot, closeDetached, err := dependencies.checkout(root, tree)
 	if err != nil {
 		return batch.PrefixRunResult{}, err
 	}
-	defer detached.Close()
-	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
-	binary, err := batchPrefixReceiptExecutable()
+	defer closeDetached()
+	executionRoot := batch.ModuleRoot(detachedRoot)
+	binary, err := dependencies.executable()
 	if err != nil {
 		return batch.PrefixRunResult{}, err
 	}
@@ -528,10 +562,14 @@ func batchPrefixReceiptArgsWithFresh(root, controlRoot, goalID, tree, resultPath
 }
 
 func recoverBatchLanding(root string, store batch.Store, id, actor string, at time.Time) error {
+	return batch.RecoverPushedSeries(store, id, actor, at, batchRecoverySeamsWithGit(root, store, id, at, gitOutput))
+}
+
+func batchRecoverySeamsWithGit(root string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error)) batch.RecoverySeams {
 	controlRoot := batch.ModuleRoot(root)
 	findTrailer := func(matches func(string) bool) (string, bool, error) {
 		format := "%H%x00%B%x00"
-		output, err := gitOutput(root, "log", "--first-parent", "origin/main", "--format="+format)
+		output, err := gitRead(root, "log", "--first-parent", "origin/main", "--format="+format)
 		if err != nil {
 			return "", false, err
 		}
@@ -545,7 +583,7 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 		}
 		return "", false, nil
 	}
-	return batch.RecoverPushedSeries(store, id, actor, at, batch.RecoverySeams{
+	return batch.RecoverySeams{
 		OriginCommit: func(unit batch.Unit) (string, bool, error) {
 			return findTrailer(func(line string) bool { return landingProvenanceNamesChain(line, unit.Chain) })
 		},
@@ -590,7 +628,7 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 			}
 			return batch.CleanupLandingBranch(root, id, record.Landing.PushedTip)
 		},
-	})
+	}
 }
 
 // landingProvenanceNamesChain mirrors the field parsing in internal/landing/held.go.
