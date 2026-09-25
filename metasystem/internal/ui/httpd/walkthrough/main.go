@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
@@ -142,6 +143,14 @@ func main() {
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
 		NotificationJournal: journal,
 		Observe:             state.observe,
+		// The fleet, invented: three machines, one of each standing, joined
+		// to the claims the canned ledger carries. -proven is the armed seat.
+		Fleet: fixtureFleet(*proven),
+		// The browsers holding the stream open, which the fleet event rides
+		// back to. This fixture fetches no presence, so nothing announces on
+		// it; it exists so the stream registers a connection the way the
+		// engine's own server does.
+		Watch: fleet.NewWatch(),
 		// What the board's Refresh runs before it observes. This fixture has
 		// no remote to reach, so the look is recorded rather than made: what
 		// it proves in a browser is that pressing Refresh runs one and that
@@ -454,6 +463,13 @@ func newLedger(calm bool) *ledger {
 	claimed.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(5 * time.Hour)}
 	second := add(ranked(walkthroughGoal("g1-s19", goal.StateClaimed, "The document reader anchors a heading"), 2, 7))
 	second.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(90 * time.Minute)}
+
+	// A third claim, by a machine that has published no presence at all. It
+	// is the one shape of the fleet page that cannot be shown from a presence
+	// record, because it is the absence of one: the ledger names the machine
+	// and nothing else does.
+	absent := add(ranked(walkthroughGoal("g1-s27", goal.StateClaimed, "The fleet channel gateway opens"), 2, 8))
+	absent.Claimed = &goal.ClaimRecord{Machine: "m0b", Lineage: "implementer", At: stampedAgo(4 * time.Hour)}
 
 	// Built and waiting to land, which is the Review lane; and held by a
 	// park, which is Waiting with a reason and a stamp. Without these two the
