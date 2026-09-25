@@ -83,7 +83,7 @@ func TestMapStopOutputUsesOnePublicFieldAndExactReport(t *testing.T) {
 		{name: "allow", blocked: false, field: "systemMessage", count: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for _, runtime := range []string{"claude", "codex", "fake"} {
+			for _, runtime := range []string{"claude", "codex", "devin", "fake"} {
 				t.Run(runtime, func(t *testing.T) {
 					root, presentation := stopOutputFixture(t, runtime, test.blocked, strings.Repeat(test.name[:1], 32))
 					output := filepath.Join(t.TempDir(), "provider.json")
@@ -118,8 +118,8 @@ func TestMapStopOutputUsesOnePublicFieldAndExactReport(t *testing.T) {
 					if test.blocked && payload["decision"] != "block" {
 						t.Fatalf("mapped block = %#v", payload)
 					}
-					if err := MapStopOutput("devin", presentation, filepath.Join(root, "devin.json")); err == nil || !strings.Contains(err.Error(), "no declared Stop output mapping") {
-						t.Fatalf("unknown Devin mapping was accepted: %v", err)
+					if err := MapStopOutput("unknown", presentation, filepath.Join(root, "unknown.json")); err == nil || !strings.Contains(err.Error(), "no declared Stop output mapping") {
+						t.Fatalf("unknown runtime mapping was accepted: %v", err)
 					}
 				})
 			}
@@ -204,7 +204,7 @@ func TestMapStopOutputAcceptsChangedWording(t *testing.T) {
 }
 func forStopOutputCases(t *testing.T, run func(*testing.T, string, bool)) {
 	t.Helper()
-	for _, runtime := range []string{"claude", "codex"} {
+	for _, runtime := range []string{"claude", "codex", "devin"} {
 		for _, blocked := range []bool{false, true} {
 			t.Run(runtime+map[bool]string{false: "/allowed", true: "/blocked"}[blocked], func(t *testing.T) {
 				run(t, runtime, blocked)

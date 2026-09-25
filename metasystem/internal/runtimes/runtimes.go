@@ -211,6 +211,7 @@ var declarations = []Declaration{
 		CollisionRoots:           []string{".agents", ".devin"},
 		SessionEnv:               "DEVIN_PROJECT_DIR",
 		InstructionFile:          "AGENTS.md",
+		ExpectedStopDelivery:     "shared-reason-v1",
 		RegistrationDirs:         []string{".agents/skills", ".devin/skills", ".devin/agents"},
 		ShippedEnforcementConfig: "devin-hooks.json",
 		// Measured truth, not a weakening: devin has been observed

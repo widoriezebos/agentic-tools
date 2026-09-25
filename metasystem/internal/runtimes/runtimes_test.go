@@ -201,7 +201,7 @@ func TestStopDeliveryRegistryIsOnlyAStaticExpectation(t *testing.T) {
 	for name, want := range map[string]string{
 		"claude": "shared-reason-v1",
 		"codex":  "shared-reason-v1",
-		"devin":  "",
+		"devin":  "shared-reason-v1",
 		// fake exercises the shared mapper in repository fixtures; this is
 		// not evidence about any installed provider host.
 		"fake": "shared-reason-v1",
