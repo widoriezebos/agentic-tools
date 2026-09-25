@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3C34HPPYNJ6Z0JFZNTTTVXV
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-25, on the live page: "it is a very big list of things that
@@ -342,3 +342,29 @@ and the proof lives in Go fixtures; unpark returns to approved where an
 approval stands; a human's own park may be lifted early; a failed answer
 after a publish is named unresolved and the re-read reports the accepted
 ref as observed. Nothing deferred beyond the first read's list.
+
+## Built (2026-09-25)
+
+Landed on ui-development; main is on hold. Built by Claude on Opus, read
+by Codex on Sol under R-124: three material findings, fixed in one round.
+A run in flight could be dismissed while its loop kept publishing; the
+sheet now refuses to close until the run ends. A stopped run could be
+sent again from its first goal; a stopped run is terminal and a new
+selection from the re-read page is the way on. The Not now and Return to
+queue controls followed the payload's sign-in row and stayed disabled
+after a sign-in; they follow the live session and the page re-reads when
+it settles.
+
+Later, when it hurts: label chips drawn from every waiting row rather
+than the rows shown; the walkthrough refusing an early return of a
+human-directed blocker park where the engine admits it; the act layer's
+fixture using real git in a temporary directory; a load flake in
+`internal/goal/branch`'s read-gate test that predates this slice.
+
+Departures the read accepted: the Fleet row's disclosure was not yet
+built at the base, so the queue row opens the way g1-s45's design
+describes; the browser found two defects the tests had not, a refusal
+closing the sheet before its sentence could be read and two sentences run
+together, both fixed in the build; `internal/ui/act` gained its first
+testing.json group; the parallel ratchet was re-pinned by hand for one
+serial test that changed package.
