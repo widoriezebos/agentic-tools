@@ -76,13 +76,16 @@ func testPlatformReapedChildCPU(t *testing.T) {
 			beforeNonRootReap = cpu
 			releasedGrandchild = true
 			helper.releaseGrandchild()
-		case releasedGrandchild && !observedNonRootReap && len(sample.MemberCPU) == 2:
+		// A child leaves the topology pass only after release_task, which runs
+		// after its parent's wait has added it to cutime. A child that vanishes
+		// only between counter reads can precede that reap, so it proves nothing.
+		case releasedGrandchild && !observedNonRootReap && len(sample.Members) == 2 && len(sample.MemberCPU) == 2:
 			afterNonRootReap = cpu
 			counterDropped = cpu+1e-9 < beforeNonRootReap
 			observedNonRootReap = true
 			releasedNested = true
 			helper.releaseNested()
-		case releasedNested && len(sample.MemberCPU) == 1:
+		case releasedNested && len(sample.Members) == 1 && len(sample.MemberCPU) == 1:
 			counterDropped = counterDropped || cpu+1e-9 < afterNonRootReap
 			observedRootReap = true
 			helper.closeInput()
