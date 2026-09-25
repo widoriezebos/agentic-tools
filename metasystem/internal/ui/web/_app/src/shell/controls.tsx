@@ -28,7 +28,7 @@ export function Hint({ label, children }: { label: string; children: ReactNode }
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  /** Primary is the composer's Send, and nothing else in this build. */
+  /** Primary is the composer's Send and a suggestion's Use this, and no more. */
   primary?: boolean;
 };
 
