@@ -450,8 +450,8 @@ func TestBacklogAnswersEveryLedgerState(t *testing.T) {
 
 			testutil.Expect(t, "state", payload.Ledger.State, string(testCase.observation.State))
 			testutil.Expect(t, "message", payload.Ledger.Message, testCase.wantMessage)
-			testutil.Expect(t, "rows", payload.Rows, []backlog.Row{})
-			testutil.Expect(t, "closed", payload.Closed, []backlog.Row{})
+			testutil.Expect(t, "rows", payload.Rows, []boardRow{})
+			testutil.Expect(t, "closed", payload.Closed, []boardRow{})
 			testutil.Expect(t, "counts", payload.Counts, map[backlog.Lane]int{})
 			testutil.Expect(t, "admission", payload.Admission, admissionPayload{})
 			testutil.Expect(t, "the loop's outcome", payload.Ledger.Fetch.Outcome, string(testCase.observation.Fetch.Outcome))

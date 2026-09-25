@@ -133,6 +133,13 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodHead {
 		return
 	}
+	// This stream is the server's one explicit connection signal, and the
+	// presence fetch owner reads it: it attempts a fetch only while a browser
+	// is here to see the answer, and never after the last one has gone. The
+	// same registration carries the `fleet` event back, because a page that
+	// is listening and a page that is connected are one fact.
+	fleetEvents, leaveFleet := h.info.Watch.Join()
+	defer leaveFleet()
 	_, _ = io.WriteString(w, ": the steward's notifications\nretry: "+
 		strconv.FormatInt(notificationRetry.Milliseconds(), 10)+"\n\n")
 	flusher.Flush()
@@ -190,6 +197,14 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 			if !writePartnerEvent(w, flusher, event) {
 				return
 			}
+		case _, open := <-fleetEvents:
+			if !open {
+				fleetEvents = nil
+				continue
+			}
+			if !writeFleetEvent(w, flusher) {
+				return
+			}
 		case <-beat.C:
 			// A comment keeps the connection warm and reaches no listener.
 			if _, err := io.WriteString(w, ": still here\n\n"); err != nil {
@@ -198,6 +213,22 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// writeFleetEvent tells a page that a presence attempt finished — success,
+// failure, or nothing new — and reports whether the client is still there.
+//
+// It carries no payload and takes no id, for the Partner's beats' reason: the
+// browser sends the last id it saw back as Last-Event-ID and the server
+// resumes the notification journal from it, so an id of this stream's own
+// would name something that journal cannot find. The page re-reads
+// /api/fleet, which is the one place the answer is composed.
+func writeFleetEvent(w http.ResponseWriter, flusher http.Flusher) bool {
+	if _, err := io.WriteString(w, "event: fleet\ndata: {}\n\n"); err != nil {
+		return false
+	}
+	flusher.Flush()
+	return true
 }
 
 // writeNotices writes one event per notice and reports whether the client is

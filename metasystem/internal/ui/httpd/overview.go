@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -70,19 +71,52 @@ func (h *handler) overview(w http.ResponseWriter, r *http.Request) {
 	// window the page is composed over is the window this read established.
 	since, first := h.visit(standing.Human, now)
 
-	board := backlogOf(h.info.Observe())
+	observed := h.info.Observe()
+	board := backlogOf(observed)
+	rows := plainRows(board.Rows)
 	page := overview.Compose(overview.Inputs{
 		Project: pane,
-		Rows:    board.Rows,
-		Closed:  board.Closed,
+		Rows:    rows,
+		Closed:  plainRows(board.Closed),
 		Counts:  board.Counts,
 		Ledger:  ledgerFor(board),
 		Journal: journal,
+		Holders: h.holders(observed, rows, now),
 		Human:   overview.Standing{Proven: standing.SignedIn},
 		Since:   since,
 		First:   first,
 	}, now)
 	_ = json.NewEncoder(w).Encode(page)
+}
+
+// holders is the presence standing of every machine the board's rows name,
+// read from the same observation those rows were projected from.
+//
+// It is best effort for the board's reason: a presence copy this seat cannot
+// read costs the In Progress rows a flag beside the seat and nothing else.
+func (h *handler) holders(observed snapshot.Observation, rows []backlog.Row, now time.Time) map[string]overview.Holder {
+	if h.info.Fleet == nil {
+		return nil
+	}
+	page, err := h.info.Fleet(observed, backlog.Board{Rows: rows}, now)
+	if err != nil {
+		return nil
+	}
+	held := map[string]overview.Holder{}
+	for _, machine := range page.Machines {
+		flag := ""
+		for _, hold := range machine.Holds {
+			if hold.Flag != "" {
+				flag = hold.Flag
+				break
+			}
+		}
+		held[machine.Machine] = overview.Holder{
+			Machine: machine.Machine, Standing: machine.Standing,
+			Since: machine.Since, Flag: flag,
+		}
+	}
+	return held
 }
 
 // now is this server's clock, or the one a test handed it.

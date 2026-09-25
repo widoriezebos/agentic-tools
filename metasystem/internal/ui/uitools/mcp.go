@@ -136,6 +136,16 @@ func Catalogue() []Tool {
 			InputSchema: schema(map[string]any{}, nil),
 		},
 		{
+			Name: OpFleet,
+			Description: "The fleet's standings: which machines have published presence, when each was last seen, " +
+				"what each is running, and which goals are held by a machine that has gone quiet. " +
+				"It flags and never acts: a silent holder keeps its claim, and the words name what a human " +
+				"does at a terminal. Bounded; a result that leaves rows out carries a cursor.",
+			InputSchema: schema(map[string]any{
+				"cursor": cursorProperty,
+			}, nil),
+		},
+		{
 			Name:        OpNotifications,
 			Description: "The steward's journal, newest first: what it said, from where, and whether it was delivered.",
 			InputSchema: schema(map[string]any{

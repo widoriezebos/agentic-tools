@@ -15,6 +15,7 @@ import {
   failureMessage,
   loadOverview,
   type Claimed,
+  type Holder,
   type Item,
   type Page as OverviewPayload,
   type Waiting,
@@ -430,6 +431,17 @@ function WaitingLine({ waiting }: { waiting: Waiting }) {
   );
 }
 
+/**
+ * The words beside a seat whose machine has gone quiet.
+ *
+ * The server composes what is wrong and carries the instant beside it, never
+ * inside it: an instant rendered on the server is rendered in one zone, and
+ * would sit on this page beside every other time rendered in another.
+ */
+function holderWords(holder: Holder): string {
+  return holder.since === "" ? holder.flag : `${holder.flag} since ${minuteTime(holder.since)}`;
+}
+
 function ClaimedCard({ claimed }: { claimed: Claimed }) {
   // The instant is read against the browser's clock as the card renders, once.
   const when = whenLine(claimed.at, new Date());
@@ -445,6 +457,16 @@ function ClaimedCard({ claimed }: { claimed: Claimed }) {
       </Where>
       <p className="ms-overview-card-facts">
         <Chip>{seat}</Chip>
+        {/* The flag beside the seat, where the server could read a standing
+            for that machine. It says what is known and asks for nothing: the
+            Fleet page is where a human goes to act on it.
+
+            The server's words carry no clock; the instant beside them is
+            rendered here, in this browser's own zone, like every other time
+            on this card. */}
+        {claimed.holder !== undefined && claimed.holder.flag !== "" && (
+          <Chip marker>{holderWords(claimed.holder)}</Chip>
+        )}
         {claimed.phase !== "" && <Chip>{claimed.phase}</Chip>}
         {when !== "" && <span className="ms-mono ms-overview-card-since">since {when}</span>}
       </p>

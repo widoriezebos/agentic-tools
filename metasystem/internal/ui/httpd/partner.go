@@ -89,14 +89,17 @@ func (h *handler) partnerOverview() (overview.Page, error) {
 		journal = read
 	}
 	now := h.now()
-	board := backlogOf(h.info.Observe())
+	observed := h.info.Observe()
+	board := backlogOf(observed)
+	rows := plainRows(board.Rows)
 	return overview.Compose(overview.Inputs{
 		Project: pane,
-		Rows:    board.Rows,
-		Closed:  board.Closed,
+		Rows:    rows,
+		Closed:  plainRows(board.Closed),
 		Counts:  board.Counts,
 		Ledger:  ledgerFor(board),
 		Journal: journal,
+		Holders: h.holders(observed, rows, now),
 		Human:   overview.Standing{Proven: h.info.Authority.Proven},
 		Since:   now.Add(-24 * time.Hour),
 		First:   true,

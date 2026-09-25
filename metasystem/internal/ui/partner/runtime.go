@@ -87,7 +87,7 @@ type ToolServer struct {
 // It is this executable rather than a configured path because the tools ARE
 // the engine: a second binary could answer a different ledger than the pages
 // do, and the whole point of the hand-off is that it cannot.
-func ToolsFor(checkout, installation string) (*ToolServer, error) {
+func ToolsFor(checkout, installation, presenceRun string) (*ToolServer, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("this seat cannot name its own executable, so the Partner gets no read tools: %w", err)
@@ -99,7 +99,14 @@ func ToolsFor(checkout, installation string) (*ToolServer, error) {
 	return &ToolServer{
 		Name:    uitools.ServerName,
 		Command: executable,
-		Args:    []string{"ui", "tools", "--root", checkout, "--metasystem-root", installation},
+		Args: []string{
+			"ui", "tools", "--root", checkout, "--metasystem-root", installation,
+			// Which server run this tool server belongs to. It is how the
+			// fleet tool tells this server's presence fetches from a
+			// previous server's: the metadata file outlives a restart and
+			// the fetches it records do not.
+			"--presence-run", presenceRun,
+		},
 	}, nil
 }
 

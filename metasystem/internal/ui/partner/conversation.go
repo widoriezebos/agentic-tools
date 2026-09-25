@@ -80,6 +80,12 @@ type Page struct {
 	// Records is what the open project tab is listing, by the key the page
 	// lists it under: a record's checkout-relative path, or a question's id.
 	Records []string `json:"records,omitempty"`
+	// Fleet is the fleet as the page was showing it: the machines on screen
+	// with their standings and flags, and where the presence copy came from.
+	// It travels for the board's reason — only the page knows what was on
+	// screen — and it is bounded, because a fleet is a list and a capture is
+	// not a listing tool.
+	Fleet *FleetCapture `json:"fleet,omitempty"`
 	// Label is the line the drawer showed, which is what the human read.
 	Label string `json:"label,omitempty"`
 	// Quote is the passage a human selected, whole, with where it came from:
@@ -107,6 +113,34 @@ type Page struct {
 	// subject it was showing. The page owns its own address grammar, so the
 	// server keeps the string rather than reassembling one.
 	Return string `json:"return,omitempty"`
+}
+
+// FleetCapture is the Fleet page as it was on screen: where the presence copy
+// came from, the machines shown, and the goals the page said need a human.
+//
+// It is the page's own reading and never a later one. The Partner may call
+// the fleet tool afterwards and get a different answer, a minute newer; the
+// block says which is which rather than certifying the newer one as what the
+// human was looking at.
+type FleetCapture struct {
+	// Source and FetchedAt are the copy's provenance as the page showed it.
+	Source    string `json:"source,omitempty"`
+	FetchedAt string `json:"fetchedAt,omitempty"`
+	// Problem is the copy's own trouble, in the page's words.
+	Problem  string         `json:"problem,omitempty"`
+	Machines []FleetMachine `json:"machines,omitempty"`
+	NeedsYou []string       `json:"needsYou,omitempty"`
+	Total    int            `json:"total,omitempty"`
+}
+
+// FleetMachine is one row of that table as it was displayed.
+type FleetMachine struct {
+	Machine  string `json:"machine"`
+	Standing string `json:"standing"`
+	// Seen is the age words the row showed, in the browser's own clock.
+	Seen  string   `json:"seen,omitempty"`
+	Flag  string   `json:"flag,omitempty"`
+	Holds []string `json:"holds,omitempty"`
 }
 
 // Lane is one column of the board as the page is showing it.

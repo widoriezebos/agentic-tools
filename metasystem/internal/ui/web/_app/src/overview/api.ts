@@ -49,7 +49,21 @@ export type Changed = {
 
 export type Seat = { machine: string; lineage: string };
 
-export type Claimed = { id: string; title: string; seat: Seat; phase: string; at: string };
+/**
+ * The presence standing of the machine a claim names. It is a flag and never
+ * an act, joined on the server from the same reading the rows came from.
+ */
+export type Holder = { machine: string; standing: string; since: string; flag: string };
+
+export type Claimed = {
+  id: string;
+  title: string;
+  seat: Seat;
+  phase: string;
+  at: string;
+  /** The standing of that seat, where this build could read one. */
+  holder?: Holder;
+};
 
 export type Waiting = { count: number; id: string; title: string; reason: string; since: string };
 

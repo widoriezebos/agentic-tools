@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
@@ -198,6 +199,36 @@ func runUI(verb string, args []string) int {
 			}, snapshot.WallTimers{})
 		}()
 
+		// The interface's own presence fetch, beside that loop and never
+		// through it. It is started and stopped under the same ownership
+		// gate, so a server refused the checkout fetches no presence either;
+		// it attempts nothing while no browser holds the notifications stream
+		// open, and at most once a minute when one does. Nothing it knows
+		// survives this process: the page says so until its first attempt.
+		// This run's own identifier. The metadata file the fetch owner writes
+		// for the Partner's tool outlives this process; nothing the owner
+		// knows does. So the file names the run that wrote it, and the tool
+		// is handed the same name, which is how it tells this server's
+		// fetches from a previous server's.
+		presenceRun, runErr := goal.NewOperationULID()
+		if runErr != nil {
+			return refuse(runErr.Error())
+		}
+		presenceWatch := fleet.NewWatch()
+		presence := fleetFetcher(roots, presenceWatch, presenceRun)
+		presenceContext, stopPresence := context.WithCancel(ctx)
+		defer stopPresence()
+		presenceStopped := make(chan struct{})
+		go func() {
+			defer close(presenceStopped)
+			if !owned.Wait(presenceContext) {
+				return
+			}
+			ticks := time.NewTicker(fleet.PollInterval)
+			defer ticks.Stop()
+			presence.Run(presenceContext, ticks.C)
+		}()
+
 		// advance carries this clone's accepted ref forward at once, which a
 		// human act needs and a cadence cannot give: the act has landed on
 		// the canonical branch, and the board must not move the card until
@@ -233,7 +264,7 @@ func runUI(verb string, args []string) int {
 				// session/new. A seat that cannot name its own executable gets
 				// a Partner that reads the page and nothing beyond it, which is
 				// the previous slice's Partner rather than no Partner at all.
-				if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation); toolsErr != nil {
+				if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation, presenceRun); toolsErr != nil {
 					fmt.Fprintln(os.Stderr, "interface Partner: "+toolsErr.Error())
 				} else {
 					admitted.Tools = tools
@@ -329,6 +360,12 @@ func runUI(verb string, args []string) int {
 					},
 					Observe: ledger.Observe,
 					Fetch:   advance,
+					// The Fleet page, and the holder flags the board and the
+					// Overview carry with it. It reads the presence copy this
+					// server fetched for itself and starts no fetch of its
+					// own.
+					Fleet: fleetReader(roots, presence.Succeeded, presence.State),
+					Watch: presenceWatch,
 					Project: func() (project.Pane, error) {
 						return project.ReadPane(projectRoots(roots), time.Now().UTC())
 					},
@@ -488,10 +525,14 @@ func runUI(verb string, args []string) int {
 			Releasing: func() {
 				stopLoop()
 				<-loopStopped
+				stopPresence()
+				<-presenceStopped
 			},
 		})
 		stopLoop()
 		<-loopStopped
+		stopPresence()
+		<-presenceStopped
 		if err != nil {
 			return refuse(lifecycle.ServeFailure(roots.StateRoot, err))
 		}

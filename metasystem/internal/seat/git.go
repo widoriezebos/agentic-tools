@@ -19,6 +19,13 @@ import (
 // exist to prevent.
 const TickNamespace = "refs/metasystem/presence-copy"
 
+// UINamespace is the interface's own copy of the fleet's presence. The
+// interface fetches into it from its own call, at most once a minute and only
+// while a browser is connected, and never through the snapshot loop's ledger
+// Fetch: every reader has a namespace of its own for the reason the tick's
+// has one, and a presence failure must never read as a ledger failure.
+const UINamespace = "refs/metasystem/presence-ui"
+
 // FetchNamespacePrefix is where `seat fleet --fetch` puts its own throwaway
 // copy, one namespace per read, deleted before the verb exits. A stale one
 // left by an interrupted read is harmless and collected by the next run.

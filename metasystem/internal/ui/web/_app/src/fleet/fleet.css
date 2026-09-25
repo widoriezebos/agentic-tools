@@ -1,0 +1,394 @@
+/*
+ * Fleet: three blocks down one column — what needs a human, this seat, and a
+ * table of the machines.
+ *
+ * The table is the page. Every other element on it is a line of words under a
+ * heading, because a standing is a word and a silence is a sentence, and
+ * neither reads better in a box. Blocks are told apart by the space between
+ * them and by their headings, as Overview's are.
+ *
+ * At phone width the table stacks into one card per machine, standing first:
+ * six columns of one-word answers do not survive four hundred pixels, and a
+ * table that scrolls sideways is a table nobody reads the right-hand half of.
+ * The header row goes away and each cell carries its own label, which is in
+ * the markup at every width and hidden where the column heads say it already.
+ *
+ * Every colour is a token. The standing pill takes the status tokens the rest
+ * of the interface already uses: a reachable machine is the ok pair, a silent
+ * one the marker pair, and an unknown one the muted surface, because "this
+ * seat cannot tell" is not an alarm.
+ */
+
+.ms-fleet {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1100px;
+  min-width: 0;
+}
+
+.ms-fleet-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-fleet-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+/* A quiet line: the provenance, an empty fleet's sentence, the remedy. */
+.ms-fleet-quiet {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-fleet-provenance {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-fleet-problem {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-danger);
+}
+
+/* --------------------------------------------------------- needs you -- */
+
+/*
+ * The one block that is a box. It is the only thing on the page asking for
+ * something, and a block that asks has to be told from the two that report.
+ */
+.ms-fleet-block--needs {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border-strong);
+  background: var(--ms-surface);
+}
+
+.ms-fleet-needs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-fleet-needs-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+}
+
+.ms-fleet-needs-words {
+  min-width: 0;
+  color: var(--ms-text-2);
+}
+
+/* A goal, as the link that opens it. */
+.ms-fleet-goal {
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--ms-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--ms-border-strong);
+}
+
+.ms-fleet-goal:hover {
+  color: var(--ms-accent);
+  border-bottom-color: var(--ms-accent);
+}
+
+/* --------------------------------------------------------- this seat -- */
+
+.ms-fleet-seat-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  color: var(--ms-text);
+}
+
+.ms-fleet-facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ms-fleet-fact {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+}
+
+.ms-fleet-roles {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ms-fleet-role {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-fleet-role-name {
+  flex: none;
+  color: var(--ms-text);
+}
+
+.ms-fleet-role-reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ms-text-3);
+}
+
+/* The dot says what a role is in, and is non-text, so it takes the saturated
+   half of each pair. */
+.ms-fleet-dot {
+  flex: none;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ms-text-3);
+}
+
+.ms-fleet-dot--alive {
+  background: var(--ms-ok);
+}
+
+.ms-fleet-dot--dead {
+  background: var(--ms-danger);
+}
+
+.ms-fleet-dot--unknown {
+  background: var(--ms-marker);
+}
+
+.ms-fleet-alive {
+  min-width: 0;
+}
+
+.ms-fleet-alive-summary {
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-fleet-alive-summary:hover {
+  color: var(--ms-text-2);
+}
+
+/* -------------------------------------------------------- the machines -- */
+
+.ms-fleet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+}
+
+.ms-fleet-table th {
+  padding: 0 10px 6px 0;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+  border-bottom: 1px solid var(--ms-border);
+  white-space: nowrap;
+}
+
+.ms-fleet-cell {
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--ms-border);
+  vertical-align: top;
+  min-width: 0;
+}
+
+.ms-fleet-cell--machine {
+  color: var(--ms-text);
+  white-space: nowrap;
+}
+
+.ms-fleet-cell--engine {
+  color: var(--ms-text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ms-fleet-here {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--ms-text-3);
+}
+
+.ms-fleet-since {
+  margin-left: 6px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+}
+
+/* The label each cell carries at phone width, and the column head carries
+   above it. It is in the markup at every width so the card is readable
+   without the header row. */
+.ms-fleet-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ms-fleet-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-fleet-hold {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The standing, in the status tokens this interface already uses. */
+.ms-fleet-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-radius: 11px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.ms-fleet-pill--reachable {
+  border-color: var(--ms-ok);
+  background: var(--ms-ok-bg);
+  color: var(--ms-ok-fg);
+}
+
+.ms-fleet-pill--unreachable {
+  border-color: var(--ms-marker);
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}
+
+/*
+ * One card per machine, standing first.
+ *
+ * The table's own parts become blocks, the header row goes away, and every
+ * cell shows the label it was carrying invisibly. The standing is ordered to
+ * the top because it is the answer the card exists to give; the machine's
+ * name follows it, and the rest reads down in the order the columns were in.
+ */
+@media (max-width: 599px) {
+  .ms-fleet-table,
+  .ms-fleet-table tbody {
+    display: block;
+    min-width: 0;
+  }
+
+  .ms-fleet-table thead {
+    display: none;
+  }
+
+  .ms-fleet-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--ms-border);
+    background: var(--ms-surface);
+  }
+
+  .ms-fleet-cell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0;
+    border-bottom: 0;
+    white-space: normal;
+  }
+
+  .ms-fleet-cell--standing {
+    order: -1;
+  }
+
+  .ms-fleet-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    flex: none;
+    min-width: 72px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ms-text-3);
+  }
+
+  .ms-fleet-cell--standing .ms-fleet-label {
+    display: none;
+  }
+}

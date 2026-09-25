@@ -181,6 +181,18 @@ type Seat struct {
 	Lineage string `json:"lineage"`
 }
 
+// Holder is the presence standing of the machine a claim names: whether it
+// has been heard from, since when, and the words the row carries when it has
+// not. It is a flag and never an act — the goal stays claimed — and it is
+// filled by this composition from a lookup the caller hands in, because the
+// backlog projection knows who claimed a goal and nothing about presence.
+type Holder struct {
+	Machine  string `json:"machine"`
+	Standing string `json:"standing"`
+	Since    string `json:"since"`
+	Flag     string `json:"flag"`
+}
+
 // Claimed is one In Progress goal, with the seat that holds it, the phase the
 // projection could name, and when the claim was taken.
 type Claimed struct {
@@ -189,6 +201,8 @@ type Claimed struct {
 	Seat  Seat   `json:"seat"`
 	Phase string `json:"phase"`
 	At    string `json:"at"`
+	// Holder is the standing of that seat, where this build could read one.
+	Holder *Holder `json:"holder,omitempty"`
 }
 
 // Waiting is the held work: how much of it there is, and the oldest one's
@@ -346,6 +360,10 @@ type Inputs struct {
 	// Journal is the newest page of the steward's notification journal,
 	// newest first, as the notifications package serves it.
 	Journal []notifications.Notice
+	// Holders is the presence standing of each machine the rows name, by
+	// machine nickname. It is handed in rather than read here for the reason
+	// every other input is: this package composes and opens nothing.
+	Holders map[string]Holder
 	Human   Standing
 	// Since is the start of the comparison window, and First says it is a
 	// first visit's day rather than a marker a previous visit left.
@@ -600,7 +618,7 @@ func messagesSince(journal []notifications.Notice, since time.Time) int {
 
 func workNow(in Inputs, now time.Time) Work {
 	return Work{
-		InProgress: inProgress(in.Rows),
+		InProgress: inProgress(in.Rows, in.Holders),
 		Next:       nextUp(in.Rows),
 		Waiting:    waiting(in.Rows),
 		Lanes:      lanes(in.Counts, in.Rows, in.Closed, now),
@@ -612,7 +630,7 @@ func workNow(in Inputs, now time.Time) Work {
 // — but a row whose claim the record somehow lacks is still shown, with the
 // seat empty, rather than dropped from the one block that says what is being
 // worked on.
-func inProgress(rows []backlog.Row) []Claimed {
+func inProgress(rows []backlog.Row, holders map[string]Holder) []Claimed {
 	claimed := []Claimed{}
 	for _, row := range rows {
 		if row.Lane != backlog.LaneInProgress {
@@ -622,6 +640,12 @@ func inProgress(rows []backlog.Row) []Claimed {
 		if row.Claim != nil {
 			one.Seat = Seat{Machine: row.Claim.Machine, Lineage: row.Claim.Lineage}
 			one.At = row.Claim.At
+			// The flag beside the seat, where the caller could read one. A
+			// machine nothing knows about leaves the row exactly as it was.
+			if held, known := holders[row.Claim.Machine]; known {
+				kept := held
+				one.Holder = &kept
+			}
 		}
 		claimed = append(claimed, one)
 	}

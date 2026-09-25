@@ -55,6 +55,18 @@ export type Approval = {
 
 export type Claim = { machine: string; lineage: string; at: string; landingAt: string };
 
+/**
+ * The presence standing of the machine a claim names: whether it has been
+ * heard from lately, since when, and the words the card carries when it has
+ * not.
+ *
+ * The backlog projection knows who claimed a goal and nothing about presence;
+ * the server joins the two from the same reading it projected the rows from.
+ * It is a flag and never an act: the goal stays claimed, and the words name
+ * what a human does at a terminal.
+ */
+export type Holder = { machine: string; standing: string; since: string; flag: string };
+
 export type Waiting = { reason: string; since: string; by: string; from: string; blocker: string };
 
 export type Abandoned = { by: string; at: string; because: string };
@@ -112,6 +124,8 @@ export type Row = {
   /** The tuple the record carries, where it carries one. */
   budget?: Budget;
   claim?: Claim;
+  /** The standing of the machine that claimed it, where one could be read. */
+  holder?: Holder;
   waiting?: Waiting;
   abandoned?: Abandoned;
   fence?: Fence;

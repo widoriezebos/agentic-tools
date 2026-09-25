@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
@@ -32,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
 const agentReason = "the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem ui restart to act as yourself"
@@ -51,6 +53,12 @@ func main() {
 	// history; this is what makes the live path — the stream, the toasts, the
 	// bell's count — something a human can stand in front of and watch.
 	notifyEvery := flag.Duration("notify-every", 0, "append a fixture notification this often; zero appends none")
+	// The fleet's own live path. This fixture fetches no presence, so nothing
+	// would ever announce on its watch; with this flag it announces on a
+	// cadence, which is what a mounted Fleet page re-reads on. It is the only
+	// way to stand in front of the one thing the fleet event exists for: a
+	// page that is already open learning that presence moved.
+	fleetEvery := flag.Duration("fleet-every", 0, "announce a fixture presence attempt this often; zero announces none")
 	// The calm workspace. Overview's good outcome is a page that says nothing
 	// needs you, and a fixture that can only show the busy one can only show
 	// half of what the section is for. Calm proves its human, admits every
@@ -137,11 +145,37 @@ func main() {
 	if *notifyEvery > 0 {
 		go appendFixtureNotifications(journal, *notifyEvery)
 	}
+	presenceWatch := fleet.NewWatch()
+	if *fleetEvery > 0 {
+		go announceFixturePresence(presenceWatch, *fleetEvery)
+	}
+	startedAt := time.Now().UTC().Format(time.RFC3339)
 	info := httpd.Info{
-		Checkout: "/walkthrough", StartedAt: time.Now().UTC().Format(time.RFC3339),
+		Checkout: "/walkthrough", StartedAt: startedAt,
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
 		NotificationJournal: journal,
 		Observe:             state.observe,
+		// What this seat is. The real server resolves it from the layout and
+		// the adoption line; this one has neither, so it answers the same
+		// shape from the fixture's own facts — without it every page's header
+		// reads "Workspace unknown" over a 500, which is the one thing on
+		// these pages that is about the fixture rather than the interface.
+		Describe: func() (workspace.Workspace, error) {
+			return workspace.Workspace{
+				SchemaVersion: workspace.SchemaVersion,
+				Subject:       "walkthrough", Mode: workspace.ModeAdopted,
+				Checkout: checkout, Installation: checkout, StateRoot: checkout,
+				EngineBuild: "walkthrough", StartedAt: startedAt,
+				ExecutableDigest: "sha256:walkthrough", SourceHead: "c5d517f",
+			}, nil
+		},
+		// The fleet, invented: three machines, one of each standing, joined
+		// to the claims the canned ledger carries. -proven is the armed seat.
+		Fleet: fixtureFleet(*proven),
+		// The browsers holding the stream open, which the fleet event rides
+		// back to. It is the same registration the engine's own server uses
+		// as its connection signal; -fleet-every is what announces on it.
+		Watch: presenceWatch,
 		// What the board's Refresh runs before it observes. This fixture has
 		// no remote to reach, so the look is recorded rather than made: what
 		// it proves in a browser is that pressing Refresh runs one and that
@@ -454,6 +488,13 @@ func newLedger(calm bool) *ledger {
 	claimed.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(5 * time.Hour)}
 	second := add(ranked(walkthroughGoal("g1-s19", goal.StateClaimed, "The document reader anchors a heading"), 2, 7))
 	second.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(90 * time.Minute)}
+
+	// A third claim, by a machine that has published no presence at all. It
+	// is the one shape of the fleet page that cannot be shown from a presence
+	// record, because it is the absence of one: the ledger names the machine
+	// and nothing else does.
+	absent := add(ranked(walkthroughGoal("g1-s27", goal.StateClaimed, "The fleet channel gateway opens"), 2, 8))
+	absent.Claimed = &goal.ClaimRecord{Machine: "m0b", Lineage: "implementer", At: stampedAgo(4 * time.Hour)}
 
 	// Built and waiting to land, which is the Review lane; and held by a
 	// park, which is Waiting with a reason and a stamp. Without these two the

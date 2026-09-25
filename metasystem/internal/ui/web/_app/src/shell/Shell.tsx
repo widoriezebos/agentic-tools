@@ -13,6 +13,7 @@ import { RefreshProvider } from "./refresh";
 import { Sheet } from "./Sheet";
 import { WorkAreaProvider } from "./workmodal";
 import { BacklogPane } from "../backlog/BacklogPane";
+import { FleetPane } from "../fleet/FleetPane";
 import { sectionHelp } from "../help/terms";
 import { useNotifications } from "../notifications/store";
 import { OverviewPane } from "../overview/OverviewPane";
@@ -262,6 +263,9 @@ function Frame() {
           is where "/" lands, so it is a route of its own rather than one of
           the sections that say which gate brings them. */}
       <Route path="/overview" element={<OverviewPane />} />
+      {/* Fleet reads the presence copy this server fetched for itself beside
+          the ledger it already reads, so it is a route of its own too. */}
+      <Route path="/fleet" element={<FleetPane />} />
       {/* The sections this build does not project. Which they are is the
           section table's own field, so the routes, the empty register and
           what the Partner is told about availability cannot disagree.
