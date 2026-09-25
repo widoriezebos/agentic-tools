@@ -34,18 +34,16 @@ func covenantBody(metric, threshold, firstRequirementProof string) string {
 // declares no guardrails at all — membership is construction, not
 // declaration.
 func TestWallCustodiesTheCovenantByConstruction(t *testing.T) {
-	root := wallRepo(t)
-	writeText(t, filepath.Join(root, "covenant.json"), covenantBody("score", ">=3", "check-1"))
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "covenant.json"), covenantBody("score", ">=1", "check-1"))
-	reviewed := snapshotTree(t, root)
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	writeText(t, filepath.Join(bed.root, "covenant.json"), covenantBody("score", ">=3", "check-1"))
 	emptyNet, gviol := mission.ParseGuardrails(mission.ContractGuardrailSubject, "", protectedArtifactPath)
 	if gviol != "" {
 		t.Fatal(gviol)
 	}
-	plain := wallAuthorization(t, root, "demo", pre, reviewed, nil)
+	plain := bed.authorization(pre, reviewed, []string{"covenant.json"}, wallPolicyPatch("covenant ordinary"), true, nil)
 	certified := []map[string]any{{"jobId": "job-c", "verdict": "accepted", "authorizationDigest": plain}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, emptyNet, "", legacySnapshot(root, "demo"))
+	inspection, err := bed.inspectWithGuardrails(pre, wallState(), certified, map[string]bool{}, emptyNet, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,10 +67,9 @@ func TestHostArtifactDeclaringCovenantContradicts(t *testing.T) {
 		t.Fatalf("declaring the covenant as a host artifact must contradict: %q", contradiction)
 	}
 	// The same contradiction through the wall's own declaration path.
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil,
-		map[string]bool{"covenant.json": true}, emptyNet, contradiction, legacySnapshot(root, "demo"))
+	bed := newWallPolicyBed(t)
+	inspection, err := bed.inspectWithGuardrails("pre", wallState(), nil,
+		map[string]bool{"covenant.json": true}, emptyNet, contradiction)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,22 +81,31 @@ func TestHostArtifactDeclaringCovenantContradicts(t *testing.T) {
 // The warden may move a requirement row; the battery escalates to the
 // human tier even down the warden's lane.
 func TestWardenLaneCovenantGovernance(t *testing.T) {
-	root := wallRepo(t)
-	writeText(t, filepath.Join(root, "covenant.json"), covenantBody("score", ">=3", "check-1"))
-	pre := snapshotTree(t, root)
+	bed := newWallPolicyBed(t)
+	old := covenantBody("score", ">=3", "check-1")
+	writeText(t, filepath.Join(bed.root, "covenant.json"), old)
+	pre := "pre"
 	emptyNet, gviol := mission.ParseGuardrails(mission.ContractGuardrailSubject, "", protectedArtifactPath)
 	if gviol != "" {
 		t.Fatal(gviol)
 	}
 
 	// A requirement-row change rides the lane.
-	writeText(t, filepath.Join(root, "covenant.json"), covenantBody("score", ">=3", "check-1-improved"))
-	reviewed := snapshotTree(t, root)
-	laned := wallAuthorization(t, root, "demo", pre, reviewed, func(record map[string]any) {
+	improved := covenantBody("score", ">=3", "check-1-improved")
+	writeText(t, filepath.Join(bed.root, "covenant.json"), improved)
+	reviewed := "requirement-reviewed"
+	patch := wallPolicyPatch("requirement reviewed")
+	laned := bed.authorization(pre, reviewed, []string{"covenant.json"}, patch, true, func(record map[string]any) {
 		record["guardrailLane"] = true
 	})
 	certified := []map[string]any{{"jobId": "job-c", "verdict": "accepted", "authorizationDigest": laned}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, emptyNet, "", legacySnapshot(root, "demo"))
+	bed.facts.expectFileAt(pre, []byte(old), true, nil)
+	bed.facts.expectFileAt(reviewed, []byte(improved), true, nil)
+	bed.facts.expectApply(pre, patch, reviewed)
+	bed.facts.expectEntries(reviewed, []string{"covenant.json"}, map[string]gittree.Entry{"covenant.json": wallPolicyFile})
+	bed.facts.expectEntries(reviewed, []string{"covenant.json"}, map[string]gittree.Entry{"covenant.json": wallPolicyFile})
+	bed.facts.expectSnapshot(reviewed, reviewed)
+	inspection, err := bed.inspectWithGuardrails(pre, wallState(), certified, map[string]bool{}, emptyNet, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,14 +118,17 @@ func TestWardenLaneCovenantGovernance(t *testing.T) {
 	// workspace deliberately reverts to the old covenant before the
 	// inspection, and the escalation still fires from the reviewed
 	// bytes alone.
-	writeText(t, filepath.Join(root, "covenant.json"), covenantBody("score", ">=1", "check-1"))
-	weakened := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "covenant.json"), covenantBody("score", ">=3", "check-1"))
-	lanedWeaker := wallAuthorization(t, root, "demo", pre, weakened, func(record map[string]any) {
+	weak := covenantBody("score", ">=1", "check-1")
+	writeText(t, filepath.Join(bed.root, "covenant.json"), weak)
+	weakened := "battery-reviewed"
+	writeText(t, filepath.Join(bed.root, "covenant.json"), old)
+	lanedWeaker := bed.authorization(pre, weakened, []string{"covenant.json"}, wallPolicyPatch("battery reviewed"), true, func(record map[string]any) {
 		record["guardrailLane"] = true
 	})
 	certified = []map[string]any{{"jobId": "job-c", "verdict": "accepted", "authorizationDigest": lanedWeaker}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, emptyNet, "", legacySnapshot(root, "demo"))
+	bed.facts.expectFileAt(pre, []byte(old), true, nil)
+	bed.facts.expectFileAt(weakened, []byte(weak), true, nil)
+	inspection, err = bed.inspectWithGuardrails(pre, wallState(), certified, map[string]bool{}, emptyNet, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,19 +143,21 @@ func TestWardenLaneCovenantGovernance(t *testing.T) {
 // A covenant born inside a mission escalates whole: covenants arrive
 // by inception or retrofit, never by a turn.
 func TestCovenantBornInsideAMissionEscalates(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "covenant.json"), covenantBody("score", ">=3", "check-1"))
-	reviewed := snapshotTree(t, root)
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	born := covenantBody("score", ">=3", "check-1")
+	writeText(t, filepath.Join(bed.root, "covenant.json"), born)
 	emptyNet, gviol := mission.ParseGuardrails(mission.ContractGuardrailSubject, "", protectedArtifactPath)
 	if gviol != "" {
 		t.Fatal(gviol)
 	}
-	laned := wallAuthorization(t, root, "demo", pre, reviewed, func(record map[string]any) {
+	laned := bed.authorization(pre, reviewed, []string{"covenant.json"}, wallPolicyPatch("covenant born"), true, func(record map[string]any) {
 		record["guardrailLane"] = true
 	})
 	certified := []map[string]any{{"jobId": "job-c", "verdict": "accepted", "authorizationDigest": laned}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, emptyNet, "", legacySnapshot(root, "demo"))
+	bed.facts.expectFileAt(pre, nil, false, nil)
+	bed.facts.expectFileAt(reviewed, []byte(born), true, nil)
+	inspection, err := bed.inspectWithGuardrails(pre, wallState(), certified, map[string]bool{}, emptyNet, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,30 +167,36 @@ func TestCovenantBornInsideAMissionEscalates(t *testing.T) {
 }
 
 // A reviewed tree that deletes the covenant escalates; a reviewed
-// tree that cannot answer at all (a bogus tree id — git ran and
-// refused) is a governance violation too, never a silent runner error
+// tree that cannot answer at all is a governance violation too, never a silent runner error
 // that skips the human-tier park.
 func TestReviewedTreeDeletionAndUnreadableEscalate(t *testing.T) {
-	root := wallRepo(t)
-	writeText(t, filepath.Join(root, "covenant.json"), covenantBody("score", ">=3", "check-1"))
-	pre := snapshotTree(t, root)
-	workspace := gittree.Workspace{Dir: root}
+	bed := newWallPolicyBed(t)
+	old := []byte(covenantBody("score", ">=3", "check-1"))
+	writeText(t, filepath.Join(bed.root, "covenant.json"), string(old))
+	pre := "pre"
 
-	violation, err := covenantGovernanceViolation(workspace, pre, pre, "digest-same")
+	bed.facts.expectFileAt(pre, old, true, nil)
+	bed.facts.expectFileAt(pre, old, true, nil)
+	violation, err := bed.governance(pre, pre, "digest-same")
 	if err != nil || violation != "" {
 		t.Fatalf("an unchanged covenant must pass the deep check: %q %v", violation, err)
 	}
 
 	// Deletion: an empty tree as the reviewed tree removes the covenant.
-	empty := snapshotTree(t, wallRepo(t))
-	violation, err = covenantGovernanceViolation(workspace, pre, empty, "digest-del")
+	empty := "empty"
+	bed.facts.expectFileAt(pre, old, true, nil)
+	bed.facts.expectFileAt(empty, nil, false, nil)
+	violation, err = bed.governance(pre, empty, "digest-del")
 	if err != nil || !strings.Contains(violation, "deletes") {
 		t.Fatalf("a reviewed tree deleting the covenant must escalate: %q %v", violation, err)
 	}
 
-	// A bogus reviewed tree: git answers, and the answer is a
-	// governance violation on the human path.
-	violation, err = covenantGovernanceViolation(workspace, pre, "0000000000000000000000000000000000000000", "digest-bogus")
+	// The repository answers that the reviewed tree is unreadable, so
+	// governance carries the failure to the human path.
+	bogus := "0000000000000000000000000000000000000000"
+	bed.facts.expectFileAt(pre, old, true, nil)
+	bed.facts.expectFileAt(bogus, nil, false, fmt.Errorf("reviewed tree %s is unreadable", bogus))
+	violation, err = bed.governance(pre, bogus, "digest-bogus")
 	if err != nil || !strings.Contains(violation, "human tier resolves") {
 		t.Fatalf("an unanswerable reviewed tree must escalate, not error: %q %v", violation, err)
 	}

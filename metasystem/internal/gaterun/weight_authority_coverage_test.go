@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -19,8 +18,9 @@ func addWeightLanding(t *testing.T, root string) {
 	}
 }
 
-func completeWeightProof(t *testing.T, root, id string, now *time.Time, exitCode int64, mutate func(*run.GovernedAdmissionResult)) {
+func completeWeightProof(t *testing.T, bed *goalRepositoryFixture, id string, now *time.Time, exitCode int64, mutate func(*run.GovernedAdmissionResult)) {
 	t.Helper()
+	root := bed.root
 	if err := os.MkdirAll(filepath.Join(root, "artifacts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -28,15 +28,13 @@ func completeWeightProof(t *testing.T, root, id string, now *time.Time, exitCode
 	store := &run.Store{Root: root, Now: func() time.Time { return *now }, Prober: prober,
 		Getpgid: func(pid int64) (int64, error) { return pid, nil }, AllPids: func() ([]int64, error) { return nil, nil }}
 	store.AdmitGoverned = func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
-		admission, err := dispatch.EvaluateGovernedRunAdmission(root, request, *now)
+		admission, err := bed.admittedAttempt(request, *now)
 		if err == nil && mutate != nil {
 			mutate(&admission)
 		}
 		return admission, err
 	}
-	store.ObserveGoverned = func(record *run.Record, ended time.Time) run.AssumptionObservation {
-		return dispatch.ObserveGovernedRun(root, record, ended)
-	}
+	store.ObserveGoverned = bed.terminalObservation
 	store.ProjectSpend = func(*run.Record, time.Time) (run.SpendSnapshot, string) { return run.SpendSnapshot{}, "" }
 	nonce, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: id, Kind: "suite",
 		Display: "weight authority proof", Log: filepath.Join("artifacts", id+".log"), GoalId: "bounded",
@@ -62,15 +60,15 @@ func completeWeightProof(t *testing.T, root, id string, now *time.Time, exitCode
 	}
 }
 
-func weightAuthorityBed(t *testing.T) (string, *time.Time) {
+func weightAuthorityBed(t *testing.T) (*goalRepositoryFixture, *time.Time) {
 	t.Helper()
 	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
-	root, _ := governedWeightBed(t, now)
+	bed, _ := governedWeightFixture(t, now)
 	priorNow := weightNow
 	weightNow = func() time.Time { return now }
 	t.Cleanup(func() { weightNow = priorNow })
-	addWeightLanding(t, root)
-	return root, &now
+	addWeightLanding(t, bed.root)
+	return bed, &now
 }
 
 func TestWeightAddAndCheckUsePersistedThresholdState(t *testing.T) {
@@ -100,20 +98,21 @@ func TestWeightAddAndCheckUsePersistedThresholdState(t *testing.T) {
 
 func TestWeightDischargeRefusesWrongRevisionAndPolicy(t *testing.T) {
 	t.Run("obligation revision", func(t *testing.T) {
-		root, _ := weightAuthorityBed(t)
-		if _, err := WeightDischarge(root, "bounded", 4, "wrong-revision"); err == nil ||
+		bed, now := weightAuthorityBed(t)
+		if _, err := bed.discharge("bounded", 4, "wrong-revision", *now); err == nil ||
 			!strings.Contains(err.Error(), "accepted obligation revision 4") {
 			t.Fatalf("wrong obligation revision did not refuse: %v", err)
 		}
 	})
 
 	t.Run("correlation policy", func(t *testing.T) {
-		root, now := weightAuthorityBed(t)
-		completeWeightProof(t, root, "policy-proof", now, 0, nil)
+		bed, now := weightAuthorityBed(t)
+		root := bed.root
+		completeWeightProof(t, bed, "policy-proof", now, 0, nil)
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=B\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := WeightDischarge(root, "bounded", 3, "policy-proof"); err == nil ||
+		if _, err := bed.discharge("bounded", 3, "policy-proof", *now); err == nil ||
 			!strings.Contains(err.Error(), "current recorded authority and policy") {
 			t.Fatalf("policy mismatch did not refuse discharge: %v", err)
 		}
@@ -122,25 +121,25 @@ func TestWeightDischargeRefusesWrongRevisionAndPolicy(t *testing.T) {
 
 func TestWeightDischargeRefusesNonGreenAndStaleBudgetEpoch(t *testing.T) {
 	t.Run("non-green proof", func(t *testing.T) {
-		root, now := weightAuthorityBed(t)
-		completeWeightProof(t, root, "red-proof", now, 1, nil)
-		if _, err := WeightDischarge(root, "bounded", 3, "red-proof"); err == nil ||
+		bed, now := weightAuthorityBed(t)
+		completeWeightProof(t, bed, "red-proof", now, 1, nil)
+		if _, err := bed.discharge("bounded", 3, "red-proof", *now); err == nil ||
 			!strings.Contains(err.Error(), "not an exact green governed proof") {
 			t.Fatalf("non-green proof did not refuse discharge: %v", err)
 		}
 	})
 
 	t.Run("budget epoch", func(t *testing.T) {
-		root, now := weightAuthorityBed(t)
-		completeWeightProof(t, root, "epoch-reset-proof", now, 0, nil)
-		if result, err := WeightDischarge(root, "bounded", 3, "epoch-reset-proof"); err != nil || !result.Decision.Applied {
+		bed, now := weightAuthorityBed(t)
+		completeWeightProof(t, bed, "epoch-reset-proof", now, 0, nil)
+		if result, err := bed.discharge("bounded", 3, "epoch-reset-proof", *now); err != nil || !result.Decision.Applied {
 			t.Fatalf("fixture could not establish the next budget epoch: %+v %v", result, err)
 		}
-		completeWeightProof(t, root, "wrong-epoch-proof", now, 0, func(admission *run.GovernedAdmissionResult) {
+		completeWeightProof(t, bed, "wrong-epoch-proof", now, 0, func(admission *run.GovernedAdmissionResult) {
 			admission.Attempt.BudgetEpoch = nil
 			admission.Attempt.AttemptOrdinal = 2
 		})
-		if _, err := WeightDischarge(root, "bounded", 3, "wrong-epoch-proof"); err == nil ||
+		if _, err := bed.discharge("bounded", 3, "wrong-epoch-proof", *now); err == nil ||
 			!strings.Contains(err.Error(), "not bound to the current obligation budget epoch") {
 			t.Fatalf("stale budget epoch did not receive typed refusal: %v", err)
 		}
@@ -148,8 +147,9 @@ func TestWeightDischargeRefusesNonGreenAndStaleBudgetEpoch(t *testing.T) {
 }
 
 func TestWeightDischargeRefusesWhenRetroObligationCannotBeRaised(t *testing.T) {
-	root, now := weightAuthorityBed(t)
-	completeWeightProof(t, root, "retro-failure-proof", now, 0, nil)
+	bed, now := weightAuthorityBed(t)
+	root := bed.root
+	completeWeightProof(t, bed, "retro-failure-proof", now, 0, nil)
 	before, err := loadWeight(root, *now)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestWeightDischargeRefusesWhenRetroObligationCannotBeRaised(t *testing.T) {
 	if err := os.MkdirAll(retrodebt.Path(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	result, err := WeightDischarge(root, "bounded", 3, "retro-failure-proof")
+	result, err := bed.discharge("bounded", 3, "retro-failure-proof", *now)
 	if err == nil || !strings.Contains(err.Error(), "retro obligation could not be raised") {
 		t.Fatalf("failed retro publication did not refuse discharge: %+v %v", result, err)
 	}

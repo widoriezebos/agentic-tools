@@ -3,8 +3,8 @@ package main
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -66,47 +66,77 @@ func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
 	}
 	wrapper := filepath.Join(module, "scripts", "agents", "commit.sh")
 	script := `#!/bin/sh
-while [ "$#" -gt 0 ]; do
-  case "$1" in --chain|--goal|--test-receipt) shift 2;; *) break;; esac
-done
-pwd > wrapper-root.txt
-git commit -q "$@"
+{
+  pwd
+  printf 'arg=%s\n' "$@"
+  printf 'author-name=%s\n' "$GIT_AUTHOR_NAME"
+  printf 'author-email=%s\n' "$GIT_AUTHOR_EMAIL"
+  printf 'committer-name=%s\n' "$GIT_COMMITTER_NAME"
+  printf 'committer-email=%s\n' "$GIT_COMMITTER_EMAIL"
+  printf 'landed-by=%s\n' "$METASYSTEM_LANDED_BY"
+} > wrapper-marker.txt
 `
 	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command("git", "init", "-q", "-b", "main", repository).CombinedOutput(); err != nil {
-		t.Fatalf("init: %v: %s", err, output)
+	marker := filepath.Join(module, "wrapper-marker.txt")
+	reads := []struct {
+		root, result string
+		args         []string
+	}{
+		{module, "before", []string{"rev-parse", "HEAD"}},
+		{module, "after", []string{"rev-parse", "HEAD"}},
+		{module, "before", []string{"rev-parse", "after^"}},
+		{repository, "after", []string{"rev-parse", "HEAD"}},
 	}
-	for _, args := range [][]string{{"config", "user.name", "Fixture"}, {"config", "user.email", "fixture@example.invalid"}} {
-		if output, err := exec.Command("git", append([]string{"-C", repository}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
+	readCount := 0
+	readGit := func(root string, args ...string) (string, error) {
+		if readCount >= len(reads) || root != reads[readCount].root || !reflect.DeepEqual(args, reads[readCount].args) {
+			t.Fatalf("unexpected Git read %d: root=%q args=%v", readCount, root, args)
 		}
+		_, err := os.Stat(marker)
+		if readCount == 0 && !os.IsNotExist(err) || readCount > 0 && err != nil {
+			t.Fatalf("Git read %d occurred on wrong side of wrapper marker: %v", readCount, err)
+		}
+		if readCount == 1 {
+			data, err := os.ReadFile(marker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+			if len(lines) != 14 || !strings.HasPrefix(lines[8], "arg=") {
+				t.Fatalf("wrapper did not record message argument: %q", data)
+			}
+			message, err := os.ReadFile(strings.TrimPrefix(lines[8], "arg="))
+			if err != nil || string(message) != "land goal-a in batch batch\n\nOriginal join order; prefix tree tree.\n" {
+				t.Fatalf("wrapper message=%q error=%v", message, err)
+			}
+		}
+		result := reads[readCount].result
+		readCount++
+		return result, nil
 	}
-	product := filepath.Join(module, "product.go")
-	if err := os.WriteFile(product, []byte("package fixture\n"), 0o644); err != nil {
+	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", readGit)
+	head, err := seams.Commit(batch.Unit{GoalID: "goal-a", Chain: "chain-a", AuthorName: "Owner", AuthorEmail: "owner@example.invalid"}, batch.PrefixReceipt{Tree: "tree"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command("git", "-C", repository, "add", ".").CombinedOutput(); err != nil {
-		t.Fatalf("add base: %v: %s", err, output)
+	if head != "after" || readCount != len(reads) {
+		t.Fatalf("commit HEAD=%q Git reads=%d, want after and %d", head, readCount, len(reads))
 	}
-	if output, err := exec.Command("git", "-C", repository, "commit", "-qm", "base").CombinedOutput(); err != nil {
-		t.Fatalf("commit base: %v: %s", err, output)
-	}
-	if err := os.WriteFile(product, []byte("package fixture\n\n// changed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if output, err := exec.Command("git", "-C", repository, "add", "metasystem/product.go").CombinedOutput(); err != nil {
-		t.Fatalf("stage product: %v: %s", err, output)
-	}
-	seams := batchLandSeams(repository, "batch", batch.Record{}, "base", "actor")
-	if _, err := seams.Commit(batch.Unit{GoalID: "goal-a", Chain: "chain-a", AuthorName: "Owner", AuthorEmail: "owner@example.invalid"}, batch.PrefixReceipt{}); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(module, "wrapper-root.txt"))
+	data, err := os.ReadFile(marker)
 	want, canonicalErr := canonicalPath(module)
-	if err != nil || canonicalErr != nil || strings.TrimSpace(string(data)) != want {
-		t.Fatalf("wrapper root=%q error=%v canonical-error=%v, want %s", data, err, canonicalErr, want)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if err != nil || canonicalErr != nil || len(lines) != 14 || lines[0] != want {
+		t.Fatalf("wrapper marker=%q error=%v canonical-error=%v, want cwd %s", data, err, canonicalErr, want)
+	}
+	messageFile := strings.TrimPrefix(lines[8], "arg=")
+	wantLines := []string{want, "arg=--chain", "arg=chain-a", "arg=--goal", "arg=goal-a", "arg=--test-receipt", "arg=" + filepath.Join(module, "artifacts", "agents", "proof-runs", "batch", "batch.json"), "arg=-F", "arg=" + messageFile, "author-name=Owner", "author-email=owner@example.invalid", "committer-name=Owner", "committer-email=owner@example.invalid", "landed-by=actor"}
+	if !reflect.DeepEqual(lines, wantLines) || filepath.Dir(messageFile) != module || !strings.HasPrefix(filepath.Base(messageFile), ".batch-commit-message-") {
+		t.Fatalf("wrapper invocation=%q, want %q and a temporary message under %s", lines, wantLines, module)
+	}
+	if _, err := os.Stat(messageFile); !os.IsNotExist(err) {
+		t.Fatalf("temporary commit message remains: %v", err)
 	}
 }
 
@@ -133,6 +163,7 @@ func TestFinishBatchLandingLeavesUnchangedPushRejectionQuiet(t *testing.T) {
 }
 
 func TestPrefixReceiptRetriesInfrastructureExitWithNonTerminalStatus(t *testing.T) {
+	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch"), 0o755); err != nil {
 		t.Fatal(err)
@@ -150,11 +181,9 @@ exit 2
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	original := batchPrefixReceiptExecutable
-	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
-	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
+	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	result, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", tree, []string{"group-a"})
+	result, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"group-a"}}, dependencies)
 	if err == nil || len(result.Red) != 0 {
 		t.Fatalf("infrastructure result=%+v error=%v", result, err)
 	}
@@ -162,9 +191,6 @@ exit 2
 
 func TestRecoveryFailureDoesNotAbortAmbientRebase(t *testing.T) {
 	root := t.TempDir()
-	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
-		t.Fatalf("init: %v: %s", err, output)
-	}
 	marker := filepath.Join(root, ".git", "rebase-merge", "ambient-owner")
 	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
 		t.Fatal(err)

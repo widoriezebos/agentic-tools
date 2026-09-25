@@ -510,11 +510,6 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor",
-      "reason": "runs public owner and native proof with process-wide owner lineage, proof admission fixture environment, and live host leases"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestLandingTestReceiptPublicSemanticDeadlineBoundaries",
       "reason": "the subprocess child owns the authorized semantic clock environment while exercising the public receipt command"
     },

@@ -31,13 +31,14 @@ func journalOf(t *testing.T, root string) []journalRecord {
 
 func TestEveryDeliveryPathLeavesOneJournalLine(t *testing.T) {
 	t.Parallel()
-	root, sink := notifyRepo(t, "")
-	if err := Deliver(root, "the steward speaks"); err != nil {
+	f := configuredNotifyFixture(t, 4, "default")
+	root, sink := f.root, f.sink
+	if err := deliverNoticeWith(root, Notice{Message: "the steward speaks", Source: NoticeSteward}, f.deliver); err != nil {
 		t.Fatal(err)
 	}
-	if err := DeliverNotice(root, Notice{
+	if err := deliverNoticeWith(root, Notice{
 		Message: "HEALTH unhealthy — runner stale", Source: NoticeAlert, Ref: "alert-abc-1",
-	}); err != nil {
+	}, f.deliver); err != nil {
 		t.Fatal(err)
 	}
 	for _, nonce := range []string{"handoff-5000", "verdict-stalled", "reap-7"} {
@@ -47,7 +48,7 @@ func TestEveryDeliveryPathLeavesOneJournalLine(t *testing.T) {
 	}
 	// The handoff nonce names no live bound intent, so it retires without a
 	// delivery; the other two go through the pending path.
-	if _, err := DeliverPending(root); err != nil {
+	if _, err := f.pending(); err != nil {
 		t.Fatal(err)
 	}
 	if data, err := os.ReadFile(sink); err != nil || !strings.Contains(string(data), "the steward speaks") {
@@ -84,8 +85,9 @@ func TestEveryDeliveryPathLeavesOneJournalLine(t *testing.T) {
 
 func TestAFailedDeliveryIsJournaledWithItsReason(t *testing.T) {
 	t.Parallel()
-	root, _ := notifyRepo(t, "exit 1")
-	if err := DeliverNotice(root, Notice{Message: "nobody heard this", Source: NoticeSteward}); err == nil {
+	f := configuredNotifyFixture(t, 1, "exit 1")
+	root := f.root
+	if err := deliverNoticeWith(root, Notice{Message: "nobody heard this", Source: NoticeSteward}, f.deliver); err == nil {
 		t.Fatal("a failing notifier must not claim delivery")
 	}
 	records := journalOf(t, root)
@@ -103,11 +105,84 @@ func TestAFailedDeliveryIsJournaledWithItsReason(t *testing.T) {
 	}
 }
 
+func TestAlertRetriesAndSpendSubmissionJournalTheirEpisodeIDs(t *testing.T) {
+	t.Parallel()
+	f := newNotifyFixture(t,
+		notifyRead{command: "exit 1"},
+		notifyRead{command: "default"},
+		notifyRead{command: "default"},
+	)
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest("runner stale"), ShouldAlert: true}
+	failed, err := f.alert(health, "HEALTH unhealthy", now)
+	if err != nil || failed.TransportResult != TransportFailed {
+		t.Fatalf("first alert attempt did not fail: %+v %v", failed, err)
+	}
+	retried, err := f.alert(health, "HEALTH unhealthy", now.Add(time.Minute))
+	if err != nil || retried.TransportResult != TransportSubmitted || retried.EpisodeID != failed.EpisodeID {
+		t.Fatalf("alert retry did not submit the same episode: %+v %v", retried, err)
+	}
+	observation := SpendObservation{Valid: true, Crossings: []SpendCrossing{
+		crossing("day-2026-09-23", "day", "tokens", 1, 125, 100),
+	}}
+	if err := updateSpendEpisodesWith(f.root, observation, now.Add(2*time.Minute), f.deliver); err != nil {
+		t.Fatal(err)
+	}
+	episodes, err := AlertEpisodes(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spendID string
+	for _, episode := range episodes {
+		if episode.Owner == string(RoleSpendFence) {
+			spendID = episode.EpisodeID
+		}
+	}
+	if spendID == "" {
+		t.Fatal("spend submission did not retain an episode")
+	}
+	records := journalOf(t, f.root)
+	if len(records) != 3 {
+		t.Fatalf("three transport attempts must leave three journal lines: %+v", records)
+	}
+	for index, want := range []struct {
+		ref       string
+		delivered bool
+	}{{failed.EpisodeID, false}, {failed.EpisodeID, true}, {spendID, true}} {
+		if records[index].Source != NoticeAlert || records[index].Ref != want.ref || records[index].Delivered != want.delivered {
+			t.Fatalf("journal attempt %d lost its episode or result: %+v", index, records[index])
+		}
+	}
+	if records[0].Error == "" || records[1].Error != "" || records[2].Error != "" {
+		t.Fatalf("journal reasons did not follow transport results: %+v", records)
+	}
+}
+
+func TestFailedPendingDeliveryKeepsItsNonceAndJournalReason(t *testing.T) {
+	t.Parallel()
+	f := configuredNotifyFixture(t, 1, "exit 1")
+	nonce := "verdict-stalled"
+	if err := QueueNotification(f.root, PendingNotification{Nonce: nonce, Message: "steward: stalled"}); err != nil {
+		t.Fatal(err)
+	}
+	if delivered, err := f.pending(); err == nil || delivered != 0 {
+		t.Fatalf("failed pending delivery did not stop the pass: delivered=%d err=%v", delivered, err)
+	}
+	records := journalOf(t, f.root)
+	if len(records) != 1 || records[0].Source != NoticeVerdict || records[0].Ref != nonce || records[0].Delivered || records[0].Error == "" {
+		t.Fatalf("failed pending attempt lost its source, nonce, or reason: %+v", records)
+	}
+	if pending, err := PendingNotifications(f.root); err != nil || len(pending) != 1 || pending[0].Nonce != nonce {
+		t.Fatalf("failed pending attempt did not retain the queue entry: %+v %v", pending, err)
+	}
+}
+
 func TestTheFixtureLogKeepsItsOwnLineBesideTheJournal(t *testing.T) {
 	t.Parallel()
-	root := notifyRepoWithoutCommand(t)
+	f := absentNotifyFixture(t, 1)
+	root := f.root
 	notifyIdentity(t, root, EnrollmentFixture)
-	if err := DeliverNotice(root, Notice{Message: "HEALTH unhealthy", Source: NoticeSteward}); err != nil {
+	if err := deliverNoticeWith(root, Notice{Message: "HEALTH unhealthy", Source: NoticeSteward}, f.deliver); err != nil {
 		t.Fatal(err)
 	}
 	log, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "notifications.log"))
@@ -122,7 +197,8 @@ func TestTheFixtureLogKeepsItsOwnLineBesideTheJournal(t *testing.T) {
 
 func TestAJournalThatCannotBeWrittenDoesNotFailTheDelivery(t *testing.T) {
 	t.Parallel()
-	root, sink := notifyRepo(t, "")
+	f := configuredNotifyFixture(t, 1, "default")
+	root, sink := f.root, f.sink
 	// A file where the steward's directory belongs: the journal cannot be
 	// created, and the operator must still be reached.
 	if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents"), 0o755); err != nil {
@@ -131,7 +207,7 @@ func TestAJournalThatCannotBeWrittenDoesNotFailTheDelivery(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "steward"), []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Deliver(root, "the channel still works"); err != nil {
+	if err := deliverNoticeWith(root, Notice{Message: "the channel still works"}, f.deliver); err != nil {
 		t.Fatalf("a journal that cannot be written must not gate delivery: %v", err)
 	}
 	if data, err := os.ReadFile(sink); err != nil || !strings.Contains(string(data), "the channel still works") {
@@ -141,9 +217,10 @@ func TestAJournalThatCannotBeWrittenDoesNotFailTheDelivery(t *testing.T) {
 
 func TestJournalIdentitiesIncrease(t *testing.T) {
 	t.Parallel()
-	root, _ := notifyRepo(t, "")
+	f := configuredNotifyFixture(t, 8, "default")
+	root := f.root
 	for index := 0; index < 8; index++ {
-		if err := Deliver(root, "line"); err != nil {
+		if err := deliverNoticeWith(root, Notice{Message: "line"}, f.deliver); err != nil {
 			t.Fatal(err)
 		}
 	}

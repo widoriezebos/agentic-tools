@@ -59,6 +59,8 @@ type CarriedLanding struct {
 type CarriedAcceptedRiskAppend struct {
 	Goal, Finding, By, Why, OpID, Commit string
 	RecordedAt                           time.Time
+	// CommitMessage supplies the raw commit-message fact; nil reads it with native Git.
+	CommitMessage func(root, commit string) ([]byte, error)
 }
 
 // CarriedLandingLine derives the durable counter solely from the confirmed
@@ -156,9 +158,11 @@ func carriedAcceptedRiskLine(root string, in CarriedAcceptedRiskAppend) (accepte
 	if in.Finding == "" || in.Goal == "" || in.OpID == "" || in.By == "" || in.Why == "" || len(in.Commit) != 40 {
 		return acceptedRiskRegisterLine{}, fmt.Errorf("carried accepted-risk entry is incomplete")
 	}
-	command := exec.Command("git", "-C", root, "log", "-1", "--format=%B", in.Commit)
-	command.Env = gittree.ScrubbedEnviron()
-	message, err := command.Output()
+	read := in.CommitMessage
+	if read == nil {
+		read = readCarriedCommitMessage
+	}
+	message, err := read(root, in.Commit)
 	if err != nil {
 		return acceptedRiskRegisterLine{}, fmt.Errorf("read carried commit %s: %w", in.Commit, err)
 	}
@@ -191,6 +195,12 @@ func carriedAcceptedRiskLine(root string, in CarriedAcceptedRiskAppend) (accepte
 		ReviewLinks: []acceptedRiskRegisterReviewLink{{Kind: "goal", Target: "plans/goals/" + in.Goal + ".md", Detail: "opid=" + in.OpID}, {Kind: "commit", Target: in.Commit, Detail: in.Finding}},
 	}
 	return line, nil
+}
+
+func readCarriedCommitMessage(root, commit string) ([]byte, error) {
+	command := exec.Command("git", "-C", root, "log", "-1", "--format=%B", commit)
+	command.Env = gittree.ScrubbedEnviron()
+	return command.Output()
 }
 
 func AppendAcceptedRisk(root string, in AcceptedRiskAppend) error {

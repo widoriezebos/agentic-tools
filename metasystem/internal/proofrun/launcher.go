@@ -166,14 +166,14 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 		defer spools.close()
 		logPaths = append(logPaths, spools.stdout.Name(), spools.stderr.Name())
-		suiteSpools, err = newCustodySpools(options.LogPath, "suite")
-		if err != nil {
-			fmt.Fprintln(combinedErr, "suite launcher: create durable suite output:", err)
-			return 1
-		}
-		defer func() { _ = suiteSpools.finish() }()
-		logPaths = append(logPaths, suiteSpools.stdout.Name(), suiteSpools.stderr.Name())
 	}
+	suiteSpools, err = newCustodySpools(options.LogPath, "suite")
+	if err != nil {
+		fmt.Fprintln(combinedErr, "suite launcher: create durable suite output:", err)
+		return 1
+	}
+	defer func() { _ = suiteSpools.finish() }()
+	logPaths = append(logPaths, suiteSpools.stdout.Name(), suiteSpools.stderr.Name())
 	if err := AppendProgressHeader(options.ProgressPath, ProgressHeader{TmpPaths: options.TmpPaths, LogPaths: logPaths}); err != nil {
 		fmt.Fprintln(combinedErr, "suite launcher:", err)
 		return 1
@@ -297,19 +297,7 @@ func LaunchSuite(options LaunchOptions) int {
 	} else {
 		suite.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}
-	var suiteOut, suiteErr io.ReadCloser
-	if suiteSpools != nil {
-		suite.Stdout, suite.Stderr = suiteSpools.stdout, suiteSpools.stderr
-	} else {
-		suiteOut, err = suite.StdoutPipe()
-		if err == nil {
-			suiteErr, err = suite.StderrPipe()
-		}
-		if err != nil {
-			fmt.Fprintln(combinedErr, "suite launcher:", err)
-			return 1
-		}
-	}
+	suite.Stdout, suite.Stderr = suiteSpools.stdout, suiteSpools.stderr
 	if err := suite.Start(); err != nil {
 		if custody != nil {
 			_ = custody.finish()
@@ -317,12 +305,10 @@ func LaunchSuite(options LaunchOptions) int {
 		fmt.Fprintln(combinedErr, "suite launcher:", err)
 		return 1
 	}
-	if suiteSpools != nil {
-		// The child has its own regular-file descriptors; the parent can
-		// follow live output without keeping a write descriptor open.
-		suiteSpools.close()
-		suiteSpools.follow(combined, combinedErr, log)
-	}
+	// The child has its own regular-file descriptors; the parent can follow
+	// live output without keeping a write descriptor open.
+	suiteSpools.close()
+	suiteSpools.follow(combined, combinedErr, log)
 	if barrier != nil {
 		for _, file := range suite.ExtraFiles[len(suite.ExtraFiles)-2:] {
 			_ = file.Close()
@@ -356,12 +342,6 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 	}
 
-	var copies sync.WaitGroup
-	if suiteSpools == nil {
-		copies.Add(2)
-		go copyStream(&copies, combined, suiteOut, true)
-		go copyStream(&copies, combinedErr, suiteErr, true)
-	}
 	var watchdog *exec.Cmd
 	var watchdogOut, watchdogErr io.ReadCloser
 	if custody != nil {
@@ -444,9 +424,8 @@ func LaunchSuite(options LaunchOptions) int {
 	// five (2026-09-12, the suite-progress fixture's chatty scenario). The
 	// watchdog's own children (evidence preservation, supervision shutdown)
 	// end before it returns, so draining its pipes before Wait cannot hang.
-	// Unmanaged suite pipes keep their old order: a detached fixture child
-	// may hold the descriptors after the suite itself exits. Custodied
-	// suites use durable files and an independently bounded final drain.
+	// Suite output uses durable files and an independently bounded final
+	// drain because detached fixture children may retain inherited streams.
 	var watchdogCopies sync.WaitGroup
 	if custody == nil {
 		watchdogCopies.Add(2)
@@ -481,7 +460,6 @@ func LaunchSuite(options LaunchOptions) int {
 				_ = watchdog.Process.Kill()
 				_ = watchdog.Wait()
 			}
-			copies.Wait()
 			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: create process launch identity:", launchErr)
 			return 1
@@ -504,7 +482,6 @@ func LaunchSuite(options LaunchOptions) int {
 			_ = watchdog.Process.Kill()
 			_ = watchdog.Wait()
 		}
-		copies.Wait()
 		watchdogCopies.Wait()
 		fmt.Fprintln(combinedErr, "suite launcher: publish proof-run record:", err)
 		return 1
@@ -524,7 +501,6 @@ func LaunchSuite(options LaunchOptions) int {
 				_ = watchdog.Process.Kill()
 				_ = watchdog.Wait()
 			}
-			copies.Wait()
 			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: publish proof attempt processes:", err)
 			return 1
@@ -597,7 +573,6 @@ func LaunchSuite(options LaunchOptions) int {
 				_ = watchdog.Process.Kill()
 				_ = watchdog.Wait()
 			}
-			copies.Wait()
 			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: close creation claim:", err)
 			return 1
@@ -621,7 +596,6 @@ func LaunchSuite(options LaunchOptions) int {
 	} else {
 		watchdogErrWait = watchdog.Wait()
 	}
-	copies.Wait()
 	survivorFailure := false
 	processes, processErr := census.EnumerateConfiguredProcesses(filepath.Dir(options.ConfPath))
 	if processErr != nil {
@@ -935,8 +909,6 @@ func copyStream(group *sync.WaitGroup, destination *lockedWriter, source io.Read
 			_, _ = destination.Write(buffer[:n])
 		}
 		if readErr != nil {
-			// Only the legacy unmanaged suite waits before joining its
-			// readers; exec.Cmd.Wait closes those pipes on success.
 			if readErr != io.EOF && !(allowClosedSource && errors.Is(readErr, os.ErrClosed)) {
 				destination.recordError(readErr)
 			}
@@ -1017,19 +989,37 @@ func assertBanner(path, banner string) error {
 	}
 	defer file.Close()
 	count := 0
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		if scanner.Text() == banner {
-			count++
+	reader := bufio.NewReader(file)
+	for {
+		matches := true
+		compared := 0
+		for {
+			fragment, more, readErr := reader.ReadLine()
+			if readErr != nil {
+				if errors.Is(readErr, io.EOF) {
+					if count != 1 {
+						return fmt.Errorf("cost banner appeared %d times in the suite log; expected exactly once", count)
+					}
+					return nil
+				}
+				return readErr
+			}
+			if matches {
+				end := compared + len(fragment)
+				if end > len(banner) || string(fragment) != banner[compared:end] {
+					matches = false
+				}
+			}
+			compared += len(fragment)
+			if more {
+				continue
+			}
+			if matches && compared == len(banner) {
+				count++
+			}
+			break
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	if count != 1 {
-		return fmt.Errorf("cost banner appeared %d times in the suite log; expected exactly once", count)
-	}
-	return nil
 }
 
 func ReadSelectorSections(path string) ([]string, error) {

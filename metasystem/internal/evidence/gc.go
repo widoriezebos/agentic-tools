@@ -86,6 +86,10 @@ type keptChain struct {
 // absolute evidence root: with nowhere durable to check against, nothing here
 // is safe to delete.
 func GC(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer) error {
+	return gcWithGoalEndpoint(checkoutRoot, evidenceRoot, graceSeconds, out, nil)
+}
+
+func gcWithGoalEndpoint(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer, endpoint *goal.Endpoint) error {
 	if !filepath.IsAbs(evidenceRoot) {
 		return fmt.Errorf("refusing to collect: the durable evidence root must be an absolute path, got %q", evidenceRoot)
 	}
@@ -96,7 +100,7 @@ func GC(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer) 
 	if err != nil {
 		return err
 	}
-	if err := pruneMirroredRecords(checkoutRoot, jobsDir, evidenceRoot, graceSeconds); err != nil {
+	if err := pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot, graceSeconds, endpoint); err != nil {
 		return err
 	}
 	residue, err := sweepResidue(agents, jobsDir)
@@ -366,15 +370,9 @@ func removeMirroredLogs(jobsDir, chain string, files map[string]any) error {
 	return nil
 }
 
-// pruneMirroredRecords removes terminal job records whose chain payload is
-// already collected and whose mirror holds the record past the grace window.
-// Job records are the registry while work is recent: the staleness check
-// reads them for its chain window and the census joins custody through them.
-// Past that window, a terminal chain's records serve only history, and
-// history is the mirror, which already holds every record file.
-func pruneMirroredRecords(checkoutRoot, jobsDir, evidenceRoot string, graceSeconds float64) error {
+func pruneMirroredRecordsWithEndpoint(checkoutRoot, jobsDir, evidenceRoot string, graceSeconds float64, endpoint *goal.Endpoint) error {
 	agents := filepath.Join(checkoutRoot, "artifacts", "agents")
-	goalState := readGoalRevisionState(checkoutRoot)
+	goalState := readGoalRevisionStateWithEndpoint(checkoutRoot, endpoint)
 	matches, _ := filepath.Glob(filepath.Join(jobsDir, "*.json"))
 	for _, recordPath := range matches {
 		record, err := readJSONObject(recordPath)
@@ -456,16 +454,22 @@ type goalRevisionState struct {
 	unknown bool
 }
 
-// readGoalRevisionState takes one accepted-ledger view for the entire GC pass.
-// A converted ledger that cannot be read makes deletion conservative; GC must
-// not turn an evidence outage into a budget refund.
-func readGoalRevisionState(checkoutRoot string) goalRevisionState {
-	if !goal.NewWorld(checkoutRoot) {
-		return goalRevisionState{}
-	}
-	endpoint, err := goal.ResolveEndpoint(checkoutRoot)
-	if err != nil {
-		return goalRevisionState{unknown: true}
+func readGoalRevisionStateWithEndpoint(checkoutRoot string, explicit *goal.Endpoint) goalRevisionState {
+	var endpoint goal.Endpoint
+	if explicit != nil {
+		if explicit.Root != checkoutRoot || explicit.Repository == nil {
+			return goalRevisionState{unknown: true}
+		}
+		endpoint = *explicit
+	} else {
+		if !goal.NewWorld(checkoutRoot) {
+			return goalRevisionState{}
+		}
+		var err error
+		endpoint, err = goal.ResolveEndpoint(checkoutRoot)
+		if err != nil {
+			return goalRevisionState{unknown: true}
+		}
 	}
 	projection, err := goal.Project(endpoint, false, now().UTC())
 	if err != nil {

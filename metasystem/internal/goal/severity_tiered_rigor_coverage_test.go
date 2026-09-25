@@ -8,9 +8,10 @@ import (
 
 func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "risk-goal")
+	endpoint := obligationAuthorityLocalEndpoint(t, "risk-goal")
+	root := endpoint.Root
 	proof := proveObligationHuman(t, root)
-	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR30", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000SR30", "mac-a")
 
 	if _, err := AcceptedRiskDecision(req, "risk-goal", "F-1", "critic-a", "Wido", "bounded risk", &proof); err == nil || !strings.Contains(err.Error(), "human act") {
 		t.Fatalf("accept-risk without the human actor = %v", err)
@@ -24,7 +25,7 @@ func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("accept-risk = %+v, %v", result, err)
 	}
-	projection, err := Project(obligationAuthorityEndpoint(root), false, req.Now)
+	projection, err := Project(endpoint, false, req.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,15 +38,21 @@ func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 	if _, err := AcceptedRiskDecision(blankReq, "risk-goal", "F-blank", "critic-a", "Wido", " \t ", &proof); err == nil || !strings.Contains(err.Error(), "requires") {
 		t.Fatalf("blank accepted-risk reason = %v; want refusal", err)
 	}
+	resolve := func(gotRoot string) (Endpoint, error) {
+		if gotRoot != root {
+			t.Fatalf("accepted-risk lookup resolved root %q, want %q", gotRoot, root)
+		}
+		return endpoint, nil
+	}
 	wantOpID := req.opid()
-	gotOpID, err := AcceptedRiskDecisionOpID(root, "risk-goal", "F-1", "critic-a", req.Now)
+	gotOpID, err := acceptedRiskDecisionOpIDWithResolver(root, "risk-goal", "F-1", "critic-a", req.Now, resolve)
 	if err != nil || gotOpID != wantOpID {
 		t.Fatalf("accepted-risk operation identifier = %q, %v; want %q", gotOpID, err, wantOpID)
 	}
-	if _, err := AcceptedRiskDecisionOpID(root, "risk-goal", "F-missing", "critic-a", req.Now); err == nil || !strings.Contains(err.Error(), "has no accepted-risk decision") {
+	if _, err := acceptedRiskDecisionOpIDWithResolver(root, "risk-goal", "F-missing", "critic-a", req.Now, resolve); err == nil || !strings.Contains(err.Error(), "has no accepted-risk decision") {
 		t.Fatalf("missing accepted-risk lookup = %v", err)
 	}
-	if _, err := AcceptedRiskDecisionOpID(root, "absent-goal", "F-1", "critic-a", req.Now); err == nil || !strings.Contains(err.Error(), "is absent") {
+	if _, err := acceptedRiskDecisionOpIDWithResolver(root, "absent-goal", "F-1", "critic-a", req.Now, resolve); err == nil || !strings.Contains(err.Error(), "is absent") {
 		t.Fatalf("absent goal lookup = %v", err)
 	}
 	req.Ulid = "01J5X00000000000000000SR35"
@@ -65,7 +72,7 @@ func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 		t.Fatalf("conflicting accepted-risk replay = %+v, %v", result, err)
 	}
 
-	release := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR33", "mac-a")
+	release := verbReqFor(endpoint, "01J5X00000000000000000SR33", "mac-a")
 	if result, err = Release(release, "risk-goal"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("release risk fixture = %+v, %v", result, err)
 	}
@@ -74,16 +81,40 @@ func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "is not claimed") {
 		t.Fatalf("accept-risk on an unclaimed goal = %+v, %v", result, err)
 	}
-	obligationAuthorityGit(t, root, "config", "goal.sync-branch", "main")
-	if _, err := AcceptedRiskDecisionOpID(root, "risk-goal", "F-1", "critic-a", req.Now); err == nil || !strings.Contains(err.Error(), "must be fully qualified") {
+	malformed := func(gotRoot string) (Endpoint, error) {
+		if gotRoot != root {
+			t.Fatalf("malformed endpoint resolved root %q, want %q", gotRoot, root)
+		}
+		seen := make(map[string]bool)
+		resolved, err := resolveEndpointWithConfig(gotRoot, func(configRoot, key string) (string, error) {
+			if configRoot != root || seen[key] {
+				t.Fatalf("unexpected config read: root=%q key=%q", configRoot, key)
+			}
+			seen[key] = true
+			switch key {
+			case "goal.sync-remote":
+				return "local", nil
+			case "goal.sync-branch":
+				return "main", nil
+			default:
+				t.Fatalf("unexpected config key %q", key)
+				return "", nil
+			}
+		})
+		if len(seen) != 2 {
+			t.Fatalf("malformed endpoint read %d config keys, want 2", len(seen))
+		}
+		return resolved, err
+	}
+	if _, err := acceptedRiskDecisionOpIDWithResolver(root, "risk-goal", "F-1", "critic-a", req.Now, malformed); err == nil || !strings.Contains(err.Error(), "must be fully qualified") {
 		t.Fatalf("accepted-risk lookup with malformed endpoint = %v", err)
 	}
 }
 
 func TestSeverityTieredRigorReviewObligationRefusals(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "review-refusals")
-	owner := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR40", "mac-a")
+	endpoint := obligationAuthorityLocalEndpoint(t, "review-refusals")
+	owner := verbReqFor(endpoint, "01J5X00000000000000000SR40", "mac-a")
 	obligation := ReviewObligation{Finding: "F-1", Chain: "critic-a", Artifact: "metasystem/a.go", Test: "prove: a"}
 
 	result, err := DeferFindings(owner, "missing-goal", []ReviewObligation{obligation})
@@ -103,7 +134,7 @@ func TestSeverityTieredRigorReviewObligationRefusals(t *testing.T) {
 		t.Fatalf("duplicate defer did not retain one open obligation: %+v", got)
 	}
 
-	foreign := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR42", "mac-b")
+	foreign := verbReqFor(endpoint, "01J5X00000000000000000SR42", "mac-b")
 	result, err = DeferFindings(foreign, "review-refusals", []ReviewObligation{{Finding: "F-2", Chain: "critic-a"}})
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "requires its owning pair") {
 		t.Fatalf("foreign defer = %+v, %v", result, err)
@@ -136,8 +167,9 @@ func TestSeverityTieredRigorReviewObligationRefusals(t *testing.T) {
 
 func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "utility-goal")
-	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR50", "mac-a")
+	endpoint := obligationAuthorityLocalEndpoint(t, "utility-goal")
+	root := endpoint.Root
+	req := verbReqFor(endpoint, "01J5X00000000000000000SR50", "mac-a")
 	req.CallerClass, req.EpochAuthority = "MAIN", EpochAuthorityHolder
 	// The fixture's claim starts its ownership episode at 2026-08-30T08:05Z; the
 	// verbs below act after it, since a claim never rebinds behind its episode.
@@ -179,13 +211,14 @@ func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "already reads exactly") {
 		t.Fatalf("unchanged approved budget = %+v, %v", result, err)
 	}
-	unclaimedRoot := obligationAuthorityLocalRoot(t, "unclaimed-budget")
-	release := obligationAuthorityVerbReq(unclaimedRoot, "01J5X00000000000000000SR54", "mac-a")
+	unclaimedEndpoint := obligationAuthorityLocalEndpoint(t, "unclaimed-budget")
+	unclaimedRoot := unclaimedEndpoint.Root
+	release := verbReqFor(unclaimedEndpoint, "01J5X00000000000000000SR54", "mac-a")
 	if result, err = Release(release, "unclaimed-budget"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("release budget fixture = %+v, %v", result, err)
 	}
 	unclaimedProof := proveObligationHuman(t, unclaimedRoot)
-	unclaimed := obligationAuthorityVerbReq(unclaimedRoot, "01J5X00000000000000000SR55", "mac-a")
+	unclaimed := verbReqFor(unclaimedEndpoint, "01J5X00000000000000000SR55", "mac-a")
 	unclaimed.Actor.Human = "Wido"
 	result, err = SetBudgetApproved(unclaimed, "unclaimed-budget", testBudget(), &unclaimedProof)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "budgets on unclaimed work") {

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -23,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
@@ -813,7 +815,13 @@ exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
 	runAsHolder := func(arguments []string, extraEnv []string) (string, int) {
 		t.Helper()
 		gate := filepath.Join(bed, "holder-gate-"+strconv.FormatInt(time.Now().UnixNano(), 10))
-		script := `while [[ ! -e "$1" ]]; do sleep 0.01; done; shift; "$@"`
+		script := `while [[ ! -e "$1" ]]; do sleep 0.01; done
+shift
+"$@" &
+child=$!
+wait "$child"
+status=$?
+exit "$status"`
 		command := exec.Command("bash", append([]string{"-c", script, "holder", gate}, arguments...)...)
 		command.Dir = root
 		// The landing verifies the retained proof in the environment the
@@ -1082,7 +1090,10 @@ func TestLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 	}
 	t.Parallel()
 	command := exec.Command(os.Args[0], "-test.run=^TestLandingTestReceiptPublicSemanticDeadlineBoundaries$", "-test.v")
-	command.Env = append(receiptCanaryEnvironmentBase(os.Environ()), "GO_WANT_LANDING_RECEIPT_DEADLINE_CHILD=1")
+	command.Env = append(receiptCanaryEnvironmentBase(os.Environ()),
+		"GO_WANT_LANDING_RECEIPT_DEADLINE_CHILD=1",
+		"METASYSTEM_WAIT_BINARY="+os.Getenv("METASYSTEM_WAIT_BINARY"),
+		"METASYSTEM_WAIT_BINARY_SOURCE="+os.Getenv("METASYSTEM_WAIT_BINARY"))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("owned public deadline fixture: %v\n%s", err, output)
@@ -1094,32 +1105,34 @@ func TestLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 
 func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 	for _, testCase := range []struct {
-		name          string
-		advance       time.Duration
-		cancelParent  bool
-		wantLaunches  int
-		wantExit      int
-		wantReason    string
-		refusesExpiry bool
+		name         string
+		advance      time.Duration
+		cancelParent bool
+		wantLaunches int
+		wantExit     int
+		wantReason   string
 	}{
 		{name: "deadline-minus-one-nanosecond", advance: -time.Nanosecond, wantLaunches: 1},
-		{name: "exact-deadline", wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time", refusesExpiry: true},
-		{name: "after-deadline", advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time", refusesExpiry: true},
+		{name: "exact-deadline", wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time"},
+		{name: "after-deadline", advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time"},
 		{name: "outer-cancellation", advance: -time.Second, cancelParent: true, wantExit: proofrun.ExitAdmissionRefused, wantReason: context.Canceled.Error()},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			startedAt := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
 			t.Setenv(goalNowEnvironment, startedAt.Format(time.RFC3339Nano))
-			root, _ := proofExtensionGoalFixtureAt(t, startedAt)
+			repository := newProofAdmissionRepositoryFixture(t, startedAt, true)
+			root := repository.root
 			root, err := filepath.EvalSymlinks(root)
 			if err != nil {
 				t.Fatal(err)
 			}
-			confPath := filepath.Join(root, "metasystem.conf")
-			configuration, err := os.ReadFile(confPath)
+			repository.root = root
+			repository.top, err = filepath.EvalSymlinks(repository.top)
 			if err != nil {
 				t.Fatal(err)
 			}
+			confPath := filepath.Join(root, "metasystem.conf")
+			configuration := repository.rawFile(t, "metasystem/metasystem.conf")
 			configuration = bytes.Replace(configuration,
 				[]byte(proofrun.AdmissionCapKey+"=4"), []byte(proofrun.AdmissionCapKey+"=1"), 1)
 			if !bytes.Contains(configuration, []byte(proofrun.AdmissionCapKey+"=1")) {
@@ -1128,23 +1141,25 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 			if err := os.WriteFile(confPath, configuration, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			writeReceiptFixture(t, root, ".gitignore", "artifacts/\n")
-			runReceiptGit(t, root, "add", "metasystem.conf", ".gitignore")
-			runReceiptGit(t, root, "commit", "-qm", "cap-one public deadline fixture")
-			runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-			runReceiptGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+			repository.seed(map[string][]byte{"metasystem/metasystem.conf": configuration})
+			fixture := newDeadlineReceiptTreeFixture(t, repository)
 			announceProofFixtureHolder(t, root)
 
 			admissionDir := filepath.Join(t.TempDir(), "host-admission")
 			t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
 			t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+			processes := filepath.Join(t.TempDir(), "processes.json")
+			if err := os.WriteFile(processes, []byte("[]\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processes)
 			holder, err := proofrun.AcquireHostResources(context.Background(), root, confPath, "heavy", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = holder.Close() })
 
-			tree := runReceiptGit(t, root, "write-tree")
+			tree := fixture.tree
 			launchCount := filepath.Join(t.TempDir(), "native-launches")
 			t.Setenv("LANDING_DEADLINE_LAUNCH_COUNT", launchCount)
 			resultPath := filepath.Join(t.TempDir(), "launch-result.json")
@@ -1171,7 +1186,31 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 				"--command", "printf 'launch\\n' >> " + strconv.Quote(launchCount),
 				"--goal", "standing-validation", "--cap-min", "1", "--result", resultPath}
 			code, _, problem := captureChannelOutput(t, func() int {
-				return runLandingTestReceiptWithContext(parent, resolveClock, args)
+				reads := repository.reads()
+				return runLandingTestReceiptWithInputs(parent, resolveClock, nil, landingReceiptTestRun, args,
+					func(receiptRoot, receiptTree, command string) (*landing.ReceiptPreparation, error) {
+						return landing.PrepareTestReceiptWithWorkspace(receiptRoot, receiptTree, command, fixture.workspace(),
+							func(freezeRoot, freezeTree string) (proofrun.FrozenExport, error) {
+								if freezeRoot != root || freezeTree != tree {
+									t.Fatalf("freeze coordinates = %q %q", freezeRoot, freezeTree)
+								}
+								frozen, err := proofrun.Freeze(freezeRoot)
+								if err == nil {
+									fixture.frozen = frozen.Root
+									fixture.checkFiles(frozen.Root)
+								}
+								return frozen, err
+							})
+					},
+					func(request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+						return admitCandidateProofLaunchWithRepository(t, repository, request)
+					},
+					func(receiptRoot, attemptID, receiptTree string, now time.Time) (landing.TestReceipt, error) {
+						return landing.PublishCommittedReceiptAtWithWorkspace(receiptRoot, attemptID, receiptTree, now, fixture.workspace())
+					},
+					func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+						return commitProofTerminalWithReasonAndReads(completion, receipt, nil, "proof launcher completed", &reads)
+					})
 			})
 			if code != testCase.wantExit || observedWait != 1 || !strings.Contains(problem, testCase.wantReason) {
 				t.Fatalf("public boundary exit=%d want=%d waits=%d stderr=%q", code, testCase.wantExit, observedWait, problem)
@@ -1196,8 +1235,12 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 			if !strings.Contains(launchResult.Reason, testCase.wantReason) {
 				t.Fatalf("structured refusal reason=%q want substring %q", launchResult.Reason, testCase.wantReason)
 			}
-			if testCase.refusesExpiry && launchResult.Disposition != proofrun.DispositionAdmissionRefused {
-				t.Fatalf("semantic expiry disposition=%+v", launchResult)
+			wantDisposition := proofrun.DispositionExecuted
+			if testCase.wantLaunches == 0 {
+				wantDisposition = proofrun.DispositionAdmissionRefused
+			}
+			if launchResult.Disposition != wantDisposition {
+				t.Fatalf("public boundary disposition=%+v want=%s", launchResult, wantDisposition)
 			}
 			attempts, err := proofrun.ReadAttempts(root)
 			if err != nil || len(attempts) != 1 {
@@ -1215,8 +1258,13 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 				if _, err := os.Stat(landing.TestReceiptPath(root, tree)); err != nil {
 					t.Fatalf("accepted boundary did not publish receipt: %v", err)
 				}
-			} else if attempt.Terminal.Result == proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) != 0 {
-				t.Fatalf("refused boundary published success: %+v", attempt)
+			} else {
+				if attempt.Terminal.Result == proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) != 0 {
+					t.Fatalf("refused boundary published success: %+v", attempt)
+				}
+				if _, err := os.Stat(landing.TestReceiptPath(root, tree)); !os.IsNotExist(err) {
+					t.Fatalf("refused boundary projected a receipt: %v", err)
+				}
 			}
 			probe, acquireErr := proofrun.AcquireHostResources(t.Context(), root, confPath, "heavy", nil)
 			if acquireErr != nil || probe == nil {
@@ -1317,17 +1365,30 @@ exec "$RECEIPT_CANARY_ENGINE" "$@"
 import (
  "fmt"
  "os"
+ "path/filepath"
  "strconv"
  "strings"
  "syscall"
 )
 func main() {
  if len(os.Args) >= 3 && os.Args[1] == "proof-run" && os.Args[2] == "go-gate-tests" {
+  logRoot := ""
+  for index := 3; index < len(os.Args); index++ {
+   if os.Args[index] != "--log-root" { continue }
+   if index+1 >= len(os.Args) { fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: --log-root requires a value"); os.Exit(2) }
+   logRoot = os.Args[index+1]
+   index++
+  }
+  if logRoot == "" { fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: --log-root is required"); os.Exit(2) }
+  if err := os.MkdirAll(logRoot, 0755); err != nil { panic(err) }
+  if err := os.WriteFile(filepath.Join(logRoot, "go-gate-native.log"), []byte("native fixture diagnostics\n"), 0600); err != nil { panic(err) }
   path := os.Getenv("RECEIPT_CANARY_MEASUREMENT_COUNT")
   measurements := 0
   if data, err := os.ReadFile(path); err == nil { measurements, _ = strconv.Atoi(strings.TrimSpace(string(data))) }
   if err := os.WriteFile(path, []byte(strconv.Itoa(measurements+1)+"\n"), 0600); err != nil { panic(err) }
-  fmt.Println("ok  github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun 0.1s coverage: 85.0% of statements")
+  packagePath := "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+  output := "ok  \t"+packagePath+"\t0.1s\tcoverage: 85.0% of statements\n"
+  fmt.Printf("{\"Action\":\"output\",\"Package\":%q,\"Test\":\"\",\"Output\":%q}\n", packagePath, output)
   return
  }
  engine := os.Getenv("RECEIPT_CANARY_ENGINE")
@@ -1339,11 +1400,20 @@ set -euo pipefail
 case "${1:-}" in
   version|env) exec "$RECEIPT_CANARY_REAL_GO" "$@" ;;
   run)
-    if [[ "${2:-}" == ./cmd/metasystem ]]; then
-      shift 2
-      exec "$RECEIPT_CANARY_ENGINE" "$@"
-    fi
-    exit 0
+    shift
+    case "${1:-}" in
+      -p=*) [[ "$1" =~ ^-p=[1-9][0-9]*$ ]] || exit 97; shift ;;
+      -p) [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || exit 97; shift 2 ;;
+    esac
+    case "${1:-}" in
+      honnef.co/go/tools/cmd/staticcheck@v0.8.0|golang.org/x/vuln/cmd/govulncheck@v1.2.0)
+        [[ "$#" -eq 2 && "${2:-}" == ./... ]] || exit 97
+        exit 0
+        ;;
+    esac
+    [[ "${1:-}" == ./cmd/metasystem ]] || exit 97
+    shift
+    exec "$RECEIPT_CANARY_ENGINE" "$@"
     ;;
   vet|build) exit 0 ;;
   list)
@@ -2152,36 +2222,105 @@ chmod +x "$3"
 }
 
 func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	runReceiptGit(t, root, "init", "-q", "-b", "main")
-	runReceiptGit(t, root, "config", "user.name", "receipt fixture")
-	runReceiptGit(t, root, "config", "user.email", "receipt@example.invalid")
+	ownerRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manifest, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "path-classes.txt"))
 	if err != nil {
 		t.Fatalf("read path class manifest: %v", err)
 	}
-	writeReceiptFixture(t, root, "scripts/agents/path-classes.txt", string(manifest)+"install:payload.txt behavior\n")
-	writeReceiptFixture(t, root, "memory/receipts.log", "1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n")
+	manifest = append(manifest, []byte("install:payload.txt behavior\n")...)
+	baseLedger := "1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n"
+	appendedLedger := baseLedger + "2|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=candidate\n"
+	writeReceiptFixture(t, root, "scripts/agents/path-classes.txt", string(manifest))
+	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\n")
+	writeReceiptFixture(t, root, "memory/receipts.log", baseLedger)
 	writeReceiptFixture(t, root, "payload.txt", "base\n")
-	runReceiptGit(t, root, "add", "-A")
-	runReceiptGit(t, root, "commit", "-qm", "base")
+
+	baseTree := strings.Repeat("a", 40)
+	withoutLine := strings.Repeat("b", 40)
+	withLine := strings.Repeat("c", 40)
+	baseLedgerBlob := strings.Repeat("d", 40)
+	appendedLedgerBlob := strings.Repeat("e", 40)
+	manifestBlob := strings.Repeat("f", 40)
+	const ledgerPath = "memory/receipts.log"
+	const manifestPath = "scripts/agents/path-classes.txt"
+	pins := []string{
+		"-c", "core.fileMode=true", "-c", "diff.noprefix=false",
+		"-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no",
+		"-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false",
+	}
+	var expected []testgit.Expectation
+	var operations []string
+	add := func(dir string, output []byte, args ...string) {
+		argv := append([]string{"-C", dir}, pins...)
+		argv = append(argv, args...)
+		expected = append(expected, testgit.Expectation{
+			Call:   testgit.Call{Dir: dir, Args: argv, Env: gittree.ScrubbedEnviron()},
+			Result: testgit.Result{Stdout: output},
+		})
+		operations = append(operations, "git "+strings.Join(args, " "))
+	}
+	file := func(tree, path, blob string, content []byte) {
+		add(root, []byte("100644 blob "+blob+"\t"+path+"\x00"),
+			"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path)
+		add(root, content, "cat-file", "blob", blob)
+	}
+	for _, candidate := range []struct {
+		tree, ledgerBlob, changed string
+		ledger                    string
+	}{
+		{withoutLine, baseLedgerBlob, "payload.txt\x00", baseLedger},
+		{withLine, appendedLedgerBlob, "memory/receipts.log\x00payload.txt\x00", appendedLedger},
+	} {
+		add(root, []byte(root+"\n"), "rev-parse", "--show-toplevel") // State root.
+		add(root, []byte(root+"\n"), "rev-parse", "--show-toplevel") // Ledger location.
+		add(root, []byte(baseTree+"\n"), "rev-parse", "HEAD^{tree}")
+		add(root, []byte("\n"), "rev-parse", "--show-prefix")
+		file(baseTree, ledgerPath, baseLedgerBlob, []byte(baseLedger))
+		add(root, []byte(candidate.changed), "diff", "--name-only", "-z", "--no-renames",
+			"--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidate.tree, "--")
+		file(candidate.tree, ledgerPath, candidate.ledgerBlob, []byte(candidate.ledger))
+		add(root, []byte("\n"), "rev-parse", "--show-prefix")
+		file(baseTree, manifestPath, manifestBlob, manifest)
+		if candidate.tree == withLine {
+			add(ownerRoot, []byte(ownerRoot+"\n"), "rev-parse", "--show-toplevel") // Receipt ledger owner.
+		}
+		add(ownerRoot, []byte(ownerRoot+"\n"), "rev-parse", "--show-toplevel") // Payload owner.
+	}
+	stub := testgit.New(t, expected...)
+	consumed := 0
+	raw := func(request gittree.RawRequest) gittree.RawResult {
+		t.Helper()
+		if consumed >= len(operations) {
+			t.Fatalf("extra raw Git request: %+v", request)
+		}
+		if request.Operation != operations[consumed] || request.Stdin != nil ||
+			request.Timeout != boundedexec.Timeout(filepath.Join(root, "metasystem.conf"), boundedexec.Local) {
+			t.Fatalf("raw Git request %d: operation=%q stdin=%q timeout=%+v", consumed, request.Operation, request.Stdin, request.Timeout)
+		}
+		consumed++
+		result := stub.Run(testgit.Call{Dir: request.Dir, Args: request.Args, Env: request.Env, Stdin: request.Stdin})
+		return gittree.RawResult{Stdout: result.Stdout, Stderr: result.Stderr, Err: result.Err}
+	}
 
 	writeReceiptFixture(t, root, "payload.txt", "candidate\n")
-	runReceiptGit(t, root, "add", "payload.txt")
-	candidate := runReceiptGit(t, root, "write-tree")
-	if code := runLandingReceiptLine([]string{"--root", root, "--tree", candidate, "--goal", "fx"}); code != 2 {
+	if code := runLandingReceiptLineWithRawSource([]string{"--root", root, "--tree", withoutLine, "--goal", "fx"}, raw); code != 2 {
 		t.Fatalf("a code landing without its receipt line exited %d, want 2", code)
 	}
 
-	writeReceiptFixture(t, root, "memory/receipts.log",
-		"1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n"+
-			"2|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=candidate\n")
-	runReceiptGit(t, root, "add", "memory/receipts.log")
-	candidate = runReceiptGit(t, root, "write-tree")
-	if code := runLandingReceiptLine([]string{"--root", root, "--tree", candidate, "--goal", "fx"}); code != 0 {
+	writeReceiptFixture(t, root, "memory/receipts.log", appendedLedger)
+	if code := runLandingReceiptLineWithRawSource([]string{"--root", root, "--tree", withLine, "--goal", "fx"}, raw); code != 0 {
 		t.Fatalf("a code landing with its receipt line exited %d, want 0", code)
 	}
-	if code := runLandingReceiptLine([]string{"--root", root}); code != 2 {
+	if code := runLandingReceiptLineWithRawSource([]string{"--root", root}, raw); code != 2 {
 		t.Fatalf("a call without a tree exited %d, want 2", code)
+	}
+	if consumed != len(operations) || len(stub.Calls()) != len(expected) {
+		t.Fatalf("raw Git transcript consumed %d of %d requests", consumed, len(expected))
 	}
 }

@@ -43,7 +43,11 @@ func upMetasystemRoot(explicit string) (string, error) {
 }
 
 func upRepositoryScope(supplied string) (string, error) {
-	top, err := stateroot.RepositoryTop(supplied)
+	return upRepositoryScopeWith(supplied, stateroot.RepositoryTop)
+}
+
+func upRepositoryScopeWith(supplied string, repositoryTop func(string) (string, error)) (string, error) {
+	top, err := repositoryTop(supplied)
 	if err != nil {
 		return "", fmt.Errorf("--repo is not inside a git repository: %s", supplied)
 	}
@@ -124,7 +128,7 @@ func restampStopCapabilityForUp(root, lineage string, claimEpoch int64) (up.Stop
 	return up.StopCapabilityRestampResult{}, nil
 }
 
-func runUp(args []string) int {
+func runUpWith(args []string, repositoryTop func(string) (string, error)) int {
 	flags := flag.NewFlagSet("up", flag.ContinueOnError)
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	metasystemRoot := flags.String("metasystem-root", "", "metasystem checkout root (internal compatibility option)")
@@ -166,7 +170,7 @@ func runUp(args []string) int {
 		fmt.Fprintln(os.Stderr, "up:", err)
 		return 2
 	}
-	scope, err := upRepositoryScope(*repo)
+	scope, err := upRepositoryScopeWith(*repo, repositoryTop)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "up:", err)
 		return 2

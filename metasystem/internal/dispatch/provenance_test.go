@@ -9,13 +9,14 @@ import (
 
 func TestSTR3TierSnapshotPlumbing02FreshFollowUpAndSetupMismatch(t *testing.T) {
 	root := sandbox(t)
+	reads := acceptedAbsentGoalReads(t, root, 2)
 	stage := t.TempDir()
 	capFile := writeJSON(t, filepath.Join(stage, "cap.json"), map[string]any{
 		"capMin": 5, "capDeadline": "2026-08-20T01:00:00Z",
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "root-setup.json")
-	if err := BuildSetup(root, setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", ""); err != nil {
+	if err := buildSetupWithGoalReads(root, setup, "root-job", "implementer", "", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", "", reads); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job", setup); err != nil {
@@ -71,7 +72,7 @@ func TestSTR3TierSnapshotPlumbing02FreshFollowUpAndSetupMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	childSetup := filepath.Join(stage, "child-setup.json")
-	if err := BuildSetup(root, childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", ""); err != nil {
+	if err := buildSetupWithGoalReads(root, childSetup, "root-job-r2", "implementer", "root-job", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", "", reads); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "root-job-r2", childSetup); err != nil {
@@ -98,13 +99,14 @@ func TestSTR3TierSnapshotPlumbing02FreshFollowUpAndSetupMismatch(t *testing.T) {
 
 func TestRecordSetupRefusesGoalReplacement(t *testing.T) {
 	root := sandbox(t)
+	reads := acceptedAbsentGoalReads(t, root, 1)
 	stage := t.TempDir()
 	capFile := writeJSON(t, filepath.Join(stage, "cap.json"), map[string]any{
 		"capMin": 5, "capDeadline": "2026-08-20T01:00:00Z",
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(root, setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", ""); err != nil {
+	if err := buildSetupWithGoalReads(root, setup, "goal-bound", "implementer", "", "main-1", "5", "goal-a", 2, 2, capFile, "bed-m1", "", reads); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "goal-bound", setup); err != nil {

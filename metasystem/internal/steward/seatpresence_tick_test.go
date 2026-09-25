@@ -2,6 +2,7 @@ package steward
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,35 @@ import (
 // under a runner context publishes, and the manual tick verb's own
 // TickConfig — the one with no runner context — publishes nothing and leaves
 // the ref where the resident runner put it.
+
+// gitRepoWithCurrentGoal is the real-git working repository this bed
+// publishes from; seat presence is git transport, so it is not stubbed.
+func gitRepoWithCurrentGoal(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "metasystem.steward.notify-command", "true")
+	if err := os.MkdirAll(filepath.Join(root, "plans"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ledger := "# Goals\n\n## Current goal: fix-it — Repair the thing\n- Origin: main\n- Next step: Repair it.\n"
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals.md"), []byte(ledger), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-qm", "baseline")
+	return root
+}
 
 func seatTickBed(t *testing.T) (root, remote string) {
 	t.Helper()

@@ -4,7 +4,7 @@ set -euo pipefail
 fail() { printf 'oldest-bash-gate self-test: %s\n' "$*" >&2; exit 1; }
 
 self_test() {
-  local self scratch passed=0 root allow out err row
+  local self scratch passed=0 root allow out err row bash_major
   self=$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/oldest-bash-gate.XXXXXX")
   trap 'rm -rf "$scratch"' EXIT HUP INT TERM
@@ -33,8 +33,20 @@ self_test() {
   }
 
   new_root w1
-  printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'echo x |& cat' >"$root/scripts/agents/w1-fixtures.sh"
+  printf '%s\n' '#!/usr/bin/env bash' 'set -e' ')' >"$root/scripts/agents/w1-fixtures.sh"
   rejects W1 'scripts/agents/w1-fixtures.sh:3: syntax:'
+
+  new_root w1b
+  printf '%s\n' '#!/usr/bin/env bash' 'set -e' 'echo x |& cat' >"$root/scripts/agents/w1-fixtures.sh"
+  bash_major=$(/bin/bash -c 'printf "%s\n" "${BASH_VERSINFO[0]}"')
+  # The native syntax gate rejects |& in Bash 3 and accepts it beginning with Bash 4.
+  if test "$bash_major" -eq 3; then
+    rejects W1b 'scripts/agents/w1-fixtures.sh:3: syntax:'
+  elif test "$bash_major" -ge 4; then
+    accepts W1b
+  else
+    fail "W1b failed: unsupported /bin/bash major $bash_major"
+  fi
 
   new_root w2a
   printf '%s\n' '#!/usr/bin/env bash' 'set -eu' 'wait_stop_real_runtime=()' \

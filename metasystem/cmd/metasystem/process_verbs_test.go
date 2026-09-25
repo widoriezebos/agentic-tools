@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,9 +17,6 @@ import (
 func separateProcessScopeFixture(t *testing.T) (string, string) {
 	t.Helper()
 	repo := t.TempDir()
-	if output, err := fixtureGitCommand("init", "--quiet", repo).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
 	var err error
 	repo, err = canonicalPath(repo)
 	if err != nil {
@@ -33,20 +29,28 @@ func separateProcessScopeFixture(t *testing.T) (string, string) {
 	if err := testexec.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture engine\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := fixtureGitCommand("-C", installation, "rev-parse", "--show-toplevel").CombinedOutput(); err != nil {
-		t.Fatalf("separate engine Git scope: %v: %s (repo %s, installation %s)", err, output, repo, installation)
-	}
 	return repo, installation
 }
 
-func fixtureGitCommand(args ...string) *exec.Cmd {
-	command := exec.Command("git", args...)
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "GIT_") {
-			command.Env = append(command.Env, entry)
+func declaredRepositoryTop(t *testing.T, top string, expected map[string]int) func(string) (string, error) {
+	t.Helper()
+	called := make(map[string]int)
+	t.Cleanup(func() {
+		for input, want := range expected {
+			if called[input] != want {
+				t.Errorf("repository top lookup for %q: got %d calls, want %d", input, called[input], want)
+			}
 		}
+	})
+	return func(input string) (string, error) {
+		t.Helper()
+		want, ok := expected[input]
+		if !ok || called[input] >= want {
+			t.Fatalf("unexpected repository top lookup for %q (call %d)", input, called[input]+1)
+		}
+		called[input]++
+		return top, nil
 	}
-	return command
 }
 
 func runnableSeparateProcessScopeFixture(t *testing.T) (string, string) {
@@ -72,16 +76,15 @@ func runnableSeparateProcessScopeFixture(t *testing.T) (string, string) {
 
 func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 	repo, installation := runnableSeparateProcessScopeFixture(t)
-	previous := classifyProcessVerbCaller
+	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 3, installation: 2})
 	var classifiedInstallations []string
-	classifyProcessVerbCaller = func(_ string, gotInstallation string, _ int64) (lease.Classification, error) {
+	classify := func(_ string, gotInstallation string, _ int64) (lease.Classification, error) {
 		classifiedInstallations = append(classifiedInstallations, gotInstallation)
 		return lease.Classification{Class: lease.ClassDelegate}, nil
 	}
-	t.Cleanup(func() { classifyProcessVerbCaller = previous })
 
 	stdout, stderr, code := captureRelay(t, func() int {
-		return runProcessStatus([]string{"--repo", repo, "--installation", installation})
+		return runProcessStatusWith([]string{"--repo", repo, "--installation", installation}, repositoryTop)
 	})
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "checkout "+repo+"\nnothing is running") || strings.Contains(stdout, "--metasystem-root") {
 		t.Fatalf("separate-installation status = code %d stdout %q stderr %q", code, stdout, stderr)
@@ -91,8 +94,8 @@ func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 		name string
 		run  func([]string) int
 	}{
-		{name: "stop", run: runProcessStop},
-		{name: "arm", run: runProcessArm},
+		{name: "stop", run: func(args []string) int { return runProcessStopWith(args, repositoryTop, classify) }},
+		{name: "arm", run: func(args []string) int { return runProcessArmWith(args, repositoryTop, classify) }},
 	} {
 		t.Run(verb.name, func(t *testing.T) {
 			stdout, stderr, code := captureRelay(t, func() int {
@@ -112,7 +115,8 @@ func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 
 func TestArmAcceptsASeparateInstallationScope(t *testing.T) {
 	repo, installation := separateProcessScopeFixture(t)
-	scope, scale, code := parseProcessScope("arm", []string{"--repo", repo, "--installation", installation})
+	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 1})
+	scope, scale, code := parseProcessScopeWith("arm", []string{"--repo", repo, "--installation", installation}, repositoryTop)
 	if code != 0 || scope.Checkout != repo || scope.Installation != installation || scope.Root != installation || scale < 1 {
 		t.Fatalf("arm scope = %#v scale=%d code=%d", scope, scale, code)
 	}
@@ -133,8 +137,9 @@ func TestArmAcceptsASeparateInstallationScope(t *testing.T) {
 
 func TestArmAllUsesTheProcessVerbRefusal(t *testing.T) {
 	repo, installation := separateProcessScopeFixture(t)
+	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 1})
 	stderr, code := captureStderr(t, func() int {
-		return runProcessArm([]string{"--repo", repo, "--installation", installation, "--all"})
+		return runProcessArmWith([]string{"--repo", repo, "--installation", installation, "--all"}, repositoryTop, lease.ClassifyAt)
 	})
 	want := "metasystem arm: the fleet form is not built yet.\nrun: metasystem arm --repo " + repo + " --installation " + installation + "\n"
 	if code != 1 || stderr != want {
@@ -144,6 +149,7 @@ func TestArmAllUsesTheProcessVerbRefusal(t *testing.T) {
 
 func TestArmTemporaryWordStillRequiresHumanCallerAndLeavesFenceUnchanged(t *testing.T) {
 	repo, installation := separateProcessScopeFixture(t)
+	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{repo: 1, installation: 1})
 	if err := stopfence.Write(repo, stopfence.Record{
 		State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 9,
 		ChangedAt: "2026-09-08T09:00:00Z", Checkout: repo,
@@ -156,17 +162,15 @@ func TestArmTemporaryWordStillRequiresHumanCallerAndLeavesFenceUnchanged(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := classifyProcessVerbCaller
-	classifyProcessVerbCaller = func(string, string, int64) (lease.Classification, error) {
+	classify := func(string, string, int64) (lease.Classification, error) {
 		return lease.Classification{Class: lease.ClassDelegate}, nil
 	}
-	t.Cleanup(func() { classifyProcessVerbCaller = previous })
 
 	stdout, stderr, code := captureRelay(t, func() int {
-		return runProcessArm([]string{
+		return runProcessArmWith([]string{
 			"--repo", repo, "--installation", installation,
 			"--temporary-human-word", "Wido authorizes this temporary arm", "--review-by", "2026-09-09",
-		})
+		}, repositoryTop, classify)
 	})
 	want := "metasystem arm: arm is a human act at a terminal; this caller is DELEGATE.\n" +
 		"at an agent-free terminal, run: metasystem arm --repo " + repo + " --installation " + installation + "\n"
@@ -181,6 +185,7 @@ func TestArmTemporaryWordStillRequiresHumanCallerAndLeavesFenceUnchanged(t *test
 
 func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testing.T) {
 	repo, installation := runnableSeparateProcessScopeFixture(t)
+	repositoryTop := declaredRepositoryTop(t, repo, map[string]int{installation: 3, repo: 1})
 	jobPath := filepath.Join(installation, "artifacts", "agents", "jobs", "damaged.json")
 	if err := os.MkdirAll(filepath.Dir(jobPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -210,7 +215,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 	} {
 		t.Run(test.verb, func(t *testing.T) {
 			stderr, code := captureStderr(t, func() int {
-				_, authorized := requireHumanTerminalAt(installation, installation, "metasystem "+test.verb, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, test.verb))
+				_, authorized := requireHumanTerminalAtWith(installation, installation, "metasystem "+test.verb, repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, test.verb))
 				if authorized {
 					return 0
 				}
@@ -229,7 +234,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 	}
 
 	stdout, stderr, code := captureRelay(t, func() int {
-		return runProcessStatus([]string{"--repo", repo, "--installation", installation})
+		return runProcessStatusWith([]string{"--repo", repo, "--installation", installation}, repositoryTop)
 	})
 	if code != 1 || stderr != "" || !strings.Contains(stdout, "inventory unreadable: job "+jobPath+":") || !strings.Contains(stdout, "unexpected EOF") ||
 		!strings.Contains(stdout, "repair the named read failures, then run: metasystem status --repo "+repo) || strings.Contains(stdout, "agent-free terminal") {
@@ -240,7 +245,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 		t.Fatal(err)
 	}
 	stderr, code = captureStderr(t, func() int {
-		_, authorized := requireHumanTerminalAt(installation, installation, "metasystem arm", processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
+		_, authorized := requireHumanTerminalAtWith(installation, installation, "metasystem arm", repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
 		if authorized {
 			return 0
 		}
@@ -388,9 +393,10 @@ func TestScopeRefusalRetainsTheInstallationOptionWithAWorkingRepairPlaceholder(t
 
 func TestCrashStepRefusalPreservesTheNamedInstallation(t *testing.T) {
 	root := missionFenceFixture(t, false)
+	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
 	t.Setenv("METASYSTEM_STOP_CRASH_AFTER", "not-a-step")
 	stderr, code := captureStderr(t, func() int {
-		return runProcessStop([]string{"--repo", root, "--installation", root})
+		return runProcessStopWith([]string{"--repo", root, "--installation", root}, repositoryTop, lease.ClassifyAt)
 	})
 	want := "metasystem stop: METASYSTEM_STOP_CRASH_AFTER must name a numbered section-4 step from 1 through 9.\n" +
 		"run: metasystem stop --repo " + root + " --installation " + root + "\n"

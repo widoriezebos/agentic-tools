@@ -23,7 +23,10 @@ type registerSnapshot struct {
 const fastForwardRecoveryName = "metasystem/fast-forward-recovery.txt"
 
 func FastForwardPreservingRegisters(ctx context.Context, root, tip string) error {
-	workspace := gittree.Workspace{Dir: root}
+	return fastForwardPreservingRegistersWith(ctx, root, tip, gittree.Workspace{Dir: root}, fastForwardGit)
+}
+
+func fastForwardPreservingRegistersWith(ctx context.Context, root, tip string, workspace gittree.Workspace, rawGit func(context.Context, string, ...string) ([]byte, error)) error {
 	top, err := workspace.TopLevel()
 	if err != nil {
 		return err
@@ -45,7 +48,7 @@ func FastForwardPreservingRegisters(ctx context.Context, root, tip string) error
 	if err != nil || unborn {
 		return fmt.Errorf("fast-forward requires a committed HEAD")
 	}
-	topWorkspace := gittree.Workspace{Dir: top}
+	topWorkspace := gittree.Workspace{Dir: top, RawSource: workspace.RawSource}
 	indexPath, err := workspace.GitPath("index")
 	if err != nil {
 		return err
@@ -66,7 +69,7 @@ func FastForwardPreservingRegisters(ctx context.Context, root, tip string) error
 		if err != nil {
 			return err
 		}
-		staged, stagedOK, err := fastForwardIndexFile(ctx, top, path)
+		staged, stagedOK, err := fastForwardIndexFileWithGit(ctx, top, path, rawGit)
 		if err != nil {
 			return err
 		}
@@ -100,11 +103,11 @@ func FastForwardPreservingRegisters(ctx context.Context, root, tip string) error
 		return errors.Join(recoverErr, os.WriteFile(indexPath, indexBytes, 0o644))
 	}
 	if len(dirty) != 0 {
-		if _, err := fastForwardGit(ctx, top, append([]string{"restore", "--staged", "--worktree", "--"}, restorePaths...)...); err != nil {
+		if _, err := rawGit(ctx, top, append([]string{"restore", "--staged", "--worktree", "--"}, restorePaths...)...); err != nil {
 			return fmt.Errorf("fast-forward failed; recovery file remains at %s: %w", recoveryPath, errors.Join(err, recoverRegisters()))
 		}
 	}
-	if _, err := fastForwardGit(ctx, top, "merge", "--ff-only", tip); err != nil {
+	if _, err := rawGit(ctx, top, "merge", "--ff-only", tip); err != nil {
 		if len(dirty) == 0 {
 			return err
 		}
@@ -150,8 +153,8 @@ func appendDelta(before []byte, beforeOK bool, after []byte, afterOK bool) ([]by
 	}
 	return after[len(before):], true
 }
-func fastForwardIndexFile(ctx context.Context, root, path string) ([]byte, bool, error) {
-	content, err := fastForwardGit(ctx, root, "show", ":"+path)
+func fastForwardIndexFileWithGit(ctx context.Context, root, path string, rawGit func(context.Context, string, ...string) ([]byte, error)) ([]byte, bool, error) {
+	content, err := rawGit(ctx, root, "show", ":"+path)
 	if err != nil && ctx.Err() != nil {
 		return nil, false, err
 	}

@@ -188,34 +188,6 @@ func TestNextPriority(t *testing.T) {
 		}
 	})
 
-	t.Run("configuration-failure-keeps-idle-refusal", func(t *testing.T) {
-		t.Parallel()
-		candidate := nextPriorityGoal("candidate", 1, 1, "")
-		root := servingBed(t, "bed-m1", map[string]*GoalFile{candidate.Id: candidate})
-		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(config.Tier3BudgetKey+"=malformed\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		projection, err := Project(Endpoint{Root: root, Remote: "local", Branch: LocalLedgerBranch}, false, time.Now())
-		if err != nil {
-			t.Fatal(err)
-		}
-		frontier, frontierErr := Next(projection, "bed-m1")
-		if frontierErr == nil || !strings.Contains(frontierErr.Error(), config.Tier3BudgetKey) || len(frontier.Ready) != 0 {
-			t.Fatalf("configuration uncertainty became a frontier: frontier=%+v err=%v", frontier, frontierErr)
-		}
-
-		work, workErr := ReadClaimableBudgetedWork(root, time.Now())
-		if workErr == nil || !strings.Contains(workErr.Error(), config.Tier3BudgetKey) {
-			t.Fatalf("claimable-work read swallowed configuration uncertainty: work=%+v err=%v", work, workErr)
-		}
-		verdict := Verdict{}
-		session := &sessionState{}
-		(&Store{}).enforceIdleBacklog(&verdict, &work, workErr, session, "session", "main", TurnVerdictOptions{})
-		if !verdict.ShouldBlock || !verdict.IdleRefusal || session.IdleBlocks != 1 || !strings.Contains(verdict.Display, "IDLE WITH BACKLOG cannot be ruled out") {
-			t.Fatalf("indeterminate backlog disabled idle refusal: verdict=%+v session=%+v", verdict, session)
-		}
-	})
-
 	t.Run("configuration-loads-once", func(t *testing.T) {
 		t.Parallel()
 		loads := 0
@@ -325,48 +297,34 @@ func TestPriorityUnranked(t *testing.T) {
 		holeB.Priority, holeB.Sequence = 2, 3
 		expectProblem(t, problemsOf(vTree(vRoot(), []*GoalFile{holeA, holeB}, nil)), "priority 2")
 
-		root := rankedGoalBed(t, map[string][2]uint64{"a": {1, 1}, "b": {1, 2}})
-		tip := acceptedTip(t, root)
-		tree, err := loadTree(root, tip)
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{"a": {1, 1}, "b": {1, 2}})
+		root := endpoint.Root
+		tip := acceptedTipForEndpoint(t, endpoint)
+		tree, err := loadTreeFor(endpoint, tip)
 		if err != nil {
 			t.Fatal(err)
 		}
 		tree.Live["b"].Sequence = 3
-		malformed, err := BuildCommit(endpointFor(root), "priority-malformed-fixture", tip, []Change{{
+		client := endpoint.Repository.(*fakeGoalRepository)
+		malformed, err := client.Build("priority-malformed-fixture", tip, []Change{{
 			Path: livePath("b"), Content: RenderFile(tree.Live["b"]),
 		}}, "seed malformed accepted priority tree")
 		if err != nil {
 			t.Fatal(err)
 		}
-		mustGit(t, root, "push", "-q", "origin", malformed+":refs/heads/main")
-		mustGit(t, root, "update-ref", LocalLedgerBranch, malformed)
-		mustGit(t, root, "update-ref", AcceptedRef, malformed)
-		request := priorityVerbReq(root, "01J5X000000000000000000R01", "mac-a")
+		if outcome, err := client.Publish(tip, malformed); err != nil || outcome != CASLanded {
+			t.Fatalf("publish malformed order: %s %v", outcome, err)
+		}
+		if err := client.AcceptedCAS(tip, malformed); err != nil {
+			t.Fatal(err)
+		}
+		request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000R01", "mac-a")
 		result, err := SetPriority(request, "a", 1, sequencePointer(1), testHumanAuthority(t, root, request.Now))
 		if err == nil || !strings.Contains(err.Error(), "captured tip does not validate") || !strings.Contains(err.Error(), "priority 1") || !strings.Contains(err.Error(), "goal repair --accept-remote") {
 			t.Fatalf("set-priority did not refuse a malformed accepted order: %+v %v", result, err)
 		}
-		if after := acceptedTip(t, root); after != malformed {
+		if after := acceptedTipForEndpoint(t, endpoint); after != malformed {
 			t.Fatalf("malformed-tree refusal changed the accepted tip: before=%s after=%s", malformed, after)
-		}
-	})
-
-	t.Run("manual-edit", func(t *testing.T) {
-		t.Parallel()
-		_, root := oneClone(t)
-		seedLedger(t, root)
-		file := vGoal("ranked-edit", StateQueued)
-		file.Priority, file.Sequence = 1, 1
-		publishGoalFixtures(t, root, file)
-		materialize(t, root, acceptedTip(t, root))
-		editFile(t, root, livePath(file.Id), func(edited *GoalFile) {
-			edited.Sequence = 2
-			edited.NextStep = "A lawful edit combined with an unlawful rank edit."
-		})
-
-		_, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000R00"))
-		if err == nil || !strings.Contains(err.Error(), "Sequence") || !strings.Contains(err.Error(), "set-priority") {
-			t.Fatalf("reconcile did not refuse a direct rank edit with its remedy: %v", err)
 		}
 	})
 }
@@ -382,15 +340,16 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 	t.Parallel()
 	t.Run("insert", func(t *testing.T) {
 		t.Parallel()
-		root := rankedGoalBed(t, map[string][2]uint64{
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
-		request := priorityVerbReq(root, "01J5X000000000000000000R10", "mac-a")
+		root := endpoint.Root
+		request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000R10", "mac-a")
 		result, err := SetPriority(request, "c", 1, sequencePointer(2), testHumanAuthority(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("insert c at 1:2: %+v %v", result, err)
 		}
-		tree, err := loadTree(root, result.Tip)
+		tree, err := loadTreeFor(endpoint, result.Tip)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -409,15 +368,16 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 
 	t.Run("move-priority", func(t *testing.T) {
 		t.Parallel()
-		root := rankedGoalBed(t, map[string][2]uint64{
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3}, "d": {2, 1},
 		})
-		request := priorityVerbReq(root, "01J5X000000000000000000R20", "mac-a")
+		root := endpoint.Root
+		request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000R20", "mac-a")
 		result, err := SetPriority(request, "b", 2, nil, testHumanAuthority(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("move b to priority 2 tail: %+v %v", result, err)
 		}
-		tree, _ := loadTree(root, result.Tip)
+		tree, _ := loadTreeFor(endpoint, result.Tip)
 		assertPriorityOrder(t, tree, []string{"a", "c", "d", "b"})
 		assertPair(t, tree.Live["c"], 1, 2)
 		assertPair(t, tree.Live["b"], 2, 2)
@@ -428,55 +388,58 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 
 	t.Run("append", func(t *testing.T) {
 		t.Parallel()
-		root := rankedGoalBed(t, map[string][2]uint64{
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
-		request := priorityVerbReq(root, "01J5X000000000000000000R30", "mac-a")
+		root := endpoint.Root
+		request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000R30", "mac-a")
 		result, err := SetPriority(request, "a", 1, sequencePointer(3), testHumanAuthority(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("append a: %+v %v", result, err)
 		}
-		tree, _ := loadTree(root, result.Tip)
+		tree, _ := loadTreeFor(endpoint, result.Tip)
 		assertPriorityOrder(t, tree, []string{"b", "c", "a"})
 	})
 
 	t.Run("same-priority-noop", func(t *testing.T) {
 		t.Parallel()
-		root := rankedGoalBed(t, map[string][2]uint64{
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
-		before := acceptedTip(t, root)
-		request := priorityVerbReq(root, "01J5X000000000000000000R40", "mac-a")
+		root := endpoint.Root
+		before := acceptedTipForEndpoint(t, endpoint)
+		request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000R40", "mac-a")
 		result, err := SetPriority(request, "b", 1, nil, testHumanAuthority(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeAbandoned || result.Tip != before {
 			t.Fatalf("same-priority omitted sequence must be a no-write no-op: %+v %v", result, err)
 		}
-		if after := acceptedTip(t, root); after != before {
+		if after := acceptedTipForEndpoint(t, endpoint); after != before {
 			t.Fatalf("no-op changed the accepted tip: before=%s after=%s", before, after)
 		}
 	})
 
 	t.Run("claimed-peer", func(t *testing.T) {
 		t.Parallel()
-		root := rankedGoalBed(t, map[string][2]uint64{
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
-		claimRequest := verbReq(root, "01J5X000000000000000000R50", "mac-b")
+		root := endpoint.Root
+		claimRequest := verbReqFor(endpoint, "01J5X000000000000000000R50", "mac-b")
 		if result, err := claimApprovedForTest(t, claimRequest, "b", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim ranked peer: %+v %v", result, err)
 		}
-		beforeTree, _ := loadTree(root, acceptedTip(t, root))
+		beforeTree, _ := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 		beforeClaim := *beforeTree.Live["b"].Claimed
 		beforeApproval := *beforeTree.Live["b"].Approved
 		beforeBudget := *beforeTree.Live["b"].Budget
 		beforeCapability := *beforeTree.Live["b"].StopCapability
 
-		request := priorityVerbReq(root, "01J5X000000000000000000R60", "mac-a")
+		request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000R60", "mac-a")
 		result, err := SetPriority(request, "c", 1, sequencePointer(2), testHumanAuthority(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("move around claimed peer: %+v %v", result, err)
 		}
-		tree, _ := loadTree(root, result.Tip)
+		tree, _ := loadTreeFor(endpoint, result.Tip)
 		peer := tree.Live["b"]
 		if !reflect.DeepEqual(*peer.Claimed, beforeClaim) || !reflect.DeepEqual(*peer.Approved, beforeApproval) ||
 			!reflect.DeepEqual(*peer.Budget, beforeBudget) || !reflect.DeepEqual(*peer.StopCapability, beforeCapability) {
@@ -490,15 +453,15 @@ func TestPriorityLifecycle(t *testing.T) {
 	t.Parallel()
 	t.Run("done-reopen", func(t *testing.T) {
 		t.Parallel()
-		root := rankedGoalBed(t, map[string][2]uint64{
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
-		doneRequest := verbReq(root, "01J5X000000000000000000S10", "mac-a")
+		doneRequest := verbReqFor(endpoint, "01J5X000000000000000000S10", "mac-a")
 		done, err := Done(doneRequest, "b", "Finished the middle goal.")
 		if err != nil || done.Outcome != OutcomeConfirmed {
 			t.Fatalf("done ranked middle: %+v %v", done, err)
 		}
-		tree, _ := loadTree(root, done.Tip)
+		tree, _ := loadTreeFor(endpoint, done.Tip)
 		assertPriorityOrder(t, tree, []string{"a", "c"})
 		assertPair(t, tree.Live["c"], 1, 2)
 		assertPair(t, tree.Done["b"], 1, 2)
@@ -521,12 +484,12 @@ func TestPriorityLifecycle(t *testing.T) {
 			t.Fatalf("departed event carries a compaction reason: %+v", departed)
 		}
 
-		reopenRequest := verbReq(root, "01J5X000000000000000000S20", "mac-a")
+		reopenRequest := verbReqFor(endpoint, "01J5X000000000000000000S20", "mac-a")
 		reopened, err := Reopen(reopenRequest, "b")
 		if err != nil || reopened.Outcome != OutcomeConfirmed {
 			t.Fatalf("reopen ranked goal: %+v %v", reopened, err)
 		}
-		tree, _ = loadTree(root, reopened.Tip)
+		tree, _ = loadTreeFor(endpoint, reopened.Tip)
 		assertPriorityOrder(t, tree, []string{"a", "c", "b"})
 		assertPair(t, tree.Live["b"], 1, 3)
 		last := tree.Live["b"].History[len(tree.Live["b"].History)-1]
@@ -537,8 +500,7 @@ func TestPriorityLifecycle(t *testing.T) {
 
 	t.Run("split", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
-		seedLedger(t, root)
+		endpoint, _ := fakeGoalEndpoint(t)
 		files := []*GoalFile{
 			rankedGoal("a", 1, 1),
 			rankedGoal("parent", 1, 2),
@@ -546,14 +508,14 @@ func TestPriorityLifecycle(t *testing.T) {
 			rankedGoal("dependent", 1, 4),
 		}
 		files[3].Blocked = []string{"parent"}
-		publishGoalFixtures(t, root, files...)
+		publishGoalFixturesForEndpoint(t, endpoint, files...)
 		members := testMembers("parent")
-		request := verbReq(root, "01J5X000000000000000000S30", "mac-a")
+		request := verbReqFor(endpoint, "01J5X000000000000000000S30", "mac-a")
 		result, err := Split(request, "parent", members, mainRatification("parent", members), nil)
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("split ranked parent: %+v %v", result, err)
 		}
-		tree, _ := loadTree(root, result.Tip)
+		tree, _ := loadTreeFor(endpoint, result.Tip)
 		assertPriorityOrder(t, tree, []string{"a", "c", "dependent", "parent-one", "parent-two"})
 		assertPair(t, tree.Done["parent"], 1, 2)
 		assertPair(t, tree.Live["c"], 1, 2)
@@ -597,21 +559,21 @@ func TestPriorityLifecycle(t *testing.T) {
 
 	t.Run("done-then-split", func(t *testing.T) {
 		t.Parallel()
-		root := rankedGoalBed(t, map[string][2]uint64{
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
-		doneRequest := verbReq(root, "01J5X000000000000000000S40", "mac-a")
+		doneRequest := verbReqFor(endpoint, "01J5X000000000000000000S40", "mac-a")
 		done, err := Done(doneRequest, "b", "Finished the middle goal.")
 		if err != nil || done.Outcome != OutcomeConfirmed {
 			t.Fatalf("done ranked middle: %+v %v", done, err)
 		}
 		members := testMembers("c")
-		splitRequest := verbReq(root, "01J5X000000000000000000S50", "mac-a")
+		splitRequest := verbReqFor(endpoint, "01J5X000000000000000000S50", "mac-a")
 		split, err := Split(splitRequest, "c", members, mainRatification("c", members), nil)
 		if err != nil || split.Outcome != OutcomeConfirmed {
 			t.Fatalf("split survivor: %+v %v", split, err)
 		}
-		tree, _ := loadTree(root, split.Tip)
+		tree, _ := loadTreeFor(endpoint, split.Tip)
 		assertPriorityOrder(t, tree, []string{"a", "c-one", "c-two"})
 		parent := tree.Done["c"]
 		last := parent.History[len(parent.History)-1]
@@ -638,12 +600,12 @@ func TestPriorityRace(t *testing.T) {
 	t.Parallel()
 	t.Run("same-position", func(t *testing.T) {
 		t.Parallel()
-		a, b := priorityRaceBed(t, []*GoalFile{
+		a, b := priorityRaceBedForEndpoint(t, []*GoalFile{
 			rankedGoal("a", 1, 1), rankedGoal("b", 1, 2),
 			vGoal("d", StateQueued), vGoal("e", StateQueued),
 		})
-		requestA := priorityVerbReq(a, "01J5X000000000000000000V10", "mac-a")
-		requestB := priorityVerbReq(b, "01J5X000000000000000000V20", "mac-b")
+		requestA := priorityVerbReqForEndpoint(a, "01J5X000000000000000000V10", "mac-a")
+		requestB := priorityVerbReqForEndpoint(b, "01J5X000000000000000000V20", "mac-b")
 		held := setPriorityRequest(requestA, "d", 1, sequencePointer(1), nil)
 		attempts := 0
 		injected := false
@@ -653,17 +615,17 @@ func TestPriorityRace(t *testing.T) {
 				return nil
 			}
 			injected = true
-			result, err := Publish(endpointFor(b), setPriorityRequest(requestB, "e", 1, sequencePointer(1), nil))
+			result, err := Publish(b, setPriorityRequest(requestB, "e", 1, sequencePointer(1), nil))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				return fmt.Errorf("competing insertion did not publish: %+v %v", result, err)
 			}
 			return nil
 		}
-		result, err := Publish(endpointFor(a), held)
+		result, err := Publish(a, held)
 		if err != nil || result.Outcome != OutcomeConfirmed || attempts < 2 {
 			t.Fatalf("held insertion did not retry and confirm: attempts=%d result=%+v err=%v", attempts, result, err)
 		}
-		tree, _ := loadTree(a, result.Tip)
+		tree, _ := loadTreeFor(a, result.Tip)
 		assertPriorityOrder(t, tree, []string{"d", "e", "a", "b"})
 		assertHistoryContainsOpid(t, tree.Live["d"], requestA.opid())
 		assertHistoryContainsOpid(t, tree.Live["e"], requestB.opid())
@@ -671,11 +633,11 @@ func TestPriorityRace(t *testing.T) {
 
 	t.Run("same-target", func(t *testing.T) {
 		t.Parallel()
-		a, b := priorityRaceBed(t, []*GoalFile{
+		a, b := priorityRaceBedForEndpoint(t, []*GoalFile{
 			rankedGoal("a", 1, 1), rankedGoal("b", 1, 2), vGoal("target", StateQueued),
 		})
-		requestA := priorityVerbReq(a, "01J5X000000000000000000V30", "mac-a")
-		requestB := priorityVerbReq(b, "01J5X000000000000000000V40", "mac-b")
+		requestA := priorityVerbReqForEndpoint(a, "01J5X000000000000000000V30", "mac-a")
+		requestB := priorityVerbReqForEndpoint(b, "01J5X000000000000000000V40", "mac-b")
 		held := setPriorityRequest(requestA, "target", 1, sequencePointer(2), nil)
 		injected := false
 		held.BeforePush = func(int) error {
@@ -683,17 +645,17 @@ func TestPriorityRace(t *testing.T) {
 				return nil
 			}
 			injected = true
-			result, err := Publish(endpointFor(b), setPriorityRequest(requestB, "target", 1, sequencePointer(1), nil))
+			result, err := Publish(b, setPriorityRequest(requestB, "target", 1, sequencePointer(1), nil))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				return fmt.Errorf("first same-target edit did not publish: %+v %v", result, err)
 			}
 			return nil
 		}
-		result, err := Publish(endpointFor(a), held)
+		result, err := Publish(a, held)
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("later same-target edit did not publish: %+v %v", result, err)
 		}
-		tree, _ := loadTree(a, result.Tip)
+		tree, _ := loadTreeFor(a, result.Tip)
 		assertPriorityOrder(t, tree, []string{"a", "target", "b"})
 		assertHistoryContainsOpid(t, tree.Live["target"], requestA.opid())
 		assertHistoryContainsOpid(t, tree.Live["target"], requestB.opid())
@@ -701,10 +663,10 @@ func TestPriorityRace(t *testing.T) {
 
 	t.Run("range-changed", func(t *testing.T) {
 		t.Parallel()
-		a, b := priorityRaceBed(t, []*GoalFile{
+		a, b := priorityRaceBedForEndpoint(t, []*GoalFile{
 			rankedGoal("a", 1, 1), rankedGoal("b", 1, 2), vGoal("target", StateQueued),
 		})
-		requestA := priorityVerbReq(a, "01J5X000000000000000000V50", "mac-a")
+		requestA := priorityVerbReqForEndpoint(a, "01J5X000000000000000000V50", "mac-a")
 		held := setPriorityRequest(requestA, "target", 1, sequencePointer(3), nil)
 		injected := false
 		held.BeforePush = func(int) error {
@@ -712,17 +674,17 @@ func TestPriorityRace(t *testing.T) {
 				return nil
 			}
 			injected = true
-			result, err := Done(verbReq(b, "01J5X000000000000000000V60", "mac-b"), "b", "Removed before the held insertion.")
+			result, err := Done(verbReqFor(b, "01J5X000000000000000000V60", "mac-b"), "b", "Removed before the held insertion.")
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				return fmt.Errorf("competing removal did not publish: %+v %v", result, err)
 			}
 			return nil
 		}
-		result, err := Publish(endpointFor(a), held)
+		result, err := Publish(a, held)
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "range 1..2") {
 			t.Fatalf("retry did not refuse its newly impossible range: %+v %v", result, err)
 		}
-		tree, _ := loadTree(a, result.Tip)
+		tree, _ := loadTreeFor(a, result.Tip)
 		assertPriorityOrder(t, tree, []string{"a", "target"})
 		if tree.Live["target"].Priority != 0 || tree.Live["target"].Sequence != 0 {
 			t.Fatalf("refused insertion ranked its target: %+v", tree.Live["target"])
@@ -732,9 +694,9 @@ func TestPriorityRace(t *testing.T) {
 	t.Run("claim-first", func(t *testing.T) {
 		t.Parallel()
 		target := approvedGoalFixture(rankedGoal("target", 1, 2), testBudget())
-		a, b := priorityRaceBed(t, []*GoalFile{rankedGoal("peer", 1, 1), target})
-		rankRequest := priorityVerbReq(a, "01J5X000000000000000000V70", "mac-a")
-		claimVerb := verbReq(b, "01J5X000000000000000000V80", "mac-b")
+		a, b := priorityRaceBedForEndpoint(t, []*GoalFile{rankedGoal("peer", 1, 1), target})
+		rankRequest := priorityVerbReqForEndpoint(a, "01J5X000000000000000000V70", "mac-a")
+		claimVerb := verbReqFor(b, "01J5X000000000000000000V80", "mac-b")
 		held := setPriorityRequest(rankRequest, "target", 1, sequencePointer(1), nil)
 		attempts := 0
 		injected := false
@@ -745,22 +707,22 @@ func TestPriorityRace(t *testing.T) {
 				return nil
 			}
 			injected = true
-			result, err := Publish(endpointFor(b), claimRequest(claimVerb, "target", nil))
+			result, err := Publish(b, claimRequest(claimVerb, "target", nil))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				return fmt.Errorf("competing claim did not publish: %+v %v", result, err)
 			}
-			tree, treeErr := loadTree(b, result.Tip)
+			tree, treeErr := loadTreeFor(b, result.Tip)
 			if treeErr != nil {
 				return treeErr
 			}
 			publishedClaim = *tree.Live["target"].Claimed
 			return nil
 		}
-		result, err := Publish(endpointFor(a), held)
+		result, err := Publish(a, held)
 		if err != nil || result.Outcome != OutcomeConfirmed || attempts < 2 {
 			t.Fatalf("rank after claim did not rebuild and confirm: attempts=%d result=%+v err=%v", attempts, result, err)
 		}
-		tree, _ := loadTree(a, result.Tip)
+		tree, _ := loadTreeFor(a, result.Tip)
 		assertPriorityOrder(t, tree, []string{"target", "peer"})
 		if tree.Live["target"].Claimed == nil || !reflect.DeepEqual(*tree.Live["target"].Claimed, publishedClaim) || tree.Live["target"].Approved == nil {
 			t.Fatalf("rank retry overwrote the published claim or approval: %+v", tree.Live["target"])
@@ -772,9 +734,9 @@ func TestPriorityRace(t *testing.T) {
 	t.Run("priority-first", func(t *testing.T) {
 		t.Parallel()
 		target := approvedGoalFixture(rankedGoal("target", 1, 2), testBudget())
-		a, b := priorityRaceBed(t, []*GoalFile{rankedGoal("peer", 1, 1), target})
-		rankRequest := priorityVerbReq(a, "01J5X000000000000000000V90", "mac-a")
-		claimVerb := verbReq(b, "01J5X000000000000000000VA0", "mac-b")
+		a, b := priorityRaceBedForEndpoint(t, []*GoalFile{rankedGoal("peer", 1, 1), target})
+		rankRequest := priorityVerbReqForEndpoint(a, "01J5X000000000000000000V90", "mac-a")
+		claimVerb := verbReqFor(b, "01J5X000000000000000000VA0", "mac-b")
 		held := claimRequest(claimVerb, "target", nil)
 		attempts := 0
 		injected := false
@@ -784,17 +746,17 @@ func TestPriorityRace(t *testing.T) {
 				return nil
 			}
 			injected = true
-			result, err := Publish(endpointFor(a), setPriorityRequest(rankRequest, "target", 1, sequencePointer(1), nil))
+			result, err := Publish(a, setPriorityRequest(rankRequest, "target", 1, sequencePointer(1), nil))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				return fmt.Errorf("competing priority edit did not publish: %+v %v", result, err)
 			}
 			return nil
 		}
-		result, err := Publish(endpointFor(b), held)
+		result, err := Publish(b, held)
 		if err != nil || result.Outcome != OutcomeConfirmed || attempts < 2 {
 			t.Fatalf("claim after priority did not rebuild and confirm: attempts=%d result=%+v err=%v", attempts, result, err)
 		}
-		tree, _ := loadTree(b, result.Tip)
+		tree, _ := loadTreeFor(b, result.Tip)
 		assertPriorityOrder(t, tree, []string{"target", "peer"})
 		claimed := tree.Live["target"]
 		if claimed.Claimed == nil || claimed.Claimed.Machine != "mac-b" || claimed.Approved == nil {
@@ -809,7 +771,8 @@ func TestPriorityRecovery(t *testing.T) {
 	t.Parallel()
 	t.Run("unlanded", func(t *testing.T) {
 		t.Parallel()
-		root := rankedGoalBed(t, map[string][2]uint64{"target": {1, 1}})
+		endpoint := rankedGoalBedForEndpoint(t, map[string][2]uint64{"target": {1, 1}})
+		root := endpoint.Root
 		opid := Opid("01J5X000000000000000000W10", "mac-a", "lin-1")
 		intent := Intent{Verb: "set-priority", Targets: []string{"target"}, Args: map[string]string{
 			"by": "wido", "priority": "2", "sequence": "1",
@@ -819,10 +782,10 @@ func TestPriorityRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := requestForEntry(endpointFor(root), entry); err == nil || !strings.Contains(err.Error(), "enrolled terminal") {
+		if _, err := requestForEntry(endpoint, entry); err == nil || !strings.Contains(err.Error(), "enrolled terminal") {
 			t.Fatalf("stored human name reconstructed rank authority: %v", err)
 		}
-		reports, err := Recover(endpointFor(root))
+		reports, err := Recover(endpoint)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -835,7 +798,7 @@ func TestPriorityRecovery(t *testing.T) {
 		if !found {
 			t.Fatalf("recovery did not close toward a fresh terminal act: %+v", reports)
 		}
-		tree, _ := loadTree(root, acceptedTip(t, root))
+		tree, _ := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 		assertPair(t, tree.Live["target"], 1, 1)
 		entry, _ = ReadEntry(root, opid)
 		if entry.Outcome != OutcomeRejected {
@@ -845,15 +808,15 @@ func TestPriorityRecovery(t *testing.T) {
 
 	t.Run("landed", func(t *testing.T) {
 		t.Parallel()
-		a, b := priorityRaceBed(t, []*GoalFile{rankedGoal("a", 1, 1), vGoal("target", StateQueued)})
-		request := priorityVerbReq(b, "01J5X000000000000000000W20", "mac-b")
+		a, b := priorityRaceBedForEndpoint(t, []*GoalFile{rankedGoal("a", 1, 1), vGoal("target", StateQueued)})
+		request := priorityVerbReqForEndpoint(b, "01J5X000000000000000000W20", "mac-b")
 		publish := setPriorityRequest(request, "target", 1, sequencePointer(2), nil)
-		result, err := Publish(endpointFor(b), publish)
+		result, err := Publish(b, publish)
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("publish rank before recovery loses its journal: %+v %v", result, err)
 		}
-		strandEntryAt(t, a, request.opid(), "mac-b", PhasePushed, publish.Intent)
-		reports, err := Recover(endpointFor(a))
+		strandEntryAt(t, a.Root, request.opid(), "mac-b", PhasePushed, publish.Intent)
+		reports, err := Recover(a)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -866,7 +829,7 @@ func TestPriorityRecovery(t *testing.T) {
 		if !found {
 			t.Fatalf("recovery did not confirm the visible operation: %+v", reports)
 		}
-		tree, _ := loadTree(a, result.Tip)
+		tree, _ := loadTreeFor(a, result.Tip)
 		assertPair(t, tree.Live["target"], 1, 2)
 		count := 0
 		for _, event := range tree.Live["target"].History {
@@ -880,10 +843,9 @@ func TestPriorityRecovery(t *testing.T) {
 	})
 }
 
-func rankedGoalBed(t *testing.T, ranks map[string][2]uint64) string {
+func rankedGoalBedForEndpoint(t *testing.T, ranks map[string][2]uint64) Endpoint {
 	t.Helper()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
 	ids := make([]string, 0, len(ranks))
 	for id := range ranks {
 		ids = append(ids, id)
@@ -893,8 +855,8 @@ func rankedGoalBed(t *testing.T, ranks map[string][2]uint64) string {
 	for _, id := range ids {
 		files = append(files, rankedGoal(id, uint8(ranks[id][0]), ranks[id][1]))
 	}
-	publishGoalFixtures(t, root, files...)
-	return root
+	publishGoalFixturesForEndpoint(t, endpoint, files...)
+	return endpoint
 }
 
 func rankedGoal(id string, priority uint8, sequence uint64) *GoalFile {
@@ -904,8 +866,8 @@ func rankedGoal(id string, priority uint8, sequence uint64) *GoalFile {
 	return file
 }
 
-func priorityVerbReq(root, ulid, machine string) VerbRequest {
-	request := verbReq(root, ulid, machine)
+func priorityVerbReqForEndpoint(endpoint Endpoint, ulid, machine string) VerbRequest {
+	request := verbReqFor(endpoint, ulid, machine)
 	request.Actor.Human = "wido"
 	return request
 }
@@ -929,11 +891,14 @@ func assertPair(t *testing.T, file *GoalFile, priority uint8, sequence uint64) {
 	}
 }
 
-func priorityRaceBed(t *testing.T, files []*GoalFile) (string, string) {
+func priorityRaceBedForEndpoint(t *testing.T, files []*GoalFile) (Endpoint, Endpoint) {
 	t.Helper()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	publishGoalFixtures(t, a, files...)
+	a, b := fakeGoalEndpointPair(t)
+	before := acceptedTipForEndpoint(t, b)
+	publishGoalFixturesForEndpoint(t, a, files...)
+	if err := b.Repository.AcceptedCAS(before, acceptedTipForEndpoint(t, a)); err != nil {
+		t.Fatal(err)
+	}
 	return a, b
 }
 
@@ -945,4 +910,50 @@ func assertHistoryContainsOpid(t *testing.T, file *GoalFile, opid string) {
 		}
 	}
 	t.Fatalf("goal %s history does not contain operation %s: %+v", file.Id, opid, file.History)
+}
+
+func TestPriorityReconcileRefusesManualRankEdit(t *testing.T) {
+	t.Parallel()
+	file := vGoal("ranked-edit", StateQueued)
+	file.Priority, file.Sequence = 1, 1
+	endpoint, _ := priorityReconcileBedForEndpoint(t, []*GoalFile{file}, nil)
+	editFile(t, endpoint.Root, livePath(file.Id), func(edited *GoalFile) {
+		edited.Sequence = 2
+		edited.NextStep = "A lawful edit combined with an unlawful rank edit."
+	})
+
+	_, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000R00"))
+	if err == nil || !strings.Contains(err.Error(), "Sequence") || !strings.Contains(err.Error(), "set-priority") {
+		t.Fatalf("reconcile did not refuse a direct rank edit with its remedy: %v", err)
+	}
+}
+
+func TestPriorityConfigurationFailureKeepsIdleRefusalPendingProjection(t *testing.T) {
+	t.Parallel()
+	candidate := nextPriorityGoal("candidate", 1, 1, "")
+	fixture, _, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{candidate.Id: candidate})
+	store := *fixture
+	root := store.Root
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(config.Tier3BudgetKey+"=malformed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := Project(endpoint, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, frontierErr := Next(projection, "bed-m1")
+	if frontierErr == nil || !strings.Contains(frontierErr.Error(), config.Tier3BudgetKey) || len(frontier.Ready) != 0 {
+		t.Fatalf("configuration uncertainty became a frontier: frontier=%+v err=%v", frontier, frontierErr)
+	}
+
+	work, workErr := readClaimableBudgetedWork(root, time.Now(), store.prober(), store.projectionDeps)
+	if workErr == nil || !strings.Contains(workErr.Error(), config.Tier3BudgetKey) {
+		t.Fatalf("claimable-work read swallowed configuration uncertainty: work=%+v err=%v", work, workErr)
+	}
+	verdict := Verdict{}
+	session := &sessionState{}
+	store.enforceIdleBacklog(&verdict, &work, workErr, session, "session", "main", TurnVerdictOptions{})
+	if !verdict.ShouldBlock || !verdict.IdleRefusal || session.IdleBlocks != 1 || !strings.Contains(verdict.Display, "IDLE WITH BACKLOG cannot be ruled out") {
+		t.Fatalf("indeterminate backlog disabled idle refusal: verdict=%+v session=%+v", verdict, session)
+	}
 }

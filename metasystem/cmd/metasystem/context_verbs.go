@@ -228,6 +228,15 @@ func runContextReport(args []string) int {
 }
 
 func runContextHandoff(args []string) int {
+	return runContextHandoffWithInputs(args, contextHandoffInputs{goal.ResolveMachine, goal.ReadClaimableBudgetedWork})
+}
+
+type contextHandoffInputs struct {
+	resolveMachine func(string) (string, error)
+	readWork       func(string, time.Time) (goal.ClaimableBudgetedWork, error)
+}
+
+func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int {
 	flags := flag.NewFlagSet("context handoff", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	cancel := flags.String("cancel", "", "live handoff nonce to cancel")
@@ -265,7 +274,7 @@ func runContextHandoff(args []string) int {
 		return contextVerbError("handoff", err)
 	}
 	if cancelSupplied {
-		caller, err := contextHandoffCaller(stateRoot)
+		caller, err := contextHandoffCallerWithMachine(stateRoot, inputs.resolveMachine)
 		if err != nil {
 			return contextVerbError("handoff", err)
 		}
@@ -304,7 +313,7 @@ func runContextHandoff(args []string) int {
 	if *note == "" {
 		return contextVerbError("handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"})
 	}
-	caller, err := contextHandoffCaller(stateRoot)
+	caller, err := contextHandoffCallerWithMachine(stateRoot, inputs.resolveMachine)
 	if err != nil {
 		return contextVerbError("handoff", err)
 	}
@@ -340,9 +349,9 @@ func runContextHandoff(args []string) int {
 	if err != nil {
 		return contextVerbError("handoff", err)
 	}
-	result, err := steward.Handoff(stateRoot, caller, steward.HandoffRecord{
+	result, err := steward.HandoffWithWorkReader(stateRoot, caller, steward.HandoffRecord{
 		Scratch: scratch, Delegates: delegates, NotePath: *note, NoteDirectory: noteDirectory,
-	}, now, filepath.Join(stateRoot, "memory", "receipts.log"))
+	}, now, filepath.Join(stateRoot, "memory", "receipts.log"), inputs.readWork)
 	if err != nil {
 		return contextVerbError("handoff", err)
 	}
@@ -465,12 +474,12 @@ func contextHandoffToplevel(root string) string {
 	}
 }
 
-func contextHandoffCaller(stateRoot string) (steward.HandoffCaller, error) {
+func contextHandoffCallerWithMachine(stateRoot string, resolveMachine func(string) (string, error)) (steward.HandoffCaller, error) {
 	classified, err := classifyContextHandoffCaller(stateRoot, stateRoot, int64(os.Getppid()))
 	if err != nil {
 		return steward.HandoffCaller{}, fmt.Errorf("classify caller: %w", err)
 	}
-	machine, err := goal.ResolveMachine(stateRoot)
+	machine, err := resolveMachine(stateRoot)
 	if err != nil {
 		return steward.HandoffCaller{}, err
 	}

@@ -23,22 +23,40 @@ func ReadChannelTree(e Endpoint, tip string) (*ChannelTree, error) {
 		Inbox:     make(map[string]*ChannelInbound),
 		Listeners: make(map[string]*ChannelListener),
 	}
-	out, err := gitIn(e.Root, "ls-tree", "-r", "--name-only", tip, "--", ChannelPrefix)
-	if err != nil {
-		return nil, fmt.Errorf("list channel tree at %s: %w", short(tip), err)
-	}
 	var paths []string
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if filePath := strings.TrimSpace(line); filePath != "" {
-			paths = append(paths, filePath)
+	var files map[string][]byte
+	if e.Repository == nil {
+		out, err := gitIn(e.Root, "ls-tree", "-r", "--name-only", tip, "--", ChannelPrefix)
+		if err != nil {
+			return nil, fmt.Errorf("list channel tree at %s: %w", short(tip), err)
 		}
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if filePath := strings.TrimSpace(line); filePath != "" {
+				paths = append(paths, filePath)
+			}
+		}
+		if len(paths) == 0 {
+			return tree, nil
+		}
+		files, err = readCommitGoalBlobs(e.Root, tip, paths, nil)
+		if err != nil {
+			return nil, fmt.Errorf("read channel tree at %s: %w", short(tip), err)
+		}
+	} else {
+		var err error
+		files, err = readCommitFiles(e, tip, ChannelPrefix)
+		if err != nil {
+			return nil, fmt.Errorf("read channel tree at %s: %w", short(tip), err)
+		}
+		for filePath := range files {
+			if strings.HasPrefix(filePath, ChannelPrefix) {
+				paths = append(paths, filePath)
+			}
+		}
+		sort.Strings(paths)
 	}
 	if len(paths) == 0 {
 		return tree, nil
-	}
-	files, err := readCommitGoalBlobs(e.Root, tip, paths, nil)
-	if err != nil {
-		return nil, fmt.Errorf("read channel tree at %s: %w", short(tip), err)
 	}
 	for _, filePath := range paths {
 		location, ok := classifyChannelPath(filePath)
@@ -194,7 +212,7 @@ func ChannelInboundRequest(e Endpoint, machine, lineage, opid string, record Cha
 			},
 		},
 		Message:  "channel inbox " + record.Provider + "-" + record.MessageID,
-		Validate: func(commit string) error { return ValidateCommit(e.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(e, commit) },
 		Mutate: func(tip string) ([]Change, error) {
 			candidate := record
 			candidate.Opid = opid
@@ -273,7 +291,7 @@ func ChannelInboundRequest(e Endpoint, machine, lineage, opid string, record Cha
 				}
 				changes = append(changes, Change{Path: ChannelPrefix + "questions/" + questionID + ".json", Content: questionContent})
 
-				goalTree, loadErr := loadTree(e.Root, tip)
+				goalTree, loadErr := loadTreeFor(e, tip)
 				if loadErr != nil {
 					return nil, loadErr
 				}

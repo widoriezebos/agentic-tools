@@ -190,12 +190,25 @@ func launchID(args []string, verb string) (string, bool) {
 	flags := flag.NewFlagSet("launch "+verb, flag.ContinueOnError)
 	id := flags.String("id", "", "launch id")
 	if flags.Parse(args) != nil || *id == "" || flags.NArg() != 0 {
-		fmt.Fprintf(os.Stderr, "usage: metasystem launch %s --id <id>\n", verb)
+		if verb == "status" || verb == "cancel" {
+			writeLaunchRecordUsage(os.Stderr, verb)
+		} else {
+			fmt.Fprintf(os.Stderr, "usage: metasystem launch %s --id <id>\n", verb)
+		}
 		return "", false
 	}
 	return *id, true
 }
+func writeLaunchRecordUsage(w io.Writer, verb string) {
+	fmt.Fprintf(w, "usage: metasystem launch %s --id <id>\n", verb)
+	fmt.Fprintln(w, "Launch records belong to the current user under ~/.metasystem/launch; they are not selected by repository.")
+	fmt.Fprintln(w, "--root is not a launch flag. Use --id to select a launch record.")
+}
 func launchRecordVerb(args []string, verb string, action func(*launch.Manager, string) (launch.Record, error)) int {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		writeLaunchRecordUsage(os.Stdout, verb)
+		return 0
+	}
 	id, ok := launchID(args, verb)
 	if !ok {
 		return 2

@@ -117,7 +117,7 @@ func (e *Engine) bornEvidence(ledger string) (string, error) {
 // narrower birth evidence: a same-pass failure drops its own staging
 // anchors, so only honest emptiness reaches a retry.
 func (e *Engine) missionAnchorsExist() (bool, error) {
-	stdout, stderr, code := gitCaptured(e.Root, "for-each-ref",
+	stdout, stderr, code := e.wallReads().Git(e.Root, "for-each-ref",
 		"--format=%(refname)", "refs/metasystem/missions/"+e.Mission+"/")
 	if code != 0 {
 		// Only a SUCCESSFUL empty enumeration proves absence; a failed
@@ -511,7 +511,12 @@ func (e *Engine) armAndPreflight(mode string) error {
 	if err := contractShapeRefusal(e.contractPath()); err != nil {
 		return err
 	}
-	_, rawSHA, err := contract.Preflight(e.contractPath(), verifiedPath)
+	var rawSHA string
+	if e.contractSource != nil {
+		_, rawSHA, err = contract.PreflightWithSource(e.contractPath(), verifiedPath, e.contractSource)
+	} else {
+		_, rawSHA, err = contract.Preflight(e.contractPath(), verifiedPath)
+	}
 	if err != nil {
 		return failf(3, "mission start refused by preflight: %v", err)
 	}

@@ -15,13 +15,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
@@ -47,25 +45,11 @@ func (f *RunFailure) Unwrap() error { return f.Err }
 // err is non-nil ONLY when the command could not run (a RunFailure); a
 // nonzero exit is an answer for the caller to type.
 func (w Workspace) gitProbe(dir string, env []string, stdin []byte, args ...string) (stdout, stderr string, code int, err error) {
-	full := append(append([]string{"-C", dir}, configPins...), args...)
-	cmd := exec.Command("git", full...)
-	cmd.Env = ScrubbedEnviron(env...)
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
+	result := w.runRaw(w.rawRequest(dir, env, stdin, "git "+strings.Join(args, " "), args...), nil, nil)
+	if result.Err != nil {
+		return string(result.Stdout), string(result.Stderr), -1, &RunFailure{Op: args[0], Err: result.Err}
 	}
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	limit := boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Local)
-	runErr := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
-	switch typed := runErr.(type) {
-	case nil:
-		return outBuf.String(), errBuf.String(), 0, nil
-	case *exec.ExitError:
-		return outBuf.String(), errBuf.String(), typed.ExitCode(), nil
-	default:
-		return outBuf.String(), errBuf.String(), -1, &RunFailure{Op: args[0], Err: runErr}
-	}
+	return string(result.Stdout), string(result.Stderr), result.ExitCode, nil
 }
 
 // answerErr words a probe outcome that ran but did not answer the

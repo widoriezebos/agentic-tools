@@ -12,7 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
-func upTestGit(t *testing.T, args ...string) *exec.Cmd {
+func upAdapterGit(t *testing.T, args ...string) *exec.Cmd {
 	t.Helper()
 	command := exec.Command("git", args...)
 	command.Env = []string{"HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH"), "TMPDIR=" + os.Getenv("TMPDIR")}
@@ -21,13 +21,11 @@ func upTestGit(t *testing.T, args ...string) *exec.Cmd {
 
 func TestTopLevelUpPrintsButDoesNotInstallSchedulerEntry(t *testing.T) {
 	root := t.TempDir()
-	if out, err := upTestGit(t, "-C", root, "init", "-q").CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, out)
-	}
+	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
 	stdout, stderr, code := captureRelay(t, func() int {
-		return dispatch([]string{
+		return dispatchWithRepositoryTop([]string{
 			"up", "--metasystem-root", root, "--repo", root, "--print-scheduler-entry",
-		})
+		}, repositoryTop)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("scheduler print failed: code=%d stderr=%q", code, stderr)
@@ -72,6 +70,7 @@ func TestArmingDetailSurvivesStop(t *testing.T) {
 func TestTopLevelUpKeepsTemplateStateSeparateFromGitScope(t *testing.T) {
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", "")
 	appRoot := t.TempDir()
+	repositoryTop := declaredRepositoryTop(t, appRoot, map[string]int{appRoot: 1})
 	metasystemRoot := filepath.Join(appRoot, "metasystem")
 	if err := os.MkdirAll(filepath.Join(appRoot, "development"), 0o755); err != nil {
 		t.Fatal(err)
@@ -85,14 +84,10 @@ func TestTopLevelUpKeepsTemplateStateSeparateFromGitScope(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(metasystemRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := upTestGit(t, "-C", appRoot, "init", "-q").CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, out)
-	}
-
 	pid := int64(os.Getppid())
 	started, ok := lease.StartedAt(pid, nil)
 	if !ok {
-		t.Skip("cannot read the parent process identity")
+		t.Fatal("cannot read the parent process identity")
 	}
 	announcement, err := lease.Announce(metasystemRoot, "template-state", pid, started, "tag", "fake", "")
 	if err != nil {
@@ -111,10 +106,10 @@ func TestTopLevelUpKeepsTemplateStateSeparateFromGitScope(t *testing.T) {
 	}
 
 	_, stderr, code := captureRelay(t, func() int {
-		return runUp([]string{
+		return runUpWith([]string{
 			"--metasystem-root", metasystemRoot, "--repo", appRoot, "--retire",
 			"--session", "template-state", "--pid", fmt.Sprint(pid), "--start-time", fmt.Sprint(started), "--runtime", "fake",
-		})
+		}, repositoryTop)
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("template retirement failed: code=%d stderr=%q", code, stderr)
@@ -127,23 +122,24 @@ func TestTopLevelUpKeepsTemplateStateSeparateFromGitScope(t *testing.T) {
 	}
 }
 
+// A linked worktree and Git steering variables require the real repository adapter.
 func TestUpRepositoryScopeIgnoresGitSteeringEnvironment(t *testing.T) {
 	primary := t.TempDir()
-	if out, err := upTestGit(t, "-C", primary, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+	if out, err := upAdapterGit(t, "-C", primary, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init primary: %v: %s", err, out)
 	}
 	if err := os.WriteFile(filepath.Join(primary, "tracked"), []byte("fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := upTestGit(t, "-C", primary, "add", "tracked").CombinedOutput(); err != nil {
+	if out, err := upAdapterGit(t, "-C", primary, "add", "tracked").CombinedOutput(); err != nil {
 		t.Fatalf("git add: %v: %s", err, out)
 	}
-	commit := upTestGit(t, "-C", primary, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
+	commit := upAdapterGit(t, "-C", primary, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
 	if out, err := commit.CombinedOutput(); err != nil {
 		t.Fatalf("git commit: %v: %s", err, out)
 	}
 	worktree := filepath.Join(t.TempDir(), "worktree")
-	if out, err := upTestGit(t, "-C", primary, "worktree", "add", "-q", worktree, "HEAD").CombinedOutput(); err != nil {
+	if out, err := upAdapterGit(t, "-C", primary, "worktree", "add", "-q", worktree, "HEAD").CombinedOutput(); err != nil {
 		t.Fatalf("git worktree add: %v: %s", err, out)
 	}
 	t.Setenv("GIT_DIR", filepath.Join(primary, ".git"))

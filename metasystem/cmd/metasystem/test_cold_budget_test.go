@@ -4,24 +4,48 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 func TestColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
+	const role = "candidate-cold-refusal-assertions"
+	if got := os.Getenv("GO_WANT_CANDIDATE_COLD_CHILD"); got != "" {
+		if got != role {
+			t.Fatalf("unexpected candidate cold child role %q", got)
+		}
+		t.Log("candidate cold child role: " + role)
+		testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t)
+		return
+	}
 	t.Parallel()
-	fixture := newCandidateEngineFixture(t)
+	command := exec.Command(os.Args[0], "-test.run=^TestColdCandidateBuildRefusalRunsBeforeNativeBuilder$", "-test.v", "-test.count=1")
+	command.Env = append(os.Environ(), "GO_WANT_CANDIDATE_COLD_CHILD="+role)
+	output, err := command.CombinedOutput()
+	if err != nil || !strings.Contains(string(output), "candidate cold child role: "+role) ||
+		!strings.Contains(string(output), "--- PASS: TestColdCandidateBuildRefusalRunsBeforeNativeBuilder") ||
+		strings.Contains(string(output), "--- SKIP:") {
+		t.Fatalf("isolated cold refusal assertions failed: %v\n%s", err, output)
+	}
+	t.Logf("isolated cold refusal assertions passed for %s:\n%s", role, output)
+}
+
+func testColdCandidateBuildRefusalRunsBeforeNativeBuilder(t *testing.T) {
+	fixture := newOrdinaryCandidateFixture(t)
 	controlRoot := t.TempDir()
 	want := &coldBuildBudgetRefusal{detail: "fixture exhausted"}
 	called := 0
+	environment := testingEnvironment(os.Environ())
+	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildFive, environment, false)
 	artifact, err := prepareCandidateEngineWithColdPreflight(context.Background(), controlRoot,
-		gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree,
-		testingEnvironment(os.Environ()), func() error { called++; return want })
+		fixture.workspace(), "metasystem", ordinaryProjectTree,
+		environment, func() error { called++; return want }, fixture.dependency())
+	fixture.assertDrained()
 	var refusal *coldBuildBudgetRefusal
 	if artifact != nil || !errors.As(err, &refusal) || refusal != want || called != 1 {
 		t.Fatalf("cold preflight did not refuse before build: artifact=%+v err=%v called=%d", artifact, err, called)

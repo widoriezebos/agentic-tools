@@ -11,20 +11,44 @@ import (
 
 func costJoinBed(t *testing.T) (Store, Record, Unit, CostForecast) {
 	t.Helper()
-	bed := assemblyFixture(t)
+	bed := policyFixture(t)
 	record := bed.record
-	prefixes, err := assembleUnits(bed.root, bed.base, record.Units)
-	must(t, err)
+	prefixes := []string{testCommit(103), testCommit(104)}
 	record.PrefixTrees, record.TipTree = prefixes, prefixes[len(prefixes)-1]
 	store := NewStore(bed.root, nil)
+	strictReassembly(t, &store)
+	expectCommittedGoals(t, &store)
 	must(t, store.Create(record))
 	incoming := Unit{GoalID: "goal-c", Chain: "chain-c", State: UnitJoining,
 		Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, SelectedGroups: []string{"c"}}
 	prospective := append(append([]Unit(nil), record.Units...), incoming)
-	all, err := assembleUnits(bed.root, bed.base, prospective)
-	must(t, err)
+	all := []string{prefixes[0], prefixes[1], testCommit(105)}
 	forecast := CostForecast{SchemaVersion: 1, ObservedAt: time.Unix(3, 0).UTC().Format(time.RFC3339Nano),
 		Currency: "snapshot-not-revalidated", Binding: CostBinding(record, prospective, all)}
+	return store, record, incoming, forecast
+}
+
+func costCASBed(t *testing.T) (Store, Record, Unit, CostForecast) {
+	t.Helper()
+	base, first, second, third := testCommit(101), testCommit(103), testCommit(104), testCommit(105)
+	record := Record{Schema: 1, BatchID: testBatchID, State: StateOpen, TipTree: second,
+		Units: []Unit{
+			{GoalID: "goal-a", Chain: "chain-a", State: UnitJoined,
+				Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 7, AccountingRevision: 5}},
+			{GoalID: "goal-b", Chain: "chain-b", State: UnitJoined,
+				Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 8, AccountingRevision: 6}},
+		},
+		batchRecordFields: batchRecordFields{BaseTree: base, PrefixTrees: []string{first, second}},
+	}
+	store := NewStore(t.TempDir(), nil)
+	strictReassembly(t, &store)
+	expectCommittedGoals(t, &store)
+	must(t, store.Create(record))
+	incoming := Unit{GoalID: "goal-c", Chain: "chain-c", State: UnitJoining,
+		Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, SelectedGroups: []string{"c"}}
+	prospective := append(append([]Unit(nil), record.Units...), incoming)
+	forecast := CostForecast{SchemaVersion: 1, ObservedAt: time.Unix(3, 0).UTC().Format(time.RFC3339Nano),
+		Currency: "snapshot-not-revalidated", Binding: CostBinding(record, prospective, []string{first, second, third})}
 	return store, record, incoming, forecast
 }
 
@@ -50,30 +74,33 @@ func TestBatchCostClosureKeepsIncomingOwnerAndRequiresMatchingSnapshot(t *testin
 
 func TestBatchCostJoinCASRefusesChangedMemberBeforeHandover(t *testing.T) {
 	t.Parallel()
-	store, record, incoming, forecast := costJoinBed(t)
+	store, record, incoming, forecast := costCASBed(t)
 	forecast.Binding.Members[0].Claim.AccountingRevision++
 	handedOver := false
 	err := PublishJoinWithAdmissionForecast(store, record.BatchID, incoming, "owner", time.Unix(3, 0),
 		func(_, _, _ string) (testpolicy.Plan, error) {
-			return testpolicy.Plan{SelectedGroups: []string{"c"}}, nil
+			t.Fatal("changed claim reached planning")
+			return testpolicy.Plan{}, nil
 		},
 		func() error { handedOver = true; return nil },
 		func(_ string, unit Unit) (JoinAdmission, error) {
-			return JoinAdmission{Tree: unit.Admission.Tree, Status: "verified"}, nil
+			t.Fatal("changed claim reached admission")
+			return JoinAdmission{}, nil
 		}, forecast)
 	if err == nil || !strings.Contains(err.Error(), "BATCH_COST_INPUT_MOVED") || handedOver {
 		t.Fatalf("changed claim crossed cost CAS: err=%v handover=%t", err, handedOver)
 	}
 	current, loadErr := store.Load(record.BatchID)
 	must(t, loadErr)
-	if len(current.Units) != len(record.Units) || !reflect.DeepEqual(current.PrefixTrees, record.PrefixTrees) {
+	if len(current.Units) != len(record.Units) || !reflect.DeepEqual(current.Units, record.Units) ||
+		!reflect.DeepEqual(current.PrefixTrees, record.PrefixTrees) {
 		t.Fatalf("failed CAS published incoming member: %+v", current)
 	}
 }
 
 func TestBatchCostJoinAndClosureRejectReplacedPrefixEpisode(t *testing.T) {
 	t.Parallel()
-	store, record, incoming, forecast := costJoinBed(t)
+	store, record, incoming, forecast := costCASBed(t)
 	first := PrefixEpisode{DecisionID: "decision-a", Token: strings.Repeat("a", 64), ExpiresAt: time.Unix(30, 0).UTC().Format(time.RFC3339Nano)}
 	replacement := PrefixEpisode{DecisionID: "decision-b", Token: strings.Repeat("b", 64), ExpiresAt: time.Unix(40, 0).UTC().Format(time.RFC3339Nano)}
 	must(t, store.Update(record.BatchID, func(current *Record) error {
@@ -91,11 +118,13 @@ func TestBatchCostJoinAndClosureRejectReplacedPrefixEpisode(t *testing.T) {
 	handedOver := false
 	err = PublishJoinWithAdmissionForecast(store, record.BatchID, incoming, "owner", time.Unix(3, 0),
 		func(_, _, _ string) (testpolicy.Plan, error) {
-			return testpolicy.Plan{SelectedGroups: []string{"c"}}, nil
+			t.Fatal("replaced episode reached planning")
+			return testpolicy.Plan{}, nil
 		},
 		func() error { handedOver = true; return nil },
 		func(_ string, unit Unit) (JoinAdmission, error) {
-			return JoinAdmission{Tree: unit.Admission.Tree, Status: "verified"}, nil
+			t.Fatal("replaced episode reached admission")
+			return JoinAdmission{}, nil
 		}, forecast)
 	if err == nil || !strings.Contains(err.Error(), "BATCH_COST_INPUT_MOVED") || handedOver {
 		t.Fatalf("replaced episode crossed join CAS: err=%v handedOver=%t", err, handedOver)
@@ -105,7 +134,8 @@ func TestBatchCostJoinAndClosureRejectReplacedPrefixEpisode(t *testing.T) {
 	}
 	current, err = store.Load(record.BatchID)
 	must(t, err)
-	if len(current.Units) != len(record.Units) || current.ClosedReason != "" {
+	if len(current.Units) != len(record.Units) || !reflect.DeepEqual(current.Units, record.Units) ||
+		!reflect.DeepEqual(current.PrefixTrees, record.PrefixTrees) || current.ClosedReason != "" {
 		t.Fatalf("stale episode moved custody or closed admission: %+v", current)
 	}
 	recomputed := forecast
@@ -114,6 +144,12 @@ func TestBatchCostJoinAndClosureRejectReplacedPrefixEpisode(t *testing.T) {
 		t.Fatalf("recomputed forecast did not bind replacement episode: old=%+v new=%+v", forecast.Binding, recomputed.Binding)
 	}
 	must(t, CloseAdmissionForCost(store, record.BatchID, "owner", time.Unix(3, 0), recomputed))
+	closed, err := store.Load(record.BatchID)
+	must(t, err)
+	if closed.ClosedReason != "budget-cost" || len(closed.Units) != len(record.Units) ||
+		len(closed.History) != 1 || closed.History[0].Verb != "close" {
+		t.Fatalf("recomputed forecast did not close admission without changing custody: %+v", closed)
+	}
 }
 
 func TestBatchCostBindingMarksReassembledOrReselectedSnapshotStale(t *testing.T) {
@@ -151,11 +187,25 @@ func TestBatchCostBindingMarksReassembledOrReselectedSnapshotStale(t *testing.T)
 
 func TestBatchCostSealPublishesExactSnapshotAndRejectsConcurrentClose(t *testing.T) {
 	t.Parallel()
-	plan := func(_, _, _ string) (testpolicy.Plan, error) {
-		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{"proof"}}, nil
-	}
 	seal := func(store Store, record Record, mutate bool) error {
-		return SealWithForecast(store, record.BatchID, record.BaseTree, "owner", time.Unix(5, 0), plan,
+		first, tip := record.PrefixTrees[0], record.PrefixTrees[1]
+		strictReassembly(t, &store,
+			expectedAssembly(record.BaseTree, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{first, tip}),
+			expectedAssembly(record.BaseTree, []string{"goal-a"}, []string{"chain-a"}, []string{first}),
+			expectedAssembly(first, []string{"goal-b"}, []string{"chain-b"}, []string{tip}))
+		expectCommittedGoals(t, &store,
+			committedGoalReply{module: ModuleRoot(store.root), tree: tip, goal: "goal-a", data: goalBed("goal-a"), present: true},
+			committedGoalReply{module: ModuleRoot(store.root), tree: tip, goal: "goal-b", data: goalBed("goal-b"), present: true})
+		planned := 0
+		plan := func(root, goal, tree string) (testpolicy.Plan, error) {
+			want := []string{"goal-a", "goal-b"}
+			if planned >= len(want) || root != store.root || goal != want[planned] || tree != tip {
+				t.Fatalf("seal plan call %d: root=%q goal=%q tree=%q", planned+1, root, goal, tree)
+			}
+			planned++
+			return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{"proof"}}, nil
+		}
+		err := SealWithForecast(store, record.BatchID, record.BaseTree, "owner", time.Unix(5, 0), plan,
 			func(candidate Record) (CostForecast, error) {
 				if mutate {
 					if err := store.Update(record.BatchID, func(current *Record) error {
@@ -168,6 +218,10 @@ func TestBatchCostSealPublishesExactSnapshotAndRejectsConcurrentClose(t *testing
 				return CostForecast{SchemaVersion: 1, ObservedAt: time.Unix(5, 0).UTC().Format(time.RFC3339Nano),
 					Currency: "snapshot-not-revalidated", Binding: CostBinding(candidate, joinedUnits(candidate.Units), candidate.PrefixTrees)}, nil
 			})
+		if planned != 2 {
+			t.Fatalf("seal plan calls=%d, want 2", planned)
+		}
+		return err
 	}
 	store, record, _, _ := costJoinBed(t)
 	must(t, seal(store, record, false))
@@ -191,13 +245,31 @@ func TestBatchCostSealPublishesExactSnapshotAndRejectsConcurrentClose(t *testing
 func TestBatchCostSealRejectsEpisodeChangedDuringForecast(t *testing.T) {
 	t.Parallel()
 	store, record, _, _ := costJoinBed(t)
+	firstTree, tip := record.PrefixTrees[0], record.PrefixTrees[1]
+	assembly := []expectedReassembly{
+		expectedAssembly(record.BaseTree, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{firstTree, tip}),
+		expectedAssembly(record.BaseTree, []string{"goal-a"}, []string{"chain-a"}, []string{firstTree}),
+		expectedAssembly(firstTree, []string{"goal-b"}, []string{"chain-b"}, []string{tip}),
+	}
+	strictReassembly(t, &store, append(append([]expectedReassembly(nil), assembly...), assembly...)...)
+	goals := []committedGoalReply{
+		{module: ModuleRoot(store.root), tree: tip, goal: "goal-a", data: goalBed("goal-a"), present: true},
+		{module: ModuleRoot(store.root), tree: tip, goal: "goal-b", data: goalBed("goal-b"), present: true},
+	}
+	expectCommittedGoals(t, &store, append(append([]committedGoalReply(nil), goals...), goals...)...)
 	first := PrefixEpisode{DecisionID: "decision-a", Token: strings.Repeat("a", 64), ExpiresAt: time.Unix(30, 0).UTC().Format(time.RFC3339Nano)}
 	replacement := PrefixEpisode{DecisionID: "decision-b", Token: strings.Repeat("b", 64), ExpiresAt: time.Unix(40, 0).UTC().Format(time.RFC3339Nano)}
 	must(t, store.Update(record.BatchID, func(current *Record) error {
 		current.PrefixEpisodes = map[string]PrefixEpisode{"goal-a": first}
 		return nil
 	}))
-	plan := func(_, _, _ string) (testpolicy.Plan, error) {
+	planned := 0
+	plan := func(root, goal, tree string) (testpolicy.Plan, error) {
+		want := []string{"goal-a", "goal-b", "goal-a", "goal-b"}
+		if planned >= len(want) || root != store.root || goal != want[planned] || tree != tip {
+			t.Fatalf("seal plan call %d: root=%q goal=%q tree=%q", planned+1, root, goal, tree)
+		}
+		planned++
 		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{"proof"}}, nil
 	}
 	mutated := false
@@ -224,6 +296,9 @@ func TestBatchCostSealRejectsEpisodeChangedDuringForecast(t *testing.T) {
 		t.Fatalf("failed seal published stale snapshot: %+v", current)
 	}
 	must(t, SealWithForecast(store, record.BatchID, record.BaseTree, "owner", time.Unix(6, 0), plan, forecast))
+	if planned != 4 {
+		t.Fatalf("seal plan calls=%d, want 4", planned)
+	}
 	sealed, err := store.Load(record.BatchID)
 	must(t, err)
 	if sealed.CostForecast == nil || !sealed.CostForecast.Matches(sealed) || sealed.CostForecast.Binding.PrefixEpisodes[0].Token != replacement.Token {

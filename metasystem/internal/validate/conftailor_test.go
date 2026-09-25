@@ -167,3 +167,63 @@ func TestTailorConfInsertsMissingDurableKeys(t *testing.T) {
 		t.Fatalf("tailored conf mismatch:\n--- got ---\n%s--- want ---\n%s", got, want)
 	}
 }
+
+// Launch lanes name their runtime and model (R-123). A lane on a selected
+// runtime keeps its pair byte-for-byte; a lane rebound to the default
+// runtime takes that runtime's configured model, wherever that row sits,
+// or an explicit empty model that launch settings refuse; none drops every
+// lane binding. Unrelated lane settings stay.
+func TestTailorConfRebindsLaneRuntimesAndModels(t *testing.T) {
+	t.Parallel()
+	const lanes = `launch.build.runtime=claude
+launch.build.model=claude-opus-5-5
+launch.build.effort=xhigh
+launch.critique.model=gpt-6-sol
+launch.critique.runtime=codex
+launch.read.runtime=devin
+launch.read.window.tokens=0
+`
+	for _, tc := range []struct {
+		name, extra string
+		runtimes    []string
+		want        string
+	}{
+		{"selected pairs unchanged", "", []string{"claude", "codex", "devin"},
+			lanes},
+		{"rebound to configured default", "role.default.model.claude=configured-claude\n", []string{"claude"},
+			"launch.build.runtime=claude\nlaunch.build.model=claude-opus-5-5\nlaunch.build.effort=xhigh\n" +
+				"launch.critique.model=configured-claude\nlaunch.critique.runtime=claude\n" +
+				"launch.read.runtime=claude\nlaunch.read.model=configured-claude\nlaunch.read.window.tokens=0\n"},
+		{"rebound with a placeholder default is explicit blank", "role.default.model.codex=<model>\n", []string{"claude", "codex"},
+			"launch.build.runtime=claude\nlaunch.build.model=claude-opus-5-5\nlaunch.build.effort=xhigh\n" +
+				"launch.critique.model=gpt-6-sol\nlaunch.critique.runtime=codex\n" +
+				"launch.read.runtime=codex\nlaunch.read.model=\nlaunch.read.window.tokens=0\n"},
+		{"rebound with no default is explicit blank", "", []string{"claude"},
+			"launch.build.runtime=claude\nlaunch.build.model=claude-opus-5-5\nlaunch.build.effort=xhigh\n" +
+				"launch.critique.model=\nlaunch.critique.runtime=claude\n" +
+				"launch.read.runtime=claude\nlaunch.read.model=\nlaunch.read.window.tokens=0\n"},
+		{"fake takes its synthesized model", "", []string{"fake"},
+			"launch.build.runtime=fake\nlaunch.build.model=fake-model\nlaunch.build.effort=xhigh\n" +
+				"launch.critique.model=fake-model\nlaunch.critique.runtime=fake\n" +
+				"launch.read.runtime=fake\nlaunch.read.model=fake-model\nlaunch.read.window.tokens=0\n"},
+		{"none drops lane runtime and model", "", []string{"none"},
+			"launch.build.effort=xhigh\nlaunch.read.window.tokens=0\n"},
+	} {
+		conf := filepath.Join(t.TempDir(), "metasystem.conf")
+		// The default-model row sits after the lanes: rebinding must not
+		// depend on having read it first.
+		writeFile(t, conf, lanes+tc.extra)
+		if err := TailorConf(conf, tc.runtimes); err != nil {
+			t.Fatal(err)
+		}
+		var got strings.Builder
+		for _, line := range strings.Split(readFile(t, conf), "\n") {
+			if strings.HasPrefix(line, "launch.") {
+				got.WriteString(line + "\n")
+			}
+		}
+		if got.String() != tc.want {
+			t.Fatalf("%s (%v): lane rows\n%s\nwant\n%s", tc.name, tc.runtimes, got.String(), tc.want)
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,10 +34,6 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-func wantShaped(t *testing.T, root string, ledger []byte, want bool, reasonPart string) {
-	wantShapedWithEnvironment(t, root, ledger, nil, want, reasonPart)
-}
-
 func wantShapedWithEnvironment(t *testing.T, root string, ledger []byte, environment []string, want bool, reasonPart string) {
 	t.Helper()
 	shaped, reason, err := adoptionShapedWithEnvironment(root, ledger, environment)
@@ -51,57 +48,85 @@ func wantShapedWithEnvironment(t *testing.T, root string, ledger []byte, environ
 	}
 }
 
-// The shape a non-holder may baseline: goal-free bytes (or none) on a
-// root that is not a git work tree, or one whose history carries no
-// ledger yet — unborn HEAD, or commits without the ledger.
+// Goal-free bytes (or none) are adoption-shaped when the checkout's
+// history has no ledger. Parse refusals do not need a history probe.
 func TestAdoptionShapedOutsideAndBeforeHistory(t *testing.T) {
 	t.Parallel()
+	check := func(root string, ledger []byte, tracked bool, probeErr error, want bool, reasonPart string, wantCalls int) {
+		t.Helper()
+		calls := 0
+		shaped, reason, err := adoptionShapedWithProbe(root, ledger, func(actualRoot string) (bool, error) {
+			if actualRoot != root {
+				t.Fatalf("probe root=%q want %q", actualRoot, root)
+			}
+			calls++
+			if calls > 1 {
+				t.Fatal("history probed more than once")
+			}
+			return tracked, probeErr
+		})
+		if calls != wantCalls {
+			t.Fatalf("history probes=%d want %d", calls, wantCalls)
+		}
+		if probeErr != nil {
+			if shaped || reason != "" || !errors.Is(err, probeErr) {
+				t.Fatalf("probe error tuple=(%v, %q, %v)", shaped, reason, err)
+			}
+			return
+		}
+		if err != nil || shaped != want || (!want && !strings.Contains(reason, reasonPart)) {
+			t.Fatalf("shape tuple=(%v, %q, %v), want shaped=%v reason containing %q", shaped, reason, err, want, reasonPart)
+		}
+	}
 	plain := t.TempDir()
-	wantShaped(t, plain, []byte(goalFreeLedger), true, "")
-	wantShaped(t, plain, nil, true, "")
-	wantShaped(t, plain, []byte(goalLedger), false, "already carries goals")
-	wantShaped(t, plain, []byte("# Goals\n\n## Nonsense"), false, "malformed")
+	check(plain, []byte(goalFreeLedger), false, nil, true, "", 1)
+	check(plain, nil, false, nil, true, "", 1)
+	check(plain, []byte(goalLedger), false, nil, false, "already carries goals", 0)
+	check(plain, []byte("# Goals\n\n## Nonsense"), false, nil, false, "malformed", 0)
+	check(plain, []byte(goalFreeLedger), false, errors.New("history unavailable"), false, "", 1)
 
 	unborn := t.TempDir()
-	gitOK(t, unborn, "init", "-q")
-	wantShaped(t, unborn, []byte(goalFreeLedger), true, "")
+	check(unborn, []byte(goalFreeLedger), false, nil, true, "", 1)
 
 	committed := t.TempDir()
-	gitOK(t, committed, "init", "-q")
 	writeFile(t, filepath.Join(committed, "README.md"), "hi\n")
-	gitOK(t, committed, "add", ".")
-	gitOK(t, committed, "commit", "-qm", "no ledger")
-	wantShaped(t, committed, []byte(goalFreeLedger), true, "")
+	check(committed, []byte(goalFreeLedger), false, nil, true, "", 1)
 }
 
-// A ledger the live branch tracks was deleted, not never written: the
-// shape refuses it for a non-holder, whatever the bytes say now. The
-// question is asked against the root's own prefix, so a nested checkout
-// is judged by its own plans/goals.md, not the toplevel's.
+// A tracked ledger is refused at the root's own prefix, even when its
+// worktree file has been deleted.
 func TestAdoptionShapedRefusesTrackedLedgerAtRootPrefix(t *testing.T) {
 	t.Parallel()
+	check := func(root string, ledger []byte, tracked, want bool, reasonPart string) {
+		t.Helper()
+		calls := 0
+		shaped, reason, err := adoptionShapedWithProbe(root, ledger, func(actualRoot string) (bool, error) {
+			if actualRoot != root {
+				t.Fatalf("probe root=%q want %q", actualRoot, root)
+			}
+			calls++
+			return tracked, nil
+		})
+		if calls != 1 || err != nil || shaped != want || (!want && !strings.Contains(reason, reasonPart)) {
+			t.Fatalf("shape tuple=(%v, %q, %v), probes=%d; want shaped=%v reason containing %q and one probe", shaped, reason, err, calls, want, reasonPart)
+		}
+	}
 	top := t.TempDir()
-	gitOK(t, top, "init", "-q")
 	writeFile(t, filepath.Join(top, "plans", "goals.md"), goalFreeLedger)
 	writeFile(t, filepath.Join(top, "nested", "README.md"), "nested\n")
-	gitOK(t, top, "add", ".")
-	gitOK(t, top, "commit", "-qm", "toplevel ledger only")
 
-	wantShaped(t, top, []byte(goalFreeLedger), false, "committed history")
-	// The nested root's history has no ledger of its own.
+	check(top, []byte(goalFreeLedger), true, false, "committed history")
+	// The nested root has an independent untracked history fact.
 	nested := filepath.Join(top, "nested")
-	wantShaped(t, nested, []byte(goalFreeLedger), true, "")
+	check(nested, []byte(goalFreeLedger), false, true, "")
 
 	writeFile(t, filepath.Join(nested, "plans", "goals.md"), goalFreeLedger)
-	gitOK(t, top, "add", ".")
-	gitOK(t, top, "commit", "-qm", "nested ledger")
-	wantShaped(t, nested, []byte(goalFreeLedger), false, "committed history")
-	// Deleting the tracked file from the work tree changes nothing: the
-	// guard reads HEAD, not the directory.
+	check(nested, []byte(goalFreeLedger), true, false, "committed history")
+	// Deleting the worktree file leaves the tracked history fact intact.
 	if err := os.Remove(filepath.Join(nested, "plans", "goals.md")); err != nil {
 		t.Fatal(err)
 	}
-	wantShaped(t, nested, nil, false, "committed history")
+	check(nested, nil, true, false, "committed history")
 }
 
 // A probe that cannot run git refuses rather than authorizes.
@@ -119,7 +144,7 @@ func TestAdoptionShapedFailsClosedWithoutGit(t *testing.T) {
 // caller exported: a GIT_DIR pointing at some other repository — set
 // deliberately, or inherited from a git hook or rebase subprocess —
 // must not redirect the guard.
-func TestAdoptionShapedIgnoresGitSteeringEnv(t *testing.T) {
+func TestGitAdapterAdoptionIgnoresGitSteeringEnv(t *testing.T) {
 	t.Parallel()
 	tracked := t.TempDir()
 	gitOK(t, tracked, "init", "-q")

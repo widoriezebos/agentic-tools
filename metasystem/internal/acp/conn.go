@@ -22,6 +22,10 @@ type Conn struct {
 	writer  *Writer
 	nextID  int64
 	lastSeq atomic.Uint64
+	// lastResponseSeq is published before the read loop routes the
+	// next frame, so whoever receives a later frame on any channel
+	// already sees the response that preceded it on the wire.
+	lastResponseSeq atomic.Uint64
 
 	mu      sync.Mutex
 	pending map[string]chan Frame
@@ -113,6 +117,7 @@ func (c *Conn) readLoop() {
 		frame := Frame{Msg: msg, Seq: seq}
 		switch msg.Classify() {
 		case KindResponse:
+			c.lastResponseSeq.Store(seq)
 			c.mu.Lock()
 			ch := c.pending[msg.ID.Key()]
 			delete(c.pending, msg.ID.Key())
@@ -197,6 +202,11 @@ func (c *Conn) Notifications() <-chan Frame { return c.notes }
 // LastSeq reports the newest routed inbound sequence — the fence
 // sample point for the prompt window's lower bound.
 func (c *Conn) LastSeq() uint64 { return c.lastSeq.Load() }
+
+// LastResponseSeq reports the newest inbound response sequence — the
+// prompt window's upper bound once the PromptResponse is on the wire,
+// even before its caller has received it.
+func (c *Conn) LastResponseSeq() uint64 { return c.lastResponseSeq.Load() }
 
 // JournalErr surfaces the first journal failure on either
 // direction — settlement evidence must not silently thin.

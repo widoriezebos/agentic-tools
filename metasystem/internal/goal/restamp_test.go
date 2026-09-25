@@ -6,23 +6,22 @@ import (
 	"testing"
 )
 
-func restampFixture(t *testing.T, id string) (string, VerbRequest) {
+func restampFixture(t *testing.T, id string) (Endpoint, VerbRequest) {
 	t.Helper()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	request := verbReq(root, "01J5X00000000000000000CE10", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	request := verbReqFor(endpoint, "01J5X00000000000000000CE10", "mac-a")
 	if result, err := openClaimForTest(t, request, id, "Keep stop authority current.", OriginMain, "Prove it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim fixture goal: %+v %v", result, err)
 	}
 	request.CallerClass = "MAIN"
 	request.EpochAuthority = EpochAuthorityHolder
-	return root, request
+	return endpoint, request
 }
 
 func TestRestampMovesTheStopCapabilityToTheLeaseEpoch(t *testing.T) {
 	t.Parallel()
-	root, request := restampFixture(t, "epoch-move")
-	before, _ := acceptedTree(t, root, request.Now)
+	endpoint, request := restampFixture(t, "epoch-move")
+	before, _ := acceptedTreeForEndpoint(t, endpoint)
 	beforeFile := before.Live["epoch-move"]
 	claim := *beforeFile.Claimed
 	if beforeFile.StopCapability == nil || beforeFile.StopCapability.ClaimEpoch != 1 {
@@ -35,7 +34,7 @@ func TestRestampMovesTheStopCapabilityToTheLeaseEpoch(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("restamp: %+v %v", result, err)
 	}
-	after, _ := acceptedTree(t, root, request.Now)
+	after, _ := acceptedTreeForEndpoint(t, endpoint)
 	afterFile := after.Live["epoch-move"]
 	if afterFile.StopCapability == nil || afterFile.StopCapability.ClaimEpoch != 5 {
 		t.Fatalf("capability epoch = %+v, want 5", afterFile.StopCapability)
@@ -43,10 +42,10 @@ func TestRestampMovesTheStopCapabilityToTheLeaseEpoch(t *testing.T) {
 	if !reflect.DeepEqual(*afterFile.Claimed, claim) {
 		t.Fatalf("restamp changed the claim record:\nbefore=%+v\nafter=%+v", claim, afterFile.Claimed)
 	}
-	if err := ValidateCommit(root, result.Tip); err != nil {
+	if err := validateCommitFor(endpoint, result.Tip); err != nil {
 		t.Fatalf("restamped record does not validate: %v", err)
 	}
-	loaded, err := loadTree(root, result.Tip)
+	loaded, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil || loaded.Live["epoch-move"].StopCapability.ClaimEpoch != 5 {
 		t.Fatalf("today's stored record did not load after restamp: %+v %v", loaded, err)
 	}
@@ -97,9 +96,8 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 
 	t.Run("unclaimed goal", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
-		seedLedger(t, root)
-		request := verbReq(root, "01J5X00000000000000000CV10", "mac-a")
+		endpoint, _ := fakeGoalEndpoint(t)
+		request := verbReqFor(endpoint, "01J5X00000000000000000CV10", "mac-a")
 		if result, err := Open(request, "unclaimed", "Wait before claiming.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open fixture goal: %+v %v", result, err)
 		}
@@ -129,19 +127,19 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 
 func TestRestampIsANoOpWhenTheEpochsAgree(t *testing.T) {
 	t.Parallel()
-	root, request := restampFixture(t, "already-current")
-	before := acceptedTip(t, root)
+	endpoint, request := restampFixture(t, "already-current")
+	before := acceptedTipForEndpoint(t, endpoint)
 	request.Ulid = "01J5X00000000000000000CN10"
 	opid := request.opid()
 	result, err := Restamp(request, "already-current")
 	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "already carries lease epoch 1") {
 		t.Fatalf("equal epoch result: %+v %v", result, err)
 	}
-	after := acceptedTip(t, root)
+	after := acceptedTipForEndpoint(t, endpoint)
 	if after != before || result.Tip != before || result.Commit != "" {
 		t.Fatalf("equal epoch changed the ledger: before=%s after=%s result=%+v", before, after, result)
 	}
-	entry, err := ReadEntry(root, opid)
+	entry, err := ReadEntry(endpoint.Root, opid)
 	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeAbandoned {
 		t.Fatalf("equal epoch journal entry: %+v %v", entry, err)
 	}

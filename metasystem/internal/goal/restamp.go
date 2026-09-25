@@ -14,7 +14,7 @@ func restampRequest(r VerbRequest, id string) PublishRequest {
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "restamp", Targets: []string{id}, Args: args}, Message: "goal restamp " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -53,6 +53,6 @@ func restampRequest(r VerbRequest, id string) PublishRequest {
 			f.History[len(f.History)-1].Reason = fmt.Sprintf("stop capability claimEpoch %d->%d", current, rebindEpoch)
 			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }

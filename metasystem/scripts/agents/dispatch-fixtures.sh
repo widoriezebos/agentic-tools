@@ -315,7 +315,7 @@ trap 'cleanup "$?"' EXIT
 setup_brain_dispatch_bed() {
   brain_origin=$tmp/brain-origin.git
   brain_repo=$tmp/brain-repo
-  git init -q --bare "$brain_origin"
+  git init -q -b main --bare "$brain_origin"
   git init -q -b main "$brain_repo"
   git -C "$brain_repo" config user.name fixture
   git -C "$brain_repo" config user.email fixture@example.invalid
@@ -2259,7 +2259,8 @@ set -e
 [[ ! -f "$agent_repo/artifacts/agents/jobs/sg-refused.json" ]] \
   || { echo "a refused --serving-goal dispatch left a job record" >&2; exit 1; }
 METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" \
-	--id fixture-serving --origin human --intent "Serve the fixture goal" --next "Dispatch with the projection." \
+	--id fixture-serving --origin human --by Wido --fixture-human-authority \
+	--intent "Serve the fixture goal" --next "Dispatch with the projection." \
 	--risk severity=3,novelty=1,exposure=1,accumulation=1 \
 	--basis "This established, isolated fixture has low novelty, exposure, and accumulation, but a misbound goal could give a delegated critic the wrong authority context." >/dev/null
 "$engine" goal approve --root "$agent_repo" --id fixture-serving --by Wido --lineage agent-fixture \
@@ -3774,7 +3775,7 @@ design_round_two_fixture_obligations() {
   printf '# Design round two fixture\n' >"$agent_repo/$page"
   git -C "$agent_repo" add -- "$page"
   git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'add design round two fixture'
-  METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" --id "$goal" --origin human \
+  METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" --id "$goal" --origin human --by Wido --fixture-human-authority \
     --intent "Prove the design round-two close table" --next "Run the two-round critic chain." \
     --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "The fixture exercises the enforced design-critique limit and obligation projection." >/dev/null
   "$engine" goal approve --root "$agent_repo" --id "$goal" --by Wido --lineage agent-fixture \

@@ -36,6 +36,11 @@ while (( $# > 0 )); do
   esac
 done
 
+build_workers=${METASYSTEM_TEST_WORKERS:-1}
+[[ "$build_workers" =~ ^[1-9][0-9]*$ ]] \
+  || { echo "go-build: METASYSTEM_TEST_WORKERS must be a positive integer" >&2; exit 1; }
+export GOMAXPROCS="$build_workers"
+
 command -v go >/dev/null 2>&1 \
   || { echo "go-build: no go toolchain on PATH; the engine cannot be built" >&2; exit 1; }
 
@@ -65,7 +70,7 @@ else
     {
       git -C "$root" diff --name-only --no-renames -z HEAD --
       git -C "$root" ls-files --others --exclude-standard --full-name -z
-    } | go run ./cmd/metasystem behavior-surface select --projection ENGINE --prefix "$engine_prefix" --nul >"$engine_changes" || {
+    } | go run -p="$build_workers" ./cmd/metasystem behavior-surface select --projection ENGINE --prefix "$engine_prefix" --nul >"$engine_changes" || {
       engine_change_rc=$?
       rm -f "$engine_changes"
       echo "go-build: cannot classify the working tree against the compiled ENGINE policy" >&2
@@ -87,7 +92,7 @@ if [[ -n "$proof_out" ]]; then
   if (( proof_trimpath == 1 )); then
     proof_flags+=(-trimpath)
   fi
-  CGO_ENABLED=0 go build "${proof_flags[@]}" \
+  CGO_ENABLED=0 go build -p="$build_workers" "${proof_flags[@]}" \
     -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=$commit" \
     -o "$proof_out" ./cmd/metasystem \
     || { echo "go-build: build failed" >&2; exit 1; }
@@ -96,7 +101,7 @@ if [[ -n "$proof_out" ]]; then
 fi
 staging="bin/.metasystem.build.$$"
 trap 'rm -f "$staging"' EXIT
-CGO_ENABLED=0 go build -buildvcs=false \
+CGO_ENABLED=0 go build -p="$build_workers" -buildvcs=false \
   -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=$commit" \
   -o "$staging" ./cmd/metasystem \
   || { echo "go-build: build failed" >&2; exit 1; }

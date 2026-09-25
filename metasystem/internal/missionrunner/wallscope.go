@@ -106,7 +106,7 @@ func (e *Engine) captureWallPostureStable(expectedTree string, declared map[stri
 // head, never the symbolic name, so no gap opens between judging and
 // projecting.
 func (e *Engine) captureWallPosture(expectedTree string, declared map[string]bool) (*wallCapture, error) {
-	workspace := gittree.Workspace{Dir: e.Root}
+	workspace := e.wallWorkspace(e.Root)
 	cap := &wallCapture{CapturedAt: nowISO()}
 	steering, err := workspace.HistorySteeringFiles()
 	if err != nil {
@@ -179,7 +179,7 @@ func (e *Engine) captureWallPosture(expectedTree string, declared map[string]boo
 		if err != nil {
 			return nil, captureFailure("wall capture cannot resolve the toplevel", err)
 		}
-		topWorkspace := gittree.Workspace{Dir: top}
+		topWorkspace := e.wallWorkspace(top)
 		if !cap.Unborn {
 			topTree, err := topWorkspace.Snapshot(cap.Head)
 			if err != nil {
@@ -320,7 +320,8 @@ type scopeAuth struct {
 // every other path equals the pre-tree. Membership is checked by
 // DECOMPOSITION, never enumeration.
 type wallAccountant struct {
-	workspace gittree.Workspace
+	workspace wallWorkspace
+	engine    *Engine
 	state     map[string]any
 	preTree   string
 	named     map[string]bool
@@ -343,14 +344,14 @@ type wallAccountant struct {
 // consumed authorizations with their reviewed entries, and the declared
 // content-free paths.
 func (e *Engine) newWallAccountant(preTree string, state map[string]any, auths []scopeAuth, declared map[string]bool) (*wallAccountant, error) {
-	workspace := gittree.Workspace{Dir: e.Root}
+	workspace := e.wallWorkspace(e.Root)
 	prefix, err := workspace.Prefix()
 	if err != nil {
 		return nil, failf(3, "wall accounting cannot resolve the workspace prefix: %v", err)
 	}
 	anchoredLedger := ""
 	ledgerPath := filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")
-	if oid, aerr := mission.AnchoredLedgerBlobOID(e.Root, state, ledgerPath); aerr == nil {
+	if oid, aerr := e.wallReads().LedgerBlobOID(e.Root, state, ledgerPath); aerr == nil {
 		anchoredLedger = oid
 	} else if !errors.Is(aerr, mission.ErrNoAnchor) {
 		// Any other anchor failure is the runner's own — never a silent
@@ -359,6 +360,7 @@ func (e *Engine) newWallAccountant(preTree string, state map[string]any, auths [
 	}
 	acct := &wallAccountant{
 		workspace:      workspace,
+		engine:         e,
 		state:          state,
 		preTree:        preTree,
 		named:          map[string]bool{preTree: true},
@@ -530,7 +532,7 @@ func (a *wallAccountant) accountedOrReviewedTree(tree string) (string, error) {
 // commit or tag judges by its workspace tree; a tree judges directly
 // (AUTO_MERGE); a blob is never accounted.
 func (a *wallAccountant) accountedOID(e *Engine, oid string) (string, error) {
-	stdout, stderr, code := gitCaptured(e.Root, "cat-file", "-t", oid)
+	stdout, stderr, code := e.wallReads().Git(e.Root, "cat-file", "-t", oid)
 	if code == -1 {
 		// Could-not-run is the runner's own failure, never a repository
 		// verdict.
@@ -546,7 +548,7 @@ func (a *wallAccountant) accountedOID(e *Engine, oid string) (string, error) {
 		}
 		return a.retainedToplevelScope(e, oid+"^{tree}")
 	case "tag":
-		peeled, stderr, code := gitCaptured(e.Root, "rev-parse", oid+"^{commit}")
+		peeled, stderr, code := e.wallReads().Git(e.Root, "rev-parse", oid+"^{commit}")
 		if code == -1 {
 			return "", failf(3, "wall accounting could not peel retained tag %s: %s", oid, strings.TrimSpace(stderr))
 		}
@@ -560,7 +562,7 @@ func (a *wallAccountant) accountedOID(e *Engine, oid string) (string, error) {
 	case "tree":
 		tree := oid
 		if a.prefix != "" {
-			sub, _, subCode := gitCaptured(e.Root, "rev-parse", oid+":"+strings.TrimSuffix(a.prefix, "/"))
+			sub, _, subCode := e.wallReads().Git(e.Root, "rev-parse", oid+":"+strings.TrimSuffix(a.prefix, "/"))
 			if subCode == -1 {
 				// A failed probe is NOT "no subtree": continuing on the
 				// toplevel tree would judge the wrong scope.
@@ -605,8 +607,8 @@ func (a *wallAccountant) retainedToplevelScope(e *Engine, treeish string) (strin
 	if err != nil {
 		return "", failf(3, "wall inspection cannot resolve the toplevel: %v", err)
 	}
-	topWorkspace := gittree.Workspace{Dir: top}
-	resolved, _, code := gitCaptured(e.Root, "rev-parse", treeish)
+	topWorkspace := e.wallWorkspace(top)
+	resolved, _, code := e.wallReads().Git(e.Root, "rev-parse", treeish)
 	if code == -1 {
 		return "", failf(3, "wall accounting could not resolve retained object tree %s", treeish)
 	}
@@ -650,7 +652,7 @@ func (a *wallAccountant) retainedToplevelScope(e *Engine, treeish string) (strin
 // committed origin and the retained object — the only paths whose
 // direction (added/modified vs removed) the scope check need resolve.
 func (a *wallAccountant) retainedSiblingProbe(top, origin, object string) ([]string, error) {
-	topWorkspace := gittree.Workspace{Dir: top}
+	topWorkspace := a.engine.wallWorkspace(top)
 	changed, err := topWorkspace.ChangedPaths(origin, object)
 	if err != nil {
 		// A diff that cannot run — an unreadable or missing sibling
@@ -696,7 +698,7 @@ func (e *Engine) firstParentSegment(origin, head string) ([]string, string) {
 	if origin == head {
 		return nil, ""
 	}
-	stdout, stderr, code := gitCaptured(e.Root, "rev-list", "--first-parent",
+	stdout, stderr, code := e.wallReads().Git(e.Root, "rev-list", "--first-parent",
 		head, "--not", origin)
 	if code == -1 {
 		// The command could not run at all: the runner's failure, never a
@@ -712,7 +714,7 @@ func (e *Engine) firstParentSegment(origin, head string) ([]string, string) {
 		return nil, fmt.Sprintf("committed HEAD retreated or rewrote history (open %s, now %s)", origin, head)
 	}
 	oldest := lines[len(lines)-1]
-	parent, perr, pcode := gitCaptured(e.Root, "rev-parse", "--verify", "--quiet", oldest+"^1")
+	parent, perr, pcode := e.wallReads().Git(e.Root, "rev-parse", "--verify", "--quiet", oldest+"^1")
 	if pcode == -1 {
 		return nil, couldNotRunSentinel + firstDetail(perr, parent)
 	}
@@ -744,13 +746,13 @@ func (e *Engine) judgeHeadChain(origin *scopeOrigin, cap *wallCapture, acct *wal
 	if violation != "" {
 		return violation, nil
 	}
-	var top gittree.Workspace
+	var top wallWorkspace
 	if cap.Nested {
 		topDir, err := acct.workspace.TopLevel()
 		if err != nil {
 			return "", failf(3, "wall inspection cannot resolve the toplevel: %v", err)
 		}
-		top = gittree.Workspace{Dir: topDir}
+		top = e.wallWorkspace(topDir)
 	}
 	tipAccounted := ""
 	if len(chain) > 0 {
@@ -822,7 +824,7 @@ func (e *Engine) judgeHeadChain(origin *scopeOrigin, cap *wallCapture, acct *wal
 				// first-parent line must differ only at workspace-prefixed
 				// paths — a sibling payload buried in an interior side
 				// commit has empty immediate deltas everywhere else.
-				baseOut, baseErr, baseCode := gitCaptured(e.Root, "merge-base", parents[0], side)
+				baseOut, baseErr, baseCode := e.wallReads().Git(e.Root, "merge-base", parents[0], side)
 				if baseCode == -1 {
 					return "", failf(3, "wall inspection cannot compute a merge base: %s", firstDetail(baseErr, baseOut))
 				}
@@ -856,7 +858,7 @@ func (c *wallCapture) topPrefix(acct *wallAccountant) string {
 
 // commitParents lists a commit's parents in order.
 func (e *Engine) commitParents(oid string) ([]string, error) {
-	stdout, stderr, code := gitCaptured(e.Root, "rev-list", "--parents", "-n", "1", oid)
+	stdout, stderr, code := e.wallReads().Git(e.Root, "rev-list", "--parents", "-n", "1", oid)
 	if code == -1 {
 		return nil, failf(3, "wall inspection cannot read the parents of %s: %s", oid, firstDetail(stderr, stdout))
 	}
@@ -924,7 +926,7 @@ func (e *Engine) judgeMissionNamespace(missionRefs map[string]string, openAnchor
 			// tree has no reachability to protect); any other nonzero — a
 			// could-not-run failure, the runner's error, never a silent
 			// skip that could admit a live anchor's deletion.
-			_, stderr, code := gitCaptured(e.Root, "cat-file", "-e", tree)
+			_, stderr, code := e.wallReads().Git(e.Root, "cat-file", "-e", tree)
 			switch code {
 			case 0:
 				return fmt.Sprintf("runner tree anchor %s%s was deleted", namespace, tree), nil
@@ -951,7 +953,7 @@ func (e *Engine) judgeMissionNamespace(missionRefs map[string]string, openAnchor
 				// byte equality would refuse the runner's own lawful
 				// interval; the anchored truth must still be a prefix with
 				// every cross-check intact.
-				if err := mission.AuthenticateLiveLedger(e.Root, state, filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")); err != nil {
+				if err := e.wallReads().AuthenticateLedger(e.Root, state, filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")); err != nil {
 					// Could-not-run stays the runner's own;
 					// only a ran-and-answered disagreement is a violation.
 					var runFailure *gittree.RunFailure
@@ -970,7 +972,7 @@ func (e *Engine) judgeMissionNamespace(missionRefs map[string]string, openAnchor
 			}
 			// A self-named ref must BE a tree anchor: a commit parked
 			// under its own id would retain history the fence never sees.
-			stdout, stderr, code := gitCaptured(e.Root, "cat-file", "-t", oid)
+			stdout, stderr, code := e.wallReads().Git(e.Root, "cat-file", "-t", oid)
 			if code == -1 {
 				return "", failf(3, "mission namespace probe could not run for %s: %s", name, firstDetail(stderr, stdout))
 			}
@@ -1211,7 +1213,7 @@ func (e *Engine) judgeMeasureWorktree(record gittree.WorktreeRecord, pinned meas
 	if capHead == "" {
 		return fmt.Sprintf("measurement worktree %s cannot be judged against an unborn HEAD", record.Path), nil
 	}
-	if _, stderr, code := gitCaptured(e.Root, "merge-base", "--is-ancestor", pinned.sha, capHead); code != 0 {
+	if _, stderr, code := e.wallReads().Git(e.Root, "merge-base", "--is-ancestor", pinned.sha, capHead); code != 0 {
 		if code == -1 {
 			return "", failf(3, "wall inspection cannot probe a measurement pin's ancestry: %s", strings.TrimSpace(stderr))
 		}
@@ -1232,8 +1234,8 @@ func (e *Engine) judgeMeasureWorktree(record gittree.WorktreeRecord, pinned meas
 	if !record.PostureReadable {
 		return fmt.Sprintf("measurement worktree %s posture is unreadable; nothing can vouch for its carriers", record.Path), nil
 	}
-	workspace := gittree.Workspace{Dir: e.Root}
-	pinTree, pinErr, code := gitCaptured(e.Root, "rev-parse", pinned.sha+"^{tree}")
+	workspace := e.wallWorkspace(e.Root)
+	pinTree, pinErr, code := e.wallReads().Git(e.Root, "rev-parse", pinned.sha+"^{tree}")
 	if code == -1 {
 		return "", failf(3, "wall inspection cannot read a measurement pin: %s", strings.TrimSpace(pinErr))
 	}
@@ -1253,14 +1255,14 @@ func (e *Engine) judgeMeasureWorktree(record gittree.WorktreeRecord, pinned meas
 	// The gate ref itself must live in the judged history: a registry
 	// entry naming a fabricated instrument commit could otherwise bound
 	// the staged delta with bytes the wall never saw.
-	gateCommit, gateErr, gateCode := gitCaptured(e.Root, "rev-parse", "--verify", "--quiet", pinned.gateRef+"^{commit}")
+	gateCommit, gateErr, gateCode := e.wallReads().Git(e.Root, "rev-parse", "--verify", "--quiet", pinned.gateRef+"^{commit}")
 	if gateCode == -1 {
 		return "", failf(3, "wall inspection cannot resolve a measurement gate ref: %s", strings.TrimSpace(gateErr))
 	}
 	if gateCode != 0 {
 		return fmt.Sprintf("measurement worktree %s records an unresolvable gate ref: %s", record.Path, strings.TrimSpace(gateErr)), nil
 	}
-	if _, ancestryErr, code := gitCaptured(e.Root, "merge-base", "--is-ancestor", strings.TrimSpace(gateCommit), capHead); code != 0 {
+	if _, ancestryErr, code := e.wallReads().Git(e.Root, "merge-base", "--is-ancestor", strings.TrimSpace(gateCommit), capHead); code != 0 {
 		if code == -1 {
 			return "", failf(3, "wall inspection cannot probe a gate ref's ancestry: %s", strings.TrimSpace(ancestryErr))
 		}
@@ -1547,7 +1549,7 @@ func (e *Engine) judgeStaged(origin *scopeOrigin, cap *wallCapture, acct *wallAc
 		if err != nil {
 			return "", failf(3, "wall inspection cannot resolve the toplevel: %v", err)
 		}
-		topWorkspace := gittree.Workspace{Dir: top}
+		topWorkspace := e.wallWorkspace(top)
 		changed, err := topWorkspace.ChangedPaths(origin.TopStaged.Tree, cap.TopStaged.Tree)
 		if err != nil {
 			return "", failf(3, "wall inspection cannot diff the toplevel staged posture: %v", err)
@@ -1601,7 +1603,7 @@ func (e *Engine) judgeToplevelFence(origin *scopeOrigin, cap *wallCapture, acct 
 	if err != nil {
 		return "", failf(3, "wall inspection cannot resolve the toplevel: %v", err)
 	}
-	topWorkspace := gittree.Workspace{Dir: top}
+	topWorkspace := e.wallWorkspace(top)
 	changed, err := topWorkspace.ChangedPaths(origin.TopTree, cap.TopTree)
 	if err != nil {
 		return "", failf(3, "wall inspection cannot diff the toplevel: %v", err)
@@ -1630,7 +1632,7 @@ func (e *Engine) judgeLedgerCarriers(cap *wallCapture, state map[string]any) (st
 		return "", nil
 	}
 	ledgerPath := filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")
-	anchoredOID, err := mission.AnchoredLedgerBlobOID(e.Root, state, ledgerPath)
+	anchoredOID, err := e.wallReads().LedgerBlobOID(e.Root, state, ledgerPath)
 	if err != nil {
 		if errors.Is(err, mission.ErrNoAnchor) {
 			return "", nil // a mission that has never anchored (fresh beds)
@@ -1639,7 +1641,7 @@ func (e *Engine) judgeLedgerCarriers(cap *wallCapture, state map[string]any) (st
 		// pass that disables the raw HEAD/index carrier comparison.
 		return "", failf(3, "wall inspection cannot resolve the anchored ledger blob: %v", err)
 	}
-	workspace := gittree.Workspace{Dir: e.Root}
+	workspace := e.wallWorkspace(e.Root)
 	ledgerRel := missionLedgerRel(e.Mission)
 	headTree, err := workspace.TreeOf(cap.Head)
 	if err != nil {
@@ -1672,7 +1674,7 @@ func (e *Engine) judgeLedgerCarriers(cap *wallCapture, state map[string]any) (st
 // path carries anything but the anchored ledger blob (or nothing).
 func (e *Engine) judgeCommitLedgerCarrier(commit string, state map[string]any) (string, error) {
 	ledgerPath := filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")
-	anchoredOID, err := mission.AnchoredLedgerBlobOID(e.Root, state, ledgerPath)
+	anchoredOID, err := e.wallReads().LedgerBlobOID(e.Root, state, ledgerPath)
 	if err != nil {
 		if errors.Is(err, mission.ErrNoAnchor) {
 			return "", nil // a mission that has never anchored
@@ -1681,7 +1683,7 @@ func (e *Engine) judgeCommitLedgerCarrier(commit string, state map[string]any) (
 		// pass that disables the per-commit carrier check.
 		return "", failf(3, "wall inspection cannot resolve the anchored ledger blob: %v", err)
 	}
-	workspace := gittree.Workspace{Dir: e.Root}
+	workspace := e.wallWorkspace(e.Root)
 	tree, err := workspace.TreeOf(commit)
 	if err != nil {
 		// Ran-and-answered unreadable history — a first-parent commit
@@ -1725,7 +1727,7 @@ func (e *Engine) judgeScope(origin *scopeOrigin, cap *wallCapture, acct *wallAcc
 	// for payload. Unborn or non-nested captures leave it empty (the
 	// scope check is then vacuous).
 	if cap.Nested && !cap.Unborn {
-		committedTop, stderr, code := gitCaptured(e.Root, "rev-parse", cap.Head+"^{tree}")
+		committedTop, stderr, code := e.wallReads().Git(e.Root, "rev-parse", cap.Head+"^{tree}")
 		if code != 0 {
 			// A probe that cannot resolve the committed toplevel tree is
 			// the runner's failure — it must never silently vacate the

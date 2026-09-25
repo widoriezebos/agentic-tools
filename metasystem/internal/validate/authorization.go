@@ -21,7 +21,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
@@ -117,7 +116,7 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	// The trees this record names stay reachable for consumption-time
 	// verification: the runner's staleness check dereferences both long
 	// after the delegate's worktree is gone.
-	repoWorkspace := gittree.Workspace{Dir: r.root}
+	repoWorkspace := r.workspaceAt(r.root)
 	for _, tree := range []string{baseTree, finalTree} {
 		if err := repoWorkspace.Anchor(missionName, tree); err != nil {
 			return fmt.Errorf("cannot anchor the authorization's %s: %v", tree, err)

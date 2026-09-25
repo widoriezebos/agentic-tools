@@ -975,13 +975,14 @@ func TestUnconsumedDischargeJSONCannotResetTheBudgetProjection(t *testing.T) {
 
 func TestPublishedSetupRetainsAttemptAndReservedMinutes(t *testing.T) {
 	root := budgetProjectionRoot(t)
+	reads := acceptedAbsentGoalReads(t, root, 1)
 	stage := t.TempDir()
 	capFile := writeJSON(t, filepath.Join(stage, "cap.json"), map[string]any{
 		"capMin": 30, "capDeadline": "2026-08-28T10:00:00Z",
 		"source": map[string]any{"rule": "fixture", "origin": "fixture", "truncatedBy": nil},
 	})
 	setup := filepath.Join(stage, "setup.json")
-	if err := BuildSetup(root, setup, "reserved", "implementer", "", "main-1", "5", "bounded", 3, 3, capFile, "", ""); err != nil {
+	if err := buildSetupWithGoalReads(root, setup, "reserved", "implementer", "", "main-1", "5", "bounded", 3, 3, capFile, "", "", reads); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecordCreate(root, "reserved", setup); err != nil {

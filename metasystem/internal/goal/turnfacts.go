@@ -247,6 +247,9 @@ func workActions(root string, work TurnWorkFacts, options TurnVerdictOptions) []
 	selected := *work.Selected
 	machine := options.SeatActor.Machine
 	if machine == "" {
+		machine = options.workMachine
+	}
+	if machine == "" {
 		machine, _ = ResolveMachine(root)
 	}
 	if work.Selection == "held" {

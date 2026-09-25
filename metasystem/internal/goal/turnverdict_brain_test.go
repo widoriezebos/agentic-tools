@@ -20,8 +20,10 @@ func TestBrainTurnVerdictFollowsVerdictAndNeverEnforcesIdleBacklog(t *testing.T)
 	remote := &GoalFile{Id: "remote", State: StateClaimed, Intent: "Remote work", Origin: OriginMain,
 		NextStep: "Node carries it.", OpenedAt: "2026-09-07T00:03:00Z", Revision: 2,
 		Claimed: &ClaimRecord{Machine: "bed-m2", Lineage: "node", At: "2026-09-07T00:04:00Z"}}
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{"approved": approved, "held": held, "remote": remote})
-	identity := ExistingLedgerIdentity(root)
+	fixture, _, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{"approved": approved, "held": held, "remote": remote})
+	store := *fixture
+	root := store.Root
+	identity := existingLedgerIdentityFor(endpoint)
 	stamp := "2026-09-07T00:00:00Z"
 	record := brain.Record{Schema: 1, Ledger: identity, Machine: "bed-m1", DeclaredBy: "Wido", DeclaredAt: stamp}
 	data, err := json.Marshal(record)
@@ -36,7 +38,7 @@ func TestBrainTurnVerdictFollowsVerdictAndNeverEnforcesIdleBacklog(t *testing.T)
 	}
 
 	now := time.Date(2026, 9, 7, 1, 0, 0, 0, time.UTC)
-	store := &Store{Root: root, Now: func() time.Time { return now }}
+	store.Now = func() time.Time { return now }
 	store.PrepareIdleContinuation = func(IdleEscalationEvent) (string, error) {
 		t.Fatal("brain verdict prepared an idle continuation")
 		return "", nil
@@ -81,14 +83,16 @@ func TestBrainTurnVerdictFollowsVerdictAndNeverEnforcesIdleBacklog(t *testing.T)
 
 func TestCorruptBrainTurnVerdictKeepsItsRemedyAfterTheBrainSummary(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{})
+	fixture, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{})
+	store := *fixture
+	root := store.Root
 	if err := os.MkdirAll(filepath.Dir(brain.Path(root)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(brain.Path(root), []byte("{broken\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "corrupt-brain", "", "")
+	verdict, err := store.TurnVerdict(ScanResult{}, "corrupt-brain", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,5 +123,22 @@ func TestUndeclaredCheckoutDropsOnlyBrainDraftScannerFailure(t *testing.T) {
 	}
 	if len(got.Unreadable) != 1 || got.Unreadable[0] != "plan scan failed" {
 		t.Fatalf("brain-only scan failure changed an undeclared checkout's all-clear: %+v", got.Unreadable)
+	}
+	fixture, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{})
+	verdict, err := fixture.TurnVerdict(ScanResult{
+		Questions:  []Item{{Kind: "question", Id: "ask-one"}},
+		Drafts:     []Item{{Kind: "draft", Id: "draft-one"}},
+		Unreadable: []string{"draft scan: fixture projection failed", "question scan: malformed fixture question"},
+	}, "undeclared-brain-only", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.ShouldBlock || strings.Contains(verdict.Display, "UNCERTAIN") {
+		t.Fatalf("brain-only scanner failures changed the undeclared turn verdict: %+v", verdict)
+	}
+	if !strings.Contains(verdict.Display, "no goal is claimed here and the queue is empty") ||
+		strings.Contains(verdict.Display, "draft scan: fixture projection failed") ||
+		strings.Contains(verdict.Display, "question scan: malformed fixture question") {
+		t.Fatalf("brain-only scanner failures leaked into the undeclared all-clear: %q", verdict.Display)
 	}
 }

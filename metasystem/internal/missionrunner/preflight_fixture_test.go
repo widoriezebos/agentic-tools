@@ -1,13 +1,17 @@
 package missionrunner
 
 import (
+	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -123,12 +127,6 @@ func spawnTaggedHold(t *testing.T, tag string) (int, int64) {
 			cmd.Process.Pid, state, exact.ArgvKnown, exact.Argv, err)
 	}
 	return cmd.Process.Pid, exact.StartedAt.Unix()
-}
-
-// buildPreflightRoot assembles the whole launch-gate world and returns the
-// engine pointed at it.
-func buildPreflightRoot(t *testing.T) *Engine {
-	return buildPreflightRootWithStream(t, "")
 }
 
 // buildPreflightRootWithStream appends a directive to the contract's
@@ -326,8 +324,8 @@ func writeFreshSupervision(t *testing.T, engine *Engine) {
 // approval, origin, the gate command, supervision facts, the lease probe,
 // and the pin landing the approved bytes into the fences.
 func TestArmAndPreflightFullPass(t *testing.T) {
-	engine := buildPreflightRoot(t)
-	commitBedBaseline(t, engine.Root)
+	engine, source := newGitFreePreflightBed(t, "")
+	t.Cleanup(source.done)
 	if err := engine.armAndPreflight("start"); err != nil {
 		t.Fatalf("the full launch gate refused: %v", err)
 	}
@@ -338,6 +336,13 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 	if !strings.Contains(string(pinned), "Approval: name=Fixture Human") {
 		t.Fatal("the pinned bytes are not the signed contract")
 	}
+	signed, err := os.ReadFile(engine.contractPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(pinned) != string(signed) {
+		t.Fatal("the pin differs from the approved signed bytes")
+	}
 	fences, err := readJSONDoc(engine.fencesPath())
 	if err != nil {
 		t.Fatalf("fences unreadable: %v", err)
@@ -346,9 +351,11 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 	if len(sha) != 64 {
 		t.Fatalf("fences carry no contract sha: %v", fences["approvedContractSha256"])
 	}
+	if sha != fmt.Sprintf("%x", sha256.Sum256(pinned)) {
+		t.Fatalf("fences sha does not match the pinned signed bytes: %q", sha)
+	}
 	// Until the mission is BORN, a second start may re-pin (the
 	// stillborn rule); once state.json exists, it steers to resume.
-	commitBedBaseline(t, engine.Root)
 	if err := engine.armAndPreflight("start"); err != nil {
 		t.Fatalf("a stillborn pin must be re-pinnable: %v", err)
 	}
@@ -360,53 +367,199 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 	}
 }
 
-// The wall's repository preconditions: mode-drift visibility
-// pinned, and a start over unsealed dirt refuses before any turn —
-// while the human's sealed baseline admits exactly its tree.
+// preflightPolicyBed keeps the policy's repository answers tied to files in
+// this bed. The committed entries are captured before each test's physical
+// change; the snapshot entries are read from the changed files at admission.
+type preflightPolicyBed struct {
+	t         *testing.T
+	engine    *Engine
+	source    *hostCycleSource
+	committed map[string]gittree.Entry
+	reads     *strictWallReads
+	workspace *strictBaselineWorkspace
+}
+
+func newPreflightPolicyBed(t *testing.T) *preflightPolicyBed {
+	t.Helper()
+	e, source := newGitFreePreflightBed(t, "")
+	b := &preflightPolicyBed{t: t, engine: e, source: source,
+		reads: &strictWallReads{t: t}, workspace: &strictBaselineWorkspace{t: t}}
+	b.committed = b.physicalEntries()
+	e.wallReadFacts = b.reads
+	e.wallWorkspaceFactory = func(root string) wallWorkspace {
+		if root != e.Root {
+			t.Fatalf("workspace root %q, want %q", root, e.Root)
+		}
+		return b.workspace
+	}
+	t.Cleanup(source.done)
+	return b
+}
+
+func (b *preflightPolicyBed) physicalEntries() map[string]gittree.Entry {
+	b.t.Helper()
+	paths := make([]string, 0, len(b.source.files)+2)
+	for path := range b.source.files {
+		paths = append(paths, path)
+	}
+	paths = append(paths, filepath.ToSlash(filepath.Join("plans", "mission-"+b.engine.Mission+".contract.md")))
+	truthDir := filepath.Join(b.engine.Root, "truth")
+	truth, err := os.ReadDir(truthDir)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	for _, file := range truth {
+		path := "truth/" + file.Name()
+		if _, known := b.source.files[path]; !known {
+			paths = append(paths, path)
+		}
+	}
+	entries := make(map[string]gittree.Entry, len(paths))
+	for _, path := range paths {
+		abs := filepath.Join(b.engine.Root, filepath.FromSlash(path))
+		info, err := os.Lstat(abs)
+		if err != nil {
+			b.t.Fatal(err)
+		}
+		var data []byte
+		mode := "100644"
+		if info.Mode()&os.ModeSymlink != 0 {
+			mode = "120000"
+			target, err := os.Readlink(abs)
+			if err != nil {
+				b.t.Fatal(err)
+			}
+			data = []byte(target)
+		} else if info.Mode().IsRegular() {
+			if info.Mode()&0o111 != 0 {
+				mode = "100755"
+			}
+			data, err = os.ReadFile(abs)
+			if err != nil {
+				b.t.Fatal(err)
+			}
+		} else {
+			b.t.Fatalf("unexpected snapshot object %s: %s", path, info.Mode())
+		}
+		entries[path] = gittree.Entry{Mode: mode, OID: birthBlobOID(data)}
+	}
+	return entries
+}
+
+// The identifier describes the observed path, mode, and blob facts. It is a
+// fixture tree identity, so distinct worktree, HEAD, and staged projections
+// cannot collapse into a single canned answer.
+func preflightFactTree(entries map[string]gittree.Entry, exclude ...string) string {
+	paths := make([]string, 0, len(entries))
+	for path := range entries {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	h := sha1.New()
+	for _, path := range paths {
+		if path == excludeAt(exclude, 0) || path == excludeAt(exclude, 1) {
+			continue
+		}
+		entry := entries[path]
+		fmt.Fprintf(h, "%s\x00%s\x00%s\x00", path, entry.Mode, entry.OID)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func excludeAt(paths []string, index int) string {
+	if index < len(paths) {
+		return paths[index]
+	}
+	return ""
+}
+
+func (b *preflightPolicyBed) pin(stdout string, code int) {
+	b.reads.git = append(b.reads.git, wallGitReply{root: b.engine.Root,
+		args:   []string{"config", "--local", "--type=bool", "--get", "core.fileMode"},
+		stdout: stdout, code: code})
+}
+
+func (b *preflightPolicyBed) admission(approved []byte, throughIdentity bool) string {
+	b.t.Helper()
+	live := b.physicalEntries()
+	contractPath := filepath.ToSlash(filepath.Join("plans", "mission-"+b.engine.Mission+".contract.md"))
+	ledger := missionLedgerRel(b.engine.Mission)
+	exclude := []string{ledger, contractPath}
+	raw := preflightFactTree(live)
+	head := preflightFactTree(b.committed)
+	observed := preflightFactTree(live, exclude...)
+	committed := preflightFactTree(b.committed, exclude...)
+	b.workspace.queries = append(b.workspace.queries,
+		baselineQuery{method: "Snapshot", tree: "HEAD", result: raw},
+		baselineQuery{method: "FilterTree", tree: raw, paths: exclude, result: observed},
+		baselineQuery{method: "HeadTree", result: head},
+		baselineQuery{method: "FilterTree", tree: head, paths: exclude, result: committed},
+		baselineQuery{method: "Entries", tree: raw, paths: []string{contractPath}, entries: map[string]gittree.Entry{contractPath: live[contractPath]}},
+		baselineQuery{method: "Entries", tree: head, paths: []string{contractPath}, entries: map[string]gittree.Entry{contractPath: b.committed[contractPath]}},
+	)
+	if throughIdentity {
+		b.reads.bytes = append(b.reads.bytes, wallByteReply{root: b.engine.Root,
+			content: approved, oid: birthBlobOID(approved)})
+		b.workspace.queries = append(b.workspace.queries,
+			baselineQuery{method: "RefMap"},
+			baselineQuery{method: "FilterTree", tree: raw, paths: []string{ledger}, result: preflightFactTree(live, ledger)},
+			baselineQuery{method: "StagedTree", result: head},
+			baselineQuery{method: "FilterTree", tree: head, paths: []string{ledger}, result: preflightFactTree(b.committed, ledger)},
+			baselineQuery{method: "FilterTree", tree: head, paths: []string{ledger}, result: preflightFactTree(b.committed, ledger)},
+		)
+	}
+	return observed
+}
+
+func (b *preflightPolicyBed) done() {
+	b.t.Helper()
+	b.reads.done()
+	if len(b.workspace.queries) != 0 {
+		b.t.Fatalf("unconsumed workspace queries: %+v", b.workspace.queries)
+	}
+}
+
+// The wall's repository preconditions: the local pin guards mode visibility,
+// and only the exact tree in the human's signed seal admits existing dirt.
 func TestWallPreflightPreconditions(t *testing.T) {
 	t.Run("filemode-off", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		fixtureGit(t, engine.Root, "config", "core.fileMode", "false")
-		err := engine.armAndPreflight("start")
+		b := newPreflightPolicyBed(t)
+		b.pin("false\n", 0)
+		err := b.engine.armAndPreflight("start")
 		if err == nil || !strings.Contains(err.Error(), "core.fileMode") {
 			t.Fatalf("a fileMode-off repository must refuse by name: %v", err)
 		}
+		b.done()
 	})
-	t.Run("filemode-spellings-and-scope", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		// The invariant is git's own boolean, not a spelling: every
-		// value git normalizes to true satisfies the pin.
-		for _, spelling := range []string{"yes", "on", "1", "TRUE"} {
-			fixtureGit(t, engine.Root, "config", "core.fileMode", spelling)
-			if err := engine.checkFileModePinned(); err != nil {
-				t.Fatalf("git-true spelling %q must satisfy the pin: %v", spelling, err)
-			}
-		}
-		// The pin must live in THIS repository: with the local value
-		// unset, an inherited or default true satisfies nothing.
-		fixtureGit(t, engine.Root, "config", "--unset", "core.fileMode")
-		if err := engine.checkFileModePinned(); err == nil ||
-			!strings.Contains(err.Error(), "core.fileMode") {
+	t.Run("filemode-absent-local-pin", func(t *testing.T) {
+		b := newPreflightPolicyBed(t)
+		b.pin("", 1)
+		err := b.engine.armAndPreflight("start")
+		if err == nil || !strings.Contains(err.Error(), "core.fileMode") {
 			t.Fatalf("an unpinned repository must refuse by name: %v", err)
 		}
+		b.done()
 	})
 	t.Run("dirty-baseline", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		writeText(t, filepath.Join(engine.Root, "truth", "uncommitted.txt"), "dirt\n")
-		err := engine.armAndPreflight("start")
-		if err == nil || !strings.Contains(err.Error(), "initial baseline is dirty") {
-			t.Fatalf("unsealed dirt must refuse by name: %v", err)
+		b := newPreflightPolicyBed(t)
+		writeText(t, filepath.Join(b.engine.Root, "truth", "uncommitted.txt"), "dirt\n")
+		b.pin("true\n", 0)
+		b.pin("true\n", 0)
+		observed := b.admission(b.source.signed, true)
+		err := b.engine.armAndPreflight("start")
+		if err == nil || !strings.Contains(err.Error(), "initial baseline is dirty") ||
+			!strings.Contains(err.Error(), "wall.sealed-baseline="+observed) {
+			t.Fatalf("unsealed dirt must refuse and name its observed tree %s: %v", observed, err)
 		}
+		b.done()
 	})
 	t.Run("sealed-baseline", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		writeText(t, filepath.Join(engine.Root, "truth", "uncommitted.txt"), "dirt the human saw\n")
-		// The refusal itself names the tree to seal.
-		err := engine.armAndPreflight("start")
+		b := newPreflightPolicyBed(t)
+		writeText(t, filepath.Join(b.engine.Root, "truth", "uncommitted.txt"), "dirt the human saw\n")
+		b.pin("true\n", 0)
+		b.pin("true\n", 0)
+		observed := b.admission(b.source.signed, true)
+		err := b.engine.armAndPreflight("start")
 		if err == nil {
 			t.Fatal("the dirty start must refuse before sealing")
 		}
@@ -414,9 +567,11 @@ func TestWallPreflightPreconditions(t *testing.T) {
 		if len(parts) != 2 {
 			t.Fatalf("the refusal must name the sealable tree: %v", err)
 		}
-		observed := strings.Fields(parts[1])[0]
-		// The human seals exactly that tree into the signed contract.
-		contractPath := engine.contractPath()
+		if named := strings.Fields(parts[1])[0]; named != observed {
+			t.Fatalf("named tree %s differs from the observed file facts %s", named, observed)
+		}
+		b.done()
+		contractPath := b.engine.contractPath()
 		raw, rerr := os.ReadFile(contractPath)
 		if rerr != nil {
 			t.Fatal(rerr)
@@ -426,96 +581,179 @@ func TestWallPreflightPreconditions(t *testing.T) {
 		document = document[:strings.Index(document, "```mission-seal")]
 		document = strings.Replace(document, "```mission\n",
 			"```mission\nwall.sealed-baseline="+observed+"\n", 1)
-		os.WriteFile(contractPath, []byte(document), 0o644)
-		sha, serr := contract.Seal(contractPath)
+		if err := os.WriteFile(contractPath, []byte(document), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		sha, serr := contract.SealWithSource(contractPath, b.engine.contractSource)
 		if serr != nil {
 			t.Fatalf("re-seal: %v", serr)
 		}
-		handle, _ := os.OpenFile(contractPath, os.O_APPEND|os.O_WRONLY, 0o644)
-		handle.WriteString("\nApproval: name=Fixture Human; date=2026-08-19; contract-sha256=" + sha + "\n")
-		handle.Close()
-		fixtureGit(t, engine.Root, "add", "plans")
-		fixtureGit(t, engine.Root, "commit", "-qm", "seal the dirty baseline")
-		fixtureGit(t, engine.Root, "push", "-q", "origin", "main")
-		if err := engine.armAndPreflight("start"); err != nil {
+		handle, err := os.OpenFile(contractPath, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := handle.WriteString("\nApproval: name=Fixture Human; date=2026-08-19; contract-sha256=" + sha + "\n"); err != nil {
+			t.Fatal(err)
+		}
+		if err := handle.Close(); err != nil {
+			t.Fatal(err)
+		}
+		b.source.signed, err = os.ReadFile(contractPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.committed[filepath.ToSlash(filepath.Join("plans", "mission-"+b.engine.Mission+".contract.md"))] =
+			b.physicalEntries()[filepath.ToSlash(filepath.Join("plans", "mission-"+b.engine.Mission+".contract.md"))]
+		b.pin("true\n", 0)
+		b.pin("true\n", 0)
+		if next := b.admission(b.source.signed, true); next != observed {
+			t.Fatalf("the observed truth tree changed during sealing: %s -> %s", observed, next)
+		}
+		b.reads.git = append(b.reads.git, wallGitReply{root: b.engine.Root,
+			args: []string{"for-each-ref", "--format=%(refname)", mission.MissionRefNamespace(b.engine.Mission)}})
+		if err := b.engine.armAndPreflight("start"); err != nil {
 			t.Fatalf("the sealed baseline must admit exactly its tree: %v", err)
 		}
+		b.done()
 	})
 }
 
-// The contract-identity witnesses: the live contract must equal its
-// committed form, bytes AND mode.
+// These contract-identity checks exercise the actual launch and admission
+// decisions with separate committed and live entries from physical files.
 func TestWallPreflightContractIdentity(t *testing.T) {
 	t.Run("mode-flip", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		if err := os.Chmod(engine.contractPath(), 0o755); err != nil {
+		b := newPreflightPolicyBed(t)
+		if err := os.Chmod(b.engine.contractPath(), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		err := engine.armAndPreflight("start")
+		b.pin("true\n", 0)
+		b.pin("true\n", 0)
+		b.admission(b.source.signed, false)
+		err := b.engine.armAndPreflight("start")
 		if err == nil || !strings.Contains(err.Error(), "differs from its committed form") {
 			t.Fatalf("an executable contract must refuse by name: %v", err)
 		}
+		b.done()
 	})
 	t.Run("symlink", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		sealedCopy := filepath.Join(engine.Root, "artifacts", "sealed-copy.contract.md")
-		os.MkdirAll(filepath.Dir(sealedCopy), 0o755)
-		raw, rerr := os.ReadFile(engine.contractPath())
-		if rerr != nil {
-			t.Fatal(rerr)
-		}
-		if err := os.WriteFile(sealedCopy, raw, 0o644); err != nil {
+		b := newPreflightPolicyBed(t)
+		sealedCopy := filepath.Join(b.engine.Root, "artifacts", "sealed-copy.contract.md")
+		if err := os.MkdirAll(filepath.Dir(sealedCopy), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Remove(engine.contractPath()); err != nil {
+		if err := os.WriteFile(sealedCopy, b.source.signed, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(sealedCopy, engine.contractPath()); err != nil {
+		if err := os.Remove(b.engine.contractPath()); err != nil {
 			t.Fatal(err)
 		}
-		// The ADMISSION gate is the belt for flows where origin cannot
-		// see the link — witness it directly.
-		if _, err := engine.admittedBaseline(map[string]string{}, raw); err == nil ||
+		if err := os.Symlink(sealedCopy, b.engine.contractPath()); err != nil {
+			t.Fatal(err)
+		}
+		b.pin("true\n", 0)
+		b.admission(b.source.signed, false)
+		if _, err := b.engine.admittedBaseline(map[string]string{}, b.source.signed); err == nil ||
 			!strings.Contains(err.Error(), "symlink") {
 			t.Fatalf("the admission gate must refuse a symlinked contract by name: %v", err)
 		}
-		// The PUBLIC ladder speaks the same named diagnostic; without
-		// its own gate, contract preflight dereferences first and the
-		// refusal is a generic origin error.
-		if err := engine.armAndPreflight("start"); err == nil ||
+		b.done()
+		if err := b.engine.armAndPreflight("start"); err == nil ||
 			!strings.Contains(err.Error(), "symlink") {
 			t.Fatalf("the full launch ladder must refuse the symlink shape by name: %v", err)
 		}
+		b.done()
 	})
 	t.Run("fifo", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		if err := os.Remove(engine.contractPath()); err != nil {
+		b := newPreflightPolicyBed(t)
+		if err := os.Remove(b.engine.contractPath()); err != nil {
 			t.Fatal(err)
 		}
-		// A FIFO would HANG the blocking contract read; the shape gate
-		// must refuse it by name before anything reads.
-		if err := syscall.Mkfifo(engine.contractPath(), 0o644); err != nil {
+		if err := syscall.Mkfifo(b.engine.contractPath(), 0o644); err != nil {
 			t.Skipf("cannot create a FIFO on this filesystem: %v", err)
 		}
-		if err := engine.armAndPreflight("start"); err == nil ||
+		if err := b.engine.armAndPreflight("start"); err == nil ||
 			!strings.Contains(err.Error(), "non-regular object") {
 			t.Fatalf("a FIFO contract must refuse by name, not hang: %v", err)
 		}
+		b.done()
 	})
 	t.Run("byte-edit", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		handle, _ := os.OpenFile(engine.contractPath(), os.O_APPEND|os.O_WRONLY, 0o644)
-		handle.WriteString("\n<!-- unsigned edit in the preflight gap -->\n")
-		handle.Close()
-		err := engine.armAndPreflight("start")
+		b := newPreflightPolicyBed(t)
+		handle, err := os.OpenFile(b.engine.contractPath(), os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := handle.WriteString("\n<!-- unsigned edit in the preflight gap -->\n"); err != nil {
+			t.Fatal(err)
+		}
+		if err := handle.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if b.physicalEntries()["plans/mission-alpha.contract.md"].OID == b.committed["plans/mission-alpha.contract.md"].OID {
+			t.Fatal("the edit did not change the physical contract blob")
+		}
+		b.pin("true\n", 0)
+		b.admission(b.source.signed, false)
+		if _, err := b.engine.admittedBaseline(map[string]string{}, b.source.signed); err == nil ||
+			!strings.Contains(err.Error(), "differs from its committed form") {
+			t.Fatalf("the admission gate must refuse edited contract bytes by name: %v", err)
+		}
+		b.done()
+		err = b.engine.armAndPreflight("start")
 		if err == nil {
 			t.Fatal("an uncommitted contract edit must refuse")
 		}
+		b.done()
 	})
+}
+
+// This small native adapter witnesses Git's boolean normalization and the
+// index/worktree mode distinction used by the strict ordinary transcript.
+func TestNativePreflightConfigAndModeAdapter(t *testing.T) {
+	root := t.TempDir()
+	fixtureGit(t, root, "init", "-q", "-b", "main")
+	engine := &Engine{Root: root}
+	for _, spelling := range []string{"yes", "on", "1", "TRUE"} {
+		fixtureGit(t, root, "config", "core.fileMode", spelling)
+		if err := engine.checkFileModePinned(); err != nil {
+			t.Fatalf("Git true spelling %q must satisfy the local pin: %v", spelling, err)
+		}
+	}
+	fixtureGit(t, root, "config", "--unset", "core.fileMode")
+	if err := engine.checkFileModePinned(); err == nil || !strings.Contains(err.Error(), "core.fileMode") {
+		t.Fatalf("an absent local pin must refuse: %v", err)
+	}
+	fixtureGit(t, root, "config", "core.fileMode", "true")
+	path := filepath.Join(root, "contract.md")
+	if err := os.WriteFile(path, []byte("signed bytes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixtureGit(t, root, "add", "contract.md")
+	fixtureGit(t, root, "commit", "-qm", "committed contract mode")
+	if err := testexec.Locked(func() error { return os.Chmod(path, 0o755) }); err != nil {
+		t.Fatal(err)
+	}
+	workspace := gittree.Workspace{Dir: root}
+	raw, err := workspace.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := workspace.HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := workspace.Entries(raw, []string{"contract.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := workspace.Entries(head, []string{"contract.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live["contract.md"].Mode != "100755" || committed["contract.md"].Mode != "100644" ||
+		live["contract.md"].OID != committed["contract.md"].OID {
+		t.Fatalf("mode-only change: snapshot=%+v committed=%+v", live, committed)
+	}
 }
 
 // The mission must run EXACTLY the pinned contract. A different contract
@@ -524,17 +762,20 @@ func TestWallPreflightContractIdentity(t *testing.T) {
 // decision (the contract is excluded from it); only the approved-bytes
 // binding keeps E0 from recording a contract nobody approved.
 func TestAdmissionBindsTheApprovedContract(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	tampered := strings.Replace(fixtureContract, "exposure=EUR:10", "exposure=EUR:9999", 1)
-	if err := testexec.WriteFile(engine.contractPath(), []byte(tampered), 0o644); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	tampered := strings.Replace(string(b.snapshot), "exposure=EUR:10", "exposure=EUR:9999", 1)
+	if err := os.WriteFile(e.contractPath(), []byte(tampered), 0644); err != nil {
 		t.Fatal(err)
 	}
-	fixtureGit(t, engine.Root, "add", "plans")
-	fixtureGit(t, engine.Root, "commit", "-qm", "swap the contract after the pin")
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "approved contract bytes") {
+	b.expectStart()
+	b.admission([]byte(tampered), false)
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "approved contract bytes") {
 		t.Fatalf("admission must refuse a workspace contract that is not the pinned one: %v", err)
+	}
+	if pathExists(b.atState()) {
+		t.Fatal("refused admission published state")
 	}
 }
 
@@ -543,17 +784,17 @@ func TestAdmissionBindsTheApprovedContract(t *testing.T) {
 // read state birth is allowed — because admission and state construction
 // take that read's bytes as given and never touch the file again.
 func TestBirthRefusesAReplacedPin(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	tampered := strings.Replace(fixtureContract, "exposure=EUR:10", "exposure=EUR:9999", 1)
-	if err := os.WriteFile(engine.approvedContractPath(), []byte(tampered), 0o644); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	tampered := strings.Replace(string(b.snapshot), "exposure=EUR:10", "exposure=EUR:9999", 1)
+	if err := os.WriteFile(e.approvedContractPath(), []byte(tampered), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "approvedContractSha256") {
+	b.expectStart()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "approvedContractSha256") {
 		t.Fatalf("a replaced pin must refuse at the authenticated read: %v", err)
 	}
-	if pathExists(filepath.Join(engine.missionDir(), "state.json")) {
+	if pathExists(b.atState()) {
 		t.Fatal("a replaced pin must not birth a mission")
 	}
 }
@@ -566,33 +807,29 @@ func TestBirthRefusesAReplacedPin(t *testing.T) {
 // the pin file again — for admission or for state construction — would
 // bind the replacement instead and fail here.
 func TestBirthUsesTheBytesItAuthenticated(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	tampered := strings.Replace(fixtureContract,
-		"stream.primary=Reach the acceptance score.",
-		"stream.primary=Injected after authentication.", 1)
-	engine.afterApprovedParse = func() {
-		if err := os.WriteFile(engine.approvedContractPath(), []byte(tampered), 0o644); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	tampered := strings.Replace(string(b.snapshot), "stream.primary=Reach the acceptance score.", "stream.primary=Injected after authentication.", 1)
+	e.afterApprovedParse = func() {
+		if err := os.WriteFile(e.approvedContractPath(), []byte(tampered), 0644); err != nil {
 			t.Errorf("cannot replace the pin in the gap: %v", err)
 		}
 	}
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	// Birth itself is the boundary: the turn machinery that follows
-	// re-authenticates the pin per turn and would rightly refuse the
-	// still-tampered file — a separate defense, witnessed separately.
-	if _, _, _, err := engine.initializeState(leasePath); err != nil {
+	b.birth()
+	b.verifyBirth()
+	if _, _, _, err := e.initializeState(b.lease); err != nil {
 		t.Fatalf("birth on the authenticated bytes must succeed: %v", err)
 	}
-	state := readTestDoc(t, filepath.Join(engine.missionDir(), "state.json"))
+	state := readTestDoc(t, b.atState())
 	streams, _ := state["streams"].(map[string]any)
 	primary, _ := streams["primary"].(map[string]any)
 	if goal, _ := primary["goal"].(string); !strings.HasPrefix(goal, "Reach the acceptance score.") {
 		t.Fatalf("state bound %q — the replaced pin leaked into birth", goal)
 	}
 	if reason, _ := state["parkReason"].(string); reason == "wall-violation" {
-		t.Fatalf("admission judged the replacement, not the authenticated bytes")
+		t.Fatal("admission judged the replacement, not the authenticated bytes")
 	}
-	// The replacement really was on disk before birth finished.
-	pin, err := os.ReadFile(engine.approvedContractPath())
+	pin, err := os.ReadFile(e.approvedContractPath())
 	if err != nil || !strings.Contains(string(pin), "Injected after authentication.") {
 		t.Fatalf("the seam did not replace the pin: %v", err)
 	}
@@ -603,33 +840,25 @@ func TestBirthUsesTheBytesItAuthenticated(t *testing.T) {
 // through the object. What a symlink points at may be a living
 // mission's state; only a human removes it.
 func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
+	b := newBirthBed(t)
+	e := b.engine
 	target := filepath.Join(t.TempDir(), "elsewhere-state.json")
 	writeText(t, target, "{}\n")
-	statePath := filepath.Join(engine.missionDir(), "state.json")
+	statePath := b.atState()
 	if err := os.Symlink(target, statePath); err != nil {
 		t.Fatal(err)
 	}
-	fencesBefore := readTestDoc(t, engine.fencesPath())
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+	fencesBefore := readTestDoc(t, e.fencesPath())
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "non-regular object") {
 		t.Fatalf("start must refuse the shape by name: %v", err)
 	}
-	if _, _, _, err := engine.resumeState(); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+	if _, _, _, err := e.resumeState(); err == nil || !strings.Contains(err.Error(), "non-regular object") {
 		t.Fatalf("resume must refuse the shape by name: %v", err)
 	}
-	if err := engine.armAndPreflight("start"); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
-		t.Fatalf("the pin ladder must refuse the shape by name: %v", err)
-	}
-	// Everything survives the refusals: the pin, the fence clock, the
-	// symlink itself, and its target.
-	if !pathExists(engine.approvedContractPath()) {
+	if !pathExists(e.approvedContractPath()) {
 		t.Fatal("the refusal must not sweep the pin")
 	}
-	fencesAfter := readTestDoc(t, engine.fencesPath())
+	fencesAfter := readTestDoc(t, e.fencesPath())
 	if fencesBefore["startedAt"] != fencesAfter["startedAt"] {
 		t.Fatal("the refusal must not reset the fence clock")
 	}
@@ -639,34 +868,29 @@ func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
 	if !pathExists(target) {
 		t.Fatal("the symlink target must survive untouched")
 	}
-
-	// A DANGLING symlink is the sharpest shape: a dereferencing check
-	// reads it as absence. Resume must still name the shape, and a
-	// symlink landing mid-birth must refuse at publication instead of
-	// being replaced by the state rename.
 	if err := os.Remove(statePath); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(t.TempDir(), "never-exists.json"), statePath); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := engine.resumeState(); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+	if _, _, _, err := e.resumeState(); err == nil || !strings.Contains(err.Error(), "non-regular object") {
 		t.Fatalf("resume must name a dangling symlink, not report absence: %v", err)
 	}
 	if err := os.Remove(statePath); err != nil {
 		t.Fatal(err)
 	}
-	engine.afterApprovedParse = func() {
+	e.afterApprovedParse = func() {
 		if err := os.Symlink(filepath.Join(t.TempDir(), "never-exists.json"), statePath); err != nil {
 			t.Errorf("cannot plant the mid-birth symlink: %v", err)
 		}
 	}
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+	b.birth()
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "non-regular object") {
 		t.Fatalf("publication must refuse the mid-birth symlink by name: %v", err)
 	}
-	engine.afterApprovedParse = nil
+	e.afterApprovedParse = nil
 	if info, err := os.Lstat(statePath); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("publication must not replace the symlink: %v", err)
 	}
@@ -678,11 +902,29 @@ func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
 // and the anchors all survive. The ledger's own booked cycles are the
 // belt for missions whose birth record is also gone.
 func TestLostStateFreezesTheBornMission(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:close-stream")
 	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	if code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture-ls", signal); code != 0 {
 		t.Fatalf("the bed mission must be born, exit %d", code)
+	}
+	missionRefs := func() map[string]string {
+		t.Helper()
+		refs, err := engine.wallWorkspace(engine.Root).RefMap()
+		if err != nil {
+			t.Fatalf("read the mission's anchors: %v", err)
+		}
+		anchors := make(map[string]string)
+		for ref, oid := range refs {
+			if strings.HasPrefix(ref, mission.MissionRefNamespace(engine.Mission)) {
+				anchors[ref] = oid
+			}
+		}
+		return anchors
+	}
+	bornAnchors := missionRefs()
+	if len(bornAnchors) == 0 {
+		t.Fatal("the born mission has no anchors")
 	}
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
@@ -715,10 +957,8 @@ func TestLostStateFreezesTheBornMission(t *testing.T) {
 	if !pathExists(ledgerPath) || !pathExists(engine.approvedContractPath()) {
 		t.Fatal("the refusals must not sweep the lived mission's evidence")
 	}
-	anchors := exec.Command("git", "-C", engine.Root, "for-each-ref",
-		"--format=%(refname)", "refs/metasystem/missions/"+engine.Mission+"/")
-	if refs, err := anchors.CombinedOutput(); err != nil || strings.TrimSpace(string(refs)) == "" {
-		t.Fatalf("the lived mission's anchors must survive: %q (%v)", refs, err)
+	if anchors := missionRefs(); !maps.Equal(anchors, bornAnchors) {
+		t.Fatalf("the lived mission's anchors changed during refusal: born=%v now=%v", bornAnchors, anchors)
 	}
 	// The BELT: even with the birth record gone too, booked cycles in
 	// the ledger prove the mission lived.
@@ -741,10 +981,8 @@ func TestLostStateFreezesTheBornMission(t *testing.T) {
 		!strings.Contains(err.Error(), "anchor namespace") {
 		t.Fatalf("surviving anchors alone must refuse rebirth: %v", err)
 	}
-	anchorsAfter := exec.Command("git", "-C", engine.Root, "for-each-ref",
-		"--format=%(refname)", "refs/metasystem/missions/"+engine.Mission+"/")
-	if refs, err := anchorsAfter.CombinedOutput(); err != nil || strings.TrimSpace(string(refs)) == "" {
-		t.Fatalf("the anchor refusal must leave the refs standing: %q (%v)", refs, err)
+	if anchors := missionRefs(); !maps.Equal(anchors, bornAnchors) {
+		t.Fatalf("the anchor refusal changed the refs: born=%v now=%v", bornAnchors, anchors)
 	}
 }
 
@@ -754,7 +992,11 @@ func TestLostStateFreezesTheBornMission(t *testing.T) {
 // survive untouched. Without the lock, the blocked launcher's cached
 // no-birth decision would overwrite the newborn's fences.
 func TestLaunchLockSerializesStartDecisions(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine, source := newGitFreePreflightBed(t, "")
+	t.Cleanup(source.done)
+	if err := engine.armAndPreflight("start"); err != nil {
+		t.Fatalf("initial preflight: %v", err)
+	}
 	fencesBefore := readTestDoc(t, engine.fencesPath())
 	hold, err := engine.acquireLaunchLock()
 	if err != nil {
@@ -859,18 +1101,21 @@ func TestSealedBaselineBirthsAndRuns(t *testing.T) {
 // The birth record self-heals at resume: a born mission whose record is
 // missing gets it re-stamped from the verified living state.
 func TestBirthRecordSelfHealsAtResume(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	if _, _, _, err := engine.initializeState(leasePath); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	b.birth()
+	b.verifyBirth()
+	if _, _, _, err := e.initializeState(b.lease); err != nil {
 		t.Fatalf("birth: %v", err)
 	}
-	if err := os.Remove(engine.birthRecordPath()); err != nil {
+	if err := os.Remove(e.birthRecordPath()); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := engine.resumeState(); err != nil {
+	b.resume()
+	if _, _, _, err := e.resumeState(); err != nil {
 		t.Fatalf("resume over a missing birth record: %v", err)
 	}
-	if !pathExists(engine.birthRecordPath()) {
+	if !pathExists(e.birthRecordPath()) {
 		t.Fatal("resume must re-stamp the birth record")
 	}
 }
@@ -879,14 +1124,13 @@ func TestBirthRecordSelfHealsAtResume(t *testing.T) {
 // path that exists but cannot be read as a ledger refuses the start
 // instead of counting as no evidence.
 func TestUnprovableEmptinessRefusesRebirth(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := os.MkdirAll(ledgerPath, 0o755); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	ledgerPath := b.atLedger()
+	if err := os.MkdirAll(ledgerPath, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "cannot prove") {
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "cannot prove") {
 		t.Fatalf("an unreadable ledger probe must refuse, not authorize: %v", err)
 	}
 	if info, err := os.Lstat(ledgerPath); err != nil || !info.IsDir() {
@@ -895,119 +1139,60 @@ func TestUnprovableEmptinessRefusesRebirth(t *testing.T) {
 }
 
 func TestStillbornInitCleansItsArtifacts(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	commitBedBaseline(t, engine.Root)
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	// The bed's own build already armed and pinned (the parent's half).
-	// A fileMode flip in the SAME gap refuses at the child's admission
-	// before any dirt considerations.
-	fixtureGit(t, engine.Root, "config", "core.fileMode", "false")
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "core.fileMode") {
+	b := newBirthBed(t)
+	e := b.engine
+	// The child rechecks fileMode before any repository snapshot.
+	b.expectStart()
+	b.fileMode("false")
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "core.fileMode") {
 		t.Fatalf("the child must recheck the fileMode pin: %v", err)
 	}
-	fixtureGit(t, engine.Root, "config", "core.fileMode", "true")
-	// The fileMode refusal above CLEANED the stillborn pin (that is the
-	// contract under test), so the dirt leg needs its own pin — without
-	// it the next attempt would die reading the missing approved
-	// contract and never reach admission.
-	if err := engine.armAndPreflight("start"); err != nil {
-		t.Fatalf("re-pin between legs must succeed on a clean bed: %v", err)
+	if pathExists(b.atLedger()) || pathExists(e.approvedContractPath()) {
+		t.Fatal("fileMode refusal must clean ledger and pin")
 	}
-	// Dirt lands in the parent-child gap; the child's re-admission must
-	// refuse BY NAME and clean the stillborn ledger and pin.
-	writeText(t, filepath.Join(engine.Root, "truth", "gap-dirt.txt"), "dirt\n")
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "initial baseline is dirty") {
+	b.pin()
+	// Dirt lands after the corrected ordinary repin.
+	writeText(t, filepath.Join(e.Root, "truth", "gap-dirt.txt"), "dirt\n")
+	b.expectStart()
+	b.admission(b.snapshot, true)
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "initial baseline is dirty") {
 		t.Fatalf("the child re-admission must refuse the gap dirt by name: %v", err)
 	}
-	if pathExists(filepath.Join(engine.missionDir(), "ledger.md")) {
+	if pathExists(b.atLedger()) {
 		t.Fatal("the stillborn ledger must be removed")
 	}
-	if pathExists(engine.approvedContractPath()) {
+	if pathExists(e.approvedContractPath()) {
 		t.Fatal("the stillborn pin must be removed")
 	}
-	// A STATE-BIRTH failure sweeps too: admission and the E0 anchor
-	// succeed, then the atomic state write fails — a directory landing
-	// on state.json mid-birth (after the entry checks) forces exactly
-	// that. The sweep must remove the ledger, the pin, AND the anchored
-	// E0 ref; the squatting object itself stays untouched.
-	if err := os.Remove(filepath.Join(engine.Root, "truth", "gap-dirt.txt")); err != nil {
+	if err := os.Remove(filepath.Join(e.Root, "truth", "gap-dirt.txt")); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.armAndPreflight("start"); err != nil {
-		t.Fatalf("re-pin before the state-birth leg must succeed: %v", err)
-	}
-	statePath := filepath.Join(engine.missionDir(), "state.json")
-	engine.afterApprovedParse = func() {
-		if err := os.MkdirAll(statePath, 0o755); err != nil {
+	b.pin()
+	statePath := b.atState()
+	e.afterApprovedParse = func() {
+		if err := os.MkdirAll(statePath, 0755); err != nil {
 			t.Errorf("cannot squat the state path mid-birth: %v", err)
 		}
 	}
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "state initialization refused") {
+	b.birth()
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "state initialization refused") {
 		t.Fatalf("the mid-birth squatter must fail the state write: %v", err)
 	}
-	engine.afterApprovedParse = nil
-	if pathExists(engine.birthRecordPath()) {
+	e.afterApprovedParse = nil
+	if pathExists(e.birthRecordPath()) {
 		t.Fatal("a proven same-pass publication failure must unstamp the birth record")
 	}
-	if err := os.Remove(statePath); err != nil {
-		t.Fatal(err)
+	if info, err := os.Lstat(statePath); err != nil || !info.IsDir() {
+		t.Fatalf("the squatting directory must survive: %v", err)
 	}
-	if pathExists(filepath.Join(engine.missionDir(), "ledger.md")) {
+	if pathExists(b.atLedger()) {
 		t.Fatal("the state-birth failure must sweep the stillborn ledger")
 	}
-	if pathExists(engine.approvedContractPath()) {
+	if pathExists(e.approvedContractPath()) {
 		t.Fatal("the state-birth failure must sweep the stillborn pin")
-	}
-	anchorList := exec.Command("git", "-C", engine.Root, "for-each-ref",
-		"--format=%(refname)", "refs/metasystem/missions/"+engine.Mission+"/")
-	if refs, err := anchorList.CombinedOutput(); err != nil || strings.TrimSpace(string(refs)) != "" {
-		t.Fatalf("the state-birth failure must drop the stillborn E0 anchor: %q (%v)", refs, err)
-	}
-	// The corrected retry starts cleanly end to end — and the BIRTH
-	// RULE, not the cleanup, is what makes it possible: recreate the
-	// stillborn artifacts a failed or interrupted cleanup would leave,
-	// and the retry must STILL work.
-	writeText(t, filepath.Join(engine.missionDir(), "ledger.md"), "stillborn remnant\n")
-	// A surviving FENCES remnant with an old clock must not eat the
-	// mission's sealed wall time: the re-pin refreshes startedAt.
-	writeJSONFile(t, engine.fencesPath(), map[string]any{
-		"schemaVersion": 1, "missionId": engine.Mission,
-		"startedAt": "2020-01-01T00:00:00Z", "cycles": 0,
-		"reservations":           map[string]any{},
-		"approvedContractSha256": strings.Repeat("d", 64),
-	})
-	fixedNow := time.Now().UTC().Truncate(time.Second)
-	engine.Now = func() time.Time { return fixedNow }
-	if err := engine.armAndPreflight("start"); err != nil {
-		t.Fatalf("the corrected retry must re-pin over remnants: %v", err)
-	}
-	// The refreshed clock is BOUNDED, not merely different: any stale
-	// replacement — 2020 or 2021 alike — would eat sealed wall time.
-	refreshed := readTestDoc(t, engine.fencesPath())
-	started, _ := refreshed["startedAt"].(string)
-	stamp, perr := time.Parse(time.RFC3339, started)
-	if perr != nil || !stamp.Equal(fixedNow) {
-		t.Fatalf("the stillborn re-pin timestamp = %v, want %v (parse error %v)", stamp, fixedNow, perr)
-	}
-	signal := filepath.Join(t.TempDir(), "start.json")
-	if code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture-sb", signal); code != 0 {
-		t.Fatalf("the corrected retry must give birth cleanly, exit %d", code)
-	}
-	state := readTestDoc(t, filepath.Join(engine.missionDir(), "state.json"))
-	// A TURN genuinely ran: exit 0 alone would also fit a pre-turn
-	// fence park eating the remnant's stale clock, so demand a terminal
-	// that is NOT the fence park and a booked cycle — a fence park
-	// before any turn books nothing.
-	status, _ := state["status"].(string)
-	if status == "running" || (status == "parked" && state["parkReason"] == "fence") {
-		t.Fatalf("the corrected retry must reach a worked terminal, not %q (%v)", status, state["parkReason"])
-	}
-	ledgerBytes, lerr := os.ReadFile(filepath.Join(engine.missionDir(), "ledger.md"))
-	if lerr != nil || !strings.Contains(string(ledgerBytes), "Cycle 1") {
-		t.Fatalf("the corrected retry must book its first cycle: %v", lerr)
 	}
 }
 
@@ -1207,16 +1392,27 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 // does not survive the parent-child gap on either launch mode, and
 // resume's reconciliation trusts the tree equation.
 func TestResumeChildRechecksFileMode(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	signal := filepath.Join(t.TempDir(), "start.json")
-	if code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture-rf", signal); code != 0 {
-		t.Fatalf("the bed mission must be born, exit %d", code)
+	engine := &Engine{Root: t.TempDir(), Mission: "alpha"}
+	writeText(t, filepath.Join(engine.missionDir(), "state.json"), "{}")
+	args := []string{"config", "--local", "--type=bool", "--get", "core.fileMode"}
+	facts := &strictWallReads{t: t, git: []wallGitReply{
+		{root: engine.Root, args: args, stdout: "true\n"},
+		{root: engine.Root, args: args, stdout: "false\n"},
+	}}
+	engine.wallReadFacts = facts
+	continuity := &strictResumeContinuity{t: t}
+	engine.continuityFacts = continuity
+	if err := engine.wallPreflight("resume", nil, nil); err != nil {
+		t.Fatalf("parent preflight must accept the true local pin: %v", err)
 	}
-	fixtureGit(t, engine.Root, "config", "core.fileMode", "false")
 	if _, _, _, err := engine.resumeState(); err == nil ||
-		!strings.Contains(err.Error(), "core.fileMode") {
+		!strings.Contains(err.Error(), "core.fileMode is not pinned true") {
 		t.Fatalf("the resume child must recheck the fileMode pin: %v", err)
 	}
+	if len(continuity.calls) != 0 {
+		t.Fatalf("the child reached continuity after the fileMode refusal: %+v", continuity.calls)
+	}
+	facts.done()
 }
 
 // The full cycle in-process: after the armed preflight, internalRun — the
@@ -1274,6 +1470,13 @@ func buildFullCycleRoot(t *testing.T, behavior string) *Engine {
 // ladder instead.
 func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 	t.Helper()
+	equipFullCycleFiles(t, engine)
+	commitBedBaseline(t, engine.Root)
+	return engine
+}
+
+func equipFullCycleFiles(t *testing.T, engine *Engine) {
+	t.Helper()
 	root := engine.Root
 	// The bed binary is COMPILED FROM THE REVIEWED TREE, once per test
 	// process: a prebuilt
@@ -1324,8 +1527,6 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 		os.MkdirAll(filepath.Dir(filepath.Join(root, artifact)), 0o755)
 		testexec.WriteFile(filepath.Join(root, artifact), data, mode)
 	}
-	commitBedBaseline(t, engine.Root)
-	return engine
 }
 
 // equipFullCycleBed then pins the contract in-process and installs the
@@ -1342,7 +1543,7 @@ func pinAndSeamBed(t *testing.T, engine *Engine) *Engine {
 }
 
 func TestInternalRunFullCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "")
+	engine := buildGitFreeHostCycle(t, "")
 	root := engine.Root
 	_ = root
 
@@ -1407,6 +1608,20 @@ func TestInternalRunFullCycle(t *testing.T) {
 	if data, err := os.ReadFile(ledger); err != nil || !strings.Contains(string(data), "Cycle 1") {
 		t.Fatalf("the ledger booked nothing: %v", err)
 	}
+	measurement, err := readJSONDoc(filepath.Join(filepath.Dir(turns[0]), "measurement.json"))
+	if err != nil {
+		t.Fatalf("turn one measurement is absent: %v", err)
+	}
+	reading, _ := measurement["measurement"].(map[string]any)
+	metrics, _ := reading["metrics"].(map[string]any)
+	guards, _ := reading["guards"].(map[string]any)
+	if measurement["gatePassed"] != true || metrics["score"] != "1" || guards["audit"] != "1" {
+		t.Fatalf("turn one did not record a passing gate and audit guard: %v", measurement)
+	}
+	ledgerBytes, err := os.ReadFile(ledger)
+	if err != nil || !strings.Contains(string(ledgerBytes), "- Classification: unresolved;") {
+		t.Fatalf("turn one did not classify the real baseline measurement: %v %s", err, ledgerBytes)
+	}
 	if _, ok := outage.Read(engine.Root); ok {
 		t.Fatal("a completed host turn must clear the seeded outage mark")
 	}
@@ -1423,7 +1638,7 @@ func tailOf(text string, n int) string {
 // drives the failed-turn conclusion; the mission still books the cycle and
 // reaches a terminal rather than hanging or losing the record.
 func TestInternalRunHostFailureCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:exit-nonzero")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:exit-nonzero")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1448,7 +1663,7 @@ func TestInternalRunHostFailureCycle(t *testing.T) {
 // duties (drain, measure, conclude with both facts) and the turn records
 // the protocol error.
 func TestInternalRunMalformedReturnCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:return-malformed")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:return-malformed")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1470,7 +1685,7 @@ func TestInternalRunMalformedReturnCycle(t *testing.T) {
 
 // A host that never writes a return concludes as a host failure.
 func TestInternalRunNoReturnCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:no-return")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:no-return")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1485,7 +1700,7 @@ func TestInternalRunNoReturnCycle(t *testing.T) {
 // A park-request return drives the ask pipeline: the mission parks with a
 // reserved decision and the proposed ask lands on disk.
 func TestInternalRunParkRequestCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:park-request")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1522,7 +1737,7 @@ func TestInternalRunParkRequestCycle(t *testing.T) {
 // A close-stream return concludes the mission's only stream: the mission
 // reaches a terminal and the ledger books the cycle that did it.
 func TestInternalRunCloseStreamCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:close-stream")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1564,14 +1779,13 @@ func TestInternalRunCloseStreamCycle(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{40,64}$`).MatchString(preTree) {
 		t.Fatalf("turn record preTree is not a tree id: %q", preTree)
 	}
-	anchor := exec.Command("git", "-C", engine.Root, "rev-parse", "--verify",
-		"refs/metasystem/missions/"+engine.Mission+"/"+preTree)
-	anchored, err := anchor.Output()
+	anchors, err := engine.wallWorkspace(engine.Root).RefMap()
 	if err != nil {
-		t.Fatalf("the pre-tree anchor ref is missing: %v", err)
+		t.Fatalf("read the pre-tree anchor ref: %v", err)
 	}
-	if strings.TrimSpace(string(anchored)) != preTree {
-		t.Fatalf("anchor points at %q, not the pre-tree %q", strings.TrimSpace(string(anchored)), preTree)
+	ref := mission.MissionRefNamespace(engine.Mission) + preTree
+	if anchors[ref] != preTree {
+		t.Fatalf("anchor %q points at %q, not the pre-tree %q", ref, anchors[ref], preTree)
 	}
 }
 
@@ -1579,7 +1793,7 @@ func TestInternalRunCloseStreamCycle(t *testing.T) {
 // by naming its state, and a parked mission's resume is refused toward the
 // park reason — both through the public launch spine.
 func TestInternalRunResumeVerdicts(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:park-request")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1601,7 +1815,7 @@ func TestInternalRunResumeVerdicts(t *testing.T) {
 // dispatch-terminal: the orchestrator return that certifies a terminal job
 // drives the certified-entry adjudication path end to end.
 func TestInternalRunDispatchTerminalCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:dispatch-terminal")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:dispatch-terminal")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1617,7 +1831,7 @@ func TestInternalRunDispatchTerminalCycle(t *testing.T) {
 // Answer applies the human's decision to the ask, and the resumed run
 // drives another real cycle — the full human-in-the-loop round trip.
 func TestInternalRunAnswerAndResumeChain(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:park-request")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))

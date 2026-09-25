@@ -29,89 +29,89 @@ func TestDepStateAnswersAbandonedFromTheAbandonedMap(t *testing.T) {
 
 func TestAbandonAllowsACarrySuccessor(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X00000000000000000E000")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000E000")
 	for index, id := range []string{"older", "successor", "dependent"} {
-		request := verbReq(root, []string{"01J5X00000000000000000E010", "01J5X00000000000000000E011", "01J5X00000000000000000E012"}[index], "mac-a")
+		request := verbReqFor(endpoint, []string{"01J5X00000000000000000E010", "01J5X00000000000000000E011", "01J5X00000000000000000E012"}[index], "mac-a")
 		request.Actor.Human = "Wido"
 		if result, err := Open(request, id, "Keep the successor rule explicit.", OriginHuman, "Resolve it."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
 	blocked := []string{"successor"}
-	if result, err := Edit(verbReq(root, "01J5X00000000000000000E013", "mac-a"), "dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000E013", "mac-a"), "dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("block dependent: %+v %v", result, err)
 	}
-	claim := verbReq(root, "01J5X00000000000000000E017", "mac-a")
+	claim := verbReqFor(endpoint, "01J5X00000000000000000E017", "mac-a")
 	if result, err := claimApprovedForTest(t, claim, "successor", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim successor: %+v %v", result, err)
 	}
-	_, debtCommit := acceptedTree(t, root, claim.Now)
-	deferRequest := verbReq(root, "01J5X00000000000000000E018", "mac-a")
+	_, debtCommit := acceptedTreeForEndpoint(t, endpoint)
+	deferRequest := verbReqFor(endpoint, "01J5X00000000000000000E018", "mac-a")
 	if result, err := DeferFindings(deferRequest, "successor", []ReviewObligation{{Finding: "carried:" + debtCommit, Chain: HumanCarriedChain, Artifact: "commit:" + debtCommit, Test: "pending"}}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("defer successor carry debt: %+v %v", result, err)
 	}
-	first := verbReq(root, "01J5X00000000000000000E014", "mac-a")
+	first := verbReqFor(endpoint, "01J5X00000000000000000E014", "mac-a")
 	first.Actor.Human = "Wido"
 	if result, err := Abandon(first, "older", AbandonSpec{Because: "the work moved", Carried: "successor"}, goalHumanProof(t, root, first.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon older goal: %+v %v", result, err)
 	}
-	refuse := verbReq(root, "01J5X00000000000000000E015", "mac-a")
+	refuse := verbReqFor(endpoint, "01J5X00000000000000000E015", "mac-a")
 	refuse.Actor.Human = "Wido"
 	if result, err := Abandon(refuse, "successor", AbandonSpec{Because: "the successor also stopped"}, goalHumanProof(t, root, refuse.Now)); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by successor") {
 		t.Fatalf("successor ignored live dependent: %+v %v", result, err)
 	}
-	second := verbReq(root, "01J5X00000000000000000E016", "mac-a")
+	second := verbReqFor(endpoint, "01J5X00000000000000000E016", "mac-a")
 	second.Actor.Human = "Wido"
 	if result, err := Abandon(second, "successor", AbandonSpec{Because: "the successor also stopped", Waive: []string{"dependent=the successor no longer applies"}}, goalHumanProof(t, root, second.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon carry successor: %+v %v", result, err)
 	}
-	tree, tip := acceptedTree(t, root, second.Now)
+	tree, tip := acceptedTreeForEndpoint(t, endpoint)
 	if tree.Abandoned["older"].Abandoned.Carried != "successor" || depState(tree, "successor") != StateAbandoned || contains(tree.Live["dependent"].Blocked, "successor") {
 		t.Fatalf("successor abandonment = older:%+v successor:%s dependent:%v", tree.Abandoned["older"].Abandoned, depState(tree, "successor"), tree.Live["dependent"].Blocked)
 	}
-	if debt, found, err := CarryDebtAt(root, tree, tip, "", second.Now); err != nil || !found || debt.Goal != "successor" || debt.ID != "carried:"+debtCommit {
+	if debt, found, err := carryDebtAtFor(endpoint, tree, tip, "", second.Now); err != nil || !found || debt.Goal != "successor" || debt.ID != "carried:"+debtCommit {
 		t.Fatalf("successor debt after abandonment = %+v %v %v", debt, found, err)
 	}
 }
 
 func TestAbandonLeavesEarlierSuccessorRecordsIntact(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X00000000000000000E100")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000E100")
 	for index, id := range []string{"older", "successor", "later"} {
-		request := verbReq(root, []string{"01J5X00000000000000000E110", "01J5X00000000000000000E111", "01J5X00000000000000000E112"}[index], "mac-a")
+		request := verbReqFor(endpoint, []string{"01J5X00000000000000000E110", "01J5X00000000000000000E111", "01J5X00000000000000000E112"}[index], "mac-a")
 		request.Actor.Human = "Wido"
 		if result, err := Open(request, id, "Keep successor records append-only.", OriginHuman, "Resolve it."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
-	first := verbReq(root, "01J5X00000000000000000E113", "mac-a")
+	first := verbReqFor(endpoint, "01J5X00000000000000000E113", "mac-a")
 	first.Actor.Human = "Wido"
 	if result, err := Abandon(first, "older", AbandonSpec{Because: "the work moved first", Carried: "successor"}, goalHumanProof(t, root, first.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon older: %+v %v", result, err)
 	}
-	tree, _ := acceptedTree(t, root, first.Now)
+	tree, _ := acceptedTreeForEndpoint(t, endpoint)
 	before := string(RenderFile(tree.Abandoned["older"]))
-	second := verbReq(root, "01J5X00000000000000000E114", "mac-a")
+	second := verbReqFor(endpoint, "01J5X00000000000000000E114", "mac-a")
 	second.Actor.Human = "Wido"
 	if result, err := Abandon(second, "successor", AbandonSpec{Because: "the work moved again", Carried: "later"}, goalHumanProof(t, root, second.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon successor: %+v %v", result, err)
 	}
-	tree, _ = acceptedTree(t, root, second.Now)
+	tree, _ = acceptedTreeForEndpoint(t, endpoint)
 	if got := string(RenderFile(tree.Abandoned["older"])); got != before || tree.Abandoned["older"].Abandoned.Carried != "successor" {
 		t.Fatal("abandoning the successor rewrote the earlier abandoned record")
 	}
-	carry := verbReq(root, "01J5X00000000000000000E115", "mac-a")
+	carry := verbReqFor(endpoint, "01J5X00000000000000000E115", "mac-a")
 	carry.Actor.Human = "Wido"
 	if result, err := CarryAbandoned(carry, "older", "later", goalHumanProof(t, root, carry.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("record later successor: %+v %v", result, err)
 	}
-	tree, _ = acceptedTree(t, root, carry.Now)
+	tree, _ = acceptedTreeForEndpoint(t, endpoint)
 	file := tree.Abandoned["older"]
 	if file.Abandoned.Carried != "later" || len(file.History) < 2 || file.History[len(file.History)-1].Verb != "carry" || file.History[len(file.History)-1].Carried != "later" {
 		t.Fatalf("later successor record = %+v history=%+v", file.Abandoned, file.History)
@@ -202,12 +202,12 @@ func seedLedger(t *testing.T, root string) {
 
 func TestEngineFloorIsAProvenHumanRootHistoryLine(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	req := verbReq(root, "01J5X000000000000000000EF0", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	req := verbReqFor(endpoint, "01J5X000000000000000000EF0", "mac-a")
 	req.Actor.Human = "Wido"
 	commit := strings.Repeat("a", 40)
-	before, err := Project(endpointFor(root), false, req.Now)
+	before, err := Project(endpoint, false, req.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestEngineFloorIsAProvenHumanRootHistoryLine(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("engine-floor: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,18 +236,17 @@ func TestEngineFloorIsAProvenHumanRootHistoryLine(t *testing.T) {
 
 func TestOpenClaimDoneLifecycle(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	aEndpoint, _ := fakeGoalEndpointPair(t)
 
-	res, err := Open(verbReq(a, "01J5X0000000000000000000D0", "mac-a"), "build-it", "Build the thing.", "main", "Start with the walls.")
+	res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000D0", "mac-a"), "build-it", "Build the thing.", "main", "Start with the walls.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	res, err = claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000D1", "mac-a"), "build-it", testBudget())
+	res, err = claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X0000000000000000000D1", "mac-a"), "build-it", testBudget())
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	doneRequest := verbReq(a, "01J5X0000000000000000000D2", "mac-a")
+	doneRequest := verbReqFor(aEndpoint, "01J5X0000000000000000000D2", "mac-a")
 	swept := ""
 	doneRequest.SweepBranch = func(goalID string) error { swept = goalID; return nil }
 	res, err = Done(doneRequest, "build-it", "Built and verified.")
@@ -260,7 +259,7 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 
 	// The archive carries the record with the full history; the live
 	// set is empty; every touched write bumped Revision exactly once.
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +273,11 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 	if t2.DonePaths["build-it"] != recordsGoalsPrefix+"build-it.md" {
 		t.Fatalf("done writes only the records-owned archive: %s", t2.DonePaths["build-it"])
 	}
-	committed, err := ReadCommitGoals(a, res.Commit)
+	canonicalTip, err := aEndpoint.Repository.Capture("check done result")
+	if err != nil || canonicalTip != res.Commit || acceptedTipForEndpoint(t, aEndpoint) != res.Commit || res.Tip != res.Commit {
+		t.Fatalf("the canonical tip and result commit disagree: tip=%s result=%+v err=%v", canonicalTip, res, err)
+	}
+	committed, err := aEndpoint.Repository.Files(res.Commit, goalsPrefix, recordsGoalsPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,6 +286,9 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 	}
 	if _, legacyWrite := committed[legacyDonePrefix+"build-it.md"]; legacyWrite {
 		t.Fatal("done must not write the legacy archive")
+	}
+	if _, liveWrite := committed[livePath("build-it")]; liveWrite {
+		t.Fatal("done must remove the live record")
 	}
 	if archived.Conclude != "Built and verified." || archived.Revision != 4 || len(archived.History) != 4 {
 		t.Fatalf("the archived record carries the whole lawful history: rev=%d hist=%d conclude=%q",
@@ -296,10 +302,9 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 
 func TestDonePublishesRecordsOwnedArchiveToRemoteTip(t *testing.T) {
 	t.Parallel()
-	origin, repo := oneClone(t)
-	seedLedger(t, repo)
+	endpoint, _ := fakeGoalEndpoint(t)
 
-	req := verbReq(repo, "01J5X0000000000000000000DA", "mac-a")
+	req := verbReqFor(endpoint, "01J5X0000000000000000000DA", "mac-a")
 	if res, err := Open(req, "archive-it", "Archive the result.", "main", "Conclude it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
@@ -309,21 +314,28 @@ func TestDonePublishesRecordsOwnedArchiveToRemoteTip(t *testing.T) {
 		t.Fatalf("done: %+v %v", res, err)
 	}
 
-	publishedTip := mustGit(t, origin, "rev-parse", "refs/heads/main")
-	if publishedTip != res.Commit {
+	publishedTip, err := endpoint.Repository.Capture("check published archive")
+	if err != nil || publishedTip != res.Commit || acceptedTipForEndpoint(t, endpoint) != res.Commit || res.Tip != res.Commit {
 		t.Fatalf("the remote tip must be the done transaction: tip=%s commit=%s", publishedTip, res.Commit)
 	}
 	recordPath := recordsGoalsPrefix + "archive-it.md"
-	record, err := gitIn(origin, "cat-file", "-p", publishedTip+":"+recordPath)
+	files, err := endpoint.Repository.Files(res.Commit, goalsPrefix, recordsGoalsPrefix)
 	if err != nil {
 		t.Fatalf("the published tree must contain %s: %v", recordPath, err)
 	}
-	archived, problems := ParseFile([]byte(record))
+	record, found := files[recordPath]
+	if !found {
+		t.Fatalf("the published tree must contain %s", recordPath)
+	}
+	archived, problems := ParseFile(record)
 	if len(problems) != 0 || archived == nil || archived.Conclude != "Published to the records-owned archive." {
 		t.Fatalf("the published archive must retain its canonical conclusion and integrity: %+v %v", archived, problems)
 	}
+	if string(record) != string(RenderFile(archived)) {
+		t.Fatal("the published archive must retain canonical bytes and its unchanged Integrity line")
+	}
 	for _, absent := range []string{livePath("archive-it"), legacyDonePrefix + "archive-it.md"} {
-		if _, err := gitIn(origin, "cat-file", "-e", publishedTip+":"+absent); err == nil {
+		if _, found := files[absent]; found {
 			t.Fatalf("the published done transaction must remove %s", absent)
 		}
 	}
@@ -331,25 +343,25 @@ func TestDonePublishesRecordsOwnedArchiveToRemoteTip(t *testing.T) {
 
 func TestLastArcGoalConclusionRaisesRetroDebt(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpointPair(t)
+	root := endpoint.Root
 	for index, id := range []string{"retro-one", "retro-two"} {
 		openID := fmt.Sprintf("01J5X00000000000000000RT%d0", index)
 		arcID := fmt.Sprintf("01J5X00000000000000000RT%d1", index)
-		if res, err := Open(verbReq(root, openID, "mac-a"), id, "Finish the arc.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(verbReqFor(endpoint, openID, "mac-a"), id, "Finish the arc.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
-		if res, err := SetArc(verbReq(root, arcID, "mac-a"), id, "retro-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := SetArc(verbReqFor(endpoint, arcID, "mac-a"), id, "retro-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("set arc %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := Done(verbReq(root, "01J5X00000000000000000RT20", "mac-a"), "retro-one", "First member done."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Done(verbReqFor(endpoint, "01J5X00000000000000000RT20", "mac-a"), "retro-one", "First member done."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("first done: %+v %v", res, err)
 	}
 	if open, err := retrodebt.Open(root); err != nil || len(open) != 0 {
 		t.Fatalf("an open arc raised debt too early: %+v %v", open, err)
 	}
-	if res, err := Done(verbReq(root, "01J5X00000000000000000RT30", "mac-a"), "retro-two", "Arc done."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Done(verbReqFor(endpoint, "01J5X00000000000000000RT30", "mac-a"), "retro-two", "Arc done."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("last done: %+v %v", res, err)
 	}
 	open, err := retrodebt.Open(root)
@@ -360,15 +372,15 @@ func TestLastArcGoalConclusionRaisesRetroDebt(t *testing.T) {
 
 func TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	if res, err := Open(verbReq(root, "01J5X00000000000000000RS10", "mac-a"), "retro-sweep", "Finish the arc.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000RS10", "mac-a"), "retro-sweep", "Finish the arc.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := SetArc(verbReq(root, "01J5X00000000000000000RS11", "mac-a"), "retro-sweep", "sweep-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := SetArc(verbReqFor(endpoint, "01J5X00000000000000000RS11", "mac-a"), "retro-sweep", "sweep-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set arc: %+v %v", res, err)
 	}
-	request := verbReq(root, "01J5X00000000000000000RS12", "mac-a")
+	request := verbReqFor(endpoint, "01J5X00000000000000000RS12", "mac-a")
 	debtVisibleAtSweep := false
 	request.SweepBranch = func(string) error {
 		open, err := retrodebt.Open(root)
@@ -393,19 +405,19 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 
 	t.Run("claim requires the complete budget and binds its revision", func(t *testing.T) {
 		t.Parallel()
-		a := riskLocalRoot(t, "budget-revision-claim")
-		if res, err := Open(obligationAuthorityVerbReq(a, "01J5X00000000000000000H100", "mac-a"), "budgeted", "Bounded work.", "main", "Start."); err != nil || res.Outcome != OutcomeConfirmed {
+		aEndpoint, _ := fakeGoalEndpoint(t)
+		if res, err := Open(verbReqFor(aEndpoint, "01J5X00000000000000000H100", "mac-a"), "budgeted", "Bounded work.", "main", "Start."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open: %+v %v", res, err)
 		}
-		missing, err := Claim(obligationAuthorityVerbReq(a, "01J5X00000000000000000H110", "mac-a"), "budgeted")
+		missing, err := Claim(verbReqFor(aEndpoint, "01J5X00000000000000000H110", "mac-a"), "budgeted")
 		if err != nil || missing.Outcome != OutcomeRejected || !strings.Contains(missing.Detail, "APPROVAL_REQUIRED") {
 			t.Fatalf("claim without approval did not refuse by remedy: %+v %v", missing, err)
 		}
-		res, err := claimApprovedForTest(t, obligationAuthorityVerbReq(a, "01J5X00000000000000000H120", "mac-a"), "budgeted", testBudget())
+		res, err := claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000H120", "mac-a"), "budgeted", testBudget())
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("budgeted claim: %+v %v", res, err)
 		}
-		tree, err := loadTree(a, res.Tip)
+		tree, err := loadTreeFor(aEndpoint, res.Tip)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -422,8 +434,8 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 
 	t.Run("set-budget preserves elapsed origin while advancing claim and accounting", func(t *testing.T) {
 		t.Parallel()
-		a := riskLocalRoot(t, "budget-revision-set")
-		claimReq := obligationAuthorityVerbReq(a, "01J5X00000000000000000H200", "mac-b")
+		aEndpoint, _ := fakeGoalEndpoint(t)
+		claimReq := verbReqFor(aEndpoint, "01J5X00000000000000000H200", "mac-b")
 		res, err := openClaimForTest(t, claimReq, "rebudget", "Bounded work.", "main", "Start.", testBudget())
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open-claim: %+v %v", res, err)
@@ -432,13 +444,13 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		setReq := obligationAuthorityVerbReq(a, "01J5X00000000000000000H210", "mac-b")
+		setReq := verbReqFor(aEndpoint, "01J5X00000000000000000H210", "mac-b")
 		setReq.Now = claimReq.Now.Add(30 * time.Minute)
 		res, err = setBudgetApprovedForTest(t, setReq, "rebudget", next)
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("set-budget: %+v %v", res, err)
 		}
-		tree, err := loadTree(a, res.Tip)
+		tree, err := loadTreeFor(aEndpoint, res.Tip)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -462,22 +474,22 @@ func TestSetBudgetKeepsForeignHolderClaimEpoch(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			root := riskLocalRoot(t, "foreign-budget-epoch")
-			holder := obligationAuthorityVerbReq(root, "01J5X00000000000000000H300", "mac-a")
+			endpoint, _ := fakeGoalEndpoint(t)
+			holder := verbReqFor(endpoint, "01J5X00000000000000000H300", "mac-a")
 			holder.ClaimEpoch = 6
 			if result, err := openClaimForTest(t, holder, "foreign-budget", "Keep the holder's lease epoch.", OriginMain, "Rebudget it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("claim at holder epoch 6: %+v %v", result, err)
 			}
 			next := testBudget()
 			next.AttemptLimit++
-			actor := obligationAuthorityVerbReq(root, "01J5X00000000000000000H310", "mac-b")
+			actor := verbReqFor(endpoint, "01J5X00000000000000000H310", "mac-b")
 			actor.ClaimEpoch = tc.actorEpoch
 			actor.Now = holder.Now.Add(time.Minute)
 			result, err := setBudgetApprovedForTest(t, actor, "foreign-budget", next)
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("foreign set-budget: %+v %v", result, err)
 			}
-			tree, err := loadTree(root, result.Tip)
+			tree, err := loadTreeFor(endpoint, result.Tip)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -526,12 +538,12 @@ func TestRebindEpochFollowsTheAuthenticatedHolderOnly(t *testing.T) {
 	}
 }
 
-func publishClaimFixtureMutation(t *testing.T, root, id, opid string, mutate func(*GoalFile)) PublishResult {
+func publishClaimFixtureMutationForEndpoint(t *testing.T, endpoint Endpoint, id, opid string, mutate func(*GoalFile)) PublishResult {
 	t.Helper()
-	result, err := Publish(obligationAuthorityEndpoint(root), PublishRequest{
+	result, err := Publish(endpoint, PublishRequest{
 		Opid: opid, Machine: "fixture", Lineage: "episode", Intent: testIntentFor("fixture-episode"), Message: "fixture episode shape",
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(root, tip)
+			tree, err := loadTreeFor(endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -542,7 +554,7 @@ func publishClaimFixtureMutation(t *testing.T, root, id, opid string, mutate fun
 			mutate(file)
 			return []Change{{Path: livePath(id), Content: RenderFile(file)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(endpoint, commit) },
 	})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("publish claim fixture mutation: %+v %v", result, err)
@@ -550,29 +562,46 @@ func publishClaimFixtureMutation(t *testing.T, root, id, opid string, mutate fun
 	return result
 }
 
+func fakeLegacyClaimEndpoint(t *testing.T, id string) (Endpoint, *fakeGoalRepository) {
+	t.Helper()
+	openedAt := "2026-08-30T08:00:00Z"
+	claimAt := "2026-08-30T08:05:00Z"
+	file := &GoalFile{
+		Id: id, State: StateClaimed, Intent: "Govern validation.", Origin: OriginMain,
+		NextStep: "Run it.", OpenedAt: openedAt, Revision: 2,
+		Budget:  &Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2},
+		Claimed: &ClaimRecord{Machine: "mac-a", Lineage: "lin-1", At: claimAt, Revision: 2},
+		History: []HistoryLine{
+			{At: openedAt, Opid: Opid("01ARZ3NDEKTSV4RRFFQ69G5FAA", "mac-a", "lin-1"), Verb: "open", Actor: "mac-a+lin-1", Targets: []string{id}, Keep: -1},
+			{At: claimAt, Opid: Opid("01ARZ3NDEKTSV4RRFFQ69G5FAB", "mac-a", "lin-1"), Verb: "claim", Actor: "mac-a+lin-1", Targets: []string{id}, Keep: -1},
+		},
+	}
+	return fakeGoalEndpoint(t, file)
+}
+
 func TestSetBudgetUnchangedIsNoOp(t *testing.T) {
 	t.Parallel()
-	root := riskLocalRoot(t, "unchanged-budget-bed")
-	request := obligationAuthorityVerbReq(root, "01J5X00000000000000000EA00", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	request := verbReqFor(endpoint, "01J5X00000000000000000EA00", "mac-a")
 	if result, err := openClaimForTest(t, request, "unchanged-budget", "Keep the tuple stable.", OriginMain, "Observe it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open and claim: %+v %v", result, err)
 	}
-	beforeTip := acceptedTip(t, root)
-	before, err := loadTree(root, beforeTip)
+	beforeTip := acceptedTipForEndpoint(t, endpoint)
+	before, err := loadTreeFor(endpoint, beforeTip)
 	if err != nil {
 		t.Fatal(err)
 	}
 	beforeBytes := RenderFile(before.Live["unchanged-budget"])
-	unchanged := obligationAuthorityVerbReq(root, "01J5X00000000000000000EA01", "mac-a")
+	unchanged := verbReqFor(endpoint, "01J5X00000000000000000EA01", "mac-a")
 	unchanged.Now = request.Now.Add(time.Hour)
 	result, err := setBudgetApprovedForTest(t, unchanged, "unchanged-budget", testBudget())
 	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "already reads exactly") {
 		t.Fatalf("identical budget was not a typed no-op: %+v %v", result, err)
 	}
-	if afterTip := acceptedTip(t, root); afterTip != beforeTip || result.Tip != beforeTip {
+	if afterTip := acceptedTipForEndpoint(t, endpoint); afterTip != beforeTip || result.Tip != beforeTip {
 		t.Fatalf("identical budget moved the accepted tip: before=%s result=%s after=%s", beforeTip, result.Tip, afterTip)
 	}
-	after, err := loadTree(root, beforeTip)
+	after, err := loadTreeFor(endpoint, beforeTip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,34 +609,34 @@ func TestSetBudgetUnchangedIsNoOp(t *testing.T) {
 		t.Fatalf("identical budget changed the claim record:\n%s\n---\n%s", beforeBytes, got)
 	}
 
-	legacyRoot := riskLocalRoot(t, "unchanged-legacy-budget-bed")
-	legacyRequest := obligationAuthorityVerbReq(legacyRoot, "01J5X00000000000000000ED00", "mac-a")
+	legacyRootEndpoint, _ := fakeGoalEndpoint(t)
+	legacyRequest := verbReqFor(legacyRootEndpoint, "01J5X00000000000000000ED00", "mac-a")
 	if legacyResult, legacyErr := openClaimForTest(t, legacyRequest, "unchanged-legacy-budget", "Keep the legacy tuple stable.", OriginMain, "Observe it.", testBudget()); legacyErr != nil || legacyResult.Outcome != OutcomeConfirmed {
 		t.Fatalf("open and claim legacy fixture: %+v %v", legacyResult, legacyErr)
 	}
-	publishClaimFixtureMutation(t, legacyRoot, "unchanged-legacy-budget", "fixture-unchanged-legacy-budget", func(file *GoalFile) {
+	publishClaimFixtureMutationForEndpoint(t, legacyRootEndpoint, "unchanged-legacy-budget", "fixture-unchanged-legacy-budget", func(file *GoalFile) {
 		file.Claimed.EpisodeAt = ""
 		file.Claimed.EpisodeRevision = 0
 		file.Claimed.EpisodeObligationRevision = 0
 	})
-	legacyTip := acceptedTip(t, legacyRoot)
-	legacyTree, err := loadTree(legacyRoot, legacyTip)
+	legacyTip := acceptedTipForEndpoint(t, legacyRootEndpoint)
+	legacyTree, err := loadTreeFor(legacyRootEndpoint, legacyTip)
 	if err != nil {
 		t.Fatal(err)
 	}
 	legacyBytes := RenderFile(legacyTree.Live["unchanged-legacy-budget"])
-	legacyNoOp := obligationAuthorityVerbReq(legacyRoot, "01J5X00000000000000000ED01", "mac-a")
+	legacyNoOp := verbReqFor(legacyRootEndpoint, "01J5X00000000000000000ED01", "mac-a")
 	legacyNoOp.Now = legacyRequest.Now.Add(time.Hour)
 	legacyResult, legacyErr := setBudgetApprovedForTest(t, legacyNoOp, "unchanged-legacy-budget", testBudget())
 	if legacyErr != nil || legacyResult.Outcome != OutcomeAbandoned {
 		t.Fatalf("identical legacy budget was not a typed no-op: %+v %v", legacyResult, legacyErr)
 	}
-	legacyAfter, err := loadTree(legacyRoot, acceptedTip(t, legacyRoot))
+	legacyAfter, err := loadTreeFor(legacyRootEndpoint, acceptedTipForEndpoint(t, legacyRootEndpoint))
 	if err != nil {
 		t.Fatal(err)
 	}
 	legacyClaim := legacyAfter.Live["unchanged-legacy-budget"].Claimed
-	if acceptedTip(t, legacyRoot) != legacyTip || string(RenderFile(legacyAfter.Live["unchanged-legacy-budget"])) != string(legacyBytes) ||
+	if acceptedTipForEndpoint(t, legacyRootEndpoint) != legacyTip || string(RenderFile(legacyAfter.Live["unchanged-legacy-budget"])) != string(legacyBytes) ||
 		legacyClaim.EpisodeAt != "" || legacyClaim.EpisodeRevision != 0 || legacyClaim.EpisodeObligationRevision != 0 {
 		t.Fatalf("legacy no-op moved the tip, rewrote bytes, or backfilled the episode: %+v", legacyClaim)
 	}
@@ -618,13 +647,14 @@ func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
 	for _, withObligation := range []bool{false, true} {
 		t.Run(fmt.Sprintf("live obligation %v", withObligation), func(t *testing.T) {
 			t.Parallel()
-			root := obligationAuthorityLocalRoot(t, "legacy-anchor")
+			endpoint, _ := fakeLegacyClaimEndpoint(t, "legacy-anchor")
+			root := endpoint.Root
 			if withObligation {
 				if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
-			before, err := loadTree(root, acceptedTip(t, root))
+			before, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -634,13 +664,13 @@ func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
 			var obligationRevision uint64
 			if withObligation {
 				proof := proveObligationHuman(t, root)
-				set := obligationAuthorityVerbReq(root, "01J5X00000000000000000EP00", "mac-a")
+				set := verbReqFor(endpoint, "01J5X00000000000000000EP00", "mac-a")
 				set.Actor.Human = "Wido"
 				set.Now = time.Date(2026, 8, 30, 8, 10, 0, 0, time.UTC)
 				if result, err := SetObligation(set, "legacy-anchor", testGovernedObligation(ObligationDraft), &proof); err != nil || result.Outcome != OutcomeConfirmed {
 					t.Fatalf("set obligation: %+v %v", result, err)
 				}
-				withLive, err := loadTree(root, acceptedTip(t, root))
+				withLive, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -648,14 +678,14 @@ func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
 			}
 			next := testBudget()
 			next.ElapsedLimit = "8h"
-			setBudget := obligationAuthorityVerbReq(root, "01J5X00000000000000000EP01", "mac-a")
+			setBudget := verbReqFor(endpoint, "01J5X00000000000000000EP01", "mac-a")
 			setBudget.CallerClass, setBudget.EpochAuthority = "MAIN", EpochAuthorityHolder
 			setBudget.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 			result, err := setBudgetApprovedForTest(t, setBudget, "legacy-anchor", next)
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("set budget: %+v %v", result, err)
 			}
-			tree, err := loadTree(root, result.Tip)
+			tree, err := loadTreeFor(endpoint, result.Tip)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -670,32 +700,32 @@ func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
 
 func TestSetBudgetRejectsContradictoryLegacyOrigin(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "contradictory-legacy")
-	publishClaimFixtureMutation(t, root, "contradictory-legacy", "fixture-contradictory-legacy", func(file *GoalFile) {
+	endpoint, _ := fakeLegacyClaimEndpoint(t, "contradictory-legacy")
+	publishClaimFixtureMutationForEndpoint(t, endpoint, "contradictory-legacy", "fixture-contradictory-legacy", func(file *GoalFile) {
 		file.Claimed.AccountingRevision = 1
 		file.Claimed.EpisodeAt = ""
 		file.Claimed.EpisodeRevision = 0
 		file.Claimed.EpisodeObligationRevision = 0
 	})
-	beforeTip := acceptedTip(t, root)
-	before, err := loadTree(root, beforeTip)
+	beforeTip := acceptedTipForEndpoint(t, endpoint)
+	before, err := loadTreeFor(endpoint, beforeTip)
 	if err != nil {
 		t.Fatal(err)
 	}
 	beforeBytes := RenderFile(before.Live["contradictory-legacy"])
 	next := testBudget()
 	next.ElapsedLimit = "8h"
-	request := obligationAuthorityVerbReq(root, "01J5X00000000000000000EC00", "mac-a")
+	request := verbReqFor(endpoint, "01J5X00000000000000000EC00", "mac-a")
 	request.CallerClass, request.EpochAuthority = "MAIN", EpochAuthorityHolder
 	request.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	result, err := setBudgetApprovedForTest(t, request, "contradictory-legacy", next)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "claimed episodeAt=") || !strings.Contains(result.Detail, "contradicts History revision=1") {
 		t.Fatalf("contradictory legacy origin was not refused without a history search: %+v %v", result, err)
 	}
-	if afterTip := acceptedTip(t, root); afterTip != beforeTip {
+	if afterTip := acceptedTipForEndpoint(t, endpoint); afterTip != beforeTip {
 		t.Fatalf("refused legacy materialization moved the accepted tip: before=%s after=%s", beforeTip, afterTip)
 	}
-	after, err := loadTree(root, beforeTip)
+	after, err := loadTreeFor(endpoint, beforeTip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -706,8 +736,8 @@ func TestSetBudgetRejectsContradictoryLegacyOrigin(t *testing.T) {
 
 func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "revisionless-migration")
-	publishClaimFixtureMutation(t, root, "revisionless-migration", "fixture-revisionless-migration", func(file *GoalFile) {
+	endpoint, _ := fakeLegacyClaimEndpoint(t, "revisionless-migration")
+	publishClaimFixtureMutationForEndpoint(t, endpoint, "revisionless-migration", "fixture-revisionless-migration", func(file *GoalFile) {
 		file.Budget = nil
 		file.Claimed.Revision = 0
 		file.Claimed.AccountingRevision = 0
@@ -715,7 +745,7 @@ func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 		file.Claimed.EpisodeRevision = 0
 		file.Claimed.EpisodeObligationRevision = 0
 	})
-	legacy, err := loadTree(root, acceptedTip(t, root))
+	legacy, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -724,14 +754,14 @@ func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 	}
 	next := testBudget()
 	next.ElapsedLimit = "8h"
-	first := obligationAuthorityVerbReq(root, "01J5X00000000000000000EM00", "mac-a")
+	first := verbReqFor(endpoint, "01J5X00000000000000000EM00", "mac-a")
 	first.CallerClass, first.EpochAuthority = "MAIN", EpochAuthorityHolder
 	first.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	result, err := setBudgetApprovedForTest(t, first, "revisionless-migration", next)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("first approved migration budget: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -741,14 +771,14 @@ func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 	}
 	secondBudget := next
 	secondBudget.ElapsedLimit = "10h"
-	second := obligationAuthorityVerbReq(root, "01J5X00000000000000000EM01", "mac-a")
+	second := verbReqFor(endpoint, "01J5X00000000000000000EM01", "mac-a")
 	second.CallerClass, second.EpochAuthority = "MAIN", EpochAuthorityHolder
 	second.Now = first.Now.Add(time.Hour)
 	result, err = setBudgetApprovedForTest(t, second, "revisionless-migration", secondBudget)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("later approved budget: %+v %v", result, err)
 	}
-	tree, err = loadTree(root, result.Tip)
+	tree, err = loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,27 +795,27 @@ func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 // (TestStealStartsNewEpisode, and the landing tests).
 func TestReleaseReclaimKeepsTheEpisodeForTheSamePair(t *testing.T) {
 	t.Parallel()
-	root := riskLocalRoot(t, "release-reclaim-bed")
-	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ER00", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	claim := verbReqFor(endpoint, "01J5X00000000000000000ER00", "mac-a")
 	if result, err := openClaimForTest(t, claim, "release-reclaim", "Restart ownership.", OriginMain, "Claim twice.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("initial claim: %+v %v", result, err)
 	}
-	before, err := loadTree(root, acceptedTip(t, root))
+	before, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil {
 		t.Fatal(err)
 	}
 	first := *before.Live["release-reclaim"].Claimed
-	release := obligationAuthorityVerbReq(root, "01J5X00000000000000000ER01", "mac-a")
+	release := verbReqFor(endpoint, "01J5X00000000000000000ER01", "mac-a")
 	release.Now = claim.Now.Add(time.Hour)
 	if result, err := Release(release, "release-reclaim"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", result, err)
 	}
-	reclaim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ER02", "mac-a")
+	reclaim := verbReqFor(endpoint, "01J5X00000000000000000ER02", "mac-a")
 	reclaim.Now = release.Now.Add(time.Hour)
 	if result, err := Claim(reclaim, "release-reclaim"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reclaim: %+v %v", result, err)
 	}
-	after, err := loadTree(root, acceptedTip(t, root))
+	after, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -798,23 +828,23 @@ func TestReleaseReclaimKeepsTheEpisodeForTheSamePair(t *testing.T) {
 
 func TestStealStartsNewEpisode(t *testing.T) {
 	t.Parallel()
-	root := riskLocalRoot(t, "steal-episode-bed")
-	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ES00", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	claim := verbReqFor(endpoint, "01J5X00000000000000000ES00", "mac-a")
 	if result, err := openClaimForTest(t, claim, "steal-episode", "Transfer ownership.", OriginMain, "Steal it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("initial claim: %+v %v", result, err)
 	}
-	before, err := loadTree(root, acceptedTip(t, root))
+	before, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil {
 		t.Fatal(err)
 	}
 	first := *before.Live["steal-episode"].Claimed
-	steal := obligationAuthorityVerbReq(root, "01J5X00000000000000000ES01", "mac-b")
+	steal := verbReqFor(endpoint, "01J5X00000000000000000ES01", "mac-b")
 	steal.Actor.Human = "Wido"
 	steal.Now = claim.Now.Add(time.Hour)
 	if result, err := Steal(steal, "steal-episode"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("steal: %+v %v", result, err)
 	}
-	after, err := loadTree(root, acceptedTip(t, root))
+	after, err := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -827,14 +857,13 @@ func TestStealStartsNewEpisode(t *testing.T) {
 
 func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	aEndpoint, _ := fakeGoalEndpointPair(t)
 
-	res, err := Open(verbReq(a, "01J5X00000000000000000Q500", "mac-a"), "labeled", "Grouped work.", "main", "Go.", "zeta", "alpha", "zeta")
+	res, err := Open(verbReqFor(aEndpoint, "01J5X00000000000000000Q500", "mac-a"), "labeled", "Grouped work.", "main", "Go.", "zeta", "alpha", "zeta")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open with labels: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, res.Tip)
+	tree, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -846,11 +875,11 @@ func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err = Edit(verbReq(a, "01J5X00000000000000000Q510", "mac-a"), "labeled", EditFields{Labels: &labels})
+	res, err = Edit(verbReqFor(aEndpoint, "01J5X00000000000000000Q510", "mac-a"), "labeled", EditFields{Labels: &labels})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("edit labels: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, res.Tip)
+	tree, err = loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -866,7 +895,7 @@ func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err = Edit(verbReq(a, "01J5X00000000000000000Q520", "mac-a"), "labeled", EditFields{Labels: &unchanged})
+	res, err = Edit(verbReqFor(aEndpoint, "01J5X00000000000000000Q520", "mac-a"), "labeled", EditFields{Labels: &unchanged})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("an equal final set follows the shipped edit behavior: %+v %v", res, err)
 	}
@@ -881,33 +910,32 @@ func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res, err = Edit(verbReq(a, "01J5X00000000000000000Q525", "mac-a"), "labeled", EditFields{Labels: &firstFinal}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err = Edit(verbReqFor(aEndpoint, "01J5X00000000000000000Q525", "mac-a"), "labeled", EditFields{Labels: &firstFinal}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("first whole-field publisher: %+v %v", res, err)
 	}
-	if res, err = Edit(verbReq(a, "01J5X00000000000000000Q526", "mac-a"), "labeled", EditFields{Labels: &lastFinal}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err = Edit(verbReqFor(aEndpoint, "01J5X00000000000000000Q526", "mac-a"), "labeled", EditFields{Labels: &lastFinal}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("last whole-field publisher: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, res.Tip)
+	tree, err = loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(tree.Live["labeled"].Labels, ","); got != "alpha,beta,last" {
 		t.Fatalf("the last publisher replaces the whole field instead of set-merging: %q", got)
 	}
-	if _, err := Open(verbReq(a, "01J5X00000000000000000Q530", "mac-a"), "bad-label", "Bad.", "main", "Stop.", "Bad_Label"); err == nil || !strings.Contains(err.Error(), labelRe.String()) {
+	if _, err := Open(verbReqFor(aEndpoint, "01J5X00000000000000000Q530", "mac-a"), "bad-label", "Bad.", "main", "Stop.", "Bad_Label"); err == nil || !strings.Contains(err.Error(), labelRe.String()) {
 		t.Fatalf("open refuses the one grammar: %v", err)
 	}
 }
 
 func TestOpenClaimCarriesLabels(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
-	res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000Q540", "mac-a"), "held-label", "Claimed at creation.", "main", "Go.", testBudget(), "custody")
+	aEndpoint, _ := fakeGoalEndpointPair(t)
+	res, err := openClaimForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000Q540", "mac-a"), "held-label", "Claimed at creation.", "main", "Go.", testBudget(), "custody")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim with labels: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, res.Tip)
+	tree, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -918,19 +946,18 @@ func TestOpenClaimCarriesLabels(t *testing.T) {
 
 func TestSameGoalClaimRaceOneWinnerNamed(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000D3", "mac-a"), "contested", "One goal, two machines.", "main", "Race."); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000D3", "mac-a"), "contested", "One goal, two machines.", "main", "Race."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 
 	// A claims first; B's claim rebuilds on the new tip, reads the
 	// standing claim, and classifies the loss naming the winner.
-	resA, err := claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000D4", "mac-a"), "contested", testBudget())
+	resA, err := claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X0000000000000000000D4", "mac-a"), "contested", testBudget())
 	if err != nil || resA.Outcome != OutcomeConfirmed {
 		t.Fatalf("A claims: %+v %v", resA, err)
 	}
-	resB, err := Claim(verbReq(b, "01J5X0000000000000000000D5", "mac-b"), "contested")
+	resB, err := Claim(verbReqFor(bEndpoint, "01J5X0000000000000000000D5", "mac-b"), "contested")
 	if err != nil || resB.Outcome != OutcomeLost {
 		t.Fatalf("B loses the claim race: %+v %v", resB, err)
 	}
@@ -941,44 +968,43 @@ func TestSameGoalClaimRaceOneWinnerNamed(t *testing.T) {
 
 func TestClaimRefusalsAreNamed(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000D6", "mac-a"), "dep", "The blocker.", "main", "First."); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, _ := fakeGoalEndpointPair(t)
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000D6", "mac-a"), "dep", "The blocker.", "main", "First."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open dep: %+v %v", res, err)
 	}
 	// A goal blocked by an open dependency refuses the claim by name.
-	res, err := Open(verbReq(a, "01J5X0000000000000000000D7", "mac-a"), "eager", "Wants to run early.", "main", "Second.")
+	res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000D7", "mac-a"), "eager", "Wants to run early.", "main", "Second.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open eager: %+v %v", res, err)
 	}
 	// Wire the edge by hand for the fixture (no verb writes this edge):
 	// publish an updated file carrying BlockedBy.
-	t2, err := loadTree(a, res.Tip)
-	if err != nil {
-		t.Fatal(err)
-	}
-	eager := t2.Live["eager"]
-	eager.Blocked = []string{"dep"}
-	touch(eager, verbReq(a, "01J5X0000000000000000000D9", "mac-a"), "edit", []string{"eager"})
-	if resw, errw := Publish(endpointFor(a), PublishRequest{
+	if resw, errw := Publish(aEndpoint, PublishRequest{
 		Opid: "op-wire-edge", Machine: "mac-a", Lineage: "l1",
 		Intent: testIntentFor("edit"), Message: "wire edge",
 		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTreeFor(aEndpoint, tip)
+			if err != nil {
+				return nil, err
+			}
+			eager := tree.Live["eager"]
+			eager.Blocked = []string{"dep"}
+			touch(eager, verbReqFor(aEndpoint, "01J5X0000000000000000000D9", "mac-a"), "edit", []string{"eager"})
 			return []Change{{Path: livePath("eager"), Content: RenderFile(eager)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(a, commit) },
+		Validate: func(commit string) error { return validateCommitFor(aEndpoint, commit) },
 	}); errw != nil || resw.Outcome != OutcomeConfirmed {
 		t.Fatalf("wire edge: %+v %v", resw, errw)
 	}
 
 	// Refusals are REJECTED results, journaled by name — not Go
 	// errors: the engine's contract for a definite rejection.
-	approveGoalForTest(t, verbReq(a, "01J5X0000000000000000000D7", "mac-a"), "eager", testBudget())
-	res2, err := Claim(verbReq(a, "01J5X0000000000000000000D8", "mac-a"), "eager")
+	approveGoalForTest(t, verbReqFor(aEndpoint, "01J5X0000000000000000000D7", "mac-a"), "eager", testBudget())
+	res2, err := Claim(verbReqFor(aEndpoint, "01J5X0000000000000000000D8", "mac-a"), "eager")
 	if err != nil || res2.Outcome != OutcomeRejected || !strings.Contains(res2.Detail, "blocked by dep") {
 		t.Fatalf("claiming past an open blocker rejects by name: %+v %v", res2, err)
 	}
-	res3, err := Claim(verbReq(a, "01J5X0000000000000000000DE", "mac-a"), "ghost")
+	res3, err := Claim(verbReqFor(aEndpoint, "01J5X0000000000000000000DE", "mac-a"), "ghost")
 	if err != nil || res3.Outcome != OutcomeRejected || !strings.Contains(res3.Detail, "ghost") {
 		t.Fatalf("claiming a goal that does not exist rejects naming it: %+v %v", res3, err)
 	}
@@ -986,53 +1012,52 @@ func TestClaimRefusalsAreNamed(t *testing.T) {
 
 func TestClaimQuotaRefusalNamesTheHeldGoalAndRelease(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
 	for index, id := range []string{"held-work", "next-work"} {
-		request := verbReq(root, []string{"01J5X00000000000000000CQ00", "01J5X00000000000000000CQ10"}[index], "mac-a")
+		request := verbReqFor(endpoint, []string{"01J5X00000000000000000CQ00", "01J5X00000000000000000CQ10"}[index], "mac-a")
 		if result, err := Open(request, id, "Exercise the claim quota.", OriginHuman, "Claim it."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 		approveGoalForTest(t, request, id, testBudget())
 	}
-	if result, err := Claim(verbReq(root, "01J5X00000000000000000CQ20", "mac-a"), "held-work"); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Claim(verbReqFor(endpoint, "01J5X00000000000000000CQ20", "mac-a"), "held-work"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held goal: %+v %v", result, err)
 	}
-	before := acceptedTip(t, root)
-	result, err := Claim(verbReq(root, "01J5X00000000000000000CQ30", "mac-a"), "next-work")
+	before := acceptedTipForEndpoint(t, endpoint)
+	result, err := Claim(verbReqFor(endpoint, "01J5X00000000000000000CQ30", "mac-a"), "next-work")
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, ClaimQuotaCode) ||
 		!strings.Contains(result.Detail, "held-work") || !strings.Contains(result.Detail, "metasystem goal release --id held-work") {
 		t.Fatalf("quota refusal: %+v %v", result, err)
 	}
-	if after := acceptedTip(t, root); after != before || result.Tip != before {
+	if after := acceptedTipForEndpoint(t, endpoint); after != before || result.Tip != before {
 		t.Fatalf("quota refusal moved ledger: before=%s after=%s result=%+v", before, after, result)
 	}
 }
 
 func TestReleaseIsOwnerOrHuman(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000D9", "mac-a"), "held", "Held by A.", "main", "Work."); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
+	b := bEndpoint.Root
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000D9", "mac-a"), "held", "Held by A.", "main", "Work."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000DA", "mac-a"), "held", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X0000000000000000000DA", "mac-a"), "held", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 	// B's agent cannot release A's claim: a rejection by name.
-	resF, err := Release(verbReq(b, "01J5X0000000000000000000DB", "mac-b"), "held")
+	resF, err := Release(verbReqFor(bEndpoint, "01J5X0000000000000000000DB", "mac-b"), "held")
 	if err != nil || resF.Outcome != OutcomeRejected || !strings.Contains(resF.Detail, "human act") {
 		t.Fatalf("a foreign release rejects as a human act: %+v %v", resF, err)
 	}
 	// B under a human can.
-	humanReq := verbReq(b, "01J5X0000000000000000000DC", "mac-b")
+	humanReq := verbReqFor(bEndpoint, "01J5X0000000000000000000DC", "mac-b")
 	humanReq.Actor.Human = "wido"
 	humanReq.Authority = testTerminalAuthority(t, b, humanReq.Now)
 	res, err := Release(humanReq, "held")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a human-directed foreign release proceeds: %+v %v", res, err)
 	}
-	t2, err := loadTree(b, res.Tip)
+	t2, err := loadTreeFor(bEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1048,26 +1073,29 @@ func TestReleaseIsOwnerOrHuman(t *testing.T) {
 
 func TestOpenClearsGoalFreeInTheSameCommit(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	// Seed a root record WITH a Goal-free declaration.
-	root := vRoot()
-	root.Free = &FreeRecord{Declared: "2026-08-20T11:00:00Z", Origin: "main", Digest: strings.Repeat("cd", 32)}
-	files := vTree(root, nil, nil)
-	if res, err := Publish(endpointFor(a), PublishRequest{
+	aEndpoint, _ := fakeGoalEndpointPair(t)
+	// Publish a Goal-free declaration on the accepted root.
+	if res, err := Publish(aEndpoint, PublishRequest{
 		Opid: "op-seed-free", Machine: "mac-seed", Lineage: "l1",
 		Intent: testIntentFor("migrate"), Message: "seed free root",
 		Mutate: func(tip string) ([]Change, error) {
-			return []Change{{Path: goalsPrefix + "backlog.md", Content: files[goalsPrefix+"backlog.md"]}}, nil
+			tree, err := loadTreeFor(aEndpoint, tip)
+			if err != nil {
+				return nil, err
+			}
+			tree.Root.Free = &FreeRecord{Declared: "2026-08-20T11:00:00Z", Origin: "main", Digest: strings.Repeat("cd", 32)}
+			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(tree.Root)}}, nil
 		},
+		Validate: func(commit string) error { return validateCommitFor(aEndpoint, commit) },
 	}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("seed: %+v %v", res, err)
 	}
 
-	res, err := Open(verbReq(a, "01J5X0000000000000000000DD", "mac-a"), "revival", "Work resumes.", "main", "Go.")
+	res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000DD", "mac-a"), "revival", "Work resumes.", "main", "Go.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open under Goal-free: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1081,20 +1109,20 @@ func TestOpenClearsGoalFreeInTheSameCommit(t *testing.T) {
 
 func TestParkUnparkCycle(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000E0", "mac-a"), "pausable", "Pausable work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
+	b := bEndpoint.Root
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000E0", "mac-a"), "pausable", "Pausable work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	// Park without a reason refuses up front.
-	if _, err := Park(verbReq(a, "01J5X0000000000000000000E1", "mac-a"), "pausable", " "); err == nil {
+	if _, err := Park(verbReqFor(aEndpoint, "01J5X0000000000000000000E1", "mac-a"), "pausable", " "); err == nil {
 		t.Fatal("park needs its reason")
 	}
-	res, err := Park(verbReq(a, "01J5X0000000000000000000E2", "mac-a"), "pausable", "waiting on the vendor")
+	res, err := Park(verbReqFor(aEndpoint, "01J5X0000000000000000000E2", "mac-a"), "pausable", "waiting on the vendor")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1105,24 +1133,24 @@ func TestParkUnparkCycle(t *testing.T) {
 
 	// An agent parking ANOTHER machine's claim rejects; a human
 	// park records the displaced claimant.
-	if res, err := Unpark(verbReq(a, "01J5X0000000000000000000E3", "mac-a"), "pausable"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Unpark(verbReqFor(aEndpoint, "01J5X0000000000000000000E3", "mac-a"), "pausable"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000E4", "mac-a"), "pausable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X0000000000000000000E4", "mac-a"), "pausable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	resB, err := Park(verbReq(b, "01J5X0000000000000000000E5", "mac-b"), "pausable", "b wants it stopped")
+	resB, err := Park(verbReqFor(bEndpoint, "01J5X0000000000000000000E5", "mac-b"), "pausable", "b wants it stopped")
 	if err != nil || resB.Outcome != OutcomeRejected || !strings.Contains(resB.Detail, "human act") {
 		t.Fatalf("an agent parking another's claim rejects: %+v %v", resB, err)
 	}
-	humanReq := verbReq(b, "01J5X0000000000000000000E6", "mac-b")
+	humanReq := verbReqFor(bEndpoint, "01J5X0000000000000000000E6", "mac-b")
 	humanReq.Actor.Human = "wido"
 	humanReq.Authority = testTerminalAuthority(t, b, humanReq.Now)
 	resH, err := Park(humanReq, "pausable", "operator stop")
 	if err != nil || resH.Outcome != OutcomeConfirmed {
 		t.Fatalf("the human park proceeds: %+v %v", resH, err)
 	}
-	t3, err := loadTree(b, resH.Tip)
+	t3, err := loadTreeFor(bEndpoint, resH.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1138,12 +1166,11 @@ func TestParkUnparkCycle(t *testing.T) {
 
 func TestParkRecordsPushedBranchSummary(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
-	if result, err := Open(verbReq(root, "01J5X00000000000000000E2A0", "mac-a"), "branched", "Branch work.", "main", "Build u1."); err != nil || result.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpointPair(t)
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000E2A0", "mac-a"), "branched", "Branch work.", "main", "Build u1."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	req := verbReq(root, "01J5X00000000000000000E2A1", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000E2A1", "mac-a")
 	req.ParkBranchCheck = func(goalID, next string) (string, error) {
 		if goalID != "branched" || next != "Build u1." {
 			t.Fatalf("branch check got goal=%q next=%q", goalID, next)
@@ -1154,7 +1181,7 @@ func TestParkRecordsPushedBranchSummary(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1165,9 +1192,8 @@ func TestParkRecordsPushedBranchSummary(t *testing.T) {
 
 func TestParkKeepsNextStepNarrativeAndAddsBranchSummary(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
-	if result, err := Open(verbReq(root, "01J5X00000000000000000E2B0", "mac-a"), "branched-narrative", "Branch work.", "main", "Finish the explanation for the next holder."); err != nil || result.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpointPair(t)
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000E2B0", "mac-a"), "branched-narrative", "Branch work.", "main", "Finish the explanation for the next holder."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
 	summaries := []string{
@@ -1175,13 +1201,13 @@ func TestParkKeepsNextStepNarrativeAndAddsBranchSummary(t *testing.T) {
 		"goal/branched-narrative last unit u1 commit " + strings.Repeat("b", 40) + " is read clean",
 	}
 	for index, summary := range summaries {
-		req := verbReq(root, fmt.Sprintf("01J5X00000000000000000E2B%d", index+1), "mac-a")
+		req := verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000E2B%d", index+1), "mac-a")
 		req.ParkBranchCheck = func(_, _ string) (string, error) { return summary, nil }
 		result, err := Park(req, "branched-narrative", "handoff")
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("park %d: %+v %v", index, result, err)
 		}
-		tree, loadErr := loadTree(root, result.Tip)
+		tree, loadErr := loadTreeFor(endpoint, result.Tip)
 		if loadErr != nil {
 			t.Fatal(loadErr)
 		}
@@ -1193,7 +1219,7 @@ func TestParkKeepsNextStepNarrativeAndAddsBranchSummary(t *testing.T) {
 			t.Fatalf("second park stacked the old summary: %q", got)
 		}
 		if index == 0 {
-			if unparked, unparkErr := Unpark(verbReq(root, "01J5X00000000000000000E2B3", "mac-a"), "branched-narrative"); unparkErr != nil || unparked.Outcome != OutcomeConfirmed {
+			if unparked, unparkErr := Unpark(verbReqFor(endpoint, "01J5X00000000000000000E2B3", "mac-a"), "branched-narrative"); unparkErr != nil || unparked.Outcome != OutcomeConfirmed {
 				t.Fatalf("unpark: %+v %v", unparked, unparkErr)
 			}
 		}
@@ -1202,46 +1228,45 @@ func TestParkKeepsNextStepNarrativeAndAddsBranchSummary(t *testing.T) {
 
 func TestReopenGuardsClaimedDependents(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000E7", "mac-a"), "base", "The base.", "main", "First."); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, _ := fakeGoalEndpointPair(t)
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000E7", "mac-a"), "base", "The base.", "main", "First."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open base: %+v %v", res, err)
 	}
-	if res, err := Done(verbReq(a, "01J5X0000000000000000000E8", "mac-a"), "base", "Base shipped."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Done(verbReqFor(aEndpoint, "01J5X0000000000000000000E8", "mac-a"), "base", "Base shipped."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done base: %+v %v", res, err)
 	}
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000E9", "mac-a"), "tower", "On the base.", "main", "Second."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000E9", "mac-a"), "tower", "On the base.", "main", "Second."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open tower: %+v %v", res, err)
 	}
 	blocked := []string{"base"}
-	if res, err := Edit(verbReq(a, "01J5X0000000000000000000EA", "mac-a"), "tower", EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Edit(verbReqFor(aEndpoint, "01J5X0000000000000000000EA", "mac-a"), "tower", EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("edit edge: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X0000000000000000000EB", "mac-a"), "tower", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X0000000000000000000EB", "mac-a"), "tower", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim tower: %+v %v", res, err)
 	}
 	// Reopening the base under the claimed dependent refuses.
-	res, err := Reopen(verbReq(a, "01J5X0000000000000000000EC", "mac-a"), "base")
+	res, err := Reopen(verbReqFor(aEndpoint, "01J5X0000000000000000000EC", "mac-a"), "base")
 	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "tower") {
 		t.Fatalf("reopen under a claimed dependent rejects naming it: %+v %v", res, err)
 	}
 	// Release the dependent; the reopen proceeds and the archive
 	// entry moves back queued.
-	if res, err := Release(verbReq(a, "01J5X0000000000000000000ED", "mac-a"), "tower"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(verbReqFor(aEndpoint, "01J5X0000000000000000000ED", "mac-a"), "tower"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
-	res, err = Reopen(verbReq(a, "01J5X0000000000000000000EE", "mac-a"), "base")
+	res, err = Reopen(verbReqFor(aEndpoint, "01J5X0000000000000000000EE", "mac-a"), "base")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("reopen: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, archived := t2.Done["base"]; archived {
 		t.Fatal("reopen removes the archive entry")
 	}
-	if files, readErr := ReadCommitGoals(a, res.Commit); readErr != nil {
+	if files, readErr := aEndpoint.Repository.Files(res.Commit, goalsPrefix, recordsGoalsPrefix); readErr != nil {
 		t.Fatal(readErr)
 	} else if _, remains := files[recordsGoalsPrefix+"base.md"]; remains {
 		t.Fatal("reopen's ledger commit must remove the concluded record")
@@ -1254,27 +1279,27 @@ func TestReopenGuardsClaimedDependents(t *testing.T) {
 
 func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X000000000000000001R00")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X000000000000000001R00")
 	for index, id := range []string{"reopen-abandoned", "reopen-successor"} {
 		ulid := []string{"01J5X000000000000000001R10", "01J5X000000000000000001R20"}[index]
-		if result, err := Open(verbReq(root, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
-	approveGoalForTest(t, verbReq(root, "01J5X000000000000000001R30", "mac-a"), "reopen-abandoned", testBudget())
-	abandon := verbReq(root, "01J5X000000000000000001R40", "mac-a")
+	approveGoalForTest(t, verbReqFor(endpoint, "01J5X000000000000000001R30", "mac-a"), "reopen-abandoned", testBudget())
+	abandon := verbReqFor(endpoint, "01J5X000000000000000001R40", "mac-a")
 	abandon.Actor.Human = "Wido"
 	if result, err := Abandon(abandon, "reopen-abandoned", AbandonSpec{Because: "the work moved", Carried: "reopen-successor"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon: %+v %v", result, err)
 	}
 
-	if result, err := Reopen(verbReq(root, "01J5X000000000000000001R50", "mac-a"), "reopen-abandoned"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not in the archive") {
+	if result, err := Reopen(verbReqFor(endpoint, "01J5X000000000000000001R50", "mac-a"), "reopen-abandoned"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not in the archive") {
 		t.Fatalf("done reopen path accepted an abandoned goal: %+v %v", result, err)
 	}
-	request := verbReq(root, "01J5X000000000000000001R60", "mac-a")
+	request := verbReqFor(endpoint, "01J5X000000000000000001R60", "mac-a")
 	if _, err := ReopenAbandoned(request, "reopen-abandoned", nil); err == nil || err.Error() != "reopen from abandoned is a human act and names its human (--by)" {
 		t.Fatalf("missing human refusal = %v", err)
 	}
@@ -1286,7 +1311,7 @@ func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *t
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reopen abandoned: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1303,12 +1328,12 @@ func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *t
 		t.Fatalf("abandon and reopen events did not survive in order: abandon=%+v reopen=%+v", abandonLine, reopenLine)
 	}
 
-	claim := verbReq(root, "01J5X000000000000000001R70", "mac-a")
+	claim := verbReqFor(endpoint, "01J5X000000000000000001R70", "mac-a")
 	claim.ClaimEpoch = 17
 	if result, err := claimApprovedForTest(t, claim, "reopen-abandoned", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("fresh claim: %+v %v", result, err)
 	}
-	projected, err := Project(endpointFor(root), true, claim.Now)
+	projected, err := Project(endpoint, true, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1320,21 +1345,20 @@ func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *t
 
 func TestDeclareFreeExclusivityAndRenewal(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000EF", "mac-a"), "open-one", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, _ := fakeGoalEndpointPair(t)
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000EF", "mac-a"), "open-one", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	// Declaring over a queued goal rejects by name.
-	res, err := DeclareFree(verbReq(a, "01J5X0000000000000000000F0", "mac-a"), "main", strings.Repeat("ef", 32))
+	res, err := DeclareFree(verbReqFor(aEndpoint, "01J5X0000000000000000000F0", "mac-a"), "main", strings.Repeat("ef", 32))
 	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "open-one") {
 		t.Fatalf("declare-free over queued rejects: %+v %v", res, err)
 	}
 	// Park it; the declaration coexists with parked.
-	if res, err := Park(verbReq(a, "01J5X0000000000000000000F1", "mac-a"), "open-one", "later"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Park(verbReqFor(aEndpoint, "01J5X0000000000000000000F1", "mac-a"), "open-one", "later"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
-	res, err = DeclareFree(verbReq(a, "01J5X0000000000000000000F2", "mac-a"), "main", strings.Repeat("ef", 32))
+	res, err = DeclareFree(verbReqFor(aEndpoint, "01J5X0000000000000000000F2", "mac-a"), "main", strings.Repeat("ef", 32))
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("declare-free over parked: %+v %v", res, err)
 	}
@@ -1342,7 +1366,7 @@ func TestDeclareFreeExclusivityAndRenewal(t *testing.T) {
 	// fresh operation finds the declaration standing and abandons —
 	// never a confirmed entry whose opid is nowhere (F8: the opid
 	// is the journal's truth).
-	res, err = DeclareFree(verbReq(a, "01J5X0000000000000000000F3", "mac-a"), "main", strings.Repeat("ef", 32))
+	res, err = DeclareFree(verbReqFor(aEndpoint, "01J5X0000000000000000000F3", "mac-a"), "main", strings.Repeat("ef", 32))
 	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already stands") {
 		t.Fatalf("a fresh renewal abandons honestly: %+v %v", res, err)
 	}
@@ -1350,19 +1374,18 @@ func TestDeclareFreeExclusivityAndRenewal(t *testing.T) {
 
 func TestEditAcceptsAMultiKilobyteIntent(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000F4", "mac-a"), "verbose", "Short.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, _ := fakeGoalEndpointPair(t)
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000F4", "mac-a"), "verbose", "Short.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	// Prose caps are REMOVED: witnessed by a
 	// multi-kilobyte intent, not a 500-byte one.
 	big := strings.Repeat("A thorough paragraph of intent. ", 150) // ~4.8KB
-	res, err := Edit(verbReq(a, "01J5X0000000000000000000F5", "mac-a"), "verbose", EditFields{Intent: &big})
+	res, err := Edit(verbReqFor(aEndpoint, "01J5X0000000000000000000F5", "mac-a"), "verbose", EditFields{Intent: &big})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a multi-kilobyte intent is lawful: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1373,23 +1396,22 @@ func TestEditAcceptsAMultiKilobyteIntent(t *testing.T) {
 
 func TestStealNeedsItsHumanAndRecordsIt(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := openClaimForTest(t, verbReq(a, "01J5X0000000000000000000F6", "mac-a"), "wanted", "Wanted work.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
+	if res, err := openClaimForTest(t, verbReqFor(aEndpoint, "01J5X0000000000000000000F6", "mac-a"), "wanted", "Wanted work.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim: %+v %v", res, err)
 	}
 	// Steal without a human refuses before anything happens.
-	if _, err := Steal(verbReq(b, "01J5X0000000000000000000F7", "mac-b"), "wanted"); err == nil ||
+	if _, err := Steal(verbReqFor(bEndpoint, "01J5X0000000000000000000F7", "mac-b"), "wanted"); err == nil ||
 		!strings.Contains(err.Error(), "--by") {
 		t.Fatalf("steal without --by refuses: %v", err)
 	}
-	humanReq := verbReq(b, "01J5X0000000000000000000F8", "mac-b")
+	humanReq := verbReqFor(bEndpoint, "01J5X0000000000000000000F8", "mac-b")
 	humanReq.Actor.Human = "wido"
 	res, err := Steal(humanReq, "wanted")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the attributed steal proceeds: %+v %v", res, err)
 	}
-	t2, err := loadTree(b, res.Tip)
+	t2, err := loadTreeFor(bEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1405,22 +1427,21 @@ func TestStealNeedsItsHumanAndRecordsIt(t *testing.T) {
 
 func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	aEndpoint, _ := fakeGoalEndpointPair(t)
 	// Three archived goals of increasing age: ancient (chained under
 	// a live blocker edge), middle, fresh. One live goal depends on
 	// a done goal that itself depends on ancient — the done-to-done
 	// chain the closure must follow.
 	mk := func(ulid, id, opened string, blocked []string) {
-		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Work "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(verbReqFor(aEndpoint, ulid, "mac-a"), id, "Work "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
 		if blocked != nil {
-			if res, err := Edit(verbReq(a, ulid[:len(ulid)-1]+"E", "mac-a"), id, EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
+			if res, err := Edit(verbReqFor(aEndpoint, ulid[:len(ulid)-1]+"E", "mac-a"), id, EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
 				t.Fatalf("edge %s: %+v %v", id, res, err)
 			}
 		}
-		if res, err := Done(verbReq(a, ulid[:len(ulid)-1]+"D", "mac-a"), id, "Done "+id); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Done(verbReqFor(aEndpoint, ulid[:len(ulid)-1]+"D", "mac-a"), id, "Done "+id); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("done %s: %+v %v", id, res, err)
 		}
 	}
@@ -1428,21 +1449,21 @@ func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 	mk("01J5X00000000000000000A010", "middle", "", []string{"ancient"})
 	mk("01J5X00000000000000000A020", "fresh", "", nil)
 	// The live goal depends on middle: closure = middle + ancient.
-	if res, err := Open(verbReq(a, "01J5X00000000000000000A030", "mac-a"), "alive", "Live work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X00000000000000000A030", "mac-a"), "alive", "Live work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open alive: %+v %v", res, err)
 	}
 	edge := []string{"middle"}
-	if res, err := Edit(verbReq(a, "01J5X00000000000000000A040", "mac-a"), "alive", EditFields{Blocked: &edge}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Edit(verbReqFor(aEndpoint, "01J5X00000000000000000A040", "mac-a"), "alive", EditFields{Blocked: &edge}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("edge alive: %+v %v", res, err)
 	}
 
 	// keep=0: only the closure survives — fresh dies, ancient and
 	// middle stay reachable, nothing dangles by construction.
-	res, err := Prune(verbReq(a, "01J5X00000000000000000A050", "mac-a"), 0)
+	res, err := Prune(verbReqFor(aEndpoint, "01J5X00000000000000000A050", "mac-a"), 0)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("prune: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1455,7 +1476,7 @@ func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 	if _, gone := t2.Done["fresh"]; gone {
 		t.Fatal("outside the closure with keep=0, fresh dies")
 	}
-	if files, readErr := ReadCommitGoals(a, res.Commit); readErr != nil {
+	if files, readErr := aEndpoint.Repository.Files(res.Commit, goalsPrefix, recordsGoalsPrefix); readErr != nil {
 		t.Fatal(readErr)
 	} else if _, remains := files[recordsGoalsPrefix+"fresh.md"]; remains {
 		t.Fatal("prune's ledger commit must remove the pruned concluded file")
@@ -1466,7 +1487,7 @@ func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 		t.Fatalf("the root history carries prune keep=0: %+v", last)
 	}
 	// A prune replay is idempotent on the rebuilt tip.
-	res2, err := Prune(verbReq(a, "01J5X00000000000000000A050", "mac-a"), 0)
+	res2, err := Prune(verbReqFor(aEndpoint, "01J5X00000000000000000A050", "mac-a"), 0)
 	if err != nil || res2.Outcome != OutcomeConfirmed || res2.Detail != "idempotent" {
 		t.Fatalf("the prune replay classifies idempotent: %+v %v", res2, err)
 	}
@@ -1474,44 +1495,44 @@ func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 
 func TestPruneRetainsAbandonedGoalsAndTheirPrerequisitesOutsideKeep(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	archive := func(ulid, id string, blocked []string) {
 		t.Helper()
-		if result, err := Open(verbReq(root, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 		if blocked != nil {
-			if result, err := Edit(verbReq(root, ulid[:len(ulid)-1]+"E", "mac-a"), id, EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+			if result, err := Edit(verbReqFor(endpoint, ulid[:len(ulid)-1]+"E", "mac-a"), id, EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("block %s: %+v %v", id, result, err)
 			}
 		}
-		if result, err := Done(verbReq(root, ulid[:len(ulid)-1]+"D", "mac-a"), id, "done"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Done(verbReqFor(endpoint, ulid[:len(ulid)-1]+"D", "mac-a"), id, "done"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("done %s: %+v %v", id, result, err)
 		}
 	}
 	archive("01J5X00000000000000001P000", "oldest-prerequisite", nil)
 	archive("01J5X00000000000000001P010", "direct-prerequisite", []string{"oldest-prerequisite"})
 	archive("01J5X00000000000000001P020", "unrelated-done", nil)
-	if result, err := Open(verbReq(root, "01J5X00000000000000001P030", "mac-a"), "abandoned-goal", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000001P030", "mac-a"), "abandoned-goal", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open abandoned goal: %+v %v", result, err)
 	}
 	blocked := []string{"direct-prerequisite"}
-	if result, err := Edit(verbReq(root, "01J5X00000000000000001P040", "mac-a"), "abandoned-goal", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Edit(verbReqFor(endpoint, "01J5X00000000000000001P040", "mac-a"), "abandoned-goal", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("block abandoned goal: %+v %v", result, err)
 	}
-	abandonReq := verbReq(root, "01J5X00000000000000001P050", "mac-a")
+	abandonReq := verbReqFor(endpoint, "01J5X00000000000000001P050", "mac-a")
 	abandonReq.Actor.Human = "Wido"
 	if result, err := Abandon(abandonReq, "abandoned-goal", AbandonSpec{Because: "cancelled"}, goalHumanProof(t, root, abandonReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon: %+v %v", result, err)
 	}
-	result, err := Prune(verbReq(root, "01J5X00000000000000001P060", "mac-a"), 0)
+	result, err := Prune(verbReqFor(endpoint, "01J5X00000000000000001P060", "mac-a"), 0)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("prune: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1525,32 +1546,31 @@ func TestPruneRetainsAbandonedGoalsAndTheirPrerequisitesOutsideKeep(t *testing.T
 
 func TestArcClaimsAsOneUnit(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
 	// Two members of one arc, plus a bystander.
 	for i, id := range []string{"arc-one", "arc-two", "solo"} {
 		ulid := fmt.Sprintf("01J5X00000000000000000B0%d0", i)
-		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Work "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(verbReqFor(aEndpoint, ulid, "mac-a"), id, "Work "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
 	}
 	arc := "covenant-patience"
 	for i, id := range []string{"arc-one", "arc-two"} {
 		ulid := fmt.Sprintf("01J5X00000000000000000B1%d0", i)
-		res, err := Publish(endpointFor(a), PublishRequest{
+		res, err := Publish(aEndpoint, PublishRequest{
 			Opid: Opid(ulid, "mac-a", "lin-1"), Machine: "mac-a", Lineage: "lin-1",
 			Intent: testIntentFor("edit"), Message: "wire arc " + id,
 			Mutate: func(tip string) ([]Change, error) {
-				t2, err := loadTree(a, tip)
+				t2, err := loadTreeFor(aEndpoint, tip)
 				if err != nil {
 					return nil, err
 				}
 				f := t2.Live[id]
 				f.Arc = arc
-				touch(f, verbReq(a, ulid, "mac-a"), "edit", []string{id})
+				touch(f, verbReqFor(aEndpoint, ulid, "mac-a"), "edit", []string{id})
 				return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
 			},
-			Validate: func(commit string) error { return ValidateCommit(a, commit) },
+			Validate: func(commit string) error { return validateCommitFor(aEndpoint, commit) },
 		})
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("wire arc %s: %+v %v", id, res, err)
@@ -1559,15 +1579,15 @@ func TestArcClaimsAsOneUnit(t *testing.T) {
 
 	// The covenant-patience two-clone race: one winner takes BOTH
 	// members; the loser names the winner.
-	resA, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000B200", "mac-a"), "arc-one", testBudget())
+	resA, err := claimArcApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000B200", "mac-a"), "arc-one", testBudget())
 	if err != nil || resA.Outcome != OutcomeConfirmed {
 		t.Fatalf("A claims the arc: %+v %v", resA, err)
 	}
-	resB, err := ClaimArc(verbReq(b, "01J5X00000000000000000B210", "mac-b"), "arc-two")
+	resB, err := ClaimArc(verbReqFor(bEndpoint, "01J5X00000000000000000B210", "mac-b"), "arc-two")
 	if err != nil || resB.Outcome != OutcomeLost {
 		t.Fatalf("B loses the whole cascade: %+v %v", resB, err)
 	}
-	t2, err := loadTree(a, resA.Tip)
+	t2, err := loadTreeFor(aEndpoint, resA.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1591,11 +1611,11 @@ func TestArcClaimsAsOneUnit(t *testing.T) {
 	}
 
 	// Release cascades back as one unit.
-	resR, err := ReleaseArc(verbReq(a, "01J5X00000000000000000B220", "mac-a"), "arc-one")
+	resR, err := ReleaseArc(verbReqFor(aEndpoint, "01J5X00000000000000000B220", "mac-a"), "arc-one")
 	if err != nil || resR.Outcome != OutcomeConfirmed {
 		t.Fatalf("release cascade: %+v %v", resR, err)
 	}
-	t3, err := loadTree(a, resR.Tip)
+	t3, err := loadTreeFor(aEndpoint, resR.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1608,44 +1628,43 @@ func TestArcClaimsAsOneUnit(t *testing.T) {
 
 func TestMemberDoneLeavesSiblingClaimed(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	aEndpoint, _ := fakeGoalEndpointPair(t)
 	for i, id := range []string{"pair-one", "pair-two"} {
 		ulid := fmt.Sprintf("01J5X00000000000000000B3%d0", i)
-		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Paired "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(verbReqFor(aEndpoint, ulid, "mac-a"), id, "Paired "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
 		wireULID := fmt.Sprintf("01J5X00000000000000000B4%d0", i)
-		res, err := Publish(endpointFor(a), PublishRequest{
+		res, err := Publish(aEndpoint, PublishRequest{
 			Opid:    Opid(wireULID, "mac-a", "lin-1"),
 			Machine: "mac-a", Lineage: "lin-1",
 			Intent: testIntentFor("edit"), Message: "wire pair " + id,
 			Mutate: func(tip string) ([]Change, error) {
-				t2, err := loadTree(a, tip)
+				t2, err := loadTreeFor(aEndpoint, tip)
 				if err != nil {
 					return nil, err
 				}
 				f := t2.Live[id]
 				f.Arc = "the-pair"
-				touch(f, verbReq(a, wireULID, "mac-a"), "edit", []string{id})
+				touch(f, verbReqFor(aEndpoint, wireULID, "mac-a"), "edit", []string{id})
 				return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
 			},
-			Validate: func(commit string) error { return ValidateCommit(a, commit) },
+			Validate: func(commit string) error { return validateCommitFor(aEndpoint, commit) },
 		})
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("wire %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000B500", "mac-a"), "pair-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000B500", "mac-a"), "pair-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim arc: %+v %v", res, err)
 	}
 	// Concluding ONE member archives it and leaves the sibling
 	// claimed — the arc survives.
-	res, err := Done(verbReq(a, "01J5X00000000000000000B510", "mac-a"), "pair-one", "First member shipped.")
+	res, err := Done(verbReqFor(aEndpoint, "01J5X00000000000000000B510", "mac-a"), "pair-one", "First member shipped.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done member: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1660,46 +1679,47 @@ func TestMemberDoneLeavesSiblingClaimed(t *testing.T) {
 
 func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
+	a := aEndpoint.Root
+	b := bEndpoint.Root
 	for i, id := range []string{"casc-one", "casc-two"} {
-		if res, err := Open(verbReq(a, fmt.Sprintf("01J5X00000000000000000C0%d0", i), "mac-a"), id, "Cascade "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(verbReqFor(aEndpoint, fmt.Sprintf("01J5X00000000000000000C0%d0", i), "mac-a"), id, "Cascade "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
 		wireULID := fmt.Sprintf("01J5X00000000000000000C1%d0", i)
-		res, err := Publish(endpointFor(a), PublishRequest{
+		res, err := Publish(aEndpoint, PublishRequest{
 			Opid:    Opid(wireULID, "mac-a", "lin-1"),
 			Machine: "mac-a", Lineage: "lin-1",
 			Intent: testIntentFor("edit"), Message: "wire " + id,
 			Mutate: func(tip string) ([]Change, error) {
-				t2, err := loadTree(a, tip)
+				t2, err := loadTreeFor(aEndpoint, tip)
 				if err != nil {
 					return nil, err
 				}
 				f := t2.Live[id]
 				f.Arc = "the-cascade"
-				touch(f, verbReq(a, wireULID, "mac-a"), "edit", []string{id})
+				touch(f, verbReqFor(aEndpoint, wireULID, "mac-a"), "edit", []string{id})
 				return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
 			},
-			Validate: func(commit string) error { return ValidateCommit(a, commit) },
+			Validate: func(commit string) error { return validateCommitFor(aEndpoint, commit) },
 		})
 		if err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("wire %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000C200", "mac-a"), "casc-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000C200", "mac-a"), "casc-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim arc: %+v %v", res, err)
 	}
 	// The human parks A's whole claimed arc from machine B: the
 	// displaced pair is recorded ONCE and rides each touched line.
-	humanReq := verbReq(b, "01J5X00000000000000000C210", "mac-b")
+	humanReq := verbReqFor(bEndpoint, "01J5X00000000000000000C210", "mac-b")
 	humanReq.Actor.Human = "wido"
 	humanReq.Authority = testTerminalAuthority(t, b, humanReq.Now)
 	res, err := ParkArc(humanReq, "casc-one", "operator hold")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human park cascade: %+v %v", res, err)
 	}
-	t2, err := loadTree(b, res.Tip)
+	t2, err := loadTreeFor(bEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1717,18 +1737,18 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 		t.Fatalf("ONE displaced pair across the cascade (R10-M06): %v", pairs)
 	}
 	// The displaced agent cannot lift a human park through the cascade.
-	res, err = UnparkArc(verbReq(a, "01J5X00000000000000000C215", "mac-a"), "casc-one")
+	res, err = UnparkArc(verbReqFor(aEndpoint, "01J5X00000000000000000C215", "mac-a"), "casc-one")
 	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "lifting a human's pause is a human act") {
 		t.Fatalf("an agent cannot unpark human-parked members: %+v %v", res, err)
 	}
 	// The displaced pair's next History-appending publication
 	// piggybacks ONE automatic root-record ack line answering the
 	// displacement — both goals on the one line.
-	res, err = Open(verbReq(a, "01J5X00000000000000000C218", "mac-a"), "casc-after", "Displaced pair keeps working.", "main", "Go.")
+	res, err = Open(verbReqFor(aEndpoint, "01J5X00000000000000000C218", "mac-a"), "casc-after", "Displaced pair keeps working.", "main", "Go.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the displaced pair's next publication: %+v %v", res, err)
 	}
-	tAck, err := loadTree(a, res.Tip)
+	tAck, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1744,11 +1764,11 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 	}
 	// Acknowledged once: the pair's NEXT publication does not re-ack.
 	stillGoing := "Still going."
-	res, err = Edit(verbReq(a, "01J5X00000000000000000C219", "mac-a"), "casc-after", EditFields{NextStep: &stillGoing})
+	res, err = Edit(verbReqFor(aEndpoint, "01J5X00000000000000000C219", "mac-a"), "casc-after", EditFields{NextStep: &stillGoing})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("edit after ack: %+v %v", res, err)
 	}
-	tAgain, err := loadTree(a, res.Tip)
+	tAgain, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1762,14 +1782,14 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 		t.Fatalf("an answered displacement never re-acks: %d lines", ackCount)
 	}
 	// The human lifts the pause; the whole arc restores.
-	humanUnpark := verbReq(a, "01J5X00000000000000000C220", "mac-a")
+	humanUnpark := verbReqFor(aEndpoint, "01J5X00000000000000000C220", "mac-a")
 	humanUnpark.Actor.Human = "wido"
 	humanUnpark.Authority = testHumanAuthority(t, a, humanUnpark.Now)
 	res, err = UnparkArc(humanUnpark, "casc-one")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark cascade: %+v %v", res, err)
 	}
-	t3, err := loadTree(a, res.Tip)
+	t3, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1782,26 +1802,25 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 
 func TestDetachReleasesWithoutSplittingTheQuota(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	aEndpoint, _ := fakeGoalEndpointPair(t)
 	for i, id := range []string{"det-one", "det-two"} {
-		if res, err := Open(verbReq(a, fmt.Sprintf("01J5X00000000000000000D0%d0", i), "mac-a"), id, "Det "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(verbReqFor(aEndpoint, fmt.Sprintf("01J5X00000000000000000D0%d0", i), "mac-a"), id, "Det "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
-		if res, err := SetArc(verbReq(a, fmt.Sprintf("01J5X00000000000000000D1%d0", i), "mac-a"), id, "det-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := SetArc(verbReqFor(aEndpoint, fmt.Sprintf("01J5X00000000000000000D1%d0", i), "mac-a"), id, "det-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000D200", "mac-a"), "det-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000D200", "mac-a"), "det-one", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim arc: %+v %v", res, err)
 	}
 	// Detaching a claimed member releases it: the quota never
 	// splits one claim into two independent ones.
-	res, err := Detach(verbReq(a, "01J5X00000000000000000D210", "mac-a"), "det-two")
+	res, err := Detach(verbReqFor(aEndpoint, "01J5X00000000000000000D210", "mac-a"), "det-two")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("detach: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1820,54 +1839,53 @@ func TestDetachReleasesWithoutSplittingTheQuota(t *testing.T) {
 
 func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000D300", "mac-a"), "anchor", "The anchor.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
+	if res, err := openClaimForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000D300", "mac-a"), "anchor", "The anchor.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim anchor: %+v %v", res, err)
 	}
-	if res, err := SetArc(verbReq(a, "01J5X00000000000000000D310", "mac-a"), "anchor", "join-arc"); err == nil && res.Outcome == OutcomeConfirmed {
+	if res, err := SetArc(verbReqFor(aEndpoint, "01J5X00000000000000000D310", "mac-a"), "anchor", "join-arc"); err == nil && res.Outcome == OutcomeConfirmed {
 		t.Fatalf("set-arc on a CLAIMED goal must refuse (queued moves only): %+v", res)
 	}
 	// Release the standing claim first — the validator refuses a
 	// second independent claim (the quota is one per machine), which
 	// the first draft of this test proved by accident.
-	if res, err := Release(verbReq(a, "01J5X00000000000000000D315", "mac-a"), "anchor"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(verbReqFor(aEndpoint, "01J5X00000000000000000D315", "mac-a"), "anchor"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release anchor: %+v %v", res, err)
 	}
 	// Re-anchor properly: open a queued member, arc it, claim the arc.
-	if res, err := Open(verbReq(a, "01J5X00000000000000000D320", "mac-a"), "anchor2", "Anchor two.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X00000000000000000D320", "mac-a"), "anchor2", "Anchor two.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open anchor2: %+v %v", res, err)
 	}
-	if res, err := SetArc(verbReq(a, "01J5X00000000000000000D330", "mac-a"), "anchor2", "join-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := SetArc(verbReqFor(aEndpoint, "01J5X00000000000000000D330", "mac-a"), "anchor2", "join-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-arc anchor2: %+v %v", res, err)
 	}
-	if res, err := claimArcApprovedForTest(t, verbReq(a, "01J5X00000000000000000D340", "mac-a"), "anchor2", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimArcApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000D340", "mac-a"), "anchor2", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim join-arc: %+v %v", res, err)
 	}
 	// A stranger may join the planning arc, but cannot inherit its foreign
 	// claim: the member lands queued.
-	if res, err := Open(verbReq(b, "01J5X00000000000000000D350", "mac-b"), "joiner", "Wants in.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(bEndpoint, "01J5X00000000000000000D350", "mac-b"), "joiner", "Wants in.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open joiner: %+v %v", res, err)
 	}
-	approveGoalForTest(t, verbReq(b, "01J5X00000000000000000D355", "mac-b"), "joiner", testBudget())
-	res, err := SetArc(verbReq(b, "01J5X00000000000000000D360", "mac-b"), "joiner", "join-arc")
+	approveGoalForTest(t, verbReqFor(bEndpoint, "01J5X00000000000000000D355", "mac-b"), "joiner", testBudget())
+	res, err := SetArc(verbReqFor(bEndpoint, "01J5X00000000000000000D360", "mac-b"), "joiner", "join-arc")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a stranger's queued join: %+v %v", res, err)
 	}
-	tForeign, err := loadTree(b, res.Tip)
+	tForeign, err := loadTreeFor(bEndpoint, res.Tip)
 	if err != nil || tForeign.Live["joiner"].State != StateApproved || tForeign.Live["joiner"].Claimed != nil {
 		t.Fatalf("foreign join inherited claim authority: %+v %v", tForeign.Live["joiner"], err)
 	}
-	if res, err := Detach(verbReq(b, "01J5X00000000000000000D365", "mac-b"), "joiner"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Detach(verbReqFor(bEndpoint, "01J5X00000000000000000D365", "mac-b"), "joiner"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("detach queued joiner for own-pair row: %+v %v", res, err)
 	}
 	// The claimant's own move auto-claims the joiner under the
 	// caller's own claim.
-	res, err = SetArc(verbReq(a, "01J5X00000000000000000D370", "mac-a"), "joiner", "join-arc")
+	res, err = SetArc(verbReqFor(aEndpoint, "01J5X00000000000000000D370", "mac-a"), "joiner", "join-arc")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the claimant's move proceeds: %+v %v", res, err)
 	}
-	t2, err := loadTree(a, res.Tip)
+	t2, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1882,26 +1900,26 @@ func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 
 func TestFreshNoOpsAbandonHonestly(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000F900", "mac-a"), "held-fast", "Held.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
+	a := aEndpoint.Root
+	if res, err := openClaimForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000F900", "mac-a"), "held-fast", "Held.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --claim: %+v %v", res, err)
 	}
 	// A fresh claim of an already-ours goal abandons (F8): its opid
 	// is nowhere, so confirmed would be a lie.
-	res, err := Claim(verbReq(a, "01J5X00000000000000000F910", "mac-a"), "held-fast")
+	res, err := Claim(verbReqFor(aEndpoint, "01J5X00000000000000000F910", "mac-a"), "held-fast")
 	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "not by this operation") {
 		t.Fatalf("claim-already-ours abandons: %+v %v", res, err)
 	}
 	// A fresh steal of an already-ours goal abandons the same way.
-	humanReq := verbReq(a, "01J5X00000000000000000F920", "mac-a")
+	humanReq := verbReqFor(aEndpoint, "01J5X00000000000000000F920", "mac-a")
 	humanReq.Actor.Human = "wido"
 	res, err = Steal(humanReq, "held-fast")
 	if err != nil || res.Outcome != OutcomeAbandoned {
 		t.Fatalf("steal-already-ours abandons: %+v %v", res, err)
 	}
 	// Detach without an arc abandons with its reason.
-	res, err = Detach(verbReq(b, "01J5X00000000000000000F930", "mac-b"), "held-fast")
+	res, err = Detach(verbReqFor(bEndpoint, "01J5X00000000000000000F930", "mac-b"), "held-fast")
 	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "not in an arc") {
 		t.Fatalf("detach-without-arc abandons: %+v %v", res, err)
 	}
@@ -1921,25 +1939,25 @@ func TestFreshNoOpsAbandonHonestly(t *testing.T) {
 // "-" clears it.
 func TestMachinePinning(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X0000000000000000000P1", "mac-a"), "gpu-work", "Needs the big machine.", "main", "Train."); err != nil || res.Outcome != OutcomeConfirmed {
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
+	a := aEndpoint.Root
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X0000000000000000000P1", "mac-a"), "gpu-work", "Needs the big machine.", "main", "Train."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 
 	// An agent cannot pin: pinning directs machines, so it names its
 	// human.
-	if _, err := SetPin(verbReq(a, "01J5X0000000000000000000P2", "mac-a"), "gpu-work", "mac-b"); err == nil ||
+	if _, err := SetPin(verbReqFor(aEndpoint, "01J5X0000000000000000000P2", "mac-a"), "gpu-work", "mac-b"); err == nil ||
 		!strings.Contains(err.Error(), "--by") {
 		t.Fatalf("agent set-pin refuses: %v", err)
 	}
-	pinReq := verbReq(a, "01J5X0000000000000000000P3", "mac-a")
+	pinReq := verbReqFor(aEndpoint, "01J5X0000000000000000000P3", "mac-a")
 	pinReq.Actor.Human = "wido"
 	pinRes, err := SetPin(pinReq, "gpu-work", "mac-b")
 	if err != nil || pinRes.Outcome != OutcomeConfirmed {
 		t.Fatalf("the attributed pin lands: %+v %v", pinRes, err)
 	}
-	pinnedTree, err := loadTree(a, pinRes.Tip)
+	pinnedTree, err := loadTreeFor(aEndpoint, pinRes.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1953,20 +1971,20 @@ func TestMachinePinning(t *testing.T) {
 	}
 
 	// The wrong machine's claim rejects naming both machines.
-	approveGoalForTest(t, verbReq(a, "01J5X0000000000000000000P3", "mac-a"), "gpu-work", testBudget())
-	res, err := Claim(verbReq(a, "01J5X0000000000000000000P4", "mac-a"), "gpu-work")
+	approveGoalForTest(t, verbReqFor(aEndpoint, "01J5X0000000000000000000P3", "mac-a"), "gpu-work", testBudget())
+	res, err := Claim(verbReqFor(aEndpoint, "01J5X0000000000000000000P4", "mac-a"), "gpu-work")
 	if err != nil || res.Outcome != OutcomeRejected ||
 		!strings.Contains(res.Detail, "pinned to machine mac-b") || !strings.Contains(res.Detail, "mac-a") {
 		t.Fatalf("a foreign claim rejects by name: %+v %v", res, err)
 	}
 	// The pinned machine claims normally.
-	if res, err := Claim(verbReq(b, "01J5X0000000000000000000P5", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReqFor(bEndpoint, "01J5X0000000000000000000P5", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the pinned machine claims: %+v %v", res, err)
 	}
 
 	// Re-pinning a goal claimed elsewhere refuses: the human decides
 	// between waiting, releasing, and stealing first.
-	repin := verbReq(a, "01J5X0000000000000000000P6", "mac-a")
+	repin := verbReqFor(aEndpoint, "01J5X0000000000000000000P6", "mac-a")
 	repin.Actor.Human = "wido"
 	if res, err := SetPin(repin, "gpu-work", "mac-a"); err != nil || res.Outcome != OutcomeRejected ||
 		!strings.Contains(res.Detail, "claimed by machine mac-b") {
@@ -1975,7 +1993,7 @@ func TestMachinePinning(t *testing.T) {
 
 	// Even a human steal honors the pin: the stealing machine is not
 	// the pinned one.
-	stealReq := verbReq(a, "01J5X0000000000000000000P7", "mac-a")
+	stealReq := verbReqFor(aEndpoint, "01J5X0000000000000000000P7", "mac-a")
 	stealReq.Actor.Human = "wido"
 	if res, err := Steal(stealReq, "gpu-work"); err != nil || res.Outcome != OutcomeRejected ||
 		!strings.Contains(res.Detail, "honors the pin") {
@@ -1984,7 +2002,7 @@ func TestMachinePinning(t *testing.T) {
 
 	// While pinned to mac-b, the goal is invisible to mac-a's frontier
 	// and ready on mac-b's.
-	frontierTree, err := loadTree(a, acceptedTip(t, a))
+	frontierTree, err := loadTreeFor(aEndpoint, acceptedTipForEndpoint(t, aEndpoint))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2013,29 +2031,29 @@ func TestMachinePinning(t *testing.T) {
 
 	// A released pin TRANSFERS whole: mac-b's pin moves to mac-a, and
 	// mac-a — refused before — now claims.
-	if res, err := Release(verbReq(b, "01J5X0000000000000000000P8", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(verbReqFor(bEndpoint, "01J5X0000000000000000000P8", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
-	moveReq := verbReq(a, "01J5X0000000000000000000P9", "mac-a")
+	moveReq := verbReqFor(aEndpoint, "01J5X0000000000000000000P9", "mac-a")
 	moveReq.Actor.Human = "wido"
 	if res, err := SetPin(moveReq, "gpu-work", "mac-a"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the transfer lands: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X0000000000000000000PA", "mac-a"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReqFor(aEndpoint, "01J5X0000000000000000000PA", "mac-a"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the newly pinned machine claims: %+v %v", res, err)
 	}
 
 	// Clearing with "-" reopens the field: after release, any machine
 	// claims again.
-	if res, err := Release(verbReq(a, "01J5X0000000000000000000PB", "mac-a"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(verbReqFor(aEndpoint, "01J5X0000000000000000000PB", "mac-a"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release for the clear: %+v %v", res, err)
 	}
-	clearReq := verbReq(a, "01J5X0000000000000000000PC", "mac-a")
+	clearReq := verbReqFor(aEndpoint, "01J5X0000000000000000000PC", "mac-a")
 	clearReq.Actor.Human = "wido"
 	if res, err := SetPin(clearReq, "gpu-work", "-"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the clear lands: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(b, "01J5X0000000000000000000PD", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReqFor(bEndpoint, "01J5X0000000000000000000PD", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("an unpinned goal claims anywhere: %+v %v", res, err)
 	}
 }
@@ -2046,59 +2064,59 @@ func TestMachinePinning(t *testing.T) {
 // by itself when every blocker is done. A person's open is unchanged.
 func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
+	aEndpoint, bEndpoint := fakeGoalEndpointPair(t)
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
 	budget := testBudget()
 	// The seat holds an approved, claimed goal a person opened.
-	if res, err := Open(verbReq(a, "01J5X00000000000000000SB00", "mac-a"), "current-work", "The seat's current goal.", OriginHuman, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(aEndpoint, "01J5X00000000000000000SB00", "mac-a"), "current-work", "The seat's current goal.", OriginHuman, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000SB01", "mac-a"), "current-work", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000SB01", "mac-a"), "current-work", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 	// A seat open without its blocker is refused with the ruling before anything publishes.
-	before := acceptedTip(t, a)
-	if _, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB02", "mac-a"), "stray-idea", "An improvement that blocks nothing.", OriginMain, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") || !strings.Contains(err.Error(), "--blocks") {
+	before := acceptedTipForEndpoint(t, aEndpoint)
+	if _, err := OpenRisked(verbReqFor(aEndpoint, "01J5X00000000000000000SB02", "mac-a"), "stray-idea", "An improvement that blocks nothing.", OriginMain, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") || !strings.Contains(err.Error(), "--blocks") {
 		t.Fatalf("a seat open without --blocks is refused with the ruling: %v", err)
 	}
-	if acceptedTip(t, a) != before {
+	if acceptedTipForEndpoint(t, aEndpoint) != before {
 		t.Fatal("the refused open moved the ledger")
 	}
 	// --origin human is a word the caller supplies, not a person: without a
 	// proof behind it the open is a seat's and is refused as one, before
 	// anything about the goal is read and with nothing published.
-	if _, err := OpenRisked(namedOnly(a, "01J5X00000000000000000SB0M", "mac-a"), "claims-to-be-asked", "An open that says it is a person's.", OriginHuman, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") {
+	if _, err := OpenRisked(namedOnly(aEndpoint.Root, "01J5X00000000000000000SB0M", "mac-a"), "claims-to-be-asked", "An open that says it is a person's.", OriginHuman, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") {
 		t.Fatalf("a name and an origin opened as a person: %v", err)
 	}
-	if acceptedTip(t, a) != before {
+	if acceptedTipForEndpoint(t, aEndpoint) != before {
 		t.Fatal("the refused human-origin open moved the ledger")
 	}
 	// A person's open - name and proof - needs no blocker.
-	asked := personReq(a, "01J5X00000000000000000SB03", "mac-a")
-	if res, err := OpenRisked(asked, "person-asked", "What the person asked for.", OriginHuman, "Do it.", nil, nil, risk, 0, "", &budget, goalHumanProof(t, a, asked.Now)); err != nil || res.Outcome != OutcomeConfirmed {
+	asked := verbReqFor(aEndpoint, "01J5X00000000000000000SB03", "mac-a")
+	asked.Actor.Human = "Wido"
+	if res, err := OpenRisked(asked, "person-asked", "What the person asked for.", OriginHuman, "Do it.", nil, nil, risk, 0, "", &budget, goalHumanProof(t, aEndpoint.Root, asked.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a proven person's open is unchanged: %+v %v", res, err)
 	}
 	// --blocks names live work.
-	if res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB04", "mac-a"), "blocker-of-nothing", "Blocks a goal that is not there.", OriginMain, "Fix.", []string{"no-such-goal"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not live") {
+	if res, err := OpenRisked(verbReqFor(aEndpoint, "01J5X00000000000000000SB04", "mac-a"), "blocker-of-nothing", "Blocks a goal that is not there.", OriginMain, "Fix.", []string{"no-such-goal"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not live") {
 		t.Fatalf("--blocks names live work only: %+v %v", res, err)
 	}
 	// A seat names only the goal it holds: another seat's claim and an
 	// unclaimed goal are both refused, whatever their origin.
-	if res, err := OpenRisked(verbReq(b, "01J5X00000000000000000SB05", "mac-b"), "foreign-fix", "mac-b blocks mac-a's work.", OriginMain, "Fix.", []string{"current-work"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
+	if res, err := OpenRisked(verbReqFor(bEndpoint, "01J5X00000000000000000SB05", "mac-b"), "foreign-fix", "mac-b blocks mac-a's work.", OriginMain, "Fix.", []string{"current-work"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
 		t.Fatalf("a seat cannot park another pair's claim through --blocks: %+v %v", res, err)
 	}
-	if res, err := OpenRisked(verbReq(b, "01J5X00000000000000000SB0K", "mac-b"), "idle-fix", "An idle seat blocks a queued goal.", OriginMain, "Fix.", []string{"person-asked"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
+	if res, err := OpenRisked(verbReqFor(bEndpoint, "01J5X00000000000000000SB0K", "mac-b"), "idle-fix", "An idle seat blocks a queued goal.", OriginMain, "Fix.", []string{"person-asked"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
 		t.Fatalf("a seat cannot park a goal it does not hold through --blocks: %+v %v", res, err)
 	}
 	// The seat opens the defect that blocks its claimed goal: one publish
 	// opens the blocker and parks the blocked goal, claim cleared, edge and
 	// blocker recorded, approval kept.
-	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB06", "mac-a"), "fix-the-defect", "The defect that blocks current-work.", OriginMain, "Fix it.", []string{"current-work"}, nil, risk, 0, "", &budget, nil)
+	res, err := OpenRisked(verbReqFor(aEndpoint, "01J5X00000000000000000SB06", "mac-a"), "fix-the-defect", "The defect that blocks current-work.", OriginMain, "Fix it.", []string{"current-work"}, nil, risk, 0, "", &budget, nil)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --blocks: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, res.Tip)
+	tree, err := loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2120,22 +2138,22 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 		t.Fatalf("the park rides the open's operation: %+v", last)
 	}
 	// An agent cannot lift the park early, and the parked goal is not claimable.
-	if res, err := Unpark(verbReq(a, "01J5X00000000000000000SB07", "mac-a"), "current-work"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "returns by itself") {
+	if res, err := Unpark(verbReqFor(aEndpoint, "01J5X00000000000000000SB07", "mac-a"), "current-work"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "returns by itself") {
 		t.Fatalf("an agent cannot lift a blocker park early: %+v %v", res, err)
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000SB08", "mac-a"), "current-work"); err == nil && res.Outcome == OutcomeConfirmed {
+	if res, err := Claim(verbReqFor(aEndpoint, "01J5X00000000000000000SB08", "mac-a"), "current-work"); err == nil && res.Outcome == OutcomeConfirmed {
 		t.Fatal("a parked, blocked goal is not claimable")
 	}
 	// The seat's one claim is free for the blocker; finishing it returns
 	// the blocked goal to approved in the same publish, claimable again.
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000SB09", "mac-a"), "fix-the-defect", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(aEndpoint, "01J5X00000000000000000SB09", "mac-a"), "fix-the-defect", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim the blocker: %+v %v", res, err)
 	}
-	res, err = Done(verbReq(a, "01J5X00000000000000000SB0A", "mac-a"), "fix-the-defect", "Fixed.")
+	res, err = Done(verbReqFor(aEndpoint, "01J5X00000000000000000SB0A", "mac-a"), "fix-the-defect", "Fixed.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done the blocker: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, res.Tip)
+	tree, err = loadTreeFor(aEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2146,18 +2164,19 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	if last := returned.History[len(returned.History)-1]; last.Verb != "unpark" || last.Opid != tree.Done["fix-the-defect"].History[len(tree.Done["fix-the-defect"].History)-1].Opid || !strings.Contains(last.Reason, "fix-the-defect is done") {
 		t.Fatalf("the return rides done's operation and names the blocker: %+v", last)
 	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000SB0B", "mac-a"), "current-work"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(verbReqFor(aEndpoint, "01J5X00000000000000000SB0B", "mac-a"), "current-work"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the returned goal is claimable again: %+v %v", res, err)
 	}
 
 	// A person may name any live goal. A second blocker on a goal that is
 	// already parked adds only the edge; the goal returns when the LAST
 	// blocker is done, to its resting state (queued here: never approved).
-	if res, err := Open(verbReq(b, "01J5X00000000000000000SB0C", "mac-b"), "twice-blocked", "Queued work two defects hold.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(bEndpoint, "01J5X00000000000000000SB0C", "mac-b"), "twice-blocked", "Queued work two defects hold.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open twice-blocked: %+v %v", res, err)
 	}
-	person := personReq(b, "01J5X00000000000000000SB0D", "mac-b")
-	proven := goalHumanProof(t, b, person.Now)
+	person := verbReqFor(bEndpoint, "01J5X00000000000000000SB0D", "mac-b")
+	person.Actor.Human = "Wido"
+	proven := goalHumanProof(t, bEndpoint.Root, person.Now)
 	if res, err := OpenRisked(person, "first-fix", "First defect.", OriginHuman, "Fix.", []string{"twice-blocked"}, nil, risk, 0, "", &budget, proven); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a person's --blocks parks an unclaimed goal: %+v %v", res, err)
 	}
@@ -2166,7 +2185,7 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("second blocker: %+v %v", res, err)
 	}
-	tree, err = loadTree(b, res.Tip)
+	tree, err = loadTreeFor(bEndpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2176,7 +2195,7 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	}
 	// The person's blockers are human-origin goals: the seat works them and
 	// the person concludes them; each conclusion checks the park.
-	if res, err := claimApprovedForTest(t, verbReq(b, "01J5X00000000000000000SB0F", "mac-b"), "first-fix", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(bEndpoint, "01J5X00000000000000000SB0F", "mac-b"), "first-fix", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim first-fix: %+v %v", res, err)
 	}
 	person.Ulid = "01J5X00000000000000000SB0G"
@@ -2184,10 +2203,10 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done first-fix: %+v %v", res, err)
 	}
-	if tree, err = loadTree(b, res.Tip); err != nil || tree.Live["twice-blocked"].State != StateParked {
+	if tree, err = loadTreeFor(bEndpoint, res.Tip); err != nil || tree.Live["twice-blocked"].State != StateParked {
 		t.Fatalf("one blocker done of two keeps the park: %v %+v", err, tree.Live["twice-blocked"])
 	}
-	if res, err := claimApprovedForTest(t, verbReq(b, "01J5X00000000000000000SB0H", "mac-b"), "second-fix", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(bEndpoint, "01J5X00000000000000000SB0H", "mac-b"), "second-fix", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim second-fix: %+v %v", res, err)
 	}
 	person.Ulid = "01J5X00000000000000000SB0J"
@@ -2195,7 +2214,7 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done second-fix: %+v %v", res, err)
 	}
-	if tree, err = loadTree(b, res.Tip); err != nil || tree.Live["twice-blocked"].State != StateQueued || tree.Live["twice-blocked"].Parked != nil {
+	if tree, err = loadTreeFor(bEndpoint, res.Tip); err != nil || tree.Live["twice-blocked"].State != StateQueued || tree.Live["twice-blocked"].Parked != nil {
 		t.Fatalf("the last blocker's done returns the goal to its resting state: %v %+v", err, tree.Live["twice-blocked"])
 	}
 }

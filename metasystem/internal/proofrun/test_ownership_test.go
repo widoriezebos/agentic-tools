@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -982,16 +981,10 @@ func TestSharedNativeProducerLaunchesOnce(t *testing.T) {
 	counter, release := filepath.Join(t.TempDir(), "native-count"), filepath.Join(t.TempDir(), "release")
 	t.Cleanup(func() { _ = os.WriteFile(release, []byte("go"), 0o600) })
 	script := fmt.Sprintf("#!/bin/sh\nset -eu\nprintf x >> %s\nwhile [ ! -f %s ]; do sleep .02; done\nmkdir -p reports\nprintf '<testsuite><testcase classname=\"fixture\" name=\"native\"/></testsuite>\\n' > reports/tests.xml\n", strconv.Quote(counter), strconv.Quote(release))
-	path := filepath.Join(f.root, "scripts", "native.sh")
-	if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runTestResultGit(t, f.root, "init", "-q", "-b", "main")
-	runTestResultGit(t, f.root, "config", "user.name", "fixture")
-	runTestResultGit(t, f.root, "config", "user.email", "fixture@example.invalid")
-	runTestResultGit(t, f.root, "add", ".")
-	runTestResultGit(t, f.root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, f.root, "rev-parse", "HEAD^{tree}")
+	tree := verdictFixtureTree(t, "native")
+	snapshot := newTestSnapshotFactory(t, f.root, tree, map[string]testSnapshotEntry{
+		"scripts/native.sh": testSnapshotFile(script, 0o755),
+	}, 3)
 	f.identity = BindIdentityInputs(f.identity, []string{"candidate-tree:" + tree})
 	group := testpolicy.Group{ID: "native", Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"scripts/native.sh"},
 		Outputs: []string{"reports"}, Obligations: []string{"native"}, Platforms: []string{"any"}, TargetMS: 10000,
@@ -1002,7 +995,7 @@ func TestSharedNativeProducerLaunchesOnce(t *testing.T) {
 		RequiredMode: testpolicy.ModeCanary, ExecutedMode: testpolicy.ModeCanary,
 		RequiredGroups: []string{"native"}, SelectedGroups: []string{"native"},
 		Stages: []testpolicy.Stage{{ID: "canary", Groups: []string{"native"}}}}
-	request := TestRunRequest{ProjectRoot: f.root, ControlRoot: f.root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+	request := TestRunRequest{ProjectRoot: f.root, ControlRoot: f.root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
 		Contract: contract, Plan: plan, CandidateEngineDigest: strings.Repeat("a", 64),
 		CandidateEngineBuildIdentity: strings.Repeat("c", 40), ComponentIdentities: map[string]string{}}
 	identities, prepared, _, err := PrepareGroupExecutionIdentities(context.Background(), request)

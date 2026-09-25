@@ -130,6 +130,10 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 				if group.Status == "passed" {
 					record.Proof.Passed = append(record.Proof.Passed, group.ID)
 				}
+			} else if proofrun.CoveredTestPass(result, group) {
+				// Other groups of this proof ran these tests natively; the
+				// group passed here without a launch of its own.
+				record.Proof.Passed = append(record.Proof.Passed, group.ID)
 			}
 			if group.ReuseAttempt != "" {
 				if record.Proof.Reuse == nil {
@@ -245,7 +249,7 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 		if len(survivors) == 0 {
 			break
 		}
-		prefixes, err = assembleUnits(store.root, record.BaseTree, survivors)
+		prefixes, err = store.reassembly.assemble(record.BaseTree, survivors)
 		if err == nil {
 			break
 		}
@@ -319,12 +323,12 @@ func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, deci
 		}
 		if current.Landing != nil && current.Landing.publishedTip() != "" {
 			if len(survivors) == 0 || !slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
-				if err := DeleteLandingBranch(store.root, id, current.Landing.publishedTip()); err != nil {
+				if err := store.reassembly.delete(id, current.Landing.publishedTip()); err != nil {
 					branchFailure = "survivor branch cleanup unavailable: " + err.Error()
 					return err
 				}
 			} else {
-				branchTip, err := RebuildLandingBranch(store.root, id, next.BaseTree, current.Landing.publishedTip(), actor, survivors)
+				branchTip, err := store.reassembly.rebuild(id, next.BaseTree, current.Landing.publishedTip(), actor, survivors)
 				if err != nil {
 					branchFailure = "survivor branch unavailable: " + err.Error()
 					return err

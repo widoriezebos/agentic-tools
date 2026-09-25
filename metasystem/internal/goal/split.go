@@ -222,7 +222,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 		Intent:  Intent{Verb: "split", Targets: []string{parentID}, Args: args},
 		Message: "goal split " + parentID,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -358,7 +358,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 		AfterConfirmed: func(tip string) error {
 			return raiseSplitOldArcDebt(r.Endpoint, tip, parentID, r.opid(), r.Now)
 		},
@@ -469,7 +469,7 @@ func goalPointers(ids []string) string {
 }
 
 func raiseSplitOldArcDebt(e Endpoint, tip, parentID, opid string, now time.Time) error {
-	tree, err := loadTree(e.Root, tip)
+	tree, err := loadTreeFor(e, tip)
 	if err != nil {
 		return fmt.Errorf("classify split's old-arc retro debt: %w", err)
 	}

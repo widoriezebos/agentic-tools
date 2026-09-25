@@ -590,8 +590,10 @@ func validateGroup(group Group) error {
 				}
 				seen[key] = true
 			}
-		} else if group.Format != "exit-status" || (group.Kind != "static" && group.Kind != "build") {
-			return fmt.Errorf("command format must be junit-xml, or exit-status for static/build")
+		} else if group.Format != "exit-status" ||
+			(group.Kind != "static" && group.Kind != "build" &&
+				(group.Phase != "acceptance" || group.Kind != "unit" && group.Kind != "integration")) {
+			return fmt.Errorf("command format must be junit-xml, or exit-status for static/build and acceptance unit/integration")
 		}
 	default:
 		return fmt.Errorf("adapter must be go, section, or command")

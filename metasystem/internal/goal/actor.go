@@ -20,7 +20,14 @@ import (
 // Enrollment is one local command, and refusing until it happens is
 // the privacy holding its ground.
 func ResolveMachine(root string) (string, error) {
-	if out, err := gitIn(root, "config", "--get", "metasystem.goal.machine"); err == nil {
+	return ResolveMachineWithConfig(root, func(root, key string) (string, error) {
+		return gitIn(root, "config", "--get", key)
+	})
+}
+
+// ResolveMachineWithConfig applies enrollment policy to a raw config lookup.
+func ResolveMachineWithConfig(root string, lookup func(string, string) (string, error)) (string, error) {
+	if out, err := lookup(root, "metasystem.goal.machine"); err == nil {
 		if name := strings.TrimSpace(out); name != "" {
 			return name, nil
 		}

@@ -1,0 +1,6 @@
+#!/bin/sh
+{
+  pwd
+  printf '%s\n' "$@"
+} >> "$METASYSTEM_TEST_GIT_DENIED_LOG"
+exit 97

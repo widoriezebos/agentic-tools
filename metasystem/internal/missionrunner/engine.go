@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
@@ -52,9 +54,15 @@ func exitFor(err error) int {
 // Engine drives one mission's runner lifecycle under one checkout root. Its
 // event stream is the flight-recorder witness: emitting never fails a caller.
 type Engine struct {
-	Root         string
-	Installation string
-	Mission      string
+	Root                 string
+	Installation         string
+	Mission              string
+	contractSource       *contract.Source
+	goalSource           *mission.GoalSource
+	wallWorkspaceFactory func(root string) wallWorkspace
+	wallReadFacts        wallReads
+	continuityFacts      missionContinuity
+	birthEffects         birthRepositoryEffects
 	// Now supplies this engine's artifact clock. Nil keeps wall-clock
 	// behavior; fixtures set it without changing time for another engine.
 	Now     func() time.Time
@@ -71,6 +79,9 @@ type Engine struct {
 	// anchors through the binary (anchorState); tests inject it because the
 	// anchor is an external git effect a unit test cannot shell out for.
 	anchorFn func(statePath, ledgerPath, identityName string) error
+	// pinnedAnchorEffect preserves both verified pins for resolution writes.
+	// Production calls mission.AnchorNamed when this effect is absent.
+	pinnedAnchorEffect func(statePath, ledgerPath, identityName, stateHash, ledgerSHA string) error
 
 	// afterApprovedParse is a test seam: it runs right after state birth's
 	// single authenticated contract read, so a fixture can mutate the pin

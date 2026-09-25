@@ -46,7 +46,7 @@ setup_ledger() {
   local label=$1 machine=$2 digest ledger manifest migrate_out fixture_start
   bed_origin=$tmp/$label-origin.git
   bed_clone=$tmp/$label-clone
-  git init -q --bare "$bed_origin"
+  git init -q -b main --bare "$bed_origin"
   git init -q -b main "$bed_clone"
   git -C "$bed_clone" config user.name fixture
   git -C "$bed_clone" config user.email fixture@example.invalid
@@ -358,7 +358,7 @@ if [[ "$fixture_scenario" == brain-actor-seam-coverage ]]; then
 	scan_actor_sites() { # directory to scan from
 		(cd "$1" && find cmd/metasystem internal -type d -name node_modules -prune -o \
 			-type f -name '*.go' ! -name '*_test.go' \
-			-exec grep -H -E 'goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller\(|lease\.ClassifyVerbAt\(e\.Root' {} + \
+			-exec grep -H -E 'goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller(With)?\(|lease\.ClassifyVerbAt\(e\.Root' {} + \
 			| grep -v '^cmd/metasystem/goalsync_mutations.go:[[:space:]]*Endpoint: e, Actor:' \
 			| LC_ALL=C sort)
 	}
@@ -388,18 +388,18 @@ cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced chec
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the checkout holder has no readable main announcement and lineage")
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the seat machine could not be resolved: %w", err)
 cmd/metasystem/goal.go:		return goal.Actor{Machine: machine, Lineage: holder.OwnerLineage}, holder.ClaimEpoch, nil
-cmd/metasystem/goal.go:	view, err := classifyVerbCaller(root, callerPid)
+cmd/metasystem/goal.go:	view, err := classifyVerbCallerWith(root, callerPid, repositoryTop)
 cmd/metasystem/goalsync_mutations.go:		classification, classErr := classifyVerbCaller(f.root, int64(os.Getppid()))
 cmd/metasystem/goalsync_mutations.go:		req.Actor.Human = f.by
-cmd/metasystem/goalsync_mutations.go:	classification, classifyErr := classifyVerbCaller(root, int64(os.Getppid()))
+cmd/metasystem/goalsync_mutations.go:	classification, classifyErr := classifyVerbCallerWith(root, int64(os.Getppid()), facts.repositoryTop)
 cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
 cmd/metasystem/landing_batch_trunkred.go:	return &ledgerTrunkRedOwner{endpoint: endpoint, actor: goal.Actor{Machine: machine, Lineage: lineage}, now: time.Now}, nil
+cmd/metasystem/process_verbs.go:	return classifyVerbCallerWith(root, callerPid, stateroot.RepositoryTop)
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
+cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {
 cmd/metasystem/proof_run.go:				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
 cmd/metasystem/proof_run.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
-cmd/metasystem/proof_run.go:	classifiedCaller, err := classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
-cmd/metasystem/proof_run.go:	classifiedCaller, err = classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
 cmd/metasystem/run.go:		view, err := classifyVerbCaller(root, int64(os.Getpid()))
 cmd/metasystem/run.go:	view, err := classifyVerbCaller(root, callerPid)
 cmd/metasystem/wait_register.go:	view, err := classifyVerbCaller(root, callerPID)
@@ -415,6 +415,7 @@ internal/goal/recover.go:		r.Actor.Human = by
 internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerbAt(e.Root, e.classifierInstallation(), int64(pid)); err == nil {
 internal/steward/revive.go:		Actor: goal.Actor{
 internal/steward/validation_window.go:	request := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: ulid, Now: now}
+internal/ui/act/act.go:		Actor:    goal.Actor{Machine: machine, Lineage: a.lineage, Human: a.human},
 ACTOR_SITES
 )
 	[[ "$actor_sites" == "$expected_actor_sites" ]] || {

@@ -62,6 +62,21 @@ type testCreationClaim struct {
 	closed bool
 }
 
+type gatedUnmanagedSuiteOutput struct {
+	bytes.Buffer
+	first   chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (output *gatedUnmanagedSuiteOutput) Write(data []byte) (int, error) {
+	if bytes.Contains(data, []byte("suite-first-part")) {
+		output.once.Do(func() { close(output.first) })
+		<-output.release
+	}
+	return output.Buffer.Write(data)
+}
+
 type releasingCreationClaim struct {
 	CreationClaim
 	release *os.File
@@ -150,6 +165,131 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 	run, err := ReadLatestProgressRun(progress)
 	if err != nil || len(run.Events) != 2 || len(run.Header.TmpPaths) != 1 {
 		t.Fatalf("progress run = %+v, %v", run, err)
+	}
+}
+
+func TestUnmanagedSuiteOutputRetainsTailAfterChildWait(t *testing.T) {
+	t.Parallel()
+	if runGoWorkerTestInOwnedProcess(t, "-test.timeout=5m") {
+		return
+	}
+
+	root := t.TempDir()
+	confPath := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(confPath, []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	processFile := filepath.Join(root, "processes.json")
+	if err := os.WriteFile(processFile, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	releasePath := filepath.Join(root, "release")
+	waitedPath := filepath.Join(root, "suite-waited")
+	for _, variable := range []struct {
+		name  string
+		value string
+	}{
+		{name: "METASYSTEM_CENSUS_PROCESS_FILE", value: processFile},
+		{name: "UNMANAGED_SUITE_WAITED", value: waitedPath},
+	} {
+		previous, existed := os.LookupEnv(variable.name)
+		if err := os.Setenv(variable.name, variable.value); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if existed {
+				if err := os.Setenv(variable.name, previous); err != nil {
+					t.Errorf("restore %s: %v", variable.name, err)
+				}
+				return
+			}
+			if err := os.Unsetenv(variable.name); err != nil {
+				t.Errorf("unset %s: %v", variable.name, err)
+			}
+		})
+	}
+	if err := syscall.Mkfifo(releasePath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(waitedPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	release, err := os.OpenFile(releasePath, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release.Close()
+	waited, err := os.OpenFile(waitedPath, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer waited.Close()
+
+	watchdog := filepath.Join(root, "watchdog.sh")
+	writeExecutable(t, watchdog, `#!/usr/bin/env bash
+done_path=
+while (($#)); do
+  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
+done
+while [[ ! -e "$done_path" ]]; do sleep 0.01; done
+printf x >"$UNMANAGED_SUITE_WAITED"
+`)
+
+	output := &gatedUnmanagedSuiteOutput{first: make(chan struct{}), release: make(chan struct{})}
+	var errors bytes.Buffer
+	var releaseOnce sync.Once
+	finished := make(chan int, 1)
+	logPath := filepath.Join(root, "suite.log")
+	go func() {
+		finished <- LaunchSuite(LaunchOptions{
+			Suite: "unmanaged-tail", Root: root, ConfPath: confPath,
+			ProgressPath: filepath.Join(root, "progress.jsonl"), LogPath: logPath, Banner: "unmanaged suite output",
+			Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+			Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+			WatchdogExecutable: watchdog,
+			Command:            []string{"sh", "-c", `printf 'suite-first-part\n'; IFS= read -r _ <"$1"; printf 'suite-final-tail\n'`, "sh", releasePath},
+			Output:             output, ErrorOutput: &errors,
+		})
+	}()
+	t.Cleanup(func() { releaseOnce.Do(func() { close(output.release) }) })
+
+	select {
+	case <-output.first:
+	case status := <-finished:
+		t.Fatalf("unmanaged suite finished before first output: status=%d, output=%q, errors=%q", status, output.String(), errors.String())
+	}
+	if _, err := release.Write([]byte{'\n'}); err != nil {
+		t.Fatal(err)
+	}
+	waitedSignal := make(chan error, 1)
+	go func() {
+		buffer := []byte{0}
+		_, readErr := waited.Read(buffer)
+		waitedSignal <- readErr
+	}()
+	select {
+	case err := <-waitedSignal:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case status := <-finished:
+		t.Fatalf("unmanaged suite finished before watchdog observed suite.Wait completion: status=%d, output=%q, errors=%q", status, output.String(), errors.String())
+	}
+	releaseOnce.Do(func() { close(output.release) })
+	if status := <-finished; status != 0 || errors.Len() != 0 {
+		t.Fatalf("unmanaged suite status=%d, output=%q, errors=%q", status, output.String(), errors.String())
+	}
+	want := "unmanaged suite output\nsuite-first-part\nsuite-final-tail\n"
+	if output.String() != want {
+		t.Fatalf("public output = %q, want complete output %q", output.String(), want)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil || string(data) != want {
+		t.Fatalf("suite log = %q, want complete log %q, err=%v", data, want, err)
+	}
+	record, err := ReadRecord(root, "unmanaged-tail")
+	if err != nil || record.Status != StatusDone {
+		t.Fatalf("unmanaged suite record=%+v err=%v", record, err)
 	}
 }
 
@@ -938,6 +1078,48 @@ func writeExecutable(t *testing.T, path, content string) {
 	t.Helper()
 	if err := testexec.WriteFile(path, []byte(content), 0o700); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAssertBannerStreamsLongLinesAndCountsCompleteLines(t *testing.T) {
+	t.Parallel()
+
+	banner := "suite-cost suite=fixture"
+	longLine := strings.Repeat("irrelevant-output-", 16*1024)
+	tests := []struct {
+		name, content, wantErr string
+	}{
+		{name: "banner before long line", content: banner + "\n" + longLine + "\n"},
+		{name: "banner after long line", content: longLine + "\n" + banner + "\n"},
+		{name: "zero banners", content: longLine + "\n", wantErr: "cost banner appeared 0 times in the suite log; expected exactly once"},
+		{name: "banner contained in line", content: "before " + banner + " after\n", wantErr: "cost banner appeared 0 times in the suite log; expected exactly once"},
+		{name: "banner prefixes line", content: banner + " after\n", wantErr: "cost banner appeared 0 times in the suite log; expected exactly once"},
+		{name: "banner suffixes line", content: "before " + banner + "\n", wantErr: "cost banner appeared 0 times in the suite log; expected exactly once"},
+		{name: "duplicate banners", content: banner + "\n" + longLine + "\n" + banner, wantErr: "cost banner appeared 2 times in the suite log; expected exactly once"},
+		{name: "final line with newline", content: "other\n" + banner + "\n"},
+		{name: "final line at EOF", content: "other\n" + banner},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "suite.log")
+			if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := assertBanner(path, banner)
+			if test.wantErr == "" && err != nil {
+				t.Fatalf("assert banner: %v", err)
+			}
+			if test.wantErr != "" && (err == nil || err.Error() != test.wantErr) {
+				t.Fatalf("assert banner error=%v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestAssertBannerPropagatesReadError(t *testing.T) {
+	t.Parallel()
+	if err := assertBanner(t.TempDir(), "suite-cost suite=fixture"); !errors.Is(err, syscall.EISDIR) {
+		t.Fatalf("assert banner error=%v, want propagated directory read error %v", err, syscall.EISDIR)
 	}
 }
 

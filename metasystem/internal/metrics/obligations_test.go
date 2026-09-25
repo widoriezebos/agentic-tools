@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -16,9 +15,9 @@ import (
 )
 
 func TestO3GoalTransactionAuthorNeverCountsAsLanding(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
-	w, err := loadWorld(f.root)
+	w, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,9 +29,9 @@ func TestO3GoalTransactionAuthorNeverCountsAsLanding(t *testing.T) {
 }
 
 func TestO4ThresholdCrossingOnlyChangesReportContent(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
-	result, err := Report(weeklyOptions(f))
+	result, err := f.report(weeklyOptions(f.fixtureRepo))
 	if err != nil {
 		t.Fatalf("crossed threshold changed report outcome: %v", err)
 	}
@@ -47,7 +46,7 @@ func TestO4ThresholdCrossingOnlyChangesReportContent(t *testing.T) {
 }
 
 func TestO5EveryNamedGapLineAppearsWhenInputIsAbsent(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	file := &goal.GoalFile{
 		Id: "no-budget", State: goal.StateDone, Intent: "No budget fixture.", Origin: goal.OriginMain,
@@ -62,14 +61,51 @@ func TestO5EveryNamedGapLineAppearsWhenInputIsAbsent(t *testing.T) {
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	accepted := f.commit("2026-08-27T00:00:00Z", "add no budget goal", true)
-	f.run("update-ref", goal.AcceptedRef, accepted)
-	periodResult, err := Report(weeklyOptions(f))
+	content := goal.RenderFile(file)
+	f.facts = withCommittedGoal(f.facts, "plans/goals/done/no-budget.md", content)
+	f.facts = appendRawCommit(f.facts, sourceNoBudget, sourceAccepted, "goals@metasystem.invalid", "2026-08-27T00:00:00Z",
+		fmt.Sprintf("%d\t0\tmetasystem/plans/goals/done/no-budget.md", strings.Count(string(content), "\n")),
+		"1\t0\tmetasystem/artifacts/agents/enumeration-report.txt",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/attribution",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/r1-output.md",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/r2-output.md",
+		"13\t0\tmetasystem/artifacts/agents/goal-transactions/rejected.json",
+		"21\t0\tmetasystem/artifacts/agents/jobs/j1.json",
+		"17\t0\tmetasystem/artifacts/agents/jobs/critic.json",
+		"18\t0\tmetasystem/artifacts/agents/jobs/critic-r2.json")
+	rawGoalCommit := f.facts.mainLog[strings.LastIndex(f.facts.mainLog, "\x1e"+sourceNoBudget):]
+	declared := strings.SplitN(rawGoalCommit, "\n\n", 2)[1]
+	wantDeclared := fmt.Sprintf("%d\t0\tmetasystem/plans/goals/done/no-budget.md\n", strings.Count(string(content), "\n")) +
+		"1\t0\tmetasystem/artifacts/agents/enumeration-report.txt\n" +
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/attribution\n" +
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/r1-output.md\n" +
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/r2-output.md\n" +
+		"13\t0\tmetasystem/artifacts/agents/goal-transactions/rejected.json\n" +
+		"21\t0\tmetasystem/artifacts/agents/jobs/j1.json\n" +
+		"17\t0\tmetasystem/artifacts/agents/jobs/critic.json\n" +
+		"18\t0\tmetasystem/artifacts/agents/jobs/critic-r2.json\n"
+	if declared != wantDeclared {
+		t.Fatalf("no-budget raw numstat paths or counts changed:\ngot %q\nwant %q", declared, wantDeclared)
+	}
+	declaredTotal := 0
+	for _, stat := range strings.Split(strings.TrimSuffix(declared, "\n"), "\n") {
+		var added, deleted int
+		var path string
+		if _, err := fmt.Sscanf(stat, "%d\t%d\t%s", &added, &deleted, &path); err != nil {
+			t.Fatalf("invalid no-budget raw numstat %q: %v", stat, err)
+		}
+		declaredTotal += added + deleted
+	}
+	if want := strings.Count(string(content), "\n") + 73; declaredTotal != want {
+		t.Fatalf("no-budget raw changed lines = %d, want %d", declaredTotal, want)
+	}
+	f.facts.acceptedTip = sourceNoBudget
+	periodResult, err := f.report(weeklyOptions(f.fixtureRepo))
 	if err != nil {
 		t.Fatal(err)
 	}
 	periodReport := detailedReport(t, periodResult)
-	goalResult, err := Report(Options{Root: f.root, GoalID: "no-budget", PeriodEnd: "2026-08-24T00:00:00Z"})
+	goalResult, err := f.report(Options{Root: f.root, GoalID: "no-budget", PeriodEnd: "2026-08-24T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,39 +125,40 @@ func TestO5EveryNamedGapLineAppearsWhenInputIsAbsent(t *testing.T) {
 }
 
 func TestO7FleetValuesFollowPinnedInputIdentityAcrossMachines(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
-	cloneRepo := filepath.Join(t.TempDir(), "clone")
-	cmd := exec.Command("git", "clone", "-q", f.repo, cloneRepo)
-	cmd.Env = withoutGitSteering(os.Environ())
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("clone: %v: %s", err, output)
+	clone := newSourceFixture(t)
+	clone.seedFullWorld()
+	clone.facts.machine = "machine-b"
+	if err := os.RemoveAll(filepath.Join(clone.root, "artifacts", "agents")); err != nil {
+		t.Fatal(err)
 	}
-	cloneRoot := filepath.Join(cloneRepo, "metasystem")
-	runGitAt(t, cloneRepo, "config", "metasystem.goal.machine", "machine-b")
-	runGitAt(t, cloneRepo, "update-ref", goal.AcceptedRef, f.run("rev-parse", goal.AcceptedRef))
+	cloneRoot := clone.root
 
-	first, err := loadWorld(f.root)
+	first, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := loadWorld(cloneRoot)
+	second, err := clone.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Identity != second.Identity {
 		t.Fatalf("same tips produced different identity: %+v %+v", first.Identity, second.Identity)
 	}
-	period := mustPeriod(t, weeklyOptions(f))
+	period := mustPeriod(t, weeklyOptions(f.fixtureRepo))
 	firstRows := fleetValues(computeRows(first, period, "", loadThresholds(f.root)))
 	secondRows := fleetValues(computeRows(second, period, "", loadThresholds(cloneRoot)))
 	if !reflect.DeepEqual(firstRows, secondRows) {
 		t.Fatalf("fleet values differ at the same tips:\n%v\n%v", firstRows, secondRows)
 	}
 
-	lagTip := runGitAt(t, cloneRepo, "rev-parse", "refs/heads/main~2")
-	runGitAt(t, cloneRepo, "update-ref", "refs/heads/main", lagTip)
-	lagging, err := loadWorld(cloneRoot)
+	clone.facts.mainTip = sourceLanding
+	clone.facts.receiptBlob = "ffffffffffffffffffffffffffffffffffffffff"
+	clone.facts.mainLog = clone.facts.mainLog[:strings.Index(clone.facts.mainLog, "\x1e"+sourceFixes)]
+	clone.facts.currentPatch = clone.facts.currentPatch[:strings.Index(clone.facts.currentPatch, "\x1e"+sourceFixes)]
+	clone.facts.receiptText = strings.Join(strings.Split(strings.TrimSuffix(clone.facts.receiptText, "\n"), "\n")[:2], "\n") + "\n"
+	lagging, err := clone.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,20 +184,8 @@ func fleetValues(rows []metricRow) map[string]string {
 	return values
 }
 
-func runGitAt(t *testing.T, directory string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = directory
-	cmd.Env = withoutGitSteering(os.Environ())
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
-	}
-	return strings.TrimSpace(string(output))
-}
-
 func TestO8MalformedSourcesRejectByNameAndArchivedBatteryEvidenceIsIgnored(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	f.write("metasystem/artifacts/agents/jobs/truncated.json", "{")
 	f.write("metasystem/artifacts/agents/jobs/trailing.json", `{"jobId":"trailing","role":"implementer","status":"completed","startedAt":"2026-08-19T00:00:00Z","endedAt":"2026-08-19T01:00:00Z"} trailing`)
@@ -188,7 +213,7 @@ func TestO8MalformedSourcesRejectByNameAndArchivedBatteryEvidenceIsIgnored(t *te
 		t.Fatal(err)
 	}
 	f.write("metasystem/artifacts/agents/battery/retired.codes", "retired=0\n")
-	w, err := loadWorld(f.root)
+	w, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +241,7 @@ func TestO8MalformedSourcesRejectByNameAndArchivedBatteryEvidenceIsIgnored(t *te
 			t.Fatalf("archived battery evidence became live proof input: %+v", proof)
 		}
 	}
-	if row := computeCost(w, mustPeriod(t, weeklyOptions(f)), ""); row.Value == "unavailable" || row.Coverage[0].Usable != 3 {
+	if row := computeCost(w, mustPeriod(t, weeklyOptions(f.fixtureRepo)), ""); row.Value == "unavailable" || row.Coverage[0].Usable != 3 {
 		t.Fatalf("metric did not compute over the usable job remainder: %+v", row)
 	}
 }
@@ -307,7 +332,7 @@ func TestCostWallClockIsUnavailableWithoutTimedJobs(t *testing.T) {
 }
 
 func TestO9JobUnionDeduplicatesAndLocalWinsTerminalConflict(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	local := filepath.Join(f.root, "artifacts", "agents", "jobs", "j1.json")
 	data, err := os.ReadFile(local)
@@ -449,7 +474,7 @@ func TestO11CollisionSemanticsSeparateTrueEventsFromContext(t *testing.T) {
 }
 
 func TestO12AtomicWriteFailureKeepsPriorGoalReport(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	target := GoalReportTarget(f.root, "g1")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -462,7 +487,7 @@ func TestO12AtomicWriteFailureKeepsPriorGoalReport(t *testing.T) {
 	standing := writeReport
 	writeReport = func(path, content, anchor string) error { return errors.New("simulated pre-publication failure") }
 	t.Cleanup(func() { writeReport = standing })
-	result, err := Report(Options{Root: f.root, GoalID: "g1", PeriodEnd: "2026-08-24T00:00:00Z"})
+	result, err := f.report(Options{Root: f.root, GoalID: "g1", PeriodEnd: "2026-08-24T00:00:00Z"})
 	if err == nil || result.Target != target || !strings.Contains(err.Error(), target) {
 		t.Fatalf("failed write did not name exact target: result=%+v err=%v", result, err)
 	}
@@ -476,9 +501,9 @@ func TestO12AtomicWriteFailureKeepsPriorGoalReport(t *testing.T) {
 }
 
 func TestUnknownGoalPublishesUnavailableReportWithoutGlobalValues(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
-	result, err := Report(Options{Root: f.root, GoalID: "missing-goal", PeriodEnd: "2026-08-24T00:00:00Z"})
+	result, err := f.report(Options{Root: f.root, GoalID: "missing-goal", PeriodEnd: "2026-08-24T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +527,7 @@ func TestUnknownGoalPublishesUnavailableReportWithoutGlobalValues(t *testing.T) 
 }
 
 func TestO13MetricsAttributeOnlyExactGoalID(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	unattributed := filepath.Join(f.root, "artifacts", "agents", "critiques", "unattributed-chain")
 	if err := os.MkdirAll(unattributed, 0o755); err != nil {
@@ -515,11 +540,11 @@ func TestO13MetricsAttributeOnlyExactGoalID(t *testing.T) {
 		"jobId": "wrong-goal", "role": "implementer", "status": "completed", "goalId": "g10", "round": 1,
 		"runtime": "codex", "startedAt": "2026-08-18T10:00:00Z", "endedAt": "2026-08-18T11:00:00Z",
 	})
-	w, err := loadWorld(f.root)
+	w, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
-	row := computeOverhead(w, mustPeriod(t, weeklyOptions(f)), "g1", loadThresholds(f.root))
+	row := computeOverhead(w, mustPeriod(t, weeklyOptions(f.fixtureRepo)), "g1", loadThresholds(f.root))
 	if !strings.Contains(row.Value, "wall_hours=4.000") || !strings.Contains(row.Value, "critique_rounds=2") ||
 		!strings.Contains(row.Coverage[1].Extra, "attributed=3 total=4") || !detailsContain(row, "critique chain unattributed: unattributed-chain") {
 		t.Fatalf("prefix-like goal id was attributed: value=%s coverage=%+v", row.Value, row.Coverage[1])
@@ -536,16 +561,24 @@ func TestO13MetricsAttributeOnlyExactGoalID(t *testing.T) {
 }
 
 func TestO14MetricsOnlyCommitAndReceiptAreSelfExcluded(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	// Keep the local evidence files out of the commit whose path set proves
 	// metrics-only self-exclusion.
-	f.commit("2026-08-20T23:00:00Z", "anchor fixture evidence", true)
-	before, err := loadWorld(f.root)
+	f.facts = appendRawCommit(f.facts, sourceAnchor, sourceAccepted, "goals@metasystem.invalid", "2026-08-20T23:00:00Z",
+		"1\t0\tmetasystem/artifacts/agents/enumeration-report.txt",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/attribution",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/r1-output.md",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/r2-output.md",
+		"13\t0\tmetasystem/artifacts/agents/goal-transactions/rejected.json",
+		"21\t0\tmetasystem/artifacts/agents/jobs/j1.json",
+		"17\t0\tmetasystem/artifacts/agents/jobs/critic.json",
+		"18\t0\tmetasystem/artifacts/agents/jobs/critic-r2.json")
+	before, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
-	period := mustPeriod(t, weeklyOptions(f))
+	period := mustPeriod(t, weeklyOptions(f.fixtureRepo))
 	beforeValues := allValues(computeRows(before, period, "", loadThresholds(f.root)))
 	data, err := os.ReadFile(filepath.Join(f.root, "memory", "receipts.log"))
 	if err != nil {
@@ -554,8 +587,12 @@ func TestO14MetricsOnlyCommitAndReceiptAreSelfExcluded(t *testing.T) {
 	selfReceipt := "1772000000|2026-08-21T00:00:00Z|RECEIPT|type=metrics-report|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=g1|built_by=coordinator|critique_waived=none|waiver_stream=none|note=report"
 	f.write("metasystem/memory/receipts.log", string(data)+selfReceipt+"\n")
 	f.write("metasystem/plans/metrics/machine-a/2026-W34.md", "report\n")
-	f.commit("2026-08-21T00:00:00Z", "land metrics report", false)
-	after, err := loadWorld(f.root)
+	f.facts = appendRawCommit(f.facts, sourceMetrics, sourceAnchor, "fixture@example.invalid", "2026-08-21T00:00:00Z",
+		"1\t0\tmetasystem/memory/receipts.log", "1\t0\tmetasystem/plans/metrics/machine-a/2026-W34.md")
+	f.facts = appendRawReceiptPatch(f.facts, sourceMetrics, "metasystem/memory/receipts.log", 4, false, selfReceipt)
+	f.facts.receiptText = string(data) + selfReceipt + "\n"
+	f.facts.receiptBlob = "fefefefefefefefefefefefefefefefefefefefe"
+	after, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -574,10 +611,20 @@ func allValues(rows []metricRow) map[string]string {
 }
 
 func TestO15LandingReceiptJoinHandlesUnattributedAndSharedCommits(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	f.write("metasystem/unattributed.txt", "work\n")
-	unattributed := f.commit("2026-08-20T00:00:00Z", "unattributed landing", false)
+	f.facts = appendRawCommit(f.facts, sourceUnknown, sourceAccepted, "fixture@example.invalid", "2026-08-20T00:00:00Z",
+		"1\t0\tmetasystem/unattributed.txt",
+		"1\t0\tmetasystem/artifacts/agents/enumeration-report.txt",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/attribution",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/r1-output.md",
+		"1\t0\tmetasystem/artifacts/agents/critiques/fixture-chain/r2-output.md",
+		"13\t0\tmetasystem/artifacts/agents/goal-transactions/rejected.json",
+		"21\t0\tmetasystem/artifacts/agents/jobs/j1.json",
+		"17\t0\tmetasystem/artifacts/agents/jobs/critic.json",
+		"18\t0\tmetasystem/artifacts/agents/jobs/critic-r2.json")
+	unattributed := sourceUnknown
 	data, err := os.ReadFile(filepath.Join(f.root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
@@ -586,7 +633,12 @@ func TestO15LandingReceiptJoinHandlesUnattributedAndSharedCommits(t *testing.T) 
 		"1773000001|2026-08-20T01:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=g2|built_by=delegate|critique_waived=none|waiver_stream=none|note=shared\n"
 	f.write("metasystem/memory/receipts.log", string(data)+rows)
 	f.write("metasystem/shared.txt", "shared\n")
-	sharedSHA := f.commit("2026-08-20T01:00:00Z", "shared landing", false)
+	f.facts = appendRawCommit(f.facts, sourceShared, sourceUnknown, "fixture@example.invalid", "2026-08-20T01:00:00Z",
+		"2\t0\tmetasystem/memory/receipts.log", "1\t0\tmetasystem/shared.txt")
+	f.facts = appendRawReceiptPatch(f.facts, sourceShared, "metasystem/memory/receipts.log", 4, false, strings.Split(strings.TrimSuffix(rows, "\n"), "\n")...)
+	f.facts.receiptText = string(data) + rows
+	f.facts.receiptBlob = "edededededededededededededededededededed"
+	sharedSHA := sourceShared
 	g2 := &goal.GoalFile{
 		Id: "g2", State: goal.StateDone, Intent: "Share one landing.", Origin: goal.OriginMain,
 		NextStep: "Share it.", Conclude: "Shared.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 3,
@@ -600,9 +652,12 @@ func TestO15LandingReceiptJoinHandlesUnattributedAndSharedCommits(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(f.root, "plans", "goals", "done", "g2.md"), goal.RenderFile(g2), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	accepted := f.commit("2026-08-27T00:00:00Z", "publish shared goal facts", true)
-	f.run("update-ref", goal.AcceptedRef, accepted)
-	w, err := loadWorld(f.root)
+	content := goal.RenderFile(g2)
+	f.facts = withCommittedGoal(f.facts, "plans/goals/done/g2.md", content)
+	f.facts = appendRawCommit(f.facts, sourceSharedG2, sourceShared, "goals@metasystem.invalid", "2026-08-27T00:00:00Z",
+		fmt.Sprintf("%d\t0\tmetasystem/plans/goals/done/g2.md", strings.Count(string(content), "\n")))
+	f.facts.acceptedTip = sourceSharedG2
+	w, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,6 +666,9 @@ func TestO15LandingReceiptJoinHandlesUnattributedAndSharedCommits(t *testing.T) 
 	for _, commit := range w.Landings {
 		if commit.SHA == unattributed && len(commit.Goals) == 0 {
 			foundUnattributed = true
+			if commit.ChangedLines != 74 {
+				t.Fatalf("unattributed landing changed lines = %d, want 74", commit.ChangedLines)
+			}
 		}
 		if commit.SHA == sharedSHA && commit.Goals["g1"] && commit.Goals["g2"] && commit.Shared {
 			foundShared = true
@@ -630,7 +688,7 @@ func TestO15LandingReceiptJoinHandlesUnattributedAndSharedCommits(t *testing.T) 
 		{id: "g1", payload: g1Payload},
 		{id: "g2", payload: sharedPayload},
 	} {
-		result, err := Report(Options{Root: f.root, GoalID: test.id, PeriodEnd: "2026-08-24T00:00:00Z"})
+		result, err := f.report(Options{Root: f.root, GoalID: test.id, PeriodEnd: "2026-08-24T00:00:00Z"})
 		if err != nil {
 			t.Fatalf("goal %s report: %v", test.id, err)
 		}
@@ -648,7 +706,7 @@ func TestO15LandingReceiptJoinHandlesUnattributedAndSharedCommits(t *testing.T) 
 }
 
 func TestO16AgeIgnoresWindowEventsDoNotAndGoalUsesWholeLifecycle(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	f.job("old-job", map[string]any{
 		"jobId": "old-job", "role": "implementer", "status": "completed", "goalId": "g1", "round": 1,
@@ -658,11 +716,11 @@ func TestO16AgeIgnoresWindowEventsDoNotAndGoalUsesWholeLifecycle(t *testing.T) {
 		"jobId": "middle-job", "role": "implementer", "status": "completed", "goalId": "g1", "round": 1,
 		"runtime": "codex", "startedAt": "2026-08-10T00:00:00Z", "endedAt": "2026-08-10T01:00:00Z", "usage": map[string]any{"inputTokens": 1},
 	})
-	w, err := loadWorld(f.root)
+	w, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
-	week := mustPeriod(t, weeklyOptions(f))
+	week := mustPeriod(t, weeklyOptions(f.fixtureRepo))
 	stale := computeStaleChecks(w, week, loadThresholds(f.root))
 	debt := computeDebt(w, week, "", loadThresholds(f.root))
 	if !strings.Contains(stale.Value, "days_since_green=9.000") || !strings.Contains(stale.Thresholds[0], "crossed") ||
@@ -710,7 +768,7 @@ func TestMetricsExcludeAbandonedFromConcludedAndDebt(t *testing.T) {
 }
 
 func TestO17InvalidThresholdsDisableWithoutFiring(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	conf := "evidence.root=" + f.evidence + "\n" +
 		"metrics.stale-checks.max-days=-1\n" +
@@ -720,7 +778,7 @@ func TestO17InvalidThresholdsDisableWithoutFiring(t *testing.T) {
 		"metrics.waiting.max-share=not-a-share\n" +
 		"metrics.delegates.min-share=NaN\n"
 	f.write("metasystem/metasystem.conf", conf)
-	result, err := Report(weeklyOptions(f))
+	result, err := f.report(weeklyOptions(f.fixtureRepo))
 	if err != nil {
 		t.Fatalf("invalid threshold aborted report: %v", err)
 	}

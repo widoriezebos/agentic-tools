@@ -139,6 +139,85 @@ func TestFreezeExportsIdenticalProjection(t *testing.T) {
 	}
 }
 
+func TestFreezeIncludesLiveGoalsInCompleteDigestWithoutGit(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "internal", "source.go"), []byte("package internal\n"), 0o644)
+	writeTestFile(t, filepath.Join(root, "plans", "goals", "active.md"), []byte("active goal\n"), 0o644)
+	writeTestFile(t, filepath.Join(root, "plans", "goals", "backlog.md"), []byte("ledger root\n"), 0o644)
+	writeTestFile(t, filepath.Join(root, "records", "goals", "done.md"), []byte("concluded goal\n"), 0o644)
+	writeTestFile(t, filepath.Join(root, "artifacts", "runtime"), []byte("runtime\n"), 0o644)
+	writeTestFile(t, filepath.Join(root, "metasystem.conf.local"), []byte("secret fixture\n"), 0o600)
+
+	frozen, err := Freeze(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = frozen.Close() })
+	for _, path := range []string{"plans/goals/active.md", "records/goals/done.md"} {
+		if _, err := os.Stat(filepath.Join(frozen.Root, filepath.FromSlash(path))); err != nil {
+			t.Fatalf("frozen goal %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{"plans/goals/backlog.md", "artifacts/runtime", "metasystem.conf.local"} {
+		if _, err := os.Lstat(filepath.Join(frozen.Root, filepath.FromSlash(path))); !os.IsNotExist(err) {
+			t.Fatalf("excluded frozen input %s exists: %v", path, err)
+		}
+	}
+	if _, err := Verify(frozen.Root, frozen.Digest); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(root, "plans", "goals", "backlog.md"), []byte("changed ledger root\n"), 0o644)
+	writeTestFile(t, filepath.Join(root, "artifacts", "runtime"), []byte("changed runtime\n"), 0o644)
+	writeTestFile(t, filepath.Join(root, "metasystem.conf.local"), []byte("changed secret fixture\n"), 0o600)
+	if _, err := Verify(root, frozen.Digest); err != nil {
+		t.Fatalf("excluded state invalidated frozen digest: %v", err)
+	}
+	writeTestFile(t, filepath.Join(root, "plans", "goals", "active.md"), []byte("changed goal\n"), 0o644)
+	if _, err := Verify(root, frozen.Digest); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("live goal mutation did not invalidate frozen digest: %v", err)
+	}
+}
+
+func TestCompleteManifestSelectsOnlyStateRootGoalsWithoutGit(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, installationPrefix, stateRootPrefix, liveGoal, concludedGoal, wrongHome string
+	}{
+		{"self-hosted", "metasystem", "metasystem", "metasystem/plans/goals/live.md", "metasystem/records/goals/done.md", "plans/goals/wrong.md"},
+		{"adopted", "tools/metasystem", "", "plans/goals/live.md", "records/goals/done.md", "tools/metasystem/plans/goals/wrong.md"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, path := range []string{test.liveGoal, test.concludedGoal, test.wrongHome} {
+				writeTestFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte(path), 0o644)
+			}
+			goalsDir := filepath.Dir(test.liveGoal)
+			for _, path := range []string{goalsDir + "/backlog.md", goalsDir + "/nested/deep.md", goalsDir + "/notes.txt"} {
+				writeTestFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte(path), 0o644)
+			}
+			m, err := readManifestAtWithHook(root, test.installationPrefix, test.stateRootPrefix, true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			paths := make(map[string]bool, len(m.entries))
+			for _, item := range m.entries {
+				paths[item.path] = true
+			}
+			for _, path := range []string{test.liveGoal, test.concludedGoal} {
+				if !paths[path] {
+					t.Errorf("state-root input %s omitted", path)
+				}
+			}
+			for _, path := range []string{test.wrongHome, goalsDir + "/backlog.md", goalsDir + "/nested/deep.md", goalsDir + "/notes.txt"} {
+				if paths[path] {
+					t.Errorf("non-goal input %s entered complete manifest", path)
+				}
+			}
+		})
+	}
+}
+
 func TestFreezePreservesCompleteNestedProjectAndPrivateGit(t *testing.T) {
 	t.Parallel()
 	project := t.TempDir()
@@ -171,6 +250,9 @@ func TestFreezePreservesCompleteNestedProjectAndPrivateGit(t *testing.T) {
 	} {
 		writeTestFile(t, path, []byte("runtime or ledger\n"), 0o644)
 	}
+	writeTestFile(t, filepath.Join(project, "plans", "goals", "active.md"), []byte("active goal\n"), 0o644)
+	writeTestFile(t, filepath.Join(project, "records", "goals", "concluded.md"), []byte("concluded goal\n"), 0o644)
+	writeTestFile(t, filepath.Join(installation, "plans", "goals", "wrong.md"), []byte("wrong installation home\n"), 0o644)
 	sourceHead := runFreezeTestGit(t, project, "rev-parse", "HEAD")
 	sourceRefs := runFreezeTestGit(t, project, "for-each-ref", "--format=%(refname) %(objectname)")
 	sourceStatus := runFreezeTestGit(t, project, "status", "--short", "--untracked-files=all")
@@ -191,6 +273,8 @@ func TestFreezePreservesCompleteNestedProjectAndPrivateGit(t *testing.T) {
 		"application/moved.txt":               "parent input\n",
 		"application/untracked.txt":           "untracked parent\n",
 		"bin/host-tool":                       "host input\n",
+		"plans/goals/active.md":               "active goal\n",
+		"records/goals/concluded.md":          "concluded goal\n",
 		"tools/metasystem/internal/source.go": "package internal\nvar Dirty = true\n",
 	} {
 		data, readErr := os.ReadFile(filepath.Join(frozen.ProjectRoot, filepath.FromSlash(path)))
@@ -201,6 +285,7 @@ func TestFreezePreservesCompleteNestedProjectAndPrivateGit(t *testing.T) {
 	for _, path := range []string{
 		"application/old.txt", "artifacts/runtime", "plans/goals/backlog.md", "metasystem.conf.local", "nested/metasystem.conf.local",
 		"tools/metasystem/artifacts/runtime", "tools/metasystem/bin/metasystem", "tools/metasystem/plans/goals/backlog.md",
+		"tools/metasystem/plans/goals/wrong.md",
 		"tools/metasystem/metasystem.conf.local", "tools/metasystem/nested/metasystem.conf.local",
 	} {
 		if _, statErr := os.Lstat(filepath.Join(frozen.ProjectRoot, filepath.FromSlash(path))); !os.IsNotExist(statErr) {
@@ -318,11 +403,22 @@ func TestFreezeRefusesBeforeExportAfterMismatchAndCleans(t *testing.T) {
 				writeTestFile(t, filepath.Join(export, "internal", "source.go"), []byte("export changed\n"), 0o644)
 			}
 		}},
+		{name: "source goal moved", hook: func(source string) func(string) {
+			return func(string) {
+				writeTestFile(t, filepath.Join(source, "plans", "goals", "active.md"), []byte("after\n"), 0o644)
+			}
+		}},
+		{name: "export goal moved", hook: func(string) func(string) {
+			return func(export string) {
+				writeTestFile(t, filepath.Join(export, "plans", "goals", "active.md"), []byte("export changed\n"), 0o644)
+			}
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			temp := t.TempDir()
 			source := filepath.Join(temp, "source")
 			writeTestFile(t, filepath.Join(source, "internal", "source.go"), []byte("before\n"), 0o644)
+			writeTestFile(t, filepath.Join(source, "plans", "goals", "active.md"), []byte("before\n"), 0o644)
 			if _, err := freezeWithHookAt(source, temp, test.hook(source)); err == nil || !strings.Contains(err.Error(), "before") || !strings.Contains(err.Error(), "export") || !strings.Contains(err.Error(), "after") {
 				t.Fatalf("freeze mismatch = %v", err)
 			}
@@ -347,7 +443,7 @@ func TestFreezeRefusesBeforeExportAfterMismatchAndCleans(t *testing.T) {
 		if err := os.Chmod(filepath.Join(root, "artifacts", "runtime"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := readManifestAtWithHook(root, "", true, func(rel string, entry os.DirEntry) error {
+		if _, err := readManifestAtWithHook(root, "", "", true, func(rel string, entry os.DirEntry) error {
 			if rel == "artifacts" && entry.IsDir() {
 				return os.RemoveAll(filepath.Join(root, "artifacts"))
 			}
@@ -360,7 +456,7 @@ func TestFreezeRefusesBeforeExportAfterMismatchAndCleans(t *testing.T) {
 	t.Run("ordinary application closures remain required", func(t *testing.T) {
 		root := t.TempDir()
 		writeTestFile(t, filepath.Join(root, "application", "input.txt"), []byte("application\n"), 0o644)
-		_, err := readManifestAtWithHook(root, "", true, func(rel string, entry os.DirEntry) error {
+		_, err := readManifestAtWithHook(root, "", "", true, func(rel string, entry os.DirEntry) error {
 			if rel == "application" && entry.IsDir() {
 				return os.RemoveAll(filepath.Join(root, "application"))
 			}

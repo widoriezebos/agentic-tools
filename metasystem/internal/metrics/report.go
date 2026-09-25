@@ -38,6 +38,10 @@ var writeReport = func(path, content, anchor string) error {
 
 // Report computes and atomically publishes one period or per-goal report.
 func Report(opts Options) (Result, error) {
+	return reportWithSource(opts, realMetricsSource())
+}
+
+func reportWithSource(opts Options, source metricsSource) (Result, error) {
 	root := opts.Root
 	if root == "" {
 		root = "."
@@ -55,7 +59,7 @@ func Report(opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	w, err := loadWorld(absRoot)
+	w, err := loadWorldWithSource(absRoot, source)
 	if err != nil {
 		return Result{}, err
 	}

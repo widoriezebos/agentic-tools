@@ -3,7 +3,6 @@ package batch
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
@@ -47,16 +45,11 @@ func ownerRecord(id, state string, joinedAt time.Time) Record {
 
 func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 	t.Helper()
-	root, seat := t.TempDir(), t.TempDir()
-	initCommand := exec.Command("git", "init", "-q", root)
-	initCommand.Env = gittree.ScrubbedEnviron()
-	must(t, initCommand.Run())
-	conf := filepath.Join(seat, "metasystem.conf")
-	must(t, os.WriteFile(conf, []byte(config.BatchRootKey+"="+root+"\n"+config.BatchMaxWaitKey+"=1m\n"), 0o644))
+	root := t.TempDir()
 	bed := &ownerBed{now: now, tree: "tree", sample: proofrun.LoadSample{OverlapKnown: true}, lockDir: filepath.Join(root, "owner-lock"), queueDir: filepath.Join(root, "owner-queue")}
 	bed.store = NewStore(root, scriptedProber{7: identity.Alive})
 	must(t, bed.store.Create(record))
-	settings, err := config.ResolveBatchLanding(conf, seat, func() time.Time { return bed.now })
+	settings, err := config.NewBatchLanding(root, time.Minute, func() time.Time { return bed.now })
 	must(t, err)
 	readClaim := func(_, tree, _, _ string) (Claim, error) {
 		bed.events = append(bed.events, "reconcile:"+tree)
@@ -200,7 +193,8 @@ func TestBatchOwnerSkipsRecordedHoldAndReleasesLockBeforeLedger(t *testing.T) {
 
 func TestBatchOwnerSavesGreenTreeThatCannotClear(t *testing.T) {
 	now := time.Unix(10, 0)
-	assembly, store, ledger := heldReopenBed(t)
+	assembly, store, ledger := heldReopenBed(t,
+		expectedAssembly("moved-tree", []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{"owner-a", "owner-ab"}))
 	record := load(t, store)
 	bed := newOwnerBed(t, record, now)
 	bed.tree = assembly.moved

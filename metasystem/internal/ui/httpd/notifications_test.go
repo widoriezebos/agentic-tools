@@ -168,17 +168,31 @@ type opened struct {
 }
 
 // streamed runs the stream against a real server, so the response is written
-// as it is produced rather than buffered into a recorder.
+// as it is produced rather than buffered into a recorder. Its handler polls the
+// journal every few milliseconds, and that clock is this test's alone.
 func streamed(t *testing.T, path string, lastEventID string) *opened {
 	t.Helper()
-	return streamedFrom(t, Info{NotificationJournal: path}, lastEventID)
+	return streamedOver(t, fastStream(Info{NotificationJournal: path}), lastEventID)
+}
+
+// fastStream is a handler whose stream polls in milliseconds rather than
+// seconds. It is set before the handler serves anything, on this handler only.
+func fastStream(info Info) *handler {
+	served := newHandler(info, loopback(), testBundle(), randomNonce)
+	served.streamTick = 5 * time.Millisecond
+	return served
 }
 
 // streamedFrom is streamed over a server this test composed itself, which is
 // how the Partner's half of the one stream is opened.
 func streamedFrom(t *testing.T, info Info, lastEventID string) *opened {
 	t.Helper()
-	served := httptest.NewServer(New(info, loopback(), testBundle()))
+	return streamedOver(t, newHandler(info, loopback(), testBundle(), randomNonce), lastEventID)
+}
+
+func streamedOver(t *testing.T, h *handler, lastEventID string) *opened {
+	t.Helper()
+	served := httptest.NewServer(h)
 	ctx, cancel := context.WithCancel(context.Background())
 	asked, err := http.NewRequestWithContext(ctx, http.MethodGet, served.URL+notificationsStreamPath, nil)
 	if err != nil {
@@ -207,7 +221,12 @@ func streamedFrom(t *testing.T, info Info, lastEventID string) *opened {
 		for {
 			line, err := reader.ReadString('\n')
 			if line != "" {
-				stream.lines <- strings.TrimRight(line, "\n")
+				// A test that has stopped reading stops this reader too.
+				select {
+				case stream.lines <- strings.TrimRight(line, "\n"):
+				case <-ctx.Done():
+					return
+				}
 			}
 			if err != nil {
 				stream.problems <- err
@@ -261,10 +280,6 @@ func (o *opened) event(t *testing.T) (id string, name string, data string) {
 // each of them.
 func TestTheStreamOpensWithACommentAndSendsOnlyWhatArrives(t *testing.T) {
 	t.Parallel()
-	previous := notificationTick
-	notificationTick = 5 * time.Millisecond
-	t.Cleanup(func() { notificationTick = previous })
-
 	path := journalWith(t,
 		journalLine(t, "S1", "steward", "already in the history", true),
 		journalLine(t, "S2", "steward", "also already there", true),
@@ -293,10 +308,6 @@ func TestTheStreamOpensWithACommentAndSendsOnlyWhatArrives(t *testing.T) {
 // gives it exactly what it missed.
 func TestTheStreamResumesFromTheLastEventTheBrowserSaw(t *testing.T) {
 	t.Parallel()
-	previous := notificationTick
-	notificationTick = 5 * time.Millisecond
-	t.Cleanup(func() { notificationTick = previous })
-
 	path := journalWith(t,
 		journalLine(t, "R1", "steward", "before the drop", true),
 		journalLine(t, "R2", "handoff", "missed while disconnected", true),
@@ -318,20 +329,23 @@ func TestTheStreamResumesFromTheLastEventTheBrowserSaw(t *testing.T) {
 // listener on the page.
 func TestTheStreamBeatsWithAComment(t *testing.T) {
 	t.Parallel()
-	previousTick, previousBeat := notificationTick, notificationHeartbeat
-	notificationTick, notificationHeartbeat = 5*time.Millisecond, 10*time.Millisecond
-	t.Cleanup(func() { notificationTick, notificationHeartbeat = previousTick, previousBeat })
-
 	path := journalWith(t, journalLine(t, "B1", "steward", "quiet", true))
-	stream := streamed(t, path, "")
+	served := fastStream(Info{NotificationJournal: path})
+	served.streamHeartbeat = 10 * time.Millisecond
+	stream := streamedOver(t, served, "")
 
 	// The opening comment and the retry hint, then the blank line that ends
 	// the opening; the next ": " line is a beat.
 	stream.line(t)
 	stream.line(t)
 	for {
-		if strings.HasPrefix(stream.line(t), ": ") {
-			return
+		select {
+		case line := <-stream.lines:
+			if strings.HasPrefix(line, ": ") {
+				return
+			}
+		case err := <-stream.problems:
+			t.Fatalf("the stream ended: %v", err)
 		}
 	}
 }

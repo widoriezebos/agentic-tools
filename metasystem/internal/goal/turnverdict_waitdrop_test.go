@@ -101,6 +101,17 @@ func TestRegisteredWaitDropReasons(t *testing.T) {
 			kind := map[bool]string{false: tc.kind, true: "job"}[tc.kind == ""]
 			fixture := newPendingWaitVerdictFixture(t, kind, false)
 			tc.mutate(t, fixture)
+			if kind == "human-act" || kind == "landing" {
+				expectedRow := fixture.row
+				expectedCalls := 0
+				reply := metarun.SourceObservation{}
+				if tc.name == "goal-observation" {
+					expectedCalls = 1
+					expectedRow.Target.ProofDigest = "other"
+					reply = metarun.SourceObservation{Pending: true, Incarnation: fixture.row.Target}
+				}
+				fixture.expectLedgerObservation(t, expectedCalls, expectedRow, reply)
+			}
 			if tc.direct {
 				if reason := directWaitDropSite(t, fixture, tc.name); !strings.HasPrefix(reason, tc.branch+": ") || !strings.Contains(reason, tc.want) {
 					t.Fatalf("reason=%q want branch=%q value=%q", reason, tc.branch, tc.want)

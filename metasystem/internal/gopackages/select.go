@@ -27,6 +27,18 @@ type Selection struct {
 	InputDirs map[string][]string
 }
 
+type selectionWorkspace interface {
+	TreeOf(string) (string, error)
+	FileAt(string, string) ([]byte, bool, error)
+	ChangedPaths(string, string) ([]string, error)
+	Entries(string, []string) (map[string]gittree.Entry, error)
+}
+
+type selector struct {
+	workspace    selectionWorkspace
+	openSnapshot func(string) (string, func() error, error)
+}
+
 // Select follows changed packages and their transitive consumers, including
 // imports in test files and files hidden by build tags. A module manifest
 // change selects the complete current package inventory.
@@ -43,6 +55,25 @@ func SelectWithTags(moduleRoot, base, tree string, buildTags []string) (selectio
 // environment that will be used by the native Go command.
 func SelectWithEnvironment(moduleRoot, base, tree string, buildTags, environment []string) (selection Selection, err error) {
 	workspace := gittree.Workspace{Dir: moduleRoot}
+	return SelectWithWorkspaceSnapshot(workspace, base, tree, buildTags, environment,
+		func(tree string) (string, func() error, error) {
+			detached, err := workspace.NewDetachedWorktree(tree)
+			if err != nil {
+				return "", nil, err
+			}
+			return detached.Workspace().Dir, detached.Close, nil
+		})
+}
+
+// SelectWithWorkspaceSnapshot uses a caller-owned exact-tree snapshot with the
+// same package selection logic as the native detached-worktree path.
+func SelectWithWorkspaceSnapshot(workspace gittree.Workspace, base, tree string, buildTags, environment []string, openSnapshot func(string) (string, func() error, error)) (selection Selection, err error) {
+	owner := selector{workspace: workspace, openSnapshot: openSnapshot}
+	return owner.selectPackages(base, tree, buildTags, environment)
+}
+
+func (s selector) selectPackages(base, tree string, buildTags, environment []string) (selection Selection, err error) {
+	workspace := s.workspace
 	resolve := func(rev string) (string, error) {
 		if _, present, readErr := workspace.FileAt(rev, "go.mod"); readErr == nil && present {
 			return rev, nil
@@ -84,16 +115,16 @@ func SelectWithEnvironment(moduleRoot, base, tree string, buildTags, environment
 	if err != nil {
 		return selection, err
 	}
-	detached, err := workspace.NewDetachedWorktree(candidateTree)
+	candidateDir, closeCandidate, err := s.openSnapshot(candidateTree)
 	if err != nil {
 		return selection, fmt.Errorf("materialize Go package candidate: %w", err)
 	}
-	defer func() { err = errors.Join(err, detached.Close()) }()
-	imports, err := packageImports(detached.Workspace().Dir, selection.ModulePath)
+	defer func() { err = errors.Join(err, closeCandidate()) }()
+	imports, err := packageImports(candidateDir, selection.ModulePath)
 	if err != nil {
 		return selection, err
 	}
-	runnable, err := runnablePackageInventory(detached.Workspace().Dir, buildTags, environment)
+	runnable, err := runnablePackageInventory(candidateDir, buildTags, environment)
 	if err != nil {
 		return selection, err
 	}
@@ -118,12 +149,12 @@ func SelectWithEnvironment(moduleRoot, base, tree string, buildTags, environment
 		}
 		owner := nearestPackageOwner(path, imports, nil)
 		if owner == "" && !baseLoaded {
-			baseDetached, bedErr := workspace.NewDetachedWorktree(baseTree)
+			baseDir, closeBase, bedErr := s.openSnapshot(baseTree)
 			if bedErr != nil {
 				return selection, fmt.Errorf("materialize Go package base: %w", bedErr)
 			}
-			defer func() { err = errors.Join(err, baseDetached.Close()) }()
-			baseImports, err = packageImports(baseDetached.Workspace().Dir, selection.ModulePath)
+			defer func() { err = errors.Join(err, closeBase()) }()
+			baseImports, err = packageImports(baseDir, selection.ModulePath)
 			if err != nil {
 				return selection, err
 			}
@@ -469,6 +500,19 @@ func dependencyDirs(module, root string, imports map[string]map[string]bool) []s
 // callers that already have a changed package pattern set.
 func ReverseDependents(moduleRoot, tree string, changed []string) (dependents []string, err error) {
 	workspace := gittree.Workspace{Dir: moduleRoot}
+	return ReverseDependentsWithWorkspaceSnapshot(workspace, tree, changed,
+		func(tree string) (string, func() error, error) {
+			detached, err := workspace.NewDetachedWorktree(tree)
+			if err != nil {
+				return "", nil, err
+			}
+			return detached.Workspace().Dir, detached.Close, nil
+		})
+}
+
+// ReverseDependentsWithWorkspaceSnapshot scans an exact-tree snapshot using
+// the same import parser and closure as the native detached-worktree path.
+func ReverseDependentsWithWorkspaceSnapshot(workspace gittree.Workspace, tree string, changed []string, openSnapshot func(string) (string, func() error, error)) (dependents []string, err error) {
 	resolved := tree
 	if _, present, readErr := workspace.FileAt(tree, "go.mod"); readErr != nil || !present {
 		resolved, err = workspace.TreeOf(tree)
@@ -487,12 +531,12 @@ func ReverseDependents(moduleRoot, tree string, changed []string) (dependents []
 	if err != nil {
 		return nil, err
 	}
-	detached, err := workspace.NewDetachedWorktree(resolved)
+	dir, closeSnapshot, err := openSnapshot(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("reverse dependents: materialize tree: %w", err)
 	}
-	defer func() { err = errors.Join(err, detached.Close()) }()
-	imports, err := packageImports(detached.Workspace().Dir, module)
+	defer func() { err = errors.Join(err, closeSnapshot()) }()
+	imports, err := packageImports(dir, module)
 	if err != nil {
 		return nil, err
 	}

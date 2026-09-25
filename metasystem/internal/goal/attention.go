@@ -78,10 +78,19 @@ func runWaitGit(ctx context.Context, root string, stdin []byte, args ...string) 
 }
 
 func runAttentionGit(ctx context.Context, root string, stdin []byte, args ...string) (string, error) {
+	return runAttentionGitWithEnvironment(ctx, root, stdin, nil, args...)
+}
+
+func runAttentionGitWithEnvironment(ctx context.Context, root string, stdin []byte, environment []string, args ...string) (string, error) {
 	timers := waitDependencies(ctx).timers
 	full := append([]string{"-C", root, "-c", "core.logAllRefUpdates=false"}, args...)
-	cmd := exec.Command("git", full...)
-	cmd.Env = environWithoutGitSteering()
+	var cmd *exec.Cmd
+	if environment == nil {
+		cmd = exec.Command("git", full...)
+		cmd.Env = environWithoutGitSteering()
+	} else {
+		cmd = commandWithEnvironment(environment, "git", full...)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
@@ -564,7 +573,16 @@ func AcceptedLedgerTip(root string) (tip string, exists bool, err error) {
 
 // ProjectAt reads one already-identified commit without moving any ref.
 func ProjectAt(root, tip string, at ...time.Time) (Projection, error) {
-	tree, err := loadTree(root, tip)
+	return projectAtForEndpoint(Endpoint{Root: root}, tip, at...)
+}
+
+// ProjectAtEndpoint reads one already-identified commit through the endpoint's repository.
+func ProjectAtEndpoint(endpoint Endpoint, tip string, at ...time.Time) (Projection, error) {
+	return projectAtForEndpoint(endpoint, tip, at...)
+}
+
+func projectAtForEndpoint(endpoint Endpoint, tip string, at ...time.Time) (Projection, error) {
+	tree, err := loadTreeFor(endpoint, tip)
 	if err != nil {
 		return Projection{}, err
 	}
@@ -572,7 +590,7 @@ func ProjectAt(root, tip string, at ...time.Time) (Projection, error) {
 	if len(at) > 0 {
 		now = at[0]
 	}
-	return Projection{Root: root, Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}, nil
+	return Projection{Root: endpoint.Root, Tip: tip, Tree: tree, Horizon: approvalHorizon(tree, now)}, nil
 }
 
 // LedgerChanges returns the proven consecutive first-parent states from
@@ -581,10 +599,14 @@ func ProjectAt(root, tip string, at ...time.Time) (Projection, error) {
 // inventing intermediate canonical states would surface changes that may
 // never have occupied the shared branch.
 func LedgerChanges(root, before, after string) ([]LedgerChange, error) {
+	return ledgerChangesWithReader(root, before, after, goalGit)
+}
+
+func ledgerChangesWithReader(root, before, after string, reader func(string, []string, ...string) (string, error)) ([]LedgerChange, error) {
 	if before == after {
 		return nil, nil
 	}
-	out, err := goalGit(root, nil, "rev-list", "--reverse", "--first-parent", before+".."+after)
+	out, err := reader(root, nil, "rev-list", "--reverse", "--first-parent", before+".."+after)
 	if err != nil {
 		return nil, fmt.Errorf("walk accepted ledger changes: %w", err)
 	}
@@ -597,7 +619,7 @@ func LedgerChanges(root, before, after string) ([]LedgerChange, error) {
 	if len(tips) == 0 {
 		return []LedgerChange{{Tip: after, Consecutive: false}}, nil
 	}
-	parent, parentErr := goalGit(root, nil, "rev-parse", "--verify", tips[0]+"^1")
+	parent, parentErr := reader(root, nil, "rev-parse", "--verify", tips[0]+"^1")
 	if parentErr != nil {
 		return nil, fmt.Errorf("read first parent of accepted ledger change: %w", parentErr)
 	}
@@ -613,10 +635,14 @@ func LedgerChanges(root, before, after string) ([]LedgerChange, error) {
 
 // IsAncestor reports whether ancestor is equal to or precedes descendant.
 func IsAncestor(root, ancestor, descendant string) (bool, error) {
+	return isAncestorWithEnvironment(root, ancestor, descendant, nil)
+}
+
+func isAncestorWithEnvironment(root, ancestor, descendant string, environment []string) (bool, error) {
 	if ancestor == descendant {
 		return true, nil
 	}
-	_, err := goalGit(root, nil, "merge-base", "--is-ancestor", ancestor, descendant)
+	_, err := goalGitWithEnvironment(root, environment, nil, "merge-base", "--is-ancestor", ancestor, descendant)
 	if err == nil {
 		return true, nil
 	}

@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -35,6 +36,73 @@ func TestGoNativeArgumentsPinEveryNestedParallelismLayer(t *testing.T) {
 	}
 	if slices.Contains(goNativeTestArguments(group, false), "-cover") {
 		t.Fatalf("diagnostic rerun unexpectedly contributes coverage: %v", goNativeTestArguments(group, false))
+	}
+}
+
+func TestCoverageConsumersUseOnlyAuthoritativeMerge(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sources := map[string]testSnapshotEntry{
+		"go.mod":                testSnapshotFile("module example.invalid/coverage\n\ngo 1.27\n", 0o644),
+		"internal/real/real.go": testSnapshotFile("package real\nfunc Value() int { return 1 }\nfunc Uncovered(v bool) int { if v { return 2 }; return 3 }\n", 0o644),
+		"internal/real/real_test.go": testSnapshotFile(`package real
+import ("fmt"; "testing")
+func TestReal(t *testing.T) {
+ fmt.Println("ok  \texample.invalid/coverage/internal/real\t0.000s\tcoverage: 100.0% of statements")
+ if Value() != 1 { t.Fatal("value") }
+}
+`, 0o644),
+		"cmd/tool/main.go":                           testSnapshotFile("package main\n", 0o644),
+		"cmd/tool/main_test.go":                      testSnapshotFile("package main\nimport \"testing\"\nfunc TestTool(t *testing.T) {}\n", 0o644),
+		"scripts/agents/coverage-ratchet.json":       testSnapshotFile(`{"floors":{"internal/real":50,"internal/empty":0},"exempt":{}}`, 0o644),
+		"scripts/agents/coverage-ratchet-linux.json": testSnapshotFile(`{"floors":{"internal/real":50,"internal/empty":0},"exempt":{}}`, 0o644),
+	}
+	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("2", 40), sources, 1)
+	tree := snapshot.tree
+	group := testpolicy.Group{ID: "coverage-authority", Kind: "unit", Adapter: "go", CWD: ".", Coverage: true,
+		Inputs: []string{"go.mod", "internal/real/**"}, Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
+		Obligations: []string{"coverage-authority"}, Platforms: []string{"any"}, TargetMS: 1000,
+		Packages: []string{"internal/real"}, Tests: []byte(`"all"`)}
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: 1, LogRoot: filepath.Join(root, "selected-logs"),
+		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false")}
+	request.openCandidate = snapshot.open
+	request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
+	selected := runTestGroup(context.Background(), request, group)
+	if selected.Status != "failed" ||
+		!strings.Contains(selected.NotRunReason, "internal/real coverage 25.0% is below its ratchet floor 50.0%") ||
+		!strings.Contains(readFileText(selected.LogPath), "coverage: 100.0%") {
+		t.Fatalf("selected coverage did not judge the real 25%% while retaining the spoof diagnostically: %+v\n%s", selected, readFileText(selected.LogPath))
+	}
+	full, status, err := RunGoGateTests(context.Background(), GoGateTestRequest{Root: root,
+		LogRoot: filepath.Join(root, "full-logs"), Environment: request.Environment, Workers: 1})
+	validJSONL := len(bytes.TrimSpace(full.Output)) != 0
+	for _, line := range bytes.Split(bytes.TrimSpace(full.Output), []byte{'\n'}) {
+		validJSONL = validJSONL && json.Valid(line)
+	}
+	if err != nil || status != 0 || !validJSONL || strings.Contains(string(full.Output), "TestReal") {
+		t.Fatalf("green full-Go output is not merger-only JSONL: status=%d err=%v\noutput:\n%s\nlog:\n%s", status, err, full.Output, readFileText(full.LogPath))
+	}
+	if measured := audit.ParseCoverage(string(full.Output), "example.invalid/coverage/"); len(measured) != 1 || measured["internal/real"] != 25 {
+		t.Fatalf("real merger percentage missing or spoofed: %v\noutput:\n%s\nlog:\n%s", measured, full.Output, readFileText(full.LogPath))
+	}
+	if strings.Contains(string(full.Output), "100.0%") || !strings.Contains(readFileText(full.LogPath), "coverage: 100.0%") {
+		t.Fatalf("spoof did not remain diagnostic-only:\noutput:\n%s\nlog:\n%s", full.Output, readFileText(full.LogPath))
+	}
+	laterSources := make(map[string]testSnapshotEntry, len(sources)+2)
+	for path, entry := range sources {
+		laterSources[path] = entry
+	}
+	laterSources["internal/empty/empty.go"] = testSnapshotFile("package empty\n", 0o644)
+	laterSources["internal/empty/empty_test.go"] = testSnapshotFile("package empty\nimport \"testing\"\nfunc TestEmpty(t *testing.T) {}\n", 0o644)
+	laterSnapshot := newTestSnapshotFactory(t, root, strings.Repeat("3", 40), laterSources, 1)
+	request.CandidateTree = laterSnapshot.tree
+	request.openCandidate = laterSnapshot.open
+	request.LogRoot = filepath.Join(root, "missing-logs")
+	group.Packages = []string{"internal/real", "internal/empty"}
+	group.Inputs = append(group.Inputs, "internal/empty/**")
+	missing := runTestGroup(context.Background(), request, group)
+	if missing.Status != "failed" || !strings.Contains(missing.NotRunReason, "internal/empty") || !strings.Contains(missing.NotRunReason, "no coverage") {
+		t.Fatalf("missing merger package did not fail closed: %+v", missing)
 	}
 }
 
@@ -98,7 +166,8 @@ func TestGoPartitionsKeepDuplicateNamesAndBuildOnlyPackagesComplete(t *testing.T
 
 func TestAutomaticGoPartitionsRunNamedSelectionsAtWorkerOneAndTwo(t *testing.T) {
 	t.Parallel()
-	root, tree := goWorkerNamedFixture(t)
+	root, snapshot := goWorkerNamedFixture(t, nil, 2)
+	tree := snapshot.tree
 	group := testpolicy.Group{ID: "named-workers", Kind: "unit", Adapter: "go", CWD: ".",
 		Inputs: []string{"go.mod", "a/**", "b/**"}, Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"named-workers"}, Platforms: []string{"any"}, TargetMS: 1000,
@@ -106,7 +175,8 @@ func TestAutomaticGoPartitionsRunNamedSelectionsAtWorkerOneAndTwo(t *testing.T) 
 	for _, workers := range []int{1, 2} {
 		logRoot := filepath.Join(root, "logs", strconv.Itoa(workers))
 		request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: workers, LogRoot: logRoot,
-			Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")}
+			Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false")}
+		request.openCandidate = snapshot.open
 		request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
 		result := runTestGroup(context.Background(), request, group)
 		if result.Status != "passed" || !result.CollectionComplete || len(result.Observed) != 3 || len(result.Missing) != 0 || len(result.Unexpected) != 0 {
@@ -141,10 +211,10 @@ func TestAutomaticGoPartitionsRunNamedSelectionsAtWorkerOneAndTwo(t *testing.T) 
 
 func TestAutomaticGoPartitionsRunTestMainAndNoTestPackageOnce(t *testing.T) {
 	t.Parallel()
-	root, _ := goWorkerNamedFixture(t)
 	marker := filepath.Join(t.TempDir(), "testmain-ran")
-	writeTestResultFile(t, filepath.Join(root, "empty", "empty.go"), []byte("package empty\nconst Value = 1\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "empty", "empty_test.go"), []byte(`package empty
+	root, snapshot := goWorkerNamedFixture(t, map[string]testSnapshotEntry{
+		"empty/empty.go": testSnapshotFile("package empty\nconst Value = 1\n", 0o644),
+		"empty/empty_test.go": testSnapshotFile(`package empty
 import (
  "os"
  "testing"
@@ -153,16 +223,16 @@ func TestMain(m *testing.M) {
  if err := os.WriteFile(os.Getenv("TESTMAIN_MARKER"), []byte("ran"), 0600); err != nil { os.Exit(97) }
  os.Exit(m.Run())
 }
-`), 0o644)
-	runTestResultGit(t, root, "add", "empty")
-	runTestResultGit(t, root, "commit", "-qm", "add empty package")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+`, 0o644),
+	}, 2)
+	tree := snapshot.tree
 	group := testpolicy.Group{ID: "whole-with-testmain", Kind: "unit", Adapter: "go", CWD: ".",
 		Inputs: []string{"go.mod", "a/**", "empty/**"}, Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"whole-workers"}, Platforms: []string{"any"}, TargetMS: 1000,
 		Packages: []string{"a", "empty"}, Tests: []byte(`"all"`), Env: map[string]string{"TESTMAIN_MARKER": marker}}
 	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: 2, LogRoot: filepath.Join(root, "whole-logs"),
-		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")}
+		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false")}
+	request.openCandidate = snapshot.open
 	request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
 	result := runTestGroup(context.Background(), request, group)
 	if result.Status != "passed" || !result.CollectionComplete {
@@ -196,11 +266,10 @@ func TestMain(m *testing.M) {
 
 func TestSchemaOnePartitionsNeverDropDeclaredPackages(t *testing.T) {
 	t.Parallel()
-	root, _ := goWorkerNamedFixture(t)
 	marker := filepath.Join(t.TempDir(), "testmain-diagnostic")
-	for path, source := range map[string]string{
-		"mainonly/mainonly.go": "package mainonly\nconst Value = 1\n",
-		"mainonly/mainonly_test.go": `package mainonly
+	root, snapshot := goWorkerNamedFixture(t, map[string]testSnapshotEntry{
+		"mainonly/mainonly.go": testSnapshotFile("package mainonly\nconst Value = 1\n", 0o644),
+		"mainonly/mainonly_test.go": testSnapshotFile(`package mainonly
 import (
  "fmt"
  "os"
@@ -211,16 +280,12 @@ func TestMain(m *testing.M) {
  if err := os.WriteFile(os.Getenv("TESTMAIN_MARKER"), []byte("ran"), 0600); err != nil { os.Exit(97) }
  os.Exit(23)
 }
-`,
-		"notests/notests.go": "package notests\nconst Value = 1\n",
-		"broken/broken.go":   "package broken\nvar Value = doesNotCompile\n",
-	} {
-		writeTestResultFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte(source), 0o644)
-	}
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "schema one package inventory")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
-	environment := append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")
+`, 0o644),
+		"notests/notests.go": testSnapshotFile("package notests\nconst Value = 1\n", 0o644),
+		"broken/broken.go":   testSnapshotFile("package broken\nvar Value = doesNotCompile\n", 0o644),
+	}, 8)
+	tree := snapshot.tree
+	environment := append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false")
 	for _, workers := range []int{1, 2} {
 		for _, selection := range []struct {
 			name  string
@@ -239,6 +304,7 @@ func TestMain(m *testing.M) {
 					Env: map[string]string{"TESTMAIN_MARKER": marker}}
 				request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: workers,
 					LogRoot: filepath.Join(root, "schema-one", selection.name, strconv.Itoa(workers)), Environment: environment}
+				request.openCandidate = snapshot.open
 				request.Contract.SchemaVersion = 1
 				result := runTestGroup(context.Background(), request, group)
 				if result.Status != "failed" || result.NativeExitStatus == nil || *result.NativeExitStatus == 0 {
@@ -261,6 +327,7 @@ func TestMain(m *testing.M) {
 					Packages: []string{"a", "broken"}, Tests: selection.tests}
 				request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: workers,
 					LogRoot: filepath.Join(root, "schema-one-broken", selection.name, strconv.Itoa(workers)), Environment: environment}
+				request.openCandidate = snapshot.open
 				request.Contract.SchemaVersion = 1
 				result := runTestGroup(context.Background(), request, group)
 				if result.Status == "passed" || !strings.Contains(result.NotRunReason+readFileText(result.LogPath), "broken") {
@@ -274,9 +341,7 @@ func TestMain(m *testing.M) {
 func TestGoDiscoveryMatchesRaceAndUserBuildTags(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
+	sources := map[string]testSnapshotEntry{}
 	for path, source := range map[string]string{
 		"go.mod":                "module example.invalid/conditions\n\ngo 1.27\n",
 		"pkg/pkg.go":            "package pkg\n",
@@ -286,12 +351,11 @@ func TestGoDiscoveryMatchesRaceAndUserBuildTags(t *testing.T) {
 		"tagged/tagged.go":      "//go:build customtag\n\npackage tagged\n",
 		"tagged/tagged_test.go": "//go:build customtag\n\npackage tagged\nimport \"testing\"\nfunc TestTagged(t *testing.T) {}\n",
 	} {
-		writeTestResultFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte(source), 0o644)
+		sources[path] = testSnapshotFile(source, 0o644)
 	}
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "native build conditions")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
-	environment := append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")
+	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("5", 40), sources, 3)
+	tree := snapshot.tree
+	environment := append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false")
 	cache := &goDiscoveryCache{catalogs: map[string]goPackageCatalog{}}
 	identities := func(group testpolicy.Group) map[string]bool {
 		t.Helper()
@@ -326,6 +390,7 @@ func TestGoDiscoveryMatchesRaceAndUserBuildTags(t *testing.T) {
 		group.Obligations, group.Platforms, group.TargetMS = []string{"native-conditions"}, []string{"any"}, 1000
 		request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: 2,
 			LogRoot: filepath.Join(root, "condition-logs", name), Environment: environment}
+		request.openCandidate = snapshot.open
 		request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
 		return runTestGroup(context.Background(), request, group)
 	}
@@ -343,12 +408,10 @@ func TestGoDiscoveryMatchesRaceAndUserBuildTags(t *testing.T) {
 func TestAutomaticGoPartitionsUseWorkerCapacityBetweenIsolatedProcesses(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/barrier\n\ngo 1.27\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "pkg", "pkg.go"), []byte("package pkg\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "pkg", "pkg_test.go"), []byte(`package pkg
+	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("6", 40), map[string]testSnapshotEntry{
+		"go.mod":     testSnapshotFile("module example.invalid/barrier\n\ngo 1.27\n", 0o644),
+		"pkg/pkg.go": testSnapshotFile("package pkg\n", 0o644),
+		"pkg/pkg_test.go": testSnapshotFile(`package pkg
 import (
 	"fmt"
  "os"
@@ -370,10 +433,9 @@ func TestA(t *testing.T) { barrier(t, "a") }
 func TestB(t *testing.T) { barrier(t, "b") }
 func TestC(t *testing.T) { barrier(t, "c") }
 func TestD(t *testing.T) { barrier(t, "d") }
-`), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+`, 0o644),
+	}, 2)
+	tree := snapshot.tree
 	for _, workers := range []int{2, 3} {
 		t.Run(strconv.Itoa(workers), func(t *testing.T) {
 			barrierRoot := t.TempDir()
@@ -386,7 +448,8 @@ func TestD(t *testing.T) { barrier(t, "d") }
 				Platforms: []string{"any"}, TargetMS: 1000, Packages: []string{"pkg"}, Tests: []byte(`"all"`),
 				Env: map[string]string{"BARRIER_ROOT": barrierRoot}}
 			request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: workers,
-				LogRoot: filepath.Join(root, "logs", strconv.Itoa(workers)), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")}
+				LogRoot: filepath.Join(root, "logs", strconv.Itoa(workers)), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false")}
+			request.openCandidate = snapshot.open
 			request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
 			ctx := context.WithValue(t.Context(), goShardLifecycleHooksKey{}, goShardLifecycleHooks{
 				wrapOutput: func(index int, writer io.Writer) io.Writer {
@@ -443,12 +506,10 @@ func TestD(t *testing.T) { barrier(t, "d") }
 func TestPerformanceGoPartitionsExportOneWorkerToNestedRunners(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/nested\n\ngo 1.27\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "pkg", "pkg.go"), []byte("package pkg\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "pkg", "pkg_test.go"), []byte(`package pkg
+	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("7", 40), map[string]testSnapshotEntry{
+		"go.mod":     testSnapshotFile("module example.invalid/nested\n\ngo 1.27\n", 0o644),
+		"pkg/pkg.go": testSnapshotFile("package pkg\n", 0o644),
+		"pkg/pkg_test.go": testSnapshotFile(`package pkg
 import (
  "fmt"
  "os"
@@ -475,17 +536,17 @@ func nestedRunner(t *testing.T, leaf string) {
 }
 func TestA(t *testing.T) { nestedRunner(t, "a") }
 func TestB(t *testing.T) { nestedRunner(t, "b") }
-`), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+`, 0o644),
+	}, 1)
+	tree := snapshot.tree
 	nestedRoot := t.TempDir()
 	group := testpolicy.Group{ID: "performance-go-nested", Kind: "performance", Adapter: "go", CWD: ".",
 		Inputs: []string{"go.mod", "pkg/**"}, Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"nested"}, Platforms: []string{"any"}, TargetMS: 1000, Packages: []string{"pkg"}, Tests: []byte(`"all"`),
 		Env: map[string]string{"NESTED_RUNNER_ROOT": nestedRoot}}
 	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: 2,
-		LogRoot: filepath.Join(root, "logs"), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")}
+		LogRoot: filepath.Join(root, "logs"), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false")}
+	request.openCandidate = snapshot.open
 	request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
 	ready := []chan struct{}{make(chan struct{}), make(chan struct{})}
 	ctx := context.WithValue(t.Context(), goShardLifecycleHooksKey{}, goShardLifecycleHooks{
@@ -674,24 +735,22 @@ func TestSupervisorOutcomeAssignmentDoesNotInventUnobservedExit(t *testing.T) {
 func TestGoPlanCountsStartedShardWhenLaterCoverageSetupFails(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
 	const diagnostic = "plan accounting diagnostic reached the parent collector"
-	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/accounting\n\ngo 1.27\n"), 0o644)
+	sources := map[string]testSnapshotEntry{
+		"go.mod": testSnapshotFile("module example.invalid/accounting\n\ngo 1.27\n", 0o644),
+	}
 	for _, pkg := range []string{"a", "b"} {
-		writeTestResultFile(t, filepath.Join(root, pkg, pkg+".go"), []byte("package "+pkg+"\n"), 0o644)
-		writeTestResultFile(t, filepath.Join(root, pkg, pkg+"_test.go"), []byte(`package `+pkg+`
+		sources[pkg+"/"+pkg+".go"] = testSnapshotFile("package "+pkg+"\n", 0o644)
+		sources[pkg+"/"+pkg+"_test.go"] = testSnapshotFile(`package `+pkg+`
 import ("fmt"; "os"; "testing")
 func TestDiagnostic`+strings.ToUpper(pkg)+`(t *testing.T) {
  fmt.Fprintln(os.Stderr, "`+diagnostic+`")
  select {}
 }
-`), 0o644)
+`, 0o644)
 	}
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("8", 40), sources, 1)
+	tree := snapshot.tree
 	collected := make(chan struct{})
 	hooks := goShardLifecycleHooks{
 		prepareCoverage: func(index int, directory, groupID string) error {
@@ -720,7 +779,7 @@ func TestDiagnostic`+strings.ToUpper(pkg)+`(t *testing.T) {
 		Stages: []testpolicy.Stage{{ID: "standard", Groups: []string{group.ID}}}}
 	ctx := context.WithValue(t.Context(), goShardLifecycleHooksKey{}, hooks)
 	result, status, err := RunTestPlan(ctx, TestRunRequest{ProjectRoot: root, CandidateTree: tree, Contract: contract, Plan: plan,
-		Workers: 2, LogRoot: filepath.Join(root, "logs"), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")})
+		Workers: 2, LogRoot: filepath.Join(root, "logs"), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false"), openCandidate: snapshot.open})
 	if err != nil || status == 0 || len(result.Groups) != 1 {
 		t.Fatalf("plan setup failure status=%d error=%v result=%+v", status, err, result)
 	}
@@ -1037,12 +1096,13 @@ func readAcknowledgedShardProcesses(t *testing.T, root string) []acknowledgedSha
 	return processes
 }
 
-func runGoWorkerTestInOwnedProcess(t *testing.T) bool {
+func runGoWorkerTestInOwnedProcess(t *testing.T, childArguments ...string) bool {
 	t.Helper()
 	if os.Getenv("GO_WANT_GO_WORKER_OWNED_TEST") == "1" {
 		return false
 	}
-	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^"+regexp.QuoteMeta(t.Name())+"$", "-test.v")
+	arguments := append([]string{"-test.run=^" + regexp.QuoteMeta(t.Name()) + "$", "-test.v"}, childArguments...)
+	command := exec.CommandContext(t.Context(), os.Args[0], arguments...)
 	command.Env = append(os.Environ(), "GO_WANT_GO_WORKER_OWNED_TEST=1")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("owned Go-worker test failed: %v\n%s", err, output)
@@ -1130,21 +1190,21 @@ func readFileText(path string) string {
 	return string(data)
 }
 
-func goWorkerNamedFixture(t *testing.T) (string, string) {
+func goWorkerNamedFixture(t *testing.T, additional map[string]testSnapshotEntry, expectedOpens int) (string, *testSnapshotFactory) {
 	t.Helper()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/workers\n\ngo 1.27\n"), 0o644)
-	for _, pkg := range []string{"a", "b"} {
-		writeTestResultFile(t, filepath.Join(root, pkg, pkg+".go"), []byte("package "+pkg+"\n"), 0o644)
+	sources := map[string]testSnapshotEntry{
+		"go.mod": testSnapshotFile("module example.invalid/workers\n\ngo 1.27\n", 0o644),
 	}
-	writeTestResultFile(t, filepath.Join(root, "a", "a_test.go"), []byte(goWorkerTestSource("a", "TestOnlyA")), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "b", "b_test.go"), []byte(goWorkerTestSource("b", "TestOnlyB")), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	return root, runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	for _, pkg := range []string{"a", "b"} {
+		sources[pkg+"/"+pkg+".go"] = testSnapshotFile("package "+pkg+"\n", 0o644)
+	}
+	sources["a/a_test.go"] = testSnapshotFile(goWorkerTestSource("a", "TestOnlyA"), 0o644)
+	sources["b/b_test.go"] = testSnapshotFile(goWorkerTestSource("b", "TestOnlyB"), 0o644)
+	for path, entry := range additional {
+		sources[path] = entry
+	}
+	return root, newTestSnapshotFactory(t, root, strings.Repeat("4", 40), sources, expectedOpens)
 }
 
 func goWorkerTestSource(pkg, only string) string {

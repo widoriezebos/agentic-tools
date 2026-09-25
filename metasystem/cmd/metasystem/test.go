@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -240,7 +241,11 @@ type testingSelectionRequest struct {
 	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
 	BatchPrefixReceipt, BatchTipProof, BatchAdmission                                   bool
 	FreshEpisode, FreshExpiresAt                                                        string
-	RequireWorkerCapabilities                                                           bool
+	// ExecutedWorkers is the worker allowance of the run a verification checks.
+	// Group execution identity binds that allowance, and a fresh resolution can
+	// differ because the default allowance follows available memory.
+	ExecutedWorkers           int
+	RequireWorkerCapabilities bool
 	// CadencePreflight plans and revalidates the fetched tree before the cadence
 	// tick claims standing authority. Governed cadence execution does not set it.
 	CadencePreflight bool
@@ -251,11 +256,17 @@ type testingSelectionRequest struct {
 }
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+	return admitTestingRunWith(request, admission, admitProofLaunch)
+}
+
+func admitTestingRunWith(request testingSelectionRequest, admission proofLaunchAdmission,
+	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
+) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	admission.ForceAttempt = request.Purpose == testpolicy.PurposeCadence || request.NoReuse || request.ForceGroups
 	if admission.CandidateTree == "" {
 		admission.CandidateTree = request.Tree
 	}
-	return admitProofLaunch(admission)
+	return admit(admission)
 }
 
 type testingCommandAdmission struct {
@@ -618,10 +629,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		}
 		workerCapabilitiesChecked = true
 	}
-	effective := testpolicy.ProtectedContract(baseContract, candidateContract)
-	if effective.Fallback == "" {
-		effective.Fallback = candidateContract.Fallback
-	}
+	effective := protectedTestingContractWithCandidateFallback(baseContract, candidateContract)
 	if err := effective.Validate(); err != nil {
 		return testingPreparation{}, fmt.Errorf("protected testing contract: %w", err)
 	}
@@ -725,6 +733,14 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		AllGroups: request.AllGroups}, nil
 }
 
+func protectedTestingContractWithCandidateFallback(baseContract, candidateContract testpolicy.Contract) testpolicy.Contract {
+	effective := testpolicy.ProtectedContract(baseContract, candidateContract)
+	if effective.Fallback == "" {
+		effective.Fallback = candidateContract.Fallback
+	}
+	return effective
+}
+
 func testingPreparationAccountsToGoal(request testingSelectionRequest) (bool, error) {
 	if request.CadencePreflight {
 		if request.Purpose != testpolicy.PurposeCadence {
@@ -738,6 +754,43 @@ func testingPreparationAccountsToGoal(request testingSelectionRequest) (bool, er
 var prepareTestingForCommand = prepareTesting
 
 func compareTrustedPolicyDecision(installation, projectRoot, candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput) error {
+	seconds := 0
+	limit := func() int {
+		if seconds == 0 {
+			seconds = steward.RearmResolveSeconds(installation)
+		}
+		return seconds
+	}
+	return compareTrustedPolicyDecisionWithReaders(candidateTree, policyBaseCommit, baseContractDigest, decision, projectRoot, policyBaseMoveReaders{
+		isAncestor: func(root, ours, engine string) (bool, error) {
+			_, err := landedRearmGitStep(context.Background(), landedRearmClock, limit(), "compare-moved-policy-base-ancestry", root,
+				"merge-base", "--is-ancestor", ours, engine)
+			if err != nil {
+				var exitError *exec.ExitError
+				if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+					return false, nil
+				}
+				return false, err
+			}
+			return true, nil
+		},
+		localLandingRef: func(root string) (string, error) {
+			return readLocalLandingRefText(context.Background(), landedRearmClock, limit(), root)
+		},
+		commitAtRef: func(root, ref string) (string, error) {
+			return landedRearmGitStep(context.Background(), landedRearmClock, limit(), "reread-moved-policy-base", root,
+				"rev-parse", "--verify", ref+"^{commit}")
+		},
+	})
+}
+
+type policyBaseMoveReaders struct {
+	isAncestor      func(projectRoot, ours, engine string) (bool, error)
+	localLandingRef func(projectRoot string) (string, error)
+	commitAtRef     func(projectRoot, ref string) (string, error)
+}
+
+func compareTrustedPolicyDecisionWithReaders(candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput, projectRoot string, readers policyBaseMoveReaders) error {
 	mismatch := decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest, decision)
 	if mismatch == nil {
 		return nil
@@ -747,7 +800,7 @@ func compareTrustedPolicyDecision(installation, projectRoot, candidateTree, poli
 	if candidateTree != decision.CandidateTree || policyBaseCommit == decision.PolicyBaseCommit {
 		return mismatch
 	}
-	moved, err := authenticatedPolicyBaseMove(installation, projectRoot, policyBaseCommit, decision.PolicyBaseCommit)
+	moved, err := authenticatedPolicyBaseMove(projectRoot, policyBaseCommit, decision.PolicyBaseCommit, readers)
 	if err != nil || !moved {
 		return mismatch
 	}
@@ -760,23 +813,20 @@ func trustedPolicyFloorRequest(request testingSelectionRequest) testingSelection
 	return request
 }
 
-func authenticatedPolicyBaseMove(installation, projectRoot, ours, engine string) (bool, error) {
-	seconds := steward.RearmResolveSeconds(installation)
-	_, err := landedRearmGitStep(context.Background(), landedRearmClock, seconds, "compare-moved-policy-base-ancestry", projectRoot,
-		"merge-base", "--is-ancestor", ours, engine)
-	if err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
-			return false, nil
-		}
+func authenticatedPolicyBaseMove(projectRoot, ours, engine string, readers policyBaseMoveReaders) (bool, error) {
+	ancestor, err := readers.isAncestor(projectRoot, ours, engine)
+	if err != nil || !ancestor {
 		return false, err
 	}
-	ref, _, _, err := landingRefParts(context.Background(), landedRearmClock, seconds, projectRoot)
+	refText, err := readers.localLandingRef(projectRoot)
 	if err != nil {
 		return false, err
 	}
-	current, err := landedRearmGitStep(context.Background(), landedRearmClock, seconds, "reread-moved-policy-base", projectRoot,
-		"rev-parse", "--verify", ref+"^{commit}")
+	ref, _, _, err := parseLandingRefParts(refText)
+	if err != nil {
+		return false, err
+	}
+	current, err := readers.commitAtRef(projectRoot, ref)
 	if err != nil {
 		return false, err
 	}
@@ -931,11 +981,15 @@ func testingRelevantInputs(prefix, contractRel string, contract testpolicy.Contr
 }
 
 func checkDeliveryInputParity(workspace gittree.Workspace, candidateTree, prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan) error {
+	return checkDeliveryInputParityWith(candidateTree, prefix, contractRel, contract, plan, workspace.SnapshotRelevant)
+}
+
+func checkDeliveryInputParityWith(candidateTree, prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan, snapshot func(candidateTree string, declarations []string) (string, error)) error {
 	declarations, err := testingRelevantInputs(prefix, contractRel, contract, plan)
 	if err != nil {
 		return err
 	}
-	workingTree, err := workspace.SnapshotRelevant(candidateTree, declarations)
+	workingTree, err := snapshot(candidateTree, declarations)
 	if err != nil {
 		return fmt.Errorf("capture relevant candidate working inputs: %w", err)
 	}
@@ -1034,6 +1088,32 @@ type candidateEngineCacheRecord struct {
 	Digest        string `json:"digest"`
 }
 
+type candidateDetachedWorkspace interface {
+	Workspace() gittree.Workspace
+	Close() error
+}
+
+type candidateEngineIO struct {
+	runGit func(*exec.Cmd) error
+	open   func(gittree.Workspace, string) (candidateDetachedWorkspace, error)
+}
+
+func nativeCandidateEngineIO() candidateEngineIO {
+	return candidateEngineIO{
+		runGit: func(command *exec.Cmd) error { return command.Run() },
+		open: func(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
+			return workspace.NewDetachedWorktree(tree)
+		},
+	}
+}
+
+func selectedCandidateEngineIO(options []candidateEngineIO) candidateEngineIO {
+	if len(options) == 0 {
+		return nativeCandidateEngineIO()
+	}
+	return options[0]
+}
+
 func candidateEngineBuildEnvironment(environment []string, stamp string) []string {
 	owned := map[string]bool{
 		"CGO_ENABLED": true, "GOAMD64": true, "GOARM": true, "GOARM64": true,
@@ -1084,12 +1164,13 @@ func (build *candidateEngineBuild) Close() error {
 // prepareCandidateEngine keeps build outputs under the proof control root.
 // The existing build identity covers the tracked engine closure, platform and
 // toolchain. Every cache hit also checks the published bytes before use.
-func prepareCandidateEngine(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (*candidateEngineBuild, error) {
-	return prepareCandidateEngineWithColdPreflight(ctx, controlRoot, workspace, installationPrefix, candidateTree, environment, nil)
+func prepareCandidateEngine(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, options ...candidateEngineIO) (*candidateEngineBuild, error) {
+	return prepareCandidateEngineWithColdPreflight(ctx, controlRoot, workspace, installationPrefix, candidateTree, environment, nil, selectedCandidateEngineIO(options))
 }
 
-func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, beforeColdBuild func() error) (*candidateEngineBuild, error) {
-	buildIdentity, err := candidateEngineBuildIdentity(ctx, workspace, installationPrefix, candidateTree, environment)
+func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, beforeColdBuild func() error, options ...candidateEngineIO) (*candidateEngineBuild, error) {
+	io := selectedCandidateEngineIO(options)
+	buildIdentity, err := candidateEngineBuildIdentityUsing(ctx, workspace, installationPrefix, candidateTree, environment, io)
 	if err != nil {
 		return nil, err
 	}
@@ -1134,7 +1215,7 @@ func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot st
 		return nil, fmt.Errorf("admit candidate engine build: %w", err)
 	}
 	defer lease.Close()
-	built, err := buildCandidateEngine(proofrun.WithHostResourceLease(ctx, lease), workspace, installationPrefix, candidateTree, environment)
+	built, err := buildCandidateEngine(proofrun.WithHostResourceLease(ctx, lease), workspace, installationPrefix, candidateTree, environment, io)
 	if err != nil {
 		return nil, err
 	}
@@ -1211,13 +1292,14 @@ func copyCandidateEngineArtifact(source, target string) error {
 // synthetic candidate commit into one proof build, and leaves bin/metasystem
 // untouched. The output survives worktree cleanup for the authenticated
 // worker and every detached group it launches.
-func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (*candidateEngineBuild, error) {
-	detached, err := workspace.NewDetachedWorktree(candidateTree)
+func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, options ...candidateEngineIO) (*candidateEngineBuild, error) {
+	io := selectedCandidateEngineIO(options)
+	detached, err := io.open(workspace, candidateTree)
 	if err != nil {
 		return nil, fmt.Errorf("candidate engine build failed while materializing tree %s: %w", candidateTree, err)
 	}
 	removeDetached := func() error { return detached.Close() }
-	candidateCommit, err := bindMaterializedCandidateCommit(ctx, detached.Workspace().Dir, installationPrefix, environment)
+	candidateCommit, err := bindMaterializedCandidateCommit(ctx, detached.Workspace(), installationPrefix, environment, io)
 	if err != nil {
 		closeErr := removeDetached()
 		return nil, fmt.Errorf("candidate engine build failed while resolving the materialized candidate commit: %v (cleanup: %v)", err, closeErr)
@@ -1271,6 +1353,10 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 }
 
 func candidateEngineBuildIdentity(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (string, error) {
+	return candidateEngineBuildIdentityUsing(ctx, workspace, installationPrefix, candidateTree, environment, nativeCandidateEngineIO())
+}
+
+func candidateEngineBuildIdentityUsing(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, io candidateEngineIO) (string, error) {
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		return "", err
@@ -1283,7 +1369,7 @@ func candidateEngineBuildIdentity(ctx context.Context, workspace gittree.Workspa
 			return "", fmt.Errorf("resolve candidate installation subtree: %w", err)
 		}
 	}
-	engineTree, err := engineProjectionTree(ctx, workspace.Dir, installationTree, policy.EnginePaths)
+	engineTree, err := engineProjectionTree(ctx, workspace.Dir, installationTree, policy.EnginePaths, io)
 	if err != nil {
 		return "", err
 	}
@@ -1307,10 +1393,10 @@ func candidateEngineBuildIdentity(ctx context.Context, workspace gittree.Workspa
 		"platform=" + runtime.GOOS + "/" + runtime.GOARCH,
 		"build-context=CGO_ENABLED=0,GOAMD64=v1,GOARM64=v8.0,GOARM=7,GOENV=off,GOEXPERIMENT=,GOFLAGS=-mod=readonly,GOTOOLCHAIN=local,GOWORK=off,-buildvcs=false,-trimpath",
 	}, "\n")
-	return commitCandidateEngineTree(ctx, workspace.Dir, engineTree, message)
+	return commitCandidateEngineTree(ctx, workspace.Dir, engineTree, message, io)
 }
 
-func engineProjectionTree(ctx context.Context, root, tree string, paths []string) (string, error) {
+func engineProjectionTree(ctx context.Context, root, tree string, paths []string, io candidateEngineIO) (string, error) {
 	directory, err := os.MkdirTemp("", "metasystem-engine-projection.*")
 	if err != nil {
 		return "", err
@@ -1322,7 +1408,7 @@ func engineProjectionTree(ctx context.Context, root, tree string, paths []string
 		command.Stdin = bytes.NewReader(stdin)
 		var stdout, stderr bytes.Buffer
 		command.Stdout, command.Stderr = &stdout, &stderr
-		if err := command.Run(); err != nil {
+		if err := io.runGit(command); err != nil {
 			return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 		}
 		return stdout.Bytes(), nil
@@ -1355,11 +1441,14 @@ func engineProjectionTree(ctx context.Context, root, tree string, paths []string
 	return engineTree, nil
 }
 
-func commitCandidateEngineTree(ctx context.Context, root, tree, message string) (string, error) {
+func commitCandidateEngineTree(ctx context.Context, root, tree, message string, io candidateEngineIO) (string, error) {
 	gitLine := func(environment []string, args ...string) (string, error) {
 		command := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
 		command.Env = environment
-		output, err := command.CombinedOutput()
+		var combined bytes.Buffer
+		command.Stdout, command.Stderr = &combined, &combined
+		err := io.runGit(command)
+		output := combined.Bytes()
 		if err != nil {
 			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 		}
@@ -1388,23 +1477,26 @@ func commitCandidateEngineTree(ctx context.Context, root, tree, message string) 
 	return commit, nil
 }
 
-func bindMaterializedCandidateCommit(ctx context.Context, root, installationPrefix string, environment []string) (string, error) {
-	workspace := gittree.Workspace{Dir: root}
+func bindMaterializedCandidateCommit(ctx context.Context, workspace gittree.Workspace, installationPrefix string, environment []string, io candidateEngineIO) (string, error) {
+	root := workspace.Dir
 	tree, err := workspace.HeadTree()
 	if err != nil {
 		return "", err
 	}
-	commit, err := candidateEngineBuildIdentity(ctx, workspace, installationPrefix, tree, environment)
+	commit, err := candidateEngineBuildIdentityUsing(ctx, workspace, installationPrefix, tree, environment, io)
 	if err != nil {
 		return "", err
 	}
-	current, unborn, err := (gittree.Workspace{Dir: root}).HeadCommit()
+	current, unborn, err := workspace.HeadCommit()
 	if err != nil || unborn {
 		return "", fmt.Errorf("resolve temporary candidate HEAD: %v", err)
 	}
 	command := exec.CommandContext(ctx, "git", "-C", root, "update-ref", "--no-deref", "HEAD", commit, current)
 	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
+	var combined bytes.Buffer
+	command.Stdout, command.Stderr = &combined, &combined
+	if err := io.runGit(command); err != nil {
+		output := combined.Bytes()
 		return "", fmt.Errorf("git update-ref --no-deref HEAD: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return commit, nil
@@ -1802,10 +1894,28 @@ func testingOwnedResources(prepared testingPreparation, attempt proofrun.Attempt
 }
 
 func bindTestingFreshnessProjection(request *proofrun.TestRunRequest, installation string) error {
+	return bindTestingFreshnessProjectionWithWorkspace(request, installation, gittree.Workspace{Dir: installation})
+}
+
+type testingProjectionAccess struct {
+	raw func(gittree.RawRequest) gittree.RawResult
+}
+
+func (a testingProjectionAccess) TopLevel(root string) (string, error) {
+	return (gittree.Workspace{Dir: root, RawSource: a.raw}).TopLevel()
+}
+func (a testingProjectionAccess) Prefix(root string) (string, error) {
+	return (gittree.Workspace{Dir: root, RawSource: a.raw}).Prefix()
+}
+func (a testingProjectionAccess) FilterPrefixes(root, tree string, paths []string) (string, error) {
+	return (gittree.Workspace{Dir: root, RawSource: a.raw}).FilterTreePrefixes(tree, paths)
+}
+
+func bindTestingFreshnessProjectionWithWorkspace(request *proofrun.TestRunRequest, installation string, workspace gittree.Workspace) error {
 	if request.FreshnessEpisode == "" {
 		return nil
 	}
-	tree, err := landing.ProjectWorkspaceTree(installation, request.CandidateTree)
+	tree, err := landing.ProjectWorkspaceTreeWith(installation, request.CandidateTree, testingProjectionAccess{raw: workspace.RawSource})
 	if err != nil {
 		return err
 	}
@@ -1855,6 +1965,10 @@ func testingCandidateManifest(workspace gittree.Workspace, candidateTree string)
 }
 
 func runTestWorker(args []string) int {
+	return runTestWorkerWithCandidateOpener(args, nil)
+}
+
+func runTestWorkerWithCandidateOpener(args []string, opener func(string, string) (proofrun.CandidateWorkspace, error)) int {
 	flags := flag.NewFlagSet("test worker", flag.ContinueOnError)
 	packet := flags.String("packet", "", "private testing request")
 	packetDigest := flags.String("packet-sha256", "", "SHA-256 identity of the immutable testing request")
@@ -1913,11 +2027,30 @@ func runTestWorker(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
 		return 3
 	}
+	packetControl, controlErr := canonicalProofRoot(request.ControlRoot)
+	packetProject, projectErr := canonicalProofRoot(request.ProjectRoot)
+	admittedControl, admittedControlErr := canonicalProofRoot(attempt.ControlRoot)
+	admittedProject, admittedProjectErr := canonicalProofRoot(attempt.ExecutionRoot)
+	if controlErr != nil || projectErr != nil || admittedControlErr != nil || admittedProjectErr != nil ||
+		packetControl != canonicalControl || admittedControl != canonicalControl ||
+		(!legacyPolicyProbe && packetProject != admittedProject) {
+		fmt.Fprintln(os.Stderr, "metasystem test worker: authenticated request roots do not match the worker packet")
+		return 3
+	}
+	request.ControlRoot = canonicalControl
+	if legacyPolicyProbe {
+		request.ProjectRoot = packetProject
+	} else {
+		request.ProjectRoot = admittedProject
+	}
 	if _, err := time.Parse(time.RFC3339Nano, attempt.Deadline); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test worker: admitted deadline is invalid")
 		return 3
 	}
 	request.Environment = inheritedTestingEnvironment(request.Environment, os.Environ())
+	request.Environment = proofrun.TestingEnvironment(request.Environment, map[string]string{
+		proofWitnessExecutionRootEnv: attempt.ExecutionRoot,
+	})
 	// The worker's context carries no deadline: the reservation is a
 	// figure, not a kill rule (proof-groups-detect-hangs-by-progress-not-
 	// the-clock, decision 3). A recorded cancellation intent cancels it.
@@ -1927,6 +2060,9 @@ func runTestWorker(args []string) int {
 	if err := runFrozenPolicyProtectionCorpus(workerContext, request); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
 		return 1
+	}
+	if opener != nil {
+		request.WithCandidateOpener(opener)
 	}
 	result, status, runErr := proofrun.RunTestPlan(workerContext, request)
 	response := result
@@ -2024,12 +2160,16 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 	}
 	return verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
 		clock: commandClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+		workspace: gittree.Workspace{Dir: prepared.ProjectRoot}, candidateIO: nativeCandidateEngineIO(),
 	})
 }
 
 type retainedTestingVerification struct {
-	clock      func() time.Time
-	revalidate func(context.Context, proofrun.TestRunRequest, []proofrun.Attempt) (map[string]string, error)
+	clock         func() time.Time
+	revalidate    func(context.Context, proofrun.TestRunRequest, []proofrun.Attempt) (map[string]string, error)
+	workspace     gittree.Workspace
+	candidateIO   candidateEngineIO
+	openCandidate func(string, string) (proofrun.CandidateWorkspace, error)
 }
 
 func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared testingPreparation, dependencies retainedTestingVerification) (proofrun.TestResult, error) {
@@ -2046,13 +2186,16 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
 		return proofrun.TestResult{}, err
 	}
+	if request.ExecutedWorkers > 0 {
+		prepared.Workers = request.ExecutedWorkers
+	}
 	attempts, err := proofrun.ReadAttempts(prepared.proofControlRoot())
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
 	identityContext, cancelIdentity := context.WithCancel(context.Background())
-	candidateEngineBuildIdentity, err := candidateEngineBuildIdentity(identityContext, gittree.Workspace{Dir: prepared.ProjectRoot},
-		prepared.Prefix, prepared.CandidateTree, prepared.Environment)
+	candidateEngineBuildIdentity, err := candidateEngineBuildIdentityUsing(identityContext, dependencies.workspace,
+		prepared.Prefix, prepared.CandidateTree, prepared.Environment, dependencies.candidateIO)
 	cancelIdentity()
 	if err != nil {
 		return proofrun.TestResult{}, err
@@ -2062,6 +2205,7 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 		return proofrun.TestResult{}, err
 	}
 	runRequest := testingRunRequest(prepared, "", "", "", candidateEngineDigest, candidateEngineBuildIdentity)
+	runRequest.WithCandidateOpener(dependencies.openCandidate)
 	metadataContext, cancelMetadata := context.WithCancel(context.Background())
 	identities, err := dependencies.revalidate(metadataContext, runRequest, attempts)
 	cancelMetadata()
@@ -2077,7 +2221,7 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 		return proofrun.TestResult{}, fmt.Errorf("selected fresh testing groups require the same explicit episode and expiry used by test run")
 	}
 	runRequest.FreshGroups = freshGroups
-	if err := bindTestingFreshnessProjection(&runRequest, prepared.Installation); err != nil {
+	if err := bindTestingFreshnessProjectionWithWorkspace(&runRequest, prepared.Installation, dependencies.workspace); err != nil {
 		return proofrun.TestResult{}, err
 	}
 	runRequest.FreshnessBinding = testingFreshnessBinding(runRequest, identities, request.FreshEpisode)
@@ -2318,7 +2462,11 @@ func testingGoalRisk(root, id string) (testpolicy.GoalRisk, uint64, error) {
 	if err != nil {
 		return testpolicy.GoalRisk{}, 0, err
 	}
-	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	return testingGoalRiskWithEndpoint(endpoint, id, time.Now().UTC())
+}
+
+func testingGoalRiskWithEndpoint(endpoint goal.Endpoint, id string, now time.Time) (testpolicy.GoalRisk, uint64, error) {
+	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
 		return testpolicy.GoalRisk{}, 0, err
 	}
@@ -2335,6 +2483,10 @@ func testingGoalRisk(root, id string) (testpolicy.GoalRisk, uint64, error) {
 }
 
 func resolveTestingGoal(root, requested string) (string, error) {
+	return resolveTestingGoalWithReads(root, requested, goal.ResolveMachine, goal.ResolveEndpoint, time.Now)
+}
+
+func resolveTestingGoalWithReads(root, requested string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), now func() time.Time) (string, error) {
 	if requested != "" {
 		return requested, nil
 	}
@@ -2353,7 +2505,7 @@ func resolveTestingGoal(root, requested string) (string, error) {
 		}
 		return attempt.AccountedGoal(), nil
 	}
-	return uniqueActiveProofGoal(root, time.Now().UTC())
+	return uniqueActiveProofGoalWithReads(root, now().UTC(), resolveMachine, resolveEndpoint)
 }
 
 func trustedTestingPolicyBase(projectRoot string, workspace gittree.Workspace) (string, error) {
@@ -2528,6 +2680,10 @@ func fileSHA256(path string) (string, error) {
 // result first and turns a missing one into a failed exit, so this guard is
 // the commit's own defence.
 func testingTerminalCommit(workerResultPath string, retained **proofrun.TestResult) func(proofrun.CompletionContext, json.RawMessage) error {
+	return testingTerminalCommitWithReads(workerResultPath, retained, nil)
+}
+
+func testingTerminalCommitWithReads(workerResultPath string, retained **proofrun.TestResult, reads *dispatchcore.ProofAdmissionReads) func(proofrun.CompletionContext, json.RawMessage) error {
 	return func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
 		if *retained == nil {
 			result, readErr := readTestingWorkerResult(workerResultPath)
@@ -2535,12 +2691,12 @@ func testingTerminalCommit(workerResultPath string, retained **proofrun.TestResu
 				if completion.ExitStatus == 0 {
 					return readErr
 				}
-				return commitProofTerminalWithReason(completion, receipt, nil,
-					"proof launcher completed; the worker left no usable result: "+readErr.Error())
+				return commitProofTerminalWithReasonAndReads(completion, receipt, nil,
+					"proof launcher completed; the worker left no usable result: "+readErr.Error(), reads)
 			}
 			*retained = &result
 		}
-		return commitProofTerminalWithTestResult(completion, receipt, *retained)
+		return commitProofTerminalWithReasonAndReads(completion, receipt, *retained, "proof launcher completed", reads)
 	}
 }
 

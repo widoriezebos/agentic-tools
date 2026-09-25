@@ -152,24 +152,22 @@ func TestGoAdapterBuildTagsBindDiscoveryAndNativeExecution(t *testing.T) {
 
 func TestGoTaggedFailureRerunUsesOriginalBuildTags(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/tagged-rerun\n\ngo 1.27\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "pkg", "plain.go"), []byte("package pkg\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "pkg", "tagged_test.go"), []byte(`//go:build batchtest
+	snapshot := newTestSnapshotFactory(t, root, strings.Repeat("c", 40), map[string]testSnapshotEntry{
+		"go.mod":       testSnapshotFile("module example.invalid/tagged-rerun\n\ngo 1.27\n", 0o644),
+		"pkg/plain.go": testSnapshotFile("package pkg\n", 0o644),
+		"pkg/tagged_test.go": testSnapshotFile(`//go:build batchtest
 
 package pkg
 import "testing"
 func TestTaggedRed(t *testing.T) { t.Fatal("tagged red") }
-`), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+`, 0o644),
+	}, 1)
+	tree := snapshot.tree
 	group := testpolicy.Group{ID: "tagged-red", Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"go.mod", "pkg/**"},
 		Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}}, Platforms: []string{"any"}, TargetMS: 1000,
 		Packages: []string{"pkg"}, BuildTags: []string{"batchtest"}, Tests: []byte(`"all"`)}
-	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: filepath.Join(root, "logs")}
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-mod=readonly -buildvcs=false"), LogRoot: filepath.Join(root, "logs")}
+	request.openCandidate = snapshot.open
 	request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
 	result := runTestGroup(context.Background(), request, group)
 	if result.Status != "failed" || len(result.Reruns) != 1 || result.Reruns[0].First != "failed" || result.Reruns[0].Second != "failed" {

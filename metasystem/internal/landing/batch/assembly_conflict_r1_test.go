@@ -5,10 +5,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"golang.org/x/sys/unix"
 )
 
@@ -50,33 +53,59 @@ func deleteReaddFixture(t *testing.T) (assemblyBed, Store, string, string) {
 
 func TestGLEBatchPathExistsGitDiagnosticIsDefiniteComposition(t *testing.T) {
 	t.Parallel()
-	bed := assemblyFixture(t)
+	root := t.TempDir()
+	calls := 0
+	readUnmerged := func(gotRoot string) ([]byte, error) {
+		if gotRoot != root {
+			t.Fatalf("unmerged reader root = %q, want %q", gotRoot, root)
+		}
+		calls++
+		return []byte{}, nil
+	}
 	command := exec.Command("sh", "-c", "exit 1")
 	err := command.Run()
 	for _, diagnostic := range []string{"error: a.go: already exists in working directory", "error: a.go: already exists in index"} {
-		if !patchCompositionConflict(bed.root, []byte(diagnostic), err) {
+		if !patchCompositionConflictWithUnmerged(root, []byte(diagnostic), err, readUnmerged) {
 			t.Fatalf("ordinary add/add diagnostic was not typed: %q", diagnostic)
 		}
 	}
 	for _, diagnostic := range []string{"error: metasystem/testing.json: already exists in index", "error: a.go: patch does not apply", "fatal: a.go: already exists in index", "error: a.go: already exists in index\nfatal: could not read index"} {
-		if patchCompositionConflict(bed.root, []byte(diagnostic), err) {
+		if patchCompositionConflictWithUnmerged(root, []byte(diagnostic), err, readUnmerged) {
 			t.Fatalf("non-composition diagnostic was typed: %q", diagnostic)
 		}
+	}
+	if calls != 6 {
+		t.Fatalf("unmerged reader called %d times, want 6", calls)
 	}
 }
 
 func TestGLEBatchDeleteReaddDependentReturnsWithIndependentSurvivor(t *testing.T) {
 	t.Parallel()
-	_, store, cOnly, _ := deleteReaddFixture(t)
+	bed, store, cOnly, patches := dependentPolicyStore(t, "delete-readd")
+	strictReassembly(t, &store,
+		expectedReassembly{kind: "assemble", base: bed.base, goals: []string{"goal-b", "goal-c"}, chains: []string{"chain-b", "chain-c"},
+			err:    &assemblyConflict{GoalID: "goal-b", Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-b does not apply: a.go already exists in index")},
+			onCall: patches("chain-b", "chain-c")},
+		expectedReassembly{kind: "assemble", base: bed.base, goals: []string{"goal-c"}, chains: []string{"chain-c"}, prefixes: []string{cOnly}, onCall: patches("chain-c")})
 	if err := ReassembleSurvivorsWithReturns(store, testBatchID, "owner", time.Unix(3, 0),
 		[]ReturnDecision{{GoalID: "goal-a", Outcome: UnitEjected, Reason: "A fenced"}}); err != nil {
 		t.Fatal(err)
 	}
 	record := load(t, store)
-	if record.State != StateOpen || record.Proof != nil || record.TipTree != cOnly ||
+	if record.State != StateOpen || record.Proof != nil || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) ||
 		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending ||
-		record.Units[2].State != UnitJoined || !strings.Contains(record.Units[1].Failure, "cannot apply") {
+		record.Units[0].Outcome != UnitEjected || record.Units[1].Outcome != UnitEjected ||
+		record.Units[2].State != UnitJoined || !strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") {
 		t.Fatalf("delete/re-add dependency did not close to C: %+v", record)
+	}
+	var returns []string
+	for _, entry := range record.History {
+		if entry.Verb == "return-request" {
+			returns = append(returns, strings.Fields(entry.Detail)[0])
+		}
+	}
+	if !slices.Equal(returns, []string{"goal-a", "goal-b"}) {
+		t.Fatalf("delete/re-add return order=%v", returns)
 	}
 }
 
@@ -107,19 +136,180 @@ func movedDeleteReaddFixture(t *testing.T) (assemblyBed, Store, string) {
 	return bed, store, newBase
 }
 
-func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) {
-	t.Parallel()
-	bed, store, newBase := movedDeleteReaddFixture(t)
-	cOnly, err := assembleUnits(bed.root, newBase, bed.record.Units[2:])
-	must(t, err)
+// reopenMovedBaseDependents builds its own delete/re-add store, moves the base
+// across A, and reopens it so A and B return while C alone survives.
+func reopenMovedBaseDependents(t *testing.T) (Store, string, string) {
+	t.Helper()
+	bed, store, _, patches := dependentPolicyStore(t, "delete-readd")
+	newBase, cOnly := bed.moved, testCommit(205)
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.State, record.Proof.Status = StateLanding, "green"
+		record.Receipts = map[string]PrefixReceipt{"goal-a": {GoalID: "goal-a", Tree: record.PrefixTrees[0], AttemptID: record.Proof.AttemptID}}
+		return nil
+	}))
+	strictReassembly(t, &store,
+		expectedReassembly{kind: "assemble", base: newBase, goals: []string{"goal-a", "goal-b", "goal-c"}, chains: []string{"chain-a", "chain-b", "chain-c"},
+			err:    &assemblyConflict{GoalID: "goal-a", Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-a does not apply on moved base: b.go changed")},
+			onCall: patches("chain-a", "chain-b", "chain-c")},
+		expectedReassembly{kind: "assemble", base: newBase, goals: []string{"goal-b", "goal-c"}, chains: []string{"chain-b", "chain-c"},
+			err:    &assemblyConflict{GoalID: "goal-b", Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-b does not apply: a.go already exists in index")},
+			onCall: patches("chain-b", "chain-c")},
+		expectedReassembly{kind: "assemble", base: newBase, goals: []string{"goal-c"}, chains: []string{"chain-c"}, prefixes: []string{cOnly}, onCall: patches("chain-c")})
 	if err := ReopenMovedTrunk(store, testBatchID, newBase, "owner", time.Unix(4, 0)); err != nil {
 		t.Fatal(err)
 	}
+	return store, newBase, cOnly
+}
+
+func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) {
+	t.Parallel()
+	store, newBase, cOnly := reopenMovedBaseDependents(t)
 	record := load(t, store)
-	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly[0] || record.Proof != nil ||
+	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) || record.Proof != nil || len(record.Receipts) != 0 ||
 		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined ||
-		!strings.Contains(record.Units[1].Failure, "cannot apply") {
+		!strings.Contains(record.Units[0].Failure, "cannot apply on moved base") ||
+		!strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") {
 		t.Fatalf("moved-base dependent closure did not retain C: %+v", record)
+	}
+	var returns []string
+	for _, entry := range record.History {
+		if entry.Verb == "return-request" {
+			returns = append(returns, strings.Fields(entry.Detail)[0])
+		}
+	}
+	if !slices.Equal(returns, []string{"goal-a", "goal-b"}) {
+		t.Fatalf("moved-base return order=%v", returns)
+	}
+}
+
+// The name is retained as a protected contract selector; the moved-base survivor
+// is now proved against stub seams instead of the public owner and native proof.
+func TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor(t *testing.T) {
+	t.Parallel()
+	store, _, cOnly := reopenMovedBaseDependents(t)
+
+	// C alone is then proved, published and returned; A and B never reach the
+	// landing seams, and every member goes back to its own source claim.
+	var handBacks []Claim
+	returnSeams := ReturnSeams{
+		Read: func(string, string, string) (ReturnLedgerGoal, error) {
+			return ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}, nil
+		},
+		Target: func(Unit) ReturnTarget { return ReturnTarget{State: ReturnTargetLive, Epoch: 9} },
+		HandBack: func(_ string, claim Claim, _ uint64) error {
+			handBacks = append(handBacks, claim)
+			return nil
+		},
+		Release: func(string, string) error { t.Fatal("live joiner claim was released"); return nil },
+	}
+	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(5, 0), returnSeams))
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.Transition(StateSealed, time.Unix(6, 0), "seal", "owner", "")
+		return nil
+	}))
+	if _, err := RequireProofPlan(store, testBatchID, "owner", "expired", proofrun.LoadSample{}, testpolicy.Plan{SelectedGroups: []string{"group"}}, time.Unix(7, 0)); err != nil {
+		t.Fatal(err)
+	}
+	must(t, FinishProof(store, testBatchID, "owner", proofrun.TestResult{AttemptID: "survivor-green", CandidateTree: cOnly,
+		Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{{ID: "group", Status: "passed", NativeLaunched: true}}}, nil, time.Unix(8, 0)))
+	if proved := load(t, store); proved.State != StateLanding || proved.Proof == nil || proved.Proof.Status != "green" || proved.Proof.Tree != cOnly ||
+		proved.Proof.AttemptID != "survivor-green" || proved.Proof.Window != "expired" {
+		t.Fatalf("C-only survivor proof=%+v state=%s", proved.Proof, proved.State)
+	}
+	var events []string
+	var receipts []PrefixReceipt
+	landSeams := greenLandSeams(&events)
+	landSeams.AppendReceipt = func(unit Unit, receipt PrefixReceipt) error {
+		events, receipts = append(events, "receipt:"+unit.GoalID), append(receipts, receipt)
+		return nil
+	}
+	must(t, LandSeries(store, testBatchID, "owner", time.Unix(9, 0), landSeams))
+	if want := []string{"apply:goal-c", "receipt:goal-c", "commit:goal-c", "held", "push", "cleanup"}; !slices.Equal(events, want) ||
+		len(receipts) != 1 || receipts[0].Tree != cOnly || receipts[0].AttemptID != "survivor-green" {
+		t.Fatalf("C-only landing events=%v receipts=%+v", events, receipts)
+	}
+	finalized := 0
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(10, 0), RecoverySeams{
+		OriginCommit: func(unit Unit) (string, bool, error) {
+			if unit.GoalID != "goal-c" {
+				t.Fatalf("recovery inspected returned unit %+v", unit)
+			}
+			return "commit-goal-c", true, nil
+		},
+		Finalize: func(unit Unit, commit string) error {
+			if unit.GoalID != "goal-c" || commit != "commit-goal-c" {
+				t.Fatalf("finalize unit=%+v commit=%s", unit, commit)
+			}
+			finalized++
+			return nil
+		},
+		Rearm:   func(string) error { return nil },
+		Cleanup: func() error { t.Fatal("landing cleanup ran twice"); return nil },
+	}))
+	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(11, 0), returnSeams))
+	landed := load(t, store)
+	if landed.State != StateLanded || landed.Units[0].State != UnitEjected || landed.Units[1].State != UnitEjected ||
+		landed.Units[2].State != UnitLanded || !landed.Units[2].P6Done || finalized != 1 {
+		t.Fatalf("C-only landed batch=%+v finalized=%d", landed, finalized)
+	}
+	for index, unit := range landed.Units {
+		if unit.ReturnDisposition != ReturnHandedBack || index >= len(handBacks) || handBacks[index] != unit.Claim {
+			t.Fatalf("%s was not handed back to its source claim: unit=%+v handBacks=%+v", unit.GoalID, unit, handBacks)
+		}
+	}
+	if len(handBacks) != 3 {
+		t.Fatalf("hand-backs=%+v, want A, B and C once", handBacks)
+	}
+}
+
+func TestGLEBatchNativeDependentChainPatchAdapter(t *testing.T) {
+	t.Parallel()
+	bridge, _, _ := dependentSplitStore(t)
+	_, err := assembleUnits(bridge.root, bridge.base, bridge.record.Units[1:2])
+	var conflict *assemblyConflict
+	if !errors.As(err, &conflict) || conflict.GoalID != "goal-b" {
+		t.Fatalf("bridge B-only patch was not a typed B conflict: %v", err)
+	}
+
+	deleted := assemblyFixture(t)
+	for chain, patch := range deleteReaddPolicyPatches() {
+		path := filepath.Join(deleted.root, "artifacts/agents/landing-batches/chains", chain, "diff.patch")
+		must(t, os.WriteFile(path, patch, 0o644))
+	}
+	if _, err := assembleUnits(deleted.root, deleted.base, deleted.record.Units); err != nil {
+		t.Fatalf("declared delete/re-add patches did not assemble on their base: %v", err)
+	}
+	_, err = assembleUnits(deleted.root, deleted.base, deleted.record.Units[1:2])
+	conflict = nil
+	if !errors.As(err, &conflict) || conflict.GoalID != "goal-b" {
+		t.Fatalf("delete/re-add B-only patch was not a typed B conflict: %v", err)
+	}
+	baseCommit := bedGit(t, deleted.root, "rev-parse", "HEAD^")
+	bedGit(t, deleted.root, "switch", "-q", "--detach", baseCommit)
+	must(t, os.WriteFile(filepath.Join(deleted.root, "b.go"), []byte("package p\nvar B = 9\n"), 0o644))
+	bedGit(t, deleted.root, "add", "b.go")
+	bedGit(t, deleted.root, "commit", "-qm", "move base across A")
+	newBase := bedGit(t, deleted.root, "rev-parse", "HEAD^{tree}")
+	for _, check := range []struct {
+		units []Unit
+		goal  string
+	}{{deleted.record.Units, "goal-a"}, {deleted.record.Units[1:], "goal-b"}} {
+		_, err := assembleUnits(deleted.root, newBase, check.units)
+		conflict = nil
+		if !errors.As(err, &conflict) || conflict.GoalID != check.goal {
+			t.Fatalf("moved-base %s conflict was not typed in join order: %v", check.goal, err)
+		}
+		if check.goal == "goal-a" && !strings.Contains(err.Error(), "b.go") {
+			t.Fatalf("moved-base A conflict did not name changed b.go: %v", err)
+		}
+	}
+	path := filepath.Join(bridge.root, "artifacts/agents/landing-batches/chains/chain-c/diff.patch")
+	must(t, os.Remove(path))
+	_, err = assembleUnits(bridge.root, bridge.base, bridge.record.Units[2:])
+	var readError *os.PathError
+	conflict = nil
+	if !errors.As(err, &readError) || readError.Op != "open" || readError.Path != path || !errors.Is(err, os.ErrNotExist) || errors.As(err, &conflict) {
+		t.Fatalf("missing C patch was not an untyped os.ReadFile failure: %v", err)
 	}
 }
 

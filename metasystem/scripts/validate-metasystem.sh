@@ -392,7 +392,7 @@ run_section() { # section id, named need, command and arguments
   section_log=$stage_work/$section_id.log
   printf '\n========== SECTION START: %s ==========\n' "$section_id"
   set +e
-  ( set -e; "$@" ) 2>&1 | tee "$section_log"
+  ( trap - EXIT; set -e; "$@" ) 2>&1 | tee "$section_log"
   pipeline_status=("${PIPESTATUS[@]}")
   body_rc=${pipeline_status[0]}
   tee_rc=${pipeline_status[1]}
@@ -722,7 +722,8 @@ if (( run_gate_fence_fixture )); then
     echo "a foreign live gate run did not block the fence" >&2; exit 1
   fi
   gate_fence_err=$(mktemp)
-  if bash scripts/agents/go-gate.sh --fast 2>"$gate_fence_err"; then
+  if env -u METASYSTEM_GATE_WITNESS -u METASYSTEM_GATE_WITNESS_WRITE \
+      bash scripts/agents/go-gate.sh --fast 2>"$gate_fence_err"; then
     echo "go-gate rebuilt over a foreign live gate run" >&2; exit 1
   fi
   grep -q "swap its binary mid-run" "$gate_fence_err" \
@@ -959,6 +960,7 @@ gate_fail_open_tripwire_section() {
   printf '#!/usr/bin/env bash\necho "shim: gofmt is broken" >&2\nexit 7\n' >"$gofmt_shim_dir/gofmt"
   chmod +x "$gofmt_shim_dir/gofmt"
   if METASYSTEM_ALLOW_CONCURRENT_GATE=1 PATH="$gofmt_shim_dir:$PATH" \
+      env -u METASYSTEM_GATE_WITNESS -u METASYSTEM_GATE_WITNESS_WRITE \
       bash scripts/agents/go-gate.sh --fast >"$gofmt_shim_dir/out" 2>&1; then
     echo "go gate passed with a broken gofmt; the fail-open hole is back" >&2
     exit 1
@@ -1930,9 +1932,20 @@ docs/collaboration.md	## Escalation Shape	1
 docs/project-rules.md	These require explicit in-task approval	0
 REQUIRED
 cp -R scripts/agents/roles "$tmp/drifted-roles"
-sed 's/build something DIFFERENT/build the same thing/' \
-  "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
+# Drift the declared design-critique quote block by its markers, not by its
+# wording, so a lawful rewording of source and quote together cannot turn
+# this fixture into a no-op.
+awk '
+  $0 == "<!-- quote source=\"skills/design-critique/SKILL.md\" -->" { inblock = 1; print; next }
+  inblock && $0 == "<!-- /quote -->" { inblock = 0; print; next }
+  inblock && !drifted && /^> ./ { print $0 " (drifted)"; drifted = 1; next }
+  { print }
+' "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
 mv "$tmp/drifted-roles/design-critic.md.new" "$tmp/drifted-roles/design-critic.md"
+if cmp -s scripts/agents/roles/design-critic.md "$tmp/drifted-roles/design-critic.md"; then
+  echo "design-critique quote drift fixture changed nothing" >&2
+  exit 1
+fi
 set +e
 "$engine" validate preamble-quotes --root "$root" --roles-dir "$tmp/drifted-roles" >"$tmp/quote-drift.out" 2>&1
 quote_status=$?

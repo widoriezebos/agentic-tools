@@ -26,6 +26,39 @@ func TestParseCoverage(t *testing.T) {
 	}
 }
 
+func TestParseCoverageMergerJSONL(t *testing.T) {
+	t.Parallel()
+	input := `{"Action":"output","Package":"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter","Test":"","Output":"ok  \tgithub.com/widoriezebos/agentic-tools/metasystem/internal/adapter\t0.000s\tcoverage: 91.2% of statements\n"}`
+	measured := ParseCoverage(input, modulePrefix)
+	if len(measured) != 1 || measured["internal/adapter"] != 91.2 {
+		t.Fatalf("merger JSONL parse wrong: %v", measured)
+	}
+}
+
+func TestParseCoverageRejectsMalformedAndMismatchedJSONL(t *testing.T) {
+	t.Parallel()
+	for name, input := range map[string]string{
+		"malformed":      `{"Action":"output"`,
+		"mismatch":       `{"Action":"output","Package":"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter","Test":"","Output":"ok  \tgithub.com/widoriezebos/agentic-tools/metasystem/internal/dispatch\t0.000s\tcoverage: 99.0% of statements\n"}`,
+		"test spoof":     `{"Action":"output","Package":"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter","Test":"TestSpoof","Output":"ok  \tgithub.com/widoriezebos/agentic-tools/metasystem/internal/adapter\t0.000s\tcoverage: 99.0% of statements\n"}`,
+		"ordinary event": `{"Time":"2026-09-22T00:00:00Z","Action":"output","Package":"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter","Test":"","Output":"ok  \tgithub.com/widoriezebos/agentic-tools/metasystem/internal/adapter\t0.000s\tcoverage: 99.0% of statements\n"}`,
+		"diagnostic":     `witness-wait: nested coverage: 99.0% of statements`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if measured := ParseCoverage(input, modulePrefix); len(measured) != 0 {
+				t.Fatalf("non-merger data became coverage: %v", measured)
+			}
+		})
+	}
+}
+
+func TestParseCoverageLegacyPlainCompatibility(t *testing.T) {
+	t.Parallel()
+	if measured := ParseCoverage(sampleOutput, modulePrefix); measured["internal/adapter"] != 85.9 {
+		t.Fatalf("legacy summary lost: %v", measured)
+	}
+}
+
 // The ratchet can fail — a deliberately lowered number is caught. A
 // check that cannot fail proves nothing.
 func TestCheckCoverageFailsOnDrop(t *testing.T) {

@@ -101,6 +101,7 @@ func TestCoverageProducerConsumerExcludesLocalConfigurationAtEveryDepth(t *testi
 	for _, path := range localConfigurations {
 		writeTestFile(t, path, []byte("dispatch.cap-max=120\nsynthetic.secret=first\n"), 0o600)
 	}
+	writeTestFile(t, filepath.Join(root, "metasystem.conf"), []byte(coverageFixtureConf), 0o600)
 	identity, err := BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full",
 		"coverage-local-configuration", []string{"gate"}, behaviorsurface.SupportedVersion)
 	if err != nil {
@@ -138,7 +139,7 @@ func TestCoverageReuseRefusesChangedCompleteProjectInputAndLegacyEvidence(t *tes
 		t.Fatal(err)
 	}
 	writeTestFile(t, filepath.Join(project, ".gitattributes"), []byte("testing.json merge=metasystem-testing\n"), 0o644)
-	writeTestFile(t, filepath.Join(root, "metasystem.conf"), []byte("dispatch.cap-max=120\n"), 0o600)
+	writeTestFile(t, filepath.Join(root, "metasystem.conf"), []byte(coverageFixtureConf), 0o600)
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 		writeTestFile(t, filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600)
 	}
@@ -292,21 +293,36 @@ func TestCoverageReuseSeparatesControlAndExecutionRoots(t *testing.T) {
 
 func completedCoverageFixture(t *testing.T) (string, Attempt, string) {
 	t.Helper()
-	root, identity := proofAttemptFixture(t, "coverage-negative")
+	root, _ := proofAttemptFixture(t, "coverage-negative")
+	conf := filepath.Join(root, "metasystem.conf")
+	writeTestFile(t, conf, []byte(coverageFixtureConf), 0o600)
+	identity, err := BuildProofIdentity(root, conf, "full", "coverage-negative", []string{"gate"}, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
 	attempt, baseline := completeCoverageAt(t, root, identity)
 	return root, attempt, baseline
 }
+
+// coverageFixtureConf declares the fake runtime, which authorizes a fixture
+// root to hold its own host admission namespace.
+const coverageFixtureConf = "dispatch.cap-max=120\nmetasystem.runtimes=fake\n"
 
 func completeCoverageAt(t *testing.T, root string, identity ProofIdentity) (Attempt, string) {
 	t.Helper()
 	baseline := coverageRatchetPath(root)
 	launcher, _ := CurrentProcessIdentity(nil)
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
-		AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}))
-
+	// Parallel tests share the binary's host admission lock; a busy lock is a
+	// refusal without an error, which would leave coverage with no attempt.
+	request := WithTestHostAdmissionDirectory(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}), filepath.Join(t.TempDir(), "host-admission"))
+	attempt, decision, err := ReserveLocked(request)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if decision.Disposition != DispositionExecuted || attempt.AttemptID == "" {
+		t.Fatalf("coverage fixture admission was not executed: decision=%+v attempt=%q", decision, attempt.AttemptID)
 	}
 	begin := CoverageBeginOptions{ControlRoot: root, ExecutionRoot: root, AttemptID: attempt.AttemptID, BaselinePath: baseline,
 		ProducerClass: "full", ProducerPID: int64(os.Getpid()), CallerPID: int64(os.Getpid())}

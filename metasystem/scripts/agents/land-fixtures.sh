@@ -758,10 +758,11 @@ BACKLOG
       --pid "$$" --start "$receipt_fixture_start" --tag "land-$fixture_scenario-seed" \
       --runtime fake --owner-lineage land-receipt-fixture >/dev/null
     METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$seed_goal_engine" goal open --root "$leg_seed" \
-      --id fx --origin human --intent "Create an exact fixture-local landing receipt." \
+      --id fx --origin human --by Wido --intent "Create an exact fixture-local landing receipt." \
       --next "Run the bounded fixture receipt." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
-      --basis "This disposable fixture executes only its bounded local landing receipt." >/dev/null
+      --basis "This disposable fixture executes only its bounded local landing receipt." \
+      --fixture-human-authority >/dev/null
     "$seed_goal_engine" goal approve --root "$leg_seed" --id fx --by Wido \
       --lineage land-receipt-fixture --elapsed-limit 4h --attempt-limit 4 \
       --reserved-job-minutes-limit 12 --active-job-limit 1 --review-round-limit 0 \
@@ -846,6 +847,9 @@ arm_receipt_runner() { # checkout, engine
   mkdir -p "$registry"
   printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_file"
   prepare_receipt_environment "$identity_file" "$registry" "$checkout"
+  # Arming refuses without a delivery channel; only darwin has a platform
+  # fallback, so the fixture checkout names its own acknowledging notifier.
+  git -C "$checkout" config --local metasystem.steward.notify-command true
   if ! receipt_env_run "$engine" steward arm --repo "$checkout" >"$arm_log" 2>&1; then
     echo "land $fixture_scenario fixture: steward arm --repo failed for $checkout" >&2
     sed -n '1,240p' "$arm_log" >&2
@@ -902,10 +906,11 @@ if is_carried_scenario; then
       --tag "land-$fixture_scenario-peer" --runtime fake --owner-lineage land-receipt-fixture-b >/dev/null
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
       "$leg_peer/bin/metasystem" goal open --root "$leg_peer" \
-        --id fx-b --origin human --intent "Create the second seat's carried landing." \
+        --id fx-b --origin human --by Wido --intent "Create the second seat's carried landing." \
         --next "Prove debt is visible between seats." \
         --risk severity=1,novelty=1,exposure=1,accumulation=1 \
-        --basis "This disposable fixture serializes two carried landing seats." >/dev/null
+        --basis "This disposable fixture serializes two carried landing seats." \
+        --fixture-human-authority >/dev/null
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now "$leg_peer/bin/metasystem" goal approve \
       --root "$leg_peer" --id fx-b --by Wido --lineage land-receipt-fixture-b \
       --elapsed-limit 4h --attempt-limit 4 --reserved-job-minutes-limit 12 \
@@ -1395,6 +1400,7 @@ take_fixture_receipt() { # engine, checkout, output log
 
 if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   clock_checkout=${METASYSTEM_RECEIPT_CLOCK_FIXTURE_ROOT:?}
+  clock_tree=${METASYSTEM_RECEIPT_CLOCK_TREE:?}
   clock_cap_min=${METASYSTEM_RECEIPT_CLOCK_CAP_MIN:?}
   clock_test_executable=${METASYSTEM_RECEIPT_CLOCK_TEST_EXECUTABLE:?}
   clock_ready=${METASYSTEM_RECEIPT_CLOCK_READY:?}
@@ -1411,7 +1417,12 @@ if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   printf '{}\n' >"$clock_identity"
   printf '[]\n' >"$clock_processes"
   prepare_receipt_environment "$clock_identity" "$clock_registry" "$clock_checkout"
-  receipt_environment+=("METASYSTEM_CENSUS_PROCESS_FILE=$clock_processes")
+  receipt_environment+=(
+    "METASYSTEM_CENSUS_PROCESS_FILE=$clock_processes"
+    "GO_WANT_PROOF_COMMAND_FIXTURE_CHILD=${GO_WANT_PROOF_COMMAND_FIXTURE_CHILD:?}"
+    "GO_PROOF_COMMAND_FIXTURE_SNAPSHOT=${GO_PROOF_COMMAND_FIXTURE_SNAPSHOT:?}"
+    "GO_PROOF_COMMAND_FIXTURE_TEMP_ROOT=${GO_PROOF_COMMAND_FIXTURE_TEMP_ROOT:?}"
+  )
   echo "land receipt-clock-boundary fixture: shell clock=$fixture_receipt_now cap-min=$clock_cap_min"
   clock_fixture_start=$(receipt_env_run "$source_engine" proc started-at --pid "$$")
   receipt_env_run env METASYSTEM_OWNER_LINEAGE=m1 "$source_engine" lease announce \
@@ -1421,7 +1432,6 @@ if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
   printf -v clock_child_command \
     'GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD=shell-boundary METASYSTEM_WAIT_BINARY=%q %q -test.run=^TestLandingReceiptShellCallerCarriesAuthorizedClock$ -test.count=1 -- --receipt-clock-private-child %q %q %q' \
     "$source_engine" "$clock_test_executable" "$clock_observed" "$clock_ready" "$clock_release"
-  clock_tree=$(git -C "$clock_checkout" write-tree)
   set +e
   receipt_checkout_env_run "$clock_checkout" env METASYSTEM_OWNER_LINEAGE=m1 \
     "$source_engine" landing test-receipt --root "$clock_checkout" \
@@ -1461,11 +1471,12 @@ publish_peer_ledger_move() { # optional peer checkout
     --pid "$$" --start "$peer_start" --tag land-receipt-fixture-peer \
     --runtime fake --owner-lineage land-receipt-fixture-peer >/dev/null
   receipt_env_run env METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-peer \
-    "$engine" goal open --root "$checkout" --id peer-goal --origin human \
+    "$engine" goal open --root "$checkout" --id peer-goal --origin human --by Wido \
       --intent "Publish one fixture peer goal." \
       --next "Let the landing consume this ledger-only move." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
-      --basis "This disposable fixture writes one isolated goal ledger commit." >/dev/null
+      --basis "This disposable fixture writes one isolated goal ledger commit." \
+      --fixture-human-authority >/dev/null
   receipt_env_run "$engine" lease retire --root "$checkout" --session land-receipt-fixture-peer \
     --pid "$$" --start "$peer_start" >/dev/null
   sync_remote=$(git -C "$checkout" config --get goal.sync-remote || true)
@@ -1570,6 +1581,18 @@ LEDGER
     awk '{ gsub(/<[^>]+>/, "fixture"); print }' "$fixture_template" >"$fixture_template.fixture"
     mv "$fixture_template.fixture" "$fixture_template"
   done
+  # The archive flattens the kit's own installation into this root, so its
+  # intent and doctrine books bind metasystem/docs/... chapters that do not
+  # exist here and its question register names goals this one-goal ledger
+  # lacks. The leg is an application: it owns minimal synthetic memory.
+  rm -rf "$leg_seed/docs/intent" "$leg_seed/docs/doctrine"
+  mkdir -p "$leg_seed/docs/intent" "$leg_seed/docs/doctrine" "$leg_seed/memory"
+  printf '%s\n' '# Intent' '' '- Kind: intent' '- Id: 01FIXTUREBRAINLEGINTENT' '- Status: accepted' '' \
+    'This disposable application exists only to land one fixture change.' >"$leg_seed/docs/intent/index.md"
+  printf '%s\n' '# Doctrine' '' '- Kind: doctrine' '- Id: 01FIXTUREBRAINLEGDOCTRINE' '- Status: accepted' '' \
+    'A landing is proven by its own gate, not narrated.' >"$leg_seed/docs/doctrine/index.md"
+  printf '%s\n' '# Open questions' '' '| id | opened | question | goals | status |' '| --- | --- | --- | --- | --- |' \
+    >"$leg_seed/memory/questions.md"
   awk '$0 !~ /^[[:space:]]*testing[.]contract[[:space:]]*=/' "$leg_seed/metasystem.conf" \
     >"$leg_seed/metasystem.conf.legacy"
   mv "$leg_seed/metasystem.conf.legacy" "$leg_seed/metasystem.conf"
@@ -1584,6 +1607,7 @@ LEDGER
   git -C "$leg_seed" add -f bin/metasystem
   git -C "$leg_seed" commit -qm seed
   git init -q --bare "$leg_remote"
+  git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" remote add origin "$leg_remote"
   git -C "$leg_seed" push -q -u origin main
   git clone -q "$leg_remote" "$leg_local"
@@ -1669,7 +1693,13 @@ assert_land_brain_refusal() { # root, expected, command...
 }
 
 prepare_abandonment_landing_leg() { # name
-  local name=$1 saved_config engine_status engine_stamp engine_commit source_top
+  local name=$1 saved_config engine_status engine_stamp engine_commit source_top source_status source_stamp
+  source_status=$("$source_engine" supervise status --repo "$root") || exit $?
+  source_stamp=$("$source_engine" json get --value "$source_status" --field engineBuild) || exit $?
+  if [[ ! $source_stamp =~ ^[0-9a-f]{40}$ && ! $source_stamp =~ ^dev-[0-9a-f]{40}-dirty$ ]]; then
+    source_engine=$tmp/abandonment-source-engine
+    env -u METASYSTEM_BUILD_STAMP bash "$root/scripts/agents/go-build.sh" --out "$source_engine" || exit $?
+  fi
   make_brain_source_leg "$name"
   engine_status=$("$source_engine" supervise status --repo "$leg_local")
   engine_stamp=$("$source_engine" json get --value "$engine_status" --field engineBuild)
@@ -1964,7 +1994,7 @@ SH
   commit_push_rc=$?
   set -e
   [[ $commit_push_rc == 1 ]] || { echo "commit --push range refusal exited $commit_push_rc" >&2; sed -n '1,180p' "$commit_push_output" >&2; exit 1; }
-  grep -Fq 'held refused: range-not-linear:' "$commit_push_output"
+  grep -Fq 'held refused: range-not-linear:' "$commit_push_output" || { echo "commit --push range refusal did not name range-not-linear" >&2; sed -n '1,180p' "$commit_push_output" >&2; exit 1; }
   [[ ! -s "$commit_push_pushes" ]] || {
     echo "commit --push ran git push after held refused:" >&2
     cat "$commit_push_pushes" >&2
@@ -2028,7 +2058,7 @@ SH
   rejected_rc=$?
   set -e
   [[ $rejected_rc == 1 ]] || { echo "commit --push rejection exited $rejected_rc" >&2; sed -n '1,180p' "$rejected_output" >&2; exit 1; }
-  grep -Fq 'held: ok 1 commit(s)' "$rejected_output"
+  grep -Fq 'held: ok 1 commit(s)' "$rejected_output" || { echo "commit --push rejection did not hold its commit first" >&2; sed -n '1,180p' "$rejected_output" >&2; exit 1; }
   grep -Fq '[rejected]' "$rejected_output"
   grep -Fq 'landing push failed at origin; the commit stands locally' "$rejected_output"
 
@@ -2049,14 +2079,15 @@ if [[ "$fixture_scenario" == abandonment-route-stack ]]; then
     cd "$leg_local"
     METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/commit.sh \
       --goal ship-widget --direct-fix register-carriage -m "lower lawful commit"
-  ) >"$leg_root/stack-l1.out" 2>&1
+  ) >"$leg_root/stack-l1.out" 2>&1 || { echo "two-commit stack lower commit failed" >&2; sed -n '1,180p' "$leg_root/stack-l1.out" >&2; exit 1; }
   move_goal_out_of_claimed_state "$leg_peer"
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal open --root "$leg_local" \
-    --id ship-gadget --origin human --intent "Ship the second fixture gadget." --next "Land its record." \
-    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "The fixture is local and disposable." >/dev/null
   saved_stack_config=$leg_root/metasystem.conf.stack-approve
   cp "$leg_local/metasystem.conf" "$saved_stack_config"
   printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal open --root "$leg_local" \
+    --id ship-gadget --origin human --by Wido --intent "Ship the second fixture gadget." --next "Land its record." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "The fixture is local and disposable." \
+    --fixture-human-authority >/dev/null
   "$source_engine" goal approve --root "$leg_local" --id ship-gadget --by Wido \
     --lineage fixture-lineage --elapsed-limit 4h --attempt-limit 4 \
     --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
@@ -2079,7 +2110,7 @@ if [[ "$fixture_scenario" == abandonment-route-stack ]]; then
   stack_rc=$?
   set -e
   [[ $stack_rc -ne 0 ]] || { echo "two-commit stack unexpectedly landed" >&2; exit 1; }
-  grep -Fq "held refused: goal-item-not-held: $stack_l1: goal ship-widget is abandoned at " "$stack_output"
+  grep -Fq "held refused: goal-item-not-held: $stack_l1: goal ship-widget is abandoned at " "$stack_output" || { echo "two-commit stack refusal did not name the abandoned lower item" >&2; sed -n '1,180p' "$stack_output" >&2; exit 1; }
   [[ ! -s "$stack_pushes" ]] || { echo "two-commit stack reached push" >&2; exit 1; }
 
   echo "abandonment-route-stack passed"
@@ -2098,7 +2129,7 @@ if [[ "$fixture_scenario" == abandonment-route-positive ]]; then
     cd "$leg_local"
     METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$positive_message" \
       --skip-transport --goal ship-widget --direct-fix register-carriage "$positive_record"
-  ) >"$positive_output" 2>&1
+  ) >"$positive_output" 2>&1 || { echo "abandonment positive route land failed" >&2; sed -n '1,180p' "$positive_output" >&2; exit 1; }
   positive_commit=$(git -C "$leg_local" rev-parse HEAD)
   grep -Fq 'held: ok 1 commit(s) above ' "$positive_output" || {
     echo "positive control did not report the held pass:" >&2

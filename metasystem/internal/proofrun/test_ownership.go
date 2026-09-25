@@ -300,7 +300,7 @@ func ownsTestComponent(attempt Attempt, id, identity string) bool {
 	if attempt.Terminal != nil && attempt.TestResult != nil {
 		for _, group := range attempt.TestResult.Groups {
 			if group.ID == id && group.ExecutionIdentity == identity {
-				return NativeTestProducer(attempt, group)
+				return TestGroupProducer(attempt, *attempt.TestResult, group)
 			}
 		}
 	}
@@ -376,7 +376,7 @@ func newestOwnedObservationWhere(attempts []Attempt, id, identity, episode, bind
 			candidate.at, _ = time.Parse(time.RFC3339Nano, attempt.StartedAt)
 		} else if attempt.Terminal != nil && attempt.TestResult != nil {
 			for _, group := range attempt.TestResult.Groups {
-				if group.ID != id || group.ExecutionIdentity != identity || !NativeTestProducer(attempt, group) {
+				if group.ID != id || group.ExecutionIdentity != identity || !TestGroupProducer(attempt, *attempt.TestResult, group) {
 					continue
 				}
 				candidate.at, _ = time.Parse(time.RFC3339Nano, group.EndedAt)
@@ -542,11 +542,13 @@ func WaitForTestProducerWithWaitCheck(ctx context.Context, root string, consumer
 				return GroupResult{}, fmt.Errorf("testing producer %s ended without complete result for %s: %s", ownerID, id, owner.Terminal.Result)
 			}
 			for _, group := range owner.TestResult.Groups {
-				if group.ID != id || group.ExecutionIdentity != identity || !group.NativeLaunched {
+				if group.ID != id || group.ExecutionIdentity != identity ||
+					!group.NativeLaunched && !TestGroupProducer(owner, *owner.TestResult, group) {
 					continue
 				}
 				group.NativeLaunched = false
 				group.ReuseAttempt = ownerID
+				group.CoveredByGroups, group.CoveredTests = nil, nil
 				if group.Status == "passed" && group.CollectionComplete {
 					group.Status = "reused"
 				}
@@ -708,8 +710,8 @@ func nativeSourceGroup(consumer Attempt, group GroupResult, now time.Time) (Grou
 		}
 	}
 	for _, native := range owner.TestResult.Groups {
-		if native.ID == group.ID && native.ExecutionIdentity == group.ExecutionIdentity && native.NativeLaunched &&
-			native.Status != "reused" {
+		if native.ID == group.ID && native.ExecutionIdentity == group.ExecutionIdentity && native.Status != "reused" &&
+			(native.NativeLaunched || TestGroupProducer(owner, *owner.TestResult, native)) {
 			return native, nil
 		}
 	}

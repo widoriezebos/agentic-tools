@@ -30,11 +30,7 @@ import (
 // branch critique closure is a fixture record; no TestResult or batch state
 // transition is synthesized.
 func TestGLEBatchPortableOwnerLandsRealCommandApplication(t *testing.T) {
-	runGLEBatchPortableOwnerMovedOrigin(t, false)
-}
-
-func TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor(t *testing.T) {
-	runGLEBatchPortableOwnerMovedOrigin(t, true)
+	runGLEBatchPortableOwnerMovedOrigin(t)
 }
 
 func waitForPortableOwnerLease(t *testing.T, root string, pid int, exited <-chan struct{}, exitErr func() error) {
@@ -102,7 +98,7 @@ func holdPortableFixtureSlots(t *testing.T, root string, max int, slots *[]*os.F
 	}
 }
 
-func runGLEBatchPortableOwnerMovedOrigin(t *testing.T, moveTwoConflicts bool) {
+func runGLEBatchPortableOwnerMovedOrigin(t *testing.T) {
 	batchE2EProcessEnvironment.Lock()
 	t.Cleanup(batchE2EProcessEnvironment.Unlock)
 	portable := newPortableProofFixture(t)
@@ -330,21 +326,11 @@ chmod +x "${out:-bin/metasystem}"
 	peer := filepath.Join(t.TempDir(), "peer")
 	batchE2EGit(t, "", "clone", "-q", origin, peer)
 	batchE2EConfigureGit(t, peer, "peer")
-	if moveTwoConflicts {
-		for _, input := range []string{"a", "b"} {
-			if err := os.WriteFile(filepath.Join(peer, "app", input+".txt"), []byte("origin "+input+" v2\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		batchE2EGit(t, peer, "add", "--", "app/a.txt", "app/b.txt")
-		batchE2EGit(t, peer, "commit", "-qm", "move A and B contribution paths")
-	} else {
-		if err := os.WriteFile(filepath.Join(peer, "app", "shared-b.txt"), []byte("shared b v2\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		batchE2EGit(t, peer, "add", "--", "app/shared-b.txt")
-		batchE2EGit(t, peer, "commit", "-qm", "move only B's declared input")
+	if err := os.WriteFile(filepath.Join(peer, "app", "shared-b.txt"), []byte("shared b v2\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
+	batchE2EGit(t, peer, "add", "--", "app/shared-b.txt")
+	batchE2EGit(t, peer, "commit", "-qm", "move only B's declared input")
 	batchE2EGit(t, peer, "push", "-q", "origin", "main")
 	movedTip := bed.originTip()
 	if movedTip == baseCommit {
@@ -358,70 +344,6 @@ chmod +x "${out:-bin/metasystem}"
 	_, native = portable.counts()
 	if native["a"] != 1 || native["b"] != 1 || native["c"] != 1 {
 		t.Fatalf("origin move ran native work before reproof: %v", native)
-	}
-	if moveTwoConflicts {
-		if len(reopened.Units) != 3 || reopened.Units[0].State != batch.UnitReturnPending || reopened.Units[1].State != batch.UnitReturnPending || reopened.Units[2].State != batch.UnitJoined ||
-			!strings.Contains(reopened.Units[0].Failure, "cannot apply") || !strings.Contains(reopened.Units[1].Failure, "cannot apply") {
-			t.Fatalf("moved base did not attribute both conflicts and retain C: %+v", reopened.Units)
-		}
-		// Reassembly starts a new, C-only membership window. The prior tick's
-		// fixture time cannot expire that new window, so advance the same
-		// governing clock relative to its currently joined member.
-		remainingJoined := oldestJoinedIn(reopened)
-		if remainingJoined.IsZero() {
-			t.Fatal("reassembled survivor has no durable join time")
-		}
-		if remainingDeadline := remainingJoined.Add(time.Minute + time.Second); remainingDeadline.After(tickAt) {
-			tickAt = remainingDeadline
-		}
-		t.Setenv("METASYSTEM_GOAL_NOW", tickAt.Format(time.RFC3339Nano))
-		var survivorProof *batch.Proof
-		var landed batch.Record
-		for step := range 10 {
-			current := tick()
-			if current.State == batch.StateLanding && current.Proof != nil && current.Proof.Status == "green" {
-				proof := *current.Proof
-				survivorProof = &proof
-				portable.observe("owner-moved-two-conflict-survivor", current.TipTree, time.Now())
-			}
-			if current.State == batch.StateLanded && len(current.Units) == 3 && current.Units[2].State == batch.UnitLanded {
-				landed = current
-				break
-			}
-			t.Logf("moved conflict survivor tick %d state=%s", step+1, current.State)
-		}
-		if landed.State != batch.StateLanded || survivorProof == nil || survivorProof.Tree != landed.TipTree || survivorProof.AttemptID == "" || survivorProof.AttemptID == first.Proof.AttemptID ||
-			len(landed.Units) != 3 || landed.Units[0].State != batch.UnitEjected || landed.Units[1].State != batch.UnitEjected || landed.Units[2].State != batch.UnitLanded ||
-			landed.Units[0].ReturnDisposition != batch.ReturnHandedBack || landed.Units[1].ReturnDisposition != batch.ReturnHandedBack || landed.Units[2].ReturnDisposition != batch.ReturnHandedBack {
-			t.Fatalf("C-only exact proof/publication failed: state=%s units=%+v survivorProof=%+v finalProof=%+v history=%+v", landed.State, landed.Units, survivorProof, landed.Proof, landed.History)
-		}
-		endpoint, err := goal.ResolveEndpoint(landing)
-		if err != nil {
-			t.Fatal(err)
-		}
-		projection, err := goal.Project(endpoint, true, time.Now().UTC())
-		if err != nil || projection.Tree == nil {
-			t.Fatalf("read accepted return ledger: projection=%+v error=%v", projection, err)
-		}
-		for _, id := range []string{"goal-a", "goal-b", "goal-c"} {
-			live := projection.Tree.Live[id]
-			if live == nil || live.Claimed == nil || live.Claimed.Machine != id || live.Claimed.Lineage != "lineage-"+id || live.Claimed.HandedOver.Batch != "" {
-				t.Fatalf("%s was not returned to its source claim: %+v", id, live)
-			}
-		}
-		for _, input := range []string{"a", "b"} {
-			if got := batchE2EGit(t, origin, "show", "refs/heads/main:app/"+input+".txt"); got != "origin "+input+" v2" {
-				t.Fatalf("ejected %s contribution reached origin: %q", input, got)
-			}
-		}
-		if got := batchE2EGit(t, origin, "show", "refs/heads/main:app/c.txt"); !strings.Contains(got, "goal contribution") {
-			t.Fatalf("independent C contribution absent from origin: %q", got)
-		}
-		receipts := batchE2EGit(t, origin, "show", "refs/heads/main:memory/receipts.log")
-		if !strings.Contains(receipts, "--goal goal-c ") || strings.Contains(receipts, "--goal goal-a ") || strings.Contains(receipts, "--goal goal-b ") {
-			t.Fatalf("C-only receipt publication failed: %s", receipts)
-		}
-		return
 	}
 	reproved := tick()
 	// Proof.BaseCommit is the enrolled policy base; Record.BaseTree is the

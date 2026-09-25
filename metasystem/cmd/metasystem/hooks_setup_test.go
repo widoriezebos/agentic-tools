@@ -11,7 +11,9 @@ import (
 
 func TestHooksCheckSupportsEveryHostAndHistoricalClaudePositionals(t *testing.T) {
 	repo, installation := setupCLIFixture(t)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo}) }); code != 0 {
+	recorder := newRuntimeLayoutRecorder(t, repo)
+	recorder.expect(repo)
+	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver([]string{"--repo", repo}, recorder.resolve) }); code != 0 {
 		t.Fatalf("setup exit = %d", code)
 	}
 	paths := map[string][2]string{
@@ -20,12 +22,14 @@ func TestHooksCheckSupportsEveryHostAndHistoricalClaudePositionals(t *testing.T)
 		"devin":  {filepath.Join(repo, ".devin", "config.json"), filepath.Join(installation, "scripts", "enforcement", "devin-hooks.json")},
 	}
 	for runtime, pair := range paths {
-		if code := runHooksCheck([]string{"--runtime", runtime, pair[0], pair[1]}); code != 0 {
+		recorder.expect(pair[0])
+		if code := runHooksCheckWithResolver([]string{"--runtime", runtime, pair[0], pair[1]}, recorder.resolve); code != 0 {
 			t.Fatalf("%s hook check exit = %d", runtime, code)
 		}
 	}
 	claude := paths["claude"]
-	if code := runHooksCheck([]string{claude[0], claude[1]}); code != 0 {
+	recorder.expect(claude[0])
+	if code := runHooksCheckWithResolver([]string{claude[0], claude[1]}, recorder.resolve); code != 0 {
 		t.Fatalf("historical Claude positional check exit = %d", code)
 	}
 
@@ -38,14 +42,17 @@ func TestHooksCheckSupportsEveryHostAndHistoricalClaudePositionals(t *testing.T)
 	if err := os.WriteFile(codex[0], data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := runHooksCheck([]string{"--runtime", "codex", codex[0], codex[1]}); code != 1 {
+	recorder.expect(codex[0])
+	if code := runHooksCheckWithResolver([]string{"--runtime", "codex", codex[0], codex[1]}, recorder.resolve); code != 1 {
 		t.Fatalf("wrong Codex matcher exit = %d, want 1", code)
 	}
 }
 
 func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testing.T) {
 	repo, installation := setupCLIFixture(t)
-	if _, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo}) }); code != 0 {
+	recorder := newRuntimeLayoutRecorder(t, repo)
+	recorder.expect(repo)
+	if _, code := captureStdout(t, func() int { return runRuntimeSetupWithResolver([]string{"--repo", repo}, recorder.resolve) }); code != 0 {
 		t.Fatalf("setup exit = %d", code)
 	}
 
@@ -101,7 +108,8 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 		t.Fatal(err)
 	}
 	shipped := filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json")
-	if code := runHooksCheck([]string{"--runtime", "claude", claudePath, shipped}); code != 1 {
+	recorder.expect(claudePath)
+	if code := runHooksCheckWithResolver([]string{"--runtime", "claude", claudePath, shipped}, recorder.resolve); code != 1 {
 		t.Fatalf("async Claude Stop check exit = %d, want 1", code)
 	}
 	ownedStop["async"] = false
@@ -112,7 +120,8 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 	if err := os.WriteFile(claudePath, append(data, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := runHooksCheck([]string{"--runtime", "claude", claudePath, shipped}); code != 0 {
+	recorder.expect(claudePath)
+	if code := runHooksCheckWithResolver([]string{"--runtime", "claude", claudePath, shipped}, recorder.resolve); code != 0 {
 		t.Fatalf("explicit synchronous Claude Stop check exit = %d", code)
 	}
 }

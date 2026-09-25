@@ -32,30 +32,58 @@ func gitOutput(repo string, args ...string) ([]byte, error) {
 }
 
 func rawEntries(repo, commit string) ([]byte, error) {
-	parents, err := gitOutput(repo, "rev-list", "--parents", "-n", "1", commit)
+	return rawEntriesWithGit(repo, commit, gitOutput)
+}
+
+func rawEntriesWithGit(repo, commit string, gitRead func(string, ...string) ([]byte, error)) ([]byte, error) {
+	parents, err := gitRead(repo, "rev-list", "--parents", "-n", "1", commit)
 	if err != nil {
 		return nil, err
 	}
 	if fields := strings.Fields(string(parents)); len(fields) < 2 {
 		return nil, refuse(commit, "the unit digest requires a parent")
 	}
-	return gitOutput(repo, "diff-tree", "-r", "-z", "--no-renames", "--full-index", commit+"^", commit)
+	return gitRead(repo, "diff-tree", "-r", "-z", "--no-renames", "--full-index", commit+"^", commit)
 }
 
 func UnitDigest(repo, commit string) (string, error) {
-	raw, err := rawEntries(repo, commit)
+	return unitDigestWithGit(repo, commit, gitOutput)
+}
+
+func unitDigestWithGit(repo, commit string, gitRead func(string, ...string) ([]byte, error)) (string, error) {
+	raw, err := rawEntriesWithGit(repo, commit, gitRead)
 	if err != nil {
 		return "", err
 	}
+	return digestRawEntries(raw), nil
+}
+
+func digestRawEntries(raw []byte) string {
 	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:])
 }
 
 func RawEntries(repo, commit string) ([]Entry, error) {
-	raw, err := rawEntries(repo, commit)
+	return rawEntriesWithGitParsed(repo, commit, gitOutput)
+}
+
+func RawEntriesWithRaw(repo, commit string, read func(string, ...string) ([]byte, error)) ([]Entry, error) {
+	return rawEntriesWithGitParsed(repo, commit, read)
+}
+
+func UnitDigestWithRaw(repo, commit string, read func(string, ...string) ([]byte, error)) (string, error) {
+	return unitDigestWithGit(repo, commit, read)
+}
+
+func rawEntriesWithGitParsed(repo, commit string, gitRead func(string, ...string) ([]byte, error)) ([]Entry, error) {
+	raw, err := rawEntriesWithGit(repo, commit, gitRead)
 	if err != nil {
 		return nil, err
 	}
+	return parseRawEntries(commit, raw)
+}
+
+func parseRawEntries(commit string, raw []byte) ([]Entry, error) {
 	parts, entries := bytes.Split(raw, []byte{0}), []Entry{}
 	for i := 0; i+1 < len(parts) && len(parts[i]) > 0; i += 2 {
 		fields := strings.Fields(string(parts[i]))

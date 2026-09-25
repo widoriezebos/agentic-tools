@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestResourceCustodySettlesWatchdogBeforeFinalCensus(t *testing.T) {
@@ -251,39 +252,34 @@ func TestResourceCustodyDrainsDetachedFixtureOfLiveLauncher(t *testing.T) {
 	if err != nil || state != identity.Alive {
 		t.Fatalf("live owner probe: %v (%s)", err, state)
 	}
+	// Each child publishes readiness only after its shell is running, then
+	// waits in a builtin read on the held release pipe until test cleanup.
+	hold := func(args ...string) identity.Ref {
+		t.Helper()
+		command := exec.Command("sh", append([]string{"-c", "printf x >&3; read never"}, args...)...)
+		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		held := testutil.StartHeldProcess(t, command)
+		exact, state, err := prober.Probe(int64(held.Command.Process.Pid))
+		if err != nil || state != identity.Alive {
+			t.Fatalf("held process probe: %v (%s)", err, state)
+		}
+		return exact.Ref()
+	}
 	start := func(key identity.FixtureKey) identity.Ref {
 		t.Helper()
 		tag, err := identity.EncodeKey(key)
 		if err != nil {
 			t.Fatal(err)
 		}
-		reader, writer, err := os.Pipe()
-		if err != nil {
-			t.Fatal(err)
-		}
-		// The tag is an argv word: the shell waits in a builtin read, so it
-		// remains the exact detached fixture process until custody kills it.
-		command := exec.Command("sh", "-c", "read never", identity.FixtureOwnerEnv+"="+tag)
-		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		command.Stdin = reader
-		if err := command.Start(); err != nil {
-			_ = reader.Close()
-			_ = writer.Close()
-			t.Fatal(err)
-		}
-		_ = reader.Close()
-		exact, state, err := prober.Probe(int64(command.Process.Pid))
-		if err != nil || state != identity.Alive {
-			_ = command.Process.Kill()
-			_ = command.Wait()
-			t.Fatalf("detached fixture probe: %v (%s)", err, state)
-		}
-		t.Cleanup(func() { _ = command.Process.Kill(); _ = writer.Close(); _ = command.Wait() })
-		return exact.Ref()
+		// The tag is an argv word, so the held shell is the exact detached
+		// fixture process until custody kills it.
+		return hold(identity.FixtureOwnerEnv + "=" + tag)
 	}
 	owned := start(identity.FixtureKey{Owner: owner.Ref(), Test: "TestDetached", Nonce: "00000001"})
-	foreignOwner := owner.Ref()
-	foreignOwner.Pid += 1_000_000
+	// The foreign fixture's owner is a distinct live process. A dead invented
+	// owner would make it a genuine orphan that any concurrent whole-table
+	// fixture reaper on the host may correctly kill.
+	foreignOwner := hold()
 	foreign := start(identity.FixtureKey{Owner: foreignOwner, Test: "TestForeign", Nonce: "00000002"})
 	observed, err := drainCustodyFixtures(ResourceCustodyOptions{Launcher: owner.Ref(), ConfPath: conf}, prober)
 	if err != nil || !observed || liveCustodyRef(prober, owned) || !liveCustodyRef(prober, foreign) {

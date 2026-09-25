@@ -82,6 +82,13 @@ type GroupResult struct {
 	BlockingGroups        []string             `json:"blockingGroups,omitempty"`
 	Reruns                []RerunFinding       `json:"reruns,omitempty"`
 	RerunNote             string               `json:"rerunNote,omitempty"`
+	// NativeContext digests everything that changes a native Go execution
+	// except its test selection. CoveredByGroups names the same-result groups
+	// whose native terminals supplied CoveredTests, the expected identities
+	// this group did not launch again.
+	NativeContext   string               `json:"nativeContext,omitempty"`
+	CoveredByGroups []string             `json:"coveredByGroups,omitempty"`
+	CoveredTests    []NativeTestIdentity `json:"coveredTests,omitempty"`
 }
 
 type LaunchCounts struct {
@@ -168,12 +175,18 @@ func ValidateTestResult(result TestResult) error {
 		seen[group.ID] = true
 		switch group.Status {
 		case "passed":
-			if !group.NativeLaunched || !group.CollectionComplete || group.NativeExitStatus == nil || *group.NativeExitStatus != 0 || group.ReuseAttempt != "" {
+			launchedPass := group.NativeLaunched && group.NativeExitStatus != nil && *group.NativeExitStatus == 0
+			coveredPass := !group.NativeLaunched && group.NativeExitStatus == nil && len(group.CoveredTests) != 0 &&
+				len(group.CoveredTests) == len(group.Expected)
+			if !launchedPass && !coveredPass || !group.CollectionComplete || group.ReuseAttempt != "" {
 				return fmt.Errorf("passed group %s has incomplete native evidence", group.ID)
 			}
 		case "reused":
 			if !group.CollectionComplete || group.ReuseAttempt == "" {
 				return fmt.Errorf("reused group %s has no successful source", group.ID)
+			}
+			if len(group.CoveredByGroups) != 0 || len(group.CoveredTests) != 0 {
+				return fmt.Errorf("reused group %s carries its source's same-result coverage", group.ID)
 			}
 		case "failed", "invalid", "unavailable", "cancelled", "runaway", "dead":
 		case "not-run", "blocked":
@@ -197,6 +210,11 @@ func ValidateTestResult(result TestResult) error {
 	}
 	if len(seen) != len(selected) {
 		return fmt.Errorf("test result omits selected groups")
+	}
+	for _, group := range result.Groups {
+		if err := validateCoveredGroup(result, group); err != nil {
+			return err
+		}
 	}
 	recomputed := result
 	recomputed.RecomputeDelivery()
@@ -453,7 +471,7 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 				continue
 			}
 			for _, group := range source.Groups {
-				if group.ID != id || group.ExecutionIdentity != identity || !NativeTestProducer(attempt, group) {
+				if group.ID != id || group.ExecutionIdentity != identity || !TestGroupProducer(attempt, *source, group) {
 					continue
 				}
 				if (!identityBoundTestResultSchema(template.SchemaVersion) ||
@@ -607,6 +625,7 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 		reused.Status = "reused"
 		reused.NativeLaunched = false
 		reused.ReuseAttempt = observation.attemptID
+		reused.CoveredByGroups, reused.CoveredTests = nil, nil
 		// Obligations describe the current decision, not the original command.
 		reused.Obligations = append([]string(nil), definition.Obligations...)
 		result.Groups = append(result.Groups, reused)

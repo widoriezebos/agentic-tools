@@ -23,7 +23,18 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-func loadRecordSet(root string) RecordSet {
+type rawSourceBundle struct {
+	goalFiles      func(root, ref string) (map[string][]byte, error)
+	landingHistory func(root string) (rawLandingHistory, error)
+}
+
+type rawLandingHistory struct {
+	prefix string
+	unborn bool
+	log    []byte
+}
+
+func loadRecordSetWith(root string, sources *rawSourceBundle) RecordSet {
 	records := RecordSet{}
 	governed, invalidGoverned, governedLimitations := loadGovernedRuns(root)
 	records.Runs = append(records.Runs, governedObservations(governed)...)
@@ -32,12 +43,12 @@ func loadRecordSet(root string) RecordSet {
 	records.SpendLimitations = append(records.SpendLimitations, governedLimitations...)
 	records.SpendLimitations = append(records.SpendLimitations, trackedLimitations...)
 
-	landings, landingLimitations := loadLandings(root)
+	landings, landingLimitations := loadLandingsWith(root, sources)
 	records.Landings = landings
 	records.SpendLimitations = append(records.SpendLimitations, landingLimitations...)
 	records.ActivityLimitations = append(records.ActivityLimitations, landingLimitations...)
 
-	records.GoalEvents, trackedLimitations = loadGoalEvents(root)
+	records.GoalEvents, trackedLimitations = loadGoalEventsWith(root, sources)
 	records.ActivityLimitations = append(records.ActivityLimitations, trackedLimitations...)
 	registerEntries, registerLimitations := loadAcceptedRiskRegister(root)
 	records.RegisterEntries = registerEntries
@@ -498,8 +509,15 @@ func asOutcome(status string) (RunOutcome, bool) {
 	}
 }
 
-func loadGoalEvents(root string) ([]GoalEventObservation, []Limitation) {
-	files, err := goal.ReadCommitGoals(root, "HEAD")
+func loadGoalEventsWith(root string, sources *rawSourceBundle) ([]GoalEventObservation, []Limitation) {
+	read := goal.ReadCommitGoals
+	if sources != nil {
+		if sources.goalFiles == nil {
+			return nil, []Limitation{evidenceLimitation("Goal-history evidence", "The current branch's goal-history files could not be read, so goal events are absent.", "Restore readable committed goal-history files on the current branch.")}
+		}
+		read = func(root, ref string, _ ...[]string) (map[string][]byte, error) { return sources.goalFiles(root, ref) }
+	}
+	files, err := read(root, "HEAD")
 	if err != nil {
 		return nil, []Limitation{evidenceLimitation("Goal-history evidence", "The current branch's goal-history files could not be read, so goal events are absent.", "Restore readable committed goal-history files on the current branch.")}
 	}
@@ -595,22 +613,44 @@ func goalVerbClass(verb string) (GoalVerbClass, bool) {
 	}
 }
 
-func loadLandings(root string) ([]LandingObservation, []Limitation) {
+func loadLandingsWith(root string, sources *rawSourceBundle) ([]LandingObservation, []Limitation) {
+	read := readGitLandingHistory
+	if sources != nil {
+		if sources.landingHistory == nil {
+			return nil, []Limitation{gitEvidenceUnavailable("the raw Git history source is unavailable")}
+		}
+		read = sources.landingHistory
+	}
+	history, err := read(root)
+	if err != nil {
+		return nil, []Limitation{gitEvidenceUnavailable(err.Error())}
+	}
+	if history.unborn {
+		return nil, nil
+	}
+	landings, rejected := parseGitLog(string(history.log), history.prefix)
+	if rejected == 0 {
+		return landings, nil
+	}
+	return landings, []Limitation{evidenceLimitation("Git landing evidence", fmt.Sprintf("%d current-branch commit or numstat records were malformed and were excluded from landing facts.", rejected), "Repair the Git history metadata or provide a durable typed landing record.")}
+}
+
+func readGitLandingHistory(root string) (rawLandingHistory, error) {
 	workspace := gittree.Workspace{Dir: root}
 	top, err := workspace.TopLevel()
 	if err != nil {
-		return nil, []Limitation{gitEvidenceUnavailable(gitResolutionFailure("repository top-level resolution", err))}
+		return rawLandingHistory{}, errors.New(gitResolutionFailure("repository top-level resolution", err))
 	}
 	prefix, err := workspace.Prefix()
 	if err != nil {
-		return nil, []Limitation{gitEvidenceUnavailable(gitResolutionFailure("checkout prefix resolution", err))}
+		return rawLandingHistory{}, errors.New(gitResolutionFailure("checkout prefix resolution", err))
 	}
 	head, unborn, err := workspace.HeadCommit()
 	if err != nil {
-		return nil, []Limitation{gitEvidenceUnavailable(gitResolutionFailure("current branch tip resolution", err))}
+		return rawLandingHistory{}, errors.New(gitResolutionFailure("current branch tip resolution", err))
 	}
 	if unborn {
-		return nil, nil
+		return rawLandingHistory{prefix: prefix, unborn: true}, nil
 	}
 	args := []string{"-C", top, "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false",
 		"log", "--topo-order", "--reverse", "--format=%x1e%H%x1f%cI%x1f%(trailers:key=Goal-Transaction,valueonly,separator=%x1d)", "--numstat", "--no-renames", head, "--"}
@@ -623,13 +663,9 @@ func loadLandings(root string) ([]LandingObservation, []Limitation) {
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	if err := boundedexec.Run(command, boundedexec.Timeout(filepath.Join(root, "metasystem.conf"), boundedexec.Local), "counselor git history"); err != nil {
-		return nil, []Limitation{gitEvidenceUnavailable("the bounded Git history read failed: " + err.Error())}
+		return rawLandingHistory{}, fmt.Errorf("the bounded Git history read failed: %w", err)
 	}
-	landings, rejected := parseGitLog(stdout.String(), prefix)
-	if rejected == 0 {
-		return landings, nil
-	}
-	return landings, []Limitation{evidenceLimitation("Git landing evidence", fmt.Sprintf("%d current-branch commit or numstat records were malformed and were excluded from landing facts.", rejected), "Repair the Git history metadata or provide a durable typed landing record.")}
+	return rawLandingHistory{prefix: prefix, log: bytes.Clone(stdout.Bytes())}, nil
 }
 
 func parseGitLog(log, prefix string) ([]LandingObservation, int) {

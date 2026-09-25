@@ -234,6 +234,30 @@ func TestMetaSystemBatchBuildCDPinsInputsAndTaggedWitnessOwner(t *testing.T) {
 	}
 }
 
+func TestFastStaticBuildDeclaresLiveAndConcludedGoalInputs(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, ok := groupMap(contract.Groups)["fast-static-build"]
+	if !ok {
+		t.Fatal("fast-static-build group is absent")
+	}
+	for _, input := range []string{
+		"plans/goals/*.md", "records/goals/*.md",
+		"metasystem/plans/goals/*.md", "metasystem/records/goals/*.md",
+	} {
+		if !contains(group.Inputs, input) {
+			t.Errorf("fast-static-build inputs omit %s", input)
+		}
+	}
+}
+
 func TestMetaSystemContractAlwaysAuditsGoTestEnvironments(t *testing.T) {
 	data, err := os.ReadFile("../../testing.json")
 	if err != nil {
@@ -253,11 +277,8 @@ func TestMetaSystemContractAlwaysAuditsGoTestEnvironments(t *testing.T) {
 		t.Fatalf("%s group is absent", groupID)
 	}
 	all, names, err := GoTests(group)
-	if err != nil || all {
-		t.Fatalf("%s must declare its non-opt-in test inventory: all=%v names=%v err=%v", groupID, all, names, err)
-	}
-	if contains(names, "TestPackageWalkExternalCheckout") {
-		t.Fatalf("%s includes opt-in TestPackageWalkExternalCheckout: %v", groupID, names)
+	if err != nil || !all || len(names) != 0 {
+		t.Fatalf("%s must use tests=all without named-selector residue: all=%v names=%v err=%v", groupID, all, names, err)
 	}
 	for _, input := range []string{"metasystem/cmd/**", "metasystem/internal/**"} {
 		if !contains(group.Inputs, input) {
@@ -513,6 +534,110 @@ func TestExternalInputsRequireExplicitAbsoluteOrEnvironmentLocators(t *testing.T
 	contract.Groups[0].ExternalInputs[0].Path = "relative/config.json"
 	if err := contract.Validate(); err == nil {
 		t.Fatal("undeclared relative external input authority was accepted")
+	}
+}
+
+func TestCommandExitStatusAcceptanceApplicationKinds(t *testing.T) {
+	t.Parallel()
+
+	commandContract := func(kind, phase string) Contract {
+		contract := fixtureContract()
+		contract.SchemaVersion = ExecutionContractSchemaVersion
+		contract.Surfaces[0].Standard = []string{"app-unit", "app-deep"}
+		for index := range contract.Groups {
+			contract.Groups[index].Phase = "acceptance"
+			contract.Groups[index].EnvironmentMode = "inherit"
+		}
+		group := &contract.Groups[0]
+		group.Kind = kind
+		group.Phase = phase
+		group.Adapter = "command"
+		group.Packages = nil
+		group.Tests = nil
+		group.Argv = []string{"npm", "test"}
+		group.Format = "exit-status"
+		return contract
+	}
+
+	for _, kind := range []string{"unit", "integration"} {
+		t.Run("acceptance-"+kind, func(t *testing.T) {
+			if err := commandContract(kind, "acceptance").Validate(); err != nil {
+				t.Fatalf("acceptance %s full-suite command was refused: %v", kind, err)
+			}
+		})
+	}
+	for _, specimen := range []struct {
+		name, kind, phase string
+	}{
+		{name: "unit-admission", kind: "unit", phase: "admission"},
+		{name: "integration-admission", kind: "integration", phase: "admission"},
+		{name: "component-acceptance", kind: "component", phase: "acceptance"},
+		{name: "e2e-acceptance", kind: "e2e", phase: "acceptance"},
+		{name: "performance-acceptance", kind: "performance", phase: "acceptance"},
+	} {
+		t.Run(specimen.name, func(t *testing.T) {
+			if err := commandContract(specimen.kind, specimen.phase).Validate(); err == nil || !strings.Contains(err.Error(), "command format") {
+				t.Fatalf("unsupported exit-status boundary was accepted: %v", err)
+			}
+		})
+	}
+	for _, kind := range []string{"static", "build"} {
+		t.Run("preserves-"+kind, func(t *testing.T) {
+			if err := commandContract(kind, "admission").Validate(); err != nil {
+				t.Fatalf("existing %s exit-status command was refused: %v", kind, err)
+			}
+		})
+	}
+
+	t.Run("build-and-static-are-not-application-test-providers", func(t *testing.T) {
+		contract := commandContract("build", "admission")
+		group := &contract.Groups[1]
+		group.Kind = "static"
+		group.Adapter = "command"
+		group.Packages = nil
+		group.Tests = nil
+		group.Argv = []string{"npm", "run", "lint"}
+		group.Format = "exit-status"
+		if err := contract.Validate(); err == nil || !strings.Contains(err.Error(), "no standard application test provider") {
+			t.Fatalf("build/static-only contract satisfied the application-test provider rule: %v", err)
+		}
+	})
+}
+
+func TestDocumentedExitStatusApplicationContractIsValid(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile("../../docs/testing-contract.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "<!-- full-suite-command-contract -->\n```json\n"
+	_, example, found := strings.Cut(string(data), marker)
+	if !found {
+		t.Fatal("documented full-suite command contract marker is absent")
+	}
+	example, _, found = strings.Cut(example, "\n```")
+	if !found {
+		t.Fatal("documented full-suite command contract fence is unterminated")
+	}
+	contract, err := Decode([]byte(example))
+	if err != nil {
+		t.Fatalf("documented full-suite command contract is invalid: %v", err)
+	}
+	group := contract.Groups[0]
+	if len(contract.Groups) != 1 || group.Kind != "unit" || group.Phase != "acceptance" || group.Adapter != "command" || group.Format != "exit-status" ||
+		!reflect.DeepEqual(group.Inputs, []string{"*", "*/**"}) || len(group.Reports) != 0 || len(group.ExpectedTests) != 0 ||
+		!contains(contract.Always.Standard, group.ID) || contract.Fallback == "" {
+		t.Fatalf("documented contract lost its full-suite command shape: %+v", contract)
+	}
+	var fallback Surface
+	for _, surface := range contract.Surfaces {
+		if surface.ID == contract.Fallback {
+			fallback = surface
+		}
+	}
+	if !contains(fallback.Standard, group.ID) || !reflect.DeepEqual(contract.Unknown, []string{group.ID}) {
+		t.Fatalf("documented fallback policy does not select the application suite: fallback=%+v unknown=%v", fallback, contract.Unknown)
 	}
 }
 

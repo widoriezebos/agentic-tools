@@ -13,22 +13,22 @@ func TestPriorityReconcile(t *testing.T) {
 	t.Parallel()
 	t.Run("same-priority", func(t *testing.T) {
 		t.Parallel()
-		root, base := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c", "d", "e"), nil)
+		endpoint, base := priorityReconcileBedForEndpoint(t, rankedPriorityGoals(1, "a", "b", "c", "d", "e"), nil)
 		for _, id := range []string{"b", "d"} {
-			editFile(t, root, livePath(id), func(file *GoalFile) {
+			editFile(t, endpoint.Root, livePath(id), func(file *GoalFile) {
 				file.State = StateDone
 				file.Conclude = "Concluded " + id + "."
 			})
 		}
-		request := humanReconcileReq(root, "01J5X000000000000000000T10")
-		result, err := Reconcile(request)
+		request := humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000T10")
+		result, err := reconcileForTest(t, request)
 		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
 			t.Fatalf("reconcile two departures in one priority: %+v %v", result, err)
 		}
-		if parent := mustGit(t, root, "rev-parse", result.Publish.Commit+"^"); parent != base {
+		if parent := endpoint.Repository.(*fakeGoalRepository).store.commits[result.Publish.Commit].parent; parent != base {
 			t.Fatalf("reconciliation was not one commit over the materialized base: parent=%s base=%s", parent, base)
 		}
-		tree, _ := loadTree(root, result.Publish.Tip)
+		tree, _ := loadTreeFor(endpoint, result.Publish.Tip)
 		assertPriorityOrder(t, tree, []string{"a", "c", "e"})
 		assertPair(t, tree.Done["b"], 1, 2)
 		assertPair(t, tree.Done["d"], 1, 4)
@@ -50,18 +50,18 @@ func TestPriorityReconcile(t *testing.T) {
 		t.Parallel()
 		live := append(rankedPriorityGoals(1, "a", "b", "c"), rankedPriorityGoals(2, "d", "e", "f")...)
 		live = append(live, vGoal("unranked", StateQueued))
-		root, _ := priorityReconcileBed(t, live, nil)
+		endpoint, _ := priorityReconcileBedForEndpoint(t, live, nil)
 		for _, id := range []string{"b", "e"} {
-			editFile(t, root, livePath(id), func(file *GoalFile) {
+			editFile(t, endpoint.Root, livePath(id), func(file *GoalFile) {
 				file.State = StateDone
 				file.Conclude = "Concluded " + id + "."
 			})
 		}
-		result, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000T20"))
+		result, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000T20"))
 		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
 			t.Fatalf("reconcile departures across priorities: %+v %v", result, err)
 		}
-		tree, _ := loadTree(root, result.Publish.Tip)
+		tree, _ := loadTreeFor(endpoint, result.Publish.Tip)
 		assertPair(t, tree.Live["a"], 1, 1)
 		assertPair(t, tree.Live["c"], 1, 2)
 		assertPair(t, tree.Live["d"], 2, 1)
@@ -73,20 +73,20 @@ func TestPriorityReconcile(t *testing.T) {
 
 	t.Run("survivor-edit", func(t *testing.T) {
 		t.Parallel()
-		root, _ := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), nil)
-		editFile(t, root, livePath("b"), func(file *GoalFile) {
+		endpoint, _ := priorityReconcileBedForEndpoint(t, rankedPriorityGoals(1, "a", "b", "c"), nil)
+		editFile(t, endpoint.Root, livePath("b"), func(file *GoalFile) {
 			file.State = StateDone
 			file.Conclude = "Concluded b."
 		})
-		editFile(t, root, livePath("c"), func(file *GoalFile) {
+		editFile(t, endpoint.Root, livePath("c"), func(file *GoalFile) {
 			file.NextStep = "Edited while b leaves."
 		})
-		request := humanReconcileReq(root, "01J5X000000000000000000T30")
-		result, err := Reconcile(request)
+		request := humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000T30")
+		result, err := reconcileForTest(t, request)
 		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
 			t.Fatalf("reconcile survivor edit: %+v %v", result, err)
 		}
-		tree, _ := loadTree(root, result.Publish.Tip)
+		tree, _ := loadTreeFor(endpoint, result.Publish.Tip)
 		c := tree.Live["c"]
 		assertPair(t, c, 1, 2)
 		if c.NextStep != "Edited while b leaves." || c.Revision != 2 || len(c.History) != 2 {
@@ -100,17 +100,17 @@ func TestPriorityReconcile(t *testing.T) {
 
 	t.Run("done-edit", func(t *testing.T) {
 		t.Parallel()
-		root, _ := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), nil)
-		editFile(t, root, livePath("b"), func(file *GoalFile) {
+		endpoint, _ := priorityReconcileBedForEndpoint(t, rankedPriorityGoals(1, "a", "b", "c"), nil)
+		editFile(t, endpoint.Root, livePath("b"), func(file *GoalFile) {
 			file.State = StateDone
 			file.Conclude = "Concluded b."
 			file.NextStep = "Archive-only edit."
 		})
-		result, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000T40"))
+		result, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000T40"))
 		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
 			t.Fatalf("reconcile done plus edit: %+v %v", result, err)
 		}
-		tree, _ := loadTree(root, result.Publish.Tip)
+		tree, _ := loadTreeFor(endpoint, result.Publish.Tip)
 		if tree.Live["b"] != nil || tree.Done["b"] == nil || tree.Done["b"].NextStep != "Archive-only edit." {
 			t.Fatalf("done edit did not land only in the archive: live=%+v done=%+v", tree.Live["b"], tree.Done["b"])
 		}
@@ -121,37 +121,37 @@ func TestPriorityReconcile(t *testing.T) {
 	t.Run("reopen-refused", func(t *testing.T) {
 		t.Parallel()
 		archived := vGoal("already-done", StateDone)
-		root, base := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), []*GoalFile{archived})
-		editFile(t, root, livePath("b"), func(file *GoalFile) {
+		endpoint, base := priorityReconcileBedForEndpoint(t, rankedPriorityGoals(1, "a", "b", "c"), []*GoalFile{archived})
+		editFile(t, endpoint.Root, livePath("b"), func(file *GoalFile) {
 			file.State = StateDone
 			file.Conclude = "Concluded b."
 		})
-		editFile(t, root, donePath("already-done"), func(file *GoalFile) {
+		editFile(t, endpoint.Root, donePath("already-done"), func(file *GoalFile) {
 			file.State = StateQueued
 			file.Conclude = ""
 		})
-		if _, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000T50")); err == nil || !strings.Contains(err.Error(), "archive has no hand-edit grammar; reopen is a verb") {
+		if _, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000T50")); err == nil || !strings.Contains(err.Error(), "archive has no hand-edit grammar; reopen is a verb") {
 			t.Fatalf("archive edit did not refuse with the named grammar: %v", err)
 		}
-		if tip := acceptedTip(t, root); tip != base {
+		if tip := acceptedTipForEndpoint(t, endpoint); tip != base {
 			t.Fatalf("refused batch changed the canonical tip: before=%s after=%s", base, tip)
 		}
-		baseFiles, err := ReadCommitGoals(root, base)
+		baseFiles, err := endpoint.Repository.Files(base, recordsGoalsPrefix)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(donePath("already-done"))), baseFiles[donePath("already-done")], 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(endpoint.Root, filepath.FromSlash(donePath("already-done"))), baseFiles[donePath("already-done")], 0o644); err != nil {
 			t.Fatal(err)
 		}
-		result, err := Reconcile(humanReconcileReq(root, "01J5X000000000000000000T60"))
+		result, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X000000000000000000T60"))
 		if err != nil || result.Publish.Outcome != OutcomeConfirmed {
 			t.Fatalf("lawful done after restoring archive: %+v %v", result, err)
 		}
-		reopened, err := Reopen(verbReq(root, "01J5X000000000000000000T70", "mac-a"), "b")
+		reopened, err := Reopen(verbReqFor(endpoint, "01J5X000000000000000000T70", "mac-a"), "b")
 		if err != nil || reopened.Outcome != OutcomeConfirmed {
 			t.Fatalf("separate reopen: %+v %v", reopened, err)
 		}
-		tree, _ := loadTree(root, reopened.Tip)
+		tree, _ := loadTreeFor(endpoint, reopened.Tip)
 		assertPair(t, tree.Live["b"], 1, 3)
 	})
 }
@@ -182,30 +182,6 @@ func TestReconcileEditRowSeesAnAbandonedArchive(t *testing.T) {
 	}
 }
 
-func priorityReconcileBed(t *testing.T, live, done []*GoalFile) (string, string) {
-	t.Helper()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	changes := make([]Change, 0, len(live)+len(done))
-	for _, file := range live {
-		changes = append(changes, Change{Path: livePath(file.Id), Content: RenderFile(file)})
-	}
-	for _, file := range done {
-		changes = append(changes, Change{Path: donePath(file.Id), Content: RenderFile(file)})
-	}
-	result, err := Publish(endpointFor(root), PublishRequest{
-		Opid: "priority-reconcile-fixture", Machine: "mac-fixture", Lineage: "lin-fixture",
-		Intent: testIntentFor("migrate"), Message: "seed priority reconcile fixture",
-		Mutate:   func(string) ([]Change, error) { return changes, nil },
-		Validate: func(commit string) error { return ValidateCommit(root, commit) },
-	})
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("publish priority reconcile fixture: %+v %v", result, err)
-	}
-	materialize(t, root, result.Tip)
-	return root, result.Tip
-}
-
 func rankedPriorityGoals(priority uint8, ids ...string) []*GoalFile {
 	files := make([]*GoalFile, 0, len(ids))
 	for index, id := range ids {
@@ -214,30 +190,21 @@ func rankedPriorityGoals(priority uint8, ids ...string) []*GoalFile {
 	return files
 }
 
-func humanReconcileReq(root, ulid string) VerbRequest {
-	return VerbRequest{
-		Endpoint: endpointFor(root),
-		Actor:    Actor{Machine: "mac-a", Lineage: "lin-1", Human: "wido"},
-		Ulid:     ulid,
-		Now:      time.Date(2026, 8, 21, 1, 0, 0, 0, time.UTC),
-	}
-}
-
 func TestReconcilePublishesHandEditsUnderTheHuman(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Intent = "Reconciled intent."
 		f.NextStep = "Reconciled next."
 	})
-	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P000"))
+	res, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P000"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Publish.Outcome != OutcomeConfirmed || len(res.Rows) != 1 || res.Rows[0].Verb != "edit" {
 		t.Fatalf("one edit row publishes: %+v", res)
 	}
-	tree, err := loadTree(a, res.Publish.Tip)
+	tree, err := loadTreeFor(endpoint, res.Publish.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +233,7 @@ func TestReconcilePublishesHandEditsUnderTheHuman(t *testing.T) {
 	// A second reconcile with no edits maps zero rows and publishes
 	// nothing — consecutive sessions without a pull work from the
 	// advanced base.
-	res2, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P010"))
+	res2, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P010"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +244,7 @@ func TestReconcilePublishesHandEditsUnderTheHuman(t *testing.T) {
 
 func TestReconcileObservesRawLabelsAndPublishesCanonicalLabels(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Labels = []string{"zeta", "alpha", "zeta"}
 	})
@@ -290,11 +257,11 @@ func TestReconcileObservesRawLabelsAndPublishesCanonicalLabels(t *testing.T) {
 		t.Fatalf("parse preserves the raw hand edit before reconcile: labels=%v problems=%v", parsed.Labels, problems)
 	}
 
-	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P020"))
+	res, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P020"))
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
 		t.Fatalf("reconcile labels: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, res.Publish.Tip)
+	tree, err := loadTreeFor(endpoint, res.Publish.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +277,7 @@ func TestReconcileObservesRawLabelsAndPublishesCanonicalLabels(t *testing.T) {
 
 func TestReconcileConflictNamesGoalAndField(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	_ = tip
 	// The hand edit parks; a competitor concludes the goal on the
 	// canonical branch first — the row's before-predicate fails on
@@ -319,10 +286,10 @@ func TestReconcileConflictNamesGoalAndField(t *testing.T) {
 		f.State = StateParked
 		f.Parked = &ParkRecord{By: "human:wido", At: "2026-08-21T01:00:00Z", Because: "pausing"}
 	})
-	if res, err := Done(verbReq(a, "01J5X00000000000000000P020", "mac-a"), "editable", "Concluded before the reconcile."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Done(verbReqFor(endpoint, "01J5X00000000000000000P020", "mac-a"), "editable", "Concluded before the reconcile."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("competitor done: %+v %v", res, err)
 	}
-	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P030"))
+	res, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P030"))
 	if err != nil || res.Publish.Outcome != OutcomeRejected {
 		t.Fatalf("the conflict rejects: %+v %v", res, err)
 	}
@@ -333,17 +300,17 @@ func TestReconcileConflictNamesGoalAndField(t *testing.T) {
 
 func TestReconcileWithoutAHumanRefuses(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
-	req := humanReconcileReq(a, "01J5X00000000000000000P040")
+	_, _, endpoint := newFakeReconcileBed(t)
+	req := humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P040")
 	req.Actor.Human = ""
-	if _, err := Reconcile(req); err == nil || !strings.Contains(err.Error(), "--by") {
+	if _, err := reconcileForTest(t, req); err == nil || !strings.Contains(err.Error(), "--by") {
 		t.Fatalf("reconcile names its human: %v", err)
 	}
 }
 
 func TestReconcileAppliesEveryRowKind(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
 
 	// Hand-park the existing goal AND hand-create a new one in the
 	// same session: two rows, one commit, one opid.
@@ -355,11 +322,11 @@ func TestReconcileAppliesEveryRowKind(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(a, "plans", "goals", "hand-new.md"), RenderFile(created), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P100"))
+	res, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P100"))
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
 		t.Fatalf("two-row session publishes: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, res.Publish.Tip)
+	tree, err := loadTreeFor(endpoint, res.Publish.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,20 +346,20 @@ func TestReconcileAppliesEveryRowKind(t *testing.T) {
 		f.State = StateQueued
 		f.Parked = nil
 	})
-	res, err = Reconcile(humanReconcileReq(a, "01J5X00000000000000000P110"))
+	res, err = reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P110"))
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed || res.Rows[0].Verb != "unpark" {
 		t.Fatalf("the unpark row applies: %+v %v", res, err)
 	}
-	published, _ := ReadCommitGoals(a, res.Publish.Commit)
+	published, _ := readCommitGoals(endpoint, res.Publish.Commit)
 	raw := strings.Replace(string(published[goalsPrefix+"editable.md"]), "- State: queued", "- State: done\n- Concluded: Concluded by hand.", 1)
 	if err := os.WriteFile(filepath.Join(a, "plans", "goals", "editable.md"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, err = Reconcile(humanReconcileReq(a, "01J5X00000000000000000P120"))
+	res, err = reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P120"))
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed || res.Rows[0].Verb != "done" {
 		t.Fatalf("the done row applies: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, res.Publish.Tip)
+	tree, err = loadTreeFor(endpoint, res.Publish.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +378,7 @@ func TestReconcileAppliesEveryRowKind(t *testing.T) {
 
 func TestReconcileOpenConflictOnExistingGoal(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
 	// A hand-created file whose id LANDS on the canonical branch
 	// before the reconcile: the open row's before-predicate fails on
 	// the fetched tip.
@@ -419,10 +386,10 @@ func TestReconcileOpenConflictOnExistingGoal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(a, "plans", "goals", "collide.md"), RenderFile(created), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := Open(verbReq(a, "01J5X00000000000000000P130", "mac-a"), "collide", "Theirs first.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000P130", "mac-a"), "collide", "Theirs first.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("competitor open: %+v %v", res, err)
 	}
-	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P140"))
+	res, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P140"))
 	if err != nil || res.Publish.Outcome != OutcomeRejected || !strings.Contains(res.Publish.Detail, "collide") {
 		t.Fatalf("the open conflict rejects naming the goal: %+v %v", res, err)
 	}
@@ -430,7 +397,7 @@ func TestReconcileOpenConflictOnExistingGoal(t *testing.T) {
 
 func TestConcurrentFieldEditConflictsInsteadOfOverwriting(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
 	// The hand edit changes intent A→B; a competitor lands A→C on
 	// the canonical branch first. The replay must CONFLICT naming
 	// the field — never overwrite C with B (F9).
@@ -438,10 +405,10 @@ func TestConcurrentFieldEditConflictsInsteadOfOverwriting(t *testing.T) {
 		f.Intent = "Hand version B."
 	})
 	competitor := "Competitor version C."
-	if res, err := Edit(verbReq(a, "01J5X00000000000000000P200", "mac-a"), "editable", EditFields{Intent: &competitor}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Edit(verbReqFor(endpoint, "01J5X00000000000000000P200", "mac-a"), "editable", EditFields{Intent: &competitor}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("competitor edit: %+v %v", res, err)
 	}
-	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P210"))
+	res, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P210"))
 	if err != nil || res.Publish.Outcome != OutcomeRejected {
 		t.Fatalf("the concurrent edit conflicts: %+v %v", res, err)
 	}
@@ -449,7 +416,7 @@ func TestConcurrentFieldEditConflictsInsteadOfOverwriting(t *testing.T) {
 		t.Fatalf("the conflict names the field and the fetched value: %s", res.Publish.Detail)
 	}
 	// The competitor's value survives untouched.
-	p, err := Project(endpointFor(a), true, time.Now())
+	p, err := Project(endpoint, true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,17 +427,17 @@ func TestConcurrentFieldEditConflictsInsteadOfOverwriting(t *testing.T) {
 
 func TestHandArcMoveMapsToItsVerbs(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
 	// A hand-set arc maps to set-arc and replays with the base-arc
 	// comparison (F11: arc IS on the closed surface).
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Arc = "hand-formed-arc"
 	})
-	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P220"))
+	res, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P220"))
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed || res.Rows[0].Verb != "set-arc" {
 		t.Fatalf("the arc move maps and publishes: %+v %v", res, err)
 	}
-	p, err := Project(endpointFor(a), true, time.Now())
+	p, err := Project(endpoint, true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +448,7 @@ func TestHandArcMoveMapsToItsVerbs(t *testing.T) {
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Arc = ""
 	})
-	res, err = Reconcile(humanReconcileReq(a, "01J5X00000000000000000P230"))
+	res, err = reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000P230"))
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed || res.Rows[0].Verb != "detach" {
 		t.Fatalf("the arc clear maps to detach: %+v %v", res, err)
 	}
@@ -489,7 +456,7 @@ func TestHandArcMoveMapsToItsVerbs(t *testing.T) {
 
 func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
+	a, tip, endpoint := newFakeReconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Origin = "rewritten-provenance"
 	})
@@ -497,7 +464,7 @@ func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = MapDeltas(a, tip, snap)
+	_, err = mapDeltasFor(endpoint, tip, snap)
 	if err == nil || !strings.Contains(err.Error(), "Origin") {
 		t.Fatalf("Origin is outside the closed edit surface: %v", err)
 	}
@@ -509,15 +476,15 @@ func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
 
 func TestHandParkOfAClaimedGoalDisplacesThePair(t *testing.T) {
 	t.Parallel()
-	a, tip := reconcileBed(t)
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000RP00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	a, tip, endpoint := newFakeReconcileBed(t)
+	if res, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000RP00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("foreign claim: %+v %v", res, err)
 	}
-	adv, err := FetchAdvance(endpointFor(a))
+	adv, err := FetchAdvance(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	materialize(t, a, adv.Tip)
+	materializeFakeReconcile(t, endpoint, adv.Tip)
 	_ = tip
 	// The hand edit: State claimed -> parked with its because.
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
@@ -525,13 +492,13 @@ func TestHandParkOfAClaimedGoalDisplacesThePair(t *testing.T) {
 		f.Claimed = nil
 		f.Parked = &ParkRecord{By: "human:wido", At: "2026-08-21T09:00:00Z", Because: "operator hold"}
 	})
-	req := verbReq(a, "01J5X00000000000000000RP10", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000RP10", "mac-a")
 	req.Actor.Human = "wido"
-	res, err := Reconcile(req)
+	res, err := reconcileForTest(t, req)
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
 		t.Fatalf("the claimed hand-park is a lawful human act (R2-13): %+v %v", res.Publish, err)
 	}
-	tree, err := loadTree(a, res.Publish.Commit)
+	tree, err := loadTreeFor(endpoint, res.Publish.Commit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,28 +510,28 @@ func TestHandParkOfAClaimedGoalDisplacesThePair(t *testing.T) {
 
 func TestHandParkAgainstQueuedConflictsWithALandedClaim(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
 	// The hand park is made against QUEUED...
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.State = StateParked
 		f.Parked = &ParkRecord{By: "human:wido", At: "2026-08-21T09:00:00Z", Because: "pausing it"}
 	})
 	// ...and a claim lands meanwhile.
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000RQ00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000RQ00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("competing claim: %+v %v", res, err)
 	}
-	req := verbReq(a, "01J5X00000000000000000RQ10", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000RQ10", "mac-a")
 	req.Actor.Human = "wido"
-	res, err := Reconcile(req)
+	res, err := reconcileForTest(t, req)
 	if err != nil || res.Publish.Outcome != OutcomeRejected || !strings.Contains(res.Publish.Detail, "made against queued") {
 		t.Fatalf("the state before-value binds (R2-10): %+v %v", res.Publish, err)
 	}
 	// The competitor's claim survives.
-	adv, err := FetchAdvance(endpointFor(a))
+	adv, err := FetchAdvance(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := loadTree(a, adv.Tip)
+	tree, err := loadTreeFor(endpoint, adv.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,33 +542,33 @@ func TestHandParkAgainstQueuedConflictsWithALandedClaim(t *testing.T) {
 
 func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
 	t.Parallel()
-	a, _ := reconcileBed(t)
+	a, _, endpoint := newFakeReconcileBed(t)
 	// A foreign pair claims an arc; the hand moves a fresh queued
 	// goal into it.
-	if res, err := Open(verbReq(a, "01J5X00000000000000000RJ00", "mac-b"), "arc-seed", "Seed.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000RJ00", "mac-b"), "arc-seed", "Seed.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open seed: %+v %v", res, err)
 	}
-	if res, err := SetArc(verbReq(a, "01J5X00000000000000000RJ10", "mac-b"), "arc-seed", "held-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := SetArc(verbReqFor(endpoint, "01J5X00000000000000000RJ10", "mac-b"), "arc-seed", "held-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-arc seed: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000RJ20", "mac-b"), "arc-seed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000RJ20", "mac-b"), "arc-seed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim seed: %+v %v", res, err)
 	}
-	approveGoalForTest(t, verbReq(a, "01J5X00000000000000000RJ25", "mac-a"), "editable", testBudget())
-	adv, err := FetchAdvance(endpointFor(a))
+	approveGoalForTest(t, verbReqFor(endpoint, "01J5X00000000000000000RJ25", "mac-a"), "editable", testBudget())
+	adv, err := FetchAdvance(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	materialize(t, a, adv.Tip)
+	materializeFakeReconcile(t, endpoint, adv.Tip)
 	// The hand edit: the QUEUED editable goal joins the claimed arc.
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) { f.Arc = "held-arc" })
-	req := verbReq(a, "01J5X00000000000000000RJ30", "mac-a")
+	req := verbReqFor(endpoint, "01J5X00000000000000000RJ30", "mac-a")
 	req.Actor.Human = "wido"
-	res, err := Reconcile(req)
+	res, err := reconcileForTest(t, req)
 	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
 		t.Fatalf("the human join into a claimed arc is the matrix's own row (R2-13): %+v %v", res.Publish, err)
 	}
-	tree, err := loadTree(a, res.Publish.Commit)
+	tree, err := loadTreeFor(endpoint, res.Publish.Commit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,26 +590,27 @@ func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
 // is not a person on this one either.
 func TestReconcileHoldsAHandEditedEdgeToTheUnblockRule(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	a, _, endpoint := newFakeReconcileBed(t, nil)
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
 	budget := testBudget()
-	if res, err := Open(verbReq(a, "01J5X00000000000000000HE00", "mac-a"), "waiting-work", "The goal that waits.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000HE00", "mac-a"), "waiting-work", "The goal that waits.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open the goal that waits: %+v %v", res, err)
 	}
-	person := personReq(a, "01J5X00000000000000000HE01", "mac-a")
+	person := verbReqFor(endpoint, "01J5X00000000000000000HE01", "mac-a")
+	person.Actor.Human = "Wido"
 	res, err := OpenRisked(person, "first-blocker", "The first defect.", OriginHuman, "Fix.",
-		[]string{"waiting-work"}, nil, risk, 0, "", &budget, personProof(t, a))
+		[]string{"waiting-work"}, nil, risk, 0, "", &budget, sessionProofForTest(t, a, person.Now))
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open the first blocker: %+v %v", res, err)
 	}
-	second := personReq(a, "01J5X00000000000000000HE02", "mac-a")
+	second := verbReqFor(endpoint, "01J5X00000000000000000HE02", "mac-a")
+	second.Actor.Human = "Wido"
 	res, err = OpenRisked(second, "second-blocker", "The second defect.", OriginHuman, "Fix.",
-		[]string{"waiting-work"}, nil, risk, 0, "", &budget, personProof(t, a))
+		[]string{"waiting-work"}, nil, risk, 0, "", &budget, sessionProofForTest(t, a, second.Now))
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open the second blocker: %+v %v", res, err)
 	}
-	materialize(t, a, res.Tip)
+	materializeFakeReconcile(t, endpoint, res.Tip)
 
 	// The hand edit drops the second blocker, which is not done.
 	path := filepath.Join(a, "plans", "goals", "waiting-work.md")
@@ -659,9 +627,9 @@ func TestReconcileHoldsAHandEditedEdgeToTheUnblockRule(t *testing.T) {
 	}
 
 	// A name with nothing behind it is refused, and the edge is named.
-	before := acceptedTip(t, a)
-	named := humanReconcileReq(a, "01J5X00000000000000000HE10")
-	reconciled, err := Reconcile(named)
+	before := acceptedTipForEndpoint(t, endpoint)
+	named := humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000HE10")
+	reconciled, err := reconcileForTest(t, named)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,20 +638,20 @@ func TestReconcileHoldsAHandEditedEdgeToTheUnblockRule(t *testing.T) {
 		!strings.Contains(reconciled.Publish.Detail, "early lift and a human act") {
 		t.Fatalf("a hand edit dropped an unfinished blocker with no proof: %+v", reconciled.Publish)
 	}
-	if acceptedTip(t, a) != before {
+	if acceptedTipForEndpoint(t, endpoint) != before {
 		t.Fatal("the refused reconcile moved the ledger")
 	}
 
 	// The same edit under a proof the approval gate admits lands, and the
 	// park is repaired from the list the edit left.
-	proven := humanReconcileReq(a, "01J5X00000000000000000HE11")
+	proven := humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000HE11")
 	proven.Actor.Human = "Wido"
 	proven.Authority = sessionProofForTest(t, a, proven.Now)
-	reconciled, err = Reconcile(proven)
+	reconciled, err = reconcileForTest(t, proven)
 	if err != nil || reconciled.Publish.Outcome != OutcomeConfirmed {
 		t.Fatalf("a proven hand edit was refused: %+v %v", reconciled, err)
 	}
-	tree, err := loadTree(a, reconciled.Publish.Tip)
+	tree, err := loadTreeFor(endpoint, reconciled.Publish.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -702,21 +670,20 @@ func TestReconcileHoldsAHandEditedEdgeToTheUnblockRule(t *testing.T) {
 
 func TestHandDoneOfABlockerLiftsItsPark(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	a, _, endpoint := newFakeReconcileBed(t, nil)
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
 	budget := testBudget()
-	if res, err := Open(verbReq(a, "01J5X00000000000000000HD00", "mac-a"), "held", "The seat's goal.", OriginHuman, "Build."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000HD00", "mac-a"), "held", "The seat's goal.", OriginHuman, "Build."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open held: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000HD01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000HD01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held: %+v %v", res, err)
 	}
-	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000HD02", "mac-a"), "fixer", "The blocker.", OriginMain, "Fix.", []string{"held"}, nil, risk, 0, "", &budget, nil)
+	res, err := OpenRisked(verbReqFor(endpoint, "01J5X00000000000000000HD02", "mac-a"), "fixer", "The blocker.", OriginMain, "Fix.", []string{"held"}, nil, risk, 0, "", &budget, nil)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open the blocker: %+v %v", res, err)
 	}
-	materialize(t, a, res.Tip)
+	materializeFakeReconcile(t, endpoint, res.Tip)
 	path := filepath.Join(a, "plans", "goals", "fixer.md")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -726,11 +693,11 @@ func TestHandDoneOfABlockerLiftsItsPark(t *testing.T) {
 	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	reconciled, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000HD10"))
+	reconciled, err := reconcileForTest(t, humanReconcileReqForEndpoint(endpoint, "01J5X00000000000000000HD10"))
 	if err != nil || reconciled.Publish.Outcome != OutcomeConfirmed || reconciled.Rows[0].Verb != "done" {
 		t.Fatalf("the hand-done row applies: %+v %v", reconciled, err)
 	}
-	tree, err := loadTree(a, reconciled.Publish.Tip)
+	tree, err := loadTreeFor(endpoint, reconciled.Publish.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}

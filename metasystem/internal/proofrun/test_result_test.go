@@ -44,7 +44,6 @@ func TestRunTestPlanFinalizesOperationalErrorResult(t *testing.T) {
 			if err := os.MkdirAll(greenProgressDirectory, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			writeTestResultFile(t, filepath.Join(root, "source.txt"), []byte("source\n"), 0o644)
 			redScript := fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 mkdir -p reports-red
@@ -54,7 +53,6 @@ mv %s %s
 printf 'closed\n' > %s
 exit 23
 `, strconv.Quote(progressDirectory), strconv.Quote(progressDirectory+"-closed"), strconv.Quote(progressDirectory))
-			writeTestResultFile(t, filepath.Join(root, "scripts", "red.sh"), []byte(redScript), 0o755)
 			greenScript := fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 mkdir -p reports-green
@@ -63,12 +61,13 @@ printf 'RAW-PASSED-OUTPUT\n' >&2
 mv %s %s
 printf 'closed\n' > %s
 `, strconv.Quote(greenProgressDirectory), strconv.Quote(greenProgressDirectory+"-closed"), strconv.Quote(greenProgressDirectory))
-			writeTestResultFile(t, filepath.Join(root, "scripts", "green.sh"), []byte(greenScript), 0o755)
-			writeTestResultScript(t, root, "later", "passed", 0)
-			runTestResultGit(t, root, "init", "-q", "-b", "main")
-			runTestResultGit(t, root, "add", ".")
-			runTestResultGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
-			tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+			tree := strings.Repeat("3", 40)
+			snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+				"source.txt":       testSnapshotFile("source\n", 0o644),
+				"scripts/red.sh":   testSnapshotFile(redScript, 0o755),
+				"scripts/green.sh": testSnapshotFile(greenScript, 0o755),
+				"scripts/later.sh": testSnapshotScript("later", "passed", 0),
+			}, 4)
 
 			group := func(id string) testpolicy.Group {
 				return testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"source.txt", "scripts/" + id + ".sh"},
@@ -92,7 +91,7 @@ printf 'closed\n' > %s
 			plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
 				ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"red", "later"}, SelectedGroups: []string{"red", "later"},
 				Stages: []testpolicy.Stage{{ID: "canary", Groups: []string{"red"}}, {ID: "standard", Groups: []string{"later"}}}}
-			request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan,
+			request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan,
 				AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "logs"), ProgressPath: progressPath,
 				CandidateEngineDigest: strings.Repeat("a", 64), Concurrency: 2}
 			if schema == testpolicy.ExecutionContractSchemaVersion {
@@ -195,11 +194,7 @@ func TestSectionEnginePreparationPreservesBytesAndNestedSelector(t *testing.T) {
 
 func TestMetaSystemStewardConsumerReceivesCandidateEngine(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "metasystem", "go.mod"), []byte("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.22\n"), 0o644)
-	writeTestResultFile(t, filepath.Join(root, "metasystem", "internal", "steward", "runner_test.go"), []byte(`package steward
+	stewardTest := `package steward
 
 import (
 	"os"
@@ -213,17 +208,19 @@ func TestDetachedStewardReadsCandidateEngine(t *testing.T) {
 		t.Fatalf("candidate engine path=%q data=%q err=%v", engine, data, err)
 	}
 }
-`), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+`
+	tree := verdictFixtureTree(t, "steward")
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"metasystem/go.mod":                          testSnapshotFile("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.22\n", 0o644),
+		"metasystem/internal/steward/runner_test.go": testSnapshotFile(stewardTest, 0o644),
+	}, 1)
 	engineData := []byte("#!/bin/sh\nexit 0\n")
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	writeTestResultFile(t, engine, engineData, 0o500)
 	group := testpolicy.Group{ID: "arbitrary-go-group", Kind: "unit", Adapter: "go", CWD: "metasystem",
 		Inputs: []string{"metasystem/go.mod", "metasystem/internal/steward/**"}, Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"steward-engine"}, Platforms: []string{"any"}, TargetMS: 5000, Packages: []string{"internal/steward"}, Tests: []byte(`"all"`)}
-	result := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, InstallationPrefix: "metasystem", CandidateTree: tree,
+	result := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, InstallationPrefix: "metasystem", CandidateTree: tree, openCandidate: snapshot.open,
 		CandidateEngine: engine, CandidateEngineDigest: digestBytes(engineData), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: filepath.Join(root, "logs")}, group)
 	if result.Status != "passed" || !result.CollectionComplete || result.ExecutionIdentity == "" {
 		t.Fatalf("detached steward result=%+v", result)
@@ -261,16 +258,13 @@ func TestMetaSystemStewardEngineIdentityIsScopedToItsSelectedPackage(t *testing.
 
 func TestStageCollectsIndependentFailuresAndNativePrerequisiteResults(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultScript(t, root, "first", "failed", 23)
-	writeTestResultScript(t, root, "second", "failed", 24)
-	writeTestResultScript(t, root, "later", "passed", 0)
-	writeTestResultScript(t, root, "deep", "failed", 25)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := strings.Repeat("4", 40)
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"scripts/first.sh":  testSnapshotScript("first", "failed", 23),
+		"scripts/second.sh": testSnapshotScript("second", "failed", 24),
+		"scripts/later.sh":  testSnapshotScript("later", "passed", 0),
+		"scripts/deep.sh":   testSnapshotScript("deep", "failed", 25),
+	}, 4)
 	groups := []testpolicy.Group{}
 	for _, fixture := range []struct {
 		id     string
@@ -288,7 +282,7 @@ func TestStageCollectsIndependentFailuresAndNativePrerequisiteResults(t *testing
 	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{filepath.Join(root, "artifacts", "launcher.log")}}); err != nil {
 		t.Fatal(err)
 	}
-	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress})
+	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress})
 	if err != nil || status != 23 || result.LaunchCounts.Test != 4 || result.Delivery.Sufficient {
 		t.Fatalf("stage result status=%d counts=%+v delivery=%+v err=%v", status, result.LaunchCounts, result.Delivery, err)
 	}
@@ -325,19 +319,16 @@ func TestSchemaTwoGroupPreservesNestedSuiteFailureEvidenceBeforeCandidateCleanup
 	}{{name: "successful enclosing group", exit: 0, want: "passed"}, {name: "failed enclosing group", exit: 7, want: "failed"}} {
 		t.Run(specimen.name, func(t *testing.T) {
 			root := t.TempDir()
-			runTestResultGit(t, root, "init", "-q", "-b", "main")
-			runTestResultGit(t, root, "config", "user.name", "fixture")
-			runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-			writeTestResultFile(t, filepath.Join(root, ".gitignore"), []byte("artifacts/\n"), 0o644)
-			writeTestResultFile(t, filepath.Join(root, "source.txt"), []byte("source\n"), 0o644)
-			runTestResultGit(t, root, "add", ".")
-			runTestResultGit(t, root, "commit", "-qm", "fixture")
-			tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+			tree := strings.Repeat("5", 40)
+			snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+				".gitignore": testSnapshotFile("artifacts/\n", 0o644),
+				"source.txt": testSnapshotFile("source\n", 0o644),
+			}, 1)
 			script := fmt.Sprintf("set -eu; d=artifacts/agents/suite-failures/nested; mkdir -p \"$d\"; printf 'marker-exact\\n' >\"$d/marker.txt\"; printf 'pid-exact\\n' >\"$d/pid\"; printf 'birth-exact\\n' >\"$d/birth\"; pwd >\"$d/candidate-root\"; exit %d", specimen.exit)
 			group := testpolicy.Group{ID: "detached-evidence", Kind: "static", Adapter: "command", CWD: ".",
 				Inputs: []string{"source.txt"}, Outputs: []string{"artifacts/agents/suite-failures"}, Platforms: []string{"any"}, TargetMS: 1000,
 				Argv: []string{"bash", "-c", script}, Format: "exit-status"}
-			result := runTestGroup(context.Background(), TestRunRequest{ControlRoot: root, ProjectRoot: root, CandidateTree: tree,
+			result := runTestGroup(context.Background(), TestRunRequest{ControlRoot: root, ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open,
 				LogRoot: filepath.Join(root, "artifacts", "test-logs"), EvidenceTimeoutMS: 5000, EvidenceMaxBytes: 1024 * 1024}, group)
 			if result.Status != specimen.want {
 				t.Fatalf("group status=%s reason=%s", result.Status, result.NotRunReason)
@@ -375,15 +366,53 @@ func TestSchemaTwoGroupPreservesNestedSuiteFailureEvidenceBeforeCandidateCleanup
 	}
 }
 
+func TestExitStatusUnitCommandRecordsNativeResultWithoutTestcaseCensus(t *testing.T) {
+	root := t.TempDir()
+	tree := strings.Repeat("6", 40)
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"source.txt": testSnapshotFile("source\n", 0o644),
+	}, 2)
+
+	for _, specimen := range []struct {
+		name, status string
+		exit         int
+		complete     bool
+	}{
+		{name: "success", status: "passed", exit: 0, complete: true},
+		{name: "failure", status: "failed", exit: 23, complete: false},
+	} {
+		t.Run(specimen.name, func(t *testing.T) {
+			output := "native-" + specimen.name + "\n"
+			logOutput := output
+			if specimen.exit != 0 {
+				logOutput += "TEST-VERDICT application-tests status=failed exit=23 reason=process exit 23 with no failing test in the evidence (collection incomplete)\n"
+			}
+			group := testpolicy.Group{ID: "application-tests", Kind: "unit", Adapter: "command", CWD: ".",
+				Phase: "acceptance", EnvironmentMode: "inherit", Inputs: []string{"source.txt"}, Platforms: []string{"any"}, TargetMS: 1000,
+				Argv: []string{"sh", "-c", fmt.Sprintf("printf %s; exit %d", strconv.Quote(output), specimen.exit)}, Format: "exit-status"}
+			result := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open,
+				LogRoot: filepath.Join(root, "logs", specimen.name)}, group)
+			logged, err := os.ReadFile(result.LogPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != specimen.status || !result.NativeLaunched || result.NativeExitStatus == nil || *result.NativeExitStatus != specimen.exit ||
+				result.CollectionComplete != specimen.complete || string(logged) != logOutput || result.LogDigest != digestBytes(logged) {
+				t.Fatalf("native command result=%+v log=%q", result, logged)
+			}
+			if len(result.Expected) != 0 || len(result.Observed) != 0 || len(result.Missing) != 0 || len(result.Unexpected) != 0 {
+				t.Fatalf("exit-status command fabricated a testcase census: %+v", result)
+			}
+		})
+	}
+}
+
 func TestCommandApplicationRunsWithoutGoAndSelectedGoRefuses(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "source.txt"), []byte("source\n"), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := verdictFixtureTree(t, "command")
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"source.txt": testSnapshotFile("source\n", 0o644),
+	}, 4)
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +433,7 @@ func TestCommandApplicationRunsWithoutGoAndSelectedGoRefuses(t *testing.T) {
 		Always: testpolicy.Always{Canary: []string{"command"}}, Unknown: []string{"command"}, Cadence: []string{"command"}}
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeStandard,
 		ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"command"}, SelectedGroups: []string{"command"}, Stages: []testpolicy.Stage{{ID: "canary", Groups: []string{"command"}}}}
-	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "base", PolicyBaseCommit: "base", Contract: contract, Plan: plan,
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "base", PolicyBaseCommit: "base", Contract: contract, Plan: plan,
 		AttemptID: "attempt", Environment: []string{"PATH=" + pathOnly, "HOME=" + root}, LogRoot: filepath.Join(root, "artifacts", "command-logs")}
 	result, status, err := RunTestPlan(context.Background(), request)
 	if err != nil || status != 0 || !result.Delivery.Sufficient || result.LaunchCounts.Test != 1 || result.LaunchCounts.Other != 1 || result.Groups[0].Status != "passed" {
@@ -436,9 +465,6 @@ func TestCommandApplicationRunsWithoutGoAndSelectedGoRefuses(t *testing.T) {
 
 func TestSectionMismatchKeepsNativeStatusAndLaterIndependentResult(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
 	script := `#!/usr/bin/env bash
 set -u
 [[ -x "$PWD/bin/metasystem" && -z "${METASYSTEM_BIN:-}" ]] || exit 26
@@ -455,10 +481,10 @@ case "$section" in
   *) exit 2 ;;
 esac
 `
-	writeTestResultFile(t, filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"), []byte(script), 0o755)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "section fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := verdictFixtureTree(t, "section")
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"scripts/agents/validate-section-selector.sh": testSnapshotFile(script, 0o755),
+	}, 3)
 	groups := []testpolicy.Group{
 		{ID: "mismatch", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-a"}, Obligations: []string{"mismatch"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "mismatch"},
 		{ID: "later", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-b"}, Obligations: []string{"later"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "later"},
@@ -471,7 +497,7 @@ esac
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	writeTestResultFile(t, engine, engineData, 0o500)
 	t.Setenv("METASYSTEM_BIN", filepath.Join(t.TempDir(), "ambient-engine"))
-	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD",
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD",
 		PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "logs"),
 		CandidateEngine: engine, CandidateEngineDigest: digestBytes(engineData)}
 	var prepareErr error
@@ -600,32 +626,4 @@ func writeTestResultFile(t *testing.T, path string, data []byte, mode os.FileMod
 	if err := testexec.WriteFile(path, data, mode); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func writeTestResultScript(t *testing.T, root, name, status string, exit int) {
-	t.Helper()
-	body := "<testsuite><testcase classname=\"fixture\" name=\"" + name + "\">"
-	if status == "failed" {
-		body += "<failure message=\"red\"/>"
-	}
-	body += "</testcase></testsuite>"
-	script := "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p reports-" + name + "\nprintf '%s\\n' " + strconv.Quote(body) + " > reports-" + name + "/tests.xml\nexit " + strconv.Itoa(exit) + "\n"
-	path := filepath.Join(root, "scripts", name+".sh")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func runTestResultGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
-	data, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, data)
-	}
-	return strings.TrimSpace(string(data))
 }

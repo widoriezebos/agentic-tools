@@ -4,8 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -291,27 +291,19 @@ func TestComputeReapFacts(t *testing.T) {
 func TestExpandPermissions(t *testing.T) {
 	dir := t.TempDir()
 	repo := t.TempDir()
-	// A writable workspace is a REAL git worktree: the
-	// expansion derives the commit's git-metadata roots from it.
-	gitCmd := func(workdir string, args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", workdir}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v %s", args, err, out)
-		}
-	}
-	gitCmd(repo, "init", "-q", "-b", "main")
-	os.WriteFile(filepath.Join(repo, "f.txt"), []byte("x\n"), 0o644)
-	gitCmd(repo, "add", ".")
-	gitCmd(repo, "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "base")
 	workspace := filepath.Join(repo, "wt")
-	gitCmd(repo, "worktree", "add", "-q", "-b", "agent/expand-test", workspace)
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := filepath.Join(repo, ".git", "worktrees", "wt")
+	commonDir := filepath.Join(repo, ".git")
+	metadata := worktreeFacts(t, resolvePath(workspace), gitDir, filepath.Join("..", ".git"), "agent/expand-test")
 	envelope := writeJSONFile(t, dir, "envelope.json", map[string]any{
 		"readRoots": []any{".", "docs"}, "writeRoots": []any{"<worktree>"},
 		"network": "allow", "approvals": "deny", "tools": "read-only",
 	})
 	output := filepath.Join(dir, "expanded.json")
-	if err := ExpandPermissions(envelope, repo, workspace, true, "builder", "deny", output); err != nil {
+	if err := expandPermissions(envelope, repo, workspace, true, "builder", "deny", output, metadata); err != nil {
 		t.Fatalf("ExpandPermissions: %v", err)
 	}
 	expanded := readJSONFile(t, output)
@@ -325,8 +317,14 @@ func TestExpandPermissions(t *testing.T) {
 	if expanded["writeRoots"].([]any)[0] != resolvePath(workspace) {
 		t.Fatalf("writeRoots = %v", expanded["writeRoots"])
 	}
+	writes := expanded["writeRoots"].([]any)
+	if len(writes) != 4 || writes[1] != resolvePath(gitDir) ||
+		writes[2] != resolvePath(filepath.Join(commonDir, "refs", "heads", "agent")) ||
+		writes[3] != resolvePath(filepath.Join(commonDir, "logs", "refs", "heads", "agent")) {
+		t.Fatalf("derived writeRoots = %v", writes)
+	}
 
-	if err := ExpandPermissions(envelope, repo, workspace, false, "builder", "", output); err == nil ||
+	if err := expandPermissions(envelope, repo, workspace, false, "builder", "", output, declaredGitFacts(t)); err == nil ||
 		!strings.Contains(err.Error(), "require --worktree") {
 		t.Fatalf("writable without worktree = %v", err)
 	}
@@ -334,7 +332,7 @@ func TestExpandPermissions(t *testing.T) {
 		"readRoots": []any{}, "writeRoots": []any{"/"},
 		"network": "deny", "approvals": "deny", "tools": "read-only",
 	})
-	if err := ExpandPermissions(escape, repo, workspace, true, "custom", "", output); err == nil ||
+	if err := expandPermissions(escape, repo, workspace, true, "custom", "", output, declaredGitFacts(t)); err == nil ||
 		!strings.Contains(err.Error(), "escapes the job worktree") {
 		t.Fatalf("escaping write root = %v", err)
 	}
@@ -366,15 +364,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	tmp := t.TempDir()
 	workspace := filepath.Join(tmp, "ws")
 	os.MkdirAll(workspace, 0o755)
-	for _, args := range [][]string{
-		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
-		{"commit", "-q", "--allow-empty", "-m", "base"},
-	} {
-		cmd := exec.Command("git", append([]string{"-C", workspace}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	facts := recordFacts(t, workspace, 1, "")
 	capResolution := filepath.Join(tmp, "cap.json")
 	if err := WriteCapResolution(capResolution, 120, "built-in", "default"); err != nil {
 		t.Fatalf("WriteCapResolution: %v", err)
@@ -397,7 +387,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	}
 
 	recordPath := filepath.Join(tmp, "record.json")
-	err := BuildRecord(BuildRecordParams{
+	params := BuildRecordParams{
 		Output: recordPath, Job: "job-b", Role: "implementer", Runtime: "fake",
 		Workspace: workspace, CapResolution: capResolution, Model: "m1",
 		Snapshot: "artifacts/agents/capabilities/x.json", InputBytes: 12, InputHash: "h",
@@ -406,7 +396,8 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 		DestructiveReach: HazardMechanical,
 		ReasoningEffort:  "medium",
 		LaunchMode:       LaunchModeSharedCheckout, OutputStream: "/tmp/out-stream.jsonl",
-	})
+	}
+	err := buildRecord(params, facts)
 	if err != nil {
 		t.Fatalf("BuildRecord: %v", err)
 	}
@@ -417,6 +408,26 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	if record["capMin"].(json.Number).String() != "120" || record["baseSha"] == "" ||
 		record["operationId"] != "job-b" || record["goalId"] != nil || record["goalRevision"] != nil {
 		t.Fatalf("built record identity = capMin %v baseSha %v", record["capMin"], record["baseSha"])
+	}
+	for _, tc := range []struct {
+		name, failedRead, reason string
+	}{
+		{"head", "head", "workspace is not a git worktree"},
+		{"branch", "branch", "cannot read the workspace branch"},
+	} {
+		t.Run(tc.name+" read failure", func(t *testing.T) {
+			reads := []gitFactRead{{kind: "head", workspace: workspace, value: testHeadID}, {kind: "branch", workspace: workspace, value: "agent/record"}}
+			for i := range reads {
+				if reads[i].kind == tc.failedRead {
+					reads[i].err = fmt.Errorf("declared read failure")
+					reads = reads[:i+1]
+					break
+				}
+			}
+			if err := buildRecord(params, declaredGitFacts(t, reads...)); err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("%s error not preserved: %v", tc.failedRead, err)
+			}
+		})
 	}
 
 	// The follow-up round inherits the parent identity and resumes its session.
@@ -455,15 +466,7 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workspace, filepath.FromSlash(design)), []byte("closed design\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
-		{"add", "."}, {"commit", "-qm", "base"},
-	} {
-		command := exec.Command("git", append([]string{"-C", workspace}, args...)...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
+	facts := recordFacts(t, workspace, 1, design)
 	outputs := filepath.Join(tmp, "outputs.txt")
 	if err := os.WriteFile(outputs, []byte("metasystem/a.go\nmetasystem/z.go\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -477,7 +480,7 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 		"network": "deny", "approvals": "deny", "tools": "read-only",
 	})
 	output := filepath.Join(tmp, "record.json")
-	if err := BuildRecord(BuildRecordParams{
+	if err := buildRecord(BuildRecordParams{
 		Output: output, Job: "design-critic", Role: "design-critic", Root: root, Runtime: "fake",
 		Workspace: workspace, CapResolution: capResolution, Model: "fake-model",
 		Snapshot: "artifacts/agents/capabilities/fake.json", InputBytes: 12, InputHash: "hash",
@@ -485,7 +488,7 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 		MainID: "main-1", ClaimEpoch: "7", DeclaredOutputs: outputs, Design: design,
 		DestructiveReach: HazardMechanical, ReasoningEffort: "medium",
 		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "stream.jsonl"),
-	}); err != nil {
+	}, facts); err != nil {
 		t.Fatal(err)
 	}
 	record := readJSONFile(t, output)
@@ -503,6 +506,20 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 	}
 	if record["design"] != design {
 		t.Fatalf("reviewed design = %v", record["design"])
+	}
+	for _, tc := range []struct {
+		name, value string
+		err         error
+	}{
+		{"missing blob", "", fmt.Errorf("missing blob")},
+		{"malformed blob", "not-an-object-id", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reads := declaredGitFacts(t, gitFactRead{kind: "blob", workspace: workspace, commit: testHeadID, path: design, value: tc.value, err: tc.err})
+			if _, _, err := designBlobBinding(workspace, testHeadID, design, reads); err == nil || !strings.Contains(err.Error(), "is not a blob") {
+				t.Fatalf("invalid blob not refused: %v", err)
+			}
+		})
 	}
 	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 2 {
 		t.Fatalf("review round limit = %v", record[reviewRoundLimitField])
@@ -536,15 +553,7 @@ func TestBuildRecordCodeCriticMarksOnlyFreshRoot(t *testing.T) {
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
-		{"commit", "-q", "--allow-empty", "-m", "base"},
-	} {
-		command := exec.Command("git", append([]string{"-C", workspace}, args...)...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
+	facts := recordFacts(t, workspace, 1, "")
 	capResolution := filepath.Join(tmp, "cap.json")
 	if err := WriteCapResolution(capResolution, 45, "built-in", "default"); err != nil {
 		t.Fatal(err)
@@ -554,14 +563,14 @@ func TestBuildRecordCodeCriticMarksOnlyFreshRoot(t *testing.T) {
 		"network": "deny", "approvals": "deny", "tools": "read-only",
 	})
 	rootOutput := filepath.Join(tmp, "code-root.json")
-	if err := BuildRecord(BuildRecordParams{
+	if err := buildRecord(BuildRecordParams{
 		Output: rootOutput, Job: "code-critic", Role: "code-critic", Root: root, Runtime: "fake",
 		Workspace: workspace, CapResolution: capResolution, Model: "fake-model",
 		Snapshot: "artifacts/agents/capabilities/fake.json", InputBytes: 12, InputHash: "root-hash",
 		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
 		MainID: "main-1", ClaimEpoch: "7", DestructiveReach: HazardMechanical, ReasoningEffort: "medium",
 		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "root-stream.jsonl"),
-	}); err != nil {
+	}, facts); err != nil {
 		t.Fatal(err)
 	}
 	rootRecord := readJSONFile(t, rootOutput)
@@ -594,15 +603,7 @@ func TestBuildRecordCarriesConfiguredMaximalModelEffort(t *testing.T) {
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
-		{"commit", "-q", "--allow-empty", "-m", "base"},
-	} {
-		cmd := exec.Command("git", append([]string{"-C", workspace}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	facts := recordFacts(t, workspace, 3, "")
 	capResolution := filepath.Join(tmp, "cap.json")
 	if err := WriteCapResolution(capResolution, 120, "built-in", "default"); err != nil {
 		t.Fatal(err)
@@ -620,7 +621,7 @@ func TestBuildRecordCarriesConfiguredMaximalModelEffort(t *testing.T) {
 		LaunchMode: LaunchModeSharedCheckout, OutputStream: "/tmp/claude-record-stream.jsonl",
 	}
 	base.Output = filepath.Join(tmp, "maximal.json")
-	if err := BuildRecord(base); err != nil {
+	if err := buildRecord(base, facts); err != nil {
 		t.Fatalf("configured maximal Claude record refused: %v", err)
 	}
 	maximal := readJSONFile(t, base.Output)
@@ -633,7 +634,7 @@ func TestBuildRecordCarriesConfiguredMaximalModelEffort(t *testing.T) {
 	nonMaximal := base
 	nonMaximal.Output = filepath.Join(tmp, "non-maximal-refused.json")
 	nonMaximal.Model = "claude-other"
-	if err := BuildRecord(nonMaximal); err == nil || !strings.Contains(err.Error(), "no executable maximal-effort mapping") {
+	if err := buildRecord(nonMaximal, facts); err == nil || !strings.Contains(err.Error(), "no executable maximal-effort mapping") {
 		t.Fatalf("non-maximal Claude design-bearing record result = %v", err)
 	}
 
@@ -641,7 +642,7 @@ func TestBuildRecordCarriesConfiguredMaximalModelEffort(t *testing.T) {
 	ordinary.Output = filepath.Join(tmp, "ordinary.json")
 	ordinary.DestructiveReach = HazardMechanical
 	ordinary.ReasoningEffort = "medium"
-	if err := BuildRecord(ordinary); err != nil {
+	if err := buildRecord(ordinary, facts); err != nil {
 		t.Fatalf("ordinary Claude record refused: %v", err)
 	}
 	ordinaryRecord := readJSONFile(t, ordinary.Output)
@@ -659,15 +660,7 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	tmp := t.TempDir()
 	workspace := filepath.Join(tmp, "ws")
 	os.MkdirAll(workspace, 0o755)
-	for _, args := range [][]string{
-		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
-		{"commit", "-q", "--allow-empty", "-m", "base"},
-	} {
-		cmd := exec.Command("git", append([]string{"-C", workspace}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	facts := recordFacts(t, workspace, 3, "")
 	capResolution := filepath.Join(tmp, "cap.json")
 	if err := WriteCapResolution(capResolution, 120, "built-in", "default"); err != nil {
 		t.Fatal(err)
@@ -700,12 +693,12 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	partial := base
 	partial.Mission = "m-one"
 	partial.Stream = "main"
-	if err := BuildRecord(partial); err == nil {
+	if err := buildRecord(partial, facts); err == nil {
 		t.Fatal("mission dispatch without a turn built a record")
 	}
 	partial.MissionTurn = "m-one-t1"
 	partial.Stream = ""
-	if err := BuildRecord(partial); err == nil {
+	if err := buildRecord(partial, facts); err == nil {
 		t.Fatal("mission dispatch without a stream built a record")
 	}
 
@@ -713,7 +706,7 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	complete.Mission = "m-one"
 	complete.MissionTurn = "m-one-t1"
 	complete.Stream = "main"
-	if err := BuildRecord(complete); err != nil {
+	if err := buildRecord(complete, facts); err != nil {
 		t.Fatalf("complete tuple refused: %v", err)
 	}
 	record := readJSONFile(t, complete.Output)

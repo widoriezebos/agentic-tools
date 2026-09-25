@@ -86,7 +86,7 @@ func setPriorityRequest(r VerbRequest, id string, priority uint8, sequence *uint
 		Intent:  Intent{Verb: "set-priority", Targets: []string{id}, Args: intentArgs(r, args)},
 		Message: fmt.Sprintf("goal set-priority %s -> %d", id, priority),
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -155,7 +155,7 @@ func setPriorityRequest(r VerbRequest, id string, priority uint8, sequence *uint
 			}
 			return ackDisplacements(tree, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 

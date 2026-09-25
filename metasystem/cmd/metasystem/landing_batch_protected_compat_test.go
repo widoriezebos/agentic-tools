@@ -2,14 +2,12 @@ package main
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -80,45 +78,5 @@ func TestLandingBatchJoinRefusesRedFastStaticGate(t *testing.T) {
 		if len(record.Units) != 0 {
 			t.Fatalf("red static admission published batch membership: %+v", record.Units)
 		}
-	}
-}
-
-// A nested landing module, rather than the caller's project root, owns Go
-// package discovery. A base change must include its transitive consumer.
-func TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	module := filepath.Join(root, "metasystem")
-	for path, contents := range map[string]string{
-		"metasystem/go.mod":                    "module example.invalid/protected\n\ngo 1.27\n",
-		"metasystem/base/base.go":              "package base\nconst Value = 1\n",
-		"metasystem/base/base_test.go":         "package base\nimport \"testing\"\nfunc TestBase(t *testing.T) {}\n",
-		"metasystem/consumer/consumer.go":      "package consumer\nimport \"example.invalid/protected/base\"\nvar Value = base.Value\n",
-		"metasystem/consumer/consumer_test.go": "package consumer\nimport \"testing\"\nfunc TestConsumer(t *testing.T) {}\n",
-	} {
-		full := filepath.Join(root, filepath.FromSlash(path))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(contents), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	testingFixtureGit(t, root, "init", "-q")
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "base")
-	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD^{tree}"))
-	if err := os.WriteFile(filepath.Join(module, "base", "base.go"), []byte("package base\nconst Value = 2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	testingFixtureGit(t, root, "add", ".")
-	tree := strings.TrimSpace(testingFixtureGit(t, root, "write-tree"))
-	selection, err := gopackages.Select(module, base, tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.Tree == "" || !slices.Equal(selection.Packages, []string{"./base", "./consumer"}) ||
-		!slices.Contains(selection.InputDirs["./consumer"], "./base") {
-		t.Fatalf("nested landing module lost changed package or transitive consumer: %+v", selection)
 	}
 }

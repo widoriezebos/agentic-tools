@@ -12,6 +12,19 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
+func handoffLegacyDependencies() openWorkDependencies {
+	return openWorkDependencies{
+		NewWorld: func(string) bool { return false },
+		ReadClaimableBudgetedWork: func(root string, _ time.Time) (goal.ClaimableBudgetedWork, error) {
+			return goal.ReadLegacyClaimableWork(root, identity.KernelProber{})
+		},
+	}
+}
+
+func completeHandoffRevival(root string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam) (ReviveOutcome, error) {
+	return completeRevivalWithDependencies(root, cfg, census, nonce, launch, handoffLegacyDependencies())
+}
+
 func TestHandoffDefaultHasNoExpiry(t *testing.T) {
 	recordedAt := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
@@ -21,7 +34,7 @@ func TestHandoffDefaultHasNoExpiry(t *testing.T) {
 
 	root, intent := stagedRevivalHandoff(t, "5000000000000001")
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
-	decision, _, err := decideForHandoff(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "owned", now)
+	decision, _, err := decideForHandoffWithReader(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "owned", now, handoffLegacyDependencies().ReadClaimableBudgetedWork)
 	if err != nil || decision.Action != ActRevive {
 		t.Fatalf("age alone must not change an admitted handoff: %+v %v", decision, err)
 	}
@@ -42,7 +55,7 @@ func TestHandoffAdmissionUsesOneExpiryRule(t *testing.T) {
 	}
 	t.Cleanup(func() { handoffExpiryRule = previous })
 
-	decision, _, err := decideForHandoff(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "owned", now)
+	decision, _, err := decideForHandoffWithReader(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "owned", now, handoffLegacyDependencies().ReadClaimableBudgetedWork)
 	if err != nil || called != 1 || decision.Action != ActNotify {
 		t.Fatalf("expiry must be consulted exactly once before predecessor liveness: called=%d decision=%+v err=%v", called, decision, err)
 	}
@@ -72,7 +85,7 @@ func TestHandoffRevivalPassesItsOneClockSampleToAdmission(t *testing.T) {
 	}
 	t.Cleanup(func() { handoffExpiryRule = previousExpiry })
 
-	decision, _, err := decideForRevival(root, TickConfig{}, deadCensus(), Evidence{}, intent)
+	decision, _, err := decideForRevivalWithDependencies(root, TickConfig{}, deadCensus(), Evidence{}, intent, handoffLegacyDependencies())
 	if err != nil || decision.Action != ActNotify || clockCalls != 1 || expiryCalls != 1 {
 		t.Fatalf("revival must pass one clock observation into admission: decision=%+v err=%v clock=%d expiry=%d", decision, err, clockCalls, expiryCalls)
 	}
@@ -89,7 +102,7 @@ func TestHandoffBindingValidationPrecedesExpiry(t *testing.T) {
 	}
 	t.Cleanup(func() { handoffExpiryRule = previous })
 
-	decision, _, err := decideForHandoff(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "owned", time.Now())
+	decision, _, err := decideForHandoffWithReader(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "owned", time.Now(), handoffLegacyDependencies().ReadClaimableBudgetedWork)
 	if err == nil || !strings.Contains(err.Error(), "invalid handoff binding") || decision.Action == ActNotify || expiryCalls != 0 {
 		t.Fatalf("an invalid binding must refuse before expiry can supersede it: decision=%+v err=%v expiry=%d", decision, err, expiryCalls)
 	}
@@ -117,7 +130,9 @@ func TestHandoffAdmissionKeepsALandingGoal(t *testing.T) {
 		Verb: "land-ready", Actor: "bed-m1+coordinator", Targets: []string{landing.Id}, Keep: -1,
 	})
 	landing.Landing = &goal.LandingRecord{At: "2026-08-23T03:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000002"}
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{landing.Id: landing})
+	bed := newDecisionTickRepository(t)
+	bed.files["plans/goals/"+landing.Id+".md"] = goal.RenderFile(landing)
+	root := bed.root
 	fixture := writeStagedHandoffFixture(t, root, "5000000000000003")
 	intent := testIntent("5000000000000003")
 	intent.Reason = seatHandoffReason
@@ -125,7 +140,25 @@ func TestHandoffAdmissionKeepsALandingGoal(t *testing.T) {
 	intent.Handoff = &fixture.binding
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
 
-	decision, _, err := decideForHandoff(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "landing", time.Now())
+	now := time.Now()
+	reads := 0
+	reader := func(actualRoot string, observedAt time.Time) (goal.ClaimableBudgetedWork, error) {
+		reads++
+		if actualRoot != root || !observedAt.Equal(now) || reads != 1 {
+			t.Fatalf("unexpected landing projection read: root=%q time=%s reads=%d", actualRoot, observedAt, reads)
+		}
+		tree, problems := goal.ParseTreeFiles(bed.files)
+		if len(problems) != 0 {
+			t.Fatalf("declared landing goal files did not parse: %v", problems)
+		}
+		return goal.ClaimableWorkFromProjection(goal.Projection{
+			Root: root, Tree: tree, Horizon: goal.ApprovalHorizon{Now: observedAt},
+		}, "bed-m1", identity.KernelProber{})
+	}
+	decision, _, err := decideForHandoffWithReader(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "landing", now, reader)
+	if reads != 1 {
+		t.Fatalf("landing projection reads = %d, want 1", reads)
+	}
 	if err != nil || decision.Action != ActRevive {
 		t.Fatalf("a goal in this machine's landing slot must remain admitted: %+v %v", decision, err)
 	}
@@ -148,7 +181,7 @@ func TestHandoffLaunchRefusesWhenItsNoticeCannotBeCleared(t *testing.T) {
 		t.Fatal(err)
 	}
 	launches := 0
-	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -166,7 +199,7 @@ func TestHandoffLaunchRefusesWhenItsNoticeCannotBeCleared(t *testing.T) {
 func TestHandoffNoticeAuthorizationIsRecheckedBeforeDelivery(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "5000000000000007")
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-	held, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	held, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		t.Fatal("a live predecessor launched its successor")
 		return nil
 	})
@@ -176,20 +209,17 @@ func TestHandoffNoticeAuthorizationIsRecheckedBeforeDelivery(t *testing.T) {
 
 	snapshotRead := make(chan struct{})
 	releaseSnapshot := make(chan struct{})
-	previousSnapshotHook := handoffDeliveryAfterSnapshot
-	handoffDeliveryAfterSnapshot = func() {
-		close(snapshotRead)
-		<-releaseSnapshot
-	}
-	t.Cleanup(func() { handoffDeliveryAfterSnapshot = previousSnapshotHook })
-
-	previousDeliver := deliverNotification
 	var deliveryCalls atomic.Int32
-	deliverNotification = func(_ string, _ Notice) error {
-		deliveryCalls.Add(1)
-		return nil
+	deps := pendingDeliveryDependencies{
+		afterSnapshot: func() {
+			close(snapshotRead)
+			<-releaseSnapshot
+		},
+		transport: func(_, _ string) error {
+			deliveryCalls.Add(1)
+			return nil
+		},
 	}
-	t.Cleanup(func() { deliverNotification = previousDeliver })
 
 	type deliveryResult struct {
 		delivered int
@@ -197,14 +227,14 @@ func TestHandoffNoticeAuthorizationIsRecheckedBeforeDelivery(t *testing.T) {
 	}
 	deliveryDone := make(chan deliveryResult, 1)
 	go func() {
-		delivered, err := DeliverPending(root)
+		delivered, err := deliverPendingWithDependencies(root, deps)
 		deliveryDone <- deliveryResult{delivered: delivered, err: err}
 	}()
 	<-snapshotRead
 
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
 	launches := 0
-	launched, launchErr := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	launched, launchErr := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -224,13 +254,9 @@ func TestHandoffNoticeAuthorizationIsRecheckedBeforeDelivery(t *testing.T) {
 func TestHandoffNoticeDeliveryDoesNotReacquireArbitration(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "500000000000000b")
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-	if held, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
+	if held, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
 		t.Fatalf("fixture did not stage its hold notice: %+v %v", held, err)
 	}
-
-	previousDeliver := deliverNotification
-	deliverNotification = func(_ string, _ Notice) error { return nil }
-	t.Cleanup(func() { deliverNotification = previousDeliver })
 
 	arbitration, err := AcquireArbitration(root)
 	if err != nil {
@@ -245,7 +271,7 @@ func TestHandoffNoticeDeliveryDoesNotReacquireArbitration(t *testing.T) {
 	beforeArbitrationWait = func() { t.Error("handoff notice delivery tried to acquire steward arbitration") }
 	t.Cleanup(func() { beforeArbitrationWait = previousWait })
 	go func() {
-		delivered, err := DeliverPending(root)
+		delivered, err := deliverPendingWith(root, func(_, _ string) error { return nil })
 		done <- deliveryResult{delivered: delivered, err: err}
 	}()
 	result := <-done
@@ -258,27 +284,23 @@ func TestHandoffNoticeDeliveryDoesNotReacquireArbitration(t *testing.T) {
 func TestHandoffNoticeDeliveryUsesTheInitialQueueSnapshot(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "500000000000000c")
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-	if held, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
+	if held, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
 		t.Fatalf("fixture did not stage its hold notice: %+v %v", held, err)
 	}
 
-	previousSnapshotHook := handoffDeliveryAfterSnapshot
-	handoffDeliveryAfterSnapshot = func() {
-		if err := os.WriteFile(filepath.Join(pendingDir(root), "late-malformed.json"), []byte("{"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Cleanup(func() { handoffDeliveryAfterSnapshot = previousSnapshotHook })
-
-	previousDeliver := deliverNotification
 	var deliveryCalls atomic.Int32
-	deliverNotification = func(_ string, _ Notice) error {
-		deliveryCalls.Add(1)
-		return nil
+	deps := pendingDeliveryDependencies{
+		afterSnapshot: func() {
+			if err := os.WriteFile(filepath.Join(pendingDir(root), "late-malformed.json"), []byte("{"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		},
+		transport: func(_, _ string) error {
+			deliveryCalls.Add(1)
+			return nil
+		},
 	}
-	t.Cleanup(func() { deliverNotification = previousDeliver })
-
-	delivered, err := DeliverPending(root)
+	delivered, err := deliverPendingWithDependencies(root, deps)
 	if err != nil || delivered != 1 || deliveryCalls.Load() != 1 {
 		t.Fatalf("a later queue change altered the already-decoded delivery pass: delivered=%d calls=%d err=%v", delivered, deliveryCalls.Load(), err)
 	}
@@ -288,22 +310,20 @@ func TestHandoffNoticeDeliveryUsesTheInitialQueueSnapshot(t *testing.T) {
 }
 
 func TestHandoffNoticeDeliveryRequiresLiveAuthorization(t *testing.T) {
-	previousDeliver := deliverNotification
 	var deliveryCalls atomic.Int32
-	deliverNotification = func(_ string, _ Notice) error {
+	deliver := func(_, _ string) error {
 		deliveryCalls.Add(1)
 		return nil
 	}
-	t.Cleanup(func() { deliverNotification = previousDeliver })
 
 	t.Run("live bound handoff delivers", func(t *testing.T) {
 		deliveryCalls.Store(0)
 		root, intent := prepareRevivalHandoff(t, "5000000000000008")
 		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-		if held, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
+		if held, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
 			t.Fatalf("fixture handoff did not hold: %+v %v", held, err)
 		}
-		delivered, err := DeliverPending(root)
+		delivered, err := deliverPendingWith(root, deliver)
 		if err != nil || delivered != 1 || deliveryCalls.Load() != 1 {
 			t.Fatalf("a live bound handoff notice did not deliver: delivered=%d calls=%d err=%v", delivered, deliveryCalls.Load(), err)
 		}
@@ -316,7 +336,7 @@ func TestHandoffNoticeDeliveryRequiresLiveAuthorization(t *testing.T) {
 		deliveryCalls.Store(0)
 		root, intent := prepareRevivalHandoff(t, "5000000000000009")
 		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-		if held, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
+		if held, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
 			t.Fatalf("fixture handoff did not hold: %+v %v", held, err)
 		}
 		// Cancellation deliberately removes launch authority first. Model a
@@ -324,7 +344,7 @@ func TestHandoffNoticeDeliveryRequiresLiveAuthorization(t *testing.T) {
 		if err := os.Remove(filepath.Join(intentsDir(root), intent.Nonce+".json")); err != nil {
 			t.Fatal(err)
 		}
-		delivered, err := DeliverPending(root)
+		delivered, err := deliverPendingWith(root, deliver)
 		if err != nil || delivered != 0 || deliveryCalls.Load() != 0 {
 			t.Fatalf("an orphaned terminal notice was delivered: delivered=%d calls=%d err=%v", delivered, deliveryCalls.Load(), err)
 		}
@@ -337,14 +357,14 @@ func TestHandoffNoticeDeliveryRequiresLiveAuthorization(t *testing.T) {
 		deliveryCalls.Store(0)
 		root, intent := prepareRevivalHandoff(t, "500000000000000a")
 		useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-		if held, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
+		if held, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
 			t.Fatalf("fixture handoff did not hold: %+v %v", held, err)
 		}
 		intent.Handoff = nil
 		if err := UpdateIntent(root, intent); err != nil {
 			t.Fatal(err)
 		}
-		delivered, err := DeliverPending(root)
+		delivered, err := deliverPendingWith(root, deliver)
 		if err == nil || !strings.Contains(err.Error(), "does not name a live bound seatHandoff intent") || delivered != 0 || deliveryCalls.Load() != 0 {
 			t.Fatalf("malformed live authority did not refuse delivery: delivered=%d calls=%d err=%v", delivered, deliveryCalls.Load(), err)
 		}

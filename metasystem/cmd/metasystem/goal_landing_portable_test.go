@@ -396,24 +396,92 @@ func (fixture *portableProofFixture) runMatchedSupplementaryCohort(args []string
 }
 
 func TestCommandApplicationPublicProofReuse(t *testing.T) {
-	fixture := newPortableProofFixture(t)
+	f := newPortableFileProof(t)
+	run := func(changed ...string) proofrun.TestResult {
+		t.Helper()
+		tree, files := f.snapshot()
+		contract := f.loadedContract(files)
+		plan := f.plan(contract, changed...)
+		request := f.request(tree, files, plan)
+		request.CandidateEngineBuildIdentity = f.engineIdentity(tree, request.Environment)
+		result, _ := f.execute(request, true)
+		verified, err := f.verify(request, files, result, time.Now().UTC())
+		if err != nil || !verified.Delivery.Sufficient {
+			t.Fatalf("retained proof verification sufficient=%t err=%v groups=%+v", verified.Delivery.Sufficient, err, verified.Groups)
+		}
+		return result
+	}
+	cold := run("app/a.txt")
+	if groups := portableGroups(cold); groups["app-a"].Status != "passed" || !groups["app-a"].NativeLaunched {
+		t.Fatalf("cold A did not run natively: %+v", groups)
+	}
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 1})
+	warm := run("app/a.txt")
+	if groups := portableGroups(warm); groups["app-a"].Status != "reused" || groups["app-a"].ReuseAttempt == "" {
+		t.Fatalf("unchanged A did not reuse its native producer: %+v", groups)
+	}
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 1})
+	f.contract.Groups = append(f.contract.Groups, f.group("app-b", "b"))
+	f.contract.Surfaces[0].Standard = append(f.contract.Surfaces[0].Standard, "app-b")
+	f.contract.Always.Standard = []string{"app-b"}
+	f.contract.Cadence = append(f.contract.Cadence, "app-b")
+	f.put("app/b.txt", "green b\n", 0o644)
+	f.writeContract()
+	added := run("app/b.txt")
+	if groups := portableGroups(added); groups["app-a"].Status != "reused" || groups["app-b"].Status != "passed" || !groups["app-b"].NativeLaunched {
+		t.Fatalf("B addition lost A reuse or B execution: %+v", groups)
+	}
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 1, "b": 1})
+	f.put("app/a.txt", "green a changed\n", 0o644)
+	mutated := run("app/a.txt")
+	if groups := portableGroups(mutated); groups["app-a"].Status != "passed" || groups["app-b"].Status != "reused" {
+		t.Fatalf("A mutation changed the wrong native work: %+v", groups)
+	}
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 2, "b": 1})
+	f.put("docs/note.md", "portable documentation only\n", 0o644)
+	documented := run("docs/note.md")
+	if groups := portableGroups(documented); groups["app-a"].Status != "reused" || groups["app-b"].Status != "reused" {
+		t.Fatalf("docs-only change lost reuse: %+v", groups)
+	}
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 2, "b": 1})
+	for index := range f.contract.Groups {
+		if f.contract.Groups[index].ID == "app-a" || f.contract.Groups[index].ID == "app-b" {
+			f.contract.Groups[index].Inputs = append(f.contract.Groups[index].Inputs, "app/shared-b.txt")
+		}
+	}
+	f.writeContract()
+	_ = run("testing.json")
+	before := f.counts()
+	f.put("app/shared-b.txt", "shared input changed\n", 0o644)
+	shared := run("app/shared-b.txt")
+	if groups := portableGroups(shared); groups["app-a"].Status != "passed" || groups["app-b"].Status != "passed" {
+		t.Fatalf("shared input did not rerun both consumers: %+v", groups)
+	}
+	after := f.counts()
+	if after["a"] != before["a"]+1 || after["b"] != before["b"]+1 {
+		t.Fatalf("shared input native counts before=%v after=%v", before, after)
+	}
+}
+
+func runPortablePublicProofReuse(fixture *portableProofFixture) {
+	t := fixture.t
 	base := fixture.git("rev-parse", "HEAD^{tree}")
 	args := []string{"--root", fixture.root, "--goal", "portable", "--tree", base, "--mode", "auto", "--purpose", "delivery"}
 	started := time.Now()
 	fixture.requireCommand(append([]string{"test", "plan"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("fixed-a-cold", base, started)
+	fixture.observe(fixture.portableScenario("fixed-a-cold"), base, started)
 	builds, native := fixture.counts()
-	if native["a"] != 1 || builds == 0 {
+	if native["a"] != 1 || builds == 0 || (fixture.baselineSource != "" && builds != 1) {
 		t.Fatalf("cold proof counts: builds=%d native=%v", builds, native)
 	}
 	started = time.Now()
 	fixture.requireReusableRun(append([]string{"test", "run"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("fixed-a-warm", base, started)
+	fixture.observe(fixture.portableScenario("fixed-a-warm"), base, started)
 	warmBuilds, warmNative := fixture.counts()
-	if warmBuilds != builds || !reflect.DeepEqual(warmNative, native) {
+	if (fixture.baselineSource == "" && warmBuilds != builds) || (fixture.baselineSource != "" && warmBuilds < builds) || !reflect.DeepEqual(warmNative, native) {
 		t.Errorf("unchanged proof launched native work: cold=(%d,%v) warm=(%d,%v)", builds, native, warmBuilds, warmNative)
 	}
 
@@ -429,9 +497,9 @@ func TestCommandApplicationPublicProofReuse(t *testing.T) {
 	fixture.requireCommand(append([]string{"test", "plan"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("a-plus-b", addedTree, started)
+	fixture.observe(fixture.portableScenario("a-plus-b"), addedTree, started)
 	_, afterAddition := fixture.counts()
-	if afterAddition["a"] != 1 || afterAddition["b"] != 1 {
+	if (fixture.baselineSource == "" && (afterAddition["a"] != 1 || afterAddition["b"] != 1)) || (fixture.baselineSource != "" && afterAddition["b"] == 0) {
 		t.Errorf("unrelated policy addition failed to reuse A or run B: %v", afterAddition)
 	}
 
@@ -441,9 +509,9 @@ func TestCommandApplicationPublicProofReuse(t *testing.T) {
 	started = time.Now()
 	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("a-input-changed", mutatedTree, started)
+	fixture.observe(fixture.portableScenario("a-input-changed"), mutatedTree, started)
 	_, afterMutation := fixture.counts()
-	if afterMutation["a"] != 2 || afterMutation["b"] != 1 {
+	if (fixture.baselineSource == "" && (afterMutation["a"] != 2 || afterMutation["b"] != 1)) || (fixture.baselineSource != "" && afterMutation["a"] <= afterAddition["a"]) {
 		t.Errorf("input mutation did not rerun only A: %v", afterMutation)
 	}
 
@@ -455,108 +523,99 @@ func TestCommandApplicationPublicProofReuse(t *testing.T) {
 	if err != nil || len(attempts) == 0 {
 		t.Fatalf("public runs retained no attempt: count=%d err=%v", len(attempts), err)
 	}
-	fixture.runMatchedSupplementaryCohort(args, "integration")
+	fixture.runMatchedSupplementaryCohort(args, fixture.portableCohort())
 }
 
 func TestCommandApplicationPrerequisiteAndIndependentFailures(t *testing.T) {
-	fixture := newPortableProofFixture(t)
-	fixture.contract.SchemaVersion = 2
-	harness := fixture.group("harness", "h")
+	f := newPortableFileProof(t)
+	f.contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
+	harness := f.group("harness", "h")
 	harness.Phase = "admission"
-	dependent := fixture.contract.Groups[0]
+	dependent := f.contract.Groups[0]
 	dependent.Requires = []string{"harness"}
-	independentRed := fixture.group("app-b", "b")
-	independentPass := fixture.group("app-c", "c")
-	fixture.contract.Groups = []testpolicy.Group{harness, dependent, independentRed, independentPass}
-	for index := range fixture.contract.Groups {
-		if fixture.contract.Groups[index].Phase == "" {
-			fixture.contract.Groups[index].Phase = "acceptance"
+	independentRed := f.group("app-b", "b")
+	independentPass := f.group("app-c", "c")
+	f.contract.Groups = []testpolicy.Group{harness, dependent, independentRed, independentPass}
+	for index := range f.contract.Groups {
+		if f.contract.Groups[index].Phase == "" {
+			f.contract.Groups[index].Phase = "acceptance"
 		}
-		fixture.contract.Groups[index].EnvironmentMode = "inherit"
+		f.contract.Groups[index].EnvironmentMode = "inherit"
 	}
-	fixture.contract.Always.Canary = []string{"harness", "app-a", "app-b", "app-c"}
-	fixture.contract.Unknown = []string{"harness", "app-a", "app-b", "app-c"}
-	fixture.contract.Cadence = []string{"harness", "app-a", "app-b", "app-c"}
-	fixture.write("app/h.txt", "red harness\n", 0o644)
-	fixture.write("app/b.txt", "red independent\n", 0o644)
-	fixture.write("app/c.txt", "green independent\n", 0o644)
-	fixture.writeContract()
-	run := func(tree, scenario string, wantGreen bool) map[string]proofrun.GroupResult {
+	f.contract.Always.Canary = []string{"harness", "app-a", "app-b", "app-c"}
+	f.contract.Unknown = []string{"harness", "app-a", "app-b", "app-c"}
+	f.contract.Cadence = []string{"harness", "app-a", "app-b", "app-c"}
+	f.put("app/h.txt", "red harness\n", 0o644)
+	f.put("app/b.txt", "red independent\n", 0o644)
+	f.put("app/c.txt", "green independent\n", 0o644)
+	f.writeContract()
+	run := func(changed string, green bool) map[string]proofrun.GroupResult {
 		t.Helper()
-		resultPath := filepath.Join(t.TempDir(), scenario+".json")
-		args := []string{"--root", fixture.root, "--goal", "portable", "--tree", tree,
-			"--mode", "auto", "--purpose", "delivery", "--result", resultPath}
-		started := time.Now()
-		status, output := fixture.command(append([]string{"test", "run"}, args...)...)
-		data, err := os.ReadFile(resultPath)
-		if err != nil {
-			t.Fatalf("%s run exit=%d has no result: %v: %s", scenario, status, err, output)
+		tree, files := f.snapshot()
+		contract := f.loadedContract(files)
+		plan := f.plan(contract, changed)
+		request := f.request(tree, files, plan)
+		if green {
+			request.CandidateEngineBuildIdentity = f.engineIdentity(tree, request.Environment)
 		}
-		var result proofrun.TestResult
-		if err := json.Unmarshal(data, &result); err != nil {
-			t.Fatal(err)
+		result, _ := f.execute(request, green)
+		if green {
+			verified, err := f.verify(request, files, result, time.Now().UTC())
+			if err != nil || !verified.Delivery.Sufficient {
+				t.Fatalf("repaired retained proof verification sufficient=%t err=%v groups=%+v", verified.Delivery.Sufficient, err, verified.Groups)
+			}
 		}
 		if err := proofrun.ValidateTestResult(result); err != nil {
-			t.Fatalf("%s retained result invalid: %v; status=%d output=%s; schema=%d attempt=%q base=%q candidate=%q engineVersion=%d engineBuild=%q counts=%+v cost=%+v groups=%d",
-				scenario, err, status, output, result.SchemaVersion, result.AttemptID, result.BaseCommit, result.CandidateTree,
-				result.CandidateEngineIdentityVersion, result.CandidateEngineBuildIdentity, result.LaunchCounts, result.Cost, len(result.Groups))
+			t.Fatal(err)
 		}
-		if wantGreen != (status == 0 && result.Delivery.Sufficient) {
-			t.Fatalf("%s status=%d delivery=%+v output=%s", scenario, status, result.Delivery, output)
-		}
-		fixture.observe(scenario, tree, started)
-		groups := map[string]proofrun.GroupResult{}
-		for _, group := range result.Groups {
-			groups[group.ID] = group
-		}
-		if len(groups) != 4 {
-			t.Fatalf("%s selected %d groups, want four: %+v", scenario, len(groups), result.Groups)
+		groups := portableGroups(result)
+		if len(groups) != 4 || result.Delivery.Sufficient != green {
+			t.Fatalf("selected groups=%+v delivery=%+v want green=%t", groups, result.Delivery, green)
 		}
 		return groups
 	}
-	firstTree := fixture.commit("declare prerequisite and independent command checks")
-	first := run(firstTree, "prerequisite-two-independent-failures", false)
+	first := run("app/h.txt", false)
 	if first["harness"].Status != "failed" || !first["harness"].NativeLaunched ||
 		first["app-b"].Status != "failed" || !first["app-b"].NativeLaunched ||
 		first["app-c"].Status != "passed" || !first["app-c"].NativeLaunched ||
 		first["app-a"].Status != "blocked" || first["app-a"].NativeLaunched ||
 		!reflect.DeepEqual(first["app-a"].BlockingGroups, []string{"harness"}) {
-		t.Fatalf("first pass failed to collect independent defects and block dependent: %+v", first)
+		t.Fatalf("first pass did not collect independent failures and block only dependent: %+v", first)
 	}
-	_, native := fixture.counts()
-	if native["h"] != 1 || native["b"] != 1 || native["c"] != 1 || native["a"] != 0 {
-		t.Fatalf("first pass native launches=%v", native)
-	}
-	fixture.write("app/h.txt", "green harness repaired\n", 0o644)
-	fixture.write("app/b.txt", "green independent repaired\n", 0o644)
-	secondTree := fixture.commit("repair both independent failures")
-	second := run(secondTree, "prerequisite-repaired-all-green", true)
+	requirePortableCounts(t, f.counts(), map[string]int{"h": 1, "b": 1, "c": 1})
+	f.put("app/h.txt", "green harness repaired\n", 0o644)
+	f.put("app/b.txt", "green independent repaired\n", 0o644)
+	second := run("app/h.txt", true)
 	if second["harness"].Status != "passed" || second["app-a"].Status != "passed" ||
 		second["app-b"].Status != "passed" || second["app-c"].Status != "reused" ||
 		second["app-c"].ReuseAttempt == "" {
-		t.Fatalf("repair lost independent proof or dependent execution: %+v", second)
+		t.Fatalf("repair lost independent pass or dependent execution: %+v", second)
 	}
-	_, native = fixture.counts()
-	if native["h"] != 2 || native["b"] != 2 || native["c"] != 1 || native["a"] != 1 {
-		t.Fatalf("repair native launches=%v", native)
-	}
-	fixture.write("app/a.txt", "green dependent changed\n", 0o644)
-	thirdTree := fixture.commit("change dependent input after repair")
-	third := run(thirdTree, "dependent-input-changed", true)
+	requirePortableCounts(t, f.counts(), map[string]int{"h": 2, "b": 2, "c": 1, "a": 1})
+	f.put("app/a.txt", "green dependent changed\n", 0o644)
+	third := run("app/a.txt", true)
 	for _, id := range []string{"harness", "app-b", "app-c"} {
 		if third[id].Status != "reused" || third[id].ReuseAttempt == "" {
-			t.Fatalf("dependent change did not reuse unaffected %s: %+v", id, third[id])
+			t.Fatalf("dependent change lost %s reuse: %+v", id, third)
 		}
 	}
 	if third["app-a"].Status != "passed" || !third["app-a"].NativeLaunched {
-		t.Fatalf("dependent change did not run A natively: %+v", third["app-a"])
+		t.Fatalf("dependent change did not run A: %+v", third["app-a"])
 	}
-	_, native = fixture.counts()
-	if native["h"] != 2 || native["b"] != 2 || native["c"] != 1 || native["a"] != 2 {
-		t.Fatalf("dependent change native launches=%v", native)
+	requirePortableCounts(t, f.counts(), map[string]int{"h": 2, "b": 2, "c": 1, "a": 2})
+}
+
+func (fixture *portableProofFixture) portableScenario(label string) string {
+	if fixture.baselineSource != "" {
+		return "legacy-" + label
 	}
-	fixture.requireCommand("test", "verify", "--root", fixture.root, "--goal", "portable", "--tree", thirdTree,
-		"--mode", "auto", "--purpose", "delivery")
+	return label
+}
+func (fixture *portableProofFixture) portableCohort() string {
+	if fixture.baselineSource != "" {
+		return "legacy"
+	}
+	return "integration"
 }
 
 func TestCommandApplicationLegacyBaselineCohort(t *testing.T) {
@@ -564,57 +623,8 @@ func TestCommandApplicationLegacyBaselineCohort(t *testing.T) {
 	if source == "" {
 		t.Skip("set GOAL_LANDING_BASELINE_SOURCE to the frozen 9498700a9 metasystem source")
 	}
-	fixture := newPortableProofFixtureWithSource(t, source)
-	base := fixture.git("rev-parse", "HEAD^{tree}")
-	args := []string{"--root", fixture.root, "--goal", "portable", "--tree", base, "--mode", "auto", "--purpose", "delivery"}
-	started := time.Now()
-	fixture.requireCommand(append([]string{"test", "plan"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("legacy-fixed-a-cold", base, started)
-	builds, native := fixture.counts()
-	if builds != 1 || native["a"] != 1 {
-		t.Fatalf("legacy cold proof counts: builds=%d native=%v", builds, native)
-	}
-	started = time.Now()
-	fixture.requireReusableRun(append([]string{"test", "run"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("legacy-fixed-a-warm", base, started)
-	warmBuilds, warmNative := fixture.counts()
-	if warmBuilds < builds || !reflect.DeepEqual(warmNative, native) {
-		t.Fatalf("legacy warm proof lost its prior native result: cold=(%d,%v) warm=(%d,%v)", builds, native, warmBuilds, warmNative)
-	}
-
-	fixture.contract.Groups = append(fixture.contract.Groups, fixture.group("app-b", "b"))
-	fixture.contract.Surfaces[0].Standard = append(fixture.contract.Surfaces[0].Standard, "app-b")
-	fixture.contract.Always.Standard = []string{"app-b"}
-	fixture.contract.Cadence = append(fixture.contract.Cadence, "app-b")
-	fixture.write("app/b.txt", "green b\n", 0o644)
-	fixture.writeContract()
-	addedTree := fixture.commit("add independent command group")
-	args[5] = addedTree
-	started = time.Now()
-	fixture.requireCommand(append([]string{"test", "plan"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("legacy-a-plus-b", addedTree, started)
-	_, afterAddition := fixture.counts()
-	if afterAddition["b"] == 0 {
-		t.Fatalf("legacy addition did not run native B: %v", afterAddition)
-	}
-
-	fixture.write("app/a.txt", "green a changed\n", 0o644)
-	mutatedTree := fixture.commit("change A input")
-	args[5] = mutatedTree
-	started = time.Now()
-	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("legacy-a-input-changed", mutatedTree, started)
-	_, afterMutation := fixture.counts()
-	if afterMutation["a"] <= afterAddition["a"] {
-		t.Fatalf("legacy A mutation did not run native A: before=%v after=%v", afterAddition, afterMutation)
-	}
-	fixture.runMatchedSupplementaryCohort(args, "legacy")
+	t.Run("current", func(t *testing.T) { runPortablePublicProofReuse(newPortableProofFixture(t)) })
+	t.Run("frozen", func(t *testing.T) { runPortablePublicProofReuse(newPortableProofFixtureWithSource(t, source)) })
 }
 
 func TestCommandApplicationThreePrefixReceiptConsumer(t *testing.T) {
@@ -821,15 +831,13 @@ func TestCommandApplicationThreePrefixReceiptConsumer(t *testing.T) {
 		t.Fatalf("moved-trunk reopen retained stale evidence or wrong series: %+v err=%v", reopened, err)
 	}
 	fixture.observe("moved-trunk-reassembled", movedTrees[2], started)
+	var tipDecision batch.PrefixDecision
 	for index := range reopened.Units {
 		decision, planErr := productionPrefixDecision(fixture.root, reopened.Units[:index+1], movedTrees[index])
 		if planErr != nil || len(decision.Groups) == 0 {
 			t.Fatalf("moved prefix %d did not replan: %+v err=%v", index, decision, planErr)
 		}
-	}
-	tipDecision, err := productionPrefixDecision(fixture.root, reopened.Units, movedTrees[2])
-	if err != nil {
-		t.Fatal(err)
+		tipDecision = decision
 	}
 	started = time.Now()
 	movedTip, err := fixture.runPrefixCommand(reopened.Units[2], movedTrees[2], tipDecision)
@@ -1022,142 +1030,125 @@ func (fixture *portableProofFixture) runPrefixCommand(unit batch.Unit, tree stri
 }
 
 func TestCommandApplicationGreenTipCannotHideRedPrefix(t *testing.T) {
-	fixture := newPortableProofFixture(t)
-	fixture.write("app/a.txt", "red a\n", 0o644)
-	prefixTree := fixture.commit("introduce failing earlier prefix")
-	prefixCommit := fixture.git("rev-parse", "HEAD")
-	args := []string{"--root", fixture.root, "--goal", "portable", "--tree", prefixTree, "--mode", "auto", "--purpose", "delivery"}
-	started := time.Now()
-	status, output := fixture.command(append([]string{"test", "run"}, args...)...)
-	fixture.observe("red-prefix", prefixTree, started)
-	if status == 0 {
-		t.Fatalf("red prefix was accepted: %s", output)
+	f := newPortableFileProof(t)
+	f.put("app/a.txt", "red a\n", 0o644)
+	redTree, redFiles := f.snapshot()
+	redContract := f.loadedContract(redFiles)
+	redRequest := f.request(redTree, redFiles, f.plan(redContract, "app/a.txt"))
+	redRequest.CandidateEngineBuildIdentity = f.engineIdentity(redTree, redRequest.Environment)
+	red, _ := f.execute(redRequest, false)
+	redGroup := portableGroups(red)["app-a"]
+	if redGroup.Status != "failed" || !redGroup.NativeLaunched || !redGroup.CollectionComplete || red.Delivery.Sufficient {
+		t.Fatalf("earlier red candidate lacks complete failed native evidence: %+v", red)
 	}
-	_, native := fixture.counts()
-	if native["a"] != 1 {
-		t.Fatalf("red prefix did not reach the native command: status=%d output=%s counts=%v", status, output, native)
-	}
-	controlRoot, err := canonicalProofRoot(fixture.root)
+	attempts, err := proofrun.ReadAttempts(f.root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempts, err := proofrun.ReadAttempts(controlRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	observedRed := false
+	retainedRed := false
 	for _, attempt := range attempts {
-		if attempt.TestResult == nil || attempt.TestResult.CandidateTree != prefixTree {
+		if attempt.TestResult == nil || attempt.TestResult.CandidateTree != redTree || attempt.TestResult.AttemptID != red.AttemptID {
 			continue
 		}
 		for _, group := range attempt.TestResult.Groups {
 			if group.ID == "app-a" && group.Status == "failed" && group.NativeLaunched && group.CollectionComplete {
-				observedRed = true
+				retainedRed = true
 			}
 		}
 	}
-	if !observedRed {
-		t.Fatalf("red prefix produced no complete native failure: %+v", attempts)
+	if !retainedRed {
+		t.Fatalf("red candidate has no retained complete native failure: %+v", attempts)
 	}
-
-	fixture.write("app/a.txt", "green a repaired\n", 0o644)
-	tipTree := fixture.commit("repair at later tip")
-	args[5] = tipTree
-	started = time.Now()
-	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("repaired-tip", tipTree, started)
-	fixture.git("checkout", "-q", "--detach", prefixCommit)
-	args[5] = prefixTree
-	started = time.Now()
-	status, output = fixture.command(append([]string{"test", "verify"}, args...)...)
-	fixture.observe("revisit-red-prefix", prefixTree, started)
-	if status == 0 {
-		t.Fatalf("later green tip authorized the earlier red tree: %s", output)
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 1})
+	f.put("app/a.txt", "green a repaired\n", 0o644)
+	greenTree, greenFiles := f.snapshot()
+	greenContract := f.loadedContract(greenFiles)
+	greenRequest := f.request(greenTree, greenFiles, f.plan(greenContract, "app/a.txt"))
+	greenRequest.CandidateEngineBuildIdentity = f.engineIdentity(greenTree, greenRequest.Environment)
+	green, _ := f.execute(greenRequest, true)
+	if group := portableGroups(green)["app-a"]; group.Status != "passed" || !group.NativeLaunched || !green.Delivery.Sufficient {
+		t.Fatalf("repaired candidate did not produce green native evidence: %+v", green)
+	}
+	now := time.Now().UTC()
+	verifiedGreen, err := f.verify(greenRequest, greenFiles, green, now)
+	if err != nil || !verifiedGreen.Delivery.Sufficient {
+		t.Fatalf("repaired candidate verification: sufficient=%t err=%v source=%+v groups=%+v", verifiedGreen.Delivery.Sufficient, err, green.Groups, verifiedGreen.Groups)
+	}
+	verifiedRed, err := f.verify(redRequest, redFiles, red, now)
+	if err != nil || verifiedRed.Delivery.Sufficient {
+		t.Fatalf("later green candidate authorized earlier red candidate: sufficient=%t err=%v groups=%+v", verifiedRed.Delivery.Sufficient, err, verifiedRed.Groups)
 	}
 }
 
 func TestCommandApplicationFreshEpisodeResumesAndRenews(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Second)
-	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	fixture := newPortableProofFixture(t)
-	processTable := filepath.Join(t.TempDir(), "processes.json")
-	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
-		t.Fatal(err)
+	f := newPortableFileProof(t)
+	f.contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
+	for index := range f.contract.Groups {
+		f.contract.Groups[index].Phase = "acceptance"
+		f.contract.Groups[index].EnvironmentMode = "inherit"
+		f.contract.Groups[index].Freshness = "episode"
 	}
-	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processTable)
-	fixture.writeEpisodeContract()
-	tree := fixture.commit("declare fresh command observation")
-	base := []string{"--root", fixture.root, "--goal", "portable", "--tree", tree, "--mode", "auto", "--purpose", "delivery"}
-	expiresAt := now.Add(time.Hour)
-	expires := expiresAt.Format(time.RFC3339)
-	episode := func(digit string) []string {
-		return append(append([]string(nil), base...), "--fresh-episode", strings.Repeat(digit, 64), "--fresh-expires-at", expires)
+	f.writeContract()
+	tree, files := f.snapshot()
+	contract := f.loadedContract(files)
+	if contract.SchemaVersion != testpolicy.ExecutionContractSchemaVersion || contract.Groups[0].Freshness != "episode" {
+		t.Fatalf("freshness declaration was not decoded from literal JSON: %+v", contract)
 	}
-	first := episode("1")
-	started := time.Now()
-	fixture.requireCommand(append([]string{"test", "run"}, first...)...)
-	fixture.requireCommand(append([]string{"test", "verify"}, first...)...)
-	fixture.observe("fresh-first-episode", tree, started)
-	_, observed := fixture.counts()
-	if observed["a"] != 1 {
-		t.Fatalf("first fresh episode did not run one native observation: %v", observed)
+	plan := f.plan(contract, "app/a.txt")
+	before := time.Now().UTC().Truncate(time.Second)
+	expires := before.Add(time.Hour).Format(time.RFC3339Nano)
+	episode := func(digit string) string { return strings.Repeat(digit, 64) }
+	args := []string{"--root", f.root, "--goal", "portable", "--tree", tree, "--mode", "auto", "--purpose", "delivery",
+		"--fresh-episode", episode("1"), "--fresh-expires-at", expires}
+	parsed, _, status := parseTestingSelection("test run", args, true)
+	if status != 0 || parsed.FreshEpisode != episode("1") || parsed.FreshExpiresAt != expires {
+		t.Fatalf("public freshness flags status=%d selection=%+v", status, parsed)
 	}
-	started = time.Now()
-	fixture.requireReusableRun(append([]string{"test", "run"}, first...)...)
-	fixture.requireCommand(append([]string{"test", "verify"}, first...)...)
-	fixture.observe("fresh-same-episode", tree, started)
-	_, observed = fixture.counts()
-	if observed["a"] != 1 {
-		t.Errorf("unchanged episode repeated native execution: %v", observed)
+	request := f.request(tree, files, plan)
+	request.CandidateEngineBuildIdentity = f.engineIdentity(tree, request.Environment)
+	request.FreshnessEpisode, request.FreshnessExpiresAt = parsed.FreshEpisode, parsed.FreshExpiresAt
+	request.FreshGroups = map[string]bool{"app-a": true}
+	f.bindFreshness(&request)
+	first, _ := f.execute(request, true)
+	if verified, err := f.verify(request, files, first, before.Add(time.Minute)); err != nil || !verified.Delivery.Sufficient {
+		t.Fatalf("first episode verify sufficient=%t err=%v groups=%+v", verified.Delivery.Sufficient, err, verified.Groups)
 	}
-	second := episode("2")
-	started = time.Now()
-	fixture.requireCommand(append([]string{"test", "run"}, second...)...)
-	fixture.requireCommand(append([]string{"test", "verify"}, second...)...)
-	fixture.observe("fresh-new-episode", tree, started)
-	_, observed = fixture.counts()
-	if observed["a"] != 2 {
-		t.Errorf("new episode reused an earlier fresh observation: %v", observed)
+	if group := portableGroups(first)["app-a"]; group.Status != "passed" || !group.NativeLaunched || first.FreshnessEpisode != episode("1") {
+		t.Fatalf("first episode lacked fresh native observation: %+v", first)
+	}
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 1})
+	same, _ := f.execute(request, true)
+	if verified, err := f.verify(request, files, same, before.Add(time.Minute)); err != nil || !verified.Delivery.Sufficient {
+		t.Fatalf("same episode verify sufficient=%t err=%v groups=%+v", verified.Delivery.Sufficient, err, verified.Groups)
+	}
+	if group := portableGroups(same)["app-a"]; group.Status != "reused" || group.ReuseAttempt == "" {
+		t.Fatalf("same episode did not reuse prior native observation: %+v", same)
+	}
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 1})
+	newEpisode := request
+	newEpisode.FreshnessEpisode = episode("2")
+	newEpisode.FreshnessBinding = ""
+	f.bindFreshness(&newEpisode)
+	renewed, _ := f.execute(newEpisode, true)
+	if group := portableGroups(renewed)["app-a"]; group.Status != "passed" || !group.NativeLaunched || renewed.FreshnessEpisode != episode("2") {
+		t.Fatalf("new episode reused old observation: %+v", renewed)
+	}
+	requirePortableCounts(t, f.counts(), map[string]int{"a": 2})
+	verified, err := f.verify(newEpisode, files, renewed, before.Add(time.Minute))
+	if err != nil || !verified.Delivery.Sufficient {
+		t.Fatalf("live episode verify sufficient=%t err=%v groups=%+v", verified.Delivery.Sufficient, err, verified.Groups)
 	}
 	for _, boundary := range []struct {
 		name string
-		now  time.Time
-	}{{name: "at-expiry", now: expiresAt}, {name: "after-expiry", now: expiresAt.Add(time.Nanosecond)}} {
+		at   time.Time
+	}{{"at-expiry", before.Add(time.Hour)}, {"after-expiry", before.Add(time.Hour).Add(time.Nanosecond)}} {
 		t.Run(boundary.name, func(t *testing.T) {
-			t.Setenv(goalNowEnvironment, boundary.now.Format(time.RFC3339Nano))
-			status, output := fixture.command(append([]string{"test", "verify"}, second...)...)
-			if status == 0 || !strings.Contains(output, "expired") {
-				t.Fatalf("public freshness verification at %s returned status=%d output=%s", boundary.now, status, output)
+			_, err := f.verify(newEpisode, files, renewed, boundary.at)
+			if err == nil || !strings.Contains(err.Error(), "expired") {
+				t.Fatalf("freshness verification at %s err=%v", boundary.at, err)
 			}
 		})
 	}
-}
-
-// The fixture writes this schema through JSON so the public decoder, rather
-// than an in-memory Group literal, admits the execution contract fields.
-func (fixture *portableProofFixture) writeEpisodeContract() {
-	fixture.t.Helper()
-	encoded, err := json.Marshal(fixture.contract)
-	if err != nil {
-		fixture.t.Fatal(err)
-	}
-	var document map[string]any
-	if err := json.Unmarshal(encoded, &document); err != nil {
-		fixture.t.Fatal(err)
-	}
-	document["schemaVersion"] = 2
-	for _, value := range document["groups"].([]any) {
-		group := value.(map[string]any)
-		group["phase"] = "acceptance"
-		group["environmentMode"] = "inherit"
-		group["freshness"] = "episode"
-	}
-	encoded, err = json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		fixture.t.Fatal(err)
-	}
-	fixture.writeBytes("testing.json", append(encoded, '\n'), 0o644)
 }
 
 const portableCommandCheck = `#!/bin/sh

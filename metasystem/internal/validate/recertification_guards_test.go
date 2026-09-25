@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -28,49 +29,103 @@ func recertGuardRepo(t *testing.T) string {
 	return root
 }
 
+func guardFilesystemRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+type guardTopLevelFacts struct {
+	t        *testing.T
+	root     string
+	expected []string
+	next     int
+}
+
+func (f *guardTopLevelFacts) answer(request gittree.RawRequest) gittree.RawResult {
+	f.t.Helper()
+	if f.next >= len(f.expected) {
+		f.t.Fatalf("unexpected top-level request from %q: %q", request.Dir, request.Args)
+	}
+	wantDir := f.expected[f.next]
+	f.next++
+	wantArgs := append(append([]string{"-C", wantDir}, rawPins...), "rev-parse", "--show-toplevel")
+	if request.Dir != wantDir || !reflect.DeepEqual(request.Args, wantArgs) || request.Stdin != nil ||
+		request.Operation != "git rev-parse --show-toplevel" || request.Timeout.Limit <= 0 {
+		f.t.Fatalf("top-level request %d = %+v, want directory %q and argv %q", f.next, request, wantDir, wantArgs)
+	}
+	if !reflect.DeepEqual(request.Env, gittree.ScrubbedEnviron()) {
+		f.t.Fatalf("top-level request %d has an unscrubbed environment", f.next)
+	}
+	if wantDir != f.root {
+		return gittree.RawResult{ExitCode: 128, Stderr: []byte("fatal: not a git repository\n")}
+	}
+	return gittree.RawResult{Stdout: []byte(f.root + "\n")}
+}
+
+func (f *guardTopLevelFacts) consumed() {
+	f.t.Helper()
+	if f.next != len(f.expected) {
+		f.t.Fatalf("top-level requests consumed %d of %d", f.next, len(f.expected))
+	}
+}
+
 func TestArtifactRegularNoFollowRefusesLinksAndNonFiles(t *testing.T) {
-	root := recertGuardRepo(t)
+	root := guardFilesystemRoot(t)
+	outside := t.TempDir()
+	facts := &guardTopLevelFacts{t: t, root: root}
+	for range 10 {
+		facts.expected = append(facts.expected, root)
+	}
+	facts.expected = append(facts.expected, outside)
 	if err := os.MkdirAll(filepath.Join(root, "artifacts", "real"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "artifacts", "real", "review.md"), []byte("review\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	absolute, err := artifactRegularNoFollow(root, "artifacts/real/review.md")
+	absolute, err := artifactRegularNoFollowWithRaw(root, "artifacts/real/review.md", facts.answer)
 	if err != nil || absolute != filepath.Join(root, "artifacts", "real", "review.md") {
 		t.Fatalf("regular artifact = %q, %v", absolute, err)
 	}
 	if err := os.Symlink(filepath.Join(root, "artifacts", "real"), filepath.Join(root, "artifacts", "linked")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := artifactRegularNoFollow(root, "artifacts/linked/review.md"); err == nil || !strings.Contains(err.Error(), "contains symlink") {
+	if _, err := artifactRegularNoFollowWithRaw(root, "artifacts/linked/review.md", facts.answer); err == nil || !strings.Contains(err.Error(), "contains symlink") {
 		t.Fatalf("linked directory = %v", err)
 	}
 	if err := os.Symlink(filepath.Join(root, "artifacts", "real", "review.md"), filepath.Join(root, "artifacts", "real", "alias.md")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := artifactRegularNoFollow(root, "artifacts/real/alias.md"); err == nil || !strings.Contains(err.Error(), "contains symlink") {
+	if _, err := artifactRegularNoFollowWithRaw(root, "artifacts/real/alias.md", facts.answer); err == nil || !strings.Contains(err.Error(), "contains symlink") {
 		t.Fatalf("linked file = %v", err)
 	}
-	if _, err := artifactRegularNoFollow(root, "artifacts/real"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+	if _, err := artifactRegularNoFollowWithRaw(root, "artifacts/real", facts.answer); err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("directory as artifact = %v", err)
 	}
-	if _, err := artifactRegularNoFollow(root, "artifacts/real/absent.md"); err == nil {
+	if _, err := artifactRegularNoFollowWithRaw(root, "artifacts/real/absent.md", facts.answer); err == nil {
 		t.Fatal("absent artifact")
 	}
 	for _, relative := range []string{"", "/etc/passwd", "../outside", "artifacts//double", "a\x00b"} {
-		if _, err := artifactRegularNoFollow(root, relative); err == nil || !strings.Contains(err.Error(), "not canonical") {
+		if _, err := artifactRegularNoFollowWithRaw(root, relative, facts.answer); err == nil || !strings.Contains(err.Error(), "not canonical") {
 			t.Fatalf("%q = %v", relative, err)
 		}
 	}
-	if _, err := artifactRegularNoFollow(t.TempDir(), "artifacts/real/review.md"); err == nil {
+	if _, err := artifactRegularNoFollowWithRaw(outside, "artifacts/real/review.md", facts.answer); err == nil {
 		t.Fatal("a root outside any repository resolved an artifact")
 	}
+	facts.consumed()
 }
 
 func TestRefuseSymlinkedDirectoryWalksEveryComponent(t *testing.T) {
-	root := recertGuardRepo(t)
-	if err := refuseSymlinkedDirectory(root, filepath.Join(root, "artifacts", "agents", "not-yet-created")); err != nil {
+	t.Parallel()
+	root := guardFilesystemRoot(t)
+	outside := t.TempDir()
+	facts := &guardTopLevelFacts{t: t, root: root, expected: []string{root, root, root, root, outside}}
+	if err := refuseSymlinkedDirectoryWithRaw(root, filepath.Join(root, "artifacts", "agents", "not-yet-created"), facts.answer); err != nil {
 		t.Fatalf("absent directory refused: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "elsewhere"), 0o755); err != nil {
@@ -79,21 +134,31 @@ func TestRefuseSymlinkedDirectoryWalksEveryComponent(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "elsewhere"), filepath.Join(root, "artifacts")); err != nil {
 		t.Fatal(err)
 	}
-	if err := refuseSymlinkedDirectory(root, filepath.Join(root, "artifacts", "agents")); err == nil || !strings.Contains(err.Error(), "contains symlink") {
+	if err := refuseSymlinkedDirectoryWithRaw(root, filepath.Join(root, "artifacts", "agents"), facts.answer); err == nil || !strings.Contains(err.Error(), "contains symlink") {
 		t.Fatalf("linked parent = %v", err)
 	}
-	if err := refuseSymlinkedDirectory(root, filepath.Join(root, "..", "sibling")); err == nil || !strings.Contains(err.Error(), "escapes the repository") {
+	if err := refuseSymlinkedDirectoryWithRaw(root, filepath.Join(root, "..", "sibling"), facts.answer); err == nil || !strings.Contains(err.Error(), "escapes the repository") {
 		t.Fatalf("escaping directory = %v", err)
 	}
-	if err := refuseSymlinkedDirectory(root, root); err != nil {
+	if err := refuseSymlinkedDirectoryWithRaw(root, root, facts.answer); err != nil {
 		t.Fatalf("the root itself refused: %v", err)
 	}
-	if err := refuseSymlinkedDirectory(t.TempDir(), "x"); err == nil {
+	if err := refuseSymlinkedDirectoryWithRaw(outside, "x", facts.answer); err == nil {
 		t.Fatal("a root outside any repository passed")
+	}
+	facts.consumed()
+}
+
+func TestRefuseSymlinkedDirectoryNativeTopLevelAdapter(t *testing.T) {
+	t.Parallel()
+	root := recertGuardRepo(t)
+	if err := refuseSymlinkedDirectory(root, root); err != nil {
+		t.Fatalf("native repository top level refused: %v", err)
 	}
 }
 
 func TestTerminalMemberPicksTheHighestRoundOfAClosedChain(t *testing.T) {
+	t.Parallel()
 	records := map[string]map[string]any{
 		"root":  {"round": float64(1), "status": "completed"},
 		"r2":    {"round": float64(2), "status": "failed", "parentJob": "root"},
@@ -123,6 +188,7 @@ func TestTerminalMemberPicksTheHighestRoundOfAClosedChain(t *testing.T) {
 }
 
 func TestCommandForWidthFollowsTheContractAndTheGateWidth(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	conf := filepath.Join(root, "metasystem.conf")
 	if _, _, _, err := commandForWidth(root, map[string]any{}, "go test ./..."); err == nil {
