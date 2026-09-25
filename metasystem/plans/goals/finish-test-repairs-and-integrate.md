@@ -7,13 +7,13 @@
 - Origin: human
 - Next step: Wido redirected this same goal on 23 September: stop the Git-maintenance workaround and replace real Git in behavior tests with per-test mocks/stubs, retaining only explained narrow Git adapter integration tests. Implement the bounded design in plans/test-suite-redesign.md through Sol units: shared strict stub, goal repository fake, then remaining consumers; prove migrated tests with Git denied, preserve parallel/race/coverage behavior, complete required validation, commit/push/install and verify. No new goal. Earlier final-validation ETA is superseded.
 - OpenedAt: 2026-09-22T16:37:11Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=15d attemptLimit=40 reservedJobMinutesLimit=1800 activeJobLimit=8 reviewRoundLimit=3
 - BudgetExceptions: 8
 - NormApproval: approvedRef=V0NV9K6S0NDYTSJ6AJQJV86ZTQ-m1e-f4b31582 minutes=1800 reviewRounds=3 goalRevision=14
 - Approved: by=human:Wido at=2026-09-24T10:58:02Z revision=15 opid=V0NV9K6S0NDYTSJ6AJQJV86ZTQ-m1e-f4b31582 authority=proven digest=ec80016bf8e416b09176ea489cfa806d9a27693a9db8cfc655a072f44262fe8a episode=15
-- Claimed: machine=m1e lineage=main-1789893000-16595-1a7a6a at=2026-09-24T10:58:02Z revision=15 accountingRevision=15 episodeAt=2026-09-22T17:29:09Z episodeRevision=3
-- StopCapability: generation=15 revision=15 machine=m1e claimEpoch=3 fenceEpoch=0
+- Claimed: machine=m1e lineage=main-1790272787-5030-13dde3 at=2026-09-25T00:00:32Z revision=16 accountingRevision=16 episodeAt=2026-09-25T00:00:32Z episodeRevision=16
+- StopCapability: generation=16 revision=16 machine=m1e claimEpoch=7 fenceEpoch=0
 
 History:
 - 2026-09-22T16:37:11Z BPWZD876FT92J8N278RKRXMM1S-m1e-32fbf0db open actor=human:Wido targets=finish-test-repairs-and-integrate
@@ -31,4 +31,5 @@ History:
 - 2026-09-23T12:38:16Z 1M4K7WY4A5CG9XG5ZDWP5BBKQF-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
 - 2026-09-23T18:52:44Z B0D5ZR88KY3GQYCNHD68SRZ1QJ-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
 - 2026-09-24T10:58:02Z V0NV9K6S0NDYTSJ6AJQJV86ZTQ-m1e-f4b31582 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-23T18:52:44Z
-Integrity: sha256=adab70399bcde8e2fce1fd091ddb32c8b8f6a414d3c16287866ea81a5326ec75
+- 2026-09-25T00:00:32Z F1WY1FCRJPS2X6NP37194CWK63-m1e-a2ccc4e1 steal actor=human:Wido targets=finish-test-repairs-and-integrate displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-24T10:58:02Z
+Integrity: sha256=176676afbf2e40d7400eadd8593632b3970ea8c55f0364cbb27559ec2fa41dc9
