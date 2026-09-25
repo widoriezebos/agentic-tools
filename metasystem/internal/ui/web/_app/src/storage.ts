@@ -13,7 +13,7 @@ import { scopeOf, type ScopeFilter } from "./project/pane";
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The nineteen keys this build remembers, and nothing else.
+ * The twenty keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -123,6 +123,19 @@ export const NOTIFICATIONS_SEEN_KEY = "ms.ui.notifications.seen";
  * is simply a name no row matches.
  */
 export const FLEET_OPEN_KEY = "ms.ui.fleet.open";
+
+/**
+ * Which group of the Decisions inbox this viewer left open.
+ *
+ * One group is open at a time, so this is one name rather than a set. It is a
+ * per-viewer convenience of exactly the kind this file is for: two people at
+ * two browsers are working through different parts of the same inbox, and a
+ * mark the server held would be one of them closing the other's group. A name
+ * this build has no group for reads as no preference at all, which is what
+ * happens when the last draft is accepted and the group it was left open on
+ * stops existing.
+ */
+export const DECISIONS_OPEN_KEY = "ms.ui.decisions.open";
 
 /**
  * The face, the size and the line spacing the conversation is read in.
@@ -354,6 +367,21 @@ export function readFleetOpen(store: Store | null = browserStore()): Set<string>
 /** Sorted, so the same set is always the same string in a viewer's storage. */
 export function writeFleetOpen(open: Set<string>, store: Store | null = browserStore()): void {
   write(FLEET_OPEN_KEY, [...open].sort().join(" "), store);
+}
+
+/**
+ * The group of the Decisions inbox this viewer left open, or null for none.
+ *
+ * Whether that name is still a group of the inbox is the page's question, and
+ * it is asked where the page's own groups are known — the same division the
+ * two tab keys above keep.
+ */
+export function readDecisionsOpen(store: Store | null = browserStore()): string | null {
+  return read(DECISIONS_OPEN_KEY, store);
+}
+
+export function writeDecisionsOpen(group: string, store: Store | null = browserStore()): void {
+  write(DECISIONS_OPEN_KEY, group, store);
 }
 
 /** The conversation's face, size and rhythm, or the defaults where none is stored. */

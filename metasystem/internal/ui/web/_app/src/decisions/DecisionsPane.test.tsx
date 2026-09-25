@@ -1,24 +1,27 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import type { Need, Page, Ruling } from "./api";
-import { Blocks } from "./DecisionsPane";
-import { noNarrowing } from "./decisions";
+import { Views } from "./DecisionsPane";
+import { noNarrowing, type Narrowing, type TabId } from "./decisions";
+import type { Acts } from "./InboxRow";
 import type { Row } from "../backlog/api";
-import type { TabId } from "./decisions";
 
 /**
  * What the page puts on the screen, over a payload and nothing else.
  *
- * The reading, the network and the sheet belong to the pane; these are the two
- * blocks, rendered as the browser would render them. Every assertion is a
- * sentence a human reads: the silence line, the act, the way through, the
- * command, the register's own words.
+ * The reading, the network and the sheets belong to the pane; these are the
+ * two views, rendered as the browser would render them. Every assertion is a
+ * sentence a human reads: the group's line, the row's one line of substance,
+ * what an open row holds and what it offers, the register's own words.
  */
 
-/** A row of the ledger, as much of one as a card reads. */
+/** A row of the ledger, as much of one as an open row reads. */
 function row(over: Partial<Row> = {}): Row {
   return {
     ref: { kind: "goal", id: "g1-s40", revision: 3 },
@@ -65,6 +68,14 @@ function need(over: Partial<Need> = {}): Need {
     act: "approve",
     command: "",
     row: row(),
+    new: false,
+    words: "",
+    context: "",
+    owner: "",
+    class: "",
+    due: "",
+    path: "",
+    goals: [],
     ...over,
   };
 }
@@ -88,9 +99,14 @@ function ruling(over: Partial<Ruling> = {}): Ruling {
 
 /** Every kind of thing that can wait on a human, one of each. */
 const everyKind: Need[] = [
-  need({ kind: "renewal", id: "g1-s42", asked: "Renew the approval of g1-s42: the review date 2026-09-06 has passed", silence: "no fresh claim is admitted" }),
   need({
-    kind: "renewal", id: "g1-s43", asked: "Renew the approval of g1-s43: the review date 2026-09-07 has passed",
+    kind: "renewal", id: "g1-s42", title: "The approval on this one expired",
+    asked: "Renew the approval of g1-s42: the review date 2026-09-06 has passed",
+    silence: "no fresh claim is admitted",
+  }),
+  need({
+    kind: "renewal", id: "g1-s43", title: "Claimed work whose approval expired",
+    asked: "Renew the approval of g1-s43: the review date 2026-09-07 has passed",
     silence: "work already claimed continues; renew at the goal", act: "", row: null,
   }),
   need({
@@ -98,6 +114,8 @@ const everyKind: Need[] = [
     asked: "Review R-3, due 2026-09-19: adopt, revise or withdraw",
     by: "Wido", silence: "it stays in force as written", act: "", row: null,
     where: { kind: "register", id: "memory/rulings.md" },
+    words: "The board's two drag moves are the only acts the browser publishes. The rest of the ruling.",
+    context: "Given with the board design", owner: "Wido", class: "temporary", due: "2026-09-19",
   }),
   need(),
   need({
@@ -109,8 +127,8 @@ const everyKind: Need[] = [
   }),
   need({
     kind: "question", id: "Q-1", title: "Which census format?", asked: "Which census format?",
-    by: "the register", silence: "it stays open", act: "", row: null,
-    where: { kind: "question", id: "Q-1" },
+    by: "the register", since: "2026-09-24", silence: "it stays open", act: "", row: null,
+    new: true, where: { kind: "question", id: "Q-1" },
   }),
   need({
     kind: "parked", id: "g1-s45", title: "The Fleet section reads the census",
@@ -130,12 +148,15 @@ const everyKind: Need[] = [
     asked: "Accept the draft A draft nobody accepted?", by: "design",
     silence: "it stays a draft, shown as one on Project", act: "", row: null,
     where: { kind: "record", id: "plans/designs/draft.md" },
+    path: "plans/designs/draft.md",
   }),
   need({
     kind: "landed", id: "d-landed", title: "Every goal of this one landed",
     asked: "Mark Every goal of this one landed done?", by: "every goal landed",
     silence: "it stays marked accepted", act: "", row: null,
     where: { kind: "record", id: "plans/designs/landed.md" },
+    path: "plans/designs/landed.md",
+    goals: [{ id: "g1-s9", state: "done" }, { id: "g1-s10", state: "done" }],
   }),
   need({
     kind: "alert", id: "n-1", title: "HEALTH unhealthy — the steward runner is stale",
@@ -147,7 +168,7 @@ const everyKind: Need[] = [
 
 function page(over: Partial<Page> = {}): Page {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     readAt: "2026-09-25T11:00:00Z",
     signIn: false,
     needsYou: everyKind,
@@ -183,199 +204,269 @@ function page(over: Partial<Page> = {}): Page {
       waiting: everyKind.filter((one) => one.kind === "approval").length,
       rulings: 148,
     },
+    visit: { since: "2026-09-24T11:00:00Z", first: false },
     register: "metasystem/memory/rulings.md",
     ...over,
   };
 }
 
-function rendered(payload: Page, tab: TabId = "rulings"): string {
+/** Nothing acts in a static render; these are the handles the row is given. */
+const acts: Acts = {
+  signedIn: true,
+  onSignIn: () => undefined,
+  onApprove: () => undefined,
+  onPark: () => undefined,
+  onEdit: () => undefined,
+  onReturn: () => undefined,
+  onWrite: () => undefined,
+  writing: "",
+  refusedAt: "",
+  refusal: "",
+};
+
+type Shown = {
+  view?: "inbox" | "decided";
+  tab?: TabId;
+  chosen?: string | null;
+  openRow?: string;
+  narrowing?: Narrowing;
+  selected?: readonly string[];
+  signedIn?: boolean;
+};
+
+function rendered(payload: Page, shown: Shown = {}): string {
   return renderToStaticMarkup(
     <MemoryRouter>
       <TooltipPrimitive.Provider>
-        <Blocks page={payload} tab={tab} />
+        <Views
+          page={payload}
+          acts={acts}
+          view={shown.view ?? "inbox"}
+          tab={shown.tab ?? "rulings"}
+          chosen={shown.chosen === undefined ? "" : shown.chosen}
+          openRow={shown.openRow ?? ""}
+          narrowing={shown.narrowing ?? noNarrowing}
+          selected={shown.selected ?? []}
+          signedIn={shown.signedIn}
+        />
       </TooltipPrimitive.Provider>
     </MemoryRouter>,
   );
 }
 
-describe("what is asked of you", () => {
-  it("says of every kind what is asked and what silence does", () => {
+describe("the page at rest", () => {
+  // The whole answer to "is anything waiting on me, and how much" in ten
+  // lines. Nothing is expanded, nothing is a card, and the queue's hundred
+  // rows are one line until a human asks for them.
+  it("is the group lines and nothing else", () => {
     const markup = rendered(page());
 
-    // Every kind but the approvals, which are the queue below and say their
-    // silence once, in its head, rather than on every row.
-    for (const one of everyKind.filter((kind) => kind.kind !== "approval")) {
-      expect(markup).toContain(one.asked);
-      expect(markup).toContain(`if you do nothing: ${one.silence}`);
+    for (const title of [
+      "Questions", "Drafts to accept", "Designs landed", "Asks from a seat", "Alerts",
+      "Approvals to renew", "Stopped goals", "Parked by a seat", "Rulings past review",
+      "Goals waiting for approval",
+    ]) {
+      expect(markup).toContain(`>${title}</span>`);
     }
-    // The whole list, never a capped group: no row says "and N more".
-    expect(markup).not.toContain("more →");
+    // No row is rendered at all: not one line of substance, not one act.
+    expect(markup).not.toContain("Which census format?");
+    expect(markup).not.toContain("The pane reads a document as a chapter");
+    expect(markup).not.toContain(">Approve<");
+    expect(markup).not.toContain("Find in the id, the intent and the labels");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('aria-expanded="true"');
   });
 
-  it("does not repeat an approval's derived sentence, which said the title twice", () => {
+  it("counts the two views in the header, each with what is behind it", () => {
     const markup = rendered(page());
 
-    expect(markup).not.toContain("for execution");
-    // The title is still there, once, as the queue row a human reads.
-    expect(markup).toContain("The pane reads a document as a chapter");
+    expect(markup).toContain(`Inbox ${String(everyKind.length)}`);
+    // The five tabs of what was decided: one ruling, one decision, one
+    // answered question, two approvals and two parks.
+    expect(markup).toContain("Decided 7");
   });
 
-  it("counts the two blocks in the header, each a way into its own", () => {
+  it("says how many of a group are new since the last visit, and nothing where none is", () => {
     const markup = rendered(page());
 
-    expect(markup).toContain("10 asked of you");
-    expect(markup).toContain("1 waiting for your approval");
-    expect(markup).toContain('href="#decisions-asked"');
-    expect(markup).toContain('href="#decisions-waiting"');
+    expect(markup).toContain(">1 new</span>");
+    // Ten groups and one new row between them, so the phrase appears once.
+    expect(markup.match(/ new<\/span>/g)).toHaveLength(1);
   });
 
-  it("carries the asker's recommendation where the record has one, and no other row invents one", () => {
+  it("gives the quiet group its standing sentence where every other says an age", () => {
     const markup = rendered(page());
 
-    expect(markup).toContain("Recommended: raise it once; what is left is small and well understood");
-    expect(markup.match(/Recommended:/g)).toHaveLength(1);
+    expect(markup).toContain("they stay in force");
+    expect(markup).toContain(">yesterday</span>");
   });
 
-  it("offers the act on the rows the server said carry one, and a way through on the rest", () => {
-    const markup = rendered(page());
-
-    // Two approvals: the unapproved goal and the unclaimed renewal. The
-    // claimed renewal links to its goal instead, because the engine refuses a
-    // budget on claimed work.
-    expect(markup.match(/>Approve</g)).toHaveLength(2);
-    expect(markup).toContain("Answer on the fleet channel with your code");
-    expect(markup).toContain("Open the register");
-    expect(markup).toContain("Open the record");
-    expect(markup).toContain("Open the message");
-  });
-
-  it("names the terminal command where the terminal is the way", () => {
-    const markup = rendered(page());
-
-    expect(markup).toContain("metasystem goal resume --id g1-s48");
-  });
-
-  // A seat's park is still asked of a human, because a human has not seen it
-  // — but the way out of it is a button now, not a command to copy.
-  it("offers a seat's park the button that returns it, and no command", () => {
-    const markup = rendered(page());
-
-    expect(markup).toContain("Return to queue");
-    expect(markup).not.toContain("metasystem goal unpark");
-  });
-
-  it("says so plainly when each block is empty", () => {
+  it("leaves an empty group off the page and says so when nothing is waiting at all", () => {
     const markup = rendered(page({ needsYou: [], counts: { needsYou: 0, asked: 0, waiting: 0, rulings: 148 } }));
 
-    expect(markup).toContain("Nothing is asked of you.");
-    expect(markup).toContain("Nothing waits for your approval.");
+    expect(markup).not.toContain("Questions");
+    expect(markup).toContain("Nothing is waiting on you.");
   });
 
-  it("puts signing in at the top, as its own row, when nothing proves a human", () => {
-    expect(rendered(page({ signIn: true }))).toContain("Sign in to act");
-    expect(rendered(page())).not.toContain("Sign in to act");
+  it("puts signing in at the top when nothing proves a human", () => {
+    expect(rendered(page({ signIn: true }))).toContain("Nothing proves a human on this seat yet.");
+    expect(rendered(page())).not.toContain("Nothing proves a human on this seat yet.");
   });
 });
 
-describe("what you decided", () => {
-  it("names the four tabs with their counts, the register's own count among them", () => {
-    const markup = rendered(page());
+describe("one group open", () => {
+  it("shows that group's rows and no other group's", () => {
+    const markup = rendered(page(), { chosen: "questions" });
 
-    expect(markup).toContain("Rulings 148");
-    expect(markup).toContain("Decisions 1");
-    expect(markup).toContain("Answered 1");
-    expect(markup).toContain("Approved 2");
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain("Which census format?");
+    expect(markup).not.toContain("A draft nobody accepted");
+    expect(markup.match(/aria-expanded="true"/g)).toHaveLength(1);
   });
 
-  it("renders a ruling whole, with its owner, its review chip and its mentions", () => {
-    const markup = rendered(page());
+  it("opens what this viewer left open, and falls back where that group has gone", () => {
+    expect(rendered(page(), { chosen: "drafts" })).toContain("A draft nobody accepted");
+    // The draft was accepted between two reads, so the group it was left open
+    // on is gone and the first group with something new opens instead.
+    const accepted = page({ needsYou: everyKind.filter((one) => one.kind !== "draft") });
+    expect(rendered(accepted, { chosen: "drafts" })).toContain("Which census format?");
+  });
 
-    // The words whole, escaped as markup escapes an apostrophe and not
-    // shortened: the register is the record, and the card renders all of it.
-    expect(markup).toContain("two drag moves are the only acts the browser publishes, and g1-s12 is where they land");
-    expect(markup).not.toContain("…");
-    expect(markup).toContain("owner Wido");
-    expect(markup).toContain("review passed 6 days ago");
-    expect(markup).toContain("/backlog/goal/g1-s12");
-    // The context is there and behind a disclosure.
-    expect(markup).toContain("Given with the board design");
+  it("opens the first group with something new where nothing is remembered", () => {
+    expect(rendered(page(), { chosen: null })).toContain("Which census format?");
+  });
+});
+
+describe("a row's one line", () => {
+  it("is the thing itself, with no id and no button on it", () => {
+    const markup = rendered(page(), { chosen: "reviews" });
+
+    // The ruling's own first sentence, not "Review R-3, due …".
+    expect(markup).toContain("The board&#x27;s two drag moves are the only acts the browser publishes");
+    expect(markup).not.toContain("adopt, revise or withdraw");
+    expect(markup).not.toContain("<button type=\"button\" class=\"ms-button\"");
+  });
+
+  it("carries the goal's facts at its muted end and a dot where it is new", () => {
+    const markup = rendered(page(), { chosen: "queue" });
+
+    expect(markup).toContain(">yours<");
+    expect(markup).toContain(">tier 3<");
+    expect(markup).toContain("5 days");
+    // Nothing in the queue is new here, so no dot is drawn in it.
+    expect(rendered(page(), { chosen: "questions" })).toContain("ms-decisions-dot");
+  });
+});
+
+describe("an open row", () => {
+  it("names the row's id, small, where a human who needs it looks for it", () => {
+    expect(rendered(page(), { chosen: "questions", openRow: "Q-1" })).toContain(">Q-1</p>");
+  });
+
+  it("holds a question and the register, which is where it is answered", () => {
+    const markup = rendered(page(), { chosen: "questions", openRow: "Q-1" });
+
+    expect(markup).toContain("Which census format?");
+    expect(markup).toContain("if you do nothing: it stays open");
+    expect(markup).toContain("Open the register");
+    // There is no one-click settle: the route takes an answering record's
+    // reference or a withdrawal, and a bare "settled" would misstate what
+    // happened.
+    expect(markup).not.toContain("Settle");
+  });
+
+  it("holds a draft, its path, and the act that accepts it", () => {
+    const markup = rendered(page(), { chosen: "drafts", openRow: "d-open" });
+
+    expect(markup).toContain("plans/designs/draft.md");
+    expect(markup).toContain(">Accept</button>");
+    expect(markup).toContain("Open the record");
+  });
+
+  it("holds a landed design's goals with their states, and the act that closes it", () => {
+    const markup = rendered(page(), { chosen: "landed", openRow: "d-landed" });
+
+    expect(markup).toContain("g1-s9 · done");
+    expect(markup).toContain("g1-s10 · done");
+    expect(markup).toContain(">Mark done</button>");
+    expect(markup).toContain("Open the record");
+  });
+
+  it("holds a ruling's words, its context behind a disclosure, and its schedule", () => {
+    const markup = rendered(page(), { chosen: "reviews", openRow: "R-3" });
+
+    expect(markup).toContain("The rest of the ruling.");
     expect(markup).toContain("<summary");
+    expect(markup).toContain("Given with the board design");
+    expect(markup).toContain("owner Wido");
+    expect(markup).toContain("review due 2026-09-19");
+    expect(markup).toContain("Open the register");
   });
 
-  // A row whose review condition is a date AND an event keeps both on the
-  // card. The register carries them — R-29-m2 is due on a date and on a
-  // terminal re-arm, whichever comes first — and the date used to win.
-  it("keeps the event on a card whose row also carries a due date", () => {
-    const both = page();
-    const markup = rendered({
-      ...both,
-      decided: {
-        ...both.decided,
-        rulings: [
-          ruling({
-            id: "R-29-m2",
-            due: "2026-09-19",
-            event: "terminal-re-arm",
-            condition: "class=temporary due=2026-09-19 event=terminal-re-arm",
-            duePassed: true,
-          }),
-        ],
-      },
-    });
+  it("holds a queued goal whole, with its four acts", () => {
+    const markup = rendered(page(), { chosen: "queue", openRow: "g1-s40" });
 
-    expect(markup).toContain("review passed 6 days ago · or on terminal-re-arm");
+    expect(markup).toContain("The pane reads a document as a chapter");
+    expect(markup).toContain("no budget recorded");
+    expect(markup).toContain("priority 2, position 1");
+    expect(markup).toContain(">Approve</button>");
+    expect(markup).toContain(">Not now</button>");
+    expect(markup).toContain(">Edit</button>");
+    expect(markup).toContain("Open the goal");
   });
 
-  it("lists the register's broken rows rather than hiding them", () => {
-    const markup = rendered(page());
+  it("holds a seat's park with the way back, and a stopped goal with its command", () => {
+    const parked = rendered(page(), { chosen: "parked", openRow: "g1-s45" });
+    const stopped = rendered(page(), { chosen: "stopped", openRow: "g1-s48" });
 
-    expect(markup).toContain("1 row of the register could not be read");
-    expect(markup).toContain("R-9: review condition needs due= or event=");
+    expect(parked).toContain("the implementer paused it to finish g1-s48 first");
+    expect(parked).toContain(">Return to queue</button>");
+    expect(stopped).toContain("metasystem goal resume --id g1-s48");
+    expect(stopped).not.toContain("metasystem goal unpark");
   });
 
-  it("says nothing about defects when the register has none", () => {
-    const empty = page();
-    const markup = rendered({ ...empty, decided: { ...empty.decided, defects: [] } });
+  it("offers a renewal the sheet only where the engine would take one", () => {
+    const unclaimed = rendered(page(), { chosen: "renewals", openRow: "g1-s42" });
+    const claimed = rendered(page(), { chosen: "renewals", openRow: "g1-s43" });
 
-    expect(markup).not.toContain("could not be read");
+    expect(unclaimed).toContain(">Approve</button>");
+    expect(claimed).not.toContain(">Approve</button>");
+    expect(claimed).toContain("work already claimed continues; renew at the goal");
   });
 
-  it("opens each of the other three tabs on its own rows", () => {
-    expect(rendered(page(), "decisions")).toContain("The roster for design work");
-    expect(rendered(page(), "answered")).toContain("Who owns the sweep?");
-    expect(rendered(page(), "approved")).toContain("Approved and ready to claim");
+  it("holds an alert and a seat's ask with the places they are answered", () => {
+    const alert = rendered(page(), { chosen: "alerts", openRow: "n-1" });
+    const ask = rendered(page(), { chosen: "asks", openRow: "q-1" });
+
+    expect(alert).toContain("Open the message");
+    expect(ask).toContain("Answer on the fleet channel with your code");
+    expect(ask).toContain("Recommended: raise it once; what is left is small and well understood");
   });
 
-  it("carries Withdraw only where the board's own eligibility allows", () => {
-    const markup = rendered(page(), "approved");
-
-    // Ready for Work carries it; a concluded goal does not.
-    expect(markup.match(/>Withdraw approval</g)).toHaveLength(1);
-    expect(markup).toContain("The shell, the rail and the header");
+  it("carries the asker's recommendation only where the record has one", () => {
+    expect(rendered(page(), { chosen: "questions", openRow: "Q-1" })).not.toContain("Recommended:");
   });
 
-  it("says what each empty tab is empty of", () => {
-    const empty = page();
-    const bare = {
-      ...empty,
-      decided: { rulings: [], defects: [], decisions: [], answered: [], approved: [], notNow: [] },
-      counts: { needsYou: 0, asked: 0, waiting: 0, rulings: 0 },
-    };
+  it("says Sign in to act in place of the acts when nothing proves a human", () => {
+    const markup = rendered(page({ signIn: true }), { chosen: "queue", openRow: "g1-s40", signedIn: false });
 
-    expect(rendered(bare, "decisions")).toContain("This project has recorded no decisions yet.");
-    expect(rendered(bare, "answered")).toContain("No question of the register has been answered yet.");
-    expect(rendered(bare, "approved")).toContain("No goal carries an approval yet.");
-    expect(rendered(bare, "rulings")).toContain("No ruling of the register matches.");
+    expect(markup).toContain(">Sign in to act</button>");
+    expect(markup).not.toContain(">Approve</button>");
+    // The way through is not an act and stays: reading a goal needs no proof.
+    expect(markup).toContain("Open the goal");
   });
-});
 
-describe("the phone", () => {
-  // The page has one column at every width, and the card stacks through its
-  // own stylesheet rather than through a second markup: nothing here renders
-  // differently at 400px, which is what keeps the two widths one page.
-  it("renders one markup, which the stylesheet stacks", () => {
-    expect(rendered(page())).toBe(rendered(page()));
-    expect(rendered(page())).toContain("ms-decisions-need-way");
+  it("shows a refusal under the row it came from, and nowhere else", () => {
+    const refused: Acts = { ...acts, refusedAt: "g1-s45", refusal: "the goal is not parked" };
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <Views page={page()} acts={refused} chosen="parked" openRow="g1-s45" />
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("the goal is not parked");
   });
 });
 
@@ -385,191 +476,139 @@ describe("the queue", () => {
     need({ id: "g1-s41", title: "The fleet page reads a chain", row: row({ ref: { kind: "goal", id: "g1-s41", revision: 3 }, intent: "The fleet page reads a seat's whole chain", labels: ["headless-fleet"], origin: "main", tier: 0, openedAt: "2026-09-24T00:00:00Z" }) }),
   ];
   const withQueue = (over: Partial<Page> = {}) =>
-    page({
-      needsYou: queued,
-      counts: { needsYou: 2, asked: 0, waiting: 2, rulings: 148 },
-      ...over,
-    });
+    page({ needsYou: queued, counts: { needsYou: 2, asked: 0, waiting: 2, rulings: 148 }, ...over });
 
-  it("says its silence once, in the block's head, rather than on every row", () => {
-    const markup = rendered(withQueue());
+  it("puts its three tools on one line in the group's head", () => {
+    const markup = rendered(withQueue(), { chosen: "queue" });
 
-    expect(markup).toContain("If you do nothing, these stay in To Do and no seat may claim them.");
-    expect(markup.match(/stay in To Do and no seat may claim them/g)).toHaveLength(1);
-  });
-
-  it("shows the row's age, its tier above zero, whose it is, and its labels", () => {
-    const markup = rendered(withQueue());
-
-    expect(markup).toContain(">tier 2<");
-    // Tier zero is a record that declares none, so no chip claims one.
-    expect(markup).not.toContain(">tier 0<");
-    expect(markup).toContain(">yours<");
-    expect(markup).toContain(">browser-interface<");
-    expect(markup).toContain(">headless-fleet<");
-  });
-
-  it("opens a row in place, with the whole intent and what a decision needs", () => {
-    const shut = rendered(withQueue());
-    const open = renderToStaticMarkup(
-      <MemoryRouter>
-        <TooltipPrimitive.Provider>
-          <Blocks page={withQueue()} tab="rulings" opened={["g1-s40"]} />
-        </TooltipPrimitive.Provider>
-      </MemoryRouter>,
-    );
-
-    expect(shut).toContain('aria-expanded="false"');
-    expect(shut).not.toContain("The queue narrows by label and by origin");
-    expect(open).toContain('aria-expanded="true"');
-    expect(open).toContain("The queue narrows by label and by origin");
-    expect(open).toContain("no budget recorded");
-    expect(open).toContain("priority 2, position 1");
-  });
-
-  it("draws a label chip per label on screen, with its count", () => {
-    const markup = rendered(withQueue());
-
-    expect(markup).toContain("browser-interface 1");
-    expect(markup).toContain("headless-fleet 1");
+    expect(markup).toContain("Find in the id, the intent and the labels");
+    expect(markup).toContain("Backlog order");
     expect(markup).toContain(">yours</button>");
     expect(markup).toContain("seats&#x27;</button>");
+    expect(markup).toContain("browser-interface 1");
+    expect(markup).toContain("2 waiting");
   });
 
-  it("counts what a bulk act would act on, and acts on nothing at zero", () => {
-    const none = rendered(withQueue());
-    const some = renderToStaticMarkup(
-      <MemoryRouter>
-        <TooltipPrimitive.Provider>
-          <Blocks page={withQueue()} tab="rulings" selected={["g1-s40"]} />
-        </TooltipPrimitive.Provider>
-      </MemoryRouter>,
-    );
+  it("shows no selection bar until something is ticked", () => {
+    expect(rendered(withQueue(), { chosen: "queue" })).not.toContain("selected</span>");
+  });
 
-    expect(none).toContain("Approve 0 selected");
-    expect(none).toContain("Not now for 0 selected");
-    expect(none.match(/disabled=""/g)?.length).toBeGreaterThan(1);
-    expect(some).toContain("Approve 1 selected");
-    expect(some).toContain("Not now for 1 selected");
+  it("puts the bar at the group's foot, with the two sheets and a way to clear", () => {
+    const markup = rendered(withQueue(), { chosen: "queue", selected: ["g1-s40"] });
+
+    expect(markup).toContain("1 selected");
+    expect(markup).toContain(">Approve</button>");
+    expect(markup).toContain(">Not now</button>");
+    expect(markup).toContain(">Clear</button>");
   });
 
   // A tick on a row the narrowing then hid is a tick on a row a human can no
   // longer see. Acting on it would be the one thing a queue must never do.
   it("acts only on rows that are ticked AND on screen", () => {
-    const markup = renderToStaticMarkup(
-      <MemoryRouter>
-        <TooltipPrimitive.Provider>
-          <Blocks
-            page={withQueue()}
-            tab="rulings"
-            selected={["g1-s40", "g1-s41"]}
-            narrowing={{ ...noNarrowing, label: "headless-fleet" }}
-          />
-        </TooltipPrimitive.Provider>
-      </MemoryRouter>,
-    );
+    const markup = rendered(withQueue(), {
+      chosen: "queue",
+      selected: ["g1-s40", "g1-s41"],
+      narrowing: { ...noNarrowing, label: "headless-fleet" },
+    });
 
-    expect(markup).toContain("Approve 1 selected");
+    expect(markup).toContain("1 selected");
     expect(markup).toContain("2 waiting · 1 shown");
     expect(markup).not.toContain("The queue narrows by label<");
   });
 
   it("says so when the tools leave nothing on screen", () => {
-    const markup = renderToStaticMarkup(
-      <MemoryRouter>
-        <TooltipPrimitive.Provider>
-          <Blocks page={withQueue()} tab="rulings" narrowing={{ ...noNarrowing, find: "nothing says this" }} />
-        </TooltipPrimitive.Provider>
-      </MemoryRouter>,
-    );
+    const markup = rendered(withQueue(), {
+      chosen: "queue",
+      narrowing: { ...noNarrowing, find: "nothing says this" },
+    });
 
     expect(markup).toContain("No goal in the queue matches.");
     expect(markup).toContain("2 waiting · 0 shown");
   });
 });
 
-describe("not now", () => {
-  it("lists the parks this human made, with the reason and the way back", () => {
-    const markup = rendered(page(), "not-now");
+describe("what you decided", () => {
+  const decided = (tab: TabId = "rulings") => rendered(page(), { view: "decided", tab });
 
-    expect(markup).toContain("not before the board&#x27;s own filters settle");
-    expect(markup).toContain("The register opens from the review card");
-    // A blocker park says what it is waiting for, because it lifts by itself.
-    expect(markup).toContain("waits for g1-s24");
-    expect(markup.match(/>Return to queue</g)).toHaveLength(3);
+  it("names the five tabs with their counts, the register's own count among them", () => {
+    const markup = decided();
+
+    expect(markup).toContain("Rulings 148");
+    expect(markup).toContain("Decisions 1");
+    expect(markup).toContain("Answered 1");
+    expect(markup).toContain("Approved 2");
+    expect(markup).toContain("Not now 2");
   });
 
-  it("says so plainly when this human has paused nothing", () => {
-    const empty = page();
-    const bare = { ...empty, decided: { ...empty.decided, notNow: [] } };
+  it("renders a ruling whole, with its owner, its review chip and its mentions", () => {
+    const markup = decided();
 
-    expect(rendered(bare, "not-now")).toContain("You have paused nothing.");
+    expect(markup).toContain("two drag moves are the only acts the browser publishes, and g1-s12 is where they land");
+    expect(markup).not.toContain("…");
+    expect(markup).toContain("owner Wido");
+    expect(markup).toContain("review passed 6 days ago");
+    expect(markup).toContain("/backlog/goal/g1-s12");
+    expect(markup).toContain("Given with the board design");
   });
 
-  it("offers no way back at all when nothing proves a human", () => {
-    const markup = rendered(page({ signIn: true }), "not-now");
+  it("lists the register's broken rows rather than hiding them", () => {
+    expect(decided()).toContain("1 row of the register could not be read");
+    expect(decided()).toContain("R-9: review condition needs due= or event=");
+  });
 
-    expect(markup).toContain("Return to queue");
-    expect(markup).toContain('disabled=""');
+  it("opens each of the other four tabs on its own rows", () => {
+    expect(decided("decisions")).toContain("The roster for design work");
+    expect(decided("answered")).toContain("Who owns the sweep?");
+    expect(decided("approved")).toContain("Approved and ready to claim");
+    expect(decided("not-now")).toContain("not before the board&#x27;s own filters settle");
+    expect(decided("not-now")).toContain("waits for g1-s24");
+  });
+
+  it("carries Withdraw only where the board's own eligibility allows", () => {
+    const markup = decided("approved");
+
+    expect(markup.match(/>Withdraw approval</g)).toHaveLength(1);
+    expect(markup).toContain("The shell, the rail and the header");
+  });
+
+  it("says what each empty tab is empty of", () => {
+    const bare = page({
+      decided: { rulings: [], defects: [], decisions: [], answered: [], approved: [], notNow: [] },
+      counts: { needsYou: 0, asked: 0, waiting: 0, rulings: 0 },
+    });
+    const view = (tab: TabId) => rendered(bare, { view: "decided", tab });
+
+    expect(view("decisions")).toContain("This project has recorded no decisions yet.");
+    expect(view("answered")).toContain("No question of the register has been answered yet.");
+    expect(view("approved")).toContain("No goal carries an approval yet.");
+    expect(view("rulings")).toContain("No ruling of the register matches.");
+    expect(view("not-now")).toContain("You have paused nothing.");
   });
 });
 
-describe("signing in while the page is open", () => {
-  // The payload carries signIn as it stood when the page was read. A human
-  // who opens Decisions signed out, signs in through "Sign in to act" and
-  // presses Not now must not meet a disabled button: the two acts this page
-  // publishes are gated on the LIVE session, not on the stale payload.
-  const RETURN_OFF = '<button type="button" class="ms-button" disabled="">Return to queue</button>';
-  const RETURN_ON = '<button type="button" class="ms-button">Return to queue</button>';
-  const NOT_NOW_OFF = '<button type="button" class="ms-button" disabled="">Not now</button>';
-  const NOT_NOW_ON = '<button type="button" class="ms-button">Not now</button>';
-
-  function withSession(payload: Page, live: boolean | undefined, tab: TabId = "not-now"): string {
-    return renderToStaticMarkup(
-      <MemoryRouter>
-        <TooltipPrimitive.Provider>
-          <Blocks page={payload} signedIn={live} tab={tab} />
-        </TooltipPrimitive.Provider>
-      </MemoryRouter>,
-    );
-  }
-
-  it("takes the payload's answer when nothing else is known", () => {
-    expect(withSession(page({ signIn: true }), undefined)).toContain(RETURN_OFF);
-    expect(withSession(page(), undefined)).toContain(RETURN_ON);
+describe("the phone", () => {
+  // The page has one column at every width, and the groups stack through the
+  // stylesheet rather than through a second markup: nothing here renders
+  // differently at 400px, which is what keeps the two widths one page.
+  it("renders one markup, which the stylesheet stacks", () => {
+    expect(rendered(page())).toBe(rendered(page()));
+    expect(rendered(page())).toContain("ms-decisions-group-line");
   });
+});
 
-  it("enables Return to queue the moment the session says a human is signed in", () => {
-    const stale = page({ signIn: true });
+describe("where the two record writes go", () => {
+  /**
+   * Accepting a draft and marking a landed design done are writes to the
+   * record status route, and this page does not open a second way to it: it
+   * calls the Project section's own writer, which is the one call site the cut
+   * guard counts for that resource. A page that wrote its own request would
+   * pass every assertion above and fail the cut.
+   */
+  it("is the Project section's own status writer, and no request of this page's own", () => {
+    const here = path.resolve(fileURLToPath(import.meta.url), "..");
+    const pane = readFileSync(path.join(here, "DecisionsPane.tsx"), "utf8");
 
-    expect(withSession(stale, false)).toContain(RETURN_OFF);
-    // The same stale payload, and the buttons are live.
-    expect(withSession(stale, true)).toContain(RETURN_ON);
-    expect(withSession(stale, true)).not.toContain(RETURN_OFF);
-  });
-
-  it("enables Not now on the queue rows too, on the same live answer", () => {
-    const queued = page({
-      signIn: true,
-      needsYou: [need({ id: "g1-s40", title: "A goal nobody has authorized" })],
-      counts: { needsYou: 1, asked: 0, waiting: 1, rulings: 0 },
-    });
-
-    expect(withSession(queued, false, "rulings")).toContain(NOT_NOW_OFF);
-    expect(withSession(queued, true, "rulings")).toContain(NOT_NOW_ON);
-    expect(withSession(queued, true, "rulings")).not.toContain(NOT_NOW_OFF);
-  });
-
-  it("leaves a seat's park in the inbox on the same live answer", () => {
-    const seatPark = page({
-      signIn: true,
-      needsYou: [
-        need({ kind: "parked", id: "g1-s37", title: "A goal a seat parked", act: "unpark", row: null }),
-      ],
-      counts: { needsYou: 1, asked: 1, waiting: 0, rulings: 0 },
-    });
-
-    expect(withSession(seatPark, false, "rulings")).toContain(RETURN_OFF);
-    expect(withSession(seatPark, true, "rulings")).toContain(RETURN_ON);
+    expect(pane).toContain('import { setRecordStatus } from "../project/api";');
+    expect(pane).toContain("setRecordStatus(need.id, status)");
   });
 });

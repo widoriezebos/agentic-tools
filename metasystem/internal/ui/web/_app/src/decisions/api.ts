@@ -54,6 +54,46 @@ export type Need = {
   command: string;
   /** The whole backlog row, for the rows whose act is the board's sheet. */
   row: Row | null;
+  /**
+   * Whether this row was recorded after the start of the window below.
+   *
+   * The server decides it, because the server is what read the dates and what
+   * knows when this human was last here. It is by recorded dates and is honest
+   * about them rather than exact: an instant is compared as an instant, a
+   * calendar date counts from the window's own day, and a row nothing dated is
+   * never new.
+   */
+  new: boolean;
+  /**
+   * The register row a ruling review names: what was actually ruled, why, who
+   * owns it, and the schedule. Every other kind carries them empty.
+   */
+  words: string;
+  context: string;
+  owner: string;
+  class: string;
+  due: string;
+  /** Where the record this row is about lives, relative to the checkout. */
+  path: string;
+  /** The goals a landed design named, with where each one stands. */
+  goals: GoalState[];
+};
+
+/** One goal a record names, and where the ledger says it stands. */
+export type GoalState = { id: string; state: string };
+
+/**
+ * The window a page's "new" was decided against: the end of this human's
+ * previous visit to THIS page, or a day back on a first one.
+ *
+ * It travels so the page can say what it means by new rather than leaving a
+ * reader to infer a boundary from the dots.
+ */
+export type Visit = {
+  /** The start of the window in RFC3339, or "" where there was none. */
+  since: string;
+  /** Whether the window is a first visit's day rather than a previous visit. */
+  first: boolean;
 };
 
 /** One row of the rulings register, whole. */
@@ -127,6 +167,8 @@ export type Page = {
   needsYou: Need[];
   decided: Decided;
   counts: Counts;
+  /** The window every row's `new` was decided against. */
+  visit: Visit;
   /**
    * Where the rulings register is, relative to the checkout — which is what
    * the document reader opens a path against. Every register destination in

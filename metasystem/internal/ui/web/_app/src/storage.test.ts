@@ -10,6 +10,7 @@ import {
   BACKLOG_TEXT_KEY,
   BACKLOG_TIER_KEY,
   BACKLOG_VIEW_KEY,
+  DECISIONS_OPEN_KEY,
   DEFAULT_DOCK_HEIGHT,
   DOCK_HEIGHT_KEY,
   DOCK_KEY,
@@ -22,6 +23,7 @@ import {
   RAIL_KEY,
   readBacklogFilters,
   readBacklogView,
+  readDecisionsOpen,
   readDockHeight,
   readDockOpen,
   readDoneWindow,
@@ -33,6 +35,7 @@ import {
   readTheme,
   writeBacklogFilters,
   writeBacklogView,
+  writeDecisionsOpen,
   writeDockHeight,
   writeDockOpen,
   writeDoneWindow,
@@ -398,6 +401,31 @@ describe("the stored view state", () => {
     expect(() => {
       writeBacklogFilters(noFilters, throwing);
       writeDoneWindow(null, throwing);
+    }).not.toThrow();
+  });
+
+  // The group of the Decisions inbox a viewer left open. Whether that name is
+  // still a group of the inbox is the page's question and is asked there; this
+  // keeps the name and nothing else.
+  it("keeps the open group of the Decisions inbox under its own key", () => {
+    const written = store({});
+
+    expect(readDecisionsOpen(written)).toBeNull();
+    writeDecisionsOpen("queue", written);
+    expect(written.getItem(DECISIONS_OPEN_KEY)).toBe("queue");
+    expect(readDecisionsOpen(written)).toBe("queue");
+    // A group a human closed is a choice rather than an absence, and is kept
+    // as one.
+    writeDecisionsOpen("", written);
+    expect(readDecisionsOpen(written)).toBe("");
+  });
+
+  it("keeps the open group out of a store that refuses to keep it", () => {
+    expect(readDecisionsOpen(throwing)).toBeNull();
+    expect(readDecisionsOpen(null)).toBeNull();
+    expect(() => {
+      writeDecisionsOpen("queue", throwing);
+      writeDecisionsOpen("queue", null);
     }).not.toThrow();
   });
 });
