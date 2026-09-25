@@ -36,6 +36,10 @@ export type HelpId =
   | "backlog"
   | "fleet"
   | "decisions-section"
+  | "needs-your-choice"
+  | "silence"
+  | "ruling"
+  | "review-condition"
   | "application"
   | "settings"
   | "partner"
@@ -159,7 +163,23 @@ export const HELP: Record<HelpId, Term> = {
   },
   "decisions-section": {
     term: "Decisions",
-    text: "What the machinery is asking you to rule on: questions from every seat, approvals, delegations. Your answer is recorded with your name as the authority.",
+    text: "Two questions on one page: what needs your choice, and what you decided. The first is everything waiting on a human, each row with what happens if you do nothing; the second is your rulings, the decisions recorded, the questions answered and the goals you approved.",
+  },
+  "needs-your-choice": {
+    term: "Needs your choice",
+    text: "Everything waiting on a human and nobody else, complete rather than capped: work nobody has authorized, approvals that expired, a seat's own question, open questions, parked and stopped goals, drafts, designs whose work has landed, rulings whose review has come due, and what the steward addressed to you.",
+  },
+  silence: {
+    term: "If you do nothing",
+    text: "What the machinery does when nobody answers. It is a statement about the engine rather than an encouragement, and it is never invented: where a record has no recorded consequence of being left, the row says exactly that.",
+  },
+  ruling: {
+    term: "Ruling",
+    text: "A standing decision a human made, kept in the register in their own words with its context, its accountable owner and, where it is temporary, the condition under which it is reviewed. The register is append-only: a ruling that is overturned is superseded by a later one, never rewritten.",
+  },
+  "review-condition": {
+    term: "Review condition",
+    text: "When a ruling comes back for a decision. Most rulings stand until a human says otherwise; a temporary, experimental, delegated-authority or assumption-dependent one carries a date or a named event, and the date is what this page can judge. An event is shown as written and judged by the steward, not here.",
   },
   application: {
     term: "Application",

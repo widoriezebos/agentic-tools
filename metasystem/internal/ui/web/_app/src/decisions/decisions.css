@@ -1,0 +1,535 @@
+/*
+ * Decisions: one list of what waits on a human, then four tabs of what they
+ * decided.
+ *
+ * The inbox is cards rather than lines, because every row here carries four
+ * sentences a human reads before choosing — what is asked, who asks, what
+ * silence does, and what is recommended — and a one-line row would ellipsise
+ * three of them. The act, the link or the command stands at the right of the
+ * card at desk width and under the words at phone width, where a column of
+ * buttons beside a column of paragraphs leaves no room for either.
+ *
+ * The rulings are cards too, for the same reason and a stronger one: a ruling
+ * is the human's own words, and the page renders them whole. Nothing is
+ * truncated, nothing is summarised, and the context is behind a disclosure so
+ * that a register of a hundred and fifty rows is still a list somebody can
+ * scroll.
+ *
+ * Every colour is a token. Nothing animates and nothing moves on its own.
+ */
+
+.ms-decisions {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 1100px;
+  min-width: 0;
+}
+
+.ms-decisions-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ms-decisions-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The eyebrow the Overview and the Project section already use for the name of
+   a group of facts. */
+.ms-decisions-title {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+  margin: 0;
+}
+
+.ms-decisions-count {
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ms-text-3);
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--ms-border);
+}
+
+/* ------------------------------------------------------ needs your choice -- */
+
+.ms-decisions-calm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+}
+
+.ms-decisions-calm-icon {
+  color: var(--ms-ok-fg);
+  flex: none;
+}
+
+.ms-decisions-signin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-marker);
+  background: var(--ms-marker-bg);
+}
+
+.ms-decisions-signin-button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ms-marker-fg);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.ms-decisions-signin-words {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-decisions-inbox {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-decisions-need {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-decisions-need-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ms-decisions-need-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+  min-width: 0;
+}
+
+.ms-decisions-need-title {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ms-text);
+  min-width: 0;
+}
+
+.ms-decisions-need-asked {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-decisions-need-muted {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-decisions-need-recommend {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+/* The right-hand column: the act, the way through, or the command. */
+.ms-decisions-need-way {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: none;
+  max-width: 45%;
+}
+
+.ms-decisions-way {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: right;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ms-decisions-way:hover {
+  text-decoration: underline;
+}
+
+/* A way this build has no surface for is words rather than a control. */
+.ms-decisions-way--words {
+  color: var(--ms-text-3);
+  cursor: default;
+  white-space: normal;
+  text-align: right;
+}
+
+.ms-decisions-way--words:hover {
+  text-decoration: none;
+}
+
+.ms-decisions-command {
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  background: var(--ms-surface-2);
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.ms-decisions-refusal {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-danger);
+}
+
+/* --------------------------------------------------------------- decided -- */
+
+.ms-decisions-rulings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ms-decisions-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ms-decisions-find-field {
+  flex: 1 1 220px;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+  color: var(--ms-text);
+}
+
+.ms-decisions-class {
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+  color: var(--ms-text);
+}
+
+/* One quiet line above the list, opening on to the rows themselves. */
+.ms-decisions-defects {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-defects-line {
+  cursor: pointer;
+  color: var(--ms-marker-fg);
+}
+
+.ms-decisions-defect-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ms-decisions-defect {
+  overflow-wrap: anywhere;
+}
+
+.ms-decisions-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-decisions-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-decisions-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+  min-width: 0;
+}
+
+.ms-decisions-card-id {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-decisions-card-date {
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+/* The human's own words, whole. */
+.ms-decisions-card-words {
+  margin: 0;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-decisions-card-facts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-card-owner {
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-mention {
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ms-accent);
+  text-decoration: none;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+
+.ms-decisions-mention:hover {
+  border-color: var(--ms-border-strong);
+}
+
+.ms-decisions-context {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-decisions-context-line {
+  cursor: pointer;
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-context-words {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------- the other tabs -- */
+
+.ms-decisions-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ms-decisions-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border-bottom: 1px solid var(--ms-border);
+}
+
+.ms-decisions-line:last-child {
+  border-bottom: none;
+}
+
+.ms-decisions-line--act {
+  padding-right: 4px;
+}
+
+.ms-decisions-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 7px 4px;
+  color: var(--ms-text);
+  text-decoration: none;
+}
+
+a.ms-decisions-row:hover {
+  background: var(--ms-surface-2);
+}
+
+.ms-decisions-row-id {
+  font-size: 11px;
+  color: var(--ms-text-3);
+  flex: none;
+}
+
+.ms-decisions-row-title {
+  font-size: 13px;
+  line-height: 20px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.ms-decisions-row-note {
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+
+.ms-decisions-row-tail {
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+  flex: none;
+}
+
+.ms-decisions-none {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-3);
+}
+
+.ms-decisions-reason {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------ the phone -- */
+
+/*
+ * At phone width the card stacks: the words take the whole line and the act,
+ * the link or the command sits under them, left-aligned, because a button
+ * pushed to the right of a 400px screen is a button under a paragraph's last
+ * word.
+ */
+@media (max-width: 719px) {
+  .ms-decisions-need {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ms-decisions-need-way {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .ms-decisions-way,
+  .ms-decisions-way--words,
+  .ms-decisions-command {
+    text-align: left;
+    white-space: normal;
+  }
+
+  .ms-decisions-line {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .ms-decisions-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .ms-decisions-row-note {
+    max-width: 100%;
+  }
+}

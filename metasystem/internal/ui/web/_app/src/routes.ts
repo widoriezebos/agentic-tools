@@ -99,8 +99,8 @@ export const sections: readonly Section[] = [
     path: "/decisions",
     title: "Decisions",
     icon: Gavel,
-    shows: "A list of what is waiting on a human, with what is being asked, which seat asked it, and what answering it would do.",
-    projected: false,
+    shows: "Everything waiting on a human, each row saying what is asked, who asks and what happens if you do nothing, and what you have already decided: your rulings whole, the decisions recorded, the questions answered and the goals approved.",
+    projected: true,
   },
   {
     id: "application",

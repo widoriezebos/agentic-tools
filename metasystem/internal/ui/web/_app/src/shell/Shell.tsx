@@ -13,6 +13,7 @@ import { RefreshProvider } from "./refresh";
 import { Sheet } from "./Sheet";
 import { WorkAreaProvider } from "./workmodal";
 import { BacklogPane } from "../backlog/BacklogPane";
+import { DecisionsPane } from "../decisions/DecisionsPane";
 import { FleetPane } from "../fleet/FleetPane";
 import { sectionHelp } from "../help/terms";
 import { useNotifications } from "../notifications/store";
@@ -266,6 +267,10 @@ function Frame() {
       {/* Fleet reads the presence copy this server fetched for itself beside
           the ledger it already reads, so it is a route of its own too. */}
       <Route path="/fleet" element={<FleetPane />} />
+      {/* Decisions reads the project, the ledger, the journal, this seat's
+          open channel questions and the rulings register at once, so it is a
+          route of its own as well. */}
+      <Route path="/decisions" element={<DecisionsPane />} />
       {/* The sections this build does not project. Which they are is the
           section table's own field, so the routes, the empty register and
           what the Partner is told about availability cannot disagree.
