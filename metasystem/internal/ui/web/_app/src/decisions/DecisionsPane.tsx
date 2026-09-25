@@ -427,6 +427,7 @@ export function Views({
   onSelect = () => undefined,
   onBulk = () => undefined,
   onAct = () => undefined,
+  now = new Date(),
 }: {
   page: DecisionsPayload;
   /**
@@ -450,8 +451,14 @@ export function Views({
   onSelect?: (ids: string[]) => void;
   onBulk?: (act: "approve" | "park", goals: Need[]) => void;
   onAct?: (request: Request) => void;
+  /**
+   * The clock every age on this page is said against. It is the real one in
+   * the app and a fixed instant in a test, so that "yesterday" and "5 days"
+   * are asserted against the payload's own day rather than the day the test
+   * happens to run.
+   */
+  now?: Date;
 }) {
-  const now = new Date();
   const acting = signedIn ?? !page.signIn;
   const groups = groupsOf(page.needsYou, now);
   const open = chosen === "" ? null : openGroup(groups, chosen);
@@ -492,7 +499,9 @@ export function Views({
           {
             id: "decided",
             title: viewTitle("decided", decidedCount(page.decided)),
-            panel: <Decided page={page} acting={acting} tab={tab} onTab={onTab} onAct={onAct} acts={acts} />,
+            panel: (
+              <Decided page={page} acting={acting} tab={tab} onTab={onTab} onAct={onAct} acts={acts} now={now} />
+            ),
           },
         ]}
         selected={view}
@@ -578,6 +587,7 @@ function Decided({
   onTab,
   onAct,
   acts,
+  now,
 }: {
   page: DecisionsPayload;
   acting: boolean;
@@ -585,15 +595,16 @@ function Decided({
   onTab: (id: TabId) => void;
   onAct: (request: Request) => void;
   acts: Acts;
+  now: Date;
 }) {
   const decided = page.decided;
   const strip = tabs(page);
   const panels: Record<TabId, ReactNode> = {
-    rulings: <Rulings rulings={decided.rulings} defects={decided.defects} />,
-    decisions: <Items items={decided.decisions} empty="This project has recorded no decisions yet." />,
-    answered: <Items items={decided.answered} empty="No question of the register has been answered yet." />,
-    approved: <Approvals approved={decided.approved} onAct={onAct} />,
-    "not-now": <NotNowList parks={decided.notNow} signedIn={acting} onReturn={acts.onReturn} />,
+    rulings: <Rulings rulings={decided.rulings} defects={decided.defects} now={now} />,
+    decisions: <Items items={decided.decisions} empty="This project has recorded no decisions yet." now={now} />,
+    answered: <Items items={decided.answered} empty="No question of the register has been answered yet." now={now} />,
+    approved: <Approvals approved={decided.approved} onAct={onAct} now={now} />,
+    "not-now": <NotNowList parks={decided.notNow} signedIn={acting} onReturn={acts.onReturn} now={now} />,
   };
   return (
     <Tabs
@@ -612,13 +623,12 @@ function Decided({
   );
 }
 
-function Rulings({ rulings, defects }: { rulings: Ruling[]; defects: string[] }) {
+function Rulings({ rulings, defects, now }: { rulings: Ruling[]; defects: string[]; now: Date }) {
   const [find, setFind] = useState("");
   const [narrowed, setNarrowed] = useState<string>(ANY_CLASS);
   const classes = useMemo(() => classesIn(rulings), [rulings]);
   const shown = useMemo(() => shownRulings(rulings, find, narrowed), [rulings, find, narrowed]);
   const broken = defectLine(defects);
-  const now = new Date();
   return (
     <div className="ms-decisions-rulings">
       <div className="ms-decisions-find">
@@ -726,12 +736,13 @@ function NotNowList({
   parks,
   signedIn,
   onReturn,
+  now,
 }: {
   parks: NotNow[];
   signedIn: boolean;
   onReturn: (id: string) => void;
+  now: Date;
 }) {
-  const now = new Date();
   if (parks.length === 0) {
     return <p className="ms-decisions-none">You have paused nothing.</p>;
   }
@@ -769,8 +780,7 @@ function NotNowList({
   );
 }
 
-function Items({ items, empty }: { items: Item[]; empty: string }) {
-  const now = new Date();
+function Items({ items, empty, now }: { items: Item[]; empty: string; now: Date }) {
   if (items.length === 0) {
     return <p className="ms-decisions-none">{empty}</p>;
   }
@@ -805,8 +815,7 @@ function ItemRow({ item, now }: { item: Item; now: Date }) {
   return <span className="ms-decisions-row">{body}</span>;
 }
 
-function Approvals({ approved, onAct }: { approved: Approved[]; onAct: (request: Request) => void }) {
-  const now = new Date();
+function Approvals({ approved, onAct, now }: { approved: Approved[]; onAct: (request: Request) => void; now: Date }) {
   if (approved.length === 0) {
     return <p className="ms-decisions-none">No goal carries an approval yet.</p>;
   }

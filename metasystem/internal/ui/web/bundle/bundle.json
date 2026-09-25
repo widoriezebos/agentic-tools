@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:bb6ca7ddc39312835c2264f18b4a13aad9465ce76cc7ef05742aa2cc523d064b",
+  "sourceDigest": "sha256:b919d90c62f79c4d585b7e4c67b645f03615409c9a20c419b644df167ed5dfc2",
   "source": [
     {
       "path": ".npmrc",
@@ -300,11 +300,11 @@
     },
     {
       "path": "src/decisions/DecisionsPane.test.tsx",
-      "sha256": "355cfdfa7358e457afb6d6a5bf888ccb46f2617abf0bf5cd7e709dd94ba3de13"
+      "sha256": "a50395f56c003d7280149ca3c976343978750e7482b1604046aded048115998e"
     },
     {
       "path": "src/decisions/DecisionsPane.tsx",
-      "sha256": "54712bf1974afc90dd7fc9af43b5ae21a9258372f483f6f2a8292d888e33f5b1"
+      "sha256": "59d9de52f0629dbb8f2d3f6ad4d312d01624db449b4579c8a8eefae56c0e13eb"
     },
     {
       "path": "src/decisions/Inbox.tsx",
@@ -950,7 +950,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "c68f5f365ec64b2d1f5663229c42511300c5a8945b4ac335979d467ca971cc09"
+      "sha256": "848dce09614a7ccdb6e1e89c54bd313170742966c0bc4284a07b564af5d429d3"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
