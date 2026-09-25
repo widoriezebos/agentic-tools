@@ -131,6 +131,23 @@ type FleetCapture struct {
 	Machines []FleetMachine `json:"machines,omitempty"`
 	NeedsYou []string       `json:"needsYou,omitempty"`
 	Total    int            `json:"total,omitempty"`
+	// Launches is the launch cards the page was showing, as it showed them.
+	// The human's authorization is not among their fields and never travels:
+	// the sheet's word is the one thing on the Fleet page this capture does
+	// not carry.
+	Launches []FleetLaunch `json:"launches,omitempty"`
+}
+
+// FleetLaunch is one launch card as it was displayed: what it is making, how
+// it ended, and where it stopped, in the page's own words.
+type FleetLaunch struct {
+	Machine     string `json:"machine"`
+	Outcome     string `json:"outcome"`
+	Destination string `json:"destination,omitempty"`
+	// Step is the step the card was showing as the current one, and Words the
+	// owner's own sentence under a failed one.
+	Step  string `json:"step,omitempty"`
+	Words string `json:"words,omitempty"`
 }
 
 // FleetMachine is one row of that table as it was displayed.

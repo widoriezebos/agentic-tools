@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -101,9 +102,104 @@ func fixtureHealth(now time.Time) *fleet.Health {
 	}
 }
 
+// The two launches this fixture serves, which are the two states of the card
+// a human can still act on: one in flight and one that stopped.
+const (
+	fixtureRunningLaunch = "01M3BQAVYXE2AT6F0JG9YB64PG"
+	fixtureFailedLaunch  = "01M3BQ8000000000000000000A"
+)
+
+// fixtureLaunches is a running launch and a failed one.
+//
+// The running one is partway through: the clone, the tracking fetch and the
+// build are done, and the configuration step is pending — which is the card's
+// own middle state, a vertical list with outcomes above and nothing below.
+// The failed one stopped at the build with the gate fence's own words, which
+// is the failure class the design's self-grade names as the one the card must
+// show verbatim.
+func fixtureLaunches(now time.Time) []launch.Record {
+	ended := seat.FormatTime(now.Add(-14 * time.Minute))
+	return []launch.Record{
+		{
+			SchemaVersion: launch.SchemaVersion, Launch: fixtureRunningLaunch, Machine: "m1f",
+			Destination:  "/Users/wido/LocalStorage/GitHub/agentic-tools-m1f",
+			ClonedCommit: "b50abb959c1e2a4f6d8b0c3e5a7f9012d4b6c8e0", BuiltStamp: "b50abb959c1e2a4f6d8b0c3e5a7f9012d4b6c8e0",
+			Process:   launch.Process{PID: 40912, StartedAt: now.Add(-3 * time.Minute).Unix()},
+			StartedAt: seat.FormatTime(now.Add(-3 * time.Minute)), Outcome: launch.OutcomeRunning,
+			ReviewBy: "2026-10-02", Created: launch.Created{Destination: true, EvidenceRoot: true},
+			Steps: []launch.Step{
+				{Step: launch.StepClone, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-3 * time.Minute))},
+				{Step: launch.StepTracking, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-2 * time.Minute))},
+				{Step: launch.StepEngine, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-40 * time.Second))},
+				{Step: launch.StepConfiguration, Outcome: launch.StepPending, At: seat.FormatTime(now.Add(-40 * time.Second))},
+			},
+			Next: launch.Next{
+				Session: "cd /Users/wido/LocalStorage/GitHub/agentic-tools-m1f && claude",
+				Stop:    "metasystem stop --repo /Users/wido/LocalStorage/GitHub/agentic-tools-m1f/metasystem",
+			},
+		},
+		{
+			SchemaVersion: launch.SchemaVersion, Launch: fixtureFailedLaunch, Machine: "m1g",
+			Destination:  "/Users/wido/LocalStorage/GitHub/agentic-tools-m1g",
+			ClonedCommit: "b50abb959c1e2a4f6d8b0c3e5a7f9012d4b6c8e0",
+			Process:      launch.Process{PID: 40655, StartedAt: now.Add(-22 * time.Minute).Unix()},
+			StartedAt:    seat.FormatTime(now.Add(-22 * time.Minute)), EndedAt: &ended,
+			Outcome: launch.OutcomeFailed, ReviewBy: "2026-10-02",
+			Created: launch.Created{Destination: true, EvidenceRoot: true},
+			Steps: []launch.Step{
+				{Step: launch.StepClone, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-22 * time.Minute))},
+				{Step: launch.StepTracking, Outcome: launch.StepDone, At: seat.FormatTime(now.Add(-21 * time.Minute))},
+				{
+					Step: launch.StepEngine, Outcome: launch.StepFailed, At: ended,
+					Words: "go-build: refused: the gate fence holds this checkout; run scripts/agents/go-gate.sh --fast and land the red it names before building here",
+				},
+			},
+			Next: launch.Next{
+				Session: "cd /Users/wido/LocalStorage/GitHub/agentic-tools-m1g && claude",
+				Stop:    "metasystem stop --repo /Users/wido/LocalStorage/GitHub/agentic-tools-m1g/metasystem",
+			},
+		},
+	}
+}
+
+// fixtureLaunchesNewest is the same two launches with the one this fixture was
+// told to show first. The page draws the newest launch still worth a card, so
+// this is how both of the card's states are reachable in a browser.
+func fixtureLaunchesNewest(now time.Time, newest string) []launch.Record {
+	records := fixtureLaunches(now)
+	switch newest {
+	case "none":
+		return nil
+	case "failed":
+		return []launch.Record{records[1], records[0]}
+	default:
+		return records
+	}
+}
+
+// fixtureLaunchOf is what this fixture answers a launch act with: the running
+// record, told what the sheet asked for. It clones nothing.
+func fixtureLaunchOf(asked launch.Request, now time.Time) launch.Record {
+	record := fixtureLaunches(now)[0]
+	if asked.Machine != "" {
+		record.Machine = asked.Machine
+	}
+	if asked.Destination != "" {
+		record.Destination = asked.Destination
+	}
+	if asked.ReviewBy != "" {
+		record.ReviewBy = asked.ReviewBy
+	}
+	record.Next = launch.Next{
+		Session: "cd " + record.Destination + " && claude",
+		Stop:    "metasystem stop --repo " + record.Destination + "/metasystem",
+	}
+	return record
+}
+
 // fixtureFleet is the Fleet page this fixture serves, composed from the canned
 // presence above and the observation the board was drawn from.
-func fixtureFleet(proven bool) func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error) {
+func fixtureFleet(proven bool, launched string) func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error) {
 	return func(observed snapshot.Observation, board backlog.Board, now time.Time) (fleet.Page, error) {
 		in := fleet.Inputs{
 			This: fixtureThis, Presence: fixturePresence(now, proven),
@@ -115,6 +211,10 @@ func fixtureFleet(proven bool) func(snapshot.Observation, backlog.Board, time.Ti
 			Observation: observed, Board: board,
 			Previous: fixtureStandings(now),
 			Window:   seat.DefaultStaleMinutes * time.Minute,
+		}
+		in.Launches = fixtureLaunchesNewest(now, launched)
+		in.Launching = fleet.Launching{
+			Parent: "/Users/wido/LocalStorage/GitHub", Repository: "agentic-tools",
 		}
 		if proven {
 			in.Health = fixtureHealth(now)

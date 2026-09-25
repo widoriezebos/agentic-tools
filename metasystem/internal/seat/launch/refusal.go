@@ -1,0 +1,111 @@
+package launch
+
+// What this verb refuses, by name.
+//
+// Every code below is this package's own. The steps themselves refuse in
+// their owner's words — git's, the build fence's, the validator's, the arm's
+// — and those are recorded verbatim rather than translated into a code here:
+// a launch that failed because the gate fence refused the new clone's build
+// must say so in the fence's sentence, because that is what a human acts on.
+
+import (
+	"fmt"
+	"time"
+)
+
+// The preflight's refusals, judged before any step and before the lock, and
+// the two the steps themselves raise.
+const (
+	// CodeNicknameInvalid is a nickname the presence publisher would refuse,
+	// or this checkout's own.
+	CodeNicknameInvalid = "SEAT_LAUNCH_NICKNAME_INVALID"
+	// CodeNicknameTaken is a nickname a sibling clone, a presence ref or a
+	// claim at the accepted tip already names.
+	CodeNicknameTaken = "SEAT_LAUNCH_NICKNAME_TAKEN"
+	// CodeDestinationExists is a destination that is already there and was
+	// not created by the launch a resume names.
+	CodeDestinationExists = "SEAT_LAUNCH_DESTINATION_EXISTS"
+	// CodeDestinationInsideACheckout is a destination beneath another git
+	// checkout, which would make the machine a directory of that one.
+	CodeDestinationInsideACheckout = "SEAT_LAUNCH_DESTINATION_INSIDE_A_CHECKOUT"
+	// CodeRunning is the host lock: one launch at a time on this host.
+	CodeRunning = "SEAT_LAUNCH_RUNNING"
+	// CodeDiskShort is free disk at the destination's parent against twice
+	// the size of this checkout.
+	CodeDiskShort = "SEAT_LAUNCH_DISK_SHORT"
+	// CodeEvidenceRootUnsafe is a sibling evidence root that is this seat's
+	// own, or that resolves through a symlink to somewhere else.
+	CodeEvidenceRootUnsafe = "SEAT_LAUNCH_EVIDENCE_ROOT_UNSAFE"
+	// CodeWordRequired is a resume that reaches enrollment without the word
+	// and the date, which the record never held.
+	CodeWordRequired = "SEAT_LAUNCH_WORD_REQUIRED"
+	// CodeWordInvalid is a word and a date that do not travel together, or a
+	// date that is not one, in the arming validator's own words.
+	CodeWordInvalid = "SEAT_LAUNCH_WORD_INVALID"
+	// CodeReviewDatePast is a review-by date already behind us, which is this
+	// side's refusal and not the engine's.
+	CodeReviewDatePast = "SEAT_LAUNCH_REVIEW_DATE_PAST"
+	// CodeIDInvalid is a launch id that is not the one path segment a record
+	// is named by.
+	CodeIDInvalid = "SEAT_LAUNCH_ID_INVALID"
+	// CodeFleetUnreadable is a presence copy this seat could not bring in or
+	// could not read. A launch judges a nickname against the fleet, and a
+	// fleet it cannot read is not a fleet it may guess about.
+	CodeFleetUnreadable = "SEAT_LAUNCH_FLEET_UNREADABLE"
+	// CodeSupervisionDown is `up --recover-only --if-down` returning with no
+	// live process holding the new machine's supervision owner lock.
+	CodeSupervisionDown = "SEAT_LAUNCH_SUPERVISION_DOWN"
+	// CodeIdentityUnreadable is a clone whose enrolled identity cannot be
+	// read after arming, so no presence record can be recognised as its own.
+	CodeIdentityUnreadable = "SEAT_LAUNCH_IDENTITY_UNREADABLE"
+)
+
+// Refusal is one of the codes above with the sentence a human acts on.
+type Refusal struct {
+	Code    string
+	Message string
+}
+
+func (r *Refusal) Error() string { return r.Code + ": " + r.Message }
+
+// refuse is the one constructor, so every refusal reads the same way.
+func refuse(code, format string, args ...any) *Refusal {
+	return &Refusal{Code: code, Message: fmt.Sprintf(format, args...)}
+}
+
+// reviewByLayout is the date form steward arm's own validator takes.
+const reviewByLayout = "2006-01-02"
+
+// ValidDay reports whether a string is one plain YYYY-MM-DD day.
+func ValidDay(day string) bool {
+	_, err := time.Parse(reviewByLayout, day)
+	return err == nil
+}
+
+// ReviewDateBefore reports whether a review-by date falls before the day the
+// client was on when it sent it.
+//
+// The day is the CLIENT's and never this process's. A browser and its server
+// can be in different zones, and for several hours a day they are on
+// different dates — so a server judging "is this in the past" against its own
+// UTC day would refuse a date a human is looking at on their own screen, or
+// accept one the sheet had already refused. One rule, judged against one day,
+// and the day travels with the request.
+//
+// The two sides are deliberately not identical. The sheet asks for a date
+// LATER than today, because a review due today is a review due the moment the
+// machine joins; the server refuses only a date EARLIER than the client's
+// today, so a request written a minute before midnight is not refused for
+// arriving a minute after it.
+//
+// It is this side's rule either way and not the engine's:
+// ValidateTemporaryWordPair accepts a past date, and the identity reader never
+// compares the date to a clock.
+func ReviewDateBefore(reviewBy, clientToday string) bool {
+	if !ValidDay(reviewBy) || !ValidDay(clientToday) {
+		return false
+	}
+	// Both are zero-padded YYYY-MM-DD, so their lexical order is their order
+	// in time and no zone is involved in the comparison at all.
+	return reviewBy < clientToday
+}

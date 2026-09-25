@@ -1,5 +1,6 @@
 import type { Page } from "./api";
 import { copyLine, flagWords, seenWords } from "./fleet";
+import { failedStep, showsCard } from "./launching";
 import type { FleetCapture } from "../partner/api";
 
 /**
@@ -38,6 +39,19 @@ export function captureOfFleet(page: Page, now: Date): FleetCapture {
       flag: flagWords(machine.holds.find((held) => held.flag !== "") ?? { flag: "", since: "" }),
       holds: machine.holds.slice(0, CAPTURED_HOLDS).map((held) => held.goal),
     })),
+    // The launch cards the page was showing. The authorization is not among
+    // these fields and never will be: it is the one thing on this page a
+    // question does not carry.
+    launches: page.launches.filter(showsCard).map((launched) => {
+      const stopped = failedStep(launched);
+      return {
+        machine: launched.machine,
+        outcome: launched.outcome,
+        destination: launched.destination,
+        step: stopped?.step ?? launched.steps.at(-1)?.step ?? "",
+        words: stopped?.words ?? "",
+      };
+    }),
     total: page.machines.length,
   };
 }

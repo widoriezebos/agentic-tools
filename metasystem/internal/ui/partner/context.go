@@ -729,6 +729,22 @@ func fleetLines(page Page) string {
 		built.WriteString("  - " + strconv.Itoa(len(shown.Machines)) + " of " +
 			strconv.Itoa(shown.Total) + " machines travelled with this question; the fleet tool reads the rest.\n")
 	}
+	// The launch cards, which are not machines yet: a launch in flight is a
+	// clone being made, and a failed one is a directory on this host. The
+	// human's authorization is not in any of these fields and never was.
+	for _, launched := range shown.Launches {
+		row := "  - launching " + launched.Machine + ": " + launched.Outcome
+		if launched.Destination != "" {
+			row += " into " + launched.Destination
+		}
+		if launched.Step != "" {
+			row += ", at " + launched.Step
+		}
+		if launched.Words != "" {
+			row += " — " + launched.Words
+		}
+		built.WriteString(row + "\n")
+	}
 	return built.String()
 }
 

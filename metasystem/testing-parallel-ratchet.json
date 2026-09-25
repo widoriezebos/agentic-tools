@@ -74,6 +74,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/run": 61,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes": 12,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/seat": 0,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/spend": 36,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot": 17,

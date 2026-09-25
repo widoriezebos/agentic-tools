@@ -53,6 +53,21 @@ export type FleetCapture = {
   machines?: FleetMachine[];
   needsYou?: string[];
   total?: number;
+  /**
+   * The launch cards the page was showing. The human's authorization is not
+   * one of these fields and never travels: the word reaches the arming verb
+   * and nothing else, which is what keeps it out of every conversation.
+   */
+  launches?: FleetLaunch[];
+};
+
+/** One launch card as it was displayed. */
+export type FleetLaunch = {
+  machine: string;
+  outcome: string;
+  destination?: string;
+  step?: string;
+  words?: string;
 };
 
 /**

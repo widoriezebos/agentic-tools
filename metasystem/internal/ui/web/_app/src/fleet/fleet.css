@@ -392,3 +392,214 @@
     display: none;
   }
 }
+
+/*
+ * Launching a machine: the button in the fleet's own heading, the sheet it
+ * opens, and the card the launch becomes.
+ *
+ * The card sits above the table because that is where a human looks for the
+ * machine it is making, and it is a bordered block rather than another row of
+ * words: a launch is the one thing on this page that is happening rather than
+ * standing, and it needs a boundary a reader's eye can return to.
+ *
+ * The steps are a list and not a table. There are nine of them, each a word
+ * and an outcome, and under a failed one a sentence in its owner's voice that
+ * can run to two lines — which a table column of fixed width would cut in
+ * half. The dot takes the same status tokens the standings pill takes: a done
+ * step is the ok pair, a failed one the danger colour, and a pending one the
+ * muted surface, because "not yet" is not an alarm.
+ */
+
+.ms-fleet-actions {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.ms-launch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-launch-card--failed {
+  border-color: var(--ms-danger);
+}
+
+.ms-launch-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-launch-where,
+.ms-launch-folded,
+.ms-launch-command {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-launch-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-launch-refusal {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-danger);
+  overflow-wrap: anywhere;
+}
+
+.ms-launch-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-launch-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+}
+
+.ms-launch-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ms-surface-3);
+  border: 1px solid var(--ms-border-strong);
+}
+
+.ms-launch-dot--done,
+.ms-launch-dot--skipped {
+  background: var(--ms-ok);
+  border-color: var(--ms-ok);
+}
+
+.ms-launch-dot--armed {
+  background: var(--ms-marker);
+  border-color: var(--ms-marker);
+}
+
+.ms-launch-dot--failed {
+  background: var(--ms-danger);
+  border-color: var(--ms-danger);
+}
+
+.ms-launch-step-name {
+  min-width: 108px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-launch-step-outcome {
+  font-size: 12px;
+  color: var(--ms-text-2);
+}
+
+.ms-launch-step-words {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-launch-step--failed .ms-launch-step-words {
+  color: var(--ms-danger);
+}
+
+.ms-launch-commands,
+.ms-launch-retry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-launch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ms-sheet-body--launch {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.ms-launch-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-launch-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ms-launch-field label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-launch-field input,
+.ms-launch-field textarea {
+  font: inherit;
+  padding: 6px 8px;
+  color: var(--ms-text);
+  background: var(--ms-surface);
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.ms-launch-field textarea {
+  resize: vertical;
+}
+
+@media (max-width: 599px) {
+  .ms-launch-step-name {
+    min-width: 0;
+  }
+
+  .ms-fleet-actions {
+    margin-left: 0;
+  }
+}

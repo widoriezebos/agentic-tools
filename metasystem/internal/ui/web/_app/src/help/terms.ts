@@ -55,6 +55,9 @@ export type HelpId =
   | "fleet-needs-you"
   | "this-seat"
   | "machine-holds"
+  | "launch-machine"
+  | "temporary-word"
+  | "review-by"
   | "engine"
   | "presence"
   | "standing"
@@ -273,6 +276,18 @@ export const HELP: Record<HelpId, Term> = {
   "machine-holds": {
     term: "Holds",
     text: "The goals whose claim names this machine, read from the accepted ledger. It is what the ledger says and not what the machine says: a presence record carries no goals, so a machine nobody has heard from still holds what it claimed.",
+  },
+  "launch-machine": {
+    term: "Launch a machine",
+    text: "A new machine of this fleet, on this host: a full clone of this checkout beside it, with its own engine built, this seat's roster and configuration copied, its own nickname, the fleet's ledger fetched, and a steward armed. It starts no session; it joins, publishes presence and waits.",
+  },
+  "temporary-word": {
+    term: "Your authorization",
+    text: "The words you enroll the machine with, recorded on its identity as a temporary enrollment. It is the lawful path for a human who is not at that checkout's terminal, and the interface adds no authority of its own: what enrolls the machine is what you typed.",
+  },
+  "review-by": {
+    term: "Review by",
+    text: "The date the machine's temporary enrollment is due to be re-approved. It stops nothing and nothing enforces it: a person re-approves the machine, or stops it, at a terminal. This field refuses a date in the past, because a review already overdue the moment a machine joins says nothing.",
   },
   engine: {
     term: "Engine",

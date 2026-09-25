@@ -640,6 +640,7 @@ func families() []family {
 			summary: "the fleet's seats: who is present, what each is running",
 			verbs: []verb{
 				{"fleet", "print every machine's presence standing, this machine first", runSeatFleet},
+				{"launch", "clone, build, configure, enroll and supervise one new machine of this fleet on this host", runSeatLaunch},
 			},
 		},
 		{

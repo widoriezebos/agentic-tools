@@ -13,10 +13,12 @@ package main
 // request can start.
 
 import (
+	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -34,6 +36,15 @@ func fleetReader(
 	succeeded func() bool,
 	state func() fleet.Copy,
 ) func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error) {
+	// Where a new machine would land, read once: the directory this checkout
+	// sits in, and what the ledger remote calls the repository. Neither can
+	// change while this server runs — a checkout does not move under its own
+	// server — and reading the remote is a git invocation that has no
+	// business being made once per page load.
+	launching := fleet.Launching{
+		Parent:     filepath.Dir(filepath.Clean(roots.Checkout)),
+		Repository: launch.RepositoryName(seatLaunchOrigin(roots.Checkout)),
+	}
 	return func(observed snapshot.Observation, board backlog.Board, now time.Time) (fleet.Page, error) {
 		transport, err := seat.NewGit(roots.Checkout)
 		if err != nil {
@@ -54,6 +65,12 @@ func fleetReader(
 		machine, enrolled := seat.Machine(roots.Checkout)
 		publication, publicationProblem := fleet.ReadPublication(roots.Checkout)
 		running, runningProblem := fleet.ReadRunning(roots.Checkout)
+		// The launches this host holds, reconciled on the way in: a running
+		// record whose process is dead is marked failed here, because a read
+		// of the records is the only moment anything learns that a launch
+		// died. A directory that cannot be read is a page with no launches
+		// on it rather than a page that will not load.
+		launches, _ := launch.Reconcile(roots.Checkout, launch.Live, now)
 		return fleet.Compose(fleet.Inputs{
 			This: machine, NoNickname: !enrolled,
 			Presence: presence, PresenceProblem: problem, Copy: copied,
@@ -63,6 +80,7 @@ func fleetReader(
 			Publication: publication, PublicationProblem: publicationProblem,
 			Health:  fleet.ReadHealth(roots.Checkout),
 			Running: running, RunningProblem: runningProblem,
+			Launches: launches, Launching: launching,
 		}, now), nil
 	}
 }

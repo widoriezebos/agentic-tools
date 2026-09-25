@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
@@ -59,6 +60,11 @@ func main() {
 	// way to stand in front of the one thing the fleet event exists for: a
 	// page that is already open learning that presence moved.
 	fleetEvery := flag.Duration("fleet-every", 0, "announce a fixture presence attempt this often; zero announces none")
+	// Which launch is the newest one, and so which card the Fleet page shows.
+	// The page shows one card — the newest launch still worth one — so a
+	// fixture that could only ever be newest in one order could only ever
+	// show one of the two states the card has.
+	launched := flag.String("launch", "running", "which launch is newest on this fixture: running, failed or none")
 	// The calm workspace. Overview's good outcome is a page that says nothing
 	// needs you, and a fixture that can only show the busy one can only show
 	// half of what the section is for. Calm proves its human, admits every
@@ -171,7 +177,15 @@ func main() {
 		},
 		// The fleet, invented: three machines, one of each standing, joined
 		// to the claims the canned ledger carries. -proven is the armed seat.
-		Fleet: fixtureFleet(*proven),
+		Fleet: fixtureFleet(*proven, *launched),
+		// Launching, invented: this fixture clones nothing and spawns
+		// nothing, so the act answers with the running record the page
+		// already shows. What it proves in a browser is the sheet, its
+		// validation and the card — not the verb, which is the engine's own
+		// tests' to prove.
+		Launch: func(_ *session.Session, asked launch.Request) (launch.Record, error) {
+			return fixtureLaunchOf(asked, time.Now().UTC()), nil
+		},
 		// The browsers holding the stream open, which the fleet event rides
 		// back to. It is the same registration the engine's own server uses
 		// as its connection signal; -fleet-every is what announces on it.

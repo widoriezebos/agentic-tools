@@ -153,7 +153,8 @@ func TestSeatFamilyIsRegistered(t *testing.T) {
 			continue
 		}
 		found = true
-		if len(family.verbs) != 1 || family.verbs[0].name != "fleet" {
+		// Reading the fleet, and adding one machine to it.
+		if len(family.verbs) != 2 || family.verbs[0].name != "fleet" || family.verbs[1].name != "launch" {
 			t.Fatalf("seat family = %+v", family.verbs)
 		}
 	}
