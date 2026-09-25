@@ -24,10 +24,26 @@ type EvidenceResult struct {
 // declared evidence inventory. The caller supplies the hard byte ceiling; a
 // separate bounded process supplies the hard wall-clock ceiling.
 func PreserveEvidence(destination string, sources []string, maxBytes int64) (EvidenceResult, error) {
-	return preserveEvidence(context.Background(), destination, sources, maxBytes)
+	return preserveEvidence(context.Background(), destination, sources, maxBytes, evidenceCopyRules{})
 }
 
-func preserveEvidence(ctx context.Context, destination string, sources []string, maxBytes int64) (EvidenceResult, error) {
+// DetachedEvidenceGroupMaxBytes bounds one group's detached suite-failure
+// bundle. It is diagnostic evidence, not a copy of the candidate.
+const DetachedEvidenceGroupMaxBytes int64 = 16 * 1024 * 1024
+
+// detachedEvidenceFileMaxBytes omits any single regular file larger than
+// this from a detached bundle; a log survives while a stray blob does not.
+const detachedEvidenceFileMaxBytes int64 = 1024 * 1024
+
+// evidenceCopyRules narrows what a copy takes. The zero value is the generic
+// PreserveEvidence behavior.
+type evidenceCopyRules struct {
+	skipGitDirs  bool
+	skipSymlinks bool
+	maxFileBytes int64
+}
+
+func preserveEvidence(ctx context.Context, destination string, sources []string, maxBytes int64, rules evidenceCopyRules) (EvidenceResult, error) {
 	if destination == "" || maxBytes < 1 {
 		return EvidenceResult{}, errors.New("evidence destination and positive byte cap are required")
 	}
@@ -67,10 +83,14 @@ func preserveEvidence(ctx context.Context, destination string, sources []string,
 				if rel == "." {
 					return os.MkdirAll(target, 0o700)
 				}
-				return copyEvidenceEntry(ctx, path, filepath.Join(target, rel), entry, maxBytes, &result)
+				if rules.skipGitDirs && entry.IsDir() && entry.Name() == ".git" {
+					result.Dropped = append(result.Dropped, path+" (git directory skipped)")
+					return filepath.SkipDir
+				}
+				return copyEvidenceEntry(ctx, path, filepath.Join(target, rel), entry, maxBytes, rules, &result)
 			})
 		} else {
-			err = copyEvidenceEntry(ctx, source, target, dirEntryFromInfo{info}, maxBytes, &result)
+			err = copyEvidenceEntry(ctx, source, target, dirEntryFromInfo{info}, maxBytes, rules, &result)
 		}
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", source, err))
@@ -85,7 +105,10 @@ func preserveEvidence(ctx context.Context, destination string, sources []string,
 // PreserveDetachedSuiteFailures moves the ignored fixture failure subtree out
 // of a disposable candidate before its owner removes that candidate. It is
 // deliberately specific to this cleanup boundary; ordinary evidence capture
-// continues to use PreserveEvidence directly.
+// continues to use PreserveEvidence directly. The copy is diagnostic and
+// bounded: it skips .git directories, symlinks, and regular files over 1 MiB,
+// and stops at maxBytes. Those omissions are recorded as DROPPED lines in the
+// bundle's copy note and are not errors.
 func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, timeout time.Duration, maxBytes int64) (EvidenceResult, string, error) {
 	// A zero timeout is no clock (the copy is bounded by bytes only); the
 	// byte bound stays positive.
@@ -118,6 +141,9 @@ func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, tim
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if entry.IsDir() && entry.Name() == ".git" && path != candidateRoot {
+			return filepath.SkipDir
+		}
 		if entry.IsDir() && strings.HasSuffix(filepath.ToSlash(path), "/artifacts/agents/suite-failures") {
 			sources = append(sources, path)
 			return filepath.SkipDir
@@ -133,7 +159,8 @@ func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, tim
 	sort.Strings(sources)
 	destination := filepath.Join(controlRoot, "artifacts", "agents", "suite-failures",
 		time.Now().UTC().Format("20060102T150405Z")+"-detached-"+safeEvidenceName(owner)+fmt.Sprintf("-%d-%d", os.Getpid(), time.Now().UnixNano()))
-	result, copyErr := preserveEvidence(ctx, destination, sources, maxBytes)
+	result, copyErr := preserveEvidence(ctx, destination, sources, maxBytes,
+		evidenceCopyRules{skipGitDirs: true, skipSymlinks: true, maxFileBytes: detachedEvidenceFileMaxBytes})
 	if ctx.Err() != nil {
 		note := fmt.Sprintf("DROPPED detached evidence copy exceeded its %s timeout; partial evidence retained", timeout)
 		_ = AppendEvidenceNote(destination, note)
@@ -142,7 +169,9 @@ func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, tim
 	if copyErr != nil {
 		return result, destination, fmt.Errorf("preserve detached suite-failure evidence at %s: %w", destination, copyErr)
 	}
-	if len(result.Dropped) > 0 || len(result.Errors) > 0 {
+	// Dropped entries are intentional bounds recorded in the copy note;
+	// only real read or write failures make the preservation incomplete.
+	if len(result.Errors) > 0 {
 		return result, destination, fmt.Errorf("detached suite-failure evidence was only partially preserved at %s (dropped=%d errors=%d)", destination, len(result.Dropped), len(result.Errors))
 	}
 	return result, destination, nil
@@ -153,7 +182,7 @@ type dirEntryFromInfo struct{ os.FileInfo }
 func (d dirEntryFromInfo) Type() fs.FileMode          { return d.Mode().Type() }
 func (d dirEntryFromInfo) Info() (os.FileInfo, error) { return d.FileInfo, nil }
 
-func copyEvidenceEntry(ctx context.Context, source, target string, entry fs.DirEntry, maxBytes int64, result *EvidenceResult) error {
+func copyEvidenceEntry(ctx context.Context, source, target string, entry fs.DirEntry, maxBytes int64, rules evidenceCopyRules, result *EvidenceResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -163,6 +192,10 @@ func copyEvidenceEntry(ctx context.Context, source, target string, entry fs.DirE
 	}
 	if info.IsDir() {
 		return os.MkdirAll(target, 0o700)
+	}
+	if info.Mode()&os.ModeSymlink != 0 && rules.skipSymlinks {
+		result.Dropped = append(result.Dropped, source+" (symlink not followed)")
+		return nil
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		link, err := os.Readlink(source)
@@ -184,6 +217,10 @@ func copyEvidenceEntry(ctx context.Context, source, target string, entry fs.DirE
 	}
 	if !info.Mode().IsRegular() {
 		result.Dropped = append(result.Dropped, source+" (not a regular file or symlink)")
+		return nil
+	}
+	if rules.maxFileBytes > 0 && info.Size() > rules.maxFileBytes {
+		result.Dropped = append(result.Dropped, fmt.Sprintf("%s (%d bytes over the %d-byte per-file cap)", source, info.Size(), rules.maxFileBytes))
 		return nil
 	}
 	remaining := maxBytes - result.CopiedBytes

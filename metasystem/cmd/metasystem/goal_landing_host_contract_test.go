@@ -161,6 +161,16 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 					"TestLandingBatchProtectedTestsUseConfiguredContractAndProjectCWD",
 				}
 			}
+			if old.ID == "test-environment-standard" && name == "TestAgedSweepRemovesFixtureRecordFiles" {
+				// Age alone no longer authorizes deletion: a sweep may remove
+				// sidecars only after an authenticated dead home and a settled
+				// inherited lease and custodian, and must retain failed settlements.
+				requiredNames = []string{
+					"TestSweepKeepsSidecarsWithoutAuthenticatedDeadHome",
+					"TestRegistrySidecarCleanupWaitsForInheritedLeaseAndCustodian",
+					"TestRegistrySidecarCleanupRetainsFailedSettlement",
+				}
+			}
 			if nowSelectsAll {
 				automaticallyCovered = append(automaticallyCovered, requiredNames...)
 			} else {

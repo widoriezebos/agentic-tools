@@ -436,7 +436,7 @@ func (w Workspace) hashBlob(blob []byte) (string, error) {
 }
 
 func (w Workspace) treeWithChanges(seed string, changes map[string]*Entry) (string, error) {
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}
@@ -734,7 +734,7 @@ func (w Workspace) GraftProjectTree(seedCommit, projectTree string) (string, err
 	if _, err := w.ResolveCommit(seedCommit); err != nil {
 		return "", err
 	}
-	env, cleanup, err := isolatedIndex()
+	env, cleanup, err := w.isolatedIndex()
 	if err != nil {
 		return "", err
 	}
