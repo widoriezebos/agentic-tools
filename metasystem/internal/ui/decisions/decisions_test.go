@@ -429,8 +429,12 @@ func TestTheTwoCountsAreTheInboxSplitAndSumToIt(t *testing.T) {
 		t.Errorf("the two blocks do not sum to the inbox: %d + %d != %d",
 			page.Counts.Asked, page.Counts.Waiting, page.Counts.NeedsYou)
 	}
-	if page.SchemaVersion != 2 {
-		t.Errorf("schema = %d, want 2", page.SchemaVersion)
+	// Three, since every row says whether it is new and the page names the
+	// window it decided that over. The number is asserted as a literal rather
+	// than against the constant, because a reader parses the number and not
+	// the constant.
+	if page.SchemaVersion != 3 {
+		t.Errorf("schema = %d, want 3", page.SchemaVersion)
 	}
 }
 

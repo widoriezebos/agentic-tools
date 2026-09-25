@@ -603,6 +603,15 @@ func runUI(verb string, args []string) int {
 					Visit: func(human string, now time.Time) (time.Time, bool, error) {
 						return overview.Visit(roots.StateRoot, human, now)
 					},
+					// The Decisions page's own marker, in the same file,
+					// through the same owner, under an entry of its own. A
+					// read there must not move the landing page's boundary:
+					// the two pages are read on different rhythms, and one
+					// marker for both would hide from a human what they never
+					// saw on the other.
+					VisitDecisions: func(human string, now time.Time) (time.Time, bool, error) {
+						return overview.VisitPage(roots.StateRoot, overview.PageDecisions, human, now)
+					},
 					// The Project Partner. The flag travels whether or not the
 					// runtime was admitted, because it decides the act routes'
 					// policy and not only the Partner's own.
