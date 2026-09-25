@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3BGYMY8N8MTWSZQ9RBT6Q47
-- Status: accepted
+- Status: done
 - Goals: browser-interface seat-mutual-awareness
 
 Slice 2 of the bridge (seat-mutual-awareness revision 7, section 10) and the
@@ -347,3 +347,31 @@ Ten material findings, each checked against the code it cites and folded.
 
 The git side effects the two fetchers still share, `FETCH_HEAD` and auto
 maintenance, are named in section 7 as churn, not a race.
+
+## Built (2026-09-25)
+
+Landed on ui-development and main in one merge. Built by Claude on Opus,
+read by Codex on Sol: eight findings, fixed in one round together with one
+of the design owner's own from the screenshots.
+
+| id | finding | fix |
+|---|---|---|
+| S1 | a failed presence read became an empty copy and false absence flags on every surface | a read failure withholds the judgement; no machine is reported absent and no flag is raised; the copy block says why |
+| S2 | the Partner's tool trusted a previous server run's fetch metadata | the metadata is bound to a run id; the tool falls back to the tick's copy for another run's file; a failed metadata write is visible |
+| S3 | the last disconnect and an attempt's admission were not ordered | admission runs under the watch's own lock |
+| S4 | success and failure times carried the attempt's start | the injected clock is read again when the attempt ends |
+| S5 | `goal next` printed a remedy for malformed and clock-ahead holders | one predicate, `NeedsHuman`, for the page and the verb: unreachable, or unknown by absence |
+| S6 | the flag words embedded a UTC clock while the page rendered local time | the instant travels as RFC 3339 and each reader renders it; the terminal prints the instant |
+| S7 | help controls named the wrong terms and some visible names had none | terms for Needs you, This seat, machine-held goals, Engine; the rung term attached where a rung shows |
+| S8 | the fleet surface omitted the changed consumers | every changed path under internal/ui and cmd/metasystem, with two focused groups |
+| S9 | the walkthrough never served a workspace, so every evidence header showed an error | thirteen lines in the fixture |
+
+Departures the read accepted: the copy block's four times and `armed` as a
+word; lane ids titled by the page; staleness as `seat.Threshold`; needs-you
+limited to unreachable and unknown by absence; composition from one
+observation instead of serving `seat fleet --json`; no isolation inventory
+after the test overhaul; `goal next` importing the fleet package for one
+account of silence; the fixture's `-fleet-every` knob. Not proved end to
+end: a departing stream blocking an admission (asserted structurally under
+the lock), and the tool's rejection of a stale file after a live restart
+(unit-tested).
