@@ -3306,6 +3306,13 @@ type EditFields struct {
 	Why      string
 	Evidence string
 	Proof    *humanauthority.Proof
+	// QueuedOnly narrows this verb to the one edit a browser may make without
+	// a proposal: a goal that is still queued and carries no approval. The
+	// allowlist is the mutation's rather than a caller's, so an approval or a
+	// claim that lands between a page's read and this act is refused at the
+	// tip rather than displaced. The terminal never sets it, and a replay
+	// rebuilds a recorded edit through the fields it was published with.
+	QueuedOnly bool
 }
 
 // Edit applies field deltas to one live goal.
@@ -3362,6 +3369,26 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			}
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
+			}
+			// The one direct edit the interface admits: a queued goal nobody
+			// has approved. Each refusal says what a human does instead,
+			// because each of the three states is left by a different act.
+			//
+			// The state is read before the approval, and the order is the
+			// whole of it: an approval survives a claim and survives a park,
+			// so a goal a seat holds would otherwise be told to withdraw an
+			// approval when what stands in the way is the claim.
+			if fields.QueuedOnly {
+				switch {
+				case f.State == StateClaimed:
+					return nil, fmt.Errorf("goal %s is claimed by %s; edit it at a terminal", id, claimedPair(f.Claimed))
+				case f.State == StateParked:
+					return nil, fmt.Errorf("goal %s is parked: return it to the queue to edit it", id)
+				case f.State == StateApproved || f.Approved != nil:
+					return nil, fmt.Errorf("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
+				case f.State != StateQueued:
+					return nil, fmt.Errorf("goal %s is %s; only a queued goal is edited from the interface", id, f.State)
+				}
 			}
 			if f.Approved != nil && fields.Intent != nil {
 				return nil, fmt.Errorf("the human approved this intent; unapprove the goal, edit it, then approve the new intent")
@@ -3448,6 +3475,9 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 				f.Labels = append([]string(nil), (*fields.Labels)...)
 			}
 			touchDisplaced(f, r, "edit", []string{id}, displaced)
+			// An edit a signed-in browser made says so on its own line, as an
+			// approval does: the ledger names the hand that acted.
+			recordSessionAuthority(&f.History[len(f.History)-1], r.Authority)
 			if raise {
 				if riskRaised != nil {
 					*riskRaised = true
@@ -3477,6 +3507,16 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
+}
+
+// claimedPair names the pair holding a claim, for a refusal that tells a
+// human which seat to go to. A claimed goal always carries its record; an
+// unnamed pair is said to be unnamed rather than crashing the mutation.
+func claimedPair(c *ClaimRecord) string {
+	if c == nil {
+		return "another pair"
+	}
+	return c.Machine + "+" + c.Lineage
 }
 
 func riskAnswersLower(old, next *RiskRecord) bool {
