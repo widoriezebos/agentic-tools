@@ -52,6 +52,10 @@ export type HelpId =
   | "priority"
   | "tier"
   | "seat"
+  | "fleet-needs-you"
+  | "this-seat"
+  | "machine-holds"
+  | "engine"
   | "presence"
   | "standing"
   | "reachable"
@@ -257,6 +261,22 @@ export const HELP: Record<HelpId, Term> = {
   unknown: {
     term: "Unknown",
     text: "A machine this seat cannot judge: one that has published no presence at all, one whose record cannot be read, or one dated further ahead than a clock difference explains.",
+  },
+  "fleet-needs-you": {
+    term: "Needs you",
+    text: "The goals held by a machine this seat has not heard from lately, or by one that has published no presence at all. The goal stays claimed and nothing here changes that: reassigning it or lifting its fence is a decision a person makes at a terminal.",
+  },
+  "this-seat": {
+    term: "This seat",
+    text: "The checkout this interface is serving: what it is called on the fleet, whether supervision is armed on it, what it last published about itself, and what the steward last recorded about its health.",
+  },
+  "machine-holds": {
+    term: "Holds",
+    text: "The goals whose claim names this machine, read from the accepted ledger. It is what the ledger says and not what the machine says: a presence record carries no goals, so a machine nobody has heard from still holds what it claimed.",
+  },
+  engine: {
+    term: "Engine",
+    text: "The build a machine was running when it last published, with the enrolment generation beside it. Two seats on different builds can read the same ledger by different rules, which is what makes it worth showing.",
   },
   rung: {
     term: "Rung",
