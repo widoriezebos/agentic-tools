@@ -1,4 +1,4 @@
-import type { Approved, Item, Need, Page, Ruling, Where } from "./api";
+import type { Approved, Need, Page, Ruling, Where } from "./api";
 import type { Row } from "../backlog/api";
 import { dateAndTime, minuteTime } from "../backlog/format";
 import { transitions } from "../backlog/moves";
@@ -210,11 +210,6 @@ export function tabs(page: Page): TabName[] {
   ];
 }
 
-/** What an Item row shows beside its title, where the item carries one. */
-export function itemNote(item: Item): string {
-  return item.note;
-}
-
 /**
  * The classes a human can narrow the rulings to: every class the register
  * actually uses, in the order the register uses them, with the rulings that
@@ -303,7 +298,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * round, in nobody's particular zone — so turning it into an instant would put
  * it on the day before in half the world.
  */
-export function dayWords(due: string): string {
+function dayWords(due: string): string {
   const parts = dayParts(due);
   if (parts === null) {
     return due;
