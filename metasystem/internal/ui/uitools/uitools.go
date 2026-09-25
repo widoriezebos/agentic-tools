@@ -1,10 +1,10 @@
 // Package uitools is the interface's own read tools, as one stdio tool server.
 //
-// The Partner is told what the human sees; this is how it sees more. Eight
+// The Partner is told what the human sees; this is how it sees more. Its
 // named operations answer from the same readers the pages are composed from —
 // the accepted ledger's projection, the project's records, a document as it
-// stands, the landing page, the steward's journal — so an answer about a goal
-// and the card that goal is on cannot disagree.
+// stands, the landing page, the fleet's standings, the steward's journal — so
+// an answer about a goal and the card that goal is on cannot disagree.
 //
 // Three rules hold for every operation, and they are the whole of what makes a
 // bounded tool honest:
@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/manifest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
@@ -41,11 +42,11 @@ import (
 // presents them as mcp__metasystem__board — composes that prefix from this.
 const ServerName = "metasystem"
 
-// The ten operations. They are named here, once, because two things depend
+// The eleven operations. They are named here, once, because two things depend
 // on the same list: the tool catalogue this server publishes, and the
 // permission rule that admits calls to it.
 //
-// Eight read this workspace. The last two read what the workspace is made of:
+// Nine read this workspace. The last two read what the workspace is made of:
 // the interface's own manifest, and the kit's own glossary, verbs, rulings and
 // routes. They answer from owners rather than from anything written for the
 // Partner, which is what keeps one account of each fact.
@@ -56,6 +57,7 @@ const (
 	OpRecords       = "records"
 	OpQuestions     = "questions"
 	OpOverview      = "overview"
+	OpFleet         = "fleet"
 	OpNotifications = "notifications"
 	OpSearch        = "search"
 	OpInterface     = "interface"
@@ -66,7 +68,7 @@ const (
 // catalogue lists them.
 var Operations = []string{
 	OpBoard, OpGoal, OpDocument, OpRecords, OpQuestions,
-	OpOverview, OpNotifications, OpSearch, OpInterface, OpKit,
+	OpOverview, OpFleet, OpNotifications, OpSearch, OpInterface, OpKit,
 }
 
 // Names reports whether a bare operation name is one this server answers.
@@ -143,8 +145,15 @@ type Readers struct {
 	Document func(id string) (project.Document, error)
 	Project  func() (project.Pane, error)
 	Overview func() (overview.Page, error)
-	Notices  func(limit int, before string) ([]notifications.Notice, error)
-	Now      func() time.Time
+	// Fleet composes the Fleet page: the standings of the machines the
+	// presence copy and the accepted tip between them know about, and the
+	// holds that are flagged. This server owns no fetcher — it runs in its
+	// own process, started by the Partner's runtime — so it reads the copy
+	// the interface's own fetch owner left behind and the metadata that owner
+	// writes after every attempt.
+	Fleet   func() (fleet.Page, error)
+	Notices func(limit int, before string) ([]notifications.Notice, error)
+	Now     func() time.Time
 	// Interface composes what this interface is made of: the half the bundle
 	// carries joined to the half this seat resolves. A nil composer is a build
 	// that cannot describe itself, which the result says.
@@ -178,6 +187,8 @@ func (r Readers) Answer(operation string, args Args) Result {
 		return r.questions()
 	case OpOverview:
 		return r.overview()
+	case OpFleet:
+		return r.fleet(args.Cursor())
 	case OpNotifications:
 		return r.notifications(args.Number("limit", notifications.DefaultLimit), args.Cursor())
 	case OpSearch:
@@ -455,6 +466,24 @@ func (r Readers) overview() Result {
 	built.WriteString("- The window this page compares against opens " + page.Since + "\n")
 	source := "the landing page as this server composes it, read " + page.ReadAt
 	return bounded(source, built.String(), 1, 1)
+}
+
+// fleet is the standings of the machines this workspace knows about: the
+// needs-you lines first, then this seat, then the other machines.
+//
+// Its source stamps BOTH readings, because a row of it is a join of two: the
+// presence copy has its own provenance and its own age, and the holders come
+// from the accepted tip. A stamp naming only one of them would let a reader
+// date a silence from a ledger read or a claim from a presence fetch.
+func (r Readers) fleet(cursor string) Result {
+	if r.Fleet == nil {
+		return Result{Problem: "this build cannot read the fleet"}
+	}
+	page, err := r.Fleet()
+	if err != nil {
+		return Result{Problem: err.Error()}
+	}
+	return paged(page.Source(), page.Lines(r.now()), cursor)
 }
 
 func (r Readers) notifications(limit int, cursor string) Result {

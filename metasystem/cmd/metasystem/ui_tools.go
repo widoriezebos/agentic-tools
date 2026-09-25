@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
@@ -25,8 +26,8 @@ import (
 // answering the Partner from the same readers the pages are composed from,
 // rather than a second account of the workspace living inside an agent.
 //
-// It writes nothing, reads only what the eight operations read, and holds no
-// state between calls beyond the readers themselves.
+// It writes nothing, reads only what the published operations read, and holds
+// no state between calls beyond the readers themselves.
 
 func runUITools(args []string) int {
 	flags := flag.NewFlagSet("ui tools", flag.ContinueOnError)
@@ -56,7 +57,7 @@ func runUITools(args []string) int {
 	return 0
 }
 
-// toolReaders is the eight operations' own readers, over one checkout. They
+// toolReaders is the published operations' own readers, over one checkout. They
 // are the interface server's readers, built here again rather than passed
 // across a process boundary: this process is the engine, and the engine reads
 // the ledger and the checkout the same way wherever it runs.
@@ -81,6 +82,31 @@ func toolReaders(roots lifecycle.Roots) uitools.Readers {
 			return project.Read(projectRoots(roots), id, now())
 		},
 		Project: pane,
+		// The fleet, from the copy the interface server's own fetch owner
+		// left in this checkout and the metadata it writes after every
+		// attempt. This process owns no fetcher: it is started by the
+		// Partner's runtime and lives for one session, and a second fetcher
+		// beside the server's would be a second minute rule over one
+		// namespace.
+		Fleet: func() (fleet.Page, error) {
+			state, _, err := fleet.LoadMetadata(roots.Checkout)
+			copied := fleet.Copy{
+				AttemptedAt: state.AttemptedAt, SucceededAt: state.SucceededAt,
+				FailedAt: state.FailedAt, Problem: state.Problem,
+			}
+			if err != nil {
+				copied.Problem = "the interface's presence fetch metadata could not be read: " + err.Error()
+			}
+			observed := ledger.Observe()
+			board := backlog.Board{}
+			if observed.State == snapshot.StateRead && observed.Tree != nil {
+				board = backlog.Project(observed.Tree, observed.Horizon, observed.Admission)
+			}
+			return fleetReader(roots,
+				func() bool { return state.SucceededAt != "" },
+				func() fleet.Copy { return copied },
+			)(observed, board, now())
+		},
 		Notices: notices,
 		// The landing page, composed here the way the interface server composes
 		// it for a turn asked from Overview: over a first visit's day, and

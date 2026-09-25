@@ -246,7 +246,7 @@ func Compose(in Inputs, now time.Time) Page {
 	for _, line := range standings {
 		// D4: the interface never writes the steward's files, so a `since`
 		// the tick did not observe is a `since` this page does not have.
-		since := frozenSince(in.Previous, line)
+		since := Since(in.Previous, line)
 		row := Machine{
 			Machine: line.Machine, Standing: string(line.Standing),
 			Reason: reasonOf(line), AgeSeconds: line.AgeSeconds,
@@ -260,7 +260,7 @@ func Compose(in Inputs, now time.Time) Page {
 		}
 		flag := ""
 		if unavailable == "" {
-			flag = flagWords(line, since, now)
+			flag = Flag(line, since, now)
 		}
 		for _, goal := range line.Holds {
 			one := held[goal]
@@ -327,10 +327,15 @@ func holdsOf(board backlog.Board) map[string]Held {
 	return rows
 }
 
-// frozenSince keeps the tick's own first observation of a standing, and
-// nothing else. seat.Fleet mints now where the file says nothing, and this
-// interface has no standing of its own to mint from.
-func frozenSince(previous map[string]seat.Observation, line seat.MachineStanding) string {
+// Since keeps the tick's own first observation of a standing, and nothing
+// else. seat.Fleet mints now where the file says nothing, and a reader that
+// writes no standings file of its own has no standing to mint from: a silence
+// dated the instant it was first noticed would be a lie about when it began.
+//
+// It is exported because three surfaces carry the same flag — this page, the
+// board's card line and `goal next` — and a second normalisation written
+// beside one of them would be a second account of when a machine went quiet.
+func Since(previous map[string]seat.Observation, line seat.MachineStanding) string {
 	was, seen := previous[line.Machine]
 	if !seen || was.Standing != line.Standing {
 		return ""
@@ -355,12 +360,15 @@ func reasonOf(line seat.MachineStanding) string {
 	}
 }
 
-// flagWords is the one sentence a claim's row carries when its holder has
-// gone silent, regenerated after the `since` normalisation above.
+// Flag is the one sentence a claim's row carries when its holder has gone
+// silent, composed after the Since normalisation above rather than taken from
+// seat.SilentHolder, whose "no presence record" branch fires for any machine
+// without a frozen since and is false for an unreachable machine holding a
+// perfectly valid record.
 //
 // A machine known only by the absence of a record has not "gone silent": it
 // has published nothing, which is a different thing and is said differently.
-func flagWords(line seat.MachineStanding, since string, now time.Time) string {
+func Flag(line seat.MachineStanding, since string, now time.Time) string {
 	if line.Standing == seat.Reachable || len(line.Holds) == 0 {
 		return ""
 	}

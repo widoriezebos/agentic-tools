@@ -640,6 +640,13 @@ func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(st
 	for _, banner := range p.Banners {
 		fmt.Println(banner)
 	}
+	// What the other machines are, before what this one can take: a goal
+	// nobody is moving because its holder has gone quiet is context for the
+	// frontier and never part of it. Standard error, so the orientation line
+	// an agent reads is exactly the line it read before.
+	for _, line := range silentHolderLines(root, p.Tree, machine, now) {
+		fmt.Fprintln(os.Stderr, line)
+	}
 	frontier, frontierErr := goal.Next(p, machine, requiredLabels...)
 	if frontierErr != nil {
 		fmt.Fprintln(os.Stderr, "goal next could not answer: "+frontierErr.Error())

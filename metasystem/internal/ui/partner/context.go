@@ -369,6 +369,8 @@ func pageLines(facts Facts, observed snapshot.Observation, page Page) (string, i
 		return bounded(goalLines(observed, page)), 0, 0
 	case page.Section == "Overview":
 		return bounded(overviewLines(facts)), 0, 0
+	case page.Fleet != nil:
+		return bounded(fleetLines(page)), 0, 0
 	case page.Section == "Project":
 		block, supplied, total := projectLines(facts, page)
 		return bounded(block), supplied, total
@@ -682,6 +684,51 @@ func overviewLines(facts Facts) string {
 		built.WriteString("  - " + lane.ID + ": " + strconv.Itoa(lane.Count) + "\n")
 	}
 	built.WriteString("- The window this page compares against opens " + page.Since + "\n")
+	return built.String()
+}
+
+// fleetLines is the fleet as the PAGE was showing it, and only that.
+//
+// Every other block here is the server reading its own owners a moment after
+// the question was asked. This one cannot be: a standing is a judgement made
+// against a clock, and re-judging it here would answer "why is m1c
+// unreachable" about a reading the human never saw. So the rows travel with
+// the capture, the block says they are the page's, and the fleet tool is what
+// the Partner calls when it wants a reading of its own.
+func fleetLines(page Page) string {
+	shown := page.Fleet
+	var built strings.Builder
+	built.WriteString("- The fleet as this page displayed it")
+	if shown.Source != "" {
+		built.WriteString(", from presence " + shown.Source)
+	}
+	if shown.FetchedAt != "" {
+		built.WriteString(", fetched " + shown.FetchedAt)
+	}
+	built.WriteString(":\n")
+	if shown.Problem != "" {
+		built.WriteString("  - the copy's own trouble, as the page said it: " + shown.Problem + "\n")
+	}
+	for _, line := range shown.NeedsYou {
+		built.WriteString("  - needs a human: " + line + "\n")
+	}
+	for _, machine := range shown.Machines {
+		row := "  - " + machine.Machine + ": " + machine.Standing
+		if machine.Seen != "" {
+			row += ", seen " + machine.Seen
+		}
+		if len(machine.Holds) > 0 {
+			row += ", holds " + strings.Join(machine.Holds, ", ")
+		}
+		if machine.Flag != "" {
+			row += " (" + machine.Flag + ")"
+		}
+		built.WriteString(row + "\n")
+	}
+	if shown.Total > len(shown.Machines) {
+		built.WriteString("  - " + strconv.Itoa(len(shown.Machines)) + " of " +
+			strconv.Itoa(shown.Total) + " machines travelled with this question; the fleet tool reads the rest.\n")
+	}
 	return built.String()
 }
 
