@@ -37,8 +37,54 @@ type backlogPayload struct {
 	BudgetDefaults map[string]goalbudget.Budget `json:"budgetDefaults"`
 	Counts         map[backlog.Lane]int         `json:"counts"`
 	Draft          backlog.DraftGap             `json:"draft"`
-	Rows           []backlog.Row                `json:"rows"`
-	Closed         []backlog.Row                `json:"closed"`
+	Rows           []boardRow                   `json:"rows"`
+	Closed         []boardRow                   `json:"closed"`
+}
+
+// boardRow is the interface's own row: the backlog projection's row exactly
+// as it stands, with the one fact this layer joins to it.
+//
+// The backlog package is not taught about presence. A row says who claimed a
+// goal, and whether that machine has been heard from lately is a second
+// reading — of the presence copy this interface fetched for itself — that
+// belongs to whoever holds both. That is this layer, and the join is made
+// from the same observation the rows were projected from, so the holder and
+// the row can never be from two commits.
+type boardRow struct {
+	backlog.Row
+	Holder *holderPayload `json:"holder,omitempty"`
+}
+
+// holderPayload is the standing of the machine that holds a claimed row. It
+// is a flag and never an act: the goal stays claimed, and the words name what
+// a human can do at a terminal.
+type holderPayload struct {
+	Machine  string `json:"machine"`
+	Standing string `json:"standing"`
+	Since    string `json:"since"`
+	Flag     string `json:"flag"`
+}
+
+// wrapRows carries the projection's rows into the interface's own shape, with
+// no holder on any of them: the join is a second step, because a build that
+// cannot read presence still serves a board.
+func wrapRows(rows []backlog.Row) []boardRow {
+	wrapped := make([]boardRow, 0, len(rows))
+	for _, row := range rows {
+		wrapped = append(wrapped, boardRow{Row: row})
+	}
+	return wrapped
+}
+
+// plainRows is the projection's rows again, for a composer that reads the
+// board rather than the page: Overview fills its own holders in its own
+// composition.
+func plainRows(rows []boardRow) []backlog.Row {
+	plain := make([]backlog.Row, 0, len(rows))
+	for _, row := range rows {
+		plain = append(plain, row.Row)
+	}
+	return plain
 }
 
 // authorityPayload is what the board is told about this server's standing. It
@@ -145,7 +191,9 @@ func (h *handler) backlog(w http.ResponseWriter, r *http.Request) {
 // two act routes answer with it too, so a board that moves a card is moving
 // it because the ledger moved.
 func (h *handler) backlogPayload() backlogPayload {
-	payload := backlogOf(h.info.Observe())
+	observed := h.info.Observe()
+	payload := backlogOf(observed)
+	h.joinHolders(observed, &payload)
 	payload.Authority = authorityPayload{
 		Proven: h.info.Authority.Proven,
 		Human:  h.info.Authority.Human,
@@ -157,6 +205,26 @@ func (h *handler) backlogPayload() backlogPayload {
 		}
 	}
 	return payload
+}
+
+// joinHolders flags the claimed rows whose holder has gone silent, from the
+// same observation the rows were projected from.
+//
+// It is best effort by design: a presence copy this seat cannot read costs
+// the board a flag and never a row. The board's whole job is to say what the
+// ledger says, and the ledger said it whether or not anybody has heard from
+// the machine holding it.
+func (h *handler) joinHolders(observed snapshot.Observation, payload *backlogPayload) {
+	if h.info.Fleet == nil || len(payload.Rows) == 0 {
+		return
+	}
+	page, err := h.info.Fleet(observed, backlog.Board{Rows: plainRows(payload.Rows)}, h.now())
+	if err != nil {
+		return
+	}
+	for index := range payload.Rows {
+		payload.Rows[index].Holder = holderOf(page, payload.Rows[index].Row)
+	}
 }
 
 func writeError(w io.Writer, reason string) {
@@ -184,8 +252,8 @@ func backlogOf(observation snapshot.Observation) backlogPayload {
 		BudgetDefaults: map[string]goalbudget.Budget{},
 		Counts:         map[backlog.Lane]int{},
 		Draft:          backlog.DraftGap{Statement: backlog.DraftStatement},
-		Rows:           []backlog.Row{},
-		Closed:         []backlog.Row{},
+		Rows:           []boardRow{},
+		Closed:         []boardRow{},
 	}
 	payload.Ledger.Freshness = freshnessOf(observation)
 	payload.Ledger.Stale = payload.Ledger.Freshness.State != snapshot.FreshnessCurrent
@@ -198,7 +266,7 @@ func backlogOf(observation snapshot.Observation) backlogPayload {
 	}
 	board := backlog.Project(observation.Tree, observation.Horizon, observation.Admission)
 	payload.Counts, payload.Draft = board.Counts, board.Draft
-	payload.Rows, payload.Closed = board.Rows, board.Closed
+	payload.Rows, payload.Closed = wrapRows(board.Rows), wrapRows(board.Closed)
 	return payload
 }
 

@@ -15,8 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/manifest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
@@ -50,6 +52,20 @@ type Info struct {
 	// Fetch is a build whose Refresh only re-observes, which is what every
 	// other read of this resource does anyway.
 	Fetch func()
+	// Fleet composes the Fleet page from one observation and its board
+	// projection, taken by the caller and handed in so that the holders on
+	// the page, the titles beside them and the tip they were read at are all
+	// of one commit. It reads the presence copy this interface fetched for
+	// itself; it starts no fetch of its own. A nil Fleet is a build that
+	// cannot answer for the fleet, which the route says and which costs the
+	// board and the Overview their holder flags and nothing else.
+	Fleet func(snapshot.Observation, backlog.Board, time.Time) (fleet.Page, error)
+	// Watch is the bridge between the open notification streams and the
+	// presence fetch owner: the streams are the owner's connection signal,
+	// and the one `fleet` event rides back to them after every attempt. A nil
+	// watch is a build with no presence fetcher, whose pages read on mount
+	// and never again.
+	Watch *fleet.Watch
 	// Project answers what the project's records declare, per request for the
 	// same reason.
 	Project func() (project.Pane, error)
@@ -325,6 +341,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == overviewPath {
 		h.overview(w, r)
+		return
+	}
+	if r.URL.Path == fleetPath {
+		h.fleet(w)
 		return
 	}
 	if r.URL.Path == partnerPath {
