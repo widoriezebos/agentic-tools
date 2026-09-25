@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:e0909236c3639ab43c53ce46d5e76d8c7cb1537c2c75910698344ac0550837b5",
+  "sourceDigest": "sha256:3e2d1c9c7c3b7670adf85b77d961716223c02dcd72be71a4b73ed2187cb23af5",
   "source": [
     {
       "path": ".npmrc",
@@ -740,7 +740,7 @@
     },
     {
       "path": "src/shell/Rail.tsx",
-      "sha256": "938891d741f01a80fb823a35067a886f2c21a1221946c66d7ccbd134f40d7c5d"
+      "sha256": "3b37c9774957529e789244374b4517d11b535601af2b45c45d06f7e9851f52f4"
     },
     {
       "path": "src/shell/Sheet.tsx",
@@ -808,7 +808,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "240f8f90659d83355215cf96d44790ca38836802dcd41e984abe9824f91f9394"
+      "sha256": "94e09ecf26f307ce93d1cdb0440160d9315ef40f95f43a7a3af7da31b12b47b4"
     },
     {
       "path": "src/shell/workmodal.test.ts",
@@ -874,11 +874,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "07e18b688ee329beda3d727c213cb3f5a28eaea879540312a91b39830b25dc65"
+      "sha256": "8fc461c51c6184856f70b1ac2d58ce856927d3a79e70065073e2c9046f75debc"
     },
     {
       "path": "assets/index.js",
-      "sha256": "89b8a264daa6ac785e70636d419abc881e0ccf9424d0f6ead3d82a022ae8d51b"
+      "sha256": "49ee67ce779aa9e5dc2ec81e788dfe21e3cb5a687490d2eb2926b69822a278de"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
