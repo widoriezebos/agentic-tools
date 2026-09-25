@@ -755,7 +755,15 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 			return nil, nil, identity.Ref{}, err
 		}
 	}
-	custody, err := startResourceCustody(LaunchOptions{WatchdogExecutable: engine}, parent.Ref(), "", files, nil)
+	// The scratch writer lock rides beside, never inside, the host lease
+	// files: the custodian holds it through its whole drain even when the
+	// workload closes its own copy, and it is never marked dirty or clean.
+	scratch := ScratchRunFromContext(ctx)
+	custodyFiles := files
+	if scratch != nil && scratch.Writer() != nil {
+		custodyFiles = append(append([]*os.File{}, files...), scratch.Writer())
+	}
+	custody, err := startResourceCustody(LaunchOptions{WatchdogExecutable: engine}, parent.Ref(), "", custodyFiles, nil)
 	if err != nil {
 		if len(files) != 0 {
 			_ = MarkHostResourcesClean(files)
@@ -764,6 +772,9 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 	}
 	originalPath, originalArgs := command.Path, append([]string(nil), command.Args...)
 	originalExtra := append([]*os.File(nil), command.ExtraFiles...)
+	if scratch != nil && scratch.Writer() != nil {
+		command.ExtraFiles = append(command.ExtraFiles, scratch.Writer())
+	}
 	barrier, err := prepareCustodyExec(command, engine)
 	finish := func() error {
 		command.Path, command.Args, command.ExtraFiles = originalPath, originalArgs, originalExtra
@@ -778,6 +789,13 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 	}
 	if err != nil {
 		return nil, nil, identity.Ref{}, errors.Join(err, finish())
+	}
+	if scratch != nil {
+		// A custodian the record does not name could outlive a crashed
+		// launcher unseen: no record, no workload.
+		if err := scratch.RecordCustodian(custody.leader, int64(custody.group)); err != nil {
+			return nil, nil, identity.Ref{}, errors.Join(fmt.Errorf("record scratch custodian: %w", err), finish())
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, nil, identity.Ref{}, errors.Join(err, finish())

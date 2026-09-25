@@ -158,11 +158,16 @@ exit 1
 		projection.Tree.Cadence.TrunkTree != newTrunk.Tree || len(projection.Tree.TrunkRed) != 1 || projection.Tree.TrunkRed[0].Owner.Machine != "" {
 		t.Fatalf("published cadence=%+v red=%+v err=%v", projection.Tree.Cadence, projection.Tree.TrunkRed, err)
 	}
+	// The fixture's standing-validation claim belongs to mac-cli, which never
+	// publishes presence into these clones, so goal next flags that holder on
+	// standard error. The flag is the only standard-error line a seat may
+	// print, and it names no clock: an unpublished holder has no since.
+	wantStderr := "goal standing-validation is held by mac-cli, which has published no presence; a human reassigns it with goal steal\n"
 	for _, seat := range seatRoots {
 		goalSyncMutationGit(t, seat, "fetch", "-q", landingRoot, projection.Tip)
 		goalSyncMutationGit(t, seat, "update-ref", goal.AcceptedRef, "FETCH_HEAD")
 		code, stdout, stderr := captureCommandOutput(t, true, true, func() int { return runGoalNext([]string{"--root", seat}) })
-		if code != 0 || stderr != "" || !strings.Contains(stdout, "owned by nobody") {
+		if code != 0 || stderr != wantStderr || !strings.Contains(stdout, "owned by nobody") {
 			t.Fatalf("seat %s next code=%d stdout=%q stderr=%q", filepath.Base(seat), code, stdout, stderr)
 		}
 	}
