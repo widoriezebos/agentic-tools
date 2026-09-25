@@ -193,6 +193,14 @@ func (s *Store) Human() string {
 // browser named one. A handle a client supplies never displaces it.
 func (s *Store) Configured() bool { return strings.TrimSpace(s.options.Human) != "" }
 
+// Root is the checkout this store's proofs are bound to.
+//
+// It is readable because a route that wants to check a session's proof for
+// itself — rather than take the store's word that the session is live — has
+// to ask the proof about the same root it was minted for, and only this store
+// knows which root that is.
+func (s *Store) Root() string { return s.options.Root }
+
 // SignIn verifies one code and mints one session, returning the session and,
 // separately, the bearer the cookie is to hold. client is what the failures
 // are counted against; asked is the handle the sheet supplied, which is used

@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,6 +39,20 @@ import (
 func launchStarter(roots lifecycle.Roots) func(*session.Session, launch.Request) (launch.Record, error) {
 	return func(_ *session.Session, asked launch.Request) (launch.Record, error) {
 		asked.From = roots.Checkout
+		// The interface never launches a machine under an authorization
+		// nobody typed. The verb still takes the terminal-only path — arming
+		// from the caller's own enrolled terminal, with no pair at all — but
+		// that path belongs to a human standing at a terminal, and a browser
+		// is not one. So the word and the date travel with every launch and
+		// with every retry, including a retry whose enrollment step may
+		// already be done: the resume decides that from the clone's own
+		// identity and binary, which this side cannot read.
+		if strings.TrimSpace(asked.Word) == "" || strings.TrimSpace(asked.ReviewBy) == "" {
+			return launch.Record{}, &launch.Refusal{
+				Code:    launch.CodeWordRequired,
+				Message: "a machine launched from this interface is enrolled under your own words: give the word and the review date",
+			}
+		}
 		if err := humanauthority.ValidateTemporaryWordPair(asked.Word, asked.ReviewBy); err != nil {
 			return launch.Record{}, &launch.Refusal{Code: launch.CodeWordInvalid, Message: err.Error()}
 		}

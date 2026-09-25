@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
@@ -161,6 +162,53 @@ func TestALaunchRefusalCarriesItsCodeAndTheStatusThatFitsIt(t *testing.T) {
 		refusal := actRefusal(t, response)
 		testutil.Expect(t, "code for "+code, refusal.Code, code)
 		testutil.Expect(t, "the owner's words for "+code, refusal.Error, "the owner's own sentence")
+	}
+}
+
+// A live cookie is not a human. The route asks the proof itself, so a session
+// record whose proof stands for nothing — or for another checkout — launches
+// nothing.
+func TestALiveSessionWithNoProofLaunchesNothing(t *testing.T) {
+	t.Parallel()
+
+	signing := newSigning(t, "Wido", workingSecret)
+	rec := &launching{answered: startedLaunch(), sessions: signing.store}
+	served := New(rec.serving(), loopback(), testBundle())
+	signedIn := post(t, served, signInPath, `{"code":"`+routeCode(t, routeNow)+`","human":""}`, nil)
+	cookie := mintedCookie(t, signedIn)
+	// The session stays live and its proof is emptied, which is exactly what
+	// a record restored from anything but a fresh in-process mint looks like.
+	held, liveness := signing.store.Lookup(cookie.Value)
+	testutil.Require(t, "the session is live", liveness, session.Live)
+	held.Proof = humanauthority.Proof{}
+
+	response := post(t, served, launchPath, wholeLaunch, carrying(cookie.Value))
+
+	testutil.Require(t, "status", response.Code, http.StatusForbidden)
+	testutil.Expect(t, "the browser is told the remedy is here", actRefusal(t, response).SignIn, true)
+	testutil.Expect(t, "nothing was launched", len(rec.asked), 0)
+}
+
+// The word and the date travel with every launch and every retry: a browser
+// is never the terminal the wordless arming path belongs to.
+func TestALaunchWithNoAuthorizationIsRefusedByName(t *testing.T) {
+	t.Parallel()
+
+	for what, body := range map[string]string{
+		"no word":      `{"machine":"m1f","destination":"/w/agentic-tools-m1f","word":"  ","reviewBy":"2026-10-02"}`,
+		"no date":      `{"machine":"m1f","destination":"/w/agentic-tools-m1f","word":"Wido says so","reviewBy":""}`,
+		"a bare retry": `{"resume":"01M3BQAVYXE2AT6F0JG9YB64PG","word":"","reviewBy":""}`,
+	} {
+		signing := newSigning(t, "Wido", workingSecret)
+		rec := &launching{answered: startedLaunch(), sessions: signing.store}
+		served := New(rec.serving(), loopback(), testBundle())
+		signedIn := post(t, served, signInPath, `{"code":"`+routeCode(t, routeNow)+`","human":""}`, nil)
+
+		response := post(t, served, launchPath, body, carrying(mintedCookie(t, signedIn).Value))
+
+		testutil.Require(t, "status for "+what, response.Code, http.StatusUnprocessableEntity)
+		testutil.Expect(t, "code for "+what, actRefusal(t, response).Code, launch.CodeWordRequired)
+		testutil.Expect(t, "nothing was launched for "+what, len(rec.asked), 0)
 	}
 }
 
