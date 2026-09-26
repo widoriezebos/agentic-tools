@@ -310,29 +310,41 @@ func TestARenewalIsDatedFromWhenItsApprovalStoppedAdmittingWork(t *testing.T) {
 		}
 	}
 
-	// An approval that expired without naming a date of its own is dated from
-	// this read: the projection says it is expired and never says when it
-	// stopped, and the approval's own instant is when the approval was given,
-	// which is the one instant it certainly is not.
-	in := everyKind()
-	in.Rows[2].Approved.ReviewBy = ""
-	in.Rows[2].Approved.ExpiredWhy = "the fleet's first terminal was enrolled at 2026-09-10T00:00:00Z"
-	found := false
-	for _, need := range Compose(in, observed).NeedsYou {
-		if need.Kind != KindRenewal || need.ID != "g1-s42" {
-			continue
+	// An approval that expired for either of the other two reasons the horizon
+	// carries is dated from this read, and the review date it still names is not
+	// the answer. Every relayed approval the ledger accepts names a review date,
+	// and ApprovalExpired refuses on the fleet's first enrollment before it ever
+	// reads that date, so both rows below keep a review date well in the future:
+	// dating them from it would say the renewal began waiting after this read.
+	// The approval's own instant is no answer either — that is when the approval
+	// was given, the one instant it certainly is not.
+	for _, why := range []string{
+		"the fleet's first terminal was enrolled at 2026-09-10T00:00:00Z",
+		"the temporary authority horizon 2026-09-20 has passed",
+	} {
+		in := everyKind()
+		in.Rows[2].Approved.ReviewBy = "2026-12-31"
+		in.Rows[2].Approved.ExpiredWhy = why
+		found := false
+		for _, need := range Compose(in, observed).NeedsYou {
+			if need.Kind != KindRenewal || need.ID != "g1-s42" {
+				continue
+			}
+			found = true
+			if need.Since != observed.Format(time.RFC3339) {
+				t.Errorf("%q is dated %q, want this read's own instant %q",
+					why, need.Since, observed.Format(time.RFC3339))
+			}
+			if need.Since == "2026-12-31T00:00:00Z" {
+				t.Errorf("%q was dated from a review date that has not passed", why)
+			}
+			if need.Since == ago(30*24*time.Hour) {
+				t.Errorf("%q was dated from when the approval was given", why)
+			}
 		}
-		found = true
-		if need.Since != observed.Format(time.RFC3339) {
-			t.Errorf("an undated expiry is dated %q, want this read's own instant %q",
-				need.Since, observed.Format(time.RFC3339))
+		if !found {
+			t.Errorf("the renewal that expired by %q left the inbox", why)
 		}
-		if need.Since == ago(30*24*time.Hour) {
-			t.Error("an undated expiry was dated from when the approval was given")
-		}
-	}
-	if !found {
-		t.Error("the undated renewal left the inbox")
 	}
 }
 
