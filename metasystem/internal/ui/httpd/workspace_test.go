@@ -27,6 +27,15 @@ func describedWorkspace() workspace.Workspace {
 		SourceHead:       "",
 		AdoptedFrom:      "",
 		AdoptionRecord:   string(workspace.Placeholder),
+		// The private store, which Settings reads from this same resource: its
+		// path, what it holds per workspace, and the bounds in words (g1-s54 D3).
+		Store: &workspace.Store{
+			Path: "/home/one/.metasystem/ui",
+			Workspaces: []workspace.StoreWorkspace{
+				{Name: "repository-0a1b2c", Size: "49 KB", Current: true},
+			},
+			Bounds: []string{"The Partner's wire journal is rotated at 8 MB, keeping one previous."},
+		},
 	}
 }
 
@@ -76,7 +85,7 @@ func TestWorkspacePayloadFieldNames(t *testing.T) {
 	}
 	want := []string{
 		"adoptedFrom", "adoptionRecord", "checkout", "conflict", "engineBuild", "executableDigest",
-		"installation", "mode", "schemaVersion", "sourceHead", "startedAt", "stateRoot", "subject",
+		"installation", "mode", "schemaVersion", "sourceHead", "startedAt", "stateRoot", "store", "subject",
 	}
 	slices.Sort(names)
 	testutil.Expect(t, "field names", names, want)

@@ -63,7 +63,7 @@ import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
 import { documentIdFromPath, documentPath } from "../routes";
 import { ASK_REVISION, ASK_SOURCE, ASK_SURFACE } from "../partner/AskSelection";
-import { START } from "../partner/sitting";
+import { sittable, START } from "../partner/sitting";
 import { StartSittingSheet } from "../partner/StartSitting";
 import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
@@ -1024,8 +1024,13 @@ function Status({ status, onChange }: { status: string; onChange: (status: strin
  * The copy confirmation is a CSS animation on an element that is remounted for
  * each copy, so a second copy says so again; there is no timer anywhere in this
  * build, and a confirmation that needed one would be the first.
+ *
+ * Start a sitting is here and on the drawer's header, and here it is offered on
+ * two record kinds only (g1-s53 D1). It is exported for the test that proves
+ * which: which kinds offer the press is a claim about this row, and the row is
+ * the smallest thing that can be rendered to read the answer off.
  */
-function FileActions({
+export function FileActions({
   path,
   document: read,
   onEdit,
@@ -1092,8 +1097,12 @@ function FileActions({
       )}
       {/* Start a sitting on this record. It is offered while no sitting stands:
           there is one sitting on one conversation, and a second Start would be a
-          second answer to "which record is under discussion". */}
-      {standing === null && (
+          second answer to "which record is under discussion".
+
+          And only on the two kinds a sitting is about (D1). The service refuses
+          the rest in its own words, which is the gate; this is the page not
+          offering a press that would be refused. */}
+      {standing === null && sittable(read.record?.kind) && (
         <button
           type="button"
           className="ms-project-act"

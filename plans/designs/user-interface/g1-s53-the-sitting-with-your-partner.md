@@ -315,9 +315,10 @@ be recorded twice; each entry carries its deposit's mark and the card's
 state is read from the record. Fields could be edited during the write;
 they freeze.
 
-Later, when it hurts: a table entry does not open the record at its
-line; Start a sitting is offered on record kinds beyond intent and
-design; the closed drawer bar wraps its title while a sitting stands at
+Later, when it hurts: a table entry opens the record at its section
+heading rather than its own line, because the reader anchors headings
+only (built 2026-09-26, with Start a sitting gated to intent and design
+records on the page and in the service); the closed drawer bar wraps its title while a sitting stands at
 1280; the table leaves blank space below itself on a phone; a deposit
 card is easiest to read in the focused view. Step 2 of the design: cases
 with Decide and Leave open, the closing deposit, the Sittings list.

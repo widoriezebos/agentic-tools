@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uihome"
 )
 
@@ -488,6 +489,12 @@ type Message struct {
 	Interface bool `json:"interface,omitempty"`
 	// Page is where the human was, on a human's message only.
 	Page *Page `json:"page,omitempty"`
+	// Trimmed marks the one line a trim leaves at the head of a transcript:
+	// the note that says what is gone and when it went. It is in the file
+	// because a later trim has to recognise it — a note about messages that
+	// are gone is itself the first thing to cut, and without the mark the
+	// head of the file would collect one note per sweep.
+	Trimmed bool `json:"trimmed,omitempty"`
 }
 
 // Conversation is the transcript and the state beside it.
@@ -684,6 +691,239 @@ func (c *Conversation) Messages(limit int) []Message {
 	copy(answer, held)
 	return answer
 }
+
+// keptMessages is the floor a trim never cuts below, whatever the bounds say:
+// the last two hundred messages of a conversation. It is why the bounds are
+// retention targets and not disk ceilings — two hundred kept messages can
+// exceed two megabytes on their own (g1-s54 D4).
+const keptMessages = 200
+
+// TrimBounds is what a transcript is kept to. Zero disables that bound, as
+// every bound of this store does.
+type TrimBounds struct {
+	// Bytes is the size the file may reach before its head is cut.
+	Bytes int64
+	// Age is how old the oldest message may be.
+	Age time.Duration
+}
+
+// Trim cuts this transcript's head where it has passed its bounds, and reports
+// how many messages went.
+//
+// It is the conversation's OWN operation, under the mutex Append takes, and it
+// replaces the file and the cached messages together. That is Astra's F2 on
+// g1-s54: a read-trim-replace from outside could drop an append that had
+// already been accepted, and a trim that only rewrote the file would leave the
+// served transcript showing messages the file no longer holds.
+//
+// Three things bound what it may cut. The last two hundred messages always
+// stay. The cut falls only where the turn changes, so a question is never left
+// without its answer nor an answer without its question. And a trailing turn
+// that has no terminal outcome yet is a turn still being answered, so it is
+// kept whole even where that means cutting less than the bound asks — the
+// bounds are retention targets, and a day passes between sweeps.
+//
+// What is cut is gone. The first remaining message says when it went.
+func (c *Conversation) Trim(bounds TrimBounds, now time.Time) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.messages) <= keptMessages {
+		return 0, nil
+	}
+	oversized := false
+	if bounds.Bytes > 0 {
+		info, err := os.Stat(c.transcript)
+		if err != nil && !os.IsNotExist(err) {
+			return 0, fmt.Errorf("the Partner's transcript could not be measured: %w", err)
+		}
+		oversized = err == nil && info.Size() > bounds.Bytes
+	}
+	stale := 0
+	if bounds.Age > 0 {
+		stale = olderThan(c.messages, now.UTC().Add(-bounds.Age))
+	}
+	if !oversized && stale == 0 {
+		return 0, nil
+	}
+	ceiling := len(c.messages) - keptMessages
+	if start, unfinished := trailingTurn(c.messages); unfinished && start < ceiling {
+		ceiling = start
+	}
+	if ceiling <= 0 {
+		return 0, nil
+	}
+	wanted := stale
+	if oversized {
+		// The file is over its size, and nothing smaller than the floor is
+		// worth writing twice: the sweep cuts as far down as the floor and the
+		// turn boundaries allow.
+		wanted = ceiling
+	}
+	if wanted > ceiling {
+		wanted = ceiling
+	}
+	cut := turnBoundary(c.messages, wanted, ceiling)
+	if cut <= 0 || !holdsAMessage(c.messages[:cut]) {
+		// A cut that would take nothing but an earlier trim's own notice is not
+		// a trim: it would rewrite the file every sweep and date the notice
+		// today for messages that went months ago. The floor is what stops the
+		// bound here, and saying so once is enough.
+		return 0, nil
+	}
+	kept := make([]Message, 0, len(c.messages)-cut+1)
+	kept = append(kept, trimNotice(now))
+	kept = append(kept, c.messages[cut:]...)
+	if err := writeTranscript(c.transcript, kept); err != nil {
+		return 0, err
+	}
+	c.messages = kept
+	return cut, nil
+}
+
+// holdsAMessage reports whether a run of messages is more than trim notices.
+func holdsAMessage(messages []Message) bool {
+	for _, message := range messages {
+		if !message.Trimmed {
+			return true
+		}
+	}
+	return false
+}
+
+// olderThan is how many messages at the head of a transcript are older than a
+// moment, counting a trim notice as neither old nor a reason to stop: the note
+// is about messages that are gone, so it goes with the next cut rather than
+// standing at the head forever and stopping every age sweep after the first.
+//
+// A stamp this build cannot read stops the count. A message whose date is
+// unreadable is a message whose age is unknown, and the unknown is kept.
+func olderThan(messages []Message, cutoff time.Time) int {
+	older := 0
+	for at, message := range messages {
+		if message.Trimmed {
+			continue
+		}
+		stamp, err := time.Parse(time.RFC3339, message.At)
+		if err != nil || !stamp.Before(cutoff) {
+			break
+		}
+		older = at + 1
+	}
+	return older
+}
+
+// trailingTurn is where the last turn begins, and whether it is unfinished: a
+// turn is finished when an answer of it carries a terminal outcome, and until
+// then it is a question this server is still answering.
+func trailingTurn(messages []Message) (int, bool) {
+	if len(messages) == 0 {
+		return 0, false
+	}
+	turn := messages[len(messages)-1].Turn
+	start := len(messages) - 1
+	for start > 0 && messages[start-1].Turn == turn {
+		start--
+	}
+	for _, message := range messages[start:] {
+		if message.Role == RolePartner && message.Outcome != "" {
+			return start, false
+		}
+	}
+	return start, true
+}
+
+// turnBoundary is the index a cut may fall on: the first one at or after wanted
+// where the turn changes, and never past ceiling. Where the range holds no
+// boundary, the last one below it is taken instead — half a turn is never cut
+// to meet a retention target, and cutting less is the right half to give up.
+func turnBoundary(messages []Message, wanted, ceiling int) int {
+	if wanted < 1 {
+		wanted = 1
+	}
+	for at := wanted; at <= ceiling; at++ {
+		if messages[at].Turn != messages[at-1].Turn {
+			return at
+		}
+	}
+	below := 0
+	for at := 1; at < wanted && at <= ceiling; at++ {
+		if messages[at].Turn != messages[at-1].Turn {
+			below = at
+		}
+	}
+	return below
+}
+
+// trimNotice is the line a trimmed transcript keeps at its head. It is written
+// in the Partner's column because those are the two roles a message has, and
+// marked so the next trim cuts it with the rest.
+func trimNotice(now time.Time) Message {
+	stamp := now.UTC()
+	return Message{
+		ID:      mintTurn(),
+		Turn:    mintTurn(),
+		Role:    RolePartner,
+		Outcome: OutcomeComplete,
+		Text:    "Earlier messages were trimmed on " + stamp.Format("2 January 2006") + ".",
+		At:      stamp.Format(time.RFC3339),
+		Trimmed: true,
+	}
+}
+
+// writeTranscript replaces the whole file, in one publication: a reader halfway
+// through the old file reads the old file whole rather than a torn mixture, and
+// the append that takes the lock next opens the file this left.
+func writeTranscript(path string, messages []Message) error {
+	var built strings.Builder
+	for _, message := range messages {
+		body, err := json.Marshal(message)
+		if err != nil {
+			return err
+		}
+		built.Write(body)
+		built.WriteByte('\n')
+	}
+	if _, err := atomicfile.WriteText(path, built.String(), ""); err != nil {
+		return fmt.Errorf("the Partner's trimmed transcript could not be written: %w", err)
+	}
+	return nil
+}
+
+// Humans names every human this workspace's directory holds a conversation for,
+// by the name the file is kept under.
+//
+// Housekeeping needs it because a transcript that grew under an earlier run of
+// this seat is bounded at start, before anybody has spoken: the conversations
+// the service holds are the ones somebody opened, and at start there are none.
+// The wire journal and the one previous it keeps are not conversations.
+func Humans(directory string) ([]string, error) {
+	held, err := os.ReadDir(directory)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("the Partner's conversation directory at %s could not be read: %w", directory, err)
+	}
+	names := []string{}
+	for _, entry := range held {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".jsonl" {
+			continue
+		}
+		if name == wireJournal || name == wireJournalPrevious {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(name, ".jsonl"))
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// The two names the wire journal takes in a conversation directory.
+const (
+	wireJournal         = "wire.jsonl"
+	wireJournalPrevious = "wire.1.jsonl"
+)
 
 // TurnFor reports the turn one client key already minted, so the same send
 // twice is the same turn once.

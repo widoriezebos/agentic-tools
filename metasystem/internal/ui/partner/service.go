@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 )
 
@@ -195,9 +196,18 @@ func NewService(runtime Runtime, host *Host, open func(human string) (*Conversat
 }
 
 // conversation answers one human's transcript, opening it the first time.
+//
+// It is held under the name the FILE is kept under rather than the handle as it
+// was spelled, because that is what decides which transcript this is: a handle
+// with a space in it and the same handle with a dash are one file, and two
+// objects over one file would be two mutexes over it — which is the race the
+// trim's own mutex exists to prevent (g1-s54 F2). Housekeeping reaches a
+// transcript nobody has opened this run by the file's name, so the two ways in
+// have to meet at one object.
 func (s *Service) conversation(human string) (*Conversation, error) {
+	key := fileName(human)
 	s.mu.Lock()
-	held, known := s.conversations[human]
+	held, known := s.conversations[key]
 	s.mu.Unlock()
 	if known {
 		return held, nil
@@ -207,13 +217,51 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 		return nil, err
 	}
 	s.mu.Lock()
-	if again, raced := s.conversations[human]; raced {
+	if again, raced := s.conversations[key]; raced {
 		opened = again
 	} else {
-		s.conversations[human] = opened
+		s.conversations[key] = opened
 	}
 	s.mu.Unlock()
 	return opened, nil
+}
+
+// Trim keeps this seat's transcripts within the bounds, and reports how many
+// messages went.
+//
+// humans names the store's own files, so a transcript that grew under an
+// earlier run of this seat is bounded at start, before anybody has spoken —
+// otherwise housekeeping's first sweep would find no conversation open and do
+// nothing. Every one of them is trimmed through the object that owns it, this
+// service's own, because the trim is the conversation's operation under the
+// mutex its appends take.
+//
+// A transcript that cannot be opened or cannot be trimmed does not stop the
+// rest: the other files are still over their bounds, and one unreadable file is
+// a reason to say so rather than to leave the store growing.
+func (s *Service) Trim(bounds TrimBounds, humans []string) (int, error) {
+	var trouble []error
+	for _, human := range humans {
+		if _, err := s.conversation(human); err != nil {
+			trouble = append(trouble, err)
+		}
+	}
+	s.mu.Lock()
+	held := make([]*Conversation, 0, len(s.conversations))
+	for _, conversation := range s.conversations {
+		held = append(held, conversation)
+	}
+	s.mu.Unlock()
+	cut := 0
+	now := s.now()
+	for _, conversation := range held {
+		removed, err := conversation.Trim(bounds, now)
+		cut += removed
+		if err != nil {
+			trouble = append(trouble, err)
+		}
+	}
+	return cut, errors.Join(trouble...)
 }
 
 // Runtime is what this seat admitted.
@@ -538,6 +586,51 @@ func admitsPurpose(purpose string) error {
 	return nil
 }
 
+// subjectKinds is what a sitting on any other kind of record is refused with, in
+// the words a human reads. It is a constant because two places say it: the
+// refusal itself, and the test that proves the refusal is the one given.
+const subjectKinds = "a sitting is about an intent or a design record"
+
+// admitsSubject says whether a sitting may be about this record (g1-s53 D1).
+//
+// A sitting shapes intent or shapes a design, and its subject is the record it
+// shapes: the four piles it writes — Facts, Proposals, Decisions, Open questions
+// — belong in one of those two kinds and nowhere else. A doctrine record, a
+// recorded decision, or a plain file of the checkout is not a thing there is a
+// sitting for. The record's page offers Start on nothing else, but the page is
+// not the gate: the route is reachable without it, and a subject arriving from
+// anywhere at all is judged here.
+//
+// The kind is the record's own declared head, read through the same document
+// reader the pages are composed from. A file declaring no head, or a head naming
+// no kind, is not a record of any kind and is refused for exactly that.
+//
+// A build with no document reader is not asked: it has no Project section and no
+// record page, so there is no Start to press and no head to read. What the reader
+// itself refuses is passed on as it is — a subject this checkout cannot read is a
+// sitting with nothing to record into, which is the route's own reason for
+// creating a draft before opening one.
+func (s *Service) admitsSubject(subject Subject) error {
+	if s.facts.Document == nil {
+		return nil
+	}
+	document, err := s.facts.Document(subject.ID)
+	if err != nil {
+		return fmt.Errorf("cannot read %s, so a sitting cannot be opened on it: %w", subject.ID, err)
+	}
+	kind := ""
+	if document.Record != nil {
+		kind = strings.TrimSpace(document.Record.Kind)
+	}
+	switch {
+	case kind == "":
+		return fmt.Errorf("%s, and %s declares neither", subjectKinds, subject.ID)
+	case kind != resolver.KindIntent && kind != resolver.KindDesign:
+		return fmt.Errorf("%s, and %s is a %s record", subjectKinds, subject.ID, kind)
+	}
+	return nil
+}
+
 // Admits says whether a sitting for this purpose could be opened at all, and
 // creates nothing.
 //
@@ -593,6 +686,9 @@ func (s *Service) Sit(ctx context.Context, human string, subject Subject, purpos
 		return Sitting{}, errors.New("a sitting is about one record of this project, and nothing else yet")
 	case subject.ID == "":
 		return Sitting{}, errors.New("a sitting about a record says which one, by its path in this checkout")
+	}
+	if err := s.admitsSubject(subject); err != nil {
+		return Sitting{}, err
 	}
 	conversation, err := s.conversation(human)
 	if err != nil {

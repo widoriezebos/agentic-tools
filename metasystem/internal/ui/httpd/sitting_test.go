@@ -22,6 +22,16 @@ import (
 // writer recorded so a sitting started on a new draft can be seen reaching it.
 func servedSitting(t *testing.T, script fakeacp.Script) (http.Handler, *partner.Service, *recorder) {
 	t.Helper()
+	return servedSittingOver(t, script, partner.Facts{})
+}
+
+// servedSittingOver is servedSitting with the server's own readers supplied, for
+// the one refusal that needs one: the subject's kind is the record's own head,
+// which the service reads through the document reader.
+func servedSittingOver(
+	t *testing.T, script fakeacp.Script, facts partner.Facts,
+) (http.Handler, *partner.Service, *recorder) {
+	t.Helper()
 	root := t.TempDir()
 	runtime := partner.Runtime{Name: "fake", Model: "fake-1", ReadOnly: "a fake server reads nothing"}
 	script.Models = []string{"fake-1"}
@@ -29,7 +39,7 @@ func servedSitting(t *testing.T, script fakeacp.Script) (http.Handler, *partner.
 	t.Cleanup(host.Close)
 	service := partner.NewService(runtime, host,
 		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
-		partner.Facts{}, func() time.Time { return time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC) })
+		facts, func() time.Time { return time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC) })
 	rec := &recorder{}
 	info := rec.writing()
 	info.Observe = readObservation
@@ -254,4 +264,42 @@ func TestASeatWithNoPartnerRefusesToStartASitting(t *testing.T) {
 		testutil.Expect(t, path+" says what to configure",
 			strings.Contains(refused.Body.String(), "ui.partner.runtime"), true)
 	}
+}
+
+// A sitting on a record of another kind is refused exactly as a purpose this
+// build does not offer is: a bad request, in the service's own words, with no
+// draft to offer again and nothing touched (g1-s53 D1).
+func TestASittingOnARecordOfAnotherKindIsRefusedAsABadRequest(t *testing.T) {
+	t.Parallel()
+	served, _, rec := servedSittingOver(t, fakeacp.Script{Chunks: []string{"never asked"}},
+		partner.Facts{Document: func(id string) (project.Document, error) {
+			return project.Document{
+				Kind: "document", ID: id, Title: "How records are written",
+				Record: &project.Head{Kind: "doctrine"},
+			}, nil
+		}})
+
+	refused := post(t, served, partnerSittingPath,
+		`{"purpose":"shape a design",`+
+			`"subject":{"kind":"record","id":"plans/doctrine/records.md","title":"How records are written"},`+
+			`"about":{"section":"Project","path":"/project"}}`, nil)
+
+	testutil.Expect(t, "it is a bad request", refused.Code, http.StatusBadRequest)
+	var body struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+		Draft string `json:"draft"`
+	}
+	testutil.Require(t, "reading the refusal", json.Unmarshal(refused.Body.Bytes(), &body), nil)
+	testutil.Expect(t, "answered as the purpose refusal is", body.Code, "request")
+	testutil.Expect(t, "saying which kinds a sitting is about",
+		strings.Contains(body.Error, "a sitting is about an intent or a design record"), true)
+	testutil.Expect(t, "naming the record it was asked about",
+		strings.Contains(body.Error, "plans/doctrine/records.md is a doctrine record"), true)
+	testutil.Expect(t, "there is no draft, because none was created", body.Draft, "")
+	testutil.Expect(t, "and the project's writer was never reached", len(rec.records), 0)
+
+	cold := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	testutil.Expect(t, "no sitting", cold.Sitting == nil, true)
+	testutil.Expect(t, "and no messages", len(cold.Messages), 0)
 }

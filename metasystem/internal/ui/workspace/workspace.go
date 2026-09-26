@@ -48,6 +48,12 @@ type Workspace struct {
 	SourceHead       string `json:"sourceHead"`
 	AdoptedFrom      string `json:"adoptedFrom"`
 	AdoptionRecord   string `json:"adoptionRecord"`
+	// Store is the interface's own private store outside every checkout: where
+	// it is, what it holds, and what it is kept to (g1-s54 D3). It is filled by
+	// the server's wiring rather than by Describe, because the bounds are this
+	// seat's configuration and the measurement is a walk of the account's home
+	// — neither is a fact of the three roots.
+	Store *Store `json:"store,omitempty"`
 }
 
 // Describe answers the workspace resource from the three roots and the
