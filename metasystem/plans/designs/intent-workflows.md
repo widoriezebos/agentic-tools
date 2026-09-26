@@ -81,7 +81,9 @@ Topics and command names must not collide: where `goals` is a command, its
 command help includes the related planning group; do not silently shadow it.
 `help all` lists all supported public capabilities, not technical engine verbs.
 Command help advertises actual accepted flags only; deliberately refused flags
-are not options. Detailed formats include a complete runnable example.
+are not options. Compatibility-only fixture and internal session/approval-binding
+flags remain parseable but are absent from help and suggestions. Human identity,
+explicit authority decisions and ordinary budget choices stay understandable. Detailed formats include a complete runnable example.
 
 `metasystem` with no arguments and `--help` are successful, read-only help.
 Old internal/direct family calls still execute for scripts, but default help,
@@ -100,15 +102,31 @@ Canonical ordinary grammar:
 metasystem build G [--work NAME] --brief FILE --check COMMAND...
 metasystem status G [--work NAME]
 metasystem review G [--work NAME] [--dispositions FILE]
-metasystem revise G [--work NAME] --brief FILE [--dispositions FILE]
+metasystem revise G [--work NAME] [--after N] --brief FILE [--dispositions FILE]
 metasystem wait G [--work NAME] [--timeout DURATION]
 metasystem land G
 ```
 
 A work name is a caller-chosen part of a goal, not a run or chain identity.
 The first unnamed build uses `main`. Existing positional G UNIT stays compatible.
-Later commands omit the name only if exactly one relevant work item exists;
-multiple items produce their names and exact public commands, never pick latest.
+Build on an approved, ready, unclaimed goal acquires its claim through the existing
+claim owner, preserving quota, readiness, elapsed fences and exact session proof.
+It never takes another holder's claim or approves a goal. A foreign holder,
+missing approval, or another current claim returns the actual public decision.
+`claim [G]`, `release [G]`, `goals --ready` and `enroll` remain advertised. Session
+identity failure directs the agent to `start session`, never to copy an identity.
+
+Selection is explicit and stage-based. Status lists all named work. Wait selects
+running work; review selects a newest built result without a collected current
+read; revise first selects failed work or work with unresolved findings, otherwise
+an explicitly named or unique completed work item. Build selects the matching
+retained named request, and creates `main` only when no work exists. If no work
+needs review, review reports the already collected results unchanged; it never
+starts a new read just to choose something. Finished/landed work is read-only
+history unless a new revision is explicitly requested and the goal is still live.
+Exactly one eligible item may be inferred; zero gives the appropriate completed,
+waiting or missing-prerequisite result; multiple items list names and exact public
+commands. No command picks the most recent timestamp.
 The selection belongs to UnitRunner beside named build identity. Add a read API
 there for (real worktree, goal, optional work); reject corrupt bindings and
 foreign roots. CLI code does not scan private storage or create another index.
@@ -125,14 +143,21 @@ never invent a plan or understate a budget. `brief` explains these inputs using
 a complete example and can still produce a scaffold without launching work.
 
 Build repeats through AdvancePrepared; no silent rewrite of prior inputs.
-Revision repeats through a new small UnitRunner owner operation: retain the
-revision request identity (goal/work, prior reviewed subject or build result,
-brief bytes and disposition digest) in the existing run record under its lock
-before any new round. A retry rejoins that recorded round even after completion.
-Changed input is a new explicit revision only against the current subject;
-stale input refuses with the current work and no effects. Reusing the same brief
-for a later genuine revision requires the new subject, so hashes alone are not
-global deduplication. Lost responses and concurrent calls cannot launch twice.
+Revision uses a small UnitRunner owner operation under the existing named/run
+locks. A public work attempt has its existing monotonically numbered round N,
+whether that attempt passed or failed. `--after N` explicitly selects the attempt
+being corrected. Retain (goal/work, after N, immutable brief bytes, disposition
+digest, resulting attempt) before any launch. Return the same resulting attempt
+on every retry, including terminal failure; do not silently consume another paid
+attempt because a response was lost. When --after is omitted, first rejoin an
+existing identical request for that work; only a genuinely new input binds the
+current attempt. A matching older request after later work reports its original
+result plus the current version, without effects; `--after CURRENT` explicitly
+asks for the new correction. A failed attempt still has N: its remedy is the same
+brief with `--after N`, which deliberately creates one new attempt under the normal
+budget. New requests against stale N refuse. Repeated/concurrent calls for the
+same after-N request join once. This preserves retry and rerun as different intents
+without editing a brief to force another run or adding another workflow store.
 
 Review G resolves the work and uses ReviewSubject and the existing committed
 review path. The exact built result is committed/published as today; help and
@@ -145,15 +170,58 @@ join and invokes the existing full close owner, then collects/publishes the read
 within the same operation. Nonempty findings stop at the author's actual
 decision and present their text plus a complete disposition template. Supplying
 `review G --dispositions FILE` validates the exact current subject and every
-finding, then closes/collects/publishes through the same owner. No separate close
+finding. `accepted` means a fix is required; `refuted` needs evidence;
+`out-of-scope` cites the declared brief; `noted` is nonmaterial only. Any accepted
+material finding without an already recorded lawful resolution requires `revise`:
+review refuses before closure and prints that exact public correction request.
+Only a complete set with no unresolved material finding may close/collect/publish.
+A genuine human risk acceptance is recognized only through its exact existing
+owner record and retains an explicit exception outcome, never a caller's label.
+The owner still decides closure and whether the resulting read authorizes landing.
+
+The generated disposition file includes a machine-written binding to goal, work
+attempt, immutable reviewed subject and return digest. Users fill decisions and
+evidence, not that binding. Canonical review and revise validate it and freeze
+its bytes with the request before effects; a stale file cannot resolve a different
+review. Replaying a completed decision rejoins its stored operation. Legacy
+explicit job/disposition APIs retain their existing contract. For manually prepared
+files the public command first offers the bound template; it does not silently
+assume that a same-named finding belongs to the current subject. No separate close
 command or second collection invocation is required after the decision.
 A partial close or publish repeats the same public request and cannot falsely
 claim that review is accepted. Failed/missing critic returns remain failures.
+Closure refusals have these concrete routes: a temporary coordination fence is
+in-progress, with `status G` and the same review command; missing holder authority
+names the holding session and asks that holder to run the same public command
+(or an explicit lawful `claim`/take-over); missing mirrored evidence uses
+`repair review G [--work NAME]`, which replays the existing mirror/close-check
+without inventing a verdict; corrupt or missing producer evidence requires a
+fresh examination using `review G --retry N` for the displayed failed examination
+number, or reports the exact unavailable external dependency. Record-writer
+permission failures remain authority refusals with the required actor, not repair
+instructions that grant authority. No route prints a bash close-check command.
+The result says examination finished, completion pending until closure and
+publication are actually complete. Retry N is accepted only for an owner-proven terminal failed examination with
+no completed findings; it cannot bypass a live process, findings, budget or
+authority. This route does not exist today for every failure: branch/read.go
+retains a root, and dispatch follow-up currently admits completed/protocol-error
+critics only (dispatch.sh:2480-2490). Extend those existing owners with a bounded
+failed-examination follow-up, preserving the original critic chain/round budget,
+frozen subject, fresh independent session and old failed record. A lost process
+must be proven stopped before retry admission. Store the mapping from failed
+examination N to the newly admitted examination under the existing read lock
+before dispatch. Repeating retry N rejoins that attempt even if it too failed;
+its failure offers retry of its own new number. No new critic root to evade the
+round cap and no second review store. The Go dispatch policy owns eligibility;
+the shell remains execution plumbing.
 
 `revise` validates supplied findings decisions against the exact review when
 there is one, then invokes the appropriate existing follow-up owner. A build
 failure with no review permits a correction brief alone. It never erases the
-old review, auto-refutes a finding or grants a risk acceptance. A changed result
+old review, auto-refutes a finding or grants a risk acceptance. A request to fold
+an already closed review refuses with the current subject; correcting previously
+completed work is a new revision against its explicit work attempt, not reopening
+a closed review chain. A changed result
 needs a new independently reviewed subject. For a design review, the author
 edits the design and invokes review again; explain that user action without
 mentioning implementer-chain absence. For explicitly selected legacy job
@@ -163,7 +231,12 @@ Land retains its exact-candidate proof and admission rules. It handles mechanica
 read collection and readiness/handover when the required decisions are already
 recorded; it never invents dispositions or silently starts an unrequested paid
 review. Missing review points to `review G`; multiple unread work items are named.
-`land G --prepare-only` preserves the old readiness-without-landing capability.
+`land G --queue-only` performs exactly the existing land-ready act: make the
+goal available for later landing and release its active-claim quota/elapsed fence
+as that owner already does. It runs no proof, no read collection and no push.
+The old ready spelling remains compatible. Ordinary land keeps its existing
+route-specific handover order; it does not prematurely release authority to
+force the two paths into one sequence.
 Goal conclusion remains `done G`. Supplying proof for a prior review obligation
 becomes `review G --finding F --test NAME` with review selection inferred only
 when unique; advanced explicit review/artifact evidence remains available with
@@ -171,7 +244,7 @@ user-facing meanings and the old authority checks.
 
 ## Human capabilities, questions and operations
 
-Existing goal creation, editing, approval, budgets, pause/resume, abandonment,
+Existing goal creation, editing, claim/release, enrollment, approval, budgets, pause/resume, abandonment,
 reopening, dependencies, priority, assignment, splitting, grouping, grants,
 notes and conclusion stay explicit public capabilities in focused help. Their
 less frequent verbs need not appear on the root page. `split` documents and
@@ -192,7 +265,8 @@ references through channel and mission owners: exactly one match wins; ambiguity
 lists explicit public choices, never chooses a store by precedence. Mission
 questions may use M/Q as a caller reference. A channel answer continues to direct
 the person to the authenticated thread, with its concrete link/instructions;
-plain local text does not manufacture authentication. A mission answer uses its
+plain local text does not manufacture authentication. Help says TEXT applies
+to mission questions; channel questions show their reply location. A mission answer uses its
 existing authority and resumes through its owner when lawful; partial success
 provides the same answer/resume public command. Withdrawing a question is
 `ask --withdraw Q --reason TEXT`, through the existing owner. Waiting and retrying
@@ -258,15 +332,15 @@ no service restart or remote production install is implied.
 
 ## Proof, iteration and implementation map
 
-| Obligation | Severity | Owner/code | Required observed behavior | Focused/runtime proof | Status |
-| --- | --- | --- | --- | --- | --- |
-| IW-1 | HIGH | intent descriptors, main help, ui_describe, uitools kit | Small orientation and full public discovery; no internal catalogue or doubled command; no-arg success | Real binary help corpus and real Partner catalogue | MISSING |
-| IW-2 | CRITICAL | UnitRunner named selection and revision | Correct goal/work; ambiguity and stale/corrupt/foreign data refuse; repeated/concurrent revisions launch once | Owner tests and CLI fixture with lost response | MISSING |
-| IW-3 | CRITICAL | reviewUnit/commitReview and full close owner | Clean review closes/collects; findings require actual exact-subject decisions; all completion survives retry | Connected build/review/revise/land fixture | MISSING |
-| IW-4 | CRITICAL | goal/landing intent adapters | All lifecycle and authority capabilities retained, readiness and exceptions explicit, no silent grants | Human/agent authority matrix, partial publication and landing replay | MISSING |
-| IW-5 | HIGH | channel/mission/process adapters | Ask/show/wait/answer/retry/withdraw and mission recovery need no internal commands, preserve authentication | Fake-provider CLI journeys; ambiguity and failed delivery | MISSING |
-| IW-6 | HIGH | health/config/project/operation adapters | Diagnosis leads to public repair; settings and records discoverable; maintenance flags preserve exact human choice | Synthetic config/health/record and recovery journeys | MISSING |
-| IW-7 | HIGH | result projection and capability catalogue | All old meaningful capabilities reachable; ordinary results and continuations shield internal structure | Inventory joins, behavioral fixtures and independent fresh-user read | MISSING |
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| IW-1 | HIGH | Public language and discovery | Small orientation; complete public catalogue; no internal help or doubled command; bare success | Intent descriptors and Partner projection | intent.go/main.go/ui_describe.go/uitools kit | TestIntentPublicDiscovery; TestRealPartnerPublicCatalogue | Built CLI help and Partner kit | MISSING | Implement and drive |
+| IW-2 | CRITICAL | Work selection and complete delivery | Exact goal/work and stable revision request; no duplicate failed retry | UnitRunner named/revision owner | internal/launch/unit_named.go/unit_run.go | TestNamedWorkSelection; TestRevisionRequestReplay | CLI lost-response and explicit failed-attempt retry | MISSING | Implement and drive |
+| IW-3 | CRITICAL | Work selection and complete delivery | Bound dispositions, authentic close, no unresolved acceptance, public recovery | Existing review/close/branch owners | intent_unit_review.go/intent_delivery.go | TestIntentGoalReviewCompletion; TestIntentGoalRevisionJourney | Connected build/review/revise/land with actual owners | MISSING | Implement and drive |
+| IW-4 | CRITICAL | Human capabilities | All lifecycle/authority acts; queue-only and exception retain exact semantics | Goal/landing adapters | intent_planning.go/intent_delivery.go | TestIntentAuthorityCapabilityMatrix; TestIntentQueueOnly | Human/agent refusal, partial publication, landing replay | MISSING | Implement and drive |
+| IW-5 | HIGH | Human capabilities, questions and operations | Complete authenticated questions and mission operation | Channel/mission adapters | intent_process.go and focused adapter files | TestIntentQuestionJourney; TestIntentMissionRecovery | Fake-provider CLI delivered/undelivered/ambiguous journeys | MISSING | Implement and drive |
+| IW-6 | HIGH | Human capabilities, questions and operations | Honest diagnosis with public repair; settings/records/maintenance | Health/config/project adapters | Intent operation adapters | TestIntentOperationsJourney; TestIntentRepairAuthority | Synthetic config/health/record and exact recovery | MISSING | Implement and drive |
+| IW-7 | HIGH | Results, recovery and migration | Full capability and truthful results without required internals | Descriptor and result owners | intent.go and each typed outcome adapter | TestIntentCapabilityPreservation; TestIntentPublicContinuations | Repeat complete fresh-orientation journey corpus | MISSING | Implement and drive |
 
 Implementation units, each with its own tests: discovery/public projection
 (about 1000 changed lines), complete delivery (about 1800), human/questions/
