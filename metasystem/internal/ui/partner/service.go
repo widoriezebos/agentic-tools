@@ -727,6 +727,79 @@ func (s *Service) Rise(human string) error {
 	return conversation.Rise(s.now())
 }
 
+// Sitting is the sitting standing on one human's conversation, or nil.
+//
+// It is here so that a reader outside this package — the project payload's
+// Sittings list, which has to say whether a sitting stands on a record now —
+// can ask without taking a whole snapshot of the conversation for one field.
+func (s *Service) Sitting(human string) (*Sitting, error) {
+	conversation, err := s.conversation(human)
+	if err != nil {
+		return nil, err
+	}
+	return conversation.Sitting(), nil
+}
+
+// noSittingToClose is what End is refused with where no sitting stands.
+const noSittingToClose = "no sitting is open, so there is nothing to close"
+
+// Closing asks the Partner for the closing deposit, and leaves the sitting
+// standing (g1-s55 D2).
+//
+// It is not called Close, because Close on this service is what ends the
+// runtime's process, and one word cannot be both the end of a conversation's
+// process and the drafting of a sitting's result.
+//
+// The mark stays on deliberately: the outcome this turn offers is admitted
+// against the sitting's own subject, exactly as every other deposit is, and a
+// conversation whose mark had already been taken off would offer it against
+// nothing. So ending a sitting is two acts — this one, which drafts, and Rise,
+// which the page reaches after the human has recorded the outcome or has said
+// they are leaving without it.
+func (s *Service) Closing(ctx context.Context, human string, page Page) (Sitting, error) {
+	conversation, err := s.conversation(human)
+	if err != nil {
+		return Sitting{}, err
+	}
+	sitting := conversation.Sitting()
+	if sitting == nil {
+		return Sitting{}, errors.New(noSittingToClose)
+	}
+	if _, err := s.submit(ctx, human, "", ClosingRequest(*sitting), page, true); err != nil {
+		return Sitting{}, err
+	}
+	return *sitting, nil
+}
+
+// Resume asks the opening question again where a standing sitting has outlived
+// the Partner's session, and reports whether it did (g1-s55 D3).
+//
+// This is the server's one freshness decision, and it owns the opening turn for
+// Start and for resume alike. It is here rather than in a browser effect for the
+// reason the mark on the turn itself exists: an effect that submitted a turn
+// would submit one per tab, per reload and per remount, and the interface would
+// be asking questions in a human's name that nobody can count. The decision is
+// one function, in the process that knows whether a session is live.
+//
+// A session that is still alive remembers this sitting, so nothing is asked: the
+// transcript is on the screen and the table is the record's. A turn already
+// running is the resume that a second tab has just asked for, or the human's own
+// question, and either way one more would be refused as busy.
+func (s *Service) Resume(ctx context.Context, human string) (bool, error) {
+	conversation, err := s.conversation(human)
+	if err != nil {
+		return false, err
+	}
+	if conversation.Sitting() == nil || s.host.Alive() || s.Busy() {
+		return false, nil
+	}
+	sitting := conversation.Sitting()
+	if _, err := s.submit(ctx, human, "", ResumingRequest(*sitting), Page{}, true); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // OpeningRequest is the one question this interface asks on a human's behalf.
 //
 // It is fixed, and it is here rather than in a browser, so that what the
@@ -746,6 +819,44 @@ func OpeningRequest(sitting Sitting) string {
 		"Where two recorded wishes conflict, say that they conflict and say where each is written down. " +
 		"Where nothing is recorded, say that nothing is recorded rather than filling the gap.\n\n" +
 		"As facts, decisions and open questions come up, offer each one with the deposit tool; the human records them."
+}
+
+// ClosingRequest is the second question this interface asks on a human's
+// behalf: the closing deposit, when they press End the sitting (g1-s55 D2).
+//
+// It is fixed and it is here for the opening request's reason — what the
+// interface says in a human's name is one sentence a reader can find — and it
+// forbids the weighing for the same reason too. The close is where a
+// preparation that quietly supplied the values would do the most damage: it is
+// the draft that goes into the record as the sitting's result.
+//
+// It asks for one deposit and names its kind, because the card the human then
+// presses Record it on is the record's Outcome section, and a close that
+// offered four cards would be four writes of one thing.
+func ClosingRequest(sitting Sitting) string {
+	return "Close this sitting on " + sitting.Subject.ID + ". Draft its closing deposit and offer it with the " +
+		"deposit tool as one deposit of kind outcome, and offer nothing else.\n\n" +
+		"It carries, in this order: the outcome as decided; the constraints it must hold to; the open questions " +
+		"with the consequence of leaving each one open; and what the table holds — the record's own four sections, " +
+		"Facts, Proposals, Decisions, Open questions, as they now stand. Draft it from those sections and from this " +
+		"conversation, and from nothing else: a closing deposit is what was decided here, not what you would " +
+		"have decided.\n\n" +
+		"Weigh nothing and settle nothing. Where the sitting left something open, say it is open and say what " +
+		"follows from that. Where nothing was decided about something, say that nothing was.\n\n" +
+		"The human reads it, edits it as they like, and presses Record it; it becomes the record's Outcome " +
+		"section then and not before."
+}
+
+// ResumingRequest is the opening request again, said as a resuming (g1-s55 D3).
+//
+// The words the Partner is given have to say which of the two this is, because
+// the two are not the same question: opening a sitting is the first turn of a
+// conversation, and resuming one is a session that has ended being asked to
+// pick up a sitting that has not. The records are read again either way — the
+// sitting's memory is the record, and this is what that is for.
+func ResumingRequest(sitting Sitting) string {
+	return "Resuming this sitting: your session ended, so nothing of it is in your memory, " +
+		"and the record is what it left behind.\n\n" + OpeningRequest(sitting)
 }
 
 // admitDeposit decides whether one prepared deposit is offered to the human.

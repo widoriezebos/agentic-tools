@@ -42,8 +42,9 @@ type Roots struct{ Checkout, Installation, StateRoot string }
 // carried when each record's file was last written, which is what a reader
 // asking "what changed since I last looked" compares against; this one carries
 // the name of the home a record was read from, because the kit's own history
-// has a name its path does not give.
-const SchemaVersion = 7
+// has a name its path does not give; this one carries the records this project
+// has sat on, known by the deposit marks their entries carry.
+const SchemaVersion = 8
 
 // Pane is the whole of Project, read once, as it was at readAt.
 type Pane struct {
@@ -56,6 +57,10 @@ type Pane struct {
 	Questions     []Question `json:"questions"`
 	Problems      []Problem  `json:"problems"`
 	Documents     []File     `json:"documents"`
+	// Sittings is the records this project has sat on, newest entry first,
+	// known by the deposit marks their entries carry. It is a view over those
+	// records and not a second store; sittings.go is the whole of the reading.
+	Sittings []Sitting `json:"sittings"`
 }
 
 // Goal is one goal of the ledger: the project's one subdivision, named by its
@@ -173,6 +178,7 @@ func ReadPane(roots Roots, now time.Time) (Pane, error) {
 		Doctrine:      bookOf(roots, read, resolver.KindDoctrine),
 		Questions:     questionsOf(read),
 		Problems:      problemsOf(read),
+		Sittings:      sittingsOf(read),
 	}
 	files, err := documents(roots.Checkout)
 	if err != nil {

@@ -33,6 +33,21 @@
   cursor: default;
 }
 
+/* The bar's own title stays on one line while a sitting stands, and the chip is
+   what gives way (g1-s55 D4).
+
+   The block the title is in is allowed to shrink so that the composer keeps its
+   room — that is the rule below, and it is right — but a shrinking block with a
+   wrapping title in it put "Project Partner" on two lines inside a bar
+   forty-eight pixels high. The title is two words and never worth wrapping; the
+   chip is a record's title and is built to be clipped, and it already says the
+   whole of itself in its tooltip. So the title does not shrink and the chip
+   does, which is the order a human would choose. */
+.ms-drawer-who:has(.ms-sitting-standing) .ms-drawer-title {
+  flex: none;
+  white-space: nowrap;
+}
+
 /* While a sitting stands: which record, the four counts, and the way out.
 
    It gives way before the composer does, which is the drawer bar's own rule for
@@ -79,9 +94,14 @@
   }
 }
 
-/* Which sitting this is, and the way into what it holds. */
+/* Which sitting this is, and the way into what it holds.
+
+   `min-width: 0` is what lets it be clipped at all: a nowrap line has no wrap
+   opportunity, so its automatic minimum size is the whole of the text and the
+   flex shrink above it does nothing until this is said. */
 .ms-sitting-chip {
   flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   max-width: 22ch;
   padding: 2px 8px;
@@ -347,6 +367,34 @@
   color: var(--ms-text-2);
 }
 
+/* A case at the edge: the one card with two presses and no fields. It keeps the
+   accent, because it is an offer standing — what it offers is a choice between
+   two entries rather than one entry to record. */
+.ms-deposit--case .ms-deposit-text {
+  font-weight: 500;
+}
+
+/* What the last end-without-recording left behind, beside Start a sitting.
+
+   It is quiet and it wraps: it is a sentence rather than a label, and it is the
+   one thing in this bar that says what did NOT happen. It leaves the bar at
+   phone width with everything else that is not the composer. */
+.ms-sitting-ended {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .ms-drawer-bar:has(.ms-drawer-field) .ms-sitting-ended {
+    display: none;
+  }
+}
+
 /* --------------------------------------------------------------- the table -- */
 
 /* The four piles, beside the conversation in the focused view. It is a column of
@@ -480,6 +528,100 @@
   line-height: 15px;
 }
 
+/* An open question of this record goes to the register with one press
+   (g1-s55 D2). It sits under the entry rather than beside it: the entry is three
+   lines of its own and a control in the same row would take width from the words
+   at exactly the width where there is least of it. */
+.ms-table-ask {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface);
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.ms-table-ask:hover {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+/* ------------------------------------------------------- Project → Sittings -- */
+
+/* One record this project has sat on. It is a row of the Project pane's own
+   list and carries that list's rhythm, but not its class: the record rows are a
+   four-column grid of title, status, act and path, and this carries a title, a
+   line of counts and a path, none of which line up with those. Taking the grid's
+   class and overriding its display would leave the two rules fighting over
+   whichever stylesheet the bundle happened to put last. */
+.ms-sitting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-block-end: 1px solid var(--ms-border);
+}
+
+.ms-sitting-row:last-child {
+  border-block-end: 0;
+}
+
+/* The path reads under the row rather than at its far edge: it is the last line
+   of a column, and the record rows it borrows the style from put it in a column
+   of its own on the right. */
+.ms-sitting-row .ms-project-row-path {
+  text-align: start;
+}
+
+/* The press that opens the conversation on this record. It reads as the row's
+   title and not as a button, because the row IS the press — the whole of what
+   this tab offers is to go back to a sitting. */
+.ms-sitting-row-open {
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ms-accent);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+}
+
+.ms-sitting-row-open:hover,
+.ms-sitting-row-open:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-sitting-row-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* A sitting standing on this record right now: the one fact on the row that is
+   about this moment rather than about what was written, so it carries the accent
+   the standing chip in the bar carries. */
+.ms-sitting-row-standing {
+  padding: 0 6px;
+  border: 1px solid var(--ms-accent);
+  border-radius: 999px;
+  color: var(--ms-text);
+}
+
 /* The table takes a column of its own beside the conversation, and never from
    the conversation's measure: the column it stands beside keeps flex: 1. */
 .ms-focused-frame .ms-table {
@@ -523,6 +665,24 @@
     flex: none;
     align-self: stretch;
     max-height: none;
+  }
+
+  /* And while it is content-height, the frame is the containing block for what
+     is inside it. That is the blank space g1-s53's Built list left open, and it
+     was never the table's height (g1-s55 D4): the labels this build hides behind
+     its fields are `.ms-visually-hidden`, which is absolutely positioned, and an
+     absolutely positioned element with no positioned ancestor is placed against
+     the PAGE. Beside the conversation the frame is the height of the work area
+     and those labels sit inside it; stacked, the frame is ten thousand pixels
+     tall, the composer's own label is at the foot of it, and the document grew
+     to reach a box one pixel high.
+
+     Measured on the walkthrough at 400 with a sitting standing: the document
+     scrolled 10731px for 780px of content, and scrolling to the end of it showed
+     an empty screen under the table. With the frame positioned, the document is
+     780px and the page ends where the table does. */
+  .ms-focused-frame:has(.ms-table) {
+    position: relative;
   }
 }
 

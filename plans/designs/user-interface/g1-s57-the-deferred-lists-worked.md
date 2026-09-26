@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3F0YA88RXTV1A1FSEHVVJ9Z
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-26: "I want all the open ones designed and implemented
@@ -58,3 +58,39 @@ Application order, the Fleet block grouped, a card in the drawer).
 Budgets as always. Box: one build lane (Claude on Opus), one code read
 (Codex on Sol) with one fix round under R-124; two attempts, 150 to 240
 job-minutes.
+
+## Built (2026-09-26)
+
+Landed on ui-development and main as d5e48641b, the eight items as
+eight commits in the design's order; the read's one fix landed as a
+second merge. Built by Claude on Opus, read by Codex on Sol under
+R-124: two material findings, one fixed in one round, one deferred. A
+renewal was dated from its review date whenever the approval named
+one, though an approval expires for two other reasons the horizon
+carries; it is now dated from the review date only when the verdict
+says the review date passed, and from this read's instant otherwise.
+The test fails against the unfixed reader.
+
+Deferred from the read, because the slice works and is safe without
+them: the drawer's growth for a card takes a stored height of exactly
+the default as untouched, so a drag that lands on 40.0 of the tenths
+the store keeps is overridden once, never stored, and undone by the
+next drag; the drawer's one-shot ask resets when the drawer is closed
+and reopened, so an existing card can ask again; the Decided tab can
+capture an inbox group.
+
+What the read verified: block and unblock reach the same tree load and
+the same refusal order through the endpoint's repository, with no
+shipped caller supplying another; the act test bed passes with a git
+that exits 127 by reading, not by skipping; the walkthrough lifts an
+early human-directed blocker park and refuses a seat's or the
+system's; the journal cursor neither repeats a page nor spins; the
+visit marker follows the reads that can fail.
+
+Not done: item 3's read-gate flake did not reproduce in three loaded
+attempts and the test stands unchanged. No row exposes an effective
+expiry instant, so the enrollment instant the verdict's own sentence
+carries is not read; later, when it hurts. The coverage exemption for
+`internal/testgoal` names three test importers and the act test bed is
+now a fourth; the full gate has not been run from this seat.
+

@@ -3,8 +3,11 @@ import { useId, useState } from "react";
 import { draftOf } from "./api";
 import { usePartner } from "./store";
 import {
+  DRAFTING,
   draftMadeLine,
   END,
+  END_SAID,
+  END_WITHOUT,
   PURPOSES,
   purposeLabel,
   SECTIONS,
@@ -194,8 +197,9 @@ export function SittingControl({
   /** True while the drawer is closed and its bar is carrying the composer. */
   compact?: boolean;
 }) {
-  const { sitting, endSitting, sittingBusy } = usePartner();
+  const { sitting, sittingBusy, sittingEnded } = usePartner();
   const [starting, setStarting] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   if (sitting === null) {
     return (
@@ -209,6 +213,14 @@ export function SittingControl({
         >
           {START}
         </button>
+        {/* What the last end left behind, where the press was made. A sitting
+            ended without an outcome wrote nothing, and this is the one act of
+            this section that has to say so. */}
+        {sittingEnded !== "" && (
+          <span className="ms-sitting-ended" role="status">
+            {sittingEnded}
+          </span>
+        )}
         <StartSittingSheet open={starting} onOpenChange={setStarting} subject={null} />
       </>
     );
@@ -225,10 +237,103 @@ export function SittingControl({
       </button>
       <Help id="sitting" />
       {!compact && <SittingCounts onOpen={onOpenTable} />}
-      <button type="button" className="ms-sitting-end" disabled={sittingBusy} onClick={endSitting}>
+      <button
+        type="button"
+        className="ms-sitting-end"
+        disabled={sittingBusy}
+        onClick={() => {
+          setEnding(true);
+        }}
+      >
         {END}
       </button>
+      <EndSittingSheet open={ending} onOpenChange={setEnding} onOpenTable={onOpenTable} />
     </span>
+  );
+}
+
+/**
+ * Ending a sitting: the two ways out, and what each one leaves behind
+ * (g1-s55 D2).
+ *
+ * It is a sheet and not a button, because ending a sitting is two acts that read
+ * as one. The first asks the Partner to draft what the sitting came to; the
+ * sitting is still standing when it answers, and it ends when the human presses
+ * Record it on the card. The second ends it now, with nothing written.
+ *
+ * The second is why this is a sheet at all. Leaving without an outcome is
+ * allowed — a sitting that came to nothing is a thing that happens — but it is
+ * also the easiest mistake this design allows, so it is said before it is done
+ * and said again afterwards, rather than sitting in the bar one press away from
+ * the way out that records.
+ */
+export function EndSittingSheet({
+  open,
+  onOpenChange,
+  onOpenTable,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The way to where the card will appear, which is the table's own page. */
+  onOpenTable: () => void;
+}) {
+  const { closeSitting, endWithoutRecording, sittingBusy, sittingRefusal } = usePartner();
+  const draft = () => {
+    void closeSitting().then(
+      () => {
+        onOpenChange(false);
+        // The card arrives in the transcript, so the human is taken to where the
+        // transcript is read: the press that ends a sitting should not leave them
+        // looking at a closed drawer wondering what happened.
+        onOpenTable();
+      },
+      () => {
+        // The refusal is on the sheet, in the server's own words, and the sheet
+        // stays open beside it.
+      },
+    );
+  };
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      side="right"
+      label={END}
+      title={END}
+      closeLabel="Close without ending the sitting"
+      bodyClassName="ms-sitting-sheet"
+      sheetName={END}
+    >
+      <p className="ms-sitting-said">
+        {END_SAID}
+        <Help id="the-outcome" />
+      </p>
+      {sittingRefusal !== "" && (
+        <p className="ms-sitting-refusal" role="status">
+          {sittingRefusal}
+        </p>
+      )}
+      <div className="ms-sitting-foot">
+        <Button primary disabled={sittingBusy} onClick={draft}>
+          {sittingBusy ? DRAFTING : END}
+        </Button>
+        <Button
+          disabled={sittingBusy}
+          onClick={() => {
+            void endWithoutRecording().then(
+              () => {
+                onOpenChange(false);
+              },
+              () => {
+                // Said on the sheet, which stays open.
+              },
+            );
+          }}
+        >
+          {END_WITHOUT}
+        </Button>
+      </div>
+    </Sheet>
   );
 }
 

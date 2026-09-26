@@ -219,20 +219,23 @@ func Catalogue() []Tool {
 		{
 			Name: OpDeposit,
 			Description: "Offer one entry for the record of the sitting the human is in: a fact with the anchor where it " +
-				"can be checked, a decision with the reason the human gave, or an open question with the consequence " +
-				"of leaving it open. Call it as each of the three comes up in the conversation, beside the answer you " +
-				"give in words. It writes nothing: the human sees a card, edits it if they like, and presses Record it, " +
-				"and only then does it enter the record. Weigh nothing — a fact is anchored, an option carries its " +
+				"can be checked, a decision with the reason the human gave, an open question with the consequence " +
+				"of leaving it open, or a case at the edge for the human to settle or leave open. Call it as each " +
+				"comes up in the conversation, beside the answer you give in words. It writes nothing: the human sees " +
+				"a card, edits it if they like, and presses Record it, and only then does it enter the record. " +
+				"The outcome is the closing deposit, and it is offered when the interface asks you to close the " +
+				"sitting and not before. Weigh nothing — a fact is anchored, an option carries its " +
 				"consequences, and the choice is the human's.",
 			InputSchema: schema(map[string]any{
 				"kind": map[string]any{
 					"type":        "string",
 					"enum":        DepositKinds,
-					"description": "Which of the three this is: fact, decision or question.",
+					"description": "Which of the five this is: fact, decision, question, case or outcome.",
 				},
 				"text": map[string]any{
-					"type":        "string",
-					"description": "The entry itself, in one sentence or a short paragraph, at most 2000 characters.",
+					"type": "string",
+					"description": "The entry itself, in one sentence or a short paragraph, at most 2000 characters — " +
+						"or, on an outcome, the whole closing draft, at most 8000.",
 				},
 				"anchor": map[string]any{
 					"type":        "string",
@@ -244,7 +247,11 @@ func Catalogue() []Tool {
 				},
 				"consequence": map[string]any{
 					"type":        "string",
-					"description": "On a question: what follows from leaving it open. At most 500 characters.",
+					"description": "On a question, and on a case: what follows from leaving it open. At most 500 characters.",
+				},
+				"clause": map[string]any{
+					"type":        "string",
+					"description": "On a case: the clause it would become, as you heard it, which the human's Decide sheet opens with. At most 500 characters.",
 				},
 			}, []string{"kind", "text"}),
 		},
