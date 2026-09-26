@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3D6T9QTZ7WDE2HTXX9TH77M
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-25: "Can I discuss the goal while I'm editing the goal with
@@ -263,3 +263,28 @@ corrected. Astra judged the fixed result form sound when read once with
 the text opaque, and `RawInput`, which the host receives, a cleaner
 vehicle only if the provider supplies it, which the checked-in schema
 leaves optional; not required for step 1.
+
+## Built (2026-09-26)
+
+Landed on ui-development and main; the slice went live before the read
+because Wido was waiting on it, and the read, delayed by a rejected
+OpenAI key that turned out to be a hiccup on the provider's side, found
+nothing material. Built by Claude on Opus, read by Codex on Sol under
+R-124: zero material findings, four deferred.
+
+The first sitting failed on UX, not on code: with nothing handed over,
+the Partner's suggestion was refused where the human could not see it
+and the Partner narrated a card that was never shown. That is g1-s52.
+
+Later, when it hurts: Undo's final guard compares a trimmed value, so a
+field differing only in outer whitespace would pass it; two sheets of
+one name open at once share a draft attachment by name; a repeated press
+of the field link may not scroll to the card again; a dismissed card
+stays folded after its sheet closes, Copy appearing only on reopen.
+
+Departures the read accepted: Set priority, Approve and Approve-selected
+register no writable fields; empty suggestion text is refused; the
+context block names the writable fields; the snapshot carries
+suggestions for a mid-answer reload; "once per field, at most three" is
+not enforced; the opening id is minted with the turn key's own minting
+after the browser showed a per-page counter would wake an old card.
