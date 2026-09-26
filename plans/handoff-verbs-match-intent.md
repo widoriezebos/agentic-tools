@@ -112,14 +112,16 @@ automatically. The existing due retro remains separate work.
 
 ## Requested follow-up: evidence reuse judgment
 
-Wido asked how these source-aware reuse decisions should become normal machinery
-without brittle deterministic rules or unnecessary repeated testing. The proposed
-smallest extension is to retain existing group/scenario terminals and add one
-source-bound agent reuse decision consumed by the current plan/run/verify owner.
-Deterministic checks validate identity, provenance, completeness and contradictions;
-the agent judges whether a source delta invalidates an observation and chooses
-residual tests. Original failures remain failures. Exact reuse already exists,
-including passing groups in failed outer attempts. Keep executed pass, exact reuse
-and agent-justified carry-forward distinguishable. No implementation or policy
-change is included here; the concrete source reads and proposal are retained in
-`evidence-reuse-machinery-proposal.md` in the external evidence root.
+Wido requested a tracked design, Fable critique and a separate implementation
+goal. The authoritative design is now
+[Examine existing evidence before repeating tests](../metasystem/plans/designs/examine-evidence-before-retesting.md),
+linked to the queued goal `examine-evidence-before-retesting`. Its review and
+handoff live under `metasystem/plans/`. The earlier external proposal is
+superseded as an implementation handoff.
+
+The independent examiner judges applicability to the current candidate and
+specifies remaining checks. The custodian verifies the evidence and performs
+acceptance mechanically. Existing exact reuse remains automatic; original
+failures retain their outcomes. The new design extends the existing `test` and
+`review` verbs and covers native/coverage and adoption component custody.
+Implementation is subsequent work, not part of the completed verb redesign.
