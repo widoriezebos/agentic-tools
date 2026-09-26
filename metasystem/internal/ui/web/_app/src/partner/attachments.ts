@@ -199,7 +199,19 @@ export function passageIn(list: readonly Attachment[]): Chosen | null {
  * in: a capture carries one draft, as a human is filling in one form.
  */
 export function draftIn(list: readonly Attachment[]): SheetDraft | null {
-  return firstOf([...list].reverse(), "draft")?.content ?? null;
+  return draftChipIn(list)?.content ?? null;
+}
+
+/**
+ * The same draft, whole: the attachment rather than what it stands for.
+ *
+ * It is what a chip needs and draftIn cannot give — a chip says its label and
+ * its lifetime and its × removes it by its id, and all three are on the
+ * attachment. The bar renders one while the drawer is closed, which is the only
+ * place that reads this.
+ */
+export function draftChipIn(list: readonly Attachment[]): Extract<Attachment, { kind: "draft" }> | null {
+  return firstOf([...list].reverse(), "draft") ?? null;
 }
 
 /** The first attachment of one kind, typed by the kind that was asked for. */

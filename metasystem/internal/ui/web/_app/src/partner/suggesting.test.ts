@@ -21,6 +21,7 @@ import {
   undone,
   usable,
   used,
+  wasOffered,
   type Marks,
   type Offered,
   type Registered,
@@ -45,6 +46,19 @@ function suggestion(over: Partial<Suggestion> = {}): Suggestion {
 /** One the service refused: no opening, and the reason in the human's words. */
 function refused(over: Partial<Suggestion> = {}): Suggestion {
   return suggestion({ opening: "", offered: false, reason: "Intent is not open for proposals", ...over });
+}
+
+/**
+ * One recorded before this build, as the page actually receives it.
+ *
+ * The flag is new in this build, so a line written earlier in the transcript
+ * file does not carry it; the engine reads that line into a struct whose bool is
+ * then false and writes it back out as offered: false, with no reason at all,
+ * because a reason is omitted where there is none. So the legacy record reaches
+ * the page looking like a refusal that will not say why.
+ */
+function older(): Suggestion {
+  return suggestion({ offered: false });
 }
 
 /** One sheet's registration, which records what was written into it. */
@@ -119,9 +133,24 @@ describe("a card's standing", () => {
     expect(refusedLine(card)).toBe("the draft was left out; press Ask about this to hand it over again");
   });
 
-  // A record written before this build carries no reason, so the card says the
-  // one true thing that is left rather than an empty line.
-  it("still says something where a record carries no reason", () => {
+  /**
+   * A record written before this build, and why the reason is what decides.
+   *
+   * The service refuses nothing without saying why and says nothing about one it
+   * offers, so a card with no reason was offered. Reading the flag alone made
+   * every card in an older conversation a refusal whose line said "Intent was
+   * not offered" of words the human had been shown and may have used.
+   */
+  it("reads a record written before this build as the offer it was", () => {
+    expect(wasOffered(older())).toBe(true);
+    expect(wasOffered(refused())).toBe(false);
+    const card = cards({}, [OPENING], older())[0];
+    expect(card.standing).toBe("waiting");
+    expect(usable(card, [OPENING])).toBe(true);
+  });
+
+  // The floor under the line itself: a refused card shows no empty why.
+  it("still says something where a refusal is asked for its line without one", () => {
     expect(refusedLine(refused({ reason: "" }))).toBe("Intent was not offered");
   });
 });

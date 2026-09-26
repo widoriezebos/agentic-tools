@@ -282,6 +282,20 @@ export function usePartner(): Partner {
 }
 
 /**
+ * The store with these readings and no others.
+ *
+ * It is the seam a render needs to show one piece of the interface over a state
+ * no static render could reach: what the closed bar does with a draft handed
+ * over is a fact about the bar, and the hand-over that puts it there is an
+ * effect. Everything not named here is the store as it stands with no provider
+ * at all — every reading empty, every act nothing — so a reading added to the
+ * store later does not have to be spelled out again wherever this is used.
+ */
+export function PartnerAs({ held, children }: { held: Partial<Partner>; children: ReactNode }) {
+  return <PartnerContext.Provider value={{ ...nothing, ...held }}>{children}</PartnerContext.Provider>;
+}
+
+/**
  * While this sheet is on screen, the capture says so: the Seeing line ends
  * with "· New goal sheet open", the question carries the name, and the message
  * it becomes keeps it.

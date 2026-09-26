@@ -587,6 +587,23 @@ body {
   color: var(--ms-text-2);
 }
 
+/*
+ * The handed-over draft, beside the one-line field: the bar is the composer
+ * while the drawer is closed, and the chip stands wherever the composer is.
+ *
+ * The cap is what keeps the row compact. Uncapped this chip says the sheet, two
+ * of its fields and where the caret is, which is a third of the bar and takes
+ * the space from the field; capped it says the first of that and trails off, as
+ * the chip in the open card does when the card is narrow. What has to survive at
+ * every width is that it is there at all and that its clear can be pressed —
+ * whole words are the open drawer's job.
+ */
+.ms-drawer-bar .ms-partner-subject-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 132px;
+}
+
 .ms-drawer-actions {
   display: flex;
   align-items: center;
@@ -1381,6 +1398,13 @@ body {
   .ms-drawer-who .ms-font-control,
   .ms-drawer-title {
     display: none;
+  }
+
+  /* The draft chip stays: it is the one thing in the bar a human cannot see
+     anywhere else while the drawer is closed. It shares the row with the field
+     alone here, and it yields a little more of itself to it. */
+  .ms-drawer-bar .ms-partner-subject-chip {
+    max-width: 116px;
   }
 }
 
