@@ -426,32 +426,49 @@ func lookedAtPage(seen Seen) *Look {
 // else in this process knows it.
 //
 // A suggestion for a field the human did not hand over is not offered, and the
-// refusal is said rather than swallowed: a human who asked for a better wording
-// and got none has to be able to see that the Partner offered one for something
-// they never handed over. An empty field is admitted like any other — a next
-// step nobody has written yet is exactly the field a human asks for words for —
+// refusal is recorded as the suggestion it was, with its reason, rather than
+// dropped to an activity line the drawer does not show. A human who asked for a
+// better wording and got no proposal has to be able to read why, where they
+// read the answer. An empty field is admitted like any other — a next step
+// nobody has written yet is exactly the field a human asks for words for —
 // because the writable names travel whether or not there is anything in them.
+//
+// A refused one is never stamped with an opening. It is not something to use,
+// and an opening on it is the one thing that could let a page offer Use this
+// for words nothing may write.
 func (s *Service) admit(running *turn, prepared Suggestion) {
 	s.mu.Lock()
 	draft := running.page.Draft
 	s.mu.Unlock()
 	if draft == nil || draft.Opening == "" ||
 		draft.Sheet != prepared.Editor || !draft.Writes(prepared.Field) {
-		s.record(running, Event{Kind: EventActivity, Text: notOffered(prepared.Field)})
+		prepared.Offered = false
+		prepared.Reason = notOffered(draft, prepared.Field)
+		s.record(running, Event{Kind: EventSuggestion, Suggestion: &prepared})
 		return
 	}
 	prepared.Opening = draft.Opening
+	prepared.Offered = true
 	s.record(running, Event{Kind: EventSuggestion, Suggestion: &prepared})
 }
 
-// notOffered is what the conversation says about a suggestion that was not
-// offered, in the words a human reads.
-func notOffered(field string) string {
+// notOffered is why one suggestion was not offered, in the words a human reads.
+//
+// Two reasons, because there are two things a human would do about it. A draft
+// that never reached this turn at all — no sheet handed over, or the chip's
+// take-back pressed — is answered with the act that hands it over again. A
+// draft that did reach it, for a field it does not open, is answered by naming
+// that field: the sheet decides which of its fields the Partner may write for,
+// and this one is not among them.
+func notOffered(draft *Draft, field string) string {
+	if draft == nil || strings.TrimSpace(draft.Sheet) == "" {
+		return "the draft was left out; press Ask about this to hand it over again"
+	}
 	said := strings.TrimSpace(field)
 	if said == "" {
-		said = "an unnamed field"
+		said = "An unnamed field"
 	}
-	return "a suggestion for " + said + " was not offered: no such field was handed over"
+	return said + " is not open for proposals"
 }
 
 // freshLine says what a fresh session was given, so a human can see why the

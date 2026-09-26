@@ -33,8 +33,7 @@ func serviceSuggesting(t *testing.T, editor, field, text string) *partner.Servic
 			Reads: []fakeacp.Read{{
 				Name:  "mcp__metasystem__suggest",
 				Title: "suggest(" + editor + " · " + field + ")",
-				Result: "prepared as a suggestion for " + field +
-					"; the human decides whether it is offered and used\n" +
+				Result: uitools.PreparedLine + "\n" +
 					uitools.SuggestionHeader + editor + uitools.SuggestionJoin + field + "\n" +
 					uitools.SuggestionSeparator + "\n" + text + "\n",
 			}},
@@ -60,6 +59,8 @@ func editing() partner.Page {
 				{Name: "Intent", Value: "The board reads the ledger somehow."},
 			},
 			Writable: []string{"Intent", "Next step", "Labels"},
+			// Where the caret was, which is what a request naming no field means.
+			Writing: "Intent",
 		},
 	}
 }
@@ -89,6 +90,8 @@ func TestASuggestionForAHandedOverFieldIsOffered(t *testing.T) {
 	testutil.Expect(t, "the editor", offered[0].Suggestion.Editor, "Edit goal")
 	testutil.Expect(t, "the field", offered[0].Suggestion.Field, "Intent")
 	testutil.Expect(t, "and the words whole", offered[0].Suggestion.Text, said)
+	testutil.Expect(t, "marked as offered", offered[0].Suggestion.Offered, true)
+	testutil.Expect(t, "with nothing to explain", offered[0].Suggestion.Reason, "")
 
 	// It arrives before the answer ends, which is what puts the card under the
 	// answer while the answer is still being written.
@@ -110,6 +113,7 @@ func TestASuggestionForAHandedOverFieldIsOffered(t *testing.T) {
 	testutil.Require(t, "the answer keeps it", len(answered.Suggestions), 1)
 	testutil.Expect(t, "whole", answered.Suggestions[0].Text, said)
 	testutil.Expect(t, "with its opening", answered.Suggestions[0].Opening, "opening-7")
+	testutil.Expect(t, "the answer marks it offered too", answered.Suggestions[0].Offered, true)
 	testutil.Expect(t, "and nothing was refused", len(answered.Activity), 0)
 	// The call is accounted for as a look as well: a suggestion never arrives
 	// without the call that prepared it being listed.
@@ -117,28 +121,39 @@ func TestASuggestionForAHandedOverFieldIsOffered(t *testing.T) {
 	testutil.Expect(t, "the call is named", answered.Looked[1].What, "suggest(Edit goal · Intent)")
 }
 
-// A field the human never handed over is not offered, and the conversation says
-// so: a human who asked for a better wording and got no card has to be able to
-// see why.
+// A field the human never handed over is not offered, and the refusal is carried
+// as the suggestion it was, with its reason, so the drawer can show it as a card
+// where the human reads the answer.
+//
+// It used to be an activity line, and an activity line was how the one live
+// sitting went wrong: the drawer does not show them, so the human saw nothing
+// and was told a card had been put on their sheet (g1-s52 §1, D3).
 func TestASuggestionForAFieldNobodyHandedOverIsNotOffered(t *testing.T) {
 	t.Parallel()
 	for _, probe := range []struct {
 		what   string
 		editor string
 		field  string
+		reason string
 		page   func() partner.Page
 	}{
-		{"a field the sheet did not register", "Edit goal", "Tier", editing},
-		{"a field handed over only as context", "Edit goal", "Goal", editing},
-		{"another editor's field", "New goal", "Intent", editing},
-		{"a sheet nobody handed over at all", "Edit goal", "Intent", func() partner.Page {
-			return partner.Page{Section: "Backlog", Path: "/backlog"}
-		}},
-		{"a sheet handed over with no opening", "Edit goal", "Intent", func() partner.Page {
-			return partner.Page{Section: "Backlog", Path: "/backlog", Draft: &partner.Draft{
-				Sheet: "Edit goal", Writable: []string{"Intent"},
-			}}
-		}},
+		{"a field the sheet did not register", "Edit goal", "Tier",
+			"Tier is not open for proposals", editing},
+		{"a field handed over only as context", "Edit goal", "Goal",
+			"Goal is not open for proposals", editing},
+		{"another editor's field", "New goal", "Intent",
+			"Intent is not open for proposals", editing},
+		{"a sheet nobody handed over at all", "Edit goal", "Intent",
+			"the draft was left out; press Ask about this to hand it over again",
+			func() partner.Page {
+				return partner.Page{Section: "Backlog", Path: "/backlog"}
+			}},
+		{"a sheet handed over with no opening", "Edit goal", "Intent",
+			"Intent is not open for proposals", func() partner.Page {
+				return partner.Page{Section: "Backlog", Path: "/backlog", Draft: &partner.Draft{
+					Sheet: "Edit goal", Writable: []string{"Intent"},
+				}}
+			}},
 	} {
 		service := serviceSuggesting(t, probe.editor, probe.field, said)
 		events, stop := service.Subscribe()
@@ -146,20 +161,29 @@ func TestASuggestionForAFieldNobodyHandedOverIsNotOffered(t *testing.T) {
 		testutil.Require(t, "admitted "+probe.what, err, nil)
 		beats := drain(t, events)
 		stop()
-		offered := 0
+		refused := []partner.Suggestion{}
 		for _, beat := range beats {
-			if beat.Kind == partner.EventSuggestion {
-				offered++
+			if beat.Kind == partner.EventSuggestion && beat.Suggestion != nil {
+				refused = append(refused, *beat.Suggestion)
 			}
 		}
-		testutil.Expect(t, probe.what+" offers nothing", offered, 0)
+		// The stream carries it, so the card appears under the answer as the call
+		// completes, exactly as an admitted one does.
+		testutil.Require(t, probe.what+" reaches the stream", len(refused), 1)
+		testutil.Expect(t, probe.what+" is not offered", refused[0].Offered, false)
+		testutil.Expect(t, probe.what+" says why", refused[0].Reason, probe.reason)
+		// And it is never stamped with an opening: nothing may write it anywhere.
+		testutil.Expect(t, probe.what+" belongs to no opening", refused[0].Opening, "")
+
 		read, err := service.Snapshot("Wido", 100)
 		testutil.Require(t, "read back "+probe.what, err, nil)
 		answered := read.Messages[len(read.Messages)-1]
-		testutil.Expect(t, probe.what+" keeps no suggestion", len(answered.Suggestions), 0)
-		testutil.Require(t, probe.what+" records one line", len(answered.Activity), 1)
-		testutil.Expect(t, probe.what+" says what was not offered", answered.Activity[0],
-			"a suggestion for "+probe.field+" was not offered: no such field was handed over")
+		testutil.Require(t, probe.what+" is kept on the answer", len(answered.Suggestions), 1)
+		testutil.Expect(t, probe.what+" as not offered", answered.Suggestions[0].Offered, false)
+		testutil.Expect(t, probe.what+" with its reason", answered.Suggestions[0].Reason, probe.reason)
+		testutil.Expect(t, probe.what+" and the words it would have offered",
+			answered.Suggestions[0].Text, said)
+		testutil.Expect(t, probe.what+" records no activity line", len(answered.Activity), 0)
 	}
 }
 
@@ -208,4 +232,5 @@ func TestOfferingASuggestionWritesNothing(t *testing.T) {
 	testutil.Expect(t, "the suggestion is not in it",
 		strings.Contains(asked.Page.Draft.Fields[1].Value, "Every refund"), false)
 	testutil.Expect(t, "and the sheet's own opening travelled with it", asked.Page.Draft.Opening, "opening-7")
+	testutil.Expect(t, "with the field the caret was in", asked.Page.Draft.Writing, "Intent")
 }

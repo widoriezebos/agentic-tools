@@ -186,3 +186,33 @@ func TestTheBlockNamesTheFieldsThePartnerMayOfferWordsFor(t *testing.T) {
 			Fields: []DraftField{{Name: "Goal", Value: "ui-1"}},
 		}}), "words for these fields"), false)
 }
+
+// The block says which field the human's caret was last in, and says so even
+// when the answer is none.
+//
+// It is what makes "make this shorter" mean something. Wido, 2026-09-26: "do you
+// know which field I was editing when I started editing in the project partner
+// panel? Because you will have to." None is the case the Partner has to behave
+// differently in, so it is stated rather than left out.
+func TestTheBlockSaysWhichFieldTheHumanWasWritingIn(t *testing.T) {
+	t.Parallel()
+	in := func(writing string) string {
+		return draftLines(Page{Draft: &Draft{
+			Sheet:    "Edit goal",
+			Opening:  "opening-1",
+			Fields:   []DraftField{{Name: "Intent", Value: "The board reads the ledger."}},
+			Writable: []string{"Intent", "Next step", "Labels"},
+			Writing:  writing,
+		}})
+	}
+	testutil.Expect(t, "the field in hand is named",
+		strings.Contains(in("Intent"), "The human was writing in Intent."), true)
+	testutil.Expect(t, "whitespace is not a field",
+		strings.Contains(in("  "), "The human was in no field yet"), true)
+	testutil.Expect(t, "and before any of them held the caret it says so",
+		strings.Contains(in(""), "The human was in no field yet"), true)
+	testutil.Expect(t, "with what to do about a request that names none",
+		strings.Contains(in(""), "a request that names no field has to be asked about"), true)
+	// A sheet nobody handed over says nothing at all, here as everywhere.
+	testutil.Expect(t, "no draft, no line", draftLines(Page{}), "")
+}

@@ -350,6 +350,14 @@ type Draft struct {
 	// the goal an edit is of — that is context and not a field anybody may
 	// write into. The sheet that owns the state says which are which.
 	Writable []string `json:"writable,omitempty"`
+	// Writing is the writable field the human's caret was last in, or "" before
+	// any of them has held it.
+	//
+	// It is what makes "make this shorter" mean something. A request that names
+	// no field is about the field the human is writing in, and nothing else in
+	// the capture says which that is: the sheet's fields travel in the order the
+	// sheet asks them, not in the order a human moved through them.
+	Writing string `json:"writing,omitempty"`
 }
 
 // Writes reports whether this draft handed over a field of that name as one the
@@ -414,7 +422,22 @@ func draftLines(page Page) string {
 	if written := writableLine(page.Draft.Writable); written != "" {
 		built.WriteString(written)
 	}
+	built.WriteString(writingLine(page.Draft.Writing))
 	return built.String()
+}
+
+// writingLine is which of the sheet's fields the human's caret was last in.
+//
+// It is said even when the answer is none, because none is the case the Partner
+// has to behave differently in: a request that names no field is about the field
+// being written in, and a Partner told nothing would guess. Wido, 2026-09-26:
+// "do you know which field I was editing when I started editing in the project
+// partner panel? Because you will have to."
+func writingLine(writing string) string {
+	if said := strings.TrimSpace(writing); said != "" {
+		return "  - The human was writing in " + said + ".\n"
+	}
+	return "  - The human was in no field yet; a request that names no field has to be asked about.\n"
 }
 
 // writableLine is which of the sheet's fields the Partner may offer words for.
