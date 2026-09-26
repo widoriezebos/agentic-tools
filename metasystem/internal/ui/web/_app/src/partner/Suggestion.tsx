@@ -158,13 +158,14 @@ export function SuggestionCard({ id }: { id: string }) {
 }
 
 /**
- * The words, to the clipboard, for a card whose editor has gone.
+ * The words, to the clipboard, for a card nobody can act on any more.
  *
- * It is the one thing left to do with a suggestion nobody can use any more, and
- * a browser that refuses the clipboard says so rather than leaving a button
- * that looks as though it worked.
+ * It is the one thing left to do with a suggestion whose editor has gone — and,
+ * since Sol's first finding on the sitting, with a deposit offered to a record
+ * this sitting is not on. A browser that refuses the clipboard says so rather
+ * than leaving a button that looks as though it worked.
  */
-function Copy({ text }: { text: string }) {
+export function Copy({ text }: { text: string }) {
   const [said, setSaid] = useState("");
   return (
     <>

@@ -25,6 +25,22 @@ import type { Deposit, Sitting } from "./api";
  * the anchor — but because an entry that says a choice was made and cannot say
  * why is exactly the entry the sitting exists to prevent. The card asks the
  * human for the one thing missing, after their own edit.
+ *
+ * Two more rules were Sol's, and both are about a card outliving the moment it
+ * was offered in.
+ *
+ * A card belongs to the record it was offered against, which the server stamped
+ * on it. End the sitting on A, start one on B, and A's cards are still on the
+ * transcript: pressing one of them would put A's words into B's record. So a
+ * card whose subject is not the sitting now standing offers no press at all —
+ * only its words, to copy.
+ *
+ * And what the record holds is what says a card was recorded. The mark a press
+ * leaves on a card is this browser's memory, and a reload has none: every
+ * persisted deposit came back as a fresh card offering Record it a second time,
+ * so the same entry could be written twice. So each entry carries the identity
+ * of the deposit it was recorded from, and a card's recorded state is read from
+ * the record's own reading rather than remembered.
  */
 
 /* ------------------------------------------------------- the four sections -- */
@@ -76,14 +92,43 @@ export type Entry = {
   clause: string;
   /** Which of the four sections it stands in. */
   section: Section;
+  /**
+   * Which deposit this entry was recorded from, or "" for a line a human wrote
+   * by hand. It is what makes a card's recorded state a fact about the record
+   * rather than a memory of this browser's, so a reload cannot offer Record it
+   * a second time for an entry the record already carries.
+   */
+  mark: string;
 };
 
 /** The separator between an entry's dated head and its words. */
 const DOT = " · ";
 
+/**
+ * The mark that says which deposit an entry was recorded from.
+ *
+ * It rides the end of the entry's own line, after the words, in brackets: short,
+ * plainly a mark rather than prose, and the last thing on the line so that
+ * nothing a human writes in front of it can be mistaken for it. The table's
+ * reader takes it off again, so what a human reads in the table is their words
+ * and not the bookkeeping.
+ *
+ * It is a visible mark and not an HTML comment on purpose. The document reader
+ * shows html as source text, deliberately — nothing in a record is interpreted
+ * — so a comment would be rendered as a blob of code beside every entry, and
+ * teaching the reader to hide comments would teach it to hide text from the
+ * human reading a record.
+ */
+const MARKED = /\s*\[d:([^\]\s]+)\]\s*$/;
+
+export function markOf(id: string): string {
+  return ` [d:${id}]`;
+}
+
 /** How one entry is written into a section. */
 export function lineOf(entry: Entry, kind: string): string {
-  const head = `- ${entry.when}${DOT}${entry.who}${DOT}${oneLine(entry.text)}`;
+  const mark = entry.mark.trim() === "" ? "" : markOf(entry.mark.trim());
+  const head = `- ${entry.when}${DOT}${entry.who}${DOT}${oneLine(entry.text)}${mark}`;
   const clause = entry.clause.trim();
   return clause === "" ? `${head}\n` : `${head}\n  - ${clauseOf(kind)}: ${oneLine(clause)}\n`;
 }
@@ -138,7 +183,12 @@ export function entriesIn(source: string): readonly Entry[] {
     if (item === null) {
       continue;
     }
-    const parts = item[1].split(DOT);
+    // The mark comes off first, so the words the table shows are the words and
+    // the identity is read from where it was written.
+    const marked = MARKED.exec(item[1]);
+    const said = marked === null ? item[1] : item[1].slice(0, marked.index);
+    const mark = marked === null ? "" : marked[1];
+    const parts = said.split(DOT);
     const entry: Entry =
       parts.length >= 3
         ? {
@@ -147,10 +197,31 @@ export function entriesIn(source: string): readonly Entry[] {
             text: parts.slice(2).join(DOT).trim(),
             clause: "",
             section,
+            mark,
           }
-        : { when: "", who: "", text: item[1].trim(), clause: "", section };
+        : { when: "", who: "", text: said.trim(), clause: "", section, mark };
     found.push(entry);
     last = entry;
+  }
+  return found;
+}
+
+/**
+ * Every entry the record carries that a deposit was recorded from, by that
+ * deposit's identity.
+ *
+ * It is what makes Record it a once-only press across a reload: the card is
+ * recorded because the record says so, and what it shows is what the record
+ * says rather than what this browser remembers typing. An entry whose mark the
+ * record carries twice is read as the first of them, because the first is the
+ * one the press landed.
+ */
+export function recordedIn(source: string): ReadonlyMap<string, Entry> {
+  const found = new Map<string, Entry>();
+  for (const entry of entriesIn(source)) {
+    if (entry.mark !== "" && !found.has(entry.mark)) {
+      found.set(entry.mark, entry);
+    }
   }
   return found;
 }
@@ -281,9 +352,31 @@ export function clauseFrom(deposit: Deposit): string {
 }
 
 /** Where a card stands, in the order a human would read them. */
-export type Standing = "refused" | "dismissed" | "recorded" | "recording" | "conflict" | "blocked" | "waiting";
+export type Standing =
+  | "refused"
+  | "dismissed"
+  | "recorded"
+  | "elsewhere"
+  | "recording"
+  | "conflict"
+  | "blocked"
+  | "waiting";
 
-export function standingOf(deposit: Deposit, mark: Mark): Standing {
+/**
+ * Where one card stands, against the sitting now standing.
+ *
+ * `sitting` is the record the sitting is on, by its path, and "" where no
+ * sitting is open at all. A card offered against another record — or against a
+ * sitting that has since ended — stands "elsewhere": it is not this record's to
+ * record, and the press is not offered for it. That is Sol's first finding: the
+ * card was offered, so the press was enabled, and the words went into whichever
+ * record the sitting happened to be on when it was pressed.
+ *
+ * Recorded comes first because it is the truer fact: an entry that landed in A's
+ * record landed there whatever happened afterwards, and a card saying so while
+ * the human sits on B is not a card offering anything.
+ */
+export function standingOf(deposit: Deposit, mark: Mark, sitting: string): Standing {
   if (!deposit.offered) {
     return "refused";
   }
@@ -293,6 +386,9 @@ export function standingOf(deposit: Deposit, mark: Mark): Standing {
   if (mark.recorded !== "") {
     return "recorded";
   }
+  if (sitting === "" || (deposit.subject?.id ?? "") !== sitting) {
+    return "elsewhere";
+  }
   if (mark.recording) {
     return "recording";
   }
@@ -300,6 +396,23 @@ export function standingOf(deposit: Deposit, mark: Mark): Standing {
     return "conflict";
   }
   return missing(deposit.kind, mark) === "" ? "waiting" : "blocked";
+}
+
+/**
+ * Whether one card's two fields are still the human's to change.
+ *
+ * They are not while the press is in flight. Sol's fifth finding: the fields
+ * stayed editable through the write, and the press had already composed its
+ * entry from the words as they stood when it ran — so a human who kept typing
+ * watched the card say "recorded" over words the record never took. Frozen, the
+ * words that were submitted are the words on the card.
+ *
+ * They are not once the record has taken them either, nor for a card that
+ * belongs to another sitting, because in both cases there is nothing left here
+ * to write.
+ */
+export function editable(standing: Standing): boolean {
+  return standing === "waiting" || standing === "blocked" || standing === "conflict";
 }
 
 /**
@@ -331,17 +444,46 @@ export type Card = Deposit & { id: string; mark: Mark; standing: Standing };
 /** One turn's deposits, as the transcript and the running turn carry them. */
 export type Carried = { turn: string; deposits: readonly Deposit[] };
 
-/** Every card this conversation carries, oldest first. */
-export function cardsIn(carried: readonly Carried[], marks: Marks): readonly Card[] {
+/**
+ * Every card this conversation carries, oldest first, against the sitting now
+ * standing and the record as it now reads.
+ *
+ * `sitting` is the record the sitting is on, and `recorded` is what that record
+ * already holds by deposit, which is what says a card was recorded. A card the
+ * record claims shows the record's own words: they are what a fresh worker
+ * reading the record would find, and they may not be what the Partner first
+ * offered or what this browser last remembered typing.
+ */
+export function cardsIn(
+  carried: readonly Carried[],
+  marks: Marks,
+  sitting: string,
+  recorded: ReadonlyMap<string, Entry>,
+): readonly Card[] {
   const cards: Card[] = [];
   for (const one of carried) {
     one.deposits.forEach((deposit, at) => {
       const id = depositID(one.turn, at);
-      const mark = marks[id] ?? marked(deposit);
-      cards.push({ ...deposit, id, mark, standing: standingOf(deposit, mark) });
+      const mark = asRecorded(marks[id] ?? marked(deposit), recorded.get(id));
+      cards.push({ ...deposit, id, mark, standing: standingOf(deposit, mark, sitting) });
     });
   }
   return cards;
+}
+
+/** One card's mark as the record has it, where the record has it at all. */
+function asRecorded(mark: Mark, entry: Entry | undefined): Mark {
+  if (entry === undefined) {
+    return mark;
+  }
+  return {
+    ...mark,
+    text: entry.text,
+    clause: entry.clause,
+    recording: false,
+    recorded: entry.section,
+    refusal: "",
+  };
 }
 
 export function cardIn(cards: readonly Card[], id: string): Card | undefined {
@@ -356,6 +498,7 @@ export function entryOf(card: Card, who: string, when: string): Entry {
     text: card.mark.text,
     clause: card.mark.clause,
     section: sectionOf(card.kind),
+    mark: card.id,
   };
 }
 
@@ -389,6 +532,35 @@ export const RECORDING = "Recording…";
 /** What a card heads itself with when nothing was offered at all. */
 export const NOT_OFFERED = "Not offered";
 
+/**
+ * What a card offered in another sitting says, and the one thing left to do with
+ * it.
+ *
+ * It says both of the two things it can honestly be — the entry went into that
+ * record, or that sitting ended before anybody pressed — because this page
+ * cannot tell them apart without reading a record it is not sitting on. What it
+ * can say for certain is the only thing that matters: these words are not this
+ * record's to record, and here they are to copy.
+ */
+export const ELSEWHERE = "recorded elsewhere or its sitting ended";
+
+/**
+ * What a press is told while the sitting's reading of its record is still being
+ * taken.
+ *
+ * A sitting starts with its opening turn already answered, so a card can be on
+ * screen in the moment between the sitting's subject arriving and this page
+ * having read that record. Nothing is written from no reading; what the press
+ * owes the human is to say so rather than to do nothing at all.
+ */
+export const NOT_READ_YET = "The record is being read. Press Record it again in a moment.";
+
+export function elsewhereLine(deposit: Deposit): string {
+  const named = (deposit.subject?.id ?? "").trim();
+  const whose = named === "" ? "another sitting" : named;
+  return `Offered to ${whose}: ${ELSEWHERE}. Copy the words to say them in this one.`;
+}
+
 /** Why nothing was offered, as the card says it. */
 export function notOfferedLine(deposit: Deposit): string {
   const said = (deposit.notOffered ?? "").trim();
@@ -401,6 +573,21 @@ export const DISMISSED = "dismissed";
 /** What the start sheet and the drawer's control are called. */
 export const START = "Start a sitting";
 export const END = "End the sitting";
+
+/**
+ * What the start sheet says when the draft it created outlived the refusal.
+ *
+ * A sitting started on a title creates the record first, so a refusal after that
+ * has left a real record in the project. The sheet says which one, and pressing
+ * Start again opens the sitting on it — because the alternative is a human
+ * pressing Start twice and finding two drafts of one wish.
+ */
+export function draftMadeLine(path: string): string {
+  return (
+    `The draft was created before this was refused: ${path}. ` +
+    `${START} again opens the sitting on that record rather than making a second one.`
+  );
+}
 
 /**
  * What the transcript says above the one question nobody typed.

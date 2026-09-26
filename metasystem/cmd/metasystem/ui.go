@@ -278,6 +278,20 @@ func runUI(verb string, args []string) int {
 			// repository, and the routes say so in these words.
 			conversations, homeErr := partner.Home()
 			admitted, admitErr := partner.Admit(partnerRuntime, strings.Fields(partnerCommand), partnerModel, roots.Checkout)
+			// A conversation written before the store moved out of the checkout
+			// is carried into the new place, once, on the first open of this
+			// workspace's directory. It is a no-op where the old place is gone,
+			// and a failure is the reason the Partner is not served: an empty
+			// history beside the old files still sitting in the checkout is the
+			// finding the move answered, in a quieter form.
+			var carryErr error
+			if homeErr == nil {
+				conversations = partner.Directory(conversations, roots.Checkout)
+				if admitErr == nil {
+					_, carryErr = partner.Carry(conversations,
+						filepath.Join(roots.StateRoot, filepath.FromSlash(partner.LegacyRelative)))
+				}
+			}
 			switch {
 			case homeErr != nil:
 				partnerRefusal = "this seat cannot keep the Partner's conversation outside the checkout, so it serves no Partner: " + homeErr.Error()
@@ -285,8 +299,10 @@ func runUI(verb string, args []string) int {
 			case admitErr != nil:
 				partnerRefusal = admitErr.Error()
 				fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
+			case carryErr != nil:
+				partnerRefusal = "this seat serves no Partner rather than an empty history: " + carryErr.Error()
+				fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
 			default:
-				conversations = partner.Directory(conversations, roots.Checkout)
 				// The interface's own read tools, handed to the session at
 				// session/new. A seat that cannot name its own executable gets
 				// a Partner that reads the page and nothing beyond it, which is

@@ -361,12 +361,22 @@ export type PartnerEvent = {
 export class PartnerError extends Error {
   readonly status: number;
   readonly install: string;
+  /**
+   * The record this request created before it was refused, by its path, or "".
+   *
+   * A sitting started on a title creates the draft before the sitting is opened,
+   * so a refusal that comes after that has left a real record in the project. The
+   * path travels so the page can offer Start again on that draft: a second press
+   * for one wish is a second attempt, not a second record.
+   */
+  readonly draft: string;
 
-  constructor(status: number, reason: string, install = "") {
+  constructor(status: number, reason: string, install = "", draft = "") {
     super(reason === "" ? `the Partner answered ${String(status)}` : reason);
     this.name = "PartnerError";
     this.status = status;
     this.install = install;
+    this.draft = draft;
   }
 }
 
@@ -375,7 +385,12 @@ export function isBusy(error: unknown): boolean {
   return error instanceof PartnerError && error.status === 409;
 }
 
-type Refusal = { error?: string; install?: string };
+/** The draft a refused request left in the project, or "". */
+export function draftOf(error: unknown): string {
+  return error instanceof PartnerError ? error.draft : "";
+}
+
+type Refusal = { error?: string; install?: string; draft?: string };
 
 /**
  * The one request. A body makes it a write, and a write is a POST of JSON;
@@ -393,7 +408,7 @@ async function request<T>(resource: string, body?: unknown, signal?: AbortSignal
   });
   if (!response.ok) {
     const refusal = await reasonOf(response);
-    throw new PartnerError(response.status, refusal.error ?? "", refusal.install ?? "");
+    throw new PartnerError(response.status, refusal.error ?? "", refusal.install ?? "", refusal.draft ?? "");
   }
   return (await response.json()) as T;
 }

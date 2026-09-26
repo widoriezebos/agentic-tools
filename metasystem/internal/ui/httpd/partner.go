@@ -191,7 +191,8 @@ func (h *handler) partnerTurn(w http.ResponseWriter, r *http.Request) {
 		}{Turn: id})
 		return
 	}
-	h.refuseTurn(w, err)
+	// A question creates no draft, so there is none to offer again.
+	h.refuseTurn(w, err, "")
 }
 
 // seeingBody is one capture, asked about rather than sent.
@@ -258,6 +259,17 @@ type sittingBody struct {
 // the project's own writer and its own refusals. A sitting whose subject does
 // not exist is a sitting with nothing to record into, and the order means a
 // refused creation refuses the whole act with the project's own words.
+//
+// But nothing is created until the act could succeed at all. Sol's third
+// finding: the draft went in before the purpose had been judged or the runtime
+// asked whether it could take a turn, so a purpose this build does not offer, or
+// a Partner that is not installed, left a record in the project nobody asked for
+// and no sitting names. Admits asks both, and creates nothing.
+//
+// What can still fail after the draft exists is the opening turn — the runtime
+// was there a moment ago and is not now, or another turn started in between. Then
+// the refusal carries the draft's own path, so the page offers Start again on
+// that draft rather than creating a second one for the same wish.
 func (h *handler) partnerSitting(w http.ResponseWriter, r *http.Request) {
 	if h.info.Partner == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -268,16 +280,22 @@ func (h *handler) partnerSitting(w http.ResponseWriter, r *http.Request) {
 	if !decodeDocument(w, r, &body) {
 		return
 	}
+	if err := h.info.Partner.Admits(r.Context(), body.Purpose); err != nil {
+		h.refuseTurn(w, err, "")
+		return
+	}
 	subject := body.Subject
+	draft := ""
 	if strings.TrimSpace(subject.ID) == "" {
 		created, ok := h.draftFor(w, body)
 		if !ok {
 			return
 		}
 		subject = created
+		draft = created.ID
 	}
 	if _, err := h.info.Partner.Sit(r.Context(), h.partnerHuman(r), subject, body.Purpose, body.About); err != nil {
-		h.refuseTurn(w, err)
+		h.refuseTurn(w, err, draft)
 		return
 	}
 	h.answerPartner(w, r)
@@ -345,24 +363,38 @@ func (h *handler) answerPartner(w http.ResponseWriter, r *http.Request) {
 // that admit one: 409 for a turn already running, 503 with the runtime's own
 // words and the line that installs it, and 400 for a request this server could
 // read and would not act on.
-func (h *handler) refuseTurn(w http.ResponseWriter, err error) {
+//
+// draft is the record this request created before the refusal, and "" where it
+// created none. It travels because a sitting refused AFTER its draft exists has
+// left a real record in the project: the page offers Start again on that draft,
+// so a second press is a second attempt at one wish rather than a second record
+// for it.
+func (h *handler) refuseTurn(w http.ResponseWriter, err error, draft string) {
 	if errors.Is(err, partner.ErrBusy) {
 		w.WriteHeader(http.StatusConflict)
-		writeActRefusal(w, "busy", err.Error())
+		writeDraftRefusal(w, "busy", err.Error(), "", draft)
 		return
 	}
 	var start *partner.StartError
 	if errors.As(err, &start) {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(struct {
-			Error   string `json:"error"`
-			Code    string `json:"code"`
-			Install string `json:"install,omitempty"`
-		}{Error: start.Reason, Code: "runtime", Install: start.Install})
+		writeDraftRefusal(w, "runtime", start.Reason, start.Install, draft)
 		return
 	}
 	w.WriteHeader(http.StatusBadRequest)
-	writeActRefusal(w, "request", err.Error())
+	writeDraftRefusal(w, "request", err.Error(), "", draft)
+}
+
+// writeDraftRefusal is the refusal body the Partner's two admitting routes share:
+// the reason, what kind of refusal it is, the line that installs a runtime where
+// there is one, and the draft this request created before it was refused.
+func writeDraftRefusal(w http.ResponseWriter, code, reason, install, draft string) {
+	_ = json.NewEncoder(w).Encode(struct {
+		Error   string `json:"error"`
+		Code    string `json:"code"`
+		Install string `json:"install,omitempty"`
+		Draft   string `json:"draft,omitempty"`
+	}{Error: reason, Code: code, Install: install, Draft: draft})
 }
 
 // partnerStop stops the running turn. It answers the snapshot, so the page
