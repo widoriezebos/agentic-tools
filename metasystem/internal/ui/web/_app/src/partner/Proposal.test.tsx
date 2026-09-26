@@ -89,11 +89,25 @@ describe("the card the Partner's proposed acts stand on", () => {
     expect(markup).toContain("The Partner: the five name the fleet inventory g1-s42 built");
   });
 
-  /** A card of one action has no checkbox: there is nothing to choose between. */
-  it("offers no checkbox on a card of one action", () => {
-    expect(rendered([proposal()])).not.toContain('type="checkbox"');
-    expect(rendered([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" })]))
-      .toContain('type="checkbox"');
+  /**
+   * A card of one action has no checkbox, no Select all and no count: there is
+   * nothing to choose between, so the foot is Apply and Dismiss alone (D3).
+   */
+  it("offers no checkbox, no Select all and no count on a card of one action", () => {
+    const one = rendered([proposal()]);
+    expect(one).not.toContain('type="checkbox"');
+    expect(one).not.toContain("Select all");
+    expect(one).not.toContain("selected");
+    // The primary press and Dismiss, and nothing else in the foot. It reads
+    // "Sign in to apply" here because this render has no proven session, which
+    // is the same button under its other word.
+    expect(one).toContain("ms-button--primary");
+    expect(one).toContain("Dismiss");
+
+    const two = rendered([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" })]);
+    expect(two).toContain('type="checkbox"');
+    expect(two).toContain("Select all");
+    expect(two).toContain("2 selected");
   });
 
   /**

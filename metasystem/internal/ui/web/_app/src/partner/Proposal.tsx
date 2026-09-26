@@ -247,7 +247,10 @@ function Foot({ card }: { card: Card }) {
 
   return (
     <div className="ms-proposal-foot">
-      {waitingLines > 0 && <span className="ms-proposal-count">{selectedLine(card)}</span>}
+      {/* How many are selected, where there is a choice to make. A card of one
+          action has no checkbox and one button, so a count beside it would be
+          counting the only thing there is (D3). */}
+      {many && waitingLines > 0 && <span className="ms-proposal-count">{selectedLine(card)}</span>}
       {foot !== "" && <span className="ms-proposal-tally">{foot}</span>}
       {waitingLines > 0 && (
         <>
