@@ -2,8 +2,10 @@
 
 - Kind: design
 - Id: 01M3CGR7CNZTS2NNTQCYRCF4JX
-- Status: done
+- Status: superseded
 - Goals: verbs-match-intent
+
+Superseded for the public interface by metasystem/plans/designs/intent-workflows.md on Wido's 2026-09-26 instruction. The execution-owner work and its proof remain valid.
 
 Review exit: closed at round 2 with zero material findings and seven named
 fixture obligations. Root accepts under Wido's explicit design/implementation
