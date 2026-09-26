@@ -136,7 +136,7 @@ func TestIntentQuestionJourney(t *testing.T) {
 	if _, result := run("question", "answer", "demo/done-ask", "no"); result.Outcome != intentRefused || len(engineCalls) != 0 {
 		t.Fatalf("conflicting repeat answer: %+v", result)
 	}
-	if code, result := run("question", "answer", "demo/done-ask", "yes"); code != 0 || len(engineCalls) != 1 || !slices.Equal(engineCalls[0][1:4], []string{"mission", "resume", "--root"}) {
+	if code, result := run("question", "answer", "demo/done-ask", "yes"); code != 0 || len(engineCalls) != 1 || !slices.Equal(engineCalls[0][1:5], []string{"internal", "mission", "resume", "--root"}) {
 		t.Fatalf("repeated answer resumes: %d %+v %v", code, result, engineCalls)
 	}
 	if _, result := run("question", "wait", "demo/open-ask"); result.Outcome != intentInProgress || result.Next == nil {
@@ -273,7 +273,7 @@ func TestIntentClaimContinuesReservedGoalByItsShow(t *testing.T) {
 		bed.addGoal(released)
 		bed.addGoal(&held)
 		code, result := bed.runJSON(bed.owners(), "goal", "claim")
-		if result.Outcome != intentUnchanged || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "goal", "show", "--goal", name}) {
+		if result.Outcome != intentUnchanged || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "goal", "show", name}) {
 			t.Fatalf("claim while %s is held: code=%d %+v", name, code, result)
 		}
 		code, shown := bed.runJSON(bed.owners(), result.Next.Argv[1:]...)
@@ -393,24 +393,24 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 		}
 		return code, result
 	}
-	code, all := run("settings", "show", "keys")
+	code, all := run("settings", "keys")
 	listing := fmt.Sprint(all.Data)
 	if code != 0 || all.Outcome != intentConfirmed || !strings.Contains(listing, "fixture.alpha.one") || !strings.Contains(listing, "fixture.beta") {
 		t.Fatalf("settings --keys: code=%d %+v", code, all)
 	}
-	code, matching := run("settings", "show", "keys", "--matching", "fixture.alpha")
+	code, matching := run("settings", "keys", "--matching", "fixture.alpha")
 	narrowed := fmt.Sprint(matching.Data)
 	if code != 0 || !strings.Contains(narrowed, "fixture.alpha.two") || strings.Contains(narrowed, "fixture.beta") {
 		t.Fatalf("settings --keys --matching: code=%d %+v", code, matching)
 	}
 	// The bed's configuration lacks testing.contract; the validate owner's
 	// own reason is the result.
-	if code, incomplete := run("settings", "show", "check"); code == 0 || incomplete.Outcome != intentRefused || !strings.Contains(incomplete.Summary, "testing.contract is required") {
+	if code, incomplete := run("settings", "check"); code == 0 || incomplete.Outcome != intentRefused || !strings.Contains(incomplete.Summary, "testing.contract is required") {
 		t.Fatalf("check settings on an incomplete configuration: code=%d %+v", code, incomplete)
 	}
 	invalid := append(append([]byte{}, original...), []byte("\ntesting.contract=missing-contract.json\n")...)
 	os.WriteFile(conf, invalid, 0o644)
-	if code, refused := run("settings", "show", "check"); code == 0 || refused.Outcome == intentConfirmed || !strings.Contains(refused.Summary, "testing.contract is invalid") ||
+	if code, refused := run("settings", "check"); code == 0 || refused.Outcome == intentConfirmed || !strings.Contains(refused.Summary, "testing.contract is invalid") ||
 		!strings.Contains(refused.Summary, "missing-contract.json") {
 		t.Fatalf("check settings on an invalid setting: code=%d %+v", code, refused)
 	}
@@ -426,7 +426,7 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	contract := []byte(`{"schemaVersion":1,"projectRisk":{"severity":1,"exposure":1,"reversibility":"revert","detection":"immediate","recovery":"bounded"},"surfaces":[{"id":"app","paths":["src/**"],"dependsOn":[],"standard":["section/smoke"],"deep":[],"critical":[]}],"groups":[{"id":"section/smoke","kind":"integration","adapter":"section","cwd":".","inputs":["metasystem.conf"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":1000,"section":"smoke"}],"always":{"canary":["section/smoke"],"standard":[]},"unknown":["section/smoke"],"cadence":["section/smoke"]}`)
 	os.WriteFile(conf, valid, 0o644)
 	os.WriteFile(filepath.Join(bed.root(), "testing.json"), contract, 0o644)
-	if code, accepted := run("settings", "show", "check"); code != 0 || accepted.Outcome != intentConfirmed {
+	if code, accepted := run("settings", "check"); code != 0 || accepted.Outcome != intentConfirmed {
 		t.Fatalf("check settings on a valid configuration: code=%d %+v", code, accepted)
 	}
 	if after, _ := os.ReadFile(conf); !bytes.Equal(after, valid) {

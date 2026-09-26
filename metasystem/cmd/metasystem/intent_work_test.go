@@ -391,7 +391,7 @@ func TestIntentBuildConcurrentRepeat(t *testing.T) {
 	if len(runs) != 1 || len(bed.runDirectories()) != 1 {
 		t.Fatalf("runs=%v directories=%v", runs, bed.runDirectories())
 	}
-	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"work", "build", "proof", "read"}) {
+	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof", "read"}) {
 		t.Fatalf("launches=%v, want one build, proof and read", launched)
 	}
 }
@@ -500,7 +500,7 @@ func TestIntentBuildResume(t *testing.T) {
 	if code != 0 || result.Outcome != intentConfirmed || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" {
 		t.Fatalf("red proof: code=%d %+v", code, result)
 	}
-	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"work", "build", "proof"}) {
+	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof"}) {
 		t.Fatalf("a red proof still read: %v", launched)
 	}
 	for _, again := range [][]string{args, {"work", "build", "run:" + run}, {"work", "wait", "run:" + run}} {
@@ -521,7 +521,7 @@ func TestIntentBuildResume(t *testing.T) {
 	if code != 0 || result.Outcome != intentConfirmed || data["run"] != run || data["round"].(float64) != 2 || data["outcome"] != "green" || data["state"] != "awaiting-judgement" {
 		t.Fatalf("follow-up: code=%d %+v", code, result)
 	}
-	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"work", "build", "proof", "build", "proof", "read"}) {
+	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof", "build", "proof", "read"}) {
 		t.Fatalf("follow-up launches=%v", launched)
 	}
 
@@ -651,7 +651,14 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 		}
 		return code, result
 	}
-	code, result := run("work", "wait", "job-1", "--timeout", "5m")
+	jobs := filepath.Join(bed.root(), "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobs, "job-1.json"), []byte(`{"jobId":"job-1","status":"running"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, result := run("work", "wait", "j2:job-1", "--timeout", "5m")
 	layout, _ := owners.resolver.ResolveLayout(bed.root())
 	if code != metarun.ExitWaitDeadline || result.Outcome != intentInProgress || result.Next == nil ||
 		!slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", "wait:wait-1"}) || layout.InstallationRoot == "" ||

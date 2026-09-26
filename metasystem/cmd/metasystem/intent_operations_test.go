@@ -80,11 +80,11 @@ func TestIntentRepairAuthority(t *testing.T) {
 		{[]string{"mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
 	} {
 		code, result, ran := owner(row.args...)
-		if result.Outcome != intentRefused || code == 0 || len(ran) < len(row.verb)+1 || !slicesHasPrefix(ran[1:], row.verb) || !strings.Contains(result.Summary, row.reason) {
+		if result.Outcome != intentRefused || code == 0 || len(ran) < len(row.verb)+1 || !slicesHasPrefix(ran[2:], row.verb) || !strings.Contains(result.Summary, row.reason) {
 			t.Errorf("%v without a person's proof = %d %+v (owner argv %v)", row.args, code, result, ran)
 		}
 	}
-	if _, result, ran := owner("repair", "mission", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"); !strings.Contains(strings.Join(ran, " "), "--adopt --waives claim-a --by Wido --reason accepted") {
+	if _, result, ran := owner("mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"); !strings.Contains(strings.Join(ran, " "), "--adopt --waives claim-a --by Wido --reason accepted") {
 		t.Errorf("accept-workspace inputs: %v %+v", ran, result)
 	}
 	// Refused before any owner runs.
@@ -100,8 +100,8 @@ func TestIntentRepairAuthority(t *testing.T) {
 		{"settings", "coordinator", "--declare", "--withdraw", "--by", "Wido"},
 		{"settings", "coordinator", "--declare"},
 		// The retired engine floor has no public spelling left to record.
-		{"settings", "show", "show", "compatibility", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
-		{"settings", "show", "show", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
+		{"settings", "show", "compatibility", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
+		{"settings", "show", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
 	} {
 		if code, result, ran := owner(args...); result.Outcome != intentRefused || code == 0 || ran != nil {
 			t.Errorf("%v = %d %+v, owner ran %v", args, code, result, ran)
@@ -201,6 +201,7 @@ func TestIntentLandException(t *testing.T) {
 		return nil, os.ErrNotExist
 	}
 	run := func(args ...string) (int, intentResult) { return b.runJSON(owners, args...) }
+	b.writeJob(map[string]any{"jobId": "j1", "role": "implementer", "status": "completed", "round": 1, "goalId": bedGoal})
 	for _, args := range [][]string{
 		{"work", "land", bedGoal, "--exception", "group:unit", "--reason", "flaky host"},
 		{"work", "land", bedGoal, "--exception", "group:unit", "--reason", "r", "--by", "Wido", "--transfer"},

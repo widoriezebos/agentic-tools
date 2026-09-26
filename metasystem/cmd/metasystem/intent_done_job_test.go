@@ -70,7 +70,7 @@ func TestIntentDoneJobCompletesOnlyTheJob(t *testing.T) {
 		{"goal", "done", bedGoal, "--reason", "finished", "--evidence", "crit1"},
 	} {
 		code, result := b.do(args...)
-		if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "nothing was done") || len(b.calls) != 0 || b.publications() != before {
+		if code != 2 || result.Outcome != intentRefused || !strings.Contains(strings.ToLower(result.Summary), "nothing was done") || len(b.calls) != 0 || b.publications() != before {
 			t.Fatalf("%v = code %d %+v calls %v", args, code, result, b.calls)
 		}
 	}
@@ -80,7 +80,7 @@ func TestIntentDoneJobCompletesOnlyTheJob(t *testing.T) {
 		t.Fatalf("a round's done = code %d %+v", code, result)
 	}
 	for _, ref := range []string{"j1:inv1", "j2:missing"} {
-		if code, result := b.do("work", "close", "j2:"+ref); code == 0 || result.Outcome != intentRefused || len(b.calls) != 0 {
+		if code, result := b.do("work", "close", ref); code == 0 || result.Outcome != intentRefused || len(b.calls) != 0 {
 			t.Fatalf("an unresolved qualified reference %s = code %d %+v", ref, code, result)
 		}
 	}
@@ -112,10 +112,14 @@ func TestIntentDoneJobRefusesALaunch(t *testing.T) {
 	owners.delivery = b.owners
 	owners.processes.launches = func() *launch.Manager { return manager }
 	before := b.publications()
-	for _, ref := range []string{"j1:solo-1", "solo-1"} {
-		code, result := b.runJSON(owners, "work", "close", "j2:"+ref)
-		if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "is a launch; done job reads a dispatch job") || len(b.calls) != 0 || b.publications() != before {
-			t.Fatalf("done job %s = code %d %+v", ref, code, result)
-		}
+	code, result := b.runJSON(owners, "work", "close", "j1:solo-1")
+	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not take a launch reference") ||
+		!strings.Contains(result.Decision, "metasystem work stop") || len(b.calls) != 0 || b.publications() != before {
+		t.Fatalf("work close j1:solo-1 = code %d %+v", code, result)
+	}
+	// A bare launch id is not a dispatch job: it is read as a goal name and
+	// refused by the goal's own owner, with nothing closed.
+	if code, result := b.runJSON(owners, "work", "close", "solo-1"); code == 0 || result.Outcome != intentRefused || len(b.calls) != 0 || b.publications() != before {
+		t.Fatalf("work close solo-1 = code %d %+v", code, result)
 	}
 }

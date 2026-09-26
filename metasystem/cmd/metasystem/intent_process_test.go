@@ -42,6 +42,8 @@ type processBed struct {
 	families  []stoptransition.Family
 	asked     []channelAskInput
 	question  channel.Question
+	// engineCalls are the engine verbs a public command ran.
+	engineCalls [][]string
 }
 
 func newProcessBed(t *testing.T) *processBed {
@@ -120,6 +122,14 @@ func (b *processBed) owners() intentOwners {
 		},
 		executable: os.Executable,
 	}
+	// Engine verbs (the mission runner's resume after an answer) run against
+	// a stand-in engine that records them; the test binary is never run as
+	// the engine.
+	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+		process: func(process intentProcess) intentProcessResult {
+			b.engineCalls = append(b.engineCalls, process.argv)
+			return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
+		}}
 	return owners
 }
 
@@ -362,6 +372,14 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		askPath := parkedHostFailureMission(t, b.root())
 		owners := b.owners()
+		// An answered question resumes the mission through the runner; the
+		// bed's runner confirms without starting a process.
+		var resumed [][]string
+		owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+			process: func(process intentProcess) intentProcessResult {
+				resumed = append(resumed, process.argv)
+				return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
+			}}
 		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
 			engine := missionrunner.NewEngine(root, id)
 			engine.AnchorEffect = func(string, string, string) error { return errors.New("anchor refused in the bed") }
@@ -377,8 +395,9 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			return engine, nil
 		}
 		code, result = b.runJSON(owners, "question", "answer", "demo/host-down", "retry: the host is back")
-		if code != 0 || result.Outcome != intentConfirmed || !missionAskAnswered(askPath) {
-			t.Fatalf("answer = %d %+v", code, result)
+		if code != 0 || result.Outcome != intentConfirmed || !missionAskAnswered(askPath) || len(resumed) != 1 ||
+			!slices.Equal(resumed[0][1:4], []string{"internal", "mission", "resume"}) {
+			t.Fatalf("answer = %d %+v resumed %v", code, result, resumed)
 		}
 		if code, result := b.runJSON(owners, "question", "answer", "demo/host-down", "again"); code != 3 || result.Outcome != intentRefused {
 			t.Fatalf("second answer = %d %+v", code, result)

@@ -174,18 +174,24 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 		t.Fatalf("root help = code %d stderr %q; it must be the concise page: %q", code, problem, root)
 	}
 	_, all, _ := runCLIHelp([]string{"help", "all"}, registered)
-	for _, command := range intentCommands() {
-		switch {
-		case command.primary && !strings.Contains(root, "  "+command.name):
-			t.Errorf("root help does not list the common command %s", command.name)
-		case !command.primary && strings.Contains(root, "\n  "+command.name+" "):
-			t.Errorf("root help lists the less common command %s; it belongs to its topic", command.name)
-		case !strings.Contains(all, "\n  metasystem "+command.name):
+	for _, object := range intentObjects() {
+		if !strings.Contains(root, "\n  "+object+" ") {
+			t.Errorf("root help does not list the object %s", object)
+		}
+	}
+	for _, command := range publicIntentCommands() {
+		if strings.Contains(root, "\n  metasystem "+command.name+" ") && !strings.Contains(root, "A typical delivery") {
+			t.Errorf("root help lists the action %s; it belongs to its object", command.name)
+		}
+		if !strings.Contains(all, "\n  metasystem "+command.name) {
 			t.Errorf("help all does not list %s", command.name)
 		}
-		code, page, problem := runCLIHelp([]string{"help", command.name}, registered)
-		if code != 0 || problem != "" || !strings.Contains(page, command.usage[0]) || !strings.Contains(page, "--repo PATH") {
+		code, page, problem := runCLIHelp(append([]string{"help"}, command.words()...), registered)
+		if code != 0 || problem != "" || !strings.Contains(page, command.usage[0]) || command.passthrough == nil && !strings.Contains(page, "--repo PATH") {
 			t.Errorf("help %s = code %d stderr %q page %q", command.name, code, problem, page)
+		}
+		if command.passthrough != nil {
+			continue
 		}
 		// Command help needs no repository, identity or writes.
 		var stdout, stderr bytes.Buffer
@@ -194,14 +200,14 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 			t.Errorf("%s --help = code %d stdout %q stderr %q", command.name, code, stdout.String(), stderr.String())
 		}
 	}
-	for _, topic := range []string{"goal", "list", "work", "questions", "operations", "administration", "human", "agent", "all"} {
+	for _, topic := range []string{"goal", "work", "question", "system", "human", "agent", "all"} {
 		code, page, problem := runCLIHelp([]string{"help", topic}, registered)
 		if code != 0 || problem != "" || page == "" {
 			t.Errorf("help %s = code %d stderr %q", topic, code, problem)
 		}
 	}
 	_, agent, _ := runCLIHelp([]string{"help", "agent"}, registered)
-	if strings.Contains(agent, "approve G") || strings.Contains(agent, "internal") {
+	if strings.Contains(agent, "goal approve G") || strings.Contains(agent, "internal") {
 		t.Errorf("help agent must list only agent commands and no internal catalogue: %q", agent)
 	}
 	_, internal, _ := runCLIHelp([]string{"internal", "--help"}, registered)
@@ -239,12 +245,12 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 	for _, one := range catalogue[0].Verbs {
 		names = append(names, one.Name)
 	}
-	for _, want := range []string{"goal", "list", "show", "approve", "budget", "pause", "resume", "done", "build", "review", "revise", "land", "check", "incidents", "help"} {
+	for _, want := range []string{"goal list", "goal show", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "work build", "work review", "work revise", "work land", "system check", "incident list", "status", "help"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("public catalogue lacks %s", want)
 		}
 	}
-	for _, absent := range append([]string{"internal", "goal", "launch"}, removedIntentAliases...) {
+	for _, absent := range append([]string{"internal", "goal", "launch", "goal fetch", "ui serve"}, removedIntentAliases...) {
 		if slices.Contains(names, absent) {
 			t.Errorf("public catalogue lists %s", absent)
 		}
@@ -335,7 +341,7 @@ func TestIntentGoalAuthorityAndState(t *testing.T) {
 	t.Run("reads", func(t *testing.T) {
 		bed := newIntentBed(t, true, nil)
 		code, result := bed.runJSON(bed.owners(), "goal", "show", bedGoal)
-		if code != 0 || result.Outcome != intentConfirmed || result.Next == nil || result.Next.Argv[1] != "resume" {
+		if code != 0 || result.Outcome != intentConfirmed || result.Next == nil || result.Next.Argv[2] != "resume" {
 			t.Fatalf("show of a stopped goal = %d %+v", code, result)
 		}
 		data := result.Data.(map[string]any)
@@ -437,7 +443,7 @@ func TestIntentGoalAuthorityAndState(t *testing.T) {
 			t.Fatalf("unpark = %d %+v; record %s approved %+v", code, result, file.State, file.Approved)
 		}
 		code, result = bed.runJSON(bed.owners(), "goal", "resume", bedGoal, "--lineage", "m1")
-		if code != 1 || result.Next == nil || result.Next.Argv[1] != "approve" {
+		if code != 1 || result.Next == nil || result.Next.Argv[2] != "approve" {
 			t.Fatalf("resume of a queued goal must name approval as its own act: %d %+v", code, result)
 		}
 	})
@@ -665,7 +671,7 @@ func TestIntentAttorneyBudgetKeepsAuthorityInputs(t *testing.T) {
 	grant := &goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
 		PowerOfAttorney: []goal.PowerOfAttorneyEntry{{
-			ID: attorneyID, By: "human:Wido", Tiers: []uint8{1}, Verbs: []string{"goal", "approve", "set-budget"},
+			ID: attorneyID, By: "human:Wido", Tiers: []uint8{1}, Verbs: []string{"approve", "set-budget"},
 			Since: "2026-09-01T08:00:00Z", Expires: "2026-09-05",
 		}},
 	}

@@ -172,7 +172,7 @@ var removedSpellings = [][]string{
 	{"review", "g"}, {"review", "design", "f"}, {"review", "job", "j"}, {"revise", "g"}, {"land", "g"}, {"land", "job", "j"},
 	{"start"}, {"start", "ui"}, {"start", "session"}, {"start", "mission", "m"}, {"start", "machine", "m9"},
 	{"stop"}, {"stop", "--repo", "x"}, {"stop", "job", "j"}, {"stop", "session"}, {"restart", "checkout"}, {"restart", "ui"},
-	{"enroll", "--name", "x"}, {"ask", "g"}, {"answer", "q"}, {"check"}, {"check", "goals"}, {"settings"},
+	{"enroll", "--name", "x"}, {"ask", "g"}, {"answer", "q"}, {"check"}, {"check", "goals"},
 	{"delegate", "--cancel", "j"}, {"watch"}, {"health"}, {"arm"},
 }
 
@@ -185,7 +185,7 @@ func TestIntentRouterRefusesRemovedSpellings(t *testing.T) {
 	registered := sentinel.registry()
 	for _, args := range removedSpellings {
 		code, stdout, stderr := routeWith(registered, args...)
-		if code != 2 || stdout != "" || !strings.Contains(stderr, "nothing was done") || !strings.Contains(stderr, "did you mean: metasystem ") {
+		if code != 2 || stdout != "" || !strings.Contains(stderr, "nothing was done") || !strings.Contains(stderr, "metasystem lists the objects") {
 			t.Errorf("%v = %d %q %q; want a refusal with a suggestion", args, code, stdout, stderr)
 		}
 		if calls := sentinel.taken(); len(calls) != 0 {
@@ -200,6 +200,8 @@ func TestIntentRouterRefusesRemovedSpellings(t *testing.T) {
 		{[]string{"goals"}, "metasystem goal"},
 		{[]string{"review", "g"}, "metasystem work review"},
 		{[]string{"enroll"}, "metasystem terminal enroll"},
+		{[]string{"show", "g"}, "metasystem goal show"},
+		{[]string{"start", "ui"}, "metasystem ui start"},
 		{[]string{"goal", "aprove"}, "metasystem goal approve"},
 		{[]string{"wrk", "land"}, "metasystem work"},
 	} {
@@ -240,7 +242,7 @@ func TestIntentRouterObjectPages(t *testing.T) {
 				}
 			}
 			for _, command := range intentCommands() {
-				if command.hidden && command.object == object && strings.Contains(page, " "+command.action+" ") {
+				if command.hidden && command.object == object && strings.Contains(page, "\n  "+command.action+" ") {
 					t.Errorf("%v lists the entry %s", args, command.name)
 				}
 			}

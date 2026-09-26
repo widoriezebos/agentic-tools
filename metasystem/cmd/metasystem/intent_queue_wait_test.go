@@ -188,7 +188,7 @@ func TestIntentWaitRealOwner(t *testing.T) {
 		t.Fatalf("file wait through the real owner: code=%d %+v stderr=%q", code, result, lastErr)
 	}
 	code, resumed := run("work", "wait", "wait:"+id, "--timeout", "1s")
-	if resumed.Outcome != intentInProgress || resumed.Next == nil || resumed.Next.Argv[3] != id {
+	if resumed.Outcome != intentInProgress || resumed.Next == nil || resumed.Next.Argv[3] != "wait:"+id {
 		t.Fatalf("resume of the same wait record: code=%d %+v", code, resumed)
 	}
 	os.MkdirAll(filepath.Join(bed.root(), "out"), 0o755)

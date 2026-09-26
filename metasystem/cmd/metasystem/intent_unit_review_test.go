@@ -502,7 +502,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// Finished but unclosed: the author's close is named, nothing collected.
 	c.writeCritic(install, "crit1", first, "completed", false)
 	_, result = c.do("work", "review", "run:"+run)
-	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "review run "+run+" --dispositions FILE") ||
+	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "work review run:"+run+" --dispositions FILE") ||
 		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
 		t.Fatalf("unclosed critic: %+v", result)
 	}
@@ -553,7 +553,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	c.edits = map[string]string{"connect.txt": "the built result, fixed\n"}
 	followUp := c.brief("follow-up.md", "Fix F1.\n")
 	code, result = c.do("work", "revise", "run:"+run, "--brief", followUp)
-	if code != 0 || result.Outcome != intentConfirmed || result.Next == nil || result.Next.Argv[1] != "review" {
+	if code != 0 || result.Outcome != intentConfirmed || result.Next == nil || result.Next.Argv[2] != "review" {
 		t.Fatalf("fold unit: code=%d %+v", code, result)
 	}
 	c.loseCommit = true
@@ -591,7 +591,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	c.edits, c.readFails = map[string]string{"readfail.txt": "read failed, proof passed\n"}, true
 	_, result = c.do(append([]string{"work", "build", c.id, "readfail", "--brief", c.brief("readfail.md", "Read-failed unit.\n"), "--lines", "5"}, workCheck...)...)
 	readFailed := resultData(t, result)["run"].(string)
-	if round := c.runRecord(readFailed).Rounds[0]; round.Outcome != "read-failed" || result.Next == nil || result.Next.Argv[1] != "review" {
+	if round := c.runRecord(readFailed).Rounds[0]; round.Outcome != "read-failed" || result.Next == nil || result.Next.Argv[2] != "review" {
 		t.Fatalf("read-failed build: %s %+v", round.Outcome, result)
 	}
 	c.readFails = false

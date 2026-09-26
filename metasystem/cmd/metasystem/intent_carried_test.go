@@ -70,7 +70,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	delivery.executable = func() (string, error) { return b.engine, nil }
 	delivery.process = func(process intentProcess) intentProcessResult {
 		b.calls = append(b.calls, append([]string(nil), process.argv...))
-		if len(process.argv) > 2 && process.argv[1] == "goal" && process.argv[2] == "carry" && !b.unproven {
+		if len(process.argv) > 3 && process.argv[2] == "goal" && process.argv[3] == "carry" && !b.unproven {
 			process.argv = append(process.argv, "--fixture-human-authority", "--lineage", "m1")
 		}
 		ran := runIntentOwnerProcess(process)
@@ -194,7 +194,7 @@ func carriedResultData(result intentResult) map[string]any {
 // shown runs the continuation a result showed, exactly as printed.
 func (b *carriedDeliveryBed) shown(result intentResult) (int, intentResult) {
 	b.t.Helper()
-	if result.Next == nil || len(result.Next.Argv) < 3 || result.Next.Argv[1] != "land" {
+	if result.Next == nil || len(result.Next.Argv) < 3 || result.Next.Argv[2] != "land" {
 		b.t.Fatalf("no land continuation was shown: %+v", result)
 	}
 	return b.land(result.Next.Argv[2:]...)
@@ -499,7 +499,7 @@ func TestIntentCarriedReplacement(t *testing.T) {
 	}
 	last := b.calls[len(b.calls)-1]
 	for _, argv := range b.calls {
-		if len(argv) > 2 && argv[1] == "goal" && argv[2] == "carry" {
+		if len(argv) > 3 && argv[2] == "goal" && argv[3] == "carry" {
 			last = argv
 		}
 	}
@@ -579,8 +579,8 @@ func TestIntentCarriedCarryOwnerDecidesThePerson(t *testing.T) {
 	if code == 0 || result.Outcome == intentConfirmed || carriedResultData(result)["exception"] != nil || len(b.lands) != 0 {
 		t.Fatalf("an unproven caller's exception was accepted: %d %+v", code, result)
 	}
-	if len(b.calls) != 2 || !slices.Equal(b.calls[0][1:], []string{"goal", "fetch", "--root", b.f.mainRoot}) ||
-		!slicesHasPrefix(b.calls[1][1:], []string{"goal", "carry", "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido"}) {
+	if len(b.calls) != 2 || !slices.Equal(b.calls[0][1:], []string{"internal", "goal", "fetch", "--root", b.f.mainRoot}) ||
+		!slicesHasPrefix(b.calls[1][1:], []string{"internal", "goal", "carry", "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido"}) {
 		t.Fatalf("owner routing = %v", b.calls)
 	}
 	if index := goalSyncMutationGit(t, b.f.mainRoot, "write-tree"); index != goalSyncMutationGit(t, b.f.mainRoot, "rev-parse", "HEAD^{tree}") ||
@@ -730,7 +730,7 @@ func TestIntentCarriedAmbiguousRetainedBaseNeedsReplacement(t *testing.T) {
 		t.Fatalf("the replacement did not record a new word: %+v", replaced)
 	}
 	for _, argv := range b.calls {
-		if len(argv) > 2 && argv[1] == "goal" && argv[2] == "carry" && slices.Contains(argv, "--supersede") && !slices.Contains(argv, first) {
+		if len(argv) > 3 && argv[2] == "goal" && argv[3] == "carry" && slices.Contains(argv, "--supersede") && !slices.Contains(argv, first) {
 			t.Fatalf("the replacement superseded another word: %v", argv)
 		}
 	}

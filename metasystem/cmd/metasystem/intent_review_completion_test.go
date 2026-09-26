@@ -118,7 +118,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	}
 	// Selection reads the read owner: the work is reviewed, its read
 	// collected and published; a later built item is the one review picks.
-	if _, result = c.do("status", c.id); !strings.Contains(result.Summary, "its read is collected and published (attestation ") || result.Next == nil || result.Next.Argv[1] != "land" {
+	if _, result = c.do("status", c.id); !strings.Contains(result.Summary, "its read is collected and published (attestation ") || result.Next == nil || result.Next.Argv[2] != "land" {
 		t.Fatalf("status after collection: %+v", result)
 	}
 	c.edits = map[string]string{"later.txt": "a later unit\n"}

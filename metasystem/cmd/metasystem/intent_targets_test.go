@@ -70,7 +70,7 @@ func TestIntentProcessTargets(t *testing.T) {
 	}
 
 	if code, result := b.runJSON(owners, "machine", "start", "m9", "--destination", "/tmp/m9"); code != 0 || len(engine) != 1 ||
-		!slices.Equal(engine[0][1:5], []string{"seat", "launch", "--machine", "m9"}) || !strings.Contains(strings.Join(engine[0], " "), "--destination /tmp/m9") {
+		!slices.Equal(engine[0][1:6], []string{"internal", "seat", "launch", "--machine", "m9"}) || !strings.Contains(strings.Join(engine[0], " "), "--destination /tmp/m9") {
 		t.Fatalf("start machine = %d %+v %v", code, result, engine)
 	}
 	for _, args := range [][]string{{"ui", "start", "--temporary-human-word", "yes"}, {"system", "start", "--destination", "/tmp/x"}, {"machine", "list", "ui"}, {"status", "--refresh"}} {

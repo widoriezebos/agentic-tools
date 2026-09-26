@@ -220,7 +220,7 @@ func TestIntentDesignLifecycle(t *testing.T) {
 	if again, _ := os.ReadFile(document); !bytes.Equal(again, original) {
 		t.Fatalf("status changed the document")
 	}
-	code, stopped := designRun(t, lost, append([]string{"system", "stop"}, status.Next.Argv[2:]...)...)
+	code, stopped := designRun(t, lost, status.Next.Argv[1:]...)
 	if code != 0 || stopped.Outcome != intentConfirmed || stopped.Data.(map[string]any)["state"] != string(launch.Cancelled) {
 		t.Fatalf("stop design of a lost supervisor: code=%d %+v", code, stopped)
 	}

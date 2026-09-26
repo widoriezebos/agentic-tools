@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -309,7 +308,7 @@ func isProofLauncherArgv(argv []string) bool {
 		argv = append(argv[:1:1], argv[2:]...)
 	}
 	return len(argv) >= 3 && filepath.Base(argv[0]) == "metasystem" &&
-		(argv[1] == "proof-run" && argv[2] == "launch" || argv[1] == "test" && argv[2] == "run" && slices.Contains(argv[3:], "--root"))
+		(argv[1] == "proof-run" && argv[2] == "launch" || argv[1] == "test" && argv[2] == "run")
 }
 
 // liveAttemptsOtherThan counts this checkout's attempts without a terminal

@@ -143,7 +143,7 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 	postContextCapture := "if [[ \"$policy\" == arming || \"$policy\" == wait-recovery ]]; then\n" +
 		"    captured=$(builtin trap - EXIT HUP INT TERM; \"$@\" 2>&1) && capture_status=0 || capture_status=$?"
 	armingCapture := `start_capture arming up_output arming start_up "$runtime" "$session" "$identity_pid" "$identity_started"`
-	waitCapture := `start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"`
+	waitCapture := `start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"`
 	armingFailureHandling := "if (( start_arming_status != 0 )); then\n" +
 		"      collect_start_notice \"Metasystem supervision arming failed: $up_aggregate\"\n" +
 		"      if [[ \"$up_aggregate\" == *' re-armed='* ]]; then\n" +
@@ -350,7 +350,7 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 			if policy == "arming" && (owner != "start_main" || key != "arming" || !strings.Contains(line, " start_up ")) {
 				add(lineNumber, "start operation mapping", "arming is reserved for start_main's checked post-context arming call")
 			}
-			if policy == "wait-recovery" && (owner != "start_main" || key != "wait-recovery" || !strings.Contains(line, ` "$ms" session start `)) {
+			if policy == "wait-recovery" && (owner != "start_main" || key != "wait-recovery" || !strings.Contains(line, ` "$ms" internal session start `)) {
 				add(lineNumber, "start operation mapping", "wait-recovery is reserved for start_main's checked post-context session-start call")
 			}
 			if strings.HasPrefix(policy, "identity-") && (owner != "start_main" || (key != "holder-read" && key != "process-identity")) {

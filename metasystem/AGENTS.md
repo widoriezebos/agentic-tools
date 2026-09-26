@@ -22,8 +22,8 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 - Give each important behavior one owner. Keep boundaries honest. Make state, failure, and observability explicit.
 - **Strictness guards invariants, never conveniences.** A check refuses loudly only for a named invariant whose violation is a real defect. A rule that breaks on benign variation—an arbitrary cap, a missing lawful path, or a format nit—is defective: handle the variation intuitively or omit the rule. No nameable invariant, no rule.
 - Use focused tests first; use expensive, model-backed, debugger, or full-suite validation only for a named question.
-- Delegate independent exploration and verifiable subtasks when available; keep decisions in the main context. Use rostered intents (`metasystem design`, `build`, `review`, `revise`) and `metasystem help work`. These workflows own dispatch, collection, closure and exact-session continuation, including fallback (`docs/orchestration.md`).
-- A subagent's tool call never waits over 240 seconds. For longer work, use its public `metasystem work wait` command and the continuation it returns.
+- Delegate independent exploration and verifiable subtasks when available; keep decisions in the main context. Use the rostered actions of `metasystem work` and `metasystem design`. These workflows own dispatch, collection, closure and exact-session continuation, including fallback (`docs/orchestration.md`).
+- A subagent's tool call never waits over 240 seconds. For longer work, use `metasystem work wait` and its continuation.
 - Keep machine-verifiable requirements in schemas, tests, linters, permissions, or scripts, never in repeated prose.
 - Keep project-specific commands and policies in `docs/project-rules.md`.
 
@@ -36,7 +36,7 @@ Programs START with `metasystem goal open` by a person: a multi-session effort g
 
 A seat leaving a goal waiting on a human starts the newest `Next step` entry with `RULING NEEDED`, `WAITING ON THE HUMAN`, `WAITING ON <one word>` followed by `CALL`, `RULING`, `DECISION`, `ANSWER`, or `WORD`, `QUESTION TO THE HUMAN`, `PARK REQUEST`, or `PARK REQUESTED`, so idle continuation leaves that goal alone.
 
-For every governed Stop, blocked or allowed, run and read the exact printed `metasystem session report --id ...` command before ending the turn or acting again; follow its seat action within existing authority. If unavailable, preserve any established block, report the read failure, and recover current work through `goals --ready`; never infer no work remains.
+For every governed Stop, blocked or allowed, run and read the exact printed `metasystem session report --id ...` command before ending the turn or acting again; follow its seat action within existing authority. If unavailable, preserve any established block, report the read failure, and recover current work through `goal list --ready`; never infer no work remains.
 
 ## Completion
 

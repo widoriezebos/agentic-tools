@@ -210,7 +210,7 @@ func TestStopTwoLineStatusBounds(t *testing.T) {
 		t.Fatalf("report identity changed: got=%+v want=%+v", identity, input.Identity)
 	}
 	reportText := string(got)
-	for _, want := range []string{"- Block source: idle-backlog", "complete-plan-step", "perform the complete plan step", "complete digest line", "runner alive", "metasystem internal run watch"} {
+	for _, want := range []string{"- Block source: idle-backlog", "complete-plan-step", "perform the complete plan step", "complete digest line", "runner alive", "metasystem work watch --run"} {
 		if !strings.Contains(reportText, want) {
 			t.Fatalf("report omitted %q", want)
 		}
@@ -698,7 +698,7 @@ func TestStopReadImperativeBounds(t *testing.T) {
 		{"held block without intervention", "held", "Task: " + fullGoalName, "Stop blocked", true, false, false},
 		{"next allowance with decision", "claimable", "No task in flight; next: " + fullGoalName, "Stop allowed; needs your decision", false, true, false},
 		{"held allowance with repair", "held", "Task: " + fullGoalName, "Stop allowed; needs supervision repair", false, false, true},
-		{"next block with both", "claimable", "No task in flight; next: alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha", "Stop blocked; needs your decision and supervision repair", true, true, true},
+		{"next block with both", "claimable", "No task in flight; next: alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alph", "Stop blocked; needs your decision and supervision repair", true, true, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -748,8 +748,8 @@ func TestStopReadImperativeBounds(t *testing.T) {
 	t.Run("longest-realistic-next-both-flags", func(t *testing.T) {
 		const fullName = "preserve stop report instructions across claude codex and devin after compaction and session restart"
 		const goalID = "preserve-stop-report-instructions-across-claude-codex-and-devin-after-compaction-and-session-restart"
-		const blockedLine = "No task in flight; next: preserve stop report instruct; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem session report --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-		const allowedLine = "No task in flight; next: preserve stop report instructions across claude codex and devin after compaction; Stop allowed; needs your decision and supervision repair; Report: metasystem session report --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		const blockedLine = "No task in flight; next: preserve stop report instructions; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem session report --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		const allowedLine = "No task in flight; next: preserve stop report instructions across claude codex and devin after compaction and; Stop allowed; needs your decision and supervision repair; Report: metasystem session report --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 		if len(fullName) != 100 || len(blockedLine) != stopTaskLineTargetByteLimit || len(allowedLine) != stopTaskLineTargetByteLimit {
 			t.Fatalf("fixture limits changed: name=%d block=%d allow=%d", len(fullName), len(blockedLine), len(allowedLine))
 		}
@@ -791,7 +791,7 @@ func TestStopReadImperativeBounds(t *testing.T) {
 					t.Fatal(err)
 				}
 				lines := strings.Split(result.HumanLine, "\n")
-				if result.Report.Alias != attempt || len(result.Report.ReadCommand) != 67 || len(lines) != 2 || len(lines[0]) != 137 || lines[0] != "Just completed: "+role+" (delegate returned)." || lines[1] != test.wantLine || len(lines[1]) != 240 || len(result.HumanLine) != 378 {
+				if result.Report.Alias != attempt || len(result.Report.ReadCommand) != 63 || len(lines) != 2 || len(lines[0]) != 137 || lines[0] != "Just completed: "+role+" (delegate returned)." || lines[1] != test.wantLine || len(lines[1]) != 240 || len(result.HumanLine) != 378 {
 					t.Fatalf("bounded pair: alias=%q command=%d lines=%d line1=%d line2=%d pair=%d text=%q", result.Report.Alias, len(result.Report.ReadCommand), len(lines), len(lines[0]), len(lines[1]), len(result.HumanLine), result.HumanLine)
 				}
 				if StopTaskLineByteLimit-len(lines[1]) != 16 {
@@ -817,10 +817,10 @@ func TestStopReadImperativeBounds(t *testing.T) {
 			blocked    bool
 			nameBytes  int
 		}{
-			{name: "block-held", kind: "task", blocked: true, nameBytes: 48},
-			{name: "block-next", kind: "next", blocked: true, nameBytes: 29},
-			{name: "allow-held", kind: "task", nameBytes: 99},
-			{name: "allow-next", kind: "next", nameBytes: 80},
+			{name: "block-held", kind: "task", blocked: true, nameBytes: 52},
+			{name: "block-next", kind: "next", blocked: true, nameBytes: 33},
+			{name: "allow-held", kind: "task", nameBytes: 100},
+			{name: "allow-next", kind: "next", nameBytes: 84},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				line := compactStopLine(strings.Repeat("g", 100), test.kind, test.blocked, true, true, command)
@@ -828,7 +828,7 @@ func TestStopReadImperativeBounds(t *testing.T) {
 				if test.kind == "next" {
 					prefix = "No task in flight; next: "
 				}
-				if len(line) != 240 || !strings.HasPrefix(line, prefix+strings.Repeat("g", test.nameBytes)+"; Stop ") {
+				if len(line) > 240 || test.nameBytes < 100 && len(line) != 240 || !strings.HasPrefix(line, prefix+strings.Repeat("g", test.nameBytes)+"; Stop ") {
 					t.Fatalf("%s name budget: line=%d text=%q", test.name, len(line), line)
 				}
 			})

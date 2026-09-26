@@ -118,23 +118,16 @@ func TestIntentHelpSurfacesArePublicForms(t *testing.T) {
 				t.Errorf("%s names the entry %s", label, command.name)
 			}
 		}
-		for _, line := range strings.Split(page, "\n") {
-			for _, quoted := range regexp.MustCompile(`metasystem [a-z][a-z-]*(?: [a-z][a-z-]*)?`).FindAllString(line, -1) {
-				match := helpUsagePattern.FindStringSubmatch(quoted)
-				object, action := match[1], match[2]
-				switch {
-				case object == "help" || object == "status" || object == "internal" && label == "help agent":
-				case isIntentObject(object):
-					if _, ok := findIntentAction(object, action); !ok && action != "" && !slices.Contains([]string{"lists", "shows", "action"}, action) {
-						if command, known := findIntentAction(object, action); !known || command.hidden {
-							t.Errorf("%s names %q, which is not a public pair", label, quoted)
-						}
-					}
-				default:
-					if !slices.Contains([]string{"prepares", "installation"}, object) {
-						t.Errorf("%s names %q, whose first word is not an object", label, quoted)
-					}
+		for _, match := range textCommandPattern.FindAllStringSubmatch(page, -1) {
+			first, second := match[2], match[3]
+			switch {
+			case first == "help" || first == "internal" || first == "status":
+			case isIntentObject(first):
+				if command, ok := findIntentAction(first, second); ok && command.hidden || !ok && familyHasVerb(registered, first, second) {
+					t.Errorf("%s names %s %s, which is not a public pair", label, first, second)
 				}
+			case slices.Contains(removedFirstWords, first) || familyHasVerb(registered, first, second):
+				t.Errorf("%s names %s %s, which is not a public form", label, first, second)
 			}
 		}
 	}

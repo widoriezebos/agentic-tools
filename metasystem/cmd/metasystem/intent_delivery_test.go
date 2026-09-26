@@ -169,7 +169,7 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 	}
 	b.handler = func(process intentProcess) intentProcessResult {
 		argv := process.argv
-		if argv[1] != "delegate" || flagValue(argv, "--role") != "design-critic" || flagValue(argv, "--goal") != "standing-validation" ||
+		if argv[2] != "delegate" || flagValue(argv, "--role") != "design-critic" || flagValue(argv, "--goal") != "standing-validation" ||
 			flagValue(argv, "--destructive-reach") != "DESIGN-BEARING" {
 			t.Fatalf("design review dispatch %v", argv)
 		}
@@ -289,7 +289,7 @@ func TestIntentFoldComposesTheReviewedDecision(t *testing.T) {
 	b.writeFile(brief, "Working Mode: fix\n\n# Goal\n\nFix F1.\n")
 	var messages []string
 	b.handler = func(process intentProcess) intentProcessResult {
-		if process.argv[2] != "--follow-up" || process.argv[3] != "impl1" {
+		if process.argv[3] != "--follow-up" || process.argv[4] != "impl1" {
 			t.Fatalf("follow-up %v", process.argv)
 		}
 		text, _ := os.ReadFile(flagValue(process.argv, "--brief"))
@@ -455,7 +455,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 		t.Fatalf("status work lists crit2 as %q: %+v", reference, listed)
 	}
 	code, result = b.do(followed[1:]...)
-	if code, again := b.do("work", "review", "j2:"+reference, "--dispositions", criticDispositions); code != 0 || again.Outcome != intentUnchanged {
+	if code, again := b.do("work", "review", reference, "--dispositions", criticDispositions); code != 0 || again.Outcome != intentUnchanged {
 		t.Fatalf("the qualified reference reaches the same closed chain: code=%d %+v", code, again)
 	}
 	expectOutcome(t, "critic chain close", code, result, intentConfirmed)
@@ -641,7 +641,7 @@ func TestIntentLandRecovery(t *testing.T) {
 	owners.install(b)
 	code, result := b.do("work", "land", "standing-validation")
 	expectOutcome(t, "unread unit", code, result, intentRefused)
-	if result.Next == nil || !slices.Equal(result.Next.Argv[1:4], []string{"work", "review", "--commit", strings.Repeat("2", 40)}) || owners.candidates != 0 {
+	if result.Next == nil || !slices.Equal(result.Next.Argv[1:5], []string{"work", "review", "--commit", strings.Repeat("2", 40)}) || owners.candidates != 0 {
 		t.Fatalf("an unread unit names its read and proves nothing: %+v", result)
 	}
 
@@ -649,7 +649,7 @@ func TestIntentLandRecovery(t *testing.T) {
 	owners.pushErr = []error{errors.New("push rejected: endpoint moved")}
 	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "unpushed", code, result, intentPartial)
-	if result.Next == nil || !slices.Equal(result.Next.Argv[:3], []string{"metasystem", "work", "land", "standing-validation"}) || len(owners.preps) != 1 {
+	if result.Next == nil || !slices.Equal(result.Next.Argv[:4], []string{"metasystem", "work", "land", "standing-validation"}) || len(owners.preps) != 1 {
 		t.Fatalf("a failed push keeps the prepared landing and names the retry: %+v", result)
 	}
 	owners.sweepErr = []error{errors.New("sweep: remote refused the branch deletion")}
@@ -766,7 +766,7 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	code, result := b.do("work", "review", "--commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic")
 	expectOutcome(t, "terminal but unclosed critic", code, result, intentInProgress)
 	if len(reads) != 1 || !slices.Contains(reads[0], "gpt-critic") || publishes != 0 ||
-		!strings.Contains(result.Decision, "review commit abc1234 --goal standing-validation --dispositions FILE") || strings.Contains(result.Decision, "gpt-critic") || strings.Contains(result.Decision, "metasystem close") ||
+		!strings.Contains(result.Decision, "work review --commit abc1234 --goal standing-validation --dispositions FILE") || strings.Contains(result.Decision, "gpt-critic") || strings.Contains(result.Decision, "metasystem close") ||
 		result.Data.(map[string]any)["material"] != float64(1) {
 		t.Fatalf("an unclosed critic names the author's close, then the same review; nothing is collected: %v %+v", reads, result)
 	}

@@ -26,7 +26,7 @@ func TestIntentBuildClaimsLawfully(t *testing.T) {
 	}
 	brief := filepath.Join(free.root(), "brief.md")
 	os.WriteFile(brief, []byte("Build it.\n"), 0o644)
-	_, result := buildJSON(t, free, "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
+	_, result := buildJSON(t, free, "work", "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
 	// The claim owner itself decides: in this bed no lease holder exists,
 	// so it refuses with its own rule and the goal is left approved.
 	file := free.goalFile(bedGoal)
@@ -48,7 +48,7 @@ func TestIntentBuildClaimsLawfully(t *testing.T) {
 	}
 	brief = filepath.Join(foreign.root(), "brief.md")
 	os.WriteFile(brief, []byte("Build it.\n"), 0o644)
-	_, result = buildJSON(t, foreign, "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
+	_, result = buildJSON(t, foreign, "work", "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
 	after := foreign.goalFile(bedGoal)
 	if result.Outcome == intentConfirmed || after.Claimed == nil || after.Claimed.Machine != "mac-other" || after.Claimed.Lineage != "o1" {
 		t.Fatalf("build took another machine's goal: %+v, result %+v", after.Claimed, result)

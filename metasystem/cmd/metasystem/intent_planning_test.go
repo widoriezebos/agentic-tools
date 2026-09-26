@@ -104,7 +104,7 @@ func TestIntentPlanningArgumentConflicts(t *testing.T) {
 		{"goal", "approve", "queued-goal", "--budget", "1d/10/720m/1/3", "--elapsed-limit", "1d", "--fixture-human-authority"},
 		{"goal", "budget", "queued-goal", "--elapsed-limit", "1d", "--attempt-limit", "10"},
 		{"goal", "list", "--ready", "--tiers"},
-		{"grant", "add", "add", "--tiers", "1", "--acts", "resume", "--until", "2026-09-05"},
+		{"grant", "add", "--tiers", "1", "--acts", "resume", "--until", "2026-09-05"},
 		{"goal", "notes", bedGoal, "--add", "x"},
 		{"goal", "notes", bedGoal, "--close", "r1", "--fixed", "abc", "--moved", "other"},
 		{"work", "review", bedGoal, "--review", "critic", "--finding", "F", "--test", "T", "--artifact", "a"},
@@ -187,7 +187,7 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 		{"goal", "prioritize", bedGoal, "1"},
 		{"goal", "unapprove", bedGoal, "--reason", "not yet"},
 		{"goal", "claim", bedGoal, "--take-over", "--reason", "the holder is gone"},
-		{"grant", "add", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05"},
+		{"grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05"},
 		{"incident", "close", "tr-1", "--reason", "fixed"},
 	} {
 		code, result := bed.runJSON(agent, args...)
@@ -231,16 +231,16 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 func TestIntentPlanningAttorneyGrant(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
-	code, result := bed.runJSON(bed.owners(), "grant", "add", "add", "--tiers", "1", "--acts", "approve,budget,resume-parked", "--until", "2026-09-05")
+	code, result := bed.runJSON(bed.owners(), "grant", "add", "--tiers", "1", "--acts", "approve,budget,resume-parked", "--until", "2026-09-05")
 	if code != 0 || result.Outcome != intentConfirmed || len(result.Targets) != 1 || result.Targets[0].Kind != "grant" {
 		t.Fatalf("grant = %d %+v", code, result)
 	}
 	acts := result.Data.(map[string]any)["acts"].([]any)
-	if !slices.Equal([]string{acts[0].(string), acts[1].(string), acts[2].(string)}, []string{"goal", "approve", "set-budget", "unpark"}) {
+	if !slices.Equal([]string{acts[0].(string), acts[1].(string), acts[2].(string)}, []string{"approve", "set-budget", "unpark"}) {
 		t.Fatalf("grant acts map to %v", acts)
 	}
 	entry := result.Targets[0].ID
-	code, result = bed.runJSON(bed.owners(), "grant", "add", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-12-31")
+	code, result = bed.runJSON(bed.owners(), "grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-12-31")
 	if code == 0 || result.Outcome != intentRefused {
 		t.Fatalf("a grant beyond seven days = %d %+v", code, result)
 	}
@@ -327,12 +327,12 @@ func TestIntentPlanningReadyTiersAndNotes(t *testing.T) {
 // intentPlanningDisposition is where each goal-family verb in this group is
 // reached from the public surface.
 var intentPlanningDisposition = map[string]string{
-	"open": "open", "edit": "edit", "set-next": "edit", "set-obligation": "edit", "claim": "claim", "steal": "claim",
-	"release": "release", "land-ready": "land", "accept-risk": "accept-risk", "set-pin": "pin", "set-priority": "prioritize",
-	"reopen": "reopen", "abandon": "abandon", "carry": "abandon", "block": "block", "unblock": "unblock",
-	"unapprove": "unapprove", "grant": "grant", "revoke": "revoke", "split": "split", "set-arc": "group", "detach": "ungroup",
-	"discharge-review-obligation": "review", "read-items": "notes", "recover": "repair", "trunk-red": "incidents",
-	"next": "goals", "tier-probe": "goals", "set-budget": "budget",
+	"open": "goal open", "edit": "goal edit", "set-next": "goal edit", "set-obligation": "goal edit", "claim": "goal claim", "steal": "goal claim",
+	"release": "goal release", "land-ready": "work land", "accept-risk": "goal accept-risk", "set-pin": "goal pin", "set-priority": "goal prioritize",
+	"reopen": "goal reopen", "abandon": "goal abandon", "carry": "goal abandon", "block": "goal block", "unblock": "goal unblock",
+	"unapprove": "goal unapprove", "grant": "grant add", "revoke": "grant revoke", "split": "goal split", "set-arc": "goal group", "detach": "goal ungroup",
+	"discharge-review-obligation": "work review", "read-items": "goal notes", "recover": "goal repair", "trunk-red": "incident claim",
+	"next": "goal list", "tier-probe": "goal list", "set-budget": "goal budget",
 }
 
 func TestIntentPlanningDescriptorCoverage(t *testing.T) {
@@ -358,19 +358,20 @@ func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 		}
 	}
 	expect := map[string][]string{
-		"approve":    {"elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"},
-		"budget":     {"elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"},
-		"goals":      {"ready", "tiers", "machine"},
-		"open":       {"risk", "basis", "tier", "reason", "origin", "blocked-by", "blocks", "label", "intent-file", "next-file"},
-		"edit":       {"next-append", "evidence", "unlabel", "obligation", "owner", "recurrence", "platform", "toolchain-identity", "surface-digest", "max-active-jobs", "timing-envelope-sec", "effect", "value-judgment", "reversibility", "severe-harm", "unfamiliar-approach", "test-discrimination", "correlated-assumption-risk", "authority-scope-change", "destructive-reach", "approved-ref"},
-		"claim":      {"take-over", "reason", "arc", "budget"},
-		"abandon":    {"successor", "waive", "also"},
-		"review":     {"test", "run", "implementation-chain", "artifact", "result", "critic"},
-		"prioritize": {"sequence"},
-		"grant":      {"tiers", "acts", "until"},
-		"notes":      {"add", "add-file", "read", "close", "fixed", "moved", "accepted"},
-		"incidents":  {"goal", "branch", "to", "reason"},
-		"repair":     {"session"},
+		"goal approve":    {"elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"},
+		"goal budget":     {"elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"},
+		"goal list":       {"ready", "tiers", "machine"},
+		"goal open":       {"risk", "basis", "tier", "reason", "origin", "blocked-by", "blocks", "label", "intent-file", "next-file"},
+		"goal edit":       {"next-append", "evidence", "unlabel", "obligation", "owner", "recurrence", "platform", "toolchain-identity", "surface-digest", "max-active-jobs", "timing-envelope-sec", "effect", "value-judgment", "reversibility", "severe-harm", "unfamiliar-approach", "test-discrimination", "correlated-assumption-risk", "authority-scope-change", "destructive-reach", "approved-ref"},
+		"goal claim":      {"take-over", "reason", "arc", "budget"},
+		"goal abandon":    {"successor", "waive", "also"},
+		"work review":     {"test", "implementation-chain", "artifact", "result", "critic"},
+		"goal prioritize": {"sequence"},
+		"grant add":       {"tiers", "acts", "until"},
+		"goal notes":      {"add", "add-file", "read", "close", "fixed", "moved", "accepted"},
+		"incident claim":  {"goal", "branch", "to"},
+		"incident close":  {"reason"},
+		"system repair":   {"session"},
 	}
 	for name, flags := range expect {
 		command, _ := findIntentCommand(name)
@@ -388,7 +389,7 @@ func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 	// The owner has retired claiming in the same act as opening; open does
 	// not advertise it.
 	open, _ := findIntentCommand("goal open")
-	for _, retired := range []string{"goal", "claim", "budget", "elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"} {
+	for _, retired := range []string{"claim", "budget", "elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"} {
 		if _, ok := open.lookupFlag(retired); ok {
 			t.Fatalf("open still advertises --%s", retired)
 		}
@@ -444,14 +445,14 @@ func expectPartial(t *testing.T, bed *intentBed, before int, args []string, code
 func TestIntentPlanningPartialAfterPublication(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
-	code, result := bed.runJSON(bed.owners(), "grant", "add", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05")
+	code, result := bed.runJSON(bed.owners(), "grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05")
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("grant = %d %+v", code, result)
 	}
 	entry := result.Targets[0].ID
 	blockProofRecords(t, bed.root())
 	for _, args := range [][]string{
-		{"grant", "add", "add", "--tiers", "1", "--acts", "budget", "--until", "2026-09-05"},
+		{"grant", "add", "--tiers", "1", "--acts", "budget", "--until", "2026-09-05"},
 		{"grant", "add", "revoke", entry},
 		{"goal", "unapprove", bedGoal, "--reason", "the design changes first"},
 	} {

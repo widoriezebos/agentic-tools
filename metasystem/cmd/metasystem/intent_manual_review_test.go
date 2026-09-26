@@ -63,8 +63,8 @@ func TestIntentManualDiffReview(t *testing.T) {
 	if againData, _ := again.Data.(map[string]any); code != 0 || againData["ref"] != ref || c.starterLaunches() != launched {
 		t.Fatalf("an identical request did not rejoin: %d %+v (launches %d then %d)", code, again, launched, c.starterLaunches())
 	}
-	for _, verb := range []string{"goal", "show", "wait"} {
-		if code, shown := run(root, verb, "work", "review", ref); code != 0 || shown.Outcome != intentConfirmed {
+	for _, verb := range []string{"status", "wait"} {
+		if code, shown := run(root, "work", verb, "read:"+ref); code != 0 || shown.Outcome != intentConfirmed {
 			t.Fatalf("%s review %s: %d %+v", verb, ref, code, shown)
 		}
 	}

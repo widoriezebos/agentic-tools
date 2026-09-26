@@ -161,7 +161,7 @@ start_main() {
       collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
     fi
   fi
-  start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"
+  start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"
   if (( start_wait_recovery_status == 0 )); then
     :
   elif (( start_wait_recovery_status != 64 )); then
@@ -462,7 +462,7 @@ func TestAuditHookStartExitsRejectsPostContextFailureBypasses(t *testing.T) {
 		}, "post-context arming and wait-recovery failures must become notices"},
 		{"brain failure wait recovery removed", func(s string) string {
 			return strings.Replace(s,
-				`start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"`,
+				`start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"`,
 				`: "$waiting_lines"`, 1)
 		}, "brain boot failure must become a notice and continue to holder-matched wait recovery"},
 		{"brain failure finalized early", func(s string) string {
@@ -752,6 +752,7 @@ func TestEngineSkewStartFixtureOnBash32(t *testing.T) {
 			writeExecutable(t, hook, readProductionHook(t))
 			trace := filepath.Join(t.TempDir(), "trace")
 			engine := `#!/usr/bin/env bash
+if [[ ${1-} == internal ]]; then shift; fi
 printf '%s\n' "$*" >>"${HOOK_START_TRACE:?}"
 if [[ ${1-} == runtime && ${2-} == list ]]; then
   printf '%s\n' claude
@@ -1142,8 +1143,8 @@ func TestHookStartPostPreparationFixturesOnBash32(t *testing.T) {
 				source = strings.Replace(source, `if ! command rm -f "$start_payload" 2>/dev/null; then`, `if ! false; then`, 1)
 			case "signal":
 				source = strings.Replace(source,
-					`  start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"`,
-					"  builtin kill -TERM \"$$\"\n  start_capture wait-recovery waiting_lines wait-recovery \"$ms\" session start --root \"$repo\" --session \"$session\"", 1)
+					`  start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"`,
+					"  builtin kill -TERM \"$$\"\n  start_capture wait-recovery waiting_lines wait-recovery \"$ms\" internal session start --root \"$repo\" --session \"$session\"", 1)
 			}
 			hook := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
 			writeExecutable(t, hook, source)
@@ -1184,6 +1185,7 @@ func appendSystemMessage(object, line string) string {
 
 func fullPathFixtureEngine() string {
 	return `#!/usr/bin/env bash
+if [[ ${1-} == internal ]]; then shift; fi
 printf '%s\n' "$*" >>"${HOOK_START_TRACE:?}"
 mode=${HOOK_START_FULL_MODE:?}
 if [[ ${1-} == runtime && ${2-} == list ]]; then
