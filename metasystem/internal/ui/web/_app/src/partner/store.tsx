@@ -24,12 +24,14 @@ import {
   cardIn,
   folded,
   holding,
+  NOWHERE,
   reach,
   offeredIn,
   undoable,
   undone,
   usable,
   used,
+  type InHand,
   type Marks,
   type Offered,
   type Registered,
@@ -118,6 +120,30 @@ type Partner = {
   /** Offer this sheet's fields, and take the caret to the composer. */
   askAbout: (draft: SheetDraft) => void;
   /**
+   * Offer this sheet's fields because the sheet opened, and do nothing else:
+   * the drawer stays as the human left it and the caret stays in the field they
+   * are typing in.
+   *
+   * It is the hand-over, and it is why there is no hidden first press any more
+   * (g1-s52 D1). The master's rule is that unsaved edits are shared "only as
+   * explicitly identified draft context"; the chip above the composer, with its
+   * ×, is that identification, and it stands whether or not the drawer is open.
+   * What it must not do is what Ask does — open the drawer and take the caret —
+   * because the human opened a sheet to write in it.
+   */
+  handOver: (draft: SheetDraft) => void;
+  /**
+   * This sheet's chip, brought up to date — and nothing where the human has
+   * taken it back.
+   *
+   * It is how the chip says which field the caret is in without the × being
+   * undone by moving the caret: a draft nobody is offering is not re-offered by
+   * bringing it up to date.
+   */
+  noteDraft: (draft: SheetDraft) => void;
+  /** Stop offering this sheet's draft, which is what its unmount does. */
+  dropDraft: (sheet: string) => void;
+  /**
    * One opening of an editor, while it is on screen: how it reads its own
    * fields right now, so that a question carries the draft as the sheet stands
    * rather than as it stood when it was handed over, and how to put words into
@@ -158,6 +184,24 @@ type Partner = {
    * is the same as it was.
    */
   noteField: (opening: string, field: string, value: string) => void;
+  /**
+   * The writable field the caret is in, and the opening it belongs to.
+   *
+   * It is one field for the whole page because a human writes in one field at a
+   * time. The chip says it, the capture carries it, and the Partner is told it,
+   * so that a request naming no field is about the field they were in.
+   */
+  writing: InHand;
+  /** A writable field says the caret is in it, which is what its focus does. */
+  noteWriting: (opening: string, field: string) => void;
+  /**
+   * Put these words in the composer and take the caret there, sending nothing.
+   *
+   * It is what a field's own "Ask the Partner" does. With something half-written
+   * the words go in at the cursor rather than over them, because the sentence a
+   * human was composing is theirs.
+   */
+  fillComposer: (text: string) => void;
   /** How many times a card has been asked for; the shell opens the drawer. */
   revealed: number;
   /**
@@ -205,6 +249,9 @@ const nothing: Partner = {
   askPassage: () => {},
   sheetDraft: null,
   askAbout: () => {},
+  handOver: () => {},
+  noteDraft: () => {},
+  dropDraft: () => {},
   offerFields: () => {},
   offered: [],
   use: () => {},
@@ -214,6 +261,9 @@ const nothing: Partner = {
   show: () => {},
   showing: "",
   noteField: () => {},
+  writing: NOWHERE,
+  noteWriting: () => {},
+  fillComposer: () => {},
   revealed: 0,
   noteSheet: () => () => {},
   capture: { section: "", path: "" },
@@ -281,6 +331,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState<readonly string[]>([]);
   const [showing, setShowing] = useState("");
   const [revealed, setRevealed] = useState(0);
+  // Which writable field the caret is in, of which opening. It is state and not
+  // a ref because the chip has to change what it says when the caret moves.
+  const [writing, setWriting] = useState<InHand>(NOWHERE);
   // The key this draft was minted with. It survives a refusal, so pressing
   // Send again after a 503 is the same turn rather than a second one.
   const key = useRef("");
@@ -489,6 +542,34 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   }, [wantComposer]);
 
   /**
+   * The sheet opened, so its draft is offered: the same attachment "Ask about
+   * this" makes, and nothing else.
+   *
+   * Not opening the drawer and not taking the caret is the whole of the
+   * difference, and it is the point (g1-s52 D1). A human opened a sheet to write
+   * in it; a hand-over that moved their caret or covered their work would be the
+   * interface deciding what they are doing. The chip above the composer is what
+   * makes the sharing explicit rather than silent, and it stands wherever the
+   * composer is shown.
+   */
+  const handOver = useCallback((draft: SheetDraft) => {
+    setAttachments((held) => attach(held, attachedDraft(draft)));
+  }, []);
+
+  /**
+   * This sheet's chip, brought up to date, and nothing where nobody is offering
+   * it. It is the refresh the send path uses, reached from the sheet so that the
+   * chip can say which field the caret is in.
+   */
+  const noteDraft = useCallback((draft: SheetDraft) => {
+    setAttachments((held) => refreshDraft(held, draft));
+  }, []);
+
+  const dropDraft = useCallback((sheet: string) => {
+    setAttachments((held) => remove(held, idFor("draft", sheet)));
+  }, []);
+
+  /**
    * One opening of an editor, for as long as it is on screen.
    *
    * It is called on every render of the sheet, because the functions it carries
@@ -583,6 +664,18 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   }, [offered]);
 
   /**
+   * A writable field says the caret is in it.
+   *
+   * The last one stands: blurring a field does not put the human nowhere, it
+   * leaves them where they were, and a request written in the composer is about
+   * the field they came from. An answer that has not changed changes no state, so
+   * clicking about inside one field re-renders nothing.
+   */
+  const noteWriting = useCallback((opening: string, field: string) => {
+    setWriting((held) => (held.opening === opening && held.field === field ? held : { opening, field }));
+  }, []);
+
+  /**
    * A sheet says it is open, and says so again by its own name rather than by
    * an identity, because two sheets of the same name are the same answer to
    * "where is the human". They are held as a stack so that a sheet opened over
@@ -635,6 +728,31 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     at(text);
   }, [draft, send]);
 
+  /**
+   * A field's own "Ask the Partner": the request goes in the composer and the
+   * caret goes with it, and nothing is sent.
+   *
+   * It respects a half-written question for the same reason a suggested question
+   * does — the sentence is the human's — so an empty composer is filled and one
+   * with words in it takes them at the cursor. What it never does is send:
+   * "Suggest a better Intent" is a starting point a human edits, not a question
+   * the interface asks on their behalf (g1-s52 D4).
+   */
+  const fillComposer = useCallback((text: string) => {
+    if (chipped(draft) === "send") {
+      setDraft(text);
+      wantComposer();
+      return;
+    }
+    const at = insert.current;
+    if (at === null) {
+      setDraft((held) => insertAt(held, held.length, held.length, text).text);
+    } else {
+      at(text);
+    }
+    wantComposer();
+  }, [draft, wantComposer]);
+
   const offerInsert = useCallback((at: ((text: string) => void) | null) => {
     insert.current = at;
   }, []);
@@ -643,14 +761,17 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     () => ({
       store, busy: running, draft, setDraft, send, stop, sending,
       attachments, detach, chosen, ask, clearChosen, passage, askPassage,
-      sheetDraft, askAbout, offerFields, noteSheet,
+      sheetDraft, askAbout, handOver, noteDraft, dropDraft, offerFields, noteSheet,
       offered, use, undo, dismiss, reopen, show, showing, noteField, revealed,
+      writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
     }),
     [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
-      clearChosen, passage, askPassage, sheetDraft, askAbout, offerFields, noteSheet,
+      clearChosen, passage, askPassage, sheetDraft, askAbout, handOver, noteDraft,
+      dropDraft, offerFields, noteSheet,
       offered, use, undo, dismiss, reopen, show, showing, noteField, revealed,
+      writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus],
   );
 

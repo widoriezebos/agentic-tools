@@ -27,8 +27,14 @@ func TestAPreparedSuggestionAnswersInTheFixedForm(t *testing.T) {
 	testutil.Expect(t, "it is not a failure", result.Failed(), false)
 	lines := strings.Split(strings.TrimRight(result.Text(), "\n"), "\n")
 	testutil.Require(t, "four lines", len(lines), 4)
-	testutil.Expect(t, "the model is told what it prepared, and who decides", lines[0],
-		"prepared as a suggestion for Intent; the human decides whether it is offered and used")
+	// It says "prepared" and then says what preparing is not. The one live
+	// sitting this wording comes from had the Partner tell a human it had put a
+	// card on their sheet when the service had refused it, so the result now
+	// names the one condition under which a prepared suggestion is shown at all.
+	testutil.Expect(t, "the model is told that preparing is not showing", lines[0],
+		"prepared; preparing does not confirm it was shown: "+
+			"it is offered only for a field of a draft the human has handed over")
+	testutil.Expect(t, "which is the line the rest of the build reads", lines[0], PreparedLine)
 	testutil.Expect(t, "the header names the editor and the field", lines[1],
 		SuggestionHeader+"Edit goal"+SuggestionJoin+"Intent")
 	testutil.Expect(t, "the framing ends at the separator", lines[2], SuggestionSeparator)

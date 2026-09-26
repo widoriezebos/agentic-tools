@@ -44,6 +44,17 @@ const (
 	SuggestionSeparator = "--- the suggestion follows, whole and to the end ---"
 )
 
+// PreparedLine is what a prepared suggestion answers the model with.
+//
+// It says "prepared" and then says what preparing is not. A Partner that read
+// "prepared as a suggestion for Intent" once told a human it had put a card on
+// their sheet, and there was no card: the field was not one the human had handed
+// over, and this server cannot know that. So the result says outright that
+// preparing does not confirm showing, and names the one condition under which
+// it is shown at all (g1-s52 D3).
+const PreparedLine = "prepared; preparing does not confirm it was shown: " +
+	"it is offered only for a field of a draft the human has handed over"
+
 // suggest prepares one suggestion, or refuses the call in words.
 func suggest(editor, field, text string) Result {
 	editor = oneLine(editor)
@@ -65,8 +76,7 @@ func suggest(editor, field, text string) Result {
 			" characters and this one is " + strconv.Itoa(utf8.RuneCountInString(text)) +
 			"; offer the field's whole new value, shorter")
 	}
-	return Result{Prepared: "prepared as a suggestion for " + field +
-		"; the human decides whether it is offered and used\n" +
+	return Result{Prepared: PreparedLine + "\n" +
 		SuggestionHeader + editor + SuggestionJoin + field + "\n" +
 		SuggestionSeparator + "\n" +
 		text + "\n"}

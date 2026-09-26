@@ -52,14 +52,20 @@ var fakeAnswer = []string{
 // It is narrowed to the prompts that carry the edit sheet, because a fake that
 // prepared it for every question would have the service refuse it on every page
 // that handed nothing over — which is a true refusal and a noisy fixture.
+//
+// It is narrowed to the sheet being OPEN rather than to its draft having been
+// handed over, so that both halves of the interaction can be stood in front of
+// on this fixture: with the draft attached the proposal appears under Intent,
+// and with the chip's take-back pressed the same call is refused and the
+// transcript shows the not-offered card with its reason.
 const suggestedIntent = "Every refund lands within a day, with nobody touching the queue."
 
 var fakeReads = []fakeacp.Read{
 	{
-		When:  "offered the Edit goal sheet",
+		When:  "Open sheet: Edit goal",
 		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpSuggest,
 		Title: "suggest(Edit goal · Intent)",
-		Result: "prepared as a suggestion for Intent; the human decides whether it is offered and used\n" +
+		Result: uitools.PreparedLine + "\n" +
 			uitools.SuggestionHeader + "Edit goal" + uitools.SuggestionJoin + "Intent\n" +
 			uitools.SuggestionSeparator + "\n" + suggestedIntent + "\n",
 	},
