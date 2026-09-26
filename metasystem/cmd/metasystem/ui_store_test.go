@@ -8,11 +8,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
 // The private store's housekeeping (g1-s54 D1): at every tick it asks both
@@ -24,9 +26,10 @@ import (
 func TestUIStoreHousekeepingAsksBothOwnersOnEveryTick(t *testing.T) {
 	t.Parallel()
 	journal := partner.NewJournal(filepath.Join(t.TempDir(), "wire.jsonl"))
-	testutil.Require(t, "opening the journal", journal.Open(), nil)
-	t.Cleanup(func() { _ = journal.Close() })
-	_, err := journal.Write([]byte("a frame of one runtime's life\n"))
+	sink, err := journal.Open()
+	testutil.Require(t, "opening the journal", err, nil)
+	t.Cleanup(func() { _ = sink.Close() })
+	_, err = sink.Write([]byte("a frame of one runtime's life\n"))
 	testutil.Require(t, "journalling a frame", err, nil)
 	asked := 0
 	said := []string{}
@@ -57,8 +60,8 @@ func TestUIStoreHousekeepingAsksBothOwnersOnEveryTick(t *testing.T) {
 	testutil.Expect(t, "and every sweep that did something said so", len(said) >= 3, true)
 	testutil.Expect(t, "the rotation is named in the seat's own words",
 		strings.Contains(said[0], "the Partner's wire journal passed its bound and was rotated"), true)
-	testutil.Expect(t, "and the trim says where what went is still kept",
-		strings.Contains(said[1], "what they said is in the records"), true)
+	testutil.Expect(t, "and the trim says what a trim leaves standing",
+		strings.Contains(said[1], "only what was saved to records survives"), true)
 }
 
 // The loop ends with the context, so a server that is shutting down is not
@@ -82,6 +85,90 @@ func TestUIStoreHousekeepingEndsWithTheContext(t *testing.T) {
 	testutil.Expect(t, "it swept once and then ended", asked, 1)
 }
 
+// The first sweep is inside the interval this process owns the checkout, and
+// never before it (Sol's read of g1-s54 under R-124).
+//
+// Until the lock is taken another server may be serving this same store, and a
+// sweep then would trim a transcript the incumbent is appending to — two
+// processes, two Conversation objects, two mutexes, one file — and rotate the
+// journal its runtime writes through. So housekeeping waits on the gate Serve's
+// Ready callback opens, and every sweep records whether Ready had run.
+func TestUIStoreHousekeepingSweepsNothingBeforeReadyOpensTheGate(t *testing.T) {
+	t.Parallel()
+	owned := snapshot.NewGate()
+	var ready atomic.Bool
+	swept := make(chan bool, 4)
+	keeper := &storeKeeper{trim: func() (int, error) { swept <- ready.Load(); return 0, nil }}
+	ticks := make(chan time.Time)
+	stopHousekeeping := startStoreHousekeeping(context.Background(), owned, keeper, ticks)
+	t.Cleanup(stopHousekeeping)
+
+	testutil.Require(t, "nothing swept while the checkout is not owned yet", len(swept), 0)
+	// Ready: ownership is held, and opening the gate is the first thing it does.
+	ready.Store(true)
+	owned.Open()
+
+	testutil.Expect(t, "the first sweep ran after Ready", <-swept, true)
+	ticks <- time.Time{}
+	testutil.Expect(t, "and so did the sweep on the tick after it", <-swept, true)
+}
+
+// Releasing stops housekeeping and joins it, while this process still holds the
+// checkout's lock: a trim in flight when the successor takes it would replace a
+// transcript the next server's own Conversation is already appending to.
+func TestUIStoreHousekeepingIsStoppedAndJoinedInsideReleasing(t *testing.T) {
+	t.Parallel()
+	owned := snapshot.NewGate()
+	// One sweep is all this test lets happen, and it is held mid-flight so that
+	// Releasing has something to wait for.
+	inFlight := make(chan struct{})
+	release := make(chan struct{})
+	var finished atomic.Bool
+	keeper := &storeKeeper{trim: func() (int, error) {
+		close(inFlight)
+		<-release
+		finished.Store(true)
+		return 0, nil
+	}}
+	ticks := make(chan time.Time)
+	stopHousekeeping := startStoreHousekeeping(context.Background(), owned, keeper, ticks)
+	owned.Open()
+	<-inFlight
+
+	// Releasing, which Serve runs before it gives the checkout up: the sweep in
+	// flight is let go, and Releasing waits for it rather than leaving it to
+	// replace a transcript the successor has already started appending to.
+	close(release)
+	stopHousekeeping()
+
+	testutil.Expect(t, "the sweep in flight ended before Releasing returned", finished.Load(), true)
+	// And nothing is left to sweep again: no goroutine is there to take a tick.
+	select {
+	case ticks <- time.Time{}:
+		t.Fatal("housekeeping took a tick after Releasing joined it")
+	default:
+	}
+}
+
+// A Serve that returns early — another server already owns this checkout — calls
+// no Ready and opens no gate. The join after Serve returns cancels housekeeping's
+// own context first, because waiting on a goroutine that is waiting on a context
+// nothing has cancelled is a server that hangs instead of printing its refusal.
+func TestUIStoreHousekeepingJoinsAfterAServeThatRefusedTheCheckout(t *testing.T) {
+	t.Parallel()
+	owned := snapshot.NewGate() // Ready never runs on this path, so it never opens
+	swept := 0
+	keeper := &storeKeeper{trim: func() (int, error) { swept++; return 0, nil }}
+	stopHousekeeping := startStoreHousekeeping(context.Background(), owned, keeper, nil)
+
+	stopHousekeeping()
+
+	testutil.Expect(t, "a server that never owned the checkout swept nothing", swept, 0)
+	// The serve path owes this join twice — once in Releasing, once after Serve
+	// — and on this path the second is the only one that runs.
+	stopHousekeeping()
+}
+
 // A refusal from one owner does not stop the other, and neither is said twice:
 // they hold different files, and the store is smaller for either one.
 func TestUIStoreHousekeepingAsksTheSecondOwnerAfterTheFirstRefuses(t *testing.T) {
@@ -89,9 +176,10 @@ func TestUIStoreHousekeepingAsksTheSecondOwnerAfterTheFirstRefuses(t *testing.T)
 	gone := filepath.Join(t.TempDir(), "gone")
 	journal := partner.NewJournal(filepath.Join(gone, "wire.jsonl"))
 	testutil.Require(t, "making the directory", os.MkdirAll(gone, 0o700), nil)
-	testutil.Require(t, "opening the journal", journal.Open(), nil)
-	t.Cleanup(func() { _ = journal.Close() })
-	_, err := journal.Write([]byte("frames\n"))
+	sink, err := journal.Open()
+	testutil.Require(t, "opening the journal", err, nil)
+	t.Cleanup(func() { _ = sink.Close() })
+	_, err = sink.Write([]byte("frames\n"))
 	testutil.Require(t, "journalling", err, nil)
 	// The directory the journal lives in goes, so the rename cannot land: the
 	// rotation refuses, and the refusal must not cost the other owner its sweep.
@@ -136,9 +224,10 @@ func TestUIStoreHousekeepingChangesNothingOutsideTheStore(t *testing.T) {
 
 	store := t.TempDir()
 	journal := partner.NewJournal(filepath.Join(store, "wire.jsonl"))
-	testutil.Require(t, "opening the journal", journal.Open(), nil)
-	t.Cleanup(func() { _ = journal.Close() })
-	_, err := journal.Write([]byte("frames\n"))
+	sink, err := journal.Open()
+	testutil.Require(t, "opening the journal", err, nil)
+	t.Cleanup(func() { _ = sink.Close() })
+	_, err = sink.Write([]byte("frames\n"))
 	testutil.Require(t, "journalling", err, nil)
 	conversation, err := partner.OpenConversation(store, "wido")
 	testutil.Require(t, "opening the conversation", err, nil)
