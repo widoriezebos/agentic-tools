@@ -352,6 +352,10 @@ export function Board({
             setEditing(null);
             onMoved(edited);
           }}
+          // A save nobody could confirm leaves this board showing a row the
+          // ledger may have moved, so what it then says is read once and shown
+          // here. The sheet stays open: the words saying so are in it.
+          onReread={onMoved}
         />
       )}
     </div>

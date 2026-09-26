@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Row } from "./api";
+import { BacklogError, type Row } from "./api";
 import {
   blockedForEdit,
   changedIn,
@@ -9,7 +9,9 @@ import {
   editNote,
   editReason,
   labelRefusal,
+  LANDED_NOT_RECORDED,
   nothingChanged,
+  outcomeOf,
 } from "./editing";
 import { offersFor } from "./menu";
 
@@ -210,5 +212,69 @@ describe("what the sheet says the act will do", () => {
       "sending the intent, the next step and the labels",
     );
     expect(editNote("ui-1", {})).toBe("Publishes nothing for ui-1 until something changes.");
+  });
+});
+
+/**
+ * What a failed save means, which is the one judgement this page makes about an
+ * act it cannot see.
+ *
+ * The route has no unresolved outcome: the act layer collapses every publication
+ * error into a refusal, and one of its answers says the act LANDED and must not
+ * be run again (Astra F1 on g1-s56). So the reading is conservative — a refusal
+ * is only what nothing landed behind, and everything else is unresolved, after
+ * which this page rereads and never sends the act again by itself.
+ */
+describe("what came back from a save", () => {
+  /** A refusal the server explained, as the one request in this build builds it. */
+  function refusal(status: number, code: string, reason: string): BacklogError {
+    return new BacklogError("/api/backlog/goals/ui-1/edit", status, reason, code);
+  }
+
+  it("is a refusal where the ledger refused the act in the state it is in", () => {
+    const said = "goal ui-1 is approved: withdraw the approval, edit it, then approve it again";
+    expect(outcomeOf(refusal(409, "refused", said))).toEqual({ kind: "refused", words: said });
+    expect(outcomeOf(refusal(409, "rejected", said))).toEqual({ kind: "refused", words: said });
+  });
+
+  it("is a refusal where the request itself was wrong, or the seat is nobody's", () => {
+    expect(outcomeOf(refusal(400, "no-change", "an edit changes at least one field")).kind).toBe("refused");
+    expect(outcomeOf(refusal(403, "unproven", "nobody is signed in here")).kind).toBe("refused");
+  });
+
+  /**
+   * The answer that says the act landed and its proof did not. It is never a
+   * refusal: calling it one would tell a human the opposite of what happened and
+   * invite the one press that would publish the edit twice.
+   */
+  it("keeps the landed-but-unrecorded answer in its own words", () => {
+    const said =
+      "the act landed at tip 6984cde, but its authority proof did not: no such file; do not run it again";
+    const outcome = outcomeOf(refusal(500, LANDED_NOT_RECORDED, said));
+    expect(outcome).toEqual({ kind: "unresolved", words: said });
+    expect(outcome.words).toContain("do not run it again");
+  });
+
+  it("is unresolved where the engine could not answer at all", () => {
+    expect(outcomeOf(refusal(500, "failed", "the ledger could not be written")).kind).toBe("unresolved");
+  });
+
+  /**
+   * And where the ledger answered with an outcome that is neither a confirmation
+   * nor a rejection: the journal lost the operation, or confirmed it late, which
+   * means it landed.
+   */
+  it("is unresolved where the ledger neither confirmed nor rejected", () => {
+    for (const code of ["confirmed-late", "lost", "abandoned", "expired"]) {
+      expect(outcomeOf(refusal(409, code, "the ledger did not confirm goal edit")).kind).toBe("unresolved");
+    }
+  });
+
+  it("is unresolved where nothing came back that could be read", () => {
+    expect(outcomeOf(new TypeError("Load failed"))).toEqual({ kind: "unresolved", words: "Load failed" });
+    expect(outcomeOf("something nobody typed")).toEqual({
+      kind: "unresolved",
+      words: "something nobody typed",
+    });
   });
 });

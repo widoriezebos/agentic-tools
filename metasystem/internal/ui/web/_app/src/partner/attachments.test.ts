@@ -10,8 +10,8 @@ import {
   passageIn,
   refreshDraft,
   remove,
+  retireOnOpeningClosed,
   retireOnSent,
-  retireOnSheetClosed,
   subjectIn,
   takeBackLabel,
   type Attachment,
@@ -21,6 +21,8 @@ import type { Chosen } from "./subject";
 
 /** One opening of a sheet, which every draft in these tests is from. */
 const OPENING = "opening-1";
+/** A second opening, of a sheet called the same thing. */
+const AGAIN = "opening-2";
 
 /**
  * How long a chip lives, and who decides.
@@ -53,7 +55,7 @@ const PASSAGE: Chosen = {
 };
 
 const DRAFT = draftOf(OPENING, "New goal", [{ name: "Id", value: "refund-worker" }]);
-const STATUS = draftOf(OPENING, "Change status", [{ name: "Status", value: "doing" }]);
+const STATUS = draftOf("opening-3", "Change status", [{ name: "Status", value: "doing" }]);
 
 /** The three, in the order a human makes them: a card, a selection, a sheet. */
 function three(): readonly Attachment[] {
@@ -71,7 +73,26 @@ describe("one list, in the order the acts were made", () => {
   it("puts a second draft from another sheet beside the first", () => {
     const list = attach(three(), attachedDraft(STATUS));
     expect(list).toHaveLength(4);
-    expect(list.at(-1)?.id).toBe("draft:Change status");
+    expect(list.at(-1)?.id).toBe(`draft:${STATUS.opening}`);
+  });
+
+  /**
+   * Two sheets of ONE NAME, open at once over two different things.
+   *
+   * The id is the opening's and not the name's, so each hands over its own draft
+   * and neither replaces the other. Before this, the second sheet to open took
+   * the first one's chip, and the first to close took the survivor's draft with
+   * it (Astra F2 on g1-s56).
+   */
+  it("keeps both drafts where two sheets of one name are open", () => {
+    const first = draftOf(OPENING, "New goal", [{ name: "Id", value: "refund-worker" }]);
+    const second = draftOf(AGAIN, "New goal", [{ name: "Id", value: "refund-reader" }]);
+    const list = attach(attach([], attachedDraft(first)), attachedDraft(second));
+    expect(list.map((held) => held.id)).toEqual([`draft:${OPENING}`, `draft:${AGAIN}`]);
+    expect(list.map((held) => held.label)).toEqual([
+      "Draft: New goal · refund-worker · writing in nothing yet",
+      "Draft: New goal · refund-reader · writing in nothing yet",
+    ]);
   });
 });
 
@@ -90,7 +111,7 @@ describe("what replaces what", () => {
     expect(passageIn(list)?.quote).toBe("Another passage.");
   });
 
-  it("replaces the draft of the same sheet, and only that one", () => {
+  it("replaces the draft of the same opening, and only that one", () => {
     const list = attach(attach(three(), attachedDraft(STATUS)), attachedDraft(draftOf(OPENING, "New goal", [
       { name: "Id", value: "refund-worker" },
       { name: "Intent", value: "Refunds are issued within a day." },
@@ -118,22 +139,37 @@ describe("the two events that retire", () => {
     expect(list.map((held) => held.kind)).toEqual(["subject", "draft"]);
   });
 
-  it("retires the closed sheet's draft, and leaves another sheet's standing", () => {
-    const list = retireOnSheetClosed(attach(three(), attachedDraft(STATUS)), "New goal");
-    expect(list.map((held) => held.id)).toEqual(["subject", "passage", "draft:Change status"]);
+  it("retires the closed opening's draft, and leaves another sheet's standing", () => {
+    const list = retireOnOpeningClosed(attach(three(), attachedDraft(STATUS)), OPENING);
+    expect(list.map((held) => held.id)).toEqual(["subject", "passage", `draft:${STATUS.opening}`]);
+  });
+
+  /**
+   * And the other of two sheets of one name keeps its own, which is the whole of
+   * F2: closing goal A's editor must not take the draft of goal B's, because a
+   * human is still filling that one in.
+   */
+  it("leaves the other same-named sheet's draft exactly where it was", () => {
+    const first = draftOf(OPENING, "New goal", [{ name: "Id", value: "refund-worker" }]);
+    const second = draftOf(AGAIN, "New goal", [{ name: "Id", value: "refund-reader" }]);
+    const both = attach(attach([], attachedDraft(first)), attachedDraft(second));
+    expect(retireOnOpeningClosed(both, OPENING).map((held) => held.id)).toEqual([`draft:${AGAIN}`]);
+    expect(retireOnOpeningClosed(both, AGAIN).map((held) => held.id)).toEqual([`draft:${OPENING}`]);
+    // And the × on one chip does the same thing, by the same id.
+    expect(remove(both, `draft:${OPENING}`).map((held) => held.id)).toEqual([`draft:${AGAIN}`]);
   });
 
   // The whole of the finding this slice answers: the subject is retired by its
   // × and by nothing else, so neither event takes it and no navigation does.
   it("never takes the subject", () => {
     expect(subjectIn(retireOnSent(three()))).not.toBeNull();
-    expect(subjectIn(retireOnSheetClosed(three(), "New goal"))).not.toBeNull();
+    expect(subjectIn(retireOnOpeningClosed(three(), OPENING))).not.toBeNull();
   });
 
   it("is the same list where there was nothing to retire", () => {
     const list = [attachedSubject(GOAL)];
     expect(retireOnSent(list)).toBe(list);
-    expect(retireOnSheetClosed(list, "New goal")).toBe(list);
+    expect(retireOnOpeningClosed(list, OPENING)).toBe(list);
     expect(remove(list, "passage")).toBe(list);
   });
 });
@@ -141,7 +177,7 @@ describe("the two events that retire", () => {
 describe("the × on a chip", () => {
   it("takes back that one and nothing else", () => {
     expect(remove(three(), "subject").map((held) => held.kind)).toEqual(["passage", "draft"]);
-    expect(remove(three(), "draft:New goal").map((held) => held.kind)).toEqual(["subject", "passage"]);
+    expect(remove(three(), `draft:${OPENING}`).map((held) => held.kind)).toEqual(["subject", "passage"]);
   });
 
   it("says what it will stop, in the words of the act that made it", () => {

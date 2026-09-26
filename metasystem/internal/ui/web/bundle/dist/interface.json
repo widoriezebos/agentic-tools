@@ -509,12 +509,12 @@
     {
       "id": "suggestion",
       "term": "Suggestion",
-      "text": "Words your Project Partner offered for one field of the sheet you are filling in. It is an offer and nothing else: the field keeps what you wrote until you press Use this, and Undo puts back what was there for as long as the field still holds the suggestion. Saving is still yours, and the Partner never saves."
+      "text": "Words your Project Partner offered for one field of the sheet you are filling in. It is an offer and nothing else: the field keeps what you wrote until you press Use this, and Undo puts back what was there for as long as the field still holds the suggestion and you have not saved it. Every save is a press of yours, and the Partner never saves."
     },
     {
       "id": "proposal",
       "term": "The Partner proposes",
-      "text": "Words your Project Partner has offered for this field, under the field itself. Use this puts them in, whole, and Undo puts back what was there for as long as the field still holds them; Dismiss folds the offer away. Nothing is saved by any of it: Save is yours, at the foot of this sheet. Where more than one has been offered for this field, the newest is here and the earlier ones are in the Partner's own column."
+      "text": "Words your Project Partner has offered for this field, under the field itself. Use this puts them in, whole, and Undo puts back what was there for as long as the field still holds them; Dismiss folds the offer away. Use and save puts them in and sends the sheet in one press, and then says what happened: saved, refused in the ledger's own words, or not confirmed, in which case nothing is sent again. Save at the foot of this sheet is still yours either way. Where more than one has been offered for this field, the newest stands here and the earlier ones unfold under it."
     },
     {
       "id": "ask-the-partner",

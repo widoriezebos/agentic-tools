@@ -16,6 +16,13 @@ import { chipLabel, type Chosen } from "./subject";
  * lifetime travels with the attachment, two events retire attachments by that
  * lifetime alone, and every chip can say out loud how long it lives.
  *
+ * A draft's lifetime is one OPENING of a sheet and not the sheet's name. Two
+ * edit sheets can stand open at once over two different goals, both called
+ * "Edit goal"; retiring by the name would have the first one to close take the
+ * other one's draft with it, which is the draft the human is still filling in
+ * (Astra F2 on g1-s56). The name is kept beside the opening, because the name
+ * is what the chip says out loud.
+ *
  * What is not here: the page. Being somewhere is not an act, it has no ×, and
  * it is never a chip — it is the Seeing line. Suggested questions are offers,
  * not attachments, and the chips in the transcript are history.
@@ -28,7 +35,7 @@ import { chipLabel, type Chosen } from "./subject";
  * "when does this leave": when I say so, when the question goes, and when the
  * thing it stands for goes.
  */
-export type Lifetime = "until-cleared" | "until-sent" | { sheet: string };
+export type Lifetime = "until-cleared" | "until-sent" | { sheet: string; opening: string };
 
 /** What every attachment carries, whatever it stands for. */
 type Made = {
@@ -58,9 +65,16 @@ export type Attachment =
   | (Made & { kind: "passage"; content: Chosen })
   | (Made & { kind: "draft"; content: SheetDraft });
 
-/** The id an attachment of this kind has: one subject, one passage, one draft per sheet. */
-export function idFor(kind: Attachment["kind"], sheet = ""): string {
-  return kind === "draft" ? `draft:${sheet}` : kind;
+/**
+ * The id an attachment of this kind has: one subject, one passage, and one draft
+ * per OPENING of a sheet.
+ *
+ * The opening rather than the name, so that two sheets of one name each hand
+ * over their own draft, each with its own chip and its own ×, and neither is
+ * replaced or retired by the other.
+ */
+export function idFor(kind: Attachment["kind"], opening = ""): string {
+  return kind === "draft" ? `draft:${opening}` : kind;
 }
 
 /**
@@ -96,17 +110,21 @@ export function attachedPassage(passage: Chosen): Attachment {
 }
 
 /**
- * A sheet a human handed over. It lives as long as its sheet: cancelled, the
- * thing it described is gone; opened, it is a goal now. Either way the chip
- * would describe nothing (Wido, 2026-09-24).
+ * A sheet a human handed over. It lives as long as that opening of that sheet:
+ * cancelled, the thing it described is gone; opened, it is a goal now. Either
+ * way the chip would describe nothing (Wido, 2026-09-24).
+ *
+ * The lifetime carries both the opening it lives by and the name it is called,
+ * because the two are asked for by different readers: the retiring event asks
+ * which opening has gone, and the chip asks what to say.
  */
 export function attachedDraft(draft: SheetDraft): Attachment {
   return {
-    id: idFor("draft", draft.sheet),
+    id: idFor("draft", draft.opening),
     kind: "draft",
     source: draftSource(draft),
     label: draftLabel(draft),
-    lifetime: { sheet: draft.sheet },
+    lifetime: { sheet: draft.sheet, opening: draft.opening },
     content: draft,
   };
 }
@@ -115,7 +133,7 @@ export function attachedDraft(draft: SheetDraft): Attachment {
  * Add one, or replace the one it replaces.
  *
  * A subject replaces the subject, a passage replaces the passage, and a draft
- * replaces the draft of its own sheet — which is what the shared id says. A
+ * replaces the draft of its own opening — which is what the shared id says. A
  * replacement keeps the place the old one held, so a second Ask does not
  * reshuffle the row a human is reading; everything else goes on the end, so
  * the list reads in the order the acts were made.
@@ -137,11 +155,12 @@ export function retireOnSent(list: readonly Attachment[]): readonly Attachment[]
 }
 
 /**
- * The second: a sheet closed, however it closed. Everything whose life was
- * that sheet's goes with it, and a draft from another sheet stands.
+ * The second: one opening of a sheet closed, however it closed. Everything whose
+ * life was that opening's goes with it, and another opening's draft stands —
+ * including the other one of two sheets of the same name.
  */
-export function retireOnSheetClosed(list: readonly Attachment[], name: string): readonly Attachment[] {
-  return without(list, (held) => typeof held.lifetime === "object" && held.lifetime.sheet === name);
+export function retireOnOpeningClosed(list: readonly Attachment[], opening: string): readonly Attachment[] {
+  return without(list, (held) => typeof held.lifetime === "object" && held.lifetime.opening === opening);
 }
 
 /** The × on a chip: this one, by name, and nothing else. */
@@ -150,8 +169,8 @@ export function remove(list: readonly Attachment[], id: string): readonly Attach
 }
 
 /**
- * This sheet's draft, as the sheet stands now — and the list untouched where
- * that sheet handed nothing over. A sheet nobody offered still reaches the
+ * This opening's draft, as its sheet stands now — and the list untouched where
+ * that opening handed nothing over. A sheet nobody offered still reaches the
  * Partner with nothing but its name.
  */
 export function refreshDraft(list: readonly Attachment[], draft: SheetDraft): readonly Attachment[] {

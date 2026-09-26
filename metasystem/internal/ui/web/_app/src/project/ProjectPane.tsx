@@ -843,6 +843,11 @@ function GoalBlock({
             setEditing(false);
             onEdited();
           }}
+          // A save nobody could confirm may have landed, so this page reads the
+          // record again and leaves the sheet, and its words, where they are.
+          onReread={() => {
+            onEdited();
+          }}
         />
       )}
     </section>

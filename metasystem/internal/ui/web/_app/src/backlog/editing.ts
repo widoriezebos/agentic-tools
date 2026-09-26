@@ -14,10 +14,16 @@
  * engine's fields are nullable and a browser that republished all three would
  * overwrite a terminal's edit of a field the human never touched with a copy
  * of what the page read minutes ago.
+ *
+ * The third part, at the foot, is what an answer means. A save that reports
+ * itself has to be conservative about the one thing it cannot see: whether an
+ * act it did not get a confirmation for landed anyway.
  */
 
-import type { Row } from "./api";
+import { BacklogError, type Row } from "./api";
 import { labelsOf, oneLine } from "./opening";
+import { refusedSave, unresolvedSave, type NotSaved } from "../partner/suggesting";
+import { failureMessage } from "../shell/workspace";
 
 /** The three fields as they are typed, before they are anything else. */
 export type EditDraft = {
@@ -195,3 +201,60 @@ const ORDER = [
   { key: "nextStep", name: "the next step" },
   { key: "labels", name: "the labels" },
 ];
+
+/* ------------------------------------------- what came back, and what it means -- */
+
+/**
+ * The code the route answers with when the act LANDED and the proof of who made
+ * it did not (internal/ui/act/act.go settle).
+ *
+ * It is the one answer that says, in its own words, that the ledger moved and
+ * that the act must not be run again. Treating it as a refusal would tell a human
+ * the opposite of what happened and invite the one press that would do harm, so
+ * it is named here rather than read off a status.
+ */
+export const LANDED_NOT_RECORDED = "proof-not-recorded";
+
+/**
+ * The ledger outcomes that are not a rejection: the journal did not confirm the
+ * act, and it did not say the act was refused either.
+ *
+ * `confirmed-late` means it landed after the wait was over; `lost` means nobody
+ * knows; `abandoned` and `expired` are operations the engine stopped waiting for.
+ * The route carries each as the code of a 409, beside the rejections, so the code
+ * is what tells them apart (internal/goal/journal.go Outcome).
+ */
+const UNSETTLED = ["confirmed-late", "lost", "abandoned", "expired"];
+
+/**
+ * What a failed save means, conservatively: refused where nothing landed, and
+ * unresolved wherever this page cannot know.
+ *
+ * The act layer has no unresolved of its own — every publication error is
+ * collapsed into a refusal — so the mapping is made here, from what the route
+ * says rather than from what it means to call it (Astra F1 on g1-s56):
+ *
+ *   - a definite rejection is a refusal in the engine's own sentence: the
+ *     request was wrong, the seat is not a human's, or the ledger refused the
+ *     act in the state it is in, which is the 4xx family;
+ *   - an engine that could not answer at all is unresolved, which is the 5xx
+ *     family, and the answer that says the act landed but its proof did not is
+ *     kept in its own words inside it;
+ *   - a ledger outcome that neither confirms nor rejects is unresolved,
+ *     whatever status carried it;
+ *   - and anything that is not a refusal the server explained — a transport
+ *     that failed, a body nobody could parse — is unresolved, because a request
+ *     that never came back may still have been received.
+ *
+ * A confirmed answer never reaches here: it is a backlog, and the caller has it,
+ * which is why this answers with the two that carry words and never with saved.
+ */
+export function outcomeOf(error: unknown): NotSaved {
+  if (!(error instanceof BacklogError)) {
+    return unresolvedSave(failureMessage(error));
+  }
+  if (error.code === LANDED_NOT_RECORDED || error.status >= 500 || UNSETTLED.includes(error.code)) {
+    return unresolvedSave(error.message);
+  }
+  return refusedSave(error.message);
+}
