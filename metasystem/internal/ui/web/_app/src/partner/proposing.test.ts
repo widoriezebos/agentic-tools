@@ -4,6 +4,7 @@ import type { Proposal } from "./api";
 import {
   answeredOf,
   applyLabel,
+  askReread,
   argumentsOf,
   askLine,
   barLine,
@@ -21,7 +22,13 @@ import {
   lineID,
   lineState,
   NEEDS_ITS_BUDGET,
+  busyAnswering,
+  coverChanged,
   newestWaitingCard,
+  noRun,
+  nothingDeferred,
+  releaseRun,
+  takeRun,
   NOT_APPLIED_SIGN_IN,
   NOT_RUN,
   offersContinue,
@@ -808,5 +815,90 @@ describe("the run, in order", () => {
     });
     await runProposals([lines[0]], driven.ports);
     expect(driven.rereads.length).toBe(1);
+  });
+});
+
+describe("one press, one run", () => {
+  /**
+   * A second Apply while one run is in flight does nothing, and the guard is
+   * taken SYNCHRONOUSLY: a press is not a render, so a flag in state would still
+   * read as free in the same frame and send every line twice.
+   */
+  it("admits one run and refuses a second while it is in flight", () => {
+    const guard = noRun();
+    expect(takeRun(guard, "t1")).toBe(true);
+    expect(takeRun(guard, "t1")).toBe(false);
+    expect(takeRun(guard, "t2")).toBe(false);
+    releaseRun(guard);
+    expect(takeRun(guard, "t2")).toBe(true);
+  });
+
+  /**
+   * The card's buttons sleep until the answer's terminal beat: until then there
+   * is no message an outcome could be recorded on (Astra S58-04).
+   */
+  it("keeps a card asleep while its own answer is still being written", () => {
+    const one = card([proposal()]);
+    expect(busyAnswering(one, one.turn)).toBe(true);
+    expect(busyAnswering(one, "another-turn")).toBe(false);
+    expect(busyAnswering(one, "")).toBe(false);
+  });
+});
+
+describe("a re-read asked while a sheet covers the work area", () => {
+  /**
+   * It waits. The content under an open sheet is what that sheet is rendered
+   * over, and a read made then would unmount its columns and whatever the human
+   * had typed into them (Astra S58-03).
+   */
+  it("is made at once where nothing covers the page", () => {
+    const held = nothingDeferred();
+    let reads = 0;
+    askReread(held, false, () => {
+      reads += 1;
+    });
+    expect(reads).toBe(1);
+    expect(held.pending).toBe(false);
+  });
+
+  it("waits while a sheet is open, and is made when it closes", () => {
+    const held = nothingDeferred();
+    let reads = 0;
+    const read = () => {
+      reads += 1;
+    };
+    askReread(held, true, read);
+    expect(reads).toBe(0);
+    expect(held.pending).toBe(true);
+    // Still covered: nothing yet.
+    coverChanged(held, true, read);
+    expect(reads).toBe(0);
+    // The sheet closed.
+    coverChanged(held, false, read);
+    expect(reads).toBe(1);
+    expect(held.pending).toBe(false);
+  });
+
+  it("is made once however many times the cover changes after it", () => {
+    const held = nothingDeferred();
+    let reads = 0;
+    const read = () => {
+      reads += 1;
+    };
+    askReread(held, true, read);
+    coverChanged(held, false, read);
+    coverChanged(held, false, read);
+    coverChanged(held, true, read);
+    coverChanged(held, false, read);
+    expect(reads).toBe(1);
+  });
+
+  it("asks for nothing where nothing was asked for", () => {
+    const held = nothingDeferred();
+    let reads = 0;
+    coverChanged(held, false, () => {
+      reads += 1;
+    });
+    expect(reads).toBe(0);
   });
 });

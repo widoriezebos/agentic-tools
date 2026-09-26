@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:f5e0442d43ffa21dc4ce32c91bb8ae05a6b6c2688f01409bdd8373327ae08cf9",
+  "sourceDigest": "sha256:4263f9c8814a22592ffb45af9793c56c10c2da43d15e80cde79e57737f47a810",
   "source": [
     {
       "path": ".npmrc",
@@ -576,7 +576,7 @@
     },
     {
       "path": "src/partner/Proposal.tsx",
-      "sha256": "50f804a02a3065b1df32a7552470ab60cb9945bc446c477e9e30346016bd458a"
+      "sha256": "36edbb049c1e20d4fec67f43bb41e085246c48fa716819bdcb9196059024ddc6"
     },
     {
       "path": "src/partner/Seeing.tsx",
@@ -676,11 +676,11 @@
     },
     {
       "path": "src/partner/proposing.test.ts",
-      "sha256": "b26046815815876b68c5e08de12e6823bdd2b71fe5e73a1fa8df1a2bb1892f1e"
+      "sha256": "fc2d14aed891108c86db6da8b898f470d4f9af86e411fa53f0d2e4be5b614c63"
     },
     {
       "path": "src/partner/proposing.ts",
-      "sha256": "92894a584d889a5dd0f4f2a74e453cbce9faa1e56ae8e928529c61c4825a5514"
+      "sha256": "712e4f41f3e85ac9e05896e2c7c28ca38d4305adea8dcfbe021743b402f1afc5"
     },
     {
       "path": "src/partner/recording.test.ts",
@@ -720,7 +720,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "cf4b8665f8e1f6a6cbcbf8a72ae83b874fb982a8fa159590efd135529ab2a6b2"
+      "sha256": "2de80368512d68003d0668200b5a1170a6d1a4e162f8fce109ba165f79a250ef"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -1054,7 +1054,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "fe911be9558b9e61b6e7ef4e27acca5808f779246f7178d390581f3e734fa0c1"
+      "sha256": "cf8a9e5c14d43144469dbcca6801f633cd0e3ce7b0548f1db80df9ead968e5dc"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

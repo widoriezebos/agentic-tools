@@ -93,16 +93,22 @@ import {
 import {
   answeredOf,
   askLine as askAboutLine,
+  askReread,
   barLine,
   cardIn as proposalCardIn,
   cardsIn as proposalCardsIn,
   dispatchOf,
+  coverChanged,
   displayedFor,
-  runProposals,
   lineID as proposalLineID,
   markOf as proposalMarkOf,
   newestWaitingCard,
+  noRun,
+  nothingDeferred,
+  releaseRun,
+  runProposals,
   sendable as sendableIn,
+  takeRun,
   waiting as waitingLine,
   waitingAcross,
   type Card as ProposalCard,
@@ -648,10 +654,10 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // close. The store stands above the refresh, so something inside the shell
   // registers it, exactly as the composer registers its cursor.
   const reread = useRef<(() => void) | null>(null);
-  const pendingReread = useRef(false);
+  const pendingReread = useRef(nothingDeferred());
   // The run in flight, held synchronously so a second Apply in the same frame
   // does nothing: a state flag is a render away and a press is not.
-  const runFor = useRef("");
+  const runFor = useRef(noRun());
   const [sittingRefusal, setSittingRefusal] = useState("");
   const [sittingBusy, setSittingBusy] = useState(false);
   // What the last end-without-recording left behind. It is kept because it is
@@ -1514,19 +1520,16 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * own columns and whatever the human had typed into them (Astra S58-03). The
    * ask is remembered and made the moment the cover clears.
    */
-  const askReread = useCallback(() => {
-    if (coveredNow.current) {
-      pendingReread.current = true;
-      return;
-    }
-    reread.current?.();
+  const askTheReread = useCallback(() => {
+    askReread(pendingReread.current, coveredNow.current, () => {
+      reread.current?.();
+    });
   }, []);
 
   useEffect(() => {
-    if (!covered && pendingReread.current) {
-      pendingReread.current = false;
+    coverChanged(pendingReread.current, covered, () => {
       reread.current?.();
-    }
+    });
   }, [covered]);
 
   const offerReread = useCallback((ask: (() => void) | null) => {
@@ -1611,10 +1614,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    */
   const runLines = useCallback(
     async (card: string, lines: readonly ProposalLine[]) => {
-      if (runFor.current !== "" || lines.length === 0) {
+      if (lines.length === 0 || !takeRun(runFor.current, card)) {
         return;
       }
-      runFor.current = card;
       setRunningProposals(card);
       try {
         await runProposals(lines, {
@@ -1661,15 +1663,15 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
           reconcile: (proposal) => {
             setStore((held) => proposalMoved(held, card, proposal));
           },
-          reread: askReread,
+          reread: askTheReread,
           signIn: askToSignIn,
         });
       } finally {
-        runFor.current = "";
+        releaseRun(runFor.current);
         setRunningProposals("");
       }
     },
-    [mark, sendAct, askReread, askToSignIn],
+    [mark, sendAct, askTheReread, askToSignIn],
   );
 
   const applyProposals = useCallback((card: string) => {

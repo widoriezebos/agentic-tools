@@ -953,3 +953,80 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
   }
   ports.reread();
 }
+
+/* ------------------------------------------------- one run, one press, once -- */
+
+/**
+ * The guard that makes a press a run and a second press nothing.
+ *
+ * It is an object rather than a flag in state because a press is not a render: a
+ * second Apply in the same frame would read a state that has not moved yet and
+ * send every line twice. The edit sheet guards its own save the same way
+ * (g1-s56 D1), and this is that rule where a test can reach it.
+ */
+export type RunGuard = { running: string };
+
+export function noRun(): RunGuard {
+  return { running: "" };
+}
+
+/** Take the run for this card, or answer false where one is already in flight. */
+export function takeRun(guard: RunGuard, card: string): boolean {
+  if (guard.running !== "") {
+    return false;
+  }
+  guard.running = card;
+  return true;
+}
+
+/** Give it back, however the run ended. */
+export function releaseRun(guard: RunGuard): void {
+  guard.running = "";
+}
+
+/**
+ * True while the answer this card belongs to is still being written.
+ *
+ * Its buttons sleep until then. The outcome of a press is recorded on the
+ * Partner's own message, and that message is appended when the whole answer has
+ * ended — so an Apply pressed mid-answer would have nothing to record `applying`
+ * on, and the route refuses it in words (Astra S58-04).
+ */
+export function busyAnswering(card: Card, running: string): boolean {
+  return running !== "" && running === card.turn;
+}
+
+/* ------------------------------------------- a re-read that waits for a sheet -- */
+
+/**
+ * A re-read asked while a sheet covers the work area, waiting for it to close.
+ *
+ * The content under an open sheet is what that sheet is rendered over: a read
+ * made then would unmount its columns and whatever the human had typed into
+ * them, and an act applied from the Partner's drawer is exactly the thing that
+ * asks for one at that moment (Astra S58-03). So the ask is remembered and made
+ * when the cover clears.
+ */
+export type Deferred = { pending: boolean };
+
+export function nothingDeferred(): Deferred {
+  return { pending: false };
+}
+
+/** Ask for the re-read now, or remember it for when the cover clears. */
+export function askReread(held: Deferred, covered: boolean, read: () => void): void {
+  if (covered) {
+    held.pending = true;
+    return;
+  }
+  read();
+}
+
+/** The cover changed: make the read that was waiting, once, when it is gone. */
+export function coverChanged(held: Deferred, covered: boolean, read: () => void): void {
+  if (covered || !held.pending) {
+    return;
+  }
+  held.pending = false;
+  read();
+}

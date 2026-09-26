@@ -7,6 +7,7 @@ import {
   applyLabel,
   argumentsOf,
   ASK_THE_PARTNER,
+  busyAnswering,
   cardHead,
   cardIn,
   CONTINUE,
@@ -285,16 +286,4 @@ function Foot({ card }: { card: Card }) {
       )}
     </div>
   );
-}
-
-/**
- * True while the answer this card belongs to is still being written.
- *
- * Its buttons sleep until then. The outcome of a press is recorded on the
- * Partner's own message, and that message is appended when the whole answer has
- * ended — so an Apply pressed mid-answer would have nothing to record `applying`
- * on, and the route refuses it in words (Astra S58-04).
- */
-export function busyAnswering(card: Card, running: string): boolean {
-  return running !== "" && running === card.turn;
 }
