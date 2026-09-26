@@ -114,11 +114,15 @@ export function Drawer({
   const navigate = useNavigate();
   const toggle = useRef<HTMLButtonElement | null>(null);
   const drawer = useRef<HTMLElement | null>(null);
-  // Asked once, for the first card of this drawer's life. A sitting deposits
-  // many cards, and a drawer that grew at each of them would be a drawer that
-  // took the page one card at a time.
+  // Asked once, for the first card of this drawer's life — a deposit's or a
+  // proposal's. A sitting deposits many cards and an answer can propose several,
+  // and a drawer that grew at each of them would be a drawer that took the page
+  // one card at a time.
   const asked = useRef(false);
-  const { draft, setDraft, busy, attachments, detach, deposits, proposalsLine, showProposals } = usePartner();
+  const {
+    draft, setDraft, busy, attachments, detach, deposits,
+    proposalsLine, proposalsWaiting, showProposals,
+  } = usePartner();
   // The draft a sheet handed over, where a sheet has. Only the draft: the
   // subject and a passage are chips a human made by their own press, in the
   // panel where they pressed it, and they know they are there. The draft is the
@@ -138,15 +142,21 @@ export function Drawer({
   // dragged taller is left exactly as it is. A drag after this is theirs and is
   // remembered as always; the shell refuses this ask outright once they have
   // made one.
+  //
+  // A card of proposed acts asks for the same room, and for a stronger reason:
+  // its press writes to the ledger. A human reads what an act will carry before
+  // they apply it, and a drawer that showed the foot of a card of six with its
+  // lines above the fold would be offering Apply over work nobody had read.
+  const cards = deposits.length + proposalsWaiting;
   useEffect(() => {
-    if (asked.current || !open || deposits.length === 0 || onRoom === undefined) {
+    if (asked.current || !open || cards === 0 || onRoom === undefined) {
       return;
     }
     asked.current = true;
     if (asksForRoom(drawer.current?.clientHeight ?? 0)) {
       onRoom(CARD_ROOM);
     }
-  }, [open, deposits.length, onRoom]);
+  }, [open, cards, onRoom]);
 
 
   return (

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:41c367598124bc88d832204644fc85fdb9adff2f1d9b7322f2526fe849fde0c3",
+  "sourceDigest": "sha256:f5e0442d43ffa21dc4ce32c91bb8ae05a6b6c2688f01409bdd8373327ae08cf9",
   "source": [
     {
       "path": ".npmrc",
@@ -860,7 +860,7 @@
     },
     {
       "path": "src/shell/Drawer.tsx",
-      "sha256": "bd5940b6c37981f19cb354c765ffb879fa2102af3749f31c8bf2c2580daf2165"
+      "sha256": "e4552c16b542b44185ef56b86df15557bb02dae9b4ee6676fc3005e53ce1e4a4"
     },
     {
       "path": "src/shell/ErrorBoundary.tsx",
@@ -1054,7 +1054,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "e6c2866348302026829828554544541a27196b67613f73af5d408c78640ec29e"
+      "sha256": "fe911be9558b9e61b6e7ef4e27acca5808f779246f7178d390581f3e734fa0c1"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
