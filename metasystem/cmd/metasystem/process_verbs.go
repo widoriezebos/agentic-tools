@@ -112,14 +112,67 @@ func runProcessStopWith(args []string, repositoryTop func(string) (string, error
 	if code != 0 {
 		return code
 	}
+	owners := defaultProcessOwners()
+	owners.repositoryTop, owners.classify = repositoryTop, classify
+	report, refusal := owners.stop(scope, scale)
+	if refusal != nil {
+		return refusal.print()
+	}
+	return printProcessReport(report)
+}
+
+// processRefusal is one process verb's refusal as its legacy call prints it:
+// the sentence, the second line naming what to run, and the exit code.
+type processRefusal struct {
+	verb, checkout, sentence, second string
+	code                             int
+	// plain is printed alone by refusals that predate the two-line form.
+	plain string
+}
+
+func (r *processRefusal) print() int {
+	if r.plain != "" {
+		fmt.Fprintln(os.Stderr, r.plain)
+		return r.code
+	}
+	refuseProcessVerb(r.verb, r.checkout, r.sentence, r.second)
+	return r.code
+}
+
+// processOwners are the checkout process owners one call uses: the
+// classifier that proves a human terminal, the stop transition and the arm
+// sequence. Production uses defaultProcessOwners; tests give each call its own.
+type processOwners struct {
+	repositoryTop func(string) (string, error)
+	classify      processCallerClassifier
+	transition    func(processScope, int) *stoptransition.Transition
+	armSteps      func(processScope, int, processArmAuthority) ([]string, error)
+}
+
+// processArmAuthority is the human authority an arm was granted under.
+type processArmAuthority struct {
+	fixtureGranted          bool
+	temporaryWord, reviewBy string
+}
+
+func defaultProcessOwners() processOwners {
+	return processOwners{repositoryTop: stateroot.RepositoryTop, classify: lease.ClassifyAt, transition: processTransition, armSteps: armCheckoutSteps}
+}
+
+func (o processOwners) humanTerminal(scope processScope, verb, retry string) (bool, *processRefusal) {
+	return humanTerminalCheck(scope.Root, scope.Installation, verb, o.repositoryTop, o.classify, retry)
+}
+
+// stop is the human-terminal checkout stop through the stop transition.
+func (o processOwners) stop(scope processScope, scale int) (stoptransition.Report, *processRefusal) {
 	crashStep, err := processStopCrashStep(scope.Root)
 	if err != nil {
-		return refuseProcessVerb("stop", scope.Checkout, err.Error(), "run: "+processVerbRetryCommand(scope, "stop"))
+		return stoptransition.Report{}, &processRefusal{verb: "stop", checkout: scope.Checkout, sentence: err.Error(), second: "run: " + processVerbRetryCommand(scope, "stop"), code: 1}
 	}
-	if _, authorized := requireHumanTerminalAtWith(scope.Root, scope.Installation, "metasystem stop", repositoryTop, classify, processVerbRetryCommand(scope, "stop")); !authorized {
-		return 1
+	if _, refusal := o.humanTerminal(scope, "metasystem stop", processVerbRetryCommand(scope, "stop")); refusal != nil {
+		return stoptransition.Report{}, refusal
 	}
-	transition := processTransition(scope, scale)
+	transition := o.transition(scope, scale)
 	if crashStep != 0 {
 		transition.AfterStep = func(step int) error {
 			if step == crashStep {
@@ -132,9 +185,14 @@ func runProcessStopWith(args []string, repositoryTop func(string) (string, error
 	}
 	report, err := transition.Stop()
 	if err != nil {
-		return refuseProcessVerb("stop", scope.Checkout, err.Error(), stopRefusalSecondLine(scope, err))
+		return report, &processRefusal{verb: "stop", checkout: scope.Checkout, sentence: err.Error(), second: stopRefusalSecondLine(scope, err), code: 1}
 	}
-	return printProcessReport(report)
+	return report, nil
+}
+
+// status reads every process family of the checkout without changing any.
+func (o processOwners) status(scope processScope, scale int) (stoptransition.Report, error) {
+	return o.transition(scope, scale).Status()
 }
 
 func stopRefusalSecondLine(scope processScope, err error) string {
@@ -169,7 +227,7 @@ func runProcessStatusWith(args []string, repositoryTop func(string) (string, err
 	if code != 0 {
 		return code
 	}
-	report, err := processTransition(scope, scale).Status()
+	report, err := defaultProcessOwners().status(scope, scale)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "metasystem status: %v.\n", err)
 		return 1
@@ -190,58 +248,95 @@ func runProcessArmWith(args []string, repositoryTop func(string) (string, error)
 	if code != 0 {
 		return code
 	}
-	fixtureGranted, authorized := requireHumanTerminalAtWith(scope.Root, scope.Installation, "metasystem arm", repositoryTop, classify, processVerbRetryCommand(scope, "arm"))
-	if !authorized {
-		return 1
-	}
-	if err := humanauthority.ValidateTemporaryWordPair(temporaryWord, reviewBy); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem arm:", err)
-		return 2
-	}
-	transition := processTransition(scope, scale)
-	transition.ArmFunc = func() ([]string, error) {
-		if seed, seedErr := seedStewardLandingRef(scope.Root); seedErr != nil {
-			return nil, seedErr
-		} else if seed.Ref != "" {
-			// The durable git configuration is the result; arm's report does
-			// not need a second provenance line for the seeding mechanism.
-		}
-		var message string
-		var armErr error
-		switch {
-		case temporaryWord != "":
-			message, armErr = steward.ArmTemporary(scope.Root, scope.Binary, temporaryWord, reviewBy)
-		case fixtureGranted:
-			message, armErr = steward.ArmFixture(scope.Root, scope.Binary)
-		default:
-			message, armErr = steward.Arm(scope.Root, scope.Binary)
-		}
-		lines := []string{}
-		if message != "" {
-			lines = append(lines, message)
-		}
-		if armErr != nil {
-			return lines, armErr
-		}
-		upResult := up.Run(up.Options{
-			Root: scope.Root, MetasystemRoot: scope.Installation, Scope: scope.Checkout,
-			Binary: scope.Binary, RecoverOnly: true, IfDown: true, WaitScaleMilli: scale,
-			CallerPid: int64(os.Getpid()),
-		})
-		lines = append(lines, upResult.Lines()...)
-		if upResult.ExitCode() != 0 {
-			return lines, fmt.Errorf("up ended with outcome %s", upResult.Outcome)
-		}
-		return lines, nil
-	}
-	report, err := transition.Arm()
-	if err != nil {
+	owners := defaultProcessOwners()
+	owners.repositoryTop, owners.classify = repositoryTop, classify
+	report, refusal := owners.arm(scope, scale, temporaryWord, reviewBy)
+	if refusal != nil {
 		for _, line := range report.Lines {
 			fmt.Println(line)
 		}
-		return refuseProcessVerb("arm", scope.Checkout, err.Error(), armRefusalSecondLine(scope, err))
+		return refusal.print()
 	}
 	return printProcessReport(report)
+}
+
+// arm is the human-terminal arm: the transition opens the stop fence and runs
+// the steward arm and recovery-only up as its arm sequence.
+func (o processOwners) arm(scope processScope, scale int, temporaryWord, reviewBy string) (stoptransition.Report, *processRefusal) {
+	fixtureGranted, refusal := o.humanTerminal(scope, "metasystem arm", processVerbRetryCommand(scope, "arm"))
+	if refusal != nil {
+		return stoptransition.Report{}, refusal
+	}
+	if err := humanauthority.ValidateTemporaryWordPair(temporaryWord, reviewBy); err != nil {
+		return stoptransition.Report{}, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), plain: "metasystem arm: " + err.Error(), code: 2}
+	}
+	transition := o.transition(scope, scale)
+	authority := processArmAuthority{fixtureGranted: fixtureGranted, temporaryWord: temporaryWord, reviewBy: reviewBy}
+	transition.ArmFunc = func() ([]string, error) { return o.armSteps(scope, scale, authority) }
+	report, err := transition.Arm()
+	if err != nil {
+		return report, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), second: armRefusalSecondLine(scope, err), code: 1}
+	}
+	return report, nil
+}
+
+// processArmEffects are the effects of the arm sequence: seeding the landing
+// ref, arming the steward, and starting the missing supervision rings.
+type processArmEffects struct {
+	seed func(root string) (stewardLandingRefSeed, error)
+	arm  func(root, binary string, authority processArmAuthority) (string, error)
+	up   func(up.Options) up.Result
+}
+
+func defaultProcessArmEffects() processArmEffects {
+	return processArmEffects{
+		seed: seedStewardLandingRef,
+		arm: func(root, binary string, authority processArmAuthority) (string, error) {
+			switch {
+			case authority.temporaryWord != "":
+				return steward.ArmTemporary(root, binary, authority.temporaryWord, authority.reviewBy)
+			case authority.fixtureGranted:
+				return steward.ArmFixture(root, binary)
+			}
+			return steward.Arm(root, binary)
+		},
+		up: up.Run,
+	}
+}
+
+// armCheckoutSteps is the arm sequence with its production effects.
+func armCheckoutSteps(scope processScope, scale int, authority processArmAuthority) ([]string, error) {
+	return defaultProcessArmEffects().steps(scope, scale, authority)
+}
+
+// steps seeds the landing ref, arms the steward under the granted authority,
+// and starts the missing supervision rings. Every step works in the
+// checkout's state root; the installation supplies the engine.
+func (effects processArmEffects) steps(scope processScope, scale int, authority processArmAuthority) ([]string, error) {
+	if seed, seedErr := effects.seed(scope.Root); seedErr != nil {
+		return nil, seedErr
+	} else if seed.Ref != "" {
+		// The durable git configuration is the result; arm's report does
+		// not need a second provenance line for the seeding mechanism.
+	}
+	message, armErr := effects.arm(scope.Root, scope.Binary, authority)
+	lines := []string{}
+	if message != "" {
+		lines = append(lines, message)
+	}
+	if armErr != nil {
+		return lines, armErr
+	}
+	upResult := effects.up(up.Options{
+		Root: scope.Root, MetasystemRoot: scope.Installation, Scope: scope.Checkout,
+		Binary: scope.Binary, RecoverOnly: true, IfDown: true, WaitScaleMilli: scale,
+		CallerPid: int64(os.Getpid()),
+	})
+	lines = append(lines, upResult.Lines()...)
+	if upResult.ExitCode() != 0 {
+		return lines, fmt.Errorf("up ended with outcome %s", upResult.Outcome)
+	}
+	return lines, nil
 }
 
 func armRefusalSecondLine(scope processScope, err error) string {
@@ -350,6 +445,17 @@ func requireHumanTerminalAt(repo, metasystemRoot, verb string, retryCommands ...
 }
 
 func requireHumanTerminalAtWith(repo, metasystemRoot, verb string, repositoryTop func(string) (string, error), classify processCallerClassifier, retryCommands ...string) (fixtureGranted, authorized bool) {
+	fixtureGranted, refusal := humanTerminalCheck(repo, metasystemRoot, verb, repositoryTop, classify, retryCommands...)
+	if refusal != nil {
+		refusal.print()
+		return false, false
+	}
+	return fixtureGranted, true
+}
+
+// humanTerminalCheck classifies the caller's terminal and returns the
+// refusal an agent, unreadable ancestry or blocking supporting data earns.
+func humanTerminalCheck(repo, metasystemRoot, verb string, repositoryTop func(string) (string, error), classify processCallerClassifier, retryCommands ...string) (bool, *processRefusal) {
 	retryCommand := ""
 	checkout := ""
 	if strings.HasPrefix(verb, "metasystem ") {
@@ -359,42 +465,37 @@ func requireHumanTerminalAtWith(repo, metasystemRoot, verb string, repositoryTop
 			retryCommand = retryCommands[0]
 		}
 	}
+	name := strings.TrimPrefix(verb, "metasystem ")
 	classification, err := classify(repo, metasystemRoot, int64(os.Getppid()))
 	if err != nil {
 		if strings.HasPrefix(verb, "metasystem ") {
-			if refuseClassificationData(strings.TrimPrefix(verb, "metasystem "), checkout, retryCommand, err) {
-				return false, false
+			if refusal := classificationDataRefusal(name, checkout, retryCommand, err); refusal != nil {
+				return false, refusal
 			}
-			refuseProcessVerb(strings.TrimPrefix(verb, "metasystem "), checkout, "the caller's ancestry could not be read: "+err.Error(), "at an agent-free terminal, run: "+retryCommand)
-		} else {
-			fmt.Fprintf(os.Stderr, "%s: human ancestry proof failed: %v\n", verb, err)
+			return false, &processRefusal{verb: name, checkout: checkout, sentence: "the caller's ancestry could not be read: " + err.Error(), second: "at an agent-free terminal, run: " + retryCommand, code: 1}
 		}
-		return false, false
+		return false, &processRefusal{verb: name, plain: fmt.Sprintf("%s: human ancestry proof failed: %v", verb, err), code: 1}
 	}
 	if classification.Class != lease.ClassHuman {
 		if strings.HasPrefix(verb, "metasystem ") {
-			name := strings.TrimPrefix(verb, "metasystem ")
-			refuseProcessVerb(name, checkout, name+" is a human act at a terminal; this caller is "+classification.Class, "at an agent-free terminal, run: "+retryCommand)
-		} else {
-			fmt.Fprintf(os.Stderr, "%s: explicit engine enrollment requires an agent-free terminal; caller classified %s\n", verb, classification.Class)
+			return false, &processRefusal{verb: name, checkout: checkout, sentence: name + " is a human act at a terminal; this caller is " + classification.Class, second: "at an agent-free terminal, run: " + retryCommand, code: 1}
 		}
-		return false, false
+		return false, &processRefusal{verb: name, plain: fmt.Sprintf("%s: explicit engine enrollment requires an agent-free terminal; caller classified %s", verb, classification.Class), code: 1}
 	}
-	return classification.FixtureGranted, true
+	return classification.FixtureGranted, nil
 }
 
-func refuseClassificationData(verb, checkout, retryCommand string, err error) bool {
+func classificationDataRefusal(verb, checkout, retryCommand string, err error) *processRefusal {
 	var failure *lease.ClassificationFailure
 	if !errors.As(err, &failure) || failure.Kind != lease.ClassificationSupportingData {
-		return false
+		return nil
 	}
 	input := failure.Source
 	if failure.Path != "" {
 		input += " " + failure.Path
 	}
 	second := "repair " + failure.Path + ", then at an agent-free terminal, run: " + retryCommand
-	refuseProcessVerb(verb, checkout, "caller classification is blocked by "+input+": "+failure.Reason(), second)
-	return true
+	return &processRefusal{verb: verb, checkout: checkout, sentence: "caller classification is blocked by " + input + ": " + failure.Reason(), second: second, code: 1}
 }
 
 func runStopFenceCreatingClose(args []string) int {
@@ -468,4 +569,13 @@ func missionFenceBeforeArmWith(root, mode string, repositoryTop func(string) (st
 		fmt.Fprintln(os.Stderr, "at an agent-free terminal, run: "+command)
 	}
 	return 0, 1
+}
+
+func refuseClassificationData(verb, checkout, retryCommand string, err error) bool {
+	refusal := classificationDataRefusal(verb, checkout, retryCommand, err)
+	if refusal == nil {
+		return false
+	}
+	refusal.print()
+	return true
 }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:351911b8f153f522b93c1b8e2ea041d6c4dce9d5e83566ccde28048558beeebf",
+  "sourceDigest": "sha256:975377b3caded43ca23514f7f32a54074fa9c1ea6c8d5311eb9b040750d33bdf",
   "source": [
     {
       "path": ".npmrc",
@@ -32,7 +32,7 @@
     },
     {
       "path": "scripts/audit.test.ts",
-      "sha256": "69a2c6ab2fd7e296f95a00d8524fcd0f0378639fe7a1d6d05ef8c2763152a517"
+      "sha256": "4c5a1de75a1518def635d84de7476381583bef34145952070a1366e13dc4aaab"
     },
     {
       "path": "scripts/bundle.mjs",
@@ -52,7 +52,7 @@
     },
     {
       "path": "scripts/interface.test.ts",
-      "sha256": "259824a98f4384d4b47797de84d94416a70035f554387c5584b9425db983ae57"
+      "sha256": "ca263817888ffa5ac5651553c5d872e04103db73b8834536858a689ab3c260aa"
     },
     {
       "path": "scripts/lockfile.test.ts",

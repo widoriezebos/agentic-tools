@@ -7,9 +7,9 @@ inside a review loop nobody was measuring.
 ## Structured budget
 
 A queued or draft goal carries no machine budget. The complete budget
-arrives when a human chooses to claim the goal: `goal claim` and
-`goal open --claim` require all four values, and `goal set-budget`
-repairs or revises an existing claim. The machinery never supplies a
+arrives when a human chooses to claim the goal: a claim requires all
+four values, and `metasystem budget <goal> BOX` repairs or revises an
+existing claim's budget (`budget <goal>` alone reads it). The machinery never supplies a
 default because limits are a human value judgment.
 
 The four limits are:
@@ -32,12 +32,12 @@ budget. Unknown evidence and a claimed goal without a budget also
 close admission, naming the exact record that needs repair. No refused
 dispatch creates a job record.
 
-`goal set-budget` is the person's one-step budget act. On a goal stopped at a
+`metasystem budget <goal> BOX` is the person's one-step budget act. On a goal stopped at a
 budget fence, supplying a genuinely changed complete tuple atomically records
 the new budget, rebinds the claim, and lifts that fence; no separate resume is
 needed. Repeating the same tuple is refused with
-`SET_BUDGET_FENCED_SAME_TUPLE`, and `goal resume` is the remedy when the limits
-should not change. A set-budget begins a fresh consumption episode. Release,
+`SET_BUDGET_FENCED_SAME_TUPLE`, and `metasystem resume <goal>` is the remedy when the limits
+should not change: it resumes on the standing approved budget. A budget act begins a fresh consumption episode. Release,
 reclaim, risk raises, and the earned extension preserve the current episode.
 
 **One extension earned by consumption.** When the exact revision seam would
@@ -65,12 +65,12 @@ A verified channel answer is human approval proof only when the configured human
 An exact verified answer to a `budget-above-norm` question re-approves the goal with the question's complete proposed box, including when an earlier verified answer already raised that goal's box.
 
 **Acts under power of attorney.** A person may delegate approve and
-set-budget on tier-1 and tier-2 goals for up to seven days: `goal grant
---by <name> --tiers 1,2 --verbs approve,set-budget,unpark --expires
+set-budget on tier-1 and tier-2 goals for up to seven days: `metasystem grant
+--by <name> --tiers 1,2 --acts approve,budget,resume-parked --until
 <YYYY-MM-DD>`
 records an entry in the
 root record's `PowerOfAttorney:` section under the person's own proof, and
-`goal revoke --by <name> --id <entry>` closes it early. A seat acts under it
+`metasystem revoke <entry> --by <name>` closes it early. A seat acts under it
 with `--under <entry>` and nothing else: no `--by`, no proof, no
 `--approved-ref`. The act is the seat's own on the ledger (`authority=attorney`,
 `authorityOutcome=POWER_OF_ATTORNEY authorityRuling=<entry>` on the history
@@ -80,9 +80,9 @@ refusal), and by any approval a person made (proven, relayed or channel),
 which neither verb rewrites. An entry a hand edit widens past the ruling's
 bounds (tier, verbs, seven days) stays readable and is never honoured. An
 approval given under an entry stands after the entry ends (R-95-m1e).
-An entry may also name `unpark` (R-105-m1e): `goal unpark --id <goal>
+An entry may also name `resume-parked`, stored as `unpark` (R-105-m1e): `metasystem resume <goal>
 --under <entry> --verified "<what holds now>"` lets the seat lift a park a
-person recorded with `park` or `unapprove` on a tier-1 goal under an entry
+person recorded with `pause` or `unapprove` on a tier-1 goal under an entry
 that covers tier 1 (a tiers 1,2 entry still lifts no tier-2 park); the
 history line carries the entry and what the seat verified beside the
 park's own reason. An engine built before `unpark` joined the verbs reads
@@ -93,7 +93,8 @@ parked and its fence is untouched, and recovery does not replay such an
 unpark: the entry is judged live at the act and the seat reruns it.
 
 Health judges claimed goals only. A claimed goal without the tuple is
-dead under `claimed-goal-appetite` and names this remedy:
+dead under `claimed-goal-appetite` and names this remedy, the long form of
+`metasystem budget <id> BOX`:
 `metasystem goal set-budget --root . --id <id> --elapsed-limit ...
 --attempt-limit ... --reserved-job-minutes-limit ...
 --active-job-limit ...`. Text beginning with `Appetite:` in a queued
@@ -103,7 +104,7 @@ reads it.
 **Split before slicing.** A large intent may enter the backlog intact so its
 authority and desired outcome are recorded honestly. It may not be claimed
 with more than the configured goal norm unless the human records the strict
-approval. Ordinarily `goal split` first atomizes that parent into an arc of
+approval. Ordinarily `metasystem split <goal> --plan FILE` first atomizes that parent into an arc of
 small, independently claimable members and concludes the parent with pointers
 to them. Dependency edges own member order. Only then does the delivery law
 slice each member into iterative, independently deployable changes. The
@@ -120,7 +121,7 @@ enforces both the citation and the evidence-carrying refutation rule.
 
 Items are shaped in `plans/goals-drafts/` — free-form files, no
 grammar, no budget required. "Draft" is the status name. The
-backlog itself holds only ready items: promotion (`goal open`) is
+backlog itself holds only ready items: promotion (`metasystem open`) is
 a person's intake act, performed after the checklist below passes; the
 person runs it, or a seat runs it with `--origin human` on the person's
 recorded word. Delete the draft file in the same change that
@@ -134,7 +135,7 @@ Before promoting any draft:
 - [ ] The intent says what DONE looks like, in one line.
 - [ ] It may be large at intake, but its intent and desired outcome are one
       coherent authority envelope. Before slicing or an ordinary over-norm
-      claim, `goal split` must turn it into small arc members.
+      claim, `metasystem split` must turn it into small arc members.
 - [ ] Each member is independently deployable and claimable; explicit blocker
       edges record ordering, and its complete structured budget is supplied at
       claim.
@@ -161,7 +162,7 @@ Before promoting any draft:
 ## Blockers a seat opens
 
 Seats opened 165 goals in five days against 62 concluded (the delivery
-audit of 6 to 11 September 2026). Under R-93-m1e a seat's `goal open`
+audit of 6 to 11 September 2026). Under R-93-m1e a seat's `metasystem open`
 (origin main) opens one thing only: the defect that blocks the goal it
 holds. The open names that goal with `--blocks <goal-id>` and is refused
 without it, with the ruling and the lawful forms in the refusal. The verb
@@ -193,10 +194,10 @@ only the edge. An improvement a seat discovers that blocks nothing goes to
 
 A machine holds one working claim at a time. Built and verified work that
 waits to land no longer holds that slot: the claim holder runs
-`metasystem goal land-ready --root . --id <goal>`, which writes a `Landing:`
+`metasystem ready <goal>`, which writes a `Landing:`
 record and a `land-ready` history line on the claimed goal. The goal stays
 claimed, so its receipts and proof attempts still bind to its claim and its
-box, but the one-claim quota no longer counts it, `goal next` lists it as
+box, but the one-claim quota no longer counts it, `metasystem goals --ready` lists it as
 `LANDING <id>` and continues or offers the next goal, and the turn verdict
 and channel report show it as live work for the landing. One landing slot
 per machine: a second `land-ready` is refused until the first lands. A
@@ -225,14 +226,14 @@ and a hand park may drop one only because the park itself does.
 ## The drop rule
 
 **The want evaporated.** The behavior or pain that justified the item is
-gone. Conclude it: `goal done --id <goal> --conclude "<what changed so
+gone. Conclude it: `metasystem done <goal> --reason "<what changed so
 this is no longer wanted>"`. Done means the ledger's promise is
 discharged, and this case discharges it honestly.
 
 **The want survives; the pursuit stops.** The item is still wanted but will
 not be worked: the record is wedged, the work moved to a successor, or the
-cost is no longer worth it. Abandon it: `goal abandon --id <goal> --by
-<human> --because "<why>" [--carried <successor>]`. An abandoned goal leaves
+cost is no longer worth it. Abandon it: `metasystem abandon <goal> --by
+<human> --reason "<why>" [--successor <successor>]`. An abandoned goal leaves
 the live set, carries its reason forever, satisfies no dependency, is never
 pruned, and a human can reopen it into the queue unranked and unapproved.
 Never conclude such a goal: a conclusion that says the work was not done
@@ -241,29 +242,31 @@ later.
 
 ## Pinning a goal to a machine
 
-A goal may be pinned to one machine's nickname (`goal set-pin --id X
---pin m2`; `--pin -` clears): only that machine may claim it, because
+A goal may be pinned to one machine's nickname (`metasystem pin X m2`;
+`metasystem pin X --clear` clears): only that machine may claim it, because
 it alone has the setup, network, or resources the work needs. The pin
 binds every claim path — an ordinary claim on any other machine
 refuses by name, and even a human steal onto a foreign machine refuses
-until the pin is moved. Pinning directs machines, so set-pin is a
+until the pin is moved. Pinning directs machines, so pinning is a
 human act (`--by`), and re-pinning a goal another machine currently
 claims refuses: release it first — or clear the pin, steal, and
-re-pin — so ownership never silently contradicts the pin. One reserved word: "-" is the clear form, so a
+re-pin — so ownership never silently contradicts the pin. One reserved word: "-" is the stored clear form, so a
 machine enrolled under that literal name can never be a pin target.
-A machine's own frontier (`goal next --machine <nick> --fetch`) traverses the
+A machine's own frontier (`metasystem goals --ready`, which `metasystem claim` reads) traverses the
 global priority-then-sequence order and skips goals pinned elsewhere. A local
 pin makes a goal eligible but never moves it ahead of an earlier unpinned
-goal. A free seat claims only the returned goal; if another seat wins that
-read-to-claim race, it fetches and selects again. The read is not a
+goal. A free seat claims only the returned goal, and `claim` without a goal
+takes exactly that one and never switches the seat's work; if another seat wins that
+read-to-claim race, it claims again. The read is not a
 reservation, and records are read to understand work rather than choose it.
-A goal the claim gate would refuse is reported by `goal next` and the channel
+A goal the claim gate would refuse is reported by `goals --ready` and the channel
 status with the gate's own cause, is never handed to a seat, and is repaired
 by the human act the cause names.
 
 ## Reading the backlog
 
-`metasystem goal list --root .` prints a text summary capped at 64 KiB:
+`metasystem goals` prints a text summary capped at 64 KiB, from any directory
+in the repository or with `--repo PATH`:
 bucket counts and the accepted ledger tip, projection notices, then one line
 per goal in claimed, approved, queued, parked order (the legacy ledger lists
 its current goal first). Each line carries the goal's rank, state, tier, id,
@@ -272,17 +275,21 @@ approval's standing, then the first sentence of its next step cut at 120
 runes with a visible mark. Each bucket sorts
 by priority, sequence, then id, with unranked goals last. Rows carry the rank,
 state, tier, id, pin, claim machine, and the first sentence of the next step
-cut at 120 characters. `--done` adds archived rows. A truncated summary ends with
+cut at 120 characters. `--all` adds archived rows. A truncated summary ends with
 an omitted-goal count and the command for saving the records.
 
-`goal list --json > file` supplies the detail with the existing JSON keys;
+`metasystem goals --json` and `metasystem show <id> --json` answer in the
+intent result envelope (`schemaVersion`, `verb`, `targets`, `outcome`,
+`summary`, with the goal projection under `data`); do not read that as the
+legacy shape. The legacy readers keep their existing JSON for scripts:
+`metasystem internal goal list --json > file` supplies the detail with the existing JSON keys;
 every goal's `History` is an empty list. `--json --history > file` includes
 all ledger history, and `--json --pretty` indents the JSON. The JSON `open`
 array continues to contain all live goals, also listed in their state arrays;
 the text summary prints each goal once. `--label` remains repeatable with
 AND matching, and `--fetch` validates and advances the accepted backlog.
 
-`goal show --id <id>` keeps the JSON page envelope and goal fields, with an
+`metasystem internal goal show --id <id>` keeps the JSON page envelope and goal fields, with an
 empty `History` list by default. Add `--history` for the complete record.
 
 ## Ordering the backlog
@@ -290,8 +297,8 @@ empty `History` list by default. Add `--history` for the complete record.
 An open goal may carry a priority from 1 (highest) through 3 and a one-based
 sequence within that priority. Both fields absent means unranked, and unranked
 goals sort after every ranked goal. Rank is a human act at the enrolled
-terminal: `metasystem goal set-priority --by <human> --id <goal> --priority
-<n> [--sequence <n>]`. Inserting a position re-sequences the other goals in
+terminal: `metasystem prioritize <goal> <n> --by <human>`; `metasystem help prioritize`
+shows how to place it at a sequence position. Inserting a position re-sequences the other goals in
 that priority so its positions remain consecutive.
 
 ## Dispatch delegate sequencing

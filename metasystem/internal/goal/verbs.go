@@ -1786,6 +1786,13 @@ func ResolveAttorney(root, id, verb string, now time.Time) (PowerOfAttorneyEntry
 	return resolveAttorneyForEndpoint(e, id, verb, now)
 }
 
+// ResolveAttorneyForEndpoint reads the named power of attorney from an
+// endpoint the caller already resolved, so the entry and the act it covers
+// come from the same accepted ledger.
+func ResolveAttorneyForEndpoint(e Endpoint, id, verb string, now time.Time) (PowerOfAttorneyEntry, error) {
+	return resolveAttorneyForEndpoint(e, id, verb, now)
+}
+
 func resolveAttorneyForEndpoint(e Endpoint, id, verb string, now time.Time) (PowerOfAttorneyEntry, error) {
 	p, err := Project(e, false, now)
 	if err != nil {
@@ -2004,13 +2011,26 @@ func Release(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, releaseRequest(r, id))
 }
 
+// ReleaseWithReason releases the claim and records why on the goal's history
+// line and in the journaled intent, so a replay records the same reason.
+func ReleaseWithReason(r VerbRequest, id, reason string) (PublishResult, error) {
+	if err := validHistoryReason(reason); err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, releaseRequestWithReason(r, id, reason))
+}
+
 // releaseRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
 func releaseRequest(r VerbRequest, id string) PublishRequest {
+	return releaseRequestWithReason(r, id, "")
+}
+
+func releaseRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: intentArgs(r, nil)},
+		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: intentArgs(r, reasonArgs(nil, reason))},
 		Message: "goal release " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTreeFor(r.Endpoint, tip)
@@ -2043,6 +2063,7 @@ func releaseRequest(r VerbRequest, id string) PublishRequest {
 				return nil, err
 			}
 			touchDisplaced(f, r, "release", []string{id}, displaced)
+			recordHistoryReason(f, reason)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
@@ -2514,14 +2535,25 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			// Queued concludes directly; a foreign
 			// claim concludes only under a human, and the override
 			// leaves the displacement signal.
-			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s is claimed by %s+%s; concluding another's work is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+			// These conclusions are a person's act: a typed --by is only a
+			// name, so each needs a terminal-grade proof for this checkout.
+			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) {
+				missing := fmt.Sprintf("goal %s is claimed by %s+%s; concluding another's work is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of another pair's claim", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
 			}
-			if f.State == StateParked && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s is parked; concluding it is a human act", id)
+			if f.State == StateParked {
+				missing := fmt.Sprintf("goal %s is parked; concluding it is a human act", id)
+				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of a parked goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
 			}
-			if f.Origin == OriginHuman && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s was opened by the human; concluding it is a human act", id)
+			if f.Origin == OriginHuman {
+				missing := fmt.Sprintf("goal %s was opened by the human; concluding it is a human act", id)
+				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of a human-origin goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
 			}
 			for _, dep := range f.Blocked {
 				if depState(t, dep) != StateDone {
@@ -3301,11 +3333,14 @@ type EditFields struct {
 	Tier     *uint8
 	Risk     *RiskRecord
 	NextStep *string
-	Blocked  *[]string
-	Labels   *[]string
-	Why      string
-	Evidence string
-	Proof    *humanauthority.Proof
+	// NextStepAppend is added to the next step the transaction's own tip
+	// holds, so a concurrent next-step edit is kept rather than overwritten.
+	NextStepAppend *string
+	Blocked        *[]string
+	Labels         *[]string
+	Why            string
+	Evidence       string
+	Proof          *humanauthority.Proof
 	// QueuedOnly narrows this verb to the one edit a browser may make without
 	// a proposal: a goal that is still queued and carries no approval. The
 	// allowlist is the mutation's rather than a caller's, so an approval or a
@@ -3335,6 +3370,9 @@ func editRequest(r VerbRequest, id string, fields EditFields) (PublishRequest, e
 }
 
 func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, riskRaised *bool) (PublishRequest, error) {
+	if fields.NextStep != nil && fields.NextStepAppend != nil {
+		return PublishRequest{}, fmt.Errorf("an edit replaces the next step or appends to it, not both")
+	}
 	if fields.Tier != nil && (*fields.Tier < 1 || *fields.Tier > 3) {
 		return PublishRequest{}, fmt.Errorf("tier must be 1, 2, or 3")
 	}
@@ -3467,6 +3505,9 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			}
 			if fields.NextStep != nil {
 				f.NextStep = *fields.NextStep
+			}
+			if fields.NextStepAppend != nil {
+				f.NextStep = appendNextStep(f.NextStep, *fields.NextStepAppend)
 			}
 			if fields.Blocked != nil {
 				f.Blocked = append([]string(nil), (*fields.Blocked)...)
@@ -3601,15 +3642,31 @@ func Steal(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, stealRequest(r, id))
 }
 
+// StealWithReason takes over the claim and records why on each displaced
+// member's history line and in the journaled intent.
+func StealWithReason(r VerbRequest, id, reason string) (PublishResult, error) {
+	if r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("steal is a human act and names its human (--by)")
+	}
+	if err := validHistoryReason(reason); err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, stealRequestWithReason(r, id, reason))
+}
+
 // stealRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
 func stealRequest(r VerbRequest, id string) PublishRequest {
+	return stealRequestWithReason(r, id, "")
+}
+
+func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "steal", Targets: []string{id}, Args: intentArgs(r, map[string]string{
+		Intent: Intent{Verb: "steal", Targets: []string{id}, Args: intentArgs(r, reasonArgs(map[string]string{
 			"by": r.Actor.Human,
-		})},
+		}, reason))},
 		Message: "goal steal " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTreeFor(r.Endpoint, tip)
@@ -3662,6 +3719,7 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 				}
 				displaced := pairMarker(m.Claimed)
 				touchDisplaced(m, r, "steal", targets, displaced)
+				recordHistoryReason(m, reason)
 				if err := bindClaim(m, r.Actor.Machine, r.Actor.Lineage, r.stamp(), m.Revision, r.ClaimEpoch); err != nil {
 					return nil, err
 				}
@@ -3982,13 +4040,26 @@ func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, releaseArcRequest(r, id))
 }
 
+// ReleaseArcWithReason is ReleaseArc with the reason recorded on every
+// released member's history line.
+func ReleaseArcWithReason(r VerbRequest, id, reason string) (PublishResult, error) {
+	if err := validHistoryReason(reason); err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, releaseArcRequestWithReason(r, id, reason))
+}
+
 // releaseArcRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
 func releaseArcRequest(r VerbRequest, id string) PublishRequest {
+	return releaseArcRequestWithReason(r, id, "")
+}
+
+func releaseArcRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: intentArgs(r, map[string]string{"cascade": "arc"})},
+		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: intentArgs(r, reasonArgs(map[string]string{"cascade": "arc"}, reason))},
 		Message: "goal release " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTreeFor(r.Endpoint, tip)
@@ -4027,6 +4098,7 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 					return nil, err
 				}
 				touchDisplaced(m, r, "release", targets, displaced)
+				recordHistoryReason(m, reason)
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
@@ -4486,6 +4558,9 @@ func editDeltas(id string, fields EditFields) []FieldDelta {
 	}
 	if fields.NextStep != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "next", New: *fields.NextStep})
+	}
+	if fields.NextStepAppend != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "nextAppend", New: *fields.NextStepAppend})
 	}
 	if fields.Blocked != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "blockedBy", New: strings.Join(*fields.Blocked, ",")})
@@ -5799,4 +5874,37 @@ func carriedIntentValue(intent map[string]string, key string) string {
 		return intent["tree"]
 	}
 	return intent[key]
+}
+
+// reasonArgs adds a stated reason to a verb's journaled intent arguments.
+func reasonArgs(args map[string]string, reason string) map[string]string {
+	if reason == "" {
+		return args
+	}
+	if args == nil {
+		args = map[string]string{}
+	}
+	args["reason"] = reason
+	return args
+}
+
+// recordHistoryReason writes a stated reason on the history line the verb
+// just appended.
+func recordHistoryReason(f *GoalFile, reason string) {
+	if reason != "" && len(f.History) > 0 {
+		f.History[len(f.History)-1].Reason = reason
+	}
+}
+
+// validHistoryReason refuses a reason the one-line history record cannot hold.
+func validHistoryReason(reason string) error {
+	if strings.ContainsAny(reason, "\r\n") {
+		return fmt.Errorf("a reason is one line; it cannot contain a line break")
+	}
+	return nil
+}
+
+// appendNextStep adds text to a next step as one more sentence.
+func appendNextStep(current, addition string) string {
+	return strings.TrimSpace(strings.TrimSpace(current) + " " + strings.TrimSpace(addition))
 }

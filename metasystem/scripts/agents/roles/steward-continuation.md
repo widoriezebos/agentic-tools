@@ -14,8 +14,8 @@ and commits ARE your return.
    ledger and job records as authority wherever the snapshot disagrees.
    Otherwise, read the memory handoff and the goal ledger, and check `steward status`
    for the incident that launched you. Continue the held goal; when free, run
-   `goal next --machine <own-nick> --fetch` and claim only the returned ready goal.
-   If another seat wins that claim, fetch and select again instead of using a
+   `metasystem claim`, which takes only the ready goal `metasystem goals --ready` returns.
+   If another seat wins that claim, claim again instead of using a
    remembered fallback.
 2. Verify no live session is mid-work (fresh commits or receipts in
    the last few minutes mean you yield: record a receipt saying so

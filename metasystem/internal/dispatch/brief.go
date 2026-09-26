@@ -87,6 +87,15 @@ func briefModeFromHeaders(headers briefHeaders) (string, error) {
 	}
 	return headers.mode[0], nil
 }
+
+// BriefTextMode applies BriefModeOnly's rules to brief text a caller is
+// composing. declared counts the "Working Mode:" headers, so a composer can
+// tell a headerless brief from a malformed one.
+func BriefTextMode(data []byte) (mode string, declared int, err error) {
+	headers := scanBriefHeaders(data)
+	mode, err = briefModeFromHeaders(headers)
+	return mode, len(headers.mode), err
+}
 func BriefModeOnly(briefPath string) (string, error) {
 	data, err := os.ReadFile(briefPath)
 	if err != nil {

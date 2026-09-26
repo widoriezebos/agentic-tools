@@ -26,7 +26,7 @@ Severity and materiality are separate. Require the verdict count to include only
 
 Review the accepted brief and the computed base-to-working-tree diff before reasoning about code quality.
 
-For a dispatched implementation, run `metasystem validate conformance --stage review --job <job-id>`. It computes the diff from the implementer branch's merge-base with the invoking target checkout, includes committed, uncommitted, and previously untracked unignored work, persists `diff.patch` and `review.json`, rejects delegate changes under `plans/` or the agent control plane, and checks only that every changed path appears in the union of every round's immutable `diffBoundary` declarations: a declared-but-unchanged path passes, while a changed-but-undeclared path refuses. Carry the emitted `reviewedTree` into every code-critic return. Read that computed diff; never substitute the delegate's file list or summary.
+For a dispatched implementation, the coordinator starts the review with `metasystem review job <job-id> --tool-calls <n>`, `metasystem review unit <run>` for a unit built with `build` (its preliminary read is feedback, not this review), or `metasystem review commit <sha> --goal <goal>` for an existing goal-branch commit. A critic launched by that command never starts another review: it reads the frozen subject its brief names. A critic working outside the command runs the conformance check itself. A delegate job review runs `metasystem validate conformance --stage review --job <job-id>`, which computes the diff from the implementer branch's merge-base with the invoking target checkout, includes committed, uncommitted, and previously untracked unignored work, persists `diff.patch` and `review.json`, rejects delegate changes under `plans/` or the agent control plane, and checks only that every changed path appears in the union of every round's immutable `diffBoundary` declarations: a declared-but-unchanged path passes, while a changed-but-undeclared path refuses. Carry the emitted `reviewedTree` into every code-critic return. Read that computed diff; never substitute the delegate's file list or summary.
 
 Check that the diff implements every acceptance criterion, stays within the declared workspace and non-goals, preserves tests and certification assets unless the brief explicitly changes them, and contains no unrelated work. Treat every mismatch as a conformance finding before proceeding.
 
@@ -55,7 +55,7 @@ The orchestrator answers every finding with the shared dispositions table:
 | F-2 | refuted | <the exact check and observed result> | none |
 ```
 
-Use `accepted` or `refuted` for material findings; a TRUE finding outside the brief's declared threat model closes as `out-of-scope`, citing that scope in its evidence cell — accepted as fact, rejected as work. Use `noted` only for non-material findings. A chain closes on ZERO unrefuted material findings, and a refutation carries the exact check and its observed result — an evidence-free refutation is refused by the closure check itself. Close the round by running `bin/metasystem validate critique-closed --findings <return.json> --dispositions <file>`; a count or prose claim is not closure.
+Use `accepted` or `refuted` for material findings; a TRUE finding outside the brief's declared threat model closes as `out-of-scope`, citing that scope in its evidence cell — accepted as fact, rejected as work. Use `noted` only for non-material findings. A chain closes on ZERO unrefuted material findings, and a refutation carries the exact check and its observed result — an evidence-free refutation is refused by the closure check itself. The author hands the dispositions to `metasystem fold review <review> --dispositions <file> --brief <file>` for a correction round or `metasystem close <job> --dispositions <file>` to close; both perform the findings-to-dispositions join (`validate critique-closed`) before acting and refuse an unjoined finding. `bin/metasystem validate critique-closed --findings <return.json> --dispositions <file>` remains the diagnostic for checking the join alone. A count or prose claim is not closure.
 
 ## Round Budget and Exit
 
@@ -79,7 +79,7 @@ declared threat model closes as out-of-scope citing the brief. Record the
 goal's budget in the brief before review:
 
 1. Run both layers over the full implementation and adjudicate every finding.
-2. If corrections were required, send one focused follow-up to the same implementer. The builder runs checks that reproduce each finding and cover the affected behavior; the selected acceptance checks run once when their evidence is consumed for the exact candidate.
+2. If corrections were required, send one focused follow-up to the same implementer (`metasystem fold review <review> --dispositions <file> --brief <file>`, or `fold unit <unit> --brief <file>` for a unit run). The builder runs checks that reproduce each finding and cover the affected behavior; the selected acceptance checks run once when their evidence is consumed for the exact candidate.
 3. While the reviewer's declared budget has a round left, recompute the whole diff and check it for scope and brief conformance. The substantive confirmation read focuses on the corrections, their consumers and prior findings. Expand that read when a correction changes the design or unrelated behavior.
 
 As the reviewer's R-60-m1 rule, stop at the first round with zero material findings. And as R-124 (Wido, 2026-09-25) refines it: a finding is material only when the slice does not WORK or is not SAFE without the fix; a finding that adds rigor, a corner, a consistency or a proof the slice's first use does not need goes to the design's "later, when it hurts" list under its Built section, not into a fix round. One fix round is the norm; the reviewer says on every finding whether the slice works and is safe without it, and the design owner certifies when nothing that fails that test remains.
@@ -89,9 +89,9 @@ must name the artifact it would change; a finding that fails the artifact
 test is demoted at registration. If material findings remain, do not certify
 the change. Only an approved token raising the goal's five-member tuple can
 raise its stored review-round member, never above the three-round ceiling;
-`job critique-budget-rebind` copies the raised member onto an open root. When
-the rounds are spent, `job critique-register-close` sends exhausted bounded
-findings to review obligations on the goal (discharged later by `goal
-discharge-review-obligation`) and closes after a human records `goal
-accept-risk` for the rest; while a severe or unproven finding stands, stop
+the internal owner `metasystem internal job critique-budget-rebind` copies the raised member onto an open root. When
+the rounds are spent, the register close (`metasystem internal job critique-register-close`) sends exhausted bounded
+findings to review obligations on the goal (discharged later by `metasystem
+resolve <goal> --review R --finding F --test NAME`) and closes after a human records `metasystem
+decide <goal> --finding F --review R --reason <text>` for the rest; while a severe or unproven finding stands, stop
 with the work waiting on the human. Never dispatch a silent fourth round.

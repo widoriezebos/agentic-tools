@@ -237,8 +237,8 @@ func designReadSubject(facts readSubjectFacts, workspace, design, outputsFile, r
 		return ReadSubject{}, fmt.Errorf("design path must be inside the reviewed workspace")
 	}
 	rel = filepath.ToSlash(rel)
-	if !strings.HasPrefix(rel, "metasystem/") {
-		return ReadSubject{}, fmt.Errorf("design path must begin metasystem/")
+	if !strings.HasPrefix(rel, "metasystem/") && !RepositoryDesignPath(rel) {
+		return ReadSubject{}, fmt.Errorf("design path must begin metasystem/ or plans/designs/")
 	}
 	content, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(rel)))
 	if err != nil {

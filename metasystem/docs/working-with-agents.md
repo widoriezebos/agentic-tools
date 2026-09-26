@@ -52,6 +52,27 @@ Two agents, or two sessions, in one repository are peers. Nothing coordinates th
 - Merge conflicts between peer agents come to you. Neither agent resolves them by force.
 - Subagents an agent spawns for itself are its own business. You mostly notice them as cost: each runs its own context and bills separately on every current runtime.
 
+## Driving the work yourself
+
+Commands say what you want done, not how the system is built. Run them from any directory inside the repository, or pass `--repo PATH` naming the repository top or any directory below it. `metasystem help human` is the one list of your actions, with their arguments; `metasystem help VERB` shows the full grammar and examples for one of them. Each line below is a separate example, not a sequence to run in order:
+
+```sh
+metasystem goals                              # what is open
+metasystem open faster-proof --intent 'Proof runs in half the time.' --next 'Measure the slowest step.' --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis 'local test tooling only'
+metasystem show faster-landing                # one goal: state, budget, next step, design
+metasystem approve faster-landing             # approve it at its tier's normal budget
+metasystem budget faster-landing              # read the budget; `budget G BOX` changes it
+metasystem pause faster-landing --reason "waiting for the vendor fix"
+metasystem resume faster-landing              # back on its standing approved budget
+metasystem done faster-landing --reason "landed in 3f2a1c0, verified live"   # only once it has actually landed and been verified
+```
+
+The same pattern covers opening and editing goals (`open`, `edit`), starting, stopping and restarting this checkout or the browser interface (`start`, `stop`, `restart checkout`, `restart ui`), enrolling your terminal (`enroll --name NAME`), answering a question (`answer`) and diagnosing a fault (`doctor`). Agents use the matching agent actions (`claim`, `brief`, `build`, `review`, `fold`, `close`, `land`, `ask`), listed by `metasystem help agent`.
+
+Two things these commands never do on your behalf. They never make a decision that is yours: when a human act or a missing answer is needed, the command stops and names it rather than guessing. And a successful `build` ends at *awaiting judgement*: built, proved and given a preliminary read that is feedback only; the committed review landing needs comes afterwards, and none of it is approved or landed. Landing and concluding a goal stay separate, explicit acts.
+
+The old technical commands (`metasystem goal …`, `delegate`, `launch …`) still work for scripts and diagnosis; `metasystem help internal` explains that catalogue.
+
 ## Your recurring duties
 
 The system stays honest through a few small human acts:

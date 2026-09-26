@@ -53,36 +53,44 @@ func runSessionStop(args []string) int {
 		fmt.Fprintf(os.Stderr, "session stop refused: the state root cannot be resolved: %v\n", err)
 		return 1
 	}
+	marker, refusal, code := authorizeSessionStop(stateRoot, *by)
+	if code != 0 {
+		fmt.Fprintln(os.Stderr, refusal)
+		return code
+	}
+	fmt.Printf("session stop authorized once for %s at holder %s epoch %d by %s\n",
+		marker.SessionId, marker.HolderMainId, marker.ClaimEpoch, marker.By)
+	return 0
+}
+
+// authorizeSessionStop mints one quiet-stop authorization for the current
+// announced main session at a proven human terminal. A refusal returns its
+// sentence and exit code and writes nothing.
+func authorizeSessionStop(stateRoot, by string) (goal.SessionStop, string, int) {
 	callerPID := int64(os.Getpid())
 	classification, err := classifySessionStopCaller(stateRoot, callerPID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "session stop refused: caller classification failed: %v\n", err)
-		return 3
+		return goal.SessionStop{}, fmt.Sprintf("session stop refused: caller classification failed: %v", err), 3
 	}
 	if classification.Class != lease.ClassHuman {
-		fmt.Fprintf(os.Stderr, "session stop refused: this is human-reserved; caller classifies %s\n", classification.Class)
-		return 3
+		return goal.SessionStop{}, fmt.Sprintf("session stop refused: this is human-reserved; caller classifies %s", classification.Class), 3
 	}
 
 	now := sessionStopNow().UTC()
 	humanProof, err := proveSessionStopHuman(stateRoot, int64(os.Getppid()), now)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "session stop refused: attended human authority was not proven: %v\n", err)
-		return 3
+		return goal.SessionStop{}, fmt.Sprintf("session stop refused: attended human authority was not proven: %v", err), 3
 	}
 	holder, err := currentSessionStopHolder(stateRoot)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "session stop refused: the current checkout holder cannot be read: %v\n", err)
-		return 1
+		return goal.SessionStop{}, fmt.Sprintf("session stop refused: the current checkout holder cannot be read: %v", err), 1
 	}
 	view, err := classifySessionStopView(stateRoot, callerPID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "session stop refused: the current lease epoch cannot be read: %v\n", err)
-		return 1
+		return goal.SessionStop{}, fmt.Sprintf("session stop refused: the current lease epoch cannot be read: %v", err), 1
 	}
 	if holder.MainId == "" || holder.SessionId == "" || view.ClaimEpoch == nil || *view.ClaimEpoch < 1 {
-		fmt.Fprintln(os.Stderr, "session stop refused: the current checkout holder lacks a main identity, announced session, or lease epoch")
-		return 1
+		return goal.SessionStop{}, "session stop refused: the current checkout holder lacks a main identity, announced session, or lease epoch", 1
 	}
 
 	marker, err := (&goal.Store{Root: stateRoot}).WriteSessionStop(goal.SessionStop{
@@ -90,7 +98,7 @@ func runSessionStop(args []string) int {
 		SessionId:     holder.SessionId,
 		HolderMainId:  holder.MainId,
 		ClaimEpoch:    *view.ClaimEpoch,
-		By:            *by,
+		By:            by,
 		WrittenAt:     now.Format(time.RFC3339),
 		ExpiresAt:     now.Add(sessionStopLifetime).Format(time.RFC3339),
 		Human: goal.SessionStopProcessRef{
@@ -99,12 +107,9 @@ func runSessionStop(args []string) int {
 		},
 	}, humanProof)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "session stop: %v\n", err)
-		return 1
+		return goal.SessionStop{}, fmt.Sprintf("session stop: %v", err), 1
 	}
-	fmt.Printf("session stop authorized once for %s at holder %s epoch %d by %s\n",
-		marker.SessionId, marker.HolderMainId, marker.ClaimEpoch, marker.By)
-	return 0
+	return marker, "", 0
 }
 
 func runSessionEnd(args []string) int {

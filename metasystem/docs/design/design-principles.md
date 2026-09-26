@@ -20,6 +20,9 @@ Two examples of what that order means in practice. When observability seems to c
 
 ## Core Standard
 
+Public command design applies standing ruling R-126-m1e in
+`memory/rulings.md`; its canonical wording lives in that register.
+
 - Give every important behavior one clear owner and one obvious home.
 - Keep domain policy, orchestration, infrastructure, transport, and external adapters at honest boundaries, with dependency direction pointing at stable concepts. The domain never depends on delivery or storage mechanics.
 - Entrypoints may coordinate collaborators. They must not absorb the behavior they coordinate, and they must not rebuild collaborator decisions inline.

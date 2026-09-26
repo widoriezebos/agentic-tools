@@ -962,6 +962,15 @@ func pendingWaitGitAnswer(root, hookCwd, cwd string, childShell bool, argv []str
 					return answer("", "", 1)
 				case slices.Equal(args, []string{"rev-parse", "HEAD"}):
 					return answer("HEAD\n", "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n", 128)
+				// The real SessionStart starts a resident steward whose first
+				// tick may read fleet presence before disarm. This checkout has
+				// no remote, so the fetch fails as Git would, and both copied
+				// presence namespaces are empty.
+				case slices.Equal(args, []string{"-c", "core.logAllRefUpdates=false", "fetch", "--no-tags", "--refmap=", "--atomic", "--prune", "origin", "+refs/metasystem/presence/*:refs/metasystem/presence-copy/metasystem/*", "+refs/heads/presence/*:refs/metasystem/presence-copy/heads/*"}):
+					return answer("", "fatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n", 128)
+				case slices.Equal(args, []string{"-c", "core.logAllRefUpdates=false", "for-each-ref", "--format=%(refname)", "refs/metasystem/presence-copy/metasystem"}),
+					slices.Equal(args, []string{"-c", "core.logAllRefUpdates=false", "for-each-ref", "--format=%(refname)", "refs/metasystem/presence-copy/heads"}):
+					return answer("", "", 0)
 				}
 				pinned := []string{"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "rev-parse"}
 				if len(args) >= len(pinned) && slices.Equal(args[:len(pinned)], pinned) {

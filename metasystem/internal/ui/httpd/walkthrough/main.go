@@ -41,7 +41,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
-const agentReason = "the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem ui restart to act as yourself"
+const agentReason = "the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem restart ui to act as yourself"
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:7979", "loopback address")

@@ -2199,7 +2199,9 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 		t.Fatalf("claim first-fix: %+v %v", res, err)
 	}
 	person.Ulid = "01J5X00000000000000000SB0G"
-	res, err = Done(person, "first-fix", "Fixed.")
+	personDone := person
+	personDone.Authority = testTerminalAuthority(t, personDone.Endpoint.Root, personDone.Now)
+	res, err = Done(personDone, "first-fix", "Fixed.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done first-fix: %+v %v", res, err)
 	}
@@ -2209,8 +2211,8 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	if res, err := claimApprovedForTest(t, verbReqFor(bEndpoint, "01J5X00000000000000000SB0H", "mac-b"), "second-fix", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim second-fix: %+v %v", res, err)
 	}
-	person.Ulid = "01J5X00000000000000000SB0J"
-	res, err = Done(person, "second-fix", "Fixed.")
+	personDone.Ulid = "01J5X00000000000000000SB0J"
+	res, err = Done(personDone, "second-fix", "Fixed.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done second-fix: %+v %v", res, err)
 	}

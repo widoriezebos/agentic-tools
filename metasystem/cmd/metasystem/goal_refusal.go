@@ -18,6 +18,9 @@ type humanVerbValues struct {
 	state                                                             string
 	fixtureHumanAuthority, stopFence, byTyped                         bool
 	rawArgs                                                           []string
+	// report, when set, receives the refusal for the public intent commands
+	// to render; the legacy calls print it below exactly as before.
+	report *ownerReport
 }
 
 type humanVerbRemedy struct {
@@ -63,6 +66,10 @@ func (values *humanVerbValues) bindGoalView(file *goal.GoalFile, tierBox goal.Bu
 func refuseHumanVerb(values *humanVerbValues, code int, sentence string, remedy humanVerbRemedy) int {
 	sentence = strings.Join(strings.Fields(strings.TrimSpace(sentence)), " ")
 	sentence = strings.TrimSuffix(sentence, ".") + "."
+	if values.report != nil {
+		values.report.refusal = &ownerRefusal{code: code, sentence: sentence, remedy: remedy}
+		return code
+	}
 	fmt.Fprintf(os.Stderr, "goal %s: %s\n", values.verb, sentence)
 	if remedy.command != "" {
 		fmt.Fprintln(os.Stderr, "run:", remedy.command)

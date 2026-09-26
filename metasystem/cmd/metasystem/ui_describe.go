@@ -80,12 +80,22 @@ func admittedRuntimes(configured string) []manifest.Runtime {
 	return runtimes
 }
 
-// commandCatalogue is the engine's own verb table, in the shape the kit tool
-// reads it. It is derived from the table main routes with, so a verb this
+// commandCatalogue is the public command table followed by the engine's own
+// verb table, in the shape the kit tool reads it. It is derived from the table main routes with, so a verb this
 // binary answers and a verb the Partner can describe are the same verb.
 func commandCatalogue() []uitools.CommandFamily {
 	routed := families()
-	catalogue := make([]uitools.CommandFamily, 0, len(routed))
+	catalogue := make([]uitools.CommandFamily, 0, len(routed)+1)
+	// The public commands come first; every engine family follows unchanged,
+	// reachable directly or as metasystem internal FAMILY VERB.
+	public := uitools.CommandFamily{Name: "metasystem", Summary: "public commands for what a person or agent wants done; families below are the internal catalogue"}
+	for _, command := range intentCommands() {
+		public.Verbs = append(public.Verbs, uitools.Command{Name: command.name, Summary: command.summary})
+	}
+	public.Verbs = append(public.Verbs,
+		uitools.Command{Name: "help", Summary: "help human, help agent, help COMMAND, help internal"},
+		uitools.Command{Name: "internal", Summary: "run an engine family verb: metasystem internal FAMILY VERB ..."})
+	catalogue = append(catalogue, public)
 	for _, family := range routed {
 		verbs := make([]uitools.Command, 0, len(family.verbs))
 		for _, one := range family.verbs {

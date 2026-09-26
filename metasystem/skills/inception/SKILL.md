@@ -231,8 +231,9 @@ stays `referenced-not-run` with its row saying so.
 
 Goal origin derives from who runs the command: the human's asks carry
 the human's authority gates only when the human's own hand opens them.
-Generate the exact `goal open` command(s) — id, intent with its cited
-IDs, next step with its `Appetite:` token — and hand them over for the
+Generate the exact `metasystem open <goal> --intent <text> --next <text>`
+command(s) — id, intent with its cited IDs, next step with its
+`Appetite:` token, and the risk fields `metasystem help open` requires — and hand them over for the
 human to run. Zero transcription: the command is complete as displayed.
 The first open clears the adopted repo's declared Goal-free by the
 machinery's own design.

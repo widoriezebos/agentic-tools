@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -180,51 +181,83 @@ func runChannelAsk(args []string) int {
 			proposedBudget = &budget
 		}
 	}
-	machine, lineage, err := channelIdentity(*root)
+	question, warnings, code, err := askChannelQuestion(*root, channelAskInput{Goal: *id, Kind: *kind, Facts: facts, Options: options, Recommendation: *recommend, Wants: *wants, Budget: proposedBudget})
+	for _, warning := range warnings {
+		fmt.Fprintln(os.Stderr, warning)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return code
+	}
+	fmt.Println(question.ID)
+	return 0
+}
+
+// channelAskInput is one question as its asker states it; Options are
+// "label: consequence".
+type channelAskInput struct {
+	Goal, Kind, Recommendation, Wants string
+	Facts, Options                    []string
+	Budget                            *goal.Budget
+}
+
+// askChannelQuestion opens one durable question thread through the
+// configured channel. Warnings are reported problems the ask continued past.
+func askChannelQuestion(root string, in channelAskInput) (channel.Question, []string, int, error) {
+	return askChannelQuestionVia(root, in, channelAskSurface{identity: channelIdentity, load: func(root string) (phase.Loaded, error) { return phase.Load(root, false) }, cursor: goal.AcceptedLedgerTip})
+}
+
+// channelAskSurface is who asks and through which configured channel; tests
+// give one ask its own identity and transport.
+type channelAskSurface struct {
+	identity func(root string) (string, string, error)
+	load     func(root string) (phase.Loaded, error)
+	cursor   func(root string) (string, bool, error)
+}
+
+// askChannelQuestionVia is askChannelQuestion through a given surface. A
+// question the owner recorded before a later step failed is returned with
+// the error, so the caller can still name it.
+func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSurface) (channel.Question, []string, int, error) {
+	machine, lineage, err := surface.identity(root)
+	if err != nil {
+		return channel.Question{}, nil, 1, err
 	}
 	opts := []channel.Option{}
-	for _, raw := range options {
+	for _, raw := range in.Options {
 		label, consequence, ok := strings.Cut(raw, ":")
 		if !ok {
-			fmt.Fprintln(os.Stderr, "--option wants label: consequence")
-			return 2
+			return channel.Question{}, nil, 2, errors.New("--option wants label: consequence")
 		}
 		opts = append(opts, channel.Option{Label: strings.TrimSpace(label), Consequence: strings.TrimSpace(consequence)})
 	}
-	l, e := phase.Load(*root, false)
+	var warnings []string
+	l, e := surface.load(root)
 	if e != nil {
-		fmt.Fprintln(os.Stderr, e)
+		warnings = append(warnings, e.Error())
 		l = phase.Loaded{}
 	}
-	ctx, cancel, e := channelPollContext(*root)
+	ctx, cancel, e := channelPollContext(root)
 	if e != nil {
-		fmt.Fprintln(os.Stderr, e)
-		return 1
+		return channel.Question{}, warnings, 1, e
 	}
 	defer cancel()
-	ledgerCursor, cursorExists, cursorErr := goal.AcceptedLedgerTip(*root)
+	ledgerCursor, cursorExists, cursorErr := surface.cursor(root)
 	if cursorErr != nil {
-		fmt.Fprintln(os.Stderr, "channel ask could not read the accepted ledger cursor:", cursorErr)
-		return 1
+		return channel.Question{}, warnings, 1, fmt.Errorf("channel ask could not read the accepted ledger cursor: %v", cursorErr)
 	}
 	if !cursorExists {
 		ledgerCursor = ""
 	}
-	now, e := goalCommandNow(*root)
+	now, e := goalCommandNow(root)
 	if e != nil {
-		fmt.Fprintln(os.Stderr, e)
-		return 1
+		return channel.Question{}, warnings, 1, e
 	}
-	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Budget: proposedBudget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
+	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: root, Goal: in.Goal, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
 	if e != nil {
-		fmt.Fprintln(os.Stderr, e)
-		return 1
+		return q, warnings, 1, e
 	}
-	fmt.Println(q.ID)
-	return 0
+	return q, warnings, 0, nil
 }
 func runChannelShow(args []string) int {
 	root, id, ok := channelQuestionFlags("show", args)

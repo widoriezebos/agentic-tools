@@ -90,53 +90,21 @@ func runUI(verb string, args []string) int {
 		}
 		return 1
 	}
-	metasystemRoot, err := upMetasystemRoot(*root)
+	listenSet := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "listen" {
+			listenSet = true
+		}
+	})
+	roots, listen, err := uiRootsAndListen(verb, *repo, *root, listen, listenSet)
 	if err != nil {
 		return refuse(err.Error())
 	}
-	roots, err := lifecycle.ResolveRoots(*repo, metasystemRoot)
-	if err != nil {
-		return refuse(err.Error())
-	}
-	if verb == "start" || verb == "serve" || verb == "restart" {
-		listenSet := false
-		flags.Visit(func(f *flag.Flag) {
-			if f.Name == "listen" {
-				listenSet = true
-			}
-		})
-		listen, err = config.UIListen(filepath.Join(roots.Installation, "metasystem.conf"), listen, listenSet)
-		if err != nil {
-			return refuse(err.Error())
-		}
-		listen, err = lifecycle.ValidateListen(listen)
-		if err != nil {
-			return refuse(err.Error())
-		}
+	if verb != "serve" {
+		return printUIResult(uiLifecycleRun(verb, roots, listen, waitSeconds).Result)
 	}
 	prober := identity.KernelProber{}
-	stop := lifecycle.StopOptions{Prober: prober, Wait: time.Duration(waitSeconds) * time.Second}
-	start := func() lifecycle.Result {
-		executable, err := os.Executable()
-		if err != nil {
-			return lifecycle.Result{Lines: []string{"cannot launch the interface server: " + err.Error()}, Code: 1}
-		}
-		return lifecycle.StartResult(lifecycle.LaunchSpec{
-			Executable: executable,
-			Args:       lifecycle.ServeArgs(roots.Checkout, roots.Installation, listen),
-			Dir:        roots.Checkout,
-			LogPath:    filepath.Join(lifecycle.Dir(roots.StateRoot), "server.log"),
-		}, lifecycle.ExecSpawn, 0)
-	}
 	switch verb {
-	case "start":
-		return printUIResult(start())
-	case "status":
-		return printUIResult(lifecycle.StatusResult(roots.StateRoot, prober, nil))
-	case "stop":
-		return printUIResult(lifecycle.StopResult(roots.StateRoot, stop))
-	case "restart":
-		return printUIResult(lifecycle.RestartResult(roots.StateRoot, stop, start))
 	case "serve":
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer cancel()
@@ -735,6 +703,74 @@ func interfaceBundle() (string, fs.FS) {
 		return "", nil
 	}
 	return manifest.SourceDigest, web.Dist()
+}
+
+// uiRootsAndListen resolves the interface's checkout, installation and
+// state root, and for the verbs that bind, its validated listen address.
+func uiRootsAndListen(verb, repo, root, listen string, listenSet bool) (lifecycle.Roots, string, error) {
+	metasystemRoot, err := upMetasystemRoot(root)
+	if err != nil {
+		return lifecycle.Roots{}, "", err
+	}
+	roots, err := lifecycle.ResolveRoots(repo, metasystemRoot)
+	if err != nil {
+		return lifecycle.Roots{}, "", err
+	}
+	listen, err = uiListen(verb, roots, listen, listenSet)
+	if err != nil {
+		return lifecycle.Roots{}, "", err
+	}
+	return roots, listen, nil
+}
+
+// uiListen is the validated listen address for the verbs that bind one.
+func uiListen(verb string, roots lifecycle.Roots, listen string, listenSet bool) (string, error) {
+	if verb != "start" && verb != "serve" && verb != "restart" {
+		return listen, nil
+	}
+	listen, err := config.UIListen(filepath.Join(roots.Installation, "metasystem.conf"), listen, listenSet)
+	if err != nil {
+		return "", err
+	}
+	return lifecycle.ValidateListen(listen)
+}
+
+// uiLifecycleResult is one interface lifecycle verb's result: the lines the
+// verb prints and the typed facts behind them.
+type uiLifecycleResult struct {
+	Result  lifecycle.Result
+	State   lifecycle.State          // status only
+	Restart *lifecycle.RestartReport // restart only
+}
+
+// uiLifecycleRun runs start, status, stop or restart through the lifecycle
+// owner; it prints nothing.
+func uiLifecycleRun(verb string, roots lifecycle.Roots, listen string, waitSeconds int64) uiLifecycleResult {
+	prober := identity.KernelProber{}
+	stop := lifecycle.StopOptions{Prober: prober, Wait: time.Duration(waitSeconds) * time.Second}
+	start := func() lifecycle.Result {
+		executable, err := os.Executable()
+		if err != nil {
+			return lifecycle.Result{Lines: []string{"cannot launch the interface server: " + err.Error()}, Code: 1}
+		}
+		return lifecycle.StartResult(lifecycle.LaunchSpec{
+			Executable: executable,
+			Args:       lifecycle.ServeArgs(roots.Checkout, roots.Installation, listen),
+			Dir:        roots.Checkout,
+			LogPath:    filepath.Join(lifecycle.Dir(roots.StateRoot), "server.log"),
+		}, lifecycle.ExecSpawn, 0)
+	}
+	switch verb {
+	case "start":
+		return uiLifecycleResult{Result: start()}
+	case "status":
+		result, state := lifecycle.StatusReport(roots.StateRoot, prober, nil)
+		return uiLifecycleResult{Result: result, State: state}
+	case "stop":
+		return uiLifecycleResult{Result: lifecycle.StopResult(roots.StateRoot, stop)}
+	}
+	report := lifecycle.RestartReportFor(roots.StateRoot, stop, start)
+	return uiLifecycleResult{Result: report.Result, Restart: &report}
 }
 
 func printUIResult(result lifecycle.Result) int {

@@ -28,14 +28,18 @@ type delegateOutcome struct {
 // runDelegate is the operator boundary. The shell remains the custody
 // implementation while its callbacks migrate; operator callers receive only
 // typed JSON and dispatch.sh itself immediately calls this verb.
-func runDelegate(args []string) int {
+func runDelegate(args []string) int { return runDelegateIn(args, "", os.Stdout, os.Stderr) }
+
+// runDelegateIn is runDelegate with the dispatch script started in dir (empty
+// is the current directory) and its typed outcome written to stdout.
+func runDelegateIn(args []string, dir string, stdout, stderr io.Writer) int {
 	root, err := upMetasystemRoot(os.Getenv("METASYSTEM_DELEGATE_ROOT"))
 	if err != nil {
-		printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
+		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
 	}
 	if len(args) > 0 && args[0] == "--adapter-selftest" && !delegateSelftestInternalAuthorized(root) {
-		printJSON(delegateOutcome{
+		writeJSONLine(stdout, stderr, delegateOutcome{
 			Outcome: "REFUSED-REQUEST", Headline: "refused",
 			Detail: "delegate --adapter-selftest is reserved for the metasystem adapter self-test",
 		})
@@ -43,16 +47,16 @@ func runDelegate(args []string) int {
 	}
 	internalArgs, mode, err := normalizeDelegateArgs(args)
 	if err != nil {
-		printJSON(delegateOutcome{Outcome: "REFUSED-REQUEST", Headline: "refused", Detail: err.Error()})
+		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-REQUEST", Headline: "refused", Detail: err.Error()})
 		return 2
 	}
 	if detail := brain.Fence(root, mode, goal.ExistingLedgerIdentity(root)); detail != "" {
-		printJSON(delegateOutcome{Outcome: "BRAIN_REFUSED", Headline: "refused", Detail: detail})
+		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "BRAIN_REFUSED", Headline: "refused", Detail: detail})
 		return 2
 	}
 	outcomeFile, err := os.CreateTemp("", "metasystem-delegate-outcome.*")
 	if err != nil {
-		printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
+		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
 	}
 	outcomePath := outcomeFile.Name()
@@ -66,7 +70,7 @@ func runDelegate(args []string) int {
 		}
 		claimCapability, err = dispatchcore.MintDelegateClaimCapability(root, dispatchMode)
 		if err != nil {
-			printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
+			writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 			return 1
 		}
 		defer dispatchcore.RemoveDelegateClaimCapability(root, claimCapability)
@@ -75,23 +79,24 @@ func runDelegate(args []string) int {
 	command := exec.Command(filepath.Join(root, "scripts", "agents", "dispatch.sh"), internalArgs...)
 	command.Env = delegateCommandEnvironment(os.Environ(), outcomePath, claimCapability)
 	command.Stdin = os.Stdin
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	command.Dir = dir
+	var scriptOut bytes.Buffer
+	var scriptErr bytes.Buffer
+	command.Stdout = &scriptOut
+	command.Stderr = io.MultiWriter(stderr, &scriptErr)
 	runErr := command.Run()
 	exitCode := commandExitCode(runErr)
 
 	if encoded, readErr := os.ReadFile(outcomePath); readErr == nil && json.Valid(bytes.TrimSpace(encoded)) && len(bytes.TrimSpace(encoded)) > 0 {
-		printDelegateOutcome(bytes.TrimSpace(encoded))
+		writeDelegateOutcome(stdout, stderr, bytes.TrimSpace(encoded))
 		return exitCode
 	}
-	if encoded := bytes.TrimSpace(stdout.Bytes()); json.Valid(encoded) && len(encoded) > 0 {
-		fmt.Println(string(encoded))
+	if encoded := bytes.TrimSpace(scriptOut.Bytes()); json.Valid(encoded) && len(encoded) > 0 {
+		fmt.Fprintln(stdout, string(encoded))
 		return exitCode
 	}
 	if exitCode == 0 {
-		job := strings.TrimSpace(stdout.String())
+		job := strings.TrimSpace(scriptOut.String())
 		if line, _, found := strings.Cut(job, "\n"); found {
 			job = line
 		}
@@ -100,11 +105,11 @@ func runDelegate(args []string) int {
 		if mode == "cancel" {
 			outcome, headline, job = "CANCELLED", "cancelled", delegateTarget(args)
 		}
-		printJSON(delegateOutcome{Outcome: outcome, Headline: headline, JobID: job})
+		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: outcome, Headline: headline, JobID: job})
 		return 0
 	}
-	detail := delegateInternalRefusalDetail(stderr.String(), runErr, exitCode)
-	printJSON(delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: detail})
+	detail := delegateInternalRefusalDetail(scriptErr.String(), runErr, exitCode)
+	writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: detail})
 	return exitCode
 }
 
@@ -186,10 +191,10 @@ func resolvedDelegatePath(path string) string {
 	return path
 }
 
-func printDelegateOutcome(encoded []byte) {
+func writeDelegateOutcome(stdout, stderr io.Writer, encoded []byte) {
 	var object map[string]any
 	if json.Unmarshal(encoded, &object) != nil {
-		fmt.Println(string(encoded))
+		fmt.Fprintln(stdout, string(encoded))
 		return
 	}
 	outcome, _ := object["outcome"].(string)
@@ -210,7 +215,7 @@ func printDelegateOutcome(encoded []byte) {
 			}
 		}
 	}
-	printJSON(object)
+	writeJSONLine(stdout, stderr, object)
 }
 
 func commandExitCode(err error) int {

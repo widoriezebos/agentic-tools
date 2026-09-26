@@ -436,12 +436,12 @@ func auditGoalSystem(root string) []string {
 	var violations []string
 
 	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
-	if err != nil || !strings.Contains(string(agents), "goal open") || !strings.Contains(string(agents), "goal next") {
-		violations = append(violations, "AGENTS.md must carry the goal-thread doctrine: programs start with `goal open`, turn ends read `goal next`")
+	if err != nil || !strings.Contains(string(agents), "metasystem open") || !strings.Contains(string(agents), "metasystem goals --ready") {
+		violations = append(violations, "AGENTS.md must carry the goal-thread doctrine: programs start with `metasystem open`, turn ends read `metasystem goals --ready`")
 	}
 	adaptation, err := os.ReadFile(filepath.Join(root, "docs", "project-adaptation.md"))
-	if err != nil || !strings.Contains(string(adaptation), "goal open") {
-		violations = append(violations, "docs/project-adaptation.md must carry the goal-open convention")
+	if err != nil || !strings.Contains(string(adaptation), "metasystem open") {
+		violations = append(violations, "docs/project-adaptation.md must carry the program-start convention: `metasystem open`")
 	}
 
 	// The registry-pointer audit is positive, not just negative: the

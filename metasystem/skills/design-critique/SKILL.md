@@ -13,13 +13,13 @@ The critic attacks; the designer adjudicates; neither does the other's job. A cr
 
 ## Find the Record Before the First Round
 
-The critique's first act is not a reading; it is one command, run for the goal the design is for:
+The record is found before anything is read. The coordinator starts a design critique with one command on the design file:
 
 ```bash
-metasystem project design-of --root <checkout> --goal <goal id>
+metasystem review design <design file>
 ```
 
-A design the resolver cannot find is not ready to be attacked: the round returns that refusal as its single finding and stops, and the designer writes the head and moves the file into the home before the loop starts (`docs/design/design-obligation-gate.md`, "A design is a record"). A design about the project as a whole names no goal and says so in the brief; everything below runs once the command has answered.
+It first resolves the file as the goal's design record, the same resolution `metasystem internal project design-of --root <checkout> --goal <goal id>` performs, and only then freezes the design, prepares the review inputs and dispatches the configured design-review lane. A critic dispatched by that command never runs it again: it reads the frozen design its brief names and returns findings. A critic working outside the command (a human, or a session handed a design directly) runs that resolver itself as its first act. A design the resolver cannot find is not ready to be attacked: the command refuses, or the outside critic returns that refusal as its single finding and stops, and the designer writes the head and moves the file into the home before the loop starts (`docs/design/design-obligation-gate.md`, "A design is a record"). A design about the project as a whole names no goal and says so in the brief; everything below runs once the record is found.
 
 ## Step 1 Before Anything
 
@@ -64,16 +64,16 @@ material finding. A finding keeps the chain open only when it changes what gets 
 and names the artifact it would change; a finding that fails the artifact
 test is demoted at registration.
 
-Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `goal accept-risk` and a re-scope by `goal edit`. There is no third design round and none can be bought.
+Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `metasystem decide` and a re-scope by `metasystem edit`. There is no third design round and none can be bought.
 
 For code critique and the warden, only an approved token raising the goal's
 five-member tuple can raise its stored review-round member, and the three-round
-ceiling still applies; `job critique-budget-rebind` copies the raised member
-onto an open root. When their rounds are spent, `job critique-register-close`
-defers exhausted bounded findings into review obligations on the goal (`goal
-discharge-review-obligation` discharges them later against the chain,
-artifact and test that carry them) or closes after a human records `goal
-accept-risk`; whenever a severe or unproven finding remains, stop with the
+ceiling still applies; the internal owner `metasystem internal job critique-budget-rebind` copies the raised member
+onto an open root. When their rounds are spent, the register close (`metasystem internal job critique-register-close`)
+defers exhausted bounded findings into review obligations on the goal (`metasystem
+resolve <goal> --review R --finding F --test NAME` discharges them later against the chain,
+artifact and test that carry them) or closes after a human records `metasystem
+decide <goal> --finding F --review R --reason <text>`; whenever a severe or unproven finding remains, stop with the
 design waiting on the human. Never dispatch a silent fourth round.
 
 Rounds must run as follow-ups on one critic chain. Dispatching a fresh critic
@@ -112,7 +112,7 @@ rounds: 21, 15, 10, 4, 3, 2).
 
 A round is closed only when every material finding carries a disposition — and that is a claim to be checked, not asserted. Parse the critique into a structured worklist (stable identifier, severity, proposal) and join it against the dispositions; the round closes when the two sets are equal. Working from prose invites the failure this prevents: "N corrections applied" reads like closure while unaddressed findings sit in the body, and the next round spends itself rediscovering them instead of finding anything new. If the critique carries no stable identifier per finding, ask for one — an unjoinable critique can be estimated, not closed.
 
-The mechanical form uses the canonical `findings` array in the critic's `return.json` and a Markdown dispositions table headed `| Finding id | Disposition | Reasoning and evidence | Amendment |`; run `bin/metasystem validate critique-closed --findings <return.json> --dispositions <file>` to perform the join.
+The mechanical form uses the canonical `findings` array in the critic's `return.json` and a Markdown dispositions table headed `| Finding id | Disposition | Reasoning and evidence | Amendment |`; `metasystem fold review <review> --dispositions <file> --brief <file>` and `metasystem close <job> --dispositions <file>` perform that join before acting; `bin/metasystem validate critique-closed --findings <return.json> --dispositions <file>` checks it alone.
 
 When a round's findings are retained or carried elsewhere (a watch-list, a later round's brief), count the retained findings against the round's own verdict number before calling the round closed. A retention that silently drops findings reads exactly like a complete one, which is the same failure the join above prevents; it has happened twice in this repository's own loops.
 

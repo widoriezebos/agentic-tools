@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -58,13 +59,16 @@ func pathFlagVar(flags *flag.FlagSet, target *string, name, value, usage string)
 	flags.Var(pathValue{target: target}, name, usage)
 }
 
-func printJSON(value any) {
+func printJSON(value any) { writeJSONLine(os.Stdout, os.Stderr, value) }
+
+// writeJSONLine is printJSON onto a caller's own streams.
+func writeJSONLine(stdout, stderr io.Writer, value any) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return
 	}
-	fmt.Println(string(encoded))
+	fmt.Fprintln(stdout, string(encoded))
 }
 
 // writeIdentityJSON writes indented, key-sorted JSON atomically: temp in the

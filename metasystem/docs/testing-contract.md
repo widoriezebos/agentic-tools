@@ -117,7 +117,8 @@ Save this as `testing.json` (the generated `reports/` directories are outputs):
 
 Run `bin/metasystem test check --root .` to validate the contract and native
 tool readiness. `test plan --root . --goal <id> --mode auto` shows the selected
-groups; `test run` executes them, and `test verify --root . --goal <id> --tree
+groups; `metasystem test --goal <id> --mode auto` executes them (the `test run`
+owner), and `test verify --root . --goal <id> --tree
 <tree>` checks sufficient retained evidence without launching tests or builds.
 Use the exact candidate tree and the same goal when running and verifying.
 Diagnostic plans and results cannot authorize delivery.

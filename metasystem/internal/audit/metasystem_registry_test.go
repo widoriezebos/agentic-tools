@@ -49,7 +49,7 @@ func TestRegistryPointerAuditRefuses(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
 	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
-		[]byte("`goal open` only, no pointer\n"), 0o644)
+		[]byte("`metasystem open` only, no pointer\n"), 0o644)
 	violations := auditGoalSystem(root)
 	found := 0
 	for _, violation := range violations {

@@ -250,6 +250,10 @@ func branchUnitWithRepository(repository BranchReadRepository, repo, endpoint, t
 	return KindInfo{}, operationRefusal(ReadInvalidCode, "commit %s is not a Goal-Unit commit of goal %s's branch", commit, goal)
 }
 
+// branchReadDefaultMode is the Working Mode header of a critic brief whose
+// supplied prose declares none (docs/working-modes.md: implement is the default).
+const branchReadDefaultMode = "Working Mode: implement"
+
 func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoint, goal, commit string, supplied []byte) (string, error) {
 	commits, err := repository.Range(repo, endpoint, commit, goal)
 	if err != nil {
@@ -276,6 +280,16 @@ func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoi
 	}
 	if len(supplied) != 0 {
 		brief += "\n# Supplied accepted implementation brief (frozen at dispatch)\n\n" + string(supplied) + "\n"
+	}
+	// Dispatch admits a critic brief only with exactly one filled Working
+	// Mode header. Headerless prose reads in the default implement mode; a
+	// supplied header is kept as written and a malformed or repeated one is
+	// refused here rather than at dispatch.
+	switch _, declared, err := dispatch.BriefTextMode([]byte(brief)); {
+	case declared == 0:
+		brief = branchReadDefaultMode + "\n\n" + brief
+	case err != nil:
+		return "", operationRefusal(ReadInvalidCode, "goal branch brief for unit %s must declare exactly one filled Working Mode header", commit)
 	}
 	return brief, nil
 }
@@ -389,6 +403,20 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 			result.State = "closed"
 			return result, nil
 		}
+		// A Goal-Read installed by an earlier collection whose record save
+		// was lost is adopted, never committed a second time.
+		// An injected read repository answers no Git of its own, so the
+		// reconciliation runs on the Git repository path only.
+		if installed, found, installedErr := installedBranchReadFor(request, info, record); installedErr != nil {
+			return result, installedErr
+		} else if found {
+			record.AttestationCommit = installed
+			if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+				return result, err
+			}
+			result.State, result.AttestationCommit = "collected", installed
+			return result, nil
+		}
 		tests, testsErr := criticTestChangesWithRepository(repository, request.Repo, request.UnitCommit, record.RootJob)
 		if testsErr != nil {
 			return result, testsErr
@@ -474,4 +502,47 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	result.State, result.RootJob, result.GateRunID = "dispatched", job, record.GateRunID
 	return result, nil
+}
+
+// installedBranchRead finds the Goal-Read of this unit commit already on the
+// local goal branch and adopts it only when its attestation validates and
+// binds this record's critic root, fast-gate run and subject tree.
+func installedBranchRead(request BranchReadRequest, info KindInfo, record branchReadRecord) (string, bool, error) {
+	tip, present, err := localBranchTip(request.Repo, goalBranchRef(request.GoalID))
+	if err != nil || !present {
+		return "", false, err
+	}
+	commits, err := ValidateRange(request.Repo, request.EndpointTip, tip, request.GoalID)
+	if err != nil {
+		return "", false, err
+	}
+	for _, commit := range commits {
+		if commit.Kind != Read {
+			continue
+		}
+		kind, err := KindOf(request.Repo, commit.ID, request.GoalID)
+		if err != nil {
+			return "", false, err
+		}
+		if kind.CommitID != request.UnitCommit {
+			continue
+		}
+		att, err := ValidateAttestation(request.Repo, request.EndpointTip, request.GoalID, unitList(info.Units), request.UnitCommit)
+		if err != nil {
+			return "", false, operationRefusal(ReadInvalidCode, "installed read %s of %s does not validate: %v", commit.ID, request.UnitCommit, err)
+		}
+		if att.Source.RootJob != record.RootJob || att.Gate.RunID != record.GateRunID || att.Subject.Tree != record.Tree {
+			return "", false, operationRefusal(ReadInvalidCode, "installed read %s of %s binds critic %s gate %s, not this record's %s %s",
+				commit.ID, request.UnitCommit, att.Source.RootJob, att.Gate.RunID, record.RootJob, record.GateRunID)
+		}
+		return commit.ID, true, nil
+	}
+	return "", false, nil
+}
+
+func installedBranchReadFor(request BranchReadRequest, info KindInfo, record branchReadRecord) (string, bool, error) {
+	if request.Repository != nil {
+		return "", false, nil
+	}
+	return installedBranchRead(request, info, record)
 }

@@ -528,3 +528,51 @@ func TestGLEBranchReadConcurrentRepositoriesKeepRootsIsolated(t *testing.T) {
 		}
 	}
 }
+
+func TestGLEBranchReadFrozenBriefCarriesOneDispatchableWorkingMode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, supplied, mode string
+	}{
+		{"headerless prose", "Build the requested outcome and watch it work.\n", "implement"},
+		{"explicit mode", "Working Mode: review\n\nRead the unit against its accepted design.\n", "review"},
+		{"repeated header", "Working Mode: review\nWorking Mode: design\n", ""},
+		{"empty header", "Working Mode:\n\nPlain prose.\n", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newReadFactRepository(t, false)
+			r.expectStart()
+			r.expectGateAndBrief()
+			input := filepath.Join(t.TempDir(), "brief.md")
+			if err := os.WriteFile(input, []byte(tc.supplied), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			delegates := 0
+			request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: r.unit,
+				GoalID: "goal-a", UnitCommit: r.unit, Repository: r, BriefPath: input,
+				CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+				Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+					delegates++
+					mode, err := dispatch.BriefModeOnly(brief)
+					body, _ := os.ReadFile(brief)
+					if err != nil || mode != tc.mode || !strings.Contains(string(body), tc.supplied) {
+						t.Fatalf("dispatch mode=%q err=%v body=%q", mode, err, body)
+					}
+					writeReadJobWithSubject(t, r.root, "critic-mode", r.unit, "running", false, r.readSubject())
+					return "critic-mode", nil
+				},
+			}
+			result, err := branch.RunBranchRead(request)
+			if tc.mode == "" {
+				if err == nil || !strings.Contains(err.Error(), "exactly one filled Working Mode header") || delegates != 0 {
+					t.Fatalf("malformed mode result=%+v delegates=%d err=%v", result, delegates, err)
+				}
+				return
+			}
+			if err != nil || result.State != "dispatched" || delegates != 1 {
+				t.Fatalf("dispatch=%+v delegates=%d err=%v", result, delegates, err)
+			}
+		})
+	}
+}

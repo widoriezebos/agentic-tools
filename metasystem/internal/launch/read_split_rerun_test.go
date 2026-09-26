@@ -215,15 +215,17 @@ func multiFilePackageDiff() string {
 
 func TestIndependentReadStartsThroughLaunchVerbs(t *testing.T) {
 	t.Parallel()
-	const sentence = "An independent read of a unit diff starts through `metasystem launch start --kind read --diff-file`, or through `metasystem unit run`, never as an in-process agent."
+	phrases := []string{"`metasystem review job J`", "--kind read --diff-file", "never as an in-process agent"}
 	root := moduleRoot(t)
 	for _, path := range []string{
 		filepath.Join(root, "docs", "project-rules.md"),
 		filepath.Join(root, "scripts", "agents", "templates", "review-brief.md"),
 	} {
 		data, err := os.ReadFile(path)
-		if err != nil || !strings.Contains(string(data), sentence) {
-			t.Errorf("%s does not route independent reads through launch verbs: %v", path, err)
+		for _, phrase := range phrases {
+			if err != nil || !strings.Contains(string(data), phrase) {
+				t.Errorf("%s does not route independent reads through review and launch: missing %q: %v", path, phrase, err)
+			}
 		}
 	}
 }

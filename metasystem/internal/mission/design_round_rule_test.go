@@ -13,7 +13,7 @@ func TestDesignRoundRuleIsStatedBySkillAndDocs(t *testing.T) {
 		"A design-critic chain's `reviewRoundLimit` is 2 whatever the goal's stored member says.",
 		"Round 2 folded with no material finding closes the loop.",
 		"Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture.",
-		"Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `goal accept-risk` and a re-scope by `goal edit`.",
+		"Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `metasystem decide` and a re-scope by `metasystem edit`.",
 		"There is no third design round and none can be bought.",
 		"`closed at round 2 on N fixture obligations`",
 	}

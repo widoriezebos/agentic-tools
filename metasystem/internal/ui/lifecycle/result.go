@@ -25,14 +25,24 @@ func StartResult(spec LaunchSpec, spawn Spawn, readyWait time.Duration) Result {
 }
 
 func StatusResult(stateRoot string, prober identity.Prober, digest func() (string, error)) Result {
+	result, _ := StatusReport(stateRoot, prober, digest)
+	return result
+}
+
+// StatusReport is StatusResult with the state it read; an unreadable record
+// is reported as Unreadable.
+func StatusReport(stateRoot string, prober identity.Prober, digest func() (string, error)) (Result, State) {
 	status, err := Read(stateRoot, prober)
 	if err != nil {
-		return failure(err)
+		return failure(err), Unreadable
 	}
 	if status.State != Running {
-		return Result{[]string{stateLine(stateRoot, status.State, status.Record)}, 1}
+		return Result{[]string{stateLine(stateRoot, status.State, status.Record)}, 1}, status.State
 	}
-	rec := status.Record
+	return runningResult(status.Record, digest), Running
+}
+
+func runningResult(rec *Record, digest func() (string, error)) Result {
 	result := Result{Lines: []string{fmt.Sprintf("interface running at http://%s (pid %d, started %s, build %s)", rec.Address, recordPid(rec), rec.StartedAt, rec.EngineBuild)}}
 	// Whether this server can act as the human is the second thing to know
 	// about it, so it is the second line. A record written before this build
@@ -66,6 +76,20 @@ func StopResult(stateRoot string, o StopOptions) Result {
 }
 
 func RestartResult(stateRoot string, o StopOptions, start func() Result) Result {
+	return RestartReportFor(stateRoot, o, start).Result
+}
+
+// RestartReport is a restart's printed result and the typed facts behind
+// it: how the stop ended, and whether and how the start ran.
+type RestartReport struct {
+	Result    Result
+	Stop      StopOutcome
+	StopError string
+	Started   bool
+	Start     Result
+}
+
+func RestartReportFor(stateRoot string, o StopOptions, start func() Result) RestartReport {
 	var started *Result
 	outcome, rec, err := Restart(stateRoot, o, func() error {
 		result := start()
@@ -73,15 +97,21 @@ func RestartResult(stateRoot string, o StopOptions, start func() Result) Result 
 		return nil
 	})
 	result := stopResult(stateRoot, outcome, rec, o.Wait, err)
+	report := RestartReport{Stop: outcome}
+	if err != nil {
+		report.StopError = err.Error()
+	}
 	if started == nil {
-		return result
+		report.Result = result
+		return report
 	}
 	if outcome == StopOutcome(Stopped) {
 		result.Lines = nil
 	}
 	result.Lines = append(result.Lines, started.Lines...)
 	result.Code = started.Code
-	return result
+	report.Result, report.Started, report.Start = result, true, *started
+	return report
 }
 
 func stopResult(stateRoot string, outcome StopOutcome, rec *Record, wait time.Duration, err error) Result {

@@ -21,15 +21,6 @@ var unitRunner = func() unitAdvancer {
 	return &launch.UnitRunner{Manager: manager, Git: launch.OSGitRunner{}}
 }
 
-func init() {
-	base := launchManager
-	launchManager = func() *launch.Manager {
-		manager := base()
-		manager.Adapters["plain-exec"] = launch.PlainExec{}
-		return manager
-	}
-}
-
 func runUnitRun(args []string) int {
 	flags := flag.NewFlagSet("unit run", flag.ContinueOnError)
 	plan := flags.String("plan", "", "unit plan")

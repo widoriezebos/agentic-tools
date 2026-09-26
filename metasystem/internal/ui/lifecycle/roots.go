@@ -29,11 +29,17 @@ func (e *RootsMismatchError) Error() string {
 // Git top, so every verb works from any directory. It is the one place the three
 // roots are derived, so a launcher and its child cannot disagree.
 func ResolveRoots(repo, installation string) (Roots, error) {
+	return ResolveRootsWith(stateroot.RepositoryTop, stateroot.RootForInstallation, repo, installation)
+}
+
+// ResolveRootsWith is ResolveRoots with the Git top and state-root readers a
+// caller already resolved its repository with.
+func ResolveRootsWith(repositoryTop, rootForInstallation func(string) (string, error), repo, installation string) (Roots, error) {
 	installationRoot, err := canonicalRoot(installation)
 	if err != nil {
 		return Roots{}, fmt.Errorf("cannot resolve the installation at %s: %w", installation, err)
 	}
-	top, err := stateroot.RepositoryTop(installationRoot)
+	top, err := repositoryTop(installationRoot)
 	if err != nil {
 		return Roots{}, fmt.Errorf("cannot resolve the checkout of the installation at %s: %w", installationRoot, err)
 	}
@@ -48,7 +54,7 @@ func ResolveRoots(repo, installation string) (Roots, error) {
 		}
 		// A path outside every Git checkout is refused with the same line as one
 		// that names another checkout: neither is served by this installation.
-		if givenTop, topErr := stateroot.RepositoryTop(given); topErr == nil {
+		if givenTop, topErr := repositoryTop(given); topErr == nil {
 			if given, err = canonicalRoot(givenTop); err != nil {
 				return Roots{}, fmt.Errorf("cannot resolve the checkout at %s: %w", givenTop, err)
 			}
@@ -57,7 +63,7 @@ func ResolveRoots(repo, installation string) (Roots, error) {
 			return Roots{}, &RootsMismatchError{Checkout: given, Installation: installationRoot}
 		}
 	}
-	stateRoot, err := stateroot.RootForInstallation(installationRoot)
+	stateRoot, err := rootForInstallation(installationRoot)
 	if err != nil {
 		return Roots{}, err
 	}

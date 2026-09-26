@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,24 +16,25 @@ import (
 // answered, and advances the state — rolling the ask back if the state write
 // or anchor refuses. It prints the outcome and returns the exit code.
 func (e *Engine) Answer(askID, answer string) int {
+	e.LastAnswer = AnswerEffects{}
 	statePath := filepath.Join(e.missionDir(), "state.json")
 	state, err := e.verifyState(statePath, false)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return 7
 	}
 	askPath := filepath.Join(e.missionDir(), "asks", askID+".json")
 	if !pathExists(askPath) {
-		fmt.Fprintf(os.Stderr, "answer refused: unknown ask %s\n", askID)
+		fmt.Fprintf(e.answerErrors(), "answer refused: unknown ask %s\n", askID)
 		return 3
 	}
 	ask, err := readDocLabeled(askPath, "mission ask", 3)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return exitFor(err)
 	}
 	if ask["askId"] != askID || ask["answeredAt"] != nil {
-		fmt.Fprintf(os.Stderr, "answer refused: unknown or already answered ask %s\n", askID)
+		fmt.Fprintf(e.answerErrors(), "answer refused: unknown or already answered ask %s\n", askID)
 		return 3
 	}
 	successor, _ := ask["supersededBy"].(string)
@@ -40,7 +42,7 @@ func (e *Engine) Answer(askID, answer string) int {
 		successor = supersededAskIDs(filepath.Join(e.missionDir(), "asks"))[askID]
 	}
 	if successor != "" {
-		fmt.Fprintf(os.Stderr, "answer refused: ask %s was superseded; answer %s instead\n", askID, successor)
+		fmt.Fprintf(e.answerErrors(), "answer refused: ask %s was superseded; answer %s instead\n", askID, successor)
 		return 3
 	}
 	reason, _ := ask["reasonClass"].(string)
@@ -51,15 +53,15 @@ func (e *Engine) Answer(askID, answer string) int {
 		return e.answerDrainStalled(statePath, state, ask, askPath, askID, answer)
 	}
 	if state["parkReason"] == "stop-loss" {
-		fmt.Fprintln(os.Stderr, "answer refused: a stop-loss park is answered through its stop-loss ask")
+		fmt.Fprintln(e.answerErrors(), "answer refused: a stop-loss park is answered through its stop-loss ask")
 		return 3
 	}
 	if reason == "wall-violation" {
-		fmt.Fprintln(os.Stderr, "answer refused: a generic answer never clears taint; use metasystem mission resolve-taint (restore or adopt-disputed-tree)")
+		fmt.Fprintln(e.answerErrors(), "answer refused: a generic answer never clears taint; use metasystem mission resolve-taint (restore or adopt-disputed-tree)")
 		return 3
 	}
 	if !turnvocab.OrchestratorMayRaise(reason) && reason != "fence" {
-		fmt.Fprintf(os.Stderr, "answer refused: unsupported reason class %s\n", valueString(ask["reasonClass"]))
+		fmt.Fprintf(e.answerErrors(), "answer refused: unsupported reason class %s\n", valueString(ask["reasonClass"]))
 		return 3
 	}
 	proposed := deepCopyDoc(state)
@@ -74,7 +76,7 @@ func (e *Engine) Answer(askID, answer string) int {
 		streams, _ := proposed["streams"].(map[string]any)
 		stream, _ := streams[streamID].(map[string]any)
 		if stream == nil || stream["state"] != "parked-reserved" {
-			fmt.Fprintln(os.Stderr, "answer refused: reserved ask does not name a parked-reserved stream")
+			fmt.Fprintln(e.answerErrors(), "answer refused: reserved ask does not name a parked-reserved stream")
 			return 3
 		}
 		stream["state"] = "active"
@@ -83,11 +85,11 @@ func (e *Engine) Answer(askID, answer string) int {
 		unpark()
 	case reason == "host-failure" && proposed["status"] == "parked":
 		if proposed["parkReason"] != "host-failure" {
-			fmt.Fprintln(os.Stderr, "answer refused: host-failure answer does not match the mission park reason")
+			fmt.Fprintln(e.answerErrors(), "answer refused: host-failure answer does not match the mission park reason")
 			return 3
 		}
 		if !anyActiveStream(proposed) {
-			fmt.Fprintln(os.Stderr, "answer refused: host-failure mission has no active stream")
+			fmt.Fprintln(e.answerErrors(), "answer refused: host-failure mission has no active stream")
 			return 3
 		}
 		unpark()
@@ -96,17 +98,17 @@ func (e *Engine) Answer(askID, answer string) int {
 			filepath.Join(e.Root, "bin", "metasystem"),
 			"mission", "contract-preflight", "--file", e.contractPath())
 		if code != 0 {
-			fmt.Fprintf(os.Stderr, "answer refused: fence contract amendment is not preflight-ready: %s\n", firstDetail(stderr, stdout))
+			fmt.Fprintf(e.answerErrors(), "answer refused: fence contract amendment is not preflight-ready: %s\n", firstDetail(stderr, stdout))
 			return 3
 		}
 		_, values, _, err := e.parseContract(false)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
 		reached, names, err := e.fenceReached(values)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(e.answerErrors(), err)
 			return exitFor(err)
 		}
 		if reached {
@@ -117,7 +119,7 @@ func (e *Engine) Answer(askID, answer string) int {
 			// surface's reach: refuse, leave
 			// the ask open, and NAME the fence still reached so the
 			// human amends the right limit and answers again.
-			fmt.Fprintf(os.Stderr, "answer refused: fence(s) still reached after the amendment: %s; raise those limits and answer again\n", strings.Join(names, ", "))
+			fmt.Fprintf(e.answerErrors(), "answer refused: fence(s) still reached after the amendment: %s; raise those limits and answer again\n", strings.Join(names, ", "))
 			return 3
 		}
 		unpark()
@@ -134,9 +136,10 @@ func (e *Engine) Answer(askID, answer string) int {
 	ask["answeredAt"] = nowISO()
 	ask["answer"] = answer
 	if err := atomicWriteJSON(askPath, ask); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return 3
 	}
+	e.LastAnswer.AskAnswered = true
 	updated, err := e.writeState(statePath, proposed)
 	if err == nil {
 		err = e.anchor(statePath, filepath.Join(e.missionDir(), "ledger.md"), e.Mission)
@@ -144,11 +147,12 @@ func (e *Engine) Answer(askID, answer string) int {
 	if err != nil {
 		// The ask record and the state advance together or not at all: an
 		// answered ask against an unmoved state would strand the mission.
-		_ = atomicWriteJSON(askPath, originalAsk)
-		fmt.Fprintf(os.Stderr, "answer refused: %s\n", err)
+		e.LastAnswer.AskAnswered = atomicWriteJSON(askPath, originalAsk) != nil
+		fmt.Fprintf(e.answerErrors(), "answer refused: %s\n", err)
 		return 3
 	}
-	fmt.Printf("mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
+	e.LastAnswer.StateAdvanced = true
+	fmt.Fprintf(e.answerOutput(), "mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
 	return 0
 }
 
@@ -164,21 +168,21 @@ func (e *Engine) Answer(askID, answer string) int {
 func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, askPath, askID, answer string) int {
 	kind, _ := ask["stopLossKind"].(string)
 	if !strings.HasPrefix(answer, "reset:") {
-		fmt.Fprintln(os.Stderr, "answer refused: amend, price, reseal, and sign the mission budget before stop-loss unpark")
+		fmt.Fprintln(e.answerErrors(), "answer refused: amend, price, reseal, and sign the mission budget before stop-loss unpark")
 		return 3
 	}
 	switch kind {
 	case mission.StopLossKindStagnation:
 		// The one park the vocal reset applies to.
 	case mission.StopLossKindCycleBudget:
-		fmt.Fprintln(os.Stderr, "answer refused: reset: applies to a stagnation park only; this park is an exhausted sealed cycle budget — amend, price, reseal, and sign the mission budget")
+		fmt.Fprintln(e.answerErrors(), "answer refused: reset: applies to a stagnation park only; this park is an exhausted sealed cycle budget — amend, price, reseal, and sign the mission budget")
 		return 3
 	default:
-		fmt.Fprintln(os.Stderr, "answer refused: reset: applies to a stagnation park only; amend, price, reseal, and sign the mission budget")
+		fmt.Fprintln(e.answerErrors(), "answer refused: reset: applies to a stagnation park only; amend, price, reseal, and sign the mission budget")
 		return 3
 	}
 	if state["status"] != "parked" || state["parkReason"] != "stop-loss" {
-		fmt.Fprintln(os.Stderr, "answer refused: stop-loss reset applies to a mission parked for stop-loss")
+		fmt.Fprintln(e.answerErrors(), "answer refused: stop-loss reset applies to a mission parked for stop-loss")
 		return 3
 	}
 	reason := strings.TrimSpace(strings.TrimPrefix(answer, "reset:"))
@@ -186,9 +190,10 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 	if err := mission.AppendReset(ledgerPath, askID, reason); err != nil {
 		// Nothing after the ledger line may happen without it: the mission
 		// stays parked, loudly.
-		fmt.Fprintf(os.Stderr, "answer refused: stop-loss reset was not recorded: %v\n", err)
+		fmt.Fprintf(e.answerErrors(), "answer refused: stop-loss reset was not recorded: %v\n", err)
 		return 3
 	}
+	e.LastAnswer.ResetRecorded = true
 	e.emit("stop-loss-reset", clipSummary(reason), map[string]string{
 		"missionId": e.Mission, "askId": askID,
 	})
@@ -196,9 +201,10 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 	answered["answeredAt"] = nowISO()
 	answered["answer"] = answer
 	if err := atomicWriteJSON(askPath, answered); err != nil {
-		fmt.Fprintf(os.Stderr, "stop-loss reset is recorded but the ask could not be marked answered: %v; answer it again — a second reset line is lawful and harmless\n", err)
+		fmt.Fprintf(e.answerErrors(), "stop-loss reset is recorded but the ask could not be marked answered: %v; answer it again — a second reset line is lawful and harmless\n", err)
 		return 3
 	}
+	e.LastAnswer.AskAnswered = true
 	proposed := deepCopyDoc(state)
 	proposed["status"] = "running"
 	proposed["parkReason"] = nil
@@ -216,10 +222,11 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 		err = e.anchor(statePath, ledgerPath, e.Mission)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "stop-loss reset is recorded and the ask is answered, but the unpark did not apply: %v; the next resume applies it\n", err)
+		fmt.Fprintf(e.answerErrors(), "stop-loss reset is recorded and the ask is answered, but the unpark did not apply: %v; the next resume applies it\n", err)
 		return 3
 	}
-	fmt.Printf("mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
+	e.LastAnswer.StateAdvanced = true
+	fmt.Fprintf(e.answerOutput(), "mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
 	return 0
 }
 
@@ -236,35 +243,35 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 // answered ask.
 func (e *Engine) answerDrainStalled(statePath string, state, ask map[string]any, askPath, askID, answer string) int {
 	if !strings.HasPrefix(answer, "resume:") {
-		fmt.Fprintln(os.Stderr, "answer refused: a drain-stalled park is answered with resume:<note> once the named jobs are verified or cleared")
+		fmt.Fprintln(e.answerErrors(), "answer refused: a drain-stalled park is answered with resume:<note> once the named jobs are verified or cleared")
 		return 3
 	}
 	if strings.TrimSpace(strings.TrimPrefix(answer, "resume:")) == "" {
-		fmt.Fprintln(os.Stderr, "answer refused: resume: requires a non-empty note")
+		fmt.Fprintln(e.answerErrors(), "answer refused: resume: requires a non-empty note")
 		return 3
 	}
 	if state["status"] != "parked" || state["parkReason"] != drainStalledReason {
-		fmt.Fprintln(os.Stderr, "answer refused: resume: applies to a mission parked for drain-stalled")
+		fmt.Fprintln(e.answerErrors(), "answer refused: resume: applies to a mission parked for drain-stalled")
 		return 3
 	}
 	stall, ok := ask["drainStall"].(map[string]any)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "answer refused: drain-stalled ask carries no survivor snapshot; delete the ask file and run mission-runner resume to re-raise it")
+		fmt.Fprintln(e.answerErrors(), "answer refused: drain-stalled ask carries no survivor snapshot; delete the ask file and run mission-runner resume to re-raise it")
 		return 3
 	}
 	cycle, ok := jsonInt(stall["cycle"])
 	if !ok || cycle < 1 {
-		fmt.Fprintln(os.Stderr, "answer refused: drain-stalled ask names an invalid cycle; delete the ask file and run mission-runner resume to re-raise it")
+		fmt.Fprintln(e.answerErrors(), "answer refused: drain-stalled ask names an invalid cycle; delete the ask file and run mission-runner resume to re-raise it")
 		return 3
 	}
 	survivors, ok := stall["survivors"].([]any)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "answer refused: drain-stalled ask carries no survivor list; delete the ask file and run mission-runner resume to re-raise it")
+		fmt.Fprintln(e.answerErrors(), "answer refused: drain-stalled ask carries no survivor list; delete the ask file and run mission-runner resume to re-raise it")
 		return 3
 	}
 	proposed := deepCopyDoc(state)
 	if !anyActiveStream(proposed) {
-		fmt.Fprintln(os.Stderr, "answer refused: drain-stalled mission has no active stream")
+		fmt.Fprintln(e.answerErrors(), "answer refused: drain-stalled mission has no active stream")
 		return 3
 	}
 	proposed["status"] = "running"
@@ -283,22 +290,24 @@ func (e *Engine) answerDrainStalled(statePath string, state, ask map[string]any,
 	ask["answeredAt"] = nowISO()
 	ask["answer"] = answer
 	if err := atomicWriteJSON(askPath, ask); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(e.answerErrors(), err)
 		return 3
 	}
+	e.LastAnswer.AskAnswered = true
 	updated, err := e.writeState(statePath, proposed)
 	if err == nil {
 		err = e.anchor(statePath, filepath.Join(e.missionDir(), "ledger.md"), e.Mission)
 	}
 	if err != nil {
-		_ = atomicWriteJSON(askPath, originalAsk)
-		fmt.Fprintf(os.Stderr, "answer refused: %s\n", err)
+		e.LastAnswer.AskAnswered = atomicWriteJSON(askPath, originalAsk) != nil
+		fmt.Fprintf(e.answerErrors(), "answer refused: %s\n", err)
 		return 3
 	}
 	e.emit("drain-stall-resumed", clipSummary(answer), map[string]string{
 		"missionId": e.Mission, "askId": askID, "cycle": fmt.Sprintf("%d", cycle),
 	})
-	fmt.Printf("mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
+	e.LastAnswer.StateAdvanced = true
+	fmt.Fprintf(e.answerOutput(), "mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
 	return 0
 }
 
@@ -329,4 +338,32 @@ func (e *Engine) fenceReachedInner(values map[string]string) (bool, []string, er
 		return false, nil, err
 	}
 	return fenceReachedAt(fences, values, missionJobStatuses(e.Root, e.Mission), e.now())
+}
+
+// answerOutput and answerErrors are where Answer reports: the process streams
+// unless this engine's caller gave it its own.
+func (e *Engine) answerOutput() io.Writer {
+	if e.Output != nil {
+		return e.Output
+	}
+	return os.Stdout
+}
+
+func (e *Engine) answerErrors() io.Writer {
+	if e.Errors != nil {
+		return e.Errors
+	}
+	return os.Stderr
+}
+
+// AnswerEffects is what the last Answer call on this engine committed,
+// whatever its exit code: a caller reports these, not the code alone.
+type AnswerEffects struct {
+	// ResetRecorded is a stop-loss reset line appended to the ledger; it is
+	// authoritative and a second one is lawful.
+	ResetRecorded bool
+	// AskAnswered is the ask record left marked answered.
+	AskAnswered bool
+	// StateAdvanced is the answered state written and anchored.
+	StateAdvanced bool
 }

@@ -45,7 +45,13 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 			model = "claude-opus-5-5[1m]"
 		}
 	}
-	args := []string{"-p", "--model", model, "--dangerously-skip-permissions", "--output-format", "json", "--name", record.Kind + "-" + record.Tag}
+	args := []string{"-p", "--model", model}
+	// The launch's recorded effort reaches the CLI; a record without one
+	// keeps Claude Code's own default.
+	if effort := readString(record.AdapterData, "effort"); effort != "" {
+		args = append(args, "--effort", effort)
+	}
+	args = append(args, "--dangerously-skip-permissions", "--output-format", "json", "--name", record.Kind+"-"+record.Tag)
 	if session := readString(record.AdapterData, "resumeSession"); session != "" {
 		args = append(args, "--resume", session)
 	}
