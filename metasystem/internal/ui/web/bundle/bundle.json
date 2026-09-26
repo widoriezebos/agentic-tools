@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:b919d90c62f79c4d585b7e4c67b645f03615409c9a20c419b644df167ed5dfc2",
+  "sourceDigest": "sha256:6be755ad8ce47119fc4d8661a62850c3bfca7c8f8b2c38ea4d56ae0e472840a5",
   "source": [
     {
       "path": ".npmrc",
@@ -116,11 +116,11 @@
     },
     {
       "path": "src/backlog/EditSheet.test.tsx",
-      "sha256": "d56f1e1ca6596072d67d515f15683c621229e79ce72e5f99af1b8752626569bb"
+      "sha256": "1699e0ee88f0a72410619c141d36ce10db96afc79e8ef728bcafbb381da64a1b"
     },
     {
       "path": "src/backlog/EditSheet.tsx",
-      "sha256": "e94215512171c43bc2b9e9fb6f3b3be35f9bae36631aec83060c69b954db4481"
+      "sha256": "55f5f6f83f247e934e91f2562d6aba7c797e831ac16095317477572eed836e32"
     },
     {
       "path": "src/backlog/GoalRow.tsx",
@@ -950,7 +950,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "848dce09614a7ccdb6e1e89c54bd313170742966c0bc4284a07b564af5d429d3"
+      "sha256": "bbc2702d16dd1e5f5743e17305d91148827a8ec7705e8e704ed05242779f82db"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
