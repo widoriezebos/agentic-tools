@@ -49,7 +49,7 @@ func runHooksStopDeadlineWait(args []string) int {
 	}
 	timeoutDuration := time.Duration(*timeout) * time.Second
 	if *pid < 1 || *timeout < 1 || int(timeoutDuration/time.Second) != *timeout || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem hooks stop-deadline-wait --pid PID --timeout-sec N --boot-id ID --origin-boot-ns N --deadline-boot-ns N [--root ROOT]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal hooks stop-deadline-wait --pid PID --timeout-sec N --boot-id ID --origin-boot-ns N --deadline-boot-ns N [--root ROOT]")
 		return 2
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -141,7 +141,7 @@ func runHooksStopDeadlineCleanup(args []string) int {
 		return 2
 	}
 	if (*waitResult == "") == (*pid == 0) || *pid < 0 || *graceMS < 0 || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem hooks stop-deadline-cleanup (--wait-result FILE | --pid PID) [--term-grace-ms N]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal hooks stop-deadline-cleanup (--wait-result FILE | --pid PID) [--term-grace-ms N]")
 		return 2
 	}
 	var waited hooks.StopDeadlineWaitResult

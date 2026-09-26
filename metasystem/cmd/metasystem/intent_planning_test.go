@@ -39,7 +39,7 @@ func TestIntentPlanningIntakeAndEdit(t *testing.T) {
 	bed := newIntentBed(t, false, nil)
 	bed.lineage = "m1"
 	before := bed.publications()
-	missingRisk := []string{"open", "new-goal", "--intent", "Make it so.", "--next", "Measure it."}
+	missingRisk := []string{"goal", "open", "new-goal", "--intent", "Make it so.", "--next", "Measure it."}
 	code, result := bed.runJSON(bed.owners(), missingRisk...)
 	bed.expectNoEffect(before, missingRisk, code, result)
 	if !slices.Contains(result.Data.(map[string]any)["missing"].([]any), "--risk") {
@@ -52,14 +52,12 @@ func TestIntentPlanningIntakeAndEdit(t *testing.T) {
 	}
 	// A seat opens only the defect blocking the goal it holds; the owner's
 	// intake law refuses anything else.
-	improvement := []string{"open", "new-goal", "--intent", "Make it so.", "--next", "Measure it.",
-		"--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "local tooling only"}
+	improvement := []string{"goal", "open", "new-goal", "--intent", "Make it so.", "--next", "Measure it.", "--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "local tooling only"}
 	code, result = bed.runJSON(bed.owners(), improvement...)
 	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "--blocks") || bed.publications() != before {
 		t.Fatalf("a seat's unblocking open = %d %+v", code, result)
 	}
-	code, result = bed.runJSON(bed.owners(), "open", "new-goal", "--intent-file", intentFile, "--next", "Measure it.", "--blocks", bedGoal,
-		"--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "local tooling only", "--label", "speed")
+	code, result = bed.runJSON(bed.owners(), "goal", "open", "new-goal", "--intent-file", intentFile, "--next", "Measure it.", "--blocks", bedGoal, "--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "local tooling only", "--label", "speed")
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("open = %d %+v", code, result)
 	}
@@ -72,7 +70,7 @@ func TestIntentPlanningIntakeAndEdit(t *testing.T) {
 	}
 
 	before = bed.publications()
-	code, result = bed.runJSON(bed.owners(), "edit", "new-goal", "--next-append", "Then halve it.")
+	code, result = bed.runJSON(bed.owners(), "goal", "edit", "new-goal", "--next-append", "Then halve it.")
 	if code != 0 || result.Outcome != intentConfirmed || bed.publications() != before+1 {
 		t.Fatalf("edit --next-append = %d %+v", code, result)
 	}
@@ -81,7 +79,7 @@ func TestIntentPlanningIntakeAndEdit(t *testing.T) {
 		t.Fatalf("edit changed more than the appended next step: %+v", edited)
 	}
 
-	code, result = bed.runJSON(bed.owners(), "edit", "new-goal", "--intent", "Make it faster.")
+	code, result = bed.runJSON(bed.owners(), "goal", "edit", "new-goal", "--intent", "Make it faster.")
 	if code != 0 || bed.goalFile("new-goal").NextStep != "Measure it. Then halve it." || bed.goalFile("new-goal").Intent != "Make it faster." {
 		t.Fatalf("edit --intent = %d %+v; goal %+v", code, result, bed.goalFile("new-goal"))
 	}
@@ -95,24 +93,24 @@ func TestIntentPlanningArgumentConflicts(t *testing.T) {
 	bed.addGoal(queued)
 	before := bed.publications()
 	for _, args := range [][]string{
-		{"edit", bedGoal, "--next", "a", "--next-append", "b"},
-		{"edit", bedGoal},
-		{"edit", bedGoal, "--owner", "Wido"},
-		{"edit", bedGoal, "--obligation", "DRAFT", "--next", "a"},
-		{"claim", bedGoal, "--reason", "because"},
-		{"claim", bedGoal, "--take-over"},
-		{"pin", bedGoal, "m1e", "--clear"},
-		{"prioritize", bedGoal, "4"},
-		{"approve", "queued-goal", "--budget", "1d/10/720m/1/3", "--elapsed-limit", "1d", "--fixture-human-authority"},
-		{"budget", "queued-goal", "--elapsed-limit", "1d", "--attempt-limit", "10"},
-		{"goals", "--ready", "--tiers"},
-		{"grant", "--tiers", "1", "--acts", "resume", "--until", "2026-09-05"},
-		{"notes", bedGoal, "--add", "x"},
-		{"notes", bedGoal, "--close", "r1", "--fixed", "abc", "--moved", "other"},
-		{"review", bedGoal, "--review", "critic", "--finding", "F", "--test", "T", "--artifact", "a"},
-		{"incidents", "close", "tr-1", "--goal", bedGoal, "--reason", "x"},
-		{"abandon", bedGoal, "--reason", "x", "--successor", bedGoal},
-		{"open", "other", "--intent", "a", "--intent-file", "b", "--next", "n"},
+		{"goal", "edit", bedGoal, "--next", "a", "--next-append", "b"},
+		{"goal", "edit", bedGoal},
+		{"goal", "edit", bedGoal, "--owner", "Wido"},
+		{"goal", "edit", bedGoal, "--obligation", "DRAFT", "--next", "a"},
+		{"goal", "claim", bedGoal, "--reason", "because"},
+		{"goal", "claim", bedGoal, "--take-over"},
+		{"goal", "pin", bedGoal, "m1e", "--clear"},
+		{"goal", "prioritize", bedGoal, "4"},
+		{"goal", "approve", "queued-goal", "--budget", "1d/10/720m/1/3", "--elapsed-limit", "1d", "--fixture-human-authority"},
+		{"goal", "budget", "queued-goal", "--elapsed-limit", "1d", "--attempt-limit", "10"},
+		{"goal", "list", "--ready", "--tiers"},
+		{"grant", "add", "add", "--tiers", "1", "--acts", "resume", "--until", "2026-09-05"},
+		{"goal", "notes", bedGoal, "--add", "x"},
+		{"goal", "notes", bedGoal, "--close", "r1", "--fixed", "abc", "--moved", "other"},
+		{"work", "review", bedGoal, "--review", "critic", "--finding", "F", "--test", "T", "--artifact", "a"},
+		{"incident", "close", "tr-1", "--goal", bedGoal, "--reason", "x"},
+		{"goal", "abandon", bedGoal, "--reason", "x", "--successor", bedGoal},
+		{"goal", "open", "other", "--intent", "a", "--intent-file", "b", "--next", "n"},
 	} {
 		code, result := bed.runJSON(bed.owners(), args...)
 		bed.expectNoEffect(before, args, code, result)
@@ -126,9 +124,7 @@ func TestIntentPlanningArgumentConflicts(t *testing.T) {
 
 	// The five long limits are one box, taken the same way as the compact one.
 	norm := tierBox(t, bed.root(), 1)
-	code, result := bed.runJSON(bed.owners(), "approve", "queued-goal", "--fixture-human-authority", "--lineage", "m1",
-		"--elapsed-limit", norm.ElapsedLimit, "--attempt-limit", fmt.Sprint(norm.AttemptLimit), "--reserved-job-minutes-limit", fmt.Sprint(norm.ReservedJobMinutesLimit),
-		"--active-job-limit", fmt.Sprint(norm.ActiveJobLimit), "--review-round-limit", fmt.Sprint(norm.ReviewRoundLimit))
+	code, result := bed.runJSON(bed.owners(), "goal", "approve", "queued-goal", "--fixture-human-authority", "--lineage", "m1", "--elapsed-limit", norm.ElapsedLimit, "--attempt-limit", fmt.Sprint(norm.AttemptLimit), "--reserved-job-minutes-limit", fmt.Sprint(norm.ReservedJobMinutesLimit), "--active-job-limit", fmt.Sprint(norm.ActiveJobLimit), "--review-round-limit", fmt.Sprint(norm.ReviewRoundLimit))
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("approve with the long limits = %d %+v", code, result)
 	}
@@ -146,7 +142,7 @@ func TestIntentPlanningClaimAndRelease(t *testing.T) {
 		t.Fatalf("fixture goal is not claimed: %+v", held)
 	}
 	before := bed.publications()
-	code, result := bed.runJSON(bed.owners(), "claim")
+	code, result := bed.runJSON(bed.owners(), "goal", "claim")
 	if code != 0 || result.Outcome != intentUnchanged || bed.publications() != before || len(result.Targets) != 1 || result.Targets[0].ID != bedGoal {
 		t.Fatalf("claim without a goal while one is held = %d %+v", code, result)
 	}
@@ -154,22 +150,22 @@ func TestIntentPlanningClaimAndRelease(t *testing.T) {
 	other := *held
 	other.Id = "second-held"
 	bed.addGoal(&other)
-	code, result = bed.runJSON(bed.owners(), "release", "--reason", "done for today")
-	bed.expectNoEffect(before, []string{"release"}, code, result)
+	code, result = bed.runJSON(bed.owners(), "goal", "release", "--reason", "done for today")
+	bed.expectNoEffect(before, []string{"goal", "release"}, code, result)
 	if candidates := result.Data.(map[string]any)["candidates"].([]any); len(candidates) != 2 {
 		t.Fatalf("ambiguous release names %v", candidates)
 	}
 
 	bed.lineage = ""
-	code, result = bed.runJSON(bed.owners(), "release", "--reason", "done for today")
-	bed.expectNoEffect(before, []string{"release"}, code, result)
+	code, result = bed.runJSON(bed.owners(), "goal", "release", "--reason", "done for today")
+	bed.expectNoEffect(before, []string{"goal", "release"}, code, result)
 
 	single := newIntentBed(t, false, nil)
 	single.lineage = "m1"
 	unreasoned := single.publications()
-	code, result = single.runJSON(single.owners(), "release")
-	single.expectNoEffect(unreasoned, []string{"release"}, code, result)
-	code, result = single.runJSON(single.owners(), "release", "--reason", "handing it back")
+	code, result = single.runJSON(single.owners(), "goal", "release")
+	single.expectNoEffect(unreasoned, []string{"goal", "release"}, code, result)
+	code, result = single.runJSON(single.owners(), "goal", "release", "--reason", "handing it back")
 	released := single.goalFile(bedGoal)
 	if code != 0 || result.Outcome != intentConfirmed || released.State == goal.StateClaimed {
 		t.Fatalf("release of the one held goal = %d %+v; goal %+v", code, result, released)
@@ -187,12 +183,12 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 	agent.prove = unprovable
 	before := bed.publications()
 	for _, args := range [][]string{
-		{"pin", bedGoal, "m1e"},
-		{"prioritize", bedGoal, "1"},
-		{"unapprove", bedGoal, "--reason", "not yet"},
-		{"claim", bedGoal, "--take-over", "--reason", "the holder is gone"},
-		{"grant", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05"},
-		{"incidents", "close", "tr-1", "--reason", "fixed"},
+		{"goal", "pin", bedGoal, "m1e"},
+		{"goal", "prioritize", bedGoal, "1"},
+		{"goal", "unapprove", bedGoal, "--reason", "not yet"},
+		{"goal", "claim", bedGoal, "--take-over", "--reason", "the holder is gone"},
+		{"grant", "add", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05"},
+		{"incident", "close", "tr-1", "--reason", "fixed"},
 	} {
 		code, result := bed.runJSON(agent, args...)
 		bed.expectNoEffect(before, args, code, result)
@@ -203,30 +199,30 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 	// A typed name is never proof: with no enrolled person proven, --by
 	// changes nothing.
 	for _, args := range [][]string{
-		{"pin", bedGoal, "m1e", "--by", "Wido"},
-		{"claim", bedGoal, "--take-over", "--reason", "the holder is gone", "--by", "Wido", "--lineage", "m1"},
-		{"incidents", "close", "tr-1", "--reason", "fixed", "--by", "Wido"},
+		{"goal", "pin", bedGoal, "m1e", "--by", "Wido"},
+		{"goal", "claim", bedGoal, "--take-over", "--reason", "the holder is gone", "--by", "Wido", "--lineage", "m1"},
+		{"incident", "close", "tr-1", "--reason", "fixed", "--by", "Wido"},
 	} {
 		code, result := bed.runJSON(agent, args...)
 		bed.expectNoEffect(before, args, code, result)
 	}
 	// A proven terminal does not lend its authority to a different name.
-	code, result := bed.runJSON(bed.owners(), "pin", bedGoal, "m1e", "--by", "Mallory")
-	bed.expectNoEffect(before, []string{"pin", "--by", "Mallory"}, code, result)
+	code, result := bed.runJSON(bed.owners(), "goal", "pin", bedGoal, "m1e", "--by", "Mallory")
+	bed.expectNoEffect(before, []string{"goal", "pin", "--by", "Mallory"}, code, result)
 	if !strings.Contains(result.Summary, "not the person enrolled") {
 		t.Fatalf("a mismatched --by is not named: %+v", result)
 	}
 	// A holder's own act takes no person's name.
-	code, result = bed.runJSON(agent, "land", bedGoal, "--queue-only", "--by", "Wido")
-	bed.expectNoEffect(before, []string{"land", "--queue-only"}, code, result)
+	code, result = bed.runJSON(agent, "work", "land", bedGoal, "--queue-only", "--by", "Wido")
+	bed.expectNoEffect(before, []string{"work", "land", "--queue-only"}, code, result)
 
 	// At the enrolled terminal the name is filled from the proof.
-	code, result = bed.runJSON(bed.owners(), "prioritize", bedGoal, "1")
+	code, result = bed.runJSON(bed.owners(), "goal", "prioritize", bedGoal, "1")
 	if code != 0 || result.Outcome != intentConfirmed || bed.goalFile(bedGoal).Priority != 1 {
 		t.Fatalf("prioritize at the enrolled terminal = %d %+v", code, result)
 	}
 	// A proven, matching --by pins; the observed proof reaches the owner.
-	code, result = bed.runJSON(bed.owners(), "pin", bedGoal, "mac-cli", "--by", "Wido")
+	code, result = bed.runJSON(bed.owners(), "goal", "pin", bedGoal, "mac-cli", "--by", "Wido")
 	if code != 0 || result.Outcome != intentConfirmed || bed.goalFile(bedGoal).Pinned != "mac-cli" {
 		t.Fatalf("pin at the enrolled terminal = %d %+v", code, result)
 	}
@@ -235,20 +231,20 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 func TestIntentPlanningAttorneyGrant(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
-	code, result := bed.runJSON(bed.owners(), "grant", "--tiers", "1", "--acts", "approve,budget,resume-parked", "--until", "2026-09-05")
+	code, result := bed.runJSON(bed.owners(), "grant", "add", "add", "--tiers", "1", "--acts", "approve,budget,resume-parked", "--until", "2026-09-05")
 	if code != 0 || result.Outcome != intentConfirmed || len(result.Targets) != 1 || result.Targets[0].Kind != "grant" {
 		t.Fatalf("grant = %d %+v", code, result)
 	}
 	acts := result.Data.(map[string]any)["acts"].([]any)
-	if !slices.Equal([]string{acts[0].(string), acts[1].(string), acts[2].(string)}, []string{"approve", "set-budget", "unpark"}) {
+	if !slices.Equal([]string{acts[0].(string), acts[1].(string), acts[2].(string)}, []string{"goal", "approve", "set-budget", "unpark"}) {
 		t.Fatalf("grant acts map to %v", acts)
 	}
 	entry := result.Targets[0].ID
-	code, result = bed.runJSON(bed.owners(), "grant", "--tiers", "1", "--acts", "approve", "--until", "2026-12-31")
+	code, result = bed.runJSON(bed.owners(), "grant", "add", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-12-31")
 	if code == 0 || result.Outcome != intentRefused {
 		t.Fatalf("a grant beyond seven days = %d %+v", code, result)
 	}
-	code, result = bed.runJSON(bed.owners(), "revoke", entry)
+	code, result = bed.runJSON(bed.owners(), "grant", "add", "revoke", entry)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("revoke %s = %d %+v", entry, code, result)
 	}
@@ -283,8 +279,8 @@ func TestIntentPlanningDecidePartial(t *testing.T) {
 	bed := newIntentBed(t, false, nil)
 	writeCriticChain(t, bed.root())
 	before := bed.publications()
-	code, result := bed.runJSON(bed.owners(), "accept-risk", bedGoal, "--finding", "S-1", "--review", "missing-job", "--reason", "bounded exposure")
-	bed.expectNoEffect(before, []string{"accept-risk"}, code, result)
+	code, result := bed.runJSON(bed.owners(), "goal", "accept-risk", bedGoal, "--finding", "S-1", "--review", "missing-job", "--reason", "bounded exposure")
+	bed.expectNoEffect(before, []string{"goal", "accept-risk"}, code, result)
 
 	// The accepted-risk register cannot be written, so only the goal act lands.
 	counselor := filepath.Join(bed.root(), "records", "counselor")
@@ -294,7 +290,7 @@ func TestIntentPlanningDecidePartial(t *testing.T) {
 	if err := os.WriteFile(counselor, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, result = bed.runJSON(bed.owners(), "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure")
+	code, result = bed.runJSON(bed.owners(), "goal", "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure")
 	if code == 0 || result.Outcome != intentPartial || bed.publications() != before+1 {
 		t.Fatalf("decide with an unwritable register = %d %+v (publications %d, was %d)", code, result, bed.publications(), before)
 	}
@@ -310,19 +306,19 @@ func TestIntentPlanningReadyTiersAndNotes(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
 	bed.lineage = "m1"
-	code, result := bed.runJSON(bed.owners(), "goals", "--ready")
+	code, result := bed.runJSON(bed.owners(), "goal", "list", "--ready")
 	if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "continue your claimed goal: "+bedGoal) {
 		t.Fatalf("goals --ready = %d %+v", code, result)
 	}
-	code, result = bed.runJSON(bed.owners(), "goals", "--tiers")
+	code, result = bed.runJSON(bed.owners(), "goal", "list", "--tiers")
 	if code != 0 || result.Outcome != intentConfirmed || result.Data.(map[string]any)["recorded"] == nil {
 		t.Fatalf("goals --tiers = %d %+v", code, result)
 	}
-	code, result = bed.runJSON(bed.owners(), "notes", bedGoal, "--read", "r2", "--add", "help wraps at 80 columns", "--add", "one more")
+	code, result = bed.runJSON(bed.owners(), "goal", "notes", bedGoal, "--read", "r2", "--add", "help wraps at 80 columns", "--add", "one more")
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("notes --add = %d %+v", code, result)
 	}
-	code, result = bed.runJSON(bed.owners(), "notes", bedGoal)
+	code, result = bed.runJSON(bed.owners(), "goal", "notes", bedGoal)
 	if items := result.Data.(map[string]any)["items"].([]any); code != 0 || len(items) != 2 {
 		t.Fatalf("notes = %d %+v", code, result)
 	}
@@ -369,7 +365,7 @@ func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 		"edit":       {"next-append", "evidence", "unlabel", "obligation", "owner", "recurrence", "platform", "toolchain-identity", "surface-digest", "max-active-jobs", "timing-envelope-sec", "effect", "value-judgment", "reversibility", "severe-harm", "unfamiliar-approach", "test-discrimination", "correlated-assumption-risk", "authority-scope-change", "destructive-reach", "approved-ref"},
 		"claim":      {"take-over", "reason", "arc", "budget"},
 		"abandon":    {"successor", "waive", "also"},
-		"review":     {"test", "implementation-chain", "artifact", "result", "critic"},
+		"review":     {"test", "run", "implementation-chain", "artifact", "result", "critic"},
 		"prioritize": {"sequence"},
 		"grant":      {"tiers", "acts", "until"},
 		"notes":      {"add", "add-file", "read", "close", "fixed", "moved", "accepted"},
@@ -391,8 +387,8 @@ func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 	}
 	// The owner has retired claiming in the same act as opening; open does
 	// not advertise it.
-	open, _ := findIntentCommand("open")
-	for _, retired := range []string{"claim", "budget", "elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"} {
+	open, _ := findIntentCommand("goal open")
+	for _, retired := range []string{"goal", "claim", "budget", "elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"} {
 		if _, ok := open.lookupFlag(retired); ok {
 			t.Fatalf("open still advertises --%s", retired)
 		}
@@ -448,16 +444,16 @@ func expectPartial(t *testing.T, bed *intentBed, before int, args []string, code
 func TestIntentPlanningPartialAfterPublication(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
-	code, result := bed.runJSON(bed.owners(), "grant", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05")
+	code, result := bed.runJSON(bed.owners(), "grant", "add", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05")
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("grant = %d %+v", code, result)
 	}
 	entry := result.Targets[0].ID
 	blockProofRecords(t, bed.root())
 	for _, args := range [][]string{
-		{"grant", "--tiers", "1", "--acts", "budget", "--until", "2026-09-05"},
-		{"revoke", entry},
-		{"unapprove", bedGoal, "--reason", "the design changes first"},
+		{"grant", "add", "add", "--tiers", "1", "--acts", "budget", "--until", "2026-09-05"},
+		{"grant", "add", "revoke", entry},
+		{"goal", "unapprove", bedGoal, "--reason", "the design changes first"},
 	} {
 		before := bed.publications()
 		code, result := bed.runJSON(bed.owners(), args...)
@@ -475,7 +471,7 @@ func TestIntentPlanningResolveByOwningSession(t *testing.T) {
 	writeCriticChain(t, foreign.root())
 	foreign.lineage = "m9"
 	before := foreign.publications()
-	code, result := foreign.runJSON(foreign.owners(), "review", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady")
+	code, result := foreign.runJSON(foreign.owners(), "work", "review", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady")
 	if code == 0 || result.Outcome != intentRefused || foreign.publications() != before || !strings.Contains(result.Summary, "owning pair") {
 		t.Fatalf("a foreign session's resolve = %d %+v", code, result)
 	}
@@ -483,7 +479,7 @@ func TestIntentPlanningResolveByOwningSession(t *testing.T) {
 	owning := newIntentBed(t, false, obligation)
 	writeCriticChain(t, owning.root())
 	owning.lineage = "m1"
-	code, result = owning.runJSON(owning.owners(), "review", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady")
+	code, result = owning.runJSON(owning.owners(), "work", "review", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady")
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("the owning session's resolve = %d %+v", code, result)
 	}
@@ -509,31 +505,31 @@ func TestIntentPlanningNotesAuthority(t *testing.T) {
 	agent := bed.owners()
 	agent.prove = unprovable
 	for _, args := range [][]string{
-		{"notes", bedGoal, "--read", "r2", "--add", "named only", "--by", "Wido"},
-		{"notes", bedGoal, "--read", "r2", "--add", "named only", "--by", "Wido", "--lineage", "m9"},
+		{"goal", "notes", bedGoal, "--read", "r2", "--add", "named only", "--by", "Wido"},
+		{"goal", "notes", bedGoal, "--read", "r2", "--add", "named only", "--by", "Wido", "--lineage", "m9"},
 	} {
 		code, result := bed.runJSON(agent, args...)
 		bed.expectNoEffect(before, args, code, result)
 	}
 	bed.lineage = "m9"
-	code, result := bed.runJSON(bed.owners(), "notes", bedGoal, "--read", "r2", "--add", "not mine")
+	code, result := bed.runJSON(bed.owners(), "goal", "notes", bedGoal, "--read", "r2", "--add", "not mine")
 	if code == 0 || result.Outcome != intentRefused || bed.publications() != before || !strings.Contains(result.Summary, "human act") {
 		t.Fatalf("another agent's note = %d %+v", code, result)
 	}
 
 	bed.lineage = ""
-	code, result = bed.runJSON(bed.owners(), "notes", bedGoal, "--read", "r2", "--add", "a person's note")
+	code, result = bed.runJSON(bed.owners(), "goal", "notes", bedGoal, "--read", "r2", "--add", "a person's note")
 	if code != 0 || result.Outcome != intentConfirmed || len(notes(bed.goalFile(bedGoal))) != 1 {
 		t.Fatalf("a proven person's note on another pair's claim = %d %+v", code, result)
 	}
 	item := notes(bed.goalFile(bedGoal))[0]
-	code, result = bed.runJSON(bed.owners(), "notes", bedGoal, "--close", item.ID, "--accepted", "not a defect")
+	code, result = bed.runJSON(bed.owners(), "goal", "notes", bedGoal, "--close", item.ID, "--accepted", "not a defect")
 	if code != 0 || result.Outcome != intentConfirmed || notes(bed.goalFile(bedGoal))[0].State == goal.ReadItemOpen {
 		t.Fatalf("a proven person's close on another pair's claim = %d %+v", code, result)
 	}
 
 	bed.lineage = "m1"
-	code, result = bed.runJSON(bed.owners(), "notes", bedGoal, "--read", "r3", "--add", "the owner's own note")
+	code, result = bed.runJSON(bed.owners(), "goal", "notes", bedGoal, "--read", "r3", "--add", "the owner's own note")
 	if code != 0 || result.Outcome != intentConfirmed || len(notes(bed.goalFile(bedGoal))) != 2 {
 		t.Fatalf("the owning agent's note = %d %+v", code, result)
 	}

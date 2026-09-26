@@ -52,7 +52,7 @@ func runACPPreflight(args []string) int {
 	f := flag.NewFlagSet("acp preflight", flag.ContinueOnError)
 	envelopePath := f.String("envelope-file", "", "path to the expanded five-field envelope JSON")
 	if err := f.Parse(args); err != nil || *envelopePath == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem acp preflight --envelope-file F")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal acp preflight --envelope-file F")
 		return 2
 	}
 	envelope, err := loadEnvelope(*envelopePath)
@@ -98,7 +98,7 @@ func runACPTurn(args []string) int {
 		return 2
 	}
 	if *serverOut == "" || *serverIn == "" || *journalPath == "" || *workspace == "" || *envelopePath == "" || *promptFile == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem acp turn --server-out P --server-in P --journal P --workspace D --envelope-file F --prompt-file F [--load-session ID] [--mode M] [--expected-protocol N] [--*-timeout-sec N]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal acp turn --server-out P --server-in P --journal P --workspace D --envelope-file F --prompt-file F [--load-session ID] [--mode M] [--expected-protocol N] [--*-timeout-sec N]")
 		return 2
 	}
 	envelope, err := loadEnvelope(*envelopePath)
@@ -211,7 +211,7 @@ func runACPMode(args []string) int {
 	runtimeName := f.String("runtime", "", "runtime whose dialect to consult")
 	tools := f.String("tools", "", "envelope tools grade")
 	if err := f.Parse(args); err != nil || *runtimeName == "" || *tools == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem acp mode --runtime R --tools GRADE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal acp mode --runtime R --tools GRADE")
 		return 2
 	}
 	dialect, err := adapter.ACPDialectFor(*runtimeName)

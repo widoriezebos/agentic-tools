@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Report is one reading of the fleet: what `metasystem seat fleet` prints and
+// Report is one reading of the fleet: what `metasystem internal seat fleet` prints and
 // what its --json hands the interface.
 type Report struct {
 	Machines []MachineStanding `json:"machines"`

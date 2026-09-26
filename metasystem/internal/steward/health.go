@@ -346,7 +346,7 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 		return *stopped, nil
 	}
 	if stateUnreadable {
-		remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
+		remedy := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 		for index := range roles {
 			if roles[index].Role != RoleSpendFence && roles[index].Status == HealthAlive {
 				durationMillis := roles[index].DurationMillis
@@ -591,7 +591,7 @@ func checkHookFreshness(repoRoot string, now time.Time) RoleVerdict {
 }
 
 func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) RoleVerdict {
-	remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
+	remedy := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 	record, durabilityPending, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
 		var busy *ComponentEvidenceBusyError
@@ -639,7 +639,7 @@ const stopHookBudgetSeconds = 60
 const defaultStopHookSlowSeconds = 15
 
 func checkStopHookDuration(repoRoot string) RoleVerdict {
-	reread := fmt.Sprintf("metasystem health --repo %q", repoRoot)
+	reread := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 	record, _, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
 		var busy *ComponentEvidenceBusyError
@@ -711,7 +711,7 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 	observedAt := now.UTC()
 	if previous.ObservedAt.After(observedAt) {
 		observedAt = previous.ObservedAt.UTC()
-		remedy := fmt.Sprintf("metasystem health --repo %q", repoRoot)
+		remedy := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 		for index := range ordered {
 			if ordered[index].Status == HealthAlive {
 				ordered[index].Status = HealthUnknown
@@ -1130,7 +1130,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 		if unknown, ok := dispatch.GoalRecordBudgetUnknown(projectionErr); ok {
 			role := roleDead(RoleClaimedGoalBudget,
 				fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason),
-				"repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo "+strconv.Quote(repoRoot))
+				"repair the exact BUDGET_UNKNOWN record, then run metasystem system check --repo "+strconv.Quote(repoRoot))
 			role.NoAutomaticRemedy = true
 			role.RemedyFacts = []RemedyFact{{Cause: CauseBudgetUnknown, Record: unknown.Record}}
 			return role
@@ -1204,7 +1204,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 				dead = append(dead, budgetFailure{
 					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_OPEN stop=%s pendingJobs=%d%s",
 						id, file.Claimed.Revision, batch.StopID, len(batch.Pending), stopFiringEvidenceSummary(batch)),
-					remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
+					remedy: "metasystem internal steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
 					fact: RemedyFact{Cause: CauseBreachStopOpen, Goal: id, Stop: batch.StopID},
 				})
 			}
@@ -1215,7 +1215,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 			dead = append(dead, budgetFailure{
 				reason: fmt.Sprintf("%s BUDGET_UNKNOWN record=%s reason=%s",
 					id, budget.Unknown.Record, budget.Unknown.Reason),
-				remedy: "repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo " + strconv.Quote(repoRoot),
+				remedy: "repair the exact BUDGET_UNKNOWN record, then run metasystem system check --repo " + strconv.Quote(repoRoot),
 				fact:   RemedyFact{Cause: CauseBudgetUnknown, Goal: id, Record: budget.Unknown.Record},
 			})
 			continue
@@ -1232,7 +1232,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 			dead = append(dead, budgetFailure{
 				reason: fmt.Sprintf("%s revision=%d BREACH %s designCritiques=%d/%d codeCritiques=%d/%d", id, budget.GoalRevision, strings.Join(fields, ", "),
 					budget.DesignCritiques, budget.Limits.ReviewRoundLimit, budget.CodeCritiques, budget.Limits.ReviewRoundLimit),
-				remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
+				remedy: "metasystem internal steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
 				fact: RemedyFact{Cause: CauseBudgetBreach, Goal: id},
 			})
 			continue
@@ -1262,7 +1262,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 	}
 	carryCounts, carryErr := goal.CountCarriesAtEndpoint(goal.Endpoint{Root: repoRoot, Repository: carryRepository}, projection.Tree, codeTip, now)
 	if carryErr != nil {
-		return roleUnknown(RoleClaimedGoalBudget, "the carried-landing counter is unreadable: "+carryErr.Error(), "repair the carried ledger or code history, then rerun metasystem health")
+		return roleUnknown(RoleClaimedGoalBudget, "the carried-landing counter is unreadable: "+carryErr.Error(), "repair the carried ledger or code history, then rerun metasystem system check")
 	}
 	known = append([]string{fmt.Sprintf("CARRIED today=%d open=%d inflight=%d debt=%d", carryCounts.Today, carryCounts.Open, carryCounts.Inflight, carryCounts.Debt)}, known...)
 	if len(dead) > 0 {
@@ -1310,7 +1310,7 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 	machine, err := readMachine(repoRoot)
 	if err != nil {
 		return roleUnknown(RoleStopCapabilityEpoch, "the enrolled machine is unreadable: "+err.Error(),
-			"repair the machine enrollment, then rerun metasystem health")
+			"repair the machine enrollment, then rerun metasystem system check")
 	}
 	var claimed []*goal.GoalFile
 	for _, id := range goal.SortedGoalIds(projection.Tree.Live) {
@@ -1328,14 +1328,14 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 	}
 	if err != nil {
 		return roleUnknown(RoleStopCapabilityEpoch, "the checkout lease is unreadable: "+err.Error(),
-			"repair the checkout lease, then rerun metasystem health")
+			"repair the checkout lease, then rerun metasystem system check")
 	}
 	var current []string
 	for _, file := range claimed {
 		if file.StopCapability == nil {
 			role := roleUnknown(RoleStopCapabilityEpoch,
 				fmt.Sprintf("claimed goal %s has no stop capability to compare", file.Id),
-				"repair the claimed goal record, then rerun metasystem health")
+				"repair the claimed goal record, then rerun metasystem system check")
 			role.RemedyFacts = []RemedyFact{{Cause: CauseStopCapabilityMissing, Goal: file.Id, Record: "plans/goals/" + file.Id + ".md"}}
 			return role
 		}
@@ -1348,14 +1348,14 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 			role := roleDead(RoleStopCapabilityEpoch,
 				fmt.Sprintf("goal %s stop capability claim epoch %d differs from live lease claim epoch %d under owner lineage %s",
 					file.Id, capabilityEpoch, holder.ClaimEpoch, holder.OwnerLineage),
-				fmt.Sprintf("metasystem goal restamp --id %s, or re-arm with metasystem up", file.Id))
+				fmt.Sprintf("metasystem internal goal restamp --id %s, or re-arm with metasystem up", file.Id))
 			role.RemedyFacts = []RemedyFact{{Cause: CauseEpochMismatch, Goal: file.Id}}
 			return role
 		}
 		role := roleDead(RoleStopCapabilityEpoch,
 			fmt.Sprintf("goal %s was claimed under owner lineage %s but the live lease belongs to owner lineage %s",
 				file.Id, file.Claimed.Lineage, holder.OwnerLineage),
-			"release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem goal handover")
+			"release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem internal goal handover")
 		role.NoAutomaticRemedy = true
 		role.RemedyFacts = []RemedyFact{{Cause: CauseForeignLineage, Goal: file.Id}}
 		return role
@@ -1429,7 +1429,7 @@ func malformedBudgetGoal(err error) (string, bool) {
 }
 
 func goalBudgetRemedy(id string) string {
-	return fmt.Sprintf("metasystem goal set-budget --root . --id %s --elapsed-limit DURATION --attempt-limit POSITIVE_INTEGER --reserved-job-minutes-limit POSITIVE_INTEGER --active-job-limit POSITIVE_INTEGER --review-round-limit NON_NEGATIVE_INTEGER", id)
+	return fmt.Sprintf("metasystem internal goal set-budget --root . --id %s --elapsed-limit DURATION --attempt-limit POSITIVE_INTEGER --reserved-job-minutes-limit POSITIVE_INTEGER --active-job-limit POSITIVE_INTEGER --review-round-limit NON_NEGATIVE_INTEGER", id)
 }
 
 func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
@@ -1489,14 +1489,14 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 		Key: "metasystem.runtimes", ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"),
 	})
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
+		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem internal config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
 	}
 	if runtimeValue == "none" {
 		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured")
 	}
 	maxAgeDays, err := nonnegativeConfig(metasystemRoot, "capability.snapshot-max-age-days", 30)
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
+		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem internal config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
 	}
 	runtimes := strings.Split(runtimeValue, ",")
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "capabilities", "*.json"))
@@ -1560,7 +1560,7 @@ func checkCapabilitySnapshots(repoRoot, metasystemRoot string, now time.Time) Ro
 		for _, name := range names {
 			name = strings.TrimSuffix(name, ":CLOCK_REGRESSED")
 			if name == "empty-runtime" || strings.HasSuffix(name, ":NO_ADAPTER") {
-				commands = append(commands, "metasystem config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
+				commands = append(commands, "metasystem internal config validate --conf "+strconv.Quote(filepath.Join(metasystemRoot, "metasystem.conf")))
 				continue
 			}
 			commands = append(commands, fmt.Sprintf("%q probe", filepath.Join(metasystemRoot, "scripts", "agents", "adapters", name+".sh")))

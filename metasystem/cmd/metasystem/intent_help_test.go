@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -42,9 +43,14 @@ func TestIntentAgentHelpCatalogue(t *testing.T) {
 	}
 	listed := map[string]int{}
 	for _, line := range strings.Split(page, "\n") {
+		if !strings.HasPrefix(line, "  ") {
+			continue
+		}
 		words := strings.Fields(line)
-		if strings.HasPrefix(line, "  ") && len(words) >= 2 && strings.HasPrefix(words[1], "[") {
-			listed[words[0]]++
+		for index := 1; index < len(words) && index <= 2; index++ {
+			if strings.HasPrefix(words[index], "[") {
+				listed[strings.Join(words[:index], " ")]++
+			}
 		}
 	}
 	for _, command := range publicIntentCommands() {
@@ -56,69 +62,98 @@ func TestIntentAgentHelpCatalogue(t *testing.T) {
 	if len(listed) != 0 {
 		t.Errorf("nonpublic commands: %v", listed)
 	}
-	for _, wanted := range []string{"approve", "budget", "accept-risk", "help human", "help review FORM", "--json", "--check"} {
+	for _, wanted := range []string{"goal approve", "goal budget", "goal accept-risk", "help human", "help work review FORM", "--json", "--check", "OBJECT ACTION", "j2:ID"} {
 		if !strings.Contains(page, wanted) {
 			t.Errorf("agent help omits %q", wanted)
 		}
 	}
-	for _, forbidden := range []string{"metasystem internal", "--fixture-human-authority", "--lineage", "metasystem goal list"} {
+	for _, forbidden := range []string{"metasystem internal", "--fixture-human-authority", "--lineage", "goal fetch", "run-loop", "test worker"} {
 		if strings.Contains(page, forbidden) {
 			t.Errorf("agent help exposes %s", forbidden)
 		}
 	}
 }
 
-func TestIntentAdministrationHelp(t *testing.T) {
+// helpUsagePattern is a public form as help prints it.
+var helpUsagePattern = regexp.MustCompile(`^metasystem ([a-z-]+)(?: ([a-z-]+))?`)
+
+// TestIntentHelpSurfacesArePublicForms is the witness that every help
+// surface, the JSON help and the Partner catalogue are written from the one
+// table: each usage line is an OBJECT ACTION form of a public pair (or the
+// top-level status) and no hidden entry appears anywhere.
+func TestIntentHelpSurfacesArePublicForms(t *testing.T) {
 	t.Parallel()
-	_, index := readHelpJSON(t, "administration", "--json")
-	listed := map[string]bool{}
-	for _, entry := range index.Commands {
-		listed[entry.Name] = true
-		if entry.Scope != "administration" && entry.Scope != "mixed" {
-			t.Errorf("administration index includes workflow-only %s", entry.Name)
+	registered := families()
+	pages := map[string]string{}
+	for _, args := range [][]string{{"help"}, {"help", "all"}, {"help", "human"}, {"help", "agent"}} {
+		_, page, _ := runCLIHelp(args, registered)
+		pages[strings.Join(args, " ")] = page
+	}
+	for _, object := range intentObjects() {
+		_, page, _ := runCLIHelp([]string{object}, registered)
+		pages[object] = page
+		_, page, _ = runCLIHelp([]string{"help", object, "--json"}, registered)
+		pages["json "+object] = page
+	}
+	for _, command := range publicIntentCommands() {
+		_, page, _ := runCLIHelp(append(command.words(), "--help"), registered)
+		pages[command.name] = page
+		_, page, _ = runCLIHelp(append(append([]string{"help"}, command.words()...), "--json"), registered)
+		pages["json "+command.name] = page
+		for _, form := range command.helpForms {
+			_, page, _ = runCLIHelp(append(append([]string{"help"}, command.words()...), form.name), registered)
+			pages[command.name+" "+form.name] = page
 		}
 	}
-	for _, name := range []string{"enroll", "settings", "restart", "start", "stop", "status", "check", "repair", "land"} {
-		if !listed[name] {
-			t.Errorf("administration index omits %s", name)
+	_, index, _ := runCLIHelp([]string{"help", "--json"}, registered)
+	pages["json index"] = index
+	catalogue, _ := json.Marshal(commandCatalogue())
+	pages["partner"] = string(catalogue)
+	for label, page := range pages {
+		if page == "" {
+			t.Errorf("%s is empty", label)
 		}
-	}
-	for _, name := range []string{"build", "review", "wait", "incidents"} {
-		if listed[name] {
-			t.Errorf("application work %s is misclassified as administration", name)
+		for _, command := range intentCommands() {
+			if command.hidden && (strings.Contains(page, "metasystem "+command.name) || strings.Contains(page, `"`+command.name+`"`)) {
+				t.Errorf("%s names the entry %s", label, command.name)
+			}
 		}
-	}
-	for _, words := range [][]string{{"help", "all"}, {"help", "human"}, {"help", "administration"}} {
-		code, page, problem := runCLIHelp(words, families())
-		heading := strings.Index(page, "MetaSystem administration (tool setup and maintenance)")
-		if code != 0 || problem != "" || heading < 0 {
-			t.Fatalf("%v does not separate administration: %d %s", words, code, problem)
-		}
-		for _, name := range []string{"enroll", "settings", "restart"} {
-			if at := strings.Index(page, "metasystem "+name+" "); at < heading {
-				t.Errorf("%v lists %s outside administration", words, name)
+		for _, line := range strings.Split(page, "\n") {
+			for _, quoted := range regexp.MustCompile(`metasystem [a-z][a-z-]*(?: [a-z][a-z-]*)?`).FindAllString(line, -1) {
+				match := helpUsagePattern.FindStringSubmatch(quoted)
+				object, action := match[1], match[2]
+				switch {
+				case object == "help" || object == "status" || object == "internal" && label == "help agent":
+				case isIntentObject(object):
+					if _, ok := findIntentAction(object, action); !ok && action != "" && !slices.Contains([]string{"lists", "shows", "action"}, action) {
+						if command, known := findIntentAction(object, action); !known || command.hidden {
+							t.Errorf("%s names %q, which is not a public pair", label, quoted)
+						}
+					}
+				default:
+					if !slices.Contains([]string{"prepares", "installation"}, object) {
+						t.Errorf("%s names %q, whose first word is not an object", label, quoted)
+					}
+				}
 			}
 		}
 	}
-	for _, row := range []struct{ name, work, admin string }{
-		{"start", "metasystem start session", "metasystem start [checkout]"},
-		{"stop", "metasystem stop job J", "metasystem stop [checkout]"},
-		{"status", "metasystem status G", "metasystem status ui"},
-		{"repair", "metasystem repair review G", "metasystem repair goals --upgrade"},
-	} {
-		_, doc := readHelpJSON(t, row.name, "--json")
-		if doc.Command.Scope != "mixed" || !strings.Contains(strings.Join(doc.Command.Usage, "\n"), row.work) ||
-			!strings.Contains(strings.Join(doc.Command.AdministrationUsage, "\n"), row.admin) {
-			t.Errorf("%s loses the workflow/administration distinction: %+v", row.name, doc.Command)
-		}
-		code, page, problem := runCLIHelp([]string{"help", row.name}, families())
-		heading := strings.Index(page, "MetaSystem administration:")
-		work, admin := strings.Index(page, row.work), strings.Index(page, row.admin)
-		if code != 0 || problem != "" || work < 0 || work >= heading || admin <= heading {
-			t.Errorf("%s text does not separate forms: %d %d %d / %s", row.name, work, heading, admin, problem)
+	for _, command := range publicIntentCommands() {
+		for _, usage := range command.allUsage() {
+			if !strings.HasPrefix(usage, "metasystem "+command.name) {
+				t.Errorf("%s has the usage %q", command.name, usage)
+			}
 		}
 	}
+}
+
+func TestIntentAdministrationHelp(t *testing.T) {
+	t.Parallel()
 	for _, command := range publicIntentCommands() {
+		administration := slices.Contains(intentAdministrationObjects, command.object)
+		if administration && command.helpScope() != "administration" || !administration && command.helpScope() == "administration" {
+			t.Errorf("%s has scope %s", command.name, command.helpScope())
+		}
 		seen := map[string]bool{}
 		for _, usage := range command.allUsage() {
 			if seen[usage] {
@@ -126,6 +161,26 @@ func TestIntentAdministrationHelp(t *testing.T) {
 			}
 			seen[usage] = true
 		}
+	}
+	for _, row := range []struct{ name, work, admin string }{
+		{"work land", "metasystem work land G --queue-only", "metasystem work land G --exception CODE --reason TEXT --by NAME --upgrade-goals"},
+		{"goal repair", "metasystem goal repair", "metasystem goal repair --upgrade"},
+	} {
+		_, doc := readHelpJSON(t, append(strings.Fields(row.name), "--json")...)
+		if doc.Command.Scope != "mixed" || !strings.Contains(strings.Join(doc.Command.Usage, "\n"), row.work) ||
+			!strings.Contains(strings.Join(doc.Command.AdministrationUsage, "\n"), row.admin) {
+			t.Errorf("%s loses the workflow/administration distinction: %+v", row.name, doc.Command)
+		}
+		code, page, problem := runCLIHelp(append([]string{"help"}, strings.Fields(row.name)...), families())
+		heading := strings.Index(page, "MetaSystem administration:")
+		work, admin := strings.Index(page, row.work), strings.Index(page, row.admin)
+		if code != 0 || problem != "" || work < 0 || work >= heading || admin <= heading {
+			t.Errorf("%s text does not separate forms: %d %d %d / %s", row.name, work, heading, admin, problem)
+		}
+	}
+	_, page, _ := runCLIHelp([]string{"system", "stop", "--help"}, families())
+	if !strings.Contains(page, "MetaSystem administration: this action manages the work system itself.") {
+		t.Errorf("system stop does not say it administers MetaSystem: %q", page)
 	}
 }
 
@@ -150,6 +205,9 @@ func TestIntentHelpJSON(t *testing.T) {
 		if !reflect.DeepEqual(page.Command.Usage, command.usage) || !reflect.DeepEqual(page.Command.AdministrationUsage, command.administrationUsage) || !reflect.DeepEqual(page.Command.Details, command.details) {
 			t.Errorf("%s differs from its command definition", entry.Name)
 		}
+		if command.passthrough != nil {
+			continue
+		}
 		seen := map[string]bool{}
 		for _, option := range page.Command.Options {
 			definition, ok := command.lookupFlag(option.Name)
@@ -167,20 +225,22 @@ func TestIntentHelpJSON(t *testing.T) {
 			}
 		}
 	}
-	for _, topic := range []string{"work", "questions", "operations", "human"} {
-		_, page := readHelpJSON(t, topic, "--json")
-		if len(page.Commands) == 0 {
-			t.Errorf("empty topic %s", topic)
+	for _, object := range intentObjects() {
+		_, page := readHelpJSON(t, object, "--json")
+		if len(page.Commands) != len(objectActions(object)) {
+			t.Errorf("help %s --json lists %d actions, want %d", object, len(page.Commands), len(objectActions(object)))
 		}
 		for _, entry := range page.Commands {
-			if (topic == "human" && entry.Audience == "agent") || (topic != "human" && entry.Group != topic) {
-				t.Errorf("wrong topic entry: %s %+v", topic, entry)
+			if !strings.HasPrefix(entry.Name, object+" ") {
+				t.Errorf("help %s --json lists %s", object, entry.Name)
 			}
 		}
 	}
-	_, goals := readHelpJSON(t, "goals", "--json")
-	if goals.Command == nil || goals.Command.Name != "goals" {
-		t.Fatal("command/topic collision no longer prefers the command")
+	_, human := readHelpJSON(t, "human", "--json")
+	for _, entry := range human.Commands {
+		if entry.Audience == "agent" {
+			t.Errorf("help human lists the agent action %s", entry.Name)
+		}
 	}
 }
 
@@ -189,10 +249,10 @@ func TestIntentHelpRefusals(t *testing.T) {
 	for _, args := range [][]string{
 		{"help", "--bad", "--json"}, {"help", "--json", "internal"},
 		{"help", "launch", "--json"}, {"help", "close", "--json"},
-		{"help", "review", "unknown", "--json"}, {"help", "review", "design", "extra", "--json"},
-		{"help", "review", "--changes", "--json"}, {"help", "all", "extra", "--json"},
-		{"help", "no-such-command", "--json"}, {"help", "review", "design", "extra"},
-		{"help", "review", "unknown"}, {"help", "--bad"},
+		{"help", "work", "review", "unknown", "--json"}, {"help", "work", "review", "design", "extra", "--json"},
+		{"help", "work", "review", "--changes", "--json"}, {"help", "all", "extra", "--json"},
+		{"help", "no-such-command", "--json"}, {"help", "work", "review", "goal", "extra"},
+		{"help", "work", "review", "unknown"}, {"help", "--bad"}, {"help", "goal", "fetch", "--json"},
 	} {
 		code, output, problem := runCLIHelp(args, families())
 		if code != 2 {
@@ -206,8 +266,13 @@ func TestIntentHelpRefusals(t *testing.T) {
 			if result.Outcome != intentRefused || result.Verb != "help" || result.Next == nil || problem != "" {
 				t.Errorf("%v has invalid refusal: %+v / %s", args, result, problem)
 			}
-		} else if output != "" || !strings.Contains(problem, "usage: metasystem help") {
+		} else if output != "" || !strings.Contains(problem, "metasystem") {
 			t.Errorf("text refusal %v = %q %q", args, output, problem)
+		}
+	}
+	for _, args := range [][]string{{"help", "goal", "fetch"}, {"help", "no-such-object"}, {"help", "goals"}} {
+		if code, output, problem := runCLIHelp(args, families()); code != 2 || output != "" || !strings.Contains(problem, "nothing was done") {
+			t.Errorf("%v = %d %q %q", args, code, output, problem)
 		}
 	}
 }
@@ -218,9 +283,10 @@ func TestIntentHelpNeverExecutes(t *testing.T) {
 		panic("help executed a command")
 	}}}}}
 	for _, args := range [][]string{
-		{"help", "--json"}, {"help", "agent"}, {"help", "review", "submit"},
-		{"help", "review", "design", "--json"}, {"help", "open", "--intent", "mutate"},
+		{"help", "--json"}, {"help", "agent"}, {"help", "work", "review", "submit"},
+		{"help", "design", "review", "design", "--json"}, {"help", "goal", "open", "--intent", "mutate"},
 		{"help", "sentinel"}, {"help", "sentinel", "mutate"}, {"help", "sentinel", "--json"},
+		{"goal"}, {"goal", "--help"}, {"goal", "approve", "--help"}, {"status", "--help"}, {"test", "plan", "--help"},
 	} {
 		var output, problem bytes.Buffer
 		dispatchWithFamiliesAndRepositoryTop(args, &output, &problem, registered, func(string) (string, error) {
@@ -231,78 +297,90 @@ func TestIntentHelpNeverExecutes(t *testing.T) {
 
 func TestIntentReviewHelpForms(t *testing.T) {
 	t.Parallel()
-	_, review := readHelpJSON(t, "review", "--json")
-	command, _ := findIntentCommand("review")
-	expected := map[string][]string{
-		"goal": {reviewGoalUsage, reviewExplicitGoalUsage}, "submit": {reviewSubmitUsage}, "finding": {reviewFindingUsage},
-		"design": {reviewDesignUsage}, "job": {reviewJobUsage}, "commit": {reviewCommitUsage}, "run": {reviewRunUsage}, "changes": {reviewChangesUsage}, "diff": {reviewDiffUsage},
+	expected := map[string]map[string][]string{
+		"work review": {
+			"goal": {reviewGoalUsage}, "submit": {reviewSubmitUsage}, "finding": {reviewFindingUsage},
+			"job": {reviewJobUsage}, "commit": {reviewCommitUsage}, "run": {reviewRunUsage}, "changes": {reviewChangesUsage}, "diff": {reviewDiffUsage},
+		},
+		"design review": {"design": {reviewDesignUsage}},
 	}
-	if len(review.Command.Forms) != len(expected) {
-		t.Fatalf("forms: %v", review.Command.Forms)
-	}
-	for _, entry := range review.Command.Forms {
-		_, page := readHelpJSON(t, entry.HelpArgv[2:]...)
-		form := page.Form
-		if form == nil || !reflect.DeepEqual(form.Usage, expected[entry.Name]) {
-			t.Fatalf("wrong usage for %s: %+v", entry.Name, form)
+	for name, forms := range expected {
+		_, review := readHelpJSON(t, append(strings.Fields(name), "--json")...)
+		command, _ := findIntentCommand(name)
+		if len(review.Command.Forms) != len(forms) {
+			t.Fatalf("%s forms: %v", name, review.Command.Forms)
 		}
-		code, text, problem := runCLIHelp([]string{"help", "review", entry.Name}, families())
-		if code != 0 || problem != "" {
-			t.Fatalf("focused text %s failed: %d %s", entry.Name, code, problem)
-		}
-		for _, section := range []string{form.Purpose, form.Effects, form.Authority, form.Repetition, "inputs:", "options:", "example:"} {
-			if section == "" || !strings.Contains(text, section) {
-				t.Errorf("focused text %s omits %q", entry.Name, section)
+		for _, entry := range review.Command.Forms {
+			_, page := readHelpJSON(t, entry.HelpArgv[2:]...)
+			form := page.Form
+			if form == nil || !reflect.DeepEqual(form.Usage, forms[entry.Name]) {
+				t.Fatalf("wrong usage for %s %s: %+v", name, entry.Name, form)
 			}
-		}
-		input, err := parseIntentArgs(command, form.ExampleArgv[2:])
-		if err != nil {
-			t.Fatalf("example cannot parse: %v: %+v", form.ExampleArgv, err)
-		}
-		options := map[string]bool{}
-		descriptions := map[string]string{}
-		valueNames := map[string]string{}
-		for _, option := range form.Options {
-			definition, ok := command.lookupFlag(option.Name)
-			if !ok || definition.hidden {
-				t.Fatalf("invalid form option %s", option.Name)
+			code, text, problem := runCLIHelp(append(append([]string{"help"}, strings.Fields(name)...), entry.Name), families())
+			if code != 0 || problem != "" || !strings.HasPrefix(text, name+" "+entry.Name+" - ") {
+				t.Fatalf("focused text %s %s failed: %d %s %q", name, entry.Name, code, problem, text)
 			}
-			options[option.Name] = true
-			descriptions[option.Name] = option.Description
-			valueNames[option.Name] = option.Value
-		}
-		if !options["repo"] || !options["json"] {
-			t.Errorf("%s lacks common options", entry.Name)
-		}
-		switch entry.Name {
-		case "changes", "diff":
-			if input.args[0] != entry.Name || input.has("changes") || input.has("patch") {
-				t.Errorf("diagnostic example submits: %v", form.ExampleArgv)
-			}
-			for _, flag := range []string{"changes", "patch", "work", "dispositions", "finding", "test", "model", "tool-calls", "after"} {
-				if options[flag] {
-					t.Errorf("diagnostic %s advertises --%s", entry.Name, flag)
+			for _, section := range []string{form.Purpose, form.Effects, form.Authority, form.Repetition, "inputs:", "options:", "example:"} {
+				if section == "" || !strings.Contains(text, section) {
+					t.Errorf("focused text %s omits %q", entry.Name, section)
 				}
 			}
-			if !strings.Contains(form.Effects, "Does not commit, publish work") || !options["brief"] || !options["retry"] {
-				t.Errorf("diagnostic boundary missing for %s", entry.Name)
+			if !slices.Equal(form.ExampleArgv[:1+len(command.words())], append([]string{"metasystem"}, command.words()...)) {
+				t.Fatalf("%s example is not a %s form: %v", entry.Name, name, form.ExampleArgv)
 			}
-			if strings.Contains(descriptions["brief"], "commit review") || !strings.Contains(descriptions["retry"], "feedback attempt") {
-				t.Errorf("diagnostic option descriptions refer to another mode: %v", descriptions)
+			input, err := parseIntentArgs(command, form.ExampleArgv[1+len(command.words()):])
+			if err != nil {
+				t.Fatalf("example cannot parse: %v: %+v", form.ExampleArgv, err)
 			}
-		case "submit":
-			if valueNames["after"] != "COMMIT" {
-				t.Errorf("submission correction names a commit, got --after %s", valueNames["after"])
+			options := map[string]bool{}
+			descriptions := map[string]string{}
+			valueNames := map[string]string{}
+			for _, option := range form.Options {
+				definition, ok := command.lookupFlag(option.Name)
+				if !ok || definition.hidden {
+					t.Fatalf("invalid form option %s", option.Name)
+				}
+				options[option.Name] = true
+				descriptions[option.Name] = option.Description
+				valueNames[option.Name] = option.Value
 			}
-			if !reflect.DeepEqual(input.args, []string{"goal", "G"}) || !input.switched("changes") || !input.has("brief") || options["retry"] {
-				t.Errorf("submission example/options: %+v %+v", input, options)
+			if !options["repo"] || !options["json"] {
+				t.Errorf("%s lacks common options", entry.Name)
 			}
-			if !strings.Contains(form.Effects, "commits") || !strings.Contains(form.Effects, "publishes") {
-				t.Error("submission does not disclose its effects")
-			}
-		case "design":
-			if options["model"] || !options["after"] || !options["retry"] {
-				t.Error("design help misstates model or retry options")
+			switch entry.Name {
+			case "changes", "diff":
+				if len(input.args) != 0 || !input.has("changes") && !input.has("patch") {
+					t.Errorf("diagnostic example names a goal: %v", form.ExampleArgv)
+				}
+				for _, flag := range []string{"work", "dispositions", "finding", "test", "model", "tool-calls", "after"} {
+					if options[flag] {
+						t.Errorf("diagnostic %s advertises --%s", entry.Name, flag)
+					}
+				}
+				if !strings.Contains(form.Effects, "Does not commit, publish work") || !options["brief"] || !options["retry"] {
+					t.Errorf("diagnostic boundary missing for %s", entry.Name)
+				}
+				if strings.Contains(descriptions["brief"], "commit review") || !strings.Contains(descriptions["retry"], "feedback attempt") {
+					t.Errorf("diagnostic option descriptions refer to another mode: %v", descriptions)
+				}
+			case "submit":
+				if valueNames["after"] != "COMMIT" {
+					t.Errorf("submission correction names a commit, got --after %s", valueNames["after"])
+				}
+				if !reflect.DeepEqual(input.args, []string{"G"}) || !input.switched("changes") || !input.has("brief") || options["retry"] {
+					t.Errorf("submission example/options: %+v %+v", input, options)
+				}
+				if !strings.Contains(form.Effects, "commits") || !strings.Contains(form.Effects, "publishes") {
+					t.Error("submission does not disclose its effects")
+				}
+			case "design":
+				if options["model"] || !options["after"] || !options["retry"] {
+					t.Error("design help misstates model or retry options")
+				}
+			case "commit":
+				if !input.has("commit") || !input.has("goal") {
+					t.Errorf("commit example = %+v", input)
+				}
 			}
 		}
 	}

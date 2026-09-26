@@ -181,7 +181,7 @@ func slicesContains(values []string, value string) bool {
 
 func runIntentDesign(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 || !inv.input.has("brief") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design needs the goal and --brief FILE; nothing was done", Decision: "metasystem design G --brief FILE"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design needs the goal and --brief FILE; nothing was done", Decision: "metasystem design write G --brief FILE"})
 	}
 	id := inv.input.args[0]
 	after := 0
@@ -213,7 +213,7 @@ func runIntentDesign(inv *intentInvocation) int {
 	case file.State == goal.StateQueued || file.State == goal.StateParked || file.Budget == nil || file.Budget.ReviewRoundLimit <= 0:
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary:  fmt.Sprintf("goal %s is not approved with a review allowance; nothing was done", id),
-			Decision: "a person approves the goal with its box: metasystem approve " + id})
+			Decision: "a person approves the goal with its box: metasystem goal approve " + id})
 	}
 	destination, recordID, problem := inv.designDestination(id, true)
 	if problem != nil {

@@ -29,11 +29,11 @@ func TestIntentQueueOnly(t *testing.T) {
 	if file := bed.goalFile(bedGoal); file.State != goal.StateClaimed || file.Landing != nil {
 		t.Fatalf("the bed goal must be held and not queued: %+v", file)
 	}
-	code, result := bed.runJSON(bed.owners(), "land", bedGoal, "--queue-only")
+	code, result := bed.runJSON(bed.owners(), "work", "land", bedGoal, "--queue-only")
 	if code != 0 || result.Outcome != intentConfirmed || bed.goalFile(bedGoal).Landing == nil {
 		t.Fatalf("queue-only = %d %+v", code, result)
 	}
-	if code, result = bed.runJSON(bed.owners(), "land", bedGoal, "--queue-only", "--through", "abc"); code != 2 || result.Outcome != intentRefused {
+	if code, result = bed.runJSON(bed.owners(), "work", "land", bedGoal, "--queue-only", "--through", "abc"); code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("queue-only with another choice = %d %+v", code, result)
 	}
 
@@ -45,8 +45,8 @@ func TestIntentQueueOnly(t *testing.T) {
 		earlier.History[index].Targets = []string{"earlier-landing"}
 	}
 	second.addGoal(earlier)
-	code, result = second.runJSON(second.owners(), "land", bedGoal, "--queue-only")
-	if result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "land", "earlier-landing"}) ||
+	code, result = second.runJSON(second.owners(), "work", "land", bedGoal, "--queue-only")
+	if result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", "earlier-landing"}) ||
 		second.goalFile(bedGoal).Landing != nil {
 		t.Fatalf("a taken landing slot = %d %+v", code, result)
 	}
@@ -71,37 +71,37 @@ func TestIntentGoalEventWait(t *testing.T) {
 	run := func(args ...string) (int, intentResult) {
 		var stdout, stderr bytes.Buffer
 		waitArgs = nil
-		code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, bed.root(), owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, bed.root(), owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result
 	}
-	if code, result := run("wait", bed.id, "--for", "landing", "--since", "abc"); code != 0 || result.Outcome != intentConfirmed ||
+	if code, result := run("work", "wait", bed.id, "--for", "landing", "--since", "abc"); code != 0 || result.Outcome != intentConfirmed ||
 		!slices.Equal(waitArgs[2:], []string{"--goal", bed.id, "--event", "landing", "--after", "abc"}) {
 		t.Fatalf("wait --for landing: %d %+v %v", code, result, waitArgs)
 	}
-	if code, result := run("wait", bed.id, "--for", "human-act", "--verb", "approve", "--since", "abc"); code != 0 ||
+	if code, result := run("work", "wait", bed.id, "--for", "human-act", "--verb", "approve", "--since", "abc"); code != 0 ||
 		!slices.Equal(waitArgs[2:], []string{"--goal", bed.id, "--event", "human-act", "--after", "abc", "--verb", "approve"}) {
 		t.Fatalf("wait --for human-act: %d %+v %v", code, result, waitArgs)
 	}
-	if code, result := run("wait", bed.id, "--event", "landing", "--after", "abc"); code != 0 ||
+	if code, result := run("work", "wait", bed.id, "--event", "landing", "--after", "abc"); code != 0 ||
 		!slices.Equal(waitArgs[2:], []string{"--goal", bed.id, "--event", "landing", "--after", "abc"}) {
 		t.Fatalf("legacy spellings: %d %+v %v", code, result, waitArgs)
 	}
-	if code, result := run("wait", bed.id, "--for", "lunch"); result.Outcome != intentRefused || waitArgs != nil {
+	if code, result := run("work", "wait", bed.id, "--for", "lunch"); result.Outcome != intentRefused || waitArgs != nil {
 		t.Fatalf("an unknown event reaches the owner: %d %+v", code, result)
 	}
 	// Nothing runs and the goal is held: the goal's status is offered.
-	if _, result := run("wait", bed.id); result.Outcome != intentUnchanged || result.Next == nil || !slices.Contains(result.Next.Argv, "status") || waitArgs != nil {
+	if _, result := run("work", "wait", bed.id); result.Outcome != intentUnchanged || result.Next == nil || !slices.Contains(result.Next.Argv, "status") || waitArgs != nil {
 		t.Fatalf("bare wait with nothing running: %+v", result)
 	}
 	// Once queued to land, the landing wait is offered instead.
-	if code, result := run("land", bed.id, "--queue-only"); code != 0 {
+	if code, result := run("work", "land", bed.id, "--queue-only"); code != 0 {
 		t.Fatalf("queue-only: %d %+v", code, result)
 	}
-	if _, result := run("wait", bed.id); result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "goal", bed.id, "--for", "landing"}) ||
+	if _, result := run("work", "wait", bed.id); result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", bed.id, "--for", "landing"}) ||
 		!strings.Contains(result.Summary, "no running work") {
 		t.Fatalf("bare wait on a queued goal: %+v", result)
 	}
@@ -123,22 +123,22 @@ func TestIntentWaitObservers(t *testing.T) {
 	run := func(args ...string) (int, intentResult) {
 		var stdout, stderr bytes.Buffer
 		waitArgs = nil
-		code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, bed.root(), owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, bed.root(), owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result
 	}
-	if _, result := run("wait", "file", "out/ready.txt", "--until", "present"); result.Outcome != intentInProgress ||
+	if _, result := run("work", "wait", "--path", "out/ready.txt", "--until", "present"); result.Outcome != intentInProgress ||
 		!slices.Contains(waitArgs, bed.root()+"/out/ready.txt") || !slices.Contains(waitArgs, "present") ||
-		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "resume", "wait-9"}) {
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", "wait:wait-9"}) {
 		t.Fatalf("wait file: %+v %v", result, waitArgs)
 	}
-	if _, result := run("wait", "proof", "attempt-7"); result.Outcome != intentInProgress || !slices.Equal(waitArgs[2:], []string{"--attempt", "attempt-7"}) {
+	if _, result := run("test", "wait", "proof:attempt-7"); result.Outcome != intentInProgress || !slices.Equal(waitArgs[2:], []string{"--attempt", "attempt-7"}) {
 		t.Fatalf("wait proof: %+v %v", result, waitArgs)
 	}
-	for _, args := range [][]string{{"wait", "file", "x"}, {"wait", "file", "x", "--until", "maybe"}, {"wait", "proof", "a", "--until", "present"}, {"wait", bed.id, "--until", "present"}} {
+	for _, args := range [][]string{{"work", "wait", "--path", "x"}, {"work", "wait", "--path", "x", "--until", "maybe"}, {"test", "wait", "proof:a", "--until", "present"}, {"work", "wait", bed.id, "--until", "present"}} {
 		if code, result := run(args...); code != 2 || result.Outcome != intentRefused || waitArgs != nil {
 			t.Fatalf("%v = %d %+v", args, code, result)
 		}
@@ -174,33 +174,33 @@ func TestIntentWaitRealOwner(t *testing.T) {
 	run := func(args ...string) (int, intentResult) {
 		var stdout, stderr bytes.Buffer
 		defer func() { lastErr = stderr.String() }()
-		code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, bed.root(), owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, bed.root(), owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result
 	}
-	code, result := run("wait", "file", "out/ready.txt", "--until", "present", "--timeout", "1s")
+	code, result := run("work", "wait", "--path", "out/ready.txt", "--until", "present", "--timeout", "1s")
 	data, _ := result.Data.(map[string]any)
 	id, _ := data["waitId"].(string)
-	if result.Outcome != intentInProgress || id == "" || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "resume", id}) {
+	if result.Outcome != intentInProgress || id == "" || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", "wait:" + id}) {
 		t.Fatalf("file wait through the real owner: code=%d %+v stderr=%q", code, result, lastErr)
 	}
-	code, resumed := run("wait", "resume", id, "--timeout", "1s")
+	code, resumed := run("work", "wait", "wait:"+id, "--timeout", "1s")
 	if resumed.Outcome != intentInProgress || resumed.Next == nil || resumed.Next.Argv[3] != id {
 		t.Fatalf("resume of the same wait record: code=%d %+v", code, resumed)
 	}
 	os.MkdirAll(filepath.Join(bed.root(), "out"), 0o755)
 	os.WriteFile(filepath.Join(bed.root(), "out", "ready.txt"), []byte("ready\n"), 0o644)
-	if code, done := run("wait", "resume", id, "--timeout", "5s"); code != 0 || done.Outcome != intentConfirmed {
+	if code, done := run("work", "wait", "wait:"+id, "--timeout", "5s"); code != 0 || done.Outcome != intentConfirmed {
 		t.Fatalf("the resumed wait after the file appeared: code=%d %+v", code, done)
 	}
 }
 
-// TestIntentReservedGoalNames: a goal named like a target word is served by
-// the explicit goal forms, which the generated continuations use; the
-// target words keep their own meaning. Nothing guesses by goal existence.
+// TestIntentReservedGoalNames: a goal named like a word the old grammar read
+// as a target kind (job, run, design, ...) is an ordinary goal name: a bare
+// word is a goal name first, and the generated continuations reach it.
 func TestIntentReservedGoalNames(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"ui", "file", "proof", "job", "run", "question", "resume", "checkout", "goal", "changes", "diff", "commit", "design"} {
@@ -215,32 +215,32 @@ func TestIntentReservedGoalNames(t *testing.T) {
 		owners := bed.workOwners()
 		run := func(args ...string) intentResult {
 			var stdout, stderr bytes.Buffer
-			runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, bed.root(), owners)
+			runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, bed.root(), owners)
 			var result intentResult
 			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 				t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 			}
 			return result
 		}
-		if status := run("status", "goal", name); status.Outcome != intentConfirmed || !strings.Contains(status.Summary, "goal "+name) {
+		if status := run("status", name); status.Outcome != intentConfirmed || !strings.Contains(status.Summary, "goal "+name) {
 			t.Fatalf("status goal %s: %+v", name, status)
 		}
-		if slices.Contains(reviewSubjectWords, name) {
-			if words := reviewGoalWords(name); !slices.Equal(words, []string{"review", "goal", name}) {
+		{
+			if words := reviewGoalWords(name); !slices.Equal(words, []string{"work", "review", name}) {
 				t.Fatalf("review continuation for goal %s: %v", name, words)
 			}
-			if reviewed := run("review", "goal", name); reviewed.Outcome == intentRefused && strings.Contains(reviewed.Summary, "review has no subject") {
+			if reviewed := run("work", "review", name); reviewed.Outcome == intentRefused && strings.Contains(reviewed.Summary, "review has no subject") {
 				t.Fatalf("review goal %s did not reach the goal: %+v", name, reviewed)
 			}
 			var built intentResult
 			{
 				var stdout, stderr bytes.Buffer
-				runIntentIn(mustIntentCommand(t, "build"), append([]string{name, "--json", "--brief", bed.brief("b.md", "Build it.\n"), "--lines", "5"}, workCheck...), &stdout, &stderr, bed.root(), owners)
+				runIntentIn(mustIntentCommand(t, "work build"), append([]string{name, "--json", "--brief", bed.brief("b.md", "Build it.\n"), "--lines", "5"}, workCheck...), &stdout, &stderr, bed.root(), owners)
 				if err := json.Unmarshal(stdout.Bytes(), &built); err != nil {
 					t.Fatalf("build %s: %v %q %q", name, err, stdout.String(), stderr.String())
 				}
 			}
-			if built.Outcome != intentConfirmed || built.Next == nil || !slices.Equal(built.Next.Argv[:4], []string{"metasystem", "review", "goal", name}) {
+			if built.Outcome != intentConfirmed || built.Next == nil || !slices.Equal(built.Next.Argv[:4], []string{"metasystem", "work", "review", name}) {
 				t.Fatalf("build of goal %s continues with its unambiguous review: %+v", name, built)
 			}
 			followed := run(built.Next.Argv[1:]...)
@@ -253,7 +253,7 @@ func TestIntentReservedGoalNames(t *testing.T) {
 				t.Fatalf("following %v did not act on goal %s: %+v", built.Next.Argv, name, followed)
 			}
 		}
-		if waited := run("wait", "goal", name); waited.Outcome != intentUnchanged || waited.Next == nil || !slices.Equal(waited.Next.Argv[:4], []string{"metasystem", "status", "goal", name}) {
+		if waited := run("work", "wait", name); waited.Outcome != intentUnchanged || waited.Next == nil || !slices.Equal(waited.Next.Argv[:3], []string{"metasystem", "status", name}) {
 			t.Fatalf("wait goal %s: %+v", name, waited)
 		}
 	}
@@ -278,23 +278,23 @@ func TestIntentProofReferenceFeedsWaitProof(t *testing.T) {
 	}
 	run := func(args ...string) (int, intentResult) {
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, bed.root(), owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, bed.root(), owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result
 	}
-	_, tested := run("test")
+	_, tested := run("test", "run")
 	if tested.Outcome != intentInProgress || !slices.Contains(tested.Targets, intentTarget{Kind: "proof", ID: "proof-20260926-a1"}) ||
-		tested.Next == nil || !slices.Equal(tested.Next.Argv, []string{"metasystem", "wait", "proof", "proof-20260926-a1"}) {
+		tested.Next == nil || !slices.Equal(tested.Next.Argv, []string{"metasystem", "test", "wait", "proof:proof-20260926-a1"}) {
 		t.Fatalf("an unfinished proof names its attempt and its wait: %+v", tested)
 	}
 	if code, waited := run(tested.Next.Argv[1:]...); code != 0 || waited.Outcome != intentConfirmed || !slices.Equal(waitArgs[2:], []string{"--attempt", "proof-20260926-a1"}) {
 		t.Fatalf("the printed wait reaches the wait owner with the attempt: %d %+v %v", code, waited, waitArgs)
 	}
 	exit = 0
-	if _, done := run("test"); done.Outcome != intentConfirmed || done.Next != nil || !slices.Contains(done.Targets, intentTarget{Kind: "proof", ID: "proof-20260926-a1"}) {
+	if _, done := run("test", "run"); done.Outcome != intentConfirmed || done.Next != nil || !slices.Contains(done.Targets, intentTarget{Kind: "proof", ID: "proof-20260926-a1"}) {
 		t.Fatalf("a finished proof still names its attempt: %+v", done)
 	}
 }
@@ -326,7 +326,7 @@ func TestIntentWaitJobKeepsTheSelectedOwner(t *testing.T) {
 		}
 	}
 	owners.processes.launches = func() *launch.Manager { return manager }
-	supervisor, child, lost := workRef(10), workRef(20), workRef(30)
+	supervisor, child, lost := workProcessRef(10), workProcessRef(20), workProcessRef(30)
 	for _, record := range []launch.Record{
 		{ID: "solo-1", Kind: "read", State: launch.Running, Supervisor: &supervisor, Child: &child},
 		{ID: "pair-1", Kind: "build", State: launch.Running, Supervisor: &supervisor, Child: &child},
@@ -347,7 +347,7 @@ func TestIntentWaitJobKeepsTheSelectedOwner(t *testing.T) {
 	}
 	run := func(args ...string) (int, intentResult) { return b.runJSON(owners, args...) }
 
-	_, listed := run("status", "work")
+	_, listed := run("work", "status")
 	waits := map[string][]string{}
 	for _, job := range listed.Data.(map[string]any)["jobs"].([]any) {
 		view := job.(map[string]any)
@@ -367,7 +367,7 @@ func TestIntentWaitJobKeepsTheSelectedOwner(t *testing.T) {
 	// The launch-only reference: a bounded wait continues with the same
 	// reference, and the continued wait sees the launch end.
 	code, bounded := run(waits["j1:solo-1"][1:]...)
-	if bounded.Outcome != intentInProgress || bounded.Next == nil || !slices.Equal(bounded.Next.Argv[1:4], []string{"wait", "job", "j1:solo-1"}) || len(dispatchWaits) != 0 {
+	if bounded.Outcome != intentInProgress || bounded.Next == nil || !slices.Equal(bounded.Next.Argv[1:4], []string{"work", "wait", "j1:solo-1"}) || len(dispatchWaits) != 0 {
 		t.Fatalf("bounded launch wait: code=%d %+v dispatch=%v", code, bounded, dispatchWaits)
 	}
 	finishOnSleep = "solo-1"
@@ -389,7 +389,7 @@ func TestIntentWaitJobKeepsTheSelectedOwner(t *testing.T) {
 	// A launch whose supervisor and child are dead is failed as lost by its
 	// owner, never reported running.
 	finishOnSleep = ""
-	code, lostWait := run("wait", "job", "j1:lost-1")
+	code, lostWait := run("work", "wait", "j1:lost-1")
 	if lostWait.Outcome != intentConfirmed || !strings.Contains(lostWait.Summary, "failed") || len(dispatchWaits) != 1 {
 		t.Fatalf("a launch with dead processes: code=%d %+v", code, lostWait)
 	}

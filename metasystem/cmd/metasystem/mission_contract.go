@@ -86,7 +86,7 @@ func runMissionContractHash(args []string) int {
 		return 2
 	}
 	if *file == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem mission contract-hash --file FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal mission contract-hash --file FILE")
 		return 2
 	}
 	data, err := os.ReadFile(*file)

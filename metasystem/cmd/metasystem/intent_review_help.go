@@ -18,8 +18,8 @@ func reviewHelpForms() []intentHelpForm {
 	return []intentHelpForm{
 		{
 			name: "goal", purpose: "review a goal's existing built or submitted work for delivery",
-			usage:  []string{reviewGoalUsage},
-			inputs: []string{"Goal G with completed work; --work NAME if several items await review."},
+			usage:       []string{reviewGoalUsage},
+			inputs:      []string{"Goal G with completed work; --work NAME if several items await review."},
 			effects:     "May commit and publish built work, start its independent review, and publish a completed clean review. Findings need the author's decisions before delivery.",
 			authority:   "Applicable goal claim, approval and review rules still apply. A review never decides its own findings or accepts human-only risk.",
 			repetition:  "Repeat to observe or complete the same review. --retry N deliberately retries a stopped examination that failed without findings. Do not combine --retry with --dispositions. Fix accepted material findings with work revise G, then review again.",

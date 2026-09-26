@@ -18,7 +18,7 @@ import (
 func designRun(t *testing.T, bed *workBed, args ...string) (int, intentResult) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, bed.root(), bed.workOwners())
+	code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, bed.root(), bed.workOwners())
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
@@ -94,7 +94,7 @@ func TestIntentDesignAuthorJourney(t *testing.T) {
 	bed := newWorkBed(t)
 	bed.starter.author = fakeAuthor(t, "The reader design.\n")
 	brief := bed.brief("design-request.md", "Design the reader.\n")
-	code, result := designRun(t, bed, "design", bed.id, "--brief", brief)
+	code, result := designRun(t, bed, "design", "write", bed.id, "--brief", brief)
 	data, _ := result.Data.(map[string]any)
 	document, _ := data["document"].(string)
 	if code != 0 || result.Outcome != intentConfirmed || data["outcome"] != "published" || result.Next == nil || !slices.Contains(result.Next.Argv, "design") {
@@ -106,14 +106,14 @@ func TestIntentDesignAuthorJourney(t *testing.T) {
 		t.Fatalf("published draft: %q", written)
 	}
 	launches := len(bed.starter.launched())
-	if _, again := designRun(t, bed, "design", bed.id, "--brief", brief); again.Outcome != intentConfirmed || len(bed.starter.launched()) != launches ||
+	if _, again := designRun(t, bed, "design", "write", bed.id, "--brief", brief); again.Outcome != intentConfirmed || len(bed.starter.launched()) != launches ||
 		again.Data.(map[string]any)["rejoined"] != true {
 		t.Fatalf("replay: %+v launches=%d->%d", again.Data, launches, len(bed.starter.launched()))
 	}
 	// The person edits; the next request is made against the edit.
 	os.WriteFile(path, append(written, []byte("A person's note.\n")...), 0o644)
 	bed.starter.author = fakeAuthor(t, "The reader design, revised.\nA person's note.\n")
-	code, result = designRun(t, bed, "design", bed.id, "--brief", bed.brief("more.md", "Revise the reader.\n"))
+	code, result = designRun(t, bed, "design", "write", bed.id, "--brief", bed.brief("more.md", "Revise the reader.\n"))
 	if code != 0 || result.Data.(map[string]any)["attempt"] != float64(2) || result.Outcome != intentConfirmed {
 		t.Fatalf("second attempt: %+v", result)
 	}
@@ -122,18 +122,18 @@ func TestIntentDesignAuthorJourney(t *testing.T) {
 		fakeAuthor(t, "A third version.\n")(record)
 		os.WriteFile(path, []byte("edited during the attempt\n"), 0o644)
 	}
-	_, result = designRun(t, bed, "design", bed.id, "--brief", bed.brief("third.md", "Third.\n"))
+	_, result = designRun(t, bed, "design", "write", bed.id, "--brief", bed.brief("third.md", "Third.\n"))
 	if result.Outcome != intentRefused || result.Data.(map[string]any)["outcome"] != "conflict" {
 		t.Fatalf("conflicting edit: %+v", result)
 	}
 	if current, _ := os.ReadFile(path); string(current) != "edited during the attempt\n" {
 		t.Fatalf("the person's edit was overwritten: %q", current)
 	}
-	if _, shown := designRun(t, bed, "show", "design", "--goal", bed.id, "--out", document, "--attempt", "3"); shown.Outcome != intentConfirmed ||
+	if _, shown := designRun(t, bed, "design", "show", "--goal", bed.id, "--out", document, "--attempt", "3"); shown.Outcome != intentConfirmed ||
 		!strings.Contains(shown.Summary, "conflict") {
 		t.Fatalf("show the kept proposal: %+v", shown)
 	}
-	if _, stale := designRun(t, bed, "design", bed.id, "--brief", bed.brief("stale.md", "Stale.\n"), "--after", "1", "--out", document); stale.Outcome != intentRefused ||
+	if _, stale := designRun(t, bed, "design", "write", bed.id, "--brief", bed.brief("stale.md", "Stale.\n"), "--after", "1", "--out", document); stale.Outcome != intentRefused ||
 		!strings.Contains(stale.Summary, "DESIGN_ATTEMPT_STALE") {
 		t.Fatalf("stale after: %+v", stale)
 	}
@@ -150,7 +150,7 @@ func TestIntentDesignAdmissionNoClaim(t *testing.T) {
 	})
 	bed.starter.author = fakeAuthor(t, "Unclaimed design.\n")
 	before := bed.goalFile(bedGoal)
-	code, result := designRun(t, bed, "design", bed.id, "--brief", bed.brief("d.md", "Design it.\n"))
+	code, result := designRun(t, bed, "design", "write", bed.id, "--brief", bed.brief("d.md", "Design it.\n"))
 	after := bed.goalFile(bedGoal)
 	if code != 0 || result.Outcome != intentConfirmed || after.State != goal.StateApproved || after.Claimed != nil || len(after.History) != len(before.History) {
 		t.Fatalf("design without a claim: %+v state=%s claimed=%+v", result, after.State, after.Claimed)
@@ -158,7 +158,7 @@ func TestIntentDesignAdmissionNoClaim(t *testing.T) {
 	queued := newWorkBedWith(t, func(file *goal.GoalFile) {
 		file.State, file.Claimed, file.StopCapability, file.StopFence, file.Budget, file.Approved = goal.StateQueued, nil, nil, nil, nil, nil
 	})
-	if _, refused := designRun(t, queued, "design", queued.id, "--brief", queued.brief("d.md", "Design it.\n")); refused.Outcome != intentRefused || len(queued.starter.launched()) != 0 {
+	if _, refused := designRun(t, queued, "design", "write", queued.id, "--brief", queued.brief("d.md", "Design it.\n")); refused.Outcome != intentRefused || len(queued.starter.launched()) != 0 {
 		t.Fatalf("design of an unapproved goal: %+v", refused)
 	}
 }
@@ -171,26 +171,26 @@ func TestIntentDesignLifecycle(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	bed.starter.hold = "design"
-	code, result := designRun(t, bed, "design", bed.id, "--brief", bed.brief("d.md", "Design it.\n"))
+	code, result := designRun(t, bed, "design", "write", bed.id, "--brief", bed.brief("d.md", "Design it.\n"))
 	if result.Outcome != intentInProgress {
 		t.Fatalf("running author: code=%d %+v", code, result)
 	}
 	_, status := designRun(t, bed, "status", bed.id)
 	designs, _ := status.Data.(map[string]any)["designs"].([]any)
-	if len(designs) != 1 || status.Next == nil || !slices.Equal(status.Next.Argv, []string{"metasystem", "wait", "goal", bed.id}) {
+	if len(designs) != 1 || status.Next == nil || !slices.Equal(status.Next.Argv, []string{"metasystem", "work", "wait", bed.id}) {
 		t.Fatalf("status of a running author: %+v", status)
 	}
 	// The launch owner's cancellation is asked for this document's attempt;
 	// in this bed its recorded processes cannot be proven dead, and the owner
 	// says so rather than reporting a stop.
-	_, shown := designRun(t, bed, "show", "design", "--goal", bed.id, "--attempt", "1")
-	if _, stopped := designRun(t, bed, "stop", "design", bed.id); stopped.Outcome != intentRefused ||
+	_, shown := designRun(t, bed, "design", "show", "--goal", bed.id, "--attempt", "1")
+	if _, stopped := designRun(t, bed, "design", "stop", bed.id); stopped.Outcome != intentRefused ||
 		!strings.Contains(stopped.Summary, "could not prove every recorded process dead") || shown.Outcome != intentConfirmed {
 		t.Fatalf("stop design: %+v", stopped)
 	}
 	failing := newWorkBed(t)
 	failing.starter.fail["design"] = true
-	_, failed := designRun(t, failing, "design", failing.id, "--brief", failing.brief("d.md", "Design it.\n"))
+	_, failed := designRun(t, failing, "design", "write", failing.id, "--brief", failing.brief("d.md", "Design it.\n"))
 	if failed.Outcome != intentFailed || failed.Next == nil || !slices.Equal(failed.Next.Argv[len(failed.Next.Argv)-2:], []string{"--after", "1"}) {
 		t.Fatalf("failed author: %+v", failed)
 	}
@@ -208,19 +208,19 @@ func TestIntentDesignLifecycle(t *testing.T) {
 	lost.manager.Supervisor = stalled
 	first := make(chan intentResult, 1)
 	go func() {
-		_, result := designRun(t, lost, "design", lost.id, "--brief", lost.brief("d.md", "Design it.\n"))
+		_, result := designRun(t, lost, "design", "write", lost.id, "--brief", lost.brief("d.md", "Design it.\n"))
 		first <- result
 	}()
 	<-stalled.claimed
 	before := len(lost.starter.launched())
 	_, status = designRun(t, lost, "status", lost.id)
-	if status.Next == nil || !slices.Equal(status.Next.Argv[:4], []string{"metasystem", "stop", "design", lost.id}) {
+	if status.Next == nil || !slices.Equal(status.Next.Argv[:4], []string{"metasystem", "design", "stop", lost.id}) {
 		t.Fatalf("status of a lost claimed supervisor: %+v", status)
 	}
 	if again, _ := os.ReadFile(document); !bytes.Equal(again, original) {
 		t.Fatalf("status changed the document")
 	}
-	code, stopped := designRun(t, lost, append([]string{"stop"}, status.Next.Argv[2:]...)...)
+	code, stopped := designRun(t, lost, append([]string{"system", "stop"}, status.Next.Argv[2:]...)...)
 	if code != 0 || stopped.Outcome != intentConfirmed || stopped.Data.(map[string]any)["state"] != string(launch.Cancelled) {
 		t.Fatalf("stop design of a lost supervisor: code=%d %+v", code, stopped)
 	}
@@ -231,7 +231,7 @@ func TestIntentDesignLifecycle(t *testing.T) {
 	}
 	lost.manager.Supervisor = lost.starter
 	lost.starter.author = fakeAuthor(t, "The next attempt.\n")
-	code, next := designRun(t, lost, "design", lost.id, "--brief", lost.brief("d2.md", "Design it again.\n"), "--after", "1")
+	code, next := designRun(t, lost, "design", "write", lost.id, "--brief", lost.brief("d2.md", "Design it again.\n"), "--after", "1")
 	if code != 0 || next.Outcome != intentConfirmed || next.Data.(map[string]any)["attempt"] != float64(2) || len(lost.starter.launched()) != before+1 {
 		t.Fatalf("a new attempt after the stopped one: code=%d %+v", code, next)
 	}
@@ -244,7 +244,7 @@ func TestIntentDesignLifecycle(t *testing.T) {
 		os.WriteFile(filepath.Join(homes, "part-"+string(rune('a'+index))+".md"),
 			[]byte("# Part\n\n- Kind: design\n- Id: "+id+"\n- Status: draft\n- Goals: "+choice.id+"\n\nBody.\n"), 0o644)
 	}
-	_, ambiguous := designRun(t, choice, "design", choice.id, "--brief", choice.brief("d.md", "Design it.\n"))
+	_, ambiguous := designRun(t, choice, "design", "write", choice.id, "--brief", choice.brief("d.md", "Design it.\n"))
 	if ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "2 draft designs") || len(choice.starter.launched()) != 0 {
 		t.Fatalf("two drafts: %+v", ambiguous)
 	}
@@ -259,7 +259,7 @@ type lostSupervisorStarter struct {
 }
 
 func (s *lostSupervisorStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
-	ref := workRef(30)
+	ref := workProcessRef(30)
 	s.m.Store.Update(id, func(record *launch.Record) error {
 		record.Supervisor = &ref
 		return nil

@@ -689,7 +689,7 @@ func runIntentBudgetWithLimits(inv *intentInvocation) int {
 func runIntentGoalViews(inv *intentInvocation) int {
 	ready, tiers := inv.input.switched("ready"), inv.input.switched("tiers")
 	if inv.input.switched("pretty") && !inv.input.switched("json") {
-		return inv.refuse("", "--pretty formats JSON; add --json; nothing was read", "metasystem goals --json --pretty")
+		return inv.refuse("", "--pretty formats JSON; add --json; nothing was read", "metasystem goal list --json --pretty")
 	}
 	if ready || tiers {
 		filters := []string{"history"}
@@ -698,7 +698,7 @@ func runIntentGoalViews(inv *intentInvocation) int {
 		}
 		for _, name := range filters {
 			if inv.input.has(name) && (name != "history" || inv.input.switched(name)) {
-				return inv.refuse("", fmt.Sprintf("--%s does not apply to this view; nothing was read", name), "drop --"+name+" or list with metasystem goals")
+				return inv.refuse("", fmt.Sprintf("--%s does not apply to this view; nothing was read", name), "drop --"+name+" or list with metasystem goal list")
 			}
 		}
 	}
@@ -709,7 +709,7 @@ func runIntentGoalViews(inv *intentInvocation) int {
 		return runIntentGoals(inv)
 	}
 	if ready && tiers || inv.input.switched("all") {
-		return inv.refuse("", "--ready, --tiers and --all are different views; give one; nothing was read", "for example metasystem goals --ready")
+		return inv.refuse("", "--ready, --tiers and --all are different views; give one; nothing was read", "for example metasystem goal list --ready")
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -989,7 +989,7 @@ func runIntentClaim(inv *intentInvocation) int {
 	}
 	if id == "" {
 		if inv.input.switched("arc") {
-			return inv.refuse("", "--arc claims a named goal's arc; nothing was done", "name the goal: metasystem claim G --arc")
+			return inv.refuse("", "--arc claims a named goal's arc; nothing was done", "name the goal: metasystem goal claim G --arc")
 		}
 		machine, err := inv.owners.dependencies.machine(inv.stateRoot)
 		if err != nil {
@@ -1275,7 +1275,7 @@ func runIntentPin(inv *intentInvocation) int {
 	case clear:
 		machine = "-"
 	case machine == "" || machine == "-":
-		return inv.refuse(id, "needs the machine to pin the goal to; nothing was done", "metasystem goal pin "+id+" MACHINE, or metasystem pin "+id+" --clear")
+		return inv.refuse(id, "needs the machine to pin the goal to; nothing was done", "metasystem goal pin "+id+" MACHINE, or metasystem goal pin "+id+" --clear")
 	}
 	actor, proof, problem := inv.actingAs("set-pin", id, actorHuman)
 	if problem != nil {
@@ -1538,7 +1538,7 @@ func runIntentRevoke(inv *intentInvocation) int {
 		entry = inv.input.args[0]
 	}
 	if entry == "" {
-		return inv.refuse("", "needs the grant to close: metasystem revoke GRANT; nothing was done", "the grant's id was printed when it was recorded")
+		return inv.refuse("", "needs the grant to close: metasystem grant revoke GRANT; nothing was done", "the grant's id was printed when it was recorded")
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1587,7 +1587,7 @@ func runIntentGroup(inv *intentInvocation) int {
 		arc = inv.input.args[1]
 	}
 	if arc == "" {
-		return inv.refuse(id, "needs the arc: metasystem group G ARC; nothing was done", "")
+		return inv.refuse(id, "needs the arc: metasystem goal group G ARC; nothing was done", "")
 	}
 	actor, proof, problem := inv.actingAs("set-arc", id, actorEither)
 	if problem != nil {

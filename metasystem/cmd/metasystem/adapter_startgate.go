@@ -46,7 +46,7 @@ func runAdapterWaitStartGate(args []string) int {
 		return 2
 	}
 	if *path == "" || *timeoutSec < 1 || *pollMS < 1 || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter wait-start-gate --path FILE --timeout-sec N [--poll-ms N]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter wait-start-gate --path FILE --timeout-sec N [--poll-ms N]")
 		return 2
 	}
 	ctx, cancel := context.WithCancel(context.Background())

@@ -58,8 +58,8 @@ func newRunner() *fakeRunner {
 		said: map[string]string{
 			"git -C " + destRoot + " rev-parse HEAD":                                                                  headCommit + "\n",
 			"git -C " + fromRoot + " config --local --list -z":                                                        "goal.sync-remote\norigin\x00goal.human.wido\nWido <wido@example.invalid>\x00user.name\nfixture\x00",
-			"metasystem config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"): "/w/evidence/m1u\n",
-			"metasystem goal next --root " + destRoot:                                                                 "g1-s44 is claimable here\n",
+			"metasystem internal config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"): "/w/evidence/m1u\n",
+			"metasystem internal goal next --root " + destRoot:                                                                 "g1-s44 is claimable here\n",
 		},
 		refused: map[string]string{
 			// An unset key is what git answers with an exit code, which is

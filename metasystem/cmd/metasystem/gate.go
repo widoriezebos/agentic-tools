@@ -28,7 +28,7 @@ func runGateRegister(args []string) int {
 		return 2
 	}
 	if *root == "" || *gate == "" || *pid == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate register --root R --gate G --pid P")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate register --root R --gate G --pid P")
 		return 2
 	}
 	path, err := gaterun.Register(*root, *pid, *gate)
@@ -54,7 +54,7 @@ func runGateFence(args []string) int {
 		return 2
 	}
 	if *root == "" || *selfPid == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate fence --root R --self-pid P")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate fence --root R --self-pid P")
 		return 2
 	}
 	holders := gaterun.Fence(*root, *selfPid)
@@ -81,7 +81,7 @@ func runGateControllerDescendant(args []string) int {
 		return 2
 	}
 	if *consumerPID <= 0 || *controllerPID <= 0 || *controllerStartedAt <= 0 || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate controller-descendant --consumer-pid P --controller-pid P --controller-started-at SECONDS [--controller-start-ticks T --controller-boot-id ID]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate controller-descendant --consumer-pid P --controller-pid P --controller-started-at SECONDS [--controller-start-ticks T --controller-boot-id ID]")
 		return 2
 	}
 	controller := identity.Ref{
@@ -108,7 +108,7 @@ func runGateWitnessFreezeWithWriters(args []string, stdout, stderr io.Writer) in
 		return 2
 	}
 	if flags.NArg() != 0 || (*root == "") == (*cleanup == "") {
-		fmt.Fprintln(stderr, "usage: metasystem gate witness-freeze (--root R | --cleanup SNAPSHOT)")
+		fmt.Fprintln(stderr, "usage: metasystem internal gate witness-freeze (--root R | --cleanup SNAPSHOT)")
 		return 2
 	}
 	if *cleanup != "" {
@@ -135,7 +135,7 @@ func runGateWitnessVerify(args []string) int {
 		return 2
 	}
 	if *root == "" || *witness == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate witness-verify --root R --witness FILE-OR-DIGEST")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate witness-verify --root R --witness FILE-OR-DIGEST")
 		return 2
 	}
 	expected, err := witnessManifestDigest(*witness)
@@ -182,7 +182,7 @@ func runGateCheck(args []string) int {
 		return 2
 	}
 	if *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate check --root R")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate check --root R")
 		return 2
 	}
 	if gaterun.Running(*root) {
@@ -203,7 +203,7 @@ func runGateGuardAcquire(args []string) int {
 		return 2
 	}
 	if *root == "" || *owner == "" || *waitSeconds <= 0 || *progressSeconds <= 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate guard-acquire --root R --owner NAME --wait-sec N --progress-sec N")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate guard-acquire --root R --owner NAME --wait-sec N --progress-sec N")
 		return 2
 	}
 	// The invoking process is a kernel fact, not a caller-selectable flag.
@@ -228,7 +228,7 @@ func runGateGuardRelease(args []string) int {
 		return 2
 	}
 	if *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate guard-release --root R")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate guard-release --root R")
 		return 2
 	}
 	if err := gaterun.ReleaseExecutionGuard(*root, int64(os.Getppid())); err != nil {

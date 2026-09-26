@@ -24,7 +24,7 @@ func runHooksCheckWithResolver(args []string, resolveLayout func(string) (stater
 	}
 	rest := flags.Args()
 	if len(rest) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem hooks check [--runtime R] <live settings> <shipped hooks>")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal hooks check [--runtime R] <live settings> <shipped hooks>")
 		return 2
 	}
 	if *runtime == "" {

@@ -141,7 +141,7 @@ func TestArmAllUsesTheProcessVerbRefusal(t *testing.T) {
 	stderr, code := captureStderr(t, func() int {
 		return runProcessArmWith([]string{"--repo", repo, "--installation", installation, "--all"}, repositoryTop, lease.ClassifyAt)
 	})
-	want := "metasystem arm: the fleet form is not built yet.\nrun: metasystem arm --repo " + repo + " --installation " + installation + "\n"
+	want := "metasystem system start: the fleet form is not built yet.\nrun: metasystem system start --repo " + repo + " --installation " + installation + "\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("arm --all = code %d stderr %q, want code 1 stderr %q", code, stderr, want)
 	}
@@ -172,8 +172,8 @@ func TestArmTemporaryWordStillRequiresHumanCallerAndLeavesFenceUnchanged(t *test
 			"--temporary-human-word", "Wido authorizes this temporary arm", "--review-by", "2026-09-09",
 		}, repositoryTop, classify)
 	})
-	want := "metasystem arm: arm is a human act at a terminal; this caller is DELEGATE.\n" +
-		"at an agent-free terminal, run: metasystem arm --repo " + repo + " --installation " + installation + "\n"
+	want := "metasystem system start: arm is a human act at a terminal; this caller is DELEGATE.\n" +
+		"at an agent-free terminal, run: metasystem system start --repo " + repo + " --installation " + installation + "\n"
 	if code != 1 || stdout != "" || stderr != want {
 		t.Fatalf("temporary arm refusal = code %d stdout %q stderr %q, want code 1 stderr %q", code, stdout, stderr, want)
 	}
@@ -237,7 +237,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 		return runProcessStatusWith([]string{"--repo", repo, "--installation", installation}, repositoryTop)
 	})
 	if code != 1 || stderr != "" || !strings.Contains(stdout, "inventory unreadable: job "+jobPath+":") || !strings.Contains(stdout, "unexpected EOF") ||
-		!strings.Contains(stdout, "repair the named read failures, then run: metasystem status --repo "+repo) || strings.Contains(stdout, "agent-free terminal") {
+		!strings.Contains(stdout, "repair the named read failures, then run: metasystem system status --repo "+repo) || strings.Contains(stdout, "agent-free terminal") {
 		t.Fatalf("ungated status = code %d stdout %q stderr %q", code, stdout, stderr)
 	}
 
@@ -245,14 +245,14 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 		t.Fatal(err)
 	}
 	stderr, code = captureStderr(t, func() int {
-		_, authorized := requireHumanTerminalAtWith(installation, installation, "metasystem arm", repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
+		_, authorized := requireHumanTerminalAtWith(installation, installation, "metasystem system start", repositoryTop, lease.ClassifyAt, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
 		if authorized {
 			return 0
 		}
 		return 1
 	})
-	want := "metasystem arm: caller classification is blocked by job record " + jobPath + ": jobId is missing.\n" +
-		"repair " + jobPath + ", then at an agent-free terminal, run: metasystem arm --repo " + repo + " --installation " + installation + "\n"
+	want := "metasystem system start: caller classification is blocked by job record " + jobPath + ": jobId is missing.\n" +
+		"repair " + jobPath + ", then at an agent-free terminal, run: metasystem system start --repo " + repo + " --installation " + installation + "\n"
 	if code != 1 || stderr != want || strings.Contains(stderr, "fixture-remote") {
 		t.Fatalf("unidentifiable-job refusal = code %d stderr %q, want %q without guessed identity", code, stderr, want)
 	}
@@ -269,59 +269,59 @@ func TestArmRefusalSecondLines(t *testing.T) {
 		{
 			name: "stop in progress",
 			err:  &stoptransition.StopInProgressError{Pid: 41},
-			want: "run: metasystem status --repo /fixture/checkout",
+			want: "run: metasystem system status --repo /fixture/checkout",
 		},
 		{
 			name: "local survivor",
 			err: &stoptransition.LocalSurvivorError{Survivor: stopfence.Survivor{
 				Component: "run", Pid: 42, PidStartedAt: 43,
 			}},
-			want: "run: metasystem stop --repo /fixture/checkout; if it survives a second stop, end pid 42 yourself; it is listed with its start time",
+			want: "run: metasystem system stop --repo /fixture/checkout; if it survives a second stop, end pid 42 yourself; it is listed with its start time",
 		},
 		{
 			name: "remote job",
 			err:  &stoptransition.RemoteJobSurvivorError{JobID: "job-one", MachineID: "machine-two"},
-			want: "cancel it from machine-two with metasystem delegate --cancel job-one; then run: metasystem arm --repo /fixture/checkout",
+			want: "cancel it from machine-two with metasystem work stop j2:job-one; then run: metasystem system start --repo /fixture/checkout",
 		},
 		{
 			name: "unknown creator names claim",
 			err:  &stoptransition.CreatorClaimSurvivorError{Verb: "run-launch", Path: "/fixture/creating/run-launch.json", Pid: 44},
-			want: "run: metasystem stop --repo /fixture/checkout",
+			want: "run: metasystem system stop --repo /fixture/checkout",
 		},
 		{
 			name: "unprobeable local identity",
 			err:  &stoptransition.UnprobeableLocalSurvivorError{Survivor: stopfence.Survivor{Component: "run", ID: "one", Pid: 45, PidStartedAt: 46}},
-			want: "run: metasystem stop --repo /fixture/checkout",
+			want: "run: metasystem system stop --repo /fixture/checkout",
 		},
 		{
 			name: "missing remote job evidence",
 			err:  &stoptransition.RemoteJobEvidenceError{JobID: "job-one", MachineID: "machine-two", Path: "/fixture/jobs/job-one.json", Kind: "missing"},
-			want: "run: metasystem stop --repo /fixture/checkout",
+			want: "run: metasystem system stop --repo /fixture/checkout",
 		},
 		{
 			name: "unreadable remote job evidence",
 			err:  &stoptransition.RemoteJobEvidenceError{JobID: "job-one", MachineID: "machine-two", Path: "/fixture/jobs/job-one.json", Kind: "unreadable", Reason: "bad JSON"},
-			want: "run: metasystem stop --repo /fixture/checkout",
+			want: "run: metasystem system stop --repo /fixture/checkout",
 		},
 		{
 			name: "unreadable family",
 			err:  &stoptransition.UnreadableFamilySurvivorError{Family: "mission", Reason: "records unreadable"},
-			want: "run: metasystem stop --repo /fixture/checkout",
+			want: "run: metasystem system stop --repo /fixture/checkout",
 		},
 		{
 			name: "recorded non-process reason",
 			err:  &stoptransition.RecordedReasonSurvivorError{Survivor: stopfence.Survivor{Component: "creator-claim", ID: "/fixture/creating/broken.json", Reason: "unreadable"}},
-			want: "run: metasystem stop --repo /fixture/checkout",
+			want: "run: metasystem system stop --repo /fixture/checkout",
 		},
 		{
 			name: "crashed stop re-inventory publication",
 			err:  &stoptransition.FencePublicationError{Path: "/fixture/transition.json", Err: errors.New("read-only filesystem")},
-			want: "run: metasystem stop --repo /fixture/checkout",
+			want: "run: metasystem system stop --repo /fixture/checkout",
 		},
 		{
 			name: "other arm failure",
 			err:  errors.New("arming failed"),
-			want: "run: metasystem arm --repo /fixture/checkout",
+			want: "run: metasystem system start --repo /fixture/checkout",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -355,10 +355,10 @@ func TestRunLaunchReadsClosedFenceBeforeCallerGate(t *testing.T) {
 func TestUnreadableFenceMakesStopPointAtArm(t *testing.T) {
 	scope := processScope{Checkout: "/fixture/checkout"}
 	err := &stopfence.RecordUnreadableError{Reason: "stop fence schema version 2 is unsupported", HighestGeneration: 7}
-	if got := stopRefusalSecondLine(scope, err); got != "run: metasystem arm --repo /fixture/checkout" {
+	if got := stopRefusalSecondLine(scope, err); got != "run: metasystem system start --repo /fixture/checkout" {
 		t.Fatalf("unreadable stop second line = %q", got)
 	}
-	if got := stopRefusalSecondLine(scope, errors.New("lock failed")); got != "run: metasystem status --repo /fixture/checkout" {
+	if got := stopRefusalSecondLine(scope, errors.New("lock failed")); got != "run: metasystem system status --repo /fixture/checkout" {
 		t.Fatalf("ordinary stop second line = %q", got)
 	}
 }
@@ -366,16 +366,16 @@ func TestUnreadableFenceMakesStopPointAtArm(t *testing.T) {
 func TestTransitionRefusalsPreserveTheNamedInstallation(t *testing.T) {
 	scope := processScope{Checkout: "/fixture/checkout", Installation: "/fixture/engine", InstallationExplicit: true}
 	unreadable := &stopfence.RecordUnreadableError{Reason: "invalid JSON", HighestGeneration: 7}
-	if got := stopRefusalSecondLine(scope, unreadable); got != "run: metasystem arm --repo /fixture/checkout --installation /fixture/engine" {
+	if got := stopRefusalSecondLine(scope, unreadable); got != "run: metasystem system start --repo /fixture/checkout --installation /fixture/engine" {
 		t.Fatalf("stop unreadable retry = %q", got)
 	}
-	if got := stopRefusalSecondLine(scope, errors.New("lock failed")); got != "run: metasystem status --repo /fixture/checkout --installation /fixture/engine" {
+	if got := stopRefusalSecondLine(scope, errors.New("lock failed")); got != "run: metasystem system status --repo /fixture/checkout --installation /fixture/engine" {
 		t.Fatalf("stop status retry = %q", got)
 	}
-	if got := armRefusalSecondLine(scope, &stoptransition.UnprobeableLocalSurvivorError{}); got != "run: metasystem stop --repo /fixture/checkout --installation /fixture/engine" {
+	if got := armRefusalSecondLine(scope, &stoptransition.UnprobeableLocalSurvivorError{}); got != "run: metasystem system stop --repo /fixture/checkout --installation /fixture/engine" {
 		t.Fatalf("arm stop retry = %q", got)
 	}
-	if got := armRefusalSecondLine(scope, errors.New("arming failed")); got != "run: metasystem arm --repo /fixture/checkout --installation /fixture/engine" {
+	if got := armRefusalSecondLine(scope, errors.New("arming failed")); got != "run: metasystem system start --repo /fixture/checkout --installation /fixture/engine" {
 		t.Fatalf("arm retry = %q", got)
 	}
 }
@@ -384,8 +384,8 @@ func TestScopeRefusalRetainsTheInstallationOptionWithAWorkingRepairPlaceholder(t
 	stderr, code := captureStderr(t, func() int {
 		return processScopeRefusal("stop", "/fixture/checkout", "/broken/engine", errors.New("/broken/engine carries no engine"))
 	})
-	want := "metasystem stop: /broken/engine carries no engine.\n" +
-		"run: metasystem stop --repo /fixture/checkout --installation <dir>, where <dir> holds this checkout's bin/metasystem\n"
+	want := "metasystem system stop: /broken/engine carries no engine.\n" +
+		"run: metasystem system stop --repo /fixture/checkout --installation <dir>, where <dir> holds this checkout's bin/metasystem\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("scope refusal = code %d stderr %q, want %q", code, stderr, want)
 	}
@@ -398,8 +398,8 @@ func TestCrashStepRefusalPreservesTheNamedInstallation(t *testing.T) {
 	stderr, code := captureStderr(t, func() int {
 		return runProcessStopWith([]string{"--repo", root, "--installation", root}, repositoryTop, lease.ClassifyAt)
 	})
-	want := "metasystem stop: METASYSTEM_STOP_CRASH_AFTER must name a numbered section-4 step from 1 through 9.\n" +
-		"run: metasystem stop --repo " + root + " --installation " + root + "\n"
+	want := "metasystem system stop: METASYSTEM_STOP_CRASH_AFTER must name a numbered section-4 step from 1 through 9.\n" +
+		"run: metasystem system stop --repo " + root + " --installation " + root + "\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("crash-step refusal = code %d stderr %q, want %q", code, stderr, want)
 	}

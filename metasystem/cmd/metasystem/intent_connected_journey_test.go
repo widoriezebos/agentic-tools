@@ -101,12 +101,12 @@ func newJourneyBed(t *testing.T) *journeyBed {
 	connectionGit(t, filepath.Dir(landingRoot), "clone", "-q", c.origin, landingRoot)
 	do := func(args ...string) (int, intentResult) {
 		t.Helper()
-		command, ok := findIntentCommand(args[0])
+		command, rest, ok := resolveIntentArgv(args)
 		if !ok {
-			t.Fatalf("no public command %q", args[0])
+			t.Fatalf("no public command %q", args)
 		}
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(command, append([]string{"--json"}, args[1:]...), &stdout, &stderr, c.root(), owners)
+		code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, c.root(), owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v printed no JSON result: %v; stdout=%q stderr=%q", args, err, stdout.String(), stderr.String())
@@ -192,19 +192,19 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	// the printed close run by the real owner, and the collecting review.
 	reviewed := func(run string, extra ...string) (critic, commit string) {
 		t.Helper()
-		code, result := do(append([]string{"review", "run", run}, extra...)...)
+		code, result := do(append([]string{"work", "review", "run:" + run}, extra...)...)
 		if result.Outcome != "in-progress" || len(c.delegates) == 0 {
 			t.Fatalf("review unit %s: code=%d %+v", run, code, result)
 		}
 		critic, commit = "crit"+strconv.Itoa(len(c.delegates)), c.delegates[len(c.delegates)-1]
 		finish(c.worktree, critic, commit)
-		code, result = do(append([]string{"review", "run", run}, extra...)...)
+		code, result = do(append([]string{"work", "review", "run:" + run}, extra...)...)
 		if result.Outcome != "in-progress" || !strings.Contains(result.Decision, "review run "+run) || !strings.Contains(result.Decision, "--dispositions FILE") ||
 			strings.Contains(result.Decision, "metasystem close") {
 			t.Fatalf("an unclosed critic must print its public decision route: code=%d %+v", code, result)
 		}
 		calls := len(b.calls)
-		if code, result = do("done", "job", critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || result.Outcome != intentConfirmed {
+		if code, result = do("work", "close", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("close %s: code=%d %+v calls=%v", critic, code, result, b.calls[calls:])
 		}
 		record := job(c.worktree, critic)
@@ -215,11 +215,11 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 			t.Fatalf("close left %s's lock behind", critic)
 		}
 		calls = len(b.calls)
-		if code, result = do("done", "job", critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || len(b.calls) != calls {
+		if code, result = do("work", "close", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || len(b.calls) != calls {
 			t.Fatalf("a repeated close must change nothing: code=%d %+v calls=%v", code, result, b.calls[calls:])
 		}
 		publications := c.publications
-		if code, result = do(append([]string{"review", "run", run}, extra...)...); code != 0 || result.Outcome != intentConfirmed || c.publications != publications+1 {
+		if code, result = do(append([]string{"work", "review", "run:" + run}, extra...)...); code != 0 || result.Outcome != intentConfirmed || c.publications != publications+1 {
 			t.Fatalf("collect %s: code=%d %+v", run, code, result)
 		}
 		return critic, commit
@@ -232,7 +232,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	build := func(unit string, edits map[string]string) string {
 		t.Helper()
 		c.edits = edits
-		code, result := do(append([]string{"build", c.id, unit, "--brief", brief, "--lines", "5"}, workCheck...)...)
+		code, result := do(append([]string{"work", "build", c.id, unit, "--brief", brief, "--lines", "5"}, workCheck...)...)
 		if code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("build %s: code=%d %+v", unit, code, result)
 		}
@@ -253,7 +253,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	// collected but unpublished, and the same review G publishes it again.
 	stages := func() map[string]string {
 		t.Helper()
-		code, result := do("status", "goal", c.id)
+		code, result := do("status", c.id)
 		views, _ := resultData(t, result)["work"].([]any)
 		found := map[string]string{}
 		for _, view := range views {
@@ -274,10 +274,10 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if found := stages(); !strings.HasPrefix(found["unit-a"], "reviewed; its read is collected but not yet published") || found["unit-b"] != "built, ready for review" {
 		t.Fatalf("collected-unpublished beside built-unread: %v", found)
 	}
-	if code, result := do("status", "goal", c.id, "--work", "unit-a"); code != 0 || result.Next == nil || !slices.Equal(result.Next.Argv[1:], []string{"review", c.id, "--work", "unit-a"}) {
+	if code, result := do("status", c.id, "--work", "unit-a"); code != 0 || result.Next == nil || !slices.Equal(result.Next.Argv[1:], []string{"work", "review", c.id, "--work", "unit-a"}) {
 		t.Fatalf("an unpublished read continues with its review: code=%d %+v", code, result)
 	}
-	if code, result := do("review", c.id, "--work", "unit-a"); code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) ||
+	if code, result := do("work", "review", c.id, "--work", "unit-a"); code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) ||
 		resultData(t, result)["state"] != "already-collected" {
 		t.Fatalf("review G republishes the collected read: code=%d %+v", code, result)
 	}
@@ -290,7 +290,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if model := flagValue(c.reads[reads], "--model"); model != "requested-critic" || flagValue(c.reads[reads], "--unit") != commitB {
 		t.Fatalf("review unit --model must reach the read owner for B's commit: %v", c.reads[reads])
 	}
-	if code, result := do("review", "run", runB, "--effort", "high"); code != 2 || result.Outcome != intentRefused {
+	if code, result := do("work", "review", "run:"+runB, "--effort", "high"); code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("a review effort override stays refused: code=%d %+v", code, result)
 	}
 	if status := c.landAdmission(); status.Prefix != 2 || status.Units[0].Commit != commitA || status.Units[1].Commit != commitB {
@@ -300,7 +300,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	// A same-unit correction: fold A, review it again. B's unit survives
 	// with its exact bytes; A's old read does not carry over.
 	c.edits = map[string]string{"a.txt": "amended A\n"}
-	if code, result := do("revise", "run", runA, "--brief", c.brief("fix.md", "Amend A.\n")); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := do("work", "revise", "run:"+runA, "--brief", c.brief("fix.md", "Amend A.\n")); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("fold unit A: code=%d %+v", code, result)
 	}
 	criticA2, commitA2 := reviewed(runA)
@@ -325,7 +325,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if status.Prefix != 1 || currentB == commitB || status.Units[1].ReadState != "built" {
 		t.Fatalf("the replayed B must await its own read: %+v", status)
 	}
-	review := []string{"review", "commit", currentB, "--goal", c.id, "--brief", brief, "--repo", c.worktree}
+	review := []string{"work", "review", "--commit", currentB, "--goal", c.id, "--brief", brief, "--repo", c.worktree}
 	if code, result := do(review...); result.Outcome != "in-progress" || c.delegates[len(c.delegates)-1] != currentB {
 		t.Fatalf("review commit of the current B: code=%d %+v", code, result)
 	}
@@ -369,7 +369,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	before := effects()
 	land := func() intentResult {
 		t.Helper()
-		command, _ := findIntentCommand("land")
+		command, _ := findIntentCommand("work land")
 		var stdout, stderr bytes.Buffer
 		runIntentIn(command, []string{c.id, "--repo", c.root(), "--json"}, &stdout, &stderr, c.root(), landOwners)
 		var result intentResult

@@ -233,9 +233,9 @@ func (f *jobFamily) Stop(item Item) (Outcome, error) {
 		id = strings.TrimPrefix(item.Key, "job:")
 	}
 	if current.remote {
-		line := fmt.Sprintf("NOT STOPPED job %s %s machine %s: owned by another machine; did: nothing, cancel it from %s with metasystem delegate --cancel %s", id, current.lens.Status(), current.machine, current.machine, id)
+		line := fmt.Sprintf("NOT STOPPED job %s %s machine %s: owned by another machine; did: nothing, cancel it from %s with metasystem work stop j2:%s", id, current.lens.Status(), current.machine, current.machine, id)
 		survivor := item.Survivor
-		survivor.Reason = fmt.Sprintf("owned by another machine; cancel it from %s with metasystem delegate --cancel %s, then restore its terminal record", current.machine, id)
+		survivor.Reason = fmt.Sprintf("owned by another machine; cancel it from %s with metasystem work stop j2:%s, then restore its terminal record", current.machine, id)
 		return Outcome{Line: line, Complete: false, Survivor: survivor}, nil
 	}
 	command := exec.Command(f.config.Binary, "internal", "delegate", "--cancel", id)

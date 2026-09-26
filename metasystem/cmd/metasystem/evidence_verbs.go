@@ -25,7 +25,7 @@ func runEvidenceGC(args []string) int {
 		return 2
 	}
 	if *root == "" || *evidenceRoot == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem evidence gc --root DIR --evidence DIR [--grace-seconds SEC]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal evidence gc --root DIR --evidence DIR [--grace-seconds SEC]")
 		return 2
 	}
 	if err := evidence.GC(*root, *evidenceRoot, *grace, os.Stdout); err != nil {

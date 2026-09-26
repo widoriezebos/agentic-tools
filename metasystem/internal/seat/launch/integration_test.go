@@ -69,11 +69,11 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 		// not a built executable, so the two commands the SOURCE side runs
 		// are answered rather than run. Everything the clone's own engine
 		// does — the ledger fetch, the orientation — is real.
-		"metasystem config get --key evidence.root --conf " + sourceConf: evidence + "\n",
-		"metasystem validate session-isolation --source-root " + source + " --destination-root " + target +
+		"metasystem internal config get --key evidence.root --conf " + sourceConf: evidence + "\n",
+		"metasystem internal validate session-isolation --source-root " + source + " --destination-root " + target +
 			" --manifest " + filepath.Join(target, install, "artifacts", "agents", "ui", "local-config-paths") +
 			" --harness-root " + filepath.Join(source, install): "",
-		"metasystem config validate --conf " + filepath.Join(target, install, "metasystem.conf") +
+		"metasystem internal config validate --conf " + filepath.Join(target, install, "metasystem.conf") +
 			" --repo " + target: "",
 	}}
 	sequencer := &Sequencer{
@@ -169,7 +169,7 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 		t.Fatalf("created = %+v", record.Created)
 	}
 	for _, key := range runner.ran {
-		if strings.HasPrefix(key, "metasystem steward arm") || strings.HasPrefix(key, "metasystem up") {
+		if strings.HasPrefix(key, "metasystem internal steward arm") || strings.HasPrefix(key, "metasystem up") {
 			t.Fatalf("this test reached %q; it stops before enrollment", key)
 		}
 	}

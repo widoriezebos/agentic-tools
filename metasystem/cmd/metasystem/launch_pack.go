@@ -17,7 +17,7 @@ func runLaunchPackCheck(args []string) int {
 		return 2
 	}
 	if (*kind != "design" && *kind != "read") || *brief == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch pack-check --kind <design|read> --brief <file> [--dir <directory>]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch pack-check --kind <design|read> --brief <file> [--dir <directory>]")
 		return 2
 	}
 	ranges, err := launchManager().CheckPack(launch.StartSpec{Kind: *kind, Brief: *brief, WorkingDirectory: *directory})

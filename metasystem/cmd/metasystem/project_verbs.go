@@ -38,7 +38,7 @@ func projectID(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem project id")
+		fmt.Fprintln(stderr, "usage: metasystem internal project id")
 		return 2
 	}
 	id, err := project.NewID()
@@ -60,15 +60,15 @@ func projectList(args []string, stdout, stderr io.Writer) int {
 	status := flags.String("status", "", "only records with this status")
 	kind, ok := projectSubject(flags, args)
 	if !ok {
-		fmt.Fprintln(stderr, "usage: metasystem project list KIND [--root DIR] [--goal ID] [--status STATUS]")
+		fmt.Fprintln(stderr, "usage: metasystem internal project list KIND [--root DIR] [--goal ID] [--status STATUS]")
 		return 2
 	}
 	if !oneOf(project.QueryKinds, kind) {
-		fmt.Fprintf(stderr, "metasystem project list: %q is not one of %s\n", kind, strings.Join(project.QueryKinds, ", "))
+		fmt.Fprintf(stderr, "metasystem internal project list: %q is not one of %s\n", kind, strings.Join(project.QueryKinds, ", "))
 		return 2
 	}
 	if *status != "" && !oneOf(project.QueryStatuses, *status) {
-		fmt.Fprintf(stderr, "metasystem project list: %q is not one of %s\n", *status, strings.Join(project.QueryStatuses, ", "))
+		fmt.Fprintf(stderr, "metasystem internal project list: %q is not one of %s\n", *status, strings.Join(project.QueryStatuses, ", "))
 		return 2
 	}
 	read, code := projectRead(*root, stderr)
@@ -90,7 +90,7 @@ func projectShow(args []string, stdout, stderr io.Writer) int {
 	root := pathFlag(flags, "root", ".", "a path at or below the metasystem installation")
 	id, ok := projectSubject(flags, args)
 	if !ok {
-		fmt.Fprintln(stderr, "usage: metasystem project show ID [--root DIR]")
+		fmt.Fprintln(stderr, "usage: metasystem internal project show ID [--root DIR]")
 		return 2
 	}
 	read, code := projectRead(*root, stderr)
@@ -99,7 +99,7 @@ func projectShow(args []string, stdout, stderr io.Writer) int {
 	}
 	record := read.Record(id)
 	if record == nil {
-		fmt.Fprintf(stderr, "metasystem project show: no record declares the id %s\n", id)
+		fmt.Fprintf(stderr, "metasystem internal project show: no record declares the id %s\n", id)
 		return 1
 	}
 	fmt.Fprintln(stdout, record.Title)
@@ -131,7 +131,7 @@ func projectTree(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem project tree [--root DIR]")
+		fmt.Fprintln(stderr, "usage: metasystem internal project tree [--root DIR]")
 		return 2
 	}
 	read, code := projectRead(*root, stderr)
@@ -194,7 +194,7 @@ func projectCheck(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem project check [--root DIR]")
+		fmt.Fprintln(stderr, "usage: metasystem internal project check [--root DIR]")
 		return 2
 	}
 	read, code := projectRead(*root, stderr)
@@ -251,7 +251,7 @@ func projectDesignOf(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 0 || *goal == "" {
-		fmt.Fprintln(stderr, "usage: metasystem project design-of --goal ID [--root DIR] [--json]")
+		fmt.Fprintln(stderr, "usage: metasystem design find --goal ID [--root DIR] [--json]")
 		return 2
 	}
 	read, code := projectRead(*root, stderr)
@@ -259,7 +259,7 @@ func projectDesignOf(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	if !read.HasGoal(*goal) {
-		fmt.Fprintf(stderr, "metasystem project design-of: the goal %s is not in the ledger\n", *goal)
+		fmt.Fprintf(stderr, "metasystem design find: the goal %s is not in the ledger\n", *goal)
 		return 2
 	}
 	found := read.List(project.KindDesign, project.ListOptions{Goal: *goal})

@@ -345,20 +345,20 @@ func (t *Transition) Status() (Report, error) {
 		if errors.As(fenceErr, &unreadable) {
 			reason = unreadable.Reason
 		}
-		report.Lines = append(report.Lines, fmt.Sprintf("fence record unreadable: %s; repair with metasystem arm --repo %s", reason, t.Checkout))
+		report.Lines = append(report.Lines, fmt.Sprintf("fence record unreadable: %s; repair with metasystem system start --repo %s", reason, t.Checkout))
 	} else if record.State == stopfence.StateClosed {
 		switch {
 		case stopfence.Completed(record):
-			report.Lines = append(report.Lines, prefix+fmt.Sprintf("stopped since %s by %s pid %d; start again: metasystem arm --repo %s", record.ChangedAt, record.By.Verb, record.By.Pid, t.Checkout))
+			report.Lines = append(report.Lines, prefix+fmt.Sprintf("stopped since %s by %s pid %d; start again: metasystem system start --repo %s", record.ChangedAt, record.By.Verb, record.By.Pid, t.Checkout))
 		case record.Phase == stopfence.PhaseStopping:
-			report.Lines = append(report.Lines, prefix+fmt.Sprintf("stop unfinished since %s by %s pid %d; run: metasystem stop --repo %s", record.ChangedAt, record.By.Verb, record.By.Pid, t.Checkout))
+			report.Lines = append(report.Lines, prefix+fmt.Sprintf("stop unfinished since %s by %s pid %d; run: metasystem system stop --repo %s", record.ChangedAt, record.By.Verb, record.By.Pid, t.Checkout))
 		default:
-			report.Lines = append(report.Lines, prefix+fmt.Sprintf("stop incomplete for %s since %s by %s pid %d; %d unresolved entries from the last stop, listed above; run: metasystem stop --repo %s", t.Checkout, record.ChangedAt, record.By.Verb, record.By.Pid, len(record.NotStopped), t.Checkout))
+			report.Lines = append(report.Lines, prefix+fmt.Sprintf("stop incomplete for %s since %s by %s pid %d; %d unresolved entries from the last stop, listed above; run: metasystem system stop --repo %s", t.Checkout, record.ChangedAt, record.By.Verb, record.By.Pid, len(record.NotStopped), t.Checkout))
 		}
 	}
 	if readFailures > 0 {
 		report.ExitCode = 1
-		report.Lines = append(report.Lines, fmt.Sprintf("status incomplete for %s; %d read failures, listed above; repair the named read failures, then run: metasystem status --repo %s", t.Checkout, readFailures, t.Checkout))
+		report.Lines = append(report.Lines, fmt.Sprintf("status incomplete for %s; %d read failures, listed above; repair the named read failures, then run: metasystem system status --repo %s", t.Checkout, readFailures, t.Checkout))
 	}
 	return report, nil
 }
@@ -493,7 +493,7 @@ func (t *Transition) Stop() (Report, error) {
 		builder.set("fence-publication", []string{fmt.Sprintf("NOT STOPPED fence record %s: final result could not be saved: %v; did: left the last published fence closed", path, writeErr)}, false)
 		report := builder.report(1)
 		count := len(survivors) + 1
-		report.Lines = append(report.Lines, fmt.Sprintf("stop incomplete for %s; %d not stopped, listed above; final result not saved in %s; fence remains closed; repair the named write failure, then run: metasystem stop --repo %s", t.Checkout, count, path, t.Checkout))
+		report.Lines = append(report.Lines, fmt.Sprintf("stop incomplete for %s; %d not stopped, listed above; final result not saved in %s; fence remains closed; repair the named write failure, then run: metasystem system stop --repo %s", t.Checkout, count, path, t.Checkout))
 		return report, nil
 	}
 	if !durable {
@@ -507,11 +507,11 @@ func (t *Transition) Stop() (Report, error) {
 func appendStopClosingLine(report *Report, checkout string, notStopped int) {
 	if notStopped == 0 {
 		report.ExitCode = 0
-		report.Lines = append(report.Lines, fmt.Sprintf("stopped %s; start again: metasystem arm --repo %s", checkout, checkout))
+		report.Lines = append(report.Lines, fmt.Sprintf("stopped %s; start again: metasystem system start --repo %s", checkout, checkout))
 		return
 	}
 	report.ExitCode = 1
-	report.Lines = append(report.Lines, fmt.Sprintf("stop incomplete for %s; %d not stopped, listed above; run: metasystem stop --repo %s", checkout, notStopped, checkout))
+	report.Lines = append(report.Lines, fmt.Sprintf("stop incomplete for %s; %d not stopped, listed above; run: metasystem system stop --repo %s", checkout, notStopped, checkout))
 }
 
 // inventoryDuringStop keeps each family independent after the fence is
@@ -843,7 +843,7 @@ func (e *RemoteJobSurvivorError) Error() string {
 
 // Remedy names the machine and command that can conclude the surviving job.
 func (e *RemoteJobSurvivorError) Remedy() string {
-	return fmt.Sprintf("cancel it from %s with metasystem delegate --cancel %s", e.MachineID, e.JobID)
+	return fmt.Sprintf("cancel it from %s with metasystem work stop j2:%s", e.MachineID, e.JobID)
 }
 
 // RemoteJobEvidenceError distinguishes absent evidence from a record that was
@@ -859,7 +859,7 @@ type RemoteJobEvidenceError struct {
 func (e *RemoteJobEvidenceError) Error() string {
 	switch e.Kind {
 	case "missing":
-		return fmt.Sprintf("cannot establish whether job %s on machine %s is terminal because its record %s is missing; restore that job's record from %s; if the job is still open there, cancel it there with metasystem delegate --cancel %s and restore the resulting terminal record", e.JobID, e.MachineID, e.Path, e.MachineID, e.JobID)
+		return fmt.Sprintf("cannot establish whether job %s on machine %s is terminal because its record %s is missing; restore that job's record from %s; if the job is still open there, cancel it there with metasystem work stop j2:%s and restore the resulting terminal record", e.JobID, e.MachineID, e.Path, e.MachineID, e.JobID)
 	case "mismatched":
 		return fmt.Sprintf("cannot establish whether job %s on machine %s is terminal because record %s does not match that job and machine: %s; restore the matching record from %s", e.JobID, e.MachineID, e.Path, e.Reason, e.MachineID)
 	default:
@@ -1007,7 +1007,7 @@ func (t *Transition) crashedStopSurvivors(previous []stopfence.Survivor) []stopf
 			}
 			survivor := item.Survivor
 			if survivor.Component == "job" && survivor.MachineID != "" {
-				survivor.Reason = fmt.Sprintf("job remains non-terminal on machine %s; cancel it from %s with metasystem delegate --cancel %s, then restore its terminal record", survivor.MachineID, survivor.MachineID, survivor.ID)
+				survivor.Reason = fmt.Sprintf("job remains non-terminal on machine %s; cancel it from %s with metasystem work stop j2:%s, then restore its terminal record", survivor.MachineID, survivor.MachineID, survivor.ID)
 			}
 			survivors = appendUniqueSurvivor(survivors, survivor)
 		}
@@ -1032,7 +1032,7 @@ func (t *Transition) crashedStopSurvivors(previous []stopfence.Survivor) []stopf
 			survivor.Path = evidenceErr.Path
 			survivor.Reason = evidenceErr.Error()
 		} else {
-			survivor.Reason = fmt.Sprintf("job remains non-terminal on machine %s; cancel it from %s with metasystem delegate --cancel %s, then restore its terminal record", survivor.MachineID, survivor.MachineID, survivor.ID)
+			survivor.Reason = fmt.Sprintf("job remains non-terminal on machine %s; cancel it from %s with metasystem work stop j2:%s, then restore its terminal record", survivor.MachineID, survivor.MachineID, survivor.ID)
 		}
 		survivors = appendUniqueSurvivor(survivors, survivor)
 	}
@@ -1155,7 +1155,7 @@ func (t *Transition) reconcileRemoteSurvivors(items []Item, report *stopReportBu
 			report.outcome(item, Outcome{Line: evidenceErr.stopLine(), Complete: false, Survivor: survivor}, false)
 			continue
 		}
-		survivor.Reason = fmt.Sprintf("job remains non-terminal on machine %s; cancel it from %s with metasystem delegate --cancel %s, then restore its terminal record", survivor.MachineID, survivor.MachineID, survivor.ID)
+		survivor.Reason = fmt.Sprintf("job remains non-terminal on machine %s; cancel it from %s with metasystem work stop j2:%s, then restore its terminal record", survivor.MachineID, survivor.MachineID, survivor.ID)
 		*survivors = appendUniqueSurvivor(*survivors, survivor)
 		item.Survivor = survivor
 		report.outcome(item, Outcome{Line: "NOT STOPPED " + item.StatusLine + ": " + survivor.Reason + "; did: left it in the fence record", Complete: false, Survivor: survivor}, false)
@@ -1204,11 +1204,11 @@ func statusSurvivorExplanation(survivor stopfence.Survivor, checkout string) str
 	if reason == "" {
 		reason = "unresolved by the last stop"
 	}
-	if survivor.Component == "job" && survivor.MachineID != "" && !strings.Contains(reason, "metasystem delegate --cancel") {
-		reason += fmt.Sprintf("; cancel it from %s with metasystem delegate --cancel %s and restore its terminal record", survivor.MachineID, survivor.ID)
+	if survivor.Component == "job" && survivor.MachineID != "" && !strings.Contains(reason, "metasystem internal delegate --cancel") {
+		reason += fmt.Sprintf("; cancel it from %s with metasystem work stop j2:%s and restore its terminal record", survivor.MachineID, survivor.ID)
 	}
 	if survivor.Component == "family-inventory" && survivor.Path != "" && !strings.Contains(reason, "repair") {
-		reason += "; repair the named record, then run: metasystem stop --repo " + checkout
+		reason += "; repair the named record, then run: metasystem system stop --repo " + checkout
 	}
 	return reason
 }

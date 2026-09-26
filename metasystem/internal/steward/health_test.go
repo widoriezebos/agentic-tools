@@ -267,7 +267,7 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "bounded-goal") ||
 			!strings.Contains(role.Reason, "claim epoch 1") || !strings.Contains(role.Reason, "claim epoch 5") ||
-			!strings.Contains(role.Remedy, "metasystem goal restamp --id bounded-goal") ||
+			!strings.Contains(role.Remedy, "metasystem internal goal restamp --id bounded-goal") ||
 			!strings.Contains(role.Remedy, "metasystem up") {
 			t.Fatalf("same-lineage divergence = %+v", role)
 		}
@@ -282,7 +282,7 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "coordinator") ||
 			!strings.Contains(role.Reason, "replacement-lineage") ||
-			role.Remedy != "release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem goal handover" {
+			role.Remedy != "release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem internal goal handover" {
 			t.Fatalf("foreign-lineage divergence = %+v", role)
 		}
 		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseForeignLineage, Goal: "bounded-goal"}) {

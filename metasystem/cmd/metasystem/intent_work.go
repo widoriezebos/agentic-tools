@@ -464,7 +464,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	if file.Budget == nil || file.Budget.ReviewRoundLimit <= 0 {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1,
 			Summary:  fmt.Sprintf("goal %s has no approved box, so its review-round limit is unknown; nothing was built", id),
-			Decision: "a person approves the goal with its box: metasystem approve " + id})
+			Decision: "a person approves the goal with its box: metasystem goal approve " + id})
 	}
 	if file.State != goal.StateClaimed {
 		// An approved goal nobody holds is claimed through the claim owner,
@@ -482,7 +482,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the goal branch endpoint is unavailable: " + err.Error() + "; nothing was built"})
 	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot, id, endpoint)); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
-			Decision: "the session holding the goal builds it, or a person takes the goal over: metasystem claim " + id + " --take-over --reason TEXT"})
+			Decision: "the session holding the goal builds it, or a person takes the goal over: metasystem goal claim " + id + " --take-over --reason TEXT"})
 	}
 	designs, problem := inv.acceptedDesignPaths(id)
 	if problem != nil {
@@ -940,7 +940,7 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 				next: again, nextReason: "another call is advancing this run; the same command continues it"}
 		case strings.HasPrefix(message, "UNIT_NAMED_INPUT_CHANGED"):
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: message + "; nothing was launched",
-				Decision: "send the change as a correction (metasystem revise G --work NAME --brief FILE), or build it under another work name"}
+				Decision: "send the change as a correction (metasystem work revise G --work NAME --brief FILE), or build it under another work name"}
 		case record.ID != "":
 			return intentResult{Outcome: intentFailed, Targets: append(targets, intentTarget{Kind: "unit", ID: record.ID}), code: 1, Summary: message,
 				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "wait"), nextReason: "the work is recorded; continue it once the cause is fixed"}
@@ -1442,7 +1442,7 @@ func runIntentBrief(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if id == "" || !inv.input.has("out") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "brief needs the goal and --out FILE; nothing was written", Decision: "metasystem brief G --out FILE"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "brief needs the goal and --out FILE; nothing was written", Decision: "metasystem work brief G --out FILE"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1569,7 +1569,7 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		fmt.Fprintf(&text, "Goal state: %s, tier %d, approved box %s; the read has at most %d rounds.\n", file.State, file.Tier, goalbudget.FormatBox(*file.Budget), file.Budget.ReviewRoundLimit)
 	default:
 		fmt.Fprintf(&text, "Goal state: %s, tier %d.\n%s\n", file.State, file.Tier,
-			mark(fmt.Sprintf("the goal is %s without an approved box; a person approves it with metasystem approve %s", file.State, file.Id)))
+			mark(fmt.Sprintf("the goal is %s without an approved box; a person approves it with metasystem goal approve %s", file.State, file.Id)))
 	}
 	fmt.Fprintf(&text, "\n# Goal\n\n%s\n\nNext step on the ledger: %s\n", file.Intent, file.NextStep)
 	text.WriteString("\n# Workspace\n\n")
@@ -1579,7 +1579,7 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		fmt.Fprintf(&text, "Branch goal/%s, checked out in %s. Leave the change there, uncommitted.\n", file.Id, worktree)
 	case problem.Outcome == intentRefused:
 		// Ordinary before the first build: build prepares the workspace.
-		fmt.Fprintf(&text, "Branch goal/%s. Its workspace does not exist yet; metasystem build prepares it. Leave the change there, uncommitted.\n", file.Id)
+		fmt.Fprintf(&text, "Branch goal/%s. Its workspace does not exist yet; metasystem work build prepares it. Leave the change there, uncommitted.\n", file.Id)
 	default:
 		fmt.Fprintf(&text, "Branch goal/%s. %s\n", file.Id, mark("the goal worktree could not be found: "+problem.Summary))
 	}

@@ -123,7 +123,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	check := conn.claimCheck(original, id, endpoint)
 	if err := branch.CheckCommitAccess(id, check); err != nil {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error() + "; nothing was submitted",
-			Decision: "the session holding the goal submits its work, or a person takes the goal over: metasystem claim " + id + " --take-over --reason TEXT"}
+			Decision: "the session holding the goal submits its work, or a person takes the goal over: metasystem goal claim " + id + " --take-over --reason TEXT"}
 	}
 	worktree, problem := inv.prepareGoalWorktree(id)
 	if problem != nil {

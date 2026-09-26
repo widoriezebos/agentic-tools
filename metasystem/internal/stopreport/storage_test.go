@@ -74,7 +74,7 @@ func TestStopAliasReservesShortestFreePrefix(t *testing.T) {
 		alias string
 		bytes int
 	}{{"1", 36}, {"15", 37}, {"15f", 38}} {
-		command := "metasystem report stop-status --id " + test.alias
+		command := "metasystem session report --id " + test.alias
 		if len(command) != test.bytes {
 			t.Fatalf("command %q has %d bytes, want %d", command, len(command), test.bytes)
 		}
@@ -89,7 +89,7 @@ func TestStopAliasReservesShortestFreePrefix(t *testing.T) {
 	}
 	fullID := SessionKey("claude", "full") + "-" + fullAttempt
 	full, err := ReserveShortestAlias(root, fullID)
-	if err != nil || len(full.Alias) != 32 || len("metasystem report stop-status --id "+full.Alias) != 67 {
+	if err != nil || len(full.Alias) != 32 || len("metasystem session report --id "+full.Alias) != 67 {
 		t.Fatalf("full reservation = %+v, %v", full, err)
 	}
 	if _, err := ReserveShortestAlias(root, SessionKey("claude", "exhausted")+"-"+fullAttempt); err == nil {

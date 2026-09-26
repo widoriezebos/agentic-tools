@@ -148,7 +148,7 @@ func TestAdapterClaudeToolGateVerb(t *testing.T) {
 				t.Fatalf("stdout=%q, want output=%t", stdout, test.wantOutput)
 			}
 			if test.wantOutput {
-				reason := fmt.Sprintf("CONTEXT AT 120K (trigger 105K): this call is denied; run metasystem context handoff --root %s alone, or launch a delegate", root)
+				reason := fmt.Sprintf("CONTEXT AT 120K (trigger 105K): this call is denied; run metasystem session handoff --root %s alone, or launch a delegate", root)
 				want := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + reason + `"}}` + "\n"
 				if stdout != want {
 					t.Fatalf("stdout=%q, want %q", stdout, want)

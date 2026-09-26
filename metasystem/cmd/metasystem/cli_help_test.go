@@ -63,13 +63,13 @@ func TestFamilyHelpAliasesForEveryRegisteredFamily(t *testing.T) {
 			}
 			for _, args := range [][]string{{"help", fam.name}, {fam.name, "--help"}, {fam.name, "-h"}} {
 				code, got, problem := runCLIHelp(args, registered)
-				if command, public := findIntentCommand(fam.name); public {
+				if isIntentObject(fam.name) {
 					var page bytes.Buffer
-					writeIntentHelp(&page, command)
+					writeIntentObjectHelp(&page, fam.name)
 					if code != 0 || got != page.String() || problem != "" {
-						t.Errorf("%v must show public help: %d %q %q", args, code, got, problem)
+						t.Errorf("%v must show the object's public actions: %d %q %q", args, code, got, problem)
 					}
-				} else if code != 2 || got != "" || !strings.Contains(problem, "metasystem help") || strings.Contains(problem, "<verb>") {
+				} else if code != 2 || got != "" || !strings.Contains(problem, "metasystem lists the objects") || strings.Contains(problem, "<verb>") {
 					t.Errorf("%v must refuse without private discovery: %d %q %q", args, code, got, problem)
 				}
 			}
@@ -89,7 +89,7 @@ func TestFamilyHelpDoesNotInvokeHandler(t *testing.T) {
 		}
 	}
 	for _, args := range [][]string{{"help", "safe"}, {"safe"}, {"safe", "--help"}, {"help", "internal"}} {
-		if code, out, problem := runCLIHelp(args, registered); code != 2 || out != "" || !strings.Contains(problem, "metasystem help") {
+		if code, out, problem := runCLIHelp(args, registered); code != 2 || out != "" || !strings.Contains(problem, "metasystem lists the objects") {
 			t.Errorf("%v = code %d, stdout %q, stderr %q", args, code, out, problem)
 		}
 	}
@@ -152,12 +152,13 @@ func TestUnknownFamilyHelpAliasErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"help", "no-such-family"}, `unknown command "no-such-family"`},
-		{[]string{"no-such-family", "--help"}, `unknown command "no-such-family"`},
-		{[]string{"launch", "no-such-verb"}, `unknown command "launch"`},
-		{[]string{"help", "launch", "extra"}, "usage: metasystem help [TOPIC|COMMAND]"},
-		{[]string{"launch", "--help", "extra"}, `unknown command "launch"`},
-		{[]string{"--help", "extra"}, "usage: metasystem help [TOPIC|COMMAND]"},
+		{[]string{"help", "no-such-family"}, `unknown object "no-such-family"`},
+		{[]string{"no-such-family", "--help"}, `unknown object "no-such-family"`},
+		{[]string{"launch", "no-such-verb"}, `unknown object "launch"`},
+		{[]string{"help", "launch", "extra"}, `unknown object "launch"`},
+		{[]string{"launch", "--help", "extra"}, `unknown object "launch"`},
+		{[]string{"--help", "extra"}, "usage: metasystem help [OBJECT [ACTION]]"},
+		{[]string{"goal", "--help", "extra"}, "usage: metasystem goal ACTION"},
 	}
 	for _, test := range cases {
 		code, output, problem := runCLIHelp(test.args, registered)

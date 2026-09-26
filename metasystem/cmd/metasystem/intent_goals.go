@@ -470,7 +470,7 @@ func (inv *intentInvocation) budgetOwner(id, box string, before *goal.GoalFile) 
 		// new box is recorded; the public command for that is resume.
 		if asked, problem := inv.completeBox(box, before); problem == nil && asked != *before.Budget {
 			result.next = inv.publicArgv("goal", "resume", id)
-			result.nextReason = "resume under the standing box first, then change it with metasystem budget " + id + " BOX"
+			result.nextReason = "resume under the standing box first, then change it with metasystem goal budget " + id + " BOX"
 			result.Decision = ""
 		}
 	}

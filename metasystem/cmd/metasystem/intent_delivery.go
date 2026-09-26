@@ -690,7 +690,7 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 	if file == nil || file.Approved == nil || file.Budget == nil || file.Budget.ReviewRoundLimit < 1 {
 		return 0, 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
 			Summary:  fmt.Sprintf("goal %s has no approved review-round budget for this review", goalID),
-			Decision: fmt.Sprintf("approve goal %s with a budget first: metasystem approve %s", goalID, goalID)}
+			Decision: fmt.Sprintf("approve goal %s with a budget first: metasystem goal approve %s", goalID, goalID)}
 	}
 	return file.Budget.ReviewRoundLimit, calls, nil
 }
@@ -702,7 +702,7 @@ const designCritiqueRounds = 2
 func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, scope, copyPath, contents, findings string, checklist []string) string {
 	lines := []string{
 		"Working Mode: " + mode,
-		"Orchestrator Identity: metasystem review",
+		"Orchestrator Identity: metasystem work review",
 		"",
 		"# Review brief: " + chain,
 		"",
@@ -928,7 +928,7 @@ func (inv *intentInvocation) dispatchReview(targets []intentTarget, args []strin
 	return inv.collectReview(targets, outcome)
 }
 
-// delegate runs `metasystem delegate` and reads its typed outcome.
+// delegate runs `metasystem internal delegate` and reads its typed outcome.
 func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (delegateOutcome, *intentResult) {
 	owners := inv.delivery()
 	binary, err := owners.executable()
@@ -1092,12 +1092,12 @@ func (inv *intentInvocation) foldReview(review string) intentResult {
 	if recordText(root, "role") == "design-critic" || subject == "" {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
 			Summary:  fmt.Sprintf("review %s reviewed a design, which has no implementer chain to follow up", review),
-			Decision: "the design's author revises the design with these dispositions, then runs metasystem review design FILE again"}
+			Decision: "the design's author revises the design with these dispositions, then runs metasystem design review FILE again"}
 	}
 	if strings.HasPrefix(subject, "commit:") {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
 			Summary:  fmt.Sprintf("review %s read a goal-branch commit; a unit fix is a new unit commit on the branch", review),
-			Decision: "commit the fix on the goal branch and read it with metasystem review commit SHA --goal G"}
+			Decision: "commit the fix on the goal branch and read it with metasystem work review --commit SHA --goal G"}
 	}
 	implementer, err := inv.jobRecord(subject)
 	if err != nil {

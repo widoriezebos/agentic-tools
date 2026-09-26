@@ -101,7 +101,7 @@ func runProcAcknowledge(args []string) int {
 		return 2
 	}
 	if *pid < 1 || *reason == "" || *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proc acknowledge --pid P --reason R --root ROOT")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proc acknowledge --pid P --reason R --root ROOT")
 		return 2
 	}
 	// The caller is ALWAYS the real parent process — this verb takes no
@@ -162,7 +162,7 @@ func runCensusAlive(args []string) int {
 		return 2
 	}
 	if *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proc alive --pid P --start-time S [--start-ticks T --boot-id B] --root R")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proc alive --pid P --start-time S [--start-ticks T --boot-id B] --root R")
 		return 2
 	}
 	if (*startTicks > 0) != (*bootID != "") {

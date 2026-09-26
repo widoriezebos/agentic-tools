@@ -17,7 +17,7 @@
 // The proof is taken ONCE, at boot, and kept for the server's life. That is
 // not a shortcut: a proof is an in-process observation of a live ancestry,
 // and the only moment this process has an ancestry reaching the human is the
-// moment it is started — by `metasystem start ui`, from the human's own
+// moment it is started — by `metasystem ui start`, from the human's own
 // terminal, which waits for the readiness line and is therefore still this
 // process's parent while the observation is made. A parsed proof has no
 // authority and none is ever read from disk here.
@@ -42,7 +42,7 @@ import (
 
 // Restart is what a human does about an interface that cannot act as them.
 // Every refusal ends with it, because it is the whole remedy.
-const Restart = "start it from your own terminal with bin/metasystem restart ui to act as yourself"
+const Restart = "start it from your own terminal with bin/metasystem ui restart to act as yourself"
 
 // Authority is one boot-time observation of who started this server: the
 // human proof, the caller classification the command edge takes at the same
@@ -217,7 +217,7 @@ func (a Authority) Human() string { return a.human }
 // Reason is why this server cannot act, in one sentence ending in the remedy.
 func (a Authority) Reason() string { return a.reason }
 
-// Line is what `metasystem status ui` prints and the server's record keeps.
+// Line is what `metasystem ui status` prints and the server's record keeps.
 func (a Authority) Line() string {
 	if a.proven {
 		return "acting as human:" + a.human + " — proven at the enrolled terminal"
@@ -662,7 +662,7 @@ func proofReason(proof humanauthority.Proof, err error) string {
 	case humanauthority.OutcomeAgent:
 		return "the interface was started by an agent process (" + agentRuntime(proof) + ")"
 	case humanauthority.OutcomeNotEnrolled:
-		return "this checkout has no enrolled terminal (run: bin/metasystem goal enroll-terminal --by <your name>)"
+		return "this checkout has no enrolled terminal (run: bin/metasystem internal goal enroll-terminal --by <your name>)"
 	case humanauthority.OutcomeTerminalMissing:
 		return "the process that started the interface does not descend from the enrolled terminal"
 	case humanauthority.OutcomeChanged, humanauthority.OutcomeReused:

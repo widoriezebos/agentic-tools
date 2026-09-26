@@ -94,7 +94,7 @@ func runHostDevinCollect(args []string) int {
 		return 2
 	}
 	if params.Root == "" || params.TurnRecordPath == "" || params.TurnDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem host devin-collect --root D --turn-record F --turn-dir D [--workspace D --stdout F --named F --transcript F --reject SHA ...]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal host devin-collect --root D --turn-record F --turn-dir D [--workspace D --stdout F --named F --transcript F --reject SHA ...]")
 		return 2
 	}
 	params.RejectDigests = rejects

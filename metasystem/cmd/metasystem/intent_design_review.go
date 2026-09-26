@@ -97,7 +97,7 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		}
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 2, text: lines,
 			Summary:  fmt.Sprintf("design %s has %d critique chains; none is chosen by time; nothing was done", plan.recordID, len(chains)),
-			Decision: "the author decides and closes each chain that no longer applies: metasystem review job ROOT --dispositions FILE"}
+			Decision: "the author decides and closes each chain that no longer applies: metasystem work review j2:ROOT --dispositions FILE"}
 	}
 	chain := chains[0]
 	entry := inv.readDesignReviewEntry(plan.recordID)

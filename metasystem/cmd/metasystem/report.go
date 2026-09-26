@@ -22,7 +22,7 @@ func runReportStopPresent(args []string) int {
 		return 2
 	}
 	if *root == "" || *input == "" || *output == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem report stop-present --root INSTALLATION --input-file FILE --output-file FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal report stop-present --root INSTALLATION --input-file FILE --output-file FILE")
 		return 2
 	}
 	_, err := report.PresentStop(*root, *input, *output, time.Now())
@@ -68,7 +68,7 @@ func runReportStopInput(args []string) int {
 		return 2
 	}
 	if *root == "" || *runtime == "" || *session == "" || *attempt == "" || *output == "" || *advisor == (*verdict != "") || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem report stop-input --root INSTALLATION --runtime RUNTIME --session SESSION --attempt HEX (--verdict-file FILE | --advisor) --output-file FILE [captured files]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal report stop-input --root INSTALLATION --runtime RUNTIME --session SESSION --attempt HEX (--verdict-file FILE | --advisor) --output-file FILE [captured files]")
 		return 2
 	}
 	err := report.ComposeStopPresentationInput(report.StopPresentationCollection{
@@ -100,7 +100,7 @@ func runReportStopStatus(args []string) int {
 		return 2
 	}
 	if *id == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem report stop-status --id ID [--root INSTALLATION]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem session report --id ID [--root INSTALLATION]")
 		return 2
 	}
 	if err := report.ValidateStopStatusID(*id); err != nil {
@@ -130,7 +130,7 @@ func runReportStopResponse(args []string) int {
 		return 2
 	}
 	if *root == "" || *payloadFile == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem report stop-response --root INSTALLATION --payload-file FILE [--runtime R] [--session S] [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal report stop-response --root INSTALLATION --payload-file FILE [--runtime R] [--session S] [--json]")
 		return 2
 	}
 	resolvedRoot, err := report.StopStatusRoot(*root)
@@ -300,7 +300,7 @@ func runReportOpenWork(args []string) int {
 		return 2
 	}
 	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem report open-work --repo R")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal report open-work --repo R")
 		return 2
 	}
 	for _, line := range report.OpenWork(*repo) {

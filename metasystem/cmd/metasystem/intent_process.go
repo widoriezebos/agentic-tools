@@ -907,7 +907,7 @@ func runIntentSystemRestart(inv *intentInvocation) int {
 	if stopped.ExitCode != 0 {
 		return inv.render(intentResult{Outcome: intentPartial, code: stopped.ExitCode, Targets: targets, text: stopped.Lines,
 			Summary:  "restart stopped at its stop: the stop did not complete, so nothing was started",
-			Decision: "resolve the survivors listed above, then run metasystem restart checkout again",
+			Decision: "resolve the survivors listed above, then run metasystem system restart again",
 			Data:     map[string]any{"reached": "stopping", "stop": map[string]any{"lines": nonNilLines(stopped.Lines), "exitCode": stopped.ExitCode}}})
 	}
 	armed, refusal := owners.arm(scope, scale, inv.input.text("temporary-human-word"), inv.input.text("review-by"))
@@ -1203,7 +1203,7 @@ func publicRemedyForFact(fact steward.RemedyFact) ([]string, string) {
 	case steward.CauseBudgetBreach:
 		return []string{"metasystem", "goal", "budget", fact.Goal, "BOX"}, "goal " + fact.Goal + " is over its box; its stop runs by itself, and a person may give it a larger box"
 	case steward.CauseBudgetUnknown:
-		return nil, "a person repairs record " + fact.Record + ", which cannot be read as a budget, then runs metasystem check"
+		return nil, "a person repairs record " + fact.Record + ", which cannot be read as a budget, then runs metasystem system check"
 	case steward.CauseBreachStopOpen:
 		return nil, "goal " + fact.Goal + "'s budget stop " + fact.Stop + " completes by itself on the steward's next pass; nothing needs doing"
 	case steward.CauseBreachStopUnresolved:

@@ -713,7 +713,7 @@ func runIntentRevise(inv *intentInvocation) int {
 				next: inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the running attempt to finish"})
 		case strings.HasPrefix(message, "UNIT_ROUND_LIMIT"):
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
-				Decision: "a person gives the goal a larger box: metasystem budget " + id + " BOX"})
+				Decision: "a person gives the goal a larger box: metasystem goal budget " + id + " BOX"})
 		}
 	}
 	outcome := inv.unitOutcome(runner, revised.UnitResult, err, targets, again)

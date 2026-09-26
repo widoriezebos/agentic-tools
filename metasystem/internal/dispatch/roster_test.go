@@ -60,7 +60,7 @@ func TestResolveRosterDecisions(t *testing.T) {
 			conf: []string{rosterBase,
 				"role.default.runtime=codex", "role.default.model.codex=<model>"},
 			params:  RosterParams{Role: "steward-continuation"},
-			refusal: "role steward-continuation resolves to codex:<model>, a template placeholder from role.default.model.codex; set it with: metasystem config tailor --conf ",
+			refusal: "role steward-continuation resolves to codex:<model>, a template placeholder from role.default.model.codex; set it with: metasystem internal config tailor --conf ",
 		},
 		{
 			name: "a template placeholder from the role's own model refuses by that key",
@@ -68,7 +68,7 @@ func TestResolveRosterDecisions(t *testing.T) {
 				"role.default.runtime=codex", "role.default.model.codex=gpt-5.6",
 				"role.implementer.runtime=claude", "role.implementer.model.claude=<model>"},
 			params:  RosterParams{Role: "implementer"},
-			refusal: "a template placeholder from role.implementer.model.claude; set it with: metasystem config tailor --conf ",
+			refusal: "a template placeholder from role.implementer.model.claude; set it with: metasystem internal config tailor --conf ",
 		},
 		{
 			name: "main roster cannot be dispatched",

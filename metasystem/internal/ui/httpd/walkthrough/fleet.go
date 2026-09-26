@@ -228,7 +228,7 @@ func fixtureLaunches(now time.Time) []launch.Record {
 			},
 			Next: launch.Next{
 				Session: "cd /Users/wido/LocalStorage/GitHub/agentic-tools-m1f && claude",
-				Stop:    "metasystem stop --repo /Users/wido/LocalStorage/GitHub/agentic-tools-m1f/metasystem",
+				Stop:    "metasystem system stop --repo /Users/wido/LocalStorage/GitHub/agentic-tools-m1f/metasystem",
 			},
 		},
 		{
@@ -249,7 +249,7 @@ func fixtureLaunches(now time.Time) []launch.Record {
 			},
 			Next: launch.Next{
 				Session: "cd /Users/wido/LocalStorage/GitHub/agentic-tools-m1g && claude",
-				Stop:    "metasystem stop --repo /Users/wido/LocalStorage/GitHub/agentic-tools-m1g/metasystem",
+				Stop:    "metasystem system stop --repo /Users/wido/LocalStorage/GitHub/agentic-tools-m1g/metasystem",
 			},
 		},
 	}
@@ -285,7 +285,7 @@ func fixtureLaunchOf(asked launch.Request, now time.Time) launch.Record {
 	}
 	record.Next = launch.Next{
 		Session: "cd " + record.Destination + " && claude",
-		Stop:    "metasystem stop --repo " + record.Destination + "/metasystem",
+		Stop:    "metasystem system stop --repo " + record.Destination + "/metasystem",
 	}
 	return record
 }

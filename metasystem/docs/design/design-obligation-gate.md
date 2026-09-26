@@ -29,19 +29,19 @@ A design a seat writes during a goal is a record, not a file in a directory: it 
 - Goals: refund-worker
 ```
 
-`Id` comes from `metasystem project id`, is unique across the project, and never changes, so the file may be renamed or moved. `Status` is `draft` while the design is being written and critiqued, `accepted` once a human has accepted it, `done` when the work it designed shipped, `superseded` when another design replaced it. `Goals` names the ledger goal the design is for, by the id the goal file carries; a design about the project as a whole carries no `Goals` line at all, and a record of the intent or doctrine kind may never carry one.
+`Id` comes from `metasystem internal project id`, is unique across the project, and never changes, so the file may be renamed or moved. `Status` is `draft` while the design is being written and critiqued, `accepted` once a human has accepted it, `done` when the work it designed shipped, `superseded` when another design replaced it. `Goals` names the ledger goal the design is for, by the id the goal file carries; a design about the project as a whole carries no `Goals` line at all, and a record of the intent or doctrine kind may never carry one.
 
 The home is `plans/designs/` **under the resolved state root**, subdirectories allowed. In the self-hosted layout that is the installation, `metasystem/plans/designs/`, with the checkout root's own `plans/designs/` read as a second home; in an adopted installation it is the application's own repository root, `plans/designs/`. It is never `vendor/metasystem/plans/designs/`: the state root of an adopted installation is the application, so a design written beneath the installation is read by nothing.
 
 Before calling a design done, run the boundary rather than trusting the file just written:
 
 ```bash
-metasystem project design-of --root . --goal <goal id>
+metasystem design find --root . --goal <goal id>
 ```
 
 It prints the id, status and path of every design record whose `Goals` names that goal, and refuses when there is none. The design-critique skill runs it first and stops on its refusal (`skills/design-critique/SKILL.md`): a critique of a design the resolver cannot find is a critique of a document that will not be found again.
 
-`metasystem project check` reads every home and refuses a duplicate id, a head missing a required key, an unknown kind or status, and a `Goals` line naming a goal the ledger does not have. The fast gate runs it (`scripts/agents/go-gate.sh`), in an adopted installation from the installed executable, so a failing check blocks every delivery that consumes that gate's retained proof, an unrelated code change included. The design homes, the decision home, the intent and doctrine books and the question register are declared inputs of that group in `testing.json`, so a change to any of them invalidates the retained proof instead of inheriting it.
+`metasystem internal project check` reads every home and refuses a duplicate id, a head missing a required key, an unknown kind or status, and a `Goals` line naming a goal the ledger does not have. The fast gate runs it (`scripts/agents/go-gate.sh`), in an adopted installation from the installed executable, so a failing check blocks every delivery that consumes that gate's retained proof, an unrelated code change included. The design homes, the decision home, the intent and doctrine books and the question register are declared inputs of that group in `testing.json`, so a change to any of them invalidates the retained proof instead of inheriting it.
 
 ## Milestone Check (declared milestones only)
 
@@ -77,8 +77,8 @@ Allowed status:
 Run:
 
 ```bash
-bin/metasystem validate design-obligations --file plans/<plan>.md
-bin/metasystem validate design-obligations --runtime-required --file plans/<plan>.md
+bin/metasystem internal validate design-obligations --file plans/<plan>.md
+bin/metasystem internal validate design-obligations --runtime-required --file plans/<plan>.md
 ```
 
 The matrix is semantic work; the script checks structure and declared state. A passing script does not prove that a named owner or test is truthful.

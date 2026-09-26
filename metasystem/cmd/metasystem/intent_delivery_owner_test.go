@@ -112,7 +112,7 @@ func (f *wholeOwnerLanding) land(t *testing.T) (int, intentResult) {
 		return intentProcessResult{stdout: receipt}
 	}
 	owners.delivery = delivery
-	command, ok := findIntentCommand("land")
+	command, ok := findIntentCommand("work land")
 	if !ok {
 		t.Fatal("land command missing")
 	}
@@ -391,7 +391,7 @@ func TestIntentLandBatchAdmissionGitAdapter(t *testing.T) {
 		return intentProcessResult{}
 	}
 	owners.delivery = delivery
-	command, _ := findIntentCommand("land")
+	command, _ := findIntentCommand("work land")
 	run := func() intentResult {
 		var stdout, stderr bytes.Buffer
 		runIntentIn(command, []string{"standing-validation", "--repo", f.mainRoot, "--json"}, &stdout, &stderr, f.mainRoot, owners)

@@ -210,7 +210,7 @@ func runGoalCarryLanding(args []string) int {
 	temporary := flags.String("temporary-human-word", "", "not accepted by carry")
 	reviewBy := flags.String("review-by", "", "not accepted by carry")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *by == "" || *tree == "" || *past == "" || strings.TrimSpace(*why) == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
 		return 2
 	}
 	if *temporary != "" || *reviewBy != "" {
@@ -667,7 +667,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	if lineage == "" {
 		enrollment, err := humanauthority.ReadEnrollment(root)
 		if err != nil {
-			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem goal enroll-terminal here once, or pass --lineage: %w", err)
+			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem internal goal enroll-terminal here once, or pass --lineage: %w", err)
 		}
 		now, nowErr := commandNow(root)
 		if nowErr != nil {
@@ -796,7 +796,7 @@ func runGoalReadItems(args []string) int {
 
 func runGoalReadItemsWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items add|close|list [flags]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal goal read-items add|close|list [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -861,7 +861,7 @@ func runGoalReadItemsAddWithProof(args []string, observed *humanauthority.Proof,
 	var items repeatedStrings
 	flags.Var(&items, "item", "read item (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *read == "" || (len(items) == 0) == (*itemsFile == "") {
-		dependencies.complain("usage: metasystem goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
+		dependencies.complain("usage: metasystem internal goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
 		return 2
 	}
 	texts := []string(items)
@@ -917,7 +917,7 @@ func runGoalReadItemsCloseWithProof(args []string, observed *humanauthority.Proo
 	moved := flags.String("moved", "", "open goal receiving the item")
 	accepted := flags.String("accepted", "", "reason this is not a defect")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *item == "" {
-		dependencies.complain("usage: metasystem goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
+		dependencies.complain("usage: metasystem internal goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
 		return 2
 	}
 	closure := goal.ReadItemClosure{}

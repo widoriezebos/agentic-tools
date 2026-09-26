@@ -82,64 +82,64 @@ func TestIntentQuestionJourney(t *testing.T) {
 		return q
 	}
 
-	if _, result := run("show", "question", "q1"); result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "ask", "--retry", "q1"}) {
+	if _, result := run("question", "show", "q1"); result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "question", "retry", "q1"}) {
 		t.Fatalf("an undelivered question offers its retry: %+v", result)
 	}
-	if code, result := run("ask", "--retry", "q1"); code == 0 || result.Outcome != intentFailed || read("q1").Undelivered != 1 {
+	if code, result := run("question", "retry", "q1"); code == 0 || result.Outcome != intentFailed || read("q1").Undelivered != 1 {
 		t.Fatalf("failed retry: %d %+v", code, result)
 	}
 	provider.fail = false
-	if code, result := run("ask", "--retry", "q1"); code != 0 || result.Outcome != intentConfirmed || read("q1").Thread == nil || len(provider.posts) != 1 {
+	if code, result := run("question", "retry", "q1"); code != 0 || result.Outcome != intentConfirmed || read("q1").Thread == nil || len(provider.posts) != 1 {
 		t.Fatalf("retry: %d %+v", code, result)
 	}
 	if read("q2").Thread != nil || read("q2").Undelivered != 0 {
 		t.Fatal("a targeted retry touched another question")
 	}
-	if code, result := run("ask", "--retry", "q1"); code != 0 || result.Outcome != intentUnchanged || len(provider.posts) != 1 {
+	if code, result := run("question", "retry", "q1"); code != 0 || result.Outcome != intentUnchanged || len(provider.posts) != 1 {
 		t.Fatalf("a delivered question is not sent again: %d %+v", code, result)
 	}
 	// Withdrawal: a reason is required, the poll lock is respected.
-	if code, result := run("ask", "--withdraw", "q2"); code != 2 || result.Outcome != intentRefused {
+	if code, result := run("question", "withdraw", "q2"); code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("withdraw without a reason: %d %+v", code, result)
 	}
 	lock, err := os.OpenFile(filepath.Join(root, "artifacts", "agents", "channel", "lock"), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil || unix.Flock(int(lock.Fd()), unix.LOCK_EX) != nil {
 		t.Fatal(err)
 	}
-	if _, result := run("ask", "--withdraw", "q2", "--reason", "decided already"); result.Outcome != intentInProgress || read("q2").State != "open" {
+	if _, result := run("question", "withdraw", "q2", "--reason", "decided already"); result.Outcome != intentInProgress || read("q2").State != "open" {
 		t.Fatalf("a withdrawal while a poll holds the lock: %+v", result)
 	}
 	unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 	lock.Close()
-	if code, result := run("ask", "--withdraw", "q2", "--reason", "decided already"); code != 0 || read("q2").State != "closed" {
+	if code, result := run("question", "withdraw", "q2", "--reason", "decided already"); code != 0 || read("q2").State != "closed" {
 		t.Fatalf("withdraw: %d %+v", code, result)
 	}
-	if _, result := run("ask", "--withdraw", "q2", "--reason", "again"); result.Outcome != intentUnchanged {
+	if _, result := run("question", "withdraw", "q2", "--reason", "again"); result.Outcome != intentUnchanged {
 		t.Fatalf("repeat withdraw: %+v", result)
 	}
-	if _, result := run("ask", "--retry", "q1", "--withdraw", "q1"); result.Outcome != intentRefused {
+	if _, result := run("question", "retry", "q1", "--withdraw", "q1"); result.Outcome != intentRefused {
 		t.Fatalf("retry and withdraw together: %+v", result)
 	}
 	// A channel question is answered in its thread; local text is no proof.
-	if _, result := run("answer", "q1", "yes"); result.Outcome != intentRefused || result.Decision != channel.ReplyInstructions(read("q1")) || read("q1").Answer != nil {
+	if _, result := run("question", "answer", "q1", "yes"); result.Outcome != intentRefused || result.Decision != channel.ReplyInstructions(read("q1")) || read("q1").Answer != nil {
 		t.Fatalf("channel answer: %+v", result)
 	}
 	// A shared id is never resolved by precedence.
-	if _, result := run("answer", "shared", "yes"); result.Outcome != intentRefused ||
+	if _, result := run("question", "answer", "shared", "yes"); result.Outcome != intentRefused ||
 		!slices.Equal(questionCandidates(result.Data), []string{"channel:shared", "demo/shared"}) {
 		t.Fatalf("ambiguous question: %+v", result)
 	}
-	if _, result := run("show", "question", "channel:shared"); result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "channel question shared") {
+	if _, result := run("question", "show", "channel:shared"); result.Outcome != intentConfirmed || !strings.Contains(result.Summary, "channel question shared") {
 		t.Fatalf("the explicit channel spelling: %+v", result)
 	}
 	// The recorded answer again completes the resume; another answer refuses.
-	if _, result := run("answer", "demo/done-ask", "no"); result.Outcome != intentRefused || len(engineCalls) != 0 {
+	if _, result := run("question", "answer", "demo/done-ask", "no"); result.Outcome != intentRefused || len(engineCalls) != 0 {
 		t.Fatalf("conflicting repeat answer: %+v", result)
 	}
-	if code, result := run("answer", "demo/done-ask", "yes"); code != 0 || len(engineCalls) != 1 || !slices.Equal(engineCalls[0][1:4], []string{"mission", "resume", "--root"}) {
+	if code, result := run("question", "answer", "demo/done-ask", "yes"); code != 0 || len(engineCalls) != 1 || !slices.Equal(engineCalls[0][1:4], []string{"mission", "resume", "--root"}) {
 		t.Fatalf("repeated answer resumes: %d %+v %v", code, result, engineCalls)
 	}
-	if _, result := run("wait", "question", "demo/open-ask"); result.Outcome != intentInProgress || result.Next == nil {
+	if _, result := run("question", "wait", "demo/open-ask"); result.Outcome != intentInProgress || result.Next == nil {
 		t.Fatalf("waiting for an unanswered mission question: %+v", result)
 	}
 }
@@ -198,18 +198,18 @@ func TestIntentAskContinuationsAreFollowed(t *testing.T) {
 		writeQuestionFixture(t, filepath.Join(root, "artifacts", "agents", "channel", "questions", id+".json"),
 			map[string]any{"id": id, "goal": bedGoal, "kind": "other", "state": "open", "facts": []string{"Land it?"}, "options": []any{map[string]any{"label": "yes", "consequence": "land"}}})
 	}
-	ask := []string{"ask", bedGoal, "--question", "Land it?", "--option", "yes: land it", "--option", "no: wait", "--recommend", "yes"}
+	ask := []string{"question", "ask", bedGoal, "--question", "Land it?", "--option", "yes: land it", "--option", "no: wait", "--recommend", "yes"}
 
 	asked = channel.Question{ID: "posted", Goal: bedGoal, State: "open", Thread: &channel.MessageRef{ThreadID: "thread-9", ID: "m9"}}
 	_, result := run(ask...)
-	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "question", "channel:posted"}) {
+	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "question", "wait", "channel:posted"}) {
 		t.Fatalf("a posted question continues with its qualified wait: %+v", result)
 	}
 	_, waited := run(result.Next.Argv[1:]...)
 	if len(engineCalls) != 1 || !slices.Contains(engineCalls[0], "wait") || flagValue(engineCalls[0], "--question") != "posted" {
 		t.Fatalf("the wait reaches the channel wait owner for exactly the question: %v", engineCalls)
 	}
-	if waited.Next == nil || !slices.Equal(waited.Next.Argv, []string{"metasystem", "wait", "question", "channel:posted"}) {
+	if waited.Next == nil || !slices.Equal(waited.Next.Argv, []string{"metasystem", "question", "wait", "channel:posted"}) {
 		t.Fatalf("a bounded wait keeps the channel qualification: %+v", waited)
 	}
 	waitCode = 0
@@ -219,7 +219,7 @@ func TestIntentAskContinuationsAreFollowed(t *testing.T) {
 
 	asked = channel.Question{ID: "stored", Goal: bedGoal, State: "open", Undelivered: 1}
 	_, result = run(ask...)
-	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "ask", "--retry", "stored"}) {
+	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "question", "retry", "stored"}) {
 		t.Fatalf("an undelivered question continues with its exact retry: %+v", result)
 	}
 	if code, retried := run(result.Next.Argv[1:]...); code != 0 || retried.Outcome != intentConfirmed || len(provider.posts) != 1 {
@@ -239,11 +239,11 @@ func TestIntentAskContinuationsAreFollowed(t *testing.T) {
 func TestIntentResumeArchivedGoalContinuesToReopen(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
-	if code, result := bed.runJSON(bed.owners(), "done", bedGoal, "--reason", "shipped and verified", "--lineage", "m1"); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := bed.runJSON(bed.owners(), "goal", "done", bedGoal, "--reason", "shipped and verified", "--lineage", "m1"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("done = %d %+v", code, result)
 	}
-	code, result := bed.runJSON(bed.owners(), "resume", bedGoal)
-	if code == 0 || result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "reopen", bedGoal, "--next", "TEXT"}) ||
+	code, result := bed.runJSON(bed.owners(), "goal", "resume", bedGoal)
+	if code == 0 || result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "goal", "reopen", bedGoal, "--next", "TEXT"}) ||
 		strings.Contains(result.Decision, "internal") {
 		t.Fatalf("resume of a done goal: code=%d %+v", code, result)
 	}
@@ -272,8 +272,8 @@ func TestIntentClaimContinuesReservedGoalByItsShow(t *testing.T) {
 		released.State, released.Claimed = goal.StateApproved, nil
 		bed.addGoal(released)
 		bed.addGoal(&held)
-		code, result := bed.runJSON(bed.owners(), "claim")
-		if result.Outcome != intentUnchanged || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "show", "--goal", name}) {
+		code, result := bed.runJSON(bed.owners(), "goal", "claim")
+		if result.Outcome != intentUnchanged || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "goal", "show", "--goal", name}) {
 			t.Fatalf("claim while %s is held: code=%d %+v", name, code, result)
 		}
 		code, shown := bed.runJSON(bed.owners(), result.Next.Argv[1:]...)
@@ -321,7 +321,7 @@ func TestIntentAbandonWithSuccessor(t *testing.T) {
 	bed.repo.commit(bed.repo.accepted).files["records/goals/lone-goal.md"] = rendered
 	human := []string{"--by", "Wido", "--fixture-human-authority", "--lineage", "m1"}
 	abandon := func(args ...string) (int, intentResult) {
-		return bed.runJSON(bed.owners(), append(append([]string{"abandon"}, args...), human...)...)
+		return bed.runJSON(bed.owners(), append(append([]string{"goal", "abandon"}, args...), human...)...)
 	}
 	for _, successor := range []string{"old-goal", "no-such-goal"} {
 		if code, result := abandon("old-goal", "--reason", "superseded", "--successor", successor); code == 0 || result.Outcome == intentConfirmed {
@@ -332,13 +332,13 @@ func TestIntentAbandonWithSuccessor(t *testing.T) {
 	notPerson.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 		return humanauthority.Proof{}, errors.New("process 42 is not the enrolled terminal")
 	}
-	if code, result := bed.runJSON(notPerson, "abandon", "old-goal", "--reason", "superseded", "--successor", "new-goal", "--lineage", "m1"); code == 0 || result.Outcome == intentConfirmed {
+	if code, result := bed.runJSON(notPerson, "goal", "abandon", "old-goal", "--reason", "superseded", "--successor", "new-goal", "--lineage", "m1"); code == 0 || result.Outcome == intentConfirmed {
 		t.Fatalf("an abandonment without a person's authority: code=%d %+v", code, result)
 	}
 	if bed.goalFile("old-goal").State == goal.StateAbandoned {
 		t.Fatal("a refused abandonment abandoned the goal")
 	}
-	if code, result := bed.runJSON(notPerson, "abandon", "lone-goal", "--reason", "no longer needed", "--successor", "new-goal", "--lineage", "m1"); code == 0 ||
+	if code, result := bed.runJSON(notPerson, "goal", "abandon", "lone-goal", "--reason", "no longer needed", "--successor", "new-goal", "--lineage", "m1"); code == 0 ||
 		result.Outcome == intentConfirmed || bed.goalFile("lone-goal").Abandoned.Carried != "" {
 		t.Fatalf("recording a successor without a person's authority: code=%d %+v", code, result)
 	}
@@ -386,31 +386,31 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	run := func(args ...string) (int, intentResult) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--repo", bed.root(), "--json"), &stdout, &stderr, caller, owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--repo", bed.root(), "--json"), &stdout, &stderr, caller, owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result
 	}
-	code, all := run("settings", "--keys")
+	code, all := run("settings", "show", "keys")
 	listing := fmt.Sprint(all.Data)
 	if code != 0 || all.Outcome != intentConfirmed || !strings.Contains(listing, "fixture.alpha.one") || !strings.Contains(listing, "fixture.beta") {
 		t.Fatalf("settings --keys: code=%d %+v", code, all)
 	}
-	code, matching := run("settings", "--keys", "--matching", "fixture.alpha")
+	code, matching := run("settings", "show", "keys", "--matching", "fixture.alpha")
 	narrowed := fmt.Sprint(matching.Data)
 	if code != 0 || !strings.Contains(narrowed, "fixture.alpha.two") || strings.Contains(narrowed, "fixture.beta") {
 		t.Fatalf("settings --keys --matching: code=%d %+v", code, matching)
 	}
 	// The bed's configuration lacks testing.contract; the validate owner's
 	// own reason is the result.
-	if code, incomplete := run("check", "settings"); code == 0 || incomplete.Outcome != intentRefused || !strings.Contains(incomplete.Summary, "testing.contract is required") {
+	if code, incomplete := run("settings", "show", "check"); code == 0 || incomplete.Outcome != intentRefused || !strings.Contains(incomplete.Summary, "testing.contract is required") {
 		t.Fatalf("check settings on an incomplete configuration: code=%d %+v", code, incomplete)
 	}
 	invalid := append(append([]byte{}, original...), []byte("\ntesting.contract=missing-contract.json\n")...)
 	os.WriteFile(conf, invalid, 0o644)
-	if code, refused := run("check", "settings"); code == 0 || refused.Outcome == intentConfirmed || !strings.Contains(refused.Summary, "testing.contract is invalid") ||
+	if code, refused := run("settings", "show", "check"); code == 0 || refused.Outcome == intentConfirmed || !strings.Contains(refused.Summary, "testing.contract is invalid") ||
 		!strings.Contains(refused.Summary, "missing-contract.json") {
 		t.Fatalf("check settings on an invalid setting: code=%d %+v", code, refused)
 	}
@@ -426,7 +426,7 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	contract := []byte(`{"schemaVersion":1,"projectRisk":{"severity":1,"exposure":1,"reversibility":"revert","detection":"immediate","recovery":"bounded"},"surfaces":[{"id":"app","paths":["src/**"],"dependsOn":[],"standard":["section/smoke"],"deep":[],"critical":[]}],"groups":[{"id":"section/smoke","kind":"integration","adapter":"section","cwd":".","inputs":["metasystem.conf"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":1000,"section":"smoke"}],"always":{"canary":["section/smoke"],"standard":[]},"unknown":["section/smoke"],"cadence":["section/smoke"]}`)
 	os.WriteFile(conf, valid, 0o644)
 	os.WriteFile(filepath.Join(bed.root(), "testing.json"), contract, 0o644)
-	if code, accepted := run("check", "settings"); code != 0 || accepted.Outcome != intentConfirmed {
+	if code, accepted := run("settings", "show", "check"); code != 0 || accepted.Outcome != intentConfirmed {
 		t.Fatalf("check settings on a valid configuration: code=%d %+v", code, accepted)
 	}
 	if after, _ := os.ReadFile(conf); !bytes.Equal(after, valid) {

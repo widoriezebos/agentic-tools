@@ -69,7 +69,7 @@ func decisionsDocument(binding reviewBinding, findings []intentFinding) string {
 	var text strings.Builder
 	text.WriteString("# Review decisions\n\n")
 	text.WriteString(binding.line() + "\n\n")
-	text.WriteString("Written by metasystem review; keep the binding line unchanged. Decide every finding: accepted (a fix is\n")
+	text.WriteString("Written by metasystem work review; keep the binding line unchanged. Decide every finding: accepted (a fix is\n")
 	text.WriteString("required, sent with revise), refuted (with evidence), out-of-scope (citing the brief's declared scope) or\n")
 	text.WriteString("noted (not material).\n\n")
 	header := validate.DispositionsHeader()

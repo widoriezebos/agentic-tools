@@ -1,6 +1,6 @@
 package main
 
-// metasystem project type-designs: the reviewed mapping that gives the kit's
+// metasystem internal project type-designs: the reviewed mapping that gives the kit's
 // own history the head a design is supposed to carry.
 //
 // The machine proposes and a human disposes. Without --apply the verb writes
@@ -91,7 +91,7 @@ func projectTypeDesigns(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem project type-designs [--root DIR] [--apply]")
+		fmt.Fprintln(stderr, "usage: metasystem internal project type-designs [--root DIR] [--apply]")
 		return 2
 	}
 	return typeDesigns(*root, *apply, project.NewID, stdout, stderr)
@@ -107,7 +107,7 @@ func typeDesigns(root string, apply bool, mint func() (string, error), stdout, s
 	}
 	home, found := typingHome(read)
 	if !found {
-		fmt.Fprintln(stderr, "metasystem project type-designs: this installation has no historical design home;"+
+		fmt.Fprintln(stderr, "metasystem internal project type-designs: this installation has no historical design home;"+
 			" only the self-hosted layout carries the kit's own past")
 		return 1
 	}
@@ -147,12 +147,12 @@ func typingHome(read *project.Project) (project.Home, bool) {
 func typingRead(home project.Home) ([]typingFile, error) {
 	root, err := os.OpenRoot(home.Path)
 	if err != nil {
-		return nil, fmt.Errorf("metasystem project type-designs: open %s: %w", home.Rel, err)
+		return nil, fmt.Errorf("metasystem internal project type-designs: open %s: %w", home.Rel, err)
 	}
 	defer func() { _ = root.Close() }()
 	entries, err := os.ReadDir(home.Path)
 	if err != nil {
-		return nil, fmt.Errorf("metasystem project type-designs: read %s: %w", home.Rel, err)
+		return nil, fmt.Errorf("metasystem internal project type-designs: read %s: %w", home.Rel, err)
 	}
 	var files []typingFile
 	for _, entry := range entries {
@@ -165,19 +165,19 @@ func typingRead(home project.Home) ([]typingFile, error) {
 		}
 		file, err := root.Open(entry.Name())
 		if err != nil {
-			return nil, fmt.Errorf("metasystem project type-designs: open %s/%s: %w", home.Rel, entry.Name(), err)
+			return nil, fmt.Errorf("metasystem internal project type-designs: open %s/%s: %w", home.Rel, entry.Name(), err)
 		}
 		info, statErr := file.Stat()
 		data, readErr := io.ReadAll(file)
 		_ = file.Close()
 		if statErr != nil {
-			return nil, fmt.Errorf("metasystem project type-designs: stat %s/%s: %w", home.Rel, entry.Name(), statErr)
+			return nil, fmt.Errorf("metasystem internal project type-designs: stat %s/%s: %w", home.Rel, entry.Name(), statErr)
 		}
 		if !info.Mode().IsRegular() {
 			continue
 		}
 		if readErr != nil {
-			return nil, fmt.Errorf("metasystem project type-designs: read %s/%s: %w", home.Rel, entry.Name(), readErr)
+			return nil, fmt.Errorf("metasystem internal project type-designs: read %s/%s: %w", home.Rel, entry.Name(), readErr)
 		}
 		files = append(files, typingFile{Name: entry.Name(), Text: string(data), Mode: info.Mode().Perm()})
 	}
@@ -340,7 +340,7 @@ func typingApply(read *project.Project, home project.Home, files []typingFile,
 	planPath := filepath.Join(home.Path, typingPlanName)
 	data, err := os.ReadFile(planPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "metasystem project type-designs: no reviewed plan at %s:"+
+		fmt.Fprintf(stderr, "metasystem internal project type-designs: no reviewed plan at %s:"+
 			" run without --apply first, then review it\n", typingPlanRel(home))
 		return 1
 	}
@@ -402,7 +402,7 @@ func typingApply(read *project.Project, home project.Home, files []typingFile,
 		typed = append(typed, typingLine{File: file.Name, Goal: line.Goal, Status: line.Status, Note: id})
 	}
 	if len(refusals) > 0 {
-		fmt.Fprintln(stderr, "metasystem project type-designs: nothing was written:")
+		fmt.Fprintln(stderr, "metasystem internal project type-designs: nothing was written:")
 		for _, refusal := range refusals {
 			fmt.Fprintln(stderr, "  "+refusal)
 		}
@@ -412,7 +412,7 @@ func typingApply(read *project.Project, home project.Home, files []typingFile,
 	for _, write := range writes {
 		if err := typingWriteFile(read, home, write); err != nil {
 			fmt.Fprintln(stderr, err)
-			fmt.Fprintf(stderr, "metasystem project type-designs: %d file(s) were already typed;"+
+			fmt.Fprintf(stderr, "metasystem internal project type-designs: %d file(s) were already typed;"+
 				" run without --apply to see what is left\n", len(typed))
 			return 1
 		}
@@ -426,7 +426,7 @@ func typingApply(read *project.Project, home project.Home, files []typingFile,
 	}
 	afterHome, found := typingHome(after)
 	if !found {
-		fmt.Fprintln(stderr, "metasystem project type-designs: the historical home is gone")
+		fmt.Fprintln(stderr, "metasystem internal project type-designs: the historical home is gone")
 		return 1
 	}
 	afterFiles, err := typingRead(afterHome)
@@ -569,10 +569,10 @@ func typingWriteFile(read *project.Project, home project.Home, file typingFile) 
 	}
 	path := filepath.Join(home.Path, file.Name)
 	if _, err := atomicfile.WriteText(path, file.Text, read.Roots.Checkout); err != nil {
-		return fmt.Errorf("metasystem project type-designs: write %s/%s: %w", home.Rel, file.Name, err)
+		return fmt.Errorf("metasystem internal project type-designs: write %s/%s: %w", home.Rel, file.Name, err)
 	}
 	if err := os.Chmod(path, file.Mode); err != nil {
-		return fmt.Errorf("metasystem project type-designs: restore the mode of %s/%s: %w", home.Rel, file.Name, err)
+		return fmt.Errorf("metasystem internal project type-designs: restore the mode of %s/%s: %w", home.Rel, file.Name, err)
 	}
 	return nil
 }
@@ -580,7 +580,7 @@ func typingWriteFile(read *project.Project, home project.Home, file typingFile) 
 func typingWritePlan(read *project.Project, home project.Home, plan string) error {
 	path := filepath.Join(home.Path, typingPlanName)
 	if _, err := atomicfile.WriteText(path, plan, read.Roots.Checkout); err != nil {
-		return fmt.Errorf("metasystem project type-designs: write %s: %w", typingPlanRel(home), err)
+		return fmt.Errorf("metasystem internal project type-designs: write %s: %w", typingPlanRel(home), err)
 	}
 	return nil
 }
@@ -591,7 +591,7 @@ func typingWritePlan(read *project.Project, home project.Home, plan string) erro
 func typingBareName(name string) error {
 	if name == "" || name == "." || name == ".." ||
 		strings.ContainsAny(name, `/\`) || filepath.IsAbs(name) {
-		return fmt.Errorf("metasystem project type-designs: %q is not a file of the historical home", name)
+		return fmt.Errorf("metasystem internal project type-designs: %q is not a file of the historical home", name)
 	}
 	return nil
 }
@@ -608,7 +608,7 @@ func typingPlanText(home project.Home, lines []typingLine) string {
 	var out strings.Builder
 	out.WriteString("# Typing the historical designs\n\n")
 	out.WriteString("The machine's proposal for the kit's own history in `" + home.Rel + "`, for a human to\n")
-	out.WriteString("review. `metasystem project type-designs` rewrites this table from the files and the\n")
+	out.WriteString("review. `metasystem internal project type-designs` rewrites this table from the files and the\n")
 	out.WriteString("ledger; `--apply` reads it back and types every line that says `resolved`.\n\n")
 	out.WriteString("The goal is proposed from the file name, the status from what the ledger says about\n")
 	out.WriteString("that goal. A line is `resolved` only when the file's own opening agrees with both;\n")

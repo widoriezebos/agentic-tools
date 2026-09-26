@@ -650,8 +650,8 @@ func families() []family {
 				{"authorize-dispatch", "gate the unattended continuation: steward caller, consumed unstamped intent, staged tuple out", runStewardAuthorizeDispatch},
 				{"revive", "one revival end to end: stage, mint, arbitrate, dispatch once", runStewardRevive},
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
-				{"arm", "explicit human enrollment and runner start (long form of metasystem arm)", runStewardArm},
-				{"restart", "replace and re-arm the runner (long form of metasystem arm)", runStewardRestart},
+				{"arm", "explicit human enrollment and runner start (long form of metasystem system start)", runStewardArm},
+				{"restart", "replace and re-arm the runner (long form of metasystem system start)", runStewardRestart},
 				{"disarm", "end the runner", runStewardDisarm},
 				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
 				{"hook-attempt", "record a supervision-hook attempt before turn work (internal)", runStewardHookAttempt},
@@ -842,7 +842,10 @@ func dispatchObject(args []string, stdout, stderr io.Writer, registered []family
 		return 0
 	}
 	if command, ok := findIntentAction(object, args[1]); ok {
-		if !command.hidden && len(args) == 3 && isHelpWord(args[2]) {
+		if command.hidden {
+			return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+		}
+		if len(args) == 3 && isHelpWord(args[2]) {
 			writeIntentHelp(stdout, command)
 			return 0
 		}

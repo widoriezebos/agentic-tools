@@ -174,7 +174,7 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 		{"--root", rootArg, "--goal", "move-stop"},
 	} {
 		code, _, stderr = invoke(invalid...)
-		if code != 2 || !strings.Contains(stderr, "usage: metasystem audit stop-decision-surface") || auditCalls != 3 || declareCalls != 0 {
+		if code != 2 || !strings.Contains(stderr, "usage: metasystem internal audit stop-decision-surface") || auditCalls != 3 || declareCalls != 0 {
 			t.Fatalf("invalid invocation %q = code %d, stderr %q, audit calls %d, declaration calls %d", invalid, code, stderr, auditCalls, declareCalls)
 		}
 	}

@@ -292,7 +292,7 @@ func TestMissingConfiguredLandingRefNamesItsActualRepair(t *testing.T) {
 
 func TestNotLandedRebuildNamesFetchAndTerminalRepairs(t *testing.T) {
 	root := t.TempDir()
-	want := fmt.Sprintf("run git -C %s fetch origin once, then rerun metasystem up, or from an agent-free terminal run metasystem steward restart --repo %s", root, root)
+	want := fmt.Sprintf("run git -C %s fetch origin once, then rerun metasystem up, or from an agent-free terminal run metasystem internal steward restart --repo %s", root, root)
 	for name, message := range map[string]string{
 		"commit is not landed":         "rebuilt engine was built from abcdef0, which is not landed on refs/remotes/origin/trunk",
 		"witness is not proven landed": "rebuilt engine was built from witness-0123456789ab, which is not proven landed on refs/remotes/origin/trunk: no matching commit",
@@ -577,7 +577,7 @@ func TestUpStaysArmedWhenTheRestampCannotRun(t *testing.T) {
 	result := Result{Components: []ComponentOutcome{stopCapabilityOutcome(options, "lineage-a", 5)}, Outcome: "armed", Authority: "writer"}
 	component := result.Components[0]
 	if result.ExitCode() != 0 || result.Outcome != "armed" || component.Outcome != "deferred" ||
-		component.Detail != "goal store is unavailable" || component.Remedy != "metasystem goal restamp --id claimed-work" {
+		component.Detail != "goal store is unavailable" || component.Remedy != "metasystem internal goal restamp --id claimed-work" {
 		t.Fatalf("restamp failure changed arming: %+v", result)
 	}
 }

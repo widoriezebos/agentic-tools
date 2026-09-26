@@ -52,7 +52,7 @@ func MapStopOutput(runtime, inputPath, outputPath string) error {
 	if presentation.Control.ShouldBlock != (presentation.Control.BlockSource != nil) {
 		return fmt.Errorf("stop presentation block source does not match its decision")
 	}
-	wantCommand := "metasystem report stop-status --id " + presentation.Report.Alias
+	wantCommand := "metasystem session report --id " + presentation.Report.Alias
 	if presentation.Report.Id == "" || presentation.Report.Alias == "" || presentation.Report.ReadCommand != wantCommand ||
 		presentation.Report.Path == "" || presentation.Report.SHA256 == "" {
 		return fmt.Errorf("stop presentation report reference is inconsistent")

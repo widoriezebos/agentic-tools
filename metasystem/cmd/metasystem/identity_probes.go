@@ -67,7 +67,7 @@ func runIdentityGroupOwned(args []string) int {
 		return 2
 	}
 	if *pgid < 2 || *tag == "" || (*root == "") != (*record == "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proc group-owned --pgid P --tag TAG [--root R --record FILE]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proc group-owned --pgid P --tag TAG [--root R --record FILE]")
 		return 2
 	}
 	switch janitor.GroupOwnership(*pgid, *tag) {
@@ -113,7 +113,7 @@ func runProcGroupMembers(args []string) int {
 		return 2
 	}
 	if *pgid < 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proc group-members --pgid P [--except PID]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proc group-members --pgid P [--except PID]")
 		return 2
 	}
 	// The enumeration must not count its own invocation chain: this

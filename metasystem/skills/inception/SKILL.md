@@ -218,7 +218,7 @@ artifacts (`covenant.json`, `docs/app-doctrine.md`,
 `docs/covenant-evidence.md`, the `docs/project-rules.md` facts) and
 the filled `metasystem.conf` — then prove the shape mechanically:
 
-    bin/metasystem covenant validate
+    bin/metasystem covenant check
 
 Its success line says "shape valid; adequacy not established" — repeat
 that honesty to the human, because it is the truth: the parser proves
@@ -231,7 +231,7 @@ stays `referenced-not-run` with its row saying so.
 
 Goal origin derives from who runs the command: the human's asks carry
 the human's authority gates only when the human's own hand opens them.
-Generate the exact `metasystem open <goal> --intent <text> --next <text>`
+Generate the exact `metasystem goal open <goal> --intent <text> --next <text>`
 command(s) — id, intent with its cited IDs, next step with its
 `Appetite:` token, and the risk fields `metasystem help open` requires — and hand them over for the
 human to run. Zero transcription: the command is complete as displayed.

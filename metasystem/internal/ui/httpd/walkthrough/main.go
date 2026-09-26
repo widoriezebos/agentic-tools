@@ -42,7 +42,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
-const agentReason = "the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem restart ui to act as yourself"
+const agentReason = "the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem ui restart to act as yourself"
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:7979", "loopback address")
@@ -50,7 +50,7 @@ func main() {
 	// The walkthrough's own one-time-code secret. It is synthetic — the base32
 	// string every TOTP example uses — so the sign-in sheet can be walked
 	// through without a configured seat and without a real secret anywhere
-	// near it. bin/metasystem channel fake code --secret <this> prints the
+	// near it. bin/metasystem internal channel fake code --secret <this> prints the
 	// code it accepts.
 	secret := flag.String("secret", "JBSWY3DPEHPK3PXP", "synthetic one-time-code secret for the sign-in walkthrough")
 	human := flag.String("human", "", "the handle this fixture seat signs in as; empty makes the sheet ask")

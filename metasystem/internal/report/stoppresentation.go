@@ -727,7 +727,7 @@ func stopReportReference(id, alias, path string) StopReportReference {
 		Id:          id,
 		Alias:       alias,
 		Path:        path,
-		ReadCommand: "metasystem report stop-status --id " + alias,
+		ReadCommand: "metasystem session report --id " + alias,
 	}
 }
 func stopHumanLine(firstLine, title, titleKind string, shouldBlock, decision, repair bool, reference StopReportReference) string {

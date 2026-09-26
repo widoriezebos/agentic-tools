@@ -308,7 +308,7 @@ type DoneReadItemsOpenError struct {
 func (e *DoneReadItemsOpenError) Error() string {
 	remedies := make([]string, 0, len(e.ItemIDs))
 	for _, itemID := range e.ItemIDs {
-		command := fmt.Sprintf("metasystem goal read-items close --id %s --item %s", e.Goal, itemID)
+		command := fmt.Sprintf("metasystem internal goal read-items close --id %s --item %s", e.Goal, itemID)
 		remedies = append(remedies, command+" --fixed <commit> | "+command+" --moved <goal-id> | "+command+` --accepted "<reason>"`)
 	}
 	return fmt.Sprintf("GOAL_DONE_READ_ITEMS_OPEN: goal %s has open read items %s; close each with one of:\n%s", e.Goal, strings.Join(e.ItemIDs, ", "), strings.Join(remedies, "\n"))

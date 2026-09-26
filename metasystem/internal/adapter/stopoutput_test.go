@@ -108,9 +108,9 @@ func TestMapStopOutputUsesOnePublicFieldAndExactReport(t *testing.T) {
 						!strings.HasSuffix(line, "--id "+presentationResult.Report.Alias) {
 						t.Fatalf("mapped human field does not use its exact alias: %#v (%v)", payload, readErr)
 					}
-					wantLine := "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id " + presentationResult.Report.Alias
+					wantLine := "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem session report --id " + presentationResult.Report.Alias
 					if test.blocked {
-						wantLine = "Just completed: unknown for this turn.\nNo task in flight; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id " + presentationResult.Report.Alias
+						wantLine = "Just completed: unknown for this turn.\nNo task in flight; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem session report --id " + presentationResult.Report.Alias
 					}
 					if line != wantLine {
 						t.Fatalf("mapped human field = %q, want %q", line, wantLine)
@@ -227,7 +227,7 @@ func writePublishedPresentation(t *testing.T, published stopreporttest.Published
 		Report: report.StopReportReference{
 			Id: published.Response.Report.ID, Alias: published.Response.Report.Alias,
 			Path: published.Response.Report.Path, SHA256: published.Response.Report.SHA256,
-			ReadCommand: "metasystem report stop-status --id " + published.Response.Report.Alias,
+			ReadCommand: "metasystem session report --id " + published.Response.Report.Alias,
 		},
 	}
 	data, err := json.Marshal(presentation)
@@ -321,7 +321,7 @@ func TestMapStopOutputRejectsUnboundReportReference(t *testing.T) {
 		}},
 		{name: "substituted alias", change: func(value *report.StopPresentationResult) {
 			value.Report.Alias = "f"
-			value.Report.ReadCommand = "metasystem report stop-status --id f"
+			value.Report.ReadCommand = "metasystem session report --id f"
 		}},
 		{name: "unbound read command", change: func(value *report.StopPresentationResult) {
 			value.Report.ReadCommand += "f"

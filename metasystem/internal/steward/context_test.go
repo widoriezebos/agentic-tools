@@ -56,7 +56,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 					reading.Latest == nil || reading.Latest.PromptTokens != test.tokens {
 					t.Fatalf("tokens %d diagnostic=%t = role %+v reading %+v err %v", test.tokens, diagnostic, role, reading, err)
 				}
-				handoff := "metasystem context handoff --root " + root + " --note <configured-note-path> --no-delegates"
+				handoff := "metasystem session handoff --root " + root + " --note <configured-note-path> --no-delegates"
 				switch {
 				case test.status == HealthDead && diagnostic:
 					if !role.NoAutomaticRemedy || !strings.Contains(role.Remedy, "context status") || strings.Contains(role.Remedy, "transcript") {
@@ -250,21 +250,21 @@ func TestContextVerdictReadsConfiguredBounds(t *testing.T) {
 	}
 	role, reading, err := contextBudgetLineWithProber(invalidRoot, invalidRoot, time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{}, healthProbe{})
 	if err == nil || role.Status != HealthUnknown || role.Reason != err.Error() || !strings.Contains(role.Reason, "CONTEXT_CONFIG_INVALID key=context.ceiling.tokens") ||
-		role.Remedy != "metasystem config validate --conf "+filepath.Join(invalidRoot, "metasystem.conf") || !reflect.DeepEqual(reading, usagepkg.Reading{}) {
+		role.Remedy != "metasystem internal config validate --conf "+filepath.Join(invalidRoot, "metasystem.conf") || !reflect.DeepEqual(reading, usagepkg.Reading{}) {
 		t.Fatalf("invalid budget = role %+v reading %+v err %v", role, reading, err)
 	}
 }
 
 func TestContextVerdictOverTriggerIsAliveWithTheRemedy(t *testing.T) {
 	role := contextVerdict(usagepkg.Reading{Latest: &usagepkg.CallSample{PromptTokens: 105001}}, config.Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000}, "/root", false)
-	if role.Status != HealthAlive || !strings.HasSuffix(role.Reason, "; over the trigger: run metasystem context handoff --root /root --note <configured-note-path> --no-delegates") {
+	if role.Status != HealthAlive || !strings.HasSuffix(role.Reason, "; over the trigger: run metasystem session handoff --root /root --note <configured-note-path> --no-delegates") {
 		t.Fatalf("over-trigger verdict = %+v", role)
 	}
 }
 
 func TestContextVerdictOverProofMaximumIsDead(t *testing.T) {
 	role := contextVerdict(usagepkg.Reading{Latest: &usagepkg.CallSample{PromptTokens: ProofMaxTokens + 1}}, config.Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000}, "/root", false)
-	if role.Status != HealthDead || !role.NoAutomaticRemedy || role.Remedy != "metasystem context handoff --root /root --note <configured-note-path> --no-delegates" || !strings.HasSuffix(role.Reason, "; over the proof maximum") {
+	if role.Status != HealthDead || !role.NoAutomaticRemedy || role.Remedy != "metasystem session handoff --root /root --note <configured-note-path> --no-delegates" || !strings.HasSuffix(role.Reason, "; over the proof maximum") {
 		t.Fatalf("over-proof-maximum verdict = %+v", role)
 	}
 }

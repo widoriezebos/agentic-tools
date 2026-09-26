@@ -67,7 +67,7 @@ func runLaunchStart(args []string) int {
 		return 2
 	}
 	if *kind == "" || *brief == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch start --kind <build|design|read|critique> --brief <file> [--dir <directory>] [--goal <id>] [--tag <tag>] [--model <model>] [--effort <effort>] [--resume-session <id>] [--page <file>] [--input <file>]... [--output <file>]... [--units-page <file>] [--unit <name>]... [--diff-file <file> [--package <directory>|--wide]]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch start --kind <build|design|read|critique> --brief <file> [--dir <directory>] [--goal <id>] [--tag <tag>] [--model <model>] [--effort <effort>] [--resume-session <id>] [--page <file>] [--input <file>]... [--output <file>]... [--units-page <file>] [--unit <name>]... [--diff-file <file> [--package <directory>|--wide]]")
 		return 2
 	}
 	data := map[string]json.RawMessage{}
@@ -94,7 +94,7 @@ func runLaunchRoundTask(args []string) int {
 	out := flags.String("out", "", "output file")
 	constraints := flags.String("constraints", "0", "constraint count")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *tag == "" || (*round != 2 && *round != 3) || *previous == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch round-task --tag <tag> --round <2|3> --previous <file> --out <file> [--constraints <n>]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch round-task --tag <tag> --round <2|3> --previous <file> --out <file> [--constraints <n>]")
 		return 2
 	}
 	data, err := os.ReadFile(*previous)
@@ -137,7 +137,7 @@ func launchWaitWith(manager *launch.Manager, args []string, stdout, stderr io.Wr
 	id := flags.String("id", "", "launch id")
 	timeout := flags.Duration("timeout", time.Duration(1<<63-1), "maximum wait")
 	if flags.Parse(args) != nil || *id == "" || flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem launch wait --id <id> [--timeout <duration>] (one call waits at most launch.wait.cap.seconds)")
+		fmt.Fprintln(stderr, "usage: metasystem internal launch wait --id <id> [--timeout <duration>] (one call waits at most launch.wait.cap.seconds)")
 		return 2
 	}
 	cap, err := manager.WaitCap()
@@ -176,7 +176,7 @@ func runLaunchStatus(args []string) int {
 }
 func runLaunchList(args []string) int {
 	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch list")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch list")
 		return 2
 	}
 	records, err := launchManager().List()
@@ -231,7 +231,7 @@ func runLaunchCensus(args []string) int {
 	flags := flag.NewFlagSet("launch census", flag.ContinueOnError)
 	reap := flags.Bool("reap", false, "terminate idle plugin brokers")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch census [--reap]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch census [--reap]")
 		return 2
 	}
 	lines, err := launchManager().Census(*reap)
@@ -248,7 +248,7 @@ func runLaunchSettings(args []string) int {
 	flags := flag.NewFlagSet("launch settings", flag.ContinueOnError)
 	asJSON := flags.Bool("json", false, "print structured settings")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch settings [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal launch settings [--json]")
 		return 2
 	}
 	executable, err := launchExecutable()
@@ -306,7 +306,7 @@ func runLaunchReport(args []string) int {
 	sinceText := flags.String("since", "", "include activity at or after this RFC3339 instant")
 	asJSON := flags.Bool("json", false, "print structured report")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (*id != "" && (*goal != "" || *sinceText != "")) {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch report [--id <id>|--goal <goal> [--since <RFC3339>]] [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem work report [--id <id>|--goal <goal> [--since <RFC3339>]] [--json]")
 		return 2
 	}
 	var since time.Time

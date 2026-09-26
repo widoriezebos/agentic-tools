@@ -344,7 +344,7 @@ func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
 	waitCallerPID = func() int64 { return self }
 	t.Cleanup(func() { waitCallerPID = originalPID })
 	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--resume", waitID}) })
-	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem channel wait --resume "+waitID) {
+	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem internal channel wait --resume "+waitID) {
 		t.Fatalf("plain channel resume code=%d stderr=%q", code, problem)
 	}
 }
@@ -671,7 +671,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 	code, output, problem := captureChannelOutput(t, func() int {
 		return runSessionStart([]string{"--root", root, "--session", "session-new"})
 	})
-	want := "WAITING attempt attempt-a until 2026-09-14T12:00:00Z: metasystem wait --resume " + strings.Repeat("a", 32)
+	want := "WAITING attempt attempt-a until 2026-09-14T12:00:00Z: metasystem work wait wait:" + strings.Repeat("a", 32)
 	if code != 0 || strings.TrimSpace(output) != want || problem != "" {
 		t.Fatalf("session start code=%d output=%q stderr=%q", code, output, problem)
 	}

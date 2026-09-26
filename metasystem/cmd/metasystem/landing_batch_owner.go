@@ -602,7 +602,7 @@ func parseBatchOwnerWithSource(args []string, verb string, clock func() time.Tim
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
 	interval := flags.Duration("interval", time.Minute, "owner tick interval")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *interval <= 0 {
-		return config.BatchLanding{}, 0, fmt.Errorf("usage: metasystem landing batch %s --root ROOT [--landing-root ROOT --max-wait DURATION]", verb)
+		return config.BatchLanding{}, 0, fmt.Errorf("usage: metasystem internal landing batch %s --root ROOT [--landing-root ROOT --max-wait DURATION]", verb)
 	}
 	if err := source.validate(); err != nil {
 		return config.BatchLanding{}, 0, err
@@ -702,7 +702,7 @@ func runBatchTickWithSource(args []string, source *batchOwnerSource) (code int) 
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
 	id := flags.String("batch", "", "batch id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch tick --root ROOT --batch ULID")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch tick --root ROOT --batch ULID")
 		return 2
 	}
 	if err := source.validate(); err != nil {

@@ -722,7 +722,7 @@ func TestControlledLaunchersExportTheirOwnRef(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build proc ref witness: %v\n%s", err, output)
 	}
-	command := exec.Command("sh", "-c", "metasystem proc ref --pid $$")
+	command := exec.Command("sh", "-c", "metasystem internal proc ref --pid $$")
 	command.Env = append(os.Environ(), "PATH="+filepath.Dir(engine)+":"+os.Getenv("PATH"))
 	var output strings.Builder
 	command.Stdout = &output

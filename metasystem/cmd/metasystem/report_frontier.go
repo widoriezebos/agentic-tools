@@ -12,7 +12,7 @@ import (
 // the action word, then the flag set the shell always accepted.
 func runReportFrontier(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem report frontier record|challenge|status [flags]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem experiment record|challenge|status [flags]")
 		return 2
 	}
 	action := args[0]
@@ -39,7 +39,7 @@ func runReportFrontier(args []string) int {
 	case "status":
 		lines, ferr = report.FrontierStatus(opts)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: metasystem report frontier record|challenge|status [flags]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem experiment record|challenge|status [flags]")
 		return 2
 	}
 	for _, line := range lines {

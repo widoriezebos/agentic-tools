@@ -90,7 +90,7 @@ func TestKitAnswersFromTheKitsOwnOwners(t *testing.T) {
 
 	verb := readers.Answer(uitools.OpKit, uitools.Args{"topic": "next"}).Text()
 	testutil.Expect(t, "a verb is answered from the catalogue in its own words",
-		strings.Contains(verb, "command · metasystem goal next: print the next ready goal"), true)
+		strings.Contains(verb, "command · metasystem internal goal next: print the next ready goal"), true)
 
 	ruling := readers.Answer(uitools.OpKit, uitools.Args{"topic": "R-121"}).Text()
 	testutil.Expect(t, "a ruling is answered from the register",

@@ -23,22 +23,22 @@ func runOutputSpill(args []string) int {
 		return 2
 	}
 	if *root == "" || *verb == "" || *ext == "" || *file == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem output spill --root ROOT --verb VERB --ext EXT --file FILE [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal output spill --root ROOT --verb VERB --ext EXT --file FILE [--json]")
 		return 2
 	}
 	absoluteRoot, err := filepath.Abs(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem output spill:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal output spill:", err)
 		return 1
 	}
 	data, err := os.ReadFile(*file)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem output spill:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal output spill:", err)
 		return 1
 	}
 	reference, err := output.Spill(absoluteRoot, *verb, *ext, data, time.Now().UTC())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem output spill:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal output spill:", err)
 		return 1
 	}
 	if *asJSON {
@@ -57,7 +57,7 @@ func runOutputPrune(args []string) int {
 		return 2
 	}
 	if *root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem output prune --root ROOT [--older-than 7d]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal output prune --root ROOT [--older-than 7d]")
 		return 2
 	}
 	olderThan, err := parseOutputDuration(*olderThanText)
@@ -65,17 +65,17 @@ func runOutputPrune(args []string) int {
 		if err == nil {
 			err = fmt.Errorf("must not be negative")
 		}
-		fmt.Fprintln(os.Stderr, "metasystem output prune: invalid --older-than:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal output prune: invalid --older-than:", err)
 		return 2
 	}
 	absoluteRoot, err := filepath.Abs(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem output prune:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal output prune:", err)
 		return 1
 	}
 	removed, err := output.Prune(absoluteRoot, olderThan, time.Now().UTC())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem output prune:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal output prune:", err)
 		return 1
 	}
 	for _, path := range removed {

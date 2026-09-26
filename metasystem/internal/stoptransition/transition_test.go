@@ -110,7 +110,7 @@ func TestSurvivorDoesNotStopLaterFamilies(t *testing.T) {
 	family := &scriptedFamily{name: "run", inventories: [][]Item{{item}, nil}, complete: false}
 	transition := testTransition(t, family)
 	report, err := transition.Stop()
-	wantClosing := "stop incomplete for /checkout; 1 not stopped, listed above; run: metasystem stop --repo /checkout"
+	wantClosing := "stop incomplete for /checkout; 1 not stopped, listed above; run: metasystem system stop --repo /checkout"
 	if err != nil || report.ExitCode != 1 || report.Lines[len(report.Lines)-1] != wantClosing {
 		t.Fatalf("survivor report=%#v err=%v", report, err)
 	}
@@ -142,7 +142,7 @@ func TestAuxiliaryBookkeepingFailureHasItsOwnLineSurvivorCountAndExit(t *testing
 		t.Fatalf("bookkeeping failure report=%#v err=%v", report, err)
 	}
 	want := "supervision-owner pid 41: stopped (TERM)\nNOT STOPPED supervision-lock " + bookkeeping.Path + ": directory not empty; did: left the lock"
-	if !strings.Contains(strings.Join(report.Lines, "\n"), want) || report.Lines[len(report.Lines)-1] != "stop incomplete for /checkout; 1 not stopped, listed above; run: metasystem stop --repo /checkout" {
+	if !strings.Contains(strings.Join(report.Lines, "\n"), want) || report.Lines[len(report.Lines)-1] != "stop incomplete for /checkout; 1 not stopped, listed above; run: metasystem system stop --repo /checkout" {
 		t.Fatalf("bookkeeping failure lines=%#v", report.Lines)
 	}
 	record, readErr := stopfence.Read(transition.Root)
@@ -488,7 +488,7 @@ func TestMissingAnchoredSupervisionOutcomeStillPublishesBookkeepingFailure(t *te
 func TestCompleteStopUsesSuccessClosingLine(t *testing.T) {
 	transition := testTransition(t, &scriptedFamily{name: "run", inventories: [][]Item{nil}})
 	report, err := transition.Stop()
-	want := "checkout /checkout\nnothing is running\nstopped /checkout; start again: metasystem arm --repo /checkout"
+	want := "checkout /checkout\nnothing is running\nstopped /checkout; start again: metasystem system start --repo /checkout"
 	if err != nil || report.ExitCode != 0 || strings.Join(report.Lines, "\n") != want {
 		t.Fatalf("complete stop = %#v err=%v, want %q", report, err, want)
 	}
@@ -501,7 +501,7 @@ func TestIncompleteStopCountsFinalSurvivorsInClosingLine(t *testing.T) {
 	family := &scriptedFamily{name: "run", inventories: [][]Item{{item("one"), item("two")}, nil}, complete: false}
 	transition := testTransition(t, family)
 	report, err := transition.Stop()
-	want := "stop incomplete for /checkout; 2 not stopped, listed above; run: metasystem stop --repo /checkout"
+	want := "stop incomplete for /checkout; 2 not stopped, listed above; run: metasystem system stop --repo /checkout"
 	if err != nil || report.ExitCode != 1 || report.Lines[len(report.Lines)-1] != want {
 		t.Fatalf("incomplete stop = %#v err=%v, want closing %q", report, err, want)
 	}
@@ -520,7 +520,7 @@ func TestStatusNamesWhoClosedTheFenceAndWhen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "checkout /checkout\nnothing is running\nstopped since 2026-09-07T07:40:00Z by stop pid 77; start again: metasystem arm --repo /checkout"
+	want := "checkout /checkout\nnothing is running\nstopped since 2026-09-07T07:40:00Z by stop pid 77; start again: metasystem system start --repo /checkout"
 	if got := strings.Join(report.Lines, "\n"); got != want {
 		t.Fatalf("status = %q, want %q", got, want)
 	}
@@ -926,7 +926,7 @@ func TestRemoteJobStopAndArmRefusalNameMachineAndCancelCommand(t *testing.T) {
 	record := map[string]any{"jobId": jobID, "status": "running"}
 	job.items[key] = jobItem{record: record, lens: dispatch.JobRecordOf(record), remote: true, machine: machine}
 	outcome, err := job.Stop(Item{Key: key})
-	wantStop := "NOT STOPPED job remote-one running machine other-machine: owned by another machine; did: nothing, cancel it from other-machine with metasystem delegate --cancel remote-one"
+	wantStop := "NOT STOPPED job remote-one running machine other-machine: owned by another machine; did: nothing, cancel it from other-machine with metasystem work stop j2:remote-one"
 	if err != nil || outcome.Complete || outcome.Line != wantStop {
 		t.Fatalf("remote stop = %#v err=%v", outcome, err)
 	}
@@ -951,7 +951,7 @@ func TestRemoteJobStopAndArmRefusalNameMachineAndCancelCommand(t *testing.T) {
 	if !errors.As(err, &remote) || err.Error() != "job remote-one is owned by machine other-machine and is not terminal" || strings.Contains(err.Error(), "\n") {
 		t.Fatalf("remote arm sentence = %v", err)
 	}
-	if got := remote.Remedy(); got != "cancel it from other-machine with metasystem delegate --cancel remote-one" {
+	if got := remote.Remedy(); got != "cancel it from other-machine with metasystem work stop j2:remote-one" {
 		t.Fatalf("remote arm remedy = %q", got)
 	}
 }
@@ -1169,7 +1169,7 @@ func TestUnreadableFenceStatusArmAndStopBehavior(t *testing.T) {
 				}
 				report, err := transition.Status()
 				joined := strings.Join(report.Lines, "\n")
-				if err != nil || report.ExitCode != 1 || !strings.Contains(joined, "checkout /checkout\nrun retained running\nfence record unreadable:") || !strings.Contains(joined, "repair with metasystem arm --repo /checkout") || !strings.Contains(joined, "status incomplete for /checkout; 1 read failures") {
+				if err != nil || report.ExitCode != 1 || !strings.Contains(joined, "checkout /checkout\nrun retained running\nfence record unreadable:") || !strings.Contains(joined, "repair with metasystem system start --repo /checkout") || !strings.Contains(joined, "status incomplete for /checkout; 1 read failures") {
 					t.Fatalf("unreadable status = %#v err=%v", report, err)
 				}
 			})

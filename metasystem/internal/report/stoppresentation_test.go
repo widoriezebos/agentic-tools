@@ -62,7 +62,7 @@ func stopPresentationFixture(root, attempt string, shouldBlock bool) StopPresent
 			Selection: "held", Refused: []goal.AdmissionRefusal{}, InFlight: []string{}, NonTerminalJobs: []string{},
 		},
 		Ownership: goal.TurnOwnershipFacts{State: "owned", GoalId: "held", Evidence: "joined holder evidence"},
-		Actions:   []goal.TurnAction{{Kind: "continue-goal", TargetId: "held", Instruction: "continue it", Command: "metasystem run watch --id run-1 --root " + root, Owner: "seat"}},
+		Actions:   []goal.TurnAction{{Kind: "continue-goal", TargetId: "held", Instruction: "continue it", Command: "metasystem work watch --run run-1 --root " + root, Owner: "seat"}},
 		Refusal:   goal.TurnRefusalFacts{Class: control.Class, BlockSource: source, Occurrence: 1, CountSpent: true, IdleRefusal: true},
 	}
 	healthVerdict := steward.HealthVerdict{Schema: 1, ObservedAt: time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC), Aggregate: "healthy", Roles: []steward.RoleVerdict{{Role: steward.RoleStewardRunner, Status: steward.HealthAlive, Reason: "runner alive"}}}
@@ -129,7 +129,7 @@ func presentStopTaskName(t *testing.T, input StopPresentationInput, wantTask, wa
 	if input.Control.ShouldBlock {
 		reportSuffix = "; Do not stop. Run this command; read and act on its report: "
 	}
-	wantLine := "Just completed: unknown for this turn.\n" + wantTask + "; " + wantOutcome + reportSuffix + "metasystem report stop-status --id " + input.Identity.Attempt[:1]
+	wantLine := "Just completed: unknown for this turn.\n" + wantTask + "; " + wantOutcome + reportSuffix + "metasystem session report --id " + input.Identity.Attempt[:1]
 	if result.HumanLine != wantLine {
 		t.Fatalf("human line = %q, want %q", result.HumanLine, wantLine)
 	}
@@ -197,7 +197,7 @@ func TestStopTwoLineStatusBounds(t *testing.T) {
 	if err := ValidateStopHumanLine(result.HumanLine); err != nil {
 		t.Fatalf("human line violates its wire bound: bytes=%d %q", len(result.HumanLine), result.HumanLine)
 	}
-	for _, want := range []string{"Just completed: unknown for this turn.\nTask: ", "; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id ", result.Report.Alias} {
+	for _, want := range []string{"Just completed: unknown for this turn.\nTask: ", "; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem session report --id ", result.Report.Alias} {
 		if !strings.Contains(result.HumanLine, want) {
 			t.Fatalf("human line omitted %q: %s", want, result.HumanLine)
 		}
@@ -210,7 +210,7 @@ func TestStopTwoLineStatusBounds(t *testing.T) {
 		t.Fatalf("report identity changed: got=%+v want=%+v", identity, input.Identity)
 	}
 	reportText := string(got)
-	for _, want := range []string{"- Block source: idle-backlog", "complete-plan-step", "perform the complete plan step", "complete digest line", "runner alive", "metasystem run watch"} {
+	for _, want := range []string{"- Block source: idle-backlog", "complete-plan-step", "perform the complete plan step", "complete digest line", "runner alive", "metasystem internal run watch"} {
 		if !strings.Contains(reportText, want) {
 			t.Fatalf("report omitted %q", want)
 		}
@@ -276,7 +276,7 @@ func TestStopCompletionUsesNewOwnedTerminalRecords(t *testing.T) {
 	active := ownedCompletionRecord("job", "active-job", "running")
 	baselineInput := stopCompletionInput(root, strings.Repeat("a", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{active})
 	baselineResult, baselineCompletion, _ := presentCompletionFixture(t, baselineInput)
-	if baselineCompletion.State != "unknown" || baselineResult.HumanLine != "Just completed: unknown for this turn.\nTask: held; Stop allowed; Report: metasystem report stop-status --id a" {
+	if baselineCompletion.State != "unknown" || baselineResult.HumanLine != "Just completed: unknown for this turn.\nTask: held; Stop allowed; Report: metasystem session report --id a" {
 		t.Fatalf("first-use completion = %+v; line=%q", baselineCompletion, baselineResult.HumanLine)
 	}
 
@@ -292,7 +292,7 @@ func TestStopCompletionUsesNewOwnedTerminalRecords(t *testing.T) {
 	passed.TerminalSeq = 9
 	currentInput := stopCompletionInput(root, strings.Repeat("b", 32), "2026-09-14T12:05:00Z", []StopCompletionRecord{returned, earlier, passed})
 	currentResult, completion, reportText := presentCompletionFixture(t, currentInput)
-	if currentResult.HumanLine != "Just completed: review widget (delegate returned).\nTask: held; Stop allowed; Report: metasystem report stop-status --id b" {
+	if currentResult.HumanLine != "Just completed: review widget (delegate returned).\nTask: held; Stop allowed; Report: metasystem session report --id b" {
 		t.Fatalf("job completion line = %q", currentResult.HumanLine)
 	}
 	if completion.State != "observed" || completion.BaselineReportId != baselineResult.Report.Id || completion.Selected == nil || completion.Selected.Id != "active-job" || len(completion.Events) != 3 {
@@ -306,7 +306,7 @@ func TestStopCompletionUsesNewOwnedTerminalRecords(t *testing.T) {
 
 	repeatedInput := stopCompletionInput(root, strings.Repeat("c", 32), "2026-09-14T12:06:00Z", []StopCompletionRecord{returned, earlier, passed})
 	repeatedResult, repeated, _ := presentCompletionFixture(t, repeatedInput)
-	if repeated.State != "none" || repeatedResult.HumanLine != "Just completed: none recorded this turn.\nTask: held; Stop allowed; Report: metasystem report stop-status --id c" {
+	if repeated.State != "none" || repeatedResult.HumanLine != "Just completed: none recorded this turn.\nTask: held; Stop allowed; Report: metasystem session report --id c" {
 		t.Fatalf("repeated completion = %+v; line=%q", repeated, repeatedResult.HumanLine)
 	}
 
@@ -718,7 +718,7 @@ func TestStopReadImperativeBounds(t *testing.T) {
 			if test.block {
 				reportSuffix = "; Do not stop. Run this command; read and act on its report: "
 			}
-			if !strings.HasSuffix(result.HumanLine, "; "+test.wantOutcome+reportSuffix+"metasystem report stop-status --id "+result.Report.Alias) {
+			if !strings.HasSuffix(result.HumanLine, "; "+test.wantOutcome+reportSuffix+"metasystem session report --id "+result.Report.Alias) {
 				t.Fatalf("reserved Stop suffix changed: %s", result.HumanLine)
 			}
 		})
@@ -748,8 +748,8 @@ func TestStopReadImperativeBounds(t *testing.T) {
 	t.Run("longest-realistic-next-both-flags", func(t *testing.T) {
 		const fullName = "preserve stop report instructions across claude codex and devin after compaction and session restart"
 		const goalID = "preserve-stop-report-instructions-across-claude-codex-and-devin-after-compaction-and-session-restart"
-		const blockedLine = "No task in flight; next: preserve stop report instruct; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-		const allowedLine = "No task in flight; next: preserve stop report instructions across claude codex and devin after compaction; Stop allowed; needs your decision and supervision repair; Report: metasystem report stop-status --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		const blockedLine = "No task in flight; next: preserve stop report instruct; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem session report --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		const allowedLine = "No task in flight; next: preserve stop report instructions across claude codex and devin after compaction; Stop allowed; needs your decision and supervision repair; Report: metasystem session report --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 		if len(fullName) != 100 || len(blockedLine) != stopTaskLineTargetByteLimit || len(allowedLine) != stopTaskLineTargetByteLimit {
 			t.Fatalf("fixture limits changed: name=%d block=%d allow=%d", len(fullName), len(blockedLine), len(allowedLine))
 		}
@@ -811,7 +811,7 @@ func TestStopReadImperativeBounds(t *testing.T) {
 	})
 
 	t.Run("maximum-alias-combined-flag-name-budgets", func(t *testing.T) {
-		command := "metasystem report stop-status --id " + strings.Repeat("a", 32)
+		command := "metasystem session report --id " + strings.Repeat("a", 32)
 		for _, test := range []struct {
 			name, kind string
 			blocked    bool
@@ -892,14 +892,14 @@ func TestStopReadImperativeByOutcome(t *testing.T) {
 		blocked, human      bool
 		repair              bool
 	}{
-		{"block-exact", strings.Repeat("a", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id a", true, false, false},
-		{"block-decision", strings.Repeat("b", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop blocked; needs your decision; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id b", true, true, false},
-		{"block-repair", strings.Repeat("c", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop blocked; needs supervision repair; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id c", true, false, true},
-		{"block-both", strings.Repeat("d", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id d", true, true, true},
-		{"allow-exact", strings.Repeat("2", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop allowed; Report: metasystem report stop-status --id 2", false, false, false},
-		{"allow-decision", strings.Repeat("3", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop allowed; needs your decision; Report: metasystem report stop-status --id 3", false, true, false},
-		{"allow-repair", strings.Repeat("4", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop allowed; needs supervision repair; Report: metasystem report stop-status --id 4", false, false, true},
-		{"allow-both", strings.Repeat("5", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop allowed; needs your decision and supervision repair; Report: metasystem report stop-status --id 5", false, true, true},
+		{"block-exact", strings.Repeat("a", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem session report --id a", true, false, false},
+		{"block-decision", strings.Repeat("b", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop blocked; needs your decision; Do not stop. Run this command; read and act on its report: metasystem session report --id b", true, true, false},
+		{"block-repair", strings.Repeat("c", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop blocked; needs supervision repair; Do not stop. Run this command; read and act on its report: metasystem session report --id c", true, false, true},
+		{"block-both", strings.Repeat("d", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem session report --id d", true, true, true},
+		{"allow-exact", strings.Repeat("2", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop allowed; Report: metasystem session report --id 2", false, false, false},
+		{"allow-decision", strings.Repeat("3", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop allowed; needs your decision; Report: metasystem session report --id 3", false, true, false},
+		{"allow-repair", strings.Repeat("4", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop allowed; needs supervision repair; Report: metasystem session report --id 4", false, false, true},
+		{"allow-both", strings.Repeat("5", 32), "Just completed: unknown for this turn.\nTask: stop refusal fits on one screen; Stop allowed; needs your decision and supervision repair; Report: metasystem session report --id 5", false, true, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := stopPresentationRoot(t)
@@ -947,7 +947,7 @@ func TestStopReadImperativeByOutcome(t *testing.T) {
 
 func TestParseStopArmingComponentsRetainsTypedFailure(t *testing.T) {
 	input := "component=accepted-engine outcome=verified\n" +
-		`component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run 'metasystem steward restart' from an agent-free terminal"` + "\n" +
+		`component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run 'metasystem internal steward restart' from an agent-free terminal"` + "\n" +
 		`up outcome=failed component=steward-runner remedy="repair"`
 	components, err := parseStopArmingComponents(input)
 	if err != nil {
@@ -1143,7 +1143,7 @@ func TestPresentStopStoppedJudgmentIsAnOrdinaryAllowance(t *testing.T) {
 	root := stopPresentationRoot(t)
 	input := stopPresentationFixture(root, strings.Repeat("c", 32), false)
 	input.Judgment.Verdict.LedgerStatus = "stopped"
-	input.Judgment.FullDisplay = "the metasystem is stopped; run: metasystem arm"
+	input.Judgment.FullDisplay = "the metasystem is stopped; run: metasystem system start"
 	input.Judgment.Work.ReadSucceeded = false
 	input.Judgment.Work.Selection = "unknown"
 	input.Judgment.Work.Selected = nil
@@ -1306,7 +1306,7 @@ func TestPresentStopSupportsParallelReportsAndRetentionBoundary(t *testing.T) {
 }
 func TestStopLineIsRenderedFromTheReportReference(t *testing.T) {
 	reference := stopReportReference(strings.Repeat("a", 64)+"-"+strings.Repeat("b", 32), "abc", "/installation/report.md")
-	if reference.ReadCommand != "metasystem report stop-status --id "+reference.Alias {
+	if reference.ReadCommand != "metasystem session report --id "+reference.Alias {
 		t.Fatalf("read command %q was not derived from alias %q", reference.ReadCommand, reference.Alias)
 	}
 	reference.ReadCommand = "read the reference-owned command"

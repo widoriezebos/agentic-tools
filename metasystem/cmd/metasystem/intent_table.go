@@ -247,22 +247,22 @@ func runWorkCheck(args []string) int {
 }
 
 // hiddenIntentEntries are the process entrypoints whose first word is also a
-// public object. They keep their existing argument vector exactly, are
-// listed only by metasystem internal, and are never named to a person or an
-// agent.
+// public object. They keep their existing argument vector exactly: the
+// router hands them to their family verb as the internal form does. They are
+// listed only by metasystem internal and never named to a person or agent.
 func hiddenIntentEntries() []intentCommand {
-	entry := func(object, action, launcher string, run func([]string) int) intentCommand {
-		return intentCommand{object: object, action: action, hidden: true, launcher: launcher, passthrough: run, maxArgs: -1,
+	entry := func(object, action, launcher string) intentCommand {
+		return intentCommand{object: object, action: action, hidden: true, launcher: launcher, maxArgs: -1,
 			summary: "process entrypoint (internal)"}
 	}
 	return []intentCommand{
-		entry("goal", "fetch", "internal/seat/launch/sequence.go", runGoalFetch),
-		entry("goal", "next", "internal/seat/launch/sequence.go", runGoalNext),
-		entry("test", "worker", "cmd/metasystem/test.go", runTestWorker),
-		entry("test", "worker-capabilities", "cmd/metasystem/test_protection.go", runTestWorkerCapabilities),
-		entry("mission", "run-loop", "internal/missionrunner/launch.go", runMissionRunnerRunLoop),
-		entry("ui", "serve", "internal/ui/lifecycle/launch.go", runUIServe),
-		entry("ui", "tools", "internal/ui/partner/runtime.go", runUITools),
+		entry("goal", "fetch", "internal/seat/launch/sequence.go"),
+		entry("goal", "next", "internal/seat/launch/sequence.go"),
+		entry("test", "worker", "cmd/metasystem/test.go"),
+		entry("test", "worker-capabilities", "cmd/metasystem/test_protection.go"),
+		entry("mission", "run-loop", "internal/missionrunner/launch.go"),
+		entry("ui", "serve", "internal/ui/lifecycle/launch.go"),
+		entry("ui", "tools", "internal/ui/partner/runtime.go"),
 	}
 }
 

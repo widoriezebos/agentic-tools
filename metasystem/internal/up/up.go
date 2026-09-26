@@ -145,7 +145,7 @@ func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) Co
 		}
 		return ComponentOutcome{
 			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(),
-			Remedy: "metasystem goal restamp --id " + goalID,
+			Remedy: "metasystem internal goal restamp --id " + goalID,
 		}
 	}
 	if result.GoalID == "" {
@@ -412,7 +412,7 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 	}
 	fence, err := stopfence.Read(options.Root)
 	if err != nil {
-		failed := failure(components, "supervision-owner", err, "repair the process-creation fence, then rerun metasystem arm")
+		failed := failure(components, "supervision-owner", err, "repair the process-creation fence, then rerun metasystem system start")
 		return nil, supervise.EnsureResult{}, &failed
 	}
 	exact, state, probeErr := (processidentity.KernelProber{}).Probe(int64(os.Getpid()))
@@ -422,7 +422,7 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 	}
 	claim, err := stopfence.Creating(options.Root, "supervision-owner", fence.Generation, exact.Ref())
 	if err != nil {
-		failed := failure(components, "supervision-owner", err, "repair the creation-claim directory, then rerun metasystem arm")
+		failed := failure(components, "supervision-owner", err, "repair the creation-claim directory, then rerun metasystem system start")
 		return nil, supervise.EnsureResult{}, &failed
 	}
 	defer claim.Close()
@@ -513,13 +513,13 @@ func ensureStewardRunner(options Options, enrolled *steward.EnrolledBinary, comp
 }
 
 func enrollmentDrift(components []ComponentOutcome, err error, installationRoot, repoRoot string) Result {
-	remedy := fmt.Sprintf("this engine is not eligible for automatic re-arm; from an agent-free terminal run metasystem steward restart --repo %s (steward arm when no runner is live), or relay the human's recorded word with --temporary-human-word and --review-by", repoRoot)
+	remedy := fmt.Sprintf("this engine is not eligible for automatic re-arm; from an agent-free terminal run metasystem internal steward restart --repo %s (steward arm when no runner is live), or relay the human's recorded word with --temporary-human-word and --review-by", repoRoot)
 	if strings.Contains(err.Error(), "owns no resolving remote-tracking landing ref") {
-		remedy = fmt.Sprintf("fetch or pull the configured remote once so its remote-tracking landing ref resolves, or from an agent-free terminal run metasystem steward restart --repo %s", repoRoot)
+		remedy = fmt.Sprintf("fetch or pull the configured remote once so its remote-tracking landing ref resolves, or from an agent-free terminal run metasystem internal steward restart --repo %s", repoRoot)
 	} else if strings.Contains(err.Error(), "owns no remote-tracking landing ref") {
 		remedy = fmt.Sprintf("run git -C %s config --local metasystem.steward.landing-ref refs/remotes/<remote>/<branch> once on this machine, or re-arm at the terminal", installationRoot)
 	} else if remote, ok := notLandedRemote(err.Error()); ok {
-		remedy = fmt.Sprintf("run git -C %s fetch %s once, then rerun metasystem up, or from an agent-free terminal run metasystem steward restart --repo %s", installationRoot, remote, repoRoot)
+		remedy = fmt.Sprintf("run git -C %s fetch %s once, then rerun metasystem up, or from an agent-free terminal run metasystem internal steward restart --repo %s", installationRoot, remote, repoRoot)
 	}
 	components = append(components, ComponentOutcome{
 		Component: "accepted-engine", Outcome: "ENROLLMENT_DRIFT", Detail: err.Error(), Remedy: remedy,
@@ -751,7 +751,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 			components = append(components, ComponentOutcome{
 				Component: "stop-capability", Outcome: "deferred",
 				Detail: "the holder classification has no claim epoch",
-				Remedy: "metasystem goal restamp --id <goal>",
+				Remedy: "metasystem internal goal restamp --id <goal>",
 			})
 		} else {
 			components = append(components, stopCapabilityOutcome(options, lineage, *view.ClaimEpoch))
@@ -785,7 +785,7 @@ func recovery(options Options) Result {
 	if err != nil {
 		result := enrollmentDrift(components, err, installationRoot(options), options.Root)
 		if errors.Is(err, steward.ErrEngineRebuilt) {
-			result.Remedy = "run metasystem up from a session, which re-arms a rebuilt engine at its enrolled path; or run metasystem steward arm at an agent-free terminal"
+			result.Remedy = "run metasystem up from a session, which re-arms a rebuilt engine at its enrolled path; or run metasystem internal steward arm at an agent-free terminal"
 			result.Components[len(result.Components)-1].Remedy = result.Remedy
 		}
 		return result

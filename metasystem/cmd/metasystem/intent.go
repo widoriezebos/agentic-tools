@@ -588,7 +588,7 @@ func (inv *intentInvocation) selectRoot() *intentResult {
 	if !converted(inv.stateRoot) {
 		return &intentResult{Outcome: intentRefused, code: 1,
 			Summary:  fmt.Sprintf("the installation at %s has no synced goal ledger", shellCommand([]string{inv.stateRoot})),
-			Decision: "a person upgrades the legacy goals file to the synced ledger first: metasystem repair goals --upgrade --by NAME (it shows the digest to review)"}
+			Decision: "a person upgrades the legacy goals file to the synced ledger first: metasystem goal repair --upgrade --by NAME (it shows the digest to review)"}
 	}
 	return nil
 }

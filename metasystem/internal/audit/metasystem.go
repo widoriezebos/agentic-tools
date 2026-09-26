@@ -12,7 +12,7 @@ import (
 )
 
 // The metasystem audit, the decision engine behind the
-// `metasystem audit metasystem` verb: required instruction files, the
+// `metasystem internal audit metasystem` verb: required instruction files, the
 // outside-reference scan over the explicit metasystem-owned list, the
 // instruction inventories, placeholder checks, the always-loaded word budget,
 // and the report-only common-path bundle.
@@ -436,12 +436,12 @@ func auditGoalSystem(root string) []string {
 	var violations []string
 
 	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
-	if err != nil || !strings.Contains(string(agents), "metasystem open") || !strings.Contains(string(agents), "metasystem goals --ready") {
-		violations = append(violations, "AGENTS.md must carry the goal-thread doctrine: programs start with `metasystem open`, turn ends read `metasystem goals --ready`")
+	if err != nil || !strings.Contains(string(agents), "metasystem goal open") || !strings.Contains(string(agents), "metasystem goal list --ready") {
+		violations = append(violations, "AGENTS.md must carry the goal-thread doctrine: programs start with `metasystem goal open`, turn ends read `metasystem goal list --ready`")
 	}
 	adaptation, err := os.ReadFile(filepath.Join(root, "docs", "project-adaptation.md"))
-	if err != nil || !strings.Contains(string(adaptation), "metasystem open") {
-		violations = append(violations, "docs/project-adaptation.md must carry the program-start convention: `metasystem open`")
+	if err != nil || !strings.Contains(string(adaptation), "metasystem goal open") {
+		violations = append(violations, "docs/project-adaptation.md must carry the program-start convention: `metasystem goal open`")
 	}
 
 	// The registry-pointer audit is positive, not just negative: the

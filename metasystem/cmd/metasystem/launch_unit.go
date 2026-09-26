@@ -27,7 +27,7 @@ func runUnitRun(args []string) int {
 	resume := flags.String("resume", "", "run id")
 	followUp := flags.String("follow-up", "", "follow-up brief")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (*plan == "") == (*resume == "") || (*plan != "" && *followUp != "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem unit run (--plan <file>|--resume <run>) [--follow-up <file>]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal unit run (--plan <file>|--resume <run>) [--follow-up <file>]")
 		return 2
 	}
 	runner := unitRunner()

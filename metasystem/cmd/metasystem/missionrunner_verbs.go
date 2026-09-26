@@ -211,8 +211,8 @@ func missionRunnerUsage() {
 			"  metasystem mission start --mission <id> [--foreground]\n"+
 			"  metasystem mission resume --mission <id> [--foreground]\n"+
 			"  metasystem mission status --mission <id>\n"+
-			"  metasystem mission answer --mission <id> --ask <ask-id> --answer <text>\n"+
-			"  metasystem mission resolve-taint --mission <id> --taint <n> --by <name> --reason <text>\n"+
+			"  metasystem internal mission answer --mission <id> --ask <ask-id> --answer <text>\n"+
+			"  metasystem internal mission resolve-taint --mission <id> --taint <n> --by <name> --reason <text>\n"+
 			"      (--restore <treeId> | --adopt --waives <claim> [--waives <claim> ...])\n")
 }
 

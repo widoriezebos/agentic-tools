@@ -54,7 +54,7 @@ func runIntentEventWait(t *testing.T, root string, args ...string) (int, intentR
 	owners := defaultIntentOwners()
 	owners.resolver = stateroot.NewResolver(fakeTop(root), noExecutable)
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, root, owners)
+	code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, root, owners)
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
@@ -77,10 +77,10 @@ func TestIntentWaitGoalEventGitAdapterObservesAPersonsAct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, result, stderr := runIntentEventWait(t, root, "wait", "standing-validation", "--for", "human-act", "--verb", "set-priority", "--timeout", "7s")
+	code, result, stderr := runIntentEventWait(t, root, "work", "wait", "standing-validation", "--for", "human-act", "--verb", "set-priority", "--timeout", "7s")
 	data, _ := result.Data.(map[string]any)
 	id, _ := data["waitId"].(string)
-	if result.Outcome != intentInProgress || id == "" || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem wait resume "+id {
+	if result.Outcome != intentInProgress || id == "" || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem work wait wait:"+id {
 		t.Fatalf("human-act wait registration: code=%d %+v stderr=%q", code, result, stderr)
 	}
 
@@ -106,7 +106,7 @@ func TestIntentWaitGoalEventGitAdapterObservesAPersonsAct(t *testing.T) {
 		t.Fatalf("published act: %+v", last)
 	}
 
-	code, done, stderr := runIntentEventWait(t, root, "wait", "resume", id, "--timeout", "20s")
+	code, done, stderr := runIntentEventWait(t, root, "work", "wait", "wait:"+id, "--timeout", "20s")
 	doneData, _ := done.Data.(map[string]any)
 	evidence, _ := doneData["sourceEvidence"].(string)
 	if code != 0 || done.Outcome != intentConfirmed || doneData["waitId"] != id || doneData["exitCode"] != float64(0) ||
@@ -149,17 +149,17 @@ func TestIntentWaitGoalLandingGitAdapterObservesTheRealLanding(t *testing.T) {
 	wait := func(args ...string) (int, intentResult, string) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, "wait"), append(append(args, "--repo", f.mainRoot), "--json"), &stdout, &stderr, f.mainRoot, defaultIntentOwners())
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(append(intentArgvRest(args), "--repo", f.mainRoot), "--json"), &stdout, &stderr, f.mainRoot, defaultIntentOwners())
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result, stderr.String()
 	}
-	code, result, stderr := wait("standing-validation", "--for", "landing", "--timeout", "7s")
+	code, result, stderr := wait("work", "wait", "standing-validation", "--for", "landing", "--timeout", "7s")
 	data, _ := result.Data.(map[string]any)
 	id, _ := data["waitId"].(string)
-	if result.Outcome != intentInProgress || id == "" || result.Next == nil || !slicesHasPrefix(result.Next.Argv, []string{"metasystem", "wait", "resume", id}) {
+	if result.Outcome != intentInProgress || id == "" || result.Next == nil || !slicesHasPrefix(result.Next.Argv, []string{"metasystem", "work", "wait", "wait:" + id}) {
 		t.Fatalf("landing wait registration: code=%d %+v stderr=%q", code, result, stderr)
 	}
 
@@ -170,7 +170,7 @@ func TestIntentWaitGoalLandingGitAdapterObservesTheRealLanding(t *testing.T) {
 	_, prepared := f.retained(t, landed)
 	f.assertLanded(t, prepared)
 
-	code, done, stderr := wait("resume", id, "--timeout", "8s")
+	code, done, stderr := wait("work", "wait", "wait:"+id, "--timeout", "8s")
 	doneData, _ := done.Data.(map[string]any)
 	evidence, _ := doneData["sourceEvidence"].(string)
 	if code != 0 || done.Outcome != intentConfirmed || doneData["waitId"] != id || doneData["sourceOutcome"] != "landing" ||
@@ -235,7 +235,7 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 	run := func(args ...string) (int, intentResult) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, "wait"), append(args, "--json"), &stdout, &stderr, root, owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, root, owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
@@ -243,13 +243,13 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 		return code, result
 	}
 
-	code, pending := run("question", question.ID, "--timeout", "1m")
+	code, pending := run("question", "wait", question.ID, "--timeout", "1m")
 	want := []string{engine, "channel", "wait", "--root", root, "--question", question.ID, "--timeout", "1"}
 	if len(calls) != 1 || !slicesEqual(calls[0], want) {
 		t.Fatalf("owner argv = %v, want %v", calls, want)
 	}
 	if pending.Outcome != intentInProgress || code == 0 || pending.Next == nil ||
-		!slicesEqual(pending.Next.Argv, []string{"metasystem", "wait", "question", "channel:" + question.ID}) {
+		!slicesEqual(pending.Next.Argv, []string{"metasystem", "question", "wait", "channel:" + question.ID}) {
 		t.Fatalf("pending question wait: %d %+v", code, pending)
 	}
 	posted, err := channel.ReadQuestion(root, question.ID)
@@ -269,7 +269,7 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 	writeTestingFixtureFile(t, filepath.Join(providerDir, "replies.jsonl"), append(reply, '\n'), 0o644)
 
 	// The public caller acts through the continuation it was shown.
-	code, answered := run(pending.Next.Argv[2:]...)
+	code, answered := run(pending.Next.Argv[1:]...)
 	if len(calls) != 2 || !slicesEqual(calls[1], []string{engine, "channel", "wait", "--root", root, "--question", question.ID}) {
 		t.Fatalf("continuation owner argv = %v", calls)
 	}
@@ -295,7 +295,7 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 	}
 
 	// Answered: the same public wait returns at once from the owner's record.
-	code, immediate := run("question", question.ID)
+	code, immediate := run("question", "wait", question.ID)
 	if len(calls) != 2 || code != 0 || immediate.Outcome != intentConfirmed {
 		t.Fatalf("immediate answered wait: %d %+v (owner runs %d)", code, immediate, len(calls))
 	}

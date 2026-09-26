@@ -1,6 +1,6 @@
 package main
 
-// `metasystem seat launch`: one machine of this fleet joins on this host.
+// `metasystem internal seat launch`: one machine of this fleet joins on this host.
 //
 // This file is the edge and nothing else. It parses the flags, gathers the
 // facts the preflight judges against, takes the host lock, builds the

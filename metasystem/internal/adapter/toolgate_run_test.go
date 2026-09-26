@@ -85,7 +85,7 @@ func TestToolGateFallsBackToEntryWhenBirthUnreadable(t *testing.T) {
 func TestToolGateClassifiesBeforeReading(t *testing.T) {
 	for _, call := range []Call{
 		{Tool: "Agent", Input: json.RawMessage(`{}`)},
-		bashToolGateCall("metasystem context status --root /repo"),
+		bashToolGateCall("metasystem session context --root /repo"),
 	} {
 		root := t.TempDir()
 		birth := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
@@ -353,7 +353,7 @@ func TestToolGateDenyModeDenies(t *testing.T) {
 	if err := RunToolGate(opts); err != nil {
 		t.Fatal(err)
 	}
-	reason := fmt.Sprintf("CONTEXT AT 120K (trigger 105K): this call is denied; run metasystem context handoff --root %s alone, or launch a delegate", root)
+	reason := fmt.Sprintf("CONTEXT AT 120K (trigger 105K): this call is denied; run metasystem session handoff --root %s alone, or launch a delegate", root)
 	want := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + reason + `"}}` + "\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)

@@ -93,7 +93,7 @@ func (b *carriedDeliveryBed) land(args ...string) (int, intentResult) {
 // landFrom runs the public land command from an installation.
 func (b *carriedDeliveryBed) landFrom(root string, args ...string) (int, intentResult) {
 	b.t.Helper()
-	command, _ := findIntentCommand("land")
+	command, _ := findIntentCommand("work land")
 	var stdout, stderr bytes.Buffer
 	if !slices.Contains(args, "--repo") {
 		args = append(args, "--repo", root)
@@ -217,9 +217,9 @@ func (b *carriedDeliveryBed) owner(verb ...string) int {
 func (b *carriedDeliveryBed) provePublicly(stopped intentResult) intentResult {
 	b.t.Helper()
 	opid, _ := carriedResultData(stopped)["exception"].(string)
-	want := []string{"metasystem", "test", "--goal", "standing-validation", "--repo", b.f.mainRoot}
+	want := []string{"metasystem", "test", "run", "--goal", "standing-validation", "--repo", b.f.mainRoot}
 	if stopped.Outcome != intentPartial || stopped.Next == nil || !slices.Equal(stopped.Next.Argv, want) ||
-		!strings.Contains(stopped.Next.Reason, "metasystem land standing-validation --using-exception "+opid) {
+		!strings.Contains(stopped.Next.Reason, "metasystem work land standing-validation --using-exception "+opid) {
 		b.t.Fatalf("the missing-proof stop did not show the public test and the same-word continuation: %+v", stopped)
 	}
 	var after []string
@@ -228,7 +228,7 @@ func (b *carriedDeliveryBed) provePublicly(stopped intentResult) intentResult {
 		text, _ := word.(string)
 		after = append(after, text)
 	}
-	if len(after) < 5 || !slices.Equal(after[:5], []string{"metasystem", "land", "standing-validation", "--using-exception", opid}) {
+	if len(after) < 5 || !slices.Equal(after[:5], []string{"metasystem", "work", "land", "standing-validation", "--using-exception", opid}) {
 		b.t.Fatalf("the after-proof continuation is not the same word: %v", after)
 	}
 	index := goalSyncMutationGit(b.t, b.f.mainRoot, "write-tree")
@@ -705,7 +705,7 @@ func TestIntentCarriedAmbiguousRetainedBaseNeedsReplacement(t *testing.T) {
 	if err := os.Remove(filepath.Join(subjects, "exception-"+first+".json")); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"metasystem", "land", "standing-validation", "--exception", "missing-declaration", "--replace-exception", first}
+	want := []string{"metasystem", "work", "land", "standing-validation", "--exception", "missing-declaration", "--replace-exception", first}
 	for _, args := range [][]string{request, {"standing-validation", "--using-exception", first}} {
 		index := goalSyncMutationGit(t, f.mainRoot, "write-tree")
 		head := goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD")

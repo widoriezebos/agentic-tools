@@ -76,18 +76,18 @@ func TestRealLoadReadersRequireExplicitOptIn(t *testing.T) {
 func TestProofLauncherArgv(t *testing.T) {
 	for argv, want := range map[string]bool{
 		"/seat/m1b/metasystem/bin/metasystem proof-run launch --suite testing --root /x": true,
-		"metasystem proof-run launch":                     true,
+		"metasystem internal proof-run launch":                     true,
 		"/seat/m1c/bin/metasystem test run --goal goal-a": true,
-		"metasystem landing batch owner --root /landing":  false,
+		"metasystem internal landing batch owner --root /landing":  false,
 		"metasystem test plan":                            false,
-		"metasystem landing batch status":                 false,
+		"metasystem internal landing batch status":                 false,
 		"metasystem test":                                 false,
 		"metasystem goal run":                             false,
 		"not-metasystem test run":                         false,
 		"metasystem proof-run status":                     false,
 		"metasystem launch proof-run":                     false,
 		"perl -e sleep proof-run launch":                  false,
-		"bash -c metasystem proof-run launch":             false,
+		"bash -c metasystem internal proof-run launch":             false,
 		"/seat/bin/metasystem.test proof-run launch":      false,
 		"go test ./internal/proofrun -run launch":         false,
 		"": false,
@@ -104,7 +104,7 @@ func TestProofLauncherArgv(t *testing.T) {
 		t.Fatalf("a top-level engine test run counted %d launcher(s), want 1", got)
 	}
 	if got := topLevelLaunchers([]processRow{
-		row(10, 1, "metasystem proof-run launch"), row(11, 10, "metasystem test run"),
+		row(10, 1, "metasystem internal proof-run launch"), row(11, 10, "metasystem test run"),
 	}, 999); got != 1 {
 		t.Fatalf("a proof launch with a nested engine test run counted %d launcher(s), want 1", got)
 	}
@@ -114,11 +114,11 @@ func TestCensusCountsRunningBatchProof(t *testing.T) {
 	row := func(pid, parent int64, argv string) processRow {
 		return processRow{pid: pid, parent: parent, launcher: isProofLauncherArgv(strings.Fields(argv))}
 	}
-	if got := topLevelLaunchers([]processRow{row(10, 1, "metasystem landing batch owner")}, 999); got != 0 {
+	if got := topLevelLaunchers([]processRow{row(10, 1, "metasystem internal landing batch owner")}, 999); got != 0 {
 		t.Fatalf("an idle batch owner counted %d launcher(s), want 0", got)
 	}
 	if got := topLevelLaunchers([]processRow{
-		row(10, 1, "metasystem landing batch owner"), row(11, 10, "metasystem test run"),
+		row(10, 1, "metasystem internal landing batch owner"), row(11, 10, "metasystem test run"),
 	}, 999); got != 1 {
 		t.Fatalf("a batch owner with its nested engine run counted %d launcher(s), want 1", got)
 	}

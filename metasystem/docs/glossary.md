@@ -37,7 +37,7 @@ not paths.
   every lease write and exists only for compare-and-swap.
 
   A claimed goal's stop capability carries the lease epoch that authorized
-  its claim. Re-arming (an agent's `metasystem start session`, which runs `metasystem up`) restamps that capability when the
+  its claim. Re-arming (an agent's `metasystem session start`, which runs `metasystem up`) restamps that capability when the
   same holder's live epoch has advanced; the internal owner `metasystem internal goal restamp --id <goal>`
   performs the same repair directly.
 
@@ -78,7 +78,7 @@ not paths.
 ## Supervision: who watches the processes
 
 - **Arming** — starting the complete checkout control plane: a person runs
-  `metasystem start`, and an agent session's `metasystem start session` runs `metasystem up`: announce the session, classify the lease, establish or
+  `metasystem system start`, and an agent session's `metasystem session start` runs `metasystem up`: announce the session, classify the lease, establish or
   verify the supervision owner, watcher, reaper, and steward runner, and wait
   for their generation-bound success. "Armed" means the checkout is watched;
   a second session is armed as a read-only `advisor` without displacing the
@@ -230,7 +230,7 @@ not paths.
   mission's host TURNS are not jobs.
 - **Adapter** — the per-runtime driver (`scripts/agents/adapters/*.sh`)
   that turns one dispatched job into one runtime session — one per
-  registered runtime (`bin/metasystem runtime list`; today claude,
+  registered runtime (`bin/metasystem internal runtime list`; today claude,
   codex, devin, and the fixture-only `fake`). A **host adapter**
   (`scripts/agents/hosts/*.sh`) does the same for mission turns.
 - **Capability snapshot** — the probed record of what a runtime CLI can

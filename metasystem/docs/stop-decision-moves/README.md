@@ -14,7 +14,7 @@ landing adds an exact declaration. Generate that declaration instead of
 writing it by hand:
 
 ```sh
-metasystem audit stop-decision-surface --declare \
+metasystem internal audit stop-decision-surface --declare \
   --goal <goal-id> --reason '<why this Stop decision moves>'
 ```
 

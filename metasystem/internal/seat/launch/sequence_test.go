@@ -33,16 +33,16 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 		"git -C " + destRoot + " rev-parse HEAD",
 		"git -C " + destRoot + " fetch --no-tags origin",
 		"go-build.sh",
-		"metasystem config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"),
-		"metasystem validate session-isolation --source-root " + fromRoot + " --destination-root " + destRoot +
+		"metasystem internal config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"),
+		"metasystem internal validate session-isolation --source-root " + fromRoot + " --destination-root " + destRoot +
 			" --manifest " + filepath.Join(destInstall(), "artifacts", "agents", "ui", "local-config-paths") +
 			" --harness-root " + filepath.Join(fromRoot, install),
-		"metasystem config validate --conf " + filepath.Join(destInstall(), "metasystem.conf") + " --repo " + destRoot,
+		"metasystem internal config validate --conf " + filepath.Join(destInstall(), "metasystem.conf") + " --repo " + destRoot,
 		"git -C " + destRoot + " config --get metasystem.goal.machine",
 		"git -C " + destRoot + " config metasystem.goal.machine " + machineName,
-		"metasystem goal fetch --root " + destRoot,
-		"metasystem goal next --root " + destRoot,
-		"metasystem steward arm --repo " + destInstall() + " --temporary-human-word " + humanWord + " --review-by " + reviewBy,
+		"metasystem internal goal fetch --root " + destRoot,
+		"metasystem internal goal next --root " + destRoot,
+		"metasystem internal steward arm --repo " + destInstall() + " --temporary-human-word " + humanWord + " --review-by " + reviewBy,
 		"metasystem up --repo " + destInstall() + " --recover-only --if-down",
 		// The wait is counted in the NEW machine's ticks, so its own cadence
 		// is read from the clone rather than assumed from this seat's.
@@ -155,7 +155,7 @@ func TestTheWordNeverReachesTheRecord(t *testing.T) {
 			t.Fatal("the human's authorization was written into the record")
 		}
 	}
-	if !built.runner.ranCommand("metasystem steward arm --repo " + destInstall() +
+	if !built.runner.ranCommand("metasystem internal steward arm --repo " + destInstall() +
 		" --temporary-human-word " + humanWord + " --review-by " + reviewBy) {
 		t.Fatal("the word did not reach the arming verb's argument list")
 	}
@@ -278,7 +278,7 @@ func TestTheEvidenceRootRefusesThisSeatsOwnRoot(t *testing.T) {
 	built := newWorld(request())
 	// A seat whose effective root is already named for this machineName would
 	// have the new machine write its evidence into this seat's.
-	built.runner.said["metasystem config get --key evidence.root --conf "+filepath.Join(fromRoot, install, "metasystem.conf")] = "/w/evidence/m1f\n"
+	built.runner.said["metasystem internal config get --key evidence.root --conf "+filepath.Join(fromRoot, install, "metasystem.conf")] = "/w/evidence/m1f\n"
 	_, err := built.sequencer.Run(fresh())
 	refusal, named := err.(*Refusal)
 	if !named || refusal.Code != CodeEvidenceRootUnsafe {
@@ -431,10 +431,10 @@ func TestAResumeChecksTheConfigurationItDidNotCopyAgain(t *testing.T) {
 		t.Fatalf("wrote %d manifests, want the absent one written", len(built.host.manifests))
 	}
 	for _, key := range []string{
-		"metasystem validate session-isolation --source-root " + fromRoot + " --destination-root " + destRoot +
+		"metasystem internal validate session-isolation --source-root " + fromRoot + " --destination-root " + destRoot +
 			" --manifest " + filepath.Join(destInstall(), "artifacts", "agents", "ui", "local-config-paths") +
 			" --harness-root " + filepath.Join(fromRoot, install),
-		"metasystem config validate --conf " + filepath.Join(destInstall(), "metasystem.conf") + " --repo " + destRoot,
+		"metasystem internal config validate --conf " + filepath.Join(destInstall(), "metasystem.conf") + " --repo " + destRoot,
 	} {
 		if !built.runner.ranCommand(key) {
 			t.Fatalf("a resume did not run %q", key)
@@ -447,7 +447,7 @@ func TestAResumeChecksTheConfigurationItDidNotCopyAgain(t *testing.T) {
 func TestTheEvidenceRootIsRecordedBeforeTheRestOfTheStepCanFail(t *testing.T) {
 	t.Parallel()
 	built := newWorld(request())
-	built.runner.refused["metasystem config validate --conf "+
+	built.runner.refused["metasystem internal config validate --conf "+
 		filepath.Join(destInstall(), "metasystem.conf")+" --repo "+destRoot] = "the configuration is invalid"
 	record, err := built.sequencer.Run(fresh())
 	if err == nil {
@@ -598,7 +598,7 @@ func TestTheRecordCarriesWhatTheMachineIsAndWhatToDoWithIt(t *testing.T) {
 	if record.Next.Session != "cd "+destRoot+" && claude" {
 		t.Fatalf("session command = %q", record.Next.Session)
 	}
-	if record.Next.Stop != "metasystem stop --repo "+destInstall() {
+	if record.Next.Stop != "metasystem system stop --repo "+destInstall() {
 		t.Fatalf("stop command = %q", record.Next.Stop)
 	}
 	if !record.Created.Destination || !record.Created.Nickname || !record.Created.EvidenceRoot {

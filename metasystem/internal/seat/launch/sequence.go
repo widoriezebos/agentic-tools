@@ -166,7 +166,7 @@ func (s *Sequencer) Run(record Record) (Record, error) {
 	record.ReviewBy = s.Request.ReviewBy
 	record.Next = Next{
 		Session: "cd " + record.Destination + " && claude",
-		Stop:    "metasystem stop --repo " + s.install(record.Destination),
+		Stop:    "metasystem system stop --repo " + s.install(record.Destination),
 	}
 	if err := s.persist(&record); err != nil {
 		return record, err

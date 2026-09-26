@@ -87,7 +87,7 @@ Launcher process, in order (launch.go:321-434):
    `missions/<id>/mission-<id>.contract.md` with its raw sha256 recorded in
    `fences.json.approvedContractSha256`, under the fence lock
    (launch.go:218-264).
-4. Spawns `metasystem mission run-loop` detached (`setsid` unless
+4. Spawns `metasystem internal mission run-loop` detached (`setsid` unless
    foreground), then polls up to 15s (scaled) for the start-signal file the
    runner writes on its first verified host start; on timeout it kills the
    runner group (launch.go:344-433).
@@ -216,7 +216,7 @@ refusal naming the widest block, prompt.go:522-533). Assembly failure →
 `failed/prompt-refused`, then `recordFailedTurn` with `consecutiveFailures=2`
 — an **immediate host-failure park** that still burns a ledger cycle (§6(h)).
 
-**S8. Validate the prompt.** `metasystem validate turn-prompt` →
+**S8. Validate the prompt.** `metasystem internal validate turn-prompt` →
 `validate turn-prompt` (loop.go:728-737, validate/turnprompt.go): framing,
 header order, byte-exact preamble, section fencing, row grammar, and the
 ask reason-class whitelist `PromptAskReasons` (orchestrator-raisable classes
@@ -503,7 +503,7 @@ this mission+turn stamp.
 
 **What the runner cannot know today**: whether a critique round *closed*.
 Closure — every material finding dispositioned
-(`metasystem validate critique-closed` joining a round return's findings
+(`metasystem work check` joining a round return's findings
 against a Markdown dispositions table) — is a skill-level check over
 artifacts the runner never reads (round `return.json` files and dispositions
 documents in `plans/`). No job-record field records closure; the runner sees

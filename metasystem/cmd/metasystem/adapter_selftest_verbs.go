@@ -32,7 +32,7 @@ func runAdapterNormalizeReturn(args []string) int {
 		return 2
 	}
 	if *candidate == "" || *record == "" || *output == "" || *markdown == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter normalize-return --candidate FILE --record FILE --output FILE --markdown FILE [--transcript FILE] [--session SID]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter normalize-return --candidate FILE --record FILE --output FILE --markdown FILE [--transcript FILE] [--session SID]")
 		return 2
 	}
 	if err := adapter.NormalizeReturn(*candidate, *transcript, *record, *output, *markdown, *session); err != nil {
@@ -52,7 +52,7 @@ func runAdapterSelftestUsage(args []string) int {
 		return 2
 	}
 	if *record == "" || (*expect != "native" && *expect != "unavailable" && *expect != "metered") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-usage --record FILE --expect native|unavailable|metered")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter selftest-usage --record FILE --expect native|unavailable|metered")
 		return 2
 	}
 	if err := adapter.SelftestUsageCheck(*record, *expect); err != nil {
@@ -73,7 +73,7 @@ func runAdapterSelftestEnvelope(args []string) int {
 		return 2
 	}
 	if *dir == "" || *runtime == "" || *field == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-envelope --dir DIR --runtime RT --field FIELD")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter selftest-envelope --dir DIR --runtime RT --field FIELD")
 		return 2
 	}
 	fmt.Println(adapter.SelftestEnvelopeDeclaration(*dir, *runtime, *field))
@@ -96,7 +96,7 @@ func runAdapterSelftestRecord(args []string) int {
 	}
 	if *output == "" || *runtime == "" || *job == "" || *usage == "" ||
 		*writeEnforcement == "" || *networkEnforcement == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-record --output FILE --runtime RT --job ID --usage MODE --write-enforcement E --network-enforcement E [--probe NAME]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter selftest-record --output FILE --runtime RT --job ID --usage MODE --write-enforcement E --network-enforcement E [--probe NAME]")
 		return 2
 	}
 	var probeLabels []string
@@ -128,7 +128,7 @@ func runAdapterSelftestListener(args []string) int {
 		return 2
 	}
 	if *portFile == "" || *requestLog == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-listener --port-file FILE --request-log FILE [--timeout-seconds SEC]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter selftest-listener --port-file FILE --request-log FILE [--timeout-seconds SEC]")
 		return 2
 	}
 	timeout := time.Duration(*timeoutSeconds * float64(time.Second))
@@ -160,7 +160,7 @@ func runAdapterSelftestRun(args []string) int {
 	}
 	if p.Root == "" || p.Runtime == "" || p.AdapterPath == "" ||
 		(p.Usage != "native" && p.Usage != "unavailable" && p.Usage != "metered") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-run --root DIR --runtime NAME --adapter SCRIPT --usage native|unavailable|metered [--probe NAME] [--turn-ceiling-sec N] [--denial-ends-turn]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter selftest-run --root DIR --runtime NAME --adapter SCRIPT --usage native|unavailable|metered [--probe NAME] [--turn-ceiling-sec N] [--denial-ends-turn]")
 		return 2
 	}
 	if *probeName != "" {
@@ -201,7 +201,7 @@ func runAdapterDevinPrompt(args []string) int {
 		return 2
 	}
 	if *prompt == "" || *schema == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-prompt --prompt FILE --schema FILE --output FILE [--return-file FILE]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter devin-prompt --prompt FILE --schema FILE --output FILE [--return-file FILE]")
 		return 2
 	}
 	if err := adapter.DevinPrompt(*prompt, *schema, *output, *returnFile); err != nil {
