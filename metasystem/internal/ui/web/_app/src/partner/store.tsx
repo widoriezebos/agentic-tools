@@ -7,11 +7,16 @@ import {
   isBusy,
   loadPartner,
   PartnerError,
+  ProposalConflict,
+  recordProposal,
   sendTurn,
   startSitting,
   stopTurn,
   type CapturedSticky,
+  type Message,
   type Page,
+  type Proposal,
+  type ProposalState,
   type Sitting,
   type Subject,
 } from "./api";
@@ -72,10 +77,56 @@ import {
   type Marks as DepositMarks,
   type Records,
 } from "./sitting";
-import { busy, emptyStore, loaded, nameOf, received, refused, retrying, unavailable, asked, type Store } from "./conversation";
+import {
+  asked,
+  busy,
+  emptyStore,
+  loaded,
+  nameOf,
+  proposalMoved,
+  received,
+  refused,
+  retrying,
+  unavailable,
+  type Store,
+} from "./conversation";
+import {
+  answeredOf,
+  askLine as askAboutLine,
+  barLine,
+  cardIn as proposalCardIn,
+  cardsIn as proposalCardsIn,
+  dispatchOf,
+  displayedFor,
+  runProposals,
+  lineID as proposalLineID,
+  markOf as proposalMarkOf,
+  newestWaitingCard,
+  sendable as sendableIn,
+  waiting as waitingLine,
+  waitingAcross,
+  type Card as ProposalCard,
+  type Displayeds,
+  type Line as ProposalLine,
+  type Marks as ProposalMarks,
+} from "./proposing";
+import {
+  approveGoal,
+  blockGoal,
+  editGoal,
+  loadBacklog,
+  openGoal,
+  parkGoal,
+  rankGoal,
+  unblockGoal,
+  unparkGoal,
+  withdrawGoal,
+  type Backlog,
+} from "../backlog/api";
 import type { Chosen } from "./subject";
 import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
 import { useAboutLine, useSubject } from "../shell/about";
+import { useSession } from "../shell/identity";
 import { editDocument, isStale, loadDocument } from "../project/api";
 import { captured } from "../stickies/stickies";
 import { useStickies } from "../stickies/store";
@@ -347,6 +398,53 @@ type Partner = {
   /** The folded line, pressed: the card is back. */
   reopenDeposit: (id: string) => void;
   /**
+   * Every card the conversation carries, oldest first, each with its lines and
+   * where each one stands. The card in the transcript is rendered from this one
+   * list, and so is the count on the closed bar.
+   */
+  proposals: readonly ProposalCard[];
+  /** Tick or untick one line, which is how the human chooses which to apply. */
+  tickProposal: (id: string, ticked: boolean) => void;
+  /** Select all: every waiting line of this card that can be sent. */
+  selectProposals: (card: string) => void;
+  /**
+   * Apply: run the ticked lines of this card in order, one act each, never
+   * retried. A refusal is passed and the run goes on; an answer that does not say
+   * what happened stops it, and the rest say "not run".
+   */
+  applyProposals: (card: string) => void;
+  /** Continue with the rest: run from the first line a stopped run never reached. */
+  continueProposals: (card: string) => void;
+  /** Try again: send this one line again, as the human's press. */
+  tryProposal: (id: string) => void;
+  /** Dismiss: every waiting line is recorded dismissed and the card folds. */
+  dismissProposals: (card: string) => void;
+  /** The folded line, pressed: the card is open again. */
+  reopenProposals: (card: string) => void;
+  /** Ask the Partner: the line's words go in the composer, and nothing is sent. */
+  askAboutProposal: (id: string) => void;
+  /** The card whose run is in flight, or "". A second Apply is refused while it is. */
+  runningProposals: string;
+  /** How many actions are waiting for the human, across every answer. */
+  proposalsWaiting: number;
+  /** What the closed bar says beside the composer, or "". */
+  proposalsLine: string;
+  /** Open the drawer at the newest card with a waiting line, which the bar does. */
+  showProposals: () => void;
+  /**
+   * The section's own offered re-read, and whether a sheet covers the work area,
+   * told to the store from inside the shell.
+   *
+   * The store stands above the refresh and the work area — it has to, because the
+   * conversation is read before either exists — so it cannot ask for them. This
+   * is the same registration the composer's cursor and an editor's fields use:
+   * something inside the tree says how, for as long as it is there.
+   */
+  offerReread: (reread: (() => void) | null) => void;
+  /** A sheet says the work area is covered, or is not. */
+  noteCovered: (covered: boolean) => void;
+
+  /**
    * The record's four sections as the sitting's current reading holds them: what
    * the table shows and what the drawer's four counts count. They are the record
    * and not a second store, so a card nobody recorded is not among them.
@@ -421,6 +519,21 @@ const nothing: Partner = {
   recordDeposit: () => {},
   dismissDeposit: () => {},
   reopenDeposit: () => {},
+  proposals: [],
+  tickProposal: () => {},
+  selectProposals: () => {},
+  applyProposals: () => {},
+  continueProposals: () => {},
+  tryProposal: () => {},
+  dismissProposals: () => {},
+  reopenProposals: () => {},
+  askAboutProposal: () => {},
+  runningProposals: "",
+  proposalsWaiting: 0,
+  proposalsLine: "",
+  showProposals: () => {},
+  offerReread: () => {},
+  noteCovered: () => {},
   table: {
     counts: { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0 },
     entries: [],
@@ -512,6 +625,33 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // when the sitting starts and replaced by the answer of every successful
   // write. The table reads it, and every Record press composes from it.
   const [reading, setReading] = useState<Reading | null>(null);
+  // What the human has done with each proposed line: whether it is ticked,
+  // whether a stopped run ever reached it, and why it will not be sent. The
+  // server owns the state a line is IN; this is what the page owns about it.
+  const [proposalMarks, setProposalMarks] = useState<ProposalMarks>({});
+  // The budget each approve line displays, taken once when the answer ends and
+  // kept with the line: what the human read is what the run sends.
+  const [displayed, setDisplayed] = useState<Displayeds>({});
+  // The cards the human folded away by pressing Dismiss. It is the page's own
+  // state: what the record says is that every waiting line was dismissed, and
+  // whether the card is folded or open again is how they are reading it.
+  const [dismissedCards, setDismissedCards] = useState<readonly string[]>([]);
+  // The card whose run is in flight, for the buttons. The guard that actually
+  // refuses a second Apply is the ref below, taken synchronously.
+  const [runningProposals, setRunningProposals] = useState("");
+  // Whether a sheet is covering the work area, as the shell tells this store.
+  // Both, because one of them is read inside a run that is already in flight and
+  // the other has to wake the effect that makes a deferred read.
+  const [covered, setCovered] = useState(false);
+  const coveredNow = useRef(false);
+  // The section's own offered re-read, and whether one is waiting for a sheet to
+  // close. The store stands above the refresh, so something inside the shell
+  // registers it, exactly as the composer registers its cursor.
+  const reread = useRef<(() => void) | null>(null);
+  const pendingReread = useRef(false);
+  // The run in flight, held synchronously so a second Apply in the same frame
+  // does nothing: a state flag is a render away and a press is not.
+  const runFor = useRef("");
   const [sittingRefusal, setSittingRefusal] = useState("");
   const [sittingBusy, setSittingBusy] = useState(false);
   // What the last end-without-recording left behind. It is kept because it is
@@ -534,6 +674,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // the reading above, which the recorder hands back after every write.
   const recording = useRef<Recorder | null>(null);
   const location = useLocation();
+  const { askToSignIn } = useSession();
   const subject = useSubject();
   const stickies = useStickies();
   const label = useAboutLine("");
@@ -1271,6 +1412,339 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     [reading],
   );
 
+  /* ---------------------------------------------------------- the proposals -- */
+
+  /**
+   * Every card the conversation carries, with where each line stands: the answers
+   * already written down, then the answer arriving now. It is composed here, from
+   * the transcript and the page's own marks, so the card in the drawer and the
+   * count on the closed bar cannot disagree about one action.
+   */
+  const proposals = useMemo(
+    () =>
+      proposalCardsIn(
+        [
+          ...store.messages
+            .filter((message) => (message.proposals ?? []).length > 0)
+            .map((message) => ({ turn: message.turn, proposals: message.proposals ?? [] })),
+          { turn: store.live.turn, proposals: store.live.proposals },
+        ],
+        proposalMarks,
+        displayed,
+        dismissedCards,
+      ),
+    [store.messages, store.live.turn, store.live.proposals, proposalMarks, displayed, dismissedCards],
+  );
+
+  /**
+   * The budget each approve line displays, read once when the answer ends.
+   *
+   * Once, and at the terminal beat, because both halves matter. The card's
+   * buttons wake then — until then there is no message an outcome can be recorded
+   * on — and the tuple the human reads has to be the tuple the run sends, so it is
+   * taken here and kept with the line rather than computed again at the press
+   * (Astra S58-08).
+   *
+   * A read that fails leaves every approve line with no budget, which the card
+   * says: "needs its budget first: approve it alone". That is the truthful answer
+   * for a page that could not read the project's law.
+   */
+  const settled = store.messages
+    .filter((message) => (message.proposals ?? []).some((proposal) => proposal.verb === "approve-goal"))
+    .map((message) => message.turn)
+    .join(" ");
+  useEffect(() => {
+    if (settled === "") {
+      return;
+    }
+    const aborter = new AbortController();
+    loadBacklog(aborter.signal)
+      .then((read) => {
+        setDisplayed((held) => {
+          const lines = proposalsIn(store.messages).filter((line) => held[line.id] === undefined);
+          return lines.length === 0 ? held : { ...held, ...displayedFor(lines, read.rows, read.budgetDefaults) };
+        });
+      })
+      .catch(() => {
+        // No budget could be read, so no approve line has one and each says so.
+        setDisplayed((held) => {
+          const lines = proposalsIn(store.messages).filter((line) => held[line.id] === undefined);
+          return lines.length === 0
+            ? held
+            : { ...held, ...Object.fromEntries(lines.map((line) => [line.id, { budget: null, source: "none" as const }])) };
+        });
+      });
+    return () => {
+      aborter.abort();
+    };
+    // The list of answers carrying an approve is what decides whether there is
+    // anything to read for; the messages themselves change on every beat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled]);
+
+  const tickProposal = useCallback((id: string, on: boolean) => {
+    setProposalMarks((held) => ({ ...held, [id]: { ...proposalMarkOf(held, id), ticked: on } }));
+  }, []);
+
+  const selectProposals = useCallback((card: string) => {
+    setProposalMarks((held) => {
+      const found = proposalCardIn(proposals, card);
+      if (found === undefined) {
+        return held;
+      }
+      let next = held;
+      for (const line of found.lines) {
+        if (waitingLine(line)) {
+          next = { ...next, [line.id]: { ...proposalMarkOf(next, line.id), ticked: true } };
+        }
+      }
+      return next;
+    });
+  }, [proposals]);
+
+  const reopenProposals = useCallback((card: string) => {
+    setDismissedCards((held) => held.filter((one) => one !== card));
+  }, []);
+
+  /**
+   * The offered re-read, made now or when the sheet over the work area closes.
+   *
+   * Deferred while a sheet covers it, because the content under an open sheet is
+   * what that sheet is rendered over: a read made then would unmount the sheet's
+   * own columns and whatever the human had typed into them (Astra S58-03). The
+   * ask is remembered and made the moment the cover clears.
+   */
+  const askReread = useCallback(() => {
+    if (coveredNow.current) {
+      pendingReread.current = true;
+      return;
+    }
+    reread.current?.();
+  }, []);
+
+  useEffect(() => {
+    if (!covered && pendingReread.current) {
+      pendingReread.current = false;
+      reread.current?.();
+    }
+  }, [covered]);
+
+  const offerReread = useCallback((ask: (() => void) | null) => {
+    reread.current = ask;
+  }, []);
+
+  const noteCovered = useCallback((now: boolean) => {
+    coveredNow.current = now;
+    setCovered(now);
+  }, []);
+
+  /**
+   * One state written onto one line, through the one route that writes them.
+   *
+   * It answers the entry as the server now holds it, so the next press sends the
+   * version this one left. A write the server refused with the entry is handed
+   * back as a conflict, and the caller must show that entry rather than send an
+   * act of its own.
+   */
+  const writeState = useCallback(
+    async (line: ProposalLine, turn: string, state: ProposalState, words: string): Promise<Proposal> => {
+      const answered = await recordProposal(turn, line.index, line.version, state, words);
+      setStore((held) => proposalMoved(held, turn, answered.proposal));
+      return answered.proposal;
+    },
+    [],
+  );
+
+  /** One line's act, sent through the clients every button on every page uses. */
+  const sendAct = useCallback(async (line: ProposalLine): Promise<Backlog | null> => {
+    const dispatch = dispatchOf(line);
+    if (dispatch === null) {
+      return null;
+    }
+    switch (dispatch.act) {
+      case "approve":
+        return approveGoal(dispatch.id, dispatch.budget);
+      case "withdraw":
+        return withdrawGoal(dispatch.id, dispatch.reason);
+      case "priority":
+        return rankGoal(dispatch.id, dispatch.priority, dispatch.sequence);
+      case "block":
+        return blockGoal(dispatch.dependent, dispatch.blocker);
+      case "unblock":
+        return unblockGoal(dispatch.dependent, dispatch.blocker);
+      case "park":
+        return parkGoal(dispatch.id, dispatch.because);
+      case "unpark":
+        return unparkGoal(dispatch.id);
+      case "edit":
+        return editGoal(dispatch.id, dispatch.edit);
+      case "open":
+        return openGoal(dispatch.goal);
+      default:
+        return null;
+    }
+  }, []);
+
+  const mark = useCallback((id: string, change: (held: ProposalMarks[string]) => ProposalMarks[string]) => {
+    setProposalMarks((held) => ({ ...held, [id]: change(proposalMarkOf(held, id)) }));
+  }, []);
+
+  /**
+   * The run: the lines given, in order, one act each, never retried.
+   *
+   * The whole of it is here because the whole of it is one sequence, and the
+   * rules it keeps are the ones a human would notice if they were wrong:
+   *
+   *   - one press, one run. A synchronous ref is taken before anything is read, as
+   *     the edit sheet guards its own save (g1-s56 D1), so a second Apply while
+   *     one is in flight does nothing.
+   *   - the canonical branch is read once, fetch-first, before the first line. A
+   *     fetch that failed refuses every line that depends on what the goal says,
+   *     unsent, and the others run as they would (Astra S58-07).
+   *   - `applying` is written BEFORE the act is sent. A write that fails sends
+   *     nothing and stops the run; a write the server refuses with the entry means
+   *     somebody else moved the line, and then the act is not sent either.
+   *   - a refusal is passed and the next line is sent; anything that does not say
+   *     what happened stops the run, and the lines after it say "not run".
+   *   - the page in view reads again after each confirmed act and when the run
+   *     ends, and never while a sheet of the human's is open on it.
+   */
+  const runLines = useCallback(
+    async (card: string, lines: readonly ProposalLine[]) => {
+      if (runFor.current !== "" || lines.length === 0) {
+        return;
+      }
+      runFor.current = card;
+      setRunningProposals(card);
+      try {
+        await runProposals(lines, {
+          // The canonical branch, once, before anything is sent. The payload says
+          // what its own fetch did, and a 200 from the accepted ledger is not the
+          // same thing as a fetch that landed (Astra S58-07).
+          look: async () => {
+            try {
+              const read = await loadBacklog(undefined, true);
+              return {
+                rows: [...read.rows, ...read.closed],
+                defaults: read.budgetDefaults,
+                outcome: read.ledger.fetch.outcome,
+                message: read.ledger.fetch.message === "" ? read.ledger.fetch.detail : read.ledger.fetch.message,
+              };
+            } catch (error: unknown) {
+              return { rows: [], defaults: {}, outcome: "failed", message: reasonOf(error) };
+            }
+          },
+          record: async (line, state, words) => {
+            try {
+              const answered = await recordProposal(card, line.index, line.version, state, words);
+              setStore((held) => proposalMoved(held, card, answered.proposal));
+              return { kind: "written", proposal: answered.proposal };
+            } catch (error: unknown) {
+              return error instanceof ProposalConflict
+                ? { kind: "conflict", proposal: error.proposal }
+                : { kind: "failed", words: reasonOf(error) };
+            }
+          },
+          send: async (line) => {
+            try {
+              const after = await sendAct(line);
+              return after === null
+                ? { kind: "refused", words: `this build cannot dispatch ${line.verb}` }
+                : { kind: "applied", words: "" };
+            } catch (error: unknown) {
+              return answeredOf(error);
+            }
+          },
+          mark: (line, change) => {
+            mark(line.id, (held) => ({ ...held, ...change }));
+          },
+          reconcile: (proposal) => {
+            setStore((held) => proposalMoved(held, card, proposal));
+          },
+          reread: askReread,
+          signIn: askToSignIn,
+        });
+      } finally {
+        runFor.current = "";
+        setRunningProposals("");
+      }
+    },
+    [mark, sendAct, askReread, askToSignIn],
+  );
+
+  const applyProposals = useCallback((card: string) => {
+    const found = proposalCardIn(proposals, card);
+    if (found !== undefined) {
+      void runLines(card, sendableIn(found));
+    }
+  }, [proposals, runLines]);
+
+  const continueProposals = useCallback((card: string) => {
+    const found = proposalCardIn(proposals, card);
+    if (found === undefined) {
+      return;
+    }
+    // From the first line the stopped run never reached, in the card's own order.
+    const at = found.lines.findIndex((line) => line.mark.notRun);
+    if (at < 0) {
+      return;
+    }
+    void runLines(card, found.lines.slice(at).filter((line) => waitingLine(line) && line.mark.ticked));
+  }, [proposals, runLines]);
+
+  const tryProposal = useCallback((id: string) => {
+    for (const card of proposals) {
+      const line = card.lines.find((one) => one.id === id);
+      if (line !== undefined) {
+        void runLines(card.id, [line]);
+        return;
+      }
+    }
+  }, [proposals, runLines]);
+
+  /**
+   * Dismiss: every waiting line of this card is recorded dismissed, and the card
+   * folds to its one line.
+   *
+   * The card folds whatever the writes did. A line somebody else settled in
+   * another tab answers with a conflict, and the human's act here was to put the
+   * card away rather than to move that line.
+   */
+  const dismissProposals = useCallback((card: string) => {
+    const found = proposalCardIn(proposals, card);
+    setDismissedCards((held) => (held.includes(card) ? held : [...held, card]));
+    if (found === undefined) {
+      return;
+    }
+    for (const line of found.lines) {
+      if (!waitingLine(line)) {
+        continue;
+      }
+      void writeState(line, card, "dismissed", "").catch(() => {
+        // A line somebody else moved first stays as they left it; the card is
+        // folded either way, because folding it was this human's own act.
+      });
+    }
+  }, [proposals, writeState]);
+
+  const askAboutProposal = useCallback((id: string) => {
+    for (const card of proposals) {
+      const line = card.lines.find((one) => one.id === id);
+      if (line !== undefined) {
+        fillComposer(askAboutLine(line));
+        return;
+      }
+    }
+  }, [proposals, fillComposer]);
+
+  const showProposals = useCallback(() => {
+    const newest = newestWaitingCard(proposals);
+    if (newest !== "") {
+      setShowing(newest);
+      setRevealed((at) => at + 1);
+    }
+  }, [proposals]);
+
   const value = useMemo(
     () => ({
       store, busy: running, draft, setDraft, send, stop, sending,
@@ -1283,6 +1757,10 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       sitting, startSitting: begin, closeSitting: close, endSitting: end,
       endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
+      proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
+      dismissProposals, reopenProposals, askAboutProposal, runningProposals,
+      proposalsWaiting: waitingAcross(proposals), proposalsLine: barLine(proposals),
+      showProposals, offerReread, noteCovered,
     }),
     [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
       clearChosen, passage, askPassage, sheetDraft, askAbout, handOver, noteDraft,
@@ -1291,10 +1769,33 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
-      deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table],
+      deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
+      proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
+      dismissProposals, reopenProposals, askAboutProposal, runningProposals,
+      showProposals, offerReread, noteCovered],
   );
 
   return <PartnerContext.Provider value={value}>{children}</PartnerContext.Provider>;
+}
+
+/**
+ * Every proposed line of every answer in the transcript, as the budget read needs
+ * them: the lines alone, without the cards' own folding, because what is wanted is
+ * which approve lines have no tuple yet.
+ */
+function proposalsIn(messages: readonly Message[]): ProposalLine[] {
+  const lines: ProposalLine[] = [];
+  for (const message of messages) {
+    for (const proposal of message.proposals ?? []) {
+      lines.push({
+        ...proposal,
+        id: proposalLineID(message.turn, proposal.index),
+        mark: proposalMarkOf({}, proposalLineID(message.turn, proposal.index)),
+        displayed: null,
+      });
+    }
+  }
+  return lines;
 }
 
 function reasonOf(error: unknown): string {

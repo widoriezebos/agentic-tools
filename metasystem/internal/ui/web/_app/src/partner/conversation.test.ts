@@ -39,6 +39,7 @@ const snapshot: Snapshot = {
   looked: null,
   suggestions: null,
   deposits: null,
+  proposals: null,
   sitting: null,
   index: null,
   readOnly: "tools limited to Read, Glob and Grep",
@@ -81,6 +82,7 @@ describe("the conversation", () => {
       activity: ["Read plans/goals/backlog.md"],
       suggestions: [],
       deposits: [],
+      proposals: [],
       doing: "",
       looked: [],
     });
@@ -204,6 +206,7 @@ describe("the conversation", () => {
       activity: ["Read plans/goals/backlog.md"],
       suggestions: [],
       deposits: [],
+      proposals: [],
       doing: "",
       looked: [],
     });

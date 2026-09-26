@@ -90,6 +90,9 @@ export type HelpId =
   | "stickies"
   | "suggestion"
   | "proposal"
+  | "proposed-action"
+  | "apply-proposed"
+  | "unresolved-act"
   | "ask-the-partner"
   | "not-offered"
   | "private-store"
@@ -422,6 +425,18 @@ export const HELP: Record<HelpId, Term> = {
     term: "The Partner proposes",
     text:
       "Words your Project Partner has offered for this field, under the field itself. Use this puts them in, whole, and Undo puts back what was there for as long as the field still holds them; Dismiss folds the offer away. Use and save puts them in and sends the sheet in one press, and then says what happened: saved, refused in the ledger's own words, or not confirmed, in which case nothing is sent again. Save at the foot of this sheet is still yours either way. Where more than one has been offered for this field, the newest stands here and the earlier ones unfold under it.",
+  },
+  "proposed-action": {
+    term: "The Partner proposes",
+    text: "Acts the Project Partner has named for you to apply. It cannot act itself: each line says which act it would make, on which goal, with every argument it would carry, and your press is the act, under your own sign-in. Tick the ones you want and press Apply; a card you do not answer stays proposed, and Dismiss folds it away.",
+  },
+  "apply-proposed": {
+    term: "Apply",
+    text: "Sends the ticked actions in order, one act each, never retried. A refused line says why in the engine's own words and the run goes on; a line whose answer does not say what happened stops the run, and the lines after it say not run until you press Continue with the rest.",
+  },
+  "unresolved-act": {
+    term: "Unresolved",
+    text: "The act may have landed and nobody here can say. Nothing is sent again by itself: read the goal, and then press Try again if it did not land. An act that landed but whose authority proof was not recorded says so instead, and offers no Try again at all.",
   },
   "ask-the-partner": {
     term: "Ask the Partner",

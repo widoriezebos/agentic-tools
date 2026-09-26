@@ -8,6 +8,8 @@ import { nameOf } from "./conversation";
 import { DepositCard } from "./Deposit";
 import { useTypefaceOn } from "./FontControl";
 import { Looked } from "./Looked";
+import { ProposalCard } from "./Proposal";
+import { cardID } from "./proposing";
 import { namesIn, runsIn, type Names } from "./references";
 import { ring } from "./ringing";
 import { atEnd, scrollerOf } from "./scrolling";
@@ -130,6 +132,7 @@ export function Transcript() {
     store.live.looked.length,
     store.live.suggestions.length,
     store.live.deposits.length,
+    store.live.proposals.length,
     store.refusal,
   ]);
 
@@ -211,6 +214,10 @@ function Said({
         {(message.deposits ?? []).map((deposit, at) => (
           <DepositCard key={depositID(message.turn, at)} id={depositID(message.turn, at)} />
         ))}
+        {/* And the acts it proposed on goals, as one card for the answer. It is
+            one card and not one per action because the human chooses between
+            them: a card of six is a list with one Apply under it. */}
+        {(message.proposals ?? []).length > 0 && <ProposalCard id={cardID(message.turn)} />}
         <Looked looked={message.looked ?? []} />
       </div>
     </div>
@@ -329,6 +336,10 @@ function Running() {
         {live.deposits.map((deposit, at) => (
           <DepositCard key={depositID(live.turn, at)} id={depositID(live.turn, at)} />
         ))}
+        {/* The card fills line by line as the server admits each action. Its
+            buttons wake at the answer's terminal beat and not before: until then
+            there is no message an outcome could be recorded on. */}
+        {live.proposals.length > 0 && <ProposalCard id={cardID(live.turn)} />}
       </div>
     </div>
   );

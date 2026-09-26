@@ -1,0 +1,230 @@
+/* The card the Partner's proposed acts stand on, under the answer that made
+   them, and the one press that applies them.
+
+   It is the deposit card's own shape — the accent down its left says the offer
+   is the Partner's — with one difference that is the whole of what it is for: a
+   deposit is words a human edits before recording, and this is an ACT, so every
+   argument is read rather than typed and nothing on it is a field. What a human
+   changes here is which lines are ticked.
+
+   No colour literal is written here: every one is a token of tokens.css, so the
+   card reads in both themes and its danger and its confirmation are the same
+   red and the same green the rest of the interface uses. */
+
+.ms-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border);
+  border-inline-start: 2px solid var(--ms-accent);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-proposal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* One action. The lines are separated by a rule rather than by space, because a
+   card of six actions is a list a human reads down and space alone lets two
+   arguments of one action read as one argument of two. */
+.ms-proposal-line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--ms-border);
+}
+
+.ms-proposal-line:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* An action that was never offered. It loses nothing but its controls: the
+   reason is what it owes the human, and it is in the danger colour because
+   nothing about it will happen. */
+.ms-proposal-line--refused .ms-proposal-word,
+.ms-proposal-line--refused .ms-proposal-title {
+  color: var(--ms-text-3);
+}
+
+.ms-proposal-verb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  color: var(--ms-text);
+  line-height: 1.5;
+}
+
+.ms-proposal-tick {
+  margin: 0;
+  accent-color: var(--ms-accent);
+}
+
+.ms-proposal-word {
+  font-weight: 600;
+}
+
+.ms-proposal-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The goal's own id, small, beside the title it belongs to: the title is what a
+   human reads and the id is what they check. */
+.ms-proposal-id {
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-proposal-not-offered {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ms-surface-3);
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* Every argument the act will carry, rendered by the interface from the
+   validated action and never from the Partner's prose. */
+.ms-proposal-argument {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding-inline-start: 18px;
+  color: var(--ms-text-2);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ms-proposal-label {
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* The Partner's own words about this action, marked as its words. */
+.ms-proposal-why {
+  margin: 0;
+  padding-inline-start: 18px;
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+/* Where the line stands. Applied is the confirmation colour, a refusal and an
+   unresolved answer the danger colour, and everything else quiet: a human
+   scanning a run of six reads the colours before the words. */
+.ms-proposal-said {
+  margin: 0;
+  padding-inline-start: 18px;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.ms-proposal-said[data-said="applied"] {
+  color: var(--ms-ok);
+  font-weight: 600;
+}
+
+.ms-proposal-said[data-said="refused"],
+.ms-proposal-said[data-said="unresolved"] {
+  color: var(--ms-danger);
+}
+
+.ms-proposal-line--refused .ms-proposal-said {
+  color: var(--ms-danger);
+  padding-inline-start: 0;
+}
+
+.ms-proposal-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-inline-start: 18px;
+}
+
+.ms-proposal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--ms-border);
+}
+
+.ms-proposal-count {
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-proposal-tally {
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* The one line an older card folds to, which reopens it: the idiom every folded
+   card in this conversation uses. */
+.ms-proposal-folded {
+  margin: 8px 0 0;
+  padding: 2px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: none;
+  color: var(--ms-text-3);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.ms-proposal-folded:hover {
+  color: var(--ms-text-2);
+}
+
+/* The count beside the composer while the drawer is closed, counted across
+   answers. Pressing it opens the drawer at the newest card that has one. */
+.ms-proposal-bar {
+  padding: 2px 8px;
+  border: 1px solid var(--ms-accent);
+  border-radius: 999px;
+  background: none;
+  color: var(--ms-accent);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .ms-drawer-bar:has(.ms-drawer-field) .ms-proposal-bar {
+    display: none;
+  }
+}

@@ -118,7 +118,7 @@ export function Drawer({
   // many cards, and a drawer that grew at each of them would be a drawer that
   // took the page one card at a time.
   const asked = useRef(false);
-  const { draft, setDraft, busy, attachments, detach, deposits } = usePartner();
+  const { draft, setDraft, busy, attachments, detach, deposits, proposalsLine, showProposals } = usePartner();
   // The draft a sheet handed over, where a sheet has. Only the draft: the
   // subject and a passage are chips a human made by their own press, in the
   // panel where they pressed it, and they know they are there. The draft is the
@@ -185,6 +185,23 @@ export function Drawer({
               onFocus={onCompose}
             />
             <Seeing />
+            {/* What is waiting for this human in the conversation, counted
+                across answers: a proposal they have not answered is waiting
+                whether or not it is the newest thing said. Pressing it opens the
+                drawer at the newest card that has one (g1-s58 D8). */}
+            {proposalsLine !== "" && (
+              <button
+                type="button"
+                className="ms-proposal-bar"
+                title="Show what the Partner proposed"
+                onClick={() => {
+                  showProposals();
+                  onToggle();
+                }}
+              >
+                {proposalsLine}
+              </button>
+            )}
             {handed !== null && (
               <AttachmentChip
                 attachment={handed}
