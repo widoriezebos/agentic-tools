@@ -75,7 +75,7 @@ hint_landing_waiters() {
   local publication_id=$1
   local stamp_args=()
   [[ -z "$landing_hint_boot_id" ]] || stamp_args=(--began-boot-nanos "$landing_hint_boot_nanos" --boot-id "$landing_hint_boot_id")
-  [[ -z "$landing_goal" ]] || "$ms" wait notify --root "$root" --goal "$landing_goal" \
+  [[ -z "$landing_goal" ]] || "$ms" internal wait notify --root "$root" --goal "$landing_goal" \
     ${stamp_args[@]+"${stamp_args[@]}"} --publication-id "$publication_id" >/dev/null 2>&1 || true
 }
 

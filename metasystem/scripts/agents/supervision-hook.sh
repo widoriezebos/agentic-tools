@@ -1098,7 +1098,7 @@ start_main() {
   # A revived session may already hold the checkout when process discovery or
   # arming is unavailable. The session-start verb matches this session identifier
   # against the holder's announced session before returning durable wait rows.
-  start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"
+  start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"
   if (( start_wait_recovery_status == 0 )); then
     [[ -z "$waiting_lines" ]] || collect_start_notice "$waiting_lines"
   elif (( start_wait_recovery_status != 64 )); then
@@ -2217,7 +2217,7 @@ $up_failure_result"
   printf '%s' "$up_output" >"$arming_capture" || record_stop_failure "the supervision arming result could not be captured" supervision-arming
   health_rc=0
   health_capture=$stop_work_dir/health.json
-  "$ms" health --hook-preview --format=json --repo "$repo" --metasystem-root "$world_installation" >"$health_capture" 2>/dev/null || health_rc=$?
+  "$ms" internal health --hook-preview --format=json --repo "$repo" --metasystem-root "$world_installation" >"$health_capture" 2>/dev/null || health_rc=$?
   health_line=$("$ms" json get --file "$health_capture" --field line 2>/dev/null || true)
   if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
     health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
@@ -2780,7 +2780,7 @@ if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$wor
     surface_json "Metasystem re-armed the rebuilt engine: $up_aggregate"
   fi
   waiting_lines_rc=0
-  waiting_lines=$("$ms" session start --root "$repo" --session "$session" 2>&1) || waiting_lines_rc=$?
+  waiting_lines=$("$ms" internal session start --root "$repo" --session "$session" 2>&1) || waiting_lines_rc=$?
   if (( waiting_lines_rc == 0 )) && [[ -n "$waiting_lines" ]]; then
     collect_start_notice "$waiting_lines"
   elif (( waiting_lines_rc == 64 )); then

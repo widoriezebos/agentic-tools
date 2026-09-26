@@ -306,7 +306,7 @@ set_component_clock_evidence() {
 run_health() {
   local name=$1
   set +e
-  "$ms" health --repo "$repo" ${health_clock_args[@]+"${health_clock_args[@]}"} >"$tmp/$name.out" 2>"$tmp/$name.err"
+  "$ms" internal health --repo "$repo" ${health_clock_args[@]+"${health_clock_args[@]}"} >"$tmp/$name.out" 2>"$tmp/$name.err"
   health_rc=$?
   set -e
 }
@@ -555,7 +555,7 @@ for candidate in "$repo/artifacts/agents/steward/alerts"/*.json; do
 done
 [[ "$active_episodes" -eq 1 ]] || fail "same digest opened a second active episode"
 
-"$ms" health acknowledge-alert --repo "$repo" --episode "$episode_id" >"$tmp/ack.out" 2>"$tmp/ack.err" || {
+"$ms" internal health acknowledge-alert --repo "$repo" --episode "$episode_id" >"$tmp/ack.out" 2>"$tmp/ack.err" || {
   cat "$tmp/ack.err" >&2
   fail "episode acknowledgment failed"
 }

@@ -304,7 +304,7 @@ func launchBatchTipProofWithDependencies(request batchProofLaunch, dependencies 
 	}
 	defer closeDetached()
 	executionRoot := batch.ModuleRoot(detachedRoot)
-	args := []string{"test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip",
+	args := []string{"internal", "test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip",
 		"--goal", request.GoalID, "--tree", request.Tree,
 		"--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath,
 		"--require-diagnostic-headroom",

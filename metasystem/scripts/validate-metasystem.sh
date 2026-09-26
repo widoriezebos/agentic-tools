@@ -2094,10 +2094,10 @@ check_bad_return design-critic "$return_fixtures/critic-miscount.json" '$.verdic
 
 if (( template_mode )); then
   set +e
-  "$engine" delegate --role code-critic --brief scripts/agents/templates/brief.md --goal none-explicit --destructive-reach MECHANICAL \
+  "$engine" internal delegate --role code-critic --brief scripts/agents/templates/brief.md --goal none-explicit --destructive-reach MECHANICAL \
     >"$tmp/code-critic-missing-reviews.out" 2>&1
   missing_reviews_status=$?
-  "$engine" delegate --role implementer --brief scripts/agents/templates/brief.md --reviews fixture-job --goal none-explicit --destructive-reach MECHANICAL \
+  "$engine" internal delegate --role implementer --brief scripts/agents/templates/brief.md --reviews fixture-job --goal none-explicit --destructive-reach MECHANICAL \
     >"$tmp/non-critic-reviews.out" 2>&1
   non_critic_reviews_status=$?
   set -e

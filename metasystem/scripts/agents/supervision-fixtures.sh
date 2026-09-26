@@ -843,7 +843,7 @@ case "$fixture_scenario" in
 	  local job=$1 output=$2
 	  printf '{"jobId":"%s","operationId":"op-%s","round":1,"status":"running","startedAt":"2026-09-16T10:00:00Z"}\n' "$job" "$job" \
 	    >"$measure_root/artifacts/agents/jobs/$job.json"
-	  "$measure_engine" wait --root "$measure_root" --job "$job" --timeout 45s --json >"$output" 2>&1 &
+	  "$measure_engine" internal wait --root "$measure_root" --job "$job" --timeout 45s --json >"$output" 2>&1 &
 	  measure_wait_pid=$!
 	  measure_wait_start=$(process_started_at "$measure_wait_pid")
 	  owned_pids+=("$measure_wait_pid:$measure_wait_start")
@@ -859,7 +859,7 @@ case "$fixture_scenario" in
 	  if [[ "$notify" == yes ]]; then
 	    read -r boot_id boot_nanos < <("$measure_engine" util bootclock)
 	    publication="job:$job:op-$job:r1:2026-09-16T10:00:00Z:completed"
-	    "$measure_engine" wait notify --root "$measure_root" --job "$job" \
+	    "$measure_engine" internal wait notify --root "$measure_root" --job "$job" \
 	      --publication-id "$publication" --began-boot-nanos "$boot_nanos" --boot-id "$boot_id" >/dev/null
 	  fi
 	  wait_until "$job wait returns" bash -c '! kill -0 "$1" 2>/dev/null' _ "$pid"
@@ -886,7 +886,7 @@ case "$fixture_scenario" in
 	run_nonce=0123456789abcdef0123456789abcdef
 	printf '%s\n' '{"schemaVersion":1,"runId":"run-unpublished","kind":"suite","display":"unpublished run","custody":"wrapped","generation":1,"fenceGeneration":1,"pid":null,"pidStartedAt":null,"pgid":null,"launchNonce":"'"$run_nonce"'","log":"run.log","startedAt":"2026-09-16T10:00:00Z","mainId":null,"ownerLineage":null,"claimEpoch":null,"sessionId":"","goalId":"","staleAfterMin":30,"hungSince":null,"windDownMin":2,"evidence":{"mode":"exit-sidecar"},"expect":{},"status":"launching","provisionalVerdict":null,"terminalSeq":null,"acked":false,"error":null,"exitCode":null,"endedAt":null}' \
 	  >"$measure_root/artifacts/agents/runs/run-unpublished.json"
-	"$measure_engine" wait --root "$measure_root" --run run-unpublished --timeout 45s --json >"$tmp/run-unpublished.out" 2>&1 &
+	"$measure_engine" internal wait --root "$measure_root" --run run-unpublished --timeout 45s --json >"$tmp/run-unpublished.out" 2>&1 &
 	run_wait_pid=$!
 	run_wait_start=$(process_started_at "$run_wait_pid")
 	owned_pids+=("$run_wait_pid:$run_wait_start")
@@ -908,7 +908,7 @@ case "$fixture_scenario" in
 	revert_target=$(git -C "$measure_root" rev-parse HEAD)
 	git -C "$measure_root" push -q origin main
 	git -C "$measure_root" update-ref refs/metasystem/accepted "$revert_target"
-	"$measure_engine" wait --root "$measure_root" --goal "$landing_goal" --event landing \
+	"$measure_engine" internal wait --root "$measure_root" --goal "$landing_goal" --event landing \
 	  --after "$revert_target" --timeout "$(harness_fixture_cap bed-scenario)s" --json >"$tmp/landing-wait.out" 2>&1 &
 	landing_wait_pid=$!
 	landing_wait_start=$(process_started_at "$landing_wait_pid")
@@ -945,7 +945,7 @@ LAND_ENGINE
 	landing_sample=$(awk '{print $2}' "$land_sample_log")
 
 	measure_report=$tmp/wait-measure.txt
-	"$measure_engine" wait measure --root "$measure_root" >"$measure_report"
+	"$measure_engine" internal wait measure --root "$measure_root" >"$measure_report"
 	for target in job-control job-unhinted run-unpublished "$landing_goal"; do
 	  grep -Fq "\"targetId\":\"$target\"" "$measure_report" \
 	    || { echo "wait-measure-fake omitted $target" >&2; cat "$measure_report" >&2; exit 1; }
@@ -1576,7 +1576,7 @@ if [[ "$fixture_scenario" == nested-holder-state ]]; then
   [[ ! -e "$nested_scope/artifacts/agents/steward" && ! -e "$nested_inner/artifacts" ]] \
     || { echo "nested freshness wrote its component record outside the installation" >&2; exit 1; }
   nested_world=$("$nested_installation/bin/metasystem" path state-root "$nested_installation")
-  nested_health=$("$nested_installation/bin/metasystem" health --repo "$nested_world" \
+  nested_health=$("$nested_installation/bin/metasystem" internal health --repo "$nested_world" \
     --metasystem-root "$nested_installation" 2>&1 || true)
   [[ "$nested_health" == *hook-freshness=alive* && "$nested_health" != *hook-freshness=dead* ]] \
     || { echo "nested state-world health did not find live hook freshness" >&2; echo "$nested_health" >&2; exit 1; }
@@ -2227,7 +2227,7 @@ assert_minimal_running_status() { # output file
 }
 
 stop_minimal_acceptance() { # output file
-  "$repo/bin/metasystem" stop --repo "$repo" >"$1"
+  "$repo/bin/metasystem" internal stop --repo "$repo" >"$1"
   assert_exact_stdout "$fixture_scenario-stop" "$1" \
     "checkout $repo" \
     "steward-runner pid $runner_pid started $runner_start: stopped (TERM)" \
@@ -2260,7 +2260,7 @@ acceptance_start_job() {
     (
       cd "$repo"
       METASYSTEM_DELEGATE_ROOT="$repo" METASYSTEM_FAKE_CRITIQUE_HOLD_CAP_SEC="$fixture_ceiling_sec" \
-        "$repo/bin/metasystem" delegate --role design-critic --outputs "$outputs" \
+        "$repo/bin/metasystem" internal delegate --role design-critic --outputs "$outputs" \
           --design metasystem/scripts/agents/roles/design-critic.md --brief "$brief" \
           --op stop-fixture-job --goal none-explicit --destructive-reach MECHANICAL
     ) >"$tmp/stop-everything-dispatch.out" 2>&1 && { dispatch_rc=0; break; }
@@ -2355,7 +2355,7 @@ if [[ "$fixture_scenario" == stop-everything ]]; then
   prepare_process_acceptance
   acceptance_start_job
   acceptance_start_run
-  "$repo/bin/metasystem" status --repo "$repo" >"$tmp/stop-everything.status"
+  "$repo/bin/metasystem" internal status --repo "$repo" >"$tmp/stop-everything.status"
   assert_exact_stdout stop-everything-status "$tmp/stop-everything.status" \
     "checkout $repo" \
     "job stop-fixture-job running pid $job_pid pgid $job_pgid role $job_role: running" \
@@ -2365,7 +2365,7 @@ if [[ "$fixture_scenario" == stop-everything ]]; then
     "repo-watcher pid $watcher_pid: running" \
     "job-reaper pid $reaper_pid: running" \
     "landing-batch-owner pid $landing_owner_pid: running"
-  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/stop-everything.stop"
+  "$repo/bin/metasystem" internal stop --repo "$repo" >"$tmp/stop-everything.stop"
   assert_exact_stdout stop-everything-stop "$tmp/stop-everything.stop" \
     "checkout $repo" \
     "job stop-fixture-job running pid $job_pid pgid $job_pgid role $job_role: cancelled (cancel path, TERM)" \
@@ -2412,7 +2412,7 @@ fi
 
 if [[ "$fixture_scenario" == status-is-live ]]; then
   prepare_process_acceptance
-  "$repo/bin/metasystem" status --repo "$repo" >"$tmp/status-is-live.before"
+  "$repo/bin/metasystem" internal status --repo "$repo" >"$tmp/status-is-live.before"
   assert_minimal_running_status "$tmp/status-is-live.before"
   stop_minimal_acceptance "$tmp/status-is-live.stop"
 
@@ -2425,13 +2425,13 @@ if [[ "$fixture_scenario" == status-is-live ]]; then
   cmp -s "$tmp/status-is-live.status-identities" "$tmp/status-is-live.stop-identities" \
     || { echo "status and stop did not name the same live identities" >&2; exit 1; }
 
-  "$repo/bin/metasystem" status --repo "$repo" >"$tmp/status-is-live.after"
+  "$repo/bin/metasystem" internal status --repo "$repo" >"$tmp/status-is-live.after"
   assert_exact_stdout status-is-live-after "$tmp/status-is-live.after" \
     "checkout $repo" "nothing is running" \
     "stopped since $fence_changed by $fence_by_verb pid $fence_by_pid; start again: metasystem arm --repo $repo"
   find "$repo/artifacts/agents" -type f ! -path '*/supervision/transition.json' -print0 \
     | LC_ALL=C sort -z | xargs -0 shasum -a 256 >"$tmp/status-is-live.files.before"
-  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/status-is-live.second-stop"
+  "$repo/bin/metasystem" internal stop --repo "$repo" >"$tmp/status-is-live.second-stop"
   assert_exact_stdout status-is-live-second-stop "$tmp/status-is-live.second-stop" \
     "checkout $repo" "nothing is running" \
     "stopped $repo; start again: metasystem arm --repo $repo"
@@ -2568,7 +2568,7 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   [[ "$(json_field "$repo/artifacts/agents/supervision/last-census.json" verdict)" == CENSUS-FAILED ]] \
     || { echo "stop-fence requires a failed census to prove the stopped refusal takes precedence" >&2; exit 1; }
   set +e
-  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" delegate \
+  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" internal delegate \
     --role design-critic --outputs "$fence_outputs" \
     --design scripts/agents/roles/design-critic.md --brief "$fence_brief" \
     --op stop-fence-job --goal none-explicit --destructive-reach MECHANICAL \
@@ -2591,7 +2591,7 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   printf '{"jobId":"%s","round":1,"status":"completed"}\n' "$fence_followup_job" \
     >"$repo/artifacts/agents/jobs/$fence_followup_job.json"
   set +e
-  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" delegate \
+  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" internal delegate \
     --follow-up "$fence_followup_job" --brief "$fence_followup_brief" \
     >"$tmp/stop-fence-followup.out" 2>&1
   fence_followup_rc=$?
@@ -2614,7 +2614,7 @@ FAKE_AGENT
   chmod +x "$stop_fence_agent"
   assert_closed_fence_refusal stop-fence-mission-start \
     "at an agent-free terminal, run: metasystem mission start --root $repo --mission <id>" \
-    "$stop_fence_agent" "$repo/bin/metasystem" mission start \
+    "$stop_fence_agent" "$repo/bin/metasystem" internal mission start \
       --root "$repo" --mission stop-fence-mission
   assert_closed_fence_refusal stop-fence-mission-run-loop "$common_fence_remedy" \
     "$repo/bin/metasystem" mission run-loop --root "$repo" --mission stop-fence-loop \
@@ -2715,7 +2715,7 @@ fi
 if [[ "$fixture_scenario" == arm-again ]]; then
   prepare_process_acceptance
   stop_minimal_acceptance "$tmp/arm-again.stop"
-  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-again.arm"
+  "$repo/bin/metasystem" internal arm --repo "$repo" >"$tmp/arm-again.arm"
   new_fence_generation=$(json_field "$repo/artifacts/agents/supervision/transition.json" generation)
   [[ "$(json_field "$repo/artifacts/agents/supervision/transition.json" state)" == open \
     && "$(json_field "$repo/artifacts/agents/supervision/transition.json" phase)" == armed ]] \
@@ -2767,7 +2767,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
     "$survivor_pid" "$survivor_start" >"$transition"
 
   set +e
-  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.arm-refusal" 2>&1
+  "$repo/bin/metasystem" internal arm --repo "$repo" >"$tmp/arm-refuses-survivor.arm-refusal" 2>&1
   survivor_arm_rc=$?
   set -e
   (( survivor_arm_rc == 1 )) \
@@ -2792,7 +2792,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
     "$remote_job" "$remote_machine" >"$transition"
 
   set +e
-  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-arm" 2>&1
+  "$repo/bin/metasystem" internal arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-arm" 2>&1
   missing_arm_rc=$?
   set -e
   (( missing_arm_rc == 1 )) \
@@ -2803,7 +2803,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
     || { echo "arm's missing-remote refusal was not actionable" >&2; cat "$tmp/arm-refuses-survivor.remote-missing-arm" >&2; exit 1; }
 
   set +e
-  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-stop" 2>&1
+  "$repo/bin/metasystem" internal stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-stop" 2>&1
   missing_stop_rc=$?
   set -e
   retained_remote=$(json_array_items "$transition" notStopped)
@@ -2817,7 +2817,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
     || { echo "stop did not retain one missing remote obligation" >&2; cat "$tmp/arm-refuses-survivor.remote-missing-stop" >&2; cat "$transition" >&2; exit 1; }
 
   set +e
-  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-arm-again" 2>&1
+  "$repo/bin/metasystem" internal arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-missing-arm-again" 2>&1
   repeated_missing_rc=$?
   set -e
   (( repeated_missing_rc == 1 )) \
@@ -2829,7 +2829,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
   cp "$transition" "$tmp/arm-refuses-survivor.classifier-transition.before"
   cp "$remote_record" "$tmp/arm-refuses-survivor.classifier-job.before"
   set +e
-  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-arm" 2>&1
+  "$repo/bin/metasystem" internal arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-arm" 2>&1
   unreadable_arm_rc=$?
   set -e
   (( unreadable_arm_rc == 1 )) \
@@ -2842,7 +2842,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
     || { echo "arm's classifier refusal changed durable records" >&2; exit 1; }
 
   set +e
-  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-stop" 2>&1
+  "$repo/bin/metasystem" internal stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-stop" 2>&1
   unreadable_stop_rc=$?
   set -e
   (( unreadable_stop_rc == 1 )) \
@@ -2855,7 +2855,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
     || { echo "stop's classifier refusal changed durable records" >&2; exit 1; }
 
   set +e
-  "$repo/bin/metasystem" status --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-status" 2>&1
+  "$repo/bin/metasystem" internal status --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unreadable-status" 2>&1
   unreadable_status_rc=$?
   set -e
   (( unreadable_status_rc == 1 )) \
@@ -2869,7 +2869,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
 
   printf '{"machineId":"%s","status":"running"}\n' "$remote_machine" >"$remote_record"
   set +e
-  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unidentified-arm" 2>&1
+  "$repo/bin/metasystem" internal arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-unidentified-arm" 2>&1
   unidentified_arm_rc=$?
   set -e
   (( unidentified_arm_rc == 1 )) \
@@ -2882,7 +2882,7 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
 
   printf '{"jobId":"%s","machineId":"%s","status":"running"}\n' "$remote_job" "$remote_machine" >"$remote_record"
   set +e
-  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-readable-open-arm" 2>&1
+  "$repo/bin/metasystem" internal arm --repo "$repo" >"$tmp/arm-refuses-survivor.remote-readable-open-arm" 2>&1
   readable_open_arm_rc=$?
   set -e
   (( readable_open_arm_rc == 1 )) \
@@ -2891,13 +2891,13 @@ if [[ "$fixture_scenario" == arm-refuses-survivor ]]; then
     || { echo "repairing classification with a non-terminal record bypassed the survivor refusal" >&2; cat "$tmp/arm-refuses-survivor.remote-readable-open-arm" >&2; exit 1; }
 
   printf '{"jobId":"%s","machineId":"%s","status":"completed"}\n' "$remote_job" "$remote_machine" >"$remote_record"
-  "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-recovered-stop" 2>&1 \
+  "$repo/bin/metasystem" internal stop --repo "$repo" >"$tmp/arm-refuses-survivor.remote-recovered-stop" 2>&1 \
     || { echo "stop did not accept restored matching terminal evidence" >&2; cat "$tmp/arm-refuses-survivor.remote-recovered-stop" >&2; exit 1; }
   [[ "$(json_field "$transition" phase)" == stopped \
     && "$(json_field "$transition" notStopped)" == '[]' ]] \
     || { echo "restored terminal evidence did not clear the remote obligation" >&2; cat "$transition" >&2; exit 1; }
 
-  "$repo/bin/metasystem" arm --repo "$repo" >"$tmp/arm-refuses-survivor.arm"
+  "$repo/bin/metasystem" internal arm --repo "$repo" >"$tmp/arm-refuses-survivor.arm"
   new_fence_generation=$(json_field "$transition" generation)
   [[ "$(json_field "$transition" state)" == open \
     && "$(json_field "$transition" phase)" == armed \
@@ -2951,7 +2951,7 @@ runner_pid=$(json_field "$runner_file" pid)
 runner_started=$(json_field "$runner_file" pidStartedAt)
 process_identity_alive "$runner_pid" "$runner_started" \
   || { echo "landed rebuild left no live steward runner" >&2; exit 1; }
-"$repo/bin/metasystem" health --repo "$repo" >"$tmp/rearm-health.out" || true
+"$repo/bin/metasystem" internal health --repo "$repo" >"$tmp/rearm-health.out" || true
 grep -Fq "machine-minted (rebuild, engine $trunk_stamp, landed ${trunk_tip:0:7} on refs/remotes/origin/trunk)" "$tmp/rearm-health.out" \
   || { echo "health hid the machine-minted provenance" >&2; cat "$tmp/rearm-health.out" >&2; exit 1; }
 grep -Fq 'engine-re-armed generation=2 previous=1' "$repo/artifacts/agents/supervision/arming.log" \
@@ -3566,7 +3566,7 @@ dispatch_fails() { # name, expected
   local name=$1 expected=$2
   set +e
   METASYSTEM_GOAL_NOW="$gate_now" METASYSTEM_DELEGATE_ROOT="$gate_repo" \
-    "$gate_repo/bin/metasystem" delegate --role design-critic \
+    "$gate_repo/bin/metasystem" internal delegate --role design-critic \
       --outputs "$gate_declared_outputs" --design "$gate_design" --brief "$brief" \
       --goal none-explicit --destructive-reach MECHANICAL --op "$name" \
       >"$tmp/$name.out" 2>&1
@@ -3578,7 +3578,7 @@ dispatch_fails() { # name, expected
 dispatch_succeeds() { # name
   local name=$1
   METASYSTEM_GOAL_NOW="$gate_now" METASYSTEM_DELEGATE_ROOT="$gate_repo" \
-    "$gate_repo/bin/metasystem" delegate --role design-critic \
+    "$gate_repo/bin/metasystem" internal delegate --role design-critic \
       --outputs "$gate_declared_outputs" --design "$gate_design" --brief "$brief" \
       --goal none-explicit --destructive-reach MECHANICAL --op "$name" \
     >"$tmp/$name.out" 2>&1 \
@@ -4026,7 +4026,7 @@ grep -Fq 'OPEN WORK (1)' <<<"$first_report" \
 # The scenario subshell is the held main for this entire block. Every hook and
 # holder-only command is its descendant, so no ambient seat or suite ancestor
 # can become the sandbox's main identity.
-"$stop_root/bin/metasystem" goal open --root "$stop_root" \
+"$stop_root/bin/metasystem" internal goal open --root "$stop_root" \
   --id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." >/dev/null
 goal_block=$(printf '%s' "$stop_payload" | stop_hook)
 goal_block_report=$(fixture_stop_status_report "$goal_block" "$stop_root" fake t) \

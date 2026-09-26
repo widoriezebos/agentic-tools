@@ -297,14 +297,14 @@ FIXTURE_TOOL_SHELL
     esac
   done
   printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_file"
-  "$clone/bin/metasystem" stop --repo "$clone" >"$tmp/wrong-terminal.stop"
+  "$clone/bin/metasystem" internal stop --repo "$clone" >"$tmp/wrong-terminal.stop"
   fence_changed=$("$clone/bin/metasystem" json get --file "$clone/artifacts/agents/supervision/transition.json" --field changedAt)
   fence_pid=$("$clone/bin/metasystem" json get --file "$clone/artifacts/agents/supervision/transition.json" --field by.pid)
   printf '%s\n' "checkout $expected_checkout" "nothing is running" \
     "stopped $expected_checkout; start again: metasystem arm --repo $expected_checkout" >"$tmp/wrong-terminal.stop.expected"
   cmp -s "$tmp/wrong-terminal.stop.expected" "$tmp/wrong-terminal.stop" \
     || { echo "the fixture-human stop report changed grammar" >&2; diff -u "$tmp/wrong-terminal.stop.expected" "$tmp/wrong-terminal.stop" >&2 || true; exit 1; }
-  "$clone/bin/metasystem" status --repo "$clone" >"$tmp/wrong-terminal.status"
+  "$clone/bin/metasystem" internal status --repo "$clone" >"$tmp/wrong-terminal.status"
   printf '%s\n' "checkout $expected_checkout" "nothing is running" \
     "stopped since $fence_changed by stop pid $fence_pid; start again: metasystem arm --repo $expected_checkout" >"$tmp/wrong-terminal.status.expected"
   cmp -s "$tmp/wrong-terminal.status.expected" "$tmp/wrong-terminal.status" \
@@ -419,7 +419,7 @@ fi
 approve_fixture_goal() { # goal id, optional complete tuple flags
   local goal_id=$1 output
   shift
-  if ! output=$("$ms" goal approve --root "$clone" --id "$goal_id" --by Wido \
+  if ! output=$("$ms" internal goal approve --root "$clone" --id "$goal_id" --by Wido \
       --fixture-human-authority "$@" 2>&1); then
     echo "fixture approval for $goal_id failed: $output" >&2
     exit 1
@@ -479,14 +479,14 @@ if [[ "$fixture_scenario" == budget-extension ]]; then
   git -C "$clone" -c core.hooksPath=/dev/null -c user.name=fixture -c user.email=fixture@example.invalid \
     commit -qm 'narrow fixture budget box'
   git -C "$clone" push -q origin main
-  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
   export METASYSTEM_GOAL_NOW=2026-09-12T20:00:00Z
-  "$ms" goal open --root "$clone" --id earned-extension --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal open --root "$clone" --id earned-extension --origin human --by Wido --fixture-human-authority \
     --intent "Exercise the once-by-consumption budget extension." --next "Apply the earned extension." \
     --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "budget extension fixture" >/dev/null
   approve_fixture_goal earned-extension \
     --elapsed-limit 8h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 --review-round-limit 3
-  "$ms" goal claim --root "$clone" --id earned-extension >/dev/null
+  "$ms" internal goal claim --root "$clone" --id earned-extension >/dev/null
   extension_revision=$("$ms" job goal-revision --root "$clone" --goal earned-extension)
 
   mkdir -p "$clone/artifacts/agents/jobs"
@@ -535,14 +535,14 @@ if [[ "$fixture_scenario" == budget-extension ]]; then
 fi
 
 if [[ "$fixture_scenario" == fenced-set-budget ]]; then
-	"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+	"$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
 	export METASYSTEM_GOAL_NOW=2026-09-18T10:00:00Z
-	"$ms" goal open --root "$clone" --id fenced-one-step --origin human --by Wido --fixture-human-authority \
+	"$ms" internal goal open --root "$clone" --id fenced-one-step --origin human --by Wido --fixture-human-authority \
 		--intent "Replace a stopped budget and reopen admission atomically." --next "Run the larger budget." \
 		--tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fenced rebudget fixture" >/dev/null
 	approve_fixture_goal fenced-one-step \
 		--elapsed-limit 1m --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
-	"$ms" goal claim --root "$clone" --id fenced-one-step >/dev/null
+	"$ms" internal goal claim --root "$clone" --id fenced-one-step >/dev/null
 	fenced_revision=$("$ms" job goal-revision --root "$clone" --goal fenced-one-step)
 	export METASYSTEM_GOAL_NOW=2026-09-18T10:02:00Z
 	fenced_stop=$("$ms" job breach-stop --root "$clone" --goal fenced-one-step --revision "$fenced_revision")
@@ -646,7 +646,7 @@ fi
 if [[ "$fixture_scenario" == carried-discharge ]]; then
   prepare_carried_record_fixture
   finding="carried:$carried_commit"
-  accepted=$("$ms" goal accept-risk --root "$clone" --id ship-widget --finding "$finding" \
+  accepted=$("$ms" internal goal accept-risk --root "$clone" --id ship-widget --finding "$finding" \
     --chain human-carried --by Wido --why "fixture accepts the deferred review" --fixture-human-authority)
   [[ "$accepted" == *'"outcome":"confirmed"'* ]] \
     || { echo "human-carried accept-risk did not confirm: $accepted" >&2; exit 1; }
@@ -803,7 +803,7 @@ fi
 # Human authority starts at the CLI's real parent, so keep the detached shell
 # alive until the command returns instead of replacing it with the CLI.
 set +e
-"$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" --id ship-widget --by Wido
+"$PROOF_GRADE_MS" internal goal release --root "$PROOF_GRADE_CLONE" --id ship-widget --by Wido
 headless_release_rc=$?
 exit "$headless_release_rc"
 PROOF_GRADE_HEADLESS
@@ -894,22 +894,22 @@ human_refuses() { # label, expected refusal, command...
 }
 
 authority_refusal='AGENT_IN_AUTHORITY_CHAIN: [[:alnum:]_-]+'
-agent_refuses release "$authority_refusal" "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" \
+agent_refuses release "$authority_refusal" "$PROOF_GRADE_MS" internal goal release --root "$PROOF_GRADE_CLONE" \
   --id ship-widget --by Wido --lineage agent-shell
 agent_refuses park "$authority_refusal" "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_CLONE" \
   --id ship-widget --because "agent stop" --by Wido --lineage agent-shell
-agent_refuses release-arc "$authority_refusal" "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_ARC_CLONE" \
+agent_refuses release-arc "$authority_refusal" "$PROOF_GRADE_MS" internal goal release --root "$PROOF_GRADE_ARC_CLONE" \
   --id ship-widget --by Wido --lineage agent-shell --arc proof-grade
 agent_refuses park-arc "$authority_refusal" "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_ARC_CLONE" \
   --id ship-widget --because "agent arc stop" --by Wido --lineage agent-shell --arc proof-grade
 agent_refuses unpark-arc "$authority_refusal" "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_ARC_CLONE" \
   --id ship-widget --by Wido --lineage agent-shell --arc proof-grade
-agent_refuses approve "$authority_refusal" "$PROOF_GRADE_MS" goal approve --root "$PROOF_GRADE_CLONE" \
+agent_refuses approve "$authority_refusal" "$PROOF_GRADE_MS" internal goal approve --root "$PROOF_GRADE_CLONE" \
   --id fix-docs --budget box --by Wido --lineage agent-shell
-agent_refuses session-stop 'caller classifies DELEGATE' "$PROOF_GRADE_MS" session stop --root "$PROOF_GRADE_CLONE" --by Wido
+agent_refuses session-stop 'caller classifies DELEGATE' "$PROOF_GRADE_MS" internal session stop --root "$PROOF_GRADE_CLONE" --by Wido
 
 if [[ "$proof_grade_subject_class" == HUMAN ]]; then
-  human_runs release "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" \
+  human_runs release "$PROOF_GRADE_MS" internal goal release --root "$PROOF_GRADE_CLONE" \
     --id ship-widget --by Wido
   human_runs park "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_CLONE" \
     --id ship-widget --because "human stop" --by Wido
@@ -917,7 +917,7 @@ if [[ "$proof_grade_subject_class" == HUMAN ]]; then
     --id ship-widget --by Wido --lineage agent-shell
   human_runs unpark-to-queued "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_CLONE" \
     --id ship-widget --by Wido
-  human_runs release-arc "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_ARC_CLONE" \
+  human_runs release-arc "$PROOF_GRADE_MS" internal goal release --root "$PROOF_GRADE_ARC_CLONE" \
     --id ship-widget --by Wido --arc proof-grade
   human_runs park-arc "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_ARC_CLONE" \
     --id ship-widget --because "human arc stop" --by Wido --arc proof-grade
@@ -958,7 +958,7 @@ if [[ "$proof_grade_subject_class" == HUMAN ]]; then
   done
 
   set +e
-  "$PROOF_GRADE_MS" goal approve --root "$PROOF_GRADE_CLONE" --id fix-docs \
+  "$PROOF_GRADE_MS" internal goal approve --root "$PROOF_GRADE_CLONE" --id fix-docs \
     --budget box --by Wido >"$PROOF_GRADE_LOG_ROOT/approve-human.log" 2>&1
   approve_rc=$?
   set -e
@@ -968,14 +968,14 @@ if [[ "$proof_grade_subject_class" == HUMAN ]]; then
     exit 1
   fi
 
-  human_runs session-stop "$PROOF_GRADE_MS" session stop --root "$PROOF_GRADE_CLONE" --by Wido
+  human_runs session-stop "$PROOF_GRADE_MS" internal session stop --root "$PROOF_GRADE_CLONE" --by Wido
 else
   printf "proof-grade allow path was not proven in this agent-descended bed; prove it at an agent-free terminal or in the steward's scheduled run\n"
-  human_refuses release-human "$authority_refusal" "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" \
+  human_refuses release-human "$authority_refusal" "$PROOF_GRADE_MS" internal goal release --root "$PROOF_GRADE_CLONE" \
     --id ship-widget --by Wido
   human_refuses park-human "$authority_refusal" "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_CLONE" \
     --id ship-widget --because "human stop" --by Wido
-  human_refuses release-arc-human "$authority_refusal" "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_ARC_CLONE" \
+  human_refuses release-arc-human "$authority_refusal" "$PROOF_GRADE_MS" internal goal release --root "$PROOF_GRADE_ARC_CLONE" \
     --id ship-widget --by Wido --arc proof-grade
   human_refuses park-arc-human "$authority_refusal" "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_ARC_CLONE" \
     --id ship-widget --because "human arc stop" --by Wido --arc proof-grade
@@ -985,9 +985,9 @@ else
     --id perf-pass --by Wido --lineage agent-shell
   human_refuses unpark-to-queued "$authority_refusal" "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_CLONE" \
     --id perf-pass --by Wido
-  human_refuses approve-human "$authority_refusal" "$PROOF_GRADE_MS" goal approve --root "$PROOF_GRADE_CLONE" \
+  human_refuses approve-human "$authority_refusal" "$PROOF_GRADE_MS" internal goal approve --root "$PROOF_GRADE_CLONE" \
     --id fix-docs --budget box --by Wido
-  human_refuses session-stop-human 'caller classifies DELEGATE' "$PROOF_GRADE_MS" session stop \
+  human_refuses session-stop-human 'caller classifies DELEGATE' "$PROOF_GRADE_MS" internal session stop \
     --root "$PROOF_GRADE_CLONE" --by Wido
 fi
 PROOF_GRADES
@@ -1035,14 +1035,14 @@ assert_brain_goal_refusal() { # expected fragment, command...
 }
 
 prepare_brain_stop_bed() {
-  "$ms" goal open --root "$clone" --id brain-draft --origin main --blocks ship-widget \
+  "$ms" internal goal open --root "$clone" --id brain-draft --origin main --blocks ship-widget \
     --intent "Draft work for Wido." --next "Wido approves this draft." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "brain draft fixture" >/dev/null
-  "$ms" goal open --root "$clone" --id brain-approved-one --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal open --root "$clone" --id brain-approved-one --origin human --by Wido --fixture-human-authority \
     --intent "Wait for the first node." --next "A node claims this." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "brain stop fixture" >/dev/null
   approve_fixture_goal brain-approved-one --budget box
-  "$ms" goal open --root "$clone" --id brain-approved-two --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal open --root "$clone" --id brain-approved-two --origin human --by Wido --fixture-human-authority \
     --intent "Wait for a node." --next "A node claims this." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "brain stop fixture" >/dev/null
   approve_fixture_goal brain-approved-two --budget box
@@ -1068,42 +1068,42 @@ if [[ "$fixture_scenario" == abandoned-with-a-reason ]]; then
     [[ "$engine_descriptor" =~ ^[0-9a-f]{40}$ || "$engine_descriptor" =~ ^dev-[0-9a-f]{40}-dirty$ ]] \
       || { echo "private abandonment engine has no source-linked build stamp: $engine_descriptor" >&2; exit 1; }
   fi
-  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
   export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/abandon-registry"
   mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
   export METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z
-  "$ms" goal open --root "$clone" --id abandon-b --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal open --root "$clone" --id abandon-b --origin human --by Wido --fixture-human-authority \
     --intent "Stay blocked until the abandoned work is re-pointed." --next "Wait for the successor." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "abandon fixture" >/dev/null
   approve_fixture_goal abandon-b --budget box
-  "$ms" goal claim --root "$clone" --id abandon-b >/dev/null
-  "$ms" goal open --root "$clone" --id abandon-a --origin main --blocks abandon-b \
+  "$ms" internal goal claim --root "$clone" --id abandon-b >/dev/null
+  "$ms" internal goal open --root "$clone" --id abandon-a --origin main --blocks abandon-b \
     --intent "Retire work that no longer belongs in the backlog." --next "Prove abandonment." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "abandon fixture" >/dev/null
-  "$ms" goal edit --root "$clone" --id abandon-a --tier 1 \
+  "$ms" internal goal edit --root "$clone" --id abandon-a --tier 1 \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "abandon fixture member" >/dev/null
   approve_fixture_goal abandon-a \
     --elapsed-limit 1m --attempt-limit 2 --reserved-job-minutes-limit 20 --active-job-limit 1 --review-round-limit 0
-  "$ms" goal claim --root "$clone" --id abandon-a >/dev/null
+  "$ms" internal goal claim --root "$clone" --id abandon-a >/dev/null
   export METASYSTEM_GOAL_NOW=2026-08-20T00:02:00Z
   "$ms" job breach-stop --root "$clone" --goal abandon-a --revision 4 >"$tmp/abandon-stop.json"
-  if release_refusal=$("$ms" goal release --root "$clone" --id abandon-a 2>&1); then
+  if release_refusal=$("$ms" internal goal release --root "$clone" --id abandon-a 2>&1); then
     echo "release cleared a breach-stopped claim" >&2; exit 1
   fi
   grep -q 'only goal resume may clear its launch fence' <<<"$release_refusal" \
     || { echo "release did not preserve the launch fence: $release_refusal" >&2; exit 1; }
 
-  if dependent_refusal=$("$ms" goal abandon --root "$clone" --id abandon-a --by Wido --because fixture --fixture-human-authority 2>&1); then
+  if dependent_refusal=$("$ms" internal goal abandon --root "$clone" --id abandon-a --by Wido --because fixture --fixture-human-authority 2>&1); then
     echo "abandon succeeded with an uncovered dependent" >&2; exit 1
   fi
   grep -q 'goal abandon-b is blocked by abandon-a' <<<"$dependent_refusal" \
     || { echo "abandon did not name the uncovered dependent: $dependent_refusal" >&2; exit 1; }
 
-  "$ms" goal open --root "$clone" --id abandon-successor --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal open --root "$clone" --id abandon-successor --origin human --by Wido --fixture-human-authority \
     --intent "Carry the still-live constraint." --next "Complete the successor." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "abandon fixture" >/dev/null
-	done_before=$("$ms" goal list --root "$clone" | sed -n '1s/.* done=\([0-9][0-9]*\) .*/\1/p')
-  "$ms" goal abandon --root "$clone" --id abandon-a --by Wido --because fixture \
+	done_before=$("$ms" internal goal list --root "$clone" | sed -n '1s/.* done=\([0-9][0-9]*\) .*/\1/p')
+  "$ms" internal goal abandon --root "$clone" --id abandon-a --by Wido --because fixture \
     --carried abandon-successor --fixture-human-authority >/dev/null
   abandon_tip=$(git -C "$origin" rev-parse main)
   git -C "$clone" cat-file -p "$abandon_tip:records/goals/abandon-a.md" >"$tmp/abandon-a.md"
@@ -1114,10 +1114,10 @@ if [[ "$fixture_scenario" == abandoned-with-a-reason ]]; then
   if git -C "$clone" cat-file -e "$abandon_tip:plans/goals/abandon-a.md" 2>/dev/null; then
     echo "the abandoned goal remained in the live path" >&2; exit 1
   fi
-	summary=$("$ms" goal list --root "$clone")
+	summary=$("$ms" internal goal list --root "$clone")
 	grep -q "^.* done=$done_before abandoned=1 tip=" <<<"$summary" \
 		|| { echo "listing conflated done and abandoned: $summary" >&2; exit 1; }
-	listing=$("$ms" goal list --root "$clone" --json)
+	listing=$("$ms" internal goal list --root "$clone" --json)
   abandoned_json=$("$ms" json get --value "$listing" --field abandoned)
   done_json=$("$ms" json get --value "$listing" --field done)
   [[ "$abandoned_json" == *'"Id":"abandon-a"'* && "$done_json" != *'"Id":"abandon-a"'* ]] \
@@ -1125,7 +1125,7 @@ if [[ "$fixture_scenario" == abandoned-with-a-reason ]]; then
   next=$("$ms" goal next --root "$clone")
   [[ "$next" != "next ready goal: abandon-a" && "$next" != "next ready goal: abandon-b" ]] \
     || { echo "goal next offered abandoned or blocked work: $next" >&2; exit 1; }
-  shown=$("$ms" goal show --root "$clone" --id abandon-a)
+  shown=$("$ms" internal goal show --root "$clone" --id abandon-a)
   [[ "$shown" == *'"Because":"fixture"'* ]] \
     || { echo "goal show omitted the abandon reason: $shown" >&2; exit 1; }
   cat >"$tmp/abandon-split.md" <<'DRAFT'
@@ -1139,7 +1139,7 @@ if [[ "$fixture_scenario" == abandoned-with-a-reason ]]; then
 - Intent: Second impossible split member.
 - Next step: Never run.
 DRAFT
-  if split_refusal=$("$ms" goal split --root "$clone" --id abandon-a --members "$tmp/abandon-split.md" 2>&1); then
+  if split_refusal=$("$ms" internal goal split --root "$clone" --id abandon-a --members "$tmp/abandon-split.md" 2>&1); then
     echo "an abandoned goal split" >&2; exit 1
   fi
   grep -q 'in the archive; there is nothing to split' <<<"$split_refusal" \
@@ -1207,7 +1207,7 @@ if [[ "$fixture_scenario" == brain-stop-corrupt ]]; then
 fi
 
 if [[ "$fixture_scenario" == brain-status-line ]]; then
-  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
   mkdir -p "$clone/records/misc"
   cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$clone/records/misc/"
   declare_brain_fixture
@@ -1224,16 +1224,16 @@ if [[ "$fixture_scenario" == brain-status-line ]]; then
 fi
 
 if [[ "$fixture_scenario" == brain-claim-refuses ]]; then
-  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
-  "$ms" goal open --root "$clone" --id brain-claim-target --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" internal goal open --root "$clone" --id brain-claim-target --origin human --by Wido --fixture-human-authority \
     --intent "A node must claim this approved goal." --next "Claim it on a node." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture claim fence" >/dev/null
   approve_fixture_goal brain-claim-target --budget box
   declared_tip=$(git -C "$origin" rev-parse main)
   declare_brain_fixture
   claim_command="this checkout is declared the brain; the brain never claims. A node claims: metasystem goal claim --root <checkout> --id <id>"
-  assert_brain_goal_refusal "$claim_command" "$ms" goal claim --root "$clone" --id brain-claim-target
-  assert_brain_goal_refusal "$claim_command" "$ms" goal open --root "$clone" --id brain-open-claim-target \
+  assert_brain_goal_refusal "$claim_command" "$ms" internal goal claim --root "$clone" --id brain-claim-target
+  assert_brain_goal_refusal "$claim_command" "$ms" internal goal open --root "$clone" --id brain-open-claim-target \
     --intent "A node must open and claim this goal." --next "Open it on a node." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture open claim fence" \
     --claim --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 0
@@ -1242,8 +1242,8 @@ if [[ "$fixture_scenario" == brain-claim-refuses ]]; then
     exit 1
   }
   printf '%s\n' '{broken' >"$clone/artifacts/agents/brain.json"
-  assert_brain_goal_refusal "this checkout's brain declaration is unreadable" "$ms" goal claim --root "$clone" --id brain-claim-target
-  assert_brain_goal_refusal "this checkout's brain declaration is unreadable" "$ms" goal open --root "$clone" --id brain-open-claim-corrupt \
+  assert_brain_goal_refusal "this checkout's brain declaration is unreadable" "$ms" internal goal claim --root "$clone" --id brain-claim-target
+  assert_brain_goal_refusal "this checkout's brain declaration is unreadable" "$ms" internal goal open --root "$clone" --id brain-open-claim-corrupt \
     --intent "A corrupt brain still cannot claim." --next "Repair the declaration." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture corrupt claim fence" \
     --claim --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 0
@@ -1256,20 +1256,20 @@ if [[ "$fixture_scenario" == brain-claim-refuses ]]; then
 fi
 
 if [[ "$fixture_scenario" == brain-classification-fails ]]; then
-  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
-  "$ms" goal open --root "$clone" --id classification-target --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" internal goal open --root "$clone" --id classification-target --origin human --by Wido --fixture-human-authority \
     --intent "Exercise fail-closed caller classification." --next "Keep the ledger unchanged." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture classification fence" >/dev/null
   declare_brain_fixture
   mkdir -p "$clone/artifacts/agents/supervision"
   printf '%s\n' '{broken' >"$clone/artifacts/agents/supervision/state.json"
   classifier_text="this checkout is declared the brain and the caller could not be classified"
-  assert_brain_goal_refusal "$classifier_text" "$ms" goal approve --root "$clone" --id classification-target \
+  assert_brain_goal_refusal "$classifier_text" "$ms" internal goal approve --root "$clone" --id classification-target \
     --by Wido --budget box --fixture-human-authority
   assert_brain_goal_refusal "$classifier_text" "$ms" goal steal --root "$clone" --id classification-target --by Wido
   rm "$clone/artifacts/agents/supervision/state.json"
   "$ms" brain withdraw --root "$clone" --by Wido --fixture-human-authority >/dev/null
-  undeclared_approve=$("$ms" goal approve --root "$clone" --id classification-target --by Wido --budget box --fixture-human-authority)
+  undeclared_approve=$("$ms" internal goal approve --root "$clone" --id classification-target --by Wido --budget box --fixture-human-authority)
   [[ "$undeclared_approve" == *'"outcome":"confirmed"'* ]] || {
     echo "undeclared fixture approval no longer behaved as before: $undeclared_approve" >&2
     exit 1
@@ -1286,7 +1286,7 @@ if [[ "$fixture_scenario" == brain-classification-fails ]]; then
 fi
 
 if [[ "$fixture_scenario" == brain-human-word-refuses ]]; then
-  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  "$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
   mkdir -p "$clone/artifacts/agents/channel/questions"
   printf '%s\n' '{broken' >"$clone/artifacts/agents/channel/questions/undeclared-broken.json"
   undeclared_question_verdict=$("$ms" report turn-verdict --root "$clone" --session brain-undeclared-question)
@@ -1308,10 +1308,10 @@ DRAFT
     echo "brain human-word fixture could not prepare its classification confirmation" >&2
     exit 1
   }
-  "$ms" goal open --root "$clone" --id brain-fixture-authority-target --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal open --root "$clone" --id brain-fixture-authority-target --origin human --by Wido --fixture-human-authority \
     --intent "Prove fixture human authority crosses the brain seam." --next "Approve this classified goal." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture human-authority positive path" >/dev/null
-  "$ms" goal open --root "$clone" --id brain-channel-target --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal open --root "$clone" --id brain-channel-target --origin human --by Wido --fixture-human-authority \
     --intent "Let a verified channel answer approve this draft." --next "Poll the verified answer." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture verified channel answer" >/dev/null
   declare_brain_fixture
@@ -1330,10 +1330,10 @@ DRAFT
   # appending --temporary-human-word "..." --review-by <date inside it>.
   assert_human_word_matrix() { # expected text
     local expected=$1
-    assert_brain_goal_refusal "$expected" "$ms" goal approve --root "$clone" --id fix-docs --by Wido --budget box
-    assert_brain_goal_refusal "$expected" "$ms" goal resume --root "$clone" --id fix-docs --by Wido \
+    assert_brain_goal_refusal "$expected" "$ms" internal goal approve --root "$clone" --id fix-docs --by Wido --budget box
+    assert_brain_goal_refusal "$expected" "$ms" internal goal resume --root "$clone" --id fix-docs --by Wido \
       --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
-    assert_brain_goal_refusal "$expected" "$ms" goal resume --root "$clone" --id fix-docs --by Wido \
+    assert_brain_goal_refusal "$expected" "$ms" internal goal resume --root "$clone" --id fix-docs --by Wido \
       --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 \
       --approved-ref fixture-answer
     assert_brain_goal_refusal "$expected" "$ms" goal set-obligation --root "$clone" --id fix-docs --by Wido \
@@ -1348,12 +1348,12 @@ DRAFT
       --confirm "$classification_digest" --by Wido
     assert_brain_goal_refusal "$expected" "$ms" goal set-budget --root "$clone" --id fix-docs --by Wido \
       --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
-    assert_brain_goal_refusal "$expected" "$ms" goal unapprove --root "$clone" --id fix-docs --by Wido --because "fixture reversal"
-    assert_brain_goal_refusal "$expected" "$ms" goal accept-risk --root "$clone" --id fix-docs --finding F1 \
+    assert_brain_goal_refusal "$expected" "$ms" internal goal unapprove --root "$clone" --id fix-docs --by Wido --because "fixture reversal"
+    assert_brain_goal_refusal "$expected" "$ms" internal goal accept-risk --root "$clone" --id fix-docs --finding F1 \
       --chain brain-fixture-chain --by Wido --why "fixture risk decision"
     assert_brain_goal_refusal "$expected" "$ms" goal discharge-review-obligation --root "$clone" --id fix-docs \
       --finding F1 --chain brain-fixture-chain --by Wido --test "fixture test"
-    assert_brain_goal_refusal "$expected" "$ms" goal repair --root "$clone" --accept-remote --by Wido
+    assert_brain_goal_refusal "$expected" "$ms" internal goal repair --root "$clone" --accept-remote --by Wido
   }
 
   declared_tip=$(git -C "$origin" rev-parse main)
@@ -1361,7 +1361,7 @@ DRAFT
   cp "$clone/metasystem.conf" "$tmp/fake-root.conf"
   printf '%s\n' 'metasystem.runtimes=codex' >"$clone/metasystem.conf"
   assert_brain_goal_refusal "this checkout is declared the brain; the brain never carries a human's word into goal approve" \
-    "$ms" goal approve --root "$clone" --id fix-docs --by Wido --budget box --fixture-human-authority
+    "$ms" internal goal approve --root "$clone" --id fix-docs --by Wido --budget box --fixture-human-authority
   cp "$tmp/fake-root.conf" "$clone/metasystem.conf"
   [[ $(git -C "$origin" rev-parse main) == "$declared_tip" ]] || {
     echo "brain human-word refusal advanced the ledger tip" >&2
@@ -1375,7 +1375,7 @@ DRAFT
   }
   cp "$tmp/valid-brain.json" "$clone/artifacts/agents/brain.json"
 
-  fixture_approval=$("$ms" goal approve --root "$clone" --id brain-fixture-authority-target \
+  fixture_approval=$("$ms" internal goal approve --root "$clone" --id brain-fixture-authority-target \
     --by Wido --budget box --fixture-human-authority)
   [[ "$fixture_approval" == *'"outcome":"confirmed"'* ]] || {
     echo "fixture-only human authority did not cross the brain seam: $fixture_approval" >&2
@@ -1438,14 +1438,14 @@ if [[ "$fixture_scenario" == human-lineage ]]; then
 # checkout's local terminal enrollment. The fixture writes the exact strict
 # JSON shape consumed by humanauthority.ReadEnrollment because its headless
 # shell cannot lawfully enroll itself as an attended terminal.
-"$ms" goal open --root "$clone" --id explicit-lineage-approval --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id explicit-lineage-approval --origin human --by Wido --fixture-human-authority \
   --intent "Record an approval under the fixture coordinator." --next "Compare its operation identity." \
   --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture identity comparison" >/dev/null
-"$ms" goal open --root "$clone" --id derived-lineage-approval --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id derived-lineage-approval --origin human --by Wido --fixture-human-authority \
   --intent "Record an approval under the enrolled terminal." --next "Inspect its transaction journal." \
   --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture identity comparison" >/dev/null
 
-explicit_approval=$("$ms" goal approve --root "$clone" --id explicit-lineage-approval \
+explicit_approval=$("$ms" internal goal approve --root "$clone" --id explicit-lineage-approval \
   --by Wido --budget box --fixture-human-authority)
 grep -q '"outcome":"confirmed"' <<<"$explicit_approval" \
   || { echo "the fixture-lineage approval did not confirm: $explicit_approval" >&2; exit 1; }
@@ -1470,7 +1470,7 @@ cat >"$clone/artifacts/agents/authority/human-terminal.json" <<'ENROLLMENT'
 ENROLLMENT
 unset METASYSTEM_OWNER_LINEAGE
 
-derived_approval=$("$ms" goal approve --root "$clone" --id derived-lineage-approval \
+derived_approval=$("$ms" internal goal approve --root "$clone" --id derived-lineage-approval \
   --by Wido --budget box --fixture-human-authority)
 grep -q '"outcome":"confirmed"' <<<"$derived_approval" \
   || { echo "the enrollment-derived approval did not confirm: $derived_approval" >&2; exit 1; }
@@ -1493,7 +1493,7 @@ esac
 open_forgiving_fixture_goal() { # goal id, optional goal-open flags
   local goal_id=$1
   shift
-  "$ms" goal open --root "$clone" --id "$goal_id" \
+  "$ms" internal goal open --root "$clone" --id "$goal_id" \
     --intent "Exercise the forgiving budget command for $goal_id." --next "Inspect the recorded box." \
     --origin human --by Wido --fixture-human-authority \
     --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" "$@" >/dev/null
@@ -1562,14 +1562,14 @@ release_forgiving_claim_if_present() { # goal id
 	if git -C "$clone" cat-file -e "$tip:plans/goals/$goal_id.md" 2>/dev/null; then
 		git -C "$clone" cat-file -p "$tip:plans/goals/$goal_id.md" >"$record"
 		if grep -q '^- State: claimed$' "$record"; then
-			"$ms" goal release --root "$clone" --id "$goal_id" >/dev/null
+			"$ms" internal goal release --root "$clone" --id "$goal_id" >/dev/null
 		fi
 	fi
 }
 
 claim_forgiving_goal() { # goal id
 	local goal_id=$1 claim_output
-	claim_output=$("$ms" goal claim --root "$clone" --id "$goal_id" 2>&1) \
+	claim_output=$("$ms" internal goal claim --root "$clone" --id "$goal_id" 2>&1) \
 		|| { echo "claiming $goal_id failed: $claim_output" >&2; return 1; }
 	grep -q '"outcome":"confirmed"' <<<"$claim_output" \
 		|| { echo "claiming $goal_id did not confirm: $claim_output" >&2; return 1; }
@@ -1594,19 +1594,19 @@ write_forgiving_fixture_enrollment Wido
 
 # A queued goal accepts the token after its flags and re-approval changes only
 # its approval tuple. The parked transaction keeps the pause intact.
-"$ms" goal budget --root "$clone" --id fix-docs --fixture-human-authority 2h/4/240m/1/2 >/dev/null
+"$ms" internal goal budget --root "$clone" --id fix-docs --fixture-human-authority 2h/4/240m/1/2 >/dev/null
 read_forgiving_goal fix-docs "$tmp/fix-docs-approved.md"
 grep -q '^- State: approved$' "$tmp/fix-docs-approved.md" \
   && grep -q '^- Budget: elapsedLimit=2h attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/fix-docs-approved.md" \
   && grep -q ' approve actor=human:Wido ' "$tmp/fix-docs-approved.md" \
   || { echo "queued goal budget did not publish an approval" >&2; cat "$tmp/fix-docs-approved.md" >&2; exit 1; }
-"$ms" goal budget 3h/5/300m/1/2 --root "$clone" --id fix-docs --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal budget 3h/5/300m/1/2 --root "$clone" --id fix-docs --by Wido --fixture-human-authority >/dev/null
 read_forgiving_goal fix-docs "$tmp/fix-docs-reapproved.md"
 [[ $(grep -c ' approve actor=human:Wido ' "$tmp/fix-docs-reapproved.md") -eq 2 ]] \
   && grep -q '^- Budget: elapsedLimit=3h attemptLimit=5 reservedJobMinutesLimit=300 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/fix-docs-reapproved.md" \
   || { echo "approved goal budget did not re-approve" >&2; cat "$tmp/fix-docs-reapproved.md" >&2; exit 1; }
 
-"$ms" goal budget --root "$clone" --id perf-pass 2h/4/240m/1/2 --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id perf-pass 2h/4/240m/1/2 --by Wido --fixture-human-authority >/dev/null
 read_forgiving_goal perf-pass "$tmp/perf-pass-parked.md"
 grep -q '^- State: parked$' "$tmp/perf-pass-parked.md" \
   && grep -q '^- Parked: ' "$tmp/perf-pass-parked.md" \
@@ -1617,7 +1617,7 @@ grep -q '^- State: parked$' "$tmp/perf-pass-parked.md" \
 # A claimed goal routes through set-budget and advances the claim binding.
 read_forgiving_goal ship-widget "$tmp/ship-widget-before-budget.md"
 claim_revision_before=$(sed -n 's/^- Claimed: .* revision=\([0-9][0-9]*\).*/\1/p' "$tmp/ship-widget-before-budget.md")
-"$ms" goal budget --root "$clone" --id ship-widget 4h/6/600m/1/2 --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id ship-widget 4h/6/600m/1/2 --by Wido --fixture-human-authority >/dev/null
 read_forgiving_goal ship-widget "$tmp/ship-widget-after-budget.md"
 claim_revision_after=$(sed -n 's/^- Claimed: .* revision=\([0-9][0-9]*\).*/\1/p' "$tmp/ship-widget-after-budget.md")
 [[ "$claim_revision_after" -gt "$claim_revision_before" ]] \
@@ -1632,7 +1632,7 @@ breach_stop_id=$(sed -n 's/.*"stopId":"\([^"]*\)".*/\1/p' <<<"$breach_stop")
 [[ -n "$breach_stop_id" ]] || { echo "breach-stop did not print its stop identifier: $breach_stop" >&2; exit 1; }
 "$ms" job stop-batch-reconcile --root "$clone" --stop "$breach_stop_id" >/dev/null
 set +e
-"$ms" goal budget --root "$clone" --id ship-widget keep --approved-ref rejected-on-resume --by Wido --fixture-human-authority \
+"$ms" internal goal budget --root "$clone" --id ship-widget keep --approved-ref rejected-on-resume --by Wido --fixture-human-authority \
 	>"$tmp/stopped-approved-ref.out" 2>"$tmp/stopped-approved-ref.err"
 stopped_approved_ref_rc=$?
 set -e
@@ -1647,7 +1647,7 @@ grep -q ' resume actor=human:Wido ' "$tmp/ship-widget-resumed.md" \
 
 for refused_id in port-engine absent-goal; do
   set +e
-  "$ms" goal budget --root "$clone" --id "$refused_id" norm --by Wido --fixture-human-authority \
+  "$ms" internal goal budget --root "$clone" --id "$refused_id" norm --by Wido --fixture-human-authority \
     >"$tmp/$refused_id.out" 2>"$tmp/$refused_id.err"
   refused_rc=$?
   set -e
@@ -1662,32 +1662,32 @@ if [[ "$fixture_scenario" == forgiving-budget-members ]]; then
 write_forgiving_fixture_enrollment Wido
 
 open_forgiving_fixture_goal norm-preset
-"$ms" goal budget --root "$clone" --id norm-preset norm --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id norm-preset norm --fixture-human-authority >/dev/null
 read_forgiving_goal norm-preset "$tmp/norm-preset.md"
 grep -q '^- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3$' "$tmp/norm-preset.md" \
   || { echo "norm did not resolve to the tier-three fixture box" >&2; cat "$tmp/norm-preset.md" >&2; exit 1; }
 
 open_forgiving_fixture_goal keep-preset \
   --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
-"$ms" goal budget --root "$clone" --id keep-preset keep --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id keep-preset keep --fixture-human-authority >/dev/null
 read_forgiving_goal keep-preset "$tmp/keep-preset.md"
 grep -q '^- Budget: elapsedLimit=3h attemptLimit=5 reservedJobMinutesLimit=300 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/keep-preset.md" \
   || { echo "keep did not preserve the opened box" >&2; cat "$tmp/keep-preset.md" >&2; exit 1; }
 
 open_forgiving_fixture_goal empty-member \
   --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
-"$ms" goal budget --root "$clone" --id empty-member 4h//// --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id empty-member 4h//// --fixture-human-authority >/dev/null
 read_forgiving_goal empty-member "$tmp/empty-member.md"
 grep -q '^- Budget: elapsedLimit=4h attemptLimit=5 reservedJobMinutesLimit=300 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/empty-member.md" \
   || { echo "empty compact members did not inherit the standing limits" >&2; cat "$tmp/empty-member.md" >&2; exit 1; }
 
 open_forgiving_fixture_goal keep-without-standing-twin
-"$ms" goal budget --root "$clone" --id keep-without-standing-twin norm --by Wido --fixture-human-authority >/dev/null
-"$ms" goal unapprove --root "$clone" --id keep-without-standing-twin --because "prepare a fieldless budget twin" --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id keep-without-standing-twin norm --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal unapprove --root "$clone" --id keep-without-standing-twin --because "prepare a fieldless budget twin" --by Wido --fixture-human-authority >/dev/null
 run_forgiving_refusal_remedy "keep without a standing box" fix-docs keep-without-standing-twin \
-	"$ms" goal budget --root "$clone" --id keep-without-standing-twin --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id keep-without-standing-twin --fixture-human-authority \
 		--elapsed-limit 1d --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
-	--refusal "$ms" goal budget --root "$clone" --id fix-docs keep --fixture-human-authority
+	--refusal "$ms" internal goal budget --root "$clone" --id fix-docs keep --fixture-human-authority
 read_forgiving_goal fix-docs "$tmp/keep-without-standing.md"
 grep -q '^- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3$' "$tmp/keep-without-standing.md" \
   || { echo "the printed norm remedy did not approve the goal" >&2; cat "$tmp/keep-without-standing.md" >&2; exit 1; }
@@ -1697,37 +1697,37 @@ open_forgiving_fixture_goal four-members \
 open_forgiving_fixture_goal four-members-twin \
 	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
 run_forgiving_refusal_remedy "four-member compact box" four-members four-members-twin \
-	"$ms" goal budget --root "$clone" --id four-members-twin --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id four-members-twin --fixture-human-authority \
 		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
-	--refusal "$ms" goal budget --root "$clone" --id four-members 4h/6/360m/1 --fixture-human-authority
+	--refusal "$ms" internal goal budget --root "$clone" --id four-members 4h/6/360m/1 --fixture-human-authority
 open_forgiving_fixture_goal invalid-member \
 	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
 open_forgiving_fixture_goal invalid-member-twin \
 	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
 run_forgiving_refusal_remedy "invalid compact member" invalid-member invalid-member-twin \
-	"$ms" goal budget --root "$clone" --id invalid-member-twin --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id invalid-member-twin --fixture-human-authority \
 		--elapsed-limit 4h --attempt-limit 5 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
-	--refusal "$ms" goal budget --root "$clone" --id invalid-member 4h/many/360m/1/2 --fixture-human-authority
+	--refusal "$ms" internal goal budget --root "$clone" --id invalid-member 4h/many/360m/1/2 --fixture-human-authority
 open_forgiving_fixture_goal mixed-box \
 	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
 open_forgiving_fixture_goal mixed-box-twin \
 	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
 run_forgiving_refusal_remedy "compact and long form together" mixed-box mixed-box-twin \
-	"$ms" goal budget --root "$clone" --id mixed-box-twin --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id mixed-box-twin --fixture-human-authority \
 		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
-	--refusal "$ms" goal budget --root "$clone" --id mixed-box 4h/6/360m/1/2 --fixture-human-authority \
+	--refusal "$ms" internal goal budget --root "$clone" --id mixed-box 4h/6/360m/1/2 --fixture-human-authority \
 		--elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3
 
 open_forgiving_fixture_goal extra-member
 open_forgiving_fixture_goal extra-member-twin
 run_forgiving_refusal_remedy "extra compact member" extra-member extra-member-twin \
-	"$ms" goal budget --root "$clone" --id extra-member-twin --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id extra-member-twin --fixture-human-authority \
 		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
-	--refusal "$ms" goal budget --root "$clone" --id extra-member 4h/6/360m/1/2/ignored --fixture-human-authority
+	--refusal "$ms" internal goal budget --root "$clone" --id extra-member 4h/6/360m/1/2/ignored --fixture-human-authority
 
 open_forgiving_fixture_goal over-round-limit
 set +e
-"$ms" goal budget --root "$clone" --id over-round-limit 4h/6/360m/1/4 --fixture-human-authority \
+"$ms" internal goal budget --root "$clone" --id over-round-limit 4h/6/360m/1/4 --fixture-human-authority \
 	>"$tmp/over-round-limit.out" 2>"$tmp/over-round-limit.err"
 over_round_limit_rc=$?
 set -e
@@ -1738,9 +1738,9 @@ set -e
 
 open_forgiving_fixture_goal approved-completion \
 	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
-"$ms" goal budget --root "$clone" --id approved-completion keep --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id approved-completion keep --fixture-human-authority >/dev/null
 set +e
-"$ms" goal budget --root "$clone" --id approved-completion 3h/5/300m/1 --fixture-human-authority \
+"$ms" internal goal budget --root "$clone" --id approved-completion 3h/5/300m/1 --fixture-human-authority \
 	>"$tmp/approved-completion.out" 2>"$tmp/approved-completion.err"
 approved_completion_rc=$?
 set -e
@@ -1751,7 +1751,7 @@ set -e
 
 open_forgiving_fixture_goal rejected-reference
 set +e
-"$ms" goal budget --root "$clone" --id rejected-reference norm --approved-ref missing-reference --fixture-human-authority \
+"$ms" internal goal budget --root "$clone" --id rejected-reference norm --approved-ref missing-reference --fixture-human-authority \
 	>"$tmp/rejected-reference.out" 2>"$tmp/rejected-reference.err"
 rejected_reference_rc=$?
 set -e
@@ -1762,7 +1762,7 @@ set -e
 
 open_forgiving_fixture_goal fixture-over-norm
 set +e
-"$ms" goal budget --root "$clone" --id fixture-over-norm 8h/10/1201m/1/3 --fixture-human-authority \
+"$ms" internal goal budget --root "$clone" --id fixture-over-norm 8h/10/1201m/1/3 --fixture-human-authority \
   >"$tmp/fixture-over-norm.out" 2>"$tmp/fixture-over-norm.err"
 fixture_over_norm_rc=$?
 set -e
@@ -1773,15 +1773,15 @@ fi
 
 if [[ "$fixture_scenario" == forgiving-budget-identity-aliases ]]; then
 write_forgiving_fixture_enrollment Wido
-"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+"$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
 open_forgiving_fixture_goal default-human
-"$ms" goal budget --root "$clone" --id default-human 2h/4/240m/1/2 --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id default-human 2h/4/240m/1/2 --fixture-human-authority >/dev/null
 read_forgiving_goal default-human "$tmp/default-human.md"
 grep -q ' approve actor=human:Wido ' "$tmp/default-human.md" \
   || { echo "the enrollment name did not default --by" >&2; cat "$tmp/default-human.md" >&2; exit 1; }
 
 open_forgiving_fixture_goal explicit-human
-"$ms" goal budget --root "$clone" --id explicit-human 2h/4/240m/1/2 --by Alice --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id explicit-human 2h/4/240m/1/2 --by Alice --fixture-human-authority >/dev/null
 read_forgiving_goal explicit-human "$tmp/explicit-human.md"
 grep -q ' approve actor=human:Alice ' "$tmp/explicit-human.md" \
   || { echo "an explicit --by did not win over the enrollment name" >&2; cat "$tmp/explicit-human.md" >&2; exit 1; }
@@ -1789,7 +1789,7 @@ grep -q ' approve actor=human:Alice ' "$tmp/explicit-human.md" \
 write_forgiving_fixture_enrollment
 open_forgiving_fixture_goal nameless-enrollment
 set +e
-"$ms" goal budget --root "$clone" --id nameless-enrollment norm --fixture-human-authority \
+"$ms" internal goal budget --root "$clone" --id nameless-enrollment norm --fixture-human-authority \
   >"$tmp/nameless-enrollment.out" 2>"$tmp/nameless-enrollment.err"
 nameless_rc=$?
 set -e
@@ -1803,30 +1803,30 @@ write_forgiving_fixture_enrollment Wido
 for alias_goal in alias-approve-box direct-approve-box alias-approve-long direct-approve-long alias-set-budget direct-set-budget; do
   open_forgiving_fixture_goal "$alias_goal"
 done
-"$ms" goal approve --root "$clone" --id alias-approve-box --budget box --by Wido --fixture-human-authority \
+"$ms" internal goal approve --root "$clone" --id alias-approve-box --budget box --by Wido --fixture-human-authority \
   >"$tmp/alias-approve-box.out" 2>"$tmp/alias-approve-box.err"
 grep -q '^hint: metasystem goal budget .*--id alias-approve-box .*norm$' "$tmp/alias-approve-box.err" \
   || { echo "approve --budget box did not print its goal budget norm hint" >&2; cat "$tmp/alias-approve-box.err" >&2; exit 1; }
-"$ms" goal budget --root "$clone" --id direct-approve-box norm --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id direct-approve-box norm --by Wido --fixture-human-authority >/dev/null
 
-"$ms" goal approve --root "$clone" --id alias-approve-long --by Wido --fixture-human-authority \
+"$ms" internal goal approve --root "$clone" --id alias-approve-long --by Wido --fixture-human-authority \
   --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2 \
   >"$tmp/alias-approve-long.out" 2>"$tmp/alias-approve-long.err"
 grep -q '^hint: metasystem goal budget .*--id alias-approve-long .*3h/5/300m/1/2$' "$tmp/alias-approve-long.err" \
   || { echo "approve long form did not print its compact goal budget hint" >&2; cat "$tmp/alias-approve-long.err" >&2; exit 1; }
-"$ms" goal budget --root "$clone" --id direct-approve-long 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal budget --root "$clone" --id direct-approve-long 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
 
-"$ms" goal budget --root "$clone" --id alias-set-budget norm --by Wido --fixture-human-authority >/dev/null
-"$ms" goal claim --root "$clone" --id alias-set-budget >/dev/null
+"$ms" internal goal budget --root "$clone" --id alias-set-budget norm --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal claim --root "$clone" --id alias-set-budget >/dev/null
 "$ms" goal set-budget --root "$clone" --id alias-set-budget --by Wido --fixture-human-authority \
   --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2 \
   >"$tmp/alias-set-budget.out" 2>"$tmp/alias-set-budget.err"
 grep -q '^hint: metasystem goal budget .*--id alias-set-budget .*3h/5/300m/1/2$' "$tmp/alias-set-budget.err" \
   || { echo "set-budget did not print its compact goal budget hint" >&2; cat "$tmp/alias-set-budget.err" >&2; exit 1; }
-"$ms" goal release --root "$clone" --id alias-set-budget >/dev/null
-"$ms" goal budget --root "$clone" --id direct-set-budget norm --by Wido --fixture-human-authority >/dev/null
-"$ms" goal claim --root "$clone" --id direct-set-budget >/dev/null
-"$ms" goal budget --root "$clone" --id direct-set-budget 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal release --root "$clone" --id alias-set-budget >/dev/null
+"$ms" internal goal budget --root "$clone" --id direct-set-budget norm --by Wido --fixture-human-authority >/dev/null
+"$ms" internal goal claim --root "$clone" --id direct-set-budget >/dev/null
+"$ms" internal goal budget --root "$clone" --id direct-set-budget 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
 
 for pair in 'alias-approve-box direct-approve-box approve' 'alias-approve-long direct-approve-long approve' 'alias-set-budget direct-set-budget set-budget'; do
   read -r alias_id direct_id history_verb <<<"$pair"
@@ -1847,20 +1847,20 @@ write_forgiving_fixture_enrollment Wido
 open_forgiving_fixture_goal dropped-shape
 open_forgiving_fixture_goal dropped-shape-twin
 run_forgiving_refusal_remedy "shared flag-shape refusal" dropped-shape dropped-shape-twin \
-	"$ms" goal budget --root "$clone" --id dropped-shape-twin --by Wido --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id dropped-shape-twin --by Wido --fixture-human-authority \
 		--elapsed-limit 1d --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
-	--refusal "$ms" goal budget --root "$clone" --id dropped-shape norm --by Wido --fixture-human-authority --label stray
+	--refusal "$ms" internal goal budget --root "$clone" --id dropped-shape norm --by Wido --fixture-human-authority --label stray
 
 open_forgiving_fixture_goal fixture-pair
 open_forgiving_fixture_goal fixture-pair-twin
 run_forgiving_refusal_remedy "fixture and temporary authority refusal" fixture-pair fixture-pair-twin \
-	"$ms" goal budget --root "$clone" --id fixture-pair-twin --by Wido --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id fixture-pair-twin --by Wido --fixture-human-authority \
 		--elapsed-limit 1d --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
-	--refusal "$ms" goal budget --root "$clone" --id fixture-pair norm --by Wido --fixture-human-authority \
+	--refusal "$ms" internal goal budget --root "$clone" --id fixture-pair norm --by Wido --fixture-human-authority \
 		--temporary-human-word "Wido authorizes this relay" --review-by 2026-09-06
 
 set +e
-"$ms" goal approve --root "$clone" --sweep --budget box --by Wido --fixture-human-authority \
+"$ms" internal goal approve --root "$clone" --sweep --budget box --by Wido --fixture-human-authority \
 	>"$tmp/approval-sweep-extras.out" 2>"$tmp/approval-sweep-extras.err"
 approval_sweep_extras_rc=$?
 set -e
@@ -1874,24 +1874,24 @@ grep -q '^listing-sha256=' <<<"$approval_sweep_preview" \
 open_forgiving_fixture_goal sweep-with-id
 open_forgiving_fixture_goal sweep-with-id-twin
 run_forgiving_refusal_remedy "approval sweep with a named goal" sweep-with-id sweep-with-id-twin \
-	"$ms" goal budget --root "$clone" --id sweep-with-id-twin --by Wido --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id sweep-with-id-twin --by Wido --fixture-human-authority \
 		--elapsed-limit 1d --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
-	--refusal "$ms" goal approve --root "$clone" --sweep --id sweep-with-id --confirm stale \
+	--refusal "$ms" internal goal approve --root "$clone" --sweep --id sweep-with-id --confirm stale \
 		--by Wido --fixture-human-authority
 
 for parked_id in parked-completion parked-completion-twin; do
 	open_forgiving_fixture_goal "$parked_id"
-	"$ms" goal budget --root "$clone" --id "$parked_id" 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
+	"$ms" internal goal budget --root "$clone" --id "$parked_id" 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
 	"$ms" goal park --root "$clone" --id "$parked_id" --because "hold the completed-box fixture" \
 		--by Wido --fixture-human-authority >/dev/null
 done
 run_forgiving_refusal_remedy "parked compact completion" parked-completion parked-completion-twin \
-	"$ms" goal budget --root "$clone" --id parked-completion-twin --by Wido --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id parked-completion-twin --by Wido --fixture-human-authority \
 		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
-	--refusal "$ms" goal budget --root "$clone" --id parked-completion 4h/6/360m/1 --by Wido --fixture-human-authority
+	--refusal "$ms" internal goal budget --root "$clone" --id parked-completion 4h/6/360m/1 --by Wido --fixture-human-authority
 
 set +e
-"$ms" goal resume --root "$clone" --id ship-widget --by Wido --fixture-human-authority \
+"$ms" internal goal resume --root "$clone" --id ship-widget --by Wido --fixture-human-authority \
 	--elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
 	>"$tmp/resume-without-fence.out" 2>"$tmp/resume-without-fence.err"
 resume_without_fence_rc=$?
@@ -1912,22 +1912,22 @@ release_forgiving_claim_if_present direct-set-budget
 release_forgiving_claim_if_present ship-widget
 for claimed_id in claimed-completion claimed-completion-twin; do
 	open_forgiving_fixture_goal "$claimed_id"
-	"$ms" goal budget --root "$clone" --id "$claimed_id" 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
+	"$ms" internal goal budget --root "$clone" --id "$claimed_id" 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
 done
 claim_forgiving_goal claimed-completion
 run_claimed_completion_twin() {
 	release_forgiving_claim_if_present claimed-completion
 	claim_forgiving_goal claimed-completion-twin
-	"$ms" goal budget --root "$clone" --id claimed-completion-twin --by Wido --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id claimed-completion-twin --by Wido --fixture-human-authority \
 		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2
 }
 run_forgiving_refusal_remedy "claimed compact completion" claimed-completion claimed-completion-twin \
 	run_claimed_completion_twin \
-	--refusal "$ms" goal budget --root "$clone" --id claimed-completion 4h/6/360m/1 --by Wido --fixture-human-authority
+	--refusal "$ms" internal goal budget --root "$clone" --id claimed-completion 4h/6/360m/1 --by Wido --fixture-human-authority
 
 for completed_id in parked-completion claimed-completion-twin; do
 	set +e
-	"$ms" goal budget --root "$clone" --id "$completed_id" 4h/6/360m/1 --by Wido --fixture-human-authority \
+	"$ms" internal goal budget --root "$clone" --id "$completed_id" 4h/6/360m/1 --by Wido --fixture-human-authority \
 		>"$tmp/$completed_id-same.out" 2>"$tmp/$completed_id-same.err"
 	completed_rc=$?
 	set -e
@@ -1946,18 +1946,18 @@ run_stopped_completion_twin() {
 	claim_forgiving_goal claimed-completion
 	export METASYSTEM_GOAL_NOW=$forgiving_second_breach_at
 	breach_stop_forgiving_goal claimed-completion
-	"$ms" goal resume --root "$clone" --id claimed-completion --by Wido --fixture-human-authority \
+	"$ms" internal goal resume --root "$clone" --id claimed-completion --by Wido --fixture-human-authority \
 		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2
 }
 run_forgiving_refusal_remedy "breach-stopped claimed compact completion" claimed-completion-twin claimed-completion \
 	run_stopped_completion_twin \
-	--refusal "$ms" goal budget --root "$clone" --id claimed-completion-twin 4h/6/360m/1 --by Wido --fixture-human-authority
+	--refusal "$ms" internal goal budget --root "$clone" --id claimed-completion-twin 4h/6/360m/1 --by Wido --fixture-human-authority
 release_forgiving_claim_if_present claimed-completion
 release_forgiving_claim_if_present claimed-completion-twin
 claim_forgiving_goal ship-widget
 
 set +e
-"$ms" goal unapprove --root "$clone" --id fix-docs --by Wido --fixture-human-authority \
+"$ms" internal goal unapprove --root "$clone" --id fix-docs --by Wido --fixture-human-authority \
   >"$tmp/unapprove-missing.out" 2>"$tmp/unapprove-missing.err"
 unapprove_missing_rc=$?
 set -e
@@ -1970,7 +1970,7 @@ cat >"$clone/artifacts/agents/jobs/fixture-risk.json" <<'JSON'
 {"jobId":"fixture-risk","role":"code-critic","round":1,"parentJob":null,"status":"completed","goalId":"ship-widget","findingRegisterRound":1,"reviewRoundLimit":3,"criticRoundsConsumed":3,"demotions":[],"findingRegister":[{"findingId":"RISK-1","critic":"fixture-critic","rigorClass":"severe","factsDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","facts":{"local":true},"artifact":"metasystem/fixture.go","title":"fixture severe finding","status":"open","resolution":"","decisionOpid":"","evidence":"direct fixture evidence","evidenceDigest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","multiplicity":1}]}
 JSON
 set +e
-"$ms" goal accept-risk --root "$clone" --id ship-widget --finding RISK-1 --chain fixture-risk --why "fixture pair" --by Wido \
+"$ms" internal goal accept-risk --root "$clone" --id ship-widget --finding RISK-1 --chain fixture-risk --why "fixture pair" --by Wido \
 	--fixture-human-authority --temporary-human-word "Wido authorizes this relay" \
 	>"$tmp/accept-risk-pair.out" 2>"$tmp/accept-risk-pair.err"
 accept_risk_pair_rc=$?
@@ -2048,13 +2048,13 @@ fi
 
 if [[ "$fixture_scenario" == risk-basis ]]; then
 set +e
-tier_alone=$("$ms" goal open --root "$clone" --id unanswered-risk \
+tier_alone=$("$ms" internal goal open --root "$clone" --id unanswered-risk \
   --intent "Refuse a tier without the four answers." --next "Answer the risk questions." --tier 2 2>&1)
 tier_alone_rc=$?
 set -e
 [[ $tier_alone_rc -ne 0 && "$tier_alone" == *"answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis"* ]] \
   || { echo "goal open --tier alone did not name the four unanswered questions: rc=$tier_alone_rc output=$tier_alone" >&2; exit 1; }
-"$ms" goal open --root "$clone" --id risk-basis --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id risk-basis --origin human --by Wido --fixture-human-authority \
   --intent "Exercise risk-derived intake." --next "Keep the risk basis visible." \
   --risk severity=2,novelty=1,exposure=1,accumulation=1 \
   --basis "moderate consequence with landed precedent" >/dev/null
@@ -2068,26 +2068,26 @@ tier_line=$(grep -n '^- Tier: 2$' "$tmp/risk-basis.md" | cut -d: -f1)
 # weight the proof (goal tier-from-severity-and-novelty). A recorded tier
 # above the derivation stands when a seat re-states the answers, the probe
 # lists it, and only a person lowers it with --tier and the same answers.
-"$ms" goal open --root "$clone" --id exposed-legacy --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id exposed-legacy --origin human --by Wido --fixture-human-authority \
   --intent "Wide but routine, tiered by the earlier formula." --next "Lower it." \
   --tier 3 --why "the earlier formula" --risk severity=1,novelty=1,exposure=3,accumulation=1 \
   --basis "wide but routine" >/dev/null
 probe_out=$("$ms" goal tier-probe --root "$clone" --pretty)
 grep -q '^lowerable: exposed-legacy queued recorded=3 derived=1' <<<"$probe_out" \
   || { echo "the tier probe does not list the exposure-lifted goal: $probe_out" >&2; exit 1; }
-"$ms" goal edit --root "$clone" --id exposed-legacy \
+"$ms" internal goal edit --root "$clone" --id exposed-legacy \
   --risk severity=1,novelty=1,exposure=3,accumulation=1 --basis "wide but routine, reworded" >/dev/null
 restate_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$restate_tip:plans/goals/exposed-legacy.md" >"$tmp/exposed-legacy.md"
 grep -q '^- Tier: 3$' "$tmp/exposed-legacy.md" \
   || { echo "a re-stated basis lowered the recorded tier" >&2; cat "$tmp/exposed-legacy.md" >&2; exit 1; }
-if seat_lower=$("$ms" goal edit --root "$clone" --id exposed-legacy --tier 1 \
+if seat_lower=$("$ms" internal goal edit --root "$clone" --id exposed-legacy --tier 1 \
   --risk severity=1,novelty=1,exposure=3,accumulation=1 --basis "wide but routine, reworded" --why "the formula changed" 2>&1); then
   echo "a seat lowered a recorded tier: $seat_lower" >&2; exit 1
 fi
 grep -q 'human act' <<<"$seat_lower" \
   || { echo "the seat's lowering refusal does not name the human act: $seat_lower" >&2; exit 1; }
-"$ms" goal edit --root "$clone" --id exposed-legacy --tier 1 \
+"$ms" internal goal edit --root "$clone" --id exposed-legacy --tier 1 \
   --risk severity=1,novelty=1,exposure=3,accumulation=1 --basis "wide but routine, reworded" --why "the formula changed" \
   --by Wido --fixture-human-authority >/dev/null
 lower_tip=$(git -C "$origin" rev-parse main)
@@ -2101,12 +2101,12 @@ if [[ "$fixture_scenario" == labels-and-filtering ]]; then
 # labels, sorts and deduplicates them, while an unlabeled open keeps
 # the field absent.
 export METASYSTEM_OWNER_LINEAGE=fixture-lineage
-open_labels=$("$ms" goal open --root "$clone" --id labeled-one --origin human --by Wido --fixture-human-authority \
+open_labels=$("$ms" internal goal open --root "$clone" --id labeled-one --origin human --by Wido --fixture-human-authority \
 	--intent "First labeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
   --label beta --label alpha --label beta)
 grep -q '"outcome":"confirmed"' <<<"$open_labels" \
   || { echo "goal open with labels did not confirm: $open_labels" >&2; exit 1; }
-"$ms" goal open --root "$clone" --id plain-goal --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id plain-goal --origin human --by Wido --fixture-human-authority \
 	--intent "An unlabeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
 labels_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$labels_tip:plans/goals/labeled-one.md" >"$tmp/labeled-one.md"
@@ -2120,32 +2120,32 @@ fi
 # 7. Edit computes one replacement field from adds and removes. An
 # equal final set follows the shipped edit behavior and still records
 # an edit; contradictory and malformed tokens refuse with the grammar.
-"$ms" goal edit --root "$clone" --id labeled-one \
+"$ms" internal goal edit --root "$clone" --id labeled-one \
   --label shared --unlabel beta >/dev/null
 edit_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$edit_tip:plans/goals/labeled-one.md" >"$tmp/labeled-one-edited.md"
 grep -q '^- Labels: alpha, shared$' "$tmp/labeled-one-edited.md" \
   || { echo "label add/remove produced the wrong whole field" >&2; cat "$tmp/labeled-one-edited.md" >&2; exit 1; }
 revision_before=$(sed -n 's/^- Revision: //p' "$tmp/labeled-one-edited.md")
-"$ms" goal edit --root "$clone" --id labeled-one --label alpha >/dev/null
+"$ms" internal goal edit --root "$clone" --id labeled-one --label alpha >/dev/null
 noop_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$noop_tip:plans/goals/labeled-one.md" >"$tmp/labeled-one-noop.md"
 revision_after=$(sed -n 's/^- Revision: //p' "$tmp/labeled-one-noop.md")
 [[ "$revision_after" -eq $((revision_before + 1)) ]] \
   || { echo "an equal final label set did not follow existing edit behavior" >&2; exit 1; }
-if contradiction=$("$ms" goal edit --root "$clone" --id labeled-one \
+if contradiction=$("$ms" internal goal edit --root "$clone" --id labeled-one \
   --label alpha --unlabel alpha 2>&1); then
   echo "a contradictory label edit succeeded" >&2; exit 1
 fi
 grep -q 'both --label and --unlabel' <<<"$contradiction" \
   || { echo "the contradictory edit did not name its refusal: $contradiction" >&2; exit 1; }
-if bad_label=$("$ms" goal open --root "$clone" --id bad-label --origin human --by Wido --fixture-human-authority \
+if bad_label=$("$ms" internal goal open --root "$clone" --id bad-label --origin human --by Wido --fixture-human-authority \
 	--intent "Must refuse." --next "Stop." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label Bad_Label 2>&1); then
   echo "a malformed label succeeded" >&2; exit 1
 fi
 grep -Fq 'must match ^[a-z][a-z0-9-]{0,31}$' <<<"$bad_label" \
   || { echo "the malformed label refusal did not name the grammar: $bad_label" >&2; exit 1; }
-if orphan_label=$("$ms" goal claim --root "$clone" --id plain-goal --label x 2>&1); then
+if orphan_label=$("$ms" internal goal claim --root "$clone" --id plain-goal --label x 2>&1); then
   echo "goal claim silently accepted an orphan --label flag" >&2; exit 1
 fi
 [[ "$orphan_label" == "goal claim does not take --label" ]] \
@@ -2156,25 +2156,25 @@ fi
 summary_goal_ids() {
   awk '$1 ~ /^[0-3]:[0-9]+$/ && $2 ~ /^(queued|approved|claimed|parked)$/ && $3 == "tier" && $5 ~ /^[a-z][a-z0-9-]*$/ { print $5 }'
 }
-"$ms" goal open --root "$clone" --id labeled-two --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id labeled-two --origin human --by Wido --fixture-human-authority \
 	--intent "Second labeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
   --label shared --label alpha >/dev/null
-one_filter=$("$ms" goal list --root "$clone" --label shared)
+one_filter=$("$ms" internal goal list --root "$clone" --label shared)
 one_ids=$(summary_goal_ids <<<"$one_filter")
 grep -Fxq 'labeled-one' <<<"$one_ids" && grep -Fxq 'labeled-two' <<<"$one_ids" \
   || { echo "one-label list filtering lost a match: $one_filter" >&2; exit 1; }
 if grep -Fxq 'plain-goal' <<<"$one_ids"; then
   echo "a zero-label goal appeared in a filtered list" >&2; exit 1
 fi
-two_filters=$("$ms" goal list --root "$clone" --label alpha --label shared)
+two_filters=$("$ms" internal goal list --root "$clone" --label alpha --label shared)
 two_ids=$(summary_goal_ids <<<"$two_filters")
 grep -Fxq 'labeled-one' <<<"$two_ids" && grep -Fxq 'labeled-two' <<<"$two_ids" \
   || { echo "two-label AND filtering lost a match: $two_filters" >&2; exit 1; }
-"$ms" goal open --root "$clone" --id and-a --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id and-a --origin human --by Wido --fixture-human-authority \
 	--intent "Carries only a." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label a >/dev/null
-"$ms" goal open --root "$clone" --id and-ab --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id and-ab --origin human --by Wido --fixture-human-authority \
 	--intent "Carries a and b." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label a --label b >/dev/null
-and_probe=$("$ms" goal list --root "$clone" --label a --label b)
+and_probe=$("$ms" internal goal list --root "$clone" --label a --label b)
 and_ids=$(summary_goal_ids <<<"$and_probe")
 [[ "$and_ids" == "and-ab" ]] \
   || { echo "the two-label list filter did not return exactly the goal carrying both labels: $and_probe" >&2; exit 1; }
@@ -2206,11 +2206,11 @@ grep -q '^- Labels: alpha, shared$' "$clone/plans/goals/labeled-one.md" \
 held_next=$("$ms" goal next --root "$clone" --label absent)
 grep -q '^continue your claimed goal: ship-widget$' <<<"$held_next" \
   || { echo "a label filter hid the held claim: $held_next" >&2; exit 1; }
-"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+"$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
 empty_next=$("$ms" goal next --root "$clone" --label absent)
 [[ "$empty_next" == "no goal matches --label absent" ]] \
   || { echo "the empty filtered candidate message is not distinct: $empty_next" >&2; exit 1; }
-"$ms" goal open --root "$clone" --id machine-only --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id machine-only --origin human --by Wido --fixture-human-authority \
 	--intent "Parked matching work is not claimable." --next "Wait for it to be unparked." \
 	--risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "machine-scoped empty fixture" --label machine-only >/dev/null
 "$ms" goal park --root "$clone" --id machine-only --by Wido --because "Keep the matching goal unavailable." --fixture-human-authority >/dev/null
@@ -2220,14 +2220,14 @@ machine_empty=$("$ms" goal next --root "$clone" --machine fixture-machine --labe
 fi
 
 if [[ "$fixture_scenario" == structured-budget ]]; then
-"$ms" goal release --root "$clone" --id ship-widget >/dev/null
-"$ms" goal open --root "$clone" --id plain-goal --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
+"$ms" internal goal open --root "$clone" --id plain-goal --origin human --by Wido --fixture-human-authority \
 	--intent "An unlabeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
 # 11. The separated intake, approval, and claim path preserves labels.
-"$ms" goal open --root "$clone" --id claimed-label --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id claimed-label --origin human --by Wido --fixture-human-authority \
 	--intent "Claimed with its group." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label custody >/dev/null
 approve_fixture_goal claimed-label --budget box
-claim_out=$("$ms" goal claim --root "$clone" --id claimed-label)
+claim_out=$("$ms" internal goal claim --root "$clone" --id claimed-label)
 grep -q '"outcome":"confirmed"' <<<"$claim_out" \
 	|| { echo "approved label claim did not confirm: $claim_out" >&2; exit 1; }
 claim_tip=$(git -C "$origin" rev-parse main)
@@ -2237,15 +2237,15 @@ grep -q '^- Labels: custody$' "$tmp/claimed-label.md" \
 
 # 12. A queued goal needs no budget. At claim, the complete tuple becomes its
 # only budget; an Appetite-prefixed sentence remains inert human prose.
-"$ms" goal release --root "$clone" --id claimed-label >/dev/null
+"$ms" internal goal release --root "$clone" --id claimed-label >/dev/null
 export METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z
-"$ms" goal open --root "$clone" --id budget-check --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id budget-check --origin human --by Wido --fixture-human-authority \
 		--intent "Exercise structured budget admission." \
 		--next "Appetite: 4h is inert human prose, not a budget." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
 		--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 >/dev/null
 approve_fixture_goal budget-check \
 	--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
-"$ms" goal claim --root "$clone" --id budget-check >/dev/null
+"$ms" internal goal claim --root "$clone" --id budget-check >/dev/null
 claim_budget_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$claim_budget_tip:plans/goals/budget-check.md" >"$tmp/budget-claim.md"
 grep -q '^- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=120 activeJobLimit=1 reviewRoundLimit=3$' "$tmp/budget-claim.md" \
@@ -2295,22 +2295,22 @@ cp -R "$root/scripts/agents/adapters" "$other/scripts/agents/"
   --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \
   --runtime fake --owner-lineage other-lineage >/dev/null
 other_claim=$(cd "$other" && METASYSTEM_OWNER_LINEAGE=other-lineage \
-	"$ms" goal claim --root "$other" --id plain-goal)
+	"$ms" internal goal claim --root "$other" --id plain-goal)
 grep -q '"outcome":"confirmed"' <<<"$other_claim" \
 	|| { echo "an approved-tuple claim did not confirm: $other_claim" >&2; exit 1; }
 unset METASYSTEM_GOAL_NOW
 fi
 
 if [[ "$fixture_scenario" == scope-bounds ]]; then
-"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+"$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
 
 # An over-norm existing goal and the revisionless open-and-claim shortcut both
 # exercise the typed refusal. The remedy must name split; no refusal fixture
 # infers success from a parser-only unit.
-"$ms" goal open --root "$clone" --id norm-parent --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id norm-parent --origin human --by Wido --fixture-human-authority \
 	--intent "Hold a large intent before decomposition." --next "Split it first." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
 approve_fixture_goal norm-parent --budget box
-"$ms" goal claim --root "$clone" --id norm-parent >/dev/null
+"$ms" internal goal claim --root "$clone" --id norm-parent >/dev/null
 if norm_refusal=$("$ms" goal set-budget --root "$clone" --id norm-parent \
 	--elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
 	--active-job-limit 1 --review-round-limit 3 --by Wido \
@@ -2320,7 +2320,7 @@ fi
 grep -q 'GOAL_NORM_REFUSED: goal norm-parent' <<<"$norm_refusal" \
 	&& grep -q 'split it into an arc of members within the box' <<<"$norm_refusal" \
   || { echo "the norm refusal did not name its type and split remedy: $norm_refusal" >&2; exit 1; }
-if open_claim_refusal=$("$ms" goal open --root "$clone" --id norm-open-claim \
+if open_claim_refusal=$("$ms" internal goal open --root "$clone" --id norm-open-claim \
 	--intent "Must not enter claimed over norm." --next "Stop." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --claim \
 	--elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 1441 \
 	--active-job-limit 1 --review-round-limit 3 2>&1); then
@@ -2333,7 +2333,7 @@ grep -q 'APPROVAL_REQUIRED: open --claim is retired' <<<"$open_claim_refusal" \
 # parent conclusion atomically, and retires the parent identifier permanently.
 # The parent is the seat's own open, so it names the claimed goal it blocks
 # (R-93-m1e); the split then rewrites that goal's edge and park to the members.
-"$ms" goal open --root "$clone" --id split-parent --blocks norm-parent \
+"$ms" internal goal open --root "$clone" --id split-parent --blocks norm-parent \
 	--intent "Deliver the two-part fixture." --next "Atomize it." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label fixture >/dev/null
 draft="$tmp/split-parent.md"
 {
@@ -2343,7 +2343,7 @@ draft="$tmp/split-parent.md"
   printf '%s\n' '' '## member split-parent-two'
   printf '%s\n' '- Intent: Deliver part two.' '- Next step: Build part two.' '- BlockedBy: split-parent-one'
 } >"$draft"
-split_out=$("$ms" goal split --root "$clone" --id split-parent --members "$draft")
+split_out=$("$ms" internal goal split --root "$clone" --id split-parent --members "$draft")
 grep -q '"outcome":"confirmed"' <<<"$split_out" \
   || { echo "goal split did not confirm: $split_out" >&2; exit 1; }
 split_tip=$(git -C "$origin" rev-parse main)
@@ -2359,13 +2359,13 @@ git -C "$clone" cat-file -p "$split_tip:plans/goals/norm-parent.md" >"$tmp/norm-
 grep -q '^- BlockedBy: split-parent-one, split-parent-two$' "$tmp/norm-parent-after-split.md" \
   && grep -q ' blocker=split-parent-one because=' "$tmp/norm-parent-after-split.md" \
   || { echo "the split did not move the blocked goal's edge and park to the members" >&2; cat "$tmp/norm-parent-after-split.md" >&2; exit 1; }
-if reopen_refusal=$("$ms" goal reopen --root "$clone" --id split-parent 2>&1); then
+if reopen_refusal=$("$ms" internal goal reopen --root "$clone" --id split-parent 2>&1); then
   echo "a decomposed parent reopened" >&2; exit 1
 fi
 grep -q 'a decomposed parent never returns' <<<"$reopen_refusal" \
   || { echo "reopen did not name permanent decomposition: $reopen_refusal" >&2; exit 1; }
 "$ms" goal prune --root "$clone" --keep 0 >/dev/null
-if recreate_refusal=$("$ms" goal open --root "$clone" --id split-parent --origin human --by Wido --fixture-human-authority \
+if recreate_refusal=$("$ms" internal goal open --root "$clone" --id split-parent --origin human --by Wido --fixture-human-authority \
 	--intent "Illicit resurrection." --next "Stop." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" 2>&1); then
   echo "a pruned decomposed parent id was recreated" >&2; exit 1
 fi
@@ -2463,21 +2463,21 @@ set -e
 fi
 
 if [[ "$fixture_scenario" == archive-and-prune ]]; then
-"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+"$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
 METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z \
-  "$ms" goal open --root "$clone" --id budget-check --origin human --by Wido --fixture-human-authority \
+  "$ms" internal goal open --root "$clone" --id budget-check --origin human --by Wido --fixture-human-authority \
 		--intent "Exercise structured budget admission." \
 		--next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --elapsed-limit 8h --attempt-limit 2 \
 		--reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 >/dev/null
 approve_fixture_goal budget-check \
 	--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
-METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z "$ms" goal claim --root "$clone" --id budget-check >/dev/null
+METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z "$ms" internal goal claim --root "$clone" --id budget-check >/dev/null
 # 13. Concluding writes the records-owned archive, reopening records a
 # ledger move back to the live set, and concluding again preserves the
 # canonical record bytes including its Integrity line.
-"$ms" goal open --root "$clone" --id archive-roundtrip --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id archive-roundtrip --origin human --by Wido --fixture-human-authority \
 	--intent "Exercise concluded-goal archival." --next "Conclude it." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" >/dev/null
-"$ms" goal done --root "$clone" --id archive-roundtrip --by Wido --fixture-human-authority \
+"$ms" internal goal done --root "$clone" --id archive-roundtrip --by Wido --fixture-human-authority \
   --conclude "Archived in the records-owned location." >/dev/null
 archive_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$archive_tip:records/goals/archive-roundtrip.md" >"$tmp/archive-roundtrip.md"
@@ -2486,7 +2486,7 @@ grep -q '^Integrity: sha256=' "$tmp/archive-roundtrip.md" \
 if git -C "$clone" cat-file -e "$archive_tip:plans/goals/done/archive-roundtrip.md" 2>/dev/null; then
   echo "goal done wrote the legacy archive" >&2; exit 1
 fi
-"$ms" goal reopen --root "$clone" --id archive-roundtrip >/dev/null
+"$ms" internal goal reopen --root "$clone" --id archive-roundtrip >/dev/null
 reopen_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$reopen_tip:plans/goals/archive-roundtrip.md" >"$tmp/archive-reopened.md"
 grep -q ' reopen actor=' "$tmp/archive-reopened.md" \
@@ -2494,22 +2494,22 @@ grep -q ' reopen actor=' "$tmp/archive-reopened.md" \
 if git -C "$clone" cat-file -e "$reopen_tip:records/goals/archive-roundtrip.md" 2>/dev/null; then
   echo "goal reopen left the concluded record behind" >&2; exit 1
 fi
-"$ms" goal done --root "$clone" --id archive-roundtrip --by Wido --fixture-human-authority \
+"$ms" internal goal done --root "$clone" --id archive-roundtrip --by Wido --fixture-human-authority \
   --conclude "Archived again after the recorded reopen." >/dev/null
 
 # Admission must stop charging a concluded goal even when its only conclusion
 # is in records/goals. Prove the causal change by exhausting a claimed goal,
 # observing refusal, concluding it, and observing acceptance at the same clock.
-"$ms" goal release --root "$clone" --id budget-check >/dev/null
+"$ms" internal goal release --root "$clone" --id budget-check >/dev/null
 METASYSTEM_GOAL_NOW=2026-08-20T10:00:00Z \
-	"$ms" goal open --root "$clone" --id admission-concluded --origin human --by Wido --fixture-human-authority \
+	"$ms" internal goal open --root "$clone" --id admission-concluded --origin human --by Wido --fixture-human-authority \
 		--intent "Prove admission consumes records-owned conclusions." \
 		--next "Conclude after its budget is exhausted." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
 		--elapsed-limit 4h --attempt-limit 1 \
 		--reserved-job-minutes-limit 30 --active-job-limit 1 --review-round-limit 3 >/dev/null
 approve_fixture_goal admission-concluded \
 	--elapsed-limit 4h --attempt-limit 1 --reserved-job-minutes-limit 30 --active-job-limit 1 --review-round-limit 3
-METASYSTEM_GOAL_NOW=2026-08-20T10:00:00Z "$ms" goal claim --root "$clone" --id admission-concluded >/dev/null
+METASYSTEM_GOAL_NOW=2026-08-20T10:00:00Z "$ms" internal goal claim --root "$clone" --id admission-concluded >/dev/null
 set +e
 admission_before=$(METASYSTEM_GOAL_NOW=2026-08-20T16:00:00Z \
   "$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
@@ -2520,7 +2520,7 @@ set -e
 grep -q 'BUDGET_REFUSED: goal admission-concluded revision=3 admission closed: elapsedLimit' <<<"$admission_before" \
   || { echo "the pre-conclusion refusal did not charge the exhausted goal: $admission_before" >&2; exit 1; }
 METASYSTEM_GOAL_NOW=2026-08-20T16:00:00Z \
-  "$ms" goal done --root "$clone" --id admission-concluded --by Wido --fixture-human-authority \
+  "$ms" internal goal done --root "$clone" --id admission-concluded --by Wido --fixture-human-authority \
     --conclude "The records-owned conclusion must leave the admission budget." >/dev/null
 admission_record_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -e "$admission_record_tip:records/goals/admission-concluded.md"
@@ -2548,10 +2548,10 @@ git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid \
 git -C "$clone" push -q origin HEAD:main
 legacy_tip=$(git -C "$clone" rev-parse HEAD)
 git -C "$clone" update-ref refs/metasystem/goals/accepted "$legacy_tip"
-dual_list=$("$ms" goal list --root "$clone")
+dual_list=$("$ms" internal goal list --root "$clone")
 grep -q ' done=3 abandoned=0 tip=' <<<"$dual_list" \
   || { echo "the dual-location soak reader did not count both conclusions: $dual_list" >&2; exit 1; }
-dual_show=$("$ms" goal show --root "$clone" --id archive-roundtrip)
+dual_show=$("$ms" internal goal show --root "$clone" --id archive-roundtrip)
 grep -q '"where":"archived"' <<<"$dual_show" \
   || { echo "goal show did not read the legacy conclusion during the soak: $dual_show" >&2; exit 1; }
 
@@ -2576,7 +2576,7 @@ if [[ "$fixture_scenario" == seat-blocker ]]; then
 # concludes the blocker, and the goal is claimable again.
 seat_tip=$(git -C "$origin" rev-parse main)
 set +e
-stray=$("$ms" goal open --root "$clone" --id stray-idea \
+stray=$("$ms" internal goal open --root "$clone" --id stray-idea \
   --intent "An improvement that blocks nothing." --next "Do it." \
   --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "seat blocker fixture" 2>&1)
 stray_rc=$?
@@ -2587,7 +2587,7 @@ set -e
   || { echo "the refused seat open moved the ledger" >&2; exit 1; }
 # ship-widget is this seat's claimed goal and the person opened it: its
 # blocker parks it all the same, with the blocker on record.
-"$ms" goal open --root "$clone" --id widget-defect --blocks ship-widget \
+"$ms" internal goal open --root "$clone" --id widget-defect --blocks ship-widget \
   --intent "The defect that blocks ship-widget." --next "Fix it." \
   --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "seat blocker fixture" >/dev/null
 blocker_tip=$(git -C "$origin" rev-parse main)
@@ -2612,8 +2612,8 @@ set -e
 # The seat's one claim is free for the blocker; concluding the blocker
 # returns the blocked goal in the same publish.
 approve_fixture_goal widget-defect --budget box
-"$ms" goal claim --root "$clone" --id widget-defect >/dev/null
-"$ms" goal done --root "$clone" --id widget-defect --conclude "Fixed; ship-widget continues." >/dev/null
+"$ms" internal goal claim --root "$clone" --id widget-defect >/dev/null
+"$ms" internal goal done --root "$clone" --id widget-defect --conclude "Fixed; ship-widget continues." >/dev/null
 return_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$return_tip:plans/goals/ship-widget.md" >"$tmp/ship-widget-returned.md"
 if grep -q '^- State: parked$' "$tmp/ship-widget-returned.md"; then
@@ -2625,7 +2625,7 @@ if grep -q '^- State: queued$' "$tmp/ship-widget-returned.md"; then
   approve_fixture_goal ship-widget \
     --elapsed-limit 4h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 0
 fi
-claim_back=$("$ms" goal claim --root "$clone" --id ship-widget)
+claim_back=$("$ms" internal goal claim --root "$clone" --id ship-widget)
 grep -q '"outcome":"confirmed"' <<<"$claim_back" \
   || { echo "the returned goal is not claimable again: $claim_back" >&2; exit 1; }
 fi
@@ -2661,11 +2661,11 @@ set -e
   || { echo "a repeated land-ready was not nothing to do: rc=$repeat_rc output=$repeat" >&2; exit 1; }
 # The seat's one claim is free: the next goal claims beside the landing goal.
 export METASYSTEM_GOAL_NOW=$open_at
-"$ms" goal open --root "$clone" --id next-widget --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id next-widget --origin human --by Wido --fixture-human-authority \
   --intent "The next goal the seat takes while ship-widget waits to land." --next "Build it." \
   --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "landing slot fixture" >/dev/null
 approve_fixture_goal next-widget --budget box
-next_claim=$("$ms" goal claim --root "$clone" --id next-widget)
+next_claim=$("$ms" internal goal claim --root "$clone" --id next-widget)
 grep -q '"outcome":"confirmed"' <<<"$next_claim" \
   || { echo "the seat could not claim beside its landing goal: $next_claim" >&2; exit 1; }
 set +e
@@ -2679,12 +2679,12 @@ grep -q "^LANDING ship-widget: land-ready since $land_at; the queue is open\$" <
   || { echo "goal next does not name the landing goal: $next_out" >&2; exit 1; }
 grep -q '^continue your claimed goal: next-widget$' <<<"$next_out" \
   || { echo "goal next does not continue the working claim: $next_out" >&2; exit 1; }
-"$ms" goal list --json --root "$clone" >"$tmp/landing-list.txt"
+"$ms" internal goal list --json --root "$clone" >"$tmp/landing-list.txt"
 grep -q "\"Landing\":{\"At\":\"$land_at\"" "$tmp/landing-list.txt" \
   || { echo "goal list does not show the landing slot" >&2; cat "$tmp/landing-list.txt" >&2; exit 1; }
 # The person concludes the landing goal; the archive keeps the land-ready
 # line and drops the slot with the claim.
-"$ms" goal done --root "$clone" --id ship-widget --by Wido --fixture-human-authority \
+"$ms" internal goal done --root "$clone" --id ship-widget --by Wido --fixture-human-authority \
   --conclude "Landed by the person while next-widget was claimed." >/dev/null
 done_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$done_tip:records/goals/ship-widget.md" >"$tmp/ship-widget-done.md"
@@ -2699,13 +2699,13 @@ git -C "$clone" cat-file -p "$done_tip:plans/goals/next-widget.md" >"$tmp/next-w
 accounting_before=$(sed -n 's/^- Claimed: .* accountingRevision=\([0-9]*\) .*/\1/p' "$tmp/next-widget-claimed.md")
 [[ -n "$accounting_before" ]] || { echo "the claim carries no accounting revision" >&2; cat "$tmp/next-widget-claimed.md" >&2; exit 1; }
 export METASYSTEM_GOAL_NOW=$release_at
-"$ms" goal release --root "$clone" --id next-widget >/dev/null
+"$ms" internal goal release --root "$clone" --id next-widget >/dev/null
 release_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$release_tip:plans/goals/next-widget.md" >"$tmp/next-widget-released.md"
 grep -q "^- Episode: machine=fixture-machine lineage=fixture-lineage accountingRevision=$accounting_before .* idleSeconds=0 released=$release_at\$" "$tmp/next-widget-released.md" \
   || { echo "the own pair's release did not keep the episode" >&2; cat "$tmp/next-widget-released.md" >&2; exit 1; }
 export METASYSTEM_GOAL_NOW=$reclaim_at
-reclaim=$("$ms" goal claim --root "$clone" --id next-widget)
+reclaim=$("$ms" internal goal claim --root "$clone" --id next-widget)
 grep -q '"outcome":"confirmed"' <<<"$reclaim" \
   || { echo "the same pair could not re-claim: $reclaim" >&2; exit 1; }
 reclaim_tip=$(git -C "$origin" rev-parse main)
@@ -2722,15 +2722,15 @@ if [[ "$fixture_scenario" == power-of-attorney ]]; then
 # 17. A person records a power of attorney (R-95-m1e); the seat then approves
 # and set-budgets a tier-1 goal with no terminal and no --by, as its own act
 # with the entry on the line; anything outside the entry's scope is refused.
-"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+"$ms" internal goal release --root "$clone" --id ship-widget >/dev/null
 export METASYSTEM_GOAL_NOW=2026-08-20T09:00:00Z
-"$ms" goal open --root "$clone" --id poa-small --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id poa-small --origin human --by Wido --fixture-human-authority \
   --intent "Tier-one work the seat may approve under attorney." --next "Approve it under the entry." \
   --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "power of attorney fixture" >/dev/null
-"$ms" goal open --root "$clone" --id poa-medium --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id poa-medium --origin human --by Wido --fixture-human-authority \
   --intent "Tier-two work outside the entry." --next "Refuse it under the entry." \
   --risk severity=2,novelty=1,exposure=1,accumulation=1 --basis "power of attorney fixture" >/dev/null
-"$ms" goal open --root "$clone" --id poa-late --origin human --by Wido --fixture-human-authority \
+"$ms" internal goal open --root "$clone" --id poa-late --origin human --by Wido --fixture-human-authority \
   --intent "Tier-one work asked for after the entry expires." --next "Refuse it under the entry." \
   --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "power of attorney fixture" >/dev/null
 grant_out=$("$ms" goal grant --root "$clone" --by Wido --fixture-human-authority \
@@ -2743,7 +2743,7 @@ grant_tip=$(git -C "$origin" rev-parse main)
 git -C "$clone" cat-file -p "$grant_tip:plans/goals/backlog.md" >"$tmp/backlog-grant.md"
 grep -q "^- $entry by=human:Wido tiers=1 verbs=approve,set-budget since=2026-08-20T09:00:00Z expires=2026-08-25$" "$tmp/backlog-grant.md" \
   || { echo "the root record does not carry the entry" >&2; cat "$tmp/backlog-grant.md" >&2; exit 1; }
-under_out=$("$ms" goal approve --root "$clone" --id poa-small --under "$entry")
+under_out=$("$ms" internal goal approve --root "$clone" --id poa-small --under "$entry")
 grep -q '"outcome":"confirmed"' <<<"$under_out" \
   || { echo "approve under attorney did not confirm: $under_out" >&2; exit 1; }
 under_tip=$(git -C "$origin" rev-parse main)
@@ -2752,7 +2752,7 @@ grep -q '^- Approved: by=fixture-machine+fixture-lineage .* authority=attorney '
   || { echo "the approval is not the seat's own act under attorney" >&2; cat "$tmp/poa-small.md" >&2; exit 1; }
 grep -q " approve actor=fixture-machine+fixture-lineage targets=poa-small authorityOutcome=POWER_OF_ATTORNEY authorityRuling=$entry" "$tmp/poa-small.md" \
   || { echo "the history line does not name the entry" >&2; cat "$tmp/poa-small.md" >&2; exit 1; }
-"$ms" goal claim --root "$clone" --id poa-small >/dev/null
+"$ms" internal goal claim --root "$clone" --id poa-small >/dev/null
 budget_out=$("$ms" goal set-budget --root "$clone" --id poa-small --under "$entry" \
   --elapsed-limit 1h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 0)
 grep -q '"outcome":"confirmed"' <<<"$budget_out" \
@@ -2763,7 +2763,7 @@ if over_out=$("$ms" goal set-budget --root "$clone" --id poa-small --under "$ent
 fi
 grep -q 'GOAL_NORM_REFUSED' <<<"$over_out" \
   || { echo "the over-box refusal is not the norm refusal: $over_out" >&2; exit 1; }
-if tier_out=$("$ms" goal approve --root "$clone" --id poa-medium --under "$entry" 2>&1); then
+if tier_out=$("$ms" internal goal approve --root "$clone" --id poa-medium --under "$entry" 2>&1); then
   echo "a tier-2 goal was approved under a tier-1 entry: $tier_out" >&2; exit 1
 fi
 grep -q 'covers tier 1 only' <<<"$tier_out" \
@@ -2774,7 +2774,7 @@ wide_out=$("$ms" goal grant --root "$clone" --by Wido --fixture-human-authority 
 grep -q '"outcome":"confirmed"' <<<"$wide_out" \
   || { echo "a tiers 1,2 grant did not confirm: $wide_out" >&2; exit 1; }
 wide=$(sed -n 's/.*"entry":"\([^"]*\)".*/\1/p' <<<"$wide_out")
-wide_approve=$("$ms" goal approve --root "$clone" --id poa-medium --under "$wide")
+wide_approve=$("$ms" internal goal approve --root "$clone" --id poa-medium --under "$wide")
 grep -q '"outcome":"confirmed"' <<<"$wide_approve" \
   || { echo "approve of a tier-2 goal under a tiers 1,2 entry did not confirm: $wide_approve" >&2; exit 1; }
 wide_tip=$(git -C "$origin" rev-parse main)
@@ -2784,7 +2784,7 @@ if ! git -C "$clone" cat-file -p "$wide_tip:plans/goals/backlog.md" >"$tmp/backl
 fi
 grep -q "^- $wide by=human:Wido tiers=1,2 verbs=approve " "$tmp/backlog-wide.md" \
   || { echo "the root record does not carry the tiers 1,2 entry" >&2; cat "$tmp/backlog-wide.md" >&2; exit 1; }
-if by_out=$("$ms" goal approve --root "$clone" --id poa-late --under "$entry" --by Wido 2>&1); then
+if by_out=$("$ms" internal goal approve --root "$clone" --id poa-late --under "$entry" --by Wido 2>&1); then
   echo "--under combined with --by: $by_out" >&2; exit 1
 fi
 grep -q "seat's own act" <<<"$by_out" \
@@ -2842,7 +2842,7 @@ grep -q 'tier-1 goals only' <<<"$tier_lift" \
   || { echo "the tier refusal does not name the ruling's scope: $tier_lift" >&2; exit 1; }
 # poa-small is the seat's claimed tier-1 goal: a defect opened against it
 # parks it behind the blocker, and no entry lifts that park (R-93-m1e).
-"$ms" goal open --root "$clone" --id poa-defect --blocks poa-small \
+"$ms" internal goal open --root "$clone" --id poa-defect --blocks poa-small \
   --intent "The defect that blocks poa-small." --next "Fix it." \
   --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "power of attorney fixture" >/dev/null
 if blocker_lift=$("$ms" goal unpark --root "$clone" --id poa-small --under "$lift" --verified "the defect is fixed" 2>&1); then
@@ -2851,7 +2851,7 @@ fi
 grep -q 'returns by itself' <<<"$blocker_lift" \
   || { echo "the blocker refusal does not say the park returns by itself: $blocker_lift" >&2; exit 1; }
 export METASYSTEM_GOAL_NOW=2026-08-26T09:00:00Z
-if late_out=$("$ms" goal approve --root "$clone" --id poa-late --under "$entry" 2>&1); then
+if late_out=$("$ms" internal goal approve --root "$clone" --id poa-late --under "$entry" 2>&1); then
   echo "an expired entry approved a goal: $late_out" >&2; exit 1
 fi
 grep -q 'expired 2026-08-25' <<<"$late_out" \

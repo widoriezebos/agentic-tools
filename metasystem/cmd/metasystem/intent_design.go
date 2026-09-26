@@ -25,17 +25,17 @@ import (
 
 func designCommand() intentCommand {
 	return intentCommand{
-		name: "design", group: "work", audience: "agent", summary: "have a design author write a goal's design as a draft",
-		usage: []string{"metasystem design G --brief FILE [--out FILE] [--after N]"},
+		object: "design", action: "write", audience: "agent", summary: "have a design author write a goal's design as a draft",
+		usage: []string{"metasystem design write G --brief FILE [--out FILE] [--after N]"},
 		details: []string{
 			"The design author works in this checkout and writes a staged draft; the goal's design document is updated only",
 			"when it still holds the bytes the request was made against. A document someone edited meanwhile is left as it is",
-			"and the proposal is kept: show design --goal G --attempt N shows it.",
+			"and the proposal is kept: design show --goal G --attempt N shows it.",
 			"Without --out: the goal's one draft design, or a new <goal>.md in the project's design home. --out names a file",
 			"inside a design home. An accepted design is never rewritten; ask for a new draft file instead.",
 			"The same request again reports the same attempt; --after N asks for one new attempt after attempt N.",
 			"Needs an approved goal with a review allowance. It does not claim the goal for building and does not touch your checkout's work.",
-			"The finished draft is reviewed with: metasystem review design FILE",
+			"The finished draft is reviewed with: metasystem design review FILE",
 		},
 		flags: []intentFlag{
 			intentBriefFlag,
@@ -43,7 +43,7 @@ func designCommand() intentCommand {
 			{name: "after", value: "N", usage: "ask for one new attempt after attempt N"},
 		},
 		maxArgs:  1,
-		examples: []string{"metasystem design verbs-match-intent --brief design-request.md", "metasystem design verbs-match-intent --brief more.md --after 1"},
+		examples: []string{"metasystem design write verbs-match-intent --brief design-request.md", "metasystem design write verbs-match-intent --brief more.md --after 1"},
 		run:      runIntentDesign,
 	}
 }
@@ -337,7 +337,7 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 	case "conflict", "invalid", "superseded":
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data,
 			Summary:  fmt.Sprintf("design attempt %d was not written to %s (%s): %s; the document is unchanged and the proposal is kept", attempt.Attempt, rel, attempt.Outcome, attempt.Detail),
-			Decision: fmt.Sprintf("merge the proposal (%s) into the document yourself, or ask for a new attempt against the current version: metasystem design %s --brief FILE --after %d", attempt.Draft, id, attempt.Attempt)}
+			Decision: fmt.Sprintf("merge the proposal (%s) into the document yourself, or ask for a new attempt against the current version: metasystem design write %s --brief FILE --after %d", attempt.Draft, id, attempt.Attempt)}
 	}
 	return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: "the attempt has no recorded outcome"}
 }

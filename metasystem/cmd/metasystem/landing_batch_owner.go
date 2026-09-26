@@ -400,10 +400,10 @@ func productionReturnSeams(root string, tree func() string) batch.ReturnSeams {
 				"--batch", record.Batch, "--target-root", loaded.SeatRoot)
 		},
 		Release: func(goalID, next string) error {
-			if err := batchChildRunner(controlRoot, landingOwnerLineage, "goal", "edit", "--root", controlRoot, "--id", goalID, "--next", next, "--lineage", landingOwnerLineage); err != nil {
+			if err := batchChildRunner(controlRoot, landingOwnerLineage, "internal", "goal", "edit", "--root", controlRoot, "--id", goalID, "--next", next, "--lineage", landingOwnerLineage); err != nil {
 				return err
 			}
-			return batchChildRunner(controlRoot, landingOwnerLineage, "goal", "release", "--root", controlRoot, "--id", goalID, "--lineage", landingOwnerLineage)
+			return batchChildRunner(controlRoot, landingOwnerLineage, "internal", "goal", "release", "--root", controlRoot, "--id", goalID, "--lineage", landingOwnerLineage)
 		},
 	}
 }

@@ -570,7 +570,7 @@ func runStewardRevive(args []string) int {
 			if binaryErr != nil {
 				return binaryErr
 			}
-			cmd := exec.Command(binary, "delegate", "--revive", it.Nonce)
+			cmd := exec.Command(binary, "internal", "delegate", "--revive", it.Nonce)
 			cmd.Dir = *repo
 			cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+*repo)
 			// Its own session, no controlling terminal: the chain

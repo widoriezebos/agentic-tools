@@ -91,7 +91,7 @@ MANIFEST
 }
 
 release_current() {
-  "$ms" goal release --root "$bed_clone" --id ship-widget >/dev/null
+  "$ms" internal goal release --root "$bed_clone" --id ship-widget >/dev/null
   git -C "$bed_clone" fetch -q origin
   git -C "$bed_clone" reset -q --hard origin/main
   git -C "$bed_clone" update-ref refs/metasystem/goals/accepted origin/main

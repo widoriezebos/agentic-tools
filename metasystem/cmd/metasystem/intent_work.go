@@ -1317,7 +1317,7 @@ func runIntentTest(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
-	argv := []string{"test", "run", "--json", "--root", inv.layout.InstallationRoot}
+	argv := []string{"internal", "test", "run", "--json", "--root", inv.layout.InstallationRoot}
 	targets := []intentTarget{}
 	for _, name := range []string{"goal", "authority", "mode"} {
 		if inv.input.has(name) {

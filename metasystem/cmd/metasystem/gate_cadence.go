@@ -386,7 +386,7 @@ func executeCadenceRun(root string, held batchOwnerLease, clock func() time.Time
 	if err != nil {
 		return gaterun.CadenceRunResult{}, err
 	}
-	testArgs := []string{"test", "run", "--root", root, "--goal", request.Authority.GoalID, "--tree", request.Trunk.Tree,
+	testArgs := []string{"internal", "test", "run", "--root", root, "--goal", request.Authority.GoalID, "--tree", request.Trunk.Tree,
 		"--mode", "deep", "--purpose", "cadence", "--result", resultPath}
 	if request.ForceGroups {
 		testArgs = append(testArgs, "--force-groups")

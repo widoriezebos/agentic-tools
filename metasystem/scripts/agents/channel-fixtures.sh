@@ -125,7 +125,7 @@ fixture_start=$("$ms" proc started-at --pid "$$")
 grep -q 'status ' "$bed/status.out"
 grep -q '"method":"chat.postMessage"' "$fake_dir/journal.jsonl"
 
-"$ms" goal open --root "$repo" --id channel-fixture --origin human \
+"$ms" internal goal open --root "$repo" --id channel-fixture --origin human \
   --intent 'Prove the fleet channel fixture.' --next 'Ask for authority.' \
   --risk severity=3,novelty=1,exposure=1,accumulation=1 \
   --basis 'This established, isolated fixture has low novelty, exposure, and accumulation, but an incorrect channel answer could authorize a one-hour budget without the human.' >/dev/null
@@ -170,16 +170,16 @@ if ! grep -Fq 'recorded: channel-fixture box raised to 1h, 1 attempts, 60 reserv
 fi
 opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$history")
 [[ -n "$opid" ]]
-"$ms" goal approve --root "$repo" --id channel-fixture --by Wido \
+"$ms" internal goal approve --root "$repo" --id channel-fixture --by Wido \
 	--elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 \
 	--review-round-limit 3 --fixture-human-authority >/dev/null
-"$ms" goal claim --root "$repo" --id channel-fixture >/dev/null
+"$ms" internal goal claim --root "$repo" --id channel-fixture >/dev/null
 if ! assert_wait_answer Slack "$qid" "$answer_token" \
   "$bed/slack-repeat-wait.out" "$bed/slack-repeat-wait.err"; then
 	exit 1
 fi
 
-"$ms" goal done --root "$repo" --id channel-fixture --by Wido --conclude 'Slack fixture passed.' >/dev/null
+"$ms" internal goal done --root "$repo" --id channel-fixture --by Wido --conclude 'Slack fixture passed.' >/dev/null
 rm -f "$repo/artifacts/agents/channel/fleet/cursor.json"
 cat >>"$repo/metasystem.conf.local" <<CONF
 channel.destination.fleet.fake.face=telegram
@@ -192,7 +192,7 @@ export METASYSTEM_GOAL_NOW=2030-01-01T00:01:00Z
 "$ms" channel status --root "$repo" --post >"$bed/telegram-status.out"
 grep -q '"method":"sendMessage"' "$fake_dir/journal.jsonl"
 
-"$ms" goal open --root "$repo" --id channel-telegram-fixture --origin human \
+"$ms" internal goal open --root "$repo" --id channel-telegram-fixture --origin human \
   --intent 'Prove the Telegram fleet channel fixture.' --next 'Ask for authority.' \
   --risk severity=3,novelty=1,exposure=1,accumulation=1 \
   --basis 'This established, isolated fixture has low novelty, exposure, and accumulation, but an incorrect Telegram answer could authorize a one-hour budget without the human.' >/dev/null
@@ -246,10 +246,10 @@ if ! grep -Fq 'recorded: channel-telegram-fixture box raised to 1h, 1 attempts, 
 fi
 telegram_opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$telegram_history")
 [[ -n "$telegram_opid" ]]
-"$ms" goal approve --root "$repo" --id channel-telegram-fixture --by Wido \
+"$ms" internal goal approve --root "$repo" --id channel-telegram-fixture --by Wido \
 	--elapsed-limit 1h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 \
 	--review-round-limit 3 --fixture-human-authority >/dev/null
-"$ms" goal claim --root "$repo" --id channel-telegram-fixture >/dev/null
+"$ms" internal goal claim --root "$repo" --id channel-telegram-fixture >/dev/null
 if ! assert_wait_answer Telegram "$telegram_qid" "$telegram_answer_token" \
   "$bed/telegram-repeat-wait.out" "$bed/telegram-repeat-wait.err"; then
 	exit 1

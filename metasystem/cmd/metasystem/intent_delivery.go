@@ -935,7 +935,7 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 	if err != nil {
 		return delegateOutcome{}, &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error()}
 	}
-	ran := owners.process(intentProcess{argv: append([]string{binary, "delegate"}, args...), dir: inv.layout.InstallationRoot})
+	ran := owners.process(intentProcess{argv: append([]string{binary, "internal", "delegate"}, args...), dir: inv.layout.InstallationRoot})
 	var outcome delegateOutcome
 	if ran.err != nil || json.Unmarshal(bytes.TrimSpace(ran.stdout), &outcome) != nil || outcome.Outcome == "" {
 		detail := "the delegate boundary returned no typed outcome"

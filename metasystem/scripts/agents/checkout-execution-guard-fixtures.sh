@@ -187,7 +187,7 @@ suite_pid=$!; owned_pids+=("$suite_pid")
 wait_for_file "$tmp/suite-first-suite.ready" "suite-first validation" "$suite_pid"
 METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$suite_first_guard_root" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$dispatch_control" \
-  METASYSTEM_DELEGATE_ROOT="$root" "$engine" delegate --role implementer --brief "$brief" \
+  METASYSTEM_DELEGATE_ROOT="$root" "$engine" internal delegate --role implementer --brief "$brief" \
     --goal none-explicit --destructive-reach DESIGN-BEARING \
     --op "checkout-guard-suite-first-$$" \
   >"$tmp/suite-first-dispatch.out" 2>"$tmp/suite-first-dispatch.err" &
@@ -209,7 +209,7 @@ write_control "$dispatch_control" "$tmp/dispatch-first-dispatch.ready" "$tmp/dis
 write_control "$suite_control" "$tmp/dispatch-first-suite.ready" "$tmp/dispatch-first-suite.release"
 METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_first_guard_root" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$dispatch_control" \
-  METASYSTEM_DELEGATE_ROOT="$root" "$engine" delegate --role implementer --brief "$brief" \
+  METASYSTEM_DELEGATE_ROOT="$root" "$engine" internal delegate --role implementer --brief "$brief" \
     --goal none-explicit --destructive-reach DESIGN-BEARING \
     --op "checkout-guard-dispatch-first-$$" \
   >"$tmp/dispatch-first-dispatch.out" 2>"$tmp/dispatch-first-dispatch.err" &

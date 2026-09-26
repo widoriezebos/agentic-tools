@@ -611,7 +611,7 @@ if adopt_leg default; then
   # consistency assertion needs no write authority — and no python
   # (the kill-python doctrine: metasystem-coupled decisions live in
   # the Go engine).
-  "$tgt/bin/metasystem" goal list --json --root "$tgt" | grep -q '"baselineMatches":true' \
+  "$tgt/bin/metasystem" internal goal list --json --root "$tgt" | grep -q '"baselineMatches":true' \
     || { echo "adopt: the seeded goal pair is not reconciled (baseline out of step)" >&2; exit 1; }
   # Genesis authorizes seeding, nothing more: once the pair stands, an
   # intent-bearing write is holder-only against the TARGET. Probe a COPY
@@ -627,7 +627,7 @@ if adopt_leg default; then
   cp -R "$tgt/." "$probe_tgt"
   fixture_view=$("$tgt/bin/metasystem" lease classify --root "$probe_tgt" --caller-pid $$ 2>/dev/null || true)
   fixture_class=$("$tgt/bin/metasystem" json get --value "$fixture_view" --field class 2>/dev/null || true)
-  if open_out=$("$tgt/bin/metasystem" goal open --root "$probe_tgt" --id post-adopt-probe \
+  if open_out=$("$tgt/bin/metasystem" internal goal open --root "$probe_tgt" --id post-adopt-probe \
       --intent "authority probe" --next "none" 2>&1); then
     [[ "$fixture_class" == HUMAN ]] \
       || { echo "adopt: a $fixture_class caller opened a goal in the adopted target; genesis must not confer write authority" >&2; exit 1; }

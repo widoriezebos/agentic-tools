@@ -401,7 +401,7 @@ METASYSTEM_OWNER_LINEAGE=fixture-lineage "$ms" goal migrate --root "$brain_repo"
 git -C "$brain_repo" fetch -q origin
 git -C "$brain_repo" reset -q --hard origin/main
 git -C "$brain_repo" update-ref refs/metasystem/goals/accepted origin/main
-METASYSTEM_OWNER_LINEAGE=fixture-lineage "$ms" goal release --root "$brain_repo" --id brain-hook-goal >/dev/null
+METASYSTEM_OWNER_LINEAGE=fixture-lineage "$ms" internal goal release --root "$brain_repo" --id brain-hook-goal >/dev/null
 git -C "$brain_repo" fetch -q origin
 git -C "$brain_repo" reset -q --hard origin/main
 git -C "$brain_repo" update-ref refs/metasystem/goals/accepted origin/main
@@ -1164,18 +1164,18 @@ $engine goal migrate --root "$installation" --source-digest "$source_digest" \
 git -C "$installation" fetch -q origin
 git -C "$installation" reset -q --hard origin/main
 git -C "$installation" update-ref refs/metasystem/goals/accepted origin/main
-$engine goal release --root "$installation" --id handoff-fixture >/dev/null
+$engine internal goal release --root "$installation" --id handoff-fixture >/dev/null
 printf '%s\n' 'metasystem.runtimes=fake' \
   "role.steward-continuation.runtime=$runtime" \
   "role.steward-continuation.model.$runtime=fixture" >"$installation/metasystem.conf"
-$engine goal approve --root "$installation" --id handoff-fixture --by Wido \
+$engine internal goal approve --root "$installation" --id handoff-fixture --by Wido \
   --elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 \
   --active-job-limit 1 --review-round-limit 3 --fixture-human-authority >/dev/null
 printf '%s\n' "metasystem.runtimes=$runtime" \
   "context.handoff.note-directory.$runtime=$note_directory" \
   "role.steward-continuation.runtime=$runtime" \
   "role.steward-continuation.model.$runtime=fixture" >"$installation/metasystem.conf"
-$engine goal claim --root "$installation" --id handoff-fixture >/dev/null
+$engine internal goal claim --root "$installation" --id handoff-fixture >/dev/null
 mkdir -p "$note_directory"
 printf '%s\n' '# Lessons' '' 'Continue the handoff fixture.' >"$note"
 stage=handoff

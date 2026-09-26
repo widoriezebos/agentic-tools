@@ -82,13 +82,13 @@ func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, looku
 		Ledger:     ledgerOwner,
 		BaseCommit: baseCommit,
 		UpdateNext: func(goalID, status string) error {
-			return batchChildRunner(controlRoot, landingOwnerLineage, "goal", "edit", "--root", controlRoot, "--id", goalID, "--next", status, "--lineage", landingOwnerLineage)
+			return batchChildRunner(controlRoot, landingOwnerLineage, "internal", "goal", "edit", "--root", controlRoot, "--id", goalID, "--next", status, "--lineage", landingOwnerLineage)
 		},
 	})
 }
 
 func batchDiagnosticArgs(root string, request batch.DiagnosticRequest, resultPath string) []string {
-	return []string{"test", "run", "--root", root, "--goal", request.GoalID, "--tree", request.Tree, "--mode", "canary",
+	return []string{"internal", "test", "run", "--root", root, "--goal", request.GoalID, "--tree", request.Tree, "--mode", "canary",
 		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath,
 		"--expected-goal-revision", fmt.Sprint(request.Claim.Revision), "--expected-accounting-revision", fmt.Sprint(request.Claim.AccountingRevision)}
 }

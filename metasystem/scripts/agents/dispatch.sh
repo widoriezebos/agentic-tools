@@ -1128,7 +1128,7 @@ wait_for_job() { # job
   local job=$1 output wait_rc
   touch "$heartbeats/$job.waiting"
   set +e
-  output=$("$ms" wait --root "$root" --job "$job" 2>&1)
+  output=$("$ms" internal wait --root "$root" --job "$job" 2>&1)
   wait_rc=$?
   set -e
   if (( wait_rc == 2 )) && grep -Fq 'unknown family "wait"' <<<"$output"; then

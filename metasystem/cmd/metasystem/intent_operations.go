@@ -25,7 +25,8 @@ func (inv *intentInvocation) engineVerb(args ...string) (intentProcessResult, *i
 	if err != nil {
 		return intentProcessResult{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the engine executable is unavailable: " + err.Error() + "; nothing was done"}
 	}
-	return inv.delivery().process(intentProcess{argv: append([]string{binary}, args...), dir: inv.layout.InstallationRoot}), nil
+	// Owner verbs are reached through the explicit internal entry.
+	return inv.delivery().process(intentProcess{argv: append([]string{binary, "internal"}, args...), dir: inv.layout.InstallationRoot}), nil
 }
 
 // ownerVerbResult is the public outcome of one owner verb run: its structured
