@@ -227,3 +227,29 @@ required manual-delivery extension is honestly implementable. Challenge the
 premise and delete needless machinery. Root adjudicates. Named mechanical
 findings become fixtures, and independent Sol review of the complete combined
 implementation remains mandatory. No partial completion claim for this user goal.
+
+
+## Concrete capture boundary correction before full submission
+
+Root source audit found the live source has ordinary generated receipt/narrator
+appends. branch.PathClass already assigns them and goal projections ClassExcluded;
+CommitStaged refuses those paths in a Unit. Do not weaken that owner or ask the
+caller to clear system-written files. For implicit manual `--changes`, preserve
+ClassExcluded paths in the source and omit them from the submitted unit using the
+existing path-class/exclusion owner, never a maintained second list. Other
+non-unit paths retain existing refusal with the applicable public design/goal act.
+An explicit `--patch` is not silently rewritten to remove disallowed changes.
+Source=destination may not discard unrelated pre-existing staging; normal unstaged
+coordination appends must survive. Test real source preservation and actual owner
+acceptance, not only the filtered path list.
+
+The caller's explicitly named brief is control input, not an accidental candidate
+file. When implicit changes are captured, omit that exact brief path if it lies
+inside the checkout, while retaining its bytes/digest as the brief. This makes the
+existing promise that brief/reports are outside capture true for the caller's
+original too. Do not require users to know an ignored internal directory. Other
+ordinary files remain captured; explicit patch contents are authoritative and are
+not filtered. Use literal Git path selection/private-index operations, not a text
+regex that rewrites binary diffs. Diagnostic reads otherwise keep their complete
+tracked/untracked whole-checkout capture, including any records the user wants
+feedback on. Add nested in-repo brief and normal background-record fixtures.

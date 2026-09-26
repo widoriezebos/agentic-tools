@@ -38,3 +38,16 @@ author prompt/declared-output contract. A fake author that secretly reads store
 metadata or receives Page from a test callback would hide the bug. The real-process
 fake-author fixture must obtain its output path from the actual prompt, just as
 the paid author would. Independent Sol must inspect this boundary.
+
+
+## Manual submission must work in an ordinary live checkout
+
+Root source audit found +18 receipt and +129 narrator lines in live main, all
+ClassExcluded by the existing branch path owner. Full captured changes staged as a
+Unit are rejected at commit.go279..294, not filtered by the commit owner. Accepted
+manual design now specifies preserving/omitting generated excluded state for
+implicit submission and preserving explicit patches as supplied. It also excludes
+the explicitly named in-repo brief from implicit candidate capture: a normal
+brief.md otherwise becomes code, a plans/ brief blocks the unit. Diagnostic review
+otherwise remains complete. These are actual first-use scope corrections, not
+permission to weaken CommitStaged or silently rewrite user-supplied patches.
