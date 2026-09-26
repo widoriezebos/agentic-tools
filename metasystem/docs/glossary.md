@@ -37,7 +37,7 @@ not paths.
   every lease write and exists only for compare-and-swap.
 
   A claimed goal's stop capability carries the lease epoch that authorized
-  its claim. Re-arming (an agent's `metasystem session start`, which runs `metasystem up`) restamps that capability when the
+  its claim. Re-arming (an agent's `metasystem session start`) restamps that capability when the
   same holder's live epoch has advanced; the internal owner `metasystem internal goal restamp --id <goal>`
   performs the same repair directly.
 
@@ -78,7 +78,7 @@ not paths.
 ## Supervision: who watches the processes
 
 - **Arming** — starting the complete checkout control plane: a person runs
-  `metasystem system start`, and an agent session's `metasystem session start` runs `metasystem up`: announce the session, classify the lease, establish or
+  `metasystem system start`, and an agent session's `metasystem session start` brings the checkout up: announce the session, classify the lease, establish or
   verify the supervision owner, watcher, reaper, and steward runner, and wait
   for their generation-bound success. "Armed" means the checkout is watched;
   a second session is armed as a read-only `advisor` without displacing the

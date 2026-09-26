@@ -166,7 +166,7 @@ var removedSpellings = [][]string{
 	{"show", "question", "q"}, {"show", "review", "read-1"}, {"approve", "g"}, {"budget", "g", "norm"}, {"pause", "g"},
 	{"resume", "g"}, {"resume", "mission", "m"}, {"done", "g", "--reason", "x"}, {"done", "job", "j"}, {"open", "g"},
 	{"edit", "g"}, {"claim"}, {"release"}, {"accept-risk", "g"}, {"pin", "g", "m1"}, {"prioritize", "g", "1"}, {"reopen", "g"},
-	{"abandon", "g"}, {"block", "g"}, {"unblock", "g"}, {"unapprove", "g"}, {"grant"}, {"revoke", "x"}, {"split", "g"},
+	{"abandon", "g"}, {"block", "g"}, {"unblock", "g"}, {"unapprove", "g"}, {"revoke", "x"}, {"split", "g"},
 	{"group", "g", "a"}, {"ungroup", "g"}, {"notes", "g"}, {"repair", "goals"}, {"repair", "waits"}, {"incidents"},
 	{"brief", "g"}, {"build", "g"}, {"build", "--resume", "r"}, {"wait", "g"}, {"wait", "--job", "j"}, {"wait", "job", "j"},
 	{"review", "g"}, {"review", "design", "f"}, {"review", "job", "j"}, {"revise", "g"}, {"land", "g"}, {"land", "job", "j"},

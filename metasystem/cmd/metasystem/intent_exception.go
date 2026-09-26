@@ -239,7 +239,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 			// public test command, then continues under the same word.
 			continuation := stopped.next
 			stopped.Summary = fmt.Sprintf("the exception %s is recorded and its candidate is staged in %s, but no test run has proved that candidate yet", opid, primary)
-			stopped.next = []string{"metasystem", "test", "--goal", goalID, "--repo", primary}
+			stopped.next = []string{"metasystem", "test", "run", "--goal", goalID, "--repo", primary}
 			stopped.nextReason = "prove the staged candidate, then continue under the same exception: " + shellCommand(continuation)
 			stopped.Data.(map[string]any)["afterProof"] = continuation
 		}

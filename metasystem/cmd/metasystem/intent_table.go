@@ -64,6 +64,7 @@ func designIntentCommands() []intentCommand {
 				{name: "retry", value: "N", usage: "examine the design once more after examination N failed without findings"},
 				{name: "tool-calls", value: "N", usage: "the reader's maximum tool calls, stated in its brief"},
 				{name: "effort", value: "VALUE", hidden: true, usage: "refused: every review's reasoning effort is set by its hazard class's configuration obligations"},
+				{name: "model", value: "MODEL", hidden: true, usage: "refused: a design critique's critic comes from the roster"},
 			},
 			maxArgs:  1,
 			examples: []string{"metasystem design review plans/designs/intent.md --tool-calls 60"},
@@ -121,6 +122,11 @@ func runIntentDesignReview(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
 			Summary:  "no review owner accepts a reasoning-effort override: dispatch sets it from the hazard class's configuration obligations",
 			Decision: "omit --effort; the roster and the destructive-reach class decide the critic's effort"})
+	}
+	if inv.input.has("model") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary:  "design review takes no --model: the delegate accepts a critic model override only for a run or commit read's code critic",
+			Decision: "omit --model; the roster decides the design critic"})
 	}
 	if result := inv.selectRoot(); result != nil {
 		return inv.render(*result)

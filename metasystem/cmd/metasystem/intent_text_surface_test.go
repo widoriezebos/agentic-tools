@@ -76,7 +76,7 @@ func TestIntentTextNamesOnlyPublicForms(t *testing.T) {
 			}
 			excepted := false
 			for _, exception := range textSurfaceExceptions {
-				if strings.HasPrefix(file, exception.file) && strings.HasPrefix(quoted, exception.text) {
+				if strings.HasPrefix(file, exception.file) && strings.HasPrefix(strings.TrimPrefix(quoted, "bin/"), exception.text) {
 					excepted = true
 				}
 			}

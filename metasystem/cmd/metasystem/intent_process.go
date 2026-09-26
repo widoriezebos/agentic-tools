@@ -1426,6 +1426,13 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 	if answered.Outcome != intentConfirmed && answered.Outcome != intentPartial {
 		return inv.render(answered)
 	}
+	if data, _ := answered.Data.(map[string]any); answered.Outcome == intentPartial && data["askAnswered"] == false {
+		// Only the reset is recorded: the same answer completes it, and the
+		// mission is not resumed on a question still open.
+		if effects, ok := data["effects"].(missionrunner.AnswerEffects); !ok || !effects.AskAnswered {
+			return inv.render(answered)
+		}
+	}
 	return inv.render(inv.resumeMission(q.mission, answered))
 }
 

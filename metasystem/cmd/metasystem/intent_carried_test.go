@@ -197,12 +197,15 @@ func (b *carriedDeliveryBed) shown(result intentResult) (int, intentResult) {
 	if result.Next == nil || len(result.Next.Argv) < 3 || result.Next.Argv[2] != "land" {
 		b.t.Fatalf("no land continuation was shown: %+v", result)
 	}
-	return b.land(result.Next.Argv[2:]...)
+	return b.land(result.Next.Argv[3:]...)
 }
 
 func (b *carriedDeliveryBed) owner(verb ...string) int {
 	count := 0
 	for _, argv := range b.calls {
+		if len(argv) > 1 && argv[1] == "internal" {
+			argv = argv[1:]
+		}
 		if len(argv) > len(verb) && slices.Equal(argv[1:1+len(verb)], verb) {
 			count++
 		}
@@ -228,7 +231,7 @@ func (b *carriedDeliveryBed) provePublicly(stopped intentResult) intentResult {
 		text, _ := word.(string)
 		after = append(after, text)
 	}
-	if len(after) < 5 || !slices.Equal(after[:5], []string{"metasystem", "work", "land", "standing-validation", "--using-exception", opid}) {
+	if len(after) < 6 || !slices.Equal(after[:6], []string{"metasystem", "work", "land", "standing-validation", "--using-exception", opid}) {
 		b.t.Fatalf("the after-proof continuation is not the same word: %v", after)
 	}
 	index := goalSyncMutationGit(b.t, b.f.mainRoot, "write-tree")

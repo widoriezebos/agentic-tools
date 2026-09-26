@@ -553,6 +553,12 @@ func runIntentReview(inv *intentInvocation) int {
 		}
 		return runIntentReviewDiagnostic(inv, inv.input.text("patch"))
 	}
+	if kind, _ := splitReference(inv.input.args[0]); kind == refJ2 || kind == refRun {
+		// Options no owner of this subject takes refuse before it is read.
+		if problem := inv.reviewCommonChecks(kind); problem != nil {
+			return inv.render(*problem)
+		}
+	}
 	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 	if problem != nil {
 		return inv.render(*problem)

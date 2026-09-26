@@ -252,8 +252,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			{"system", "stop", "--by", "Wido"},
 			{"work", "stop"},
 			{"session", "stop"},
-			{"status", "fleet"},
-			{"system", "restart"},
+			{"status", "fleet", "extra"},
 		} {
 			code, result := b.runJSON(owners, args...)
 			if code == 0 || result.Outcome != intentRefused {
@@ -294,7 +293,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		}
 		owners := b.owners()
 		code, ambiguous := b.runJSON(owners, "work", "stop", "job-a")
-		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "both a launch of this user and a dispatch job") ||
+		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "names 2 records (j1:job-a, j2:job-a)") ||
 			strings.Contains(ambiguous.Decision, "internal") || !slices.Equal(ambiguous.Data.(map[string]any)["candidates"].([]any), []any{"j1:job-a", "j2:job-a"}) ||
 			!strings.Contains(fmt.Sprint(ambiguous.Data.(map[string]any)["choices"]), "[metasystem work stop j1:job-a]") {
 			t.Fatalf("ambiguous job = %d %+v", code, ambiguous)
@@ -303,11 +302,11 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code, result := b.runJSON(owners, "work", "stop", "j1:job-a"); code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "launch job-a already ended") {
 			t.Fatalf("stop job j1:job-a = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(owners, "work", "status", "j2:job-a"); code != 0 || result.Summary != "dispatch job job-a: running" || result.Targets[0].ID != "j2:job-a" {
+		if code, result := b.runJSON(owners, "work", "status", "j2:job-a"); code != 0 || result.Summary != "dispatch job j2:job-a: running" || result.Targets[0].ID != "j2:job-a" {
 			t.Fatalf("status job j2:job-a = %d %+v", code, result)
 		}
 		code, unknown := b.runJSON(owners, "work", "stop", "job")
-		if code != 1 || unknown.Outcome != intentRefused || !strings.HasPrefix(unknown.Summary, "no job job:") || unknown.Next == nil ||
+		if code != 1 || unknown.Outcome != intentRefused || !strings.HasPrefix(unknown.Summary, "no launch or dispatch job or diagnostic read names job;") || unknown.Next == nil ||
 			!slices.Equal(unknown.Next.Argv, []string{"metasystem", "work", "status", "--all"}) {
 			t.Fatalf("unknown job = %d %+v", code, unknown)
 		}
@@ -336,7 +335,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code, result := b.runJSON(owners, "work", "stop", "job-b"); code != 0 || result.Outcome != intentUnchanged {
 			t.Fatalf("ended launch = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(owners, "work", "status", "job-c"); code != 0 || result.Summary != "dispatch job job-c: running" {
+		if code, result := b.runJSON(owners, "work", "status", "job-c"); code != 0 || result.Summary != "dispatch job j2:job-c: running" {
 			t.Fatalf("dispatch status = %d %+v", code, result)
 		}
 		var cancelled []string
@@ -399,7 +398,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			!slices.Equal(resumed[0][1:4], []string{"internal", "mission", "resume"}) {
 			t.Fatalf("answer = %d %+v resumed %v", code, result, resumed)
 		}
-		if code, result := b.runJSON(owners, "question", "answer", "demo/host-down", "again"); code != 3 || result.Outcome != intentRefused {
+		if code, result := b.runJSON(owners, "question", "answer", "demo/host-down", "again"); code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "already answered with a different answer") {
 			t.Fatalf("second answer = %d %+v", code, result)
 		}
 	})
@@ -442,7 +441,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			t.Fatalf("unknown doctor = %d %+v", code, result)
 		}
 		_, stdout, _ := b.run(owners, "system", "check")
-		if !strings.Contains(stdout, "unknown: no tick yet; remedy: metasystem system start") {
+		if !strings.Contains(stdout, "unknown: no tick yet; remedy: metasystem session start") {
 			t.Fatalf("doctor text dropped the owner remedy: %q", stdout)
 		}
 		missing := filepath.Join(t.TempDir(), "a dir", "x")
@@ -450,7 +449,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, shellCommand([]string{missing})) {
 			t.Fatalf("quoted repo = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(owners, "system", "stop", "--by", "a", "--by", "b"); code != 2 || !strings.Contains(result.Summary, "given twice") {
+		if code, result := b.runJSON(owners, "system", "stop", "--installation", "a", "--installation", "b"); code != 2 || !strings.Contains(result.Summary, "given twice") {
 			t.Fatalf("conflict = %d %+v", code, result)
 		}
 		if b.fence().State != stopfence.StateOpen || b.armCalls != 0 {

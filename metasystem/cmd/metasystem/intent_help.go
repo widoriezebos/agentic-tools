@@ -89,7 +89,7 @@ type intentHelpDocument struct {
 func publicHelpProtocol() intentHelpProtocol {
 	return intentHelpProtocol{
 		Instructions: []string{
-			"Commands are OBJECT ACTION: metasystem goal approve G, metasystem work land G. metasystem lists the objects; metasystem OBJECT lists its actions.",
+			"Commands are OBJECT ACTION, for example metasystem work land G. metasystem lists the objects; metasystem OBJECT lists its actions.",
 			"Work on the assigned goal. Use goal list --ready and goal claim only when choosing unassigned work is authorized.",
 			"Use --json for public command results; put it before --check, which consumes every remaining argument.",
 			"Read outcome, summary, data and decision even on nonzero exit. Success confirms this invocation, not delivery or goal conclusion.",

@@ -244,7 +244,7 @@ func TestIntentPlanningAttorneyGrant(t *testing.T) {
 	if code == 0 || result.Outcome != intentRefused {
 		t.Fatalf("a grant beyond seven days = %d %+v", code, result)
 	}
-	code, result = bed.runJSON(bed.owners(), "grant", "add", "revoke", entry)
+	code, result = bed.runJSON(bed.owners(), "grant", "revoke", entry)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("revoke %s = %d %+v", entry, code, result)
 	}
@@ -453,7 +453,7 @@ func TestIntentPlanningPartialAfterPublication(t *testing.T) {
 	blockProofRecords(t, bed.root())
 	for _, args := range [][]string{
 		{"grant", "add", "--tiers", "1", "--acts", "budget", "--until", "2026-09-05"},
-		{"grant", "add", "revoke", entry},
+		{"grant", "revoke", entry},
 		{"goal", "unapprove", bedGoal, "--reason", "the design changes first"},
 	} {
 		before := bed.publications()

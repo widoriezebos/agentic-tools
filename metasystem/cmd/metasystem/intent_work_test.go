@@ -634,8 +634,12 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 	}
 	var parsed testingSelectionRequest
 	owners.work.subprocess = func(dir string, argv []string, stderr io.Writer) ([]byte, int, error) {
-		// The real test-run parser reads what the public command passes.
-		request, _, code := parseTestingSelection(argv[0]+" "+argv[1], argv[2:], true)
+		// The real test-run parser reads what the public command passes to
+		// the engine's internal test run.
+		if len(argv) < 3 || argv[0] != "internal" || argv[1] != "test" || argv[2] != "run" {
+			t.Fatalf("the public test run did not call the internal test run: %v", argv)
+		}
+		request, _, code := parseTestingSelection(argv[1]+" "+argv[2], argv[3:], true)
 		parsed = request
 		if code != 0 {
 			return nil, code, nil

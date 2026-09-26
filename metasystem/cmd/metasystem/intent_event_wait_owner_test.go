@@ -244,7 +244,7 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 	}
 
 	code, pending := run("question", "wait", question.ID, "--timeout", "1m")
-	want := []string{engine, "channel", "wait", "--root", root, "--question", question.ID, "--timeout", "1"}
+	want := []string{engine, "internal", "channel", "wait", "--root", root, "--question", question.ID, "--timeout", "1"}
 	if len(calls) != 1 || !slicesEqual(calls[0], want) {
 		t.Fatalf("owner argv = %v, want %v", calls, want)
 	}
@@ -270,7 +270,7 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 
 	// The public caller acts through the continuation it was shown.
 	code, answered := run(pending.Next.Argv[1:]...)
-	if len(calls) != 2 || !slicesEqual(calls[1], []string{engine, "channel", "wait", "--root", root, "--question", question.ID}) {
+	if len(calls) != 2 || !slicesEqual(calls[1], []string{engine, "internal", "channel", "wait", "--root", root, "--question", question.ID}) {
 		t.Fatalf("continuation owner argv = %v", calls)
 	}
 	expectOutcome(t, "answered question wait", code, answered, intentConfirmed)
