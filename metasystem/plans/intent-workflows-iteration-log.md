@@ -56,3 +56,98 @@ collection, and closed the final two bounded corrections as named fixture
 obligations. Independent code critique remains mandatory. Main contract R126
 now also records the user's explicit requirement that internal structure never
 be required to complete a task. Product implementation is next.
+
+## Implementation and verification preparation
+
+- Accepted design checkpoint: b5d7b6819. Opus launch
+  20260926t084154-3eae3d3163, claude-opus-5-5, running in the isolated worktree.
+- Goal next step updated through the real owner; published tip
+  e23da6aeb30837f7314f07ea12732b1b6c235ae1. Shared main pulled that record.
+- Baseline CLI observations retained under ignored
+  artifacts/agents/intent-workflows-verification/baseline.json. The first release
+  prints 72 root-help lines and exits 2 on no arguments; --help exits 0. Build,
+  review, wait and close command help was captured separately with exact exits.
+- Independent source audit grounded every administration choice in the build
+  brief, distinguishing human attribution, human caller classification and
+  enrolled proof. It also identified targeted channel retry/withdraw locking,
+  retained mission answer before resume, and carried landing token consumption.
+  These are required implementation details, not claims of Fable certification.
+
+Next verification consumes the actual candidate, with focused owner checks first:
+
+1. Rebuild the CLI. Run no arguments, all root aliases, every focused topic and
+   public command help, unknown and conflicting inputs. Observe exit codes,
+   ordinary suggestions, hidden compatibility flags and no service effects.
+2. Drive fresh goal/work flows through the connected real-owner fixtures:
+   automatic lawful claim, multiple work selection, review/decision/revision,
+   failed correction replay, superseded decisions, failed critic retry and land.
+   Count actual launches/publications; inspecting printed commands alone is weak.
+3. Drive human acts with and without the required authority, goal-event waits,
+   question retry/withdraw races, exact mission answer/resume repetition, each
+   administration choice, queue-only and carried landing interruption recovery.
+4. Exercise the Partner's real catalogue consumer and compare it to CLI public
+   discovery. All 48 original capabilities and 13 advanced outcomes need an
+   implemented public route; retaining an old alias does not pass this check.
+5. Sol reviews the computed complete implementation diff and named final Fable
+   fixtures before certification. Root dispositions findings and resumes Opus
+   for material corrections, then rechecks affected behavior.
+6. At integration, pull current main, select required tests from the actual
+   candidate/risk, complete every required group and all coverage floors, and
+   reuse only matching successful proof. Record evidence and limits, then repeat
+   fresh human/agent journeys and correct any justified remaining usability gap.
+
+## Open questions for the first completed usability pass
+
+Source-grounded, not yet judgments on the unfinished build:
+
+- AGENTS.md:25 and docs/orchestration.md:228 currently require an internal
+  delegate command for a rostered design author; orchestration:245 also sends a
+  later critic round to internal delegate. The current public design covers
+  review of a written design, but not obviously authoring through the roster or
+  following up that design review. After step 1 works, drive these actual agent
+  intentions and determine the smallest public route. A hidden internal escape
+  cannot count as completion. If no lawful existing public route exists, this
+  is a concrete requirement failure for a focused design amendment and Fable
+  critique, not permission to publish an incomplete capability claim.
+- Existing wait also supports proof attempts and filesystem observations
+  through legacy selectors. Determine which are actual caller intentions and
+  ensure their advanced public discovery is clear, without exposing registration
+  or process bookkeeping as required steps.
+- AGENTS.md's public work guidance must change with the completed workflow;
+  the builder does not own AGENTS.md, so root folds those proven commands.
+
+## First build checkpoint and next usability iteration
+
+Opus launch 20260926t084154-3eae3d3163 completed with exit 0, provider session
+124b0e5a-c6b5-42d0-835b-87b46082ce1e, 90 measured tool calls and 97 turns.
+Authoritative start/end: 08:41:54.379064Z to 09:00:02.972678Z (18m 8.6s).
+Its return incorrectly claims 150 calls/40 minutes reached and gives guessed
+local times. Root's initial continuation brief approximation of 23 minutes was
+also inaccurate; the retained launch timestamps above govern. This is a coherent
+partial checkpoint, not budget exhaustion or product completion. Reported provider
+cost was USD 7.0584966, not an estimate. The first focused owner tests and CLI
+help/refusal checks passed; full delivery and operations remain incomplete.
+
+Root separately drove the checkpoint binary from a disposable directory: bare,
+--help and -h exit 0 with 44 lines; focused help succeeds; typo/bare wait/invalid
+revision/conflicting queue-only flags exit 2. help design exits 2. Exact binary
+hash and outputs are retained in ignored artifacts/agents/intent-workflows-
+verification/checkpoint-1/result.json. These prove discovery only.
+
+Continuation 2 (same Opus session) is launch 20260926t090311-bf1bba8367,
+prioritizing actual review/close/collect/publication, bound decisions, failed
+review retry and claim/selection completion before remaining operations. No
+product changes have been committed or independently certified.
+
+The source audit confirmed an additional required planning task: design authoring
+through its own roster and continuing a bounded design critique lack complete
+public routes. Proof/file waits exist but disappear from discovery. The first
+runtime help still exposes read units and certified job chain. Root authored a
+focused second usability design, designs/intent-planning-continuity.md (ID
+01M3EFDSFTKWEMSDCP1BB7TDGQ), SHA256
+495456bf4e7175abef81392d37e9a2e066b0808e48d4d2270b578d195a09e7d7.
+Fable critique launch 20260926t091003-5291dcd738 is running, round 1 of a declared
+maximum 2 for this new requirement gap. Parent C1-C8 stay closed on their mandatory
+fixtures; this is not another round to polish their prose. Project check passes
+147 records and the resolver finds the new draft. Root will disposition this
+critique before authorizing its additional implementation.
