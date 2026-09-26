@@ -93,5 +93,13 @@ func Acts() []manifest.Act {
 			Does: "Cancels the running answer and keeps what it had said."},
 		{ID: routePartnerSeeing, Title: "Show what the Partner will see", Requires: conversationHand,
 			Does: "Composes the block the next question would carry, without sending anything."},
+		// Starting a sitting asks for the checkout's own hand rather than the
+		// conversation's, because it may write: a sitting started on a new draft
+		// creates that record in the checkout before the conversation is marked.
+		// Ending one changes nothing but the conversation.
+		{ID: routePartnerSitting, Title: "Start a sitting", Requires: checkoutHand,
+			Does: "Opens a working conversation on one record — an existing one, or a draft created now in the home its kind names — and asks the Partner what the records already hold about it."},
+		{ID: routePartnerRise, Title: "End the sitting", Requires: conversationHand,
+			Does: "Takes the sitting off the conversation. What was recorded stays in the record, which is the whole of what a sitting leaves behind."},
 	}
 }

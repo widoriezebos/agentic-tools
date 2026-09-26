@@ -1,7 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router";
 
-import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn, type CapturedSticky, type Page } from "./api";
+import {
+  endSitting,
+  isBusy,
+  loadPartner,
+  PartnerError,
+  sendTurn,
+  startSitting,
+  stopTurn,
+  type CapturedSticky,
+  type Page,
+  type Sitting,
+  type Subject,
+} from "./api";
 import {
   attach,
   attachedDraft,
@@ -37,10 +49,25 @@ import {
   type Registered,
 } from "./suggesting";
 import { keyFor } from "./asking";
-import { busy, emptyStore, loaded, received, refused, retrying, unavailable, asked, type Store } from "./conversation";
+import { recorder, type Reading, type Recorder } from "./recording";
+import {
+  cardIn as depositIn,
+  cardsIn as depositsIn,
+  countsIn,
+  entriesIn,
+  entryOf,
+  marked,
+  missing,
+  type Card as DepositCard,
+  type Counts,
+  type Entry,
+  type Marks as DepositMarks,
+} from "./sitting";
+import { busy, emptyStore, loaded, nameOf, received, refused, retrying, unavailable, asked, type Store } from "./conversation";
 import type { Chosen } from "./subject";
 import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
 import { useAboutLine, useSubject } from "../shell/about";
+import { editDocument, isStale, loadDocument } from "../project/api";
 import { captured } from "../stickies/stickies";
 import { useStickies } from "../stickies/store";
 
@@ -230,6 +257,53 @@ type Partner = {
   wanted: number;
   /** Put the caret back where Ask took it from. */
   returnFocus: () => void;
+
+  /**
+   * The sitting this conversation is, or null. It is the server's answer, read
+   * from the snapshot, so a reload and a second tab agree about which record is
+   * under discussion.
+   */
+  sitting: Sitting | null;
+  /**
+   * Start a sitting: on the record named, or on a draft the server creates under
+   * the title given. The opening turn is the server's, and it is in the
+   * transcript the answer carries.
+   */
+  startSitting: (asked: { purpose: string; subject?: Subject; title?: string }) => Promise<void>;
+  /** End the sitting. What was recorded stays in the record. */
+  endSitting: () => void;
+  /** What a Start or End press was refused with, in the server's own words. */
+  sittingRefusal: string;
+  /** True while a Start or End press is in flight. */
+  sittingBusy: boolean;
+
+  /**
+   * Every deposit this conversation carries, oldest first, each with where it
+   * stands. The card on the transcript is rendered from this one list.
+   */
+  deposits: readonly DepositCard[];
+  /** The words of one card, as the human now has them. */
+  editDeposit: (id: string, text: string) => void;
+  /** The clause of one card: its anchor, its reason or its consequence. */
+  editClause: (id: string, clause: string) => void;
+  /**
+   * Record it. It composes the entry from the sitting's current reading of the
+   * record, writes the whole source under that reading's revision, and refreshes
+   * the reading from what the write answered. Presses are serialized: two in a
+   * row land both entries, and two at once land both in the order they were
+   * pressed.
+   */
+  recordDeposit: (id: string) => void;
+  /** Dismiss: the card folds to one line. */
+  dismissDeposit: (id: string) => void;
+  /** The folded line, pressed: the card is back. */
+  reopenDeposit: (id: string) => void;
+  /**
+   * The record's four sections as the sitting's current reading holds them: what
+   * the table shows and what the drawer's four counts count. They are the record
+   * and not a second store, so a card nobody recorded is not among them.
+   */
+  table: { counts: Counts; entries: readonly Entry[]; revision: string };
 };
 
 const nothing: Partner = {
@@ -273,6 +347,18 @@ const nothing: Partner = {
   offerInsert: () => {},
   wanted: 0,
   returnFocus: () => {},
+  sitting: null,
+  startSitting: async () => {},
+  endSitting: () => {},
+  sittingRefusal: "",
+  sittingBusy: false,
+  deposits: [],
+  editDeposit: () => {},
+  editClause: () => {},
+  recordDeposit: () => {},
+  dismissDeposit: () => {},
+  reopenDeposit: () => {},
+  table: { counts: { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0 }, entries: [], revision: "" },
 };
 
 const PartnerContext = createContext<Partner>(nothing);
@@ -348,6 +434,18 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // Which writable field the caret is in, of which opening. It is state and not
   // a ref because the chip has to change what it says when the caret moves.
   const [writing, setWriting] = useState<InHand>(NOWHERE);
+  // What the human has made of each deposit: the words as they now stand, the
+  // clause, whether a press is in flight, where the record took it, and whether
+  // the card is folded. It is the page's own state and not the server's — the
+  // server admitted the deposit, and what happens to it afterwards is the
+  // human's until they press Record it.
+  const [depositMarks, setDepositMarks] = useState<DepositMarks>({});
+  // The sitting's one current reading of its record: source and revision, taken
+  // when the sitting starts and replaced by the answer of every successful
+  // write. The table reads it, and every Record press composes from it.
+  const [reading, setReading] = useState<Reading | null>(null);
+  const [sittingRefusal, setSittingRefusal] = useState("");
+  const [sittingBusy, setSittingBusy] = useState(false);
   // The key this draft was minted with. It survives a refusal, so pressing
   // Send again after a 503 is the same turn rather than a second one.
   const key = useRef("");
@@ -360,6 +458,10 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // other — the instant a question is sent — and the writing only when a human
   // presses Use this or Undo.
   const openings = useRef(new Map<string, Registered>());
+  // The one recorder of this sitting, which owns the reading and the queue. It
+  // is a ref because it is not something a render reads: what a render reads is
+  // the reading above, which the recorder hands back after every write.
+  const recording = useRef<Recorder | null>(null);
   const location = useLocation();
   const subject = useSubject();
   const stickies = useStickies();
@@ -771,6 +873,208 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     insert.current = at;
   }, []);
 
+  /* ------------------------------------------------------------- the sitting -- */
+
+  const sitting = store.sitting;
+
+  /**
+   * The sitting's reading, taken when the subject changes and at no other time.
+   *
+   * It is read once per subject rather than on every render, because it is a
+   * reading: a second one taken behind a human's back would move the revision a
+   * Record press is about to write under. Every later reading comes from a write
+   * this page made, or from the reread a conflict asks for.
+   */
+  const subjectID = sitting?.subject.id ?? "";
+  useEffect(() => {
+    if (subjectID === "") {
+      recording.current = null;
+      setReading(null);
+      return;
+    }
+    let alive = true;
+    loadDocument(subjectID)
+      .then((document) => {
+        if (!alive) {
+          return;
+        }
+        const taken = { id: subjectID, revision: document.revision, source: document.source };
+        recording.current = recorder(
+          taken,
+          async (id, source, revision) => {
+            const saved = await editDocument(id, source, revision);
+            return { revision: saved.revision, source: saved.source };
+          },
+          async (id) => {
+            const again = await loadDocument(id);
+            return { revision: again.revision, source: again.source };
+          },
+          isStale,
+        );
+        setReading(taken);
+      })
+      .catch((error: unknown) => {
+        if (alive) {
+          setSittingRefusal(reasonOf(error));
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [subjectID]);
+
+  const begin = useCallback(
+    async (asked: { purpose: string; subject?: Subject; title?: string }) => {
+      setSittingBusy(true);
+      setSittingRefusal("");
+      try {
+        const answered = await startSitting({ ...asked, about: capture });
+        setStore((held) => loaded(held, answered));
+      } catch (error: unknown) {
+        setSittingRefusal(reasonOf(error));
+        throw error;
+      } finally {
+        setSittingBusy(false);
+      }
+    },
+    [capture],
+  );
+
+  const end = useCallback(() => {
+    setSittingBusy(true);
+    setSittingRefusal("");
+    endSitting()
+      .then((answered) => {
+        setStore((held) => loaded(held, answered));
+      })
+      .catch((error: unknown) => {
+        setSittingRefusal(reasonOf(error));
+      })
+      .finally(() => {
+        setSittingBusy(false);
+      });
+  }, []);
+
+  /**
+   * Every deposit the conversation carries, with where each one stands: the
+   * answers already written down, then the answer arriving now. It is composed
+   * here, from the transcript and the marks, so the card on the transcript and
+   * the table cannot disagree about one deposit.
+   */
+  const deposits = useMemo(
+    () =>
+      depositsIn(
+        [
+          ...store.messages
+            .filter((message) => (message.deposits ?? []).length > 0)
+            .map((message) => ({ turn: message.turn, deposits: message.deposits ?? [] })),
+          { turn: store.live.turn, deposits: store.live.deposits },
+        ],
+        depositMarks,
+      ),
+    [store.messages, store.live.turn, store.live.deposits, depositMarks],
+  );
+
+  const changeMark = useCallback(
+    (id: string, change: (mark: DepositMarks[string]) => DepositMarks[string]) => {
+      setDepositMarks((held) => {
+        const card = depositIn(deposits, id);
+        if (card === undefined) {
+          return held;
+        }
+        return { ...held, [id]: change(held[id] ?? marked(card)) };
+      });
+    },
+    [deposits],
+  );
+
+  const editDeposit = useCallback(
+    (id: string, text: string) => {
+      changeMark(id, (mark) => ({ ...mark, text, refusal: "" }));
+    },
+    [changeMark],
+  );
+
+  const editClause = useCallback(
+    (id: string, clause: string) => {
+      changeMark(id, (mark) => ({ ...mark, clause, refusal: "" }));
+    },
+    [changeMark],
+  );
+
+  const dismissDeposit = useCallback(
+    (id: string) => {
+      changeMark(id, (mark) => ({ ...mark, dismissed: true }));
+    },
+    [changeMark],
+  );
+
+  const reopenDeposit = useCallback(
+    (id: string) => {
+      changeMark(id, (mark) => ({ ...mark, dismissed: false }));
+    },
+    [changeMark],
+  );
+
+  /**
+   * Record it.
+   *
+   * The card that is pressed must be admitted, must still need nothing, and must
+   * not already be in flight — a second press of one card is one entry, not two.
+   * Everything else is the recorder's: the entry is composed from the reading as
+   * it stands when the press runs, the write goes under that reading's revision,
+   * and the reading is refreshed from what the write answered.
+   *
+   * A conflict keeps the card exactly as the human has it and says so; pressing
+   * again is one more press, now against the record the reread brought back.
+   */
+  const recordDeposit = useCallback(
+    (id: string) => {
+      const card = depositIn(deposits, id);
+      const held = recording.current;
+      if (card === undefined || held === null || !card.offered) {
+        return;
+      }
+      if (card.mark.recording || card.mark.recorded !== "" || missing(card.kind, card.mark) !== "") {
+        return;
+      }
+      changeMark(id, (mark) => ({ ...mark, recording: true, refusal: "" }));
+      const entry = entryOf(card, nameOf(store.human), stampOf(new Date()));
+      void held.press(entry, card.kind).then((outcome) => {
+        if (outcome.kind !== "failed") {
+          setReading(outcome.reading);
+        }
+        setDepositMarks((marks) => {
+          const mark = marks[id];
+          if (mark === undefined) {
+            return marks;
+          }
+          if (outcome.kind === "recorded") {
+            return { ...marks, [id]: { ...mark, recording: false, recorded: outcome.section, refusal: "" } };
+          }
+          return { ...marks, [id]: { ...mark, recording: false, refusal: outcome.reason } };
+        });
+      });
+    },
+    [deposits, changeMark, store.human],
+  );
+
+  /**
+   * The table: the record's four sections as the sitting's reading holds them.
+   *
+   * It is derived from the one reading and nothing else, which is what makes it
+   * the record rather than a second store: an entry is on the table because the
+   * record carries it, and a card nobody pressed Record it on is not.
+   */
+  const table = useMemo(
+    () => ({
+      counts: countsIn(reading?.source ?? ""),
+      entries: entriesIn(reading?.source ?? ""),
+      revision: reading?.revision ?? "",
+    }),
+    [reading],
+  );
+
   const value = useMemo(
     () => ({
       store, busy: running, draft, setDraft, send, stop, sending,
@@ -780,13 +1084,17 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
+      sitting, startSitting: begin, endSitting: end, sittingRefusal, sittingBusy,
+      deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
     }),
     [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
       clearChosen, passage, askPassage, sheetDraft, askAbout, handOver, noteDraft,
       dropDraft, offerFields, noteSheet,
       offered, use, undo, dismiss, reopen, show, showing, noteField, revealed,
       writing, noteWriting, fillComposer,
-      capture, moved, refresh, suggest, offerInsert, wanted, returnFocus],
+      capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
+      sitting, begin, end, sittingRefusal, sittingBusy,
+      deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table],
   );
 
   return <PartnerContext.Provider value={value}>{children}</PartnerContext.Provider>;
@@ -794,6 +1102,19 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
 
 function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The date an entry is stamped with, as a record writes one: the day, in this
+ * browser's own time zone.
+ *
+ * A record's section is read by a human, and a human reads a date. The instant
+ * is not kept: the transcript already holds the turn the deposit arrived in, to
+ * the second, and a record's entry is not a second copy of that.
+ */
+function stampOf(now: Date): string {
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${String(now.getFullYear())}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
 }
 
 function installOf(error: unknown): string {

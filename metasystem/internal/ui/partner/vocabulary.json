@@ -388,5 +388,25 @@
     "id": "not-offered",
     "term": "Not offered",
     "text": "Your Project Partner prepared words for a field, and they were not offered to you. It happens when the field is not one the open sheet lets the Partner write for, or when the sheet's draft was left out of the question. The card says which, and the words are there to read; nothing was put in any field and nothing was saved."
+  },
+  {
+    "id": "sitting",
+    "term": "Sitting",
+    "text": "A working conversation on one record, with your Project Partner. It has no memory of its own: the record is the memory, and what you decide goes into it as you go, by your own press. The test of a sitting is that you could stop right now and a fresh partner could go on from the record alone. The Partner's first turn brings what the records already hold about the subject; it never decides anything, and only records rule."
+  },
+  {
+    "id": "deposit",
+    "term": "What the Partner offers the record",
+    "text": "A fact, a decision or an open question your Project Partner has offered for the record of this sitting. It is an offer and nothing else: nothing is written until you press Record it, and the words are yours to change before you do. A decision is recorded with the reason you gave and a fact with the anchor where it can be checked, so Record it waits until each has one."
+  },
+  {
+    "id": "the-table",
+    "term": "The table",
+    "text": "The four kinds of working material this sitting has put into its record: Facts, Proposals, Decisions and Open questions. It is not a second store — it is those four sections of the record itself, so everything here is something you recorded and anything you did not record is not here. The counts beside your Project Partner are the same four."
+  },
+  {
+    "id": "no-recommendation",
+    "term": "No recommendation",
+    "text": "Your Project Partner lays out options with their consequences and does not say which to pick. That is deliberate: when every option comes pre-weighed, choosing the recommended one every time is approval by habit, and the values in this project are yours. Ask it to weigh them and it will; unasked, it brings the cases at the edge, the conflicts and the consequences, and leaves the choice where it belongs."
   }
 ]

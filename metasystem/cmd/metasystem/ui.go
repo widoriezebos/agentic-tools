@@ -269,11 +269,24 @@ func runUI(verb string, args []string) int {
 		var partnerService *partner.Service
 		partnerRefusal := ""
 		if partnerRuntime != "" {
+			// Where the conversation goes, before anything is admitted. It is
+			// this account's own directory outside every checkout, because the
+			// transcript is private sitting material an examiner must never read
+			// and the state root lies inside the checkout a critic is handed
+			// (g1-s53 D11). An account whose home cannot be resolved has no
+			// Partner at all rather than a Partner whose every word lands in the
+			// repository, and the routes say so in these words.
+			conversations, homeErr := partner.Home()
 			admitted, admitErr := partner.Admit(partnerRuntime, strings.Fields(partnerCommand), partnerModel, roots.Checkout)
-			if admitErr != nil {
+			switch {
+			case homeErr != nil:
+				partnerRefusal = "this seat cannot keep the Partner's conversation outside the checkout, so it serves no Partner: " + homeErr.Error()
+				fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
+			case admitErr != nil:
 				partnerRefusal = admitErr.Error()
 				fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
-			} else {
+			default:
+				conversations = partner.Directory(conversations, roots.Checkout)
 				// The interface's own read tools, handed to the session at
 				// session/new. A seat that cannot name its own executable gets
 				// a Partner that reads the page and nothing beyond it, which is
@@ -283,11 +296,14 @@ func runUI(verb string, args []string) int {
 				} else {
 					admitted.Tools = tools
 				}
+				// The wire journal is every frame of the runtime's life, which is
+				// the conversation again in another form, so it is kept beside
+				// the conversation and not in the checkout.
 				host := partner.NewHost(admitted, roots.Checkout,
-					filepath.Join(roots.StateRoot, filepath.FromSlash(partner.Relative), "wire.jsonl"))
+					filepath.Join(conversations, "wire.jsonl"))
 				partnerService = partner.NewService(admitted, host,
 					func(human string) (*partner.Conversation, error) {
-						return partner.OpenConversation(roots.StateRoot, human)
+						return partner.OpenConversation(conversations, human)
 					},
 					partner.Facts{
 						Observe: ledger.Observe,

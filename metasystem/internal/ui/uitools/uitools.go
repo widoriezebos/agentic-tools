@@ -20,14 +20,16 @@
 //   - Nothing here writes. There is no operation that could, and the process
 //     that serves these tools opens the checkout read-only.
 //
-// One operation reads nothing: `suggest` takes words the Partner has written
-// for a field of the editor the human handed over and hands them back in a
-// fixed form, so that the interface can offer them to the human as a card. It
-// keeps all three rules. It writes nothing and cannot: this process has no
-// capture, no session and no way to reach the human's browser, so it validates
-// its arguments and says what it prepared. Whether the suggestion is offered
-// at all is decided by the human's own server, against the draft the human
-// handed over, and whether it is used is decided by the human.
+// Two operations read nothing. `suggest` takes words the Partner has written
+// for a field of the editor the human handed over; `deposit` takes one entry
+// the Partner offers the record of the sitting the human is in. Each hands what
+// it was given back in a fixed form, so that the interface can offer it to the
+// human as a card. Both keep all three rules. Neither writes and neither can:
+// this process has no capture, no conversation, no session and no way to reach
+// the human's browser, so each validates its arguments and says what it
+// prepared. Whether the offer reaches the human at all is decided by the
+// human's own server — against the draft they handed over, or against the
+// sitting they opened — and what happens to it then is decided by the human.
 package uitools
 
 import (
@@ -74,6 +76,7 @@ const (
 	OpInterface     = "interface"
 	OpKit           = "kit"
 	OpSuggest       = "suggest"
+	OpDeposit       = "deposit"
 )
 
 // Operations is every operation this server answers, in the order the
@@ -81,7 +84,7 @@ const (
 var Operations = []string{
 	OpBoard, OpGoal, OpDocument, OpRecords, OpQuestions,
 	OpOverview, OpFleet, OpNotifications, OpSearch, OpInterface, OpKit,
-	OpSuggest,
+	OpSuggest, OpDeposit,
 }
 
 // Names reports whether a bare operation name is one this server answers.
@@ -221,6 +224,9 @@ func (r Readers) Answer(operation string, args Args) Result {
 		return r.kit(args.Text("topic"), args.Cursor())
 	case OpSuggest:
 		return suggest(args.Text("editor"), args.Text("field"), args.Text("text"))
+	case OpDeposit:
+		return deposit(args.Text("kind"), args.Text("text"),
+			args.Text("anchor"), args.Text("reason"), args.Text("consequence"))
 	default:
 		return Result{Problem: "this server answers " + strings.Join(Operations, ", ") + ", not " + operation}
 	}

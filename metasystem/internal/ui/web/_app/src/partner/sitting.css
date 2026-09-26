@@ -1,0 +1,511 @@
+/* The sitting: the control in the Partner's header, the deposit card, and the
+   room's table beside the conversation.
+
+   Every colour is a token of src/tokens.css, so every one of them has a light
+   and a dark value and the contrast tests see all of them. Nothing here is a
+   fixed width: the header's strip wraps, the card is the column's width, and the
+   table becomes a row of the column at phone width. */
+
+/* ------------------------------------------- the control in the drawer's bar -- */
+
+.ms-sitting-start,
+.ms-sitting-end {
+  padding: 2px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ms-sitting-start:hover,
+.ms-sitting-end:hover {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+.ms-sitting-end:disabled {
+  color: var(--ms-text-3);
+  cursor: default;
+}
+
+/* While a sitting stands: which record, the four counts, and the way out.
+
+   It gives way before the composer does, which is the drawer bar's own rule for
+   the line that says what the page is about: where to type matters more than what
+   the typing would be about. So the block the sitting stands in is allowed to
+   shrink, the counts and the chip shrink inside it, and the closed bar's field
+   keeps a floor it cannot be squeezed past. */
+.ms-drawer-who:has(.ms-sitting-standing) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.ms-drawer-bar:has(.ms-sitting-standing) .ms-drawer-field {
+  min-width: 18ch;
+}
+
+.ms-sitting-standing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* At the width of a phone the closed bar holds the composer, the Seeing line and
+   the drawer's own two controls, and that is the whole of it: a chip clipped to
+   one letter says nothing, and where to type matters more. So the sitting leaves
+   the closed bar at this width and stands in it the moment the drawer is opened.
+   The record's own page still offers Start a sitting, which is where a human is
+   when they decide to sit down.
+
+   The closed bar is the one with the field in it; the open one has none. */
+@media (max-width: 720px) {
+  .ms-drawer-bar:has(.ms-drawer-field) .ms-sitting-standing,
+  .ms-drawer-bar:has(.ms-drawer-field) .ms-sitting-start {
+    display: none;
+  }
+
+  /* The four counts leave the bar altogether at this width: four names and four
+     numbers do not fit beside the chip and the way out, and four clipped to
+     "Facts 0 Propo" is a summary of nothing. The chip is the way to the table,
+     and the table itself names the four sections and counts them. */
+  .ms-drawer-bar .ms-sitting-counts {
+    display: none;
+  }
+}
+
+/* Which sitting this is, and the way into what it holds. */
+.ms-sitting-chip {
+  flex: 0 1 auto;
+  overflow: hidden;
+  max-width: 22ch;
+  padding: 2px 8px;
+  border: 1px solid var(--ms-accent);
+  border-radius: 999px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.ms-sitting-chip:hover {
+  background: var(--ms-surface-3);
+}
+
+/* The four counts, as one control: they are a summary of one thing — what the
+   record holds — so they open the table together rather than four at a time. */
+.ms-sitting-counts {
+  display: flex;
+  flex: 0 1 auto;
+  /* One row and never two: the drawer's bar is forty-eight pixels high, so a
+     strip that wrapped would stand outside it rather than in it. */
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
+  gap: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ms-sitting-counts:hover {
+  border-color: var(--ms-border-strong);
+}
+
+.ms-sitting-count {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ms-sitting-count-name {
+  color: var(--ms-text-3);
+}
+
+.ms-sitting-count-number {
+  color: var(--ms-text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------- the start sheet -- */
+
+.ms-sitting-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ms-sitting-said {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ms-sitting-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.ms-sitting-select,
+.ms-sitting-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+}
+
+.ms-sitting-subject {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  color: var(--ms-text);
+}
+
+.ms-sitting-path {
+  overflow-wrap: anywhere;
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-sitting-refusal {
+  margin: 0;
+  color: var(--ms-danger);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ms-sitting-foot {
+  display: flex;
+  gap: 8px;
+  margin-block-start: 4px;
+}
+
+/* --------------------------------------------------------- the deposit card -- */
+
+/* An offer for the record, under the answer that made it. The accent down its
+   left says it is the Partner's, as a suggestion's does; what tells the two
+   apart is that this one carries the fields the human edits before pressing. */
+.ms-deposit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border);
+  border-inline-start: 2px solid var(--ms-accent);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+/* Nothing was offered: there was no sitting to offer it to. */
+.ms-deposit--refused {
+  border-inline-start-color: var(--ms-border-strong);
+}
+
+.ms-deposit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* Which of the four sections this would land in. */
+.ms-deposit-where {
+  margin-inline-start: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ms-surface-3);
+  color: var(--ms-text-3);
+  font-weight: 400;
+}
+
+.ms-deposit-text {
+  margin: 0;
+  color: var(--ms-text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ms-deposit-clause {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ms-deposit-label {
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.ms-deposit-field,
+.ms-deposit-clause-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* What the card still needs before it may be recorded, and what a refused press
+   said. The first is a requirement and the second is a refusal, so they are two
+   lines in two colours rather than one line that means either. */
+.ms-deposit-needs {
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-deposit-refusal,
+.ms-deposit-reason {
+  margin: 0;
+  color: var(--ms-danger);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-deposit-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-deposit-said {
+  color: var(--ms-ok);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.ms-deposit-folded {
+  margin: 8px 0 0;
+  padding: 2px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: none;
+  color: var(--ms-text-3);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.ms-deposit-folded:hover {
+  color: var(--ms-text-2);
+}
+
+/* --------------------------------------------------------------- the table -- */
+
+/* The four piles, beside the conversation in the focused view. It is a column of
+   its own at the reading widths and a row of the column when there is no room
+   for two, because a table that squeezed the conversation would take width from
+   the one thing the page is for. */
+.ms-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 320px;
+  padding: 10px 12px;
+  border: 1px solid var(--ms-border);
+  border-radius: 10px;
+  background: var(--ms-surface-2);
+}
+
+.ms-table-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.ms-table-subject {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--ms-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ms-table-empty {
+  margin: 0;
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ms-table-pile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-table-pile-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding-block-end: 4px;
+  border-block-end: 1px solid var(--ms-border);
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.ms-table-pile-count {
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+.ms-table-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-table-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ms-table-entry-text {
+  margin: 0;
+  color: var(--ms-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* The anchor or the reason. It is what makes the entry checkable, so it stands
+   under the words rather than behind a disclosure. */
+.ms-table-entry-clause {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ms-table-entry-who {
+  margin: 0;
+  color: var(--ms-text-3);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+/* The table takes a column of its own beside the conversation, and never from
+   the conversation's measure: the column it stands beside keeps flex: 1. */
+.ms-focused-frame .ms-table {
+  flex: 0 0 300px;
+  align-self: flex-start;
+  max-height: 100%;
+}
+
+/* At the width of a phone the table follows the conversation instead of standing
+   beside it, and it stops being a scroller of its own: the page scrolls.
+
+   The frame stops being a full-height flex column too, but only while a table is
+   in it. Beside the conversation the frame is the height of the work area and the
+   conversation scrolls inside it, which is right for two columns and wrong for
+   three stacked boxes: the conversation would be squeezed to nothing so that the
+   table below it could have its own height, and the table would end up painted
+   over the cards a human is deciding about. Stacked, the three read in order and
+   the page scrolls, which is what every other stacked pane does. A frame with no
+   table is left exactly as it was. */
+@media (max-width: 720px) {
+  .ms-table {
+    overflow-y: visible;
+    max-width: none;
+  }
+
+  .ms-focused-frame:has(.ms-table) {
+    flex: none;
+    height: auto;
+  }
+
+  /* The conversation stops being a scroller of its own for the same reason, and
+     stops flexing with it: `flex: 1; min-height: 0` in a column whose own height
+     is its content lets the transcript collapse to a few lines so that the boxes
+     below it can have their height, which is the opposite of what it is for. */
+  .ms-focused-frame:has(.ms-table) .ms-dock-statement {
+    flex: none;
+    overflow-y: visible;
+  }
+
+  .ms-focused-frame .ms-table {
+    flex: none;
+    align-self: stretch;
+    max-height: none;
+  }
+}
+
+/* ------------------------------------------- the interface's own question -- */
+
+/* The one question nobody typed, said in the row above it. It is the last thing
+   in that row, after the time, because it is about the asking and not about the
+   words. */
+.ms-turn-by {
+  flex: none;
+  color: var(--ms-text-3);
+  font-style: italic;
+}

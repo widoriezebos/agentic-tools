@@ -216,6 +216,38 @@ func Catalogue() []Tool {
 				},
 			}, []string{"editor", "field", "text"}),
 		},
+		{
+			Name: OpDeposit,
+			Description: "Offer one entry for the record of the sitting the human is in: a fact with the anchor where it " +
+				"can be checked, a decision with the reason the human gave, or an open question with the consequence " +
+				"of leaving it open. Call it as each of the three comes up in the conversation, beside the answer you " +
+				"give in words. It writes nothing: the human sees a card, edits it if they like, and presses Record it, " +
+				"and only then does it enter the record. Weigh nothing — a fact is anchored, an option carries its " +
+				"consequences, and the choice is the human's.",
+			InputSchema: schema(map[string]any{
+				"kind": map[string]any{
+					"type":        "string",
+					"enum":        DepositKinds,
+					"description": "Which of the three this is: fact, decision or question.",
+				},
+				"text": map[string]any{
+					"type":        "string",
+					"description": "The entry itself, in one sentence or a short paragraph, at most 2000 characters.",
+				},
+				"anchor": map[string]any{
+					"type":        "string",
+					"description": "On a fact: where it can be checked, as a path with a line or a record's own id. At most 500 characters.",
+				},
+				"reason": map[string]any{
+					"type":        "string",
+					"description": "On a decision: the reason the human gave, in their own words as you heard them. At most 500 characters.",
+				},
+				"consequence": map[string]any{
+					"type":        "string",
+					"description": "On a question: what follows from leaving it open. At most 500 characters.",
+				},
+			}, []string{"kind", "text"}),
+		},
 	}
 }
 
@@ -236,8 +268,9 @@ const Instructions = "These tools read this MetaSystem workspace exactly as its 
 	"and the kit's own meanings from the glossary, command catalogue, rulings register and routes that own them. " +
 	"Every result names the source it read from and says how much of the whole it supplied; " +
 	"when a result carries a cursor, call the same tool again with it to read the rest. " +
-	"Nothing here writes. The one tool that reads nothing, suggest, offers the human words for a field of " +
-	"an editor they handed over; it applies nothing, and the human decides."
+	"Nothing here writes. The two tools that read nothing offer the human something to decide about: " +
+	"suggest offers words for a field of an editor they handed over, and deposit offers one entry for the " +
+	"record of a sitting they are in. Neither applies anything, and the human decides."
 
 /* ------------------------------------------------------------- the frames -- */
 

@@ -166,7 +166,23 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // stream — and nothing here renders Markdown either: a complete answer goes
   // through the reader's own preview route, which is project/api.ts's call
   // site and not a second one.
-  ["partner/api.ts", 1, ["/api/partner", "/api/partner/turns", "/api/partner/seeing", "/stop"]],
+  // The sitting's own two join that call site: starting one and ending one are
+  // the same request with a body, to the same collection, so there is still
+  // exactly one place in this build that reaches the network from here. The end
+  // address lies under the start address and is listed on its own, because it is
+  // an exact path and not an id between a prefix and a suffix.
+  [
+    "partner/api.ts",
+    1,
+    [
+      "/api/partner",
+      "/api/partner/turns",
+      "/api/partner/seeing",
+      "/api/partner/sitting",
+      "/api/partner/sitting/end",
+      "/stop",
+    ],
+  ],
   // Decisions. One read when the pane mounts, one when a human presses the
   // section's refresh, and one after an act completes — all three through the
   // one request below. The page holds no timer: everything on it is composed
