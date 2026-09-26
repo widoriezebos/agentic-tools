@@ -608,28 +608,43 @@ func renewals(rows []backlog.Row, now time.Time) []Need {
 // expiredAt is when this approval stopped admitting new work, which is what a
 // renewal has been waiting on a human since.
 //
-// It is the review date the approval names, where it names one and the date
-// reads: that is the instant the gate began refusing. An approval that
-// expired for one of the other reasons the horizon carries — a terminal
-// enrolled, the standing authority horizon passing — names no date of its
-// own here, and the row is dated from this read instead: the projection
+// It is the review date the approval names, where the review date is WHY the
+// approval expired and the date reads: that is the instant the gate began
+// refusing. Every relayed approval carries a review date, and internal/goal's
+// ApprovalExpired refuses on the fleet's first terminal enrollment before it
+// ever looks at that date, so the verdict the row carries — not the presence of
+// a date — is what says whether the date is the answer. An approval that
+// expired for one of the other two reasons — a terminal enrolled, the standing
+// authority horizon passing — is dated from this read instead: the projection
 // answers that the approval is expired and never says when it stopped, so the
 // one instant this page can stand behind is the instant it read the verdict.
-// The approval's own instant, which this dated it from before, is when the
-// approval was GIVEN — the one instant on the row that is certainly not when
-// it stopped admitting work, and dating a renewal from it aged the renewal by
-// however long the approval had been good for.
+// Dating those from a review date that has not passed would put the renewal's
+// since after the moment it began waiting, and make a renewal that has been
+// waiting since an enrollment look new. The approval's own instant, which this
+// dated it from before either fix, is when the approval was GIVEN — the one
+// instant on the row that is certainly not when it stopped admitting work, and
+// dating a renewal from it aged the renewal by however long the approval had
+// been good for.
 //
 // The second result says which of the two it answered with: a review date is
 // a day written as midnight, and the newness test has to know that before it
 // compares it to a window that opened after midnight. This read's own instant
 // is an instant and not a day.
 func expiredAt(approval backlog.Approval, now time.Time) (string, bool) {
-	if stamped := dayStamp(approval.ReviewBy); stamped != "" {
-		return stamped, true
+	if strings.HasPrefix(approval.ExpiredWhy, reviewDateExpiry) {
+		if stamped := dayStamp(approval.ReviewBy); stamped != "" {
+			return stamped, true
+		}
 	}
 	return stamp(now), false
 }
+
+// reviewDateExpiry opens the one verdict internal/goal's ApprovalExpired writes
+// when the review date is why the approval stopped admitting work: "the review
+// date <YYYY-MM-DD> has passed". Neither of the other two verdicts begins this
+// way — one names the fleet's first enrollment instant, the other the temporary
+// authority horizon.
+const reviewDateExpiry = "the review date "
 
 // asks is this seat's open channel questions, shown as recorded.
 //
