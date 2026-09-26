@@ -592,13 +592,19 @@ common case.
   Astra's reads of g1-s60): the body is `{from, state, words}`, `from`
   being the state the line showed when the human pressed; the write is
   admitted only when the persisted state equals `from` and the pair is
-  one of: to `applying` from `waiting`, `refused`, `unresolved`, or from
-  `applying` as the human's explicit Try again on a line the page shows
-  as in flight; to `applied`, `refused` or `unresolved` from `applying`;
-  to `dismissed` from `waiting`, `refused`, `unresolved` or `applying`.
-  Any other write answers 409 with code `state` and the entry as it
-  stands, changing nothing, so a stale tab that still shows `waiting`
-  cannot move a line that is really `unresolved` or in flight. The
+  one of: to `applying` from `waiting`, `refused` or `unresolved`; to
+  `applied`, `refused` or `unresolved` from `applying`; to `dismissed`
+  from `waiting`, `refused`, `unresolved` or `applying`. Every allowed
+  pair changes the state, so two writers racing on one line can never
+  both pass (revision 11): there is no `applying → applying`, and Try
+  again on a line the page shows as in flight is two writes by the
+  human's one press, `applying → unresolved` with the words "left in
+  flight; the human checked the goal and tries again", then
+  `unresolved → applying`, and only then the act; a refusal of either
+  write reconciles the line and sends nothing. Any other write answers
+  409 with code `state` and the entry as it stands, changing nothing,
+  so a stale tab that still shows `waiting` cannot move a line that is
+  really `unresolved` or in flight. The
   runner takes that answer as the line's truth: it reconciles the line
   to the entry returned and never sends an act for it; if the entry is
   settled (`applied`, `refused`, `dismissed`) the run goes on, and if it
@@ -777,9 +783,11 @@ reasons, the title carried; the message, the stream and the snapshot
 carrying it; the outcome route's policy, its six states, its refusal of
 a running turn and of an unknown index, each allowed pair admitted with
 a matching `from`, a matching pair with a stale `from` refused with the
-entry, two writers racing on one line with only one admitted, the
-runner stopping on an unsettled conflict and going on past a settled
-one, Try again on an in-flight line sending `from: applying`, and the
+entry, `applying → applying` refused even with a matching `from`, two
+writers racing on one line with only one admitted for every allowed
+pair, the runner stopping on an unsettled conflict and going on past a
+settled one, Try again on an in-flight line as two writes sending one
+act and two tabs pressing it at once sending exactly one, and the
 message rewritten in place with the rest of the transcript untouched; the context block's
 line from recorded states; the describe table's row and a join test
 that every ledger act in the catalogue is in the table and every table
@@ -989,3 +997,14 @@ flight, and left no press that could recover a line abandoned at
 the run goes on or stops; Try again and Dismiss from `applying` are the
 human's explicit presses with `from: applying`. The builder was told in
 the same words. Read by Astra in the scoped confirmation on g1-s60.
+
+## Revision 11: every allowed pair changes the state
+
+From Astra's confirmation read on g1-s60 (S60-06 not confirmed): a
+retry from `applying` to `applying` left the compared state unchanged,
+so two tabs pressing Try again on one in-flight line both passed the
+compare-and-set and published twice. Folded: no `applying → applying`;
+Try again on an in-flight line is two writes, `applying → unresolved`
+then `unresolved → applying`, so the second tab's first write is
+refused; every allowed pair now changes the state. The builder was told
+in the same words; one more scoped read on this point alone follows.

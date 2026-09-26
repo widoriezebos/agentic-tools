@@ -109,8 +109,10 @@ applied · 1 dismissed", because the row and the card are one record.
   the composer filled as the card's does; a line at `applying` says "was
   being applied when the page left; check the goal before applying
   again" and offers Open the goal, Try again and Dismiss, as the card
-  does, each press sending `from: applying` so that only a human who
-  read that line can move it (g1-s58 D6, revision 10). The
+  does; Dismiss sends `from: applying`, and Try again is two writes,
+  `applying → unresolved` then `unresolved → applying`, so that only a
+  human who read that line can move it and two tabs pressing at once
+  send one act (g1-s58 D6, revisions 10 and 11). The
   group has checkboxes and the selection bar of the queue; its Apply
   opens the queue's own kind of sheet, one line per ticked row on screen
   with every argument whole and, for an approve, the budget from one
@@ -239,3 +241,17 @@ Confirmed by Astra as sufficient: the bulk sheet and the open row's
 budget on open (S60-02); the reader's four states and the counts
 (S60-03). The stale sentence that this slice lands after g1-s59 was
 removed in revision 2's head.
+
+## Dispositions (Astra's scoped confirmation read, 2026-09-26)
+
+Checked at `fe4bac5df`. S60-04 and S60-05 confirmed as folded, and
+every non-terminal state has an outgoing transition. S60-06 not
+confirmed on one point, folded in revision 4 and the parent's revision
+11:
+
+| id | finding | fold |
+|---|---|---|
+| S60-06 | `applying → applying` left the compared state unchanged, so two tabs pressing Try again on one in-flight line both passed the compare-and-set and published twice | no such pair; Try again on an in-flight line is two writes, `applying → unresolved` then `unresolved → applying`, so every allowed pair changes the state and the second tab's first write is refused (D3, g1-s58 D6) |
+
+One more scoped read on this point alone follows; the record is in
+g1-s60-astra-critique.md.

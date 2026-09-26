@@ -89,3 +89,23 @@ Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic cha
 - Reviewed `c3e099af4`. Findings are inferred from the written contracts and code read; no files changed or runtime tests run.
 
 VERDICT: 3 material findings (fail test 2): S60-04, S60-05, S60-06
+
+---
+
+# Astra's scoped confirmation read, on revision 3 (and g1-s58 revision 10)
+
+Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic chain, against `fe4bac5df`; the checklist was the three round-2 folds and nothing else. Verbatim; the disposition is g1-s60's revision 4 and g1-s58's revision 11.
+
+---
+
+Checked both designs at `fe4bac5df`; read-only.
+
+1. **S60-04 — confirmed as folded.** g1-s58 D6 requires `{from, state, words}`, with `from` captured from the line shown at the press and compared inside the writer. g1-s60 D5 inherits that contract for the inbox. A stale `from: waiting` cannot move a persisted `unresolved` or `applying` entry; reconciliation sends no act. **Test 1:** Yes—the fold changes the request and admission contract. **Test 2:** Passes for the identified stale-waiting failure.
+
+2. **S60-05 — confirmed as folded.** g1-s58 D6 continues past settled conflicts and stops on `applying` or `unresolved`, offering Continue; g1-s60 D5 states the same rule. In the two-tab `[open X, block Y by X]` case, conflicting with X's `applying` state now stops before the block. **Test 1:** Yes—the fold changes conflict control flow. **Test 2:** Passes for the identified premature continuation.
+
+3. **S60-06 — not confirmed: retrying `applying` does not exclude another retry.** **Evidence:** g1-s58 D6 allows `applying → applying`; g1-s60 D3 offers that retry. The parent nevertheless promises that two tabs cannot publish the act twice. **Concrete failure:** Both tabs display the same abandoned `applying` approval. After inspecting the goal, the human presses Try again in each tab before either finishes. Both send `{from: applying, state: applying}`. The first accepted write leaves the compared state unchanged, so the second also succeeds—even with serialized writes—and both runners submit approval. The specified "only one admitted" fixture fails for this pair. Recovery and protection against stale `from: waiting` are present, but exclusion between retries is not. **Test 1:** Yes—the recovery admission mechanism must distinguish competing attempts. **Test 2:** Fails **SAFE**—an in-scope two-tab recovery can publish the same approval twice.
+
+Every nonterminal state now has an allowed outgoing transition; no such line is permanently immovable. The remaining defect is duplicate retry admission.
+
+VERDICT: 1 folds not confirmed: S60-06
