@@ -587,16 +587,26 @@ common case.
   nothing but the transcript. The route serves persisted messages only
   and refuses a turn still running, in words. The conversation rewrites
   that one message in place through the atomic writer the trim already
-  uses, and admits a write only as a transition the persisted entry
-  allows, decided inside that writer (revision 9, from Astra's read of
-  g1-s60): `applying` from `waiting`, `refused` or `unresolved`;
-  `applied`, `refused` or `unresolved` from `applying`; `dismissed` from
-  `waiting`, `refused` or `unresolved`; any other write answers 409 with
-  code `state` and the entry as it stands, changing nothing. The runner
-  takes that answer as "someone else settled this line": it reconciles
-  the line to the entry returned, sends no act for it and goes on, so a
-  stale Apply in a second tab, or two presses at once, cannot publish
-  one act twice. An `applying` write that fails stops the run at that line with
+  uses, and admits a write only as a compare-and-set on the state the
+  caller saw, decided inside that writer (revision 9 and 10, from
+  Astra's reads of g1-s60): the body is `{from, state, words}`, `from`
+  being the state the line showed when the human pressed; the write is
+  admitted only when the persisted state equals `from` and the pair is
+  one of: to `applying` from `waiting`, `refused`, `unresolved`, or from
+  `applying` as the human's explicit Try again on a line the page shows
+  as in flight; to `applied`, `refused` or `unresolved` from `applying`;
+  to `dismissed` from `waiting`, `refused`, `unresolved` or `applying`.
+  Any other write answers 409 with code `state` and the entry as it
+  stands, changing nothing, so a stale tab that still shows `waiting`
+  cannot move a line that is really `unresolved` or in flight. The
+  runner takes that answer as the line's truth: it reconciles the line
+  to the entry returned and never sends an act for it; if the entry is
+  settled (`applied`, `refused`, `dismissed`) the run goes on, and if it
+  is unsettled (`applying`, `unresolved`) the run stops there as an
+  unresolved answer stops it, with Continue with the rest offered. Two
+  presses at once, or one in each of two tabs, cannot publish one act
+  twice, and an in-flight line left by a page that closed is recovered
+  by the human's own Try again or Dismiss after Open the goal. An `applying` write that fails stops the run at that line with
   its words and sends nothing. The card reads its lines from the message,
   so a reload shows applied as applied, and a line left at `applying` as
   "was being applied when the page left; check the goal before applying
@@ -765,10 +775,12 @@ whose blocker an earlier `open` of the same answer named, refusing an
 `open` of an existing id and an act on an unknown goal with their
 reasons, the title carried; the message, the stream and the snapshot
 carrying it; the outcome route's policy, its six states, its refusal of
-a running turn and of an unknown index, each allowed transition
-admitted and each other refused with the entry, two writers racing on
-one line with only one admitted, and the message rewritten in place
-with the rest of the transcript untouched; the context block's
+a running turn and of an unknown index, each allowed pair admitted with
+a matching `from`, a matching pair with a stale `from` refused with the
+entry, two writers racing on one line with only one admitted, the
+runner stopping on an unsettled conflict and going on past a settled
+one, Try again on an in-flight line sending `from: applying`, and the
+message rewritten in place with the rest of the transcript untouched; the context block's
 line from recorded states; the describe table's row and a join test
 that every ledger act in the catalogue is in the table and every table
 row the catalogue admits is in the catalogue. The six fixture
@@ -965,3 +977,15 @@ second approval record. Folded into D6 as the transition rule, with
 the conflict answer and the runner's reconciliation, and into section
 6's tests; the builder, mid-build, was told in the same words. Not sent
 to Astra as a round: it is the critic's own finding, folded as stated.
+
+## Revision 10: the write carries the state the caller saw
+
+From Astra's failsafe round on g1-s60 (S60-04, S60-05, S60-06): a pair
+table alone let a stale tab move a line that was really unresolved,
+told the runner to go on past a conflict whose entry was still in
+flight, and left no press that could recover a line abandoned at
+`applying`. Folded as one mechanism: the write is a compare-and-set on
+`from`, the state the caller saw; a conflict's entry decides whether
+the run goes on or stops; Try again and Dismiss from `applying` are the
+human's explicit presses with `from: applying`. The builder was told in
+the same words. Read by Astra in the scoped confirmation on g1-s60.

@@ -42,3 +42,50 @@ Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, against revision 1 of 
 - Reviewed design commit `77170636a`, treating g1-s58 as designed. Findings are inferred from the contracts and code read; no runtime tests were run or files changed.
 
 VERDICT: 3 material findings (fail test 2): S60-01, S60-02, S60-03
+
+---
+
+# Astra's round 2, the failsafe round, on revision 2
+
+Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic chain, against revision 2 at `c3e099af4`. Verbatim; the dispositions are the design's revision 3 and g1-s58's revision 10.
+
+---
+
+1. **S60-04 — High — A stale Apply can silently become a retry of an unresolved act**
+
+   **Evidence (read):** g1-s58 D6 (revision 9) permits `applying` from `waiting`, `refused` or `unresolved`, but the request body carries only `{state, words}`. It does not identify the state the human saw. g1-s60 D5 updates another tab's transcript without refreshing its inbox.
+
+   **Concrete failure:** Tab A's approval lands, its response is lost, and its runner records `unresolved`. Tab B still shows the proposal as waiting. Its ordinary Apply successfully transitions the persisted `unresolved` entry to `applying` and submits another approval, without first showing the uncertainty warning or asking for Try again. The unchanged goal definition and budget pass the freshness guard.
+
+   **Change:** Include the caller's reviewed source state in the transition request and compare it atomically, returning the current entry without dispatch when it differs.
+
+   **Test 1:** Yes—changes the transition payload, admission check and both callers. **Test 2:** Fails **SAFE**—a stale confirmation can repeat an act that already landed without informed retry consent.
+
+2. **S60-05 — Medium — A conflict skips an action whose outcome is still unknown**
+
+   **Evidence (read):** g1-s58 D6 (revision 9) directs the runner to reconcile every state conflict and "go on." A conflict can return `applying`, which is not settled. This contradicts the parent's stop-at-uncertainty rule, inherited by g1-s60 D4.
+
+   **Concrete failure:** Tab A starts only `open X`. Tab B confirms `[open X, block Y by X]` while that first act remains in flight. Its first transition conflicts with `applying`; the specified reconciliation skips ahead and submits the block before X exists. The block is refused, then X lands, leaving the requested sequence incomplete. No explicit Continue authorized proceeding past the unknown result.
+
+   **Change:** Reconcile conflicts according to the returned state, stopping on an in-flight or unresolved entry and requiring explicit Continue before sending subsequent lines.
+
+   **Test 1:** Yes—changes conflict handling in the shared runner. **Test 2:** Fails **WORK**—an ordinary two-tab interaction violates the promised ordering and uncertainty stop.
+
+3. **S60-06 — Medium — Try again on an `applying` row cannot succeed**
+
+   **Evidence (read):** g1-s60 D3 explicitly offers Try again for persisted `applying` entries. The shared runner must first record `applying`, but g1-s58 D6 (revision 9) rejects `applying → applying`; neither design specifies an intervening recovery operation.
+
+   **Concrete failure:** The browser closes after recording `applying` but before submitting the act. On return, the human checks the goal and presses the offered Try again. Every press receives a state conflict and sends nothing. The row remains permanently `applying`, and Dismiss is also inadmissible from that state.
+
+   **Change:** Specify a supported recovery path for abandoned `applying` entries and align the offered controls with it while retaining the rejection of an ordinary duplicate Apply.
+
+   **Test 1:** Yes—changes recovery controls and their transition contract. **Test 2:** Fails **WORK**—the advertised recovery fails on the first interrupted application.
+
+**Deferred and non-material**
+
+- **S60-02's confirmation fold is sufficient:** open rows and bulk sheets capture and display approval budgets before submission. **Test 1:** No further change required. **Test 2:** Passes.
+- **S60-03's retention fold is sufficient apart from S60-06:** failed and in-flight entries survive rereads with their words. Counts describe those outstanding entries; "n new" remains based on proposal time. **Test 1:** No additional counting mechanism required. **Test 2:** Passes.
+- The stale g1-s59 landing reference does not override the explicit removal of that dependency. **Test 1:** No substantive implementation difference. **Test 2:** Passes.
+- Reviewed `c3e099af4`. Findings are inferred from the written contracts and code read; no files changed or runtime tests run.
+
+VERDICT: 3 material findings (fail test 2): S60-04, S60-05, S60-06

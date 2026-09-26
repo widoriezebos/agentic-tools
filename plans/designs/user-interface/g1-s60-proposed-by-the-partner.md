@@ -13,6 +13,10 @@ g1-s58 step 1 as built, and lands after it. Revision 2, the same
 night, after Astra's round-1 read: three material findings, all
 folded at the foot, one of them into the parent as its revision 9;
 g1-s59 is on hold behind the verb system, so nothing here waits on it.
+Revision 3, after Astra's failsafe round: three more, all consequences
+of the transition fold, folded as one mechanism in the parent's
+revision 10; the loop closed at round 2, a scoped confirmation read
+follows.
 
 ## What exists and binds
 
@@ -104,7 +108,9 @@ applied · 1 dismissed", because the row and the card are one record.
   Open the goal and Ask the Partner, the last opening the drawer with
   the composer filled as the card's does; a line at `applying` says "was
   being applied when the page left; check the goal before applying
-  again" and offers Open the goal and Try again, as the card does. The
+  again" and offers Open the goal, Try again and Dismiss, as the card
+  does, each press sending `from: applying` so that only a human who
+  read that line can move it (g1-s58 D6, revision 10). The
   group has checkboxes and the selection bar of the queue; its Apply
   opens the queue's own kind of sheet, one line per ticked row on screen
   with every argument whole and, for an approve, the budget from one
@@ -121,11 +127,15 @@ applied · 1 dismissed", because the row and the card are one record.
   the same code. A row in flight shows the line's state as the card
   does; Dismiss records `dismissed` through the route.
 - D5. **The card and the row read one state, and only one caller can
-  move it.** The outcome route admits a write only as a transition the
-  persisted entry allows (g1-s58 D6, revision 9) and answers a conflict
-  with the entry as it stands; a caller whose `applying` was refused
-  reconciles its row and sends nothing, so a stale row in a second tab
-  cannot publish an act the card already applied (Astra, S60-01). On
+  move it.** The outcome route admits a write only as a compare-and-set
+  on the state the caller saw (g1-s58 D6, revisions 9 and 10) and
+  answers a conflict with the entry as it stands; a caller whose write
+  was refused reconciles its row to that entry and sends nothing, goes
+  on when the entry is settled, and stops the run with Continue offered
+  when the entry is in flight or unresolved, so a stale row in a second
+  tab can neither publish an act the card already applied nor retry an
+  act whose outcome is unknown without reading that first (Astra,
+  S60-01, S60-04, S60-05). On
   recording a state the route publishes a `proposal` beat with the
   updated entry to the service's watchers, so a transcript open in
   another tab, or the drawer beside the inbox, folds the change into its
@@ -210,3 +220,22 @@ Non-material, confirmed by Astra: the human identity resolves to one
 transcript, the unnamed seat included; schema 4 already exists on the
 branch, so this is schema 5, and an older frontend simply skips the
 new kind. Astra's read is saved verbatim in g1-s60-astra-critique.md.
+
+## Dispositions (Astra round 2, the failsafe round, 2026-09-26, under R-124)
+
+Three material findings, every one a consequence of round 1's
+transition fold, every one a bounded choice, folded as one mechanism
+in the parent (g1-s58 D6, revision 10) and relied on here; the loop
+closes at round 2 under the critique skill's principled exit, with a
+scoped confirmation read of the folds.
+
+| id | finding | fold |
+|---|---|---|
+| S60-04 | the write carried only the target state, so a stale tab showing `waiting` could move a line that was really `unresolved` to `applying` and retry a landed act without reading the uncertainty | the write carries `from`, the state the caller saw, and is admitted only when the persisted state equals it (g1-s58 D6) |
+| S60-05 | on a conflict the runner went on, even when the returned entry was still in flight, breaking the stop-at-uncertainty rule and a proposal's order | a conflict's entry decides: settled goes on, in flight or unresolved stops the run with Continue offered (D5, g1-s58 D6) |
+| S60-06 | Try again and Dismiss on a line abandoned at `applying` could never be admitted | both are the human's explicit presses with `from: applying`, allowed pairs after Open the goal (D3, g1-s58 D6) |
+
+Confirmed by Astra as sufficient: the bulk sheet and the open row's
+budget on open (S60-02); the reader's four states and the counts
+(S60-03). The stale sentence that this slice lands after g1-s59 was
+removed in revision 2's head.
