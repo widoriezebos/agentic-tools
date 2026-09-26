@@ -180,7 +180,7 @@ describe("the fields the Partner may be offered words for", () => {
     expect(SOURCE).toContain("set={putWords}");
     expect(SOURCE).toContain("opening={opening}");
     for (const field of ["Intent", "Next step", "Labels"]) {
-      expect(SOURCE).toContain(`<FieldSuggestions opening={opening} field="${field}"`);
+      expect(SOURCE).toContain(`<AskThePartner opening={opening} field="${field}"`);
     }
   });
 
@@ -191,10 +191,56 @@ describe("the fields the Partner may be offered words for", () => {
     expect(SOURCE).not.toContain('field="Goal"');
   });
 
-  // And the label's own row is on screen, which is where the count stands.
-  it("puts each label in a row that has room for the count beside it", () => {
+  // And the label's own row is on screen, which is where the link stands.
+  it("puts each label in a row that has room for the link beside it", () => {
     const markup = sheet();
     expect(markup.match(/class="ms-act-label"/g)).toHaveLength(3);
+  });
+});
+
+/**
+ * Where a proposal stands, and where the caret is reported from.
+ *
+ * Neither can be read from static markup — there is no conversation here to
+ * carry a proposal, and no document to move a caret in — so the wiring is read
+ * where it is written. What it asserts is the one thing g1-s52 moved: the block
+ * renders under the field's own control rather than in the drawer, and the field
+ * is what tells the store where the human is writing.
+ */
+describe("where the Partner's proposal stands", () => {
+  it("is under each writable field, inside the sheet", () => {
+    for (const field of ["Intent", "Next step", "Labels"]) {
+      expect(SOURCE).toContain(`<FieldProposals opening={opening} field="${field}"`);
+    }
+    // Under the control and above its hint, which is where the design draws it.
+    expect(SOURCE).toMatch(
+      /<textarea[\s\S]*?\/>\s*<FieldProposals opening=\{opening\} field="Intent"/,
+    );
+    expect(SOURCE).toMatch(
+      /<TokenField[\s\S]*?\/>\s*<FieldProposals opening=\{opening\} field="Labels"/,
+    );
+  });
+
+  it("reports the caret from each field's own row", () => {
+    expect(SOURCE).toContain("const inHand = useFieldInHand(opening);");
+    for (const field of ["Intent", "Next step", "Labels"]) {
+      expect(SOURCE).toContain(`inHand("${field}");`);
+    }
+  });
+
+  /**
+   * No press does Use this and Save at once, in this step.
+   *
+   * Astra's two material findings are why (F1, F2): this sheet's save reads its
+   * draft and its "nothing changed" guard from the render, and guards busy on its
+   * own button, so a second caller that first set the words would save the
+   * previous delta, or refuse, or report a save it cannot confirm. One press
+   * waits for a submission path that takes the next draft explicitly and returns
+   * its real outcome.
+   */
+  it("offers no press that uses and saves at once", () => {
+    expect(SOURCE).not.toMatch(/Use and save/i);
+    expect(SOURCE).not.toMatch(/Used and saved/i);
   });
 });
 

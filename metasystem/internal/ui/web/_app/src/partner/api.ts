@@ -180,6 +180,16 @@ export type Suggestion = {
   field: string;
   /** The field's whole new value, as the Partner wrote it. */
   text: string;
+  /**
+   * Whether the human was shown it as something to use.
+   *
+   * A refused one travels rather than being dropped: a human who asked for a
+   * better wording and got no proposal has to be able to read why, where they
+   * read the answer. It carries no opening, so nothing can offer to write it.
+   */
+  offered: boolean;
+  /** Why it was not offered, in the words a human reads, or "" for one that was. */
+  reason?: string;
 };
 
 /** What the conversation can point at, for the links in an answer. */

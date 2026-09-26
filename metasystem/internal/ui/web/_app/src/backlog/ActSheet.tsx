@@ -14,7 +14,9 @@ import {
   type Move,
 } from "./moves";
 import { Panel } from "./Panel";
-import { FieldSuggestions, useOpening } from "../partner/Suggestion";
+import { AskThePartner, FieldProposals } from "../partner/FieldProposals";
+import { useOpening } from "../partner/Suggestion";
+import { useFieldInHand } from "../partner/writing";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
@@ -60,6 +62,8 @@ export function ActSheet({
   // This opening of this sheet, minted once. Withdrawing has one field the
   // Partner may write; approving has none, and both are this one opening.
   const opening = useOpening();
+  // Which field the caret is in, reported by the field's own row.
+  const inHand = useFieldInHand(opening);
   const { session, askToSignIn } = useSession();
   const retried = useRef(false);
   const authority = actingAs(backlog.authority, session);
@@ -146,10 +150,15 @@ export function ActSheet({
       {approving ? (
         <BudgetFields draft={draft} source={prefill.source} onChange={setDraft} />
       ) : (
-        <div className="ms-act-field">
+        <div
+          className="ms-act-field"
+          onFocus={() => {
+            inHand("Reason");
+          }}
+        >
           <div className="ms-act-label">
             <label htmlFor="ms-act-reason">Reason (optional)</label>
-            <FieldSuggestions opening={opening} field="Reason" value={reason} />
+            <AskThePartner opening={opening} field="Reason" value={reason} />
           </div>
           <input
             id="ms-act-reason"
@@ -159,6 +168,7 @@ export function ActSheet({
               setReason(event.target.value);
             }}
           />
+          <FieldProposals opening={opening} field="Reason" value={reason} />
         </div>
       )}
     </Panel>
