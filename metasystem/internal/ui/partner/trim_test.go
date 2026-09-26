@@ -127,6 +127,26 @@ func TestAnUnfinishedTrailingTurnIsKeptWhole(t *testing.T) {
 	testutil.Expect(t, "and everything kept is that turn", whole, true)
 }
 
+// A transcript past the floor but inside both of its bounds is left alone. A
+// sweep that trimmed a conversation nobody's bounds were crossed by would be a
+// sweep taking a human's history for nothing.
+func TestATranscriptInsideBothBoundsIsLeftAlone(t *testing.T) {
+	t.Parallel()
+	now := at(t, "2026-09-26T10:00:00Z")
+	conversation, directory := transcript(t, 110, now.AddDate(0, 0, -30), "a short exchange")
+
+	cut, err := conversation.Trim(partner.TrimBounds{Bytes: 2 << 20, Age: 90 * 24 * time.Hour}, now)
+
+	testutil.Require(t, "trimming", err, nil)
+	testutil.Expect(t, "nothing went", cut, 0)
+	held := conversation.Messages(0)
+	testutil.Expect(t, "every message is still there", len(held), 220)
+	testutil.Expect(t, "and no notice was written", notices(held), 0)
+	reopened, err := partner.OpenConversation(directory, "wido")
+	testutil.Require(t, "reopening", err, nil)
+	testutil.Expect(t, "the file was not rewritten either", len(reopened.Messages(0)), 220)
+}
+
 // A transcript under the floor is never trimmed, whatever the bounds say: two
 // hundred messages are kept even where they are over the size and past the day
 // bound, which is why the numbers are retention targets and not disk ceilings.
