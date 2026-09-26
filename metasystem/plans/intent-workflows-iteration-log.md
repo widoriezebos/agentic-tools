@@ -495,3 +495,55 @@ the primary implementation still sits on merge dd1233e66 until main9 returns, so
 merging avoids racing its shared testing.json/metasystem.conf writes. Live user
 receipt/narrator rows are preserved. No product certification, final coverage or
 Sol review is claimed by these checkpoints; all remain completion requirements.
+
+## Final composition and bounded recovery proof
+
+Live main and the primary branch now include f689a9a02; primary merge57166c10c
+preserves the incoming UI storage and sitting work, including testing/configuration
+changes. Live receipt/narrator rows remain user-owned and unstaged. Product work is
+still uncommitted and awaits independent Sol review and final immutable acceptance.
+
+Main9 completed14:28:01 CEST (20260926t120520-b255ad63c1). It corrected the actual
+same-checkout staging loss: a refused commit restores the captured prior index,
+leaves worktree bytes intact and reports uncertain cleanup as partial. Real endpoint
+manual delivery passes with explicitly reported proof/ledger seams; this is not an
+external-CLI whole journey. The actual diagnostic child recipe found an omitted
+report path in the read prompt, now fixed and tested. Its final two background tests
+were killed when the provider returned: one output is empty and the other absent,
+with both runtime task files ending [killed]. No broad pass is claimed. Main10
+(20260926t123823-c990e7095c) completes owner-correct qualified waits, reserved-name
+claim continuations, public guidance and truthful test registrations on merged main.
+
+Carried changes are completely imported through tree923ae26d58af6df749595643693f470184f6299f,
+with actual replacement, authenticated-owner word adoption, same-word recovery and
+public test recovery passing the unchanged land.sh transaction. Scratch candidate
+creation skips installed delivery hooks; final delivery still executes its hooks.
+Ambiguous retained bases refuse before staging and offer explicit public replacement;
+the displayed replacement, public test and landing command complete in the actual
+fixture. The final correction launch20260926t122906-45e50e85ef completed14:33:45 CEST.
+No remaining carried writer is active; independent review/final gates remain.
+
+Planning checkpoint2 (20260926t121453-b81d774e4d) completed14:39:55 CEST. Root computed
+and imported tree28249526e5a001b6c8698e18686faba029187063 from83eac8372: six files,
+605 additions/222 deletions. The dispatcher now refuses a fresh root while the same
+goal/document has an open chain. All newly introduced scenario logic lives in Go;
+the existing shell bed only supplies its authenticated environment and checks each
+real-owner journey passed. Structured goal-state/revision, actual follow-up, lost
+response, closure and author cancellation pass. Real public failed-review retry
+remains an explicit obligation, not inferred from lower-level checks.
+
+The design owner always freezes design critique at two rounds. A foreign third round
+after completed round2 is therefore not a lawful real-bed scenario; do not raise the
+cap to manufacture one. Generic stored-record replay and actual lost-response/moved-
+revision replay cover their separate claims. Publication collision already executes
+the actual conditional writer in TestIntentDesignAuthorJourney; the real process
+journey separately proves prompt, output, publication and cancellation. A duplicate
+full-process collision exercise is not required without a new defect. Dead claimed-
+supervisor cancellation and actual public failed-review retry remain required.
+
+Planning continuation3 (20260926t124854-10bc6f15cb) uses the existing fake adapter's
+behavior-source reader in its disposable bed only. Go fixture code controls markers;
+real supervision/reaping must write the death proof before public retry starts the
+same chain's second round. No production injection hook or fabricated terminal/death
+record is authorized. Stop-loss:65 new tools/18 actual minutes, diagnose a concrete
+owner failure before repeating the bed. Root retains certification.

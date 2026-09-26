@@ -254,9 +254,11 @@ parent's full capability audit and repeated real public journeys.
 Final named fixture details:
 
 - IP-C4 / TestDesignCritiqueReplayAndCap: completed follow-up replay with retained
-  child; lost response with operation-to-job lookup; intervening foreign round;
-  moved goal revision. Every replay rejoins the authentic same child, launches
-  nothing, and cannot adopt a mismatched subject.
+  child; lost response with operation-to-job lookup; moved goal revision. Every
+  replay rejoins the authentic same child, launches nothing, and cannot adopt a
+  mismatched subject. A stored-record fixture covers an intervening foreign round;
+  the real design owner freezes the cap at two, so a third round after completed
+  round two is not a lawful runtime scenario and must not raise that cap for proof.
 - IP-C5 / same fixture plus actual follow-up owner: failed and timeout/budget-cap
   critic offer public --retry; old live process refuses; original cap is enforced;
   no fresh root for the same goal/document; repeated failed retry rejoins.
