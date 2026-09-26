@@ -199,6 +199,43 @@ func TestAFieldAnotherActTakesIsRefusedByNamingThatAct(t *testing.T) {
 		strings.Contains(onOther, "id is the new goal's own field on open-goal"), true)
 }
 
+// A key no act takes at all is refused by name.
+//
+// It is the misspelling that matters, and it is how a field is lost in silence:
+// a Partner that sent `blocked_by` where the body says `blockedBy` used to be
+// told it had prepared the action, and the card carried no dependency — so a
+// press opened a goal that waited for nothing.
+func TestAKeyNoActTakesIsRefusedByName(t *testing.T) {
+	t.Parallel()
+	words := refusedPropose(t, "a misspelt blockedBy", uitools.Args{
+		"verb": "open-goal", "goal": "refund-worker",
+		"intent": "i", "nextStep": "n", "basis": "b",
+		"severity": float64(1), "novelty": float64(1), "exposure": float64(1), "accumulation": float64(1),
+		"blocked_by":  []any{"bank-sandbox"},
+		"explanation": "x",
+	})
+	testutil.Expect(t, "the key is quoted back",
+		strings.Contains(words, `"blocked_by" is not a field this tool takes`), true)
+	testutil.Expect(t, "with what this act does take",
+		strings.Contains(words, "open-goal takes intent, nextStep"), true)
+	testutil.Expect(t, "and the three every act takes",
+		strings.Contains(words, "beside verb, goal and explanation"), true)
+
+	// The three common fields and the act's own are admitted, so nothing that
+	// belongs is caught by this.
+	prepared(t, uitools.Args{
+		"verb": "park-goal", "goal": "g1-s44", "because": "away", "explanation": "x",
+	})
+
+	// And the schema says so too, for a client that validates before it calls.
+	described := map[string]uitools.Tool{}
+	for _, tool := range uitools.Catalogue() {
+		described[tool.Name] = tool
+	}
+	testutil.Expect(t, "the schema is closed",
+		described[uitools.OpPropose].InputSchema["additionalProperties"], false)
+}
+
 // Every authority and plumbing field, and every form the routes cannot carry,
 // is refused by its own name with where it can be done instead.
 func TestTheAuthorityAndPlumbingFieldsAreRefusedByName(t *testing.T) {

@@ -1,6 +1,7 @@
 package uitools
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -339,6 +340,19 @@ func propose(args Args) Result {
 			return refusedCall(verb + " needs " + needed + ": " + needs(verb, needed))
 		}
 	}
+	// And every other key the caller sent, whatever it is. The two checks above
+	// name a field this act does not take and a field no act takes; this one is
+	// what catches a MISSPELLING, which is the way a field is lost in silence: a
+	// Partner that sent `blocked_by` where the body says `blockedBy` was told it
+	// had prepared the action, and the card carried no dependency at all.
+	for _, key := range sortedKeys(args) {
+		if commonProposalField(key) || admitted[key] || !args.Given(key) {
+			continue
+		}
+		return refusedCall(quotedKey(key) + " is not a field this tool takes; " + verb +
+			" takes " + listed(act.Fields()) + ", beside verb, goal and explanation")
+	}
+
 	for _, field := range act.Fields() {
 		value, refusal := valueOf(args, field)
 		if refusal != "" {
@@ -524,6 +538,28 @@ func everyProposalField() []string {
 	return all
 }
 
+// commonProposalField is one of the three every act takes: which act it is, the
+// goal it is about, and the Partner's own words for the human.
+func commonProposalField(key string) bool {
+	return key == "verb" || key == "goal" || key == "explanation"
+}
+
+// sortedKeys is the caller's own keys in a fixed order, so a call with two
+// unknown fields is refused with the same one twice rather than with whichever
+// the map happened to yield first.
+func sortedKeys(args Args) []string {
+	named := make([]string, 0, len(args))
+	for key := range args {
+		named = append(named, key)
+	}
+	sort.Strings(named)
+	return named
+}
+
+func quotedKey(key string) string {
+	return `"` + oneLine(key) + `"`
+}
+
 func anyGiven(fields map[string]string, of []string) bool {
 	for _, field := range of {
 		if _, given := fields[field]; given {
@@ -616,7 +652,13 @@ func proposeSchema() map[string]any {
 		FieldBlocker: map[string]any{"type": "string",
 			"description": "On " + ProposeBlock + " and " + ProposeUnblock + ": the goal the one named in goal waits for."},
 	}
-	return schema(properties, []string{"verb", "goal", "explanation"})
+	asked := schema(properties, []string{"verb", "goal", "explanation"})
+	// Closed, unlike every other tool's. This is the one tool whose arguments
+	// become an act a human presses, and a field the schema quietly tolerated is
+	// a field the card would silently omit; a client that validates is told
+	// before the call, and one that does not is told by the refusal above.
+	asked["additionalProperties"] = false
+	return asked
 }
 
 func riskProperty(what string) map[string]any {
