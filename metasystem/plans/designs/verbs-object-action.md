@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3FS4JWK13Z7W87G1SAEJZ06
-- Status: draft (revision 3)
+- Status: draft (revision 4)
 - Goals: verbs-match-intent
 - Supersedes: `verb-cleanup.md` rule "Do not migrate thousands of private
   process-protocol calls" and its retention of the family dispatcher;
@@ -155,7 +155,7 @@ predecessor in the same slice.
 | | review | `review G`, `review goal G`, `review G --changes/--patch`, `review commit SHA --goal G`, `review changes`, `review diff`, `review job J`, `review run RUN`, `review G --finding F --test` |
 | | revise | `revise G`, `revise job R`, `revise run RUN` |
 | | land | `land G ...`, `land job J` |
-| | wait | `wait G`, `wait goal G`, `wait job/run/proof/resume/review ID`, `wait G --for` |
+| | wait | `wait G`, `wait goal G`, `wait job/run/proof/resume/review ID`, `wait G --for`, and `wait file PATH --until present\|absent` as `work wait --path PATH --until present\|absent` (caller-relative path, same observation and durable resumption, `intent_work.go:193,1219`) |
 | | stop | `stop job J`, `stop review REF` |
 | | status | `status job J`, `status run RUN`, `status work`, `show review REF` |
 | | close | `done job J` |
@@ -328,7 +328,7 @@ later unit (a ratchet: numbers, not lists, except where a list is the rule).
 | R2 | Every public form is `OBJECT ACTION ...` (or one of the two `status` forms); help, JSON help and the Partner catalogue come from the one table; hidden entries never appear. | Test renders every help surface and checks each usage line. |
 | R3 | Entries are exactly 3.2's list, each with a launcher reference that exists in non-test code. | Test: entry set equals the table's hidden set; each launcher string found. |
 | R4 | No committed shell file invokes the installed binary except the stubs of 3.3. | Static test over `git ls-files '*.sh' '*.bash'` for binary invocation patterns (`$ms`, `${ms}`, `$engine`, `$deadline_engine`, `$gate_build_scratch`, `bin/metasystem`, `METASYSTEM_BIN`, `METASYSTEM_PROOF_AUTH_BIN`, `go run ./cmd/metasystem`, pass-through `"$@"` into those); ceiling ratchets to the stub count. A second ceiling on total shell lines under `metasystem/scripts`. |
-| R5 | Public actions never subprocess the engine for a non-entry. | Static test for exec of `os.Executable()`, `os.Args[0]` or a resolved engine path whose argv is not an entry; ceiling ratchets to zero. |
+| R5 | Public actions never subprocess the engine for a non-entry, except a proof launched by a resident owner (6.2). | Static test for exec of `os.Executable()`, `os.Args[0]` or a resolved engine path whose argv is neither an entry nor the resident proof launch; ceiling ratchets to zero. |
 | R6 | Text shown to people and agents names only public forms. | Test extracts `metasystem W W` and `bin/metasystem W W` from Go string literals, live docs, skills, role packets, `AGENTS.md`, `wow.md` and UI source (excluding `records/`, historical `plans/`, `memory/`) and checks each against the public table. |
 | R7 | Authority parity for every subprocess replaced by an in-process call (6.2). | Per replaced call: authorization and refusal parity, holder classification and claim epoch, human-proof rejection, hand-back and release, compared against the subprocess era on the same fixture. |
 | R8 | Process recognizers follow their process (6.6). | For each entry and each ported long-lived process: classification and authorized versus refused signalling against the process's actual argv. |
@@ -472,6 +472,18 @@ Witness beyond R7: an unannounced agent runtime with a controlling terminal runs
 `settings coordinator --declare --by NAME` directly and is refused by the human
 gate (`brain.go:28-32`), as today.
 
+A proof keeps its own process when the caller is a resident owner (VOA-15).
+Admission records the current process as the proof's launcher
+(`proof_run.go:1130`, `proofrun/launcher.go:125`) and goal-stop cancellation
+signals that launcher (`dispatch/stop.go:707`, `proofrun/stop.go:64`). Run
+in-process inside the landing batch owner, cancelling one proof would signal the
+owner serving every other batch. So the landing batch owner's proofs
+(`landing_batch_prove.go:322`, `landing_batch_red.go:91`,
+`landing_batch_land.go:553`) stay child processes running `test run`, with the
+invocation context passed explicitly rather than through inherited environment.
+Witness: cancel one proof while the owner is proving another batch; the owner
+survives and completes the other.
+
 Per-invocation execution state moves with the call (VOA-14). A replaced child
 discarded its environment on exit; an in-process call inside a resident owner
 does not. Every environment variable the reached code reads or writes as
@@ -566,9 +578,15 @@ new entries (`hook`, `pre-commit`) with their stubs.
 - The stubs tolerate an older engine by rebuilding once (3.3). A unit that
   changes the hook stub lands only with the engine that serves it in the same
   commit, so a checkout that pulls and rebuilds is consistent.
-- The cutover executor is the existing authorized rearm-on-landed path
-  (`rearm_on_landed.go:73-83`): a checkout's steward whose enrolled engine is
-  behind its tip by landed commits rebuilds and re-arms itself. `system stop`
+- The cutover executor is the existing authorized rearm-on-landed decision and
+  rebuild (`rearm_on_landed.go:73-83,462`). Today only test preparation calls it
+  (`test.go:560`, `rearm_on_landed.go:548`), so a checkout that pulls and runs
+  no test keeps its old engine (VOA-11-R3). U1 adds the trigger: the session
+  start owner (`runSessionStart`, `wait_verb.go:471`, reached by the runtime's
+  start hook) runs the same decision and, when the enrolled engine is behind the
+  tip by landed commits, the same authorized rebuild and re-arm, without test
+  preparation's index handling. Witness: a peer checkout pulls U1, runs no test,
+  starts a session, and `work build` then routes. `system stop`
   and `system start` stay human-only (`process_verbs.go:172,479`) and are not
   part of the automatic cutover (VOA-11-R2). U0b moves that rebuild to
   `devgate build` before any later cutover depends on it; until then it uses
@@ -577,6 +595,18 @@ new entries (`hook`, `pre-commit`) with their stubs.
   its human restarts it.
 - A unit that removes a verb a live delegate might call lands only when the
   checkout's job registry shows no running delegate launched before it.
+- Retained executable plans (VOA-16). A unit run stores its proof command
+  verbatim (`intent_work.go:624`) and resume replays it
+  (`launch/unit_run.go:155,369`); its reservation digest forbids editing it
+  (`launch/unit_named.go:295`). U1 adds a check that scans resumable unit runs
+  for a stored argv that invokes the engine with a spelling the landing removes,
+  and the landing's precondition is that the scan is empty: such runs are
+  finished or abandoned through their existing owners first. Resume also refuses,
+  before launching, a stored argv that invokes the engine with a command the
+  engine no longer has, naming the run and the abandon remedy, so a run created
+  on another checkout cannot replay a deleted spelling. Witness: a suspended run
+  whose proof command is `metasystem test --goal G` is listed by the scan and
+  refused at resume after U1; its digest is never altered.
 - The browser UI: acts call Go functions; displayed command strings change in U1
   (`ui/decisions/decisions.go:817`, `ui/act/act.go:20,45,220,665`,
   `lifecycle/*`, `httpd/walkthrough/fleet.go:231-288`,
@@ -629,3 +659,13 @@ material findings, all accepted.
 | VOA-11-R2 cutover executor and bootstrap order | accepted | 7; U0b |
 | VOA-13 `test plan` public and entry | accepted | 3.2 |
 | VOA-14 invocation-local state | accepted | 6.2 |
+
+Round 3, Codex `gpt-6-astra`, against revision 3: five of six round-2 folds
+verified, four material findings, all accepted.
+
+| Finding | Disposition | Where folded |
+|---|---|---|
+| VOA-11-R3 cutover trigger | accepted | 7: session start runs the rearm decision |
+| VOA-15 in-process proof cancellation | accepted | 6.2: resident owners keep proof children; R5 |
+| VOA-16 retained executable plans | accepted | 7: scan precondition and resume refusal |
+| VOA-17 file waits | accepted | 3.1: `work wait --path` |

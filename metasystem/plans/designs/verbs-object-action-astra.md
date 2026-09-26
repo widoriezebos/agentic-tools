@@ -224,3 +224,72 @@ Material findings: 6
 
 Codex session ID: 01a0dfab-41d4-7c62-91b9-956bdfa4f955
 Resume in Codex: codex resume 01a0dfab-41d4-7c62-91b9-956bdfa4f955
+
+---
+
+Round 3: Codex gpt-6-astra, read-only, against revision 3 (c1e6f31f7).
+
+Read-only review of `c1e6f31f7`. No files or Git state were changed; no builds or tests were run. Verification below means the proposed fold matches the traced code path. Failure scenarios are source-derived.
+
+| Round-2 fold | Verification |
+|---|---|
+| VOA-02-R2 | Verified. The [per-edge identity rule](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:455) preserves the current child’s [parent-based human gate](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/brain.go:28), including the classifier’s [parent-first signature walk](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/lease/classify.go:426). |
+| VOA-03-R2 | Verified. [U1 now migrates the separate top-level machinery routes](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:359), covering the actual [dispatch wait](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/agents/dispatch.sh:1131), [cancellation](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/stoptransition/families.go:241), and [critic continuation](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/goal_branch.go:216) calls. The existing [explicit internal dispatcher](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/main.go:793) supports the proposed temporary routing. |
+| VOA-08-R2 | Verified. The [self-resolving stub](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:296) preserves the existing [installation-directory behavior](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/agents/go-build.sh:10) required by adoption’s [absolute-path invocation](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/adopt.sh:216). |
+| VOA-11-R2 | Not verified; see VOA-11-R3 below. |
+| VOA-13 | Verified. The [explicit public/protocol exception](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:230) preserves the existing [raw JSON output](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:223), [retained-engine argv and strict decoder](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:908), and [candidate-engine probe](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test_protection.go:233). |
+| VOA-14 | Verified for the original state leak. [Request-local execution state](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:475) removes the lifetime mismatch between the [process-global restart flag](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:484), today’s [separate proof child](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/landing_batch_prove.go:322), and the [resident owner loop](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/landing_batch_owner.go:664). |
+
+**VOA-11-R3 — High — fold does not resolve: automatic cutover has no steward trigger**
+
+Evidence: [Section 7](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:569) assigns rebuilding to an already-existing steward path. The actual `landedRearm` entry is [test preparation](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:560); its implementation explicitly describes that caller at [rearm_on_landed.go:548](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/rearm_on_landed.go:548). The steward’s [resident loop](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/steward/runner.go:205) ticks, revives and delivers notifications; its [revival callback](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/steward_verbs.go:639) invokes `steward revive`. The `up` recovery path [re-enrolls an already-rebuilt executable](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/up/up.go:566), rather than building it.
+
+Scenario: An armed peer pulls U1 without starting another test invocation or landing a batch. Its source and instructions contain the new grammar, but its installed engine remains old. The steward does not perform the promised rebuild. The newly instructed `work build` therefore cannot run. Moving the bootstrap earlier fixes availability, but does not supply the missing trigger.
+
+Change: Assign an explicit cutover invocation and executor before new commands become usable on each affected checkout. Wire that invocation to the authorized rebuild/rearm sequence, and test a peer that pulls U1 without subsequently running tests.
+
+Test 1: Adds required cutover control flow and an integration fixture.
+
+Test 2: WORK — the prescribed automatic transition does not execute, leaving peers unable to use the delivered grammar.
+
+**VOA-15 — High — In-process proof cancellation can terminate the shared landing owner**
+
+Evidence: [U1 replaces landing batch children with owner calls](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:370). Today the proof has a [separate process](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/landing_batch_prove.go:322). Admission records the [current process as launcher](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/proof_run.go:1130), and suite publication likewise records [its own PID](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/proofrun/launcher.go:125). Goal-stop cancellation [stops that launcher directly or through its process records](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/dispatch/stop.go:707); the latter path explicitly includes [signalling the launcher](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/proofrun/stop.go:64).
+
+Scenario: The resident landing owner runs a proof in-process. A goal stop cancels that proof. Its recorded launcher is now the landing owner itself, so the existing cancellation ladder sends TERM—and potentially KILL—to the process serving other batches. Invocation-local environment and caller classification do not isolate this cancellation.
+
+Change: Retain a dedicated, declared per-proof launcher process for resident callers, with its own cancellation identity. Add a fixture cancelling one proof while the landing owner remains alive and continues other work.
+
+Test 1: Changes the process-entry inventory, U1’s subprocess-removal scope, and cancellation tests.
+
+Test 2: SAFE — stopping one proof terminates a shared running owner outside that proof’s intended scope.
+
+**VOA-16 — Medium — Retained executable plans can replay deleted commands after cutover**
+
+Evidence: The design promises [resuming an existing unit run through `work build ID`](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:154), but its cutover checks only [running delegates](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:578) and says [records retain old spellings](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:587). Build stores the supplied proof command [verbatim in the unit plan](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_work.go:624). Resume [reloads that retained plan](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/unit_run.go:155), then [launches its stored argv](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/unit_run.go:369). Editing the plan instead triggers the [reserved-input digest refusal](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/unit_named.go:295).
+
+Scenario: A suspended unit has a proof command invoking an installation’s engine with the old public `test --goal G` spelling. No delegate is currently running, so cutover proceeds. Resuming the unit replays that command against the replaced engine and fails. Changing its retained argv manually also prevents continuation because the reservation digest no longer matches.
+
+Change: Add an explicit cutover treatment for retained executable plans: inventory affected resumable runs and migrate their active command bindings through an owner-controlled transition preserving original inputs, reservation integrity, and run/round lineage. Test continuation across U1 with an old public proof command.
+
+Test 1: Adds migration behavior for durable execution inputs, beyond updating source callers and historical text.
+
+Test 2: WORK and SAFE — a promised continuation becomes unusable; bypassing the digest to repair it would lose the existing input-integrity check.
+
+**VOA-17 — Medium — Filesystem waits have no replacement in the public grammar**
+
+Evidence: The existing public table advertises [`wait file PATH --until present|absent`](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_work.go:193). Its handler [resolves the caller-relative path and invokes the wait owner](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_work.go:1219). The proposed [replacement row](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:158) omits file waits, and the [reference contract](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:103) supplies no filesystem target. U1 nevertheless [deletes every old public spelling](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:353).
+
+Scenario: An agent needs to wait for an external process to create a nonempty result file. After U1, the old public command is removed, while no new object/action form can start that path wait. A `wait:` reference can resume an existing wait but cannot create this missing one.
+
+Change: Add `work wait --path PATH --until present|absent`, retaining caller-relative resolution, existing observation semantics, and durable resumption. Include it in U1’s public table and routing witnesses.
+
+Test 1: Adds a required public form and its owner binding.
+
+Test 2: WORK — the grammar cutover removes an existing executable waiting operation without a replacement.
+
+Round-2 folds verified: 5 of 6
+Material findings: 4
+
+Codex session ID: 01a0dfb9-f67d-7f73-80dd-1a6f229705ba
+Resume in Codex: codex resume 01a0dfb9-f67d-7f73-80dd-1a6f229705ba
