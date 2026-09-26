@@ -18,14 +18,17 @@ import (
 func TestIntentPublicCoverage(t *testing.T) {
 	t.Parallel()
 	publicNames := []string{
-		"abandon", "accept-risk", "answer", "approve", "ask", "block", "brief", "budget", "build", "check", "claim", "close", "design",
-		"decide", "doctor", "done", "edit", "enroll", "fleet", "fold", "goals", "grant", "group",
-		"incidents", "land", "notes", "open", "pause", "pin", "prioritize", "ready", "recover", "red", "release", "repair",
-		"reopen", "resolve", "restart", "resume", "review", "revise", "revoke", "settings", "show", "split", "start",
-		"status", "stop", "test", "ui", "unapprove", "unblock", "ungroup", "wait",
+		"abandon", "accept-risk", "answer", "approve", "ask", "block", "brief", "budget", "build", "check", "claim", "design",
+		"done", "edit", "enroll", "goals", "grant", "group",
+		"incidents", "land", "notes", "open", "pause", "pin", "prioritize", "release", "repair",
+		"reopen", "restart", "resume", "review", "revise", "revoke", "settings", "show", "split", "start",
+		"status", "stop", "test", "unapprove", "unblock", "ungroup", "wait",
 	}
 	commands := intentCommands()
 	registered := families()
+	if len(publicNames) != 44 || len(commands) != 44 {
+		t.Fatalf("%d public names and %d descriptors, want exactly 44 of each", len(publicNames), len(commands))
+	}
 
 	t.Run("public table", func(t *testing.T) {
 		var got []string
@@ -39,10 +42,10 @@ func TestIntentPublicCoverage(t *testing.T) {
 			if command.run == nil {
 				t.Errorf("%s has no run handler", command.name)
 			}
-			if command.summary == "" || len(command.usage) == 0 || len(command.examples) == 0 {
-				t.Errorf("%s: summary %q, %d usage lines, %d examples; all are required", command.name, command.summary, len(command.usage), len(command.examples))
+			if command.summary == "" || len(command.allUsage()) == 0 || len(command.examples) == 0 {
+				t.Errorf("%s: summary %q, %d usage lines, %d examples; all are required", command.name, command.summary, len(command.allUsage()), len(command.examples))
 			}
-			for _, line := range append(append([]string(nil), command.usage...), command.examples...) {
+			for _, line := range append(append([]string(nil), command.allUsage()...), command.examples...) {
 				if strings.TrimSpace(line) == "" {
 					t.Errorf("%s has an empty usage or example line", command.name)
 				}
@@ -80,7 +83,6 @@ func TestIntentPublicCoverage(t *testing.T) {
 			"open":                        {verb: "open"},
 			"abandon":                     {verb: "abandon"},
 			"carry":                       {verb: "abandon", flag: "successor"},
-			"engine-floor":                {internal: "installation maintenance"},
 			"set-next":                    {verb: "edit", flag: "next"},
 			"read-items":                  {verb: "notes"},
 			"promote":                     {internal: "legacy-ledger maintenance"},
@@ -106,15 +108,15 @@ func TestIntentPublicCoverage(t *testing.T) {
 			"carrying":                    {internal: "exceptional landing"},
 			"carried":                     {internal: "exceptional landing"},
 			"accept-risk":                 {verb: "accept-risk"},
-			"discharge-review-obligation": {verb: "resolve"},
+			"discharge-review-obligation": {verb: "review", flag: "finding", kind: "review G --finding F --test NAME"},
 			"split":                       {verb: "split"},
 			"set-obligation":              {verb: "edit", flag: "obligation"},
 			"enroll-terminal":             {verb: "enroll"},
 			"resume":                      {verb: "resume"},
 			"release":                     {verb: "release"},
 			"steal":                       {verb: "claim", flag: "take-over"},
-			"trunk-red":                   {verb: "red", kind: "red own"},
-			"land-ready":                  {verb: "ready"},
+			"trunk-red":                   {verb: "incidents", kind: "incidents claim"},
+			"land-ready":                  {verb: "land", flag: "queue-only", kind: "land G --queue-only"},
 			"edit":                        {verb: "edit"},
 			"set-arc":                     {verb: "group"},
 			"set-pin":                     {verb: "pin"},
@@ -128,10 +130,10 @@ func TestIntentPublicCoverage(t *testing.T) {
 			"fetch":                       {verb: "goals", flag: "fetch", internal: "diagnostic read-side advance"},
 			"repair":                      {internal: "authority recovery"},
 			"source-digest":               {internal: "migration support"},
-			"recover":                     {verb: "recover"},
+			"recover":                     {verb: "repair", kind: "repair goals"},
 		}
-		if len(acts) != 54 {
-			t.Fatalf("the disposition table has %d rows, want 54", len(acts))
+		if len(acts) != 53 {
+			t.Fatalf("the disposition table has %d rows, want 53", len(acts))
 		}
 		var goalFamily *family
 		for index := range registered {
@@ -169,7 +171,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 					t.Errorf("goal %s maps to %s --%s, which %s does not accept", act, row.verb, row.flag, row.verb)
 				}
 			}
-			if row.kind != "" && !strings.Contains(strings.Join(target.usage, "\n"), row.kind) {
+			if row.kind != "" && !strings.Contains(strings.Join(target.allUsage(), "\n"), row.kind) {
 				t.Errorf("goal %s maps to %q, which %s usage does not show", act, row.kind, row.verb)
 			}
 		}
@@ -177,23 +179,23 @@ func TestIntentPublicCoverage(t *testing.T) {
 
 	t.Run("ordinary grammar", func(t *testing.T) {
 		forms := map[string][]string{
-			"start":     {"start session"},
-			"stop":      {"stop job", "stop session"},
-			"restart":   {"restart checkout", "restart ui"},
-			"status":    {"status G", "status job", "status work"},
-			"review":    {"review G", "review design", "review job", "review commit"},
-			"revise":    {"revise G", "--after N", "--brief FILE"},
-			"incidents": {"incidents claim", "incidents close"},
-			"repair":    {"repair review G"},
-			"fold":      {"fold review", "fold unit"},
-			"land":      {"land job", "land G --queue-only"},
-			"wait":      {"wait G", "wait G --for landing|human-act", "--since TIP", "wait job"},
-			"ui":        {"start|stop|status"},
-			"notes":     {"--read", "--add", "--close", "--fixed", "--moved", "--accepted"},
-			"pin":       {"--clear"},
-			"claim":     {"--take-over"},
-			"red":       {"red own", "red close"},
-			"answer":    {"answer Q [TEXT]", "answer M/Q TEXT"},
+			"restart":     {"restart checkout", "restart ui"},
+			"status":      {"status G", "status job", "status work", "status run", "status ui", "status --machines"},
+			"review":      {"review G", "review design", "review job", "review commit", "review run", "review G --finding F --test NAME"},
+			"revise":      {"revise G", "--after N", "--brief FILE", "revise job R --dispositions FILE --brief FILE", "revise run RUN --brief FILE"},
+			"done":        {"done G --reason TEXT", "done job J [--dispositions FILE] [--evidence R]"},
+			"accept-risk": {"accept-risk G --finding F [--review R] --reason TEXT"},
+			"check":       {"metasystem check"},
+			"start":       {"start session", "start ui"},
+			"stop":        {"stop job", "stop session", "stop ui"},
+			"incidents":   {"incidents claim", "incidents close"},
+			"repair":      {"repair review G"},
+			"land":        {"land job", "land G --queue-only"},
+			"wait":        {"wait G", "wait G --for landing|human-act", "--since TIP", "wait job", "wait run"},
+			"notes":       {"--read", "--add", "--close", "--fixed", "--moved", "--accepted"},
+			"pin":         {"--clear"},
+			"claim":       {"--take-over"},
+			"answer":      {"answer Q [TEXT]", "answer M/Q TEXT"},
 		}
 		for name, wants := range forms {
 			command, ok := findIntentCommand(name)
@@ -201,7 +203,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 				t.Errorf("no public %s", name)
 				continue
 			}
-			usage := strings.Join(command.usage, "\n")
+			usage := strings.Join(command.allUsage(), "\n")
 			for _, want := range wants {
 				if !strings.Contains(usage, want) {
 					t.Errorf("%s usage lacks %q: %q", name, want, usage)
@@ -278,12 +280,12 @@ func TestIntentPublicCoverage(t *testing.T) {
 			pages[strings.Join(args, " ")] = page
 		}
 		// The root page is an orientation; help all lists every public
-		// command and none of the compatibility spellings, which stay routed.
+		// command.
 		for _, name := range publicNames {
 			command, _ := findIntentCommand(name)
 			listed := strings.Contains(pages["help all"], "\n  metasystem "+name+" ") || strings.Contains(pages["help all"], "\n  metasystem "+name+"\n")
-			if listed == command.compatibility {
-				t.Errorf("help all lists %s = %t; compatibility %t", name, listed, command.compatibility)
+			if !listed {
+				t.Errorf("help all does not list %s", name)
 			}
 			if command.primary && !strings.Contains(pages["help"], "  "+name) {
 				t.Errorf("root help does not mention the common command %s", name)
@@ -303,7 +305,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 				if code != 0 || stderr != "" {
 					t.Errorf("%s = code %d stderr %q", label, code, stderr)
 				}
-				for _, line := range append(append([]string(nil), command.usage...), command.examples...) {
+				for _, line := range append(append([]string(nil), command.allUsage()...), command.examples...) {
 					if !strings.Contains(page, line) {
 						t.Errorf("%s lacks %q", label, line)
 					}
@@ -317,7 +319,6 @@ func TestIntentPublicCoverage(t *testing.T) {
 		}
 		t.Run("compatibility help", func(t *testing.T) {
 			compatibility := map[string][]string{
-				"ui":   {"ui start", "ui stop", "ui status"},
 				"test": {"test plan", "test verify", "test report"},
 				"wait": {"wait --job"},
 			}
@@ -342,9 +343,8 @@ func TestIntentPublicCoverage(t *testing.T) {
 			counts[one.Name]++
 		}
 		for _, name := range publicNames {
-			command, _ := findIntentCommand(name)
-			if want := map[bool]int{false: 1, true: 0}[command.compatibility]; counts[name] != want {
-				t.Errorf("Partner catalogue lists %s %d times, want %d", name, counts[name], want)
+			if counts[name] != 1 {
+				t.Errorf("Partner catalogue lists %s %d times, want 1", name, counts[name])
 			}
 		}
 		for _, fam := range registered {

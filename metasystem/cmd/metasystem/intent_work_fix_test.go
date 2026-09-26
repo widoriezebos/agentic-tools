@@ -195,7 +195,7 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 	}
 	findings = "No material findings.\nVERDICT: land\n"
 	run := data["run"].(string)
-	code, result, _ = bed.work("fold", "unit", run, "--brief", bed.brief("follow-up.md", "Fix the witness.\n"))
+	code, result, _ = bed.work("revise", "run", run, "--brief", bed.brief("follow-up.md", "Fix the witness.\n"))
 	data = resultData(t, result)
 	if code != 0 || data["round"].(float64) != 2 || data["readClean"] != true || !strings.Contains(result.Summary, "read verdict: land") {
 		t.Fatalf("clean read after the fold: code=%d %+v", code, result)
@@ -247,11 +247,11 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	}
 	run := data["run"].(string)
 	followUp := bed.brief("follow-up.md", "Again.\n")
-	if code, result, _ = bed.work("fold", "unit", run, "--brief", followUp); code != 0 || resultData(t, result)["round"].(float64) != 2 {
+	if code, result, _ = bed.work("revise", "run", run, "--brief", followUp); code != 0 || resultData(t, result)["round"].(float64) != 2 {
 		t.Fatalf("second round: code=%d %+v", code, result)
 	}
 	launched := len(bed.starter.launched())
-	code, result, _ = bed.work("fold", "unit", run, "--brief", followUp)
+	code, result, _ = bed.work("revise", "run", run, "--brief", followUp)
 	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "UNIT_ROUND_LIMIT") || len(bed.starter.launched()) != launched {
 		t.Fatalf("third round: code=%d %+v", code, result)
 	}

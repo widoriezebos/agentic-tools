@@ -334,8 +334,6 @@ func TestSplitPrechecksReadTheArchive(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000001S000", "mac-a"), "split-parent", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}

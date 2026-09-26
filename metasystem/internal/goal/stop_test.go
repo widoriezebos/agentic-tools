@@ -363,12 +363,6 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	floorReq := verbReqFor(endpoint, "01J5X00000000000000001T000", "mac-a")
-	floorReq.Actor.Human = "Wido"
-	if result, err := EngineFloor(floorReq, strings.Repeat("a", 40), goalHumanProof(t, root, floorReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("engine floor: %+v %v", result, err)
-	}
 	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000001T010", "mac-a"), "stop-me", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open stop-me: %+v %v", result, err)
 	}
@@ -541,8 +535,6 @@ func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X000000000000000001S00")
 	abandoned, now := makeFencedAbandonedGoal(t, endpoint, "fenced-reopen", "01J5X000000000000000001S1")
 	if abandoned == nil || abandoned.StopCapability == nil || abandoned.StopFence == nil {
 		t.Fatalf("fixture did not retain the frozen fence: %+v", abandoned)
@@ -602,8 +594,6 @@ func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *te
 	t.Parallel()
 	endpointA, endpointB := fakeGoalEndpointPair(t)
 	rootA, rootB := endpointA.Root, endpointB.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpointA, "01J5X000000000000000001T00")
 	for index, id := range []string{"successor-one", "successor-two"} {
 		ulid := []string{"01J5X000000000000000001T10", "01J5X000000000000000001T20"}[index]
 		if result, err := Open(verbReqFor(endpointA, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {

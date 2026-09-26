@@ -91,7 +91,5 @@ the change. Only an approved token raising the goal's five-member tuple can
 raise its stored review-round member, never above the three-round ceiling;
 the internal owner `metasystem internal job critique-budget-rebind` copies the raised member onto an open root. When
 the rounds are spent, the register close (`metasystem internal job critique-register-close`) sends exhausted bounded
-findings to review obligations on the goal (discharged later by `metasystem
-resolve <goal> --review R --finding F --test NAME`) and closes after a human records `metasystem
-decide <goal> --finding F --review R --reason <text>` for the rest; while a severe or unproven finding stands, stop
+findings to review obligations on the goal (discharged later by `metasystem review <goal> --review R --finding F --test NAME`) and closes after a human records `metasystem accept-risk <goal> --finding F --review R --reason <text>` for the rest; while a severe or unproven finding stands, stop
 with the work waiting on the human. Never dispatch a silent fourth round.

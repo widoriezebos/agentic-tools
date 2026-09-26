@@ -37,6 +37,7 @@ type intentHelpEntry struct {
 	Group    string   `json:"group"`
 	Summary  string   `json:"summary"`
 	Audience string   `json:"audience"`
+	Scope    string   `json:"scope"`
 	HelpArgv []string `json:"helpArgv"`
 }
 
@@ -48,11 +49,12 @@ type intentHelpFormEntry struct {
 
 type intentHelpCommand struct {
 	intentHelpEntry
-	Usage    []string              `json:"usage"`
-	Options  []intentHelpOption    `json:"options"`
-	Details  []string              `json:"details,omitempty"`
-	Examples []string              `json:"examples,omitempty"`
-	Forms    []intentHelpFormEntry `json:"forms,omitempty"`
+	Usage               []string              `json:"usage"`
+	AdministrationUsage []string              `json:"administrationUsage,omitempty"`
+	Options             []intentHelpOption    `json:"options"`
+	Details             []string              `json:"details,omitempty"`
+	Examples            []string              `json:"examples,omitempty"`
+	Forms               []intentHelpFormEntry `json:"forms,omitempty"`
 }
 
 type intentHelpFormDocument struct {
@@ -94,7 +96,8 @@ func publicHelpProtocol() intentHelpProtocol {
 			"next.argv is a suggested argument vector, not permission: preserve its words and references; do not shell-evaluate it or execute it beyond your authority.",
 			"Use wait with the returned reference for running work. Inspect partial, failed or refused results before repeating a mutation; retries are command-specific.",
 			"Use show for records, status for live work, check for diagnosis. Audience labels guide discovery; they do not grant authority over a target.",
-			"Use help COMMAND for full inputs; help review FORM for goal, submit, design, job, commit, changes, diff or finding. Add --json to help for structured discovery.",
+			"Use help administration for MetaSystem setup and maintenance. Mixed command pages separate those forms from application work; their own authority rules still apply.",
+			"Use help COMMAND for full inputs; help review FORM for goal, submit, design, job, run, commit, changes, diff or finding. Add --json to help for structured discovery.",
 		},
 		Outcomes: []intentHelpOutcome{
 			{intentConfirmed, "the requested invocation succeeded; inspect what it confirmed"},
@@ -128,8 +131,18 @@ func writeIntentAgentHelp(w io.Writer) {
 	fmt.Fprintln(w, "Human decisions remain visible here; help human describes their commands.")
 }
 
+func (command intentCommand) helpScope() string {
+	scope := "workflow"
+	if command.group == "administration" {
+		scope = "administration"
+	} else if len(command.administrationUsage) > 0 {
+		scope = "mixed"
+	}
+	return scope
+}
+
 func helpEntry(command intentCommand) intentHelpEntry {
-	return intentHelpEntry{command.name, command.group, command.summary, command.audience,
+	return intentHelpEntry{command.name, command.group, command.summary, command.audience, command.helpScope(),
 		[]string{"metasystem", "help", command.name, "--json"}}
 }
 
@@ -154,10 +167,10 @@ func describeHelp(selectors []string) (intentHelpDocument, error) {
 		return doc, fmt.Errorf("help takes one topic or command, optionally followed by its form")
 	}
 	if len(selectors) > 0 {
-		if command, ok := findIntentCommand(selectors[0]); ok && !command.compatibility {
+		if command, ok := findIntentCommand(selectors[0]); ok {
 			if len(selectors) == 1 {
 				description := intentHelpCommand{intentHelpEntry: helpEntry(command), Usage: command.usage,
-					Options: helpOptions(command, nil), Details: command.details, Examples: command.examples}
+					AdministrationUsage: command.administrationUsage, Options: helpOptions(command, nil), Details: command.details, Examples: command.examples}
 				for _, form := range command.helpForms {
 					description.Forms = append(description.Forms, helpFormEntry(command, form))
 				}
@@ -192,7 +205,7 @@ func describeHelp(selectors []string) (intentHelpDocument, error) {
 	}
 	doc.Topic = topic
 	for _, command := range publicIntentCommands() {
-		if topic == "all" || topic == "agent" || (topic == "human" && command.audience != "agent") || command.group == topic {
+		if topic == "all" || topic == "agent" || (topic == "human" && command.audience != "agent") || command.group == topic || topic == "administration" && len(command.administrationUsage) > 0 {
 			doc.Commands = append(doc.Commands, helpEntry(command))
 		}
 	}
@@ -201,7 +214,7 @@ func describeHelp(selectors []string) (intentHelpDocument, error) {
 	return doc, nil
 }
 
-func runIntentHelp(args []string, stdout, stderr io.Writer, registered []family) int {
+func runIntentHelp(args []string, stdout, stderr io.Writer) int {
 	selectors := []string{}
 	wantJSON := slices.Contains(args, "--json")
 	// This invocation only renders the shared envelope; no owners or roots exist.
@@ -246,14 +259,8 @@ func runIntentHelp(args []string, stdout, stderr io.Writer, registered []family)
 		return 0
 	}
 	if intentTopic(name) {
-		writeIntentTopicHelp(stdout, name, registered)
+		writeIntentTopicHelp(stdout, name)
 		return 0
-	}
-	for _, fam := range registered {
-		if fam.name == name {
-			writeFamilyHelp(stdout, fam)
-			return 0
-		}
 	}
 	writeUnknownIntentCommand(stderr, name)
 	return 2

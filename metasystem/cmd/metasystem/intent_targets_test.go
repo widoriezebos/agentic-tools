@@ -18,9 +18,11 @@ func TestIntentProcessTargets(t *testing.T) {
 	b := newProcessBed(t)
 	owners := b.owners()
 	var verbs []string
-	owners.processes.ui = func(verb string, _ lifecycle.Roots) (uiLifecycleResult, error) {
+	var received []uiIntentOptions
+	owners.processes.ui = func(verb string, _ lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error) {
 		verbs = append(verbs, verb)
-		return uiLifecycleResult{Result: lifecycle.Result{Lines: []string{"ui " + verb}}, State: lifecycle.Running}, nil
+		received = append(received, options)
+		return uiLifecycleResult{Result: lifecycle.Result{Lines: []string{"ui " + verb}}, State: lifecycle.Running, Restart: &lifecycle.RestartReport{Started: true}}, nil
 	}
 	var engine [][]string
 	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
@@ -36,6 +38,37 @@ func TestIntentProcessTargets(t *testing.T) {
 	if !slices.Equal(verbs, []string{"start", "stop", "status"}) {
 		t.Fatalf("interface verbs = %v", verbs)
 	}
+	for _, options := range received {
+		if options != (uiIntentOptions{waitSeconds: 15}) {
+			t.Fatalf("default interface options = %+v", options)
+		}
+	}
+	for _, test := range []struct {
+		args []string
+		want uiIntentOptions
+	}{
+		{[]string{"start", "ui", "--listen", "127.0.0.1:9876"}, uiIntentOptions{listen: "127.0.0.1:9876", listenSet: true, waitSeconds: 15}},
+		{[]string{"stop", "ui", "--wait-seconds", "0"}, uiIntentOptions{waitSeconds: 0}},
+		{[]string{"restart", "ui", "--listen", "[::1]:9876", "--wait-seconds", "40"}, uiIntentOptions{listen: "[::1]:9876", listenSet: true, waitSeconds: 40}},
+	} {
+		if code, result := b.runJSON(owners, test.args...); code != 0 || result.Outcome != intentConfirmed || received[len(received)-1] != test.want {
+			t.Fatalf("%v = %d %+v options %+v", test.args, code, result, received)
+		}
+	}
+	for _, args := range [][]string{
+		{"start", "session", "--listen", "127.0.0.1:9876"},
+		{"start", "machine", "m9", "--listen", "127.0.0.1:9876"},
+		{"stop", "job", "j2:some-job", "--wait-seconds", "0"},
+		{"restart", "checkout", "--wait-seconds", "1"},
+		{"stop", "ui", "--wait-seconds", "-1"},
+		{"stop", "ui", "--wait-seconds", "0.5"},
+		{"restart", "ui", "--wait-seconds", "9223372036854775807"},
+	} {
+		if code, result := b.runJSON(owners, args...); code != 2 || result.Outcome != intentRefused || len(verbs) != 6 || len(engine) != 0 {
+			t.Fatalf("bad UI options %v reached an owner: %d %+v %v %v", args, code, result, verbs, engine)
+		}
+	}
+
 	if code, result := b.runJSON(owners, "start", "machine", "m9", "--destination", "/tmp/m9"); code != 0 || len(engine) != 1 ||
 		!slices.Equal(engine[0][1:5], []string{"seat", "launch", "--machine", "m9"}) || !strings.Contains(strings.Join(engine[0], " "), "--destination /tmp/m9") {
 		t.Fatalf("start machine = %d %+v %v", code, result, engine)
@@ -48,7 +81,7 @@ func TestIntentProcessTargets(t *testing.T) {
 	if legacyProcessCall([]string{"--machines"}) || legacyProcessCall([]string{"--refresh"}) || !legacyProcessCall([]string{"--all"}) {
 		t.Fatal("status --machines must take the public route while the old flag-only status keeps its own")
 	}
-	if len(verbs) != 3 || len(engine) != 1 {
+	if len(verbs) != 6 || len(engine) != 1 {
 		t.Fatalf("a refused target reached an owner: %v %v", verbs, engine)
 	}
 }

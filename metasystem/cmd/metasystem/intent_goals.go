@@ -801,6 +801,15 @@ func runIntentResume(inv *intentInvocation) int {
 }
 
 func runIntentDone(inv *intentInvocation) int {
+	if args := inv.input.args; len(args) == 2 && args[0] == "job" {
+		return runIntentDoneJob(inv, args[1])
+	}
+	for _, name := range []string{"dispositions", "evidence"} {
+		if inv.input.has(name) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: fmt.Sprintf("--%s belongs to done job J; done G concludes the goal; nothing was done", name)})
+		}
+	}
 	id, problem := inv.singleTarget()
 	if problem != nil {
 		return inv.render(*problem)
@@ -825,4 +834,24 @@ func runIntentDone(inv *intentInvocation) int {
 		code, _ := trySyncMutationWithCompletion("done", args, inv.owners.commandNow, dependencies, inv.owners.parkBranchCheck, inv.owners.completion)
 		return code
 	}, func() intentResult { return inv.afterGoalAct(id, "done") })
+}
+
+// runIntentDoneJob completes one finished job chain's records through the
+// close-chain owner. It never reaches a goal mutation: the goal's options
+// are refused before anything is read or written.
+func runIntentDoneJob(inv *intentInvocation, ref string) int {
+	for _, definition := range inv.command.flags {
+		if name := definition.name; name != "dispositions" && name != "evidence" && inv.input.has(name) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{jobTarget(ref)},
+				Summary: fmt.Sprintf("--%s belongs to done G; done job J takes only --dispositions and --evidence; nothing was done", name)})
+		}
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	job, problem := inv.dispatchJobID(ref, "done")
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	return inv.render(inv.closeChain(job))
 }

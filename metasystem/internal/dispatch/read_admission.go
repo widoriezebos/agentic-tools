@@ -248,13 +248,13 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 }
 
 func redundantReadError(result ReadAdmissionResult, prior cleanReadCandidate, detail string) error {
-	next := fmt.Sprintf("next: dispatch.sh close --job %s", prior.root)
+	next := fmt.Sprintf("next: metasystem done job %s", prior.root)
 	if prior.closedLive {
-		next = fmt.Sprintf("next: dispatch.sh close --job %s --reconcile-evidence %s; completion still checks terminal coverage and required evidence", prior.read.Subject.ImplementerRoot, prior.root)
+		next = fmt.Sprintf("next: metasystem done job %s --evidence %s; completion still checks terminal coverage and required evidence", prior.read.Subject.ImplementerRoot, prior.root)
 	} else if prior.latestRound > prior.read.Round {
-		next = fmt.Sprintf("critic root %s now has later round %d, so clean read round %d cannot close that newer state; resolve and fold the later work before dispatching another equal read", prior.root, prior.latestRound, prior.read.Round)
+		next = fmt.Sprintf("critic root %s now has later round %d, so clean read round %d cannot close that newer state; resolve and revise the later work before dispatching another equal read", prior.root, prior.latestRound, prior.read.Round)
 	} else if !prior.closeable {
-		next = fmt.Sprintf("critic root %s cannot presently close from read round %d; inspect its current closure and fold evidence before dispatching another equal read", prior.root, prior.read.Round)
+		next = fmt.Sprintf("critic root %s cannot presently close from read round %d; inspect its current closure and evidence before dispatching another equal read", prior.root, prior.read.Round)
 	}
 	message := fmt.Sprintf("REDUNDANT_READ: critic root %s already proved a clean critic read at round %d for subject %s; %s", prior.root, prior.read.Round, result.SubjectDigest, next)
 	if detail != "" {

@@ -1696,37 +1696,12 @@ assert_land_brain_refusal() { # root, expected, command...
 }
 
 prepare_abandonment_landing_leg() { # name
-  local name=$1 saved_config engine_status engine_stamp engine_commit source_top source_status source_stamp
-  source_status=$("$source_engine" supervise status --repo "$root") || exit $?
-  source_stamp=$("$source_engine" json get --value "$source_status" --field engineBuild) || exit $?
-  if [[ ! $source_stamp =~ ^[0-9a-f]{40}$ && ! $source_stamp =~ ^dev-[0-9a-f]{40}-dirty$ ]]; then
-    source_engine=$tmp/abandonment-source-engine
-    env -u METASYSTEM_BUILD_STAMP bash "$root/scripts/agents/go-build.sh" --out "$source_engine" || exit $?
-  fi
+  local name=$1 saved_config
   make_brain_source_leg "$name"
-  engine_status=$("$source_engine" supervise status --repo "$leg_local")
-  engine_stamp=$("$source_engine" json get --value "$engine_status" --field engineBuild)
-  if [[ "$engine_stamp" =~ ^dev-([0-9a-f]{40})-dirty$ ]]; then
-    engine_commit=${BASH_REMATCH[1]}
-  elif [[ "$engine_stamp" =~ ^[0-9a-f]{40}$ ]]; then
-    engine_commit=$engine_stamp
-  else
-    echo "brain land fixture binary has no source-linked build stamp: $engine_stamp" >&2
-    exit 1
-  fi
-  source_top=$(git -C "$root" rev-parse --show-toplevel)
-  git -C "$leg_local" fetch -q "$source_top" "$engine_commit"
-  saved_config=$leg_root/metasystem.conf.engine-floor
-  cp "$leg_local/metasystem.conf" "$saved_config"
-  printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal engine-floor --root "$leg_local" --commit "$engine_commit" \
-    --by Wido --fixture-human-authority >/dev/null
-  mv "$saved_config" "$leg_local/metasystem.conf"
   git clone -q "$leg_remote" "$leg_peer"
   git -C "$leg_peer" config user.name fixture-peer
   git -C "$leg_peer" config user.email fixture-peer@example.invalid
   git -C "$leg_peer" config metasystem.goal.machine brain-leg
-  git -C "$leg_peer" fetch -q "$source_top" "$engine_commit"
   git -C "$leg_peer" fetch -q origin
   git -C "$leg_peer" reset -q --hard origin/main
   git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main

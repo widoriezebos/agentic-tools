@@ -297,7 +297,7 @@ func TestIntentFoldComposesTheReviewedDecision(t *testing.T) {
 		return intentProcessResult{stdout: []byte(`{"outcome":"WON","headline":"started","jobId":"impl1-r2"}`)}
 	}
 	for range 2 {
-		code, result := b.do("fold", "review", "crit1", "--dispositions", dispositions, "--brief", brief)
+		code, result := b.do("revise", "job", "crit1", "--dispositions", dispositions, "--brief", brief)
 		expectOutcome(t, "fold", code, result, intentInProgress)
 	}
 	if len(messages) != 2 || messages[0] != messages[1] || !strings.HasPrefix(messages[0], "Working Mode: fix") ||
@@ -353,7 +353,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	b.writeReturn("crit1", 1, "crit1", map[string]any{"id": "F1", "material": true}, map[string]any{"id": "F2", "material": false})
 	partial := filepath.Join(b.root(), "partial.md")
 	b.writeFile(partial, deliveryDispositionsHeader+"| F1 | accepted | fixed in round 2 | none |\n")
-	code, result := b.do("close", "crit1", "--dispositions", partial)
+	code, result := b.do("done", "job", "crit1", "--dispositions", partial)
 	expectOutcome(t, "unjoined dispositions", code, result, intentRefused)
 	if len(b.calls) != 0 || !strings.Contains(fmt.Sprint(result.Data), "F2") {
 		t.Fatalf("an incomplete join refuses before the close owner: %+v", result)
@@ -375,14 +375,14 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 
 	// Without an evidence root the owner cannot mirror, so its close check
 	// refuses and nothing is stamped.
-	code, result = b.do("close", "inv1")
+	code, result = b.do("done", "job", "inv1")
 	expectOutcome(t, "owner refusal", code, result, intentRefused)
 	if closed, _ := b.job("inv1")["chainClosed"].(bool); closed || result.Decision == "" {
 		t.Fatalf("an owner refusal leaves the chain open: %+v", result)
 	}
 	evidence := t.TempDir()
 	b.writeFile(conf, string(existing)+"\nevidence.root="+evidence+"\n")
-	code, result = b.do("close", "inv1")
+	code, result = b.do("done", "job", "inv1")
 	if result.Outcome != intentConfirmed {
 		t.Fatalf("whole close: exit %d %+v", code, result)
 	}
@@ -394,7 +394,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 		t.Fatalf("the chain lock outlived the owner: %v", err)
 	}
 	calls := len(b.calls)
-	code, result = b.do("close", "inv1")
+	code, result = b.do("done", "job", "inv1")
 	expectOutcome(t, "repeat close", code, result, intentUnchanged)
 	if len(b.calls) != calls {
 		t.Fatal("a closed chain is not closed again")
@@ -426,7 +426,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	b.writeReturn("crit2", 1, "crit2", map[string]any{"id": "C1", "material": false})
 	criticDispositions := filepath.Join(b.root(), "crit2.md")
 	b.writeFile(criticDispositions, deliveryDispositionsHeader+"| C1 | noted | wording only | none |\n")
-	code, result = b.do("close", "crit2", "--dispositions", criticDispositions)
+	code, result = b.do("done", "job", "crit2", "--dispositions", criticDispositions)
 	expectOutcome(t, "unfolded critic round", code, result, intentRefused)
 	if !strings.Contains(fmt.Sprint(result.Data), "folded through round 0 while terminal round 1 exists") {
 		t.Fatalf("the real close check refuses an unfolded round: %+v", result)
@@ -466,7 +466,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	if closed, _ := critic["chainClosed"].(bool); !closed || critic["findingRegisterRound"] != float64(1) || critic["mirror"] == nil || critic["runnerClosed"] != nil {
 		t.Fatalf("the real owner closes the folded critic chain: %v", critic)
 	}
-	_, result = b.do("close", "inv1", "--dispositions", partial)
+	_, result = b.do("done", "job", "inv1", "--dispositions", partial)
 	if result.Outcome != intentUnchanged {
 		t.Fatalf("closed first: %+v", result)
 	}

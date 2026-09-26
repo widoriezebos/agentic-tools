@@ -136,7 +136,7 @@ func TestStatusResultDigestComparison(t *testing.T) {
 			name:   "changed",
 			digest: func() (string, error) { return "sha256:current", nil },
 			extraLine: "the executable on disk differs from the one the interface is running; " +
-				"to pick it up: metasystem ui restart",
+				"to pick it up: metasystem restart ui",
 		},
 		{
 			name:      "read error",
@@ -377,7 +377,7 @@ func TestServeFailure(t *testing.T) {
 		line := ServeFailure(t.TempDir(), &AlreadyRunningError{Address: "127.0.0.1:49152"})
 
 		testutil.Expect(t, "serve failure", line,
-			"an interface server already runs for this checkout at http://127.0.0.1:49152; stop it with: metasystem ui stop")
+			"an interface server already runs for this checkout at http://127.0.0.1:49152; stop it with: metasystem stop ui")
 	})
 
 	t.Run("other error passes through", func(t *testing.T) {

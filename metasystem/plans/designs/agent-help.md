@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3FDYDMV0G5V9YC1M9XAKGZR
-- Status: accepted
+- Status: done
 - Goals: verbs-match-intent
 
 Author: root Codex. Wido requested design and implementation on 26 September
@@ -158,8 +158,8 @@ critique pressure. Changed-line estimate: 900-1,400 including focused tests.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | AH-1 | HIGH | Public interface | Human help stays byte-identical; agent index keeps every public capability with less reading | cmd/metasystem help renderer | `cmd/metasystem/intent_help.go` | `TestIntentAgentHelpCatalogue` and captured original human outputs | Before/after built CLI comparison | DONE | Verified; see plans/agent-help-verification.md |
 | AH-2 | HIGH | Structured discovery | Same public descriptors, visible flags and result envelope; no hidden internals or execution | cmd/metasystem help router | `cmd/metasystem/main.go`; `cmd/metasystem/intent_help.go` | `TestIntentHelpJSON`; `TestIntentHelpNeverExecutes` | Built CLI from a directory outside every repository; invalid/unknown input | DONE | Verified; see plans/agent-help-verification.md |
-| AH-3 | HIGH | Focused contracts | Review forms distinguish diagnostic feedback from submission and preserve authority/replay conditions | review command descriptor | `cmd/metasystem/intent_review_help.go` | `TestIntentReviewHelpForms` with actual parser and declared effect boundaries | Focused help and independently selected task commands | DONE | Verified; see plans/agent-help-verification.md |
-| AH-4 | HIGH | Public interface | Agent understands outcomes, argument vectors, waits and conditional authority | cmd/metasystem help protocol | `cmd/metasystem/intent_help.go` | `TestIntentAgentResultProtocol` | Fresh Opus help-only task selection, judged by root, with actual output-size measurements | DONE | Verified; see plans/agent-help-verification.md |
+| AH-3 | HIGH | Focused contracts | Review forms distinguish diagnostic feedback from submission and preserve authority/replay conditions | cmd/metasystem review descriptor | `cmd/metasystem/intent_review_help.go` | `TestIntentReviewHelpForms` with actual parser and declared effect boundaries | Focused help and independently selected task commands; plans/agent-help-verification.md | DONE | Verified; see plans/agent-help-verification.md |
+| AH-4 | HIGH | Public interface | Agent understands outcomes, argument vectors, waits and conditional authority | cmd/metasystem help protocol | `cmd/metasystem/intent_help.go` | `TestIntentAgentResultProtocol` | Fresh Opus help-only task selection, judged by root, with actual output-size measurements; plans/agent-help-verification.md | DONE | Verified; see plans/agent-help-verification.md |
 
 No claim of statistical model-performance improvement: one bounded fresh-agent
 task trial is a smoke test, alongside measured output size and deterministic

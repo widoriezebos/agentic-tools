@@ -64,16 +64,14 @@ material finding. A finding keeps the chain open only when it changes what gets 
 and names the artifact it would change; a finding that fails the artifact
 test is demoted at registration.
 
-Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `metasystem decide` and a re-scope by `metasystem edit`. There is no third design round and none can be bought.
+Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `metasystem accept-risk` and a re-scope by `metasystem edit`. There is no third design round and none can be bought.
 
 For code critique and the warden, only an approved token raising the goal's
 five-member tuple can raise its stored review-round member, and the three-round
 ceiling still applies; the internal owner `metasystem internal job critique-budget-rebind` copies the raised member
 onto an open root. When their rounds are spent, the register close (`metasystem internal job critique-register-close`)
-defers exhausted bounded findings into review obligations on the goal (`metasystem
-resolve <goal> --review R --finding F --test NAME` discharges them later against the chain,
-artifact and test that carry them) or closes after a human records `metasystem
-decide <goal> --finding F --review R --reason <text>`; whenever a severe or unproven finding remains, stop with the
+defers exhausted bounded findings into review obligations on the goal (`metasystem review <goal> --review R --finding F --test NAME` discharges them later against the chain,
+artifact and test that carry them) or closes after a human records `metasystem accept-risk <goal> --finding F --review R --reason <text>`; whenever a severe or unproven finding remains, stop with the
 design waiting on the human. Never dispatch a silent fourth round.
 
 Rounds must run as follow-ups on one critic chain. Dispatching a fresh critic

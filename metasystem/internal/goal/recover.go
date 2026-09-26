@@ -477,7 +477,9 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand", in.Verb)
 	case "set-priority":
 		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal")
-	case "abandon", "engine-floor", "carry":
+	case "engine-floor":
+		return PublishRequest{}, fmt.Errorf("engine-floor is retired and cannot be replayed from journal text")
+	case "abandon", "carry":
 		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal", in.Verb)
 	case "split":
 		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)

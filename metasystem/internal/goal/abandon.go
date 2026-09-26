@@ -1,90 +1,19 @@
 package goal
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
+// abandonDependencies holds the test seam that runs just before abandon's
+// push, while its goal-revision locks are held.
 type abandonDependencies struct {
-	buildStamp       func() string
-	isAncestor       func(root, ancestor, descendant string) (bool, error)
-	registryProblems func(string, func(string, string) (bool, error), time.Time) ([]string, error)
-	beforePush       func(attempt int) error
-}
-
-func (dependencies abandonDependencies) withDefaults() abandonDependencies {
-	if dependencies.buildStamp == nil {
-		dependencies.buildStamp = func() string { return "dev" }
-	}
-	if dependencies.isAncestor == nil {
-		dependencies.isAncestor = func(root, ancestor, descendant string) (bool, error) {
-			_, err := gitIn(root, "merge-base", "--is-ancestor", ancestor, descendant)
-			if err == nil {
-				return true, nil
-			}
-			var commandErr *gitError
-			if errors.As(err, &commandErr) && commandErr.ExitCode() == 1 {
-				return false, nil
-			}
-			return false, err
-		}
-	}
-	if dependencies.registryProblems == nil {
-		dependencies.registryProblems = func(string, func(string, string) (bool, error), time.Time) ([]string, error) {
-			return nil, fmt.Errorf("the fleet engine registry checker is not configured")
-		}
-	}
-	return dependencies
-}
-
-// EngineFloor records the oldest engine commit every enrolled seat is known
-// to run. It changes only root history, keeping the record readable by older
-// engines until the first abandoned goal introduces the new grammar.
-func EngineFloor(r VerbRequest, commit string, proof *humanauthority.Proof) (PublishResult, error) {
-	if r.Actor.Human == "" {
-		return PublishResult{}, fmt.Errorf("engine-floor is a human act and names its human (--by)")
-	}
-	if proof == nil || !proof.ValidFor(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("engine-floor requires freshly observed enrolled-terminal human authority")
-	}
-	if !hexCommit(commit) {
-		return PublishResult{}, fmt.Errorf("engine-floor line without a commit")
-	}
-	return Publish(r.Endpoint, engineFloorRequest(r, commit))
-}
-
-func engineFloorRequest(r VerbRequest, commit string) PublishRequest {
-	return PublishRequest{
-		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "engine-floor", Args: intentArgs(r, map[string]string{"commit": commit})},
-		Message: "goal engine-floor " + commit,
-		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTreeFor(r.Endpoint, tip)
-			if err != nil {
-				return nil, err
-			}
-			if tree.Root == nil {
-				return nil, fmt.Errorf("the ledger is not adopted")
-			}
-			if rootOpidLanded(tree.Root, r) {
-				return nil, AlreadyApplied{}
-			}
-			tree.Root.Revision++
-			tree.Root.History = append(tree.Root.History, HistoryLine{
-				At: r.stamp(), Opid: r.opid(), Verb: "engine-floor", Actor: r.Actor.historyActor(),
-				Keep: -1, Reason: commit + " every enrolled seat runs this engine or newer",
-			})
-			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(tree.Root)}}, nil
-		},
-		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
-	}
+	beforePush func(attempt int) error
 }
 
 // AbandonSpec carries the reason and the complete disposition of every live
@@ -121,9 +50,6 @@ func Abandon(r VerbRequest, id string, spec AbandonSpec, proof *humanauthority.P
 
 	projection, err := Project(r.Endpoint, false, r.Now)
 	if err != nil {
-		return PublishResult{}, err
-	}
-	if err := requireAbandonFleetFloor(r, projection.Tree); err != nil {
 		return PublishResult{}, err
 	}
 
@@ -250,43 +176,6 @@ func validateAbandonArguments(id string, spec AbandonSpec) (abandonArguments, er
 		return abandonArguments{}, fmt.Errorf("carried must name a live successor")
 	}
 	return args, nil
-}
-
-func requireAbandonFleetFloor(r VerbRequest, tree *TreeGoals) error {
-	dependencies := r.abandon.withDefaults()
-	floor := ""
-	if tree != nil {
-		floor = newestEngineFloor(tree.Root)
-	}
-	stamp := dependencies.buildStamp()
-	if floor == "" {
-		return fmt.Errorf("abandon writes a state that engines older than this build refuse, and the ledger has no record that the fleet runs it; after every enrolled seat has rebuilt and re-armed (metasystem status --machines lists every enrolled machine), a person records the floor: metasystem settings compatibility --minimum-engine %s --by NAME", stamp)
-	}
-	commit, dirty, ok := enginebuild.StampCommit(stamp)
-	if !ok {
-		return fmt.Errorf("this engine's build (%s) cannot be placed against the fleet floor %s; build it with scripts/agents/go-build.sh", stamp, floor)
-	}
-	atOrAbove, err := dependencies.isAncestor(r.Endpoint.Root, floor, commit)
-	if err != nil {
-		return fmt.Errorf("place this engine's build against fleet floor %s: %w", floor, err)
-	}
-	if !atOrAbove {
-		dirtyText := ""
-		if dirty {
-			dirtyText = " (dirty build)"
-		}
-		return fmt.Errorf("this engine's build (%s)%s is below the fleet floor %s; build it with scripts/agents/go-build.sh", stamp, dirtyText, floor)
-	}
-	problems, err := dependencies.registryProblems(floor, func(ancestor, descendant string) (bool, error) {
-		return dependencies.isAncestor(r.Endpoint.Root, ancestor, descendant)
-	}, r.Now)
-	if err != nil {
-		return err
-	}
-	if len(problems) != 0 {
-		return fmt.Errorf("%s", strings.Join(problems, "\n"))
-	}
-	return nil
 }
 
 func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abandonArguments, projectedRevisions map[string]uint64) PublishRequest {
@@ -660,23 +549,6 @@ func repointBlockers(blocked []string, abandoned map[string]bool, successor stri
 	return sortedUnique(result)
 }
 
-func newestEngineFloor(root *RootRecord) string {
-	if root == nil {
-		return ""
-	}
-	for i := len(root.History) - 1; i >= 0; i-- {
-		line := root.History[i]
-		if line.Verb != "engine-floor" {
-			continue
-		}
-		words := strings.Fields(line.Reason)
-		if len(words) > 0 {
-			return words[0]
-		}
-	}
-	return ""
-}
-
 func sortedSet(set map[string]bool) []string {
 	ids := make([]string, 0, len(set))
 	for id := range set {
@@ -684,12 +556,4 @@ func sortedSet(set map[string]bool) []string {
 	}
 	sort.Strings(ids)
 	return ids
-}
-
-// EngineFloorOf is the ledger's newest recorded engine floor, or empty.
-func EngineFloorOf(root *RootRecord) string {
-	if root == nil {
-		return ""
-	}
-	return newestEngineFloor(root)
 }

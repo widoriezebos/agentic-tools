@@ -309,17 +309,6 @@ func TestIntentAbandonWithSuccessor(t *testing.T) {
 		}
 		bed.addGoal(&live)
 	}
-	// This build and the fleet floor are per-request facts the abandon owner
-	// checks: the ledger records the floor, and this instance's build is it.
-	floor := strings.Repeat("a", 40)
-	bed.setRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
-		History: []goal.HistoryLine{{At: "2026-09-01T08:00:00Z", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FB1", "mac-cli", "m1"), Verb: "engine-floor",
-			Actor: "human:Wido", Reason: floor + " every enrolled seat runs this engine or newer", Keep: -1}}})
-	fleet := bed.owners()
-	fleet.dependencies.configureAbandon = func(request *goal.VerbRequest) {
-		request.ConfigureAbandon(func() string { return floor }, func(string, string, string) (bool, error) { return true, nil },
-			func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil })
-	}
 	lone := file("lone-goal")
 	lone.State, lone.Revision = goal.StateAbandoned, lone.Revision+1
 	opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FB2", "mac-cli", "m1")
@@ -353,14 +342,11 @@ func TestIntentAbandonWithSuccessor(t *testing.T) {
 		result.Outcome == intentConfirmed || bed.goalFile("lone-goal").Abandoned.Carried != "" {
 		t.Fatalf("recording a successor without a person's authority: code=%d %+v", code, result)
 	}
-	withFleet := func(args ...string) (int, intentResult) {
-		return bed.runJSON(fleet, append(append([]string{"abandon"}, args...), human...)...)
-	}
-	if code, result := withFleet("old-goal", "--reason", "superseded", "--successor", "no-such-goal"); code == 0 || result.Outcome == intentConfirmed ||
+	if code, result := abandon("old-goal", "--reason", "superseded", "--successor", "no-such-goal"); code == 0 || result.Outcome == intentConfirmed ||
 		bed.goalFile("old-goal").State == goal.StateAbandoned || !slices.Equal(bed.goalFile("dep-goal").Blocked, []string{"old-goal"}) {
-		t.Fatalf("an invalid successor with valid fleet facts: code=%d %+v", code, result)
+		t.Fatalf("an invalid successor changed the goal or its dependent: code=%d %+v", code, result)
 	}
-	code, fresh := withFleet("old-goal", "--reason", "superseded", "--successor", "new-goal")
+	code, fresh := abandon("old-goal", "--reason", "superseded", "--successor", "new-goal")
 	old, dep := bed.goalFile("old-goal"), bed.goalFile("dep-goal")
 	if code != 0 || fresh.Outcome != intentConfirmed || old.State != goal.StateAbandoned || old.Abandoned == nil || old.Abandoned.Carried != "new-goal" ||
 		!slices.Equal(dep.Blocked, []string{"new-goal"}) {

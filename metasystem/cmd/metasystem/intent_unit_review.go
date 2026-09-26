@@ -14,7 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
-// review unit RUN connects a built unit to the goal branch evidence landing
+// review run RUN connects a built unit to the goal branch evidence landing
 // consumes. The unit runner binds its latest completed round to a
 // goal-branch subject under the run's lock; the branch commit owner makes
 // the Goal-Unit commit (or amends the unit's earlier one) under the claim
@@ -373,7 +373,7 @@ func resolveUnitCommit(git func(string, ...string) ([]byte, error), install, end
 // publication owner, with its records in root. A terminal critic whose
 // chain is not closed yields the author's close and collects nothing; a
 // repeat publishes the same attestation without reading again. review
-// commit and review unit share it.
+// commit and review run share it.
 func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, unit string, args []string) intentResult {
 	owners := inv.delivery()
 	result, code, err := owners.branchRead(args)

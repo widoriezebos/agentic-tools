@@ -452,7 +452,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// A later edit is never absorbed: refused before staging or commit.
 	late := filepath.Join(c.worktree, "late.txt")
 	os.WriteFile(late, []byte("typed after the build\n"), 0o644)
-	code, result = c.do("review", "unit", run)
+	code, result = c.do("review", "run", run)
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "UNIT_RESULT_CHANGED") ||
 		connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" || c.commits != 0 {
 		t.Fatalf("stale result: code=%d %+v", code, result)
@@ -460,7 +460,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	os.Remove(late)
 	// The same path with other bytes is refused too.
 	os.WriteFile(filepath.Join(c.worktree, "café.txt"), []byte("accentuated\n"), 0o644)
-	if _, result = c.do("review", "unit", run); !strings.Contains(result.Summary, "UNIT_RESULT_CHANGED") || c.commits != 0 {
+	if _, result = c.do("review", "run", run); !strings.Contains(result.Summary, "UNIT_RESULT_CHANGED") || c.commits != 0 {
 		t.Fatalf("changed bytes at a result path: %+v", result)
 	}
 	os.WriteFile(filepath.Join(c.worktree, "café.txt"), []byte("accented\n"), 0o644)
@@ -468,9 +468,9 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// The commit is made but its response is lost, then publication fails:
 	// exactly one unit commit, reconciled and reported partial.
 	c.loseCommit, c.failPushes = true, 1
-	code, result = c.do("review", "unit", run)
+	code, result = c.do("review", "run", run)
 	if result.Outcome != intentPartial || result.Next == nil ||
-		!slices.Equal(slices.DeleteFunc(slices.Clone(result.Next.Argv), func(word string) bool { return word == "--json" }), []string{"metasystem", "review", "unit", run}) {
+		!slices.Equal(slices.DeleteFunc(slices.Clone(result.Next.Argv), func(word string) bool { return word == "--json" }), []string{"metasystem", "review", "run", run}) {
 		t.Fatalf("lost commit then failed push: code=%d %+v", code, result)
 	}
 	subjects := c.runRecord(run).Subjects
@@ -484,7 +484,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 			t.Fatalf("%q is not in the unit commit", path)
 		}
 	}
-	code, result = c.do("review", "unit", run)
+	code, result = c.do("review", "run", run)
 	if result.Outcome != intentInProgress || len(c.delegates) != 1 || c.delegates[0] != first || c.commits != 1 {
 		t.Fatalf("retry publishes the same commit and requests one critic: code=%d %+v delegates=%v", code, result, c.delegates)
 	}
@@ -494,19 +494,19 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	if remote := connectionGit(t, c.root(), "ls-remote", c.origin, "refs/heads/goal/"+c.id); !strings.HasPrefix(remote, first) {
 		t.Fatalf("the unit commit is published: %q", remote)
 	}
-	_, result = c.do("review", "unit", run)
+	_, result = c.do("review", "run", run)
 	if result.Outcome != intentInProgress || len(c.delegates) != 1 {
 		t.Fatalf("a running critic is waited on, never dispatched again: %+v", result)
 	}
 
 	// Finished but unclosed: the author's close is named, nothing collected.
 	c.writeCritic(install, "crit1", first, "completed", false)
-	_, result = c.do("review", "unit", run)
-	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "review unit "+run+" --dispositions FILE") ||
+	_, result = c.do("review", "run", run)
+	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "review run "+run+" --dispositions FILE") ||
 		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
 		t.Fatalf("unclosed critic: %+v", result)
 	}
-	code, result = c.do("close", "crit1", "--dispositions", c.dispositions(), "--repo", install)
+	code, result = c.do("done", "job", "crit1", "--dispositions", c.dispositions(), "--repo", install)
 	if code != 0 || result.Outcome != intentConfirmed || len(c.closes) != 1 {
 		t.Fatalf("public close (fake whole owner): code=%d %+v", code, result)
 	}
@@ -515,17 +515,17 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// retry adopts that exact read, publication then fails once, and the
 	// next retry publishes: one attestation, one critic, one collection.
 	c.loseReadSave = true
-	code, result = c.do("review", "unit", run)
+	code, result = c.do("review", "run", run)
 	if result.Outcome == intentConfirmed || c.commitReads != 1 {
 		t.Fatalf("interrupted collection: code=%d %+v reads=%d", code, result, c.commitReads)
 	}
 	c.failPushes = 1
-	code, result = c.do("review", "unit", run)
+	code, result = c.do("review", "run", run)
 	if result.Outcome != intentPartial || c.commitReads != 1 {
 		t.Fatalf("adopted read, failed publication: code=%d %+v reads=%d", code, result, c.commitReads)
 	}
 	attestation := resultData(t, result)["attestation"].(string)
-	code, result = c.do("review", "unit", run)
+	code, result = c.do("review", "run", run)
 	if code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) || resultData(t, result)["attestation"] != attestation ||
 		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "land", c.id}) || len(c.delegates) != 1 || c.commitReads != 1 {
 		t.Fatalf("published read: code=%d %+v", code, result)
@@ -542,7 +542,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	c.edits = map[string]string{"later.txt": "a later unit\n"}
 	_, result = c.do(append([]string{"build", c.id, "later", "--brief", c.brief("later.md", "A later unit.\n"), "--lines", "5"}, workCheck...)...)
 	later := resultData(t, result)["run"].(string)
-	if code, result = c.do("review", "unit", later); result.Outcome != intentInProgress || len(c.delegates) != 2 {
+	if code, result = c.do("review", "run", later); result.Outcome != intentInProgress || len(c.delegates) != 2 {
 		t.Fatalf("later unit: code=%d %+v", code, result)
 	}
 
@@ -552,12 +552,12 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// is replayed, and a new critic reads the replacement.
 	c.edits = map[string]string{"connect.txt": "the built result, fixed\n"}
 	followUp := c.brief("follow-up.md", "Fix F1.\n")
-	code, result = c.do("fold", "unit", run, "--brief", followUp)
+	code, result = c.do("revise", "run", run, "--brief", followUp)
 	if code != 0 || result.Outcome != intentConfirmed || result.Next == nil || result.Next.Argv[1] != "review" {
 		t.Fatalf("fold unit: code=%d %+v", code, result)
 	}
 	c.loseCommit = true
-	code, result = c.do("review", "unit", run)
+	code, result = c.do("review", "run", run)
 	if result.Outcome != intentInProgress || len(c.delegates) != 3 {
 		t.Fatalf("amended subject needs its own critic: code=%d %+v delegates=%v", code, result, c.delegates)
 	}
@@ -571,10 +571,10 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("the amended branch is the replacement then the replayed later unit, without the dropped read: %v", commits)
 	}
 	c.writeCritic(install, "crit3", second, "completed", false)
-	if code, result = c.do("close", "crit3", "--dispositions", c.dispositions(), "--repo", install); code != 0 {
+	if code, result = c.do("done", "job", "crit3", "--dispositions", c.dispositions(), "--repo", install); code != 0 {
 		t.Fatalf("close crit3: %+v", result)
 	}
-	code, result = c.do("review", "unit", run)
+	code, result = c.do("review", "run", run)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("amended unit read: code=%d %+v", code, result)
 	}
@@ -595,7 +595,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("read-failed build: %s %+v", round.Outcome, result)
 	}
 	c.readFails = false
-	if code, result = c.do("review", "unit", readFailed); result.Outcome != intentInProgress || len(c.delegates) != 4 {
+	if code, result = c.do("review", "run", readFailed); result.Outcome != intentInProgress || len(c.delegates) != 4 {
 		t.Fatalf("read-failed round requests committed review: code=%d %+v", code, result)
 	}
 
@@ -604,7 +604,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	c.edits, c.proofWrites = map[string]string{"other.txt": "another unit\n"}, true
 	_, result = c.do(append([]string{"build", c.id, "wrote", "--brief", c.brief("wrote.md", "Another unit.\n"), "--lines", "5"}, workCheck...)...)
 	wrote := resultData(t, result)["run"].(string)
-	code, result = c.do("review", "unit", wrote)
+	code, result = c.do("review", "run", wrote)
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "proof-wrote") ||
 		connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" {
 		t.Fatalf("proof-wrote: code=%d %+v", code, result)
@@ -620,7 +620,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	if result.Outcome == intentConfirmed || !strings.Contains(result.Summary, "GOAL_BRANCH_NOT_HOLDER") || len(c.starts()) != launches {
 		t.Fatalf("unclaimed build: code=%d %+v", code, result)
 	}
-	code, result = c.do("fold", "unit", readFailed, "--brief", c.brief("unclaimed-fold.md", "No claim.\n"))
+	code, result = c.do("revise", "run", readFailed, "--brief", c.brief("unclaimed-fold.md", "No claim.\n"))
 	if result.Outcome == intentConfirmed || len(c.starts()) != launches {
 		t.Fatalf("unclaimed fold launched: code=%d %+v launches=%d", code, result, len(c.starts())-launches)
 	}

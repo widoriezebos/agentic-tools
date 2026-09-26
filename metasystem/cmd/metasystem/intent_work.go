@@ -190,8 +190,8 @@ func intentWorkCommands() []intentCommand {
 		},
 		{
 			name: "wait", group: "work", audience: "agent", summary: "wait for a goal's work, its landing or a person's act",
-			usage: []string{"metasystem wait G [--work NAME] [--timeout DURATION]", "metasystem wait G --for landing|human-act [--verb V] [--since TIP] [--timeout DURATION]", "metasystem wait question Q [--timeout DURATION]", "metasystem wait job J [--timeout DURATION]", "metasystem wait resume ID [--timeout DURATION]", "metasystem wait goal G [--work NAME] (any goal name, including target words)",
-				"metasystem wait proof REF [--timeout DURATION]", "metasystem wait file PATH --until present|absent [--timeout DURATION]"},
+			usage: []string{"metasystem wait G [--work NAME] [--timeout DURATION]", "metasystem wait G --for landing|human-act [--verb V] [--since TIP] [--timeout DURATION]", "metasystem wait question Q [--timeout DURATION]", "metasystem wait job J [--timeout DURATION]", "metasystem wait run RUN [--timeout DURATION]", "metasystem wait resume ID [--timeout DURATION]", "metasystem wait goal G [--work NAME] (any goal name, including target words)",
+				"metasystem wait proof REF [--timeout DURATION]", "metasystem wait file PATH --until present|absent [--timeout DURATION]", "metasystem wait review REF [--timeout DURATION]"},
 			details: []string{
 				"wait G continues the goal's running work: the one named with --work, or the only work item that is running.",
 				"With nothing running it says so; when the goal is queued to land it offers wait G --for landing.",
@@ -202,7 +202,7 @@ func intentWorkCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work to wait for"},
-				{name: "timeout", value: "DURATION", usage: "how long this invocation waits (for example 10m)"},
+				{name: "timeout", value: "DURATION", usage: "how long this invocation waits (for example 20s or 10m)"},
 				{name: "for", aliases: []string{"event"}, value: "EVENT", usage: "landing or human-act: wait for that goal event instead of work"},
 				{name: "since", aliases: []string{"after"}, value: "TIP", usage: "with --for: the goal-ledger revision to wait after (default: the current one)"},
 				{name: "verb", value: "VERB", usage: "with --for human-act: the person's act to wait for"},
@@ -219,7 +219,9 @@ func intentWorkCommands() []intentCommand {
 			usage: []string{"metasystem test [--goal G] [--authority H] [--mode auto|standard|deep]"},
 			details: []string{
 				"Runs the risk-selected tests for this checkout and reports the result, naming its proof attempt; wait proof ID reads that attempt's recorded end.",
-				"metasystem test plan, test verify and test report keep their own grammar.",
+				"test plan --root INSTALLATION [--goal G] --json previews the selected tests and their reasons without running them.",
+				"test verify --root INSTALLATION --tree TREE [--goal G] --json checks whether retained proof covers that exact tree, without rerunning tests.",
+				"test report --result FILE --expensive-ms N summarizes a recorded test result as JSON; N is the positive threshold for expensive tests.",
 			},
 			flags: []intentFlag{
 				{name: "goal", value: "G", usage: "the accepted goal owning the delivery"},
@@ -231,24 +233,21 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentTest,
 		},
 		{
-			name: "settings", group: "operations", audience: "both", summary: "show the selected installation's settings and where each value comes from",
-			usage: []string{"metasystem settings [KEY]", "metasystem settings --keys [--matching PREFIX]", "metasystem settings coordinator [--declare|--withdraw --by NAME]", "metasystem settings compatibility [--minimum-engine SHA --by NAME]"},
+			name: "settings", group: "administration", audience: "both", summary: "inspect MetaSystem settings and configure its coordination",
+			usage: []string{"metasystem settings [KEY]", "metasystem settings --keys [--matching PREFIX]", "metasystem settings coordinator [--declare|--withdraw --by NAME]"},
 			details: []string{"Without KEY: the launch settings. With KEY: that launch setting or any metasystem.conf key.",
 				"Read only. Settings are changed in metasystem.conf or the environment, not by this command; check settings validates them all.",
 				"coordinator shows whether this checkout is its ledger's coordinator; --declare and --withdraw are a person's act at",
-				"an agent-free terminal, and declaring needs this machine quiet (no claimed goal, job, run or mission here).",
-				"compatibility shows the recorded minimum engine; --minimum-engine records a person's assertion that every seat runs",
-				"at least that engine (no machine is probed), at the enrolled terminal and with synced goals."},
+				"an agent-free terminal, and declaring needs this machine quiet (no claimed goal, job, run or mission here)."},
 			flags: []intentFlag{
 				{name: "keys", usage: "every configured key of the selected installation, with its source"},
 				{name: "matching", value: "PREFIX", usage: "with --keys: only keys starting with PREFIX"},
 				{name: "declare", usage: "coordinator: declare this checkout"},
 				{name: "withdraw", usage: "coordinator: withdraw the declaration"},
-				{name: "minimum-engine", value: "SHA", usage: "compatibility: the 40-character engine commit"},
 				{name: "by", value: "NAME", usage: "the person deciding"},
 			},
 			maxArgs:  1,
-			examples: []string{"metasystem settings", "metasystem settings launch.read.model", "metasystem settings coordinator", "metasystem settings compatibility"},
+			examples: []string{"metasystem settings", "metasystem settings launch.read.model", "metasystem settings coordinator"},
 			run:      runIntentSettings,
 		},
 	}
@@ -967,7 +966,11 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 // workArgv is a public command about the run's goal and named work.
 func (inv *intentInvocation) workArgv(record launch.UnitRunRecord, verb string, extra ...string) []string {
 	if record.Goal == "" || record.Unit == "" {
-		return inv.publicArgv(append([]string{verb, "unit", record.ID}, extra...)...)
+		if verb == "revise" {
+			// revise run continues the run's newest round; it names no attempt.
+			extra = []string{"--brief", "FILE"}
+		}
+		return inv.publicArgv(append([]string{verb, "run", record.ID}, extra...)...)
 	}
 	words := []string{verb, record.Goal, "--work", record.Unit}
 	switch verb {
@@ -1017,22 +1020,20 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 	return data
 }
 
-// fold unit
+// revise run
 
-// fold unit
-
-// runIntentFoldUnit sends the follow-up brief to the run through the unit
+// runIntentReviseRun sends the follow-up brief to the run through the unit
 // runner's follow-up, which reuses the run's plan, proof and read and
 // refuses a round past the run's approved limit.
-func runIntentFoldUnit(inv *intentInvocation, run string) int {
+func runIntentReviseRun(inv *intentInvocation, run string) int {
 	if len(inv.input.args) != 2 || !inv.input.has("brief") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "fold unit needs the run and --brief FILE; nothing was done", Decision: "metasystem fold unit RUN --brief FILE"})
+			Summary: "revise run needs the run and --brief FILE; nothing was done", Decision: "metasystem revise run RUN --brief FILE"})
 	}
 	brief := inv.callerPath(inv.input.text("brief"))
 	runner := inv.unitRunner()
 	result, err := runner.Continue(launch.UnitRequest{Resume: run, FollowUp: brief})
-	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "unit", ID: run}}, inv.publicArgv("wait", "unit", run)))
+	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "unit", ID: run}}, inv.publicArgv("wait", "run", run)))
 }
 
 // wait
@@ -1042,7 +1043,7 @@ func runIntentWait(inv *intentInvocation) int {
 	switch {
 	case inv.input.has("until") && (len(args) != 2 || args[0] != "file"):
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--until belongs to wait file PATH; nothing was done"})
-	case len(args) == 1 && slices.Contains([]string{"question", "resume", "proof", "file", "job", "unit", "review"}, args[0]):
+	case len(args) == 1 && slices.Contains([]string{"question", "resume", "proof", "file", "job", "run", "review"}, args[0]):
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("wait %s names what to wait for (see metasystem help wait); nothing was done", args[0])})
 	case len(args) == 1:
 		if inv.input.has("for") {
@@ -1100,7 +1101,7 @@ func runIntentWait(inv *intentInvocation) int {
 			}
 		}
 		return runIntentWaitWork(inv, args[1])
-	case len(args) == 2 && slices.Contains([]string{"job", "goal", "unit"}, args[0]):
+	case len(args) == 2 && slices.Contains([]string{"job", "goal", "run"}, args[0]):
 		if inv.input.has("work") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
 				Summary: "--work names a goal's work: wait G --work NAME; nothing was done"})
@@ -1124,8 +1125,8 @@ func runIntentWait(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	targets := []intentTarget{{Kind: kind, ID: id}}
-	if kind == "unit" {
-		return inv.render(inv.waitUnit(id, timeout, targets, inv.publicArgv("wait", "unit", id)))
+	if kind == "run" {
+		return inv.render(inv.waitUnit(id, timeout, []intentTarget{{Kind: "unit", ID: id}}, inv.publicArgv("wait", "run", id)))
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1405,19 +1406,11 @@ func runIntentSettings(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--matching belongs to settings --keys; nothing was done"})
 	}
 	if args := inv.input.args; len(args) == 1 && args[0] == "coordinator" {
-		if inv.input.has("minimum-engine") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--minimum-engine belongs to settings compatibility; nothing was done"})
-		}
 		return runIntentSettingsCoordinator(inv)
-	} else if len(args) == 1 && args[0] == "compatibility" {
-		if inv.input.has("declare") || inv.input.has("withdraw") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--declare and --withdraw belong to settings coordinator; nothing was done"})
-		}
-		return runIntentSettingsCompatibility(inv)
 	}
-	for _, name := range []string{"declare", "withdraw", "minimum-engine", "by"} {
+	for _, name := range []string{"declare", "withdraw", "by"} {
 		if inv.input.has(name) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to settings coordinator or compatibility; nothing was done", name)})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to settings coordinator; nothing was done", name)})
 		}
 	}
 	if problem := inv.resolveLayout(); problem != nil {

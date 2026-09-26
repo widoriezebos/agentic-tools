@@ -68,6 +68,67 @@ func TestIntentAgentHelpCatalogue(t *testing.T) {
 	}
 }
 
+func TestIntentAdministrationHelp(t *testing.T) {
+	t.Parallel()
+	_, index := readHelpJSON(t, "administration", "--json")
+	listed := map[string]bool{}
+	for _, entry := range index.Commands {
+		listed[entry.Name] = true
+		if entry.Scope != "administration" && entry.Scope != "mixed" {
+			t.Errorf("administration index includes workflow-only %s", entry.Name)
+		}
+	}
+	for _, name := range []string{"enroll", "settings", "restart", "start", "stop", "status", "check", "repair", "land"} {
+		if !listed[name] {
+			t.Errorf("administration index omits %s", name)
+		}
+	}
+	for _, name := range []string{"build", "review", "wait", "incidents"} {
+		if listed[name] {
+			t.Errorf("application work %s is misclassified as administration", name)
+		}
+	}
+	for _, words := range [][]string{{"help", "all"}, {"help", "human"}, {"help", "administration"}} {
+		code, page, problem := runCLIHelp(words, families())
+		heading := strings.Index(page, "MetaSystem administration (tool setup and maintenance)")
+		if code != 0 || problem != "" || heading < 0 {
+			t.Fatalf("%v does not separate administration: %d %s", words, code, problem)
+		}
+		for _, name := range []string{"enroll", "settings", "restart"} {
+			if at := strings.Index(page, "metasystem "+name+" "); at < heading {
+				t.Errorf("%v lists %s outside administration", words, name)
+			}
+		}
+	}
+	for _, row := range []struct{ name, work, admin string }{
+		{"start", "metasystem start session", "metasystem start [checkout]"},
+		{"stop", "metasystem stop job J", "metasystem stop [checkout]"},
+		{"status", "metasystem status G", "metasystem status ui"},
+		{"repair", "metasystem repair review G", "metasystem repair goals --upgrade"},
+	} {
+		_, doc := readHelpJSON(t, row.name, "--json")
+		if doc.Command.Scope != "mixed" || !strings.Contains(strings.Join(doc.Command.Usage, "\n"), row.work) ||
+			!strings.Contains(strings.Join(doc.Command.AdministrationUsage, "\n"), row.admin) {
+			t.Errorf("%s loses the workflow/administration distinction: %+v", row.name, doc.Command)
+		}
+		code, page, problem := runCLIHelp([]string{"help", row.name}, families())
+		heading := strings.Index(page, "MetaSystem administration:")
+		work, admin := strings.Index(page, row.work), strings.Index(page, row.admin)
+		if code != 0 || problem != "" || work < 0 || work >= heading || admin <= heading {
+			t.Errorf("%s text does not separate forms: %d %d %d / %s", row.name, work, heading, admin, problem)
+		}
+	}
+	for _, command := range publicIntentCommands() {
+		seen := map[string]bool{}
+		for _, usage := range command.allUsage() {
+			if seen[usage] {
+				t.Errorf("%s repeats a form across sections: %s", command.name, usage)
+			}
+			seen[usage] = true
+		}
+	}
+}
+
 func TestIntentHelpJSON(t *testing.T) {
 	t.Parallel()
 	_, root := readHelpJSON(t, "--json")
@@ -83,10 +144,10 @@ func TestIntentHelpJSON(t *testing.T) {
 	for _, entry := range root.Commands {
 		_, page := readHelpJSON(t, entry.HelpArgv[2:]...)
 		command, ok := findIntentCommand(entry.Name)
-		if !ok || command.compatibility || page.Command == nil {
+		if !ok || page.Command == nil {
 			t.Fatalf("invalid index entry %+v", entry)
 		}
-		if !reflect.DeepEqual(page.Command.Usage, command.usage) || !reflect.DeepEqual(page.Command.Details, command.details) {
+		if !reflect.DeepEqual(page.Command.Usage, command.usage) || !reflect.DeepEqual(page.Command.AdministrationUsage, command.administrationUsage) || !reflect.DeepEqual(page.Command.Details, command.details) {
 			t.Errorf("%s differs from its command definition", entry.Name)
 		}
 		seen := map[string]bool{}
@@ -174,7 +235,7 @@ func TestIntentReviewHelpForms(t *testing.T) {
 	command, _ := findIntentCommand("review")
 	expected := map[string][]string{
 		"goal": {reviewGoalUsage, reviewExplicitGoalUsage}, "submit": {reviewSubmitUsage}, "finding": {reviewFindingUsage},
-		"design": {reviewDesignUsage}, "job": {reviewJobUsage}, "commit": {reviewCommitUsage}, "changes": {reviewChangesUsage}, "diff": {reviewDiffUsage},
+		"design": {reviewDesignUsage}, "job": {reviewJobUsage}, "commit": {reviewCommitUsage}, "run": {reviewRunUsage}, "changes": {reviewChangesUsage}, "diff": {reviewDiffUsage},
 	}
 	if len(review.Command.Forms) != len(expected) {
 		t.Fatalf("forms: %v", review.Command.Forms)

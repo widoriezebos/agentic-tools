@@ -604,11 +604,6 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestIntentCompatibilityGitAdapterRecordsTheFloorThroughTheEngineFloorOwner",
-      "reason": "its migrated legacy fixture sets METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv and migration captures the global stderr"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile",
       "reason": "sets METASYSTEM_OWNER_LINEAGE with t.Setenv to control the real owner child process"
     },

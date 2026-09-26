@@ -48,8 +48,11 @@ type CommandFamily struct {
 type Command struct {
 	Name    string
 	Summary string
+	Scope   string
 	// Usage is the command's accepted forms, each a complete command line.
 	Usage []string
+	// AdministrationUsage identifies forms that manage MetaSystem itself.
+	AdministrationUsage []string
 }
 
 // The kit files this tool reads that are named rather than pointed at.
@@ -149,12 +152,18 @@ func (r Readers) kitEntries(root string) (entries []entry, sources, problems []s
 		for _, family := range r.Kit.Commands() {
 			for _, verb := range family.Verbs {
 				name, text := "metasystem "+verb.Name, verb.Summary
+				if verb.Scope == "administration" {
+					text = "MetaSystem administration: " + text
+				}
 				if family.Name != "" {
 					name = "metasystem " + family.Name + " " + verb.Name
 					text += " (" + family.Name + ": " + family.Summary + ")"
 				}
 				if len(verb.Usage) > 0 {
 					text += "; usage: " + strings.Join(verb.Usage, "; ")
+				}
+				if len(verb.AdministrationUsage) > 0 {
+					text += "; MetaSystem administration forms: " + strings.Join(verb.AdministrationUsage, "; ")
 				}
 				entries = append(entries, entry{
 					owner: "command", from: "the engine's own command catalogue",

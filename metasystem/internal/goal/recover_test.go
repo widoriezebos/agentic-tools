@@ -342,6 +342,9 @@ func TestRecoveryRefusesToReplayAbandonEngineFloorAndAbandonedReopen(t *testing.
 			}
 			_, err := requestForEntry(endpoint, entry)
 			want := test.verb + " is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal"
+			if test.verb == "engine-floor" {
+				want = "engine-floor is retired and cannot be replayed from journal text"
+			}
 			if err == nil || err.Error() != want {
 				t.Fatalf("recovery refusal = %v, want %q", err, want)
 			}

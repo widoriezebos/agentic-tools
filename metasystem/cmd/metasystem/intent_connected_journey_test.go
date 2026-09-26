@@ -192,19 +192,19 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	// the printed close run by the real owner, and the collecting review.
 	reviewed := func(run string, extra ...string) (critic, commit string) {
 		t.Helper()
-		code, result := do(append([]string{"review", "unit", run}, extra...)...)
+		code, result := do(append([]string{"review", "run", run}, extra...)...)
 		if result.Outcome != "in-progress" || len(c.delegates) == 0 {
 			t.Fatalf("review unit %s: code=%d %+v", run, code, result)
 		}
 		critic, commit = "crit"+strconv.Itoa(len(c.delegates)), c.delegates[len(c.delegates)-1]
 		finish(c.worktree, critic, commit)
-		code, result = do(append([]string{"review", "unit", run}, extra...)...)
-		if result.Outcome != "in-progress" || !strings.Contains(result.Decision, "review unit "+run) || !strings.Contains(result.Decision, "--dispositions FILE") ||
+		code, result = do(append([]string{"review", "run", run}, extra...)...)
+		if result.Outcome != "in-progress" || !strings.Contains(result.Decision, "review run "+run) || !strings.Contains(result.Decision, "--dispositions FILE") ||
 			strings.Contains(result.Decision, "metasystem close") {
 			t.Fatalf("an unclosed critic must print its public decision route: code=%d %+v", code, result)
 		}
 		calls := len(b.calls)
-		if code, result = do("close", critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || result.Outcome != intentConfirmed {
+		if code, result = do("done", "job", critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("close %s: code=%d %+v calls=%v", critic, code, result, b.calls[calls:])
 		}
 		record := job(c.worktree, critic)
@@ -215,11 +215,11 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 			t.Fatalf("close left %s's lock behind", critic)
 		}
 		calls = len(b.calls)
-		if code, result = do("close", critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || len(b.calls) != calls {
+		if code, result = do("done", "job", critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || len(b.calls) != calls {
 			t.Fatalf("a repeated close must change nothing: code=%d %+v calls=%v", code, result, b.calls[calls:])
 		}
 		publications := c.publications
-		if code, result = do(append([]string{"review", "unit", run}, extra...)...); code != 0 || result.Outcome != intentConfirmed || c.publications != publications+1 {
+		if code, result = do(append([]string{"review", "run", run}, extra...)...); code != 0 || result.Outcome != intentConfirmed || c.publications != publications+1 {
 			t.Fatalf("collect %s: code=%d %+v", run, code, result)
 		}
 		return critic, commit
@@ -290,7 +290,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	if model := flagValue(c.reads[reads], "--model"); model != "requested-critic" || flagValue(c.reads[reads], "--unit") != commitB {
 		t.Fatalf("review unit --model must reach the read owner for B's commit: %v", c.reads[reads])
 	}
-	if code, result := do("review", "unit", runB, "--effort", "high"); code != 2 || result.Outcome != intentRefused {
+	if code, result := do("review", "run", runB, "--effort", "high"); code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("a review effort override stays refused: code=%d %+v", code, result)
 	}
 	if status := c.landAdmission(); status.Prefix != 2 || status.Units[0].Commit != commitA || status.Units[1].Commit != commitB {
@@ -300,7 +300,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	// A same-unit correction: fold A, review it again. B's unit survives
 	// with its exact bytes; A's old read does not carry over.
 	c.edits = map[string]string{"a.txt": "amended A\n"}
-	if code, result := do("fold", "unit", runA, "--brief", c.brief("fix.md", "Amend A.\n")); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := do("revise", "run", runA, "--brief", c.brief("fix.md", "Amend A.\n")); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("fold unit A: code=%d %+v", code, result)
 	}
 	criticA2, commitA2 := reviewed(runA)

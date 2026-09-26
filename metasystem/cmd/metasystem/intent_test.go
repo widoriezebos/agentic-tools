@@ -180,9 +180,7 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 			t.Errorf("root help does not list the common command %s", command.name)
 		case !command.primary && strings.Contains(root, "\n  "+command.name+" "):
 			t.Errorf("root help lists the less common command %s; it belongs to its topic", command.name)
-		case command.compatibility && strings.Contains(all, "\n  metasystem "+command.name+" "):
-			t.Errorf("help all advertises the compatibility spelling %s", command.name)
-		case !command.compatibility && !strings.Contains(all, "\n  metasystem "+command.name):
+		case !strings.Contains(all, "\n  metasystem "+command.name):
 			t.Errorf("help all does not list %s", command.name)
 		}
 		code, page, problem := runCLIHelp([]string{"help", command.name}, registered)
@@ -196,7 +194,7 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 			t.Errorf("%s --help = code %d stdout %q stderr %q", command.name, code, stdout.String(), stderr.String())
 		}
 	}
-	for _, topic := range []string{"goals", "work", "questions", "operations", "human", "agent", "all", "internal"} {
+	for _, topic := range []string{"goals", "work", "questions", "operations", "administration", "human", "agent", "all"} {
 		code, page, problem := runCLIHelp([]string{"help", topic}, registered)
 		if code != 0 || problem != "" || page == "" {
 			t.Errorf("help %s = code %d stderr %q", topic, code, problem)
@@ -206,32 +204,20 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 	if strings.Contains(agent, "approve G") || strings.Contains(agent, "internal") {
 		t.Errorf("help agent must list only agent commands and no internal catalogue: %q", agent)
 	}
-	_, internal, _ := runCLIHelp([]string{"help", "internal"}, registered)
-	var legacy bytes.Buffer
-	writeUsage(&legacy, registered)
-	if !strings.Contains(internal, legacy.String()) {
-		t.Error("help internal does not carry the complete legacy catalogue")
+	_, internal, _ := runCLIHelp([]string{"internal", "--help"}, registered)
+	var machinery bytes.Buffer
+	writeUsage(&machinery, registered)
+	if !strings.Contains(internal, machinery.String()) || !strings.Contains(internal, "maintainer reference") {
+		t.Error("internal help must describe current machinery explicitly")
 	}
-	// Every family keeps its help through the internal alias, and directly
-	// when no public command has its name; a public name shows only the
-	// public command.
+	if code, page, _ := runCLIHelp([]string{"help", "internal"}, registered); code != 2 || page != "" {
+		t.Error("public help must not publish machinery")
+	}
 	for _, fam := range registered {
-		var want bytes.Buffer
-		if command, public := findIntentCommand(fam.name); public {
-			writeIntentHelp(&want, command)
-		} else {
-			writeFamilyHelp(&want, fam)
-		}
 		var familyOnly bytes.Buffer
 		writeFamilyHelp(&familyOnly, fam)
-		for _, args := range [][]string{{"help", fam.name}, {fam.name, "--help"}, {"internal", fam.name, "--help"}} {
-			expected := want.String()
-			if args[0] == "internal" {
-				expected = familyOnly.String()
-			}
-			if code, got, problem := runCLIHelp(args, registered); code != 0 || got != expected || problem != "" {
-				t.Errorf("%v = code %d stderr %q, stdout equal %t", args, code, problem, got == expected)
-			}
+		if code, got, problem := runCLIHelp([]string{"internal", fam.name, "--help"}, registered); code != 0 || got != familyOnly.String() || problem != "" {
+			t.Errorf("internal %s help = code %d stderr %q, stdout equal %t", fam.name, code, problem, got == familyOnly.String())
 		}
 	}
 	// The alias routes to the family handler unchanged.
@@ -258,7 +244,7 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 			t.Errorf("public catalogue lacks %s", want)
 		}
 	}
-	for _, absent := range []string{"internal", "doctor", "red", "ready", "goal", "launch"} {
+	for _, absent := range append([]string{"internal", "goal", "launch"}, removedIntentAliases...) {
 		if slices.Contains(names, absent) {
 			t.Errorf("public catalogue lists %s", absent)
 		}

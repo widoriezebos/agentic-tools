@@ -257,7 +257,7 @@ type Info struct {
 // absentBundleStatement is what a page request gets from an engine built
 // without a bundle. It says what is missing and how to get it back rather than
 // serving an empty page or a stack trace.
-const absentBundleStatement = "MetaSystem interface: this executable was built without the interface bundle. Rebuild it from a checkout that contains internal/ui/web/bundle/dist, then run: metasystem ui restart"
+const absentBundleStatement = "MetaSystem interface: this executable was built without the interface bundle. Rebuild it from a checkout that contains internal/ui/web/bundle/dist, then run: metasystem restart ui"
 
 // reservedPrefixes never answer with the page, exactly or with anything
 // beneath them: /- belongs to the server, /api to the API, /assets to the

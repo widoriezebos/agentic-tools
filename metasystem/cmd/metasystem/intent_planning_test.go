@@ -109,8 +109,8 @@ func TestIntentPlanningArgumentConflicts(t *testing.T) {
 		{"grant", "--tiers", "1", "--acts", "resume", "--until", "2026-09-05"},
 		{"notes", bedGoal, "--add", "x"},
 		{"notes", bedGoal, "--close", "r1", "--fixed", "abc", "--moved", "other"},
-		{"resolve", bedGoal, "--review", "critic", "--finding", "F", "--test", "T", "--artifact", "a"},
-		{"red", "close", "tr-1", "--goal", bedGoal, "--reason", "x"},
+		{"review", bedGoal, "--review", "critic", "--finding", "F", "--test", "T", "--artifact", "a"},
+		{"incidents", "close", "tr-1", "--goal", bedGoal, "--reason", "x"},
 		{"abandon", bedGoal, "--reason", "x", "--successor", bedGoal},
 		{"open", "other", "--intent", "a", "--intent-file", "b", "--next", "n"},
 	} {
@@ -192,7 +192,7 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 		{"unapprove", bedGoal, "--reason", "not yet"},
 		{"claim", bedGoal, "--take-over", "--reason", "the holder is gone"},
 		{"grant", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05"},
-		{"red", "close", "tr-1", "--reason", "fixed"},
+		{"incidents", "close", "tr-1", "--reason", "fixed"},
 	} {
 		code, result := bed.runJSON(agent, args...)
 		bed.expectNoEffect(before, args, code, result)
@@ -205,7 +205,7 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 	for _, args := range [][]string{
 		{"pin", bedGoal, "m1e", "--by", "Wido"},
 		{"claim", bedGoal, "--take-over", "--reason", "the holder is gone", "--by", "Wido", "--lineage", "m1"},
-		{"red", "close", "tr-1", "--reason", "fixed", "--by", "Wido"},
+		{"incidents", "close", "tr-1", "--reason", "fixed", "--by", "Wido"},
 	} {
 		code, result := bed.runJSON(agent, args...)
 		bed.expectNoEffect(before, args, code, result)
@@ -217,8 +217,8 @@ func TestIntentPlanningHumanOnlyActs(t *testing.T) {
 		t.Fatalf("a mismatched --by is not named: %+v", result)
 	}
 	// A holder's own act takes no person's name.
-	code, result = bed.runJSON(agent, "ready", bedGoal, "--by", "Wido")
-	bed.expectNoEffect(before, []string{"ready"}, code, result)
+	code, result = bed.runJSON(agent, "land", bedGoal, "--queue-only", "--by", "Wido")
+	bed.expectNoEffect(before, []string{"land", "--queue-only"}, code, result)
 
 	// At the enrolled terminal the name is filled from the proof.
 	code, result = bed.runJSON(bed.owners(), "prioritize", bedGoal, "1")
@@ -283,8 +283,8 @@ func TestIntentPlanningDecidePartial(t *testing.T) {
 	bed := newIntentBed(t, false, nil)
 	writeCriticChain(t, bed.root())
 	before := bed.publications()
-	code, result := bed.runJSON(bed.owners(), "decide", bedGoal, "--finding", "S-1", "--review", "missing-job", "--reason", "bounded exposure")
-	bed.expectNoEffect(before, []string{"decide"}, code, result)
+	code, result := bed.runJSON(bed.owners(), "accept-risk", bedGoal, "--finding", "S-1", "--review", "missing-job", "--reason", "bounded exposure")
+	bed.expectNoEffect(before, []string{"accept-risk"}, code, result)
 
 	// The accepted-risk register cannot be written, so only the goal act lands.
 	counselor := filepath.Join(bed.root(), "records", "counselor")
@@ -294,7 +294,7 @@ func TestIntentPlanningDecidePartial(t *testing.T) {
 	if err := os.WriteFile(counselor, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, result = bed.runJSON(bed.owners(), "decide", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure")
+	code, result = bed.runJSON(bed.owners(), "accept-risk", bedGoal, "--finding", "S-1", "--review", "critic-r2", "--reason", "bounded exposure")
 	if code == 0 || result.Outcome != intentPartial || bed.publications() != before+1 {
 		t.Fatalf("decide with an unwritable register = %d %+v (publications %d, was %d)", code, result, bed.publications(), before)
 	}
@@ -332,10 +332,10 @@ func TestIntentPlanningReadyTiersAndNotes(t *testing.T) {
 // reached from the public surface.
 var intentPlanningDisposition = map[string]string{
 	"open": "open", "edit": "edit", "set-next": "edit", "set-obligation": "edit", "claim": "claim", "steal": "claim",
-	"release": "release", "land-ready": "ready", "accept-risk": "decide", "set-pin": "pin", "set-priority": "prioritize",
+	"release": "release", "land-ready": "land", "accept-risk": "accept-risk", "set-pin": "pin", "set-priority": "prioritize",
 	"reopen": "reopen", "abandon": "abandon", "carry": "abandon", "block": "block", "unblock": "unblock",
 	"unapprove": "unapprove", "grant": "grant", "revoke": "revoke", "split": "split", "set-arc": "group", "detach": "ungroup",
-	"discharge-review-obligation": "resolve", "read-items": "notes", "recover": "recover", "trunk-red": "red",
+	"discharge-review-obligation": "review", "read-items": "notes", "recover": "repair", "trunk-red": "incidents",
 	"next": "goals", "tier-probe": "goals", "set-budget": "budget",
 }
 
@@ -369,12 +369,12 @@ func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 		"edit":       {"next-append", "evidence", "unlabel", "obligation", "owner", "recurrence", "platform", "toolchain-identity", "surface-digest", "max-active-jobs", "timing-envelope-sec", "effect", "value-judgment", "reversibility", "severe-harm", "unfamiliar-approach", "test-discrimination", "correlated-assumption-risk", "authority-scope-change", "destructive-reach", "approved-ref"},
 		"claim":      {"take-over", "reason", "arc", "budget"},
 		"abandon":    {"successor", "waive", "also"},
-		"resolve":    {"test", "implementation-chain", "artifact", "result", "critic"},
+		"review":     {"test", "implementation-chain", "artifact", "result", "critic"},
 		"prioritize": {"sequence"},
 		"grant":      {"tiers", "acts", "until"},
 		"notes":      {"add", "add-file", "read", "close", "fixed", "moved", "accepted"},
-		"red":        {"goal", "branch", "to", "reason"},
-		"recover":    {"session"},
+		"incidents":  {"goal", "branch", "to", "reason"},
+		"repair":     {"session"},
 	}
 	for name, flags := range expect {
 		command, _ := findIntentCommand(name)
@@ -475,7 +475,7 @@ func TestIntentPlanningResolveByOwningSession(t *testing.T) {
 	writeCriticChain(t, foreign.root())
 	foreign.lineage = "m9"
 	before := foreign.publications()
-	code, result := foreign.runJSON(foreign.owners(), "resolve", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady")
+	code, result := foreign.runJSON(foreign.owners(), "review", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady")
 	if code == 0 || result.Outcome != intentRefused || foreign.publications() != before || !strings.Contains(result.Summary, "owning pair") {
 		t.Fatalf("a foreign session's resolve = %d %+v", code, result)
 	}
@@ -483,7 +483,7 @@ func TestIntentPlanningResolveByOwningSession(t *testing.T) {
 	owning := newIntentBed(t, false, obligation)
 	writeCriticChain(t, owning.root())
 	owning.lineage = "m1"
-	code, result = owning.runJSON(owning.owners(), "resolve", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady")
+	code, result = owning.runJSON(owning.owners(), "review", bedGoal, "--review", "critic-r2", "--finding", "F-1", "--test", "TestIntentReady")
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("the owning session's resolve = %d %+v", code, result)
 	}

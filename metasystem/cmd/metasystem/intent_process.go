@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,8 @@ import (
 // decides authority; the owners do, and their refusals are rendered.
 
 var (
+	intentUIListenFlag     = intentFlag{name: "listen", value: "ADDRESS", usage: "ui: loopback IP and port (default: configured address)"}
+	intentUIWaitFlag       = intentFlag{name: "wait-seconds", value: "N", usage: "ui: seconds to wait for shutdown (default: 15; zero checks immediately)"}
 	intentInstallationFlag = intentFlag{name: "installation", value: "DIR", advanced: true,
 		usage: "the metasystem installation of this checkout, when it is not the one found from --repo"}
 	intentTemporaryArmFlag = intentFlag{name: "temporary-human-word", value: "WORD", advanced: true,
@@ -48,8 +51,9 @@ var (
 func processIntentCommands() []intentCommand {
 	return []intentCommand{
 		{
-			name: "start", group: "operations", audience: "both", summary: "let this checkout's work run again, or start an agent session",
-			usage: []string{"metasystem start [checkout]", "metasystem start session", "metasystem start mission M", "metasystem start ui",
+			name: "start", group: "operations", audience: "both", summary: "start assigned work or MetaSystem services",
+			usage: []string{"metasystem start session", "metasystem start mission M"},
+			administrationUsage: []string{"metasystem start [checkout]", "metasystem start ui [--listen ADDRESS]",
 				"metasystem start machine NAME [--destination PATH] [--resume ID]"},
 			details: []string{
 				"start (or start checkout) is done by a person at their enrolled terminal. New work may start again, and the helpers that watch and continue work are started.",
@@ -59,46 +63,49 @@ func processIntentCommands() []intentCommand {
 				"start ui starts the browser interface. start machine NAME clones, builds, configures, enrolls and supervises one new",
 				"machine of this fleet on this host (a person's act; --resume ID continues an interrupted launch).",
 			},
-			flags: []intentFlag{intentInstallationFlag, intentTemporaryArmFlag, intentReviewByFlag, {name: "lineage", value: "LINEAGE", advanced: true, hidden: true, usage: "start session: the session's owner lineage"},
+			flags: []intentFlag{intentUIListenFlag, intentInstallationFlag, intentTemporaryArmFlag, intentReviewByFlag, {name: "lineage", value: "LINEAGE", advanced: true, hidden: true, usage: "start session: the session's owner lineage"},
 				{name: "destination", value: "PATH", advanced: true, usage: "start machine: where the new machine's clone lands"},
 				{name: "resume", value: "ID", advanced: true, usage: "start machine: continue this interrupted launch"}},
 			maxArgs:  2,
-			examples: []string{"metasystem start", "metasystem start session", "metasystem start ui", "metasystem start machine m1f"},
+			examples: []string{"metasystem start session", "metasystem start", "metasystem start ui", "metasystem start machine m1f"},
 			run:      runIntentStart,
 		},
 		{
-			name: "stop", group: "operations", audience: "both", summary: "stop this checkout, one job, or the current session",
-			usage: []string{"metasystem stop [checkout]", "metasystem stop job J", "metasystem stop session --by NAME", "metasystem stop ui",
+			name: "stop", group: "operations", audience: "both", summary: "stop selected work, a session, or MetaSystem",
+			usage: []string{"metasystem stop job J", "metasystem stop session --by NAME", "metasystem stop review REF",
 				"metasystem stop design G [--out FILE] [--attempt N]"},
+			administrationUsage: []string{"metasystem stop [checkout]", "metasystem stop ui [--wait-seconds N]"},
 			details: []string{
 				"stop (or stop checkout) is done by a person at their enrolled terminal. Every job and helper of this checkout stops, and no new work starts until start.",
 				"If something keeps running, stop says what, and nothing is reported as stopped that is not.",
 				"stop job J cancels exactly the selected job J; nothing else stops.",
 				"stop session authorizes one quiet stop of the announced main session; the checkout keeps running.",
 			},
-			flags: []intentFlag{intentInstallationFlag, {name: "by", value: "NAME", usage: "stop session: the attending person"},
+			flags: []intentFlag{intentUIWaitFlag, intentInstallationFlag, {name: "by", value: "NAME", usage: "stop session: the attending person"},
 				{name: "out", value: "FILE", usage: "stop design: the design document, when the goal has several"},
 				{name: "attempt", value: "N", usage: "stop design: this attempt instead of the newest"}},
 			maxArgs:  2,
-			examples: []string{"metasystem stop", "metasystem stop job design-r2-4f1c", "metasystem stop session --by Wido"},
+			examples: []string{"metasystem stop job design-r2-4f1c", "metasystem stop", "metasystem stop session --by Wido"},
 			run:      runIntentStop,
 			legacy:   legacyProcessCall,
 		},
 		{
-			name: "restart", group: "operations", audience: "human", summary: "stop then start this checkout, or restart the interface",
-			usage: []string{"metasystem restart checkout", "metasystem restart ui"},
+			name: "restart", group: "administration", audience: "both", summary: "restart MetaSystem for this checkout, or its interface",
+			usage: []string{"metasystem restart checkout", "metasystem restart ui [--listen ADDRESS] [--wait-seconds N]"},
 			details: []string{
 				"restart checkout starts again only after everything stopped; if either half fails, it says where it got to and what to run next.",
-				"restart ui restarts the browser interface with the executable on disk.",
+				"restart ui restarts the browser interface with the executable on disk; an agent may do this within its authorization.",
+				"restart checkout requires enrolled-terminal human authority. Starting the interface through an agent does not authenticate a person for its human actions.",
 			},
-			flags:    []intentFlag{intentInstallationFlag, intentTemporaryArmFlag, intentReviewByFlag},
+			flags:    []intentFlag{intentUIListenFlag, intentUIWaitFlag, intentInstallationFlag, intentTemporaryArmFlag, intentReviewByFlag},
 			maxArgs:  1,
 			examples: []string{"metasystem restart checkout", "metasystem restart ui"},
 			run:      runIntentRestart,
 		},
 		{
 			name: "status", group: "work", primary: true, audience: "both", summary: "what is running: a goal's work, this checkout, or one job",
-			usage: []string{"metasystem status G [--work NAME]", "metasystem status goal G [--work NAME]", "metasystem status [checkout]", "metasystem status job J", "metasystem status work [--all]", "metasystem status mission M", "metasystem status ui", "metasystem status --machines [--refresh]"},
+			usage:               []string{"metasystem status G [--work NAME]", "metasystem status goal G [--work NAME]", "metasystem status job J", "metasystem status work [--all]", "metasystem status run RUN", "metasystem status mission M"},
+			administrationUsage: []string{"metasystem status [checkout]", "metasystem status ui", "metasystem status --machines [--refresh]"},
 			details: []string{
 				"Unknown and stale readings are reported as such; a read failure is never shown as stopped or healthy.",
 				"status G lists every named work item of the goal with its stage and the command that continues it; show G is the goal's record.",
@@ -114,7 +121,7 @@ func processIntentCommands() []intentCommand {
 			legacy:   legacyProcessCall,
 		},
 		{
-			name: "enroll", group: "goals", audience: "human", summary: "enroll this terminal as the person's",
+			name: "enroll", group: "administration", audience: "human", summary: "authenticate your terminal for human decisions in MetaSystem",
 			usage:    []string{"metasystem enroll --name NAME"},
 			details:  []string{"Run it at an agent-free terminal. The local enrollment and its fleet publication are reported separately."},
 			flags:    []intentFlag{{name: "name", aliases: []string{"by"}, value: "NAME", usage: "your name"}, intentLineageFlag},
@@ -171,42 +178,16 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentAnswer,
 		},
 		{
-			name: "fleet", group: "operations", compatibility: true, replacedBy: "metasystem status --machines", audience: "both", summary: "every machine's presence, this one first",
-			usage:    []string{"metasystem fleet [--refresh]"},
-			flags:    []intentFlag{{name: "refresh", aliases: []string{"fetch"}, usage: "fetch presence now instead of reading the last tick's copy"}},
-			maxArgs:  0,
-			examples: []string{"metasystem fleet", "metasystem fleet --refresh"},
-			run:      runIntentFleet,
-		},
-		{
 			name: "check", group: "operations", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
-			usage: []string{"metasystem check", "metasystem check goals", "metasystem check settings"},
+			usage:               []string{"metasystem check goals"},
+			administrationUsage: []string{"metasystem check", "metasystem check settings"},
 			details: []string{"Checks this checkout once and repairs nothing. Each problem names the command that fixes it, where there is one.",
 				"check goals lists the goal files that differ from their published base: the edits repair goals --accept-edits would publish.",
 				"check settings validates every setting of the selected installation's configuration and changes nothing."},
 			flags:    []intentFlag{intentInstallationFlag},
 			maxArgs:  1,
-			examples: []string{"metasystem check", "metasystem check --json", "metasystem check goals", "metasystem check settings"},
+			examples: []string{"metasystem check goals", "metasystem check", "metasystem check --json", "metasystem check settings"},
 			run:      runIntentCheck,
-		},
-		{
-			name: "doctor", group: "operations", compatibility: true, replacedBy: "metasystem check", audience: "both", summary: "diagnose problems with this checkout, changing nothing",
-			usage:    []string{"metasystem doctor"},
-			details:  []string{"Checks this checkout once and repairs nothing. Each problem names the command that fixes it, where there is one."},
-			flags:    []intentFlag{intentInstallationFlag},
-			maxArgs:  0,
-			examples: []string{"metasystem doctor", "metasystem doctor --json"},
-			run:      runIntentDoctor,
-		},
-		{
-			name: "ui", group: "operations", compatibility: true, replacedBy: "metasystem start ui, stop ui or status ui", audience: "human", summary: "the browser interface: start, stop or status",
-			usage:    []string{"metasystem ui [start|stop|status]"},
-			details:  []string{"Bare ui says whether the browser interface is running. ui start, ui stop and ui status are the interface's own commands and print its own report."},
-			maxArgs:  0,
-			flags:    []intentFlag{intentInstallationFlag},
-			examples: []string{"metasystem ui start", "metasystem ui"},
-			run:      runIntentUI,
-			legacy:   legacyUICall,
 		},
 	}
 }
@@ -216,7 +197,7 @@ func processIntentCommands() []intentCommand {
 func legacyProcessCall(args []string) bool {
 	for index := 0; index < len(args); index++ {
 		switch arg := args[index]; {
-		case slices.Contains([]string{"checkout", "job", "session", "unit", "design", "goal", "--json", "-json", "--help", "-help", "-h", "--work", "-work",
+		case slices.Contains([]string{"checkout", "job", "session", "run", "design", "goal", "--json", "-json", "--help", "-help", "-h", "--work", "-work",
 			"--machines", "-machines", "--refresh", "-refresh", "--fetch", "-fetch"}, arg):
 			return false
 		case slices.Contains([]string{"--repo", "-repo", "--installation", "-installation"}, arg):
@@ -227,28 +208,6 @@ func legacyProcessCall(args []string) bool {
 		}
 	}
 	return true
-}
-
-// legacyUICall routes a registered interface verb to the interface family.
-func legacyUICall(args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-	if args[0] == "--help" || args[0] == "-h" {
-		// The interface family's own help, as before.
-		return true
-	}
-	for _, fam := range families() {
-		if fam.name != "ui" {
-			continue
-		}
-		for _, one := range fam.verbs {
-			if one.name == args[0] {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // processIntentOwners are the owners the process and question commands call.
@@ -266,7 +225,7 @@ type processIntentOwners struct {
 	question       func(root, id string) (channel.Question, error)
 	mission        func(root, mission string) (*missionrunner.Engine, error)
 	channelLink    func(root string) (channel.Provider, channel.DestinationConfig)
-	ui             func(verb string, roots lifecycle.Roots) (uiLifecycleResult, error)
+	ui             func(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error)
 	executable     func() (string, error)
 }
 
@@ -404,14 +363,14 @@ func (inv *intentInvocation) kindAndTarget(kinds ...string) (string, string, *in
 	kind := args[0]
 	if !slices.Contains(kinds, kind) {
 		return "", "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("does not know the target %s; it takes %s. Nothing was done", shellCommand([]string{kind}), strings.Join(inv.command.usage, " | ")),
+			Summary:  fmt.Sprintf("does not know the target %s; it takes %s. Nothing was done", shellCommand([]string{kind}), strings.Join(inv.command.allUsage(), " | ")),
 			Decision: "name one of the targets above"}
 	}
 	target := ""
 	if len(args) > 1 {
 		target = args[1]
 	}
-	needsID := kind == "job" || kind == "unit"
+	needsID := kind == "job" || kind == "run"
 	switch {
 	case needsID && target == "":
 		return "", "", &intentResult{Outcome: intentRefused, code: 2,
@@ -459,6 +418,9 @@ func processRefusalResult(targets []intentTarget, prefix string, refusal *proces
 }
 
 func runIntentStart(inv *intentInvocation) int {
+	if problem := inv.checkUIOptionsTarget(); problem != nil {
+		return inv.render(*problem)
+	}
 	if args := inv.input.args; len(args) == 2 && args[0] == "mission" {
 		return runIntentMissionTarget(inv, "start", args[1])
 	} else if len(args) == 1 && args[0] == "ui" {
@@ -514,6 +476,9 @@ func runIntentStart(inv *intentInvocation) int {
 }
 
 func runIntentStop(inv *intentInvocation) int {
+	if problem := inv.checkUIOptionsTarget(); problem != nil {
+		return inv.render(*problem)
+	}
 	if args := inv.input.args; len(args) == 1 && args[0] == "ui" {
 		return inv.uiTarget("stop")
 	} else if len(args) == 2 && args[0] == "design" {
@@ -825,13 +790,13 @@ func runIntentStatus(inv *intentInvocation) int {
 	} else if inv.input.switched("all") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--all belongs to status work; nothing was done"})
 	}
-	if args := inv.input.args; len(args) == 1 && !slices.Contains([]string{"checkout", "job", "unit"}, args[0]) {
+	if args := inv.input.args; len(args) == 1 && !slices.Contains([]string{"checkout", "job", "run"}, args[0]) {
 		return runIntentStatusGoal(inv, args[0])
 	}
 	if inv.input.has("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: status G --work NAME; nothing was done"})
 	}
-	kind, target, problem := inv.kindAndTarget("checkout", "job", "unit")
+	kind, target, problem := inv.kindAndTarget("checkout", "job", "run")
 	if problem != nil {
 		return inv.render(*problem)
 	}
@@ -857,7 +822,7 @@ func runIntentStatus(inv *intentInvocation) int {
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("dispatch job %s: %s", target, status),
 			Data: map[string]any{"kind": "dispatch", "record": job.dispatch, "recordPath": job.recordPath}})
-	case "unit":
+	case "run":
 		targets := []intentTarget{{Kind: "unit", ID: target}}
 		runner := &launch.UnitRunner{Manager: inv.owners.processes.launches()}
 		record, err := runner.Status(target)
@@ -886,6 +851,9 @@ func runIntentStatus(inv *intentInvocation) int {
 }
 
 func runIntentRestart(inv *intentInvocation) int {
+	if problem := inv.checkUIOptionsTarget(); problem != nil {
+		return inv.render(*problem)
+	}
 	if len(inv.input.args) == 0 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "restart needs its target: metasystem restart checkout, or metasystem restart ui; nothing was done",
 			Decision: "name the target"})
@@ -1075,7 +1043,7 @@ func runIntentAnswer(inv *intentInvocation) int {
 		return runIntentAnswerQuestion(inv)
 	}
 	if len(args) == 0 || (args[0] != "mission" && args[0] != "question") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "answer takes " + strings.Join(inv.command.usage, " | ") + "; nothing was answered",
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "answer takes " + strings.Join(inv.command.allUsage(), " | ") + "; nothing was answered",
 			Decision: "name what the question belongs to"})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
@@ -1291,11 +1259,13 @@ func publicRemedyForFact(fact steward.RemedyFact) ([]string, string) {
 	return nil, "no public command repairs this; the reason above names what a person must change"
 }
 
-func runIntentUI(inv *intentInvocation) int { return inv.runUIVerb("status") }
-
 // runUIVerb runs the interface's status or restart through its lifecycle
 // owner and renders the typed result.
 func (inv *intentInvocation) runUIVerb(verb string) int {
+	options, optionProblem := inv.uiOptions()
+	if optionProblem != nil {
+		return inv.render(*optionProblem)
+	}
 	layout, installation, _, problem := inv.selectInstallation()
 	if problem != nil {
 		return inv.render(*problem)
@@ -1305,7 +1275,7 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
 	}
-	lifecycleResult, err := inv.owners.processes.ui(verb, roots)
+	lifecycleResult, err := inv.owners.processes.ui(verb, roots, options)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
 	}
@@ -1331,7 +1301,7 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	case restart.Started:
 		return inv.render(intentResult{Outcome: intentPartial, code: result.Code, Targets: targets, text: result.Lines, Data: data,
 			Summary: "the interface stopped but did not start again",
-			next:    []string{"metasystem", "ui", "start"}, nextReason: "start it once the problem above is fixed"})
+			next:    []string{"metasystem", "start", "ui"}, nextReason: "start it once the problem above is fixed"})
 	case restart.Stop == lifecycle.Timeout:
 		return inv.render(intentResult{Outcome: intentPartial, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
 			Summary: "the interface was asked to stop but is still running, so it was not started again",
@@ -1341,14 +1311,39 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 		Summary: "the interface could not be restarted; nothing was changed"})
 }
 
+type uiIntentOptions struct {
+	listen      string
+	listenSet   bool
+	waitSeconds int64
+}
+
+func (inv *intentInvocation) checkUIOptionsTarget() *intentResult {
+	if (inv.input.has("listen") || inv.input.has("wait-seconds")) && !slices.Equal(inv.input.args, []string{"ui"}) {
+		return &intentResult{Outcome: intentRefused, code: 2, Summary: "--listen and --wait-seconds belong to the ui target; nothing was done"}
+	}
+	return nil
+}
+
+func (inv *intentInvocation) uiOptions() (uiIntentOptions, *intentResult) {
+	options := uiIntentOptions{listen: inv.input.text("listen"), listenSet: inv.input.has("listen"), waitSeconds: 15}
+	if inv.input.has("wait-seconds") {
+		seconds, err := strconv.ParseInt(inv.input.text("wait-seconds"), 10, 64)
+		if err != nil || seconds < 0 || seconds > int64((1<<63-1)/time.Second) {
+			return options, &intentResult{Outcome: intentRefused, code: 2, Summary: "--wait-seconds needs a nonnegative whole number of seconds that fits a duration; nothing was done"}
+		}
+		options.waitSeconds = seconds
+	}
+	return options, nil
+}
+
 // uiLifecycleFor runs one interface lifecycle verb with the interface's own
 // defaults; an error is a refusal before anything was done.
-func uiLifecycleFor(verb string, roots lifecycle.Roots) (uiLifecycleResult, error) {
-	listen, err := uiListen(verb, roots, "", false)
+func uiLifecycleFor(verb string, roots lifecycle.Roots, options uiIntentOptions) (uiLifecycleResult, error) {
+	listen, err := uiListen(verb, roots, options.listen, options.listenSet)
 	if err != nil {
 		return uiLifecycleResult{}, err
 	}
-	return uiLifecycleRun(verb, roots, listen, 15), nil
+	return uiLifecycleRun(verb, roots, listen, options.waitSeconds), nil
 }
 
 func sameCanonicalPath(left, right string) bool {
@@ -1540,6 +1535,10 @@ func runIntentMissionTarget(inv *intentInvocation, verb, mission string) int {
 // uiTarget is start ui, stop ui and status ui: the interface's own
 // lifecycle verbs, refusing options that belong to the checkout.
 func (inv *intentInvocation) uiTarget(verb string) int {
+	options, optionProblem := inv.uiOptions()
+	if optionProblem != nil {
+		return inv.render(*optionProblem)
+	}
 	for _, other := range []string{"temporary-human-word", "review-by", "lineage", "by", "work", "machines", "refresh"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%s ui takes no --%s; nothing was done", verb, other)})
@@ -1557,7 +1556,7 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
 	}
-	ran, err := inv.owners.processes.ui(verb, roots)
+	ran, err := inv.owners.processes.ui(verb, roots, options)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
 	}

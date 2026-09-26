@@ -203,7 +203,7 @@ func TestIntentWaitRealOwner(t *testing.T) {
 // target words keep their own meaning. Nothing guesses by goal existence.
 func TestIntentReservedGoalNames(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"ui", "file", "proof", "job", "unit", "question", "resume", "checkout", "goal", "changes", "diff", "commit", "design"} {
+	for _, name := range []string{"ui", "file", "proof", "job", "run", "question", "resume", "checkout", "goal", "changes", "diff", "commit", "design"} {
 		bed := newWorkBedWith(t, func(file *goal.GoalFile) { workApprovedBox(file) })
 		bed.id = name
 		file := bed.goalFile(bedGoal)

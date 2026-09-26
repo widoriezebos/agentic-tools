@@ -636,7 +636,7 @@ func TestReadAdmissionDirectsClosedLiveRootToImplementationClose(t *testing.T) {
 		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
 		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
 		for _, text := range []string{
-			"next: dispatch.sh close --job implementer --reconcile-evidence critic",
+			"next: metasystem done job implementer --evidence critic",
 			"completion still checks terminal coverage and required evidence",
 		} {
 			if !strings.Contains(err.Error(), text) {
@@ -651,7 +651,7 @@ func TestReadAdmissionDirectsClosedLiveRootToImplementationClose(t *testing.T) {
 		closeReadyCriticChain(t, repo, "critic", "critic")
 		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
 		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
-		if !strings.Contains(err.Error(), "next: dispatch.sh close --job critic") || strings.Contains(err.Error(), "--reconcile-evidence") {
+		if !strings.Contains(err.Error(), "next: metasystem done job critic") || strings.Contains(err.Error(), "--evidence") {
 			t.Fatalf("open-root recovery changed: %v", err)
 		}
 	})
@@ -665,7 +665,7 @@ func TestReadAdmissionDirectsClosedLiveRootToImplementationClose(t *testing.T) {
 		})
 		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
 		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
-		if !strings.Contains(err.Error(), "later round 2") || strings.Contains(err.Error(), "--reconcile-evidence") {
+		if !strings.Contains(err.Error(), "later round 2") || strings.Contains(err.Error(), "--evidence") {
 			t.Fatalf("historical recovery changed: %v", err)
 		}
 	})

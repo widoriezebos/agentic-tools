@@ -9,6 +9,7 @@ const (
 	reviewDesignUsage       = "metasystem review design FILE [--goal G] [--dispositions FILE [--after N]] [--retry N]"
 	reviewJobUsage          = "metasystem review job J [--dispositions FILE]"
 	reviewCommitUsage       = "metasystem review commit SHA --goal G"
+	reviewRunUsage          = "metasystem review run RUN [--model MODEL]"
 	reviewChangesUsage      = "metasystem review changes --brief FILE [--goal G] [--retry N]"
 	reviewDiffUsage         = "metasystem review diff PATCH --brief FILE [--goal G] [--retry N]"
 	reviewExplicitGoalUsage = "metasystem review goal G [--work NAME]"
@@ -76,6 +77,18 @@ func reviewHelpForms() []intentHelpForm {
 			flags:       []string{"goal", "brief", "dispositions", "retry", "model"},
 			optionNotes: map[string]intentHelpOptionNote{"dispositions": {description: "the author's decisions on this commit's examination"}, "retry": {description: "one more examination after failed round N is stopped"}, "model": {description: "the critic model, subject to roster authorization"}},
 			example:     []string{"metasystem", "review", "commit", "SHA", "--goal", "G", "--json"},
+		},
+		{
+			name: "run", purpose: "review a built run's newest round by the run reference it returned",
+			usage: []string{reviewRunUsage},
+			inputs: []string{"RUN is the run reference build or revise run returned; preserve it exactly.",
+				"Its goal, work and round come from the run's own record; review G is the goal-directed route."},
+			effects:     "Commits the run's newest round on its goal branch, replacing an earlier round's commit, and requests its independent committed review. It does not land or conclude the goal.",
+			authority:   "The run's goal claim and approval rules apply. Decisions are the author's; the reviewer cannot approve itself.",
+			repetition:  "Repeat to collect the same review. After revise run the new round is reviewed afresh; the earlier read does not carry over.",
+			flags:       []string{"model"},
+			optionNotes: map[string]intentHelpOptionNote{"model": {description: "the critic model, subject to roster authorization"}},
+			example:     []string{"metasystem", "review", "run", "RUN", "--json"},
 		},
 		{
 			name: "changes", purpose: "get feedback on current changes without submitting them",

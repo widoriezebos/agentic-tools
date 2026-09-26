@@ -76,7 +76,6 @@ func TestIntentRepairAuthority(t *testing.T) {
 		{[]string{"repair", "goals", "--accept-remote-history", "--by", "Wido"}, []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root"}, "git fetch"},
 		{[]string{"settings", "coordinator", "--declare", "--by", "Wido"}, []string{"brain", "declare", "--root"}, "is a human act; run it from an agent-free terminal"},
 		{[]string{"settings", "coordinator", "--withdraw", "--by", "Wido"}, []string{"brain", "withdraw", "--root"}, "is a human act; run it from an agent-free terminal"},
-		{[]string{"settings", "compatibility", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"}, []string{"goal", "engine-floor", "--root"}, "could not prove enrolled human ancestry"},
 		{[]string{"repair", "mission", "demo", "--problem", "2", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "restored"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
 		{[]string{"repair", "mission", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
 	} {
@@ -100,20 +99,21 @@ func TestIntentRepairAuthority(t *testing.T) {
 		{"repair", "mission", "demo", "--problem", "2", "--accept-workspace", "--confirm-restored", strings.Repeat("b", 40), "--waive", "c", "--by", "Wido", "--reason", "r"},
 		{"settings", "coordinator", "--declare", "--withdraw", "--by", "Wido"},
 		{"settings", "coordinator", "--declare"},
-		{"settings", "compatibility", "--minimum-engine", "abc", "--by", "Wido"},
-		{"settings", "compatibility", "--minimum-engine", strings.Repeat("a", 40)},
+		// The retired engine floor has no public spelling left to record.
+		{"settings", "compatibility", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
+		{"settings", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
 	} {
 		if code, result, ran := owner(args...); result.Outcome != intentRefused || code == 0 || ran != nil {
 			t.Errorf("%v = %d %+v, owner ran %v", args, code, result, ran)
 		}
 	}
-	// Reading needs no person: the coordinator is honestly absent and no
-	// minimum engine is recorded.
+	// Reading needs no person: the coordinator is honestly absent. The
+	// retired minimum-engine read is only an unknown setting name now.
 	if code, result, ran := owner("settings", "coordinator"); code != 0 || !strings.Contains(result.Summary, "no coordinator is declared") || ran != nil {
 		t.Errorf("coordinator read: %d %+v", code, result)
 	}
-	if code, result, _ := owner("settings", "compatibility"); code != 0 || !strings.Contains(result.Summary, "no minimum engine") {
-		t.Errorf("compatibility read: %d %+v", code, result)
+	if code, result, _ := owner("settings", "compatibility"); code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "there is no setting compatibility") {
+		t.Errorf("retired compatibility read: %d %+v", code, result)
 	}
 	if code, result, _ := owner("repair", "goals"); code != 0 || !strings.Contains(result.Summary, "whole installation") {
 		t.Errorf("journal recovery names its scope: %d %+v", code, result)
