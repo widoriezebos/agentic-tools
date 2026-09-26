@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3FS4JWK13Z7W87G1SAEJZ06
-- Status: draft (revision 6)
+- Status: accepted for build (revision 6; design critique closed at round 6 with zero material findings)
 - Goals: verbs-match-intent
 - Supersedes: `verb-cleanup.md` rule "Do not migrate thousands of private
   process-protocol calls" and its retention of the family dispatcher;
@@ -370,6 +370,12 @@ builder names.
   Replaces the public layer's subprocess calls (`engineVerb`, `subprocess`,
   landing batch children) with owner calls under 6.2.
 
+U1 is built as three parts that land together: U1a the table, router, help,
+references, public forms, deleted spellings and every caller and text (colliding
+Go callers may use the explicit `internal` form until U1b); U1b the subprocess
+replacements under 6.2; U1c the hook-side bootstrap and the retained-plan scan,
+migration and resume refusal of section 7.
+
 **Wave 1 (parallel)**
 
 - U2 Dead verbs, under 6.1.
@@ -713,3 +719,6 @@ verified; one failed fold, accepted; no new findings.
 | Finding | Disposition | Where folded |
 |---|---|---|
 | VOA-16-R5 materialized proof argv | accepted | 7: migration covers unlaunched proof files |
+
+Round 6, Codex `gpt-6-astra`, confirmation read of revision 6: VOA-16-R5
+verified; zero material findings. The loop is closed.

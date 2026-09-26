@@ -368,3 +368,23 @@ Material findings: 1
 
 Codex session ID: 01a0dfc7-afa8-7b22-9279-4268dcd347a3
 Resume in Codex: codex resume 01a0dfc7-afa8-7b22-9279-4268dcd347a3
+
+---
+
+Round 6: Codex gpt-6-astra, read-only confirmation of revision 6 (c51afa0cf).
+
+**VOA-16-R5 is verified.** Revision 6 resolves the missed proof-file migration; no new material defect was found.
+
+The original failure is confirmed by the code: [unit_run.go:371](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/unit_run.go:371) preserves an existing `proof-NAME.json`, and [plain.go:20](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/plain.go:20) reads that file to construct the executed command. [Section 7:620](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:620) now explicitly migrates this executable copy before an unlaunched step proceeds. Its [witness at line 634](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:634) checks the command actually executed after interruption, directly covering the original WORK failure.
+
+The extension introduces no identified WORK or SAFE defect. It preserves launched steps’ files and evidence and records rewritten argv in the migration history. This fits the existing launch boundary: [read_sequence.go:38](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/read_sequence.go:38) records `starting` before launch, then checks for the launch record before starting anything. Thus an interrupted `starting` step with no launch record is still unlaunched and covered by the new requirement; existing launches remain untouched.
+
+No other new material defect was found in revision 6’s changes. Verification was by source inspection at `c51afa0cf`; no builds, tests, file edits, or Git writes were performed.
+
+Proposed receipt, not written: `Read-only revision-6 confirmation; materialized proof-argv fold verified; no new material findings.`
+
+Round-5 folds verified: 1 of 1
+Material findings: 0
+
+Codex session ID: 01a0dfcc-9101-7780-9d76-f2bb4a552bb5
+Resume in Codex: codex resume 01a0dfcc-9101-7780-9d76-f2bb4a552bb5
