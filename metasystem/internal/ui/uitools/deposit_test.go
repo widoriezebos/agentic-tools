@@ -119,7 +119,7 @@ func TestADepositOfAKindThisBuildDoesNotRecordIsRefused(t *testing.T) {
 		kind string
 		says string
 	}{
-		{"a proposal", "proposal", "a proposal is not one of them yet"},
+		{"a proposal", "proposal", "a proposal is not one of them"},
 		{"something else entirely", "wish", `"wish" is none of them`},
 		{"no kind at all", "  ", "a deposit with no kind at all"},
 	} {

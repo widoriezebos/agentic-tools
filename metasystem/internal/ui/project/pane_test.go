@@ -180,7 +180,7 @@ func TestPaneCarriesEachBookInReadingOrder(t *testing.T) {
 		{ID: "doctrine-events", Title: "Events are the source of truth"},
 		{ID: "doctrine-budgets", Title: "Every run is budgeted"},
 	})
-	testutil.Expect(t, "the schema the home's name arrived in", pane.SchemaVersion, 7)
+	testutil.Expect(t, "the schema the sittings arrived in", pane.SchemaVersion, 8)
 	testutil.Expect(t, "the register", pane.Questions, []Question{
 		{ID: "Q-1", Opened: "2026-09-22", Question: "Where does an adopted project's intent live?",
 			Goals: []string{}, Status: "open"},

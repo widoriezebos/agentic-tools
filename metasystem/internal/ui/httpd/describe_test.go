@@ -27,7 +27,7 @@ func TestEveryWriteRouteIsAnActWithAHand(t *testing.T) {
 		routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
 		routePark, routeUnpark,
 		routePartnerTurn, routePartnerStop, routePartnerSeeing,
-		routePartnerSitting, routePartnerRise,
+		routePartnerSitting, routePartnerClose, routePartnerRise,
 		routeAddSticky, routeEditSticky, routeRemoveSticky,
 	}
 	// The one read this table describes. A notepad's read belongs beside its

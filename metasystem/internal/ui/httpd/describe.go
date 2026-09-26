@@ -99,6 +99,8 @@ func Acts() []manifest.Act {
 		// Ending one changes nothing but the conversation.
 		{ID: routePartnerSitting, Title: "Start a sitting", Requires: checkoutHand,
 			Does: "Opens a working conversation on one record — an existing one, or a draft created now in the home its kind names — and asks the Partner what the records already hold about it."},
+		{ID: routePartnerClose, Title: "Draft the sitting's outcome", Requires: conversationHand,
+			Does: "Asks the Partner for the closing deposit — the outcome as decided, the constraints, the open questions with their consequences, and what the table holds. It ends nothing: the sitting stands until the human has recorded the outcome or left without it."},
 		{ID: routePartnerRise, Title: "End the sitting", Requires: conversationHand,
 			Does: "Takes the sitting off the conversation. What was recorded stays in the record, which is the whole of what a sitting leaves behind."},
 	}

@@ -43,6 +43,13 @@ const (
 	partnerSittingEndPath = "/api/partner/sitting/end"
 	routePartnerSitting   = "partner-sitting"
 	routePartnerRise      = "partner-sitting-end"
+	// And the close, which is the drafting of the sitting's outcome and not the
+	// end of it: it asks one more turn and leaves the mark where it is, so the
+	// card it offers is admitted against the record the sitting is on
+	// (g1-s55 D2). Ending is still the route above, reached after the human has
+	// recorded the outcome or has said they are leaving without it.
+	partnerSittingClosePath = "/api/partner/sitting/close"
+	routePartnerClose       = "partner-sitting-close"
 )
 
 // partnerMessages is how much of the transcript the read route carries. A
@@ -69,10 +76,13 @@ func partnerRouteOf(path string) (written, bool) {
 	if path == partnerSeeingPath {
 		return written{route: routePartnerSeeing}, true
 	}
-	// The end path first: it lies under the start path, and an exact match is
-	// what tells the two apart.
+	// The exact paths beneath the start path first: they lie under it, and an
+	// exact match is what tells them apart.
 	if path == partnerSittingEndPath {
 		return written{route: routePartnerRise}, true
+	}
+	if path == partnerSittingClosePath {
+		return written{route: routePartnerClose}, true
 	}
 	if path == partnerSittingPath {
 		return written{route: routePartnerSitting}, true
@@ -141,6 +151,20 @@ func (h *handler) partnerHuman(r *http.Request) string {
 }
 
 // partner answers what the Partner is and what it has said.
+//
+// It is also where a sitting resumes (g1-s55 D3). A conversation whose sitting
+// mark stands, read by a page whose Partner session has since ended, is asked
+// the opening question again before this answers — so the transcript the page is
+// handed already holds the turn, and the first words it reads say what is on the
+// table. The decision is the service's one freshness decision, not this route's,
+// and no browser effect submits a turn: an effect would submit one per tab and
+// per reload, in a human's name.
+//
+// A resume that cannot be asked — a runtime that has gone away since the sitting
+// started — is not a failure of the read. The conversation is still there to
+// show, the sitting still stands, and the human can still type; so the refusal
+// is left where the next turn will meet it rather than turned into a page that
+// will not load.
 func (h *handler) partner(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if h.info.Partner == nil {
@@ -148,6 +172,7 @@ func (h *handler) partner(w http.ResponseWriter, r *http.Request) {
 		writeActRefusal(w, "partner", h.partnerRefusal())
 		return
 	}
+	_, _ = h.info.Partner.Resume(r.Context(), h.partnerHuman(r))
 	snapshot, err := h.info.Partner.Snapshot(h.partnerHuman(r), partnerMessages)
 	if err != nil {
 		writeFailure(w, err.Error())
@@ -327,6 +352,36 @@ func (h *handler) draftFor(w http.ResponseWriter, body sittingBody) (partner.Sub
 	return partner.Subject{
 		Kind: partner.SubjectRecord, ID: written.Path, Title: written.Record.Title,
 	}, true
+}
+
+// partnerClose asks the Partner to draft the sitting's closing deposit, and
+// answers the conversation with that turn already in the transcript.
+//
+// It ends nothing. The sitting stands until the human has recorded the outcome
+// or has said they are leaving without it, because the card this turn offers is
+// admitted against the sitting's subject and a conversation with no mark on it
+// would offer it against no record at all.
+//
+// It answers the snapshot for the start route's reason: the closing turn is a
+// turn this page did not send, so the page has to be handed the transcript that
+// now holds it rather than left to guess that one appeared.
+func (h *handler) partnerClose(w http.ResponseWriter, r *http.Request) {
+	if h.info.Partner == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeActRefusal(w, "partner", h.partnerRefusal())
+		return
+	}
+	var body struct {
+		About partner.Page `json:"about"`
+	}
+	if !decodeDocument(w, r, &body) {
+		return
+	}
+	if _, err := h.info.Partner.Closing(r.Context(), h.partnerHuman(r), body.About); err != nil {
+		h.refuseTurn(w, err, "")
+		return
+	}
+	h.answerPartner(w, r)
 }
 
 // partnerRise ends the sitting, and answers the conversation without it. What
