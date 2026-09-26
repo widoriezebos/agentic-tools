@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3F0YA80SGFHCGPYEHC6D500
-- Status: draft
+- Status: accepted
 - Goals: browser-interface
 
 Wido, 2026-09-26: "I want all the open ones designed and implemented
@@ -29,21 +29,35 @@ place; the chip carries both the field words and "writing in <field>".
   `submit(next: Draft): Promise<Outcome>` with `Outcome = saved |
   refused(words) | unresolved(words)`: it computes the delta from the
   explicit next draft against what the sheet opened with, refuses an
-  empty delta in words, guards busy inside itself (a second call while
-  one is in flight answers `refused("a save is in flight")`), sends
-  through the existing route, and answers what happened. Save calls it
-  with the current draft; nothing else changes for Save.
+  empty delta in words, guards busy inside itself with a synchronously held ref, not render
+  state (a second call while one is in flight answers `refused("a save
+  is in flight")`), sends through the existing route with Save's own
+  validation, once-only sign-in retry and busy dismissal protection, and
+  answers what happened by a conservative mapping of what the route
+  returns: a confirmed response is `saved`; a local validation failure
+  or a definite server rejection is `refused(words)`; an ambiguous
+  engine refusal, a transport failure or an unreadable answer is
+  `unresolved(words)`, after which the page rereads and never resubmits
+  by itself; the route's `proof-not-recorded` answer, which says the
+  act landed and must not be repeated, is shown in those words and never
+  treated as a refusal (internal/ui/act/act.go:467-485; acts.go:488).
+  Save calls it with the current draft; nothing else changes for Save.
 - D2. **Use and save.** A proposal in the edit sheet gains a second
-  button: it calls the sheet's setter with the words and then `submit`
-  with the resulting draft in one act; the card and the block say "Used
-  and saved" only on `saved`; on `refused` the words stay in the field,
-  the block says "used; the save was refused: <words>" and Save is
-  available; on `unresolved` the block says so and the page re-reads.
+  button: the sheet builds the next draft with the words, sets it and
+  calls `submit` with that same value in one act, never waiting on a
+  render; the card and the block say "Used
+  and saved" only on `saved`; on `refused` the words stay in the field, the block says "used; the
+  save was refused: <words>" and the draft stays editable with Save
+  under its normal validation; on `unresolved` the block says so and the page re-reads.
   Other sheets get Use this alone. Undo is not offered after a save.
+  When a save closes the sheet, as Save does, "Used and saved" survives
+  on the card in the transcript.
 - D3. **The leftovers.** Undo's final guard reads the field's raw value
-  through a raw reader on the registration and compares it whole; draft
-  attachments are keyed and refreshed by opening id, so two same-named
-  sheets keep their own; a card's closed state takes precedence over
+  through a raw reader on the registration and compares it whole; draft attachments are keyed, refreshed and retired by opening id, a
+  draft living until its own opening closes or its own ✕ is pressed and
+  never removed by another sheet of the same name (attachments.ts:103,
+  143; AskSheet.tsx:101), the sheet name kept for the chip's words, so
+  two same-named sheets keep their own; a card's closed state takes precedence over
   dismissed, so Copy shows once the sheet is gone; "n more" unfolds the
   older proposals in place under the newest, each with its own Use this;
   the chip shows "Draft: Edit goal · g1-s12 · writing in Intent", the
@@ -54,9 +68,11 @@ place; the chip carries both the field words and "writing in <field>".
 ## 3. Verification and box
 
 Frontend: submit's delta from an explicit draft, its empty-delta and
-in-flight refusals, its three outcomes; Use and save on each outcome
-with the words kept on refusal; Undo's raw compare; two same-named
-sheets' attachments; the closed-over-dismissed card; "n more" in place;
+in-flight refusals, its three outcomes by the mapping, the landed-but-
+unrecorded answer shown in its own words; two calls in one render
+refused by the ref guard; Use and save on each outcome
+with the words kept on refusal; Undo's raw compare; two same-named sheets' attachments, closing either leaving the other;
+"Used and saved" surviving the sheet's close; the closed-over-dismissed card; "n more" in place;
 the chip's words; the guards stay green. Walkthrough: a canned refusal
 for the save. Screenshots at 1280 and 400: Use and save succeeding, and
 refused. Budgets as always. Box: one build lane (Claude on Opus), one
@@ -70,3 +86,20 @@ Medium on D2: one press does two acts, and the words say which landed.
 Weakest: the attachments keyed by opening change a lifetime rule the
 chip has kept by name since it existed; the test for two same-named
 sheets is what holds it.
+
+## Dispositions (Astra read, 2026-09-26, under R-124)
+
+Two material findings, four deferred; every code claim checked.
+
+| id | finding | fold |
+|---|---|---|
+| F1 | the route has no literal unresolved outcome: the act layer collapses every publication error to `refused`, and one answer says the act landed and must not be repeated | a conservative mapping: confirmed is saved, definite rejection refused, ambiguous is unresolved with a reread and no resubmission, and the landed-not-recorded answer kept in its own words |
+| F2 | attachments keyed by opening but retired by name would let one same-named sheet's close remove the other's draft | a draft lives until its own opening closes or its own ✕; name kept for the words only |
+
+Folded because they cost nothing: the busy guard is a synchronous ref;
+the sheet builds the next draft itself and submits that value; Save
+keeps its validation, sign-in retry and closing; "Used and saved"
+survives the sheet's close on the card; the words "Save follows its
+normal validation". Deferred: which of two same-named drafts the
+question carries, the last attached today; chip wording for other
+sheets.
