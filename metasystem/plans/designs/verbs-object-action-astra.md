@@ -140,3 +140,87 @@ Material findings: 12
 
 Codex session ID: 01a0df9c-6db2-7b81-9a4d-6571b5333988
 Resume in Codex: codex resume 01a0df9c-6db2-7b81-9a4d-6571b5333988
+
+---
+
+Round 2: Codex gpt-6-astra, read-only, against revision 2 (6614a1dd2).
+
+Read-only review of `6614a1dd2`. All twelve folds were checked. No builds, tests, or writes were performed; the failure scenarios below are inferred from the cited code.
+
+**VOA-02-R2 — fold does not resolve**
+
+Evidence: [Design:436](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:436) constructs the public command’s context from “its own caller.” Currently, [intent_operations.go:341](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_operations.go:341) launches a coordinator-mutation child, whose human gate classifies its parent—the public command process—at [brain.go:28](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/brain.go:28). The classifier starts runtime-signature checks at the supplied process’s **parent**, at [classify.go:426](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/lease/classify.go:426). This exact-node omission is documented at [directinvoker.go:11](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/lease/directinvoker.go:11). An otherwise unrecognized caller with a controlling terminal becomes HUMAN at [classify.go:463](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/lease/classify.go:463).
+
+Scenario: An unannounced, terminal-bearing agent runtime directly invokes `settings coordinator --declare --by NAME`. Today, the owner child’s ancestry walk encounters that runtime and rejects the human-only action. Starting the replacement context from the public command’s caller skips the runtime’s own signature and can classify it HUMAN. The gate at `brain.go:32` then permits the declaration.
+
+Change: Specify the source identity per replaced call edge. Replacing a child requires the current process’s identity—the parent that child previously observed. Already-direct owners retain their existing caller identity. Add a direct-runtime invocation fixture for the coordinator’s human gate.
+
+Test 1: yes — changes context construction and authorization tests.
+
+Test 2: SAFE — the prescribed starting identity can turn an agent invocation into an accepted human act.
+
+**VOA-03-R2 — fold does not resolve**
+
+Evidence: [U1:340](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:340) retains only **family** fallthrough; [6.5:477](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:477) migrates callers of colliding family pairs. However, `wait` and `delegate` are separate top-level dispatcher branches at [main.go:848](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/main.go:848), not family pairs or retained §3.2 entries. Surviving callers include dispatch’s `wait --root … --job …` at [dispatch.sh:1131](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/agents/dispatch.sh:1131), cancellation’s `delegate --cancel` at [stoptransition/families.go:241](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/stoptransition/families.go:241), and critic continuation’s `delegate --follow-up` at [goal_branch.go:216](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/goal_branch.go:216). Dispatch’s port is deferred to [U6b:390](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:390).
+
+Scenario: U1 removes the non-entry top-level routes while preserving only family fallthrough. A subsequent checkout stop reaches job cancellation, launches `delegate --cancel`, and receives an unknown-command refusal. The job remains nonterminal; cancellation reports incomplete at [families.go:249](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/stoptransition/families.go:249).
+
+Change: Include top-level machinery branches in U1’s caller migration. Convert their callers to owner calls or explicitly prefixed temporary machinery routes until their ports land. Preserve the public hard cutover; do not retain old public spellings.
+
+Test 1: yes — changes U1’s routing scope, caller migrations, and cancellation/wait tests.
+
+Test 2: WORK and SAFE — intermediate slices break waiting, continuation, and governed cancellation of running jobs.
+
+**VOA-08-R2 — fold does not resolve**
+
+Evidence: [Design:288](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:288) prescribes the one-line stub `exec go run ./cmd/devgate build "$@"`. Today’s build script resolves its installation directory and changes into it at [go-build.sh:10](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/agents/go-build.sh:10). Adoption resolves its source root in a subshell at [adopt.sh:94](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/adopt.sh:94), then invokes the build script by absolute path at [adopt.sh:216](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/adopt.sh:216). The stub lands in [U7a:362](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:362); adoption remains a script until [U8:401](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:401).
+
+Scenario: Between U7a and U8, invoke the adoption script from this repository’s top level. Its mandatory build reaches the stub, which resolves `./cmd/devgate` against the repository top instead of the `metasystem` module. Adoption fails before the new build owner runs.
+
+Change: Preserve location-independent invocation: the stub must resolve its own installation and change directory, or pass that directory through `go -C`. Add an adoption/bootstrap witness invoked from outside the module directory.
+
+Test 1: yes — changes the specified stub and its witnesses.
+
+Test 2: WORK — a surviving production caller cannot complete adoption during the planned intermediate state.
+
+**VOA-11-R2 — fold does not resolve**
+
+Evidence: [Section 7:525](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:525) requires the agent seat to execute `system stop`, bootstrap build, and `system start` after each landing. The existing public checkout stop calls the process owner at [intent_process.go:508](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_process.go:508). That owner requires a human terminal at [process_verbs.go:172](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/process_verbs.go:172) and explicitly rejects non-HUMAN callers at [process_verbs.go:479](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/process_verbs.go:479). Checkout start likewise invokes the arm owner at [intent_process.go:471](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_process.go:471). Additionally, the prescribed bootstrap first arrives in [U7a:362](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:362), after U0 and U1.
+
+Scenario: Even with the new grammar installed, the m1e agent seat cannot perform the required quiesce: its stop is refused by the preserved authority checks. Earlier landings also cannot use the not-yet-delivered `cmd/devgate`. Thus the stated recovery sequence is unavailable when first required.
+
+Change: Define the cutover executor and available commands for each generation. Use an existing authorized rearm path, or assign the human-terminal operations to a human. Establish bootstrap availability before any dependent cutover, and specify quiescence before replacing the affected live machinery.
+
+Test 1: yes — changes cutover ownership, prerequisites, and execution order.
+
+Test 2: WORK — the mandatory cutover cannot execute under the authority and delivery order the design preserves.
+
+**VOA-13 — High — `test plan` is simultaneously public and exclusively hidden**
+
+Evidence: [Public table:166](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:166) exposes `test plan`; [entrypoint table:243](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:243) retains that exact pair as an entry. Yet [design:225](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:225) forbids sharing a pair, and [6.5:483](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:483) says entries do not become public. This is an active machine protocol: [test.go:909](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:909) invokes retained-engine `test plan`, and [test.go:932](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:932) strictly decodes its raw plan. Candidate probes also invoke it at [test_protection.go:233](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test_protection.go:233). The ordinary public JSON envelope is different, as defined at [intent.go:596](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent.go:596).
+
+Scenario: Applying entry precedence omits the promised public planning action from generated help and the catalogue. Applying ordinary public routing and rendering changes the response consumed by retained engines and proof probes. No single registration satisfies the specified visibility, disjointness, and protocol rules.
+
+Change: Explicitly resolve this pair. One workable contract is a public `test plan` registration preserving its existing machine argv and raw JSON, with machinery-only options hidden. Amend the disjoint-pair rule accordingly and test calls from the preceding engine generation.
+
+Test 1: yes — changes registration rules, visibility, response handling, and protocol tests.
+
+Test 2: WORK — the current instructions cannot simultaneously deliver the public action and preserve the active proof protocol.
+
+**VOA-14 — Medium — In-process proofs inherit another invocation’s restart state**
+
+Evidence: [U1:346](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:346) replaces landing batch children with owner calls. Today each batch proof gets a separate process and environment at [landing_batch_prove.go:322](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/landing_batch_prove.go:322). Testing preparation reads `METASYSTEM_PREPARATION_RESTARTED` at [test.go:485](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:485), permanently sets it after one base movement at [test.go:498](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:498), and refuses another movement when it is set at [test.go:492](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/test.go:492). The landing owner repeatedly processes work in the same process at [landing_batch_owner.go:664](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/landing_batch_owner.go:664).
+
+Scenario: One in-process proof encounters a legitimate base movement and successfully retries. Its environment flag remains in the resident owner. A later proof’s first base movement is incorrectly refused as the second movement “during one test invocation.” The removed child boundary previously discarded that state.
+
+Change: Extend §6.2 beyond authority context to preserve invocation-local execution state. Make the restart allowance request-local. Test two consecutive preparations in one owner, each with one base movement, while retaining refusal for two movements within one invocation.
+
+Test 1: yes — changes preparation state ownership and sequential-invocation tests.
+
+Test 2: WORK — a later valid proof, and therefore its landing, is incorrectly refused because an earlier invocation consumed its own allowance.
+
+Folds verified: 8 of 12
+Material findings: 6
+
+Codex session ID: 01a0dfab-41d4-7c62-91b9-956bdfa4f955
+Resume in Codex: codex resume 01a0dfab-41d4-7c62-91b9-956bdfa4f955
