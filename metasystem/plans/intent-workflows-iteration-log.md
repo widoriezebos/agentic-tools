@@ -296,3 +296,25 @@ attempt raced unfinished worktree creation and refused before launch; after the
 creation exited0 the successful launch above began. Main continuation6 prioritizes
 planning and avoids that owner's exclusive files. Root will compute/integrate
 its full patch before combined code critique and final testing.
+
+## Parallel proof task and matrix structure check
+
+Independent Opus launch20260926t103219-f91b1050ad, provider session
+8c3d9fd1-eb05-4277-9e76-96d5ebd02821, works only on positive administration/carry/
+event-wait tests in sibling intent-authority-proof checkout, same private seed.
+Brief is retained under artifacts/agents/intent-positive-proof-brief.md; no product
+source or shared test registry edits authorized there. Root will import computed
+changes and preserve every actual failing boundary. Main continuation6 and read
+owner launch continue independently; read owner provider session is
+ecc9b3c2-d835-452f-bfec-d1953f2ab644.
+
+Root ran obligation validators before completion. Parent IW1..7 and planning
+IP1..4 correctly refuse completion while rows remain missing. Manual table had a
+real schema defect: abbreviated columns made its four rows invisible to the
+validator. Root restored the canonical ten-column table with explicit code targets
+and next actions, preserving all behavior/obligations. Revalidation recognizes
+IM1..4 and correctly blocks completion; exact exit/output retained in
+artifacts/agents/intent-workflows-verification/design-gate-before-completion.json.
+This is a record structure correction, not a runtime pass or a new design round.
+Goal Next step published; live main now e3a86b67e, a goal-only change pending next
+idle integration into the implementation checkout.

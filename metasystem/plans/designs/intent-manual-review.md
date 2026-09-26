@@ -205,12 +205,13 @@ mandatory before this user's goal is done.
 
 ## Proof and critique
 
-| Obligation id | Severity | Required behavior | Owner | Test proof | Runtime proof | Status |
-| --- | --- | --- | --- | --- | --- | --- |
-| IM-1 | HIGH | Manual diff/current-change feedback with no builder; source untouched | Launch retained read/partition owners | TestIntentManualDiffReview; TestStandaloneReadPartition; TestManualCaptureFromNestedCheckout | Public commands, actual capture/retention with fake reader | MISSING |
-| IM-2 | CRITICAL | Replays, failed retry and live/compacted outcomes honest | Existing launch custody and request retention | TestStandaloneReadReplayAndRecovery | One launch per request; show/wait/stop use public REF | MISSING |
-| IM-3 | CRITICAL | Manual submission has authentic commit/review/landing authority | Goal branch commit/read owners | TestIntentManualWorkDelivery; TestManualStageRefusalPreservesCheckout | Manual edit -> public submission -> bound review -> land, no builder | MISSING |
-| IM-4 | CRITICAL | Lost response, amendment and unrelated/source work preservation | Existing branch range/commit/amend owners | TestManualSubmissionReplayAndAmend | Lost commit/push result, repeat and correction with another work item | MISSING |
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| IM-1 | HIGH | Diagnostic public subjects and complete snapshot | Manual diff/current-change feedback with no builder; source untouched | Launch retained read/partition owners | internal/launch/standalone_read.go and read_sequence.go; public review adapter | TestIntentManualDiffReview; TestStandaloneReadPartition; TestManualCaptureFromNestedCheckout | Public commands, actual capture/retention with fake reader | MISSING | Complete owner and public adapter, drive exact candidate |
+| IM-2 | CRITICAL | Diagnostic request lifecycle | Replays, failed retry and live/compacted outcomes honest | Existing launch custody and request retention | Standalone read request/sequence using Manager custody | TestStandaloneReadReplayAndRecovery | One launch per request; show/wait/stop use public REF | MISSING | Complete and drive lifecycle |
+| IM-3 | CRITICAL | Manual submission and committed review | Manual submission has authentic commit/review/landing authority | Goal branch commit/read owners | goal/branch CommitStaged and RunBranchRead; shared commit wrapper and public manual adapter | TestIntentManualWorkDelivery; TestManualStageRefusalPreservesCheckout | Manual edit -> public submission -> bound review -> land, no builder | MISSING | Implement after diagnostic slice and drive |
+| IM-4 | CRITICAL | Manual replay, locking and amendment | Lost response, amendment and unrelated/source work preservation | Existing branch range/commit/amend owners | goal/branch commit/push/range owner and checkout mutation lock | TestManualSubmissionReplayAndAmend | Lost commit/push result, repeat and correction with another work item | MISSING | Implement exact comparison/locking and drive |
+
 
 Round 1 folded IM-C1..3: deleted the proposed manual request registry and
 CommitPatch, retained exact branch-owner comparison and existing indexed commit,
