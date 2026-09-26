@@ -68,3 +68,57 @@ the missing diagnostic capability. Root is separately designing its smallest
 public subject; do not invent it inside the parent implementation. Diagnostic
 feedback must never be promoted into a landing attestation. Manual delivery's
 existing owner sequence is being checked before root claims complete capability.
+
+## Required namespace correction from bounded source audit
+
+Actual source gaps,26 September, continuation5: status ui/checkout/job/unit cannot
+show the identically named goal's work (intent_process.go status dispatcher), and
+wait file/proof/job/unit/question/resume cannot wait for that goal's running work
+(intent_work.go early subject refusal). `show --goal G`, build G and repair review G
+already work. This is the same bounded subject-disambiguation issue as accepted
+manual IM-C3, not a new workflow or another prose review chain.
+
+Add `status goal G [--work NAME]` -> runIntentStatusGoal and make `wait goal G
+[--work NAME]` without --for -> runIntentWaitWork. Explicit --for landing|human-act
+keeps the current goal-event observer. Preserve legacy flag-based event selectors
+and their defaults. Focused help states the qualified goal behavior; bare shortcuts
+stay for unambiguous names. Generated status/wait/review continuations must use a
+qualified goal form when its name is a reserved subject, never target existence
+heuristics. TestIntentReservedGoalNames drives all affected ids through real
+selection and proves ui/file/job target commands still mean their original targets.
+These are required IW-1/2 capability proofs, reviewed with the full implementation.
+
+## Verification under the user's explicit machinery bypass
+
+The goal remains queued, no synthetic approval/claim/budget. Governed test run and
+test verify correctly require those facts even for diagnostic purpose. Final
+verification will use the existing external diagnostic drivers rebuilt against
+an immutable candidate, calling the real protected-contract selector and
+proofrun.RunTestPlan with risk3/2/3/2,9 workers bounded by inherited allowance,
+all selected groups and exact whole-project tree. Goal-less CLI plan uses zero
+risk and misses accumulation providers, so cannot stand in for this selection.
+Diagnostic observations will never be labeled governed attempts/certificates.
+Full coverage requires real RunGoGateTests result plus unchanged ratchet judge
+and full internal-package inventory; affected-package tests alone collect no
+coverage. Existing source driver is outside repository in the prior verbs evidence
+verification-tools directory. Root will inspect/rebuild it at final candidate.
+Focused dispatcher diagnostics use METASYSTEM_FIXTURE_ONLY=dispatch-b through the
+normal parent, preserving capability minting/cleanup; filtered pass is not full gate.
+
+## Real whole-close fixture is already available
+
+Root source agent checked continuation5's claimed unmirrored barrier. There is
+NO pre-close mirror guard in closeChain/finishedReview/criticClosure. The join
+requires a real findingRegister, while dispatch.sh close mirrors all terminal
+members BEFORE register-close/CloseCheck. A record unmirrored before actual
+whole close is expected, not grounds to omit the positive assertion.
+
+Reuse TestIntentConnectedJourneyRealClose in intent_connected_journey_test.go,
+especially finish(): actual dispatchcore.ComputeReadSubject, subject.json,
+reviewedTree-bound fake-provider return, completed/sessionId/capabilitySnapshot/
+endedAt/reviewRoundLimit metadata, real CritiqueRegisterAdvance. realCloseOwner
+in intent_delivery_test.go supplies evidence.root OUTSIDE checkout, capability
+snapshot and record-locks; actual dispatch.sh performs mirror/close/check/stamp.
+Adapt that authentic fixture to review commit --dispositions then real collection/
+publication. No pre-mirroring shortcut, fake closure stamp or success-only callback.
+The current commit closure test still fakes closure/attestation and is not that proof.

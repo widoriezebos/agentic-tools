@@ -407,3 +407,15 @@ public route, all critical/high proof obligations are done, no material critique
 remains, and root's repeat usability pass identifies no further justified change.
 This is the user's iteration authorization; no extra approval is requested for
 ordinary corrections within this contract.
+
+## Executable namespace correction from the fresh usability audit
+
+The same explicit-subject rule accepted for manual `review goal G` applies to
+status and wait: `status goal G [--work NAME]` shows goal work; `wait goal G
+[--work NAME]` waits for work, and explicit `--for landing|human-act` selects the
+existing event observer. Legacy flag event selectors keep their defaults. Public
+continuations qualify reserved goal names; lookup never guesses from whether a
+goal happens to exist. TestIntentReservedGoalNames is an IW-1/2 proof for ui,
+checkout, job, unit, file, proof, question and resume, alongside original target
+behavior. This bounded dispatcher correction preserves valid goal capability;
+it adds no owner, state or authority and goes to mandatory implementation critique.
