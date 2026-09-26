@@ -293,3 +293,48 @@ Material findings: 4
 
 Codex session ID: 01a0dfb9-f67d-7f73-80dd-1a6f229705ba
 Resume in Codex: codex resume 01a0dfb9-f67d-7f73-80dd-1a6f229705ba
+
+---
+
+Round 4: Codex gpt-6-astra, read-only, against revision 4 (b1ef33db3).
+
+Revision 4 has **two material failed folds**. No additional finding met both materiality tests. This was a read-only source review at `b1ef33db3`; no files or Git state were changed, and no builds or tests were run. Scenarios below are inferred from the cited code.
+
+| Round-3 fold | Verification |
+|---|---|
+| VOA-11-R3 | Not verified; see VOA-11-R4. |
+| VOA-15 | Verified. Retaining dedicated proof children in [§6.2](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:475) preserves the separate launcher used by [landing_batch_prove.go:322](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/landing_batch_prove.go:322). Admission records that child’s identity at [proof_run.go:1130](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/proof_run.go:1130), so cancellation through [dispatch/stop.go:707](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/dispatch/stop.go:707) targets the proof launcher without terminating the shared owner. |
+| VOA-16 | Not verified; see VOA-16-R4. |
+| VOA-17 | Verified. The added [`work wait --path` form](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:158) preserves the existing [caller-relative resolution and owner invocation](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_work.go:1219). Its `wait:` continuation maps to the separate [durable-resume owner](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_work.go:1265). |
+
+**VOA-11-R4 — fold does not resolve**
+
+**Evidence:** [Section 7:584](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:584) adds the rebuild trigger to `runSessionStart` in U1. The preceding engine’s [existing handler](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/wait_verb.go:471) only validates the holder session and prints waiting lines. The hook selects the installed executable at [supervision-hook.sh:936](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/agents/supervision-hook.sh:936) and invokes that executable’s `session start` at [line 1101](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/scripts/agents/supervision-hook.sh:1101). Its earlier `up` operation can re-enroll an **already rebuilt** engine, as [up.go:566](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/up/up.go:566) shows. The rebuilding hook stub arrives only in [U4](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:383).
+
+**Scenario:** A peer has the pre-U1 executable, pulls U1, runs no test, and starts a session—the fold’s own witness. Its installed executable does not contain the newly added trigger. Even if the hook reaches `session start`, it runs the old handler and performs no rebuild. The updated instructions then request `work build`, which that executable cannot route.
+
+**Change:** Put the first-cutover invocation somewhere executable before the replacement engine exists: for example, a hook-side bootstrap invocation delivered with U1, using the authorized decision/rebuild/rearm path. Test with an actual preceding-generation executable installed and only the source checkout advanced to U1.
+
+**Test 1:** Yes—changes the bootstrap entry path, delivery ordering and integration fixture.
+
+**Test 2:** **WORK**—the prescribed first automatic cutover cannot execute; the peer remains unable to use the delivered grammar.
+
+**VOA-16-R4 — fold does not resolve**
+
+**Evidence:** [Section 7:601](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:601) requires affected runs to be finished or abandoned through existing owners and makes abandonment the remedy for post-cutover refusal. No unit-run abandonment owner exists: searching `func.*Abandon|Abandon` throughout `internal/launch/*.go` returned no matches. The available [cancellation owner](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/launch.go:532) updates an individual launch record. The [close owner](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/intent_delivery.go:1165) closes a dispatch chain. Unit completion instead writes `awaiting-judgement` at [unit_run.go:563](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/unit_run.go:563), while changing retained inputs remains forbidden by [unit_named.go:295](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/unit_named.go:295).
+
+**Scenario:** An incompatible suspended named run from another checkout reaches the new resume guard after U1. The guard correctly refuses its stored command, but the advertised abandonment remedy cannot retire that run. Cancelling a child does not retire the unit or its reservation; closing a dispatch chain addresses another store. Editing the retained command still fails the digest check. The fold detects the incompatibility without providing its promised recovery.
+
+**Change:** Specify an executable recovery path. If abandonment is selected, define its unit-run owner, reachable action, persisted retirement state and reservation treatment, preserving run/round history and resolving any live children. Otherwise specify an owner-controlled command-binding migration. Exercise recovery after the incompatibility refusal, not merely the refusal itself.
+
+**Test 1:** Yes—adds lifecycle behavior and a public owner binding absent from the proposed implementation.
+
+**Test 2:** **WORK**—an affected run cannot complete the prescribed recovery through the named existing owners.
+
+Proposed receipt, not written: `Read-only revision-4 design critique; source inspection; two failed folds; no additional material findings.`
+
+Round-3 folds verified: 2 of 4  
+Material findings: 2
+
+Codex session ID: 01a0dfc2-5ca5-7281-a66d-885ffb7a64e2
+Resume in Codex: codex resume 01a0dfc2-5ca5-7281-a66d-885ffb7a64e2

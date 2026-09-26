@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3FS4JWK13Z7W87G1SAEJZ06
-- Status: draft (revision 4)
+- Status: draft (revision 5)
 - Goals: verbs-match-intent
 - Supersedes: `verb-cleanup.md` rule "Do not migrate thousands of private
   process-protocol calls" and its retention of the family dispatcher;
@@ -581,12 +581,18 @@ new entries (`hook`, `pre-commit`) with their stubs.
 - The cutover executor is the existing authorized rearm-on-landed decision and
   rebuild (`rearm_on_landed.go:73-83,462`). Today only test preparation calls it
   (`test.go:560`, `rearm_on_landed.go:548`), so a checkout that pulls and runs
-  no test keeps its old engine (VOA-11-R3). U1 adds the trigger: the session
-  start owner (`runSessionStart`, `wait_verb.go:471`, reached by the runtime's
-  start hook) runs the same decision and, when the enrolled engine is behind the
-  tip by landed commits, the same authorized rebuild and re-arm, without test
-  preparation's index handling. Witness: a peer checkout pulls U1, runs no test,
-  starts a session, and `work build` then routes. `system stop`
+  no test keeps its old engine (VOA-11-R3). The trigger must run before the new
+  engine exists, so it lives on the hook side, whose script comes from the pulled
+  tree (VOA-11-R4). U1 adds to `supervision-hook.sh`'s start event, before its
+  `session start` call (`supervision-hook.sh:1101`), a bootstrap step: when the
+  installed engine's stamp is behind the tree's landed engine inputs, run the
+  existing authorized rearm command, the rebuild followed by `up` re-enrolling
+  the rebuilt engine (`rearm_on_landed.go:73`, `up.go:566`); the hook already
+  calls `up`. The step first runs the retained-plan check below and does not
+  rearm while it reports an unmigratable run. From U4 the Go hook and its stub
+  carry the same step. Witness: a checkout with a preceding-generation engine
+  installed and only its source advanced to U1 starts a session; the engine is
+  rebuilt and re-enrolled, and `work build` then routes. `system stop`
   and `system start` stay human-only (`process_verbs.go:172,479`) and are not
   part of the automatic cutover (VOA-11-R2). U0b moves that rebuild to
   `devgate build` before any later cutover depends on it; until then it uses
@@ -599,14 +605,30 @@ new entries (`hook`, `pre-commit`) with their stubs.
   verbatim (`intent_work.go:624`) and resume replays it
   (`launch/unit_run.go:155,369`); its reservation digest forbids editing it
   (`launch/unit_named.go:295`). U1 adds a check that scans resumable unit runs
-  for a stored argv that invokes the engine with a spelling the landing removes,
-  and the landing's precondition is that the scan is empty: such runs are
-  finished or abandoned through their existing owners first. Resume also refuses,
-  before launching, a stored argv that invokes the engine with a command the
-  engine no longer has, naming the run and the abandon remedy, so a run created
-  on another checkout cannot replay a deleted spelling. Witness: a suspended run
-  whose proof command is `metasystem test --goal G` is listed by the scan and
-  refused at resume after U1; its digest is never altered.
+  for a stored argv that invokes the engine with a spelling the landing removes.
+  There is no unit-run abandonment owner (`internal/launch` has none), so the
+  recovery is an owner-controlled migration (VOA-16-R4):
+  - U1 carries the mapping from every removed spelling that has a public
+    successor to that successor (3.1's table and 6.5's pairs), as data in the
+    command table.
+  - A unit-run owner operation migrates a stored argv through that mapping. It
+    records a history entry on the run with the original argv, the new argv, the
+    original and new reservation digests and the mapping revision, then stores
+    the new digest; the digest check (`launch/unit_named.go:295`) accepts a plan
+    whose digest equals the one the migration recorded. Rounds and run lineage
+    are unchanged.
+  - Resume applies the migration automatically before launching when every
+    removed spelling in the stored argv has a successor. A stored argv with a
+    removed spelling that has no successor is refused before launching, naming
+    the run.
+  - The hook bootstrap (above) and the landing precondition run the same scan on
+    the checkout's machine: a run with an unmigratable spelling keeps the old
+    engine enrolled (no rearm) and blocks the landing, so it can finish on the
+    engine that understands it; once it finishes, the next session start rearms.
+  - Witness: a suspended run whose proof command is `metasystem test --goal G`
+    resumes after U1 as `metasystem test run --goal G` with the migration in its
+    history; a run with a removed dead-verb spelling is refused at resume, holds
+    the rearm, and rearm proceeds after it completes.
 - The browser UI: acts call Go functions; displayed command strings change in U1
   (`ui/decisions/decisions.go:817`, `ui/act/act.go:20,45,220,665`,
   `lifecycle/*`, `httpd/walkthrough/fleet.go:231-288`,
@@ -669,3 +691,11 @@ verified, four material findings, all accepted.
 | VOA-15 in-process proof cancellation | accepted | 6.2: resident owners keep proof children; R5 |
 | VOA-16 retained executable plans | accepted | 7: scan precondition and resume refusal |
 | VOA-17 file waits | accepted | 3.1: `work wait --path` |
+
+Round 4, Codex `gpt-6-astra`, against revision 4: two of four round-3 folds
+verified, no new findings, two failed folds, both accepted.
+
+| Finding | Disposition | Where folded |
+|---|---|---|
+| VOA-11-R4 first cutover runs on the old engine | accepted | 7: hook-side bootstrap in U1 |
+| VOA-16-R4 no abandonment owner | accepted | 7: owner-controlled argv migration |
