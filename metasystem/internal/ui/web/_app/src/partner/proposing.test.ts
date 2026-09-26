@@ -608,12 +608,18 @@ describe("the run, in order", () => {
       look: Looked;
       /** One reading per call, for a run that reads again after an act lands. */
       looks: readonly Looked[];
-      answers: Record<string, Answered>;
+      /**
+       * What each line's act answers. A list answers a line that is sent more
+       * than once — the human signing in after a refusal that asked them to.
+       */
+      answers: Record<string, Answered | readonly Answered[]>;
       writes: Record<string, Written>;
     }> = {},
   ) {
     const sent: string[] = [];
     const looks: Looked[] = [];
+    // The entry each line stands at, as the route would hold it.
+    const entries = new Map<string, Proposal>();
     const written: { line: string; state: string; words: string; version: number }[] = [];
     const marked: { line: string; change: Partial<Mark> }[] = [];
     const reconciled: Proposal[] = [];
@@ -633,14 +639,29 @@ describe("the run, in order", () => {
         if (forced !== undefined) {
           return Promise.resolve(forced);
         }
-        return Promise.resolve({
-          kind: "written",
-          proposal: { ...line, state, words, version: line.version + 1 },
-        });
+        // The server's own compare-and-set, here: a write against a version the
+        // entry has moved past is refused with the entry as it stands. Without
+        // it this stub would admit a stale write and a run resuming on one would
+        // look right (Sol S58-C-03).
+        const standing = entries.get(line.id);
+        if (standing !== undefined && standing.version !== line.version) {
+          return Promise.resolve({ kind: "conflict", proposal: standing });
+        }
+        const moved: Proposal = { ...line, state, words, version: line.version + 1 };
+        entries.set(line.id, moved);
+        return Promise.resolve({ kind: "written", proposal: moved });
       },
       send: (line) => {
+        const before = sent.filter((one) => one === line.id).length;
         sent.push(line.id);
-        return Promise.resolve(over.answers?.[line.id] ?? { kind: "applied", words: "" });
+        const canned = over.answers?.[line.id];
+        if (canned === undefined) {
+          return Promise.resolve({ kind: "applied", words: "" });
+        }
+        if (Array.isArray(canned)) {
+          return Promise.resolve(canned[Math.min(before, canned.length - 1)]);
+        }
+        return Promise.resolve(canned as Answered);
       },
       mark: (line, change) => {
         marked.push({ line: line.id, change });
@@ -846,7 +867,14 @@ describe("the run, in order", () => {
   it("ends at a sign-in refusal and runs on from that line when the human signs in", async () => {
     const lines = three();
     const driven = driving(lines, {
-      answers: { [lines[1].id]: { kind: "sign-in", words: NOT_APPLIED_SIGN_IN } },
+      // Refused for want of a sign-in the first time, and applied the second —
+      // which is what signing in and running on from that line looks like.
+      answers: {
+        [lines[1].id]: [
+          { kind: "sign-in", words: NOT_APPLIED_SIGN_IN },
+          { kind: "applied", words: "" },
+        ],
+      },
     });
     await runProposals(lines, driven.ports);
     expect(driven.sent).toEqual([lines[0].id, lines[1].id]);
@@ -860,9 +888,14 @@ describe("the run, in order", () => {
     expect(driven.signIns.length).toBe(1);
     expect(driven.signIns[0].map((one) => one.id)).toEqual([lines[1].id, lines[2].id]);
 
-    const after = driving(driven.signIns[0]);
-    await runProposals(driven.signIns[0], after.ports);
-    expect(after.sent).toEqual([lines[1].id, lines[2].id]);
+    // And they carry the entries as the route left them. The line that asked for
+    // the sign-in has been written twice — applying, then refused — so handing
+    // back the line as the press first read it would write a stale version, meet
+    // a settled conflict, and SKIP the very act the human signed in for
+    // (Sol S58-C-03). The resumed run goes through the same server.
+    expect(driven.signIns[0][0].version).toBe(3);
+    await runProposals(driven.signIns[0], driven.ports);
+    expect(driven.sent).toEqual([lines[0].id, lines[1].id, lines[1].id, lines[2].id]);
   });
 
   /**

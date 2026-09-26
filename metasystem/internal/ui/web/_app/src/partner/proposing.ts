@@ -907,6 +907,15 @@ export type RunPorts = {
   signIn: (rest: readonly Line[]) => void;
 };
 
+/**
+ * One line as the route last returned it: the entry's own state, words and
+ * version over the line the press read, with everything the page holds about it
+ * left alone.
+ */
+function asStanding(line: Line, held: Proposal | undefined): Line {
+  return held === undefined ? line : { ...line, ...held };
+}
+
 /** True for a state nothing more will happen to by itself. */
 export function settledState(state: ProposalState): boolean {
   return state === "applied" || state === "refused" || state === "dismissed";
@@ -950,6 +959,11 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
   // guarded.
   let stale = false;
   let stoppedAt = -1;
+  // Each line's entry as the route last returned it. A line this run has written
+  // is past the version the press read, and handing the press's own copy to the
+  // sign-in sheet made the resumed run write a stale version, meet a settled
+  // conflict, and skip the very act the human signed in for (Sol S58-C-03).
+  const standing = new Map<string, Proposal>();
   for (const [at, line] of lines.entries()) {
     if (stale && needsTheCompare(line.verb)) {
       looked = await ports.look();
@@ -961,6 +975,9 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       continue;
     }
     const started = await ports.record(line, "applying", "");
+    if (started.kind !== "failed") {
+      standing.set(line.id, started.proposal);
+    }
     if (started.kind === "conflict") {
       ports.reconcile(started.proposal);
       if (settledState(started.proposal.state)) {
@@ -980,6 +997,9 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     const answered = await ports.send(sending);
     const written = recorded(answered);
     const finished = await ports.record(sending, written.state, written.words);
+    if (finished.kind !== "failed") {
+      standing.set(line.id, finished.proposal);
+    }
     if (finished.kind === "conflict") {
       ports.reconcile(finished.proposal);
     } else if (finished.kind === "failed") {
@@ -996,7 +1016,9 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     if (!goesOn(answered)) {
       stoppedAt = at;
       if (answered.kind === "sign-in") {
-        ports.signIn(lines.slice(at));
+        // The lines from here, as the route now holds them, so signing in
+        // resumes with the act that asked for it rather than past it.
+        ports.signIn(lines.slice(at).map((one) => asStanding(one, standing.get(one.id))));
       }
       break;
     }
