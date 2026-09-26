@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3EHSKGNBHDJEW5HM2PQVYMW
-- Status: draft
+- Status: accepted
 - Goals: browser-interface
 
 Wido, 2026-09-26, on the conversation store's move to the account's
@@ -19,31 +19,47 @@ re-read at `1be2696e9`.
    (internal/ui/partner/conversation.go), the stickies owner its
    `stickies.json`. Two checkouts are two directories; two humans are two
    files; the registry's environment seam moves them all.
-2. **Nothing bounds the transcript or the wire journal.** Both are
-   append-only; on this host after three days the wire journal is 121 KB
-   and one conversation 49 KB; no reader trims either. The stickies store
+2. **Nothing bounds the transcript within a runtime, nor the wire
+   journal within a runtime.** The transcript is loaded into memory and
+   appended under the conversation's mutex, the file opened and closed
+   per append (internal/ui/partner/conversation.go:431-505); the wire
+   journal is opened once per runtime process with truncation and held
+   as the connection's writer until that process ends (host.go:1147;
+   internal/acp/conn.go:62), so it bounds itself per runtime but a long
+   runtime grows it without limit. On this host after three days the
+   journal is 121 KB and one conversation 49 KB. The stickies store
    is bounded at 500 per human (g1-s50).
 3. **What is memory and what is not.** The paper: records are the only
    memory that survives; the sitting has none of its own (docs/paper/15-the-sitting.md).
-   The master: raw transcripts and streamed tool detail are "disposable"
-   sitting material in a protected server-local store (user-interface-design.md:381);
-   a fresh session is given the last few messages, not the file
-   (partner/service.go, `freshLine`).
+   The master: raw transcripts and streamed tool detail live in a
+   protected server-local store, apart from disposable execution
+   artifacts (user-interface-design.md:381); a fresh session is given
+   the last twenty messages within an eight-kilobyte block, not the
+   file (conversation.go:616). Neither text calls the transcript
+   disposable; both make the records the memory that must survive.
 
 ## 2. Decisions
 
-- D1. **Three bounds, one owner.** `uihome` gains housekeeping the
-  interface runs at start and once a day while it serves:
-  - the wire journal rotates at 8 MB: the current file becomes
-    `wire.1.jsonl`, one previous is kept, older ones removed;
+- D1. **Two bounds, each by its owner,** requested by a housekeeping
+  loop the interface runs at start and once a day while it serves, in
+  the channel-driven pattern the fleet fetch loop uses with a synthetic
+  tick in tests (internal/ui/fleet/fetch.go:373):
+  - the wire journal rotates at 8 MB through its own writer: the
+    Partner's journal writer closes, renames the current file to
+    `wire.1.jsonl` and reopens a fresh sink between two writes, keeping
+    one previous; housekeeping asks the writer, never renames the path
+    under it;
   - a conversation is trimmed from its head when it passes 2 MB or its
     oldest message is older than 90 days, keeping at least the last 200
-    messages and never cutting inside a turn; what is cut is gone, and
-    the conversation's first remaining message says "earlier messages
-    were trimmed on <date>";
-  - a workspace directory whose newest file is older than 180 days is
-    removed whole, so a checkout that was deleted does not keep its
-    private store forever.
+    messages: an operation of `Conversation` itself, under the mutex
+    `Append` takes, replacing the file and the cached messages together,
+    cutting only between distinct `Turn` values and keeping an unfinished
+    trailing turn whole; what is cut is gone, and the first remaining
+    message says "earlier messages were trimmed on <date>".
+    A workspace directory is never removed: modification times prove
+  neither disuse nor a deleted checkout, and the notepad in it is the
+  human's durable reminders (g1-s50). Detecting a deleted checkout is a
+  later decision of its own.
 - D2. **Never the records.** Housekeeping touches only the private store
   under the account's home; nothing in a checkout, nothing under the
   state root.
@@ -51,29 +67,51 @@ re-read at `1be2696e9`.
   path, its size per workspace and the bounds in words; the Partner's
   help term says transcripts are trimmed and records are the memory.
 - D4. **Numbers are configuration with defaults**, `ui.store.wire-mb`,
-  `ui.store.conversation-mb`, `ui.store.conversation-days`,
-  `ui.store.workspace-days` in `metasystem.conf`, so a project can
-  keep more or less; zero disables that bound.
+  `ui.store.conversation-mb` and `ui.store.conversation-days` in
+  `metasystem.conf`, read through `config.Get` with its precedence as the
+  other interface keys are (internal/config/ui.go:95); zero disables that
+  bound. They are retention targets, not disk ceilings: two hundred kept
+  messages can exceed two megabytes, and a day passes between sweeps.
 
 ## 3. Not here, later
 
+Removing the private store of a checkout that no longer exists.
 Archiving trimmed transcripts elsewhere. Per-sitting export. Bounds on
-the checkout's own artifacts, which are the engine's.
+the checkout's own artifacts, which are the engine's. Aggregate quotas
+across workspaces.
 
 ## 4. Verification and box
 
-Go: housekeeping over a fixture home with an oversized wire journal, an
-oversized and an old conversation, an unused workspace, each bound
-crossed and not crossed, the turn boundary respected, zero disabling a
-bound, nothing outside the home touched; the daily run scheduled without
-a wall-clock wait in tests. Frontend: the Settings lines. Budgets as
+Go: the writer's rotation while a connection writes, the previous kept
+and the older removed; the conversation's trim over an oversized and an
+old transcript with an append racing it, the cut falling between turns
+and an unfinished trailing turn kept, the cached messages matching the
+file; each bound crossed and not crossed; zero disabling a bound;
+nothing outside the home touched; the daily loop driven by a synthetic
+tick in tests. Frontend: the Settings lines. Budgets as
 always. Box: one build lane (Claude on Opus), one code read (Codex on
 Sol) with one fix round under R-124, after Astra's read; two attempts,
 60 to 120 job-minutes.
 
 ## 5. Self-grade
 
-High: three bounds in one owner over files it already owns. Medium on
-the conversation trim: cutting inside a turn would leave a human message
-without its answer; the boundary is the turn key. Weakest: the numbers
+High: two bounds, each in the hands of the writer that owns the file.
+Medium on the conversation trim: it shares the append's mutex and the
+cut falls between turns. Weakest: the numbers
 are guesses until a month of use says otherwise.
+
+## Dispositions (Astra read, 2026-09-26, under R-124)
+
+Three material findings, three deferred; every code claim checked.
+
+| id | finding | fold |
+|---|---|---|
+| F1 | removing a workspace directory on modification time would erase a quiet checkout's stickies and transcript; reading a notepad refreshes nothing | dropped; no directory is removed; a deleted checkout is a later decision |
+| F2 | a read-trim-replace outside the conversation can race an accepted append, and a disk-only trim leaves the served transcript stale; a trailing turn can be unfinished | the trim is the conversation's own operation under the append's mutex, replacing file and cache together, cutting between turns |
+| F3 | renaming the wire journal under the runtime's open descriptor leaves it writing the renamed file; the journal is truncated at runtime spawn | rotation by the journal writer, close, rename, reopen; the fact corrected |
+
+Folded because they cost nothing: the master and the paper do not call
+transcripts disposable, and the design no longer says so; the numbers
+are retention targets; the daily loop follows the fleet fetch loop's
+synthetic-tick pattern; the workspace key hashes the cleaned absolute
+path without resolving links.
