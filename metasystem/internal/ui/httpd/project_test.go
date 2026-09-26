@@ -84,7 +84,7 @@ func TestProjectPayload(t *testing.T) {
 	// record last changed was the sixth's, the slice plan the fifth's, the
 	// goals the fourth's and the summaries the third's, so each is read back
 	// off the wire rather than assumed to have travelled with the rest.
-	testutil.Expect(t, "the schema version", payload.SchemaVersion, 7)
+	testutil.Expect(t, "the schema version", payload.SchemaVersion, 8)
 	testutil.Expect(t, "the ledger's goals", payload.Goals[0].ID, "g1-s22")
 	testutil.Expect(t, "a record's goals", payload.Records[0].Goals, []string{"g1-s22"})
 	testutil.Expect(t, "a record's summary", payload.Records[0].Summary,

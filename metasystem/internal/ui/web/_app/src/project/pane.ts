@@ -7,6 +7,7 @@ import type {
   Pane,
   ProjectRecord,
   Question,
+  SittingRow,
 } from "./api";
 import { ACTIONS, ASK, type Kind } from "./writing";
 import type { HelpId } from "../help/terms";
@@ -201,11 +202,13 @@ export const FINISHED = ["done", "superseded"];
 export const QUESTIONS_TITLE = "Open questions";
 export const DOCUMENTS_TITLE = "Documents";
 export const SLICES_TITLE = "Slices";
+export const SITTINGS_TITLE = "Sittings";
 
 /** What those sections are called in the address, and in the strip. */
 export const QUESTIONS_TAB = "questions";
 export const DOCUMENTS_TAB = "documents";
 export const SLICES_TAB = "slices";
+export const SITTINGS_TAB = "sittings";
 
 /** The term that explains each book. A book with none carries no help. */
 const BOOK_HELP: Readonly<Record<string, HelpId>> = { intent: "intent", doctrine: "doctrine" };
@@ -238,6 +241,11 @@ export function pageSections(briefing: Briefing): PageSection[] {
   rows.push({ id: tabForKind("design"), title: kindTitle("design"), help: goal ? "goal-designs" : "designs" });
   rows.push({ id: QUESTIONS_TAB, title: QUESTIONS_TITLE, help: goal ? "goal-questions" : "questions" });
   if (briefing.goal === null) {
+    // Sittings are the project's and not a goal's: a sitting is on one record,
+    // and the records it is on are read from the records themselves rather than
+    // from a ledger goal. A goal page narrows records by what they say they are
+    // about, and a sitting says nothing about a goal at all.
+    rows.push({ id: SITTINGS_TAB, title: SITTINGS_TITLE, help: "sittings" });
     rows.push({ id: DOCUMENTS_TAB, title: DOCUMENTS_TITLE, help: "documents" });
   } else {
     // Slices are a goal's and only a goal's: the project as a whole has no
@@ -327,6 +335,7 @@ const NOTHING: Readonly<Record<string, string>> = {
   decisions: "decisions",
   designs: "designs",
   [QUESTIONS_TAB]: "open questions",
+  [SITTINGS_TAB]: "sittings",
 };
 
 /**
@@ -1146,4 +1155,51 @@ export function listedIn(briefing: Briefing, tab: string): string[] {
     return briefing.questions.map((row) => row.key);
   }
   return [];
+}
+
+/* ------------------------------------------------------------- the sittings -- */
+
+/**
+ * What one Sittings row says beside its title, in the order a human reads it
+ * (g1-s55 D3).
+ *
+ * The four piles as counts, because the counts are what says how much of a
+ * sitting there is; the piles nobody wrote into are left out, because "0
+ * proposals" is a fact about a section that does not exist rather than about
+ * this sitting.
+ */
+export function pilesLine(counts: SittingRow["counts"]): string {
+  const said = [
+    counted(counts.facts, "fact"),
+    counted(counts.proposals, "proposal"),
+    counted(counts.decisions, "decision"),
+    counted(counts.questions, "open question"),
+  ].filter((one) => one !== "");
+  return said.length === 0 ? NOTHING_RECORDED : said.join(" · ");
+}
+
+/** What a row says where its sitting has recorded nothing into the record yet. */
+export const NOTHING_RECORDED = "nothing recorded yet";
+
+/** What a row says where a sitting is open on that record right now. */
+export const STANDS_NOW = "a sitting stands on this now";
+
+/** What the press on a row does, said where a human meets it. */
+export function opensLine(row: SittingRow): string {
+  return row.standing
+    ? `Open the conversation on ${row.record.path}`
+    : `Open the conversation on ${row.record.path} and start a sitting on it`;
+}
+
+/** When a row's last entry was recorded, as the row says it, or "". */
+export function lastAtLine(row: SittingRow): string {
+  return row.lastAt === "" ? "" : `last entry ${row.lastAt}`;
+}
+
+/** One count, or "" for none of something, which is not worth a word. */
+function counted(of: number, word: string): string {
+  if (of === 0) {
+    return "";
+  }
+  return `${String(of)} ${word}${of === 1 ? "" : "s"}`;
 }

@@ -9,11 +9,18 @@ import (
 // The second operation that reads nothing.
 //
 // A sitting is a working conversation on one record, and the record is its
-// memory: it deposits three kinds of working material while it runs — facts
-// anchored where they can be checked, decisions recorded then and there with
-// the human's own reasons, and open questions named with their consequences.
-// One test covers all three: end the sitting at any moment and a fresh worker
-// with the same human must be able to go on from the record alone.
+// memory: it deposits facts anchored where they can be checked, decisions
+// recorded then and there with the human's own reasons, and open questions
+// named with their consequences. One test covers all of them: end the sitting
+// at any moment and a fresh worker with the same human must be able to go on
+// from the record alone.
+//
+// Two more kinds are step 2's, and neither is an entry of the four piles. A
+// CASE is a case at the edge, offered for the human to settle or to leave open:
+// it lands on no pile by itself, and what lands is the decision or the open
+// question the human makes of it (g1-s55 D1). An OUTCOME is the closing
+// deposit, drafted when the human ends the sitting, and it is written as the
+// record's own Outcome section rather than appended to a pile (D2).
 //
 // This is how the Partner offers one. It prepares a deposit; it does not write
 // one. Nothing here reaches the record: the card appears on the transcript and
@@ -28,23 +35,25 @@ import (
 // says "prepared" rather than "offered": the turn-owning service holds the
 // conversation and admits the deposit against the sitting's subject.
 
-// The three kinds one deposit can be, and the one that waits.
+// The five kinds one deposit can be, and the one that waits.
 //
-// Proposals are the fourth kind of working material a sitting maintains, and
-// they are step 2: the closing deposit is what makes a proposal worth having,
-// and the closing deposit is not here (g1-s53 §4). A call that names one is
-// refused in words that say so, rather than being silently recorded as
-// something else.
+// Proposals are the fourth pile a sitting maintains, and nothing offers one:
+// the closing deposit was what would have made a proposal worth having, and it
+// has a kind of its own now, because what it writes is the record's Outcome
+// section and not a pile. A call that names a proposal is refused in words that
+// say so, rather than being silently recorded as something else.
 const (
 	DepositFact     = "fact"
 	DepositDecision = "decision"
 	DepositQuestion = "question"
+	DepositCase     = "case"
+	DepositOutcome  = "outcome"
 	DepositProposal = "proposal"
 )
 
 // DepositKinds is what this build admits, in the order the tool's own
 // description lists them.
-var DepositKinds = []string{DepositFact, DepositDecision, DepositQuestion}
+var DepositKinds = []string{DepositFact, DepositDecision, DepositQuestion, DepositCase, DepositOutcome}
 
 // The bounds. A deposit is one entry of a record's section: a line or a
 // paragraph, with one short clause beside it. Past these the call is refused in
@@ -53,9 +62,16 @@ var DepositKinds = []string{DepositFact, DepositDecision, DepositQuestion}
 const (
 	// maxDeposit is how much one deposit says, in characters.
 	maxDeposit = 2000
-	// maxClause is how much the anchor, the reason or the consequence carries.
-	// An anchor is a path with a line in it; a reason is a sentence.
+	// maxClause is how much the anchor, the reason, the consequence or the
+	// clause carries. An anchor is a path with a line in it; a reason is a
+	// sentence; a clause is the one line a case would become.
 	maxClause = 500
+	// maxOutcome is how much the closing deposit says. It is the one deposit
+	// that is not an entry of a list: it is a whole section — the outcome as
+	// decided, the constraints, the open questions with their consequences, and
+	// what the table holds — so an entry's bound would refuse the very thing
+	// the kind exists for.
+	maxOutcome = 8000
 )
 
 // The fixed form a prepared deposit travels back in, written down once here and
@@ -72,7 +88,10 @@ const (
 	DepositAnchor      = "Anchor: "
 	DepositReason      = "Reason: "
 	DepositConsequence = "Consequence: "
-	DepositSeparator   = "--- the deposit follows, whole and to the end ---"
+	// DepositClause carries what a case would become: the clause as the Partner
+	// heard it, which the Decide sheet opens with (g1-s55 D1).
+	DepositClause    = "Clause: "
+	DepositSeparator = "--- the deposit follows, whole and to the end ---"
 )
 
 // DepositedLine is what a prepared deposit answers the model with.
@@ -85,28 +104,29 @@ const DepositedLine = "prepared; preparing does not record it: the human presses
 	"and it enters the record then and not before"
 
 // deposit prepares one deposit, or refuses the call in words.
-func deposit(kind, text, anchor, reason, consequence string) Result {
+func deposit(kind, text, anchor, reason, consequence, clauseSaid string) Result {
 	kind = strings.ToLower(oneLine(kind))
 	anchor, reason, consequence = oneLine(anchor), oneLine(reason), oneLine(consequence)
+	clauseSaid = oneLine(clauseSaid)
 	// Only the framing's own newlines are the framing's. What the model wrote
 	// travels as it wrote it, apart from the blank lines a transport may have
 	// left at either end of it.
 	text = strings.Trim(text, "\n")
 	switch {
 	case kind == DepositProposal:
-		return refusedCall("this interface records facts, decisions and open questions in a sitting; " +
-			"a proposal is not one of them yet, so say it in words instead")
+		return refusedCall("this interface records facts, decisions, open questions, cases at the edge and " +
+			"the closing outcome in a sitting; a proposal is not one of them, so say it in words instead")
 	case !depositKind(kind):
 		return refusedCall("a deposit is a " + strings.Join(DepositKinds, ", a ") +
 			"; " + quotedKind(kind) + " is none of them")
 	case strings.TrimSpace(text) == "":
 		return refusedCall("this tool needs the words of the " + kind + " to offer; a deposit is one entry of the record")
-	case utf8.RuneCountInString(text) > maxDeposit:
-		return refusedCall("a deposit carries at most " + strconv.Itoa(maxDeposit) +
+	case utf8.RuneCountInString(text) > bound(kind):
+		return refusedCall("the " + kind + " carries at most " + strconv.Itoa(bound(kind)) +
 			" characters and this one is " + strconv.Itoa(utf8.RuneCountInString(text)) +
 			"; offer the entry itself, shorter")
 	}
-	if over := longestClause(anchor, reason, consequence); over != "" {
+	if over := longestClause(anchor, reason, consequence, clauseSaid); over != "" {
 		return refusedCall("the " + over + " on a deposit carries at most " + strconv.Itoa(maxClause) +
 			" characters; say the rest in your answer")
 	}
@@ -122,6 +142,13 @@ func deposit(kind, text, anchor, reason, consequence string) Result {
 		built += labelled(DepositReason, reason)
 	case DepositQuestion:
 		built += labelled(DepositConsequence, consequence)
+	case DepositCase:
+		// A case takes both of the clauses its two presses need: the clause it
+		// would become, which the Decide sheet opens with, and the consequence
+		// of leaving it open, which Leave open records with the question
+		// (g1-s55 D1). It is the one kind with two, because it is the one kind
+		// offered as a choice between two entries.
+		built += labelled(DepositClause, clauseSaid) + labelled(DepositConsequence, consequence)
 	}
 	return Result{Prepared: DepositedLine + "\n" + built + DepositSeparator + "\n" + text + "\n"}
 }
@@ -147,11 +174,20 @@ func depositKind(kind string) bool {
 	return false
 }
 
-func longestClause(anchor, reason, consequence string) string {
+// bound is how much one kind of deposit says. Every kind is one entry of a
+// list except the outcome, which is a whole section of the record.
+func bound(kind string) int {
+	if kind == DepositOutcome {
+		return maxOutcome
+	}
+	return maxDeposit
+}
+
+func longestClause(anchor, reason, consequence, clauseSaid string) string {
 	for _, one := range []struct {
 		name string
 		said string
-	}{{"anchor", anchor}, {"reason", reason}, {"consequence", consequence}} {
+	}{{"anchor", anchor}, {"reason", reason}, {"consequence", consequence}, {"clause", clauseSaid}} {
 		if utf8.RuneCountInString(one.said) > maxClause {
 			return one.name
 		}

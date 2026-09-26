@@ -4,6 +4,11 @@ import type { DocumentPayload, Pane, ProjectRecord } from "./api";
 import {
   ABOUT_PROJECT,
   aboutOf,
+  lastAtLine,
+  NOTHING_RECORDED,
+  opensLine,
+  pilesLine,
+  STANDS_NOW,
   aboutRow,
   briefingFor,
   countLine,
@@ -158,6 +163,7 @@ const pane: Pane = {
     { path: "metasystem/docs/design/principles.md", title: "Design principles" },
     { path: "metasystem/plans/g1-s1.md", title: "A historical design" },
   ],
+  sittings: [],
 };
 
 function titles(rows: (Row | TocEntry)[]): string[] {
@@ -201,6 +207,7 @@ describe("what is on the page, as the strip of tabs names it", () => {
       { id: "decisions", title: "Decisions", help: "decisions" },
       { id: "designs", title: "Designs", help: "designs" },
       { id: "questions", title: "Open questions", help: "questions" },
+      { id: "sittings", title: "Sittings", help: "sittings" },
       { id: "documents", title: "Documents", help: "documents" },
     ]);
   });
@@ -280,12 +287,57 @@ describe("the one act at the trailing end of the strip", () => {
       for (const section of pageSections(briefingFor(pane, goal))) {
         const actions = stripActions(section.id);
         expect({ tab: section.id, refresh: actions.refresh }).toEqual({ tab: section.id, refresh: REFRESH });
+        // Sittings writes nothing either: a sitting is started from the record
+        // it is about or from the Partner's own header, and a tab that offered
+        // "New sitting" would be asking which record from a page listing every
+        // record there is.
         expect({ tab: section.id, writes: actions.newAction !== null }).toEqual({
           tab: section.id,
-          writes: section.id !== "documents" && section.id !== "slices",
+          writes: !["documents", "slices", "sittings"].includes(section.id),
         });
       }
     }
+  });
+});
+
+/**
+ * Project → Sittings: the records this project has sat on (g1-s55 D3).
+ *
+ * The rows are the payload's, so what is decided here is what a row SAYS: how
+ * much of a sitting there is, when its last entry was recorded, whether one
+ * stands on it now, and what pressing it will do — which a row has to say before
+ * it is pressed, because the press starts a sitting.
+ */
+describe("what one Sittings row says", () => {
+  const row = {
+    record: { kind: "design", id: "design-sessions", path: "plans/designs/sessions.md", title: "Session limits" },
+    counts: { facts: 2, proposals: 0, decisions: 1, questions: 1 },
+    lastAt: "2026-09-26",
+    standing: false,
+  };
+
+  it("counts the piles it holds, and leaves out the ones nobody wrote into", () => {
+    expect(pilesLine(row.counts)).toBe("2 facts · 1 decision · 1 open question");
+  });
+
+  it("says nothing was recorded rather than counting four nothings", () => {
+    expect(pilesLine({ facts: 0, proposals: 0, decisions: 0, questions: 0 })).toBe(NOTHING_RECORDED);
+  });
+
+  it("dates its last entry, and says nothing where it has none", () => {
+    expect(lastAtLine(row)).toBe("last entry 2026-09-26");
+    expect(lastAtLine({ ...row, lastAt: "" })).toBe("");
+  });
+
+  it("says what the press will do before it is pressed, because the press is the consent", () => {
+    expect(opensLine(row)).toBe(
+      "Open the conversation on plans/designs/sessions.md and start a sitting on it",
+    );
+    // A sitting already standing on it is opened and not started again.
+    expect(opensLine({ ...row, standing: true })).toBe(
+      "Open the conversation on plans/designs/sessions.md",
+    );
+    expect(STANDS_NOW).toBe("a sitting stands on this now");
   });
 });
 

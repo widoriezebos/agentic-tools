@@ -92,6 +92,23 @@ export type Problem = { path: string; line: number; message: string };
 /** One of the checkout's other documents, by path, with no kind claimed. */
 export type DocumentFile = { path: string; title: string };
 
+/**
+ * One row of Project → Sittings: a record this project has sat on, what its
+ * four piles hold, when its last entry was recorded, and whether a sitting
+ * stands on it right now (g1-s55 D3).
+ *
+ * It is a view over the records themselves and not a second store: a record is
+ * here because its own entries carry the marks of the deposits they were
+ * recorded from, which is what "this was sat on" means.
+ */
+export type SittingRow = {
+  record: { kind: string; id: string; path: string; title: string };
+  counts: { facts: number; proposals: number; decisions: number; questions: number };
+  /** The date of the last entry recorded, as the entry itself carries it, or "". */
+  lastAt: string;
+  standing: boolean;
+};
+
 export type Pane = {
   schemaVersion: number;
   readAt: string;
@@ -102,6 +119,7 @@ export type Pane = {
   questions: Question[];
   problems: Problem[];
   documents: DocumentFile[];
+  sittings: SittingRow[];
 };
 
 export type Heading = { level: number; id: string; text: string };

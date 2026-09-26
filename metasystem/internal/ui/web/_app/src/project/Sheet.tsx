@@ -61,7 +61,24 @@ import { DEFAULT_MODALITY, useOpener, useWorkModal, type Modality } from "../she
 export type Request =
   | { mode: "record"; kind: Kind; scope: Scope }
   | { mode: "status"; id: string; title: string; path: string; status: string }
-  | { mode: "question"; scope: Scope }
+  | {
+      mode: "question";
+      scope: Scope;
+      /**
+       * The question as it arrives, where something composed it: an open
+       * question of a sitting's table, asked with its consequence and the record
+       * it came out of (g1-s55 D2). It is a prefill and not a fact — the field is
+       * the human's, and Ask is still their press.
+       */
+      question?: string;
+      /**
+       * The ledger goals this question is about, where the caller knows them
+       * better than the page's scope does. A sitting's question is about what
+       * its record is about, and a record names goals of the ledger, which is
+       * what this route scopes by.
+       */
+      goals?: string[];
+    }
   | { mode: "answer"; id: string; question: string }
   | { mode: "discard"; path: string };
 
@@ -409,13 +426,17 @@ function QuestionForm({
   onClose,
   onSend,
 }: {
-  request: { scope: Scope };
+  request: { scope: Scope; question?: string; goals?: string[] };
   sending: boolean;
   onClose: () => void;
   onSend: Send;
 }) {
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(request.question ?? "");
   const blocked = blockedQuestion(question);
+  // What it is about: the goals the caller named where it named any, and the
+  // page's own scope otherwise. A question out of a sitting is about what its
+  // record is about, which is not the page the sheet was opened over.
+  const goals = request.goals;
   return (
     <>
       <Head
@@ -424,12 +445,17 @@ function QuestionForm({
         sheet="New question"
         fields={[{ name: "Question", value: question }]}
       />
-      <About scope={request.scope} />
+      {goals === undefined ? <About scope={request.scope} /> : <AboutGoals goals={goals} />}
       <div className="ms-writing-field">
         <label htmlFor="ms-writing-question">Question</label>
-        <input
+        {/* A textarea and not a line: a question composed out of a sitting
+            carries what follows from leaving it open and the record it came out
+            of, and a human who cannot see the whole of what they are about to
+            ask cannot edit it. It is still one row of the register — the write
+            trims it to one question — so nothing here is a second field. */}
+        <textarea
           id="ms-writing-question"
-          type="text"
+          rows={3}
           value={question}
           onChange={(event) => {
             setQuestion(event.target.value);
@@ -445,7 +471,10 @@ function QuestionForm({
         onConfirm={() => {
           onSend(async () => ({
             mode: "question",
-            asked: await askQuestion({ question: question.trim(), goals: scopeGoals(request.scope) }),
+            asked: await askQuestion({
+              question: question.trim(),
+              goals: goals ?? scopeGoals(request.scope),
+            }),
           }));
         }}
       />
@@ -555,6 +584,29 @@ function DiscardForm({
         }}
       />
     </>
+  );
+}
+
+/**
+ * What a question out of a sitting is about: the goals its record names, read
+ * rather than chosen, exactly as the scope line beside it is.
+ *
+ * A record that names none is about the project as a whole, and so is the
+ * question — which is a scope and not a missing field.
+ */
+function AboutGoals({ goals }: { goals: readonly string[] }) {
+  return (
+    <p className="ms-writing-about">
+      About:{" "}
+      {goals.length === 0
+        ? "this project"
+        : goals.map((goal, at) => (
+            <span key={goal}>
+              {at > 0 && ", "}
+              <span className="ms-mono">{goal}</span>
+            </span>
+          ))}
+    </p>
   );
 }
 

@@ -165,7 +165,7 @@ type Suggestion struct {
 // consequence, and the entry enters the record when the human presses Record it
 // and not before. A card the human edits keeps their words.
 type Deposit struct {
-	// Kind is fact, decision or question.
+	// Kind is fact, decision, question, case or outcome.
 	Kind string `json:"kind"`
 	// Text is the entry itself, as the Partner wrote it. It is kept whole
 	// rather than shortened as a look's excerpt is: an excerpt is something a
@@ -173,10 +173,16 @@ type Deposit struct {
 	Text string `json:"text"`
 	// Anchor is where a fact can be checked; Reason is the reason the Partner
 	// heard for a decision; Consequence is what follows from leaving a question
-	// open. One of the three at most, decided by the kind.
+	// — or a case — open. Decided by the kind.
 	Anchor      string `json:"anchor,omitempty"`
 	Reason      string `json:"reason,omitempty"`
 	Consequence string `json:"consequence,omitempty"`
+	// Clause is what a case would become, as the Partner heard it: the line the
+	// human's Decide sheet opens with. It is the one field a case has that no
+	// other kind does, because a case is offered as a choice between two
+	// entries — the decision it becomes, and the open question it becomes —
+	// and each needs its own clause (g1-s55 D1).
+	Clause string `json:"clause,omitempty"`
 	// Subject is the record this deposit was admitted against, stamped by the
 	// service from the sitting. The page writes an admitted deposit into that
 	// record and no other, so which record it is cannot be the browser's guess.
@@ -1052,6 +1058,7 @@ func clause(held *Deposit, line string) {
 		{uitools.DepositAnchor, &held.Anchor},
 		{uitools.DepositReason, &held.Reason},
 		{uitools.DepositConsequence, &held.Consequence},
+		{uitools.DepositClause, &held.Clause},
 	} {
 		if rest, named := strings.CutPrefix(line, one.label); named {
 			*one.into = strings.TrimSpace(rest)

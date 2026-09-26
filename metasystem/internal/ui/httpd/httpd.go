@@ -425,7 +425,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == projectPath {
-		h.project(w)
+		h.project(w, r)
 		return
 	}
 	if r.URL.Path == interfacePath {
@@ -550,7 +550,11 @@ func (h *handler) workspace(w http.ResponseWriter) {
 // project answers the project's declared memory. A failure is a 500 carrying
 // the reason, for the workspace route's reason: the reason is what a human
 // acts on.
-func (h *handler) project(w http.ResponseWriter) {
+// The Sittings list is the one part of it this route composes rather than
+// reads: which records were sat on is in the records themselves, and which one a
+// sitting stands on right now is on this human's conversation, which the project
+// reader has no way to know (g1-s55 D3).
+func (h *handler) project(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if h.info.Project == nil {
 		writeFailure(w, "this engine was built without a project reader")
@@ -560,6 +564,14 @@ func (h *handler) project(w http.ResponseWriter) {
 	if err != nil {
 		writeFailure(w, err.Error())
 		return
+	}
+	if h.info.Partner != nil {
+		// A conversation this server cannot read is a sitting it cannot report,
+		// and not a reason to refuse the project: every other row of this
+		// payload is still what the checkout says.
+		if sitting, sittingErr := h.info.Partner.Sitting(h.partnerHuman(r)); sittingErr == nil && sitting != nil {
+			pane.MarkStanding(sitting.Subject.ID)
+		}
 	}
 	_ = json.NewEncoder(w).Encode(pane)
 }

@@ -180,6 +180,7 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       "/api/partner/seeing",
       "/api/partner/sitting",
       "/api/partner/sitting/end",
+      "/api/partner/sitting/close",
       "/stop",
     ],
   ],

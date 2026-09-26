@@ -51,16 +51,44 @@ export const SECTIONS = ["Facts", "Proposals", "Decisions", "Open questions"] as
 
 export type Section = (typeof SECTIONS)[number];
 
+/**
+ * The fifth section, which is not a pile: what the sitting came to, written when
+ * the human ends it (g1-s55 D2).
+ *
+ * It is not on the table and it is not a list. The four piles are the working
+ * material a sitting accumulates, entry by entry; this is the one thing it
+ * concludes, written once and replaced rather than appended to — so a sitting
+ * closed twice leaves one Outcome and not two.
+ */
+export const OUTCOME = "Outcome";
+
+/** Where one deposit is written: one of the four piles, or the Outcome. */
+export type Written = Section | typeof OUTCOME;
+
 /** Which section each kind of deposit is written into. */
-const SECTION_OF: Readonly<Record<string, Section>> = {
+const SECTION_OF: Readonly<Record<string, Written>> = {
   fact: "Facts",
   proposal: "Proposals",
   decision: "Decisions",
   question: "Open questions",
+  outcome: OUTCOME,
 };
 
-export function sectionOf(kind: string): Section {
+/**
+ * Where a deposit of this kind lands.
+ *
+ * A case is missing from the map on purpose and never asked for it: a case lands
+ * on no section by itself (D1), and what lands is the decision or the open
+ * question the human makes of it. The card for one shows no destination, because
+ * it has none until a human presses one of its two buttons.
+ */
+export function sectionOf(kind: string): Written {
   return SECTION_OF[kind] ?? "Facts";
+}
+
+/** Whether one written section is one of the four piles the table shows. */
+export function isPile(section: Written): section is Section {
+  return (SECTIONS as readonly string[]).includes(section);
 }
 
 /** What each kind calls the clause beside its words, as the card labels it. */
@@ -69,10 +97,23 @@ const CLAUSE_OF: Readonly<Record<string, string>> = {
   decision: "Reason",
   question: "Consequence",
   proposal: "Consequence",
+  // A case card's clause is the consequence of leaving it open, because that is
+  // the one its own press records: Leave open writes the case as an open
+  // question with it. The other clause a case carries — the clause it would
+  // become — belongs to the Decide sheet, which is where it is read and edited.
+  case: "Consequence",
+  // An outcome carries no clause. It is a whole section, and a labelled line
+  // beside it would be a field with nothing to put in it.
+  outcome: "",
 };
 
 export function clauseOf(kind: string): string {
   return CLAUSE_OF[kind] ?? "Anchor";
+}
+
+/** Whether this kind of card has a clause beside its words at all. */
+export function clausedKind(kind: string): boolean {
+  return clauseOf(kind) !== "";
 }
 
 /**
@@ -125,8 +166,8 @@ export type Entry = {
   text: string;
   /** The anchor, the reason or the consequence, whichever the kind carries. */
   clause: string;
-  /** Which of the four sections it stands in. */
-  section: Section;
+  /** Which section it stands in: one of the four piles, or the Outcome. */
+  section: Written;
   /**
    * Which deposit this entry was recorded from, or "" for a line a human wrote
    * by hand. It is what makes a card's recorded state a fact about the record
@@ -258,7 +299,134 @@ export function recordedIn(source: string): ReadonlyMap<string, Entry> {
       found.set(entry.mark, entry);
     }
   }
+  // And the Outcome, which is the one recorded thing that is not an entry of a
+  // pile. It is read for the same reason every entry's mark is: the outcome card
+  // must say "recorded" because the record says so, and a reload must not offer
+  // to write a second Outcome over the one already there.
+  const outcome = outcomeIn(source);
+  if (outcome !== null && outcome.mark !== "" && !found.has(outcome.mark)) {
+    found.set(outcome.mark, outcome);
+  }
   return found;
+}
+
+/* -------------------------------------------------------------- the outcome -- */
+
+/**
+ * The line that says where an Outcome came from.
+ *
+ * The section itself is the human's words, whole, so the bookkeeping cannot ride
+ * the end of them the way an entry's does: an entry is one line and this is
+ * paragraphs, and a mark stuck to the last sentence of a human's outcome would
+ * be a mark inside their prose. So it is one dated, attributed line at the foot,
+ * shaped like an entry's head — which is also what lets the record say who
+ * closed this sitting and when.
+ */
+export const FROM_THE_SITTING = "Recorded from the sitting";
+
+const OUTCOME_FOOT = new RegExp(
+  `^[-*]\\s+${FROM_THE_SITTING}${DOT}(.*?)${DOT}(.*?)\\s*\\[d:([^\\]\\s]+)\\]\\s*$`,
+);
+
+export function outcomeFoot(entry: Entry): string {
+  return `- ${FROM_THE_SITTING}${DOT}${entry.when}${DOT}${entry.who} ${markOf(entry.mark).trim()}`;
+}
+
+/** Where the record's Outcome section stands, or null where it has none. */
+function outcomeAt(lines: readonly string[]): { at: number; end: number } | null {
+  for (let index = 0; index < lines.length; index += 1) {
+    const heading = /^#{1,6}\s+(.*)$/.exec(lines[index]);
+    if (heading === null || heading[1].trim() !== OUTCOME) {
+      continue;
+    }
+    let end = lines.length;
+    for (let after = index + 1; after < lines.length; after += 1) {
+      if (/^#{1,6}\s+/.test(lines[after])) {
+        end = after;
+        break;
+      }
+    }
+    return { at: index, end };
+  }
+  return null;
+}
+
+/**
+ * The record's whole source with the sitting's outcome written under an
+ * "Outcome" heading — replacing the one the record has (g1-s55 D2).
+ *
+ * Replacing, and not appending, because an outcome is what the sitting came to
+ * and a record has one: every design this project writes is created with an
+ * empty Outcome heading already in it (project/write.go's templates), so an
+ * append would leave the heading above and the words below it under a second one.
+ *
+ * The heading is left exactly as the record spells it — level and all — and
+ * everything outside the section is untouched, because this is a whole source
+ * going through a revision-checked write and a composition that tidied anything
+ * would be this browser rewriting a human's record around the one thing they
+ * asked for.
+ */
+export function outcomeWritten(source: string, entry: Entry): string {
+  const body = [...oneOrMore(entry.text), "", outcomeFoot(entry)];
+  const lines = source.split("\n");
+  const found = outcomeAt(lines);
+  if (found === null) {
+    const before = source.replace(/\s*$/, "");
+    const opened = before === "" ? "" : `${before}\n\n`;
+    return `${opened}## ${OUTCOME}\n\n${body.join("\n")}\n`;
+  }
+  // The blank lines before the next heading belong to the gap between sections,
+  // so the section is replaced and the gap is kept.
+  let last = found.end;
+  while (last > found.at + 1 && lines[last - 1].trim() === "") {
+    last -= 1;
+  }
+  return [...lines.slice(0, found.at + 1), "", ...body, ...lines.slice(last)].join("\n");
+}
+
+/**
+ * The Outcome the record carries, as the entry it was written from, or null.
+ *
+ * The words are what stands between the heading and the foot, whole, so the card
+ * shows the record's own outcome rather than what the Partner first offered. A
+ * section with no foot is an Outcome a human wrote by hand: it is read, with no
+ * mark, so nothing claims a deposit wrote it.
+ */
+export function outcomeIn(source: string): Entry | null {
+  const lines = source.split("\n");
+  const found = outcomeAt(lines);
+  if (found === null) {
+    return null;
+  }
+  const said = lines.slice(found.at + 1, found.end);
+  let when = "";
+  let who = "";
+  let mark = "";
+  const words: string[] = [];
+  for (const line of said) {
+    const foot = OUTCOME_FOOT.exec(line);
+    if (foot === null) {
+      words.push(line);
+      continue;
+    }
+    when = foot[1].trim();
+    who = foot[2].trim();
+    mark = foot[3];
+  }
+  const text = words.join("\n").replace(/^\s*\n/, "").replace(/\s*$/, "");
+  if (text === "" && mark === "") {
+    return null;
+  }
+  return { when, who, text, clause: "", section: OUTCOME, mark };
+}
+
+/**
+ * The words of an outcome as its section carries them: every line, with the
+ * blank lines kept, because an outcome is paragraphs and flattening it would
+ * turn the whole of a sitting's result into one line.
+ */
+function oneOrMore(said: string): readonly string[] {
+  return said.replace(/\s*$/, "").replace(/^\s*\n/, "").split("\n");
 }
 
 /** How many entries each section holds, which is what the drawer's strip says. */
@@ -267,7 +435,9 @@ export type Counts = Readonly<Record<Section, number>>;
 export function countsIn(source: string): Counts {
   const counted: Record<Section, number> = { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0 };
   for (const entry of entriesIn(source)) {
-    counted[entry.section] += 1;
+    if (isPile(entry.section)) {
+      counted[entry.section] += 1;
+    }
   }
   return counted;
 }
@@ -287,6 +457,13 @@ export function countsIn(source: string): Counts {
  * record around the one line they asked for.
  */
 export function appended(source: string, entry: Entry, kind: string): string {
+  // The Outcome is written and replaced rather than appended to, so a press for
+  // one goes through its own composition and never through this. It is asked
+  // here rather than at the call site because this is the function that would
+  // silently make a list of a section that is prose.
+  if (entry.section === OUTCOME) {
+    return outcomeWritten(source, entry);
+  }
   const line = lineOf(entry, kind);
   const lines = source.split("\n");
   const heading = headingOf(entry.section);
@@ -398,10 +575,28 @@ export function clauseFrom(deposit: Deposit): string {
       return deposit.reason ?? "";
     case "question":
     case "proposal":
+    case "case":
       return deposit.consequence ?? "";
+    case "outcome":
+      return "";
     default:
       return deposit.anchor ?? "";
   }
+}
+
+/**
+ * The clause a case would become, as the Partner heard it: what the Decide
+ * sheet opens with.
+ *
+ * The case's own words are the case — "a laptop sleeps with the page open" — and
+ * the clause is the rule it would turn into. Where the Partner named no clause
+ * the sheet opens with the case itself, because a human deciding a case they can
+ * see is better served by their own words over the Partner's than by an empty
+ * box (D1).
+ */
+export function clauseHeard(deposit: Deposit): string {
+  const said = (deposit.clause ?? "").trim();
+  return said === "" ? deposit.text : said;
 }
 
 /** Where a card stands, in the order a human would read them. */
@@ -449,6 +644,26 @@ export function standingOf(deposit: Deposit, mark: Mark, sitting: string): Stand
     return "conflict";
   }
   return missing(deposit.kind, mark) === "" ? "waiting" : "blocked";
+}
+
+/**
+ * Whether a press on one card would be admitted.
+ *
+ * A card in conflict is pressable, and that is the whole of why this exists
+ * (g1-s55, folded from Astra's read). A conflict is the record having moved: the
+ * human's words are still on the card, nothing was written, and the reading has
+ * been taken again — so pressing Record it once more is one more press against
+ * the record as it now stands. The press used to be offered and then quietly do
+ * nothing, because only a waiting card was admitted, and the only way to make a
+ * refused card waiting again was to edit it. A human who was happy with their
+ * words had nothing to edit.
+ *
+ * Everything else is not a press: a card the record has taken is written, a card
+ * of another sitting is not this record's, one still needing a reason or an
+ * anchor has nothing to write yet, and one already in flight is being written.
+ */
+export function pressable(standing: Standing): boolean {
+  return standing === "waiting" || standing === "conflict";
 }
 
 /**
@@ -543,14 +758,31 @@ export function cardIn(cards: readonly Card[], id: string): Card | undefined {
   return cards.find((card) => card.id === id);
 }
 
-/** The entry one card would write, from the words as the human now has them. */
-export function entryOf(card: Card, who: string, when: string): Entry {
+/**
+ * What one press writes, where what it writes is not the card's own words.
+ *
+ * It is the case card's whole reason for existing (D1): the card carries a case,
+ * and the two presses on it record something else — Decide records a decision
+ * whose words are the clause and whose reason the human wrote, and Leave open
+ * records an open question. So a press says what it is recording, and the entry
+ * is composed from that rather than from the card.
+ */
+export type Records = { kind: string; text: string; clause: string };
+
+/** What one card records by default: the words as the human now has them. */
+export function recordsOf(card: Card): Records {
+  return { kind: card.kind, text: card.mark.text, clause: card.mark.clause };
+}
+
+/** The entry one press would write, marked with the card that offered it. */
+export function entryOf(card: Card, who: string, when: string, records?: Records): Entry {
+  const said = records ?? recordsOf(card);
   return {
     when,
     who,
-    text: card.mark.text,
-    clause: card.mark.clause,
-    section: sectionOf(card.kind),
+    text: said.text,
+    clause: said.clause,
+    section: sectionOf(said.kind),
     mark: card.id,
   };
 }
@@ -566,9 +798,127 @@ export function cardHead(kind: string): string {
       return "An open question";
     case "proposal":
       return "A proposal";
+    case "case":
+      return "A case at the edge";
+    case "outcome":
+      return "What this sitting came to";
     default:
       return "A fact";
   }
+}
+
+/* ------------------------------------------------------ the case's two presses -- */
+
+/** The two presses a case offers, and what each one records (g1-s55 D1). */
+export const DECIDE = "Decide";
+export const LEAVE_OPEN = "Leave open";
+
+/** What the Decide sheet is called, and what its two fields are. */
+export const DECIDE_TITLE = "Decide this case";
+export const DECIDE_CLAUSE = "The clause, as heard";
+export const DECIDE_REASON = "Your reason";
+
+/**
+ * What the Decide sheet says above its two fields.
+ *
+ * It says the one thing the paper asks of a sitting's decisions: the words are
+ * the Partner's as it heard them and the reason is the human's own, recorded
+ * then and there rather than reconstructed later.
+ */
+export const DECIDE_SAID =
+  "The clause is what your Partner heard; change it to what you mean. " +
+  "The reason is yours, and it is recorded with the decision.";
+
+/** What Leave open says it will do, so a press is not a surprise. */
+export function leftOpenLine(clause: string): string {
+  const said = clause.trim();
+  const follows = said === "" ? "" : ` Its consequence is recorded with it: ${said}`;
+  return `Records this case as an open question, in the Partner's words.${follows}`;
+}
+
+/** What a case says once the record has taken one of its two presses. */
+export function caseSettledLine(where: string): string {
+  return where === "Decisions"
+    ? "Decided, and in the record."
+    : "Left open, and in the record.";
+}
+
+/* -------------------------------------------------------------- ending it -- */
+
+/**
+ * The two ways a sitting ends (g1-s55 D2), and what each of them says.
+ *
+ * Ending it asks the Partner for the closing deposit and ends nothing: the
+ * sitting stands, the outcome card appears, and the record takes it when the
+ * human presses Record it. Ending without recording is allowed — it is a
+ * human's own judgement that this sitting had no outcome worth writing — and it
+ * says what it leaves behind, because the weakest thing about this design is
+ * that it is easy to do by accident (g1-s55 §5).
+ */
+export const END_WITHOUT = "End without recording";
+export const DRAFTING = "Drafting the outcome…";
+export const ENDED_WITHOUT =
+  "The sitting ended and no outcome was written into the record. Everything you recorded during it is still there.";
+export const END_SAID =
+  "Your Partner drafts what this sitting came to; you read it, edit it, and press Record it. " +
+  "It becomes the record's Outcome section, and the sitting ends then.";
+
+/** What the outcome card's press is called, and what it says afterwards. */
+export const RECORD_OUTCOME = "Record it and end the sitting";
+
+/* ------------------------------------------------------------- Ask it -- */
+
+/** The press an open question on the table offers (g1-s55 D2). */
+export const ASK_IT = "Ask it";
+
+/**
+ * The one question an open question of the table becomes in the register.
+ *
+ * Three things in one question, because the register's row IS one question and
+ * the route takes one line: the question itself, what follows from leaving it
+ * open, and the record this sitting was on. Astra's F1 is the second of those —
+ * the consequence was the whole reason the table kept the question, and a row
+ * that dropped it would send the question to the register stripped of the thing
+ * that says why it matters.
+ *
+ * The source is said in the question's own words rather than as a scope, because
+ * the question route scopes by ledger goal id and refuses a record path: a
+ * record is not a goal, and the row would be refused on the first Ask.
+ */
+export function askedFromSitting(entry: Entry, record: string): string {
+  const said = [oneLine(entry.text)];
+  const clause = oneLine(entry.clause);
+  if (clause !== "") {
+    said.push(`leaving it open: ${clause}`);
+  }
+  said.push(`from the sitting on ${record}`);
+  return said.join(" — ");
+}
+
+/**
+ * The ledger goals a record's own head names, which is the scope the question
+ * route takes (g1-s55 F1).
+ *
+ * The record's goals and not the record: a question is scoped by ledger goal id,
+ * so what a question out of this sitting is about is what the record it came out
+ * of says it is about. A record that names none is about the project as a whole,
+ * and the question is too.
+ *
+ * It is read from the head, which is the list before the first section heading.
+ * Fields, as the resolver reads them (internal/project/record.go:199), so a head
+ * naming two goals scopes the question to both.
+ */
+export function goalsIn(source: string): readonly string[] {
+  for (const line of source.split("\n")) {
+    if (/^#{2,6}\s+/.test(line)) {
+      return [];
+    }
+    const named = /^[-*]\s+Goals:\s*(.*)$/i.exec(line);
+    if (named !== null) {
+      return named[1].split(/\s+/).filter((one) => one !== "");
+    }
+  }
+  return [];
 }
 
 /** The one press that writes. */

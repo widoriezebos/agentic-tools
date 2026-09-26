@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { countsIn, entriesIn, entryPath } from "./sitting";
+import { ASK_IT, countsIn, entriesIn, entryPath, sittingChip } from "./sitting";
 import { PartnerAs } from "./store";
 import { SittingTable } from "./Table";
 
@@ -47,7 +47,7 @@ function table(source: string): string {
               purpose: "shape a design",
               startedAt: "2026-09-26T09:00:00Z",
             },
-            table: { counts: countsIn(source), entries: entriesIn(source), revision: "r1" },
+            table: { counts: countsIn(source), entries: entriesIn(source), revision: "r1", source },
           }}
         >
           <SittingTable />
@@ -87,5 +87,45 @@ describe("an entry of the table", () => {
 
     expect(markup).not.toContain("ms-table-entry-link");
     expect(markup).toContain("Nothing has been recorded in this sitting yet.");
+  });
+
+  /**
+   * An open question goes to the register with one press, and nothing else does
+   * (g1-s55 D2).
+   *
+   * It is beside the entry rather than inside its link, because a press inside a
+   * link is a press that navigates — and what this one does is open a sheet over
+   * the page the human is on.
+   */
+  it("offers Ask it on an open question, and on no other pile", () => {
+    const markup = table(SOURCE);
+
+    expect(markup.split("ms-table-ask").length - 1).toBe(1);
+    expect(markup).toContain(`>${ASK_IT}<`);
+    // The fact is not a question, so it carries no press of its own.
+    const upToTheFact = markup.slice(0, markup.indexOf("Open questions"));
+    expect(upToTheFact).not.toContain("ms-table-ask");
+  });
+
+  /**
+   * Resume, from the browser's side: a conversation whose sitting mark stands
+   * comes back with its chip and its table on load (g1-s55 D3).
+   *
+   * There is nothing to submit here and nothing to remember: the sitting is the
+   * server's answer and the table is a reading of the record, so a page that has
+   * just loaded shows both from the snapshot alone. The turn that says what is on
+   * the table is the server's own, decided where it reads the conversation.
+   */
+  it("stands with its subject and its piles on a page that has just loaded", () => {
+    const markup = table(SOURCE);
+
+    expect(markup).toContain("Session limits");
+    expect(markup).toContain("the limit is twelve hours");
+    expect(markup).toContain("what the current limit protects");
+    expect(sittingChip({
+      subject: { kind: "record", id: RECORD, title: "Session limits" },
+      purpose: "shape a design",
+      startedAt: "2026-09-26T09:00:00Z",
+    })).toBe("Sitting: Session limits");
   });
 });

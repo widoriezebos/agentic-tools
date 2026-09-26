@@ -23,6 +23,8 @@ const SEEING = "/api/partner/seeing";
 /** The sitting: one address starts one, and the one under it ends one. */
 const SITTING = "/api/partner/sitting";
 const SITTING_END = "/api/partner/sitting/end";
+/** Drafting the sitting's outcome, which ends nothing. */
+const SITTING_CLOSE = "/api/partner/sitting/close";
 /** Stopping the running turn: the turn's id, with this after it. */
 const STOP = "/stop";
 
@@ -217,7 +219,7 @@ export type Sitting = { subject: Subject; purpose: string; startedAt: string };
  * human's press. A card the human edits before pressing keeps their words.
  */
 export type Deposit = {
-  /** fact, decision or question. */
+  /** fact, decision, question, case or outcome. */
   kind: string;
   /** The entry itself, as the Partner wrote it. */
   text: string;
@@ -225,8 +227,14 @@ export type Deposit = {
   anchor?: string;
   /** The reason the Partner heard for a decision. */
   reason?: string;
-  /** What follows from leaving a question open. */
+  /** What follows from leaving a question — or a case — open. */
   consequence?: string;
+  /**
+   * On a case: the clause it would become, as the Partner heard it, which the
+   * Decide sheet opens with. A case is the one kind offered as a choice between
+   * two entries, so it is the one kind with two clauses.
+   */
+  clause?: string;
   /**
    * The record it was admitted against, stamped by the server from the sitting.
    * The page writes an admitted deposit into that record and no other, so which
@@ -462,6 +470,18 @@ export async function startSitting(asked: {
   about: Page;
 }): Promise<Snapshot> {
   return request<Snapshot>(SITTING, asked);
+}
+
+/**
+ * Ask the Partner to draft the sitting's closing deposit, and read back the
+ * conversation with that turn already in the transcript (g1-s55 D2).
+ *
+ * It ends nothing. The sitting stands until the human has recorded the outcome
+ * or has said they are leaving without it, because the card this turn offers is
+ * admitted against the sitting's subject.
+ */
+export async function closeSitting(about: Page): Promise<Snapshot> {
+  return request<Snapshot>(SITTING_CLOSE, { about });
 }
 
 /** End the sitting. What was recorded stays in the record. */
