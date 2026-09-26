@@ -114,7 +114,7 @@ func (b *processBed) owners() intentOwners {
 			return b.question, nil
 		},
 		mission: func(root, id string) (*missionrunner.Engine, error) { return missionrunner.NewEngine(root, id), nil },
-		ui: func(string, lifecycle.Roots) (uiLifecycleResult, error) {
+		ui: func(string, lifecycle.Roots, uiIntentOptions) (uiLifecycleResult, error) {
 			b.t.Error("the interface lifecycle was called")
 			return uiLifecycleResult{}, errors.New("unexpected")
 		},
@@ -166,7 +166,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if status.Outcome != intentConfirmed || status.Targets[0].ID != result.Targets[0].ID {
 			t.Fatalf("status = %+v", status)
 		}
-		code, doctor := b.runJSON(b.owners(), "doctor")
+		code, doctor := b.runJSON(b.owners(), "check")
 		encoded, _ := json.Marshal(doctor.Data)
 		var preview steward.HookHealthPreview
 		if err := json.Unmarshal(encoded, &preview); err != nil {
@@ -337,7 +337,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code, result := b.runJSON(owners, "stop", "job", "j2:job-c"); code != 0 || result.Outcome != intentConfirmed || len(cancelled) != 1 || !strings.HasSuffix(cancelled[0], " job-c") || !samePath(strings.TrimSuffix(cancelled[0], " job-c"), b.root()) {
 			t.Fatalf("dispatch cancel = %d %+v %v", code, result, cancelled)
 		}
-		if code, result := b.runJSON(owners, "status", "unit", "unit-z"); code != 1 || result.Outcome != intentRefused {
+		if code, result := b.runJSON(owners, "status", "run", "unit-z"); code != 1 || result.Outcome != intentRefused {
 			t.Fatalf("unknown unit = %d %+v", code, result)
 		}
 	})
@@ -418,11 +418,11 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		owners.processes.health = func(string, string, time.Time) steward.HealthVerdict {
 			return steward.HealthVerdict{Aggregate: "unknown", Roles: []steward.RoleVerdict{{Role: steward.RoleStewardRunner, Status: steward.HealthUnknown, Reason: "no tick yet", Remedy: "metasystem start"}}}
 		}
-		code, result := b.runJSON(owners, "doctor")
+		code, result := b.runJSON(owners, "check")
 		if code != 2 || result.Outcome != intentConfirmed {
 			t.Fatalf("unknown doctor = %d %+v", code, result)
 		}
-		_, stdout, _ := b.run(owners, "doctor")
+		_, stdout, _ := b.run(owners, "check")
 		if !strings.Contains(stdout, "unknown: no tick yet; remedy: metasystem start") {
 			t.Fatalf("doctor text dropped the owner remedy: %q", stdout)
 		}
@@ -450,9 +450,6 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			if legacyProcessCall(args) {
 				t.Fatalf("%v stayed on the old handler", args)
 			}
-		}
-		if !legacyUICall([]string{"start"}) || !legacyUICall([]string{"serve"}) || legacyUICall(nil) {
-			t.Fatal("ui routing")
 		}
 		if command, _ := findIntentCommand("start"); command.legacy != nil {
 			t.Fatal("start has no old top-level call to keep")

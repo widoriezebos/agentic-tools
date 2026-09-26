@@ -127,7 +127,6 @@ func (inv *intentInvocation) refuseOthers(allowed []string, names ...string) *in
 
 var (
 	intentSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	intentSHA40Pattern  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	intentTreePattern   = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 )
 
@@ -362,40 +361,6 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 	data["reason"] = state.Reason
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data,
 		Summary: "the coordinator declaration is unreadable: " + state.Reason, next: inv.publicArgv("check"), nextReason: "diagnose the declaration"})
-}
-
-// runIntentSettingsCompatibility shows or records the minimum engine the
-// fleet's seats are asserted to run.
-func runIntentSettingsCompatibility(inv *intentInvocation) int {
-	if inv.input.has("minimum-engine") != inv.input.has("by") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "recording a minimum engine takes --minimum-engine SHA and --by NAME together; nothing was done"})
-	}
-	if commit := inv.input.text("minimum-engine"); commit != "" && !intentSHA40Pattern.MatchString(commit) {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--minimum-engine is a 40-character lowercase engine commit; nothing was done"})
-	}
-	if problem := inv.selectRoot(); problem != nil {
-		return inv.render(*problem)
-	}
-	targets := []intentTarget{{Kind: "compatibility", ID: inv.stateRoot}}
-	if inv.input.has("minimum-engine") {
-		ran, problem := inv.engineVerb("goal", "engine-floor", "--root", inv.stateRoot, "--commit", inv.input.text("minimum-engine"), "--by", inv.input.text("by"))
-		if problem != nil {
-			return inv.render(*problem)
-		}
-		result := ownerVerbResult(ran, targets, "recorded the person's assertion that every seat runs at least engine "+inv.input.text("minimum-engine")+"; no machine was probed", nil)
-		return inv.render(result)
-	}
-	projection, _, problem := inv.projection()
-	if problem != nil {
-		return inv.render(*problem)
-	}
-	floor := goal.EngineFloorOf(projection.Tree.Root)
-	if floor == "" {
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: map[string]any{"minimumEngine": ""},
-			Summary: "no minimum engine is recorded for this ledger"})
-	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: map[string]any{"minimumEngine": floor},
-		Summary: "the recorded minimum engine is " + floor + " (a person's assertion, not a probe of the machines)"})
 }
 
 // runIntentCheck diagnoses without writing: the checkout's machinery, or

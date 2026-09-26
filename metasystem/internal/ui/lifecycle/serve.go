@@ -45,7 +45,7 @@ type AlreadyRunningError struct{ Address string }
 
 func (e *AlreadyRunningError) Error() string {
 	if e.Address != "" {
-		return fmt.Sprintf("an interface server already runs for this checkout at http://%s; stop it with: metasystem ui stop", e.Address)
+		return fmt.Sprintf("an interface server already runs for this checkout at http://%s; stop it with: metasystem stop ui", e.Address)
 	}
 	return "an interface server already runs for this checkout"
 }

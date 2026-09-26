@@ -245,11 +245,6 @@ type VerbRequest struct {
 	abandon     abandonDependencies
 }
 
-// ConfigureAbandon binds the executing engine and fleet view to this request.
-func (r *VerbRequest) ConfigureAbandon(buildStamp func() string, isAncestor func(string, string, string) (bool, error), registryProblems func(string, func(string, string) (bool, error), time.Time) ([]string, error)) {
-	r.abandon = abandonDependencies{buildStamp: buildStamp, isAncestor: isAncestor, registryProblems: registryProblems}
-}
-
 const EpochAuthorityHolder = "holder"
 
 // ClaimEpochForRebind is the single authority for replacing or preserving a

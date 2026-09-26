@@ -372,8 +372,6 @@ func TestNextAndIdleRefusalIgnoreAnAbandonedGoal(t *testing.T) {
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
 	dependencies := projectionDependencies{source: &projectionSource{endpoint: endpoint, machine: "bed-m1"}}
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000J000", "bed-m1"), "only-work", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}

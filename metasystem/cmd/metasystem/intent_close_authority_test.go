@@ -30,7 +30,7 @@ func TestIntentCloseRecordWriterPreflight(t *testing.T) {
 	refused.writeReturn("crit1", 1, "crit1")
 	decisions := refused.root() + "/decisions.md"
 	refused.writeFile(decisions, deliveryDispositionsHeader)
-	code, result := refused.do("close", "crit1", "--dispositions", decisions)
+	code, result := refused.do("done", "job", "crit1", "--dispositions", decisions)
 	data, _ := result.Data.(map[string]any)
 	if code == 0 || result.Outcome != intentRefused || len(refused.calls) != 0 || data["cause"] == nil || result.Next != nil {
 		t.Fatalf("a refused preflight: %d %+v calls=%v", code, result, refused.calls)

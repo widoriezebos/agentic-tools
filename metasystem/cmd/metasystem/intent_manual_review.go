@@ -13,7 +13,7 @@ import (
 
 // reviewSubjectWords are the words review reads as a subject kind rather
 // than a goal id; review goal G reaches every goal, these included.
-var reviewSubjectWords = []string{"design", "job", "unit", "commit", "changes", "diff", "goal"}
+var reviewSubjectWords = []string{"design", "job", "run", "commit", "changes", "diff", "goal"}
 
 // reviewGoalWords is review's goal form: review G, or review goal G when the
 // goal's id is one of review's subject words.

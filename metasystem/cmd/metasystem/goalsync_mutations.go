@@ -37,7 +37,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 type goalRecoveryPolicy struct {
@@ -549,9 +548,6 @@ type syncRequestDependencies struct {
 	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	presence       func(string, goal.Endpoint) (seat.Copy, error)
-	// configureAbandon binds an abandon request to the executing engine's
-	// build and the fleet's engine floor; nil is the production binding.
-	configureAbandon func(*goal.VerbRequest)
 	// report, when set, receives the owner's typed outcome instead of the
 	// printed one; the public intent commands render it themselves.
 	report *ownerReport
@@ -2371,18 +2367,6 @@ func runGoalSetPriority(args []string) int {
 	return runGoalSetPriorityWithAuthority(args, proveEnrolledGoalHumanAuthority)
 }
 
-func configureAbandonFleetFloor(request *goal.VerbRequest) {
-	request.ConfigureAbandon(
-		func() string { return supervise.BuildStamp },
-		func(root, ancestor, descendant string) (bool, error) {
-			return goal.IsAncestor(root, ancestor, descendant)
-		},
-		func(floor string, isAncestor func(a, b string) (bool, error), now time.Time) ([]string, error) {
-			return supervise.EngineFloorProblems(floor, isAncestor, identity.KernelProber{}, now)
-		},
-	)
-}
-
 func runGoalAbandon(args []string) int {
 	return runGoalAbandonWithInputs(args, proveEnrolledGoalHumanAuthority, goalCommandNow, defaultSyncRequestDependencies())
 }
@@ -2420,11 +2404,6 @@ func runGoalAbandonWithInputs(args []string, prove goalAuthorityProver, commandN
 	if err != nil {
 		dependencies.complain(err)
 		return 1
-	}
-	if dependencies.configureAbandon != nil {
-		dependencies.configureAbandon(&request)
-	} else {
-		configureAbandonFleetFloor(&request)
 	}
 	result, err := goal.Abandon(request, *id, goal.AbandonSpec{Because: *because, Carried: *carried, Waive: waive, Also: also}, &proof)
 	return dependencies.publish(result, err)
@@ -2466,39 +2445,6 @@ func runGoalCarryAbandonedWithInputs(args []string, prove goalAuthorityProver, c
 	}
 	result, err := goal.CarryAbandoned(request, *id, *successor, &proof)
 	return dependencies.publish(result, err)
-}
-
-func runGoalEngineFloor(args []string) int {
-	flags := flag.NewFlagSet("goal engine-floor", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	commit := flags.String("commit", "", "40-character lowercase engine commit")
-	by := flags.String("by", "", "the directing human")
-	lineage := flags.String("lineage", "", "this coordinator's lineage")
-	fixtureAuthority := flags.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "goal engine-floor takes no positional arguments")
-		return 2
-	}
-	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal engine-floor works only with the synced backlog; migrate this checkout first")
-		return 1
-	}
-	shared := &syncFlags{root: *root, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
-	proof, err := proveGoalHumanAuthority("engine-floor", shared, proveEnrolledGoalHumanAuthority)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	request, err := syncReqWithProof("engine-floor", *root, *by, *lineage, &proof)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	result, err := goal.EngineFloor(request, *commit, &proof)
-	return printSyncResult(result, err)
 }
 
 func runGoalSetPriorityWithAuthority(args []string, prove goalAuthorityProver) int {

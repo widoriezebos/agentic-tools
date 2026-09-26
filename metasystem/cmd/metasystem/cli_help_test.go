@@ -38,28 +38,14 @@ func TestFamilyHelpAliasesForEveryRegisteredFamily(t *testing.T) {
 	t.Parallel()
 	registered := families()
 	for _, fam := range registered {
-		fam := fam
 		t.Run(fam.name, func(t *testing.T) {
 			t.Parallel()
-			code, want, problem := runCLIHelp([]string{"help", fam.name}, registered)
+			code, want, problem := runCLIHelp([]string{"internal", fam.name, "--help"}, registered)
 			if code != 0 || problem != "" {
-				t.Fatalf("help FAMILY = code %d, stderr %q", code, problem)
+				t.Fatalf("internal FAMILY --help = code %d, stderr %q", code, problem)
 			}
-			aliases := [][]string{{fam.name, "--help"}, {fam.name, "-h"}}
-			if _, public := findIntentCommand(fam.name); public {
-				// A public command's name shows the public command; the
-				// family's own help stays reachable through internal.
-				code, want, problem = runCLIHelp([]string{"internal", fam.name, "--help"}, registered)
-				if code != 0 || problem != "" {
-					t.Fatalf("internal FAMILY --help = code %d, stderr %q", code, problem)
-				}
-				aliases = [][]string{{"internal", fam.name, "-h"}}
-			}
-			for _, args := range aliases {
-				code, got, problem := runCLIHelp(args, registered)
-				if code != 0 || got != want || problem != "" {
-					t.Errorf("%v = code %d, stdout equal %t, stderr %q", args, code, got == want, problem)
-				}
+			if code, got, problem := runCLIHelp([]string{"internal", fam.name, "-h"}, registered); code != 0 || got != want || problem != "" {
+				t.Errorf("internal -h = code %d, stdout equal %t, stderr %q", code, got == want, problem)
 			}
 			if !strings.Contains(want, fam.summary) {
 				t.Errorf("family help omits summary %q", fam.summary)
@@ -70,9 +56,21 @@ func TestFamilyHelpAliasesForEveryRegisteredFamily(t *testing.T) {
 				}
 			}
 			if len(fam.verbs) > 0 {
-				example := "metasystem " + fam.name + " " + fam.verbs[0].name + " --help"
+				example := "metasystem internal " + fam.name + " " + fam.verbs[0].name + " --help"
 				if !strings.Contains(want, example) {
 					t.Errorf("family help omits leaf-flag example %q", example)
+				}
+			}
+			for _, args := range [][]string{{"help", fam.name}, {fam.name, "--help"}, {fam.name, "-h"}} {
+				code, got, problem := runCLIHelp(args, registered)
+				if command, public := findIntentCommand(fam.name); public {
+					var page bytes.Buffer
+					writeIntentHelp(&page, command)
+					if code != 0 || got != page.String() || problem != "" {
+						t.Errorf("%v must show public help: %d %q %q", args, code, got, problem)
+					}
+				} else if code != 2 || got != "" || !strings.Contains(problem, "metasystem help") || strings.Contains(problem, "<verb>") {
+					t.Errorf("%v must refuse without private discovery: %d %q %q", args, code, got, problem)
 				}
 			}
 		})
@@ -85,11 +83,17 @@ func TestFamilyHelpDoesNotInvokeHandler(t *testing.T) {
 	registered := []family{{name: "safe", summary: "safe help", verbs: []verb{{
 		name: "mutate", summary: "must remain idle", run: func([]string) int { called++; return 0 },
 	}}}}
-	for _, args := range [][]string{{"help", "safe"}, {"safe", "--help"}, {"safe", "-h"}} {
+	for _, args := range [][]string{{"internal", "safe", "--help"}, {"internal", "safe", "-h"}} {
 		if code, _, problem := runCLIHelp(args, registered); code != 0 || problem != "" {
 			t.Fatalf("%v = code %d, stderr %q", args, code, problem)
 		}
 	}
+	for _, args := range [][]string{{"help", "safe"}, {"safe"}, {"safe", "--help"}, {"help", "internal"}} {
+		if code, out, problem := runCLIHelp(args, registered); code != 2 || out != "" || !strings.Contains(problem, "metasystem help") {
+			t.Errorf("%v = code %d, stdout %q, stderr %q", args, code, out, problem)
+		}
+	}
+
 	if called != 0 {
 		t.Fatalf("family help invoked a handler %d times", called)
 	}
@@ -97,15 +101,15 @@ func TestFamilyHelpDoesNotInvokeHandler(t *testing.T) {
 
 func TestLaunchFamilyHelpShowsRecordCommands(t *testing.T) {
 	t.Parallel()
-	code, output, problem := runCLIHelp([]string{"launch", "--help"}, families())
+	code, output, problem := runCLIHelp([]string{"internal", "launch", "--help"}, families())
 	if code != 0 || problem != "" {
 		t.Fatalf("launch help = code %d, stderr %q", code, problem)
 	}
 	for _, want := range []string{
-		"metasystem launch start --help",
-		"metasystem launch status --id <id>",
-		"metasystem launch wait --id <id> [--timeout <duration>]",
-		"metasystem launch cancel --id <id>",
+		"metasystem internal launch start --help",
+		"metasystem internal launch status --id <id>",
+		"metasystem internal launch wait --id <id> [--timeout <duration>]",
+		"metasystem internal launch cancel --id <id>",
 		"current user", "~/.metasystem/launch", "--root is not a launch flag",
 	} {
 		if !strings.Contains(output, want) {
@@ -150,9 +154,9 @@ func TestUnknownFamilyHelpAliasErrors(t *testing.T) {
 	}{
 		{[]string{"help", "no-such-family"}, `unknown command "no-such-family"`},
 		{[]string{"no-such-family", "--help"}, `unknown command "no-such-family"`},
-		{[]string{"launch", "no-such-verb"}, `unknown verb "no-such-verb"`},
+		{[]string{"launch", "no-such-verb"}, `unknown command "launch"`},
 		{[]string{"help", "launch", "extra"}, "usage: metasystem help [TOPIC|COMMAND]"},
-		{[]string{"launch", "--help", "extra"}, `unknown verb "--help"`},
+		{[]string{"launch", "--help", "extra"}, `unknown command "launch"`},
 		{[]string{"--help", "extra"}, "usage: metasystem help [TOPIC|COMMAND]"},
 	}
 	for _, test := range cases {
@@ -165,9 +169,9 @@ func TestUnknownFamilyHelpAliasErrors(t *testing.T) {
 
 func TestKnownFamilyVerbErrorsShowOnlyThatFamily(t *testing.T) {
 	t.Parallel()
-	for _, args := range [][]string{{"launch"}, {"launch", "no-such-verb"}} {
+	for _, args := range [][]string{{"internal", "launch"}, {"internal", "launch", "no-such-verb"}} {
 		code, output, problem := runCLIHelp(args, families())
-		if code != 2 || output != "" || !strings.Contains(problem, "usage: metasystem launch <verb> [flags]") || !strings.Contains(problem, "Flags are specific to each verb") || strings.Contains(problem, "usage: metasystem <family> <verb>") {
+		if code != 2 || output != "" || !strings.Contains(problem, "usage: metasystem internal launch <verb> [flags]") || !strings.Contains(problem, "Flags are specific to each verb") || strings.Contains(problem, "usage: metasystem <family> <verb>") {
 			t.Errorf("%v = code %d, stdout %q, stderr %q", args, code, output, problem)
 		}
 	}

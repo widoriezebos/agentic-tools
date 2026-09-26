@@ -83,14 +83,14 @@ func admittedRuntimes(configured string) []manifest.Runtime {
 // commandCatalogue is the public command table in the shape the kit tool
 // reads it, derived from the table main routes with, so a command this binary
 // answers and a command the Partner can describe are the same command. The
-// engine families and compatibility spellings stay callable for scripts and
-// are not part of it.
+// private process protocols are not part of it.
 func commandCatalogue() []uitools.CommandFamily {
 	public := uitools.CommandFamily{Summary: "the public commands: say what you want done; metasystem help lists them by area"}
 	for _, command := range publicIntentCommands() {
-		public.Verbs = append(public.Verbs, uitools.Command{Name: command.name, Summary: command.summary, Usage: command.usage})
+		public.Verbs = append(public.Verbs, uitools.Command{Name: command.name, Summary: command.summary, Scope: command.helpScope(),
+			Usage: command.usage, AdministrationUsage: command.administrationUsage})
 	}
 	public.Verbs = append(public.Verbs,
-		uitools.Command{Name: "help", Summary: "help goals, help work, help questions, help operations, help human, help agent, help all, help COMMAND"})
+		uitools.Command{Name: "help", Summary: "help goals, help work, help questions, help operations, help administration, help human, help agent, help all, help COMMAND; add --json for structured help"})
 	return []uitools.CommandFamily{public}
 }

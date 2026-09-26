@@ -70,7 +70,7 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	bed.releaseHeldBuild(result)
 	launched := len(bed.starter.launched())
 	restore := tamper(t, filepath.Join(inputs.(string), "build-brief.md"))
-	for _, args := range [][]string{{"build", "--resume", run}, {"wait", "unit", run}} {
+	for _, args := range [][]string{{"build", "--resume", run}, {"wait", "run", run}} {
 		code, refused, _ := bed.work(args...)
 		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") || !strings.Contains(refused.Summary, "run="+run) {
 			t.Fatalf("%v after a retained input changed: code=%d %+v", args, code, refused)
@@ -78,14 +78,14 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	}
 	restore()
 	bed.manager.Settings.BuildLinesCap++
-	if code, refused, _ := bed.work("wait", "unit", run); code != 1 || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") {
+	if code, refused, _ := bed.work("wait", "run", run); code != 1 || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") {
 		t.Fatalf("wait unit after a launch setting changed: code=%d %+v", code, refused)
 	}
 	bed.manager.Settings.BuildLinesCap--
 	if len(bed.starter.launched()) != launched {
 		t.Fatalf("a refused continuation launched: %v", bed.starter.launched())
 	}
-	code, result, _ = bed.work("wait", "unit", run)
+	code, result, _ = bed.work("wait", "run", run)
 	if code != 0 || resultData(t, result)["outcome"] != "green" || !slices.Equal(bed.starter.launched()[launched:], []string{"proof", "read"}) {
 		t.Fatalf("restored continuation: code=%d %+v launches=%v", code, result, bed.starter.launched())
 	}
@@ -93,16 +93,23 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	launched = len(bed.starter.launched())
 	restore = tamper(t, filepath.Join(inputs.(string), "read-brief.md"))
 	followUp := bed.brief("follow-up.md", "Fix it.\n")
-	if code, refused, _ := bed.work("fold", "unit", run, "--brief", followUp); code != 1 || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") || len(bed.starter.launched()) != launched {
+	if code, refused, _ := bed.work("revise", "run", run, "--brief", followUp); code != 1 || !strings.Contains(refused.Summary, "UNIT_NAMED_INPUT_CHANGED") || len(bed.starter.launched()) != launched {
 		t.Fatalf("fold after a retained input changed: code=%d %+v", code, refused)
 	}
 	restore()
 	bed.brief("follow-up.md", "Fix it, differently.\n")
-	code, result, _ = bed.work("fold", "unit", run, "--brief", followUp)
+	// The run keeps its own plan, proof and round limit: a goal's attempt,
+	// work item or decisions file is refused before the runner is asked.
+	for _, conflict := range [][]string{{"--after", "1"}, {"--work", "guarded"}, {"--dispositions", followUp}} {
+		if code, refused, _ := bed.work(append([]string{"revise", "run", run, "--brief", followUp}, conflict...)...); code != 2 || refused.Outcome != intentRefused || len(bed.starter.launched()) != launched {
+			t.Fatalf("revise run with %v: code=%d %+v", conflict, code, refused)
+		}
+	}
+	code, result, _ = bed.work("revise", "run", run, "--brief", followUp)
 	if code != 0 || resultData(t, result)["round"].(float64) != 2 || resultData(t, result)["maxRounds"].(float64) != 2 {
 		t.Fatalf("fold with its own brief: code=%d %+v", code, result)
 	}
-	if code, refused, _ := bed.work("fold", "unit", run, "--brief", followUp); code != 1 || !strings.Contains(refused.Summary, "UNIT_ROUND_LIMIT") {
+	if code, refused, _ := bed.work("revise", "run", run, "--brief", followUp); code != 1 || !strings.Contains(refused.Summary, "UNIT_ROUND_LIMIT") {
 		t.Fatalf("round past the limit: code=%d %+v", code, refused)
 	}
 
@@ -116,7 +123,7 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	if err != nil || plan.Unit != "guarded" {
 		t.Fatalf("legacy plan: %v", err)
 	}
-	if code, result, _ = bed.work("wait", "unit", legacy.Record.ID); code != 0 || resultData(t, result)["run"] != legacy.Record.ID {
+	if code, result, _ = bed.work("wait", "run", legacy.Record.ID); code != 0 || resultData(t, result)["run"] != legacy.Record.ID {
 		t.Fatalf("legacy continuation: code=%d %+v", code, result)
 	}
 }
@@ -205,7 +212,7 @@ func TestIntentReadFindingsInSandboxTemp(t *testing.T) {
 	if err := os.Remove(filepath.Dir(output)); err != nil {
 		t.Fatal(err)
 	}
-	code, result, _ = bed.work("fold", "unit", data["run"].(string), "--brief", bed.brief("follow-up.md", "Again.\n"))
+	code, result, _ = bed.work("revise", "run", data["run"].(string), "--brief", bed.brief("follow-up.md", "Again.\n"))
 	info, err := os.Lstat(filepath.Dir(output))
 	if code != 0 || resultData(t, result)["readClean"] != true || err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
 		t.Fatalf("read after the findings directory was cleaned: code=%d %+v info=%v err=%v", code, result, info, err)

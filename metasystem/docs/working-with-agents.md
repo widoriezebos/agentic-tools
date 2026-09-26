@@ -67,11 +67,11 @@ metasystem resume faster-landing              # back on its standing approved bu
 metasystem done faster-landing --reason "landed in 3f2a1c0, verified live"   # only once it has actually landed and been verified
 ```
 
-The same pattern covers opening and editing goals (`open`, `edit`), starting, stopping and restarting this checkout, the browser interface, a mission or a new machine (`start`, `stop`, `restart`, `start ui`, `start mission M`, `start machine NAME`), enrolling your terminal (`enroll --name NAME`), answering a question (`answer Q [TEXT]`), accepting a finding's risk (`accept-risk`), diagnosing and repairing (`check`, `repair`), and settings (`settings`, `settings coordinator`, `settings compatibility`). Agents use the matching agent actions (`claim`, `brief`, `build`, `review`, `revise`, `wait`, `land`, `ask`), listed by `metasystem help agent`; `metasystem help all` lists every command.
+The same pattern covers opening and editing goals (`open`, `edit`), starting, stopping and restarting this checkout, the browser interface, a mission or a new machine (`start`, `stop`, `restart`, `start ui`, `start mission M`, `start machine NAME`), enrolling your terminal (`enroll --name NAME`), answering a question (`answer Q [TEXT]`), accepting a finding's risk (`accept-risk`), diagnosing and repairing (`check`, `repair`), and settings (`settings`, `settings coordinator`). Agents use the matching agent actions (`claim`, `brief`, `build`, `review`, `revise`, `wait`, `land`, `ask`), listed by `metasystem help agent`; `metasystem help all` lists every command.
 
 Two things these commands never do on your behalf. They never make a decision that is yours: when a human act or a missing answer is needed, the command stops and names it rather than guessing. And a successful `build` ends awaiting review: built, proved and given a preliminary read that is feedback only; `review G` then has the result examined independently, completes it when there are no findings, and asks for your decisions when there are. Landing and concluding a goal stay separate, explicit acts.
 
-The old technical commands (`metasystem goal …`, `delegate`, `launch …`) still work for existing scripts and maintainer diagnosis; no ordinary task needs them.
+Use `metasystem help administration` for MetaSystem setup and maintenance. Application work is listed separately in human, agent and command help.
 
 ## Your recurring duties
 

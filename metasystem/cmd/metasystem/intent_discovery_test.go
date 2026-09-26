@@ -68,13 +68,14 @@ func TestIntentPublicDiscovery(t *testing.T) {
 	if code != 2 || out != "" || !strings.Contains(problem, "did you mean: metasystem build") || strings.Contains(problem, "internal") {
 		t.Errorf("unknown word = %d %q %q", code, out, problem)
 	}
-	// Compatibility spellings keep routing and say what replaced them.
-	for name, current := range map[string]string{"doctor": "metasystem check", "red": "metasystem incidents", "ready": "metasystem land G --queue-only"} {
-		command, ok := findIntentCommand(name)
-		var help bytes.Buffer
-		writeIntentCommandHelp(&help, command)
-		if !ok || !command.compatibility || !strings.Contains(help.String(), current) {
-			t.Errorf("%s = %t %t %q", name, ok, command.compatibility, help.String())
+	// The removed intent spellings have no descriptor and no help page.
+	for _, name := range removedIntentAliases {
+		if _, ok := findIntentCommand(name); ok {
+			t.Errorf("%s is still a public descriptor", name)
+		}
+
+		if code, out, _ := runCLIHelp([]string{"help", name}, registered); code == 0 || out != "" {
+			t.Errorf("help %s = code %d stdout %q; a removed spelling is refused", name, code, out)
 		}
 	}
 }
@@ -89,6 +90,25 @@ func TestRealPartnerPublicCatalogue(t *testing.T) {
 	if !strings.Contains(build, "metasystem build") || !strings.Contains(build, "metasystem build G [--work NAME] --brief FILE --check COMMAND...") {
 		t.Errorf("kit build = %q", build)
 	}
+	status := readers.Answer(uitools.OpKit, uitools.Args{"topic": "metasystem status"}).Text()
+	for _, want := range []string{"metasystem status G", "MetaSystem administration forms:", "metasystem status [checkout]"} {
+		if !strings.Contains(status, want) {
+			t.Errorf("kit status omits %q: %q", want, status)
+		}
+	}
+	settings := readers.Answer(uitools.OpKit, uitools.Args{"topic": "metasystem settings"}).Text()
+	if !strings.Contains(settings, "MetaSystem administration:") {
+		t.Errorf("kit settings omits its administration scope: %q", settings)
+	}
+	for _, command := range commandCatalogue()[0].Verbs {
+		if command.Name == "status" && (command.Scope != "mixed" || len(command.AdministrationUsage) == 0 || len(command.Usage) == 0) {
+			t.Errorf("Partner lost status forms or scope: %+v", command)
+		}
+		if command.Name == "settings" && command.Scope != "administration" {
+			t.Errorf("Partner lost settings scope: %+v", command)
+		}
+	}
+
 	for _, topic := range []string{"build", "review", "goal", "launch"} {
 		text := readers.Answer(uitools.OpKit, uitools.Args{"topic": topic}).Text()
 		for _, leak := range []string{"metasystem metasystem", "metasystem goal ", "metasystem launch ", "internal"} {

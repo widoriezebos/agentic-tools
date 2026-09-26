@@ -65,7 +65,7 @@ func runningResult(rec *Record, digest func() (string, error)) Result {
 	if err != nil {
 		result.Lines = append(result.Lines, "cannot read the executable on disk to compare builds: "+err.Error())
 	} else if ExecutableChanged(*rec, current) {
-		result.Lines = append(result.Lines, "the executable on disk differs from the one the interface is running; to pick it up: metasystem ui restart")
+		result.Lines = append(result.Lines, "the executable on disk differs from the one the interface is running; to pick it up: metasystem restart ui")
 	}
 	return result
 }

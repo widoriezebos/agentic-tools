@@ -31,8 +31,6 @@ func TestAbandonAllowsACarrySuccessor(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000E000")
 	for index, id := range []string{"older", "successor", "dependent"} {
 		request := verbReqFor(endpoint, []string{"01J5X00000000000000000E010", "01J5X00000000000000000E011", "01J5X00000000000000000E012"}[index], "mac-a")
 		request.Actor.Human = "Wido"
@@ -81,8 +79,6 @@ func TestAbandonLeavesEarlierSuccessorRecordsIntact(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000E100")
 	for index, id := range []string{"older", "successor", "later"} {
 		request := verbReqFor(endpoint, []string{"01J5X00000000000000000E110", "01J5X00000000000000000E111", "01J5X00000000000000000E112"}[index], "mac-a")
 		request.Actor.Human = "Wido"
@@ -140,11 +136,6 @@ func verbReq(root, ulid, machine string) VerbRequest {
 		ClaimEpoch:      1,
 		ParkBranchCheck: func(string, string) (string, error) { return "", nil },
 	}
-	request.ConfigureAbandon(
-		func() string { return strings.Repeat("a", 40) },
-		func(string, string, string) (bool, error) { return true, nil },
-		func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil },
-	)
 	return request
 }
 
@@ -197,40 +188,6 @@ func seedLedger(t *testing.T, root string) {
 	})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("seed: %+v %v", res, err)
-	}
-}
-
-func TestEngineFloorIsAProvenHumanRootHistoryLine(t *testing.T) {
-	t.Parallel()
-	endpoint, _ := fakeGoalEndpoint(t)
-	root := endpoint.Root
-	req := verbReqFor(endpoint, "01J5X000000000000000000EF0", "mac-a")
-	req.Actor.Human = "Wido"
-	commit := strings.Repeat("a", 40)
-	before, err := Project(endpoint, false, req.Now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := EngineFloor(req, commit, nil); err == nil || err.Error() != "engine-floor requires freshly observed enrolled-terminal human authority" {
-		t.Fatalf("engine-floor without proof = %v", err)
-	}
-	result, err := EngineFloor(req, commit, goalHumanProof(t, root, req.Now))
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("engine-floor: %+v %v", result, err)
-	}
-	tree, err := loadTreeFor(endpoint, result.Tip)
-	if err != nil {
-		t.Fatal(err)
-	}
-	line := tree.Root.History[len(tree.Root.History)-1]
-	if line.Verb != "engine-floor" || line.Actor != "human:Wido" || line.Reason != commit+" every enrolled seat runs this engine or newer" {
-		t.Fatalf("wrong engine-floor history line: %+v", line)
-	}
-	if tree.Root.Revision != before.Tree.Root.Revision+1 {
-		t.Fatalf("root revision = %d, want %d", tree.Root.Revision, before.Tree.Root.Revision+1)
-	}
-	if parsed, problems := ParseRoot(RenderRoot(tree.Root)); parsed == nil || len(problems) != 0 {
-		t.Fatalf("published root does not parse clean: root=%+v problems=%v", parsed, problems)
 	}
 }
 
@@ -1281,8 +1238,6 @@ func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *t
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X000000000000000001R00")
 	for index, id := range []string{"reopen-abandoned", "reopen-successor"} {
 		ulid := []string{"01J5X000000000000000001R10", "01J5X000000000000000001R20"}[index]
 		if result, err := Open(verbReqFor(endpoint, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
@@ -1497,8 +1452,6 @@ func TestPruneRetainsAbandonedGoalsAndTheirPrerequisitesOutsideKeep(t *testing.T
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X0000000000000000000A0")
 	archive := func(ulid, id string, blocked []string) {
 		t.Helper()
 		if result, err := Open(verbReqFor(endpoint, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {

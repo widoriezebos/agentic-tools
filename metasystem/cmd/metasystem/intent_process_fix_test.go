@@ -123,7 +123,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 		if record, _ := stopfence.Read(installation); record.Generation != 0 {
 			t.Fatalf("stop wrote a second fence inside the installation: %+v", record)
 		}
-		code, doctor := run("doctor")
+		code, doctor := run("check")
 		encoded, _ := json.Marshal(doctor.Data)
 		var preview steward.HookHealthPreview
 		if err := json.Unmarshal(encoded, &preview); err != nil || !preview.Verdict.Stopped || code != preview.ExitCode {
@@ -274,7 +274,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 		startCode := 0
 		starts := 0
 		owners := b.owners()
-		owners.processes.ui = func(verb string, _ lifecycle.Roots) (uiLifecycleResult, error) {
+		owners.processes.ui = func(verb string, _ lifecycle.Roots, _ uiIntentOptions) (uiLifecycleResult, error) {
 			if verb == "status" {
 				result, state := lifecycle.StatusReport(stateRoot, identity.KernelProber{}, nil)
 				return uiLifecycleResult{Result: result, State: state}, nil
@@ -288,7 +288,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 			})
 			return uiLifecycleResult{Result: report.Result, Restart: &report}, nil
 		}
-		code, result := b.runJSON(owners, "ui")
+		code, result := b.runJSON(owners, "status", "ui")
 		if code != 1 || result.Outcome != intentConfirmed || result.Data.(map[string]any)["state"] != string(lifecycle.Stopped) {
 			t.Fatalf("ui status = %d %+v", code, result)
 		}
@@ -297,10 +297,10 @@ func TestIntentProcessCorrections(t *testing.T) {
 		}
 		startCode = 1
 		code, result = b.runJSON(owners, "restart", "ui")
-		if code == 0 || result.Outcome != intentPartial || starts != 2 || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "ui", "start"}) {
+		if code == 0 || result.Outcome != intentPartial || starts != 2 || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "start", "ui"}) {
 			t.Fatalf("restart ui that cannot start = %d %+v", code, result)
 		}
-		owners.processes.ui = func(string, lifecycle.Roots) (uiLifecycleResult, error) {
+		owners.processes.ui = func(string, lifecycle.Roots, uiIntentOptions) (uiLifecycleResult, error) {
 			return uiLifecycleResult{}, errors.New("no interface installation")
 		}
 		if code, result := b.runJSON(owners, "restart", "ui"); code != 1 || result.Outcome != intentRefused {
@@ -439,7 +439,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 		t.Parallel()
 		b := newAdoptedBed(t)
 		var seen []lifecycle.Roots
-		b.owners.processes.ui = func(verb string, roots lifecycle.Roots) (uiLifecycleResult, error) {
+		b.owners.processes.ui = func(verb string, roots lifecycle.Roots, _ uiIntentOptions) (uiLifecycleResult, error) {
 			seen = append(seen, roots)
 			result, state := lifecycle.StatusReport(roots.StateRoot, identity.KernelProber{}, nil)
 			return uiLifecycleResult{Result: result, State: state}, nil
@@ -447,7 +447,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 		for _, call := range []struct {
 			cwd  string
 			args []string
-		}{{b.app, []string{"ui", "--installation", b.installation}}, {b.installation, []string{"ui"}}, {t.TempDir(), []string{"ui", "--repo", b.app, "--installation", b.installation}}} {
+		}{{b.app, []string{"status", "ui", "--installation", b.installation}}, {b.installation, []string{"status", "ui"}}, {t.TempDir(), []string{"status", "ui", "--repo", b.app, "--installation", b.installation}}} {
 			code, result := b.run(call.cwd, call.args...)
 			if code != 1 || result.Outcome != intentConfirmed || result.Data.(map[string]any)["state"] != string(lifecycle.Stopped) {
 				t.Fatalf("%v from %s = %d %+v", call.args, call.cwd, code, result)

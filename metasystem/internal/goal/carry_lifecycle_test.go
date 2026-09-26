@@ -400,8 +400,6 @@ func openCarryWordForAbandonTestFor(t *testing.T, base time.Time) (endpoint, oth
 	t.Helper()
 	endpoint, other, human = carryBedFor(t, base)
 	root := endpoint.Root
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000D000")
 	proof = testHumanAuthority(t, root, base)
 	word = CarryArgs{
 		Goal: "g", Workspace: strings.Repeat("a", 40), Past: "missing-declaration",
@@ -505,8 +503,6 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		t.Parallel()
 		endpoint, _, human := carryBedFor(t, base)
 		root := endpoint.Root
-		configureAbandonFloorTest(t, strings.Repeat("a", 40))
-		recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000D050")
 		open := carryVerb(human, "01J5X00000000000000000D051", 1)
 		if result, err := Open(open, "child", "Carry the dependent.", OriginHuman, "Land it."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open child: %+v %v", result, err)
@@ -821,8 +817,6 @@ func TestAbandonKeepsClosedCarryHistoryVisible(t *testing.T) {
 		t.Parallel()
 		endpoint, _, human := carryBedFor(t, base.Add(3*time.Hour))
 		root := endpoint.Root
-		configureAbandonFloorTest(t, strings.Repeat("a", 40))
-		recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000D0A0")
 		proof := testHumanAuthority(t, root, base.Add(3*time.Hour))
 		firstRequest := carryVerb(human, "01J5X00000000000000000D0A1", 1)
 		firstArgs := CarryArgs{Goal: "g", Workspace: strings.Repeat("e", 40), Past: "missing-declaration", Why: "first bounded word", Expires: base.Add(5 * time.Hour), RaiseFormat: true}

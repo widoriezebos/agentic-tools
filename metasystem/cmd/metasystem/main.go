@@ -36,11 +36,7 @@ func families() []family {
 			name:    "ui",
 			summary: "the checkout's browser interface",
 			verbs: []verb{
-				{"start", "start the interface server", runUIStart},
 				{"serve", "serve the interface in the foreground (internal)", runUIServe},
-				{"status", "show the interface server and executable state", runUIStatus},
-				{"stop", "stop the interface server", runUIStop},
-				{"restart", "restart the interface with the executable on disk", runUIRestart},
 				{"tools", "serve the interface's read tools to the Project Partner over stdio (internal)", runUITools},
 			},
 		},
@@ -577,7 +573,6 @@ func families() []family {
 				{"open", "declare a goal; Current when none exists, queued otherwise", runGoalOpen},
 				{"abandon", "human-only: record that a goal will never be worked and why; retained with its reason, satisfies no dependency, never pruned, reopenable", runGoalAbandon},
 				{"carry", "human-only: name the live successor carrying an abandoned goal, or carry a landing past one named refusal or testing group", runGoalCarry},
-				{"engine-floor", "human-only: record the oldest engine commit every enrolled seat runs; the first abandon refuses without it", runGoalEngineFloor},
 				{"set-next", "rewrite the Current goal's next step", runGoalSetNext},
 				{"read-items", "record, close, or list non-breaking read findings", runGoalReadItems},
 				{"promote", "move a queued goal to Current", runGoalPromote},
@@ -785,33 +780,7 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 		return 0
 	}
 	if args[0] == "help" {
-		if len(args) == 1 {
-			writeIntentRootHelp(stdout)
-			return 0
-		}
-		if len(args) != 2 {
-			fmt.Fprintln(stderr, "usage: metasystem help [TOPIC|COMMAND]")
-			fmt.Fprintln(stderr, "       metasystem help goals|work|questions|operations|human|agent|all|COMMAND")
-			return 2
-		}
-		if command, ok := findIntentCommand(args[1]); ok {
-			writeIntentHelp(stdout, command)
-			return 0
-		}
-		if intentTopic(args[1]) {
-			writeIntentTopicHelp(stdout, args[1], registered)
-			return 0
-		}
-		// A family's own help stays available to the scripts that ask for
-		// it by name; no public page lists the families.
-		for _, fam := range registered {
-			if fam.name == args[1] {
-				writeFamilyHelp(stdout, fam)
-				return 0
-			}
-		}
-		writeUnknownIntentCommand(stderr, args[1])
-		return 2
+		return runIntentHelp(args[1:], stdout, stderr)
 	}
 	if args[0] == "--help" || args[0] == "-h" {
 		if len(args) != 1 {
@@ -822,9 +791,8 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 		return 0
 	}
 	if args[0] == "internal" {
-		// A pure alias: the technical catalogue exactly as its own calls.
-		if len(args) == 1 || args[1] == "--help" || args[1] == "-h" {
-			writeIntentTopicHelp(stdout, "internal", registered)
+		if len(args) == 1 || len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+			writeInternalUsage(stdout, registered)
 			return 0
 		}
 		return dispatchInternal(args[1:], stdout, stderr, registered, repositoryTop)
@@ -835,6 +803,12 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 	}
 	if command, ok := findIntentCommand(args[0]); ok && (command.legacy == nil || !command.legacy(args[1:])) && !intentYieldsToLegacy(args, registered) {
 		return runIntent(command, args[1:], stdout, stderr, defaultIntentOwners())
+	}
+	// Machinery callers use complete protocol invocations. Its discovery is
+	// confined to the explicit internal entry so public help stays task-based.
+	if _, public := findIntentCommand(args[0]); !public && (isFamilyName(registered, args[0]) && !intentYieldsToLegacy(args, registered) || slices.Contains(args[1:], "--help") || slices.Contains(args[1:], "-h")) {
+		writeUnknownIntentCommand(stderr, args[0])
+		return 2
 	}
 	return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
 }
@@ -910,41 +884,48 @@ func writeUnknownIntentCommand(w io.Writer, name string) {
 }
 
 func writeFamilyHelp(w io.Writer, fam family) {
-	fmt.Fprintf(w, "usage: metasystem %s <verb> [flags]\n%s\n", fam.name, fam.summary)
+	fmt.Fprintf(w, "usage: metasystem internal %s <verb> [flags]\n%s\n", fam.name, fam.summary)
 	for _, command := range fam.verbs {
 		fmt.Fprintf(w, "  %-14s %s\n", command.name, command.summary)
 	}
 	if len(fam.verbs) > 0 {
-		fmt.Fprintf(w, "example: metasystem %s %s --help (show leaf flags)\n", fam.name, fam.verbs[0].name)
+		fmt.Fprintf(w, "example: metasystem internal %s %s --help (show leaf flags)\n", fam.name, fam.verbs[0].name)
 	}
 	fmt.Fprintln(w, "Flags are specific to each verb; use the verb help before adding options such as --root or --dir.")
 	if fam.name == "launch" {
-		fmt.Fprintln(w, "example: metasystem launch status --id <id>")
-		fmt.Fprintln(w, "example: metasystem launch wait --id <id> [--timeout <duration>]")
-		fmt.Fprintln(w, "example: metasystem launch cancel --id <id>")
+		fmt.Fprintln(w, "example: metasystem internal launch status --id <id>")
+		fmt.Fprintln(w, "example: metasystem internal launch wait --id <id> [--timeout <duration>]")
+		fmt.Fprintln(w, "example: metasystem internal launch cancel --id <id>")
 		fmt.Fprintln(w, "Launch records belong to the current user under ~/.metasystem/launch; they are not selected by repository.")
 		fmt.Fprintln(w, "--root is not a launch flag. Use --id to select a launch record.")
 	}
 }
 
+func writeInternalUsage(w io.Writer, registered []family) {
+	fmt.Fprintln(w, "MetaSystem machinery: maintainer reference for current process protocols.")
+	fmt.Fprintln(w, "For application tasks, use metasystem help. These handlers keep their own authority checks.")
+	fmt.Fprintln(w)
+	writeUsage(w, registered)
+}
+
 func writeUsage(w io.Writer, registered []family) {
-	fmt.Fprintln(w, "usage: metasystem <family> <verb> [flags]")
-	fmt.Fprintln(w, "       metasystem up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
-	fmt.Fprintln(w, "       metasystem up --print-scheduler-entry [--repo <checkout>]")
-	fmt.Fprintln(w, "       metasystem stop [--repo <path>] [--installation <dir>] [--all]")
-	fmt.Fprintln(w, "       metasystem status [--repo <path>] [--installation <dir>] [--all]")
-	fmt.Fprintln(w, "       metasystem arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")
-	fmt.Fprintln(w, "       metasystem health --repo <checkout>")
-	fmt.Fprintln(w, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
-	fmt.Fprintln(w, "       metasystem watch [--root <checkout>] [--json]")
-	fmt.Fprintln(w, "       metasystem watch --job <id> [--root <checkout>] [--poll-ms <milliseconds>]")
-	fmt.Fprintln(w, "       metasystem wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--path <absolute-path> --until <present|absent>|--resume <wait-id>) [--timeout <duration>] [--json]")
-	fmt.Fprintln(w, "       metasystem wait register --pid <pid> --label <text> [--job <id>] [--timeout <duration>] [--json]")
-	fmt.Fprintln(w, "       metasystem wait register --human --question <text> --timeout <duration> [--json]")
-	fmt.Fprintln(w, "       metasystem wait end --wait-id <id> [--json]")
-	fmt.Fprintln(w, "       metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
-	fmt.Fprintln(w, "       metasystem delegate --follow-up <job> --brief <file>")
-	fmt.Fprintln(w, "       metasystem delegate --cancel <job>")
+	fmt.Fprintln(w, "usage: metasystem internal <family> <verb> [flags]")
+	fmt.Fprintln(w, "       metasystem internal up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
+	fmt.Fprintln(w, "       metasystem internal up --print-scheduler-entry [--repo <checkout>]")
+	fmt.Fprintln(w, "       metasystem internal stop [--repo <path>] [--installation <dir>] [--all]")
+	fmt.Fprintln(w, "       metasystem internal status [--repo <path>] [--installation <dir>] [--all]")
+	fmt.Fprintln(w, "       metasystem internal arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")
+	fmt.Fprintln(w, "       metasystem internal health --repo <checkout>")
+	fmt.Fprintln(w, "       metasystem internal health acknowledge-alert --episode <id> [--repo <checkout>]")
+	fmt.Fprintln(w, "       metasystem internal watch [--root <checkout>] [--json]")
+	fmt.Fprintln(w, "       metasystem internal watch --job <id> [--root <checkout>] [--poll-ms <milliseconds>]")
+	fmt.Fprintln(w, "       metasystem internal wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--path <absolute-path> --until <present|absent>|--resume <wait-id>) [--timeout <duration>] [--json]")
+	fmt.Fprintln(w, "       metasystem internal wait register --pid <pid> --label <text> [--job <id>] [--timeout <duration>] [--json]")
+	fmt.Fprintln(w, "       metasystem internal wait register --human --question <text> --timeout <duration> [--json]")
+	fmt.Fprintln(w, "       metasystem internal wait end --wait-id <id> [--json]")
+	fmt.Fprintln(w, "       metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
+	fmt.Fprintln(w, "       metasystem internal delegate --follow-up <job> --brief <file>")
+	fmt.Fprintln(w, "       metasystem internal delegate --cancel <job>")
 	for _, fam := range registered {
 		fmt.Fprintf(w, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {

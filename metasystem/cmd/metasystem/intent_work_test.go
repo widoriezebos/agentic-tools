@@ -503,7 +503,7 @@ func TestIntentBuildResume(t *testing.T) {
 	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof"}) {
 		t.Fatalf("a red proof still read: %v", launched)
 	}
-	for _, again := range [][]string{args, {"build", "--resume", run}, {"wait", "unit", run}} {
+	for _, again := range [][]string{args, {"build", "--resume", run}, {"wait", "run", run}} {
 		code, repeat, _ := bed.work(again...)
 		if code != 0 || resultData(t, repeat)["run"] != run || resultData(t, repeat)["outcome"] != "proof-red" || len(bed.starter.launched()) != 2 {
 			t.Fatalf("%v: code=%d %+v launches=%v", again, code, repeat, bed.starter.launched())
@@ -516,7 +516,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	delete(bed.starter.fail, "proof")
 	followUp := bed.brief("follow-up.md", "Fix the red proof.\n")
-	code, result, _ = bed.work("fold", "unit", run, "--brief", followUp)
+	code, result, _ = bed.work("revise", "run", run, "--brief", followUp)
 	data = resultData(t, result)
 	if code != 0 || result.Outcome != intentConfirmed || data["run"] != run || data["round"].(float64) != 2 || data["outcome"] != "green" || data["state"] != "awaiting-judgement" {
 		t.Fatalf("follow-up: code=%d %+v", code, result)
@@ -539,7 +539,7 @@ func TestIntentBuildResume(t *testing.T) {
 		record.State, record.ExitCode = launch.Completed, &exit
 		return nil
 	})
-	code, result, _ = bed.work("wait", "unit", heldRun)
+	code, result, _ = bed.work("wait", "run", heldRun)
 	if code != 0 || result.Outcome != intentConfirmed || resultData(t, result)["outcome"] != "green" {
 		t.Fatalf("continued wait: code=%d %+v", code, result)
 	}

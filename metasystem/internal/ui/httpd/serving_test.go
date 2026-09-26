@@ -181,7 +181,7 @@ func TestAbsentBundleStatesWhatIsMissing(t *testing.T) {
 			page := request(t, served, http.MethodGet, "/", "127.0.0.1:7878", nil)
 			testutil.Expect(t, "page status", page.Code, http.StatusServiceUnavailable)
 			testutil.Expect(t, "page content type", page.Header().Get("Content-Type"), "text/plain; charset=utf-8")
-			testutil.Expect(t, "page body", page.Body.String(), "MetaSystem interface: this executable was built without the interface bundle. Rebuild it from a checkout that contains internal/ui/web/bundle/dist, then run: metasystem ui restart")
+			testutil.Expect(t, "page body", page.Body.String(), "MetaSystem interface: this executable was built without the interface bundle. Rebuild it from a checkout that contains internal/ui/web/bundle/dist, then run: metasystem restart ui")
 
 			deep := request(t, served, http.MethodGet, "/some/deep/path", "127.0.0.1:7878", map[string]string{"Accept": "text/html"})
 			testutil.Expect(t, "deep page status", deep.Code, http.StatusServiceUnavailable)

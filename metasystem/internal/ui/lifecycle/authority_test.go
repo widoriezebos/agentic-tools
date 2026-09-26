@@ -19,7 +19,7 @@ func TestStatusReportsWhatTheBootProofFound(t *testing.T) {
 
 	for name, line := range map[string]string{
 		"proven":     "acting as human:Wido — proven at the enrolled terminal",
-		"not proven": "not proven: the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem ui restart to act as yourself",
+		"not proven": "not proven: the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem restart ui to act as yourself",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

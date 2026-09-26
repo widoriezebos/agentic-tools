@@ -281,8 +281,6 @@ func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
 	t.Run("abandon --also member", func(t *testing.T) {
 		t.Parallel()
 		endpoint, peer := readItemBed(t, "abandon-parent", "abandon-child")
-		configureAbandonFloorTest(t, strings.Repeat("a", 40))
-		recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000RT00")
 		blocked := []string{"abandon-parent"}
 		if result, err := Edit(readItemRequest(endpoint, 110), "abandon-child", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("block child: %+v %v", result, err)

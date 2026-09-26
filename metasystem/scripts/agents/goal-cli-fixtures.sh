@@ -1093,22 +1093,6 @@ if [[ "$fixture_scenario" == abandoned-with-a-reason ]]; then
   grep -q 'only goal resume may clear its launch fence' <<<"$release_refusal" \
     || { echo "release did not preserve the launch fence: $release_refusal" >&2; exit 1; }
 
-  if floor_refusal=$("$ms" goal abandon --root "$clone" --id abandon-a --by Wido --because fixture --fixture-human-authority 2>&1); then
-    echo "abandon succeeded without an engine floor" >&2; exit 1
-  fi
-  grep -q 'ledger has no record that the fleet runs it' <<<"$floor_refusal" \
-    || { echo "abandon did not name the missing fleet floor: $floor_refusal" >&2; exit 1; }
-  engine_status=$("$ms" supervise status --repo "$clone")
-  engine_stamp=$("$ms" json get --value "$engine_status" --field engineBuild)
-  if [[ "$engine_stamp" =~ ^dev-([0-9a-f]{40})-dirty$ ]]; then
-    engine_commit=${BASH_REMATCH[1]}
-  elif [[ "$engine_stamp" =~ ^[0-9a-f]{40}$ ]]; then
-    engine_commit=$engine_stamp
-  else
-    echo "fixture binary has no source-linked build stamp: $engine_stamp" >&2; exit 1
-  fi
-  git -C "$clone" fetch -q "$(git -C "$root" rev-parse --show-toplevel)" "$engine_commit"
-  "$ms" goal engine-floor --root "$clone" --commit "$engine_commit" --by Wido --fixture-human-authority >/dev/null
   if dependent_refusal=$("$ms" goal abandon --root "$clone" --id abandon-a --by Wido --because fixture --fixture-human-authority 2>&1); then
     echo "abandon succeeded with an uncovered dependent" >&2; exit 1
   fi

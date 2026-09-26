@@ -160,15 +160,6 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentRelease,
 		},
 		{
-			name: "ready", group: "work", compatibility: true, replacedBy: "metasystem land G --queue-only", audience: "agent", summary: "mark the held goal built and waiting to land",
-			usage:    []string{"metasystem ready [G]"},
-			details:  []string{"The claim leaves the one-claim quota and its elapsed fence until it lands. It is the claim holder's own act."},
-			flags:    []intentFlag{intentTargetFlag, intentLineageFlag},
-			maxArgs:  1,
-			examples: []string{"metasystem ready verbs-match-intent"},
-			run:      runIntentReady,
-		},
-		{
 			name: "accept-risk", group: "goals", audience: "human", summary: "accept the risk of one severe or unproven review finding",
 			usage: []string{"metasystem accept-risk G --finding F [--review R] --reason TEXT"},
 			details: []string{
@@ -185,24 +176,6 @@ func intentPlanningCommands() []intentCommand {
 			maxArgs:  1,
 			examples: []string{"metasystem accept-risk verbs-match-intent --finding S-1 --reason 'the exposure is local and reversible'"},
 			run:      runIntentAcceptRisk,
-		},
-		{
-			name: "decide", group: "goals", compatibility: true, replacedBy: "metasystem accept-risk G --finding F --reason TEXT", audience: "human", summary: "accept the risk of one severe or unproven review finding",
-			usage: []string{"metasystem decide G --finding F --review R --reason TEXT"},
-			details: []string{
-				"R is any job of the review; its chain root is read from the recorded job. human-carried names a carried finding.",
-				"Records your risk decision on the goal and applies it to the review; a partial result says what still needs to complete.",
-			},
-			flags: withFlags([]intentFlag{
-				intentTargetFlag,
-				{name: "finding", value: "F", usage: "the finding id"},
-				{name: "review", aliases: []string{"chain"}, value: "R", usage: "the review job (or its chain root)"},
-				reasonFlag("why", "why the risk is accepted"),
-				fileFlag("reason", "read the reason from FILE"),
-			}, intentHumanActFlags, intentRelayFlags),
-			maxArgs:  1,
-			examples: []string{"metasystem decide verbs-match-intent --finding S-1 --review job-7 --reason 'the exposure is local and reversible'"},
-			run:      runIntentDecide,
 		},
 		{
 			name: "pin", group: "goals", audience: "human", summary: "pin a goal to one machine, or clear its pin",
@@ -342,28 +315,6 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentUngroup,
 		},
 		{
-			name: "resolve", group: "work", compatibility: true, replacedBy: "metasystem review G --finding F --test NAME", audience: "both", summary: "discharge a review obligation with its test",
-			usage: []string{"metasystem resolve G --review R --finding F --test NAME", "metasystem resolve G --review R --finding F --implementation-chain J --artifact PATH --result RUN --critic ROOT"},
-			details: []string{
-				"R is any job of the review; its chain root is read from the recorded job.",
-				"The session holding G acts in its own name; anyone else's discharge is a person's act.",
-				"A fixture obligation is discharged by its implementation chain, artifact, governed test result and clean code-critic root.",
-			},
-			flags: withFlags([]intentFlag{
-				intentTargetFlag,
-				{name: "review", aliases: []string{"chain"}, value: "R", usage: "the review job (or its chain root)"},
-				{name: "finding", value: "F", usage: "the finding id"},
-				{name: "test", value: "NAME", usage: "the test that proves the finding resolved"},
-				{name: "implementation-chain", value: "J", advanced: true, usage: "fixture obligation: the implementation chain carrying the fix"},
-				{name: "artifact", value: "PATH", advanced: true, usage: "fixture obligation: the changed artifact"},
-				{name: "result", value: "RUN", advanced: true, usage: "fixture obligation: the retained governed test result"},
-				{name: "critic", value: "ROOT", advanced: true, usage: "fixture obligation: the clean code-critic root"},
-			}, intentHumanActFlags),
-			maxArgs:  1,
-			examples: []string{"metasystem resolve verbs-match-intent --review job-7 --finding F-2 --test TestIntentReady"},
-			run:      runIntentResolve,
-		},
-		{
 			name: "notes", group: "goals", audience: "both", summary: "read, add or close a goal's non-breaking read findings",
 			usage: []string{"metasystem notes G", "metasystem notes G --read LABEL --add TEXT...", "metasystem notes G --close ITEM --fixed COMMIT|--moved G2|--accepted REASON"},
 			details: []string{
@@ -387,30 +338,19 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentNotes,
 		},
 		{
-			name: "recover", group: "operations", compatibility: true, replacedBy: "metasystem repair goals, and metasystem repair waits", audience: "both", summary: "recover the goal journal and this session's durable waits",
-			usage: []string{"metasystem recover [G] [--session S]"},
-			details: []string{
-				"The journal recovery confirms, corrects, completes or closes every stranded goal entry of this installation; G, when named, is shown afterwards.",
-				"The durable waits are the recorded wait continuations; --session checks they belong to the checkout holder's current session.",
-				"Each repair result is reported separately.",
-			},
-			flags:    []intentFlag{intentTargetFlag, {name: "session", value: "S", advanced: true, usage: "the runtime session that must hold the checkout"}},
-			maxArgs:  1,
-			examples: []string{"metasystem recover", "metasystem recover verbs-match-intent"},
-			run:      runIntentRecover,
-		},
-		{
 			name: "repair", group: "operations", audience: "both", summary: "recover one named task",
 			usage: []string{
 				"metasystem repair goals",
-				"metasystem repair goals --accept-edits --by NAME",
-				"metasystem repair goals --refresh",
-				"metasystem repair goals --accept-remote-history --by NAME",
-				"metasystem repair goals --upgrade --source-digest SHA256 --by NAME [--amendments FILE] [--identity ULID] [--sync-mode remote|local]",
 				"metasystem repair waits [--session S]",
 				"metasystem repair mission M --problem N --confirm-restored TREE --by NAME --reason TEXT",
 				"metasystem repair mission M --problem N --accept-workspace --waive CLAIM... --by NAME --reason TEXT",
 				"metasystem repair review G [--work NAME]",
+			},
+			administrationUsage: []string{
+				"metasystem repair goals --accept-edits --by NAME",
+				"metasystem repair goals --refresh",
+				"metasystem repair goals --accept-remote-history --by NAME",
+				"metasystem repair goals --upgrade --source-digest SHA256 --by NAME [--amendments FILE] [--identity ULID] [--sync-mode remote|local]",
 			},
 			details: []string{
 				"repair goals completes interrupted goal changes across this installation; work that is still running is left alone.",
@@ -469,22 +409,6 @@ func intentPlanningCommands() []intentCommand {
 			maxArgs:  2,
 			examples: []string{"metasystem incidents", "metasystem incidents claim tr-01 --goal fix-trunk", "metasystem incidents close tr-01 --reason 'the flake is fixed at its source'"},
 			run:      runIntentIncidents,
-		},
-		{
-			name: "red", group: "operations", compatibility: true, replacedBy: "metasystem incidents", audience: "both", summary: "own or close a trunk-red incident",
-			usage: []string{"metasystem red own ENTRY --goal G [--branch NAME]", "metasystem red close ENTRY --reason TEXT"},
-			details: []string{
-				"ENTRY is the retained incident id, as goals prints it. Owning is an agent's act; closing, and owning --by for another machine (--to), are a person's.",
-			},
-			flags: withFlags([]intentFlag{
-				{name: "goal", value: "G", usage: "own: the goal fixing it"},
-				{name: "branch", value: "NAME", advanced: true, usage: "own: the fix branch"},
-				{name: "to", value: "MACHINE", advanced: true, usage: "own, with --by: the machine assigned the fix"},
-				reasonFlag("why", "close: why the incident is closed"), fileFlag("reason", "read the reason from FILE"),
-			}, intentHumanActFlags),
-			maxArgs:  2,
-			examples: []string{"metasystem red own tr-01 --goal fix-trunk", "metasystem red close tr-01 --reason 'the flake is fixed at its source'"},
-			run:      runIntentRed,
 		},
 	}
 }
@@ -1186,14 +1110,6 @@ func runIntentRelease(inv *intentInvocation) int {
 	}, "id")))
 }
 
-func runIntentReady(inv *intentInvocation) int {
-	id, code, ok := inv.uniqueHeldGoal()
-	if !ok {
-		return code
-	}
-	return inv.render(inv.landReady(id))
-}
-
 // runIntentQueueOnly is land G --queue-only: exactly the land-ready act. A
 // refusal because this machine's landing slot is taken names the public
 // landing of the goal that holds it, read from the goal ledger.
@@ -1844,59 +1760,6 @@ func runIntentNotes(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: lines,
 		Summary: fmt.Sprintf("%d note(s) on %s", len(items), id), Data: map[string]any{"where": where, "tip": projection.Tip, "items": items}})
-}
-
-// runIntentRecover runs the two recovery owners and reports each result on
-// its own: the goal journal's recovery rule, and the durable wait rows.
-func runIntentRecover(inv *intentInvocation) int {
-	id, problem := inv.singleTarget()
-	if problem != nil {
-		return inv.render(*problem)
-	}
-	if problem := inv.selectRoot(); problem != nil {
-		return inv.render(*problem)
-	}
-	journal := map[string]any{}
-	var lines []string
-	failed := 0
-	reports, err := recoverGoalJournal(inv.stateRoot, inv.owners.commandNow, inv.owners.dependencies)
-	if err != nil {
-		failed++
-		journal["outcome"], journal["error"] = intentFailed, err.Error()
-		lines = append(lines, "journal: not recovered: "+err.Error())
-	} else {
-		entries := []map[string]string{}
-		for _, report := range reports {
-			entries = append(entries, map[string]string{"opid": report.Opid, "action": string(report.Action), "detail": report.Detail})
-			lines = append(lines, fmt.Sprintf("journal: %s: %s - %s", report.Opid, report.Action, report.Detail))
-		}
-		journal["outcome"], journal["entries"] = intentConfirmed, entries
-		if len(reports) == 0 {
-			journal["outcome"] = intentUnchanged
-			lines = append(lines, "journal: clean; nothing to recover")
-		}
-	}
-	waits, waitLines, waitsFailed := inv.waitContinuations()
-	lines = append(lines, waitLines...)
-	if waitsFailed {
-		failed++
-	}
-	data := map[string]any{"journal": journal, "waits": waits}
-	result := intentResult{Outcome: intentConfirmed, text: lines, Data: data, Summary: "recovery ran"}
-	if id != "" {
-		result.Targets = inv.targets(id)
-		after := inv.afterGoalAct(id, "recover")
-		data["goal"] = after.Data
-		result.text = append(result.text, after.Summary)
-	}
-	switch failed {
-	case 0:
-	case 2:
-		result.Outcome, result.code, result.Summary = intentFailed, 1, "neither recovery completed"
-	default:
-		result.Outcome, result.code, result.Summary = intentPartial, 1, "one recovery completed and the other did not"
-	}
-	return inv.render(result)
 }
 
 // waitContinuations reads this checkout's durable wait continuations,

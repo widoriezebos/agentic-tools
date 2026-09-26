@@ -608,6 +608,19 @@ func runIntentReviewDischarge(inv *intentInvocation, id string) int {
 // runIntentRevise corrects one work item through the unit runner's retained
 // revision request.
 func runIntentRevise(inv *intentInvocation) int {
+	if args := inv.input.args; len(args) == 2 && args[0] == "run" {
+		for _, other := range []string{"work", "after", "dispositions"} {
+			if inv.input.has(other) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "unit", ID: args[1]}},
+					Summary: fmt.Sprintf("revise run RUN takes only --brief: the run keeps its own plan, proof and round limit; --%s is not one; nothing was done", other)})
+			}
+		}
+		hook := inv.delivery().foldUnitHook
+		if hook == nil {
+			hook = runIntentReviseRun
+		}
+		return hook(inv, args[1])
+	}
 	if args := inv.input.args; len(args) == 2 && args[0] == "job" {
 		for _, other := range []string{"work", "after"} {
 			if inv.input.has(other) {
