@@ -368,3 +368,17 @@ func jsonErrorPosition(data []byte, err error) (int, int) {
 	}
 	return line, column
 }
+
+// Dispositions reads a dispositions table's finding ids and their decisions
+// with the same parser the close join uses. Any violation is returned and
+// the map is then incomplete.
+func Dispositions(path string) (map[string]string, []string) {
+	var violations []string
+	_, dispositions, _ := readDispositions(path, func(format string, args ...any) {
+		violations = append(violations, fmt.Sprintf(format, args...))
+	})
+	return dispositions, violations
+}
+
+// DispositionsHeader is the table header the close join requires.
+func DispositionsHeader() []string { return append([]string(nil), dispositionsHeader...) }

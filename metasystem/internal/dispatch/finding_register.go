@@ -97,7 +97,15 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 		// it (first drawn live 2026-08-29: a coordinator cancel
 		// deadlocked its own chain against the fold gate).
 		cancelledRound := status == "cancelled"
-		if status != "completed" && !failedAttempt && !cancelledRound {
+		// A round cut off at its cap whose process group the reaper proved
+		// dead also folds neutrally: it returned nothing to decide, so it
+		// invents no finding, and the round number still advances so the
+		// chain's round cap keeps counting it.
+		cappedRound := status == "timeout" && asString(roundRecord["groupDeathProvenAt"]) != ""
+		if status == "timeout" && !cappedRound {
+			return "", fmt.Errorf("critic round %s timed out but its process group is not proven dead", roundJob)
+		}
+		if status != "completed" && !failedAttempt && !cancelledRound && !cappedRound {
 			return "", fmt.Errorf("critic round %s is neither completed, failed, nor cancelled", roundJob)
 		}
 		round, ok := numInt(roundRecord["round"])
@@ -140,7 +148,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			var completedSubject ReadSubject
 			completedSubjectPresent := false
 			completedSubjectBound := false
-			if cancelledRound {
+			if cancelledRound || cappedRound {
 				// Neutral fold: the round number advances so the chain
 				// unwedges, the register's findings and caps are
 				// untouched — a cancellation is nobody's critique.
@@ -433,7 +441,29 @@ func CritiqueRegisterDecisionFinding(repoRoot, rootJob, findingID, goalID string
 						claim, evidence = originalClaim, originalEvidence
 					}
 				}
-				result = CritiqueDecisionFinding{FindingID: f.FindingID, Chain: rootJob, GoalID: goalID, RigorClass: string(f.RigorClass), Artifact: f.Artifact, Title: f.Title, Claim: claim, Evidence: evidence, Facts: f.Facts}
+				// Synthetic findings record why review evidence is missing. The
+				// register's exact identity and digest describe that failure;
+				// accepting its risk does not turn it into a successful review.
+				missing := ""
+				switch findingID {
+				case syntheticProtocolFindingID(asString(root["role"]), f.Critic):
+					missing = "the review did not return usable evidence"
+				case syntheticUnboundFindingID(asString(root["role"]), f.Critic):
+					missing = "the review result is not bound to the work examined"
+				}
+				if missing != "" {
+					if claim == "" {
+						claim = missing
+					}
+					if evidence == "" {
+						evidence = fmt.Sprintf("Review %s records that %s (evidence digest %s).", f.Critic, missing, f.EvidenceDigest)
+					}
+				}
+				title := f.Title
+				if title == "" {
+					title = claim
+				}
+				result = CritiqueDecisionFinding{FindingID: f.FindingID, Chain: rootJob, GoalID: goalID, RigorClass: string(f.RigorClass), Artifact: f.Artifact, Title: title, Claim: claim, Evidence: evidence, Facts: f.Facts}
 				return nil
 			}
 		}

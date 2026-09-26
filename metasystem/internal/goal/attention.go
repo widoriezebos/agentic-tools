@@ -35,6 +35,31 @@ type LedgerChange struct {
 
 const boundedCaptureGrace = 5 * time.Second
 
+type waitGraceKey struct{}
+
+// waitCaptureGrace sizes the cleanup grace a wait reserves after its reads
+// from the wait's own deadline: the full grace when the deadline allows it,
+// otherwise half of what remains, so a short wait still fetches within its
+// deadline instead of spending it all on the reserve.
+func waitCaptureGrace(ctx context.Context) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return boundedCaptureGrace
+	}
+	return min(boundedCaptureGrace, max(time.Until(deadline)/2, 0))
+}
+
+func withWaitGrace(ctx context.Context, grace time.Duration) context.Context {
+	return context.WithValue(ctx, waitGraceKey{}, grace)
+}
+
+func waitGraceOf(ctx context.Context) time.Duration {
+	if grace, ok := ctx.Value(waitGraceKey{}).(time.Duration); ok {
+		return grace
+	}
+	return boundedCaptureGrace
+}
+
 type attentionGitRun func(context.Context, string, []byte, ...string) (string, error)
 
 type waitGitContextFunc func(context.Context, time.Duration, []string) (context.Context, context.CancelFunc)
@@ -111,7 +136,7 @@ func runAttentionGitWithEnvironment(ctx context.Context, root string, stdin []by
 	case <-ctx.Done():
 		pgid := cmd.Process.Pid
 		_ = syscall.Kill(-pgid, syscall.SIGTERM)
-		grace := timers.NewTimer(boundedCaptureGrace)
+		grace := timers.NewTimer(waitGraceOf(ctx))
 		poll := timers.NewTicker(10 * time.Millisecond)
 		defer grace.Stop()
 		defer poll.Stop()
@@ -148,16 +173,17 @@ func waitGit(ctx context.Context, root string, stdin []byte, args ...string) (st
 		return "", ctx.Err()
 	}
 	budget := 10 * time.Second
+	grace := waitCaptureGrace(ctx)
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
-		if remaining-budget < boundedCaptureGrace {
-			budget = remaining - boundedCaptureGrace
+		if remaining-budget < grace {
+			budget = remaining - grace
 		}
 	}
 	if budget <= 0 {
 		return "", context.DeadlineExceeded
 	}
-	readCtx, cancel := waitDependencies(ctx).withTimeout(ctx, budget, args)
+	readCtx, cancel := waitDependencies(ctx).withTimeout(withWaitGrace(ctx, grace), budget, args)
 	defer cancel()
 	return runWaitGit(readCtx, root, stdin, args...)
 }
@@ -257,9 +283,10 @@ func cleanupWaitTip(parent context.Context, e Endpoint, opid string) {
 	if e.LocalMode() || opid == "" {
 		return
 	}
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), boundedCaptureGrace)
+	grace := waitGraceOf(parent)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()
-	cleanupCtx = withWaitGitDependencies(cleanupCtx, waitDependencies(parent))
+	cleanupCtx = withWaitGrace(withWaitGitDependencies(cleanupCtx, waitDependencies(parent)), grace)
 	_, _ = runWaitGit(cleanupCtx, e.Root, nil, "update-ref", "-d", fetchRefFor(opid))
 }
 
@@ -824,8 +851,9 @@ func ObserveLedgerForWait(ctx context.Context, root string, selector metarun.Wai
 		}
 	}
 	budget := 10 * time.Second
+	grace := waitCaptureGrace(ctx)
 	if deadline, ok := ctx.Deadline(); ok {
-		remaining := time.Until(deadline) - boundedCaptureGrace
+		remaining := time.Until(deadline) - grace
 		if remaining < budget {
 			budget = remaining
 		}
@@ -833,11 +861,11 @@ func ObserveLedgerForWait(ctx context.Context, root string, selector metarun.Wai
 	if budget <= 0 {
 		return metarun.SourceObservation{Temporary: true}, fmt.Errorf("not enough wait budget remains for goal fetch and cleanup")
 	}
-	captured, err := captureWaitTip(ctx, endpoint, budget)
+	captured, err := captureWaitTip(withWaitGrace(ctx, grace), endpoint, budget)
 	if err != nil {
 		return metarun.SourceObservation{Temporary: true}, err
 	}
-	defer cleanupWaitTip(ctx, endpoint, captured.OperationID)
+	defer cleanupWaitTip(withWaitGrace(ctx, grace), endpoint, captured.OperationID)
 	incarnation := metarun.WaiterTarget{StartedAt: "ledger:" + selector.After, ProofDigest: ledgerEndpointIdentity(endpoint)}
 	if pinned != (metarun.WaiterTarget{}) && lastTip == captured.Tip {
 		return metarun.SourceObservation{Pending: true, Incarnation: incarnation, Outcome: "pending", Evidence: "ledger:" + captured.Tip, LedgerTip: captured.Tip}, nil
@@ -1028,7 +1056,31 @@ func landingWaitAt(ctx context.Context, root, tip, goalID, chain string) (bool, 
 	if err != nil {
 		return false, "", fmt.Errorf("read landing commit %s: %w", short(tip), err)
 	}
-	return matchLandingMessage(output, goalID, chain)
+	matched, provenance, err := matchLandingMessage(output, goalID, chain)
+	if matched || err != nil || chain != "" {
+		return matched, provenance, err
+	}
+	return VerifiedGoalBranchLanding(ctx, root, tip, goalID)
+}
+
+// GoalBranchLandingVerifier verifies that commit is the last landing of
+// goalID from its goal branch and returns that landing's provenance. The goal
+// branch owner registers it; this package cannot import that owner.
+type GoalBranchLandingVerifier func(ctx context.Context, root, commit, goalID string) (bool, string, error)
+
+var goalBranchLandingVerifier GoalBranchLandingVerifier
+
+func RegisterGoalBranchLandingVerifier(verifier GoalBranchLandingVerifier) {
+	goalBranchLandingVerifier = verifier
+}
+
+// VerifiedGoalBranchLanding asks the registered goal branch owner whether
+// commit is goalID's verified last landing; without an owner nothing matches.
+func VerifiedGoalBranchLanding(ctx context.Context, root, commit, goalID string) (bool, string, error) {
+	if goalBranchLandingVerifier == nil {
+		return false, "", nil
+	}
+	return goalBranchLandingVerifier(ctx, root, commit, goalID)
 }
 
 func matchLandingMessage(message, goalID, chain string) (bool, string, error) {

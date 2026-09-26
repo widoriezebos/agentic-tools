@@ -16,7 +16,8 @@ new provider integration or speculative future workflow is requested.
 Scope: complete computed base-to-candidate change and all affected consumers.
 Preserve every capability in intent-workflows-capabilities.md and unchanged
 machine consumers. Root owns plans/rulings/receipts and the final certification;
-Opus owns product/tests/public guidance. Existing expected help changes are
+Opus owns product/tests/public guidance. Fable performs the independent code
+critique under R-127-m1e; only the root coordinator remains Astra. Existing expected help changes are
 authorized; weakened assertions, coverage floors, fake delivery, and claimed
 proof without actual owner execution are not. Other incoming main changes are
 part of the base; do not attribute them to this implementation.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -303,6 +304,14 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 			t.Errorf("supervision shutdown: %v: %s", err, output)
 		}
 		runner, armed := steward.LiveRunner(worktree)
+		// The runner's exact kernel identity, taken before the disarm, is
+		// what must exit; the disarm's own wait ends with its record.
+		var captured identity.Ref
+		if runner.Pid > 0 {
+			if exact, state, err := (identity.KernelProber{}).Probe(runner.Pid); err == nil && state == identity.Alive {
+				captured = exact.Ref()
+			}
+		}
 		outcome, err := steward.Disarm(worktree)
 		if err != nil {
 			t.Errorf("steward disarm: %v", err)
@@ -313,7 +322,13 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 			return
 		}
 		// Disarm's own wait also ends when the record changes, so the
-		// recorded process itself must be absent by its kernel identity.
+		// captured process is joined by its exact identity, then the recorded
+		// process itself must be absent by its kernel identity.
+		if captured.Pid > 0 {
+			if err := testutil.AwaitExactExit(identity.KernelProber{}, captured); err != nil {
+				t.Errorf("steward runner %d did not exit after the disarm: %v", runner.Pid, err)
+			}
+		}
 		live, state, err := (identity.KernelProber{}).Probe(runner.Pid)
 		if err != nil {
 			t.Errorf("probe steward runner %d: %v", runner.Pid, err)

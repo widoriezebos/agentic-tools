@@ -85,6 +85,46 @@ func TestWaitGoalLandingDestinationMatchesLedgerBranch(t *testing.T) {
 	transcript.done()
 }
 
+// TestWaitGoalShortDeadlineStillObserves: a wait whose whole deadline is
+// shorter than the full cleanup grace still captures and reads the ledger
+// inside that deadline rather than reporting a transport failure.
+func TestWaitGoalShortDeadlineStillObserves(t *testing.T) {
+	t.Parallel()
+	endpoint, client := fakeGoalEndpoint(t)
+	repo := endpoint.Root
+	baseTip := acceptedTipForEndpoint(t, endpoint)
+	opened, err := Open(verbReqFor(endpoint, "01J5X0000000000000000000D2", "mac-a"), "goal-a", "Wait target.", "main", "Wait for landing.")
+	if err != nil || opened.Outcome != OutcomeConfirmed {
+		t.Fatalf("open goal-a: %+v %v", opened, err)
+	}
+	transcript := newWaitObservationTranscript(t, endpoint, client)
+	transcript.declare(opened.Tip, baseTip)
+	selector := metarun.WaitSelector{Kind: "goal", TargetID: "goal-a", GoalID: "goal-a", Event: "landing", After: opened.Tip}
+	for _, deadline := range []time.Duration{5 * time.Second, 2 * time.Second} {
+		transcript.endpoint("", "")
+		transcript.expect("refs/remotes/origin/main\n", "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
+		transcript.capture(opened.Tip)
+		transcript.acceptance(opened.Tip, opened.Tip)
+		transcript.files(opened.Tip, goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
+		transcript.cleanup()
+		ctx, cancel := context.WithCancel(fixedDeadline{withWaitGitDependencies(context.Background(), transcript.dependencies()), time.Now().Add(deadline)})
+		observed, observeErr := ObserveLedger(ctx, repo, selector, metarun.WaiterTarget{}, opened.Tip)
+		cancel()
+		if observeErr != nil || !observed.Pending || observed.Temporary || observed.ExitCode != 0 {
+			t.Fatalf("a %s wait = %+v err=%v", deadline, observed, observeErr)
+		}
+		transcript.done()
+	}
+	if grace := waitCaptureGrace(context.Background()); grace != boundedCaptureGrace {
+		t.Fatalf("a wait without a deadline reserves %s, want %s", grace, boundedCaptureGrace)
+	}
+	short, cancel := context.WithCancel(fixedDeadline{context.Background(), time.Now().Add(2 * time.Second)})
+	defer cancel()
+	if grace := waitCaptureGrace(short); grace <= 0 || grace > time.Second {
+		t.Fatalf("a 2s wait reserves %s, want at most half its deadline", grace)
+	}
+}
+
 func TestWaitGoalFetchDeadline(t *testing.T) {
 	t.Parallel()
 	if _, err := CaptureTipBounded(Endpoint{Root: t.TempDir(), Remote: "local", Branch: LocalLedgerBranch}, 0); err == nil || !strings.Contains(err.Error(), "positive") {
@@ -1496,3 +1536,12 @@ exit 97
 		t.Fatalf("unexpected git calls:\n%s", logBytes)
 	}
 }
+
+// fixedDeadline reports a deadline without arming a timer: the wait sizes
+// its budget from Deadline, and nothing here must expire in wall time.
+type fixedDeadline struct {
+	context.Context
+	at time.Time
+}
+
+func (c fixedDeadline) Deadline() (time.Time, bool) { return c.at, true }

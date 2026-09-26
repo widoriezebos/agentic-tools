@@ -29,7 +29,13 @@ func newLaunchManager() *launch.Manager {
 	}
 	scanner := launch.KernelProcessScanner{Prober: prober}
 	codex := launch.CodexExec{Binary: "codex", SessionsRoot: filepath.Join(home, ".codex", "sessions"), CommonTemplate: filepath.Join(filepath.Dir(executable), "..", "scripts", "agents", "templates", "design-common.md"), Now: time.Now, Scanner: scanner}
-	claude := launch.ClaudeHeadless{Binary: "claude", ProjectsRoot: filepath.Join(home, ".claude", "projects"), Scanner: scanner}
+	// Claude Code keeps its session transcripts under CLAUDE_CONFIG_DIR when
+	// that is set, else under ~/.claude; the measurement reads the same place.
+	claudeConfig := filepath.Join(home, ".claude")
+	if configured := os.Getenv("CLAUDE_CONFIG_DIR"); configured != "" {
+		claudeConfig = configured
+	}
+	claude := launch.ClaudeHeadless{Binary: "claude", ProjectsRoot: filepath.Join(claudeConfig, "projects"), Scanner: scanner}
 	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "plain-exec": launch.PlainExec{}},
 		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout,

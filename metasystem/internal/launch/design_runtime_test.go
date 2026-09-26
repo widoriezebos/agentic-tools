@@ -47,8 +47,8 @@ func TestLaneAdapterFollowsItsRuntimeSetting(t *testing.T) {
 	t.Parallel()
 
 	runLaneAdapterCases(t, "read-runtime-", []laneAdapterCase{
-		{name: "read defaults to Codex", kind: "read", want: "codex-exec"},
-		{name: "read on Claude by its setting", kind: "read", useSettings: true, runtime: "claude", settings: "claude-opus-5-5[1m]", want: "claude-headless"},
+		{name: "read defaults to Claude", kind: "read", want: "claude-headless"},
+		{name: "read on Codex by its setting", kind: "read", useSettings: true, runtime: "codex", settings: "gpt-6-sol", want: "codex-exec"},
 	})
 }
 

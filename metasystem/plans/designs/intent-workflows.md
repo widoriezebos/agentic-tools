@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3EC3QT7M2TC36P7ZVNRF0RW
-- Status: accepted
+- Status: done
 - Goals: verbs-match-intent
 
 Design critique: closed at round 2 on 2 fixture obligations (IW-C7 and IW-C8),
@@ -123,8 +123,8 @@ missing approval, or another current claim returns the actual public decision.
 identity failure directs the agent to `start session`, never to copy an identity.
 
 Selection is explicit and stage-based. Status lists all named work. Wait selects
-running work; review selects a newest built result without a collected current
-read; revise first selects failed work or work with unresolved findings, otherwise
+running work; review selects work whose current review still needs examination or
+publication; revise first selects failed work or work with unresolved findings, otherwise
 an explicitly named or unique completed work item. Build selects the matching
 retained named request, and creates `main` only when no work exists. If no work
 needs review, review reports the already collected results unchanged; it never
@@ -353,13 +353,13 @@ no service restart or remote production install is implied.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| IW-1 | HIGH | Public language and discovery | Small orientation; complete public catalogue; no internal help or doubled command; bare success | Intent descriptors and Partner projection | intent.go/main.go/ui_describe.go/uitools kit | TestIntentPublicDiscovery; TestRealPartnerPublicCatalogue | Built CLI help and Partner kit | MISSING | Implement and drive |
-| IW-2 | CRITICAL | Work selection and complete delivery | Exact goal/work and stable revision request; no duplicate failed retry | UnitRunner named/revision owner | internal/launch/unit_named.go/unit_run.go | TestNamedWorkSelection; TestRevisionRequestReplay | CLI lost-response and explicit failed-attempt retry | MISSING | Implement and drive |
-| IW-3 | CRITICAL | Work selection and complete delivery | Bound dispositions, authentic close, no unresolved acceptance, public recovery | Existing review/close/branch owners | intent_unit_review.go/intent_delivery.go | TestIntentGoalReviewCompletion; TestIntentGoalRevisionJourney | Connected build/review/revise/land with actual owners | MISSING | Implement and drive |
-| IW-4 | CRITICAL | Human capabilities | All lifecycle/authority acts; queue-only and exception retain exact semantics | Goal/landing adapters | intent_planning.go/intent_delivery.go | TestIntentAuthorityCapabilityMatrix; TestIntentQueueOnly | Human/agent refusal, partial publication, landing replay | MISSING | Implement and drive |
-| IW-5 | HIGH | Human capabilities, questions and operations | Complete authenticated questions and mission operation | Channel/mission adapters | intent_process.go and focused adapter files | TestIntentQuestionJourney; TestIntentMissionRecovery | Fake-provider CLI delivered/undelivered/ambiguous journeys | MISSING | Implement and drive |
-| IW-6 | HIGH | Human capabilities, questions and operations | Honest diagnosis with public repair; settings/records/maintenance | Health/config/project adapters | Intent operation adapters | TestIntentOperationsJourney; TestIntentRepairAuthority | Synthetic config/health/record and exact recovery | MISSING | Implement and drive |
-| IW-7 | HIGH | Results, recovery and migration | Full capability and truthful results without required internals | Descriptor and result owners | intent.go and each typed outcome adapter | TestIntentCapabilityPreservation; TestIntentPublicContinuations | Repeat complete fresh-orientation journey corpus | MISSING | Implement and drive |
+| IW-1 | HIGH | Public language and discovery | Small orientation; complete public catalogue; no internal help or doubled command; bare success | cmd/metasystem intent descriptors; internal/ui/uitools catalogue | `cmd/metasystem/intent.go`; `cmd/metasystem/ui_describe.go`; `internal/ui/uitools/kit.go` | `cmd/metasystem/intent_discovery_test.go#TestIntentPublicDiscovery`; `cmd/metasystem/intent_discovery_test.go#TestRealPartnerPublicCatalogue` |Built CLI help and Partner kit; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IW-2 | CRITICAL | Work selection and complete delivery | Exact goal/work and stable revision request; no duplicate failed retry | internal/launch.UnitRunner | `internal/launch/unit_named.go`; `internal/launch/unit_revise.go` | `internal/launch/unit_revise_test.go#TestNamedWorkListsOneGoalsWork`; `internal/launch/unit_revise_test.go#TestRevisionRequestReplay`; `internal/launch/unit_revise_test.go#TestRevisionRetainsReviewedFindingsAfterFailure` |CLI lost-response and explicit failed-attempt retry; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IW-3 | CRITICAL | Work selection and complete delivery | Bound dispositions, authentic close, no unresolved acceptance, public recovery | cmd/metasystem closeChain and branch read owners | `cmd/metasystem/intent_unit_review.go`; `cmd/metasystem/intent_delivery.go`; `cmd/metasystem/intent_review_binding.go` | `cmd/metasystem/intent_review_completion_test.go#TestIntentGoalReviewCompletion`; `cmd/metasystem/intent_connected_journey_test.go#TestIntentConnectedJourneyRealClose`; `cmd/metasystem/intent_delivery_test.go#TestIntentCloseWholeOwner` |Connected build/review/revise/land with actual owners; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IW-4 | CRITICAL | Human capabilities | All lifecycle/authority acts; queue-only and exception retain exact semantics | internal/goal and internal/landing owners | `cmd/metasystem/intent_planning.go`; `cmd/metasystem/intent_exception.go`; `internal/landing/carried_prepare.go`; `cmd/metasystem/intent_questions.go` | `cmd/metasystem/intent_test.go#TestIntentGoalAuthorityAndState`; `cmd/metasystem/intent_queue_wait_test.go#TestIntentQueueOnly`; `cmd/metasystem/intent_authority_positive_test.go#TestIntentCarriedGoalDeliveryGitAdapter`; `cmd/metasystem/intent_carried_test.go#TestIntentCarriedReplacement`; `cmd/metasystem/intent_questions_test.go#TestIntentAbandonWithSuccessor` |Human/agent refusal, partial publication, landing replay; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IW-5 | HIGH | Human capabilities, questions and operations | Complete authenticated questions and mission operation | internal/channel and internal/missionrunner owners | `cmd/metasystem/intent_process.go`; `cmd/metasystem/intent_questions.go` | `cmd/metasystem/intent_questions_test.go#TestIntentQuestionJourney`; `cmd/metasystem/intent_event_wait_owner_test.go#TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer`; `cmd/metasystem/intent_operations_test.go#TestIntentRepairAuthority`; missionrunner `internal/missionrunner/wall_test.go#TestResolveTaintThroughWrapper` |Fake-provider CLI delivered/undelivered/ambiguous journeys; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IW-6 | HIGH | Human capabilities, questions and operations | Honest diagnosis with public repair; settings/records/maintenance | internal/steward, internal/config and internal/project readers | `cmd/metasystem/intent_operations.go`; `cmd/metasystem/intent_process.go` | `cmd/metasystem/intent_targets_test.go#TestIntentCheckPublicRemedies`; `cmd/metasystem/intent_work_fix_test.go#TestIntentSettingsSelectedInstallation`; `cmd/metasystem/intent_questions_test.go#TestIntentSettingsKeysAndCheck`; `cmd/metasystem/intent_operations_test.go#TestIntentRepairAuthority`; `cmd/metasystem/intent_authority_positive_test.go#TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile` |Synthetic config/health/record and exact recovery; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IW-7 | HIGH | Results, recovery and migration | Full capability and truthful results without required internals | cmd/metasystem intent descriptors and typed results | `cmd/metasystem/intent.go`; `cmd/metasystem/intent_process.go`; `cmd/metasystem/intent_work.go` | `cmd/metasystem/intent_coverage_test.go#TestIntentPublicCoverage`; `cmd/metasystem/intent_queue_wait_test.go#TestIntentReservedGoalNames`; `cmd/metasystem/intent_questions_test.go#TestIntentAskContinuationsAreFollowed`; `cmd/metasystem/intent_queue_wait_test.go#TestIntentWaitJobKeepsTheSelectedOwner` |Repeat complete fresh-orientation journey corpus; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
 
 
 Named fixture obligations from final design critique:
@@ -370,12 +370,17 @@ Named fixture obligations from final design critique:
   later authentic review supersedes it. Unresolved uncollected findings qualify.
 - IW-C8 / `TestIntentGoalEventWait`: wait for queued landing and filtered human
   acts through `--for`/`--since`, retain legacy aliases, and show the queued hint.
-- IW-2 / `TestNamedWorkSelection`: collected/published, collected/unpublished and
+- IW-2 / `TestIntentGoalReviewCompletion` and `TestIntentConnectedJourneyRealClose`: collected/published, collected/unpublished and
   built/unread work coexist; selection consults or retains the read owner's binding.
 - IW-2 / `TestRevisionRequestReplay`: crash after request retention before launch;
   retry and a concurrent identical request admit exactly one launch.
-- IW-3 / `TestIntentReviewRetryAuthority`: live old critic refuses retry, proved
-  stopped admits within the same chain cap, replay rejoins even after retry failure.
+- IW-3 / `internal/goal/branch/read_retry_test.go#TestIntentReviewRetryAuthority`
+  and `cmd/metasystem/intent_manual_submit_test.go#TestManualReviewFailedExaminationRetries`:
+  live old critic refuses retry; a stopped failed round admits once in the same
+  chain; replay rejoins even after retry failure. The real dispatch follow-up
+  uses the existing register/exhaustion owners for the frozen round limit,
+  exercised by the dispatcher cap scenarios. This is composed owner evidence,
+  not a claim of one manual end-to-end round-exhaustion fixture.
 - IW-4 / `TestIntentQueueOnly`: a second landing slot refuses with the earlier
   goal's public land command; no proof or publication runs during queue-only.
 - IW-6 / `TestIntentRepairAuthority`: every source-grounded administration choice
@@ -391,7 +396,7 @@ new contract; retain capability, custody, authority and replay assertions.
 Fable critiques this complete design (at most two substantive rounds on one
 thread). Root dispositions every finding. Usability defects against this user's
 explicit requirements are material even when the old workflow could be made to
-work by an expert. Opus implements; independent Sol critique first checks the
+work by an expert. Opus implements; independent Fable critique first checks the
 whole diff against this design, then defects. Root drives the built CLI and real
 owner fixtures, not just mock command routing.
 
@@ -431,13 +436,50 @@ is uncertainty. Preserve all actual close checks and report later failures as
 completion pending with owner detail and public repair. Supplemental CloseCheck
 facts do not justify a guessed permission/I/O label. This bounded owner-boundary
 correction replaces posthoc guessing, requires no new wire protocol, and is part
-of IW review proof and mandatory Sol critique.
+of IW review proof and mandatory Fable critique.
 
 
 ## Exceptional delivery completion
 
 IW-4 additionally binds plans/intent-carried-delivery-design.md, accepted after
 Fable4->2 and root's exact receipt/Advance owner corrections. Its four named
-carried-delivery/staging/replay fixtures are mandatory in final independent Sol
+carried-delivery/staging/replay fixtures are mandatory in final independent Fable
 review. No fake carried success, ordinary proof placeholder, missing goal receipt,
 stale code/ledger consumption or projected-tree checkout may complete this row.
+
+## Later, when it hurts
+
+The first implementation critique noted that build can retain its own claim after
+input validation refuses, and the existing review reader reports incomplete
+examination without a distinct dead-process label. Public release and corrected
+review recovery cover these outcomes. Neither justifies a new owner or state
+model for this release. Selection uses its returned filtered collection as part
+of the required mixed manual/build ambiguity correction.
+
+The final critique also retains two deliberate boundaries. An unread item and an
+unpublished review both need attention, so selecting between them is explicit;
+automatic preference is deferred until actual use warrants it. Evidence damaged
+after a review completed is refused, with the completed-record invariant preserved.
+It needs a deliberate repair design if it occurs; an ordinary retry must not
+silently overwrite completed evidence. These are ICR-12 and ICR-13 in the tracked
+implementation dispositions, not unfinished first-use behavior.
+
+
+### Failed examination and the human risk decision
+
+A protocol-failed examination can leave a missing-evidence finding that a later
+read does not lawfully erase. Review must retain that guard and expose the human
+decision through `accept-risk G --finding F --review R --reason TEXT`, using the
+existing finding reader to obtain the exact finding and goal/review binding. It
+never accepts risk on the person's behalf, and never labels this blocked review
+complete. Once that public decision is recorded, the same public review continues.
+Ordinary recovery instructions must not require a caller to understand internal
+close/register commands. Actual raw diagnostics remain evidence; they do not
+replace an executable public continuation. This completes IW-3 and IW-4's existing
+recovery/authority contract; no new authority or evidence policy is introduced.
+
+Implementation shipped with final runtime acceptance recorded in
+`plans/intent-workflows-verification.md`; Fable's three implementation reviews and
+root's literal-only final help correction are adjudicated in
+`plans/intent-workflows-code-review-dispositions.md`. Design completion does not
+conclude the human-owned goal.

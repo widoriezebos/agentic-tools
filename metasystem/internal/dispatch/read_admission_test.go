@@ -907,3 +907,60 @@ func assertReadRefusal(t *testing.T, result ReadAdmissionResult, err error, reas
 		t.Fatalf("diagnostic lacks root or digest: %v", err)
 	}
 }
+
+// TestReadAdmissionRefusesFreshDesignRootWhileChainOpen: a fresh
+// design-critic root for a goal is refused while that goal's chain of the
+// same document is not closed, running, failed, capped or exhausted, and
+// whatever bytes the document now has. The chain's own next round, another
+// goal, another document, a closed chain and a goal-less dispatch are
+// admitted as before.
+func TestReadAdmissionRefusesFreshDesignRootWhileChainOpen(t *testing.T) {
+	t.Parallel()
+	path := "plans/designs/reader.md"
+	seed := func(t *testing.T, status string, change func(map[string]any)) string {
+		repo := t.TempDir()
+		seedUnfoldedRead(t, repo, "chain", "design-critic", status, admissionDesignSubject(path, "a", "1", "c"))
+		file := filepath.Join(repo, "artifacts", "agents", "jobs", "chain.json")
+		record := readJSONFile(t, file)
+		record["goalId"] = "g"
+		if change != nil {
+			change(record)
+		}
+		if err := writeRecord(file, record); err != nil {
+			t.Fatal(err)
+		}
+		return repo
+	}
+	changed := admissionDesignSubject(path, "b", "1", "c")
+	for _, status := range []string{"running", "failed", "completed"} {
+		repo := seed(t, status, nil)
+		result, err := CritiqueReadAdmissionForGoal(repo, "design-critic", "fresh", "g", 1, changed)
+		assertReadRefusal(t, result, err, designChainOpenRefusal, "chain", 1)
+	}
+	exhausted := seed(t, "completed", func(record map[string]any) { record["chainExhausted"] = true })
+	result, err := CritiqueReadAdmissionForGoal(exhausted, "design-critic", "fresh", "g", 1, changed)
+	assertReadRefusal(t, result, err, designChainOpenRefusal, "chain", 1)
+
+	for name, admit := range map[string]func(string) (ReadAdmissionResult, error){
+		"own next round": func(repo string) (ReadAdmissionResult, error) {
+			return CritiqueReadAdmissionForGoal(repo, "design-critic", "chain", "g", 2, changed)
+		},
+		"another goal": func(repo string) (ReadAdmissionResult, error) {
+			return CritiqueReadAdmissionForGoal(repo, "design-critic", "fresh", "other", 1, changed)
+		},
+		"another document": func(repo string) (ReadAdmissionResult, error) {
+			return CritiqueReadAdmissionForGoal(repo, "design-critic", "fresh", "g", 1, admissionDesignSubject("plans/designs/writer.md", "b", "1", "c"))
+		},
+		"no goal": func(repo string) (ReadAdmissionResult, error) {
+			return CritiqueReadAdmission(repo, "design-critic", "fresh", 1, changed)
+		},
+	} {
+		if result, err := admit(seed(t, "running", nil)); err != nil || result.Decision != readAdmittedDecision {
+			t.Fatalf("%s: %+v %v", name, result, err)
+		}
+	}
+	closed := seed(t, "completed", func(record map[string]any) { record["chainClosed"] = true })
+	if result, err := CritiqueReadAdmissionForGoal(closed, "design-critic", "fresh", "g", 1, changed); err != nil || result.Decision != readAdmittedDecision {
+		t.Fatalf("closed chain: %+v %v", result, err)
+	}
+}

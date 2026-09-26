@@ -1736,7 +1736,7 @@ dispatch_job() {
     set -e
     (( subject_rc == 0 )) || die "$subject_rc" "$subject_output"
     if [[ -s "$subject_temp" ]]; then
-      admit_critique_read "$role" "$job" 1 "$subject_temp"
+      admit_critique_read "$role" "$job" 1 "$subject_temp" "$goal"
     fi
   fi
   if [[ "$role" == implementer && -n "$goal" ]]; then
@@ -2102,12 +2102,12 @@ cleanup_subject_temp() {
   exit_cleanup_admission_result=
 }
 
-admit_critique_read() { # role, requesting root, round, private subject file
-  local role=$1 requesting_root=$2 round=$3 subject_file=$4 output rc=0 decision prior_root event_recorded
+admit_critique_read() { # role, requesting root, round, private subject file, optional served goal
+  local role=$1 requesting_root=$2 round=$3 subject_file=$4 served_goal=${5:-} output rc=0 decision prior_root event_recorded
   exit_cleanup_admission_result=$(mktemp "$record_locks/read-admission.XXXXXX")
   set +e
   output=$(lease_run_held "$current_claim_epoch" "$0" __critique-read-admission \
-    --role "$role" --root-job "$requesting_root" --round "$round" \
+    --role "$role" --root-job "$requesting_root" --round "$round" ${served_goal:+--goal "$served_goal"} \
     --subject-file "$subject_file" --result "$exit_cleanup_admission_result" 2>&1)
   rc=$?
   set -e
@@ -2397,6 +2397,7 @@ follow_up() {
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp stage_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 subject_temp= subject_output= subject_rc=0
   local repeated_follow_up=0 parent_job fresh_context_temp= worktree_path= trunk_commit= rebase_plan= plan_rebase=false behind=0 unmerged_json= authority_message=
   local rebased_from= rebased_to= rebase_failure= rebase_message_temp= previous_message_temp= root_launch_mode=
+  local retry_refusal=
   local continuation= continuation_role= continuation_launch= continuation_workspace= continuation_temp= cap_truncated=
   local -a product_root_args=() continuation_args=() conflicted_paths=() rebase_record_args=() cap_compose_args=()
 	local brain_fence_rc=0
@@ -2465,13 +2466,14 @@ follow_up() {
     # fresh-context packet with the paragraph the first wrapper kept.
     continuation=$(json_field "$standing_child_record" continuation 2>/dev/null || true)
     [[ "$continuation" == after-cap ]] || continuation=
-  elif [[ "$status" == timeout && "$error" == budget-cap ]]; then
+  elif [[ "$status" == timeout && "$error" == budget-cap && "$(json_field "$latest" role 2>/dev/null || true)" != *critic ]]; then
     # A round the reaper cut off at its cap left its work in the chain
     # worktree and wrote no return; an implementer chain continues it in a
     # fresh-context round that is told so (goal
-    # capped-round-continues-instead-of-restarting). Critic chains keep the
-    # refusal (their register cannot fold a capped round) and so do the
-    # roles whose returns carry no diff boundary.
+    # capped-round-continues-instead-of-restarting). A capped critic round
+    # is not continued: it may be examined afresh through the examination
+    # retry below; the roles whose returns carry no diff boundary keep the
+    # refusal.
     continuation_role=$(json_field "$latest" role 2>/dev/null || true)
     continuation_workspace=$(json_field "$latest" workspaceRoot 2>/dev/null || true)
     continuation_launch=$(json_field "$latest" launchMode 2>/dev/null || true)
@@ -2486,8 +2488,14 @@ follow_up() {
     continuation=after-cap
     round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
     [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
+  elif retry_refusal=$("$ms" job examination-retry --root "$root" --record "$latest" 2>&1); then
+    # A critic round that ended without a return, capped rounds included,
+    # is examined once more in the same chain, under the chain's own round
+    # cap; the engine decides, including that its process is proven dead.
+    round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
+    [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
   else
-    die 1 "follow-up requires the newest record to be completed, failed with protocol_error, or an implementer worktree round cut off at its cap (timeout with budget-cap); use a fresh dispatch after pending, running, process-lost, or cancelled"
+    die 1 "follow-up requires the newest record to be completed, failed with protocol_error, an implementer worktree round cut off at its cap (timeout with budget-cap), or a critic round the examination retry admits (${retry_refusal:-not admitted}); use a fresh dispatch after pending, running, process-lost or cancelled rounds it does not admit"
   fi
   worktree_path=$(json_field "$jobs/$root_id.json" workspaceRoot 2>/dev/null || true)
   root_launch_mode=$(json_field "$jobs/$root_id.json" launchMode 2>/dev/null || true)

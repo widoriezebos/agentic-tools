@@ -51,6 +51,10 @@ func newDeliveryBed(t *testing.T) *deliveryBed {
 	}
 	bed.install = layout.InstallationRoot
 	bed.owners = &intentDeliveryOwners{
+		// The bed's close owner runs as a person's act (its engine wrapper
+		// classifies HUMAN); the record-writer authority owner judges that
+		// same classification.
+		recordWriter: humanRecordWriter,
 		process: func(process intentProcess) intentProcessResult {
 			bed.calls = append(bed.calls, process.argv)
 			if bed.handler == nil {
@@ -177,14 +181,14 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 			t.Fatalf("design subject admission refused %v: %v", argv, err)
 		}
 		brief := flagValue(argv, "--brief")
-		if mode, err := dispatchcore.BriefModeOnly(brief); err != nil || mode != "design review" {
+		if mode, err := dispatchcore.BriefModeOnly(brief); err != nil || mode != "design-critique" {
 			t.Fatalf("brief mode admission refused: %q %v", mode, err)
 		}
 		if _, err := dispatchcore.ReadBriefAdmission(brief, "", true, nil); err != nil {
 			t.Fatalf("brief admission refused: %v", err)
 		}
 		text, _ := os.ReadFile(brief)
-		for _, section := range []string{"Round budget: ", "Threat model: ", "Scope: ", "## Prepared copy", "## Checklist", "Maximum reader tool calls: 30", "01DESIGN"} {
+		for _, section := range []string{"Round budget: 2 focused rounds", "Threat model: ", "Scope: ", "## Prepared copy", "## Checklist", "Maximum reader tool calls: 30", "01DESIGN"} {
 			if !strings.Contains(string(text), section) {
 				t.Fatalf("brief lacks %q:\n%s", section, text)
 			}
@@ -398,9 +402,27 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	// A review chain: the author's dispositions record the round's
 	// out-of-scope finding in the register, then the real owner closes the
 	// register and the chain.
+	// crit2 and crit3 are two critique chains of one design, so a review of
+	// that design refuses to choose between them.
+	roots, err := project.ResolveRoots(b.install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var home string
+	for _, candidate := range project.Homes(roots) {
+		if candidate.Kind == project.KindDesign && candidate.Glob == "" {
+			home = candidate.Path
+		}
+	}
+	design := filepath.Join(home, "two-chains.md")
+	b.writeFile(design, "# Two chains\n\n- Kind: design\n- Id: 01DESIGNTWOCHAINS\n- Status: draft\n- Goals: standing-validation\n\nA design.\n")
+	canonical, _ := filepath.EvalSymlinks(design)
 	b.writeJob(map[string]any{"jobId": "crit2", "role": "design-critic", "status": "completed", "round": 1,
 		"destructiveReach": "DESIGN-BEARING", "dispatchMode": "fresh", "sessionId": "crit2-session", "endedAt": "2026-09-25T11:00:00Z",
-		"capabilitySnapshot": "artifacts/agents/capabilities/close.json", "parentJob": nil, "findingRegister": []any{}})
+		"capabilitySnapshot": "artifacts/agents/capabilities/close.json", "parentJob": nil, "findingRegister": []any{},
+		"goalId": "standing-validation", "design": canonical, "reviewRoundLimit": 2})
+	b.writeJob(map[string]any{"jobId": "crit3", "role": "design-critic", "status": "completed", "round": 1, "parentJob": nil,
+		"goalId": "standing-validation", "design": canonical})
 	b.writeReturn("crit2", 1, "crit2", map[string]any{"id": "C1", "material": false})
 	criticDispositions := filepath.Join(b.root(), "crit2.md")
 	b.writeFile(criticDispositions, deliveryDispositionsHeader+"| C1 | noted | wording only | none |\n")
@@ -413,8 +435,33 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	if advanced, err := dispatchcore.CritiqueRegisterAdvance(b.install, "crit2", "crit2"); err != nil || advanced != "advanced" {
 		t.Fatalf("register advance = %q, %v", advanced, err)
 	}
-	code, result = b.do("close", "crit2", "--dispositions", criticDispositions)
+	// The multi-chain refusal offers the public close of each chain; the
+	// root and file are substituted into exactly the printed command.
+	_, refused := b.do("review", "design", design, "--tool-calls", "30")
+	printed := "metasystem review job ROOT --dispositions FILE"
+	if refused.Outcome != intentRefused || !strings.Contains(refused.Decision, printed) || strings.Contains(refused.Decision, "metasystem close") {
+		t.Fatalf("the multi-chain refusal: %+v", refused)
+	}
+	followed := strings.Fields(strings.NewReplacer("ROOT", "crit2", "FILE", criticDispositions).Replace(printed))
+	// The reference a person copies is the one status work prints.
+	_, listed := b.do("status", "work", "--all")
+	reference := ""
+	for _, job := range listed.Data.(map[string]any)["jobs"].([]any) {
+		if view := job.(map[string]any); strings.HasSuffix(fmt.Sprint(view["reference"]), ":crit2") {
+			reference = view["reference"].(string)
+		}
+	}
+	if reference != "j2:crit2" {
+		t.Fatalf("status work lists crit2 as %q: %+v", reference, listed)
+	}
+	code, result = b.do(followed[1:]...)
+	if code, again := b.do("review", "job", reference, "--dispositions", criticDispositions); code != 0 || again.Outcome != intentUnchanged {
+		t.Fatalf("the qualified reference reaches the same closed chain: code=%d %+v", code, again)
+	}
 	expectOutcome(t, "critic chain close", code, result, intentConfirmed)
+	if !strings.Contains(result.Summary, "accepts no design") {
+		t.Fatalf("a closed review chain must not read as acceptance: %+v", result)
+	}
 	critic := b.job("crit2")
 	if closed, _ := critic["chainClosed"].(bool); !closed || critic["findingRegisterRound"] != float64(1) || critic["mirror"] == nil || critic["runnerClosed"] != nil {
 		t.Fatalf("the real owner closes the folded critic chain: %v", critic)
@@ -698,7 +745,7 @@ func TestIntentLandBatchMemberSelection(t *testing.T) {
 func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	t.Parallel()
 	b := newDeliveryBed(t)
-	b.writeJob(map[string]any{"jobId": "crit9", "role": "code-critic", "status": "completed", "round": 1, "reviews": "commit:" + strings.Repeat("3", 40)})
+	b.writeJob(map[string]any{"jobId": "crit9", "role": "code-critic", "status": "completed", "round": 1, "reviews": "commit:" + strings.Repeat("3", 40), "findingRegister": []any{}})
 	b.writeReturn("crit9", 1, "crit9", map[string]any{"id": "F1", "material": true})
 	var reads [][]string
 	b.owners.branchRead = func(args []string) (branch.BranchReadResult, int, error) {
@@ -719,17 +766,28 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	code, result := b.do("review", "commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic")
 	expectOutcome(t, "terminal but unclosed critic", code, result, intentInProgress)
 	if len(reads) != 1 || !slices.Contains(reads[0], "gpt-critic") || publishes != 0 ||
-		!strings.Contains(result.Decision, "metasystem close crit9 --dispositions FILE") || !strings.Contains(result.Decision, "review commit abc1234 --goal standing-validation") ||
+		!strings.Contains(result.Decision, "review commit abc1234 --goal standing-validation --dispositions FILE") || strings.Contains(result.Decision, "gpt-critic") || strings.Contains(result.Decision, "metasystem close") ||
 		result.Data.(map[string]any)["material"] != float64(1) {
 		t.Fatalf("an unclosed critic names the author's close, then the same review; nothing is collected: %v %+v", reads, result)
 	}
 	subject, _ := json.Marshal(readsubject.ReadSubject{Kind: readsubject.SubjectCommit, Commit: strings.Repeat("3", 40), Parent: strings.Repeat("4", 40), Tree: strings.Repeat("5", 40), DiffDigest: strings.Repeat("6", 64)})
 	var subjectObject map[string]any
 	_ = json.Unmarshal(subject, &subjectObject)
-	record := b.job("crit9")
-	record["closure"] = map[string]any{"criticRoot": "crit9", "round": 1, "subject": subjectObject, "mechanism": "clean"}
-	b.writeJob(record)
-	code, result = b.do("review", "commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic")
+	// The author's decisions close the review through the whole close owner
+	// (the bed's close process stamps the closure), then it is collected.
+	b.handler = func(process intentProcess) intentProcessResult {
+		record := b.job("crit9")
+		record["chainClosed"] = true
+		record["closure"] = map[string]any{"criticRoot": "crit9", "round": 1, "subject": subjectObject, "mechanism": "clean"}
+		b.writeJob(record)
+		return intentProcessResult{}
+	}
+	decisions := filepath.Join(b.root(), "crit9-decisions.md")
+	b.writeFile(decisions, deliveryDispositionsHeader+"| F1 | refuted | the test at x_test.go:12 covers it | none |\n")
+	code, result = b.do("review", "commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic", "--dispositions", decisions)
+	if len(b.calls) != 1 || filepath.Base(b.calls[0][0]) != "dispatch.sh" || b.calls[0][1] != "close" {
+		t.Fatalf("the decided review did not run the whole close owner: %v %+v", b.calls, result)
+	}
 	expectOutcome(t, "collected, publication lost", code, result, intentPartial)
 	if len(reads) != 3 || !slices.Contains(reads[2], "--collect") || result.Next == nil || !strings.Contains(result.Next.Reason, "no critic or commit is repeated") {
 		t.Fatalf("a lost publication is partial with the same command: %v %+v", reads, result)
@@ -738,13 +796,19 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 		reads = append(reads, args)
 		return branch.BranchReadResult{State: "already-collected", RootJob: "crit9", GateRunID: "g1", AttestationCommit: "attest1"}, 0, nil
 	}
-	code, result = b.do("review", "commit", "abc1234", "--goal", "standing-validation")
+	// The printed continuation is the exact subject's review; the decided
+	// call's model and dispositions are not repeated.
+	if want := []string{"metasystem", "review", "commit", "abc1234", "--goal", "standing-validation"}; !slices.Equal(result.Next.Argv, want) {
+		t.Fatalf("the lost publication's continuation is %v, want %v", result.Next.Argv, want)
+	}
+	calls := len(b.calls)
+	code, result = b.do(result.Next.Argv[1:]...)
 	expectOutcome(t, "republished", code, result, intentConfirmed)
-	if len(reads) != 4 || slices.Contains(reads[3], "--collect") || publishes != 2 {
+	if len(reads) != 4 || slices.Contains(reads[3], "--collect") || publishes != 2 || len(b.calls) != calls {
 		t.Fatalf("the repeat publishes the retained attestation without collecting again: %v", reads)
 	}
 
-	calls := len(b.calls)
+	calls = len(b.calls)
 	for _, args := range [][]string{
 		{"review", "commit", "abc1234", "--goal", "standing-validation", "--effort", "high"},
 		{"review", "job", "impl1", "--model", "gpt-critic", "--tool-calls", "20"},

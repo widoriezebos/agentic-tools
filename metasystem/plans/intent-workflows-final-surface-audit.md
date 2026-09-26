@@ -3,6 +3,11 @@
 Root notes from real checkpoint4 help and current source, 26 September 2026.
 Required by the user's full intent/no-internals contract, not an expanded design.
 
+This is the historical discovery record. Its material gaps are now corrected and
+verified; final acceptance is in `intent-workflows-verification.md` and the
+completed matrices in the three intent designs. The observations below retain
+their original checkpoint context.
+
 - The reduced root has nine starting points and 24 lines. This is meaningful only
   when the complete workflow behind build/review/land, design/review, manual review
   and recovery exists. Keep every capability in intent-workflows-capabilities.md.
@@ -37,7 +42,7 @@ the author where to write. Confirm against final source and fix through the exis
 author prompt/declared-output contract. A fake author that secretly reads store
 metadata or receives Page from a test callback would hide the bug. The real-process
 fake-author fixture must obtain its output path from the actual prompt, just as
-the paid author would. Independent Sol must inspect this boundary.
+the paid author would. Independent Fable must inspect this boundary.
 
 
 ## Manual submission must work in an ordinary live checkout
@@ -97,3 +102,28 @@ report cleanup failure/uncertain installation honestly. An explicit supplied pat
 must also work from a clean target goal checkout; cwd alone never means a patch
 is already applied. Complete manual delivery still needs actual endpoint payload,
 not only the current fixture's successful batch join with fake landing effects.
+
+## Capability inventory completion, 26 September
+
+Two omitted retained outcomes were found by tracing all48 commands and13 advanced
+capabilities to their current public implementation. These correct the accepted
+scope; they add no top-level verb or owner.
+
+- Abandonment with a successor currently omits the existing atomic owner's Carried
+  input, then attempts succession only after abandon confirms. Live dependents can
+  therefore refuse before succession, while interrupted succession emits an internal
+  carry command and public replay stops on the archived source. Fresh `abandon G
+  --reason TEXT --successor G2` must forward the successor to goal.Abandon; that owner
+  already archives and repoints dependents atomically. Already-abandoned recovery
+  uses existing CarryAbandoned through that same public intention, preserving the
+  original reason and fresh enrolled-human proof. Invalid successors cannot leave
+  a newly abandoned source; completed replays cannot append duplicate history.
+- Settings supports a known non-launch key but lacks the existing key enumeration
+  and complete validation outcomes. `settings --keys [--matching PREFIX]` uses the
+  existing config keys owner, and `check settings` uses its validate owner, both
+  honoring the selected installation. Preserve existing summary and key reads.
+  Synthetic selected-installation fixtures prove discovery and invalid-setting
+  refusal; no live private configuration is read during development verification.
+
+These are required capability-preservation fixes for the original Opus builder.
+Independent Fable review covers their actual implementation with the whole patch.

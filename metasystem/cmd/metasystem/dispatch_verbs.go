@@ -1895,6 +1895,7 @@ func runDispatchCritiqueReadAdmission(args []string) int {
 	role := flags.String("role", "", "critic role")
 	rootJob := flags.String("root-job", "", "requesting critic root job id")
 	round := flags.Int64("round", 0, "proposed critic round")
+	goalID := flags.String("goal", "", "the goal a fresh dispatch serves")
 	subjectFile := flags.String("subject-file", "", "private computed read subject")
 	resultFile := flags.String("result", "", "structured admission result")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
@@ -1921,7 +1922,7 @@ func runDispatchCritiqueReadAdmission(args []string) int {
 			} else if !present {
 				admissionErr = fmt.Errorf("critique subject file %s contains no subject", *subjectFile)
 			} else {
-				result, admissionErr = dispatchcore.CritiqueReadAdmission(*repo, *role, *rootJob, *round, subject)
+				result, admissionErr = dispatchcore.CritiqueReadAdmissionForGoal(*repo, *role, *rootJob, *goalID, *round, subject)
 			}
 		}
 	}

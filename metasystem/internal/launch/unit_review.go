@@ -36,6 +36,11 @@ type UnitSubject struct {
 	Commit    string `json:"commit,omitempty"`
 	Tip       string `json:"tip,omitempty"`
 	Published string `json:"published,omitempty"`
+	// Examination is the critic chain whose completed return examined this
+	// subject; ExaminationRound is that return's round. A failed critic
+	// round with no return never sets them.
+	Examination      string `json:"examination,omitempty"`
+	ExaminationRound int64  `json:"examinationRound,omitempty"`
 }
 
 // UnitReview is a completed round as a committed review consumes it.

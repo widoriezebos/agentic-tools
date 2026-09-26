@@ -58,6 +58,9 @@ type workStarter struct {
 	fail  map[string]bool
 	hold  string
 	kinds []string
+	// author, when set, is the fake design author: it writes the staged
+	// page before the launch completes.
+	author func(launch.Record)
 }
 
 func (s *workStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
@@ -65,7 +68,11 @@ func (s *workStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
 	s.mu.Lock()
 	s.kinds = append(s.kinds, record.Kind)
 	red, hold := s.fail[record.Kind], s.hold == record.Kind
+	author := s.author
 	s.mu.Unlock()
+	if author != nil && record.Kind == "design" && !hold {
+		author(record)
+	}
 	s.m.Store.Update(id, func(current *launch.Record) error {
 		if hold {
 			supervisor, child := workRef(10), workRef(20)
@@ -147,7 +154,13 @@ func (g workGit) Run(directory string, _ []string, args ...string) ([]byte, erro
 
 func newWorkBed(t *testing.T) *workBed {
 	t.Helper()
-	bed := &workBed{intentBed: newIntentBed(t, false, workApprovedBox), id: "standing-validation", head: "base-commit", readDirs: map[string]bool{}}
+	return newWorkBedWith(t, workApprovedBox)
+}
+
+// newWorkBedWith is the work bed with its goal record shaped by amend.
+func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
+	t.Helper()
+	bed := &workBed{intentBed: newIntentBed(t, false, amend), id: "standing-validation", head: "base-commit", readDirs: map[string]bool{}}
 	// A public build creates the read's findings directory under the shared
 	// temporary root with a unique name; the bed removes only its own.
 	t.Cleanup(bed.removeReadDirs)
@@ -185,6 +198,13 @@ func newWorkBed(t *testing.T) *workBed {
 	templates := filepath.Join(layout.InstallationRoot, "scripts", "agents", "templates")
 	os.MkdirAll(templates, 0o700)
 	if err := os.WriteFile(filepath.Join(templates, "review-brief.md"), template, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	designTemplate, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "templates", "design-brief.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(templates, "design-brief.md"), designTemplate, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	bed.manager.TemplateDirectory = templates
@@ -509,7 +529,7 @@ func TestIntentBuildResume(t *testing.T) {
 	held := append([]string{"build", bed.id, "held", "--brief", brief, "--lines", "20"}, workCheck...)
 	code, result, _ = bed.work(held...)
 	heldRun := resultData(t, result)["run"].(string)
-	if code != 3 || result.Outcome != intentInProgress || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "unit", heldRun}) {
+	if code != 3 || result.Outcome != intentInProgress || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "goal", bed.id, "--work", "held"}) || heldRun == "" {
 		t.Fatalf("capped build: code=%d %+v", code, result)
 	}
 	bed.starter.hold = ""
@@ -634,12 +654,21 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 	code, result := run("wait", "job", "job-1", "--timeout", "5m")
 	layout, _ := owners.resolver.ResolveLayout(bed.root())
 	if code != metarun.ExitWaitDeadline || result.Outcome != intentInProgress || result.Next == nil ||
-		!slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "--resume", "wait-1", "--root", layout.InstallationRoot}) ||
+		!slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "resume", "wait-1"}) || layout.InstallationRoot == "" ||
 		!slices.Equal(waitArgs, []string{"--root", layout.InstallationRoot, "--job", "job-1", "--timeout", "5m0s"}) {
 		t.Fatalf("wait deadline: code=%d %+v args=%v", code, result, waitArgs)
 	}
+	// The printed continuation is itself a public command that resumes the
+	// same recorded wait through the wait owner.
+	code, result = run("wait", "resume", "wait-1")
+	if code != metarun.ExitWaitDeadline || result.Outcome != intentInProgress || !slices.Equal(waitArgs, []string{"--root", layout.InstallationRoot, "--resume", "wait-1"}) ||
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "resume", "wait-1"}) {
+		t.Fatalf("wait resume: code=%d %+v args=%v", code, result, waitArgs)
+	}
 	waitResult = metarun.WaitResult{SchemaVersion: 2, WaitID: "wait-2", ExitCode: metarun.ExitGreen, SourceOutcome: "green"}
-	if code, result := run("wait", "goal", bed.id); code != 0 || result.Outcome != intentConfirmed || len(waitArgs) != 8 || waitArgs[2] != "--goal" ||
+	// The goal event needs --for (or its --event alias); bare wait goal G is
+	// the goal's running work.
+	if code, result := run("wait", "goal", bed.id, "--for", "landing"); code != 0 || result.Outcome != intentConfirmed || len(waitArgs) != 8 || waitArgs[2] != "--goal" ||
 		waitArgs[4] != "--event" || waitArgs[5] != "landing" || waitArgs[6] != "--after" || waitArgs[7] == "" {
 		t.Fatalf("wait goal: code=%d %+v args=%v", code, result, waitArgs)
 	}
@@ -675,7 +704,7 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 		args   []string
 		legacy bool
 	}{
-		{[]string{"wait", "--job", "j"}, true}, {[]string{"wait", "register", "--pid", "1"}, true}, {[]string{"wait"}, true},
+		{[]string{"wait", "--job", "j"}, true}, {[]string{"wait", "register", "--pid", "1"}, true}, {[]string{"wait"}, false},
 		{[]string{"wait", "job", "j"}, false}, {[]string{"wait", "--help"}, false},
 		{[]string{"test", "plan"}, true}, {[]string{"test", "verify"}, true}, {[]string{"test", "--goal", "g"}, false},
 		{[]string{"build", "g", "u"}, false}, {[]string{"settings"}, false},

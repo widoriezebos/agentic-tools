@@ -8,9 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,31 +41,91 @@ func intentDeliveryCommands() []intentCommand {
 	goalFlag := intentFlag{name: "goal", value: "G", usage: "the goal the subject serves (default: the one the record names)"}
 	return []intentCommand{
 		{
-			name: "review", audience: "both", summary: "review a design, a finished job, a built unit or a goal-branch commit",
-			usage: []string{"metasystem review design FILE [--goal G]", "metasystem review job J", "metasystem review unit RUN", "metasystem review commit SHA --goal G"},
+			name: "review", group: "work", primary: true, audience: "both", summary: "independently review a goal's built work, a design, a job or a commit",
+			usage: []string{"metasystem review G [--work NAME] [--dispositions FILE]", "metasystem review G --changes|--patch PATCH --brief FILE [--work NAME] [--after COMMIT] [--dispositions FILE]", "metasystem review G --finding F --test NAME", "metasystem review design FILE [--goal G] [--dispositions FILE [--after N]] [--retry N]", "metasystem review job J [--dispositions FILE]", "metasystem review commit SHA --goal G",
+				"metasystem review changes --brief FILE [--goal G] [--retry N]", "metasystem review diff PATCH --brief FILE [--goal G] [--retry N]", "metasystem review goal G [--work NAME]"},
 			details: []string{
-				"design: FILE must be a design record (- Kind: design, - Id, - Goals). The review task is composed from it and the design-critique rules and runs on the configured design-critic lane.",
+				"review G records the goal's built result as the candidate and requests its independent examination: the one named with --work,",
+				"or the only work item whose result is built. Repeat the same command to see the examination's progress and findings.",
+				"An examination with no findings completes by itself: the review closes and its read is collected and published.",
+				"Findings stop at the author's decision: the review writes a decisions file bound to this exact examination; decide",
+				"each finding (accepted, refuted, out-of-scope or noted) and run review G --dispositions FILE. An accepted material",
+				"finding needs a fix first: revise G --after N --brief FILE --dispositions FILE, then review the new attempt.",
+				"An examination round that fails without findings is retried with review G --retry N (its round number): the same",
+				"review chain examines the same subject once more under its round limit; repeating it rejoins that retry.",
+				"review G --finding F --test NAME discharges a finding's obligation with the test that proves it resolved; the",
+				"examination is inferred when the goal has exactly one, else named with --review R. The session holding G",
+				"discharges in its own name; anyone else's discharge is a person's act.",
+				"--changes or --patch PATCH submits work a person or agent wrote as the goal's work (named --work, default main): claims the goal,",
+				"commits the change on the goal branch in the goal's worktree, publishes it and requests the same independent examination built work",
+				"gets; decisions, closing, collection and landing continue exactly as for built work. --changes takes this checkout's tracked and",
+				"untracked changes; system records and the named brief stay behind. From the goal's own worktree the edits are committed in place.",
+				"Repeating the command rejoins the committed version. A correction names the version it replaces: --after COMMIT (from status).",
+				"design FILE: an independent critique of a design document; the goal comes from the document or --goal.",
 				"job: a completed implementer job is reviewed by the code-critic lane; its goal and subject come from the job record.",
-				"unit: the unit run's latest completed round whose proof passed is committed on goal/G as that unit (a later round amends the unit's earlier commit), published, and read by a committed critic. Later edits in the worktree are never taken in; a changed result refuses before staging.",
-				"commit: one unit commit on goal/G is read through the goal branch read, which freezes the subject and records the attestation.",
-				"unit and commit: a finished critic is collected only after its chain is closed with the author's dispositions. The critic of a unit runs in the goal's own checkout, so run the close command the review prints, which names that checkout with --repo (metasystem close J --dispositions FILE --repo CHECKOUT), then repeat the same review to collect the read; it is published on goal/G for land G.",
-				"Run the same command again to collect the result: the dispatch keeps one identity per subject, so a repeat never starts a second review.",
+				"review job J --dispositions FILE records your decisions on that review's findings and completes the review.",
+				"commit SHA: reads one committed version of a goal's work; review commit SHA --goal G --dispositions FILE decides its findings, closes and collects.",
+				"Repeat the same command to collect the result; it continues the existing review without starting another.",
 				"Findings are for the author to disposition; a review never accepts its own findings.",
+				"changes and diff PATCH ask independent readers for feedback on this checkout's current tracked and untracked changes, or on",
+				"a supplied patch. It is diagnostic feedback only: no goal review, approval or landing follows from it, and the checkout is not",
+				"changed. The result's REF drives show review REF, wait review REF and stop review REF; the same request rejoins its reads,",
+				"and --retry N asks for one new attempt after attempt N failed or was stopped.",
+				"review goal G reviews goal G even when its id is one of the subject words design, job, unit, commit, changes, diff or goal.",
 			},
 			flags: []intentFlag{
 				goalFlag,
+				{name: "work", value: "NAME", usage: "review G: the goal's named work to review"},
+				{name: "changes", usage: "review G: submit this checkout's current changes as the goal's work"},
+				{name: "patch", value: "PATCH", usage: "review G: submit this patch file as the goal's work"},
+				{name: "dispositions", value: "FILE", usage: "review G: the author's decisions, in the bound file the review wrote"},
+				{name: "retry", value: "N", usage: "review G or design: examine the subject once more after examination N failed without findings"},
+				{name: "after", value: "N", usage: "review design: the examination the decisions answer; with --changes or --patch: the version (commit) being corrected"},
+				{name: "finding", value: "F", usage: "review G: discharge this finding's obligation with --test (or the fixture proof)"},
+				{name: "test", value: "NAME", usage: "with --finding: the test that proves the finding resolved"},
+				{name: "review", aliases: []string{"chain"}, value: "R", advanced: true, usage: "with --finding: the examination, when the goal has more than one"},
+				{name: "implementation-chain", value: "J", advanced: true, usage: "with --finding, a fixture obligation: the implementation chain carrying the fix"},
+				{name: "artifact", value: "PATH", advanced: true, usage: "with --finding, a fixture obligation: the changed artifact"},
+				{name: "result", value: "RUN", advanced: true, usage: "with --finding, a fixture obligation: the retained governed test result"},
+				{name: "critic", value: "ROOT", advanced: true, usage: "with --finding, a fixture obligation: the clean code-critic root"},
+				intentByFlag, intentLineageFlag, intentFixtureFlag,
 				{name: "brief", value: "FILE", advanced: true, usage: "commit review: the accepted implementation brief frozen into the read"},
 				{name: "tool-calls", value: "N", usage: "design and job review: the reader's maximum tool calls, stated in its brief"},
 				{name: "model", value: "MODEL", usage: "unit and commit review: the critic model, subject to roster authorization; kept with the read"},
-				{name: "effort", value: "VALUE", usage: "refused: every review's reasoning effort is set by its hazard class's configuration obligations"},
+				{name: "effort", value: "VALUE", hidden: true, usage: "refused: every review's reasoning effort is set by its hazard class's configuration obligations"},
 			},
 			maxArgs: 2,
-			examples: []string{"metasystem review design plans/designs/intent.md --tool-calls 60", "metasystem review job impl-01 --tool-calls 40", "metasystem review unit 20260925T101500Z-abc123",
+			examples: []string{"metasystem review verbs-match-intent", "metasystem review verbs-match-intent --work discovery", "metasystem review design plans/designs/intent.md --tool-calls 60", "metasystem review job impl-01 --tool-calls 40",
 				"metasystem review commit 3f2a9c1 --goal verbs-match-intent"},
 			run: runIntentReview,
 		},
 		{
-			name: "fold", audience: "agent", summary: "fold a review's dispositioned findings into a follow-up round",
+			name: "revise", group: "work", audience: "agent", summary: "correct a goal's work with a brief: one new attempt, reviewed again",
+			usage: []string{"metasystem revise G [--work NAME] [--after N] --brief FILE [--dispositions FILE]", "metasystem revise job R --dispositions FILE --brief FILE"},
+			details: []string{
+				"Every attempt of a work item has a number N, whether it passed or failed; --after N names the attempt being corrected.",
+				"The request (work, N and the brief's exact bytes) is kept before anything starts, so repeating it, even after a lost",
+				"response or a failure, reaches the same new attempt and never spends another. Without --after an identical earlier",
+				"request is rejoined first; otherwise the newest attempt is corrected. A request against an older attempt is refused.",
+				"When the new attempt fails, the same brief with --after of that attempt's number deliberately makes one more attempt.",
+				"Without --work: the only work item that failed, else the only one that finished. The result must be reviewed again.",
+				"--dispositions is the decisions file review G wrote for an examination of attempt R (R may be before N). Its findings",
+				"and decisions are frozen with the request and stay the builder's input across failed corrections; a file answering an",
+				"examination that a later attempt's completed examination superseded is refused.",
+				"revise job R continues a finished job review's implementer chain with the author's decisions on every finding.",
+			},
+			flags: []intentFlag{
+				{name: "work", value: "NAME", usage: "the goal's named work to correct"},
+				{name: "after", value: "N", usage: "the attempt being corrected (default: rejoin the same request, else the newest attempt)"},
+				intentBriefFlag,
+				{name: "dispositions", value: "FILE", usage: "the bound decisions file of the reviewed examination"},
+			},
+			maxArgs:  2,
+			examples: []string{"metasystem revise verbs-match-intent --brief fix.md", "metasystem revise job crit-01 --dispositions r1-dispositions.md --brief r1-fix.md", "metasystem revise verbs-match-intent --work discovery --after 2 --brief fix.md"},
+			run:      runIntentRevise,
+		},
+		{
+			name: "fold", group: "work", compatibility: true, replacedBy: "metasystem revise G --brief FILE, or metasystem revise job R --dispositions FILE --brief FILE", audience: "agent", summary: "fold a review's dispositioned findings into a follow-up round",
 			usage: []string{"metasystem fold review R --dispositions FILE --brief FILE", "metasystem fold unit U --brief FILE"},
 			details: []string{
 				"review: every finding of review chain R must have exactly one disposition row; the join is checked before anything starts.",
@@ -80,7 +143,7 @@ func intentDeliveryCommands() []intentCommand {
 			run: runIntentFold,
 		},
 		{
-			name: "close", audience: "agent", summary: "close a finished job chain after its findings are dispositioned",
+			name: "close", group: "work", compatibility: true, replacedBy: "metasystem review job J --dispositions FILE, review commit SHA --goal G --dispositions FILE, review design FILE --dispositions FILE or review G --dispositions FILE", audience: "agent", summary: "close a finished job chain after its findings are dispositioned",
 			usage: []string{"metasystem close J [--dispositions FILE] [--reconcile-evidence JOB]"},
 			details: []string{
 				"J is the chain's root job. A review chain needs --dispositions; the join is checked and its out-of-scope rows are recorded first.",
@@ -96,9 +159,17 @@ func intentDeliveryCommands() []intentCommand {
 			run:      runIntentClose,
 		},
 		{
-			name: "land", audience: "both", summary: "land a goal's read units, or a certified job chain",
-			usage: []string{"metasystem land G [--through COMMIT]", "metasystem land job J"},
+			name: "land", group: "work", primary: true, audience: "both", summary: "land a goal's reviewed work",
+			usage: []string{"metasystem land G [--through COMMIT]", "metasystem land G --queue-only", "metasystem land job J",
+				"metasystem land G --exception CODE --reason TEXT --by NAME [--expires 2h] [--replace-exception ID [--transfer]] [--upgrade-goals]",
+				"metasystem land G --using-exception ID"},
 			details: []string{
+				"--queue-only marks the held goal built and waiting to land, and nothing else: no proof runs, no read is collected and nothing is pushed.",
+				"--exception is a person's explicit act, never implied by land G: the goal's whole landing candidate is computed, the",
+				"exception past exactly one refusal code (or one group:NAME) is recorded with the enrolled person's proof, and the carried",
+				"landing delivers it from this checkout's main. Repeating the request rejoins the recorded exception; a changed candidate",
+				"needs --replace-exception. --using-exception ID lands under an exception already recorded, locally or through the channel.",
+				"The claim leaves the one-claim quota and its elapsed fence until it lands; each machine has one landing slot.",
 				"With landing.batch-root configured, the goal branch (or the certified chain) joins the landing batch, which proves and pushes it.",
 				"Without it, the read-clean goal branch is proved on its landing candidate, prepared and pushed by hand.",
 				"Missing reads, proof or approval refuse with the missing input; no other route is tried instead.",
@@ -106,9 +177,19 @@ func intentDeliveryCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
+				{name: "queue-only", usage: "only mark the held goal waiting to land, for a later land G"},
+				{name: "exception", value: "CODE", advanced: true, usage: "a person's exception: the one refusal code or group:NAME this landing is carried past"},
+				{name: "reason", value: "TEXT", advanced: true, usage: "with --exception: why"},
+				{name: "by", value: "NAME", advanced: true, usage: "with --exception: the person deciding, at the enrolled terminal"},
+				{name: "expires", value: "DURATION", advanced: true, usage: "with --exception: how long it stays usable (default 2h, at most 4h)"},
+				{name: "replace-exception", value: "ID", advanced: true, usage: "with --exception: the unused exception this one replaces"},
+				{name: "transfer", advanced: true, usage: "with --replace-exception: take over an exception recorded on another seat"},
+				{name: "upgrade-goals", advanced: true, usage: "with --exception: raise the goal ledger's format in the same act"},
+				{name: "using-exception", value: "ID", advanced: true, usage: "land under this already recorded exception (local or answered through the channel)"},
+				intentLineageFlag,
 			},
 			maxArgs:  2,
-			examples: []string{"metasystem land verbs-match-intent", "metasystem land verbs-match-intent --through 3f2a9c1", "metasystem land job impl-01"},
+			examples: []string{"metasystem land verbs-match-intent", "metasystem land verbs-match-intent --queue-only", "metasystem land verbs-match-intent --through 3f2a9c1", "metasystem land job impl-01"},
 			run:      runIntentLand,
 		},
 	}
@@ -129,12 +210,15 @@ type intentProcessResult struct {
 // intentDeliveryOwners are the owners the delivery commands call. Production
 // uses defaultIntentDeliveryOwners; tests give each invocation its own.
 type intentDeliveryOwners struct {
-	process     func(intentProcess) intentProcessResult
-	executable  func() (string, error)
-	branchRead  func([]string) (branch.BranchReadResult, int, error)
-	branchState func(root, goalID string) (intentBranchState, error)
-	landPrep    func([]string) (goalBranchLandPrepOutcome, int, error)
-	landPush    func([]string) (branch.PreparedLanding, string, int, error)
+	// recordWriter asks the record-writer authority owner whether this
+	// engine may write the named chain's records, before anything writes.
+	recordWriter func(root, job string) (cause string, err error)
+	process      func(intentProcess) intentProcessResult
+	executable   func() (string, error)
+	branchRead   func([]string) (branch.BranchReadResult, int, error)
+	branchState  func(root, goalID string) (intentBranchState, error)
+	landPrep     func([]string) (goalBranchLandPrepOutcome, int, error)
+	landPush     func([]string) (branch.PreparedLanding, string, int, error)
 	// landCandidate composes the pending landing and returns the candidate
 	// tree its receipt must prove.
 	landCandidate func([]string) (goalBranchLandPrepOutcome, int, error)
@@ -159,8 +243,9 @@ type intentBranchState struct {
 
 func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 	return &intentDeliveryOwners{
-		process:    runIntentOwnerProcess,
-		executable: os.Executable,
+		recordWriter: recordWriterPreflight,
+		process:      runIntentOwnerProcess,
+		executable:   os.Executable,
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			binary, err := os.Executable()
 			if err != nil {
@@ -428,9 +513,34 @@ func (inv *intentInvocation) sameCommand() []string {
 // ---- review
 
 func runIntentReview(inv *intentInvocation) int {
+	manual := inv.input.has("changes") || inv.input.has("patch")
+	switch args := inv.input.args; {
+	case manual && len(args) == 1 && !slices.Contains(reviewSubjectWords, args[0]):
+		return runIntentReviewManual(inv, args[0])
+	case manual && len(args) == 2 && args[0] == "goal":
+		return runIntentReviewManual(inv, args[1])
+	case manual:
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--changes and --patch submit a goal's work: review G --changes|--patch PATCH --brief FILE; nothing was done"})
+	case len(args) == 1 && !slices.Contains(reviewSubjectWords, args[0]):
+		return runIntentReviewGoal(inv, args[0])
+	case len(args) == 2 && args[0] == "goal":
+		return runIntentReviewGoal(inv, args[1])
+	case len(args) == 1 && args[0] == "changes":
+		return runIntentReviewDiagnostic(inv, "")
+	case len(args) == 2 && args[0] == "diff":
+		return runIntentReviewDiagnostic(inv, args[1])
+	}
+	if inv.input.has("work") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: review G --work NAME; nothing was done"})
+	}
+	for _, number := range []string{"retry", "after"} {
+		if value, err := strconv.Atoi(inv.input.text(number)); inv.input.has(number) && (err != nil || value < 1) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s takes an examination number such as 1; nothing was done", number)})
+		}
+	}
 	if len(inv.input.args) != 2 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:    "review names what to review: design FILE, job J, unit RUN or commit SHA",
+			Summary:    "review names what to review: G, goal G, design FILE, job J, unit RUN, commit SHA, changes or diff PATCH",
 			nextReason: "for example: metasystem review design plans/designs/intent.md"})
 	}
 	if result := inv.selectRoot(); result != nil {
@@ -451,7 +561,31 @@ func runIntentReview(inv *intentInvocation) int {
 	case "design":
 		return inv.render(inv.reviewDesign(subject))
 	case "job":
-		return inv.render(inv.reviewJob(subject))
+		// The reference status work prints selects its store; review reads a
+		// dispatch job, always by its raw id.
+		job, problem := inv.resolveJob(subject, "review")
+		qualified := strings.HasPrefix(subject, launchJobPrefix) || strings.HasPrefix(subject, dispatchJobPrefix)
+		switch {
+		case problem != nil && qualified:
+			return inv.render(*problem)
+		case problem != nil:
+			if data, _ := problem.Data.(map[string]any); data["candidates"] != nil {
+				return inv.render(*problem)
+			}
+		case job.kind == "launch":
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "job", ID: jobReference(job)}},
+				Summary: fmt.Sprintf("%s is a launch; review job reads a dispatch job (j2:ID); nothing was done", jobReference(job))})
+		default:
+			subject = job.id
+		}
+		if record, err := inv.jobRecord(subject); err == nil && criticRole(recordText(record, "role")) {
+			return inv.render(inv.closeCriticJob(subject))
+		}
+		result := inv.reviewJob(subject)
+		if inv.input.has("dispositions") {
+			return inv.render(inv.closeJobReview(subject, result))
+		}
+		return inv.render(result)
 	case "commit":
 		return inv.render(inv.reviewCommit(subject))
 	case "unit":
@@ -498,7 +632,7 @@ func readIntentDesignRecord(path string) (intentDesignRecord, []byte, error) {
 		}
 	}
 	if kind != "design" || record.ID == "" {
-		return record, data, fmt.Errorf("%s is not a design record: its header needs - Kind: design and - Id", path)
+		return record, data, fmt.Errorf("%s is not a design document of a goal; metasystem design G writes one, or name the goal's existing design", path)
 	}
 	return record, data, nil
 }
@@ -528,6 +662,8 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 
 // reviewBrief renders scripts/agents/templates/review-brief.md for one
 // subject. Every value is recorded state or the caller's explicit input.
+const designCritiqueRounds = 2
+
 func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, scope, copyPath, contents, findings string, checklist []string) string {
 	lines := []string{
 		"Working Mode: " + mode,
@@ -551,7 +687,7 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 		"",
 		"Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn.",
 		"",
-		"No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn is registered with `metasystem wait register`.",
+		"No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn continues with the wait command its result prints.",
 		"",
 	}
 	for index, item := range checklist {
@@ -635,7 +771,10 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	if lineCount == 0 {
 		lineCount = 1
 	}
-	briefText := reviewBrief("design review", "design "+record.ID, goalID, rounds, calls,
+	// A design critique has at most two rounds: the register raises a second
+	// round's unresolved findings to a person (finding_register.go).
+	rounds = min(rounds, designCritiqueRounds)
+	briefText := reviewBrief("design-critique", "design "+record.ID, goalID, rounds, calls,
 		"the threat model the design page states for itself, and goal "+goalID+"'s intent; a true finding outside it closes as out-of-scope.",
 		fmt.Sprintf("design record %s at %s (status %s) and its declared outputs; the implementation is out of scope.", record.ID, gitRel, record.Status),
 		filepath.Join(git, filepath.FromSlash(gitRel)),
@@ -645,8 +784,25 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	if err := writeIntentInputs(dir, map[string]string{brief: briefText, outputs: gitRel + "\n"}); err != nil {
 		return intentResult{Targets: target, Outcome: intentFailed, Summary: err.Error()}
 	}
-	return inv.dispatchReview(target, []string{"--role", "design-critic", "--brief", brief, "--goal", goalID,
-		"--destructive-reach", "DESIGN-BEARING", "--outputs", outputs, "--design", filepath.Join(git, filepath.FromSlash(gitRel))})
+	designPath := filepath.Join(git, filepath.FromSlash(gitRel))
+	plan := designReviewPlan{targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief}
+	if decided := inv.reviewDesignChain(plan); decided != nil {
+		return *decided
+	}
+	if len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot, goalID, designPath)) == 0 {
+		// The first paid critique needs the goal's claim; an approved goal
+		// nobody holds is claimed lawfully, with no build worktree.
+		if refused := inv.acquireDesignCritiqueClaim(goalID); refused != nil {
+			return *refused
+		}
+	}
+	chainsBefore := len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot, goalID, designPath))
+	result := inv.dispatchReview(target, []string{"--role", "design-critic", "--brief", brief, "--goal", goalID,
+		"--destructive-reach", "DESIGN-BEARING", "--outputs", outputs, "--design", gitRel})
+	if chainsBefore == 0 {
+		inv.recordFirstDesignExamination(plan)
+	}
+	return result
 }
 
 // writeIntentInputs writes generated review inputs once. The same subject
@@ -712,7 +868,7 @@ func (inv *intentInvocation) reviewJob(job string) intentResult {
 	}
 	dir := filepath.Join(inv.layout.InstallationRoot, "artifacts", "agents", "intent-review", "job-"+job)
 	brief := filepath.Join(dir, "brief.md")
-	briefText := reviewBrief("code review", "job "+job, goalID, rounds, calls,
+	briefText := reviewBrief("code-critique", "job "+job, goalID, rounds, calls,
 		"the threat model of the design and brief job "+job+" implements; a true finding outside it closes as out-of-scope.",
 		fmt.Sprintf("implementer job %s's recorded diff against its brief; unchanged code is out of scope.", job),
 		recordText(record, "workspaceRoot"),
@@ -758,7 +914,7 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 			nextReason: "the same request is recovered under its recorded dispatch identity; it is not dispatched again"}
 	}
 	switch {
-	case outcome.JobID != "":
+	case outcome.JobID != "" && !strings.HasPrefix(outcome.Outcome, "REFUSED"):
 		return outcome, nil
 	case outcome.Outcome == "RECONCILING" || outcome.Outcome == "IN-PROGRESS" || outcome.Outcome == "BOUND":
 		return outcome, &intentResult{Targets: targets, Outcome: intentInProgress,
@@ -805,8 +961,16 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 	result := intentResult{Targets: targets, Outcome: intentConfirmed, Data: data,
 		Summary: fmt.Sprintf("review %s returned %d findings, %d material", job, len(findings), material)}
 	if len(findings) > 0 {
-		result.Decision = fmt.Sprintf("the author dispositions each finding of %s, then folds or closes the review", job)
-		result.text = []string{"dispositions: metasystem fold review " + job + " --dispositions FILE --brief FILE, or metasystem close " + job + " --dispositions FILE"}
+		result.Decision = fmt.Sprintf("the author decides each finding of %s in a dispositions file, then corrects or closes the review", job)
+		if len(targets) > 0 && targets[0].Kind == "job" {
+			reviewed := targets[0].ID
+			result.text = []string{"correct: " + shellCommand(inv.publicArgv("revise", "job", job, "--dispositions", "FILE", "--brief", "FILE")),
+				"close: " + shellCommand(inv.publicArgv("review", "job", reviewed, "--dispositions", "FILE"))}
+		} else {
+			result.text = []string{"close: " + shellCommand(inv.publicArgv("close", job, "--dispositions", "FILE"))}
+		}
+	} else if len(targets) > 0 && targets[0].Kind == "job" {
+		result.next, result.nextReason = inv.publicArgv("review", "job", targets[0].ID, "--dispositions", "FILE"), "close the review with the author's (empty) decisions"
 	}
 	return result
 }
@@ -826,6 +990,9 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	if inv.input.has("model") {
 		args = append(args, "--model", inv.input.text("model"))
 	}
+	if inv.input.has("retry") {
+		args = append(args, "--retry", inv.input.text("retry"))
+	}
 	return inv.commitReview(targets, inv.layout.InstallationRoot, goalID, unit, args)
 }
 
@@ -844,6 +1011,15 @@ func (inv *intentInvocation) criticClosure(targets []intentTarget, root, unit, g
 	}
 	data := map[string]any{"rootJob": rootJob, "state": "terminal-unclosed"}
 	if round, err := inv.newestRoundAt(root, rootJob); err == nil {
+		if _, _, err := readIntentFindings(inv.returnPathAt(root, rootJob, recordRound(round))); err != nil {
+			// The examination ended without a return: there are no findings to
+			// decide; the same review examines the subject once more.
+			again := append(inv.canonicalReviewArgv(targets, goalID, unit), "--retry", fmt.Sprint(recordRound(round)))
+			data["failedRound"] = recordRound(round)
+			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
+				Summary:  fmt.Sprintf("examination round %d of critic %s ended without findings to decide", recordRound(round), rootJob),
+				Decision: "examine the subject once more in the same chain, once the old round is proven stopped: " + shellCommand(again)}
+		}
 		if findings, verdict, err := readIntentFindings(inv.returnPathAt(root, rootJob, recordRound(round))); err == nil {
 			material := 0
 			for _, finding := range findings {
@@ -856,8 +1032,8 @@ func (inv *intentInvocation) criticClosure(targets []intentTarget, root, unit, g
 	}
 	return &intentResult{Targets: targets, Outcome: intentInProgress, Data: data,
 		Summary: fmt.Sprintf("critic %s has finished reading unit %s, but its chain is not closed", rootJob, unit),
-		Decision: fmt.Sprintf("the author dispositions every finding of %s in a dispositions file, runs %s, then repeats %s",
-			rootJob, shellCommand(closeArgv(root, inv.layout.InstallationRoot, rootJob)), shellCommand(inv.sameCommand()))}
+		Decision: fmt.Sprintf("the author decides every finding of %s in a dispositions file, then runs %s",
+			rootJob, shellCommand(append(slices.DeleteFunc(inv.sameCommand(), func(word string) bool { return word == "--json" }), "--dispositions", "FILE")))}
 }
 
 // ---- fold
@@ -1050,6 +1226,20 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	if evidence := inv.input.text("reconcile-evidence"); evidence != "" && !validIntentJobID(evidence) {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%q is not a review evidence job id", evidence)}
 	}
+	writer := inv.delivery().recordWriter
+	if writer == nil {
+		writer = recordWriterPreflight
+	}
+	if cause, err := writer(inv.layout.InstallationRoot, job); err != nil {
+		result := intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": cause},
+			Summary: fmt.Sprintf("the close of %s was not started: %v", job, err)}
+		if cause == "record-writer-refused" {
+			result.Decision = "the close writes the review's records, which only a person, the checkout's lease holder or the chain's own job may do; one of them runs the same command"
+		} else {
+			result.Decision = "the caller's authority could not be established; nothing was written; run the same command where the checkout's authority can be read"
+		}
+		return result
+	}
 	if criticRole(recordText(root, "role")) {
 		if !inv.input.has("dispositions") {
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
@@ -1114,6 +1304,22 @@ func nonEmptyLines(text string) []string {
 
 func runIntentLand(inv *intentInvocation) int {
 	args := inv.input.args
+	if inv.input.switched("queue-only") {
+		if len(args) != 1 || inv.input.has("through") || inv.input.has("using-exception") || slices.ContainsFunc(exceptionOptions, inv.input.has) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: "--queue-only takes one goal and no other choice; nothing was done", Decision: "metasystem land G --queue-only"})
+		}
+		return runIntentQueueOnly(inv, args[0])
+	}
+	if inv.input.has("lineage") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "--lineage names the session that queues a landing; it is taken only with --queue-only; nothing was done"})
+	}
+	if len(args) == 1 && (inv.input.has("exception") || inv.input.has("using-exception")) {
+		if problem := inv.landExceptionInput(args[0]); problem != nil {
+			return inv.render(*problem)
+		}
+	}
 	if len(args) == 0 || len(args) > 2 || (len(args) == 2 && args[0] != "job") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "land names a goal, or job J",
 			nextReason: "for example: metasystem land verbs-match-intent"})
@@ -1125,7 +1331,20 @@ func runIntentLand(inv *intentInvocation) int {
 		return inv.render(*result)
 	}
 	if len(args) == 2 {
+		for _, other := range append([]string{"using-exception"}, exceptionOptions...) {
+			if inv.input.has(other) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "an exception lands a goal, not a job chain; nothing was done"})
+			}
+		}
 		return inv.render(inv.landJob(args[1]))
+	}
+	if inv.input.has("exception") || inv.input.has("using-exception") {
+		return inv.render(inv.landException(args[0]))
+	}
+	for _, other := range exceptionOptions {
+		if inv.input.has(other) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to an exceptional landing with --exception CODE; nothing was done", other)})
+		}
 	}
 	return inv.render(inv.landGoal(args[0], inv.input.text("through")))
 }
@@ -1439,12 +1658,84 @@ func mustJSON(value any) string {
 	return string(encoded) + "\n"
 }
 
-// closeArgv is the public close of a critic chain whose records live in
-// installation; another installation than the selected one is named.
-func closeArgv(installation, selected, rootJob string) []string {
-	argv := []string{"metasystem", "close", rootJob, "--dispositions", "FILE"}
-	if installation != selected {
-		argv = append(argv, "--repo", installation)
+// closeJobReview completes a finished job review with the author's
+// dispositions: the join is checked and the whole close owner closes the
+// critic chain, exactly as close does for that chain.
+func (inv *intentInvocation) closeJobReview(job string, reviewed intentResult) intentResult {
+	critic := ""
+	for _, target := range reviewed.Targets {
+		if target.Kind == "job" && target.ID != job {
+			critic = target.ID
+		}
 	}
-	return argv
+	if critic == "" {
+		if data, ok := reviewed.Data.(map[string]any); ok {
+			critic, _ = data["rootJob"].(string)
+		}
+	}
+	if critic == "" || reviewed.Outcome == intentRefused || reviewed.Outcome == intentFailed {
+		reviewed.Summary = "the review of job " + job + " has no finished critic to decide yet: " + reviewed.Summary
+		if reviewed.Outcome == intentConfirmed {
+			reviewed.Outcome, reviewed.code = intentInProgress, 0
+		}
+		return reviewed
+	}
+	closed := inv.closeChain(critic)
+	closed.Targets = append([]intentTarget{jobTarget(job)}, closed.Targets...)
+	if closed.Outcome == intentConfirmed || closed.Outcome == intentUnchanged {
+		closed.Summary = fmt.Sprintf("the review of job %s is decided and its chain %s is closed", job, critic)
+	}
+	return closed
+}
+
+// recordWriterPreflight classifies this executing engine for the checkout
+// and asks the record-writer authority owner, as the close owner's own
+// guards will; it proves permission to start, not that the close completes.
+func recordWriterPreflight(root, job string) (string, error) {
+	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
+	if err != nil {
+		return "authority-unestablished", err
+	}
+	if err := authority.Authorize("record-writer", map[string]any{"class": caller.Class, "holder": caller.Holder,
+		"jobId": caller.JobId, "stewardJob": caller.StewardJob}, job); err != nil {
+		return "record-writer-refused", err
+	}
+	return "", nil
+}
+
+// closeCriticJob completes an existing review chain named by its critic root
+// with the author's decisions, through the same whole close owner that
+// review G and review commit use: the join, record-writer authority, live
+// processes, caps and accepted findings are the owner's checks. A closed
+// chain is not an accepted design, a collected goal read or permission to
+// land; it only ends that review.
+func (inv *intentInvocation) closeCriticJob(job string) intentResult {
+	if !inv.input.has("dispositions") {
+		return intentResult{Targets: []intentTarget{jobTarget(job)}, Outcome: intentRefused, code: 2,
+			Summary:  fmt.Sprintf("job %s is a review chain; its findings are decided, not reviewed again; nothing was done", job),
+			Decision: "decide every finding in a dispositions file, then run " + shellCommand(inv.publicArgv("review", "job", dispatchJobPrefix+job, "--dispositions", "FILE"))}
+	}
+	closed := inv.closeChain(job)
+	if closed.Outcome == intentConfirmed || closed.Outcome == intentUnchanged {
+		closed.Summary = fmt.Sprintf("review chain %s is closed with the author's decisions; this ends that review only: it accepts no design, collects no goal read and does not permit landing", job)
+	}
+	return closed
+}
+
+// canonicalReviewArgv is the public review of the selected subject, for a
+// continuation: the goal's named work when a work item was selected, else
+// the committed version itself. It carries no flag of the call that printed
+// it, so a continuation never repeats a stale --dispositions or --retry.
+func (inv *intentInvocation) canonicalReviewArgv(targets []intentTarget, goalID, unit string) []string {
+	for _, target := range targets {
+		if target.Kind == "work" && target.ID != "" {
+			return inv.publicArgv(append(reviewGoalWords(goalID), "--work", target.ID)...)
+		}
+	}
+	for _, target := range targets {
+		if target.Kind == "unit" && target.ID != "" {
+			return inv.publicArgv("review", "unit", target.ID)
+		}
+	}
+	return inv.publicArgv("review", "commit", unit, "--goal", goalID)
 }

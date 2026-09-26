@@ -64,7 +64,7 @@ var settingDefaults = []Setting{
 	{Key: SeatWindowKey, Value: "0", Source: "default"}, {Key: BuildWindowKey, Value: "0", Source: "default"},
 	{Key: DesignWindowKey, Value: "0", Source: "default"}, {Key: ReadWindowKey, Value: "0", Source: "default"},
 	{Key: BuildModelKey, Value: "claude-opus-5-5", Source: "default"}, {Key: BuildEffortKey, Value: "xhigh", Source: "default"},
-	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "gpt-6-sol", Source: "default"},
+	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "claude-fable-5-1", Source: "default"},
 	{Key: WaitCapKey, Value: "240", Source: "default"}, {Key: BriefCapKey, Value: "120000", Source: "default"},
 	{Key: BuildLinesCapKey, Value: "1500", Source: "default"}, {Key: ReadSplitLinesKey, Value: "1200", Source: "default"},
 	{Key: DesignBaselineTokensKey, Value: "2432374", Source: "default"}, {Key: DesignBaselineRequestsKey, Value: "28", Source: "default"},
@@ -74,9 +74,9 @@ var settingDefaults = []Setting{
 	// has a model of its own, because the author and the critic are
 	// different models; and a lane names its runtime because a model name is
 	// not an agent — more than one agent can serve the same model.
-	{Key: CritiqueModelKey, Value: "gpt-6-sol", Source: "default"},
-	{Key: BuildRuntimeKey, Value: "claude", Source: "default"}, {Key: CritiqueRuntimeKey, Value: "codex", Source: "default"},
-	{Key: DesignRuntimeKey, Value: "claude", Source: "default"}, {Key: ReadRuntimeKey, Value: "codex", Source: "default"},
+	{Key: CritiqueModelKey, Value: "claude-opus-5-5", Source: "default"},
+	{Key: BuildRuntimeKey, Value: "claude", Source: "default"}, {Key: CritiqueRuntimeKey, Value: "claude", Source: "default"},
+	{Key: DesignRuntimeKey, Value: "claude", Source: "default"}, {Key: ReadRuntimeKey, Value: "claude", Source: "default"},
 }
 
 func LoadShippedSeatWindow(moduleRoot string, configured int64) (ShippedSeatWindow, error) {

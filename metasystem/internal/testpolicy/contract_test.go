@@ -906,3 +906,36 @@ func fixtureContract() Contract {
 		},
 		Always: Always{Canary: []string{"app-unit"}, Standard: []string{}}, Unknown: []string{"app-unit"}, Cadence: []string{"app-unit", "app-deep"}}
 }
+
+// TestMetaSystemDesignChangeSelectsTheDispatcherSection: a delivery that
+// changes the public design commands at goal risk 3/2/3/2 requires the full
+// dispatcher fixture section, whose b scenario drives the design owner
+// journeys, as the provider of the surface's critical budget-stop-authority
+// obligation; no surface lists that section as a deep choice.
+func TestMetaSystemDesignChangeSelectsTheDispatcherSection(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const section = "section/dispatcher-adapter-and-mission-runner-fixtures"
+	for _, path := range []string{"metasystem/cmd/metasystem/intent_design.go", "metasystem/cmd/metasystem/intent_design_review.go"} {
+		plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{path}, GoalRisk: GoalRisk{Severity: 3, Novelty: 2, Exposure: 3, Accumulation: 2},
+			RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+		if err != nil {
+			t.Fatalf("select %s: %v", path, err)
+		}
+		if !contains(plan.RequiredGroups, section) {
+			t.Errorf("a risk 3/2/3/2 change to %s did not require %s: %v", path, section, plan.RequiredGroups)
+		}
+	}
+	for _, surface := range contract.Surfaces {
+		if contains(surface.Deep, section) {
+			t.Errorf("surface %s lists the full dispatcher section as deep", surface.ID)
+		}
+	}
+}

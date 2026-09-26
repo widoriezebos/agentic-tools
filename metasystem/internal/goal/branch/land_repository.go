@@ -63,8 +63,17 @@ func gitLandingRepository() landingRepository {
 			if err != nil {
 				return "", nil, err
 			}
+			// The candidate is private scratch, never a delivery: the
+			// checkout's installed hooks (the pre-commit guard among them)
+			// judge the real landing commit, not its composition. An empty
+			// hooks directory turns them off, as a proof run's
+			// gittree.Materialization.HooksPath does.
+			if err := os.Mkdir(scratchHooks(scratch), 0o700); err != nil {
+				_ = os.RemoveAll(scratch)
+				return "", nil, err
+			}
 			worktree := filepath.Join(scratch, "worktree")
-			if _, err := gitOutput(repo, "worktree", "add", "--quiet", "--detach", worktree, base); err != nil {
+			if _, err := gitOutput(repo, "-c", "core.hooksPath="+scratchHooks(scratch), "worktree", "add", "--quiet", "--detach", worktree, base); err != nil {
 				_ = os.RemoveAll(scratch)
 				return "", nil, err
 			}
@@ -118,7 +127,7 @@ func gitLandingRepository() landingRepository {
 			env := []string{"GIT_AUTHOR_NAME=" + who.Name, "GIT_AUTHOR_EMAIL=" + who.Email,
 				"GIT_COMMITTER_NAME=" + who.Name, "GIT_COMMITTER_EMAIL=" + who.Email,
 				"GIT_AUTHOR_DATE=" + stamp, "GIT_COMMITTER_DATE=" + stamp}
-			_, err := gitInputEnv(dir, env, message, "commit", "--quiet", "-F", "-")
+			_, err := gitInputEnv(dir, env, message, "-c", "core.hooksPath="+scratchHooks(filepath.Dir(dir)), "commit", "--quiet", "-F", "-")
 			return err
 		},
 		tree: func(dir string) (string, error) {
@@ -159,3 +168,6 @@ func (r landingRepository) status(repo, endpoint, tip, goal string) (Status, err
 		},
 	})
 }
+
+// scratchHooks is the empty hooks directory of one land-prep scratch.
+func scratchHooks(scratch string) string { return filepath.Join(scratch, "no-hooks") }

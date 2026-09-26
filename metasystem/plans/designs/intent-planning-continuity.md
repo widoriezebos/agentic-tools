@@ -2,14 +2,14 @@
 
 - Kind: design
 - Id: 01M3EFDSFTKWEMSDCP1BB7TDGQ
-- Status: accepted
+- Status: done
 - Goals: verbs-match-intent
 
 Design critique: closed at round 2 on 2 fixture obligations (IP-C4 and IP-C5),
 material trajectory 3 to 2. Root accepts the explicit replay lookup and capped
 retry corrections below; they are bounded existing-owner changes with executable
 arbiters. All five findings are joined in intent-planning-dispositions.md.
-Mandatory independent Sol critique covers these fixtures plus all parent duties.
+Mandatory independent Fable critique covers these fixtures plus all parent duties.
 This authorizes implementation, not acceptance of unproven product behavior.
 
 Author: root Codex. This is the next usability iteration authorized by Wido,
@@ -239,15 +239,15 @@ routes, leaving maintainer protocol explanations explicitly diagnostic.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| IP-1 | CRITICAL | Public task | Correct design roster; exact retained retry; no overwritten user document | Launch design request plus project record writer | internal/launch and internal/project; intent design adapter | TestIntentDesignAuthorJourney; TestIntentDesignAdmissionNoClaim; TestDesignRequestReplay; TestDesignRequestCrashBeforeSupervisor; TestDesignPublicationConflict | Public design through fake provider and actual retention/publication owners | MISSING | Implement and drive |
-| IP-2 | CRITICAL | Bounded examination | Same critic chain, frozen old findings/new subject, replay and cap | Dispatch read/follow-up owners | internal/dispatch; intent design review | TestIntentDesignCritiqueAdmission; TestIntentDesignCritiqueContinuation; TestDesignCritiqueReplayAndCap | Two design versions, decision, one follow-up, replay, exhausted refusal | MISSING | Implement and drive |
-| IP-3 | HIGH | Public task | Status, wait, stop and failed-result recovery need only goal/document | Existing launch observation/cancellation | intent status/wait/stop adapters | TestIntentDesignLifecycle | Running, ambiguous, failed and stopped author outcomes | MISSING | Implement and drive |
-| IP-4 | HIGH | Orientation and waits | Compact task language; proof/file waits discoverable and owner-driven | Descriptors and wait owner | intent help/wait plus agent docs | TestIntentPublicOrientation; TestIntentPublicProofAndFileWait | Built CLI help and real isolated proof/file observers | MISSING | Implement and drive |
+| IP-1 | CRITICAL | Public task | Correct design roster; exact retained retry; no overwritten user document | internal/launch.Manager; internal/project publication | `internal/launch/design_request.go`; `internal/project/publish.go`; `cmd/metasystem/intent_design.go` | `cmd/metasystem/intent_design_test.go#TestIntentDesignAuthorJourney`; `cmd/metasystem/intent_design_test.go#TestIntentDesignAdmissionNoClaim`; `internal/launch/design_request_test.go#TestDesignRequestReplay`; `internal/launch/design_request_test.go#TestDesignRequestCrashBeforeSupervisor`; `internal/project/publish_test.go#TestDesignPublicationConflict` |Public design through fake provider and actual retention/publication owners; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IP-2 | CRITICAL | Bounded examination | Same critic chain, frozen old findings/new subject, replay and cap | internal/dispatch critique and follow-up owners | `internal/dispatch/design_chain.go`; `internal/dispatch/read_admission.go`; `cmd/metasystem/intent_design_review.go` | `cmd/metasystem/intent_design_review_test.go#TestIntentDesignCritiqueAdmission`; `cmd/metasystem/intent_design_review_test.go#TestDesignCritiqueReplayAndCap`; `cmd/metasystem/intent_design_real_owner_test.go#TestIntentDesignReviewRealOwnerJourney`; `cmd/metasystem/intent_design_real_owner_test.go#TestIntentDesignRetryRealOwnerJourney` |Two design versions, decision, one follow-up, replay, exhausted refusal; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IP-3 | HIGH | Public task | Status, wait, stop and failed-result recovery need only goal/document | internal/launch.Manager observation and cancellation | `cmd/metasystem/intent_design.go`; `internal/launch/design_request.go` | `cmd/metasystem/intent_design_test.go#TestIntentDesignLifecycle` |Running, ambiguous, failed and stopped author outcomes; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IP-4 | HIGH | Orientation and waits | Compact task language; proof/file waits discoverable and owner-driven | cmd/metasystem descriptors and existing wait owners | `cmd/metasystem/intent.go`; `cmd/metasystem/intent_work.go`; `cmd/metasystem/intent_process.go` | `cmd/metasystem/intent_discovery_test.go#TestIntentPublicDiscovery`; `cmd/metasystem/intent_queue_wait_test.go#TestIntentWaitObservers`; `cmd/metasystem/intent_queue_wait_test.go#TestIntentWaitRealOwner`; `cmd/metasystem/intent_queue_wait_test.go#TestIntentProofReferenceFeedsWaitProof` |Built CLI help and real isolated proof/file observers; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
 
 Fable critiques this newly observed requirement gap in at most two rounds, with
 round 2 declared as failsafe before round 1. This is a new user-authorized usability
 iteration, not another round on the parent's already-folded C1-C8. Root adjudicates.
-Opus then implements; mandatory independent Sol code critique covers the combined
+Opus then implements; mandatory independent Fable code critique covers the combined
 implementation and all parent/follow-on fixtures. Completion still requires the
 parent's full capability audit and repeated real public journeys.
 
@@ -256,9 +256,10 @@ Final named fixture details:
 - IP-C4 / TestDesignCritiqueReplayAndCap: completed follow-up replay with retained
   child; lost response with operation-to-job lookup; moved goal revision. Every
   replay rejoins the authentic same child, launches nothing, and cannot adopt a
-  mismatched subject. A stored-record fixture covers an intervening foreign round;
-  the real design owner freezes the cap at two, so a third round after completed
-  round two is not a lawful runtime scenario and must not raise that cap for proof.
+  mismatched subject. The stored-record fixture rejects an operation belonging to
+  another chain. An intervening foreign round after completed round two is not a
+  lawful runtime scenario: the real design owner freezes the cap at two and must
+  not raise that cap for proof.
 - IP-C5 / same fixture plus actual follow-up owner: failed and timeout/budget-cap
   critic offer public --retry; old live process refuses; original cap is enforced;
   no fresh root for the same goal/document; repeated failed retry rejoins.
@@ -268,5 +269,11 @@ Final named fixture details:
 - TestDesignRequestCrashBeforeSupervisor: both winners of the locked starting
   transition, a delayed Supervise after recovery, and uncertain writer custody.
 - TestIntentDesignLifecycle includes explicit document choice and dead claimed
-  supervisor recovery. Sol checks actual subject refresh on follow-up and the
+  supervisor recovery. Fable checks actual subject refresh on follow-up and the
   supervisor command's refused-claim exit, which Fable did not certify.
+
+Implementation shipped with final runtime acceptance recorded in
+`plans/intent-workflows-verification.md`; Fable's three implementation reviews and
+root's literal-only final help correction are adjudicated in
+`plans/intent-workflows-code-review-dispositions.md`. Design completion does not
+conclude the human-owned goal.

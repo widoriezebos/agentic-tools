@@ -2229,6 +2229,24 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 		t.Fatalf("the wrapper adoption must record its typed resolution: %v", entry)
 	}
 
+	// The public repair route drives the same owner with the same human
+	// decision: repair mission M --problem N --confirm-restored TREE.
+	publicBed := parkedSoloBuildMission(t)
+	publicState := filepath.Join(publicBed.missionDir(), "state.json")
+	publicTree := readTestDoc(t, publicState)["openTurn"].(map[string]any)["preTree"].(string)
+	if err := os.Remove(filepath.Join(publicBed.Root, "solo.go")); err != nil {
+		t.Fatal(err)
+	}
+	public := exec.Command(filepath.Join(publicBed.Root, "bin", "metasystem"), "repair", "mission", publicBed.Mission,
+		"--problem", "1", "--confirm-restored", publicTree, "--by", "Wido", "--reason", "restored through the public route", "--json")
+	public.Dir = publicBed.Root
+	if out, err := public.CombinedOutput(); err != nil || !strings.Contains(string(out), `"outcome": "confirmed"`) {
+		t.Fatalf("the public repair route must resolve through the owner: %v\n%s", err, out)
+	}
+	if restored := readTestDoc(t, publicState); restored["parkReason"] != nil || unresolvedTaint(restored) != "" {
+		t.Fatalf("the public repair must unpark and lift the STOP like the owner verb: %v", restored["parkReason"])
+	}
+
 	// Malformed shapes refuse at the wrapper too, exit 2, no state read.
 	if _, err := runWrapper(adoptBed, "resolve-taint", "--mission", adoptBed.Mission,
 		"--taint", "1", "--restore", "not-a-tree", "--by", "Wido", "--reason", "r"); err == nil {

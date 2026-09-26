@@ -112,7 +112,34 @@ type RoleVerdict struct {
 	ConsecutiveFailures int          `json:"consecutiveFailures,omitempty"`
 	FailureEscalation   string       `json:"failureEscalation,omitempty"`
 	NoAutomaticRemedy   bool         `json:"noAutomaticRemedy,omitempty"`
+	// RemedyFacts are the typed causes behind an unhealthy verdict, one per
+	// affected goal, so a caller can name the public act without reading
+	// the reason text.
+	RemedyFacts []RemedyFact `json:"remedyFacts,omitempty"`
 }
+
+// RemedyFact is one typed cause of an unhealthy role.
+type RemedyFact struct {
+	Cause  RemedyCause `json:"cause"`
+	Goal   string      `json:"goal,omitempty"`
+	Record string      `json:"record,omitempty"`
+	Stop   string      `json:"stop,omitempty"`
+}
+
+// RemedyCause names one actionable cause a health role reports.
+type RemedyCause string
+
+const (
+	CauseBudgetMissing         RemedyCause = "budget-missing"
+	CauseBudgetMalformed       RemedyCause = "budget-malformed"
+	CauseBudgetUnknown         RemedyCause = "budget-unknown"
+	CauseBudgetBreach          RemedyCause = "budget-breach"
+	CauseBreachStopOpen        RemedyCause = "breach-stop-open"
+	CauseBreachStopUnresolved  RemedyCause = "breach-stop-indeterminate"
+	CauseEpochMismatch         RemedyCause = "epoch-mismatch"
+	CauseForeignLineage        RemedyCause = "foreign-lineage"
+	CauseStopCapabilityMissing RemedyCause = "stop-capability-missing"
+)
 
 const (
 	AutoHealEligible = "AUTO_HEAL_ELIGIBLE"
@@ -1105,12 +1132,14 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 				fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason),
 				"repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo "+strconv.Quote(repoRoot))
 			role.NoAutomaticRemedy = true
+			role.RemedyFacts = []RemedyFact{{Cause: CauseBudgetUnknown, Record: unknown.Record}}
 			return role
 		}
 		if id, malformed := malformedBudgetGoal(projectionErr); malformed {
 			role := roleDead(RoleClaimedGoalBudget,
 				fmt.Sprintf("claimed goal %s has a malformed structured budget tuple", id), goalBudgetRemedy(id))
 			role.NoAutomaticRemedy = true
+			role.RemedyFacts = []RemedyFact{{Cause: CauseBudgetMalformed, Goal: id}}
 			return role
 		}
 		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
@@ -1119,6 +1148,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 		reason    string
 		remedy    string
 		automatic bool
+		fact      RemedyFact
 	}
 	var dead []budgetFailure
 	var known []string
@@ -1144,6 +1174,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 			dead = append(dead, budgetFailure{
 				reason: fmt.Sprintf("%s BUDGET_MISSING record=plans/goals/%s.md: claimed goal has no structured budget", id, id),
 				remedy: goalBudgetRemedy(id),
+				fact:   RemedyFact{Cause: CauseBudgetMissing, Goal: id, Record: "plans/goals/" + id + ".md"},
 			})
 			continue
 		}
@@ -1154,6 +1185,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_INDETERMINATE stop=%s reason=%s",
 						id, file.Claimed.Revision, file.StopFence.StopID, batchErr),
 					remedy: "inspect the named stop batch and exact job record; keep the launch fence closed",
+					fact:   RemedyFact{Cause: CauseBreachStopUnresolved, Goal: id, Stop: file.StopFence.StopID},
 				})
 				continue
 			}
@@ -1166,12 +1198,14 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_INDETERMINATE stop=%s reason=%s%s",
 						id, file.Claimed.Revision, batch.StopID, batch.Failure, stopFiringEvidenceSummary(batch)),
 					remedy: "inspect the named stop batch and exact job record; keep the launch fence closed",
+					fact:   RemedyFact{Cause: CauseBreachStopUnresolved, Goal: id, Stop: batch.StopID},
 				})
 			default:
 				dead = append(dead, budgetFailure{
 					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_OPEN stop=%s pendingJobs=%d%s",
 						id, file.Claimed.Revision, batch.StopID, len(batch.Pending), stopFiringEvidenceSummary(batch)),
 					remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
+					fact: RemedyFact{Cause: CauseBreachStopOpen, Goal: id, Stop: batch.StopID},
 				})
 			}
 			continue
@@ -1182,6 +1216,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 				reason: fmt.Sprintf("%s BUDGET_UNKNOWN record=%s reason=%s",
 					id, budget.Unknown.Record, budget.Unknown.Reason),
 				remedy: "repair the exact BUDGET_UNKNOWN record, then run metasystem health --repo " + strconv.Quote(repoRoot),
+				fact:   RemedyFact{Cause: CauseBudgetUnknown, Goal: id, Record: budget.Unknown.Record},
 			})
 			continue
 		}
@@ -1198,6 +1233,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 				reason: fmt.Sprintf("%s revision=%d BREACH %s designCritiques=%d/%d codeCritiques=%d/%d", id, budget.GoalRevision, strings.Join(fields, ", "),
 					budget.DesignCritiques, budget.Limits.ReviewRoundLimit, budget.CodeCritiques, budget.Limits.ReviewRoundLimit),
 				remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
+				fact: RemedyFact{Cause: CauseBudgetBreach, Goal: id},
 			})
 			continue
 		}
@@ -1233,8 +1269,10 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 		reasons := make([]string, 0, len(dead))
 		remedy := dead[0].remedy
 		noAutomaticRemedy := false
+		var facts []RemedyFact
 		for _, failure := range dead {
 			reasons = append(reasons, failure.reason)
+			facts = append(facts, failure.fact)
 			if !failure.automatic && !noAutomaticRemedy {
 				remedy = failure.remedy
 				noAutomaticRemedy = true
@@ -1242,6 +1280,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 		}
 		role := roleDead(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; %s", riskUnanswered, strings.Join(reasons, "; ")), remedy)
 		role.NoAutomaticRemedy = noAutomaticRemedy
+		role.RemedyFacts = facts
 		return role
 	}
 	if len(known) == 0 {
@@ -1294,9 +1333,11 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 	var current []string
 	for _, file := range claimed {
 		if file.StopCapability == nil {
-			return roleUnknown(RoleStopCapabilityEpoch,
+			role := roleUnknown(RoleStopCapabilityEpoch,
 				fmt.Sprintf("claimed goal %s has no stop capability to compare", file.Id),
 				"repair the claimed goal record, then rerun metasystem health")
+			role.RemedyFacts = []RemedyFact{{Cause: CauseStopCapabilityMissing, Goal: file.Id, Record: "plans/goals/" + file.Id + ".md"}}
+			return role
 		}
 		capabilityEpoch := file.StopCapability.ClaimEpoch
 		if capabilityEpoch == holder.ClaimEpoch {
@@ -1304,16 +1345,19 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 			continue
 		}
 		if file.Claimed.Lineage == holder.OwnerLineage {
-			return roleDead(RoleStopCapabilityEpoch,
+			role := roleDead(RoleStopCapabilityEpoch,
 				fmt.Sprintf("goal %s stop capability claim epoch %d differs from live lease claim epoch %d under owner lineage %s",
 					file.Id, capabilityEpoch, holder.ClaimEpoch, holder.OwnerLineage),
 				fmt.Sprintf("metasystem goal restamp --id %s, or re-arm with metasystem up", file.Id))
+			role.RemedyFacts = []RemedyFact{{Cause: CauseEpochMismatch, Goal: file.Id}}
+			return role
 		}
 		role := roleDead(RoleStopCapabilityEpoch,
 			fmt.Sprintf("goal %s was claimed under owner lineage %s but the live lease belongs to owner lineage %s",
 				file.Id, file.Claimed.Lineage, holder.OwnerLineage),
 			"release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem goal handover")
 		role.NoAutomaticRemedy = true
+		role.RemedyFacts = []RemedyFact{{Cause: CauseForeignLineage, Goal: file.Id}}
 		return role
 	}
 	return roleAlive(RoleStopCapabilityEpoch, "stop capability epochs match the live lease: "+strings.Join(current, ", "))

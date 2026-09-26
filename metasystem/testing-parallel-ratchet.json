@@ -546,6 +546,196 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies",
       "test": "TestARelativeRegistryHomeIsRefusedRatherThanResolvedInTheCheckout",
       "reason": "sets the process-wide supervision registry home and the account's home directory to prove a relative registry home is refused rather than resolved inside the checkout the server was started in"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentGoalReviewCompletion",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real commit and close owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentGoalReviewEmptyJoinRealClose",
+      "reason": "sets METASYSTEM_BIN with t.Setenv so the real close owner runs the freshly built engine as its own process"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentManualDiffReview",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real checkout the diagnostic capture reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentManualWorkDelivery",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real commit, push, read and close owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestManualSubmissionReplayAndAmend",
+      "reason": "runs in the connection bed, which isolates git configuration with t.Setenv, and sets the lease lock wait with t.Setenv to prove a refusal under the real checkout lock"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestManualStageRefusalPreservesCheckout",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real goal worktree it stages into"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentManualDiffReviewStopAndRetry",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real checkout the diagnostic capture reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestManualCommitRefusalRestoresStaging",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real goal worktree and commit owner it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestManualPatchInGoalWorktreeAndChangedBrief",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real commit, push and read owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentManualWorkLandsOnEndpoint",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real commit, push, read, close and landing owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner",
+      "reason": "its migrated legacy fixture sets the process-wide terminal-table environment with t.Setenv, it sets METASYSTEM_SUPERVISION_REGISTRY_HOME and swaps terminal tables for its controls, and migration captures the global stderr"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCompatibilityGitAdapterRecordsTheFloorThroughTheEngineFloorOwner",
+      "reason": "its migrated legacy fixture sets METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv and migration captures the global stderr"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile",
+      "reason": "sets METASYSTEM_OWNER_LINEAGE with t.Setenv to control the real owner child process"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentRepairGoalsGitAdapterUpgradesOnlyTheReviewedDigest",
+      "reason": "legacyHumanTerminalRoot sets the process-wide terminal-table environment with t.Setenv"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentRepairGoalsGitAdapterAcceptsRemoteHistoryInADeclaredCoordinator",
+      "reason": "stageHumanTerminal sets the process-wide terminal-table environment, and the test changes the supervision registry home and swaps terminal tables to select the real child's authority controls"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentWaitGoalEventGitAdapterObservesAPersonsAct",
+      "reason": "eventWaitRoot sets METASYSTEM_OWNER_LINEAGE with t.Setenv, and the human act captures the global stdout and stderr"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentWaitGoalLandingGitAdapterObservesTheRealLanding",
+      "reason": "sets METASYSTEM_OWNER_LINEAGE with t.Setenv for the real wait owner process"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer",
+      "reason": "eventWaitRoot sets METASYSTEM_OWNER_LINEAGE with t.Setenv for the real channel wait owner process"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentBriefBeforeFirstWorkspaceBuilds",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real goal worktree preparation it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedGoalDeliveryGitAdapter",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedReplacement",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedFromTheLinkedGoalCheckout",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedCarryOwnerDecidesThePerson",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedChannelWordAdoption",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedChannelWordMismatchRefuses",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedAmbiguousRetainedBaseNeedsReplacement",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedReplay",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses, and sets METASYSTEM_LAND_FIXTURE_CRASH with t.Setenv to crash the real land subprocess before its push"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/landing",
+      "test": "TestCarriedStageRefusesAHeldCheckoutLock",
+      "reason": "sets METASYSTEM_LEASE_LOCK_WAIT_SEC with t.Setenv so the held checkout lock refuses without waiting"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentDesignAuthorRealOwnerJourney",
+      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where both design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentDesignReviewRealOwnerJourney",
+      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where both design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestLaunchManagerReadsClaudeTranscriptsWhereClaudeKeepsThem",
+      "reason": "sets CLAUDE_CONFIG_DIR with t.Setenv, the process environment the launch manager's Claude adapter wiring reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentDesignRetryRealOwnerJourney",
+      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where the design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentReviewSelectionAcrossProducers",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real commit, push and read owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestManualReviewFailedExaminationRetries",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real commit, push and read owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestManualReviewProtocolFailureNeedsAcceptedRisk",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real commit, push and read owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentReviewSelectionMixedProducers",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real build, commit, push and read owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestManualCleanReviewCompletesItself",
+      "reason": "runs in the connection bed, which isolates the global and system git configuration with t.Setenv for the real commit, push, read and close owners it drives"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestIntentCarriedChannelWordAdoptionStopsWhenBindingFails",
+      "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
     }
   ]
 }

@@ -631,7 +631,9 @@ func TestAbandonRefusesWithoutTheFleetFloor(t *testing.T) {
 	req.Actor.Human = "Wido"
 	proof := goalHumanProof(t, root, req.Now)
 	req.ConfigureAbandon(func() string { return strings.Repeat("a", 40) }, func(string, string, string) (bool, error) { return true, nil }, func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil })
-	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "ledger has no record that the fleet runs it") {
+	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "ledger has no record that the fleet runs it") ||
+		!strings.Contains(err.Error(), "metasystem settings compatibility --minimum-engine") || !strings.Contains(err.Error(), "metasystem status --machines") ||
+		strings.Contains(err.Error(), "goal engine-floor") || strings.Contains(err.Error(), "supervise status") {
 		t.Fatalf("missing floor: %v", err)
 	}
 	floorReq := verbReqFor(endpoint, "01J5X00000000000000000Z110", "mac-a")
@@ -669,7 +671,8 @@ func TestAbandonRefusesWithoutTheFleetFloor(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jobDir, "job-live.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "job-live") {
+	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "job-live") ||
+		!strings.Contains(err.Error(), "metasystem stop job j2:job-live") || strings.Contains(err.Error(), "delegate --cancel") {
 		t.Fatalf("passing floor did not proceed to refusal 5: %v", err)
 	}
 }

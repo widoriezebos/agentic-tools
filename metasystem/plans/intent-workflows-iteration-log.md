@@ -547,3 +547,259 @@ real supervision/reaping must write the death proof before public retry starts t
 same chain's second round. No production injection hook or fabricated terminal/death
 record is authorized. Stop-loss:65 new tools/18 actual minutes, diagnose a concrete
 owner failure before repeating the bed. Root retains certification.
+
+## Complete owner proof before independent certification
+
+Planning continuation3 (20260926t124854-10bc6f15cb) completed14:57:53 CEST. Root
+imported computed tree e1db717624a4bdb9051cf555c0b24929d2a4e2a6, final incremental
+patch SHA256 aa6ba85bb2e908c04df67999bea49e74516dea0beb492435fb1e382fd7b54eed.
+Actual public failed-review retry now waits for real reaper death proof, starts
+only the same chain's second round, rejoins that failed round on repeated input,
+and refuses a third under the real two-round cap. The existing dispatcher b bed
+passes all three Go journeys and all prior b legs (257seconds, exit0). Dead claimed
+supervisor cancellation separately reaches the actual Manager.Cancel owner with
+explicit per-instance process facts; that fixture does not claim a kernel kill.
+No production test bypass or fabricated terminal record was introduced.
+
+Main10 (20260926t123823-c990e7095c) completed15:01:10 CEST. Qualified waits now
+select the proper existing owner and preserve their reference; reserved goal names
+continue through show --goal. Actual carried owner suite passes236seconds. Actual
+binary diagnostic review runs a fake provider through real supervision, waits and
+reads the report, with private registry/transcripts. It required a real missing
+report-path correction in the author prompt. Manual endpoint delivery runs public
+adapters through authentic commit/read/close/collect/push with declared model,
+proof and ledger seams. Root accepts that boundary; a duplicate external manual
+bed is not needed without a concrete defect. One broad intent run failed only its
+help coverage assertion; that assertion was corrected and focused checks passed,
+so no whole-pattern final pass is claimed.
+
+Main11 (20260926t130321-db4a0c7d11) completed15:11:50 CEST. Successor abandonment
+now composes the existing atomic owner and retained recovery. Settings exposes
+existing key enumeration and validation. Full internal/testpolicy passes39.6seconds.
+The full dispatcher section remains deliberately cadence-only; an attempted deep
+selection correctly failed its guard and was reverted without weakening the guard.
+
+Main12 (20260926t131615-1ade7b6fcc) completed before15:25 CEST, exit0. The public
+fresh-abandon fixture injects fleet/build facts per request and executes the real
+atomic owner: source archive and dependent repoint pass together. The old adapter
+fails that fixture. Invalid successor, interrupted recovery, replay and authority
+negatives remain covered. Settings has an actual valid synthetic configuration
+positive, as well as both refusals. Focused command tests, goal abandonment owner,
+full testpolicy and format/vet pass. No unchanged broad/carried/dispatcher rerun.
+
+The shared design brief now states its actual two-round limit; the prior value
+failed its new assertion. Claude transcript configuration proof no longer mutates
+HOME. A narrow dispatch-b-fixtures command group selects the existing b runner
+without moving its full section from cadence. Legacy critic closure now has public
+review job J --dispositions FILE through authentic whole-close. Final continuation13
+(20260926t132738-8673cb0c5d) fixes the actual qualified-reference omission in that
+route, follows the multi-chain public remedy and adds the selection canary. First
+launch attempt used a wrong cap environment name and refused before creating work;
+the corrected explicit override launched the same original session. This remains
+pre-certification; final selected acceptance, coverage and Sol critique are pending.
+
+Both live main and primary now include e4b86cfd8, the latest UI ownership/journal
+fixes. Product/record backup 2cb6d74c6e53de376e8701610dcbace251598b6c was restored
+cleanly after the merge and is retained. The two live user logs remain untouched.
+
+
+## Last public recovery and removal of redundant proof work
+
+Main13 (20260926t132738-8673cb0c5d) returned exit0 at about15:32 CEST. The real
+whole-close fixture now starts from the actual two-chain design refusal, follows
+its printed public review job command, then follows the qualified reference from
+status work. Both the hidden-close wording and qualified-reference old-code
+mutations fail this fixture; corrected source passes. Launch-qualified references
+cannot be treated as colliding dispatcher records. Focused command suite, whole
+testpolicy, format and vet pass; no dispatcher rerun claimed.
+
+Root and builder independently traced Select: it requires every provider of each
+affected critical obligation. The existing full dispatcher section already provides
+budget-stop-authority, so it is selected for these design changes. Earlier root
+wording calling it cadence-only was inaccurate: the guard only forbids listing it
+as a deep choice. Adding a separate b scenario group would duplicate existing
+required execution. Root ordered deletion of that new group and its references,
+keeping the full section, expanded inputs, source mapping and unchanged critical
+obligation. The canary must prove that actual selection. This is removal of a
+redundant addition, not a policy exception or invented evidence reuse.
+
+Continuation14 (20260926t133353-dc1526d90f) performs only that deletion and focused
+contract verification. All design rows now identify implemented owner/test targets
+and are READY_FOR_RUNTIME; final immutable acceptance and Sol review remain named
+requirements. This status does not claim completion or governed proof.
+
+Main14 (20260926t133353-dc1526d90f) returned exit0 at about15:35 CEST. The duplicate
+scenario group is deleted. TestMetaSystemDesignChangeSelectsTheDispatcherSection
+proves the actual existing critical-provider selection and preserves the deep-list
+pin. The focused canary, full testpolicy/contractgit/contractmerge and format checks
+pass. All implementation writers are idle. Root resolved every matrix owner, code
+file and named test to existing source; the three READY_FOR_RUNTIME structure checks
+pass. Their earlier unformatted shorthand correctly failed the validator and was
+replaced with concrete paths. Immutable review and acceptance start next.
+
+
+## Human roster correction before the independent read
+
+The first physical freeze is commit388c4becf8d8a3c6e126b99ecf3d8104fbd2cebd,
+treef9aa9cbf7f09fa3fa84f6d8e5eda9d281f31c6dc. Its engine and both external diagnostic
+drivers build successfully. No final acceptance suite started yet. The attempted
+native Sol read was rejected by provider usage limits before review; it produced no
+findings or certification and consumes no substantive review round.
+
+Wido then reset the limit and explicitly restricted every delegate to Opus/Fable,
+with only this root coordinator remaining Astra. R-127-m1e and the development
+roster capture the correction. Fable will independently review Opus implementation;
+Opus remains the original builder. Continuation15 (20260926t140946-4ad28c5e8d) updates
+tracked runtime/model defaults and focused assertions. Current launches explicitly
+pin every lane to Claude so an older private override cannot choose Codex here.
+The private configuration is not inspected, copied or mutated. The corrected source
+will be frozen anew before Fable review and acceptance; the old snapshot is retained
+as unreviewed build evidence only.
+
+
+Continuation15 returned exit0 at about16:15 CEST. Tracked dispatcher and launch
+runtime/model defaults now implement the Opus/Fable pairing; historical benchmark
+records and supported Codex adapters remain intact. Tests assert actual lane choice
+and differing author/critic models. The whole launch package passes27.3seconds after
+removing the delegate's explicit lane environment overrides from its test subprocess;
+those overrides otherwise replace synthetic fixture settings and were independently
+shown to break an unchanged HEAD test too. Final external drivers already scrub that
+environment. Config/validate/dispatch/critique packages, focused command consumers,
+Partner package, format and launch vet pass. Earlier omitted maintainer read syntax
+in project-rules is restored to satisfy existing consumer checks; normal public work
+still uses intent. Root corrected the adjacent stale roster comments to match keys.
+Fable starts the first substantive code critique on the refrozen complete candidate.
+
+## Final step-back review, 26 September 2026
+
+The frozen candidate 2f7fafcb5a97ce7bb4c8f53e4f92363f7cb3deff (tree
+4af2104498b73f640474f4abadb7041af1ccb20e) received the full Fable first code
+read. The first partial report was completed in the same provider context; this
+is one review round, not two. Fable found three material defects: manual review
+retry, mixed manual/build ambiguity, and settings-check discovery. Root accepted
+all three and the explicit human contract correction to help that still narrated
+internal owners. Every finding, including non-material notes, is adjudicated in
+intent-workflows-code-review-dispositions.md. No agreement is claimed yet.
+
+Actual CLI discovery passed 60 cases, with 9 starting points and 44 public commands
+available through focused discovery. Root also drove diagnostic review/wait/show
+through the built candidate and actual supervisor (own exits 124/0/0), with a
+synthetic Claude child obtaining its report path from the real prompt. Source
+changes stayed intact. These results do not stand in for full acceptance.
+
+The selected native owner and full race/coverage owner continue on the unchanged
+physical candidate. The command package passed its complete selected run. Observed
+failures include the instruction word budget, fixture process-exit synchronization,
+executable writes outside testexec, wall-clock waits and stale/missing refusal
+register rows. Root shortened its delegation paragraph and the existing audit
+passes; Opus corrects the remaining accepted batch in the separate primary tree.
+The original red evidence is retained externally. No assertion or coverage floor
+is weakened, and no broad rerun begins before the independent batch completes.
+
+Main was fetched again at ade7984c4, adding three UI design documents with no
+product overlap. Merge after the active writer completes, before the final frozen
+candidate. Opus continuation 16 is launch 20260926t144412-c7edd57914, same original
+builder context 124b0e5a-c6b5-42d0-835b-87b46082ce1e, 100 tools / 35 actual minutes.
+Fable independently confirms its corrections afterward, within the original
+three-round maximum. Only root remains Astra; all delegates use Opus or Fable.
+
+
+## Final correction batch, 26 September, 17:20 CEST
+
+R-127 supersedes the earlier prospective Sol references in this historical log:
+only the root coordinator is Astra, all builders are Opus 5.5 and the independent
+implementation critic is Fable 5.1. Fable completed the whole first read; root
+accepted its three material findings plus the explicit public-language contract
+finding. No second code-review round has yet started.
+
+Returns 16 and 17 correct manual retry, executable recovery, mixed work selection,
+settings discovery and internal help prose. The meaningful mixed fixture also
+caught an untracked build result that manual submission previously mistook for a
+clean workspace. Process cleanup now joins exact identity and preserves the original
+no-survivor assertion; its actual race fixture passed. The full independent shell
+batch finished, exposing two additional stale fixture contracts, assigned as one
+bounded correction. Root also traced manual zero-findings completion and assigned
+that explicit parent-contract gap before final certification.
+
+All coverage repair tests have been read and imported from the exact reviewed patch
+67c1bdfb949dafbef02b38f150d1678c058baab2af9ae9cfaeac5076a74303a1.
+All 29 new tests pass with race and no Git; focused coverage clears the unchanged
+floors in channel, goal/branch, identity, launch and stickies. Full final coverage
+and independent correction confirmation remain due. No final success is inferred
+from focused measurements, an old candidate or a delegate's summary.
+
+
+At 17:43 CEST, all correction builders are terminal. Manual clean-review completion
+passes actual owner fixtures, and the final budget-only dispatch-a run passes in
+526 seconds. The prior design-chain setup was removed rather than expanded. Root
+read each complete return and exact patch, and all three obligation matrices pass
+the structural check with critical/high rows ready for final runtime evidence.
+The final verification decision is recorded in intent-workflows-verification.md;
+no final green, Fable agreement or integration is yet claimed.
+
+
+## 26 September, 18:10 CEST — final recovery corrections
+
+The second independent Fable review confirmed the original corrections and found
+two remaining public continuations that could not finish by following their own
+commands: manual retry retained --retry forever, and a goal named design lost its
+explicit goal qualifier. Root reproduced and fixed the latter through the existing
+reviewGoalWords helper. The original Opus builder is completing the retry all the
+way through actual close/collection/publication, keeping repeat and live-job checks.
+Root also removed the remaining named normal-help narration about internal owners;
+raw status unit stays compatible but is no longer advertised as ordinary work.
+Focused discovery, public coverage and the real Partner catalogue pass, own exit0.
+
+R3's five previously failed shell sections all pass, including the full dispatcher
+section. Its staticcheck found a real shadowed carried-adoption error and four dead
+values. Main19 corrects them, with staticcheck0 and a before-red/after-green real
+persistence-negative fixture; main20 replaces its permission assumption with a
+portable filesystem obstruction. The independent native checks continue collecting
+the batch. The one observed smoke failure is an old expectation of a stale model
+flag in a continuation, now being corrected without losing its behavior assertions.
+
+The latest fetched main is e5925c951, including UI and goal endpoint changes. Merge
+it after the active writer returns, preserve both testing/refusal-register updates,
+and freeze the combined source before final whole-package race/coverage and the
+third Fable confirmation. No claim of all-green completion or shipment is made yet.
+
+
+## 26 September, 18:45 CEST — final candidate freeze
+
+The last concrete recovery gap is corrected: a protocol-failed review gives a
+public human-risk decision in the repository that holds the review, and the
+record describes the actual missing evidence. The agent is refused; declared
+human-fixture authority completes the existing decision writers. Both synthetic
+failure kinds retain exact identity and unproven classification. Focused runtime,
+refusal and test-policy checks pass. No review or risk guard was weakened.
+Latest main 9e8f98108 is merged. Freeze the combined source for final Fable round
+three and full race/coverage, required native consumers and six section runs.
+Prior evidence keeps its original tree and result; completion remains unclaimed.
+
+
+At 18:55 CEST, Fable's final code confirmation finds no new behavioral defect and
+confirms all recovery, authority and persistence corrections. It requests four
+remaining ordinary-help descriptions be rewritten around user effects. Root makes
+only those literal edits and verifies their rebuilt help, retaining Fable's original
+fix-first report and the exact R4 runtime identities. No fourth critique is opened.
+The full race/coverage, twelve changed native groups and six remaining section runs
+continue. Fast-static-build/refusal and 60-case rebuilt discovery already pass.
+
+
+## 26 September — final acceptance and integration
+
+All remaining runs are terminal and successful. R4 full race/coverage observes
+12,742 tests with zero missing/unexpected observations; its unchanged coverage-floor
+audit passes. Four later incoming-main UI packages pass fresh race/coverage, and
+the complete current floor audit also passes. All 203 selected requirements are
+accounted for through the explicit root composition in the verification record,
+including all 38 shell sections and 45 landing scenarios. All 15 critical/high
+obligations are DONE and all 49 named test references have actual passing evidence.
+
+Fable's final material finding is addressed by four verified descriptor literals;
+its original fix-first report is retained, without inventing a fourth review or a
+governed certificate. Public discovery offers nine starting verbs and 44 full task
+commands. Root is satisfied with the bounded final design and capability coverage.
+The combined source includes main78ad66f48. Commit, push and integrate this accepted
+source under the user's existing authorization; preserve the live receipt and
+narrator additions. Goal conclusion remains human-reserved.

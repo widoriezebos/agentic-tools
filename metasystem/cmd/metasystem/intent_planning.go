@@ -80,7 +80,7 @@ func withFlags(groups ...[]intentFlag) []intentFlag {
 func intentPlanningCommands() []intentCommand {
 	return []intentCommand{
 		{
-			name: "open", audience: "both", summary: "declare a new goal",
+			name: "open", group: "goals", primary: true, audience: "both", summary: "declare a new goal",
 			usage: []string{"metasystem open G --intent TEXT --next TEXT --risk ANSWERS --basis TEXT"},
 			details: []string{
 				"The goal is queued for a person's approval. The four risk answers and their basis are the intake law's classification.",
@@ -104,12 +104,12 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentOpen,
 		},
 		{
-			name: "edit", audience: "both", summary: "change a goal's intent, next step, risk or labels in place",
+			name: "edit", group: "goals", audience: "both", summary: "change a goal's intent, next step, risk or labels in place",
 			usage: []string{"metasystem edit G [--intent TEXT] [--next TEXT | --next-append TEXT]", "metasystem edit G --obligation STATE --owner NAME --recurrence VALUE ..."},
 			details: []string{
 				"Only the supplied fields change. --next-append adds to the next step the accepted ledger holds when the edit is published.",
 				"Raising the risk of an approved goal takes --evidence; lowering it is a person's act.",
-				"--obligation binds a governed obligation through the owner of set-obligation; every obligation field is required there.",
+				"--obligation records a recurring responsibility; provide every required obligation field.",
 			},
 			flags: withFlags([]intentFlag{
 				intentTargetFlag,
@@ -128,7 +128,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentEdit,
 		},
 		{
-			name: "claim", audience: "agent", summary: "claim a goal for this session, or the next ready goal",
+			name: "claim", group: "goals", audience: "agent", summary: "claim a goal for this session, or the next ready goal",
 			usage: []string{"metasystem claim [G]", "metasystem claim G --take-over --reason TEXT"},
 			details: []string{
 				"Without G the machine's ready frontier chooses; a goal this machine already holds is continued, never switched.",
@@ -147,7 +147,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentClaim,
 		},
 		{
-			name: "release", audience: "agent", summary: "release a claim this session holds",
+			name: "release", group: "goals", audience: "agent", summary: "release a claim this session holds",
 			usage:   []string{"metasystem release [G] --reason TEXT"},
 			details: []string{"Without G the one goal this session holds is released; holding none or several names them instead.", "The reason is recorded on the goal's history line."},
 			flags: withFlags([]intentFlag{
@@ -160,7 +160,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentRelease,
 		},
 		{
-			name: "ready", audience: "agent", summary: "mark the held goal built and waiting to land",
+			name: "ready", group: "work", compatibility: true, replacedBy: "metasystem land G --queue-only", audience: "agent", summary: "mark the held goal built and waiting to land",
 			usage:    []string{"metasystem ready [G]"},
 			details:  []string{"The claim leaves the one-claim quota and its elapsed fence until it lands. It is the claim holder's own act."},
 			flags:    []intentFlag{intentTargetFlag, intentLineageFlag},
@@ -169,11 +169,29 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentReady,
 		},
 		{
-			name: "decide", audience: "human", summary: "accept the risk of one severe or unproven review finding",
+			name: "accept-risk", group: "goals", audience: "human", summary: "accept the risk of one severe or unproven review finding",
+			usage: []string{"metasystem accept-risk G --finding F [--review R] --reason TEXT"},
+			details: []string{
+				"The review is inferred when the goal's work records exactly one examination; otherwise --review R names it (any job of the review, or human-carried for a carried finding).",
+				"Records your risk decision on the goal and applies it to the review; a partial result says what still needs to complete.",
+			},
+			flags: withFlags([]intentFlag{
+				intentTargetFlag,
+				{name: "finding", value: "F", usage: "the finding id"},
+				{name: "review", aliases: []string{"chain"}, value: "R", usage: "the review job (or its chain root)"},
+				reasonFlag("why", "why the risk is accepted"),
+				fileFlag("reason", "read the reason from FILE"),
+			}, intentHumanActFlags, intentRelayFlags),
+			maxArgs:  1,
+			examples: []string{"metasystem accept-risk verbs-match-intent --finding S-1 --reason 'the exposure is local and reversible'"},
+			run:      runIntentAcceptRisk,
+		},
+		{
+			name: "decide", group: "goals", compatibility: true, replacedBy: "metasystem accept-risk G --finding F --reason TEXT", audience: "human", summary: "accept the risk of one severe or unproven review finding",
 			usage: []string{"metasystem decide G --finding F --review R --reason TEXT"},
 			details: []string{
 				"R is any job of the review; its chain root is read from the recorded job. human-carried names a carried finding.",
-				"The goal record lands first, then the accepted-risk register, the critique register and the authority proof; a later failure is reported as partial.",
+				"Records your risk decision on the goal and applies it to the review; a partial result says what still needs to complete.",
 			},
 			flags: withFlags([]intentFlag{
 				intentTargetFlag,
@@ -187,7 +205,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentDecide,
 		},
 		{
-			name: "pin", audience: "human", summary: "pin a goal to one machine, or clear its pin",
+			name: "pin", group: "goals", audience: "human", summary: "pin a goal to one machine, or clear its pin",
 			usage:    []string{"metasystem pin G MACHINE", "metasystem pin G --clear"},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "clear", usage: "remove the pin"}}, intentHumanActFlags),
 			maxArgs:  2,
@@ -195,7 +213,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentPin,
 		},
 		{
-			name: "prioritize", audience: "human", summary: "place an open goal in priority 1, 2 or 3",
+			name: "prioritize", group: "goals", audience: "human", summary: "place an open goal in priority 1, 2 or 3",
 			usage: []string{"metasystem prioritize G 1|2|3 [--sequence N]"},
 			flags: withFlags([]intentFlag{
 				intentTargetFlag,
@@ -207,7 +225,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentPrioritize,
 		},
 		{
-			name: "reopen", audience: "both", summary: "return a done or abandoned goal to the queue with a fresh next step",
+			name: "reopen", group: "goals", audience: "both", summary: "return a done or abandoned goal to the queue with a fresh next step",
 			usage:    []string{"metasystem reopen G --next TEXT"},
 			details:  []string{"Reopening an abandoned goal is a person's act. The fresh next step is recorded right after the reopen; a failure there is reported as partial."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "next", value: "TEXT", usage: "the fresh next step"}, fileFlag("next", "read the next step from FILE")}, intentHumanActFlags),
@@ -216,7 +234,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentReopen,
 		},
 		{
-			name: "abandon", audience: "human", summary: "record that a goal will never be worked, and why",
+			name: "abandon", group: "goals", audience: "human", summary: "record that a goal will never be worked, and why",
 			usage: []string{"metasystem abandon G --reason TEXT [--successor G2]"},
 			details: []string{
 				"--successor names the live goal carrying the work; it is recorded after the abandonment is committed, and a refusal there is reported as partial.",
@@ -235,7 +253,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentAbandon,
 		},
 		{
-			name: "block", audience: "both", summary: "record that a goal waits for another",
+			name: "block", group: "goals", audience: "both", summary: "record that a goal waits for another",
 			usage:    []string{"metasystem block G --on G2"},
 			details:  []string{"G parks until G2 is done, unless G2 is already done."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "on", aliases: []string{"blocker"}, value: "G2", usage: "the goal G waits for"}}, intentHumanActFlags),
@@ -244,7 +262,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentBlock,
 		},
 		{
-			name: "unblock", audience: "both", summary: "remove one blocker from a goal",
+			name: "unblock", group: "goals", audience: "both", summary: "remove one blocker from a goal",
 			usage:    []string{"metasystem unblock G --on G2"},
 			details:  []string{"Removing a blocker that is not done is a person's act; the park lifts only when every remaining blocker is done."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "on", aliases: []string{"blocker"}, value: "G2", usage: "the goal G no longer waits for"}}, intentHumanActFlags, intentRelayFlags),
@@ -253,7 +271,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentUnblock,
 		},
 		{
-			name: "unapprove", audience: "human", summary: "withdraw a goal's execution approval",
+			name: "unapprove", group: "goals", audience: "human", summary: "withdraw a goal's execution approval",
 			usage:    []string{"metasystem unapprove G --reason TEXT"},
 			details:  []string{"A standing claim is parked with the approval."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, reasonFlag("because", "why the approval is withdrawn"), fileFlag("reason", "read the reason from FILE")}, intentHumanActFlags, intentRelayFlags),
@@ -262,7 +280,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentUnapprove,
 		},
 		{
-			name: "grant", audience: "human", summary: "record a power of attorney a seat acts under",
+			name: "grant", group: "goals", audience: "human", summary: "record a power of attorney a seat acts under",
 			usage: []string{"metasystem grant --tiers LIST --acts LIST --until DATE"},
 			details: []string{
 				"--acts is from approve, budget and resume-parked; a seat then acts with --under GRANT on approve, budget and resume of a parked goal.",
@@ -278,7 +296,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentGrant,
 		},
 		{
-			name: "revoke", audience: "human", summary: "close a power of attorney early",
+			name: "revoke", group: "goals", audience: "human", summary: "close a power of attorney early",
 			usage:    []string{"metasystem revoke GRANT"},
 			flags:    withFlags([]intentFlag{{name: "grant", value: "GRANT", advanced: true, usage: "the grant, as an alternative to naming it first"}}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  1,
@@ -286,37 +304,49 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentRevoke,
 		},
 		{
-			name: "split", audience: "both", summary: "split a goal into independently claimable members",
-			usage:    []string{"metasystem split G --plan FILE"},
-			details:  []string{"FILE is the owner's member draft. The parent concludes as decomposed; its members form one arc."},
+			name: "split", group: "goals", audience: "both", summary: "split a goal into independently claimable related goals",
+			usage: []string{"metasystem split G --plan FILE"},
+			details: []string{"The parent concludes as decomposed and its members become a group of related goals. The same goal rules apply",
+				"to each member; splitting a person's goal is a person's act at the enrolled terminal. FILE, for goal big-goal:",
+				"  # split big-goal",
+				"  ## member first",
+				"  - Intent: Build the reader.",
+				"  - Next step: Write the reader's brief.",
+				"  ## member second",
+				"  - Intent: Build the writer.",
+				"  - Next step: Write the writer's brief.",
+				"  - BlockedBy: first",
+				"  - Labels: io, writer",
+				"BlockedBy and Labels are optional comma-separated lists."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "plan", aliases: []string{"members"}, value: "FILE", usage: "the member draft"}}, intentHumanActFlags),
 			maxArgs:  1,
 			examples: []string{"metasystem split big-goal --plan members.md"},
 			run:      runIntentSplit,
 		},
 		{
-			name: "group", audience: "both", summary: "move a goal into an arc",
-			usage:    []string{"metasystem group G ARC"},
-			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "arc", value: "ARC", advanced: true, usage: "the arc, as an alternative to naming it after G"}}, intentHumanActFlags),
+			name: "group", group: "goals", audience: "both", summary: "put a goal into a group of related goals",
+			usage:    []string{"metasystem group G GROUP"},
+			details:  []string{"GROUP names the group of related goals, usually the goal they serve; a claim of the group covers its members."},
+			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "arc", value: "GROUP", advanced: true, usage: "the group, as an alternative to naming it after G"}}, intentHumanActFlags),
 			maxArgs:  2,
 			examples: []string{"metasystem group slice-2 verbs-match-intent"},
 			run:      runIntentGroup,
 		},
 		{
-			name: "ungroup", audience: "both", summary: "take a goal out of its arc",
+			name: "ungroup", group: "goals", audience: "both", summary: "take a goal out of its group of related goals",
 			usage:    []string{"metasystem ungroup G"},
-			details:  []string{"A claim riding the arc is released."},
+			details:  []string{"A claim the goal held only through its group is released."},
 			flags:    withFlags([]intentFlag{intentTargetFlag}, intentHumanActFlags),
 			maxArgs:  1,
 			examples: []string{"metasystem ungroup slice-2"},
 			run:      runIntentUngroup,
 		},
 		{
-			name: "resolve", audience: "both", summary: "discharge a review obligation with its test",
+			name: "resolve", group: "work", compatibility: true, replacedBy: "metasystem review G --finding F --test NAME", audience: "both", summary: "discharge a review obligation with its test",
 			usage: []string{"metasystem resolve G --review R --finding F --test NAME", "metasystem resolve G --review R --finding F --implementation-chain J --artifact PATH --result RUN --critic ROOT"},
 			details: []string{
 				"R is any job of the review; its chain root is read from the recorded job.",
-				"The session holding G discharges under its own lineage; anyone else's discharge is a person's act.",
+				"The session holding G acts in its own name; anyone else's discharge is a person's act.",
 				"A fixture obligation is discharged by its implementation chain, artifact, governed test result and clean code-critic root.",
 			},
 			flags: withFlags([]intentFlag{
@@ -334,7 +364,7 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentResolve,
 		},
 		{
-			name: "notes", audience: "both", summary: "read, add or close a goal's non-breaking read findings",
+			name: "notes", group: "goals", audience: "both", summary: "read, add or close a goal's non-breaking read findings",
 			usage: []string{"metasystem notes G", "metasystem notes G --read LABEL --add TEXT...", "metasystem notes G --close ITEM --fixed COMMIT|--moved G2|--accepted REASON"},
 			details: []string{
 				"Notes are non-breaking read items. A finding stays a finding; closing a note never certifies one.",
@@ -357,12 +387,12 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentNotes,
 		},
 		{
-			name: "recover", audience: "both", summary: "recover the goal journal and this session's durable waits",
+			name: "recover", group: "operations", compatibility: true, replacedBy: "metasystem repair goals, and metasystem repair waits", audience: "both", summary: "recover the goal journal and this session's durable waits",
 			usage: []string{"metasystem recover [G] [--session S]"},
 			details: []string{
 				"The journal recovery confirms, corrects, completes or closes every stranded goal entry of this installation; G, when named, is shown afterwards.",
 				"The durable waits are the recorded wait continuations; --session checks they belong to the checkout holder's current session.",
-				"Each owner's result is reported separately.",
+				"Each repair result is reported separately.",
 			},
 			flags:    []intentFlag{intentTargetFlag, {name: "session", value: "S", advanced: true, usage: "the runtime session that must hold the checkout"}},
 			maxArgs:  1,
@@ -370,7 +400,78 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentRecover,
 		},
 		{
-			name: "red", audience: "both", summary: "own or close a trunk-red incident",
+			name: "repair", group: "operations", audience: "both", summary: "recover one named task",
+			usage: []string{
+				"metasystem repair goals",
+				"metasystem repair goals --accept-edits --by NAME",
+				"metasystem repair goals --refresh",
+				"metasystem repair goals --accept-remote-history --by NAME",
+				"metasystem repair goals --upgrade --source-digest SHA256 --by NAME [--amendments FILE] [--identity ULID] [--sync-mode remote|local]",
+				"metasystem repair waits [--session S]",
+				"metasystem repair mission M --problem N --confirm-restored TREE --by NAME --reason TEXT",
+				"metasystem repair mission M --problem N --accept-workspace --waive CLAIM... --by NAME --reason TEXT",
+				"metasystem repair review G [--work NAME]",
+			},
+			details: []string{
+				"repair goals completes interrupted goal changes across this installation; work that is still running is left alone.",
+				"--accept-edits reconciles the exact current hand edits of the goal files against their base and republishes them; edits",
+				"that need a person's proof ask for it. check goals previews the edits first. --refresh completes an interrupted refresh",
+				"of the published view without reading any edit as new authority.",
+				"--accept-remote-history accepts the fetched current history of the same ledger locally after a rewind; nothing is pushed.",
+				"--upgrade converts the legacy plans/goals.md under its reviewed SHA-256: without --source-digest it only shows the",
+				"digest to review. --amendments FILE starts with 'MIGRATION_EPOCH: <RFC3339>' and 'REVIEWED_SOURCE_SHA256: <sha256>', then",
+				"'### add-goal: ID' sections (intent, origin, next; optional blockedby, arc) or '### amend-goal: ID' sections (next,",
+				"blockedby, arc, state); a parked amendment also gives parked-by, parked-at (timestamp or EPOCH) and parked-because.",
+				"repair waits lists this checkout's durable wait continuations, checked against the holder's --session when given.",
+				"repair mission records a person's resolution of one workspace problem: --confirm-restored says the files already match",
+				"that recorded safe tree (restore them first; nothing is restored by this command); --accept-workspace accepts the",
+				"observed workspace with each waived attribution claim named. Every problem must be resolved before the mission resumes.",
+				"repair review completes and publishes the finished review using its recorded decisions. It never decides a finding.",
+			},
+			flags: []intentFlag{
+				{name: "work", value: "NAME", usage: "repair review: the goal's named work"},
+				{name: "accept-edits", usage: "repair goals: reconcile the reviewed hand edits"},
+				{name: "refresh", usage: "repair goals: complete an interrupted refresh"},
+				{name: "accept-remote-history", usage: "repair goals: accept the fetched history of the same ledger"},
+				{name: "upgrade", usage: "repair goals: convert the legacy goals file"},
+				{name: "source-digest", value: "SHA256", usage: "--upgrade: the reviewed file's SHA-256"},
+				{name: "amendments", value: "FILE", usage: "--upgrade: the amendment file"},
+				{name: "identity", value: "ULID", advanced: true, usage: "--upgrade: the ledger identity (an existing one is kept on a rerun)"},
+				{name: "sync-mode", value: "MODE", advanced: true, usage: "--upgrade: remote (default) or local"},
+				{name: "session", value: "S", advanced: true, usage: "repair waits: the runtime session that must hold the checkout"},
+				{name: "problem", value: "N", usage: "repair mission: the recorded problem's number"},
+				{name: "confirm-restored", value: "TREE", usage: "repair mission: the recorded safe tree the files already match"},
+				{name: "accept-workspace", usage: "repair mission: accept the observed workspace"},
+				{name: "waive", value: "CLAIM", repeat: true, usage: "repair mission, with --accept-workspace: an attribution claim waived (repeatable)"},
+				{name: "by", value: "NAME", usage: "the person deciding"},
+				reasonFlag("why", "repair mission: why"),
+			},
+			maxArgs: 3,
+			examples: []string{"metasystem repair goals", "metasystem repair goals --accept-edits --by Wido", "metasystem repair waits",
+				"metasystem repair mission demo --problem 2 --confirm-restored 3f2a9c1e0d4b5a6978695a4b3c2d1e0f98765432 --by Wido --reason 'restored from the snapshot'",
+				"metasystem repair review verbs-match-intent"},
+			run: runIntentRepair,
+		},
+		{
+			name: "incidents", group: "operations", audience: "both", summary: "list broken-main incidents, take one on, or close one",
+			usage: []string{"metasystem incidents [--all]", "metasystem incidents claim I --goal G", "metasystem incidents close I --reason TEXT"},
+			details: []string{
+				"An incident is a failure on main that someone must own. claim names the goal whose work fixes it; it is an agent's act,",
+				"and a person may assign it to another machine with --by NAME --to MACHINE. Closing an incident is a person's act.",
+			},
+			flags: withFlags([]intentFlag{
+				{name: "all", usage: "include closed incidents"},
+				{name: "goal", value: "G", usage: "claim: the goal fixing it"},
+				{name: "branch", value: "NAME", advanced: true, usage: "claim: the fix branch"},
+				{name: "to", value: "MACHINE", advanced: true, usage: "claim, with --by: the machine assigned the fix"},
+				reasonFlag("why", "close: why the incident is closed"), fileFlag("reason", "read the reason from FILE"),
+			}, intentHumanActFlags),
+			maxArgs:  2,
+			examples: []string{"metasystem incidents", "metasystem incidents claim tr-01 --goal fix-trunk", "metasystem incidents close tr-01 --reason 'the flake is fixed at its source'"},
+			run:      runIntentIncidents,
+		},
+		{
+			name: "red", group: "operations", compatibility: true, replacedBy: "metasystem incidents", audience: "both", summary: "own or close a trunk-red incident",
 			usage: []string{"metasystem red own ENTRY --goal G [--branch NAME]", "metasystem red close ENTRY --reason TEXT"},
 			details: []string{
 				"ENTRY is the retained incident id, as goals prints it. Owning is an agent's act; closing, and owning --by for another machine (--to), are a person's.",
@@ -412,7 +513,7 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	if typed != "" && actor == actorAgent {
 		return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(target),
 			Summary:  fmt.Sprintf("%s is the claim holder's own act and takes no --by; nothing was done", verb),
-			Decision: "the session holding the claim runs it under its own lineage"}
+			Decision: "the session holding the goal runs it, acting in its own name"}
 	}
 	if typed == "" && (actor == actorAgent || actor == actorEither && agent) {
 		if !agent {
@@ -971,7 +1072,7 @@ func runIntentClaim(inv *intentInvocation) int {
 			// Held work is continued, never switched for the frontier's next goal.
 			return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(selection.GoalID),
 				Summary: fmt.Sprintf("%s already holds %s; continue it (a claim never switches held work)", machine, selection.GoalID),
-				next:    inv.publicArgv("show", selection.GoalID), nextReason: "the held goal and its next step",
+				next:    inv.publicArgv("show", "--goal", selection.GoalID), nextReason: "the held goal and its next step",
 				Data: map[string]any{"machine": machine, "selection": selection}})
 		case goal.NextSelectionReady:
 			id = selection.GoalID
@@ -1016,6 +1117,19 @@ func runIntentClaim(inv *intentInvocation) int {
 		}
 		return goal.Claim(req, f.id, budgets...)
 	}, "id")))
+}
+
+// acquireClaim claims one named goal for this session exactly as claim G
+// does, and returns the owner's result.
+func (inv *intentInvocation) acquireClaim(id string) intentResult {
+	actor, proof, problem := inv.actingAs("claim", id, actorEither)
+	if problem != nil {
+		return *problem
+	}
+	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
+	return inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		return goal.Claim(req, f.id)
+	}, "id"))
 }
 
 // takeOver displaces another machine's claim through the steal owner; it is
@@ -1077,14 +1191,69 @@ func runIntentReady(inv *intentInvocation) int {
 	if !ok {
 		return code
 	}
-	actor, proof, problem := inv.actingAs("ready", id, actorAgent)
-	if problem != nil {
+	return inv.render(inv.landReady(id))
+}
+
+// runIntentQueueOnly is land G --queue-only: exactly the land-ready act. A
+// refusal because this machine's landing slot is taken names the public
+// landing of the goal that holds it, read from the goal ledger.
+func runIntentQueueOnly(inv *intentInvocation, id string) int {
+	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
+	result := inv.landReady(id)
+	if result.Outcome != intentRefused || len(result.next) > 0 {
+		return inv.render(result)
+	}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return inv.render(result)
+	}
+	mine := goalRecordClaim(projection, id)
+	var waiting []string
+	for _, other := range sortedLiveIDs(projection) {
+		file := projection.Tree.Live[other]
+		if other == id || file.State != goal.StateClaimed || file.Claimed == nil || file.Landing == nil || file.Claimed.HandedOver != (goal.HandedOver{}) {
+			continue
+		}
+		if mine == "" || file.Claimed.Machine == mine {
+			waiting = append(waiting, other)
+		}
+	}
+	if len(waiting) == 1 {
+		result.Summary = fmt.Sprintf("%s; this machine's one landing slot holds goal %s", strings.TrimSpace(result.Summary), waiting[0])
+		result.next, result.nextReason = []string{"metasystem", "land", waiting[0]}, "land the goal waiting in the slot first, then queue this one again"
+		result.Decision = ""
+	}
+	return inv.render(result)
+}
+
+func (inv *intentInvocation) landReady(id string) intentResult {
+	actor, proof, problem := inv.actingAs("ready", id, actorAgent)
+	if problem != nil {
+		return *problem
+	}
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
-	return inv.render(inv.goalAct(id, "ready", inv.syncOwner("land-ready", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	return inv.goalAct(id, "ready", inv.syncOwner("land-ready", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.LandReady(req, f.id)
-	}, "id")))
+	}, "id"))
+}
+
+// goalRecordClaim is the machine holding a live goal's claim, if any.
+func goalRecordClaim(projection goal.Projection, id string) string {
+	if file := projection.Tree.Live[id]; file != nil && file.Claimed != nil {
+		return file.Claimed.Machine
+	}
+	return ""
+}
+
+func sortedLiveIDs(projection goal.Projection) []string {
+	ids := make([]string, 0, len(projection.Tree.Live))
+	for id := range projection.Tree.Live {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 // reviewRoot is the chain root of a named review job, read from its record.
@@ -1099,6 +1268,23 @@ func (inv *intentInvocation) reviewRoot(id, review string) (string, *intentResul
 			Decision: "name a recorded review job of this goal"}
 	}
 	return root, nil
+}
+
+// runIntentAcceptRisk is the accept-risk act: the review is inferred only
+// when the goal's work records exactly one examination.
+func runIntentAcceptRisk(inv *intentInvocation) int {
+	if !inv.input.has("review") && len(inv.input.args) == 1 {
+		if problem := inv.selectRoot(); problem != nil {
+			return inv.render(*problem)
+		}
+		chain, problem := inv.uniqueExamination(inv.input.args[0], "accept-risk")
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		inv.inferredChain = chain
+		inv.input.values["review"] = []string{chain}
+	}
+	return runIntentDecide(inv)
 }
 
 func runIntentDecide(inv *intentInvocation) int {
@@ -1122,9 +1308,12 @@ func runIntentDecide(inv *intentInvocation) int {
 	if len(missing) > 0 {
 		return inv.refuse(id, fmt.Sprintf("a risk decision needs %s; nothing was done", strings.Join(missing, ", ")), "name the finding, its review and why its risk is accepted")
 	}
-	chain, problem := inv.reviewRoot(id, inv.input.text("review"))
-	if problem != nil {
-		return inv.render(*problem)
+	chain := inv.inferredChain
+	if chain == "" {
+		var problem *intentResult
+		if chain, problem = inv.reviewRoot(id, inv.input.text("review")); problem != nil {
+			return inv.render(*problem)
+		}
 	}
 	actor, _, problem := inv.actingAs("accept-risk", id, actorHuman)
 	if problem != nil {
@@ -1277,25 +1466,42 @@ func runIntentAbandon(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	if file, where := goalRecord(projection, id); file != nil && where == "abandoned" && successor != "" {
+		// Recovery of an abandonment that recorded no successor: the
+		// original abandonment and its reason stand; the carry owner records
+		// the successor under a person's fresh authority.
+		if file.Abandoned != nil && file.Abandoned.Carried == successor {
+			return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(id, successor),
+				Summary: fmt.Sprintf("%s is already abandoned and carried by %s; nothing was done", id, successor)})
+		}
+		carryArgs := append([]string{"--root", inv.stateRoot, "--id", id, "--to", successor}, actor...)
+		carried := inv.ownerCall(inv.targets(id, successor), func(dependencies syncRequestDependencies) int {
+			return runGoalCarryAbandonedWithInputs(carryArgs, inv.owners.prove, inv.owners.commandNow, dependencies)
+		}, func() intentResult { return inv.afterGoalAct(id, "abandon") })
+		if carried.Outcome == intentConfirmed {
+			carried.Summary = fmt.Sprintf("%s was already abandoned; %s now carries its work", id, successor)
+		}
+		return inv.render(carried)
+	}
+	// A fresh abandonment names its successor in the same transaction, which
+	// archives the goal and repoints its live dependents to the successor.
 	args := append([]string{"--root", inv.stateRoot, "--id", id, "--because", reason}, actor...)
+	if successor != "" {
+		args = append(args, "--carried", successor)
+	}
 	args = append(args, inv.forwardEach("waive", "waive")...)
 	args = append(args, inv.forwardEach("also", "also")...)
 	abandoned := inv.goalAct(id, "abandon", func(dependencies syncRequestDependencies) int {
 		return runGoalAbandonWithInputs(args, inv.owners.prove, inv.owners.commandNow, dependencies)
 	})
-	if abandoned.Outcome != intentConfirmed || successor == "" {
-		return inv.render(abandoned)
+	if abandoned.Outcome == intentConfirmed && successor != "" {
+		abandoned.Summary = fmt.Sprintf("abandoned %s; %s carries its work", id, successor)
 	}
-	carryArgs := append([]string{"--root", inv.stateRoot, "--id", id, "--to", successor}, actor...)
-	carried := inv.ownerCall(inv.targets(id, successor), func(dependencies syncRequestDependencies) int {
-		return runGoalCarryAbandonedWithInputs(carryArgs, inv.owners.prove, inv.owners.commandNow, dependencies)
-	}, func() intentResult { return inv.afterGoalAct(id, "abandon") })
-	if carried.Outcome == intentConfirmed {
-		carried.Summary = fmt.Sprintf("abandoned %s; %s carries its work", id, successor)
-		return inv.render(carried)
-	}
-	return inv.render(partialAfter(abandoned, carried, "abandoned "+id+", but "+successor+" was not recorded as its successor",
-		inv.publicArgv("internal", "goal", "carry", "--id", id, "--to", successor), "name the successor of the abandoned goal"))
+	return inv.render(abandoned)
 }
 
 func runIntentBlock(inv *intentInvocation) int   { return inv.edge("block") }
@@ -1670,35 +1876,10 @@ func runIntentRecover(inv *intentInvocation) int {
 			lines = append(lines, "journal: clean; nothing to recover")
 		}
 	}
-	waits := map[string]any{}
-	session := inv.input.text("session")
-	holderProblem := ""
-	if session != "" {
-		holder, err := lease.CurrentHolder(inv.stateRoot)
-		switch {
-		case err != nil:
-			holderProblem = "the checkout holder cannot be read: " + err.Error()
-		case holder.SessionId != session:
-			holderProblem = "session " + session + " does not hold this checkout"
-		}
-	}
-	if holderProblem != "" {
+	waits, waitLines, waitsFailed := inv.waitContinuations()
+	lines = append(lines, waitLines...)
+	if waitsFailed {
 		failed++
-		waits["outcome"], waits["error"] = intentRefused, holderProblem
-		lines = append(lines, "waits: "+holderProblem)
-	} else if rows, err := report.CurrentWaitingLines(inv.stateRoot); err != nil {
-		failed++
-		waits["outcome"], waits["error"] = intentFailed, err.Error()
-		lines = append(lines, "waits: unreadable: "+err.Error())
-	} else {
-		waits["outcome"], waits["continuations"] = intentConfirmed, rows
-		if len(rows) == 0 {
-			waits["outcome"] = intentUnchanged
-			lines = append(lines, "waits: none recorded")
-		}
-		for _, row := range rows {
-			lines = append(lines, "waits: "+row)
-		}
 	}
 	data := map[string]any{"journal": journal, "waits": waits}
 	result := intentResult{Outcome: intentConfirmed, text: lines, Data: data, Summary: "recovery ran"}
@@ -1716,6 +1897,108 @@ func runIntentRecover(inv *intentInvocation) int {
 		result.Outcome, result.code, result.Summary = intentPartial, 1, "one recovery completed and the other did not"
 	}
 	return inv.render(result)
+}
+
+// waitContinuations reads this checkout's durable wait continuations,
+// checked against the checkout holder's session when --session names one.
+func (inv *intentInvocation) waitContinuations() (map[string]any, []string, bool) {
+	var lines []string
+	waitsFailed := false
+	waits := map[string]any{}
+	session := inv.input.text("session")
+	holderProblem := ""
+	if session != "" {
+		holder, err := lease.CurrentHolder(inv.stateRoot)
+		switch {
+		case err != nil:
+			holderProblem = "the checkout holder cannot be read: " + err.Error()
+		case holder.SessionId != session:
+			holderProblem = "session " + session + " does not hold this checkout"
+		}
+	}
+	if holderProblem != "" {
+		waitsFailed = true
+		waits["outcome"], waits["error"] = intentRefused, holderProblem
+		lines = append(lines, "waits: "+holderProblem)
+	} else if rows, err := report.CurrentWaitingLines(inv.stateRoot); err != nil {
+		waitsFailed = true
+		waits["outcome"], waits["error"] = intentFailed, err.Error()
+		lines = append(lines, "waits: unreadable: "+err.Error())
+	} else {
+		waits["outcome"], waits["continuations"] = intentConfirmed, rows
+		if len(rows) == 0 {
+			waits["outcome"] = intentUnchanged
+			lines = append(lines, "waits: none recorded")
+		}
+		for _, row := range rows {
+			lines = append(lines, "waits: "+row)
+		}
+	}
+	return waits, lines, waitsFailed
+}
+
+// recoverWaits is repair waits: the continuations and who may resume them.
+func (inv *intentInvocation) recoverWaits() intentResult {
+	waits, lines, failed := inv.waitContinuations()
+	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"waits": waits}, Summary: "this checkout's recorded wait continuations"}
+	if failed {
+		result.Outcome, result.code, result.Summary = intentRefused, 1, "the wait continuations cannot be recovered here"
+	} else if waits["outcome"] == intentUnchanged {
+		result.Outcome, result.Summary = intentUnchanged, "this checkout has no recorded wait continuations"
+	}
+	return result
+}
+
+// runIntentIncidents lists the trunk-red register, or claims or closes one
+// entry through the same owner calls as red own and red close.
+func runIntentIncidents(inv *intentInvocation) int {
+	if len(inv.input.args) == 0 {
+		for _, choice := range []string{"goal", "branch", "to", "reason", "by"} {
+			if inv.input.has(choice) {
+				return inv.refuse("", fmt.Sprintf("--%s belongs to incidents claim or close; the list takes only --all; nothing was done", choice), "metasystem incidents claim I --goal G, or metasystem incidents close I --reason TEXT")
+			}
+		}
+		if problem := inv.selectRoot(); problem != nil {
+			return inv.render(*problem)
+		}
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		lines, listed := []string{}, []goal.TrunkRedEntry{}
+		for _, entry := range projection.Tree.TrunkRed {
+			if entry.Closed != nil && !inv.input.switched("all") {
+				continue
+			}
+			listed = append(listed, entry)
+			state := "open, unowned"
+			switch {
+			case entry.Closed != nil:
+				state = "closed"
+			case entry.FixGoal != "":
+				state = "owned, fixed by goal " + entry.FixGoal
+			}
+			lines = append(lines, fmt.Sprintf("  %s  %s  %s (%s)", entry.ID, entry.Group, state, entry.Status))
+		}
+		result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"incidents": listed},
+			Summary: fmt.Sprintf("%d incident(s) on main", len(listed))}
+		for _, entry := range listed {
+			if entry.Closed == nil && entry.FixGoal == "" {
+				result.next, result.nextReason = []string{"metasystem", "incidents", "claim", entry.ID, "--goal", "G"}, "an unowned incident needs a goal that fixes it"
+				break
+			}
+		}
+		return inv.render(result)
+	}
+	if inv.input.switched("all") {
+		return inv.refuse("", "--all belongs to the incident list; nothing was done", "drop --all")
+	}
+	if inv.input.args[0] == "claim" {
+		inv.input.args[0] = "own"
+	} else if inv.input.args[0] != "close" {
+		return inv.refuse("", "takes claim I --goal G or close I --reason TEXT, or nothing to list; nothing was done", "the incident ids are listed by metasystem incidents")
+	}
+	return runIntentRed(inv)
 }
 
 func runIntentRed(inv *intentInvocation) int {

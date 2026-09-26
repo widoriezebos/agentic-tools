@@ -50,6 +50,9 @@ type UnitRunRecord struct {
 	// Subjects binds completed rounds to their committed goal-branch
 	// subjects; ReviewSubject is its only writer.
 	Subjects []UnitSubject `json:"subjects,omitempty"`
+	// Revisions are the retained correction requests; Revise is their only
+	// writer.
+	Revisions []UnitRevision `json:"revisions,omitempty"`
 }
 
 type UnitRound struct {
@@ -315,6 +318,11 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if round.FollowUp != "" {
 		brief = round.FollowUp
 		previous = readOutputs(runner.Manager, record.Rounds[len(record.Rounds)-2])
+		for _, revision := range record.Revisions {
+			if revision.Attempt == round.Number && revision.Decisions != "" {
+				previous = append(previous, revision.Decisions)
+			}
+		}
 	}
 	buildCount, err := runner.ensureBuildSteps(record, round, plan, brief)
 	if err != nil {
@@ -384,7 +392,12 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 	}
-	readStart, err := runner.appendReadSteps(record, round, diffPath)
+	readInputs := append(append(append([]string{}, plan.Read.Inputs...), previous...), round.FollowUp)
+	if round.FollowUp == "" {
+		readInputs = readInputs[:len(readInputs)-1]
+	}
+	sequence := runner.readSequence(record, round, plan, readInputs, diffPath)
+	readStart, err := sequence.plan()
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -400,74 +413,39 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 		return runner.finish(record, round, "proof-red")
 	}
-	readInputs := append(append(append([]string{}, plan.Read.Inputs...), previous...), round.FollowUp)
-	if round.FollowUp == "" {
-		readInputs = readInputs[:len(readInputs)-1]
-	}
-	if result, done, err := runner.runReadSteps(record, round, plan, readInputs, diffPath, readStart, deadline); done || err != nil {
-		return result, err
-	}
-	for index := readStart; index < len(round.Steps); index++ {
-		if round.Steps[index].State != StepPassed {
-			return runner.finish(record, round, "read-failed")
+	outcome, stop, capped, err := sequence.advance(readStart, deadline)
+	if err != nil || capped {
+		if stop < 0 {
+			return UnitResult{}, err
 		}
+		return runner.result(*record, round, &round.Steps[stop], capped), err
 	}
-	if err := runner.appendReadReruns(record, round, diffPath, readStart); err != nil {
-		return UnitResult{}, err
-	}
-	if result, done, err := runner.runReadSteps(record, round, plan, readInputs, diffPath, readStart, deadline); done || err != nil {
-		return result, err
-	}
-	hasRerun, initialDidNotCount := false, false
-	for index := readStart; index < len(round.Steps); index++ {
-		step := round.Steps[index]
-		if step.State != StepPassed {
-			return runner.finish(record, round, "read-failed")
-		}
-		if step.Rerun {
-			hasRerun = true
-		}
-		if step.Rerun && !unitStepVerdictCounts(step) {
-			return runner.finish(record, round, "read-compacted")
-		}
-		if !step.Rerun && !unitStepVerdictCounts(step) {
-			initialDidNotCount = true
-		}
-	}
-	if initialDidNotCount && !hasRerun {
-		return runner.finish(record, round, "read-compacted")
-	}
-	return runner.finish(record, round, "green")
+	return runner.finish(record, round, outcome)
 }
 
-func (runner *UnitRunner) appendReadSteps(record *UnitRunRecord, round *UnitRound, diffPath string) (int, error) {
-	readStart := len(round.Steps)
-	for index := 0; index < len(round.Steps); index++ {
-		if strings.HasPrefix(round.Steps[index].Name, "read") {
-			return index, nil
-		}
-	}
-	settings, err := runner.Manager.resolvedSettings()
-	if err != nil {
-		return 0, err
-	}
-	choice, err := ChooseReadMode(diffPath, settings.ReadSplitLines)
-	if err != nil {
-		return 0, err
-	}
-	if choice.Mode == "package" {
-		var directories []string
-		for directory := range choice.Directories {
-			directories = append(directories, directory)
-		}
-		sort.Strings(directories)
-		for _, directory := range directories {
-			round.Steps = append(round.Steps, UnitStep{Name: "read:" + directory, State: StepPending, Model: round.ReadModel, Mode: "package", Package: directory})
-		}
-	} else {
-		round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepPending, Model: round.ReadModel, Mode: choice.Mode})
-	}
-	return readStart, runner.save(*record)
+// readSequence is the round's reads under the shared read partition policy.
+func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, plan UnitPlan, inputs []string, diffPath string) readSequence {
+	return readSequence{driver: runner.driver(record, round), model: round.ReadModel, diff: diffPath, serial: len(plan.Read.Outputs) > 0,
+		spec: StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
+			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model}}
+}
+
+// driver starts a unit round's launches under the run's own launch ids,
+// its launch gate and its named reservation.
+func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
+	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: runner.Manager.Start,
+		save: func() error { return runner.save(*record) },
+		before: func(spec StartSpec) error {
+			if runner.BeforeModelLaunch != nil && (spec.Kind == "build" || spec.Kind == "read") {
+				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
+					return fmt.Errorf("UNIT_LAUNCH_UNAUTHORIZED unit=%s goal=%s run=%s: %w", record.Unit, record.Goal, record.ID, err)
+				}
+			}
+			if runner.named != nil {
+				return runner.named.verify(runner)
+			}
+			return nil
+		}}
 }
 
 func (runner *UnitRunner) ensureBuildSteps(record *UnitRunRecord, round *UnitRound, plan UnitPlan, brief string) (int, error) {
@@ -516,51 +494,6 @@ func (runner *UnitRunner) ensureBuildSteps(record *UnitRunRecord, round *UnitRou
 	return len(steps), runner.save(*record)
 }
 
-func (runner *UnitRunner) runReadSteps(record *UnitRunRecord, round *UnitRound, plan UnitPlan, inputs []string, diffPath string, readStart int, deadline time.Time) (UnitResult, bool, error) {
-	if err := prepareReadOutputDirectories(plan.Read.Outputs); err != nil {
-		return UnitResult{}, false, err
-	}
-	for index := readStart; index < len(round.Steps); index++ {
-		step := &round.Steps[index]
-		if !strings.HasPrefix(step.Name, "read") || step.State != StepPending && step.State != StepStarting {
-			continue
-		}
-		packet, err := unitReadPacket(diffPath, *step)
-		if err != nil {
-			return UnitResult{}, false, err
-		}
-		adapterData := map[string]json.RawMessage{}
-		setString(adapterData, "unitReadPacket", packet)
-		spec := StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
-			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: step.Package, File: step.File,
-			Wide: step.Mode == "wide", AdapterData: adapterData}
-		if step.Rerun {
-			spec.readMode = step.Mode
-		}
-		if _, err := runner.startStep(record, round, index, spec); err != nil {
-			return UnitResult{}, false, err
-		}
-		// Split reads share the plan's declared output paths. Complete each
-		// writer before starting the next one so every report belongs to its
-		// own launch and a queued start does not wait behind a long read.
-		if len(plan.Read.Outputs) > 0 {
-			if capped, err := runner.waitStep(record, round, index, deadline); err != nil || capped {
-				return runner.result(*record, round, step, capped), true, err
-			}
-		}
-	}
-	for index := readStart; index < len(round.Steps); index++ {
-		step := &round.Steps[index]
-		if !strings.HasPrefix(step.Name, "read") {
-			continue
-		}
-		if capped, err := runner.waitStep(record, round, index, deadline); err != nil || capped {
-			return runner.result(*record, round, step, capped), true, err
-		}
-	}
-	return UnitResult{}, false, nil
-}
-
 func unitReadPacket(diffPath string, step UnitStep) (string, error) {
 	data, err := os.ReadFile(diffPath)
 	if err != nil {
@@ -601,55 +534,13 @@ func appendReadPacket(data []byte, record Record) []byte {
 	if diff := readString(record.AdapterData, "readDiff"); diff != "" {
 		data = append(data, []byte("\nDiff: "+diff+"\n")...)
 	}
+	// A read that declares its report file names it: the reader cannot
+	// otherwise know where the report it must leave belongs.
+	var outputs []string
+	if record.Kind == "read" && json.Unmarshal(record.AdapterData["declaredOutputs"], &outputs) == nil && len(outputs) == 1 {
+		data = append(data, []byte("\nWrite your complete report, ending with its VERDICT line, to exactly this file: "+outputs[0]+"\nThe read is not complete until that file exists.\n")...)
+	}
 	return data
-}
-
-func (runner *UnitRunner) appendReadReruns(record *UnitRunRecord, round *UnitRound, diffPath string, readStart int) error {
-	for index := readStart; index < len(round.Steps); index++ {
-		if round.Steps[index].Rerun {
-			return nil
-		}
-	}
-	choice, err := ChooseReadMode(diffPath, 1<<62)
-	if err != nil {
-		return err
-	}
-	var reruns []UnitStep
-	for index := readStart; index < len(round.Steps); index++ {
-		step := round.Steps[index]
-		if step.Rerun || !strings.HasPrefix(step.Name, "read") || unitStepVerdictCounts(step) {
-			continue
-		}
-		if step.Package != "" {
-			var files []string
-			for name := range choice.Files {
-				if filepath.Dir(name) == step.Package {
-					files = append(files, name)
-				}
-			}
-			sort.Strings(files)
-			if len(files) <= 1 {
-				continue
-			}
-			for _, name := range files {
-				reruns = append(reruns, UnitStep{Name: "read:" + name + ":rerun", State: StepPending, Model: round.ReadModel, Mode: "file", Package: step.Package, File: name, Rerun: true})
-			}
-			continue
-		}
-		var packages []string
-		for name := range choice.Directories {
-			packages = append(packages, name)
-		}
-		sort.Strings(packages)
-		for _, name := range packages {
-			reruns = append(reruns, UnitStep{Name: "read:" + name + ":rerun", State: StepPending, Model: round.ReadModel, Mode: "package", Package: name, Rerun: true})
-		}
-	}
-	if len(reruns) == 0 {
-		return nil
-	}
-	round.Steps = append(round.Steps, reruns...)
-	return runner.save(*record)
 }
 
 func unitStepVerdictCounts(step UnitStep) bool {
@@ -657,80 +548,7 @@ func unitStepVerdictCounts(step UnitStep) bool {
 }
 
 func (runner *UnitRunner) advanceStep(record *UnitRunRecord, round *UnitRound, index int, spec StartSpec, deadline time.Time) (bool, error) {
-	if _, err := runner.startStep(record, round, index, spec); err != nil {
-		return false, err
-	}
-	return runner.waitStep(record, round, index, deadline)
-}
-
-func (runner *UnitRunner) startStep(record *UnitRunRecord, round *UnitRound, index int, spec StartSpec) (Record, error) {
-	step := &round.Steps[index]
-	if step.State == StepPending {
-		step.LaunchID = fmt.Sprintf("%s-r%d-s%d", record.ID, round.Number, index+1)
-		step.State, step.StartedAt = StepStarting, runner.Manager.Now().UTC().Format(time.RFC3339Nano)
-		if err := runner.save(*record); err != nil {
-			return Record{}, err
-		}
-	}
-	launchRecord, err := runner.Manager.Store.Read(step.LaunchID)
-	if errors.Is(err, fs.ErrNotExist) {
-		if runner.BeforeModelLaunch != nil && (spec.Kind == "build" || spec.Kind == "read") {
-			if err := runner.BeforeModelLaunch(*record, spec); err != nil {
-				return Record{}, fmt.Errorf("UNIT_LAUNCH_UNAUTHORIZED unit=%s goal=%s run=%s: %w", record.Unit, record.Goal, record.ID, err)
-			}
-		}
-		if runner.named != nil {
-			if err := runner.named.verify(runner); err != nil {
-				return Record{}, err
-			}
-		}
-		spec.ID = step.LaunchID
-		launchRecord, err = runner.Manager.Start(spec)
-	}
-	if err != nil && launchRecord.ID == "" {
-		return Record{}, err
-	}
-	if launchRecord.State.Terminal() {
-		runner.endStep(record, round, index, launchRecord)
-		return launchRecord, runner.save(*record)
-	}
-	step.State = StepRunning
-	return launchRecord, runner.save(*record)
-}
-
-func (runner *UnitRunner) waitStep(record *UnitRunRecord, round *UnitRound, index int, deadline time.Time) (bool, error) {
-	step := &round.Steps[index]
-	if step.State == StepPassed || step.State == StepFailed {
-		return false, nil
-	}
-	remaining := deadline.Sub(runner.Manager.Now())
-	if remaining < 0 {
-		remaining = 0
-	}
-	launchRecord, terminal, err := runner.Manager.Wait(step.LaunchID, remaining)
-	if err != nil {
-		return false, err
-	}
-	if !terminal {
-		step.State = StepRunning
-		if err := runner.save(*record); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	runner.endStep(record, round, index, launchRecord)
-	return false, runner.save(*record)
-}
-
-func (runner *UnitRunner) endStep(record *UnitRunRecord, round *UnitRound, index int, launchRecord Record) {
-	step := &round.Steps[index]
-	step.State, step.Reason, step.FinishedAt = StepFailed, launchRecord.Reason, runner.Manager.Now().UTC().Format(time.RFC3339Nano)
-	if launchRecord.State == Completed {
-		step.State = StepPassed
-	}
-	if strings.HasPrefix(step.Name, "read") {
-		step.Verdict, step.VerdictCounts = launchRecord.Measurement.Verdict, launchRecord.VerdictCounts
-	}
+	return runner.driver(record, round).advanceStep(index, spec, deadline)
 }
 
 func (runner *UnitRunner) skipAfter(record *UnitRunRecord, round *UnitRound, from int, reason string) error {
@@ -766,6 +584,12 @@ func (runner *UnitRunner) writeDiff(worktree, base, target string) error {
 // WorktreeDiff is the worktree's cumulative binary diff against base,
 // computed through a disposable index exactly as a round's worktree.diff.
 func (runner *UnitRunner) WorktreeDiff(worktree, base string) ([]byte, error) {
+	return runner.worktreeDiff(worktree, base)
+}
+
+// worktreeDiff is WorktreeDiff leaving out the exact worktree-relative
+// paths excluded, selected literally by Git pathspec.
+func (runner *UnitRunner) worktreeDiff(worktree, base string, excluded ...string) ([]byte, error) {
 	git := runner.Git
 	if git == nil {
 		git = OSGitRunner{}
@@ -784,12 +608,21 @@ func (runner *UnitRunner) WorktreeDiff(worktree, base string) ([]byte, error) {
 		return nil, err
 	}
 	index := filepath.Join(temporary, "index")
-	if data, readErr := os.ReadFile(strings.TrimSpace(string(indexPathData))); readErr == nil {
+	sourceIndex := strings.TrimSpace(string(indexPathData))
+	if data, readErr := os.ReadFile(sourceIndex); readErr == nil {
 		if err := os.WriteFile(index, data, 0o600); err != nil {
 			return nil, err
 		}
 	} else {
 		return nil, readErr
+	}
+	// The copy keeps the source index's time: Git trusts an entry's cached
+	// file times only when the file is older than the index, so a later copy
+	// time would hide an edit made in the index's own second.
+	if info, statErr := os.Stat(sourceIndex); statErr == nil {
+		if err := os.Chtimes(index, info.ModTime(), info.ModTime()); err != nil {
+			return nil, err
+		}
 	}
 	objectDir := filepath.Join(temporary, "objects")
 	if err := os.MkdirAll(objectDir, 0o700); err != nil {
@@ -799,7 +632,11 @@ func (runner *UnitRunner) WorktreeDiff(worktree, base string) ([]byte, error) {
 	if _, err := git.Run(worktree, environment, "add", "-A", "--sparse", "--", "."); err != nil {
 		return nil, err
 	}
-	return git.Run(worktree, environment, "diff", "--cached", "--binary", base, "--", ".")
+	args := []string{"diff", "--cached", "--binary", base, "--", "."}
+	for _, path := range excluded {
+		args = append(args, ":(exclude,literal)"+path)
+	}
+	return git.Run(worktree, environment, args...)
 }
 
 type repositorySnapshot struct {

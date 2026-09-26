@@ -647,6 +647,31 @@ func TestCritiqueRegisterReadsDecisionAndAcceptsRisk(t *testing.T) {
 		!strings.Contains(err.Error(), "is absent") {
 		t.Fatalf("absent acceptance finding = %v", err)
 	}
+	for _, tc := range []struct {
+		name     string
+		register []registerFinding
+		missing  string
+	}{
+		{"failed", foldProtocolError(nil, "code-critic", "failed-round", map[string]any{"error": "no result", "phase": "return"}), "did not return usable evidence"},
+		{"unbound", foldUnboundReturn(nil, "code-critic", "unbound-round", ReadSubject{}, map[string]any{}), "not bound to the work examined"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root[findingRegisterField] = encodeFindingRegister(tc.register)
+			if err := writeRecord(rootPath, root); err != nil {
+				t.Fatal(err)
+			}
+			f := tc.register[0]
+			decision, err := CritiqueRegisterDecisionFinding(repo, "critic", f.FindingID, "goal-a")
+			if err != nil || decision.Title == "" || decision.RigorClass != "unproven" ||
+				!strings.Contains(decision.Evidence, tc.missing) || !strings.Contains(decision.Evidence, f.Critic) ||
+				!strings.Contains(decision.Evidence, f.EvidenceDigest) {
+				t.Fatalf("missing-evidence risk lost its actual failure identity: %+v, %v", decision, err)
+			}
+			if _, err := CritiqueRegisterDecisionFinding(repo, "critic", f.FindingID, "other-goal"); err == nil {
+				t.Fatal("synthetic finding bypassed the goal binding")
+			}
+		})
+	}
 }
 
 func TestCritiqueRegisterRefusesMalformedFoldRound(t *testing.T) {
@@ -676,5 +701,43 @@ func TestCritiqueRegisterRefusesMalformedFoldRound(t *testing.T) {
 	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err == nil ||
 		!strings.Contains(err.Error(), "not a non-negative integer") {
 		t.Fatalf("negative folded round = %v", err)
+	}
+}
+
+// TestCappedRoundFoldsNeutrallyOnlyWhenProvenDead: a critic round cut off at
+// its cap folds with no invented finding once the reaper proved its process
+// group dead; until then the register refuses it, and a failed round keeps
+// its synthetic unproven finding.
+func TestCappedRoundFoldsNeutrallyOnlyWhenProvenDead(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	writeCriticRound(t, repo, "critic", "critic", 1, nil, nil)
+	path := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
+	record := readJSONFile(t, path)
+	record["status"], record["error"] = "timeout", "budget-cap"
+	if err := writeRecord(path, record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err == nil || !strings.Contains(err.Error(), "not proven dead") {
+		t.Fatalf("a capped round without death proof folded: %v", err)
+	}
+	if got := readRegisterRound(t, repo, "critic"); got != 0 {
+		t.Fatalf("a refused fold advanced the register: %d", got)
+	}
+	record["groupDeathProvenAt"] = "2026-09-26T09:00:00Z"
+	if err := writeRecord(path, record); err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+		t.Fatalf("a proven-dead capped round must fold: %q, %v", outcome, err)
+	}
+	if items := readRegister(t, repo, "critic"); len(items) != 0 {
+		t.Fatalf("a capped round invented findings: %v", items)
+	}
+	if got := readRegisterRound(t, repo, "critic"); got != 1 {
+		t.Fatalf("the capped round did not count: %d", got)
+	}
+	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "unchanged" {
+		t.Fatalf("a replayed fold: %q, %v", outcome, err)
 	}
 }

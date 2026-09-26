@@ -381,8 +381,11 @@ func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 		var help bytes.Buffer
 		writeIntentCommandHelp(&help, command)
 		for _, flag := range flags {
-			if _, ok := command.lookupFlag(flag); !ok || !strings.Contains(help.String(), "--"+flag) {
-				t.Fatalf("%s does not take or document --%s", name, flag)
+			definition, ok := command.lookupFlag(flag)
+			// Compatibility-only binding options stay parseable and are
+			// absent from help.
+			if !ok || definition.hidden == strings.Contains(help.String(), "--"+flag+" ") {
+				t.Fatalf("%s does not take --%s, or its help does not match its visibility", name, flag)
 			}
 		}
 	}

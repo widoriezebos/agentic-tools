@@ -2,14 +2,14 @@
 
 - Kind: design
 - Id: 01M3EJ5W1JX95BA2NHD4G6Z1N7
-- Status: accepted
+- Status: done
 - Goals: verbs-match-intent
 
 Author: root Codex, 26 September 2026. This completes a demonstrated capability
 gap in the user's full intent redesign; accepted parent and planning contracts
 remain required. Critique closed at round 2 on two named fixture obligations
 (material trajectory 3 -> 2), plus the required concurrency/replay fixtures;
-independent Sol implementation critique is mandatory. Investigation: plans/intent-manual-review-investigation.md.
+independent Fable implementation critique is mandatory. Investigation: plans/intent-manual-review-investigation.md.
 
 ## Contract and first usable slice
 
@@ -216,10 +216,10 @@ mandatory before this user's goal is done.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| IM-1 | HIGH | Diagnostic public subjects and complete snapshot | Manual diff/current-change feedback with no builder; source untouched | Launch retained read/partition owners | internal/launch/standalone_read.go and read_sequence.go; public review adapter | TestIntentManualDiffReview; TestStandaloneReadPartition; TestManualCaptureFromNestedCheckout | Public commands, actual capture/retention with fake reader | MISSING | Complete owner and public adapter, drive exact candidate |
-| IM-2 | CRITICAL | Diagnostic request lifecycle | Replays, failed retry and live/compacted outcomes honest | Existing launch custody and request retention | Standalone read request/sequence using Manager custody | TestStandaloneReadReplayAndRecovery | One launch per request; show/wait/stop use public REF | MISSING | Complete and drive lifecycle |
-| IM-3 | CRITICAL | Manual submission and committed review | Manual submission has authentic commit/review/landing authority | Goal branch commit/read owners | goal/branch CommitStaged and RunBranchRead; shared commit wrapper and public manual adapter | TestIntentManualWorkDelivery; TestManualStageRefusalPreservesCheckout | Manual edit -> public submission -> bound review -> land, no builder | MISSING | Implement after diagnostic slice and drive |
-| IM-4 | CRITICAL | Manual replay, locking and amendment | Lost response, amendment and unrelated/source work preservation | Existing branch range/commit/amend owners | goal/branch commit/push/range owner and checkout mutation lock | TestManualSubmissionReplayAndAmend | Lost commit/push result, repeat and correction with another work item | MISSING | Implement exact comparison/locking and drive |
+| IM-1 | HIGH | Diagnostic public subjects and complete snapshot | Manual diff/current-change feedback with no builder; source untouched | internal/launch.Manager retained read owner | `internal/launch/standalone_read.go`; `internal/launch/read_sequence.go`; `cmd/metasystem/intent_manual_review.go` | `cmd/metasystem/intent_manual_review_test.go#TestIntentManualDiffReview`; `internal/launch/standalone_read_test.go#TestStandaloneReadPartition`; `cmd/metasystem/intent_manual_submit_test.go#TestManualCaptureFromNestedCheckout` |Public commands, actual capture/retention with fake reader; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IM-2 | CRITICAL | Diagnostic request lifecycle | Replays, failed retry and live/compacted outcomes honest | internal/launch.Manager custody and retention | `internal/launch/standalone_read.go`; `internal/launch/read_sequence.go` | `internal/launch/standalone_read_test.go#TestStandaloneReadReplayAndRecovery` |One launch per request; show/wait/stop use public REF; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IM-3 | CRITICAL | Manual submission and committed review | Manual submission has authentic commit/review/landing authority | internal/goal/branch commit and branch read owners | `internal/goal/branch/commit.go`; `internal/goal/branch/read.go`; `cmd/metasystem/intent_manual_submit.go` | `cmd/metasystem/intent_manual_submit_test.go#TestIntentManualWorkDelivery`; `cmd/metasystem/intent_manual_submit_test.go#TestIntentManualWorkLandsOnEndpoint`; `cmd/metasystem/intent_manual_submit_test.go#TestManualStageRefusalPreservesCheckout`; `cmd/metasystem/intent_manual_submit_test.go#TestManualCommitRefusalRestoresStaging` |Manual edit -> public submission -> bound review -> land, no builder; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
+| IM-4 | CRITICAL | Manual replay, locking and amendment | Lost response, amendment and unrelated/source work preservation | internal/goal/branch range, commit and amendment owners | `cmd/metasystem/intent_manual_submit.go`; `internal/goal/branch/commit.go`; `internal/goal/branch/push.go` | `cmd/metasystem/intent_manual_submit_test.go#TestManualSubmissionReplayAndAmend` |Lost commit/push result, repeat and correction with another work item; see `plans/intent-workflows-verification.md` and the exact `obligation-runtime-join.json` test join | DONE | None; root accepted the final runtime composition and Fable findings are adjudicated |
 
 
 Round 1 folded IM-C1..3: deleted the proposed manual request registry and
@@ -234,7 +234,7 @@ Fable: maximum two rounds on this new concrete capability, failsafe round 2;
 criterion is whether step 1 works/safely meets its contract, plus whether the
 required manual-delivery extension is honestly implementable. Challenge the
 premise and delete needless machinery. Root adjudicates. Named mechanical
-findings become fixtures, and independent Sol review of the complete combined
+findings become fixtures, and independent Fable review of the complete combined
 implementation remains mandatory. No partial completion claim for this user goal.
 
 
@@ -262,3 +262,9 @@ not filtered. Use literal Git path selection/private-index operations, not a tex
 regex that rewrites binary diffs. Diagnostic reads otherwise keep their complete
 tracked/untracked whole-checkout capture, including any records the user wants
 feedback on. Add nested in-repo brief and normal background-record fixtures.
+
+Implementation shipped with final runtime acceptance recorded in
+`plans/intent-workflows-verification.md`; Fable's three implementation reviews and
+root's literal-only final help correction are adjudicated in
+`plans/intent-workflows-code-review-dispositions.md`. Design completion does not
+conclude the human-owned goal.

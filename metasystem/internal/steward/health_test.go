@@ -197,6 +197,9 @@ func TestClaimedGoalWithoutStructuredBudgetIsDead(t *testing.T) {
 		!strings.Contains(role.Remedy, "goal set-budget --root . --id hungry-goal") {
 		t.Fatalf("the budgetless claimed goal and its current remedy must be named: %+v", role)
 	}
+	if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseBudgetMissing, Goal: "hungry-goal", Record: "plans/goals/hungry-goal.md"}) {
+		t.Fatalf("the typed cause is not carried: %+v", role.RemedyFacts)
+	}
 }
 
 func stopCapabilityHealthGoal() *goal.GoalFile {
@@ -268,6 +271,9 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 			!strings.Contains(role.Remedy, "metasystem up") {
 			t.Fatalf("same-lineage divergence = %+v", role)
 		}
+		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseEpochMismatch, Goal: "bounded-goal"}) {
+			t.Fatalf("same-lineage typed cause = %+v", role.RemedyFacts)
+		}
 	})
 
 	t.Run("foreign lineage divergence", func(t *testing.T) {
@@ -278,6 +284,9 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 			!strings.Contains(role.Reason, "replacement-lineage") ||
 			role.Remedy != "release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem goal handover" {
 			t.Fatalf("foreign-lineage divergence = %+v", role)
+		}
+		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseForeignLineage, Goal: "bounded-goal"}) {
+			t.Fatalf("foreign-lineage typed cause = %+v", role.RemedyFacts)
 		}
 	})
 
@@ -401,6 +410,9 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "steward tick") {
 			t.Fatalf("structured breaches did not route to breach-stop healing: %+v", role)
 		}
+		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseBudgetBreach, Goal: "bounded-goal"}) {
+			t.Fatalf("the breach's typed cause is not carried: %+v", role.RemedyFacts)
+		}
 	})
 
 	t.Run("budget unknown", func(t *testing.T) {
@@ -413,6 +425,10 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 			!strings.Contains(role.Reason, "artifacts/agents/jobs/revisionless.json") ||
 			!verdict.ShouldAlert || verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
 			t.Fatalf("unknown spending did not name its exact record: %+v", role)
+		}
+		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0].Cause != CauseBudgetUnknown || role.RemedyFacts[0].Goal != "bounded-goal" ||
+			!strings.Contains(role.RemedyFacts[0].Record, "revisionless.json") {
+			t.Fatalf("the unknown budget's typed cause is not carried: %+v", role.RemedyFacts)
 		}
 	})
 }

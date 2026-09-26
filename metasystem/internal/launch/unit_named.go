@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"golang.org/x/sys/unix"
@@ -450,4 +452,85 @@ func (runner *UnitRunner) NamedInputDirectory(worktree, goal, unit string) (stri
 		return "", err
 	}
 	return filepath.Join(runner.root(), ".inputs", key), nil
+}
+
+// NamedWork is one named unit of a goal in one worktree: the name the caller
+// chose, the run reserved for it, and that run's record once it exists.
+type NamedWork struct {
+	Unit   string
+	Run    string
+	Record *UnitRunRecord
+}
+
+// Running reports whether the work's run is still advancing its round.
+func (work NamedWork) Running() bool {
+	return work.Record == nil || work.Record.State != "awaiting-judgement"
+}
+
+// NamedWork lists the named units this store holds for one goal in one
+// worktree, ordered by name. It reads the named entries and the runs they
+// reserved and writes nothing. An entry that cannot be read, or whose run
+// names another goal, unit or worktree, is refused rather than skipped, so a
+// caller never selects among a partial list. Entries of other worktrees and
+// goals are not this goal's work and are left out.
+func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) {
+	real, err := filepath.EvalSymlinks(worktree)
+	if err != nil {
+		return nil, planInvalid("worktree", err)
+	}
+	directory := filepath.Dir(runner.namedPath("x", ""))
+	names, err := os.ReadDir(directory)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var work []NamedWork
+	for _, name := range names {
+		key, isEntry := strings.CutSuffix(name.Name(), ".json")
+		if !isEntry || name.IsDir() {
+			continue
+		}
+		entry, found, err := runner.readNamed(key)
+		if err != nil {
+			return nil, err
+		}
+		if !found || entry.Worktree != real || entry.Goal != goal {
+			continue
+		}
+		if _, expected, err := namedUnitIdentity(UnitPlan{Worktree: real, Goal: goal, Unit: entry.Unit}); err != nil || expected != key {
+			return nil, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT entry=%s: its goal, unit and worktree do not match its key", runner.namedPath(key, ".json"))
+		}
+		one := NamedWork{Unit: entry.Unit, Run: entry.Run}
+		if entry.Run != "" {
+			record, readErr := runner.read(entry.Run)
+			switch {
+			case errors.Is(readErr, fs.ErrNotExist):
+			case readErr != nil:
+				return nil, readErr
+			case record.Goal != goal || record.Unit != entry.Unit:
+				return nil, fmt.Errorf("UNIT_NAMED_ENTRY_CORRUPT entry=%s: run %s belongs to goal %s unit %s", runner.namedPath(key, ".json"), entry.Run, record.Goal, record.Unit)
+			default:
+				one.Record = &record
+			}
+		}
+		work = append(work, one)
+	}
+	sort.Slice(work, func(i, j int) bool { return work[i].Unit < work[j].Unit })
+	return work, nil
+}
+
+// RetainedRequest is the request bytes a named unit's run started with, as
+// AdvancePrepared retained them; found is false when the unit has none.
+func (runner *UnitRunner) RetainedRequest(worktree, goal, unit string) ([]byte, bool, error) {
+	_, key, err := namedUnitIdentity(UnitPlan{Worktree: worktree, Goal: goal, Unit: unit})
+	if err != nil {
+		return nil, false, err
+	}
+	data, err := os.ReadFile(filepath.Join(runner.root(), ".inputs", key, "request.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	return data, err == nil, err
 }

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -324,40 +325,80 @@ func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) {
 }
 
 func (f *ProcessFixture) waitForExits(refs []identity.Ref) {
-	type observation struct {
-		exact identity.Exact
-		state identity.Liveness
-		err   error
+	pending := awaitExits(f.prober, refs, f.waitBound, f.release)
+	for _, ref := range sortedPendingRefs(pending) {
+		last := pending[ref]
+		f.t.Errorf("child did not exit after %s: ref=%+v state=%s same-identity=%t zombie=%t probe=%v",
+			f.waitBound, ref, last.state, identity.SameIdentity(last.exact, ref), last.exact.Zombie, last.err)
 	}
-	observed := make(map[identity.Ref]observation, len(refs))
+}
+
+// exitObservation is the last probe of one exact identity.
+type exitObservation struct {
+	exact identity.Exact
+	state identity.Liveness
+	err   error
+}
+
+// awaitExits probes each exact identity until it has exited (gone, a zombie,
+// or its pid now held by another process) or bound elapses, calling exited
+// for each as it goes. It returns the identities still present at the bound
+// with their last probe; an unknown liveness or a probe error stays pending.
+func awaitExits(prober identity.Prober, refs []identity.Ref, bound time.Duration, exited func(identity.Ref)) map[identity.Ref]exitObservation {
+	observed := make(map[identity.Ref]exitObservation, len(refs))
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	deadline := time.After(f.waitBound)
+	deadline := time.After(bound)
 	for {
-		var pending []identity.Ref
+		pending := map[identity.Ref]exitObservation{}
 		for _, ref := range refs {
-			exact, state, err := f.prober.Probe(ref.Pid)
-			observed[ref] = observation{exact: exact, state: state, err: err}
+			exact, state, err := prober.Probe(ref.Pid)
+			observed[ref] = exitObservation{exact: exact, state: state, err: err}
 			if err != nil || state == identity.Unknown || state == identity.Alive && identity.SameIdentity(exact, ref) && !exact.Zombie {
-				pending = append(pending, ref)
-			} else {
-				f.release(ref)
+				pending[ref] = observed[ref]
+			} else if exited != nil {
+				exited(ref)
 			}
 		}
 		if len(pending) == 0 {
-			return
+			return nil
 		}
 		select {
 		case <-ticker.C:
 		case <-deadline:
-			for _, ref := range pending {
-				last := observed[ref]
-				f.t.Errorf("child did not exit after %s: ref=%+v state=%s same-identity=%t zombie=%t probe=%v",
-					f.waitBound, ref, last.state, identity.SameIdentity(last.exact, ref), last.exact.Zombie, last.err)
-			}
-			return
+			return pending
 		}
 	}
+}
+
+func sortedPendingRefs(pending map[identity.Ref]exitObservation) []identity.Ref {
+	refs := make([]identity.Ref, 0, len(pending))
+	for ref := range pending {
+		refs = append(refs, ref)
+	}
+	sort.Slice(refs, func(a, b int) bool { return refs[a].Pid < refs[b].Pid })
+	return refs
+}
+
+// AwaitExactExit waits, within the fixture exit bound, for the process with
+// exactly ref's identity to exit. A different process now holding the pid
+// counts as that exit; the same identity still alive, an unknown liveness or
+// a probe error at the bound is an error. It records no fixture custody.
+func AwaitExactExit(prober identity.Prober, ref identity.Ref) error {
+	bound, err := testenv.FixtureExitWaitBound()
+	if err != nil {
+		return err
+	}
+	return awaitExactExitWithin(prober, ref, bound)
+}
+
+func awaitExactExitWithin(prober identity.Prober, ref identity.Ref, bound time.Duration) error {
+	if pending := awaitExits(prober, []identity.Ref{ref}, bound, nil); len(pending) != 0 {
+		last := pending[ref]
+		return fmt.Errorf("process did not exit after %s: ref=%+v state=%s same-identity=%t zombie=%t probe=%v",
+			bound, ref, last.state, identity.SameIdentity(last.exact, ref), last.exact.Zombie, last.err)
+	}
+	return nil
 }
 
 func (f *ProcessFixture) release(ref identity.Ref) {

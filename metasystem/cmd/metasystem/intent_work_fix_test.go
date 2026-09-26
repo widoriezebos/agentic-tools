@@ -220,9 +220,15 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	bed := newWorkBed(t)
 	plain := bed.brief("plain.md", "Build the unit.\n")
 	check := append([]string{"--check"}, workArgv...)
-	code, result, _ := bed.work(append([]string{"build", bed.id, "budget", "--brief", plain, "--lines", "5"}, check...)...)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "Maximum reader tool calls: N") {
-		t.Fatalf("undecided read budget: code=%d %+v", code, result)
+	// A brief that names no read budget uses the configured allowance.
+	code, result, _ := bed.work(append([]string{"build", bed.id, "plain", "--brief", plain, "--lines", "5"}, check...)...)
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("configured read budget: code=%d %+v", code, result)
+	}
+	if plan, err := launch.ReadUnitPlan(resultData(t, result)["plan"].(string)); err != nil {
+		t.Fatal(err)
+	} else if readBrief, _ := os.ReadFile(plan.Read.Brief); !strings.Contains(string(readBrief), "Maximum reader tool calls: 48") {
+		t.Fatalf("the configured allowance is not the read's budget:\n%s", readBrief)
 	}
 	budgeted := bed.brief("budgeted.md", "Build the unit.\n\nMaximum reader tool calls: 25\n")
 	code, result, _ = bed.work(append([]string{"build", bed.id, "budget", "--brief", budgeted, "--lines", "5", "--read-tool-calls", "30"}, check...)...)
@@ -329,10 +335,10 @@ func TestIntentBriefCarriesAcceptedDesign(t *testing.T) {
 		}
 	}
 	missing, _ := resultData(t, result)["missingDecisions"].([]any)
-	if code != 0 || len(missing) != 1 || !strings.Contains(missing[0].(string), "tool-call budget") {
-		t.Fatalf("only the read budget is undecided: code=%d missing=%v\n%s", code, missing, written)
+	if code != 0 || len(missing) != 0 || !strings.Contains(string(written), "Maximum reader tool calls: 48") {
+		t.Fatalf("the read budget is the configured allowance, nothing undecided: code=%d missing=%v\n%s", code, missing, written)
 	}
-	filled := strings.Replace(string(written), intentMissingDecision+" the read's tool-call budget, written as the line 'Maximum reader tool calls: N'", "Maximum reader tool calls: 20", 1)
+	filled := strings.Replace(string(written), "Maximum reader tool calls: 48", "Maximum reader tool calls: 20", 1)
 	os.WriteFile(filepath.Join(bed.root(), "filled.md"), []byte(filled), 0o600)
 	code, result, _ = bed.work(append([]string{"build", bed.id, "u1", "--brief", "filled.md", "--check"}, workArgv...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
