@@ -275,3 +275,24 @@ lines with nine starting points; focused help succeeds, malformed wait proof/fil
 resume refuses2. Design help still2 (unbuilt). Binary hash, all commands and exits
 are in artifacts/agents/intent-workflows-verification/checkpoint-4/result.json.
 Continuation5 is running as20260926t101048-ddde2f31b7. Current main already merged.
+
+## Fifth checkpoint and independent read-owner implementation
+
+Continuation5 completed12:26:45 CEST, exit0; cumulative460 model/473 tool calls,
+81 new tools,82 turns, actual15m57.3s. Real dispatcher diagnostic dispatch-b passes
+capped/lost critic followup in the same chain. Authentic auto-claim and foreign
+claim refusal, real mission repair and file-wait/resume proofs now exist. Parent
+administration/carry/event-wait/publication proof remains incomplete; planning not
+started. Broad owner check failed three steward tests without installed engine;
+the suspected environment cause was not baseline-proved. Broad intent run failed
+two expectation regressions, fixed and focused-rerun0; no full rerun claimed.
+
+Main pulled/merged through8db599e25 (new UI design correction). Private read-owner
+seed f2d5da5fe541cd5d41aef30d64475d928f83c7d6 preserves unfinished product and
+root design, tree9e820e6e0e8d1c7117608da6da71f7aba1613a34; not certification.
+Independent Opus launch20260926t102804-0d4f267ead implements only read sequencing
+and diagnostic request owner in sibling intent-read-owner checkout. First start
+attempt raced unfinished worktree creation and refused before launch; after the
+creation exited0 the successful launch above began. Main continuation6 prioritizes
+planning and avoids that owner's exclusive files. Root will compute/integrate
+its full patch before combined code critique and final testing.

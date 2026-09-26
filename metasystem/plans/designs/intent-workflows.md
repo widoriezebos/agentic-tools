@@ -419,3 +419,16 @@ goal happens to exist. TestIntentReservedGoalNames is an IW-1/2 proof for ui,
 checkout, job, unit, file, proof, question and resume, alongside original target
 behavior. This bounded dispatcher correction preserves valid goal capability;
 it adds no owner, state or authority and goes to mandatory implementation critique.
+
+## Truthful review-close refusal boundary
+
+The existing whole-close shell flattens later failures, so closability, caller
+identity or opening a job file cannot establish a failed operation's cause.
+Preflight the actual record-writer authority owner for the root before the join
+may write its register, using the executing engine's actual classification and
+all custody fields. A refusal there is authoritative; unreadable classification
+is uncertainty. Preserve all actual close checks and report later failures as
+completion pending with owner detail and public repair. Supplemental CloseCheck
+facts do not justify a guessed permission/I/O label. This bounded owner-boundary
+correction replaces posthoc guessing, requires no new wire protocol, and is part
+of IW review proof and mandatory Sol critique.
