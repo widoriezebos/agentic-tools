@@ -3,6 +3,7 @@ package partner_test
 import (
 	"bufio"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -60,18 +61,19 @@ func TestTheWireJournalRotatesUnderALiveConnectionAndKeepsWriting(t *testing.T) 
 func TestTheWireJournalKeepsOnePreviousAndTheOlderGoes(t *testing.T) {
 	t.Parallel()
 	journal := partner.NewJournal(filepath.Join(t.TempDir(), "wire.jsonl"))
-	testutil.Require(t, "opening", journal.Open(), nil)
-	t.Cleanup(func() { _ = journal.Close() })
+	sink, err := journal.Open()
+	testutil.Require(t, "opening", err, nil)
+	t.Cleanup(func() { _ = sink.Close() })
 
-	write(t, journal, "first")
+	write(t, sink, "first")
 	rotated, err := journal.Rotate(1)
 	testutil.Require(t, "the first rotation", err, nil)
 	testutil.Expect(t, "it rotated", rotated, true)
-	write(t, journal, "second")
+	write(t, sink, "second")
 	rotated, err = journal.Rotate(1)
 	testutil.Require(t, "the second rotation", err, nil)
 	testutil.Expect(t, "it rotated again", rotated, true)
-	write(t, journal, "third")
+	write(t, sink, "third")
 
 	testutil.Expect(t, "the current file holds what was written after the last rotation",
 		strings.Join(lines(t, journal.Path()), ""), "third")
@@ -88,14 +90,15 @@ func TestTheWireJournalKeepsOnePreviousAndTheOlderGoes(t *testing.T) {
 func TestNoLineIsTornOrLostWhenTheJournalRotatesUnderWriters(t *testing.T) {
 	t.Parallel()
 	journal := partner.NewJournal(filepath.Join(t.TempDir(), "wire.jsonl"))
-	testutil.Require(t, "opening", journal.Open(), nil)
-	t.Cleanup(func() { _ = journal.Close() })
+	sink, err := journal.Open()
+	testutil.Require(t, "opening", err, nil)
+	t.Cleanup(func() { _ = sink.Close() })
 
 	// Enough is written first that the bound is already passed, so the one
 	// rotation lands in the middle of the concurrent writes rather than after
 	// them.
 	for at := 0; at < 50; at++ {
-		write(t, journal, "before-"+strconv.Itoa(at))
+		write(t, sink, "before-"+strconv.Itoa(at))
 	}
 	const writers, each = 8, 40
 	started := make(chan struct{})
@@ -106,7 +109,7 @@ func TestNoLineIsTornOrLostWhenTheJournalRotatesUnderWriters(t *testing.T) {
 			defer writing.Done()
 			<-started
 			for at := 0; at < each; at++ {
-				_, _ = journal.Write([]byte("during-" + strconv.Itoa(writer) + "-" + strconv.Itoa(at) + "\n"))
+				_, _ = sink.Write([]byte("during-" + strconv.Itoa(writer) + "-" + strconv.Itoa(at) + "\n"))
 			}
 		}(writer)
 	}
@@ -144,9 +147,10 @@ func TestNoLineIsTornOrLostWhenTheJournalRotatesUnderWriters(t *testing.T) {
 func TestAJournalUnderItsBoundOrWithTheBoundOffIsNotRotated(t *testing.T) {
 	t.Parallel()
 	journal := partner.NewJournal(filepath.Join(t.TempDir(), "wire.jsonl"))
-	testutil.Require(t, "opening", journal.Open(), nil)
-	t.Cleanup(func() { _ = journal.Close() })
-	write(t, journal, "a short life")
+	sink, err := journal.Open()
+	testutil.Require(t, "opening", err, nil)
+	t.Cleanup(func() { _ = sink.Close() })
+	write(t, sink, "a short life")
 
 	rotated, err := journal.Rotate(8 << 20)
 	testutil.Require(t, "asking under the bound", err, nil)
@@ -167,9 +171,10 @@ func TestAJournalUnderItsBoundOrWithTheBoundOffIsNotRotated(t *testing.T) {
 func TestAJournalNoProcessHasOpenIsLeftAlone(t *testing.T) {
 	t.Parallel()
 	journal := partner.NewJournal(filepath.Join(t.TempDir(), "wire.jsonl"))
-	testutil.Require(t, "opening", journal.Open(), nil)
-	write(t, journal, "one process's frames")
-	testutil.Require(t, "closing", journal.Close(), nil)
+	sink, err := journal.Open()
+	testutil.Require(t, "opening", err, nil)
+	write(t, sink, "one process's frames")
+	testutil.Require(t, "closing", sink.Close(), nil)
 
 	rotated, err := journal.Rotate(1)
 	testutil.Require(t, "asking a closed journal", err, nil)
@@ -179,10 +184,69 @@ func TestAJournalNoProcessHasOpenIsLeftAlone(t *testing.T) {
 
 	// The next process opens it again and starts from nothing, which is the
 	// bound the journal has always had across processes.
-	testutil.Require(t, "opening again", journal.Open(), nil)
-	t.Cleanup(func() { _ = journal.Close() })
+	next, err := journal.Open()
+	testutil.Require(t, "opening again", err, nil)
+	t.Cleanup(func() { _ = next.Close() })
 	testutil.Expect(t, "the file was truncated", journal.Size(), int64(0))
 	testutil.Expect(t, "and holds nothing", len(lines(t, journal.Path())), 0)
+}
+
+// An old runtime cannot close the new runtime's journal, and it cannot write
+// into it either.
+//
+// This is Sol's read of g1-s54 under R-124. One writer serves every runtime a
+// host spawns, and Host.Ready may see a connection as dead and open the next
+// runtime's journal before the old endpoint's close callback has run. A close
+// that was not bound to its own open would then close the descriptor the new
+// runtime writes through, and every frame after it would report success and land
+// nowhere. So the ordering is forced here: the old open's teardown runs last.
+func TestAnOldRuntimesTeardownCannotCloseOrWriteTheNewRuntimesJournal(t *testing.T) {
+	t.Parallel()
+	journal := partner.NewJournal(filepath.Join(t.TempDir(), "wire.jsonl"))
+	old, err := journal.Open()
+	testutil.Require(t, "the old runtime's journal opened", err, nil)
+	write(t, old, "the old runtime's last frame")
+
+	fresh, err := journal.Open()
+	testutil.Require(t, "the new runtime's journal opened", err, nil)
+	t.Cleanup(func() { _ = fresh.Close() })
+	testutil.Expect(t, "the new open is a new generation", fresh.Generation() != old.Generation(), true)
+
+	testutil.Expect(t, "the old runtime's close closes nothing and says why",
+		errors.Is(old.Close(), partner.ErrStaleJournal), true)
+	_, err = old.Write([]byte("a replaced runtime's frame\n"))
+	testutil.Expect(t, "and its writes are refused rather than reported as written",
+		errors.Is(err, partner.ErrStaleJournal), true)
+
+	write(t, fresh, "the new runtime's frame")
+	testutil.Expect(t, "so the journal holds the new runtime's frames and only those",
+		lines(t, journal.Path()), []string{"the new runtime's frame"})
+}
+
+// The same ordering through the host that produces it: the old session is torn
+// down with its journal close held, the next session opens the journal, the held
+// teardown runs, and the turn that follows is journalled.
+func TestTheNewSessionsFramesLandAfterTheOldSessionsTeardownRuns(t *testing.T) {
+	t.Parallel()
+	journal := partner.NewJournal(filepath.Join(t.TempDir(), "wire.jsonl"))
+	host, closes := hostJournallingHoldingCloses(t, journal,
+		fakeacp.Script{Chunks: []string{"after the old runtime went"}}, true)
+
+	_, err := host.Ready(context.Background())
+	testutil.Require(t, "the first session opened", err, nil)
+	host.Close()
+	_, err = host.Ready(context.Background())
+	testutil.Require(t, "the next session opened", err, nil)
+
+	// The old endpoint's teardown, forced to run after the new open.
+	teardown := <-closes
+	teardown()
+
+	result, err := host.Prompt(context.Background(), "and now?", func(partner.Update) {})
+	testutil.Require(t, "the turn ran", err, nil)
+	testutil.Expect(t, "the turn completed", result.Outcome, partner.OutcomeComplete)
+	testutil.Expect(t, "and its frames are in the journal the old teardown did not close",
+		containsFrame(lines(t, journal.Path()), "session/prompt"), true)
 }
 
 // The host that spawns a runtime's own command holds the journal's writer, so
@@ -209,31 +273,60 @@ func TestTheHostHoldsTheJournalsWriterOnlyWhereItKeepsAJournal(t *testing.T) {
 // opens.
 func hostJournalling(t *testing.T, journal *partner.Journal, script fakeacp.Script) *partner.Host {
 	t.Helper()
+	host, _ := hostJournallingHoldingCloses(t, journal, script, false)
+	return host
+}
+
+// hostJournallingHoldingCloses is the same host, except that with hold set each
+// endpoint's journal close is handed to the caller rather than run: the test
+// decides when an old runtime's teardown happens, which is the ordering the
+// generation exists to survive.
+func hostJournallingHoldingCloses(t *testing.T, journal *partner.Journal, script fakeacp.Script,
+	hold bool) (*partner.Host, chan func()) {
+	t.Helper()
 	opener := fakeacp.Open(script)
+	closes := make(chan func(), 4)
+	// Whatever the test left held is run before the descriptors leave with the
+	// process, after the host's own teardown has handed over the last of them.
+	t.Cleanup(func() {
+		for {
+			select {
+			case teardown := <-closes:
+				teardown()
+			default:
+				return
+			}
+		}
+	})
 	host := partner.NewHostOn(partner.Runtime{Name: "claude"}, t.TempDir(),
 		func(ctx context.Context) (partner.Endpoint, error) {
 			endpoint, err := opener(ctx)
 			if err != nil {
 				return endpoint, err
 			}
-			if err := journal.Open(); err != nil {
+			sink, err := journal.Open()
+			if err != nil {
 				return endpoint, err
 			}
-			endpoint.Journal = journal
+			endpoint.Journal = sink
 			closing := endpoint.Close
 			endpoint.Close = func() {
 				closing()
-				_ = journal.Close()
+				if hold {
+					closes <- func() { _ = sink.Close() }
+					return
+				}
+				_ = sink.Close()
 			}
 			return endpoint, nil
 		})
 	t.Cleanup(host.Close)
-	return host
+	return host, closes
 }
 
-func write(t *testing.T, journal *partner.Journal, line string) {
+func write(t *testing.T, sink *partner.Sink, line string) {
 	t.Helper()
-	_, err := journal.Write([]byte(line + "\n"))
+	_, err := sink.Write([]byte(line + "\n"))
 	testutil.Require(t, "writing "+line, err, nil)
 }
 

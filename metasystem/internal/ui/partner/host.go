@@ -1158,20 +1158,31 @@ func spawn(ctx context.Context, runtime Runtime, checkout string, journal *Journ
 	}
 	said := &words{}
 	command.Stderr = said
-	// The journal is opened before the process starts and closed with it. A
+	// The journal is opened before the process starts and closed with it, and
+	// both ends are the generation this open made: the sink is this process's
+	// own writer and the only thing that can close the file it opened. A
 	// journal that cannot be opened journals nothing rather than refusing the
 	// process: the frames are evidence of the conversation, not the
 	// conversation.
+	//
+	// The generation is what keeps this process's teardown off the next
+	// process's file. Host.Ready may find this connection dead and open the
+	// next runtime's journal before this endpoint's close callback has run, and
+	// a close that was not bound to its own open would then close the
+	// descriptor the new runtime writes through — after which every frame would
+	// report success and land nowhere (Sol's read of g1-s54 under R-124).
 	var journalWriter io.Writer
+	var journalled *Sink
 	if journal != nil {
-		if err := journal.Open(); err == nil {
-			journalWriter = journal
+		if opened, err := journal.Open(); err == nil {
+			journalled = opened
+			journalWriter = opened
 		}
 	}
 	if err := command.Start(); err != nil {
 		stop()
-		if journal != nil {
-			_ = journal.Close()
+		if journalled != nil {
+			_ = journalled.Close()
 		}
 		return Endpoint{}, err
 	}
@@ -1183,8 +1194,11 @@ func spawn(ctx context.Context, runtime Runtime, checkout string, journal *Journ
 			stop()
 			_ = stdin.Close()
 			_ = command.Wait()
-			if journal != nil {
-				_ = journal.Close()
+			if journalled != nil {
+				// A stale close is this callback running after the next
+				// runtime's journal was already opened, which is exactly what
+				// the generation exists for: it closes nothing.
+				_ = journalled.Close()
 			}
 		},
 		Words: said.read,
