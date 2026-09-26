@@ -318,3 +318,36 @@ artifacts/agents/intent-workflows-verification/design-gate-before-completion.jso
 This is a record structure correction, not a runtime pass or a new design round.
 Goal Next step published; live main now e3a86b67e, a goal-only change pending next
 idle integration into the implementation checkout.
+
+
+## Sixth checkpoint: real owner proof found delivery gaps
+
+Main continuation6 completed12:49:42 CEST, exit0; cumulative538 model/554 tool
+calls,81 new tools,82 invocation turns, actual19m44.8s. Builder estimate135calls
+was not its measured count. Authoring, retained drafts, conditional publication,
+startup recovery, lifecycle and design critique adapters now exist. Whole launch,
+project and dispatch packages pass; broad intent/design/help exits0, followed by
+a focused check after final input validation. Actual dispatcher design follow-up,
+positive lifecycle, proof producers and manual work remain open. Root read full
+return, merged main e3a86b67e and launched continuation7 as20260926t105203-033e78b3f4.
+
+Independent positive-proof builder returned seven real-owner passing tests and a
+real failing landing-wait observer: branch landing succeeds but its actual message
+is not recognized by the observer. No assertion was weakened. Continuation2 is
+20260926t105012-f0acae5912, adding actual question waiting in its same isolated
+scope. Full carried transport still unproved. Source audit independently found
+that the current exceptional adapter neither stages a candidate nor passes paths
+or --staged-only. Root drafted intent-carried-delivery-design.md using a delta
+between projected trees to preserve coordination files; Fable review is
+20260926t105423-7b79807e56. This is required IW-4 completion, not optional expansion.
+
+Read-owner first computed patch was exactly four files, tree
+4388b5bbee0a4891f3bd931fac30b3e990ca3315, SHA256
+93f5c563fc3bf545d28d6aeeff0ccef64d40486b68d078d215df92ed2e25de77.
+Source audit found mixed compaction could falsely report green; original Opus
+fixed it and tested the failing mutation, plus integrated actual startup recovery.
+Correction1 launch20260926t104918-a3b719920f completed12:52:10 CEST: full launch0,
+26.3s. A report filename collision remains; correction2 runs as
+20260926t105527-7f2362031e. Final computed import and independent Sol critique are
+still pending. Read-owner design_request.go is a read-only primary dependency,
+not part of its returned patch. No product is certified by these checkpoints.
