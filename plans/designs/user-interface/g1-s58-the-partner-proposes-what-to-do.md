@@ -587,7 +587,16 @@ common case.
   nothing but the transcript. The route serves persisted messages only
   and refuses a turn still running, in words. The conversation rewrites
   that one message in place through the atomic writer the trim already
-  uses. An `applying` write that fails stops the run at that line with
+  uses, and admits a write only as a transition the persisted entry
+  allows, decided inside that writer (revision 9, from Astra's read of
+  g1-s60): `applying` from `waiting`, `refused` or `unresolved`;
+  `applied`, `refused` or `unresolved` from `applying`; `dismissed` from
+  `waiting`, `refused` or `unresolved`; any other write answers 409 with
+  code `state` and the entry as it stands, changing nothing. The runner
+  takes that answer as "someone else settled this line": it reconciles
+  the line to the entry returned, sends no act for it and goes on, so a
+  stale Apply in a second tab, or two presses at once, cannot publish
+  one act twice. An `applying` write that fails stops the run at that line with
   its words and sends nothing. The card reads its lines from the message,
   so a reload shows applied as applied, and a line left at `applying` as
   "was being applied when the page left; check the goal before applying
@@ -756,8 +765,10 @@ whose blocker an earlier `open` of the same answer named, refusing an
 `open` of an existing id and an act on an unknown goal with their
 reasons, the title carried; the message, the stream and the snapshot
 carrying it; the outcome route's policy, its six states, its refusal of
-a running turn and of an unknown index, and the message rewritten in
-place with the rest of the transcript untouched; the context block's
+a running turn and of an unknown index, each allowed transition
+admitted and each other refused with the entry, two writers racing on
+one line with only one admitted, and the message rewritten in place
+with the rest of the transcript untouched; the context block's
 line from recorded states; the describe table's row and a join test
 that every ledger act in the catalogue is in the table and every table
 row the catalogue admits is in the catalogue. The six fixture
@@ -943,3 +954,14 @@ list beside g1-s59, which is on hold. The builder, mid-build, was told
 the same in the same words. Not sent to Astra: it restores the form
 revisions 2 to 4 carried, which the critic read in rounds 1 and 2 and
 in the confirmation read.
+
+## Revision 9: the outcome route admits transitions
+
+From Astra's round-1 read of g1-s60 (S60-01): the outcome route's
+write was unconditional, and its Apply guard local to one caller, so a
+second tab whose card or inbox still showed a line waiting could record
+`applying` again and publish the act twice; a repeated approve is a
+second approval record. Folded into D6 as the transition rule, with
+the conflict answer and the runner's reconciliation, and into section
+6's tests; the builder, mid-build, was told in the same words. Not sent
+to Astra as a round: it is the critic's own finding, folded as stated.
