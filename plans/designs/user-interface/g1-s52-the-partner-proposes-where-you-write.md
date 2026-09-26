@@ -87,6 +87,15 @@ What changes, and why:
 - **The entry is on the field.** "Ask the Partner" beside each writable
   field's label fills the composer with a request for that field and
   takes the caret there; the human edits or sends.
+- **The Partner knows which field you were in.** The sheet notices
+  which writable field last held the caret and tells the store; the chip
+  says it, "Draft: Edit goal · writing in Intent"; the capture carries it
+  and the Partner is told "the human was writing in Intent", so "make
+  this shorter" means that field, and a proposal for another field must
+  name it in words. Before any field has held the caret, the chip says
+  "writing in nothing yet" and the Partner names the field or asks. Wido,
+  2026-09-26: "do you know which field I was editing when I started
+  editing in the project partner panel? Because you will have to."
 - **Use and save.** Beside Use this on the proposal, when the sheet is
   the edit sheet: one press that uses the words and saves the sheet with
   its existing save, the same act as pressing Save after Use this. Never
@@ -119,12 +128,19 @@ What changes, and why:
   in the edit sheet only: uses the words and calls the sheet's existing
   save, so the same route, refusals and busy guard apply; the card and
   the block say "Used and saved". Other sheets get Use this alone.
-- D6. **Nothing else moves.** No direct performance by the Partner, no
+- D6. **The field in hand travels.** Each writable field reports focus
+  to the sheet, which keeps the last one and hands it to the store beside
+  the draft; the chip shows it; the capture's draft carries `writing`;
+  the Partner's context block says "writing in <field>" or "in no field
+  yet"; the skill sentence gains "a request that names no field is about
+  the field the human is writing in; when there is none, ask or name it".
+  The field link of D4 sets it too.
+- D7. **Nothing else moves.** No direct performance by the Partner, no
   document editor, no stickies composer.
 
 ## 4. Payload
 
-None on the wire beyond D3: `Message.suggestions[].offered: true|false`
+The capture's draft gains `writing: "Intent" | ""`. Beyond that, D3 only: `Message.suggestions[].offered: true|false`
 and `reason` on a refused one, and the same on the stream event.
 
 ## 5. Not here, later
@@ -136,9 +152,10 @@ fields at once as one act. Diffs.
 ## 6. Verification and box
 
 Go: the service recording a refused suggestion with its reason and the
-stream carrying it; the tool's result words. Frontend: the chip appearing
-on open and going on close and on ✕, the draft carried by a question
-without a prior press; the proposal block under the field with its
+stream carrying it; the tool's result words. Frontend: the chip appearing on open and going on close and on ✕, the
+draft carried by a question without a prior press; the field in hand
+following focus, shown on the chip and carried in the capture, empty
+before any focus; the proposal block under the field with its
 states; the field link filling the composer; Use and save calling the
 sheet's save once and refusing while busy; the transcript's not-offered
 card; the guards stay green. Walkthrough: the fake Partner's canned
