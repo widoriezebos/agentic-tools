@@ -2,7 +2,14 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 
-import { failureMessage, loadPane, type DocumentFile, type Pane as PanePayload, type Problem } from "./api";
+import {
+  failureMessage,
+  loadPane,
+  type DocumentFile,
+  type Pane as PanePayload,
+  type Problem,
+  type SittingRow,
+} from "./api";
 import {
   briefingFor,
   countText,
@@ -27,8 +34,14 @@ import {
   SCOPE_LABEL,
   SCOPES,
   scopeNote,
+  lastAtLine,
+  opensLine,
+  pilesLine,
   sliceCount,
+  SITTINGS_TAB,
+  SITTINGS_TITLE,
   SLICES_TAB,
+  STANDS_NOW,
   SLICES_TITLE,
   stripActions,
   tabForKind,
@@ -422,6 +435,9 @@ function Columns({
           {goal !== null && <ProjectWide tab={id} count={listing.counted.own} />}
         </Block>
       );
+    }
+    if (id === SITTINGS_TAB) {
+      return <Sittings rows={pane.sittings} nothing={nothing(id)} />;
     }
     if (id === DOCUMENTS_TAB) {
       return <Documents groups={groups} total={pane.documents.length} />;
@@ -1437,4 +1453,75 @@ export function dateOf(stamp: string): string {
 export function timeOf(stamp: string): string {
   const at = new Date(stamp);
   return Number.isNaN(at.getTime()) ? stamp : at.toLocaleTimeString();
+}
+
+/**
+ * Project → Sittings: the records this project has sat on (g1-s55 D3).
+ *
+ * It is a view over those records and not a second store. A record is listed
+ * because its own entries carry the marks of the deposits they were recorded
+ * from — never because it has the headings, which the record creator writes into
+ * every design and every intent the moment it is written (Astra's F2). A record
+ * a sitting stands on right now is listed even where nothing has been recorded
+ * into it yet, because that is the sitting a human is in the middle of.
+ *
+ * Pressing a row opens the conversation on that record and starts a sitting on
+ * it where none stands. The press is the consent: a row that said "open" and
+ * then quietly opened a sitting would be starting one behind a human's back, so
+ * the row says which of the two it will do before it is pressed.
+ */
+function Sittings({ rows, nothing }: { rows: readonly SittingRow[]; nothing: ReactNode }) {
+  const { startSitting } = usePartner();
+  const navigate = useNavigate();
+  const open = (row: SittingRow) => {
+    const go = () => {
+      void navigate("/brain");
+    };
+    if (row.standing) {
+      go();
+      return;
+    }
+    void startSitting({
+      purpose: row.record.kind === "intent" ? "shape intent" : "shape a design",
+      subject: { kind: "record", id: row.record.path, title: row.record.title },
+    }).then(go, () => {
+      // The refusal is the Partner's own, and the drawer says it where every
+      // other Start refusal is said. Nothing here navigates on one: a sitting
+      // that was not opened is not a conversation to be taken to.
+    });
+  };
+  if (rows.length === 0) {
+    return <Block title={SITTINGS_TITLE}>{nothing}</Block>;
+  }
+  return (
+    <Block title={SITTINGS_TITLE} count={rows.length}>
+      <ul className="ms-project-rows">
+        {rows.map((row) => (
+          <li key={row.record.path} className="ms-project-row ms-sitting-row">
+            <button
+              type="button"
+              className="ms-sitting-row-open"
+              title={opensLine(row)}
+              onClick={() => {
+                open(row);
+              }}
+            >
+              <span className="ms-project-row-title">
+                {row.record.title === "" ? row.record.path : row.record.title}
+              </span>
+            </button>
+            <p className="ms-sitting-row-facts">
+              <span className="ms-project-row-note">{row.record.kind}</span>
+              <span>{pilesLine(row.counts)}</span>
+              {lastAtLine(row) !== "" && <span>{lastAtLine(row)}</span>}
+              {row.standing && <span className="ms-sitting-row-standing">{STANDS_NOW}</span>}
+            </p>
+            <p className="ms-project-row-path" title={row.record.path}>
+              {row.record.path}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </Block>
+  );
 }

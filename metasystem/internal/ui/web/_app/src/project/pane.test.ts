@@ -158,6 +158,7 @@ const pane: Pane = {
     { path: "metasystem/docs/design/principles.md", title: "Design principles" },
     { path: "metasystem/plans/g1-s1.md", title: "A historical design" },
   ],
+  sittings: [],
 };
 
 function titles(rows: (Row | TocEntry)[]): string[] {
@@ -201,6 +202,7 @@ describe("what is on the page, as the strip of tabs names it", () => {
       { id: "decisions", title: "Decisions", help: "decisions" },
       { id: "designs", title: "Designs", help: "designs" },
       { id: "questions", title: "Open questions", help: "questions" },
+      { id: "sittings", title: "Sittings", help: "sittings" },
       { id: "documents", title: "Documents", help: "documents" },
     ]);
   });
@@ -280,9 +282,13 @@ describe("the one act at the trailing end of the strip", () => {
       for (const section of pageSections(briefingFor(pane, goal))) {
         const actions = stripActions(section.id);
         expect({ tab: section.id, refresh: actions.refresh }).toEqual({ tab: section.id, refresh: REFRESH });
+        // Sittings writes nothing either: a sitting is started from the record
+        // it is about or from the Partner's own header, and a tab that offered
+        // "New sitting" would be asking which record from a page listing every
+        // record there is.
         expect({ tab: section.id, writes: actions.newAction !== null }).toEqual({
           tab: section.id,
-          writes: section.id !== "documents" && section.id !== "slices",
+          writes: !["documents", "slices", "sittings"].includes(section.id),
         });
       }
     }
