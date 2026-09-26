@@ -22,3 +22,38 @@ Final round 2 checks the changed admission and atomic recovery contract, not pro
 polish. These are consequential owner corrections; the root does not accept an
 age-only process-death inference. Same-chain follow-up replay and publication
 remain named mandatory implementation fixtures and independent Sol review scope.
+
+## Final round 2
+
+Fable reviewed SHA256 89d5f0261cdf70f2bae5faf25c869b66d3fe1ccd444f619e2f669045eaa3d47d
+(preserved ee0549093); launch 20260926t092513-fbee9d93d4, same provider session,
+exit 0, 18 launch-measured calls / 9 provider turns. Its report says 9 tool calls;
+these counts use different units and are not interchangeable. Two material
+findings, both accepted and retained. No third prose round.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| IP-C4 | accepted | follow_up chooses the next child under its own lock, and ClaimLaunchPreflight treats an operation bound to a different child id as a mismatch. A frozen operation ID alone cannot rejoin a completed child. The existing findOperationRecord read can recover that child without spawning or a new registry. | Freeze the request-to-operation binding before launch, retain child afterward; owner lookup handles a lost result with provenance validation. TestDesignCritiqueReplayAndCap names completed, missing-child, intervening-round and moved-revision cases. |
+| IP-C5 | accepted | The timeout/budget-cap implementer-only branch precedes the new failed-critic retry branch. Existing design read admission does not enforce the live-subject fresh-root guard for the same design. | Explicit review design FILE --retry N; existing dispatch owner extends bounded retry for capped critics and path-scoped root selection/refusal. Named fixture drives the real branch, death proof, replay and cap. |
+
+Fable calls these shape corrections. Root judges their resolution bounded and
+fixture-expressible: the retained request and dispatch-read extension were already
+in the design; the correction identifies their exact child lookup/selection and
+the omitted retry case, with no new workflow mechanism. The falling 3-to-2
+trajectory and declared failsafe end prose review on these two mandatory fixtures.
+Independent Sol implementation review remains compulsory and can reject the
+result; unresolved authority or behavioral defects cannot be waived by this exit.
+
+N8 is folded into public stopped-supervisor recovery; N9 confirms public proof
+reference production. Fable's unexamined supervisor exit, nil-reference death and
+actual design-subject refresh are explicitly assigned to implementation proof.
+
+Root's additional source check found reviewBriefFacts is not the entire dispatch
+admission: internal/dispatch/stop.go:resolveGoalBindingWithReads requires a claim
+and stop authority; dispatch.sh:require_goal_tier_ladder requires tier 3. Therefore
+claim-free AUTHORING stands, but first paid REVIEW acquires the same ordinary
+lawful claim used by build, with existing refusal/actor/epoch rules intact and no
+worktree creation. TestIntentDesignCritiqueAdmission proves that direct public
+journey. This preserves existing authority, rather than silently allowing
+claim-free critiques. Root also made the existing document choice usable in
+show/stop with --out FILE; no new selection mechanism.

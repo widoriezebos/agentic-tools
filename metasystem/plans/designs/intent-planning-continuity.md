@@ -2,8 +2,15 @@
 
 - Kind: design
 - Id: 01M3EFDSFTKWEMSDCP1BB7TDGQ
-- Status: draft
+- Status: accepted
 - Goals: verbs-match-intent
+
+Design critique: closed at round 2 on 2 fixture obligations (IP-C4 and IP-C5),
+material trajectory 3 to 2. Root accepts the explicit replay lookup and capped
+retry corrections below; they are bounded existing-owner changes with executable
+arbiters. All five findings are joined in intent-planning-dispositions.md.
+Mandatory independent Sol critique covers these fixtures plus all parent duties.
+This authorizes implementation, not acceptance of unproven product behavior.
 
 Author: root Codex. This is the next usability iteration authorized by Wido,
 26 September 2026. It complements Complete tasks through intent; it does not
@@ -56,8 +63,8 @@ required and continues independently.
 
 ```
 metasystem design G --brief FILE [--out FILE] [--after N]
-metasystem show design --goal G [--attempt N]
-metasystem review design FILE [--dispositions FILE] [--after N]
+metasystem show design --goal G [--out FILE] [--attempt N]
+metasystem review design FILE [--dispositions FILE] [--after N] [--retry N]
 ```
 
 `design` is one real additional intention, in focused work/agent help. It uses
@@ -140,14 +147,29 @@ existing writer API.
 work; `wait G` waits for it when uniquely eligible, with normal named ambiguity.
 The design command repeated while running reports the same attempt. Cancellation
 uses the existing launch stop owner behind an explicit public design target,
-`stop design G [--attempt N]`; it never kills another document's author. A complete
+`stop design G [--out FILE] [--attempt N]`; it never kills another document's author. When a goal has several designs,
+show/stop use the same public --out FILE selector as design; choices print exact
+commands. A claimed supervisor that died before its child is outside the new
+unclaimed-start recovery; status offers stop design G with that document selector
+through the existing cancellation owner. A complete
 draft names the visible document and `review design FILE` as its continuation.
 
 ## Design review stays one bounded examination
 
 Extend the existing dispatch read owner to select design critique state by goal
 and canonical design record/path, under its existing locks. Do not scan private
-job files in CLI code. No prior review admits the first critique as today. The
+job files in CLI code. Design authoring admission does not imply claim-free
+critique: existing dispatch requires a claimed goal, stop authority and tier 3.
+Before the first new paid critique, review checks the existing tier/budget facts
+and acquires an ordinary lawful claim for an eligible authenticated agent only
+when the goal is unclaimed, using the parent's acquireClaim/goal.Claim owner.
+It creates no build worktree. Existing holder/epoch exceptions stay owned by
+dispatch; foreign claims, quota, readiness, stop fences and lower tiers refuse
+with public goal/approval/assignment remedies, never silent policy changes.
+This starts the existing claim accounting; critique's existing first-slice and
+aggregate budget rules remain. A retained result is rejoined before admission
+of a new paid round. TestIntentDesignCritiqueAdmission proves these distinctions.
+No prior review then admits the first critique through the existing dispatch. The
 same immutable subject rejoins its examination and can complete through the
 parent's bound disposition/full-close behavior.
 
@@ -161,17 +183,32 @@ An unresolved decision prints the complete bound template. Manual design edits
 remain supported; a separate author launch is optional for correction.
 
 `review design FILE --dispositions FILE` binds the current changed document and
-prior reviewed round, then calls existing typed follow-up with a frozen operation
-ID. Retain that request-to-child binding through the dispatch owner BEFORE launch;
-replaying after completion rejoins the same child rather than recomputing from
-latest parent. `--after N` is the public previous examination number when explicit
-selection is needed. Frozen round limit, fresh required critic context, finding
+prior reviewed round. Before launch the dispatch owner retains exact goal,
+canonical document, prior round, decision digest, new subject digest and frozen
+operation ID. The existing typed follow-up mints the child under its chain lock;
+the adapter must not pre-mint a child or hold that lock across follow-up. Retain
+the resulting child after the owner returns. Replay first reads that retained
+child; if the response was lost, use an exposed read of the dispatch owner's
+existing findOperationRecord scan to resolve the frozen operation ID. Validate
+the actual retained operation/subject provenance, not just an arbitrary matching
+ID. Rejoin that child in any state, including after completion or an intervening
+round; never re-call follow-up merely to discover its completed result.
+The structured operation-id-bound-to-another-job response supplies recordedJobId
+for this same validated rejoin, not an instruction to spend again. `--after N`
+is the public previous examination number when explicit selection is needed. Frozen round limit, fresh required critic context, finding
 history, authority, and aggregate goal allowance all remain enforced. Multiple
 legacy chains produce explicit review choices; none is selected by timestamp.
 A closed/exhausted chain stays closed/exhausted and gives its existing public
 budget/re-scope/recorded-decision remedy; changed bytes cannot silently buy a root.
-Failed examination recovery inherits the parent's bounded retry rules. Closing a
-clean critique records review completion, never human acceptance of the design.
+Failed examination recovery is review design FILE --retry N. It uses the
+parent's explicit failed-examination extension, including timeout/budget-cap,
+only after old-process death is proved and under the same frozen round cap.
+The dispatch read owner refuses a fresh root for this goal and canonical design
+path while its selected chain is open, failed, capped or exhausted; the current
+live-subject guard does not already do that for design subjects. The public route
+rejoins it and offers --retry N when admitted, or the bounded public cap remedy.
+Repeating retry N rejoins its retained child even after that child fails. Closing
+a clean critique records review completion, never human acceptance of the design.
 
 ## Orientation and retained waits
 
@@ -202,10 +239,10 @@ routes, leaving maintainer protocol explanations explicitly diagnostic.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| IP-1 | CRITICAL | Public task | Correct design roster; exact retained retry; no overwritten user document | Launch design request plus project record writer | internal/launch and internal/project; intent design adapter | TestIntentDesignAuthorJourney; TestIntentDesignAdmissionNoClaim; TestDesignRequestReplay; TestDesignRequestCrashBeforeSupervisor; TestDesignPublicationConflict | Public design through fake provider and actual retention/publication owners | MISSING | Fold critique then implement |
-| IP-2 | CRITICAL | Bounded examination | Same critic chain, frozen old findings/new subject, replay and cap | Dispatch read/follow-up owners | internal/dispatch; intent design review | TestIntentDesignCritiqueContinuation; TestDesignCritiqueReplayAndCap | Two design versions, decision, one follow-up, replay, exhausted refusal | MISSING | Fold critique then implement |
-| IP-3 | HIGH | Public task | Status, wait, stop and failed-result recovery need only goal/document | Existing launch observation/cancellation | intent status/wait/stop adapters | TestIntentDesignLifecycle | Running, ambiguous, failed and stopped author outcomes | MISSING | Fold critique then implement |
-| IP-4 | HIGH | Orientation and waits | Compact task language; proof/file waits discoverable and owner-driven | Descriptors and wait owner | intent help/wait plus agent docs | TestIntentPublicOrientation; TestIntentPublicProofAndFileWait | Built CLI help and real isolated proof/file observers | MISSING | Fold critique then implement |
+| IP-1 | CRITICAL | Public task | Correct design roster; exact retained retry; no overwritten user document | Launch design request plus project record writer | internal/launch and internal/project; intent design adapter | TestIntentDesignAuthorJourney; TestIntentDesignAdmissionNoClaim; TestDesignRequestReplay; TestDesignRequestCrashBeforeSupervisor; TestDesignPublicationConflict | Public design through fake provider and actual retention/publication owners | MISSING | Implement and drive |
+| IP-2 | CRITICAL | Bounded examination | Same critic chain, frozen old findings/new subject, replay and cap | Dispatch read/follow-up owners | internal/dispatch; intent design review | TestIntentDesignCritiqueAdmission; TestIntentDesignCritiqueContinuation; TestDesignCritiqueReplayAndCap | Two design versions, decision, one follow-up, replay, exhausted refusal | MISSING | Implement and drive |
+| IP-3 | HIGH | Public task | Status, wait, stop and failed-result recovery need only goal/document | Existing launch observation/cancellation | intent status/wait/stop adapters | TestIntentDesignLifecycle | Running, ambiguous, failed and stopped author outcomes | MISSING | Implement and drive |
+| IP-4 | HIGH | Orientation and waits | Compact task language; proof/file waits discoverable and owner-driven | Descriptors and wait owner | intent help/wait plus agent docs | TestIntentPublicOrientation; TestIntentPublicProofAndFileWait | Built CLI help and real isolated proof/file observers | MISSING | Implement and drive |
 
 Fable critiques this newly observed requirement gap in at most two rounds, with
 round 2 declared as failsafe before round 1. This is a new user-authorized usability
@@ -213,3 +250,21 @@ iteration, not another round on the parent's already-folded C1-C8. Root adjudica
 Opus then implements; mandatory independent Sol code critique covers the combined
 implementation and all parent/follow-on fixtures. Completion still requires the
 parent's full capability audit and repeated real public journeys.
+
+Final named fixture details:
+
+- IP-C4 / TestDesignCritiqueReplayAndCap: completed follow-up replay with retained
+  child; lost response with operation-to-job lookup; intervening foreign round;
+  moved goal revision. Every replay rejoins the authentic same child, launches
+  nothing, and cannot adopt a mismatched subject.
+- IP-C5 / same fixture plus actual follow-up owner: failed and timeout/budget-cap
+  critic offer public --retry; old live process refuses; original cap is enforced;
+  no fresh root for the same goal/document; repeated failed retry rejoins.
+- TestIntentDesignCritiqueAdmission: author from a second checkout writes no
+  execution claim, then review lawfully claims an eligible goal without making a
+  build worktree; foreign holder/lower tier/budget refusal starts no critic.
+- TestDesignRequestCrashBeforeSupervisor: both winners of the locked starting
+  transition, a delayed Supervise after recovery, and uncertain writer custody.
+- TestIntentDesignLifecycle includes explicit document choice and dead claimed
+  supervisor recovery. Sol checks actual subject refresh on follow-up and the
+  supervisor command's refused-claim exit, which Fable did not certify.

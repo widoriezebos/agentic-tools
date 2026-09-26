@@ -178,3 +178,25 @@ before any child, rejecting an age-only inference of process death. Fable final
 round 2 is launch 20260926t092513-fbee9d93d4, same provider session. Planning
 remains draft until that report is adjudicated. Parent C1-C8 stay closed on their
 mandatory fixtures.
+
+## Planning design accepted for implementation
+
+Final planning Fable report read in full. Round 2 has two material findings,
+IP-C4 (completed-follow-up replay must read the operation's actual child) and
+IP-C5 (public capped-critic retry and design-path fresh-root guard). Both were
+accepted into the existing-owner design and named TestDesignCritiqueReplayAndCap
+cases. Trajectory is 3 to 2; no third prose round. Root's source audit additionally
+clarified that claim-free authoring does not imply claim-free critique: existing
+dispatch requires claimed tier-3 goal and stop authority, so review uses ordinary
+lawful claim admission while retaining accounting and actor/epoch checks.
+
+The follow-on design is accepted for implementation on these mandatory fixture
+obligations, alongside the parent's obligations and independent Sol code review.
+No code certification or runtime success is inferred from design acceptance.
+Continuation-4 brief is prepared, estimated total combined patch 9000 lines
+including tests, with the task-only size override authorized by Wido's machinery
+bypass. It will resume the same Opus context after continuation 3 finishes.
+Goal Next step now records both accepted designs, partial implementation, required
+proof and the outstanding pull/push/integration. Separate evidence-reuse work
+remains separate. Project record check passes 147 records; diff whitespace check
+passes. Live user-owned logs remain preserved.
