@@ -130,9 +130,11 @@ export function EditSheet({
   return (
     <Panel
       form
-      eyebrow="Queued, not yet approved"
+      // The panel's goal card is for the acts that need to name what they act
+      // on; here the intent is the first field, so the card would only say it
+      // twice (Wido, 2026-09-26). The id goes in the eyebrow instead.
+      eyebrow={`${goal.ref.id} · queued, not yet approved`}
       title="Edit goal"
-      goal={goal}
       // What the head's Ask hands over: the three fields as they stand.
       fields={[
         { name: "Goal", value: goal.ref.id },

@@ -109,8 +109,10 @@ describe("the edit sheet", () => {
 
   it("names the goal it is about, and says it is not yet approved", () => {
     const markup = sheet();
-    expect(markup).toContain("ui-1");
-    expect(markup).toContain("Queued, not yet approved");
+    // The id and the state share the eyebrow; the goal card that used to
+    // repeat the intent above the Intent field is gone.
+    expect(markup).toContain("ui-1 · queued, not yet approved");
+    expect(markup).not.toContain("ms-act-goal");
     expect(markup).toContain("Edit goal");
   });
 
