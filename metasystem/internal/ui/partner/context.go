@@ -136,6 +136,11 @@ type Seen struct {
 	Supplied, Total int
 	// Block is "what the human sees now", whole.
 	Block string
+	// Observed is the ledger reading this composition was made from. It is here
+	// so that the turn admits a proposed action against the reading the Partner
+	// was told about: a second reading taken while the answer ran would refuse
+	// an act on a goal the block had just named.
+	Observed snapshot.Observation
 }
 
 // Stamp is what an answer wears: what the Partner was given, in one clause.
@@ -160,6 +165,7 @@ func See(facts Facts, page Page, now time.Time) Seen {
 		Supplied: supplied,
 		Total:    total,
 		Block:    block,
+		Observed: observed,
 	}
 	if displayed := displayedSource(page); displayed != "" && displayed != seen.Source {
 		seen.Displayed = displayed
@@ -175,7 +181,7 @@ func Compose(facts Facts, page Page, human string, now time.Time) string {
 // ComposeSeen is the same block from a composition already made, so the turn
 // and the sheet beside it are one reading rather than two.
 func ComposeSeen(seen Seen, page Page, human string) string {
-	return ComposeOpening(seen, page, human, "")
+	return ComposeOpening(seen, page, human, "", "")
 }
 
 // Opening is what the FIRST prompt of a session carries beyond the standing
@@ -195,12 +201,24 @@ func Opening(facts Facts, now time.Time) (string, MemoryIndex) {
 // ComposeOpening is the turn's block with the session's own opening material
 // between the standing rule and the page. An empty opening is a later prompt
 // of a session that has already been given it.
-func ComposeOpening(seen Seen, page Page, human, opening string) string {
+//
+// proposed is what happened to the actions the last two answers proposed, or
+// "" where neither proposed one. It is the conversation's own material rather
+// than the page's, which is why the sheet that shows a human what the Partner
+// will be given passes "": that sheet is about the page, exactly as it leaves
+// the session's opening material out.
+func ComposeOpening(seen Seen, page Page, human, opening, proposed string) string {
 	var built strings.Builder
 	built.WriteString(standingRule)
 	built.WriteString("\n\n" + vocabulary())
 	if strings.TrimSpace(opening) != "" {
 		built.WriteString("\n" + opening)
+	}
+	// What happened to what this Partner proposed, before where the human is:
+	// it is about the conversation rather than about the page, and an answer
+	// that builds on a proposal has to have read it first.
+	if strings.TrimSpace(proposed) != "" {
+		built.WriteString(proposed)
 	}
 	built.WriteString("\nWhere the human is\n")
 	built.WriteString(whereLines(page))
