@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -774,6 +774,12 @@ func dispatchWithRepositoryTop(args []string, repositoryTop func(string) (string
 	return dispatchWithFamiliesAndRepositoryTop(args, os.Stdout, os.Stderr, families(), repositoryTop)
 }
 
+// dispatchWithFamiliesAndRepositoryTop routes one invocation: the public
+// (object, action) pairs first, then the hidden entries, then the explicit
+// internal form. A (word, verb) pair that is neither a public action nor an
+// entry falls through to its family, transitionally, so machinery callers
+// keep working until their port; nothing else is routed, and an unknown word
+// is refused before any effect.
 func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 0 {
 		writeIntentRootHelp(stdout)
@@ -784,7 +790,7 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 	}
 	if args[0] == "--help" || args[0] == "-h" {
 		if len(args) != 1 {
-			fmt.Fprintln(stderr, "usage: metasystem help [TOPIC|COMMAND]")
+			fmt.Fprintln(stderr, "usage: metasystem help [OBJECT [ACTION]]")
 			return 2
 		}
 		writeIntentRootHelp(stdout)
@@ -797,23 +803,76 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 		}
 		return dispatchInternal(args[1:], stdout, stderr, registered, repositoryTop)
 	}
-	if command, ok := findIntentCommand(args[0]); ok && len(args) == 2 && slices.Contains([]string{"--help", "-h"}, args[1]) {
-		writeIntentHelp(stdout, command)
-		return 0
-	}
-	if command, ok := findIntentCommand(args[0]); ok && (command.legacy == nil || !command.legacy(args[1:])) && !intentYieldsToLegacy(args, registered) {
+	if args[0] == "status" {
+		command, _ := findIntentCommand("status")
+		if len(args) == 2 && isHelpWord(args[1]) {
+			writeIntentHelp(stdout, command)
+			return 0
+		}
 		return runIntent(command, args[1:], stdout, stderr, defaultIntentOwners())
 	}
-	// Machinery callers use complete protocol invocations. Its discovery is
-	// confined to the explicit internal entry so public help stays task-based.
-	if _, public := findIntentCommand(args[0]); !public && (isFamilyName(registered, args[0]) && !intentYieldsToLegacy(args, registered) || slices.Contains(args[1:], "--help") || slices.Contains(args[1:], "-h")) {
-		writeUnknownIntentCommand(stderr, args[0])
-		return 2
+	if isIntentObject(args[0]) {
+		return dispatchObject(args, stdout, stderr, registered, repositoryTop)
 	}
-	return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	// Process entrypoints whose first word is not an object (supervise,
+	// steward, up, ...) and the transitional families keep their argv.
+	if len(args) >= 2 && !isHelpWord(args[1]) && (args[0] == "up" || familyHasVerb(registered, args[0], args[1])) {
+		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	}
+	if args[0] == "up" {
+		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	}
+	writeUnknownIntentCommand(stderr, args[0])
+	return 2
 }
 
-// dispatchInternal routes the engine families and the existing top-level
+func isHelpWord(word string) bool { return word == "--help" || word == "-h" || word == "-help" }
+
+// dispatchObject routes a first word that is an object: its action list, a
+// public action, a hidden entry, or a family verb of the same name that no
+// public action or entry takes.
+func dispatchObject(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
+	object := args[0]
+	if len(args) == 1 || isHelpWord(args[1]) {
+		if len(args) > 2 {
+			fmt.Fprintf(stderr, "usage: metasystem %s ACTION [TARGET...] [OPTIONS]\n", object)
+			return 2
+		}
+		writeIntentObjectHelp(stdout, object)
+		return 0
+	}
+	if command, ok := findIntentAction(object, args[1]); ok {
+		if !command.hidden && len(args) == 3 && isHelpWord(args[2]) {
+			writeIntentHelp(stdout, command)
+			return 0
+		}
+		if command.passthrough != nil {
+			return command.passthrough(args[2:])
+		}
+		return runIntent(command, args[2:], stdout, stderr, defaultIntentOwners())
+	}
+	if familyHasVerb(registered, object, args[1]) {
+		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	}
+	writeUnknownIntentAction(stderr, object, args[1])
+	return 2
+}
+
+func familyHasVerb(registered []family, name, verb string) bool {
+	for _, fam := range registered {
+		if fam.name != name {
+			continue
+		}
+		for _, v := range fam.verbs {
+			if v.name == verb {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// dispatchInternal routes the engine families and the internal top-level
 // calls with their own parsers, output and exit codes.
 func dispatchInternal(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
@@ -873,14 +932,23 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	return 2
 }
 
-// writeUnknownIntentCommand refuses a word no command or family answers to,
-// offering only a public command.
+// writeUnknownIntentCommand refuses a first word no object answers to,
+// offering only public spellings.
 func writeUnknownIntentCommand(w io.Writer, name string) {
-	fmt.Fprintf(w, "metasystem: unknown command %q; nothing was done\n", name)
-	if near := suggestIntentCommand(name); near != "" {
-		fmt.Fprintf(w, "did you mean: metasystem %s\n", near)
+	fmt.Fprintf(w, "metasystem: unknown object %q; nothing was done\n", name)
+	if near := suggestIntent(name); len(near) > 0 {
+		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
 	}
-	fmt.Fprintln(w, "metasystem help lists the common commands; metasystem help all lists every command")
+	fmt.Fprintln(w, "metasystem lists the objects; metasystem OBJECT lists its actions")
+}
+
+// writeUnknownIntentAction refuses an action the object does not have.
+func writeUnknownIntentAction(w io.Writer, object, action string) {
+	fmt.Fprintf(w, "metasystem %s: unknown action %q; nothing was done\n", object, action)
+	if near := suggestIntentAction(object, action); len(near) > 0 {
+		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
+	}
+	fmt.Fprintf(w, "metasystem %s lists its actions\n", object)
 }
 
 func writeFamilyHelp(w io.Writer, fam family) {
@@ -926,6 +994,12 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "       metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
 	fmt.Fprintln(w, "       metasystem internal delegate --follow-up <job> --brief <file>")
 	fmt.Fprintln(w, "       metasystem internal delegate --cancel <job>")
+	fmt.Fprintln(w, "Process entrypoints (started by the named launcher; never typed by a person or agent):")
+	for _, command := range intentCommands() {
+		if command.hidden {
+			fmt.Fprintf(w, "  %-28s %s\n", command.name, command.launcher)
+		}
+	}
 	for _, fam := range registered {
 		fmt.Fprintf(w, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {

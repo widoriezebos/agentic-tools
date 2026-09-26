@@ -49,96 +49,217 @@ var (
 )
 
 func processIntentCommands() []intentCommand {
+	lineage := intentFlag{name: "lineage", value: "LINEAGE", advanced: true, hidden: true, usage: "the session's owner lineage"}
 	return []intentCommand{
 		{
-			name: "start", group: "operations", audience: "both", summary: "start assigned work or MetaSystem services",
-			usage: []string{"metasystem start session", "metasystem start mission M"},
-			administrationUsage: []string{"metasystem start [checkout]", "metasystem start ui [--listen ADDRESS]",
-				"metasystem start machine NAME [--destination PATH] [--resume ID]"},
+			object: "system", action: "start", audience: "human", summary: "start MetaSystem for this checkout",
+			usage: []string{"metasystem system start", "metasystem system start --if-down"},
 			details: []string{
-				"start (or start checkout) is done by a person at their enrolled terminal. New work may start again, and the helpers that watch and continue work are started.",
+				"Done by a person at their enrolled terminal. New work may start again, and the helpers that watch and continue work are started.",
 				"A terminal that stays enrolled keeps its authority when the engine is rebuilt; no new enrollment is needed.",
-				"start session prepares the current agent session to work.",
-				"start mission M starts that autonomous mission.",
-				"start ui starts the browser interface. start machine NAME clones, builds, configures, enrolls and supervises one new",
-				"machine of this fleet on this host (a person's act; --resume ID continues an interrupted launch).",
+				"--if-down is the scheduler's recovery: it starts only helpers that are down and carries no session or lease authority.",
 			},
-			flags: []intentFlag{intentUIListenFlag, intentInstallationFlag, intentTemporaryArmFlag, intentReviewByFlag, {name: "lineage", value: "LINEAGE", advanced: true, hidden: true, usage: "start session: the session's owner lineage"},
-				{name: "destination", value: "PATH", advanced: true, usage: "start machine: where the new machine's clone lands"},
-				{name: "resume", value: "ID", advanced: true, usage: "start machine: continue this interrupted launch"}},
-			maxArgs:  2,
-			examples: []string{"metasystem start session", "metasystem start", "metasystem start ui", "metasystem start machine m1f"},
-			run:      runIntentStart,
+			flags:    []intentFlag{intentInstallationFlag, intentTemporaryArmFlag, intentReviewByFlag, {name: "if-down", advanced: true, usage: "recover only helpers that are down (the scheduler's recovery path)"}},
+			maxArgs:  0,
+			examples: []string{"metasystem system start"},
+			run:      runIntentSystemStart,
 		},
 		{
-			name: "stop", group: "operations", audience: "both", summary: "stop selected work, a session, or MetaSystem",
-			usage: []string{"metasystem stop job J", "metasystem stop session --by NAME", "metasystem stop review REF",
-				"metasystem stop design G [--out FILE] [--attempt N]"},
-			administrationUsage: []string{"metasystem stop [checkout]", "metasystem stop ui [--wait-seconds N]"},
+			object: "system", action: "stop", audience: "human", summary: "stop MetaSystem for this checkout",
+			usage: []string{"metasystem system stop"},
 			details: []string{
-				"stop (or stop checkout) is done by a person at their enrolled terminal. Every job and helper of this checkout stops, and no new work starts until start.",
+				"Done by a person at their enrolled terminal. Every job and helper of this checkout stops, and no new work starts until system start.",
 				"If something keeps running, stop says what, and nothing is reported as stopped that is not.",
-				"stop job J cancels exactly the selected job J; nothing else stops.",
-				"stop session authorizes one quiet stop of the announced main session; the checkout keeps running.",
 			},
-			flags: []intentFlag{intentUIWaitFlag, intentInstallationFlag, {name: "by", value: "NAME", usage: "stop session: the attending person"},
-				{name: "out", value: "FILE", usage: "stop design: the design document, when the goal has several"},
-				{name: "attempt", value: "N", usage: "stop design: this attempt instead of the newest"}},
-			maxArgs:  2,
-			examples: []string{"metasystem stop job design-r2-4f1c", "metasystem stop", "metasystem stop session --by Wido"},
-			run:      runIntentStop,
-			legacy:   legacyProcessCall,
+			flags:    []intentFlag{intentInstallationFlag},
+			maxArgs:  0,
+			examples: []string{"metasystem system stop"},
+			run:      runIntentSystemStop,
 		},
 		{
-			name: "restart", group: "administration", audience: "both", summary: "restart MetaSystem for this checkout, or its interface",
-			usage: []string{"metasystem restart checkout", "metasystem restart ui [--listen ADDRESS] [--wait-seconds N]"},
+			object: "system", action: "restart", audience: "human", summary: "stop and start MetaSystem for this checkout",
+			usage: []string{"metasystem system restart"},
 			details: []string{
-				"restart checkout starts again only after everything stopped; if either half fails, it says where it got to and what to run next.",
-				"restart ui restarts the browser interface with the executable on disk; an agent may do this within its authorization.",
-				"restart checkout requires enrolled-terminal human authority. Starting the interface through an agent does not authenticate a person for its human actions.",
+				"Starts again only after everything stopped; if either half fails, it says where it got to and what to run next.",
+				"Requires enrolled-terminal human authority.",
 			},
-			flags:    []intentFlag{intentUIListenFlag, intentUIWaitFlag, intentInstallationFlag, intentTemporaryArmFlag, intentReviewByFlag},
+			flags:    []intentFlag{intentInstallationFlag, intentTemporaryArmFlag, intentReviewByFlag},
+			maxArgs:  0,
+			examples: []string{"metasystem system restart"},
+			run:      runIntentSystemRestart,
+		},
+		{
+			object: "system", action: "status", audience: "both", summary: "whether MetaSystem runs for this checkout, and its watchdog's view",
+			usage: []string{"metasystem system status", "metasystem system status --steward"},
+			details: []string{"Unknown and stale readings are reported as such; a read failure is never shown as stopped or healthy.",
+				"--steward prints the idle watchdog's view: evidence age, live intents and pending notifications."},
+			flags:    []intentFlag{intentInstallationFlag, {name: "steward", usage: "the idle watchdog's view instead"}},
+			maxArgs:  0,
+			examples: []string{"metasystem system status", "metasystem system status --steward"},
+			run:      runIntentSystemStatus,
+		},
+		{
+			object: "system", action: "check", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
+			usage:    []string{"metasystem system check"},
+			details:  []string{"Checks this checkout once and repairs nothing. Each problem names the command that fixes it, where there is one."},
+			flags:    []intentFlag{intentInstallationFlag},
+			maxArgs:  0,
+			examples: []string{"metasystem system check", "metasystem system check --json"},
+			run:      runIntentDoctor,
+		},
+		{
+			object: "system", action: "repair", audience: "both", summary: "list this checkout's durable wait continuations",
+			usage:    []string{"metasystem system repair [--session S]"},
+			details:  []string{"Lists this checkout's durable wait continuations, checked against the holder's --session when given."},
+			flags:    []intentFlag{{name: "session", value: "S", advanced: true, usage: "the runtime session that must hold the checkout"}},
+			maxArgs:  0,
+			examples: []string{"metasystem system repair"},
+			run:      runIntentRepairWaits,
+		},
+		{
+			object: "session", action: "start", audience: "agent", summary: "prepare the current agent session to work",
+			usage:    []string{"metasystem session start"},
+			details:  []string{"Announces this session, restamps its stop capability and starts the helpers the session needs."},
+			flags:    []intentFlag{intentInstallationFlag, lineage},
+			maxArgs:  0,
+			examples: []string{"metasystem session start"},
+			run:      runIntentSessionStart,
+		},
+		{
+			object: "session", action: "stop", audience: "human", summary: "authorize one quiet stop of the announced main session",
+			usage:    []string{"metasystem session stop --by NAME"},
+			details:  []string{"The checkout keeps running; a person authorizes this at the enrolled terminal."},
+			flags:    []intentFlag{{name: "by", value: "NAME", usage: "the attending person"}},
+			maxArgs:  0,
+			examples: []string{"metasystem session stop --by Wido"},
+			run:      func(inv *intentInvocation) int { return inv.stopSession() },
+		},
+		{
+			object: "mission", action: "start", audience: "both", summary: "start an autonomous mission",
+			usage: []string{"metasystem mission start M"}, maxArgs: 1, examples: []string{"metasystem mission start demo"},
+			run: func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "start") },
+		},
+		{
+			object: "mission", action: "status", audience: "both", summary: "a mission's runner status",
+			usage: []string{"metasystem mission status M"}, maxArgs: 1, examples: []string{"metasystem mission status demo"},
+			run: func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "status") },
+		},
+		{
+			object: "mission", action: "resume", audience: "human", summary: "resume a parked or interrupted mission",
+			usage: []string{"metasystem mission resume M"}, maxArgs: 1, examples: []string{"metasystem mission resume demo"},
+			run: func(inv *intentInvocation) int { return runIntentMissionNamed(inv, "resume") },
+		},
+		{
+			object: "mission", action: "repair", audience: "human", summary: "record a person's resolution of one mission workspace problem",
+			usage: []string{"metasystem mission repair M --problem N --confirm-restored TREE --by NAME --reason TEXT",
+				"metasystem mission repair M --problem N --accept-workspace --waive CLAIM... --by NAME --reason TEXT"},
+			details: []string{
+				"--confirm-restored says the files already match that recorded safe tree (restore them first; nothing is restored by this command);",
+				"--accept-workspace accepts the observed workspace with each waived attribution claim named. Every problem must be resolved before the mission resumes.",
+			},
+			flags: []intentFlag{
+				{name: "problem", value: "N", usage: "the recorded problem's number"},
+				{name: "confirm-restored", value: "TREE", usage: "the recorded safe tree the files already match"},
+				{name: "accept-workspace", usage: "accept the observed workspace"},
+				{name: "waive", value: "CLAIM", repeat: true, usage: "with --accept-workspace: an attribution claim waived (repeatable)"},
+				{name: "by", value: "NAME", usage: "the person deciding"},
+				reasonFlag("why", "why"),
+			},
 			maxArgs:  1,
-			examples: []string{"metasystem restart checkout", "metasystem restart ui"},
-			run:      runIntentRestart,
-		},
-		{
-			name: "status", group: "work", primary: true, audience: "both", summary: "what is running: a goal's work, this checkout, or one job",
-			usage:               []string{"metasystem status G [--work NAME]", "metasystem status goal G [--work NAME]", "metasystem status job J", "metasystem status work [--all]", "metasystem status run RUN", "metasystem status mission M"},
-			administrationUsage: []string{"metasystem status [checkout]", "metasystem status ui", "metasystem status --machines [--refresh]"},
-			details: []string{
-				"Unknown and stale readings are reported as such; a read failure is never shown as stopped or healthy.",
-				"status G lists every named work item of the goal with its stage and the command that continues it; show G is the goal's record.",
-				"Only work visible to the current user is shown; a job reference is matched exactly, never by prefix.",
+			examples: []string{"metasystem mission repair demo --problem 2 --confirm-restored 3f2a9c1e0d4b5a6978695a4b3c2d1e0f98765432 --by Wido --reason 'restored from the snapshot'"},
+			run: func(inv *intentInvocation) int {
+				if len(inv.input.args) != 1 {
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "mission repair needs the mission: metasystem mission repair M ...; nothing was done"})
+				}
+				return runIntentRepairMission(inv, inv.input.args[0])
 			},
-			flags: []intentFlag{intentInstallationFlag, {name: "work", value: "NAME", usage: "with G: only this named work"},
-				{name: "machines", usage: "every machine's presence, this one first"},
-				{name: "all", usage: "with status work: ended jobs too"},
-				{name: "refresh", aliases: []string{"fetch"}, usage: "with --machines: fetch presence now instead of the last copy"}},
-			maxArgs:  2,
-			examples: []string{"metasystem status verbs-match-intent", "metasystem status", "metasystem status job design-r2-4f1c"},
-			run:      runIntentStatus,
-			legacy:   legacyProcessCall,
 		},
 		{
-			name: "enroll", group: "administration", audience: "human", summary: "authenticate your terminal for human decisions in MetaSystem",
-			usage:    []string{"metasystem enroll --name NAME"},
+			object: "ui", action: "start", audience: "both", summary: "start the browser interface",
+			usage: []string{"metasystem ui start [--listen ADDRESS]"}, flags: []intentFlag{intentUIListenFlag, intentInstallationFlag}, maxArgs: 0,
+			examples: []string{"metasystem ui start"}, run: func(inv *intentInvocation) int { return inv.uiTarget("start") },
+		},
+		{
+			object: "ui", action: "stop", audience: "both", summary: "stop the browser interface",
+			usage: []string{"metasystem ui stop [--wait-seconds N]"}, flags: []intentFlag{intentUIWaitFlag, intentInstallationFlag}, maxArgs: 0,
+			examples: []string{"metasystem ui stop"}, run: func(inv *intentInvocation) int { return inv.uiTarget("stop") },
+		},
+		{
+			object: "ui", action: "restart", audience: "both", summary: "restart the browser interface with the executable on disk",
+			usage:    []string{"metasystem ui restart [--listen ADDRESS] [--wait-seconds N]"},
+			details:  []string{"An agent may do this within its authorization. Starting the interface through an agent does not authenticate a person for its human actions."},
+			flags:    []intentFlag{intentUIListenFlag, intentUIWaitFlag, intentInstallationFlag},
+			maxArgs:  0,
+			examples: []string{"metasystem ui restart"}, run: func(inv *intentInvocation) int { return inv.runUIVerb("restart") },
+		},
+		{
+			object: "ui", action: "status", audience: "both", summary: "whether the browser interface runs, and where",
+			usage: []string{"metasystem ui status"}, flags: []intentFlag{intentInstallationFlag}, maxArgs: 0,
+			examples: []string{"metasystem ui status"}, run: func(inv *intentInvocation) int { return inv.uiTarget("status") },
+		},
+		{
+			object: "machine", action: "list", audience: "both", summary: "every machine's presence, this one first",
+			usage:    []string{"metasystem machine list [--refresh]"},
+			flags:    []intentFlag{{name: "refresh", aliases: []string{"fetch"}, usage: "fetch presence now instead of the last copy"}},
+			maxArgs:  0,
+			examples: []string{"metasystem machine list", "metasystem machine list --refresh"},
+			run:      runIntentFleet,
+		},
+		{
+			object: "machine", action: "start", audience: "human", summary: "clone, build, configure, enroll and supervise one new machine of this fleet",
+			usage:   []string{"metasystem machine start NAME [--destination PATH] [--resume ID]"},
+			details: []string{"A person's act on this host; --resume ID continues an interrupted launch."},
+			flags: []intentFlag{intentTemporaryArmFlag, intentReviewByFlag,
+				{name: "destination", value: "PATH", advanced: true, usage: "where the new machine's clone lands"},
+				{name: "resume", value: "ID", advanced: true, usage: "continue this interrupted launch"}},
+			maxArgs:  1,
+			examples: []string{"metasystem machine start m1f"},
+			run: func(inv *intentInvocation) int {
+				if len(inv.input.args) != 1 {
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "machine start needs the machine's name: metasystem machine start NAME; nothing was done"})
+				}
+				return runIntentStartMachine(inv, inv.input.args[0])
+			},
+		},
+		{
+			object: "terminal", action: "enroll", audience: "human", summary: "authenticate your terminal for human decisions in MetaSystem",
+			usage:    []string{"metasystem terminal enroll --name NAME"},
 			details:  []string{"Run it at an agent-free terminal. The local enrollment and its fleet publication are reported separately."},
 			flags:    []intentFlag{{name: "name", aliases: []string{"by"}, value: "NAME", usage: "your name"}, intentLineageFlag},
 			maxArgs:  0,
-			examples: []string{"metasystem enroll --name Wido"},
+			examples: []string{"metasystem terminal enroll --name Wido"},
 			run:      runIntentEnroll,
 		},
 		{
-			name: "ask", group: "questions", primary: true, audience: "agent", summary: "ask the person a question through the channel",
-			usage: []string{"metasystem ask G --question TEXT --option TEXT...", "metasystem ask G --question TEXT --option 'LABEL: CONSEQUENCE'... [--recommend LABEL]",
-				"metasystem ask --retry Q", "metasystem ask --withdraw Q --reason TEXT"},
+			object: "work", action: "status", primary: true, audience: "both", summary: "running work, or one goal's work, job, run or read",
+			usage: []string{"metasystem work status [--all]", "metasystem work status G [--work NAME]", "metasystem work status REF"},
+			details: []string{
+				"Without a target: this user's running launches and this repository's running dispatch jobs, each with its reference; --all adds ended ones.",
+				"REF is a goal, or a reference as a result printed it: j1:ID (a launch), j2:ID (a dispatch job), run:ID (a unit run) or read:REF (a diagnostic read).",
+				"A bare id is searched in each of those stores; several matches refuse and list each reference. A reference is matched exactly, never by prefix.",
+			},
+			flags:    []intentFlag{{name: "all", usage: "without a target: ended jobs too"}, {name: "work", value: "NAME", usage: "with G: only this named work"}},
+			maxArgs:  1,
+			accepts:  []string{refGoal, refJ1, refJ2, refRun, refRead},
+			examples: []string{"metasystem work status", "metasystem work status verbs-match-intent", "metasystem work status j2:design-r2-4f1c"},
+			run:      runIntentWorkStatus,
+		},
+		{
+			object: "work", action: "stop", audience: "both", summary: "stop exactly one running job or diagnostic read",
+			usage:    []string{"metasystem work stop REF"},
+			details:  []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read); nothing else stops."},
+			maxArgs:  1,
+			accepts:  []string{refJ1, refJ2, refRead},
+			examples: []string{"metasystem work stop j2:design-r2-4f1c"},
+			run:      runIntentWorkStop,
+		},
+		{
+			object: "question", action: "ask", primary: true, audience: "agent", summary: "ask the person a question through the channel",
+			usage: []string{"metasystem question ask G --question TEXT --option TEXT...", "metasystem question ask G --question TEXT --option 'LABEL: CONSEQUENCE'... [--recommend LABEL]"},
 			details: []string{
 				"The person answers in the channel thread; the answer is authenticated there, never by a local command.",
 				"--kind selects an authority question (stop, budget-above-norm, carry); stop and budget-above-norm take --budget BOX.",
-				"When delivery failed, ask --retry Q delivers exactly that stored question once more;",
-				"it never asks a new question and touches no other. ask --withdraw Q --reason TEXT withdraws it the same way.",
-				"show question Q shows its state and how it is answered; wait question Q waits for its answer.",
+				"question show Q shows its state and how it is answered; question wait Q waits for its answer.",
 			},
 			flags: []intentFlag{
 				intentTargetFlag,
@@ -152,62 +273,80 @@ func processIntentCommands() []intentCommand {
 				{name: "kind", value: "KIND", advanced: true, usage: "an authority question: stop, budget-above-norm or carry"},
 				{name: "wants", value: "TOKEN", advanced: true, usage: "the exact answer token (carry questions)"},
 				{name: "budget", value: "BOX", advanced: true, usage: "the proposed compact box for stop and budget-above-norm"},
-				{name: "retry", value: "Q", usage: "deliver this existing, undelivered question again; no new question is asked"},
-				{name: "withdraw", value: "Q", usage: "withdraw this question, with --reason"},
-				reasonFlag("because", "with --withdraw: why the question is withdrawn"),
 			},
 			maxArgs:  1,
-			examples: []string{"metasystem ask verbs-match-intent --question 'Land slice 2 now?' --option 'yes: land it' --option 'no: wait for review' --recommend yes"},
+			examples: []string{"metasystem question ask verbs-match-intent --question 'Land slice 2 now?' --option 'yes: land it' --option 'no: wait for review' --recommend yes"},
 			run:      runIntentAsk,
 		},
 		{
-			name: "answer", group: "questions", audience: "human", summary: "answer a question, or see where a channel question is answered",
-			usage: []string{"metasystem answer Q [TEXT]", "metasystem answer M/Q TEXT", "metasystem answer Q --answer-file FILE"},
+			object: "question", action: "retry", audience: "agent", summary: "deliver one stored, undelivered question once more",
+			usage:    []string{"metasystem question retry Q"},
+			details:  []string{"It never asks a new question and touches no other."},
+			maxArgs:  1,
+			examples: []string{"metasystem question retry q-20260925-1"},
+			run: func(inv *intentInvocation) int {
+				if len(inv.input.args) != 1 {
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question retry needs the question: metasystem question retry Q; nothing was done"})
+				}
+				return runIntentAskRetry(inv, inv.input.args[0])
+			},
+		},
+		{
+			object: "question", action: "withdraw", audience: "agent", summary: "withdraw one question, with a reason",
+			usage:    []string{"metasystem question withdraw Q --reason TEXT"},
+			flags:    []intentFlag{reasonFlag("because", "why the question is withdrawn")},
+			maxArgs:  1,
+			examples: []string{"metasystem question withdraw q-20260925-1 --reason 'decided in the review'"},
+			run: func(inv *intentInvocation) int {
+				if len(inv.input.args) != 1 {
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question withdraw needs the question: metasystem question withdraw Q --reason TEXT; nothing was done"})
+				}
+				return runIntentAskWithdraw(inv, inv.input.args[0])
+			},
+		},
+		{
+			object: "question", action: "answer", audience: "human", summary: "answer a question, or see where a channel question is answered",
+			usage: []string{"metasystem question answer Q [TEXT]", "metasystem question answer M/Q TEXT", "metasystem question answer Q --answer-file FILE"},
 			details: []string{
 				"Q is a channel question or a mission's question; when both share the id, channel:Q or M/Q names one.",
 				"TEXT answers a mission question: the mission records it (or changes nothing), then resumes when its requirements are satisfied.",
 				"Repeating the same answer completes an interrupted resume; a different answer to an answered question is refused.",
-				"A channel question is answered in its channel thread, which authenticates the person; answer Q shows where and how.",
-				"A mission answer applies the answer and advances the mission, or changes nothing.",
+				"A channel question is answered in its channel thread, which authenticates the person; question answer Q shows where and how.",
 				"--answer-file reads the answer from FILE, exactly, less its final line end; the same answer may also be given inline.",
-				"A channel question is answered in its channel thread; answer question Q prints how, and records nothing.",
 			},
 			flags:    []intentFlag{{name: "answer-file", value: "FILE", advanced: true, usage: "read the mission answer from FILE"}},
-			maxArgs:  4,
-			examples: []string{"metasystem answer host-failure 'retry: the host is back'", "metasystem answer demo/host-failure --answer-file answer.md", "metasystem answer q-20260925-1"},
-			run:      runIntentAnswer,
+			maxArgs:  2,
+			examples: []string{"metasystem question answer host-failure 'retry: the host is back'", "metasystem question answer demo/host-failure --answer-file answer.md", "metasystem question answer q-20260925-1"},
+			run:      runIntentAnswerQuestion,
 		},
 		{
-			name: "check", group: "operations", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
-			usage:               []string{"metasystem check goals"},
-			administrationUsage: []string{"metasystem check", "metasystem check settings"},
-			details: []string{"Checks this checkout once and repairs nothing. Each problem names the command that fixes it, where there is one.",
-				"check goals lists the goal files that differ from their published base: the edits repair goals --accept-edits would publish.",
-				"check settings validates every setting of the selected installation's configuration and changes nothing."},
-			flags:    []intentFlag{intentInstallationFlag},
+			object: "question", action: "show", audience: "both", summary: "one question, from the channel or a mission, and how it is answered",
+			usage:    []string{"metasystem question show Q"},
 			maxArgs:  1,
-			examples: []string{"metasystem check goals", "metasystem check", "metasystem check --json", "metasystem check settings"},
-			run:      runIntentCheck,
+			examples: []string{"metasystem question show q-20260925-1", "metasystem question show demo/host-failure"},
+			run:      func(inv *intentInvocation) int { return runIntentShowQuestion(inv, inv.input.args) },
+		},
+		{
+			object: "question", action: "list", audience: "both", summary: "the channel questions still open",
+			usage:    []string{"metasystem question list"},
+			maxArgs:  0,
+			examples: []string{"metasystem question list"},
+			run:      runIntentQuestionList,
+		},
+		{
+			object: "question", action: "wait", audience: "agent", summary: "wait for a question's answer",
+			usage:    []string{"metasystem question wait Q [--timeout DURATION]"},
+			flags:    []intentFlag{{name: "timeout", value: "DURATION", usage: "how long this invocation waits (for example 20s or 10m)"}},
+			maxArgs:  1,
+			examples: []string{"metasystem question wait channel:q-20260925-1 --timeout 10m"},
+			run: func(inv *intentInvocation) int {
+				if len(inv.input.args) != 1 {
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question wait needs the question: metasystem question wait Q; nothing was done"})
+				}
+				return inv.render(inv.waitQuestion(inv.input.args[0]))
+			},
 		},
 	}
-}
-
-// legacyProcessCall keeps the old top-level stop, status and arm-style calls
-// on their own parsers: no target kind and none of the public-only options.
-func legacyProcessCall(args []string) bool {
-	for index := 0; index < len(args); index++ {
-		switch arg := args[index]; {
-		case slices.Contains([]string{"checkout", "job", "session", "run", "design", "goal", "--json", "-json", "--help", "-help", "-h", "--work", "-work",
-			"--machines", "-machines", "--refresh", "-refresh", "--fetch", "-fetch"}, arg):
-			return false
-		case slices.Contains([]string{"--repo", "-repo", "--installation", "-installation"}, arg):
-			index++
-		case !strings.HasPrefix(arg, "-"):
-			// A goal named after the verb is the public status G.
-			return false
-		}
-	}
-	return true
 }
 
 // processIntentOwners are the owners the process and question commands call.
@@ -354,35 +493,6 @@ func (inv *intentInvocation) selectProcessScope() (processScope, int, *intentRes
 	return scope, scale, nil
 }
 
-// kindAndTarget reads VERB [KIND] [TARGET] where a bare verb means this checkout.
-func (inv *intentInvocation) kindAndTarget(kinds ...string) (string, string, *intentResult) {
-	args := inv.input.args
-	if len(args) == 0 {
-		return "checkout", "", nil
-	}
-	kind := args[0]
-	if !slices.Contains(kinds, kind) {
-		return "", "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("does not know the target %s; it takes %s. Nothing was done", shellCommand([]string{kind}), strings.Join(inv.command.allUsage(), " | ")),
-			Decision: "name one of the targets above"}
-	}
-	target := ""
-	if len(args) > 1 {
-		target = args[1]
-	}
-	needsID := kind == "job" || kind == "run"
-	switch {
-	case needsID && target == "":
-		return "", "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary:  fmt.Sprintf("%s %s needs the %s id; nothing was done", inv.command.name, kind, kind),
-			Decision: fmt.Sprintf("name it: metasystem %s %s ID", inv.command.name, kind)}
-	case !needsID && target != "":
-		return "", "", &intentResult{Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("%s %s takes no id; unexpected %s. Nothing was done", inv.command.name, kind, shellCommand([]string{target}))}
-	}
-	return kind, target, nil
-}
-
 func (inv *intentInvocation) checkoutTarget(scope processScope) []intentTarget {
 	return []intentTarget{{Kind: "checkout", ID: scope.Checkout}}
 }
@@ -417,90 +527,63 @@ func processRefusalResult(targets []intentTarget, prefix string, refusal *proces
 	return result
 }
 
-func runIntentStart(inv *intentInvocation) int {
-	if problem := inv.checkUIOptionsTarget(); problem != nil {
-		return inv.render(*problem)
-	}
-	if args := inv.input.args; len(args) == 2 && args[0] == "mission" {
-		return runIntentMissionTarget(inv, "start", args[1])
-	} else if len(args) == 1 && args[0] == "ui" {
-		return inv.uiTarget("start")
-	} else if len(args) == 2 && args[0] == "machine" {
-		return runIntentStartMachine(inv, args[1])
-	}
-	for _, only := range []string{"destination", "resume"} {
-		if inv.input.has(only) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to start machine NAME; nothing was done", only)})
+// runIntentSystemStart arms this checkout's machinery at a person's word,
+// or with --if-down recovers only helpers that are down.
+func runIntentSystemStart(inv *intentInvocation) int {
+	if inv.input.switched("if-down") {
+		for _, other := range []string{"temporary-human-word", "review-by"} {
+			if inv.input.has(other) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("system start --if-down carries no person's word; --%s is not taken; nothing was done", other)})
+			}
 		}
-	}
-	kind, _, problem := inv.kindAndTarget("checkout", "session")
-	if problem != nil {
-		return inv.render(*problem)
+		scope, _, problem := inv.selectProcessScope()
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		return runUpWith([]string{"--metasystem-root", scope.Installation, "--repo", scope.Checkout, "--recover-only", "--if-down"}, inv.owners.processes.process.repositoryTop)
 	}
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	owners := inv.owners.processes
-	if kind == "session" {
-		if inv.input.has("temporary-human-word") || inv.input.has("review-by") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "start session is an agent's start and takes no human word; nothing was done",
-				Decision: "a person starts the checkout with metasystem start"})
-		}
-		binary, err := owners.executable()
-		if err == nil {
-			binary, err = canonicalPath(binary)
-		}
-		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "cannot resolve the running engine: " + err.Error()})
-		}
-		result := owners.up(up.Options{
-			Root: scope.Installation, MetasystemRoot: scope.Installation, Scope: scope.Checkout, Binary: binary,
-			OwnerLineage: inv.input.text("lineage"), WaitScaleMilli: scale, CallerPid: int64(os.Getppid()),
-			RestampStopCapability: restampStopCapabilityForUp,
-		})
-		outcome := intentConfirmed
-		if result.ExitCode() != 0 {
-			outcome = intentRefused
-		}
-		return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
-			Summary: "session start: " + result.Outcome, text: result.Lines(), Decision: result.Remedy,
-			Data: map[string]any{"outcome": result.Outcome, "lines": nonNilLines(result.Lines()), "remedy": result.Remedy}})
-	}
 	before, _ := processFence(scope)
-	report, refusal := owners.process.arm(scope, scale, inv.input.text("temporary-human-word"), inv.input.text("review-by"))
+	report, refusal := inv.owners.processes.process.arm(scope, scale, inv.input.text("temporary-human-word"), inv.input.text("review-by"))
 	if refusal != nil {
 		return inv.render(inv.startRefusal(scope, scale, before, refusal, report))
 	}
 	return inv.render(processReportResult(inv.checkoutTarget(scope), "started "+scope.Checkout, report))
 }
 
-func runIntentStop(inv *intentInvocation) int {
-	if problem := inv.checkUIOptionsTarget(); problem != nil {
-		return inv.render(*problem)
-	}
-	if args := inv.input.args; len(args) == 1 && args[0] == "ui" {
-		return inv.uiTarget("stop")
-	} else if len(args) == 2 && args[0] == "design" {
-		return runIntentStopDesign(inv, args[1])
-	} else if len(args) == 2 && args[0] == "review" {
-		return runIntentReviewRef(inv, "stop", args[1])
-	} else if inv.input.has("out") || inv.input.has("attempt") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--out and --attempt belong to stop design G; nothing was done"})
-	}
-	kind, target, problem := inv.kindAndTarget("checkout", "job", "session")
+// runIntentSessionStart prepares the current agent session through up.
+func runIntentSessionStart(inv *intentInvocation) int {
+	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	if kind != "session" && inv.input.has("by") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--by names the person authorizing stop session; nothing was done"})
+	owners := inv.owners.processes
+	binary, err := owners.executable()
+	if err == nil {
+		binary, err = canonicalPath(binary)
 	}
-	switch kind {
-	case "job":
-		return inv.stopJob(target)
-	case "session":
-		return inv.stopSession()
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "cannot resolve the running engine: " + err.Error()})
 	}
+	result := owners.up(up.Options{
+		Root: scope.Installation, MetasystemRoot: scope.Installation, Scope: scope.Checkout, Binary: binary,
+		OwnerLineage: inv.input.text("lineage"), WaitScaleMilli: scale, CallerPid: int64(os.Getppid()),
+		RestampStopCapability: restampStopCapabilityForUp,
+	})
+	outcome := intentConfirmed
+	if result.ExitCode() != 0 {
+		outcome = intentRefused
+	}
+	return inv.render(intentResult{Outcome: outcome, Targets: []intentTarget{{Kind: "session", ID: scope.Checkout}}, code: result.ExitCode(),
+		Summary: "session start: " + result.Outcome, text: result.Lines(), Decision: result.Remedy,
+		Data: map[string]any{"outcome": result.Outcome, "lines": nonNilLines(result.Lines()), "remedy": result.Remedy}})
+}
+
+// runIntentSystemStop stops this checkout's machinery at a person's word.
+func runIntentSystemStop(inv *intentInvocation) int {
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
@@ -513,7 +596,7 @@ func runIntentStop(inv *intentInvocation) int {
 		_, fence := processFence(scope)
 		return inv.render(intentResult{Outcome: intentPartial, code: report.ExitCode, Targets: inv.checkoutTarget(scope), text: report.Lines,
 			Summary: "stop did not finish: some processes are still running (listed below); no new work starts (" + fence + ")",
-			next:    inv.publicArgv(append([]string{"stop"}, inv.forward("installation")...)...), nextReason: "stop again; end any process that survives a second stop yourself",
+			next:    inv.publicArgv(append([]string{"system", "stop"}, inv.forward("installation")...)...), nextReason: "stop again; end any process that survives a second stop yourself",
 			Data: map[string]any{"lines": nonNilLines(report.Lines), "exitCode": report.ExitCode, "fence": fence}})
 	}
 	return inv.render(processReportResult(inv.checkoutTarget(scope), "stopped "+scope.Checkout, report))
@@ -524,7 +607,7 @@ func (inv *intentInvocation) stopSession() int {
 	if by == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "session", ID: ""}},
 			Summary: "stop session needs the attending person: --by NAME; nothing was done",
-			next:    inv.publicArgv("stop", "session", "--by", "NAME"), nextReason: "at the enrolled terminal, with your name"})
+			next:    inv.publicArgv("session", "stop", "--by", "NAME"), nextReason: "at the enrolled terminal, with your name"})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
@@ -573,81 +656,12 @@ type intentJob struct {
 	recordPath string
 }
 
-// resolveJob finds the exact record J names: a launch record of the current
-// user, or a dispatch job of this repository. Two matches, or none, refuse.
-// Public job references: j1:ID names a launch of this user and j2:ID a
-// dispatch job of this repository; a raw ID is searched in both. The prefix
-// is decoded only here, and owners always receive the raw ID.
-const (
-	launchJobPrefix   = "j1:"
-	dispatchJobPrefix = "j2:"
-)
-
+// jobReference is the qualified public reference of a job.
 func jobReference(job intentJob) string {
 	if job.kind == "launch" {
 		return launchJobPrefix + job.id
 	}
 	return dispatchJobPrefix + job.id
-}
-
-// resolveJob finds the exact record a job reference names: a launch record
-// of the current user, or a dispatch job of this repository. Two matches,
-// or none, refuse; an ambiguity offers both references for the same verb.
-func (inv *intentInvocation) resolveJob(ref, verb string) (intentJob, *intentResult) {
-	targets := []intentTarget{{Kind: "job", ID: ref}}
-	id, searchLaunch, searchDispatch := ref, true, true
-	if raw, found := strings.CutPrefix(ref, launchJobPrefix); found {
-		id, searchDispatch = raw, false
-	} else if raw, found := strings.CutPrefix(ref, dispatchJobPrefix); found {
-		id, searchLaunch = raw, false
-	}
-	var found []intentJob
-	if searchLaunch && inv.owners.processes.launches != nil {
-		manager := inv.owners.processes.launches()
-		record, err := manager.Store.Read(id)
-		switch {
-		case err == nil:
-			found = append(found, intentJob{id: id, kind: "launch", launch: record})
-		case errors.Is(err, fs.ErrNotExist), strings.Contains(err.Error(), "invalid launch id"):
-		default:
-			return intentJob{}, &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("the launch record %s is unreadable: %v", id, err)}
-		}
-	}
-	repository := "no repository was resolved"
-	if searchDispatch && dispatchJobIDPattern.MatchString(id) {
-		if problem := inv.selectLayoutRoot(); problem == nil {
-			repository = inv.stateRoot
-			path := filepath.Join(inv.stateRoot, "artifacts", "agents", "jobs", id+".json")
-			_, statErr := os.Stat(path)
-			object, readErr := dispatchcore.ReadRecordObject(path)
-			switch {
-			case errors.Is(statErr, fs.ErrNotExist):
-			case readErr == nil:
-				found = append(found, intentJob{id: id, kind: "dispatch", dispatch: object, recordPath: path})
-			default:
-				return intentJob{}, &intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("the dispatch job record %s is unreadable: %v", path, readErr)}
-			}
-		} else {
-			repository = "no repository at " + shellCommand([]string{inv.cwd}) + " (" + problem.Summary + ")"
-		}
-	}
-	switch len(found) {
-	case 0:
-		return intentJob{}, &intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: fmt.Sprintf("no job %s: no launch record of this user and no dispatch job in %s; nothing was done", shellCommand([]string{ref}), repository),
-			next:    inv.publicArgv("status", "work", "--all"), nextReason: "lists this user's launches and this repository's dispatch jobs with their references"}
-	case 2:
-		lines, choices := []string{}, []map[string]any{}
-		for _, job := range found {
-			lines = append(lines, fmt.Sprintf("  %s: %s", shellCommand(inv.publicArgv(verb, "job", jobReference(job))), jobPurpose(job)))
-			choices = append(choices, map[string]any{"reference": jobReference(job), "purpose": jobPurpose(job), "argv": inv.publicArgv(verb, "job", jobReference(job))})
-		}
-		return intentJob{}, &intentResult{Outcome: intentRefused, code: 1, Targets: targets, text: lines,
-			Summary:  fmt.Sprintf("%s names both a launch of this user and a dispatch job of this repository; nothing was done", shellCommand([]string{ref})),
-			Decision: "name the one meant by its reference, " + jobReference(found[0]) + " or " + jobReference(found[1]),
-			Data:     map[string]any{"candidates": []string{jobReference(found[0]), jobReference(found[1])}, "choices": choices}}
-	}
-	return found[0], nil
 }
 
 // jobPurpose describes a job for a person choosing it.
@@ -712,11 +726,11 @@ func runIntentStatusWork(inv *intentInvocation) int {
 	for _, job := range jobs {
 		ref := jobReference(job)
 		ended := (job.kind == "launch" && job.launch.State.Terminal()) || (job.kind == "dispatch" && dispatchcore.TerminalStatus(fmt.Sprint(job.dispatch["status"])))
-		view := map[string]any{"reference": ref, "kind": job.kind, "purpose": jobPurpose(job), "status": inv.publicArgv("status", "job", ref)}
+		view := map[string]any{"reference": ref, "kind": job.kind, "purpose": jobPurpose(job), "status": inv.publicArgv("work", "status", ref)}
 		line := fmt.Sprintf("  %s: %s", ref, jobPurpose(job))
 		if !ended {
-			view["wait"], view["stop"] = inv.publicArgv("wait", "job", ref), inv.publicArgv("stop", "job", ref)
-			line += "; " + shellCommand(inv.publicArgv("wait", "job", ref)) + " or " + shellCommand(inv.publicArgv("stop", "job", ref))
+			view["wait"], view["stop"] = inv.publicArgv("work", "wait", ref), inv.publicArgv("work", "stop", ref)
+			line += "; " + shellCommand(inv.publicArgv("work", "wait", ref)) + " or " + shellCommand(inv.publicArgv("work", "stop", ref))
 		}
 		views = append(views, view)
 		lines = append(lines, line)
@@ -728,7 +742,7 @@ func runIntentStatusWork(inv *intentInvocation) int {
 	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"scope": scope, "all": all, "jobs": views},
 		Summary: fmt.Sprintf("%d %s job(s) among %s", len(jobs), word, scope)}
 	if !all {
-		result.next, result.nextReason = inv.publicArgv("status", "work", "--all"), "also lists ended jobs"
+		result.next, result.nextReason = inv.publicArgv("work", "status", "--all"), "also lists ended jobs"
 	}
 	return inv.render(result)
 }
@@ -769,76 +783,9 @@ func (inv *intentInvocation) stopJob(ref string) int {
 	return inv.render(result)
 }
 
-func runIntentStatus(inv *intentInvocation) int {
-	if args := inv.input.args; len(args) == 2 && args[0] == "goal" {
-		return runIntentStatusGoal(inv, args[1])
-	}
-	if args := inv.input.args; len(args) == 2 && args[0] == "mission" {
-		return runIntentMissionTarget(inv, "status", args[1])
-	} else if len(args) == 1 && args[0] == "ui" {
-		return inv.uiTarget("status")
-	} else if inv.input.switched("machines") {
-		if len(args) > 0 || inv.input.has("work") || inv.input.has("installation") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "status --machines takes only --refresh; nothing was done"})
-		}
-		return runIntentFleet(inv)
-	} else if inv.input.has("refresh") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--refresh belongs to status --machines; nothing was done"})
-	}
-	if args := inv.input.args; len(args) == 1 && args[0] == "work" {
-		return runIntentStatusWork(inv)
-	} else if inv.input.switched("all") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--all belongs to status work; nothing was done"})
-	}
-	if args := inv.input.args; len(args) == 1 && !slices.Contains([]string{"checkout", "job", "run"}, args[0]) {
-		return runIntentStatusGoal(inv, args[0])
-	}
-	if inv.input.has("work") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: status G --work NAME; nothing was done"})
-	}
-	kind, target, problem := inv.kindAndTarget("checkout", "job", "run")
-	if problem != nil {
-		return inv.render(*problem)
-	}
-	switch kind {
-	case "job":
-		job, problem := inv.resolveJob(target, "status")
-		if problem != nil {
-			return inv.render(*problem)
-		}
-		target = job.id
-		targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}
-		if job.kind == "launch" {
-			record, err := inv.owners.processes.launches().Status(target)
-			if err != nil {
-				return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s status: %v", target, err)})
-			}
-			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s: %s", target, record.State),
-				text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}})
-		}
-		status, _ := job.dispatch["status"].(string)
-		if status == "" {
-			status = "unknown (the record names no status)"
-		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("dispatch job %s: %s", target, status),
-			Data: map[string]any{"kind": "dispatch", "record": job.dispatch, "recordPath": job.recordPath}})
-	case "run":
-		targets := []intentTarget{{Kind: "unit", ID: target}}
-		runner := &launch.UnitRunner{Manager: inv.owners.processes.launches()}
-		record, err := runner.Status(target)
-		if errors.Is(err, fs.ErrNotExist) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("no unit run %s of this user; nothing was read", shellCommand([]string{target}))})
-		}
-		if err != nil {
-			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("unit run %s: %v", target, err)})
-		}
-		lines := []string{}
-		for _, round := range record.Rounds {
-			lines = append(lines, fmt.Sprintf("round %d: %s", round.Number, round.Outcome))
-		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
-			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record}})
-	}
+// runIntentCheckoutStatus is the overview of this checkout: its
+// machinery, running work, open questions and attention items.
+func runIntentCheckoutStatus(inv *intentInvocation) int {
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
@@ -850,21 +797,102 @@ func runIntentStatus(inv *intentInvocation) int {
 	return inv.render(processReportResult(inv.checkoutTarget(scope), "status of "+scope.Checkout, report))
 }
 
-func runIntentRestart(inv *intentInvocation) int {
-	if problem := inv.checkUIOptionsTarget(); problem != nil {
-		return inv.render(*problem)
+// runIntentSystemStatus is the checkout's machinery status, or with
+// --steward the idle watchdog's own view.
+func runIntentSystemStatus(inv *intentInvocation) int {
+	if !inv.input.switched("steward") {
+		return runIntentCheckoutStatus(inv)
 	}
-	if len(inv.input.args) == 0 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "restart needs its target: metasystem restart checkout, or metasystem restart ui; nothing was done",
-			Decision: "name the target"})
-	}
-	kind, _, problem := inv.kindAndTarget("checkout", "ui")
+	scope, _, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	if kind == "ui" {
-		return inv.runUIVerb("restart")
+	args := []string{"--repo", scope.Checkout}
+	if inv.input.switched("json") {
+		args = append(args, "--json")
 	}
+	return runStewardStatus(args)
+}
+
+// runIntentWorkStatus lists running work, or reads the one goal, job, run
+// or read a reference names.
+func runIntentWorkStatus(inv *intentInvocation) int {
+	if len(inv.input.args) == 0 {
+		if inv.input.has("work") {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: work status G --work NAME; nothing was done"})
+		}
+		return runIntentStatusWork(inv)
+	}
+	if inv.input.switched("all") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--all belongs to the list of running work (work status without a target); nothing was done"})
+	}
+	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	if ref.kind != refGoal && inv.input.has("work") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: work status G --work NAME; nothing was done"})
+	}
+	switch ref.kind {
+	case refGoal:
+		return runIntentStatusGoal(inv, ref.id)
+	case refRead:
+		return runIntentReviewRef(inv, "show", ref.id)
+	case refRun:
+		targets := []intentTarget{{Kind: "run", ID: ref.qualified()}}
+		runner := &launch.UnitRunner{Manager: inv.owners.processes.launches()}
+		record, err := runner.Status(ref.id)
+		if errors.Is(err, fs.ErrNotExist) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("no unit run %s of this user; nothing was read", shellCommand([]string{ref.qualified()}))})
+		}
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("unit run %s: %v", ref.qualified(), err)})
+		}
+		lines := []string{}
+		for _, round := range record.Rounds {
+			lines = append(lines, fmt.Sprintf("round %d: %s", round.Number, round.Outcome))
+		}
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
+			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record}})
+	}
+	job := ref.job
+	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}
+	if job.kind == "launch" {
+		record, err := inv.owners.processes.launches().Status(job.id)
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("launch %s status: %v", jobReference(job), err)})
+		}
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s: %s", jobReference(job), record.State),
+			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}})
+	}
+	status, _ := job.dispatch["status"].(string)
+	if status == "" {
+		status = "unknown (the record names no status)"
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("dispatch job %s: %s", jobReference(job), status),
+		Data: map[string]any{"kind": "dispatch", "record": job.dispatch, "recordPath": job.recordPath}})
+}
+
+// runIntentWorkStop stops exactly the job or diagnostic read a reference
+// names.
+func runIntentWorkStop(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work stop needs the reference of the work to stop: metasystem work stop REF; nothing was done",
+			next: inv.publicArgv("work", "status"), nextReason: "lists running work with its references"})
+	}
+	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	if ref.kind == refRead {
+		return runIntentReviewRef(inv, "stop", ref.id)
+	}
+	return inv.stopJob(ref.qualified())
+}
+
+// runIntentSystemRestart stops this checkout's machinery and, only once
+// everything stopped, starts it again.
+func runIntentSystemRestart(inv *intentInvocation) int {
 	scope, scale, problem := inv.selectProcessScope()
 	if problem != nil {
 		return inv.render(*problem)
@@ -890,7 +918,7 @@ func runIntentRestart(inv *intentInvocation) int {
 		_, fence := processFence(scope)
 		result := intentResult{Outcome: intentPartial, code: max(refusal.code, 1), Targets: targets, text: lines,
 			Summary: "restart stopped the checkout, but its start refused: " + strings.TrimSuffix(strings.TrimSpace(refusal.sentence), ".") + "; the stop fence is now " + fence,
-			next:    inv.publicArgv(append([]string{"start"}, inv.forward("installation")...)...), nextReason: "start it once the refusal above is resolved",
+			next:    inv.publicArgv(append([]string{"system", "start"}, inv.forward("installation")...)...), nextReason: "start it once the refusal above is resolved",
 			Data: map[string]any{"reached": "stopped", "fence": fence, "stop": map[string]any{"lines": nonNilLines(stopped.Lines), "exitCode": stopped.ExitCode},
 				"start": map[string]any{"lines": nonNilLines(armed.Lines), "remedy": refusal.second}}}
 		return inv.render(result)
@@ -904,7 +932,7 @@ func runIntentEnroll(inv *intentInvocation) int {
 	name := strings.TrimSpace(inv.input.text("name"))
 	if name == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "enroll needs your name: --name NAME; nothing was done",
-			next: inv.publicArgv("enroll", "--name", "NAME"), nextReason: "at an agent-free terminal, with your name"})
+			next: inv.publicArgv("terminal", "enroll", "--name", "NAME"), nextReason: "at an agent-free terminal, with your name"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -931,39 +959,17 @@ func runIntentEnroll(inv *intentInvocation) int {
 }
 
 func runIntentAsk(inv *intentInvocation) int {
-	if choice, problem := inv.exclusiveChoice("retry", "withdraw"); problem != nil {
-		return inv.render(*problem)
-	} else if choice != "" {
-		for _, other := range []string{"question", "option", "option-file", "recommend", "fact", "fact-file", "kind", "wants", "budget", "id"} {
-			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s acts on an existing question and takes no --%s; nothing was done", choice, other)})
-			}
-		}
-		if len(inv.input.args) > 0 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s names the question itself: ask --%s Q; nothing was done", choice, choice)})
-		}
-		if choice == "retry" {
-			if inv.input.has("reason") {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--reason explains a withdrawal; a retry takes none; nothing was done"})
-			}
-			return runIntentAskRetry(inv, inv.input.text("retry"))
-		}
-		return runIntentAskWithdraw(inv, inv.input.text("withdraw"))
-	}
-	if inv.input.has("reason") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--reason belongs to ask --withdraw Q; nothing was asked"})
-	}
 	id, problem := inv.singleTarget()
 	if problem != nil {
 		return inv.render(*problem)
 	}
 	if id == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "ask needs the goal the question is about: " + inv.command.usage[0] + "; nothing was done", Decision: "name the goal"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question ask needs the goal the question is about: " + inv.command.usage[0] + "; nothing was done", Decision: "name the goal"})
 	}
 	question := strings.TrimSpace(inv.input.text("question"))
 	if question == "" || len(inv.input.values["option"]) == 0 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
-			Summary: "ask needs --question TEXT and at least one --option 'LABEL: CONSEQUENCE'; nothing was asked"})
+			Summary: "question ask needs --question TEXT and at least one --option 'LABEL: CONSEQUENCE'; nothing was asked"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1016,8 +1022,8 @@ func runIntentAsk(inv *intentInvocation) int {
 	}
 	data := map[string]any{"question": q, "delivery": delivery, "replyInstructions": channel.ReplyInstructions(q)}
 	lines := append(warnings, "delivery: "+delivery)
-	wait := inv.publicArgv("wait", "question", "channel:"+q.ID)
-	poll := inv.publicArgv("ask", "--retry", q.ID)
+	wait := inv.publicArgv("question", "wait", "channel:"+q.ID)
+	poll := inv.publicArgv("question", "retry", q.ID)
 	if err != nil {
 		return inv.render(inv.askAfterFailure(q, err, code, targets, warnings))
 	}
@@ -1035,53 +1041,6 @@ func runIntentAsk(inv *intentInvocation) int {
 	lines = append(lines, "the person answers in the channel thread: "+channel.ReplyInstructions(q))
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "asked " + q.ID + " and " + delivery, text: lines,
 		next: wait, nextReason: "wait for the authenticated answer", Data: data})
-}
-
-func runIntentAnswer(inv *intentInvocation) int {
-	args := inv.input.args
-	if len(args) >= 1 && args[0] != "mission" && args[0] != "question" {
-		return runIntentAnswerQuestion(inv)
-	}
-	if len(args) == 0 || (args[0] != "mission" && args[0] != "question") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "answer takes " + strings.Join(inv.command.allUsage(), " | ") + "; nothing was answered",
-			Decision: "name what the question belongs to"})
-	}
-	if problem := inv.selectLayoutRoot(); problem != nil {
-		return inv.render(*problem)
-	}
-	if args[0] == "question" {
-		if len(args) < 2 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "answer question needs the question id; nothing was answered"})
-		}
-		id := args[1]
-		targets := []intentTarget{{Kind: "question", ID: id}}
-		q, err := inv.owners.processes.question(inv.stateRoot, id)
-		if err != nil {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("no channel question %s: %v", shellCommand([]string{id}), err)})
-		}
-		if q.Answer != nil {
-			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "question " + id + " was already answered through its channel", Data: map[string]any{"question": q}})
-		}
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary:  "question " + id + " is answered in its channel thread, which authenticates you; nothing was recorded here",
-			Decision: channel.ReplyInstructions(q),
-			Data:     map[string]any{"question": q, "replyInstructions": channel.ReplyInstructions(q)}})
-	}
-	if path := inv.input.text("answer-file"); path != "" && len(args) >= 3 {
-		text, problem := inv.readTextFile("answer-file", path)
-		if problem != nil {
-			return inv.render(*problem)
-		}
-		if len(args) == 4 && args[3] != text {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: "the inline answer and --answer-file differ; nothing was answered", Decision: "give the answer once"})
-		}
-		args = append(args[:3:3], text)
-	}
-	if len(args) != 4 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "answer mission needs M, Q and the answer as one quoted TEXT or --answer-file FILE: metasystem answer mission M Q TEXT; nothing was answered"})
-	}
-	return inv.render(inv.answerMission(args[1], args[2], args[3]))
 }
 
 // answerMission records a person's answer through the mission owner, which
@@ -1104,7 +1063,7 @@ func (inv *intentInvocation) answerMission(missionID, askID, answer string) inte
 	answered := missionAskAnswered(askPath) && !answeredBefore
 	effects := engine.LastAnswer
 	data := map[string]any{"mission": missionID, "ask": askID, "exitCode": code, "askAnswered": answered, "effects": effects, "lines": nonNilLines(lines)}
-	resume := inv.publicArgv("resume", "mission", missionID)
+	resume := inv.publicArgv("mission", "resume", missionID)
 	switch {
 	case code == 0:
 		return (intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "answered " + askID + " of mission " + missionID, text: lines, Data: data})
@@ -1113,7 +1072,7 @@ func (inv *intentInvocation) answerMission(missionID, askID, answer string) inte
 		// completes the answer.
 		return (intentResult{Outcome: intentPartial, code: code, Targets: targets, text: lines, Data: data,
 			Summary: "the reset for " + askID + " is recorded, but the question could not be marked answered",
-			next:    inv.publicArgv("answer", "mission", missionID, askID, answer), nextReason: "answer again; a second reset is harmless"})
+			next:    inv.publicArgv("question", "answer", missionID+"/"+askID, answer), nextReason: "answer again; a second reset is harmless"})
 	case effects.AskAnswered || answered:
 		result := intentResult{Outcome: intentPartial, code: code, Targets: targets, text: lines, Data: data,
 			Summary: "the answer to " + askID + " is recorded but the mission did not continue yet"}
@@ -1217,21 +1176,21 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 	case steward.RoleStewardRunner, steward.RoleSupervisionOwner, steward.RoleRepoWatcher, steward.RoleNarratorFreshness,
 		steward.RoleCensusFreshness, steward.RoleHookFreshness:
 		if stopped {
-			return []string{"metasystem", "start"}, ""
+			return []string{"metasystem", "system", "start"}, ""
 		}
-		return []string{"metasystem", "start", "session"}, ""
+		return []string{"metasystem", "session", "start"}, ""
 	case steward.RoleLedgerAttention:
-		return []string{"metasystem", "goals"}, ""
+		return []string{"metasystem", "goal", "list"}, ""
 	case steward.RoleNonterminalJobs:
 		return nil, "the job reaper reconciles these on its next pass; metasystem status lists the work"
 	case steward.RoleRetroDebt:
 		return nil, "run the retro and record its receipt"
 	case steward.RoleTrunkRed:
-		return []string{"metasystem", "incidents"}, ""
+		return []string{"metasystem", "incident", "list"}, ""
 	case steward.RoleSpendFence:
 		return nil, "a person raises the spend ceiling in metasystem.conf"
 	case steward.RoleProofAttempts:
-		return []string{"metasystem", "test"}, ""
+		return []string{"metasystem", "test", "run"}, ""
 	}
 	return nil, "no public command repairs this; the reason above names what a person must change"
 }
@@ -1240,9 +1199,9 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 func publicRemedyForFact(fact steward.RemedyFact) ([]string, string) {
 	switch fact.Cause {
 	case steward.CauseBudgetMissing, steward.CauseBudgetMalformed:
-		return []string{"metasystem", "budget", fact.Goal, "BOX"}, ""
+		return []string{"metasystem", "goal", "budget", fact.Goal, "BOX"}, ""
 	case steward.CauseBudgetBreach:
-		return []string{"metasystem", "budget", fact.Goal, "BOX"}, "goal " + fact.Goal + " is over its box; its stop runs by itself, and a person may give it a larger box"
+		return []string{"metasystem", "goal", "budget", fact.Goal, "BOX"}, "goal " + fact.Goal + " is over its box; its stop runs by itself, and a person may give it a larger box"
 	case steward.CauseBudgetUnknown:
 		return nil, "a person repairs record " + fact.Record + ", which cannot be read as a budget, then runs metasystem check"
 	case steward.CauseBreachStopOpen:
@@ -1250,9 +1209,9 @@ func publicRemedyForFact(fact steward.RemedyFact) ([]string, string) {
 	case steward.CauseBreachStopUnresolved:
 		return nil, "a person inspects budget stop " + fact.Stop + " of goal " + fact.Goal + " and its job records; new work stays fenced until it resolves"
 	case steward.CauseEpochMismatch:
-		return []string{"metasystem", "start", "session"}, ""
+		return []string{"metasystem", "session", "start"}, ""
 	case steward.CauseForeignLineage:
-		return []string{"metasystem", "release", fact.Goal}, "the session that claimed goal " + fact.Goal + " releases it, or a person takes it over: metasystem claim " + fact.Goal + " --take-over --reason TEXT"
+		return []string{"metasystem", "goal", "release", fact.Goal}, "the session that claimed goal " + fact.Goal + " releases it, or a person takes it over: metasystem goal claim " + fact.Goal + " --take-over --reason TEXT"
 	case steward.CauseStopCapabilityMissing:
 		return nil, "a person repairs goal " + fact.Goal + "'s record (" + fact.Record + "), which has no stop capability"
 	}
@@ -1301,11 +1260,11 @@ func (inv *intentInvocation) runUIVerb(verb string) int {
 	case restart.Started:
 		return inv.render(intentResult{Outcome: intentPartial, code: result.Code, Targets: targets, text: result.Lines, Data: data,
 			Summary: "the interface stopped but did not start again",
-			next:    []string{"metasystem", "start", "ui"}, nextReason: "start it once the problem above is fixed"})
+			next:    []string{"metasystem", "ui", "start"}, nextReason: "start it once the problem above is fixed"})
 	case restart.Stop == lifecycle.Timeout:
 		return inv.render(intentResult{Outcome: intentPartial, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
 			Summary: "the interface was asked to stop but is still running, so it was not started again",
-			next:    []string{"metasystem", "restart", "ui"}, nextReason: "try again once it has stopped"})
+			next:    []string{"metasystem", "ui", "restart"}, nextReason: "try again once it has stopped"})
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: max(result.Code, 1), Targets: targets, text: result.Lines, Data: data,
 		Summary: "the interface could not be restarted; nothing was changed"})
@@ -1315,13 +1274,6 @@ type uiIntentOptions struct {
 	listen      string
 	listenSet   bool
 	waitSeconds int64
-}
-
-func (inv *intentInvocation) checkUIOptionsTarget() *intentResult {
-	if (inv.input.has("listen") || inv.input.has("wait-seconds")) && !slices.Equal(inv.input.args, []string{"ui"}) {
-		return &intentResult{Outcome: intentRefused, code: 2, Summary: "--listen and --wait-seconds belong to the ui target; nothing was done"}
-	}
-	return nil
 }
 
 func (inv *intentInvocation) uiOptions() (uiIntentOptions, *intentResult) {
@@ -1380,7 +1332,7 @@ func (inv *intentInvocation) startRefusal(scope processScope, scale int, before 
 	}
 	return intentResult{Outcome: intentPartial, code: max(refusal.code, 1), Targets: inv.checkoutTarget(scope), text: lines, Data: data,
 		Summary: "start began but did not finish: " + strings.TrimSuffix(strings.TrimSpace(refusal.sentence), ".") + "; the checkout accepts new work again (" + fence + ") but not everything is running",
-		next:    inv.publicArgv(append([]string{"start"}, inv.forward("installation")...)...), nextReason: "start again once the problem above is fixed"}
+		next:    inv.publicArgv(append([]string{"system", "start"}, inv.forward("installation")...)...), nextReason: "start again once the problem above is fixed"}
 }
 
 // askAfterFailure reports a question the channel owner recorded before a
@@ -1397,7 +1349,7 @@ func (inv *intentInvocation) askAfterFailure(q channel.Question, failure error, 
 	if readErr != nil {
 		data["savedQuestion"] = nil
 		result.Summary = "question " + q.ID + " may be recorded, but a later step failed (" + failure.Error() + ") and its saved record cannot be read: " + readErr.Error()
-		result.Decision = "repair the channel question storage at " + shellCommand([]string{questionFile}) + ", then read the question with " + shellCommand(inv.publicArgv("show", "question", "channel:"+q.ID))
+		result.Decision = "repair the channel question storage at " + shellCommand([]string{questionFile}) + ", then read the question with " + shellCommand(inv.publicArgv("question", "show", "channel:"+q.ID))
 		return result
 	}
 	data["savedQuestion"], data["savedThread"] = saved, saved.Thread
@@ -1412,7 +1364,7 @@ func (inv *intentInvocation) askAfterFailure(q channel.Question, failure error, 
 		result.Decision = "the question stands and is answered in its channel thread; the goal ledger may not show it as asked"
 	default:
 		result.Summary = "question " + q.ID + " is saved but not delivered, and a later step failed: " + failure.Error()
-		result.next = inv.publicArgv("ask", "--retry", q.ID)
+		result.next = inv.publicArgv("question", "retry", q.ID)
 		result.nextReason = "delivers exactly this stored question once more"
 	}
 	return result
@@ -1459,7 +1411,7 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 	}
 	if strings.TrimSpace(text) == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a mission question is answered with TEXT (or --answer-file FILE); nothing was answered",
-			next: inv.publicArgv("show", "question", q.publicName()), nextReason: "the question and its options"})
+			next: inv.publicArgv("question", "show", q.publicName()), nextReason: "the question and its options"})
 	}
 	if q.ask["answeredAt"] != nil {
 		recorded, _ := q.ask["answer"].(string)
@@ -1521,15 +1473,40 @@ func runIntentMission(inv *intentInvocation, verb, mission string) int {
 	return inv.render(result)
 }
 
-// runIntentMissionTarget refuses the options that belong to other targets
-// before the mission runner is asked.
-func runIntentMissionTarget(inv *intentInvocation, verb, mission string) int {
-	for _, other := range []string{"installation", "temporary-human-word", "review-by", "lineage", "work"} {
-		if inv.input.has(other) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%s mission M takes no --%s; nothing was done", verb, other)})
-		}
+// runIntentMissionNamed starts, resumes or reads the one named mission.
+func runIntentMissionNamed(inv *intentInvocation, verb string) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("mission %s needs the mission: metasystem mission %s M; nothing was done", verb, verb)})
 	}
-	return runIntentMission(inv, verb, mission)
+	return runIntentMission(inv, verb, inv.input.args[0])
+}
+
+// runIntentQuestionList lists the open channel questions of this
+// repository through the channel's own question walk.
+func runIntentQuestionList(inv *intentInvocation) int {
+	if problem := inv.selectLayoutRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	questions, unreadable := channel.WalkOpenQuestions(inv.stateRoot)
+	lines, views := []string{}, []map[string]any{}
+	for _, q := range questions {
+		first := ""
+		if len(q.Facts) > 0 {
+			first = q.Facts[0]
+		}
+		lines = append(lines, fmt.Sprintf("  channel:%s  %s  goal %s  %s", q.ID, q.State, q.Goal, first))
+		views = append(views, map[string]any{"reference": "channel:" + q.ID, "state": q.State, "goal": q.Goal, "question": first,
+			"show": inv.publicArgv("question", "show", "channel:"+q.ID)})
+	}
+	for _, problem := range unreadable {
+		lines = append(lines, "  unreadable: "+problem)
+	}
+	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"questions": views, "unreadable": nonNilLines(unreadable)},
+		Summary: fmt.Sprintf("%d open channel question(s)", len(questions))}
+	if len(unreadable) > 0 {
+		result.Outcome, result.code = intentPartial, 1
+	}
+	return inv.render(result)
 }
 
 // uiTarget is start ui, stop ui and status ui: the interface's own
@@ -1566,7 +1543,7 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 			Summary: map[string]string{"start": "the interface is started", "stop": "the interface is stopped"}[verb]})
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: ran.Result.Code, Targets: targets, Data: data, text: ran.Result.Lines,
-		Summary: "the interface did not " + verb + "; its report is below", next: inv.publicArgv("status", "ui"), nextReason: "what the interface is doing now"})
+		Summary: "the interface did not " + verb + "; its report is below", next: inv.publicArgv("ui", "status"), nextReason: "what the interface is doing now"})
 }
 
 // runIntentStartMachine adds one machine to the fleet through the seat
@@ -1592,7 +1569,7 @@ func runIntentStartMachine(inv *intentInvocation, name string) int {
 	}
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "machine", ID: name}}, "machine "+name+" is launched and supervised", nil)
 	if result.Outcome != intentConfirmed {
-		result.next, result.nextReason = inv.publicArgv("status", "--machines"), "every machine's presence"
+		result.next, result.nextReason = inv.publicArgv("machine", "list"), "every machine's presence"
 	}
 	return inv.render(result)
 }

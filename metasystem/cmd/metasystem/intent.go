@@ -18,22 +18,23 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// The public command surface says what a person or an agent wants done:
-// "approve this goal", "give it this budget". Each command is one descriptor
-// in intentCommands; the router, every help page and the Project Partner
-// catalogue read that one table, so a command that is not in it is neither
-// routed nor advertised. The commands call the existing owners; the technical
-// families stay callable for existing scripts and hooks but are not listed.
+// The public command surface is object then action: "goal approve G",
+// "work land G". Each (object, action) pair is one descriptor in
+// intentCommands; the router, every help page, the JSON help and the Project
+// Partner catalogue read that one table, so a pair that is not in it is
+// neither routed nor advertised. The actions call the existing owners. Hidden
+// rows are process entrypoints whose first word is also an object: they keep
+// their existing argument vector and are listed only by metasystem internal.
 
 // intentFlag is one option a public command accepts. An empty value names a
-// switch; aliases are older spellings whose meaning is identical.
+// switch; aliases are other spellings whose meaning is identical.
 type intentFlag struct {
 	name     string
 	aliases  []string
 	value    string
 	repeat   bool
 	advanced bool
-	// hidden options stay parseable for existing scripts and fixtures but
+	// hidden options stay parseable for machinery callers and fixtures but
 	// are never shown in help or offered as a correction.
 	hidden bool
 	usage  string
@@ -42,8 +43,12 @@ type intentFlag struct {
 	rest bool
 }
 
-// intentCommand is one public command: its grammar, its help and its handler.
+// intentCommand is one (object, action) pair: its grammar, its help and its
+// handler. The top-level status is the one row with an empty action.
 type intentCommand struct {
+	object string
+	action string
+	// name is "object action" (or "status"); it labels results and help.
 	name     string
 	audience string // human, agent, or both
 	summary  string
@@ -57,14 +62,21 @@ type intentCommand struct {
 	examples            []string
 	helpForms           []intentHelpForm
 	run                 func(*intentInvocation) int
-	// legacy, when set, keeps an existing call of the same name on its own
-	// handler: the old flag-only top-level calls and a family's own verbs.
-	legacy func([]string) bool
-	// group is the help topic the command belongs to: goals, work,
-	// questions or operations.
+	// passthrough hands the words after the action, unchanged, to a handler
+	// with its own parser, output and exit codes: a machinery verb given a
+	// public home, or a process entrypoint.
+	passthrough func([]string) int
+	// hidden rows are process entrypoints: routed, never listed in public
+	// help; launcher names the code that starts them.
+	hidden   bool
+	launcher string
+	// accepts are the reference kinds a work reference may name here
+	// (goal, j1, j2, run, read, wait, proof); empty takes none.
+	accepts []string
+	// group is the help area the object belongs to: plan, deliver, run or
+	// practice.
 	group string
-	// primary commands appear on the root orientation page; the others are
-	// listed by their topic and by help all.
+	// primary actions appear on the root orientation page.
 	primary bool
 }
 
@@ -89,18 +101,28 @@ var (
 )
 
 func intentCommands() []intentCommand {
-	commands := goalIntentCommands()
-	commands = append(commands, processIntentCommands()...)
-	commands = append(commands, intentPlanningCommands()...)
-	commands = append(commands, intentWorkCommands()...)
-	return append(commands, intentDeliveryCommands()...)
+	var commands []intentCommand
+	for _, part := range [][]intentCommand{
+		goalIntentCommands(), intentPlanningCommands(), designIntentCommands(), intentWorkCommands(),
+		intentDeliveryCommands(), processIntentCommands(), practiceIntentCommands(), hiddenIntentEntries(), {topLevelStatus()},
+	} {
+		commands = append(commands, part...)
+	}
+	for index := range commands {
+		command := &commands[index]
+		command.name = strings.TrimSpace(command.object + " " + command.action)
+		if command.group == "" {
+			command.group = intentObjectGroup(command.object)
+		}
+	}
+	return commands
 }
 
 func goalIntentCommands() []intentCommand {
 	return []intentCommand{
 		{
-			name: "goals", group: "goals", primary: true, audience: "both", summary: "list the open goals",
-			usage: []string{"metasystem goals [--all] [--label LABEL]... [--history]", "metasystem goals --ready [--label LABEL]... [--machine NAME]", "metasystem goals --tiers"},
+			object: "goal", action: "list", primary: true, audience: "both", summary: "list the open goals",
+			usage: []string{"metasystem goal list [--all] [--label LABEL]... [--history]", "metasystem goal list --ready [--label LABEL]... [--machine NAME]", "metasystem goal list --tiers"},
 			details: []string{
 				"Lists the accepted goals. --all adds the done and abandoned goals.",
 				"--fetch checks the latest shared goal history before listing it and may update the local copy; it works with every view.",
@@ -117,26 +139,21 @@ func goalIntentCommands() []intentCommand {
 				{name: "pretty", advanced: true, usage: "with --json: indented JSON (the JSON result is always indented)"},
 			},
 			maxArgs:  0,
-			examples: []string{"metasystem goals", "metasystem goals --all --label ui", "metasystem goals --ready", "metasystem goals --tiers"},
+			examples: []string{"metasystem goal list", "metasystem goal list --all --label ui", "metasystem goal list --ready", "metasystem goal list --tiers"},
 			run:      runIntentGoalViews,
 		},
 		{
-			name: "show", group: "goals", audience: "both", summary: "one goal's record, a project record, or a question",
-			usage: []string{"metasystem show G [--history]", "metasystem show designs [--goal G]", "metasystem show decisions", "metasystem show record ID",
-				"metasystem show design --goal G [--out FILE] [--attempt N]", "metasystem show question Q", "metasystem show review REF"},
-			details: []string{"show G is the goal's record; status G is its live work.",
-				"designs, decisions and record ID read the project's own records; design --goal G is one goal's design records.",
-				"question Q is one question, from the channel or a mission, and how it is answered."},
-			flags: []intentFlag{intentTargetFlag, {name: "history", advanced: true, usage: "include the goal's ledger history"},
-				{name: "attempt", value: "N", usage: "show design: one design attempt and its proposal"},
-				{name: "out", value: "FILE", usage: "show design: the design document, when the goal has several"}},
-			maxArgs:  2,
-			examples: []string{"metasystem show verbs-match-intent", "metasystem show verbs-match-intent --history", "metasystem show designs --goal verbs-match-intent", "metasystem show record 01M3EC3QT7M2TC36P7ZVNRF0RW"},
+			object: "goal", action: "show", audience: "both", summary: "one goal's record: intent, next step, budget and designs",
+			usage:    []string{"metasystem goal show G [--history]"},
+			details:  []string{"goal show G is the goal's record; status G is its live work."},
+			flags:    []intentFlag{intentTargetFlag, {name: "history", advanced: true, usage: "include the goal's ledger history"}},
+			maxArgs:  1,
+			examples: []string{"metasystem goal show verbs-match-intent", "metasystem goal show verbs-match-intent --history"},
 			run:      runIntentShow,
 		},
 		{
-			name: "approve", group: "goals", primary: true, audience: "human", summary: "approve goals for execution",
-			usage: []string{"metasystem approve G... [--budget BOX]"},
+			object: "goal", action: "approve", primary: true, audience: "human", summary: "approve goals for execution",
+			usage: []string{"metasystem goal approve G... [--budget BOX]"},
 			details: []string{
 				"Without --budget each goal is approved under its own tier's norm box, all goals in one act.",
 				"BOX is norm or the complete compact box, for example 1d/10/720m/1/3 (elapsed/attempts/job minutes/active jobs/review rounds).",
@@ -150,17 +167,17 @@ func goalIntentCommands() []intentCommand {
 				intentLongBudgetFlags[0], intentLongBudgetFlags[1], intentLongBudgetFlags[2], intentLongBudgetFlags[3], intentLongBudgetFlags[4],
 			},
 			maxArgs:  -1,
-			examples: []string{"metasystem approve verbs-match-intent", "metasystem approve goal-a goal-b", "metasystem approve verbs-match-intent --budget 1d/10/720m/1/3"},
+			examples: []string{"metasystem goal approve verbs-match-intent", "metasystem goal approve goal-a goal-b", "metasystem goal approve verbs-match-intent --budget 1d/10/720m/1/3"},
 			run:      runIntentApproveWithLimits,
 		},
 		{
-			name: "budget", group: "goals", audience: "human", summary: "read a goal's budget, or give it a box",
-			usage: []string{"metasystem budget G", "metasystem budget G BOX"},
+			object: "goal", action: "budget", audience: "human", summary: "read a goal's budget, or give it a box",
+			usage: []string{"metasystem goal budget G", "metasystem goal budget G BOX"},
 			details: []string{
-				"Without BOX: the standing box and what has been spent, the same block show prints.",
+				"Without BOX: the standing box and what has been spent, the same block goal show prints.",
 				"BOX is norm (the tier's box), keep (the standing box) or the complete compact box 1d/10/720m/1/3.",
 				"A queued or parked goal is approved with the box; a running goal's box is changed.",
-				"A goal stopped by its budget resumes under its standing box first: metasystem resume G.",
+				"A goal stopped by its budget resumes under its standing box first: metasystem goal resume G.",
 			},
 			flags: []intentFlag{
 				intentTargetFlag,
@@ -170,12 +187,12 @@ func goalIntentCommands() []intentCommand {
 				intentLongBudgetFlags[0], intentLongBudgetFlags[1], intentLongBudgetFlags[2], intentLongBudgetFlags[3], intentLongBudgetFlags[4],
 			},
 			maxArgs:  2,
-			examples: []string{"metasystem budget verbs-match-intent", "metasystem budget verbs-match-intent norm", "metasystem budget verbs-match-intent 2d/12/900m/2/3"},
+			examples: []string{"metasystem goal budget verbs-match-intent", "metasystem goal budget verbs-match-intent norm", "metasystem goal budget verbs-match-intent 2d/12/900m/2/3"},
 			run:      runIntentBudgetWithLimits,
 		},
 		{
-			name: "pause", group: "goals", audience: "both", summary: "park a goal with a reason",
-			usage: []string{"metasystem pause G --reason TEXT"},
+			object: "goal", action: "pause", audience: "both", summary: "park a goal with a reason",
+			usage: []string{"metasystem goal pause G --reason TEXT"},
 			flags: []intentFlag{
 				intentTargetFlag,
 				{name: "reason", aliases: []string{"because"}, value: "TEXT", usage: "why the goal is parked"},
@@ -183,17 +200,16 @@ func goalIntentCommands() []intentCommand {
 				intentByFlag, intentLineageFlag, intentFixtureFlag,
 			},
 			maxArgs:  1,
-			examples: []string{"metasystem pause verbs-match-intent --reason 'waits for the design review'"},
+			examples: []string{"metasystem goal pause verbs-match-intent --reason 'waits for the design review'"},
 			run:      runIntentPause,
 		},
 		{
-			name: "resume", group: "goals", audience: "human", summary: "resume a parked goal, or a stopped goal under its standing box",
-			usage: []string{"metasystem resume G", "metasystem resume G --under GRANT --verified TEXT", "metasystem resume mission M"},
+			object: "goal", action: "resume", audience: "human", summary: "resume a parked goal, or a stopped goal under its standing box",
+			usage: []string{"metasystem goal resume G", "metasystem goal resume G --under GRANT --verified TEXT"},
 			details: []string{
 				"A parked goal returns to the queue; approval is not granted by resuming.",
-				"A goal stopped by its budget resumes under its standing approved box; change the box afterwards with budget.",
+				"A goal stopped by its budget resumes under its standing approved box; change the box afterwards with goal budget.",
 				"--under and --verified are a seat's unpark under a power of attorney, for parked goals only.",
-				"resume mission M resumes a parked or interrupted autonomous mission.",
 			},
 			flags: []intentFlag{
 				intentTargetFlag,
@@ -202,35 +218,29 @@ func goalIntentCommands() []intentCommand {
 				fileFlag("verified", "read what the seat verified from FILE"),
 				intentByFlag, intentLineageFlag, intentApprovedRefFlag, intentTemporaryWordFlag, intentReviewByFlag, intentFixtureFlag,
 			},
-			maxArgs:  2,
-			examples: []string{"metasystem resume verbs-match-intent"},
+			maxArgs:  1,
+			examples: []string{"metasystem goal resume verbs-match-intent"},
 			run:      runIntentResume,
 		},
 		{
-			name: "done", group: "goals", audience: "both", summary: "conclude a goal, or complete a finished job's records",
-			usage: []string{"metasystem done G --reason TEXT", "metasystem done job J [--dispositions FILE] [--evidence R]"},
-			details: []string{"The goal's obligations are checked first; its merged branch is swept afterwards.",
-				"--dispositions and --evidence belong only to done job; the goal form refuses them. A goal conclusion needs --reason.",
-				"done job J completes the finished job after checking its authority, results and review decisions. Use the original job reference from status.",
-				"It concludes no goal, lands nothing and grants no approval.",
-				"A review chain needs its author's --dispositions; review job J --dispositions FILE is the route while reviewing.",
-				"--evidence R reconciles review R's evidence into the chain before it closes. An already closed chain is reported unchanged."},
+			object: "goal", action: "done", audience: "both", summary: "conclude a goal",
+			usage:   []string{"metasystem goal done G --reason TEXT"},
+			details: []string{"The goal's obligations are checked first; its merged branch is swept afterwards. A goal conclusion needs --reason."},
 			flags: []intentFlag{
 				intentTargetFlag,
 				{name: "reason", aliases: []string{"conclude"}, value: "TEXT", usage: "the conclusion"},
 				fileFlag("reason", "read the reason from FILE"),
 				intentByFlag, intentLineageFlag,
-				{name: "dispositions", value: "FILE", usage: "done job: the Markdown dispositions table for a review chain"},
-				{name: "evidence", value: "R", advanced: true, usage: "done job: a review evidence job reconciled into the chain before it closes"},
 			},
-			maxArgs:  2,
-			examples: []string{"metasystem done verbs-match-intent --reason 'all four slices landed'", "metasystem done job impl-01"},
+			maxArgs:  1,
+			examples: []string{"metasystem goal done verbs-match-intent --reason 'all four slices landed'"},
 			run:      runIntentDone,
 		},
 	}
 }
 
-// findIntentCommand finds a public descriptor by name.
+// findIntentCommand finds a public or hidden descriptor by its name, "object
+// action" or "status".
 func findIntentCommand(name string) (intentCommand, bool) {
 	for _, command := range intentCommands() {
 		if command.name == name {
@@ -238,6 +248,16 @@ func findIntentCommand(name string) (intentCommand, bool) {
 		}
 	}
 	return intentCommand{}, false
+}
+
+// findIntentAction finds the descriptor of one (object, action) pair.
+func findIntentAction(object, action string) (intentCommand, bool) {
+	return findIntentCommand(strings.TrimSpace(object + " " + action))
+}
+
+// words is the command's own spelling as argument-vector words.
+func (c intentCommand) words() []string {
+	return strings.Fields(c.name)
 }
 
 // allFlags is the command's own options plus the two every command takes.
@@ -422,12 +442,12 @@ func unknownIntentFlag(command intentCommand, raw []string, index int, name stri
 		}
 	}
 	if len(near) == 1 {
-		corrected := append([]string{"metasystem", command.name}, raw...)
+		corrected := append(append([]string{"metasystem"}, command.words()...), raw...)
 		token := raw[index]
 		_, value, joined := strings.Cut(token, "=")
-		corrected[2+index] = "--" + near[0]
+		corrected[1+len(command.words())+index] = "--" + near[0]
 		if joined {
-			corrected[2+index] += "=" + value
+			corrected[1+len(command.words())+index] += "=" + value
 		}
 		return &intentInputError{
 			summary: fmt.Sprintf("does not take --%s; did you mean --%s? Nothing was done", name, near[0]),
@@ -881,59 +901,138 @@ func shellWords(command string) []string {
 }
 
 // Help pages. Each is written from the command table, so help lists exactly
-// the commands and options the router accepts. The root page is a short
-// orientation; the topics and help all list the complete public surface.
+// the objects, actions and options the router accepts; hidden entries never
+// appear.
 
-// intentGroups are the help topics that each list one area in full, in the
-// order help all prints them.
-var intentGroups = []struct{ name, heading string }{
-	{"goals", "Plan and steer goals"},
-	{"work", "Deliver work on a goal"},
-	{"questions", "Questions for a person"},
-	{"operations", "Manage work and recovery"},
-	{"administration", "MetaSystem administration (tool setup and maintenance)"},
+// intentGroup is one help area: its objects in the order help prints them.
+type intentGroup struct {
+	name, heading string
+	objects       []string
 }
+
+var intentGroups = []intentGroup{
+	{"plan", "Plan", []string{"goal", "design", "decision", "grant"}},
+	{"deliver", "Deliver", []string{"work", "test", "question", "incident"}},
+	{"run", "Run", []string{"status", "session", "mission", "system", "machine", "ui", "settings", "terminal"}},
+	{"practice", "Practice", []string{"receipt", "experiment", "critique", "covenant"}},
+}
+
+// intentObjectSummaries say in one line what each object is.
+var intentObjectSummaries = map[string]string{
+	"goal":       "the backlog: open, approve, budget, claim and conclude goals",
+	"design":     "a goal's design: write, find, review and read designs",
+	"decision":   "the project's recorded decisions",
+	"grant":      "powers of attorney a seat acts under",
+	"work":       "a goal's work: brief, build, review, revise, land, wait and stop",
+	"test":       "risk-selected tests and their proof",
+	"question":   "questions for a person, and their answers",
+	"incident":   "failures on main that someone must own",
+	"status":     "the overview of this checkout, or one goal's work",
+	"session":    "this agent session: start, stop, stop report and context handoff",
+	"mission":    "autonomous missions",
+	"system":     "MetaSystem for this checkout: start, stop, restart, status, check, repair",
+	"machine":    "the fleet's machines",
+	"ui":         "the browser interface",
+	"settings":   "MetaSystem settings and coordination",
+	"terminal":   "enroll a terminal for a person's decisions",
+	"receipt":    "task receipts and the retro cadence",
+	"experiment": "measured-improvement experiments and their stop-loss",
+	"critique":   "critique registers and their review budget",
+	"covenant":   "the app's covenant",
+}
+
+// intentAdministrationObjects configure or repair MetaSystem itself.
+var intentAdministrationObjects = []string{"system", "machine", "ui", "settings", "terminal"}
+
+func intentObjectGroup(object string) string {
+	for _, group := range intentGroups {
+		if slices.Contains(group.objects, object) {
+			return group.name
+		}
+	}
+	return ""
+}
+
+// intentObjects are the public first words that are objects, in help order.
+func intentObjects() []string {
+	var objects []string
+	for _, group := range intentGroups {
+		for _, object := range group.objects {
+			if object != "status" {
+				objects = append(objects, object)
+			}
+		}
+	}
+	return objects
+}
+
+func isIntentObject(word string) bool { return slices.Contains(intentObjects(), word) }
 
 func (command intentCommand) allUsage() []string {
 	return append(slices.Clone(command.usage), command.administrationUsage...)
 }
 
-// publicIntentCommands are the commands help lists: every descriptor.
+// publicIntentCommands are the rows help lists: every row but the hidden
+// entries.
 func publicIntentCommands() []intentCommand {
-	return intentCommands()
+	var public []intentCommand
+	for _, command := range intentCommands() {
+		if !command.hidden {
+			public = append(public, command)
+		}
+	}
+	return public
+}
+
+// objectActions are one object's public actions, in table order.
+func objectActions(object string) []intentCommand {
+	var actions []intentCommand
+	for _, command := range publicIntentCommands() {
+		if command.object == object {
+			actions = append(actions, command)
+		}
+	}
+	return actions
 }
 
 func writeIntentRootHelp(w io.Writer) {
-	fmt.Fprintln(w, "usage: metasystem COMMAND [TARGET...] [OPTIONS]")
-	fmt.Fprintln(w, "Say what you want done; metasystem prepares, runs, collects and recovers the work.")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Start here:")
+	fmt.Fprintln(w, "usage: metasystem OBJECT ACTION [TARGET...] [OPTIONS]")
+	fmt.Fprintln(w, "Say what you want done to what; metasystem prepares, runs, collects and recovers the work.")
 	for _, group := range intentGroups {
-		for _, command := range publicIntentCommands() {
-			if command.primary && command.group == group.name {
-				fmt.Fprintf(w, "  %-10s %s\n", command.name, command.summary)
-			}
+		fmt.Fprintf(w, "\n%s:\n", group.heading)
+		for _, object := range group.objects {
+			fmt.Fprintf(w, "  %-11s %s\n", object, intentObjectSummaries[object])
 		}
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "A typical delivery:")
-	fmt.Fprintln(w, "  metasystem build my-goal --brief brief.md --check go test ./...")
-	fmt.Fprintln(w, "  metasystem review my-goal")
-	fmt.Fprintln(w, "  metasystem land my-goal")
+	fmt.Fprintln(w, "  metasystem work build my-goal --brief brief.md --check go test ./...")
+	fmt.Fprintln(w, "  metasystem work review my-goal")
+	fmt.Fprintln(w, "  metasystem work land my-goal")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "More:")
-	fmt.Fprintln(w, "  metasystem help goals | help work | help questions | help operations   one area in full")
-	fmt.Fprintln(w, "  metasystem help administration                                      MetaSystem setup and maintenance")
-	fmt.Fprintln(w, "  metasystem help human | help agent | help all                         by audience, or everything")
-	fmt.Fprintln(w, "  metasystem help COMMAND                                               one command's options and examples")
-	fmt.Fprintln(w, "Options go before or after the goal; --repo PATH selects the repository from any path inside it.")
+	fmt.Fprintln(w, "  metasystem OBJECT                  that object's actions")
+	fmt.Fprintln(w, "  metasystem OBJECT ACTION --help    one action's forms, options and examples")
+	fmt.Fprintln(w, "  metasystem help [OBJECT [ACTION]]  the same pages; help agent, help human and help all by audience")
+	fmt.Fprintln(w, "Options go before or after the target; --repo PATH selects the repository from any path inside it.")
+}
+
+// writeIntentObjectHelp lists one object's actions, one line each.
+func writeIntentObjectHelp(w io.Writer, object string) {
+	fmt.Fprintf(w, "usage: metasystem %s ACTION [TARGET...] [OPTIONS]\n", object)
+	fmt.Fprintf(w, "%s: %s\n", object, intentObjectSummaries[object])
+	fmt.Fprintln(w, "actions:")
+	for _, command := range objectActions(object) {
+		fmt.Fprintf(w, "  %-15s %s\n", command.action, command.summary)
+	}
+	fmt.Fprintf(w, "metasystem %s ACTION --help shows one action's forms, options and examples.\n", object)
 }
 
 // writeIntentLong lists commands with every usage, the summary and the first
 // example.
 func writeIntentLong(w io.Writer, commands []intentCommand) {
 	for _, command := range commands {
-		for _, usage := range command.usage {
+		for _, usage := range command.allUsage() {
 			fmt.Fprintf(w, "  %s\n", usage)
 		}
 		fmt.Fprintf(w, "      %s\n", command.summary)
@@ -953,54 +1052,28 @@ func intentCommandsWhere(keep func(intentCommand) bool) []intentCommand {
 	return kept
 }
 
-// intentTopic reports whether a help word is a topic rather than a command.
-// goals is both: its command help carries the planning topic after it.
+// intentTopic reports whether a help word is an audience topic rather than
+// an object.
 func intentTopic(name string) bool {
-	if slices.Contains([]string{"human", "agent", "all"}, name) {
-		return true
-	}
-	for _, group := range intentGroups {
-		if group.name == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains([]string{"human", "agent", "all"}, name)
 }
 
-func writeIntentGroupHelp(w io.Writer, name string) {
-	writeIntentGroupHelpFor(w, name, "")
-}
-
-func writeIntentGroupHelpFor(w io.Writer, name, audience string) {
-	for _, group := range intentGroups {
-		if group.name != name {
-			continue
-		}
-		fmt.Fprintf(w, "%s (metasystem help COMMAND for options):\n", group.heading)
+func writeIntentGroupHelpFor(w io.Writer, group intentGroup, audience string) {
+	fmt.Fprintf(w, "%s (metasystem OBJECT ACTION --help for options):\n", group.heading)
+	for _, object := range group.objects {
 		writeIntentLong(w, intentCommandsWhere(func(command intentCommand) bool {
-			return command.group == name && (audience != "human" || command.audience != "agent")
+			return command.object == object && (audience != "human" || command.audience != "agent")
 		}))
-		if name == "administration" {
-			for _, command := range publicIntentCommands() {
-				if len(command.administrationUsage) == 0 || audience == "human" && command.audience == "agent" {
-					continue
-				}
-				for _, usage := range command.administrationUsage {
-					fmt.Fprintf(w, "  %s\n", usage)
-				}
-				fmt.Fprintf(w, "      MetaSystem administration forms of %s; help %s describes their inputs and authority.\n", command.name, command.name)
-			}
-		}
 	}
 }
 
 func writeIntentTopicHelp(w io.Writer, topic string) {
 	switch topic {
 	case "human":
-		fmt.Fprintln(w, "For people (metasystem help COMMAND for options):")
+		fmt.Fprintln(w, "For people (metasystem OBJECT ACTION --help for options):")
 		for _, group := range intentGroups {
 			fmt.Fprintln(w)
-			writeIntentGroupHelpFor(w, group.name, "human")
+			writeIntentGroupHelpFor(w, group, "human")
 		}
 	case "agent":
 		writeIntentAgentHelp(w)
@@ -1009,27 +1082,21 @@ func writeIntentTopicHelp(w io.Writer, topic string) {
 			if index > 0 {
 				fmt.Fprintln(w)
 			}
-			writeIntentGroupHelp(w, group.name)
+			writeIntentGroupHelpFor(w, group, "")
 		}
-	default:
-		writeIntentGroupHelp(w, topic)
 	}
 }
 
-// writeIntentHelp is the page help NAME prints: the command's own help, and
-// for goals the planning topic after it, so neither shadows the other.
+// writeIntentHelp is the page OBJECT ACTION --help and help OBJECT ACTION
+// print.
 func writeIntentHelp(w io.Writer, command intentCommand) {
 	writeIntentCommandHelp(w, command)
-	if command.name == "goals" {
-		fmt.Fprintln(w)
-		writeIntentGroupHelp(w, "goals")
-	}
 }
 
 func writeIntentCommandHelp(w io.Writer, command intentCommand) {
 	fmt.Fprintf(w, "%s - %s\n", command.name, command.summary)
-	if command.group == "administration" {
-		fmt.Fprintln(w, "MetaSystem administration: this command manages the work system itself.")
+	if slices.Contains(intentAdministrationObjects, command.object) {
+		fmt.Fprintln(w, "MetaSystem administration: this action manages the work system itself.")
 	}
 	fmt.Fprintln(w, "usage:")
 	for _, usage := range command.usage {
@@ -1046,7 +1113,7 @@ func writeIntentCommandHelp(w io.Writer, command intentCommand) {
 	}
 	writeFlags := func(heading string, advanced bool) {
 		var rows []string
-		for _, definition := range command.allFlags() {
+		for _, definition := range command.helpFlags() {
 			if definition.advanced != advanced || definition.hidden {
 				continue
 			}
@@ -1083,17 +1150,73 @@ func writeIntentCommandHelp(w io.Writer, command intentCommand) {
 			fmt.Fprintf(w, "  %s\n", example)
 		}
 	}
-	fmt.Fprintln(w, "Options go before or after the goal; `--` ends the options.")
+	if command.passthrough == nil {
+		fmt.Fprintln(w, "Options go before or after the target; `--` ends the options.")
+	}
 }
 
-// suggestIntentCommand names the public command nearest a mistyped word, or
-// nothing when none is close.
-func suggestIntentCommand(name string) string {
+// helpFlags are the options help shows: a parsed action's own options plus
+// --repo and --json; a passthrough action's documented options only.
+func (command intentCommand) helpFlags() []intentFlag {
+	if command.passthrough != nil {
+		return command.flags
+	}
+	return command.allFlags()
+}
+
+// suggestIntent names the public spellings nearest a mistyped first word: an
+// object a small typo away, else the actions of that exact name, else the
+// nearest object.
+func suggestIntent(word string) []string {
 	best, closest := "", 3
-	for _, command := range publicIntentCommands() {
-		if distance := editDistance(command.name, name); distance < closest {
-			best, closest = command.name, distance
+	for _, object := range append(intentObjects(), "status") {
+		if distance := editDistance(object, word); distance < closest {
+			best, closest = object, distance
 		}
 	}
-	return best
+	if best != "" {
+		return []string{"metasystem " + best}
+	}
+	var actions []string
+	for _, command := range publicIntentCommands() {
+		if command.action == word {
+			actions = append(actions, "metasystem "+command.name)
+		}
+	}
+	if len(actions) > 0 {
+		return actions
+	}
+	for _, command := range publicIntentCommands() {
+		if command.action != "" && editDistance(command.action, word) <= 2 {
+			actions = append(actions, "metasystem "+command.name)
+		}
+	}
+	if len(actions) > 4 {
+		actions = actions[:4]
+	}
+	return actions
+}
+
+// suggestIntentAction names the actions of object nearest a mistyped action.
+func suggestIntentAction(object, word string) []string {
+	var near []string
+	closest := 3
+	for _, command := range objectActions(object) {
+		distance := editDistance(command.action, word)
+		switch {
+		case distance < closest:
+			closest, near = distance, []string{"metasystem " + command.name}
+		case distance == closest:
+			near = append(near, "metasystem "+command.name)
+		}
+	}
+	if len(near) > 0 {
+		return near
+	}
+	for _, command := range publicIntentCommands() {
+		if command.action == word {
+			near = append(near, "metasystem "+command.name)
+		}
+	}
+	return near
 }

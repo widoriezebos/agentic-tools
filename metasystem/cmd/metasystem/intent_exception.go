@@ -252,7 +252,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 // the word's own recorded refusal and person: the one explicit decision
 // that authorizes the goal's composition on the current main.
 func (inv *intentInvocation) carriedReplacement(goalID, opid string, status landing.CarryStatus, reason string) ([]string, string) {
-	return inv.publicArgv("land", goalID, "--exception", status.Past, "--replace-exception", opid,
+	return inv.publicArgv("work", "land", goalID, "--exception", status.Past, "--replace-exception", opid,
 			"--reason", reason, "--by", strings.TrimPrefix(status.By, "human:")),
 		"a person replaces the exception for the candidate composed on the current main"
 }
@@ -284,7 +284,7 @@ func (inv *intentInvocation) carriedUnidentified(goalID, opid, primary string, t
 func (inv *intentInvocation) carriedStopped(goalID, opid string, targets []intentTarget, data map[string]any, why string) intentResult {
 	return intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: data,
 		Summary: fmt.Sprintf("the exception %s is recorded, but %s", opid, why),
-		next:    inv.publicArgv("land", goalID, "--using-exception", opid), nextReason: "continue the carried landing under the same exception; no new exception is recorded"}
+		next:    inv.publicArgv("work", "land", goalID, "--using-exception", opid), nextReason: "continue the carried landing under the same exception; no new exception is recorded"}
 }
 
 // carriedRefresh fetches the code origin and the goal ledger the carried

@@ -80,12 +80,12 @@ func withFlags(groups ...[]intentFlag) []intentFlag {
 func intentPlanningCommands() []intentCommand {
 	return []intentCommand{
 		{
-			name: "open", group: "goals", primary: true, audience: "both", summary: "declare a new goal",
-			usage: []string{"metasystem open G --intent TEXT --next TEXT --risk ANSWERS --basis TEXT"},
+			object: "goal", action: "open", primary: true, audience: "both", summary: "declare a new goal",
+			usage: []string{"metasystem goal open G --intent TEXT --next TEXT --risk ANSWERS --basis TEXT"},
 			details: []string{
 				"The goal is queued for a person's approval. The four risk answers and their basis are the intake law's classification.",
 				"--blocked-by parks the goal until those goals are done; --blocks parks the named goals on it.",
-				"Execution follows a person's approval: open, then metasystem approve G, then metasystem claim G.",
+				"Execution follows a person's approval: goal open, then metasystem goal approve G, then metasystem goal claim G.",
 			},
 			flags: withFlags([]intentFlag{
 				intentTargetFlag,
@@ -100,12 +100,12 @@ func intentPlanningCommands() []intentCommand {
 				intentLabelFlag,
 			}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem open faster-proof --intent 'Proof runs in half the time.' --next 'Measure the slowest step.' --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis 'local test tooling only'"},
+			examples: []string{"metasystem goal open faster-proof --intent 'Proof runs in half the time.' --next 'Measure the slowest step.' --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis 'local test tooling only'"},
 			run:      runIntentOpen,
 		},
 		{
-			name: "edit", group: "goals", audience: "both", summary: "change a goal's intent, next step, risk or labels in place",
-			usage: []string{"metasystem edit G [--intent TEXT] [--next TEXT | --next-append TEXT]", "metasystem edit G --obligation STATE --owner NAME --recurrence VALUE ..."},
+			object: "goal", action: "edit", audience: "both", summary: "change a goal's intent, next step, risk or labels in place",
+			usage: []string{"metasystem goal edit G [--intent TEXT] [--next TEXT | --next-append TEXT]", "metasystem goal edit G --obligation STATE --owner NAME --recurrence VALUE ..."},
 			details: []string{
 				"Only the supplied fields change. --next-append adds to the next step the accepted ledger holds when the edit is published.",
 				"Raising the risk of an approved goal takes --evidence; lowering it is a person's act.",
@@ -124,12 +124,12 @@ func intentPlanningCommands() []intentCommand {
 				{name: "unlabel", value: "LABEL", repeat: true, advanced: true, usage: "a label token to remove (repeatable)"},
 			}, intentObligationFlags, []intentFlag{intentApprovedRefFlag}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem edit verbs-match-intent --next 'Land slice 2.'", "metasystem edit verbs-match-intent --next-append 'Then review the help pages.'"},
+			examples: []string{"metasystem goal edit verbs-match-intent --next 'Land slice 2.'", "metasystem goal edit verbs-match-intent --next-append 'Then review the help pages.'"},
 			run:      runIntentEdit,
 		},
 		{
-			name: "claim", group: "goals", audience: "agent", summary: "claim a goal for this session, or the next ready goal",
-			usage: []string{"metasystem claim [G]", "metasystem claim G --take-over --reason TEXT"},
+			object: "goal", action: "claim", audience: "agent", summary: "claim a goal for this session, or the next ready goal",
+			usage: []string{"metasystem goal claim [G]", "metasystem goal claim G --take-over --reason TEXT"},
 			details: []string{
 				"Without G the machine's ready frontier chooses; a goal this machine already holds is continued, never switched.",
 				"--take-over displaces another machine's claim; it is a person's act and never a fallback of an ordinary claim.",
@@ -143,12 +143,12 @@ func intentPlanningCommands() []intentCommand {
 				{name: "budget", value: "BOX", advanced: true, usage: "the complete compact box for the claim"},
 			}, intentLongBudgetFlags, intentHumanActFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem claim", "metasystem claim verbs-match-intent", "metasystem claim verbs-match-intent --take-over --reason 'm1b is gone for the day'"},
+			examples: []string{"metasystem goal claim", "metasystem goal claim verbs-match-intent", "metasystem goal claim verbs-match-intent --take-over --reason 'm1b is gone for the day'"},
 			run:      runIntentClaim,
 		},
 		{
-			name: "release", group: "goals", audience: "agent", summary: "release a claim this session holds",
-			usage:   []string{"metasystem release [G] --reason TEXT"},
+			object: "goal", action: "release", audience: "agent", summary: "release a claim this session holds",
+			usage:   []string{"metasystem goal release [G] --reason TEXT"},
 			details: []string{"Without G the one goal this session holds is released; holding none or several names them instead.", "The reason is recorded on the goal's history line."},
 			flags: withFlags([]intentFlag{
 				intentTargetFlag,
@@ -156,12 +156,12 @@ func intentPlanningCommands() []intentCommand {
 				reasonFlag("because", "why the claim is released, recorded on the goal's history"), fileFlag("reason", "read the reason from FILE"),
 			}, intentHumanActFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem release --reason 'the design changes first'", "metasystem release verbs-match-intent --reason 'handing it to m1b'"},
+			examples: []string{"metasystem goal release --reason 'the design changes first'", "metasystem goal release verbs-match-intent --reason 'handing it to m1b'"},
 			run:      runIntentRelease,
 		},
 		{
-			name: "accept-risk", group: "goals", audience: "human", summary: "accept the risk of one severe or unproven review finding",
-			usage: []string{"metasystem accept-risk G --finding F [--review R] --reason TEXT"},
+			object: "goal", action: "accept-risk", audience: "human", summary: "accept the risk of one severe or unproven review finding",
+			usage: []string{"metasystem goal accept-risk G --finding F [--review R] --reason TEXT"},
 			details: []string{
 				"The review is inferred when the goal's work records exactly one examination; otherwise --review R names it (any job of the review, or human-carried for a carried finding).",
 				"Records your risk decision on the goal and applies it to the review; a partial result says what still needs to complete.",
@@ -174,41 +174,41 @@ func intentPlanningCommands() []intentCommand {
 				fileFlag("reason", "read the reason from FILE"),
 			}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem accept-risk verbs-match-intent --finding S-1 --reason 'the exposure is local and reversible'"},
+			examples: []string{"metasystem goal accept-risk verbs-match-intent --finding S-1 --reason 'the exposure is local and reversible'"},
 			run:      runIntentAcceptRisk,
 		},
 		{
-			name: "pin", group: "goals", audience: "human", summary: "pin a goal to one machine, or clear its pin",
-			usage:    []string{"metasystem pin G MACHINE", "metasystem pin G --clear"},
+			object: "goal", action: "pin", audience: "human", summary: "pin a goal to one machine, or clear its pin",
+			usage:    []string{"metasystem goal pin G MACHINE", "metasystem goal pin G --clear"},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "clear", usage: "remove the pin"}}, intentHumanActFlags),
 			maxArgs:  2,
-			examples: []string{"metasystem pin verbs-match-intent m1e", "metasystem pin verbs-match-intent --clear"},
+			examples: []string{"metasystem goal pin verbs-match-intent m1e", "metasystem goal pin verbs-match-intent --clear"},
 			run:      runIntentPin,
 		},
 		{
-			name: "prioritize", group: "goals", audience: "human", summary: "place an open goal in priority 1, 2 or 3",
-			usage: []string{"metasystem prioritize G 1|2|3 [--sequence N]"},
+			object: "goal", action: "prioritize", audience: "human", summary: "place an open goal in priority 1, 2 or 3",
+			usage: []string{"metasystem goal prioritize G 1|2|3 [--sequence N]"},
 			flags: withFlags([]intentFlag{
 				intentTargetFlag,
 				{name: "priority", value: "1|2|3", advanced: true, usage: "the priority, as an alternative to naming it after G"},
 				{name: "sequence", value: "N", advanced: true, usage: "the one-based position within the priority"},
 			}, intentHumanActFlags),
 			maxArgs:  2,
-			examples: []string{"metasystem prioritize verbs-match-intent 1", "metasystem prioritize verbs-match-intent 1 --sequence 2"},
+			examples: []string{"metasystem goal prioritize verbs-match-intent 1", "metasystem goal prioritize verbs-match-intent 1 --sequence 2"},
 			run:      runIntentPrioritize,
 		},
 		{
-			name: "reopen", group: "goals", audience: "both", summary: "return a done or abandoned goal to the queue with a fresh next step",
-			usage:    []string{"metasystem reopen G --next TEXT"},
+			object: "goal", action: "reopen", audience: "both", summary: "return a done or abandoned goal to the queue with a fresh next step",
+			usage:    []string{"metasystem goal reopen G --next TEXT"},
 			details:  []string{"Reopening an abandoned goal is a person's act. The fresh next step is recorded right after the reopen; a failure there is reported as partial."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "next", value: "TEXT", usage: "the fresh next step"}, fileFlag("next", "read the next step from FILE")}, intentHumanActFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem reopen verbs-match-intent --next 'Cover the fleet commands.'"},
+			examples: []string{"metasystem goal reopen verbs-match-intent --next 'Cover the fleet commands.'"},
 			run:      runIntentReopen,
 		},
 		{
-			name: "abandon", group: "goals", audience: "human", summary: "record that a goal will never be worked, and why",
-			usage: []string{"metasystem abandon G --reason TEXT [--successor G2]"},
+			object: "goal", action: "abandon", audience: "human", summary: "record that a goal will never be worked, and why",
+			usage: []string{"metasystem goal abandon G --reason TEXT [--successor G2]"},
 			details: []string{
 				"--successor names the live goal carrying the work; it is recorded after the abandonment is committed, and a refusal there is reported as partial.",
 				"Live dependents are waived with --waive DEPENDENT=REASON or abandoned in the same act with --also DEPENDENT.",
@@ -222,39 +222,39 @@ func intentPlanningCommands() []intentCommand {
 				{name: "also", value: "G", repeat: true, advanced: true, usage: "abandon a live dependent in the same act (repeatable)"},
 			}, intentHumanActFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem abandon old-idea --reason 'superseded by the new design' --successor new-idea"},
+			examples: []string{"metasystem goal abandon old-idea --reason 'superseded by the new design' --successor new-idea"},
 			run:      runIntentAbandon,
 		},
 		{
-			name: "block", group: "goals", audience: "both", summary: "record that a goal waits for another",
-			usage:    []string{"metasystem block G --on G2"},
+			object: "goal", action: "block", audience: "both", summary: "record that a goal waits for another",
+			usage:    []string{"metasystem goal block G --on G2"},
 			details:  []string{"G parks until G2 is done, unless G2 is already done."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "on", aliases: []string{"blocker"}, value: "G2", usage: "the goal G waits for"}}, intentHumanActFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem block slice-3 --on slice-2"},
+			examples: []string{"metasystem goal block slice-3 --on slice-2"},
 			run:      runIntentBlock,
 		},
 		{
-			name: "unblock", group: "goals", audience: "both", summary: "remove one blocker from a goal",
-			usage:    []string{"metasystem unblock G --on G2"},
+			object: "goal", action: "unblock", audience: "both", summary: "remove one blocker from a goal",
+			usage:    []string{"metasystem goal unblock G --on G2"},
 			details:  []string{"Removing a blocker that is not done is a person's act; the park lifts only when every remaining blocker is done."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "on", aliases: []string{"blocker"}, value: "G2", usage: "the goal G no longer waits for"}}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem unblock slice-3 --on slice-2"},
+			examples: []string{"metasystem goal unblock slice-3 --on slice-2"},
 			run:      runIntentUnblock,
 		},
 		{
-			name: "unapprove", group: "goals", audience: "human", summary: "withdraw a goal's execution approval",
-			usage:    []string{"metasystem unapprove G --reason TEXT"},
+			object: "goal", action: "unapprove", audience: "human", summary: "withdraw a goal's execution approval",
+			usage:    []string{"metasystem goal unapprove G --reason TEXT"},
 			details:  []string{"A standing claim is parked with the approval."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, reasonFlag("because", "why the approval is withdrawn"), fileFlag("reason", "read the reason from FILE")}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem unapprove verbs-match-intent --reason 'the design changes first'"},
+			examples: []string{"metasystem goal unapprove verbs-match-intent --reason 'the design changes first'"},
 			run:      runIntentUnapprove,
 		},
 		{
-			name: "grant", group: "goals", audience: "human", summary: "record a power of attorney a seat acts under",
-			usage: []string{"metasystem grant --tiers LIST --acts LIST --until DATE"},
+			object: "grant", action: "add", audience: "human", summary: "record a power of attorney a seat acts under",
+			usage: []string{"metasystem grant add --tiers LIST --acts LIST --until DATE"},
 			details: []string{
 				"--acts is from approve, budget and resume-parked; a seat then acts with --under GRANT on approve, budget and resume of a parked goal.",
 				"--until is the last day covered, YYYY-MM-DD, at most seven days out. The grant's id is printed.",
@@ -265,20 +265,20 @@ func intentPlanningCommands() []intentCommand {
 				{name: "until", aliases: []string{"expires"}, value: "DATE", usage: "the last day covered, YYYY-MM-DD"},
 			}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  0,
-			examples: []string{"metasystem grant --tiers 1 --acts approve,budget --until 2026-10-01"},
+			examples: []string{"metasystem grant add --tiers 1 --acts approve,budget --until 2026-10-01"},
 			run:      runIntentGrant,
 		},
 		{
-			name: "revoke", group: "goals", audience: "human", summary: "close a power of attorney early",
-			usage:    []string{"metasystem revoke GRANT"},
+			object: "grant", action: "revoke", audience: "human", summary: "close a power of attorney early",
+			usage:    []string{"metasystem grant revoke GRANT"},
 			flags:    withFlags([]intentFlag{{name: "grant", value: "GRANT", advanced: true, usage: "the grant, as an alternative to naming it first"}}, intentHumanActFlags, intentRelayFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem revoke 01ARZ3NDEKTSV4RRFFQ69G5FAV-mac-cli-m1"},
+			examples: []string{"metasystem grant revoke 01ARZ3NDEKTSV4RRFFQ69G5FAV-mac-cli-m1"},
 			run:      runIntentRevoke,
 		},
 		{
-			name: "split", group: "goals", audience: "both", summary: "split a goal into independently claimable related goals",
-			usage: []string{"metasystem split G --plan FILE"},
+			object: "goal", action: "split", audience: "both", summary: "split a goal into independently claimable related goals",
+			usage: []string{"metasystem goal split G --plan FILE"},
 			details: []string{"The parent concludes as decomposed and its members become a group of related goals. The same goal rules apply",
 				"to each member; splitting a person's goal is a person's act at the enrolled terminal. FILE, for goal big-goal:",
 				"  # split big-goal",
@@ -293,30 +293,30 @@ func intentPlanningCommands() []intentCommand {
 				"BlockedBy and Labels are optional comma-separated lists."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "plan", aliases: []string{"members"}, value: "FILE", usage: "the member draft"}}, intentHumanActFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem split big-goal --plan members.md"},
+			examples: []string{"metasystem goal split big-goal --plan members.md"},
 			run:      runIntentSplit,
 		},
 		{
-			name: "group", group: "goals", audience: "both", summary: "put a goal into a group of related goals",
-			usage:    []string{"metasystem group G GROUP"},
+			object: "goal", action: "group", audience: "both", summary: "put a goal into a group of related goals",
+			usage:    []string{"metasystem goal group G GROUP"},
 			details:  []string{"GROUP names the group of related goals, usually the goal they serve; a claim of the group covers its members."},
 			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "arc", value: "GROUP", advanced: true, usage: "the group, as an alternative to naming it after G"}}, intentHumanActFlags),
 			maxArgs:  2,
-			examples: []string{"metasystem group slice-2 verbs-match-intent"},
+			examples: []string{"metasystem goal group slice-2 verbs-match-intent"},
 			run:      runIntentGroup,
 		},
 		{
-			name: "ungroup", group: "goals", audience: "both", summary: "take a goal out of its group of related goals",
-			usage:    []string{"metasystem ungroup G"},
+			object: "goal", action: "ungroup", audience: "both", summary: "take a goal out of its group of related goals",
+			usage:    []string{"metasystem goal ungroup G"},
 			details:  []string{"A claim the goal held only through its group is released."},
 			flags:    withFlags([]intentFlag{intentTargetFlag}, intentHumanActFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem ungroup slice-2"},
+			examples: []string{"metasystem goal ungroup slice-2"},
 			run:      runIntentUngroup,
 		},
 		{
-			name: "notes", group: "goals", audience: "both", summary: "read, add or close a goal's non-breaking read findings",
-			usage: []string{"metasystem notes G", "metasystem notes G --read LABEL --add TEXT...", "metasystem notes G --close ITEM --fixed COMMIT|--moved G2|--accepted REASON"},
+			object: "goal", action: "notes", audience: "both", summary: "read, add or close a goal's non-breaking read findings",
+			usage: []string{"metasystem goal notes G", "metasystem goal notes G --read LABEL --add TEXT...", "metasystem goal notes G --close ITEM --fixed COMMIT|--moved G2|--accepted REASON"},
 			details: []string{
 				"Notes are non-breaking read items. A finding stays a finding; closing a note never certifies one.",
 				"--all lists closed items too.",
@@ -334,81 +334,90 @@ func intentPlanningCommands() []intentCommand {
 				fileFlag("accepted", "with --close: read why it is not a defect from FILE"),
 			}, intentHumanActFlags),
 			maxArgs:  1,
-			examples: []string{"metasystem notes verbs-match-intent", "metasystem notes verbs-match-intent --read r2 --add 'help wraps at 80 columns'"},
+			examples: []string{"metasystem goal notes verbs-match-intent", "metasystem goal notes verbs-match-intent --read r2 --add 'help wraps at 80 columns'"},
 			run:      runIntentNotes,
 		},
 		{
-			name: "repair", group: "operations", audience: "both", summary: "recover one named task",
-			usage: []string{
-				"metasystem repair goals",
-				"metasystem repair waits [--session S]",
-				"metasystem repair mission M --problem N --confirm-restored TREE --by NAME --reason TEXT",
-				"metasystem repair mission M --problem N --accept-workspace --waive CLAIM... --by NAME --reason TEXT",
-				"metasystem repair review G [--work NAME]",
-			},
+			object: "goal", action: "repair", audience: "both", summary: "complete interrupted goal changes, or publish reviewed hand edits",
+			usage: []string{"metasystem goal repair"},
 			administrationUsage: []string{
-				"metasystem repair goals --accept-edits --by NAME",
-				"metasystem repair goals --refresh",
-				"metasystem repair goals --accept-remote-history --by NAME",
-				"metasystem repair goals --upgrade --source-digest SHA256 --by NAME [--amendments FILE] [--identity ULID] [--sync-mode remote|local]",
+				"metasystem goal repair --accept-edits --by NAME",
+				"metasystem goal repair --refresh",
+				"metasystem goal repair --accept-remote-history --by NAME",
+				"metasystem goal repair --upgrade --source-digest SHA256 --by NAME [--amendments FILE] [--identity ULID] [--sync-mode remote|local]",
 			},
 			details: []string{
-				"repair goals completes interrupted goal changes across this installation; work that is still running is left alone.",
+				"Completes interrupted goal changes across this installation; work that is still running is left alone.",
 				"--accept-edits reconciles the exact current hand edits of the goal files against their base and republishes them; edits",
-				"that need a person's proof ask for it. check goals previews the edits first. --refresh completes an interrupted refresh",
+				"that need a person's proof ask for it. goal check previews the edits first. --refresh completes an interrupted refresh",
 				"of the published view without reading any edit as new authority.",
 				"--accept-remote-history accepts the fetched current history of the same ledger locally after a rewind; nothing is pushed.",
 				"--upgrade converts the legacy plans/goals.md under its reviewed SHA-256: without --source-digest it only shows the",
 				"digest to review. --amendments FILE starts with 'MIGRATION_EPOCH: <RFC3339>' and 'REVIEWED_SOURCE_SHA256: <sha256>', then",
 				"'### add-goal: ID' sections (intent, origin, next; optional blockedby, arc) or '### amend-goal: ID' sections (next,",
 				"blockedby, arc, state); a parked amendment also gives parked-by, parked-at (timestamp or EPOCH) and parked-because.",
-				"repair waits lists this checkout's durable wait continuations, checked against the holder's --session when given.",
-				"repair mission records a person's resolution of one workspace problem: --confirm-restored says the files already match",
-				"that recorded safe tree (restore them first; nothing is restored by this command); --accept-workspace accepts the",
-				"observed workspace with each waived attribution claim named. Every problem must be resolved before the mission resumes.",
-				"repair review completes and publishes the finished review using its recorded decisions. It never decides a finding.",
 			},
 			flags: []intentFlag{
-				{name: "work", value: "NAME", usage: "repair review: the goal's named work"},
-				{name: "accept-edits", usage: "repair goals: reconcile the reviewed hand edits"},
-				{name: "refresh", usage: "repair goals: complete an interrupted refresh"},
-				{name: "accept-remote-history", usage: "repair goals: accept the fetched history of the same ledger"},
-				{name: "upgrade", usage: "repair goals: convert the legacy goals file"},
+				{name: "accept-edits", usage: "reconcile the reviewed hand edits"},
+				{name: "refresh", usage: "complete an interrupted refresh"},
+				{name: "accept-remote-history", usage: "accept the fetched history of the same ledger"},
+				{name: "upgrade", usage: "convert the legacy goals file"},
 				{name: "source-digest", value: "SHA256", usage: "--upgrade: the reviewed file's SHA-256"},
 				{name: "amendments", value: "FILE", usage: "--upgrade: the amendment file"},
 				{name: "identity", value: "ULID", advanced: true, usage: "--upgrade: the ledger identity (an existing one is kept on a rerun)"},
 				{name: "sync-mode", value: "MODE", advanced: true, usage: "--upgrade: remote (default) or local"},
-				{name: "session", value: "S", advanced: true, usage: "repair waits: the runtime session that must hold the checkout"},
-				{name: "problem", value: "N", usage: "repair mission: the recorded problem's number"},
-				{name: "confirm-restored", value: "TREE", usage: "repair mission: the recorded safe tree the files already match"},
-				{name: "accept-workspace", usage: "repair mission: accept the observed workspace"},
-				{name: "waive", value: "CLAIM", repeat: true, usage: "repair mission, with --accept-workspace: an attribution claim waived (repeatable)"},
 				{name: "by", value: "NAME", usage: "the person deciding"},
-				reasonFlag("why", "repair mission: why"),
 			},
-			maxArgs: 3,
-			examples: []string{"metasystem repair goals", "metasystem repair goals --accept-edits --by Wido", "metasystem repair waits",
-				"metasystem repair mission demo --problem 2 --confirm-restored 3f2a9c1e0d4b5a6978695a4b3c2d1e0f98765432 --by Wido --reason 'restored from the snapshot'",
-				"metasystem repair review verbs-match-intent"},
-			run: runIntentRepair,
+			maxArgs:  0,
+			examples: []string{"metasystem goal repair", "metasystem goal repair --accept-edits --by Wido"},
+			run:      runIntentRepairGoals,
 		},
 		{
-			name: "incidents", group: "operations", audience: "both", summary: "list broken-main incidents, take one on, or close one",
-			usage: []string{"metasystem incidents [--all]", "metasystem incidents claim I --goal G", "metasystem incidents close I --reason TEXT"},
-			details: []string{
-				"An incident is a failure on main that someone must own. claim names the goal whose work fixes it; it is an agent's act,",
-				"and a person may assign it to another machine with --by NAME --to MACHINE. Closing an incident is a person's act.",
-			},
-			flags: withFlags([]intentFlag{
-				{name: "all", usage: "include closed incidents"},
-				{name: "goal", value: "G", usage: "claim: the goal fixing it"},
-				{name: "branch", value: "NAME", advanced: true, usage: "claim: the fix branch"},
-				{name: "to", value: "MACHINE", advanced: true, usage: "claim, with --by: the machine assigned the fix"},
-				reasonFlag("why", "close: why the incident is closed"), fileFlag("reason", "read the reason from FILE"),
-			}, intentHumanActFlags),
-			maxArgs:  2,
-			examples: []string{"metasystem incidents", "metasystem incidents claim tr-01 --goal fix-trunk", "metasystem incidents close tr-01 --reason 'the flake is fixed at its source'"},
+			object: "goal", action: "check", audience: "both", summary: "the goal files that differ from their published base, changing nothing",
+			usage:    []string{"metasystem goal check"},
+			details:  []string{"Lists the goal files that differ from their published base: the edits goal repair --accept-edits would publish."},
+			maxArgs:  0,
+			examples: []string{"metasystem goal check"},
+			run:      runIntentCheckGoals,
+		},
+		{
+			object: "grant", action: "list", audience: "both", summary: "the recorded powers of attorney, live and closed",
+			usage:    []string{"metasystem grant list [--all]"},
+			flags:    []intentFlag{{name: "all", usage: "include revoked and expired grants"}},
+			maxArgs:  0,
+			examples: []string{"metasystem grant list"},
+			run:      runIntentGrantList,
+		},
+		{
+			object: "incident", action: "list", audience: "both", summary: "the broken-main incidents",
+			usage:    []string{"metasystem incident list [--all]"},
+			details:  []string{"An incident is a failure on main that someone must own."},
+			flags:    []intentFlag{{name: "all", usage: "include closed incidents"}},
+			maxArgs:  0,
+			examples: []string{"metasystem incident list"},
 			run:      runIntentIncidents,
+		},
+		{
+			object: "incident", action: "claim", audience: "both", summary: "take on an incident with the goal whose work fixes it",
+			usage:   []string{"metasystem incident claim I --goal G"},
+			details: []string{"An agent's act; a person may assign it to another machine with --by NAME --to MACHINE."},
+			flags: withFlags([]intentFlag{
+				{name: "goal", value: "G", usage: "the goal fixing it"},
+				{name: "branch", value: "NAME", advanced: true, usage: "the fix branch"},
+				{name: "to", value: "MACHINE", advanced: true, usage: "with --by: the machine assigned the fix"},
+			}, intentHumanActFlags),
+			maxArgs:  1,
+			examples: []string{"metasystem incident claim tr-01 --goal fix-trunk"},
+			run:      func(inv *intentInvocation) int { return runIntentIncidentAct(inv, "own") },
+		},
+		{
+			object: "incident", action: "close", audience: "human", summary: "close an incident with its reason",
+			usage:    []string{"metasystem incident close I --reason TEXT"},
+			details:  []string{"Closing an incident is a person's act."},
+			flags:    withFlags([]intentFlag{reasonFlag("why", "why the incident is closed"), fileFlag("reason", "read the reason from FILE")}, intentHumanActFlags),
+			maxArgs:  1,
+			examples: []string{"metasystem incident close tr-01 --reason 'the flake is fixed at its source'"},
+			run:      func(inv *intentInvocation) int { return runIntentIncidentAct(inv, "close") },
 		},
 	}
 }
@@ -752,7 +761,7 @@ func runIntentGoalViews(inv *intentInvocation) int {
 	case goal.NextSelectionReady:
 		result.Summary = "next ready goal: " + selection.GoalID
 		result.Targets = inv.targets(selection.GoalID)
-		result.next, result.nextReason = inv.publicArgv("claim", selection.GoalID), "claim it"
+		result.next, result.nextReason = inv.publicArgv("goal", "claim", selection.GoalID), "claim it"
 	default:
 		result.Summary = "no ready goal for " + machine
 	}
@@ -996,7 +1005,7 @@ func runIntentClaim(inv *intentInvocation) int {
 			// Held work is continued, never switched for the frontier's next goal.
 			return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(selection.GoalID),
 				Summary: fmt.Sprintf("%s already holds %s; continue it (a claim never switches held work)", machine, selection.GoalID),
-				next:    inv.publicArgv("show", "--goal", selection.GoalID), nextReason: "the held goal and its next step",
+				next:    inv.publicArgv("goal", "show", selection.GoalID), nextReason: "the held goal and its next step",
 				Data: map[string]any{"machine": machine, "selection": selection}})
 		case goal.NextSelectionReady:
 			id = selection.GoalID
@@ -1138,7 +1147,7 @@ func runIntentQueueOnly(inv *intentInvocation, id string) int {
 	}
 	if len(waiting) == 1 {
 		result.Summary = fmt.Sprintf("%s; this machine's one landing slot holds goal %s", strings.TrimSpace(result.Summary), waiting[0])
-		result.next, result.nextReason = []string{"metasystem", "land", waiting[0]}, "land the goal waiting in the slot first, then queue this one again"
+		result.next, result.nextReason = []string{"metasystem", "work", "land", waiting[0]}, "land the goal waiting in the slot first, then queue this one again"
 		result.Decision = ""
 	}
 	return inv.render(result)
@@ -1266,7 +1275,7 @@ func runIntentPin(inv *intentInvocation) int {
 	case clear:
 		machine = "-"
 	case machine == "" || machine == "-":
-		return inv.refuse(id, "needs the machine to pin the goal to; nothing was done", "metasystem pin "+id+" MACHINE, or metasystem pin "+id+" --clear")
+		return inv.refuse(id, "needs the machine to pin the goal to; nothing was done", "metasystem goal pin "+id+" MACHINE, or metasystem pin "+id+" --clear")
 	}
 	actor, proof, problem := inv.actingAs("set-pin", id, actorHuman)
 	if problem != nil {
@@ -1291,7 +1300,7 @@ func runIntentPrioritize(inv *intentInvocation) int {
 		priority = inv.input.args[1]
 	}
 	if priority != "1" && priority != "2" && priority != "3" {
-		return inv.refuse(id, fmt.Sprintf("the priority is 1, 2 or 3, not %s; nothing was done", shellCommand([]string{priority})), "metasystem prioritize "+id+" 1|2|3")
+		return inv.refuse(id, fmt.Sprintf("the priority is 1, 2 or 3, not %s; nothing was done", shellCommand([]string{priority})), "metasystem goal prioritize "+id+" 1|2|3")
 	}
 	actor, _, problem := inv.actingAs("set-priority", id, actorHuman)
 	if problem != nil {
@@ -1327,7 +1336,7 @@ func runIntentReopen(inv *intentInvocation) int {
 	case where == "live":
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 			Summary: fmt.Sprintf("%s is %s, not done or abandoned; nothing was done", id, file.State),
-			next:    inv.publicArgv("edit", id, "--next", next), nextReason: "a live goal's next step is edited"})
+			next:    inv.publicArgv("goal", "edit", id, "--next", next), nextReason: "a live goal's next step is edited"})
 	}
 	actorKind := actorEither
 	if where == "abandoned" {
@@ -1349,7 +1358,7 @@ func runIntentReopen(inv *intentInvocation) int {
 		return inv.render(edited)
 	}
 	return inv.render(partialAfter(reopened, edited, "reopened "+id+", but its fresh next step was not recorded",
-		inv.publicArgv("edit", id, "--next", next), "record the next step on the reopened goal"))
+		inv.publicArgv("goal", "edit", id, "--next", next), "record the next step on the reopened goal"))
 }
 
 // partialAfter is a second act's failure after the first one committed.
@@ -1478,7 +1487,7 @@ func runIntentGrant(inv *intentInvocation) int {
 		}
 	}
 	if len(missing) > 0 {
-		return inv.refuse("", fmt.Sprintf("a power of attorney needs %s; nothing was done", strings.Join(missing, ", ")), "metasystem grant --tiers 1 --acts approve,budget --until YYYY-MM-DD")
+		return inv.refuse("", fmt.Sprintf("a power of attorney needs %s; nothing was done", strings.Join(missing, ", ")), "metasystem grant add --tiers 1 --acts approve,budget --until YYYY-MM-DD")
 	}
 	var verbs []string
 	for _, act := range strings.Split(inv.input.text("acts"), ",") {
@@ -1815,60 +1824,46 @@ func (inv *intentInvocation) recoverWaits() intentResult {
 // runIntentIncidents lists the trunk-red register, or claims or closes one
 // entry through the same owner calls as red own and red close.
 func runIntentIncidents(inv *intentInvocation) int {
-	if len(inv.input.args) == 0 {
-		for _, choice := range []string{"goal", "branch", "to", "reason", "by"} {
-			if inv.input.has(choice) {
-				return inv.refuse("", fmt.Sprintf("--%s belongs to incidents claim or close; the list takes only --all; nothing was done", choice), "metasystem incidents claim I --goal G, or metasystem incidents close I --reason TEXT")
-			}
-		}
-		if problem := inv.selectRoot(); problem != nil {
-			return inv.render(*problem)
-		}
-		projection, _, problem := inv.projection()
-		if problem != nil {
-			return inv.render(*problem)
-		}
-		lines, listed := []string{}, []goal.TrunkRedEntry{}
-		for _, entry := range projection.Tree.TrunkRed {
-			if entry.Closed != nil && !inv.input.switched("all") {
-				continue
-			}
-			listed = append(listed, entry)
-			state := "open, unowned"
-			switch {
-			case entry.Closed != nil:
-				state = "closed"
-			case entry.FixGoal != "":
-				state = "owned, fixed by goal " + entry.FixGoal
-			}
-			lines = append(lines, fmt.Sprintf("  %s  %s  %s (%s)", entry.ID, entry.Group, state, entry.Status))
-		}
-		result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"incidents": listed},
-			Summary: fmt.Sprintf("%d incident(s) on main", len(listed))}
-		for _, entry := range listed {
-			if entry.Closed == nil && entry.FixGoal == "" {
-				result.next, result.nextReason = []string{"metasystem", "incidents", "claim", entry.ID, "--goal", "G"}, "an unowned incident needs a goal that fixes it"
-				break
-			}
-		}
-		return inv.render(result)
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
 	}
-	if inv.input.switched("all") {
-		return inv.refuse("", "--all belongs to the incident list; nothing was done", "drop --all")
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return inv.render(*problem)
 	}
-	if inv.input.args[0] == "claim" {
-		inv.input.args[0] = "own"
-	} else if inv.input.args[0] != "close" {
-		return inv.refuse("", "takes claim I --goal G or close I --reason TEXT, or nothing to list; nothing was done", "the incident ids are listed by metasystem incidents")
+	lines, listed := []string{}, []goal.TrunkRedEntry{}
+	for _, entry := range projection.Tree.TrunkRed {
+		if entry.Closed != nil && !inv.input.switched("all") {
+			continue
+		}
+		listed = append(listed, entry)
+		state := "open, unowned"
+		switch {
+		case entry.Closed != nil:
+			state = "closed"
+		case entry.FixGoal != "":
+			state = "owned, fixed by goal " + entry.FixGoal
+		}
+		lines = append(lines, fmt.Sprintf("  %s  %s  %s (%s)", entry.ID, entry.Group, state, entry.Status))
 	}
-	return runIntentRed(inv)
+	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"incidents": listed},
+		Summary: fmt.Sprintf("%d incident(s) on main", len(listed))}
+	for _, entry := range listed {
+		if entry.Closed == nil && entry.FixGoal == "" {
+			result.next, result.nextReason = []string{"metasystem", "incident", "claim", entry.ID, "--goal", "G"}, "an unowned incident needs a goal that fixes it"
+			break
+		}
+	}
+	return inv.render(result)
 }
 
-func runIntentRed(inv *intentInvocation) int {
-	if len(inv.input.args) < 2 || inv.input.args[0] != "own" && inv.input.args[0] != "close" {
-		return inv.refuse("", "needs own ENTRY --goal G or close ENTRY --reason TEXT; nothing was done", "the entry ids are listed by metasystem goals")
+// runIntentIncidentAct claims (the trunk-red register's own) or closes one
+// entry through the register's owner.
+func runIntentIncidentAct(inv *intentInvocation, sub string) int {
+	if len(inv.input.args) != 1 {
+		return inv.refuse("", "needs the incident: metasystem incident "+inv.command.action+" I; nothing was done", "the incident ids are listed by metasystem incident list")
 	}
-	sub, entry := inv.input.args[0], inv.input.args[1]
+	entry := inv.input.args[0]
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
@@ -1914,4 +1909,40 @@ func runIntentRed(inv *intentInvocation) int {
 	}, func() intentResult {
 		return intentResult{Summary: "trunk red " + entry + ": " + sub + " confirmed", Data: map[string]any{"entry": entry}}
 	}))
+}
+
+// runIntentGrantList lists the ledger's recorded powers of attorney: the
+// live ones, or with --all the revoked and expired ones too.
+func runIntentGrantList(inv *intentInvocation) int {
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	projection, now, problem := inv.projection()
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	var entries []goal.PowerOfAttorneyEntry
+	if projection.Tree != nil && projection.Tree.Root != nil {
+		entries = projection.Tree.Root.PowerOfAttorney
+	}
+	lines, views := []string{}, []map[string]any{}
+	for _, entry := range entries {
+		live, why := entry.LiveAt(now)
+		if !live && !inv.input.switched("all") {
+			continue
+		}
+		state := "live"
+		if !live {
+			state = "closed: " + why
+		}
+		tiers := make([]string, 0, len(entry.Tiers))
+		for _, tier := range entry.Tiers {
+			tiers = append(tiers, fmt.Sprint(tier))
+		}
+		lines = append(lines, fmt.Sprintf("  %s  by %s  tiers %s  acts %s  until %s  %s", entry.ID, entry.By, strings.Join(tiers, ","), strings.Join(entry.Verbs, ","), entry.Expires, state))
+		views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "tiers": entry.Tiers, "acts": entry.Verbs, "since": entry.Since,
+			"until": entry.Expires, "revoked": entry.Revoked, "live": live})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"grants": views},
+		Summary: fmt.Sprintf("%d power(s) of attorney", len(views))})
 }

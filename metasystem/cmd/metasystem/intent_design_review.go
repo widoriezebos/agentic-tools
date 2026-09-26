@@ -124,7 +124,7 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 	case status != "completed":
 		return &intentResult{Targets: append(plan.targets, jobTarget(chain.NewestJob)), Outcome: intentFailed, code: 1,
 			Summary:    fmt.Sprintf("examination %d of design %s ended %s without findings to decide", chain.NewestRound, plan.recordID, status),
-			next:       inv.publicArgv("review", "design", relativeOrSame(inv.layout.GitRoot, plan.design), "--retry", strconv.FormatInt(chain.NewestRound, 10)),
+			next:       inv.publicArgv("design", "review", relativeOrSame(inv.layout.GitRoot, plan.design), "--retry", strconv.FormatInt(chain.NewestRound, 10)),
 			nextReason: "examine the design once more in the same chain, under its round limit, once the old process is proven stopped"}
 	}
 	examined := entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)]

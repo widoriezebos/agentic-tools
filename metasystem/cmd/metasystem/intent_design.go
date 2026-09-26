@@ -154,7 +154,7 @@ func (inv *intentInvocation) designDestinationPath(id string, creating bool) (st
 			}
 		}
 		return "", "", &intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("goal %s has no design; nothing was done", id),
-			next: inv.publicArgv("design", id, "--brief", "FILE"), nextReason: "ask a design author for one"}
+			next: inv.publicArgv("design", "write", id, "--brief", "FILE"), nextReason: "ask a design author for one"}
 	}
 	path := filepath.Join(home, id+".md")
 	if _, err := os.Stat(path); err == nil {
@@ -275,10 +275,10 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 	switch {
 	case errors.Is(err, launch.ErrDesignStale):
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
-			next: inv.publicArgv("design", id, "--brief", "FILE", "--after", strconv.Itoa(result.Current)), nextReason: "a new attempt follows the newest one"}
+			next: inv.publicArgv("design", "write", id, "--brief", "FILE", "--after", strconv.Itoa(result.Current)), nextReason: "a new attempt follows the newest one"}
 	case errors.Is(err, launch.ErrDesignWriterRunning):
 		return intentResult{Outcome: intentInProgress, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
-			next: inv.publicArgv("wait", "goal", id), nextReason: "the current author is still writing"}
+			next: inv.publicArgv("work", "wait", id), nextReason: "the current author is still writing"}
 	case err != nil && result.Attempt.Attempt == 0:
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched"}
 	}
@@ -322,18 +322,18 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 		data["reason"] = record.Reason
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data,
 			Summary: fmt.Sprintf("design attempt %d for goal %s ended %s (%s); the document is unchanged", attempt.Attempt, id, record.State, record.Reason),
-			next:    inv.publicArgv("design", id, "--brief", "FILE", "--after", strconv.Itoa(attempt.Attempt)), nextReason: "ask for one new attempt after the failed one"}
+			next:    inv.publicArgv("design", "write", id, "--brief", "FILE", "--after", strconv.Itoa(attempt.Attempt)), nextReason: "ask for one new attempt after the failed one"}
 	default:
 		return intentResult{Outcome: intentInProgress, Targets: targets, Data: data,
 			Summary: fmt.Sprintf("design attempt %d for goal %s is %s", attempt.Attempt, id, record.State),
-			next:    inv.publicArgv("show", "design", "--goal", id, "--attempt", strconv.Itoa(attempt.Attempt)), nextReason: "the attempt and its draft"}
+			next:    inv.publicArgv("design", "show", "--goal", id, "--attempt", strconv.Itoa(attempt.Attempt)), nextReason: "the attempt and its draft"}
 	}
 	data["outcome"], data["detail"] = attempt.Outcome, attempt.Detail
 	switch attempt.Outcome {
 	case "published":
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
 			Summary: fmt.Sprintf("design attempt %d for goal %s is written to %s as a draft", attempt.Attempt, id, rel),
-			next:    inv.publicArgv("review", "design", rel, "--goal", id), nextReason: "an independent critique examines the draft"}
+			next:    inv.publicArgv("design", "review", rel, "--goal", id), nextReason: "an independent critique examines the draft"}
 	case "conflict", "invalid", "superseded":
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data,
 			Summary:  fmt.Sprintf("design attempt %d was not written to %s (%s): %s; the document is unchanged and the proposal is kept", attempt.Attempt, rel, attempt.Outcome, attempt.Detail),

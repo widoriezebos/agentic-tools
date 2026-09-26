@@ -168,7 +168,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			if err != nil || resolved == "" {
 				failure = &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
 					Summary: fmt.Sprintf("--after %s names no commit this checkout has; nothing was submitted", inv.input.text("after")),
-					next:    inv.publicArgv("status", "goal", id, "--work", work), nextReason: "the work's current version"}
+					next:    inv.publicArgv("status", id, "--work", work), nextReason: "the work's current version"}
 				return nil
 			}
 			info, err := branch.KindOf(install, resolved, id)
@@ -214,7 +214,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			failure = &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
 				Summary: fmt.Sprintf("version %s of work %s is no longer current (current: %s), and the current version is not this correction of it; nothing was submitted",
 					shortSHA(after), work, cmpOr(shortSHA(current), "none")),
-				next: inv.publicArgv("status", "goal", id, "--work", work), nextReason: "the work's current version"}
+				next: inv.publicArgv("status", id, "--work", work), nextReason: "the work's current version"}
 			return nil
 		}
 		staged, stageErr := stageManual(git, worktree, same, capture)
@@ -260,7 +260,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			failure = &intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
 				Summary: fmt.Sprintf("the branch commit owner did not commit work %s: %v; the goal worktree is now at %s, which does not hold this change, so its staging was left exactly as it is",
 					work, commitErr, cmpOr(shortSHA(tipAfter), "an unreadable HEAD")),
-				next: inv.publicArgv("status", "goal", id, "--work", work), nextReason: "the work's current version on the goal branch"}
+				next: inv.publicArgv("status", id, "--work", work), nextReason: "the work's current version on the goal branch"}
 			return nil
 		}
 		if undoErr := staged.undo(); undoErr != nil {
@@ -314,7 +314,7 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 		result.Data = data
 	}
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
-		result.next, result.nextReason = inv.publicArgv("land", id), "the work's read is published on the goal branch; landing admits it by its own rules"
+		result.next, result.nextReason = inv.publicArgv("work", "land", id), "the work's read is published on the goal branch; landing admits it by its own rules"
 	}
 	return result
 }
