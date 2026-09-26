@@ -587,24 +587,27 @@ common case.
   nothing but the transcript. The route serves persisted messages only
   and refuses a turn still running, in words. The conversation rewrites
   that one message in place through the atomic writer the trim already
-  uses, and admits a write only as a compare-and-set on the state the
-  caller saw, decided inside that writer (revision 9 and 10, from
-  Astra's reads of g1-s60): the body is `{from, state, words}`, `from`
-  being the state the line showed when the human pressed; the write is
-  admitted only when the persisted state equals `from` and the pair is
-  one of: to `applying` from `waiting`, `refused` or `unresolved`; to
-  `applied`, `refused` or `unresolved` from `applying`; to `dismissed`
-  from `waiting`, `refused`, `unresolved` or `applying`. Every allowed
-  pair changes the state, so two writers racing on one line can never
-  both pass (revision 11): there is no `applying → applying`, and Try
-  again on a line the page shows as in flight is two writes by the
-  human's one press, `applying → unresolved` with the words "left in
-  flight; the human checked the goal and tries again", then
-  `unresolved → applying`, and only then the act; a refusal of either
-  write reconciles the line and sends nothing. Any other write answers
-  409 with code `state` and the entry as it stands, changing nothing,
-  so a stale tab that still shows `waiting` cannot move a line that is
-  really `unresolved` or in flight. The
+  uses, and admits a write only as a compare-and-set on the entry's
+  version, decided inside that writer (revisions 9 to 12, from Astra's
+  reads of g1-s60): every entry carries `version`, 1 when the service
+  admits it and incremented by one on every admitted write, persisted
+  on the message and carried on the snapshot, the `proposal` beat and
+  the route's answers; the body is `{version, state, words}`, `version`
+  being the entry's version the caller last rendered; the write is
+  admitted only when the persisted version equals it and the pair
+  (persisted state → state) is one of: to `applying` from `waiting`,
+  `refused`, `unresolved` or `applying`, the last being Try again on a
+  line the page shows as in flight; to `applied`, `refused` or
+  `unresolved` from `applying`; to `dismissed` from `waiting`, `refused`,
+  `unresolved` or `applying`. Any other write answers 409 with code
+  `state` and the entry as it stands, version included, changing
+  nothing. Because the version moves on every admitted write, two
+  presses that saw the same entry can never both pass, whatever the
+  states: a stale tab that still shows `waiting` cannot move a line
+  that is really `unresolved` or in flight, and two tabs pressing Try
+  again on one abandoned line send one act, since a compare on states
+  alone cannot tell a fresh attempt from an abandoned one once the line
+  is `applying` again (Astra's one-point read on g1-s60). The
   runner takes that answer as the line's truth: it reconciles the line
   to the entry returned and never sends an act for it; if the entry is
   settled (`applied`, `refused`, `dismissed`) the run goes on, and if it
@@ -751,14 +754,16 @@ a `Goal: ` line, then one labelled line per body field given, `Reason: `,
 `Next step: `, `Labels: `, `Id: `, `Severity: `, `Novelty: `, `Exposure: `,
 `Accumulation: `, `Basis: `, `Blocked by: `, `Blocks: `, then the
 separator and the explanation. `Message.proposals: [{ index, verb, goal, title, fields: {…},
-read: { intent, nextStep, tier, labels } | null, why, offered, reason,
-state, words, at }]` on a Partner message, the same object on the stream
-as `proposal` events as each is admitted, and on the snapshot's running
-turn as `proposals`. The route `POST /api/partner/turns/<turn>/proposals/<index>`
-with `{state, words}`, the conversation hand's policy, answering the
-snapshot; a state that is not one of the six, an index the message does
-not carry, a turn that is not this conversation's or one still running
-is refused with words. The act refusal codes `pushed-unknown` and
+read: { intent, nextStep, tier, labels } | null, explanation, offered,
+reason, state, words, at, version }]` on a Partner message, the same
+object on the stream as `proposal` events as each is admitted or
+written, and on the snapshot's running turn as `proposals`. The route
+`POST /api/partner/turns/<turn>/proposals/<index>` with `{version,
+state, words}`, the conversation hand's policy, answering the snapshot;
+a state that is not one of the six, an index the message does not
+carry, a turn that is not this conversation's or one still running is
+refused with words, and a stale version or a pair not allowed with 409
+`state` and the entry. The act refusal codes `pushed-unknown` and
 `journal-unreadable` under 500; the page's unsettled list reduced to
 `confirmed-late`. The describe table gains `{ID: routeEditGoal, Title:
 "Edit a goal", Requires: ledgerHand}` and the new route's own row, and
@@ -782,13 +787,15 @@ whose blocker an earlier `open` of the same answer named, refusing an
 reasons, the title carried; the message, the stream and the snapshot
 carrying it; the outcome route's policy, its six states, its refusal of
 a running turn and of an unknown index, each allowed pair admitted with
-a matching `from`, a matching pair with a stale `from` refused with the
-entry, `applying → applying` refused even with a matching `from`, two
-writers racing on one line with only one admitted for every allowed
-pair, the runner stopping on an unsettled conflict and going on past a
-settled one, Try again on an in-flight line as two writes sending one
-act and two tabs pressing it at once sending exactly one, and the
-message rewritten in place with the rest of the transcript untouched; the context block's
+the version it renders, an admitted write bumping the version with the
+answer carrying it, a write with a stale version refused with the
+entry, two writers racing with one version and exactly one admitted
+for every allowed pair, `applying → applying` included, the runner
+stopping on an unsettled conflict and going on past a settled one, two
+tabs pressing Try again on one in-flight line sending exactly one act,
+Try again racing Dismiss sending at most one act with the loser
+reconciled, and the message rewritten in place with the rest of the
+transcript untouched; the context block's
 line from recorded states; the describe table's row and a join test
 that every ledger act in the catalogue is in the table and every table
 row the catalogue admits is in the catalogue. The six fixture
@@ -1008,3 +1015,15 @@ Try again on an in-flight line is two writes, `applying → unresolved`
 then `unresolved → applying`, so the second tab's first write is
 refused; every allowed pair now changes the state. The builder was told
 in the same words; one more scoped read on this point alone follows.
+
+## Revision 12: a version on the entry
+
+From Astra's one-point read: two writes that return a line to
+`applying` restore the very state a second tab's stale press compares
+against, so a compare on states cannot tell a fresh attempt from an
+abandoned one, whatever the pairs. Folded as the textbook mechanism:
+the entry carries a version that every admitted write increments and
+every press must present; `from` is withdrawn, the two-write retry is
+withdrawn, and Try again on an in-flight line is one exclusive write
+again. The builder was told in the same words; Astra walks the same
+three races against it in a last one-point read.

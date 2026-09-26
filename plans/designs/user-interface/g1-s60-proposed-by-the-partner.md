@@ -15,8 +15,9 @@ folded at the foot, one of them into the parent as its revision 9;
 g1-s59 is on hold behind the verb system, so nothing here waits on it.
 Revision 3, after Astra's failsafe round: three more, all consequences
 of the transition fold, folded as one mechanism in the parent's
-revision 10; the loop closed at round 2, a scoped confirmation read
-follows.
+revision 10; the loop closed at round 2. Revisions 4 and 5, after two
+one-point reads on the retry race: the parent's revisions 11 and 12,
+ending with a version on the entry.
 
 ## What exists and binds
 
@@ -109,10 +110,10 @@ applied · 1 dismissed", because the row and the card are one record.
   the composer filled as the card's does; a line at `applying` says "was
   being applied when the page left; check the goal before applying
   again" and offers Open the goal, Try again and Dismiss, as the card
-  does; Dismiss sends `from: applying`, and Try again is two writes,
-  `applying → unresolved` then `unresolved → applying`, so that only a
-  human who read that line can move it and two tabs pressing at once
-  send one act (g1-s58 D6, revisions 10 and 11). The
+  does; every press sends the version of the entry the row rendered,
+  so that only a human who read that line as it now stands can move it
+  and two tabs pressing at once send one act (g1-s58 D6, revisions 10
+  to 12). The
   group has checkboxes and the selection bar of the queue; its Apply
   opens the queue's own kind of sheet, one line per ticked row on screen
   with every argument whole and, for an approve, the budget from one
@@ -130,8 +131,9 @@ applied · 1 dismissed", because the row and the card are one record.
   does; Dismiss records `dismissed` through the route.
 - D5. **The card and the row read one state, and only one caller can
   move it.** The outcome route admits a write only as a compare-and-set
-  on the state the caller saw (g1-s58 D6, revisions 9 and 10) and
-  answers a conflict with the entry as it stands; a caller whose write
+  on the entry's version, which every admitted write increments and
+  every press presents (g1-s58 D6, revisions 9 to 12), and answers a
+  conflict with the entry as it stands; a caller whose write
   was refused reconciles its row to that entry and sends nothing, goes
   on when the entry is settled, and stops the run with Continue offered
   when the entry is in flight or unresolved, so a stale row in a second
@@ -255,3 +257,19 @@ confirmed on one point, folded in revision 4 and the parent's revision
 
 One more scoped read on this point alone follows; the record is in
 g1-s60-astra-critique.md.
+
+## Dispositions (Astra's one-point read, 2026-09-26)
+
+Checked at `a6378505c`. Not confirmed: the two-write retry returns the
+line to `applying`, the very state a second tab's stale press compares
+against, so both tabs pass in turn and send the act twice; a compare on
+states cannot tell a fresh attempt from an abandoned one. Astra also
+walked the waiting-line race (one act) and Try again racing Dismiss (at
+most one act) and found no stranded state. Folded in revision 5 and the
+parent's revision 12:
+
+| id | finding | fold |
+|---|---|---|
+| S60-06 | with any pair table, a line back at `applying` lets a stale `from: applying` pass again | the entry carries a version that every admitted write increments and every press presents; `from` and the two-write retry are withdrawn; Try again on an in-flight line is one exclusive write (D3, D5, g1-s58 D6) |
+
+A last one-point read walks the same three races against the version.

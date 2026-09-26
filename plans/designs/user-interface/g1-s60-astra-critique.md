@@ -109,3 +109,38 @@ Checked both designs at `fe4bac5df`; read-only.
 Every nonterminal state now has an allowed outgoing transition; no such line is permanently immovable. The remaining defect is duplicate retry admission.
 
 VERDICT: 1 folds not confirmed: S60-06
+
+---
+
+# Astra's one-point read on the S60-06 fold (revision 4, g1-s58 revision 11)
+
+Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic chain, against `a6378505c`. Verbatim; the disposition is g1-s60's revision 5 and g1-s58's revision 12.
+
+---
+
+**not confirmed — S60-06.** The two writes restore `applying`, allowing another tab's stale `from: applying` to pass. This contradicts g1-s58 D6's exclusion claim and g1-s60 D3.
+
+**Two-tab Try again:** both tabs show the same abandoned `applying` approval. The human checks the goal and presses Try again in each tab. Tab B's first request arrives after A's two writes:
+
+| Step | Operation | Persisted state afterward |
+|---|---|---|
+| 1 | A: `applying → unresolved` succeeds | `unresolved` |
+| 2 | A: `unresolved → applying` succeeds | `applying` |
+| 3 | A sends the act; its answer remains pending | `applying` |
+| 4 | B: `applying → unresolved` succeeds | `unresolved` |
+| 5 | B: `unresolved → applying` succeeds | `applying` |
+| 6 | B sends the same act again | `applying` |
+
+Every write is serialized, matches `from`, and changes state. Neither receives a refusal. Comparing the state cannot distinguish the abandoned attempt from A's new attempt.
+
+**Two-tab Apply on waiting:** A's `waiting → applying` succeeds; B's identical transition fails. No allowed transition restores `waiting`, so only one press sends an act.
+
+**Try again racing Dismiss:** if Dismiss wins first, retry fails and sends nothing. If Dismiss arrives between retry's writes, its captured `from: applying` fails against `unresolved`. If it arrives after retry restores `applying`, Dismiss succeeds—even though retry can already have sent its act. Thus this race sends at most one act, but dismissal does not cancel it.
+
+**Nonterminal states:** none is stranded. `waiting`, `refused`, and `unresolved` can move to `applying` or `dismissed`; `applying` offers the two-write retry and dismissal.
+
+**Test 1 — changes what the implementer builds: yes.** Recovery admission must distinguish successive attempts; changing each individual state transition is insufficient.
+
+**Test 2 — works and is safe without correction: no.** Two ordinary tabs can send the same approval twice, within the stated threat model. The design explicitly notes that duplicate approval creates two records.
+
+VERDICT: 1 folds not confirmed: S60-06
