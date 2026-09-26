@@ -57,6 +57,7 @@ import {
   countsIn,
   editable,
   ENDED_WITHOUT,
+  pressable,
   entriesIn,
   entryOf,
   marked,
@@ -1127,9 +1128,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   /**
    * Record it.
    *
-   * The card that is pressed must be waiting — admitted, needing nothing, not
-   * already in flight, not already in the record, and offered against the record
-   * this sitting is on. That last one is Sol's first finding: the press used to
+   * The card that is pressed must be admitted, needing nothing, not already in
+   * flight, not already in the record, and offered against the record this
+   * sitting is on — waiting, or left in conflict by a record that moved. That last one is Sol's first finding: the press used to
    * ask only whether the card was offered, so a card left on the transcript by a
    * sitting that had ended wrote its words into whatever record the next sitting
    * was about. The recorder is asked for the same record by name, so the gate
@@ -1147,7 +1148,11 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const recordDeposit = useCallback(
     (id: string, records?: Records) => {
       const card = depositIn(deposits, id);
-      if (card === undefined || card.standing !== "waiting") {
+      // A card in conflict is pressed again, without an edit: the record moved,
+      // nothing was written, the human's words are still here and the reading has
+      // been taken again, so this press is one more press against what the record
+      // now says.
+      if (card === undefined || !pressable(card.standing)) {
         return;
       }
       const into = card.subject?.id ?? "";

@@ -647,6 +647,26 @@ export function standingOf(deposit: Deposit, mark: Mark, sitting: string): Stand
 }
 
 /**
+ * Whether a press on one card would be admitted.
+ *
+ * A card in conflict is pressable, and that is the whole of why this exists
+ * (g1-s55, folded from Astra's read). A conflict is the record having moved: the
+ * human's words are still on the card, nothing was written, and the reading has
+ * been taken again — so pressing Record it once more is one more press against
+ * the record as it now stands. The press used to be offered and then quietly do
+ * nothing, because only a waiting card was admitted, and the only way to make a
+ * refused card waiting again was to edit it. A human who was happy with their
+ * words had nothing to edit.
+ *
+ * Everything else is not a press: a card the record has taken is written, a card
+ * of another sitting is not this record's, one still needing a reason or an
+ * anchor has nothing to write yet, and one already in flight is being written.
+ */
+export function pressable(standing: Standing): boolean {
+  return standing === "waiting" || standing === "conflict";
+}
+
+/**
  * Whether one card's two fields are still the human's to change.
  *
  * They are not while the press is in flight. Sol's fifth finding: the fields
