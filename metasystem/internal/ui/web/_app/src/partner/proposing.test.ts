@@ -615,7 +615,7 @@ describe("the run, in order", () => {
     const marked: { line: string; change: Partial<Mark> }[] = [];
     const reconciled: Proposal[] = [];
     const rereads: number[] = [];
-    const signIns: (() => void)[] = [];
+    const signIns: (readonly Line[])[] = [];
     const ports: RunPorts = {
       look: () =>
         Promise.resolve(over.look ?? { rows: [], defaults: {}, outcome: "current", message: "" }),
@@ -643,8 +643,8 @@ describe("the run, in order", () => {
       reread: () => {
         rereads.push(rereads.length + 1);
       },
-      signIn: (again) => {
-        signIns.push(again);
+      signIn: (rest) => {
+        signIns.push(rest);
       },
     };
     return { ports, sent, written, marked, reconciled, rereads, signIns };
@@ -799,11 +799,13 @@ describe("the run, in order", () => {
     });
     expect(driven.marked.filter((one) => one.change.notRun === true).map((one) => one.line))
       .toEqual([lines[2].id]);
+    // What the sheet is handed is the lines from the one that asked for it, so
+    // signing in runs on from there and no earlier.
     expect(driven.signIns.length).toBe(1);
+    expect(driven.signIns[0].map((one) => one.id)).toEqual([lines[1].id, lines[2].id]);
 
-    // Signing in runs on from the line that asked for it, and no earlier.
-    const after = driving(lines.slice(1));
-    await runProposals(lines.slice(1), after.ports);
+    const after = driving(driven.signIns[0]);
+    await runProposals(driven.signIns[0], after.ports);
     expect(after.sent).toEqual([lines[1].id, lines[2].id]);
   });
 

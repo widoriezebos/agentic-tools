@@ -864,8 +864,16 @@ export type RunPorts = {
   reconcile: (proposal: Proposal) => void;
   /** Ask the page in view to read again, now or when a sheet over it closes. */
   reread: () => void;
-  /** Open the sign-in sheet, with what to do if the human signs in. */
-  signIn: (again: () => void) => void;
+  /**
+   * Open the sign-in sheet, handing over the lines a signed-in human would run
+   * on from — this one and the ones after it.
+   *
+   * It hands over the LINES rather than a function that runs them, so that
+   * running them goes back through the same guarded entry a press does: a
+   * continuation that called this function again would be a second run nothing
+   * had taken the guard for.
+   */
+  signIn: (rest: readonly Line[]) => void;
 };
 
 /** True for a state nothing more will happen to by itself. */
@@ -890,8 +898,9 @@ export function settledState(state: ProposalState): boolean {
  *   - a refusal is passed; anything that does not say what happened stops the run
  *     and the lines after it say "not run";
  *   - a refusal a sign-in would remedy ends the run at that line and NEVER waits:
- *     the sheet's success runs on from there, and a sheet closed without signing
- *     in leaves the card exactly as it is;
+ *     the lines from there are handed to the sign-in sheet, whose success runs
+ *     them as a fresh press, and a sheet closed without signing in leaves the
+ *     card exactly as it is;
  *   - the page in view reads again after each confirmed act and when the run ends.
  */
 export async function runProposals(lines: readonly Line[], ports: RunPorts): Promise<void> {
@@ -939,9 +948,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     if (!goesOn(answered)) {
       stoppedAt = at;
       if (answered.kind === "sign-in") {
-        ports.signIn(() => {
-          void runProposals(lines.slice(at), ports);
-        });
+        ports.signIn(lines.slice(at));
       }
       break;
     }

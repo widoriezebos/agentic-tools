@@ -658,6 +658,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // The run in flight, held synchronously so a second Apply in the same frame
   // does nothing: a state flag is a render away and a press is not.
   const runFor = useRef(noRun());
+  // The guarded entry, for the one caller that is not a press: the sign-in
+  // sheet's success, which runs on from the line that asked for it.
+  const runLinesAgain = useRef<((card: string, lines: readonly ProposalLine[]) => Promise<void>) | null>(null);
   const [sittingRefusal, setSittingRefusal] = useState("");
   const [sittingBusy, setSittingBusy] = useState(false);
   // What the last end-without-recording left behind. It is kept because it is
@@ -1664,7 +1667,14 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
             setStore((held) => proposalMoved(held, card, proposal));
           },
           reread: askTheReread,
-          signIn: askToSignIn,
+          // The run never waits on a sheet. It has already ended here; signing
+          // in runs the rest as a fresh press, through the same guarded entry,
+          // and closing the sheet without signing in leaves the settled card.
+          signIn: (rest) => {
+            askToSignIn(() => {
+              void runLinesAgain.current?.(card, rest);
+            });
+          },
         });
       } finally {
         releaseRun(runFor.current);
@@ -1673,6 +1683,11 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     },
     [mark, sendAct, askTheReread, askToSignIn],
   );
+
+  // The run, reached from the sign-in sheet's own success. It is a ref because
+  // the sheet's callback outlives the render that opened it, and because the run
+  // that hands it over is the run being defined.
+  runLinesAgain.current = runLines;
 
   const applyProposals = useCallback((card: string) => {
     const found = proposalCardIn(proposals, card);
