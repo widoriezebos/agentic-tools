@@ -40,7 +40,11 @@ Revision 5: the verbs seat landed on main and was merged as `8a22b6284`,
 so the grammar unit of D1 and D4, ruled last, is written against its
 descriptor table. Every cite re-read at `b19a413cf`; the merge changed
 three words in the act layer's comments and none of the cited lines,
-and touched no other cited file.
+and touched no other cited file. Revision 7, on Wido's UX question of
+where proposals belong: the conversation is where a proposal is made
+and answered, and the wrong place to keep one that waits; step 1 folds
+older cards to one line, and the Decisions inbox becomes the waiting
+proposals' home in step 2 (D8, section 4).
 
 ## 1. What exists and binds
 
@@ -345,9 +349,16 @@ keeps it:
   one on the card, is refused on the line, "the goal changed since this
   was proposed", with Open the goal, so a stale card never authorises
   work or a budget I did not read.
-- **Ignoring is allowed.** A card you do not act on stays proposed, with
-  its ticks; Dismiss folds it to one line that reopens; nothing expires
-  into an act.
+- **Ignoring is allowed, and an ignored proposal is not lost.** A card
+  you do not act on stays proposed, with its ticks; Dismiss folds it to
+  one line that reopens; nothing expires into an act. Once a newer
+  answer stands under it, a card with waiting lines folds by itself to
+  one line, "The Partner proposed earlier · 3 waiting", that reopens,
+  so a stale Apply is never the first thing in view and a conversation
+  does not bury a decision. The conversation is where a proposal is
+  made and answered; where it waits, when you do not answer it, is the
+  Decisions inbox, in step 2, beside every other choice that waits on
+  you.
 - **Human-only acts need my sign-in and nothing else new.** When the
   session is not proven the button says "Sign in to apply" and opens the
   sign-in sheet; the run starts when the code is accepted. A session that
@@ -578,12 +589,25 @@ common case.
   names the human; the transcript is the record that the Partner
   proposed it and when the human applied it, which is the master's
   "authorship retained separately" for this step.
-- D8. **Where the human looks.** The card is in the transcript, in the
-  drawer and in the focused view; the drawer's one-shot growth for a card
-  (Drawer.tsx:78-91) covers it; while a proposal of the last answer has a
-  waiting line and the drawer is closed, its bar says "n actions
-  proposed" beside the composer, and pressing it opens the drawer at the
-  card, as the sitting's counts open the table.
+- D8. **Where the human looks, and where a proposal waits.** The card is
+  in the transcript, in the drawer and in the focused view, because it
+  is the answer to what the human just asked and the Partner's reasons
+  stand beside it; the drawer's one-shot growth for a card
+  (Drawer.tsx:78-91) covers it. A card of any answer but the newest that
+  still has a waiting line folds to one line, "The Partner proposed
+  earlier · n waiting", which reopens, in the idiom the field proposals
+  use for older offers (`PROPOSED_EARLIER`, src/partner/suggesting.ts:475;
+  the fold and unfold of a dismissed card, :178-179), so the newest
+  answer is what is in view and an old Apply is never pressed by
+  accident. While any loaded answer has a waiting line and the drawer is
+  closed, its bar says "n actions proposed" beside the composer, counted
+  across answers, and pressing it opens the drawer at the newest such
+  card, as the sitting's counts open the table. The conversation is the
+  wrong place to keep a proposal that waits: it scrolls, and "ignored"
+  would become "lost". Waiting proposals get the home every other
+  waiting choice has, the Decisions inbox, in step 2 (section 4); the
+  transcript keeps the card as the record of the exchange, as it keeps a
+  deposit's card while the record holds the entry.
 - D9. **The Partner is told, and told what happened.** Its instructions
   gain: "Everything the interface can do is a verb, and a proposal is a
   verb statement: when the human asks you to do something the interface
@@ -625,8 +649,19 @@ Later, when it hurts: the checkout writes as verbs (set a record's
 status, settle a question, ask a question, write a record: one catalogue
 row, one admission rule against the project reader and one client each);
 "Review in the sheet" on a line, opening the verb's own sheet prefilled
-so an argument can be edited before applying; a "proposed" marker on the
-subject's row on the board and in the queue; abandon, after its ruling;
+so an argument can be edited before applying; **step 2, the waiting
+proposals' home**: the Decisions inbox gains one group, "Proposed by the
+Partner", composed from the conversation's persisted proposals with a
+waiting line, one row per line in the inbox's own idiom (the verb word,
+the subject, the arguments, the Partner's explanation as the note; one
+open row with Apply, Dismiss, Open the goal and Ask the Partner; the
+selection bar for many), the group's count in the header's "needs you",
+"n new" by the proposal's time, and the same outcome route recording
+what was done, so the card in the transcript and the row in the inbox
+read one state and an ignored proposal waits where every other choice
+waits until it is applied or dismissed; **step 3**, a chip on the
+subject's row on the board and in the queue, "Pause proposed", opening
+that row at the proposal; abandon, after its ruling;
 the Partner's authorship on the ledger's history line; the owner-side
 basis compare on the approve and edit routes, checked inside the
 transaction on `ApprovalDigest` (gate 2's review basis); keyboard
@@ -721,8 +756,12 @@ ending the run with the sheet's success running on from the line, and a
 closed sheet leaving the card settled; the offered re-read called after
 a confirmed act, deferred while `covered` and made when it clears; the
 `inStrip` flag hiding the header's icon; every offered re-read keeping
-its page mounted; the bar's count; the guards stay green, with the new
-call sites rowed in `cuts.test.ts`. Walkthrough: the fake Partner answers
+its page mounted; an older answer's card with a waiting line folded to
+its one line and reopened by pressing it, the newest answer's card
+never folded, a card with no waiting line not folded but read as it
+stands; the bar's count across answers and its press opening the
+newest such card; the guards stay green, with the new call sites rowed
+in `cuts.test.ts`. Walkthrough: the fake Partner answers
 a canned proposal of three actions and a canned single open; the
 fixture's canned acts refuse one goal by name and answer 500 for
 another, so a refused line passed and an unresolved line stopping the
@@ -835,3 +874,20 @@ The two existing owners Astra pointed at are taken: `goal.ParseRiskRecord`
 for `risk` and `goal.ApplyLabelDelta` for an edit's labels. The design
 is closed, read whole by the critic across its mechanism and its
 grammar; the build waits on Wido's go.
+
+## Revision 7: where a proposal waits
+
+Wido, 2026-09-26: "With your UX cap on, is the location of the
+proposals indeed the right place, or would you have these not in the
+discussion with the project partner but somewhere in the UI?", then
+"make sure the design reflects this insight". The answer folded: the
+conversation is where a proposal is made and answered, and the wrong
+place to keep one that waits. Step 1 gains one presentation rule in the
+idiom that exists, older cards with waiting lines fold to one line and
+the bar counts across answers (D8, section 2, section 6); step 2 is the
+Decisions inbox group "Proposed by the Partner" over the persisted
+proposals, and step 3 the subject row's chip (section 4). No mechanism
+changes: the fold reuses the field proposals' own, and the inbox group
+reads what D6 already persists. Not sent to Astra: a presentation rule
+inside a pattern the critic has read twice, and a later-list entry; the
+code read covers the fold.
