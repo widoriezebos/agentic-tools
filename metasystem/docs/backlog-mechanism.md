@@ -194,7 +194,7 @@ only the edge. An improvement a seat discovers that blocks nothing goes to
 
 A machine holds one working claim at a time. Built and verified work that
 waits to land no longer holds that slot: the claim holder runs
-`metasystem ready <goal>`, which writes a `Landing:`
+`metasystem land <goal> --queue-only`, which writes a `Landing:`
 record and a `land-ready` history line on the claimed goal. The goal stays
 claimed, so its receipts and proof attempts still bind to its claim and its
 box, but the one-claim quota no longer counts it, `metasystem goals --ready` lists it as

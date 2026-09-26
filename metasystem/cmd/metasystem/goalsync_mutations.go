@@ -549,6 +549,9 @@ type syncRequestDependencies struct {
 	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	presence       func(string, goal.Endpoint) (seat.Copy, error)
+	// configureAbandon binds an abandon request to the executing engine's
+	// build and the fleet's engine floor; nil is the production binding.
+	configureAbandon func(*goal.VerbRequest)
 	// report, when set, receives the owner's typed outcome instead of the
 	// printed one; the public intent commands render it themselves.
 	report *ownerReport
@@ -2418,7 +2421,11 @@ func runGoalAbandonWithInputs(args []string, prove goalAuthorityProver, commandN
 		dependencies.complain(err)
 		return 1
 	}
-	configureAbandonFleetFloor(&request)
+	if dependencies.configureAbandon != nil {
+		dependencies.configureAbandon(&request)
+	} else {
+		configureAbandonFleetFloor(&request)
+	}
 	result, err := goal.Abandon(request, *id, goal.AbandonSpec{Because: *because, Carried: *carried, Waive: waive, Also: also}, &proof)
 	return dependencies.publish(result, err)
 }

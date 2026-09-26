@@ -458,8 +458,8 @@ func designBlobBinding(workspace, commit, design string, facts buildWorkspaceFac
 		return "", "", fmt.Errorf("design path must be inside the reviewed workspace")
 	}
 	rel = filepath.ToSlash(rel)
-	if !strings.HasPrefix(rel, "metasystem/") {
-		return "", "", fmt.Errorf("design path must begin metasystem/")
+	if !strings.HasPrefix(rel, "metasystem/") && !RepositoryDesignPath(rel) {
+		return "", "", fmt.Errorf("design path must begin metasystem/ or plans/designs/")
 	}
 	blob, err := facts.BlobAt(workspace, commit, rel)
 	if err != nil || !gitObjectIDRe.MatchString(blob) {

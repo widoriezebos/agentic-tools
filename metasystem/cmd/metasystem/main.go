@@ -231,6 +231,7 @@ func families() []family {
 				{"handshake-eval", "evaluate a handshake into its record patch", runDispatchHandshakeEval},
 				{"reap-facts", "print a record's reap verdict facts", runDispatchReapFacts},
 				{"census-fresh", "require a fresh successful census for dispatch", runDispatchCensusFresh},
+				{"examination-retry", "admit one fresh examination round after a critic round ended without a return (internal)", runJobExaminationRetry},
 				{"census-wait", "wait for current freshness or an explicit post-event census", runDispatchCensusWait},
 				{"watcher-ceiling", "print the attested watcher ceiling", runDispatchWatcherCeiling},
 				{"expand-permissions", "expand a role's permission preset for a workspace", runDispatchExpandPermissions},
@@ -780,8 +781,8 @@ func dispatchWithRepositoryTop(args []string, repositoryTop func(string) (string
 
 func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 0 {
-		writeIntentRootHelp(stderr)
-		return 2
+		writeIntentRootHelp(stdout)
+		return 0
 	}
 	if args[0] == "help" {
 		if len(args) == 1 {
@@ -789,31 +790,32 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 			return 0
 		}
 		if len(args) != 2 {
-			fmt.Fprintln(stderr, "usage: metasystem help [FAMILY]")
-			fmt.Fprintln(stderr, "       metasystem help human|agent|internal|COMMAND")
+			fmt.Fprintln(stderr, "usage: metasystem help [TOPIC|COMMAND]")
+			fmt.Fprintln(stderr, "       metasystem help goals|work|questions|operations|human|agent|all|COMMAND")
 			return 2
 		}
-		if slices.Contains(intentHelpTopics, args[1]) {
+		if command, ok := findIntentCommand(args[1]); ok {
+			writeIntentHelp(stdout, command)
+			return 0
+		}
+		if intentTopic(args[1]) {
 			writeIntentTopicHelp(stdout, args[1], registered)
 			return 0
 		}
-		if command, ok := findIntentCommand(args[1]); ok {
-			writeIntentHelpWithFamily(stdout, command, registered)
-			return 0
-		}
+		// A family's own help stays available to the scripts that ask for
+		// it by name; no public page lists the families.
 		for _, fam := range registered {
 			if fam.name == args[1] {
 				writeFamilyHelp(stdout, fam)
 				return 0
 			}
 		}
-		fmt.Fprintf(stderr, "metasystem help: unknown family %q\n", args[1])
-		fmt.Fprintln(stderr, "metasystem help lists the commands; metasystem help internal lists every family")
+		writeUnknownIntentCommand(stderr, args[1])
 		return 2
 	}
 	if args[0] == "--help" || args[0] == "-h" {
 		if len(args) != 1 {
-			fmt.Fprintln(stderr, "usage: metasystem help [FAMILY]")
+			fmt.Fprintln(stderr, "usage: metasystem help [TOPIC|COMMAND]")
 			return 2
 		}
 		writeIntentRootHelp(stdout)
@@ -828,7 +830,7 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 		return dispatchInternal(args[1:], stdout, stderr, registered, repositoryTop)
 	}
 	if command, ok := findIntentCommand(args[0]); ok && len(args) == 2 && slices.Contains([]string{"--help", "-h"}, args[1]) {
-		writeIntentHelpWithFamily(stdout, command, registered)
+		writeIntentHelp(stdout, command)
 		return 0
 	}
 	if command, ok := findIntentCommand(args[0]); ok && (command.legacy == nil || !command.legacy(args[1:])) && !intentYieldsToLegacy(args, registered) {
@@ -893,9 +895,18 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 		writeFamilyHelp(stderr, fam)
 		return 2
 	}
-	fmt.Fprintf(stderr, "metasystem: unknown family %q\n", args[0])
-	writeIntentRootHelp(stderr)
+	writeUnknownIntentCommand(stderr, args[0])
 	return 2
+}
+
+// writeUnknownIntentCommand refuses a word no command or family answers to,
+// offering only a public command.
+func writeUnknownIntentCommand(w io.Writer, name string) {
+	fmt.Fprintf(w, "metasystem: unknown command %q; nothing was done\n", name)
+	if near := suggestIntentCommand(name); near != "" {
+		fmt.Fprintf(w, "did you mean: metasystem %s\n", near)
+	}
+	fmt.Fprintln(w, "metasystem help lists the common commands; metasystem help all lists every command")
 }
 
 func writeFamilyHelp(w io.Writer, fam family) {

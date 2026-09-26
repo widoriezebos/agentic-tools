@@ -18,9 +18,10 @@ import (
 const cleanReadRoundsField = "cleanReadRounds"
 
 const (
-	readAdmittedDecision  = "ADMITTED"
-	redundantReadRefusal  = "REDUNDANT_READ"
-	concurrentReadRefusal = "CONCURRENT_READ"
+	readAdmittedDecision   = "ADMITTED"
+	redundantReadRefusal   = "REDUNDANT_READ"
+	concurrentReadRefusal  = "CONCURRENT_READ"
+	designChainOpenRefusal = "DESIGN_CHAIN_OPEN"
 )
 
 type CleanReadRound struct {
@@ -51,6 +52,16 @@ type cleanReadCandidate struct {
 // critic. It serializes the evidence read with folds and refusal appends, but
 // releases that lock before returning so callers can mirror safely.
 func CritiqueReadAdmission(repoRoot, role, rootJob string, round int64, subject readsubject.ReadSubject) (result ReadAdmissionResult, err error) {
+	return CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, "", round, subject)
+}
+
+// CritiqueReadAdmissionForGoal is CritiqueReadAdmission for a dispatch that
+// serves goal. A fresh design-critic root for a goal is refused while that
+// goal already has an unclosed critique chain of the same design document:
+// open, failed, capped or exhausted, and whatever the document's bytes now
+// are. That chain continues by its own follow-up or retry; another goal or
+// another document is not affected.
+func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round int64, subject readsubject.ReadSubject) (result ReadAdmissionResult, err error) {
 	result = ReadAdmissionResult{SubjectDigest: subject.Digest()}
 	if !validJobID.MatchString(rootJob) {
 		return result, fmt.Errorf("critic root %q is not a valid job identifier", rootJob)
@@ -153,6 +164,31 @@ func CritiqueReadAdmission(repoRoot, role, rootJob string, round int64, subject 
 				detail = "the refusal event is published, but its crash durability is not proven; mirror the prior root to repair durable evidence"
 			}
 			return "", redundantReadError(result, prior, detail)
+		}
+
+		if subject.Kind == readsubject.SubjectDesign && round == 1 && goalID != "" && goalID != "none-explicit" {
+			if _, present := state.records[rootJob]; !present {
+				for _, criticRoot := range roots {
+					root := state.records[criticRoot]
+					if closed, _ := root["chainClosed"].(bool); closed || asString(root["goalId"]) != goalID {
+						continue
+					}
+					latestRound, latest, latestErr := highestCriticMember(state, criticRoot, role)
+					if latestErr != nil {
+						return "", latestErr
+					}
+					result.Decision = designChainOpenRefusal
+					result.CriticRoot = criticRoot
+					result.Round = latestRound
+					result.LatestCriticRound = latestRound
+					return "", &OpError{
+						Code:   11,
+						Reason: designChainOpenRefusal,
+						Message: fmt.Sprintf("%s: goal %s already has critique chain %s of design %s (newest round %d, %s); the requested subject %s does not start a fresh chain: continue that chain with its follow-up or retry, or close it first",
+							designChainOpenRefusal, goalID, criticRoot, subject.DesignPath, latestRound, asString(latest["status"]), result.SubjectDigest),
+					}
+				}
+			}
 		}
 
 		if subject.Kind == readsubject.SubjectLive {
@@ -596,7 +632,7 @@ func validateReadSubjectForRole(role string, subject readsubject.ReadSubject) er
 		if role != "design-critic" {
 			return fmt.Errorf("role %s cannot read a design critique subject", role)
 		}
-		if cleanPath != subject.DesignPath || !strings.HasPrefix(cleanPath, "metasystem/") ||
+		if cleanPath != subject.DesignPath || !strings.HasPrefix(cleanPath, "metasystem/") && !RepositoryDesignPath(cleanPath) ||
 			!nonempty(subject.ContentDigest) || !nonempty(subject.DeclaredOutputsDigest) ||
 			(subject.ReviewedCommit != "" && !nonempty(subject.ReviewedCommit)) {
 			return fmt.Errorf("design critique subject is malformed")

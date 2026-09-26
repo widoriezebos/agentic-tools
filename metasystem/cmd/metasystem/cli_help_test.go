@@ -27,9 +27,10 @@ func TestRootHelpAliases(t *testing.T) {
 			t.Errorf("root %s = code %d, stdout equal %t, stderr %q", alias, code, got == want, problem)
 		}
 	}
+	// A bare call is read-only help and succeeds.
 	code, output, problem := runCLIHelp(nil, registered)
-	if code != 2 || output != "" || !strings.Contains(problem, "usage: metasystem") {
-		t.Errorf("bare command = code %d, stdout %q, stderr %q", code, output, problem)
+	if code != 0 || output != want || problem != "" {
+		t.Errorf("bare command = code %d, stdout equal %t, stderr %q", code, output == want, problem)
 	}
 }
 
@@ -44,7 +45,17 @@ func TestFamilyHelpAliasesForEveryRegisteredFamily(t *testing.T) {
 			if code != 0 || problem != "" {
 				t.Fatalf("help FAMILY = code %d, stderr %q", code, problem)
 			}
-			for _, args := range [][]string{{fam.name, "--help"}, {fam.name, "-h"}} {
+			aliases := [][]string{{fam.name, "--help"}, {fam.name, "-h"}}
+			if _, public := findIntentCommand(fam.name); public {
+				// A public command's name shows the public command; the
+				// family's own help stays reachable through internal.
+				code, want, problem = runCLIHelp([]string{"internal", fam.name, "--help"}, registered)
+				if code != 0 || problem != "" {
+					t.Fatalf("internal FAMILY --help = code %d, stderr %q", code, problem)
+				}
+				aliases = [][]string{{"internal", fam.name, "-h"}}
+			}
+			for _, args := range aliases {
 				code, got, problem := runCLIHelp(args, registered)
 				if code != 0 || got != want || problem != "" {
 					t.Errorf("%v = code %d, stdout equal %t, stderr %q", args, code, got == want, problem)
@@ -137,12 +148,12 @@ func TestUnknownFamilyHelpAliasErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"help", "no-such-family"}, `unknown family "no-such-family"`},
-		{[]string{"no-such-family", "--help"}, `unknown family "no-such-family"`},
+		{[]string{"help", "no-such-family"}, `unknown command "no-such-family"`},
+		{[]string{"no-such-family", "--help"}, `unknown command "no-such-family"`},
 		{[]string{"launch", "no-such-verb"}, `unknown verb "no-such-verb"`},
-		{[]string{"help", "launch", "extra"}, "usage: metasystem help [FAMILY]"},
+		{[]string{"help", "launch", "extra"}, "usage: metasystem help [TOPIC|COMMAND]"},
 		{[]string{"launch", "--help", "extra"}, `unknown verb "--help"`},
-		{[]string{"--help", "extra"}, "usage: metasystem help [FAMILY]"},
+		{[]string{"--help", "extra"}, "usage: metasystem help [TOPIC|COMMAND]"},
 	}
 	for _, test := range cases {
 		code, output, problem := runCLIHelp(test.args, registered)

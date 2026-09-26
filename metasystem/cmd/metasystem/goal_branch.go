@@ -207,6 +207,27 @@ func readDelegate(binary, root, brief, goalID, commit, runtime, model string, en
 	return "", fmt.Errorf("delegate returned no started job: %s", lastOutputLine(output))
 }
 
+// readFollowUp starts one more round of a critic chain through the delegate
+// follow-up and returns the round's job id.
+func readFollowUp(binary, root, rootJob, brief string, environment ...string) (string, error) {
+	if binary == "" {
+		return "", fmt.Errorf("delegate binary is unavailable")
+	}
+	command := exec.Command(binary, "delegate", "--follow-up", rootJob, "--brief", brief)
+	command.Env = append(append(os.Environ(), environment...), "METASYSTEM_DELEGATE_ROOT="+root)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	var outcome delegateOutcome
+	if jsonErr := json.Unmarshal(bytes.TrimSpace(output), &outcome); jsonErr == nil && outcome.Outcome == "WON" && outcome.JobID != "" && err == nil {
+		return outcome.JobID, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("delegate follow-up: %s: %w", lastOutputLine(stderr.Bytes()), err)
+	}
+	return "", fmt.Errorf("delegate follow-up returned no started round: %s", lastOutputLine(output))
+}
+
 func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencies) int {
 	result, code, err := goalBranchReadRun(args, dependencies)
 	if err != nil {
@@ -233,6 +254,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	flags.Var(runtime, "runtime", "requested critic runtime (subject to roster authorization)")
 	flags.Var(model, "model", "requested critic model (subject to roster authorization)")
 	collect := flags.Bool("collect", false, "collect a closed critic root into an attestation")
+	retry := flags.Int64("retry", 0, "examine the critic chain's failed round N once more, in the same chain")
 	selected := flags.String("selected-installation", "", "installation whose configured code-critic roster the critic dispatch resolves (a generated goal worktree's selected installation)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || *unit == "" {
 		return branch.BranchReadResult{}, 2, fmt.Errorf("goal branch read needs --goal and --unit")
@@ -293,7 +315,14 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect,
 		BriefPath: brief.value, Runtime: runtime.value, Model: model.value,
-		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository})
+		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
+		Retry: *retry, FollowUp: func(rootJob, brief string) (string, error) {
+			environment, err := criticDelegateEnvironment(*selected, *root, brief)
+			if err != nil {
+				return "", err
+			}
+			return readFollowUp(dependencies.Binary, *root, rootJob, brief, environment...)
+		}})
 	if err != nil {
 		return branch.BranchReadResult{}, 1, err
 	}
@@ -994,10 +1023,34 @@ func runGoalBranchCommitWith(args []string, dependencies goalBranchCommitDepende
 }
 
 func withGoalBranchCommitTokenAt(root, holderRoot string, commit func() error) error {
+	return goalBranchCheckoutSection(root, holderRoot, func(withToken func(func() error) error) error {
+		return withToken(commit)
+	})
+}
+
+// goalBranchCheckoutSection runs body inside the checkout's mutation
+// section: the holder is established first, the bounded checkout mutation
+// lock is then taken and the holder checked again inside it. withToken mints
+// the commit identity token and runs one commit under it; it takes no lock,
+// so staging and its commit share one section without nested acquisition.
+// The token is the hook's identity proof; the lock is the exclusion.
+func goalBranchCheckoutSection(root, holderRoot string, body func(withToken func(func() error) error) error) error {
 	pid := int64(os.Getpid())
 	if _, err := lease.RequireHolder(holderRoot, pid, nil); err != nil {
 		return err
 	}
+	release, err := lease.LockBounded(lease.LockPath(holderRoot), "goal branch commit")
+	if err != nil {
+		return err
+	}
+	defer release()
+	if _, err := lease.RequireHolder(holderRoot, pid, nil); err != nil {
+		return err
+	}
+	return body(func(commit func() error) error { return goalBranchCommitToken(root, pid, commit) })
+}
+
+func goalBranchCommitToken(root string, pid int64, commit func() error) error {
 	exact, state, err := (identity.KernelProber{}).Probe(pid)
 	if err != nil || state != identity.Alive {
 		return fmt.Errorf("goal branch commit: caller process start time is unreadable")

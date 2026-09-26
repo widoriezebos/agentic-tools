@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -41,11 +44,15 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	case strings.HasPrefix(message, "UNIT_RUN_UNKNOWN"):
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: message}
 	case strings.HasPrefix(message, "UNIT_REVIEW_NOT_READY") && strings.Contains(message, "still running"):
+		record, _ := runner.Status(run)
+		record.ID = run
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed",
-			next: inv.publicArgv("wait", "unit", run), nextReason: "the round must finish before its result is committed"}
+			next: inv.workArgv(record, "wait"), nextReason: "the attempt must finish before its result is committed"}
 	case strings.HasPrefix(message, "UNIT_REVIEW_NOT_READY"):
+		record, _ := runner.Status(run)
+		record.ID = run
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed",
-			Decision: "fix the round with a follow-up: metasystem fold unit " + run + " --brief FILE"}
+			next: inv.workArgv(record, "revise", "--after", strconv.Itoa(len(record.Rounds)), "--brief", "FILE"), nextReason: "correct the attempt; a correction brief starts one new attempt"}
 	}
 	return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: message + "; nothing was committed"}
 }
@@ -238,6 +245,12 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	if install != original {
 		args = append(args, "--selected-installation", original)
 	}
+	if inv.reviewWork != nil {
+		inv.reviewWork.attempt, inv.reviewWork.retain, inv.reviewWork.subject = review.Round.Number, retain, subject
+	}
+	if inv.reviewWork != nil && inv.reviewWork.retry > 0 {
+		args = append(args, "--retry", strconv.FormatInt(inv.reviewWork.retry, 10))
+	}
 	result := inv.commitReview(targets, install, goalID, subject.Commit, args)
 	if merged, ok := result.Data.(map[string]any); ok {
 		for key, value := range data {
@@ -368,7 +381,50 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 		// The branch read calls a terminal critic closed; collection needs
 		// the chain's own recorded closure, which only the close owner writes.
 		if waiting := inv.criticClosure(targets, root, unit, goalID, result.RootJob); waiting != nil {
-			return *waiting
+			if data, _ := waiting.Data.(map[string]any); data["failedRound"] != nil {
+				// A failed examination has no findings to decide; its
+				// continuation is the retry, never a decisions file.
+				return *waiting
+			}
+			if inv.reviewWork == nil && inv.input.has("dispositions") {
+				// An explicitly named commit's review closes with the author's
+				// decisions through the whole close owner, then collects below.
+				closer := *inv
+				closer.layout.InstallationRoot = root
+				closed := closer.closeChain(result.RootJob)
+				if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
+					closed.Targets = append(targets, closed.Targets...)
+					closed.Summary = "the examination finished, but its close did not complete: " + closed.Summary
+					inv.riskRemedy(&closed, root, goalID, result.RootJob,
+						append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", inv.input.text("dispositions")))
+					return closed
+				}
+			} else if inv.reviewWork == nil {
+				join, clean := inv.cleanExaminationJoin(root, goalID, unit, result.RootJob)
+				if !clean {
+					waiting.Decision = fmt.Sprintf("the author decides every finding of %s in a dispositions file, then runs %s",
+						result.RootJob, shellCommand(append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", "FILE")))
+					return *waiting
+				}
+				// A completed examination with no findings has nothing to
+				// decide: its empty join closes through the whole close owner.
+				closer := *inv
+				closer.layout.InstallationRoot = root
+				closer.input = intentInput{values: map[string][]string{"dispositions": {join}}}
+				closed := closer.closeChain(result.RootJob)
+				if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
+					closed.Targets = append(targets, closed.Targets...)
+					closed.Summary = "the examination finished clean, but its close did not complete: " + closed.Summary
+					inv.riskRemedy(&closed, root, goalID, result.RootJob, inv.canonicalReviewArgv(targets, goalID, unit))
+					return closed
+				}
+			} else {
+				// A goal's work review completes the author's decision and the
+				// whole close here, then collects below.
+				if pending := inv.closeWorkReview(targets, root, unit, result.RootJob); pending != nil {
+					return *pending
+				}
+			}
 		}
 		result, code, err = owners.branchRead(append(args, "--collect"))
 	}
@@ -394,20 +450,47 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 	}
 	if result.State != "collected" && result.State != "already-collected" {
 		return intentResult{Targets: targets, Outcome: intentInProgress, Data: data,
-			Summary: fmt.Sprintf("the read of unit %s is %s (critic %s)", unit, result.State, result.RootJob),
-			next:    inv.sameCommand(), nextReason: "collects the read's attestation once its critic chain is closed"}
+			Summary: "the review of this work is in progress",
+			next:    inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "continues this review and publishes its result when ready"}
 	}
 	published, err := owners.publishRead(root, goalID, unit)
 	data["publication"] = published
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
-			Summary: fmt.Sprintf("unit %s is read and attestation %s is committed, but not yet on the goal branch's remote: %v", unit, result.AttestationCommit, err),
-			next:    inv.sameCommand(), nextReason: "publishes the same attestation under the same push operation; no critic or commit is repeated"}
+			Summary: fmt.Sprintf("the review is complete, but its result has not yet been published: %v", err),
+			next:    inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "publishes the same attestation under the same push operation; no critic or commit is repeated"}
 	}
 	outcome := intentConfirmed
 	if result.State == "already-collected" && published.State == "current" {
 		outcome = intentUnchanged
 	}
 	return intentResult{Targets: targets, Outcome: outcome, Data: data,
-		Summary: fmt.Sprintf("unit %s is read; attestation %s is on %s", unit, result.AttestationCommit, published.RemoteTip)}
+		Summary: "the review is complete and published"}
+}
+
+// cleanExaminationJoin is the empty decisions join of a critic chain whose
+// newest round completed with a readable return and no findings, retained
+// beside that return as the build review retains it. Any other round (still
+// running, failed, malformed or with findings) is not clean.
+func (inv *intentInvocation) cleanExaminationJoin(root, goalID, unit, rootJob string) (string, bool) {
+	newest, err := inv.newestRoundAt(root, rootJob)
+	if err != nil || recordText(newest, "status") != "completed" {
+		return "", false
+	}
+	round := recordRound(newest)
+	returnPath := inv.returnPathAt(root, rootJob, round)
+	digest, _, readErr := reviewReturnDigest(returnPath)
+	findings, _, parseErr := readIntentFindings(returnPath)
+	if readErr != nil || parseErr != nil || len(findings) != 0 {
+		return "", false
+	}
+	join := filepath.Join(filepath.Dir(returnPath), "decisions.md")
+	if _, err := os.Stat(join); err == nil {
+		return join, true
+	}
+	binding := reviewBinding{Goal: goalID, Subject: unit, Examination: rootJob, Round: round, Return: digest}
+	if err := os.WriteFile(join, []byte(decisionsDocument(binding, nil)), 0o600); err != nil {
+		return "", false
+	}
+	return join, true
 }

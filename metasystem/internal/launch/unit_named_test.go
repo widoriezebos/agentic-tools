@@ -160,7 +160,7 @@ func TestNamedUnitChangedInputRefusesWithThePriorRun(t *testing.T) {
 		}},
 		{"build-model", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.BuildModel = "another-model" }},
 		{"build-runtime", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.BuildRuntime = "codex" }},
-		{"read-runtime", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.ReadRuntime = "claude" }},
+		{"read-runtime", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.ReadRuntime = "codex" }},
 		{"build-window", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.BuildWindow = 400000 }},
 		{"read-window", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.ReadWindow = 400000 }},
 		{"build-lines-cap", func(t *testing.T, fixture unitFixture) { fixture.manager.Settings.BuildLinesCap = 3 }},
@@ -466,7 +466,7 @@ func TestNamedUnitChangeBeforeAPendingLaunchLaunchesNothingUntilRestored(t *test
 		name            string
 		change, restore func(fixture unitFixture)
 	}{
-		{"read-runtime", func(fixture unitFixture) { fixture.manager.Settings.ReadRuntime = "claude" },
+		{"read-runtime", func(fixture unitFixture) { fixture.manager.Settings.ReadRuntime = "codex" },
 			func(fixture unitFixture) { fixture.manager.Settings.ReadRuntime = DefaultSettings().ReadRuntime }},
 		{"read-brief", func(fixture unitFixture) {
 			plan, _ := ReadUnitPlan(fixture.plan)

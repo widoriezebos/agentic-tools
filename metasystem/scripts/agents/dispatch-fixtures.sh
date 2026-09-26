@@ -1459,6 +1459,14 @@ conf_edit "$budget_dispatch_repo/metasystem.conf" replace-line-first '^evidence[
   "evidence.root=$budget_dispatch_evidence"
 conf_edit "$budget_dispatch_repo/metasystem.conf" replace-line-first '^metasystem[.]budget[.]tier-3=.*$' \
   'metasystem.budget.tier-3=8h/1/1200m/1/3'
+# The budget exercise is a plain verifier read. Production keeps the verifier
+# on main; this fixture copy deletes that entry so the fake default serves it,
+# exactly as leg_default_role does for the main bed. The public delegate has
+# no --permissions flag, so the copy's verifier preset is the zero-write
+# "none" that leg_default_role passes, keeping shared-checkout custody.
+conf_edit "$budget_dispatch_repo/metasystem.conf" delete-line-first '^role[.]verifier[.]runtime=.*$'
+conf_edit "$budget_dispatch_repo/metasystem.conf" replace-line-first '^dispatch[.]permissions[.]verifier=.*$' \
+  'dispatch.permissions.verifier=none'
 mkdir -p "$budget_dispatch_repo/plans"
 cat >"$budget_dispatch_repo/plans/goals.md" <<'BUDGET_LEDGER'
 # Goals
@@ -1510,7 +1518,7 @@ grep -Fq '"outcome":"confirmed"' <<<"$budget_claim" \
 budget_goal_revision=$("$budget_dispatch_repo/bin/metasystem" job goal-revision \
   --root "$budget_dispatch_repo" --goal structured-budget)
 budget_brief="$agent_fixture/structured-budget.md"
-sed 's/^Working Mode:.*/Working Mode: design/' \
+sed 's/^Working Mode:.*/Working Mode: verify/' \
   "$budget_dispatch_repo/scripts/agents/templates/brief.md" >"$budget_brief"
 (
   agent_repo=$budget_dispatch_repo
@@ -1521,7 +1529,7 @@ sed 's/^Working Mode:.*/Working Mode: design/' \
   wait_for_agent_census_fresh structured-budget-within
   run_agent_fixture_captured structured-budget-within structured-budget-within \
     "$agent_fixture/structured-budget-within.out" \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_brief" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-within --goal structured-budget --destructive-reach MECHANICAL --wait
 )
 grep -Fq '"outcome":"WON"' "$agent_fixture/structured-budget-within.out" \
@@ -1531,7 +1539,7 @@ budget_within_record="$budget_dispatch_repo/artifacts/agents/jobs/structured-bud
 [[ "$("$engine" json get --file "$budget_within_record" --field status)" == completed ]] \
   || { echo "the within-limits structured dispatch did not complete" >&2; exit 1; }
 [[ "$("$engine" json get --file "$budget_within_record" --field launchMode)" == shared-checkout ]] \
-  || { echo "the public read-only critic did not use shared-checkout custody" >&2; cat "$budget_within_record" >&2; exit 1; }
+  || { echo "the public read-only verifier did not use shared-checkout custody" >&2; cat "$budget_within_record" >&2; exit 1; }
 [[ "$("$engine" json get --file "$budget_within_record" --field goalId)" == structured-budget \
    && "$("$engine" json get --file "$budget_within_record" --field goalRevision)" == "$budget_goal_revision" ]] \
   || { echo "the within-limits dispatch did not bind the accepted structured goal revision" >&2; exit 1; }
@@ -1545,7 +1553,7 @@ printf '\nThis changes the retry fingerprint.\n' >>"$budget_mismatch_brief"
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
   agent_fails structured-budget-opid-mismatch '"outcome":"REFUSED-OPID-MISMATCH"' \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_mismatch_brief" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role verifier --brief "$budget_mismatch_brief" \
       --op structured-budget-within --goal structured-budget --destructive-reach MECHANICAL
 )
 set +e
@@ -1584,7 +1592,7 @@ git -C "$budget_dispatch_repo" update-ref refs/metasystem/goals/accepted "$budge
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
   run_agent_fixture_captured structured-budget-extended structured-budget-extended \
     "$agent_fixture/structured-budget-extended.out" \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_brief" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-extended --goal structured-budget --destructive-reach MECHANICAL --wait
 )
 grep -Fq '"outcome":"WON"' "$agent_fixture/structured-budget-extended.out" \
@@ -1605,7 +1613,7 @@ grep -Fq -- '- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=24
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:08:00Z
   agent_fails structured-budget-refused '"outcome":"REFUSED-BUDGET"' \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_brief" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-refused --goal structured-budget --destructive-reach MECHANICAL
 )
 grep -Fq "extended once at 2000-01-01T00:07:00Z; a further raise is a person's set-budget" \
@@ -1615,9 +1623,6 @@ grep -Fq "extended once at 2000-01-01T00:07:00Z; a further raise is a person's s
   || { echo "the structured admission refusal created a job record" >&2; exit 1; }
 budget_follow_message="$agent_fixture/structured-budget-follow-up.md"
 cp "$budget_dispatch_repo/scripts/agents/templates/follow-up.md" "$budget_follow_message"
-# Admission runs before budget accounting. Give this follow-up a genuinely
-# changed subject so the fixture reaches the budget refusal it is testing.
-printf '\nBudget follow-up fixture revision.\n' >>"$budget_dispatch_repo/metasystem/scripts/agents/roles/design-critic.md"
 (
   agent_repo=$budget_dispatch_repo
   agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
@@ -2439,6 +2444,25 @@ leg_happy
 leg_default_role
 make_code_brief
 make_follow_message
+# The public design journeys are Go adapter tests against this armed bed
+# (cmd/metasystem/intent_design_real_owner_test.go). The bed hands over
+# its environment, its lease holder main and its follow-up message; the
+# tests decide everything else.
+intent_design_real_owner_journeys() {
+  local lineage bed_env="$agent_fixture/intent-design-bed.env" out="$agent_fixture/intent-design-journeys.out"
+  lineage=$("$engine" json get --value "$("$engine" lease require-holder --root "$agent_repo" --caller-pid "$$")" --field mainId --default "")
+  env -0 >"$bed_env"
+  (cd "$root" && METASYSTEM_INTENT_DESIGN_BED="$agent_repo" METASYSTEM_INTENT_DESIGN_BED_ENV="$bed_env" \
+    METASYSTEM_INTENT_DESIGN_BED_LINEAGE="$lineage" METASYSTEM_INTENT_DESIGN_BED_SUPERVISION="${agent_supervision_repo:-}" \
+    METASYSTEM_INTENT_DESIGN_BED_FOLLOW="$follow_message" \
+    go test -count=1 -v -run '^TestIntentDesign(Review|Author|Retry)RealOwnerJourney$' ./cmd/metasystem) >"$out" 2>&1 \
+    && grep -Fq -- '--- PASS: TestIntentDesignReviewRealOwnerJourney' "$out" && grep -Fq -- '--- PASS: TestIntentDesignAuthorRealOwnerJourney' "$out" \
+    && grep -Fq -- '--- PASS: TestIntentDesignRetryRealOwnerJourney' "$out" \
+    || { echo "intent design real-owner journeys failed" >&2; cat "$out" >&2; exit 1; }
+  grep -E -- '^(--- |ok|FAIL)' "$out"
+  echo "intent design real-owner journeys passed"
+}
+intent_design_real_owner_journeys
 pending_brief="$agent_fixture/pending.md"
 make_agent_brief "$pending_brief" design 'FAKE:no-session-signal'
 wait_for_agent_census_fresh pending-chain
@@ -2955,8 +2979,8 @@ wait_for_agent_child_stopped "$agent_repo/artifacts/agents/timed/rounds/1/child.
   "timeout did not TERM the whole owned group"
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/timed.json" \
   || { echo "timeout terminal record lacks group-death proof" >&2; exit 1; }
-# A capped critic round is not continued (its register cannot fold it);
-# the refusal check on `timed` below says so. The one-minute cap composes no
+# A capped critic round is not continued; the examination retry below
+# examines it afresh once its group death is proven. The one-minute cap composes no
 # return-by line (the margin is not below it).
 make_follow_message
 if grep -Fq 'write your return by' "$agent_repo/artifacts/agents/timed/rounds/1/prompt.md"; then
@@ -3258,8 +3282,16 @@ grep -Fq '# Canonical critique register carry' "$malformed_follow_prompt" \
   && grep -Fq -- '- synthetic-' "$malformed_follow_prompt" \
   || { echo "the corrected protocol-return follow-up did not carry its synthetic finding identifier" >&2; cat "$malformed_follow_prompt" >&2; exit 1; }
 agent_fails pending-follow-up 'use a fresh dispatch after pending, running, process-lost' "$agent_dispatch" follow-up --job cancelled --message "$follow_message"
-agent_fails timeout-follow-up 'implementer worktree chains only' "$agent_dispatch" follow-up --job timed --message "$follow_message"
-agent_fails process-loss-follow-up 'use a fresh dispatch after pending, running, process-lost' "$agent_dispatch" follow-up --job process-loss --message "$follow_message"
+# A capped or lost critic round whose group death the reaper proved is
+# folded without findings and examined once more in the same chain: the
+# engine admits the retry and the follow-up creates the chain's next round.
+for retried in timed process-loss; do
+  run_agent_fixture "$retried-examination-retry" "$retried-r2" "$agent_dispatch" follow-up --job "$retried" --message "$follow_message" --wait
+  [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/$retried-r2.json" --field round 2>/dev/null)" == 2 \
+    && "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/$retried-r2.json" --field parentJob 2>/dev/null)" == "$retried" ]] \
+    || { echo "the examination retry of $retried did not create round 2 of the same chain" >&2; cat "$agent_repo/artifacts/agents/jobs/$retried-r2.json" >&2 2>/dev/null; exit 1; }
+done
+printf 'EXAMINATION-RETRY-PASS chains=timed,process-loss\n'
 
 json_replace_field "$agent_repo/artifacts/agents/jobs/default-role.json" sessionId null
 agent_fails null-session-follow-up 'fresh-context embed fallback' "$agent_dispatch" follow-up --job default-role --message "$follow_message"

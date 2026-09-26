@@ -53,7 +53,7 @@ type ArtifactRef struct {
 var artifactControlPattern = regexp.MustCompile(`[\x00-\x1f\x7f]`)
 
 func validArtifactPath(path string) bool {
-	if !strings.HasPrefix(path, "metasystem/") || strings.TrimSpace(path) != path || strings.Contains(path, "\\") || strings.Contains(path, "=>") || artifactControlPattern.MatchString(path) {
+	if !strings.HasPrefix(path, "metasystem/") && !strings.HasPrefix(path, "plans/designs/") || strings.TrimSpace(path) != path || strings.Contains(path, "\\") || strings.Contains(path, "=>") || artifactControlPattern.MatchString(path) {
 		return false
 	}
 	segments := strings.Split(path, "/")

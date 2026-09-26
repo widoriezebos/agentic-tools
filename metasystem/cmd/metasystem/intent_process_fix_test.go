@@ -201,7 +201,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 
 		transport.fail = true
 		code, result = b.runJSON(owners, "ask", "goal-a", "--question", "Another?", "--option", "yes: go")
-		if code == 0 || result.Outcome != intentInProgress || result.Next == nil || !slices.Contains(result.Next.Argv, "poll") {
+		if code == 0 || result.Outcome != intentInProgress || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "ask", "--retry", result.Targets[1].ID}) {
 			t.Fatalf("undelivered ask = %d %+v", code, result)
 		}
 		if pending, _ := channel.ReadQuestion(b.root(), result.Targets[1].ID); pending.Thread != nil || pending.Undelivered != 1 {

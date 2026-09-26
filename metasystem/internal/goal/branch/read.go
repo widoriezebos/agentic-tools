@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,16 +25,26 @@ type BranchReadRequest struct {
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
 	BriefPath, Runtime, Model                                string
 	Collect                                                  bool
-	CheckClaim                                               func() error
-	Gate                                                     func(string) (string, error)
-	Delegate                                                 func(string, string, string, string, string) (string, error)
-	Commit                                                   func(CommitReadRequest) (string, Attestation, error)
-	NewID                                                    func(string) (string, error)
-	Repository                                               BranchReadRepository
+	// Retry names a failed examination round of the recorded critic chain
+	// to examine once more; FollowUp starts that round in the same chain.
+	Retry      int64
+	FollowUp   func(rootJob, brief string) (string, error)
+	CheckClaim func() error
+	Gate       func(string) (string, error)
+	Delegate   func(string, string, string, string, string) (string, error)
+	Commit     func(CommitReadRequest) (string, Attestation, error)
+	NewID      func(string) (string, error)
+	Repository BranchReadRepository
 }
 
 type BranchReadResult struct {
 	State, RootJob, GateRunID, AttestationCommit string
+	// Published is set by InspectBranchRead: the collected attestation is
+	// contained in the goal branch's origin tip the push owner last
+	// recorded, so the remote holds it as far as this checkout knows.
+	Published bool
+	// Retry is the examination round a retry admitted, or rejoined.
+	Retry string
 }
 
 // ReadNeverLaunchedError is returned only when the delegate boundary proves
@@ -64,7 +75,10 @@ type branchReadRecord struct {
 	DispatchPending   bool   `json:"dispatchPending,omitempty"`
 	DispatchRetryable bool   `json:"dispatchRetryable,omitempty"`
 	FrozenBriefSHA256 string `json:"frozenBriefSha256,omitempty"`
-	AttestationCommit string `json:"attestationCommit,omitempty"`
+	// Retries maps a failed examination round to the round its retry
+	// admitted ("pending" before the follow-up reported it).
+	Retries           map[string]string `json:"retries,omitempty"`
+	AttestationCommit string            `json:"attestationCommit,omitempty"`
 }
 
 func gitCommonDir(repo string) (string, error) {
@@ -386,6 +400,9 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	}
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
+	if request.Retry > 0 {
+		return retryBranchRead(request, common, recordPath, record, result)
+	}
 	if record.AttestationCommit != "" {
 		result.State = "already-collected"
 		return result, nil
@@ -545,4 +562,112 @@ func installedBranchReadFor(request BranchReadRequest, info KindInfo, record bra
 		return "", false, nil
 	}
 	return installedBranchRead(request, info, record)
+}
+
+// retryBranchRead examines the recorded critic chain's failed round once
+// more, in the same chain. The mapping from the failed round to its retry is
+// saved under the read lock before the follow-up starts, so repeating the
+// same retry rejoins it, even after the retry itself failed; the dispatch
+// policy decides whether the failed round may be retried at all.
+func retryBranchRead(request BranchReadRequest, common, recordPath string, record branchReadRecord, result BranchReadResult) (BranchReadResult, error) {
+	if record.RootJob == "" {
+		return result, operationRefusal(ReadInvalidCode, "no examination of unit %s has been dispatched, so there is nothing to retry", request.UnitCommit)
+	}
+	if record.AttestationCommit != "" {
+		return result, operationRefusal(ReadInvalidCode, "the read of unit %s is collected; its examination is not retried", request.UnitCommit)
+	}
+	key := strconv.FormatInt(request.Retry, 10)
+	records, err := dispatch.ChainRecords(request.Repo, record.RootJob)
+	if err != nil {
+		return result, err
+	}
+	var newest map[string]any
+	var newestRound int64
+	for _, one := range records {
+		if round, parseErr := strconv.ParseInt(fmt.Sprint(one["round"]), 10, 64); parseErr == nil && round >= newestRound {
+			newest, newestRound = one, round
+		}
+	}
+	admitted := record.Retries[key]
+	if admitted == "pending" && newestRound == request.Retry+1 {
+		// The follow-up started but its report was lost: adopt the round.
+		admitted, _ = newest["jobId"].(string)
+		record.Retries[key] = admitted
+		if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+			return result, err
+		}
+	}
+	if admitted != "" && admitted != "pending" {
+		result.State, result.Retry = "retry-joined", admitted
+		return result, nil
+	}
+	if newest == nil || newestRound != request.Retry {
+		return result, operationRefusal(ReadInvalidCode, "examination round %d is not the newest round of %s (the newest is %d)", request.Retry, record.RootJob, newestRound)
+	}
+	if err := dispatch.ExaminationRetryAdmissible(request.Repo, newest); err != nil {
+		return result, operationRefusal(ReadInvalidCode, "%v", err)
+	}
+	if request.FollowUp == nil || record.Brief == "" {
+		return result, fmt.Errorf("goal branch read has no follow-up command or frozen brief for a retry")
+	}
+	if record.Retries == nil {
+		record.Retries = map[string]string{}
+	}
+	record.Retries[key] = "pending"
+	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+		return result, err
+	}
+	job, err := request.FollowUp(record.RootJob, record.Brief)
+	if err != nil || job == "" {
+		return result, errors.Join(fmt.Errorf("the examination retry could not start"), err)
+	}
+	record.Retries[key] = job
+	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+		return result, fmt.Errorf("%s: retry round %s may be running; recording it failed: %w", ReadDispatchPendingCode, job, err)
+	}
+	result.State, result.Retry = "dispatched", job
+	return result, nil
+}
+
+// InspectBranchRead reads one unit commit's read record without locking or
+// writing: its critic root and, once collected, its attestation. A unit with
+// no record yet has neither.
+func InspectBranchRead(repo, goalID, unitCommit string) (BranchReadResult, error) {
+	_, recordPath, _, err := branchReadPathsWithRepository(branchReadRepositoryFor(nil), repo, goalID, unitCommit)
+	if err != nil {
+		return BranchReadResult{}, err
+	}
+	record, err := loadBranchReadRecord(recordPath)
+	if err != nil {
+		return BranchReadResult{}, err
+	}
+	result := BranchReadResult{RootJob: record.RootJob, GateRunID: record.GateRunID, AttestationCommit: record.AttestationCommit}
+	switch {
+	case record.AttestationCommit != "":
+		result.State = "collected"
+		if result.Published, err = attestationPublished(repo, goalID, record.AttestationCommit); err != nil {
+			return result, err
+		}
+	case record.RootJob != "":
+		result.State = "examining"
+	}
+	return result, nil
+}
+
+// attestationPublished reports whether the push owner's recorded origin tip
+// for the goal branch contains the attestation. No recorded tip means the
+// branch was never published from this checkout.
+func attestationPublished(repo, goalID, attestation string) (bool, error) {
+	out, err := gitOutput(repo, "for-each-ref", "--format=%(objectname)", originTipRef(goalID))
+	if err != nil {
+		return false, err
+	}
+	tip := strings.TrimSpace(string(out))
+	if tip == "" {
+		return false, nil
+	}
+	if tip == attestation {
+		return true, nil
+	}
+	return ancestor(repo, attestation, tip)
 }

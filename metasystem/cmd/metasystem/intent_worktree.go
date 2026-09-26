@@ -25,6 +25,10 @@ type intentConnectionOwners struct {
 	endpointTip func(root string, endpoint goal.Endpoint) (string, error)
 	claimCheck  func(root, goalID string, endpoint goal.Endpoint) func() error
 	commitToken func(root string, commit func() error) error
+	// section is the checkout mutation section a manual submission stages
+	// and commits in; its withToken mints the commit token without another
+	// lock.
+	section     func(root string, body func(withToken func(func() error) error) error) error
 	transport   branch.PushTransport
 	commit      func(branch.CommitRequest) (string, error)
 	push        func(branch.PushRequest) (branch.PushResult, error)
@@ -58,6 +62,11 @@ func (inv *intentInvocation) connection() intentConnectionOwners {
 	if owners.commitToken == nil {
 		owners.commitToken = func(root string, commit func() error) error {
 			return withGoalBranchCommitTokenAt(root, goalBranchHolderRoot(root), commit)
+		}
+	}
+	if owners.section == nil {
+		owners.section = func(root string, body func(withToken func(func() error) error) error) error {
+			return goalBranchCheckoutSection(root, goalBranchHolderRoot(root), body)
 		}
 	}
 	if owners.transport == nil {

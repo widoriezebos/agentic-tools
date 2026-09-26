@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -36,12 +37,14 @@ type connectionBed struct {
 	edits            map[string]string
 	proofWrites      bool
 	readFails        bool
+	followUps        []string
 	delegates        []string
 	failPushes       int
 	loseCommit       bool
 	commits          int
 	tokens           int
 	closes           [][]string
+	failCloses       int
 	claimLost        bool
 	// isolate, when set, wraps the real adapter-configuration isolation.
 	isolate      func(real func(string, string) error, source, destination string) error
@@ -210,7 +213,11 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		}
 	}
 	owners.delivery = &intentDeliveryOwners{
-		process: c.closeOwner,
+		// The bed's close owner runs as a person's act (its engine wrapper
+		// classifies HUMAN); the record-writer authority owner judges that
+		// same classification.
+		recordWriter: humanRecordWriter,
+		process:      c.closeOwner,
 		publishRead: func(root, goalID, unit string) (branch.PublishReadResult, error) {
 			c.publications++
 			return branch.PublishCollectedRead(branch.PublishReadRequest{Repo: root, Remote: "origin", EndpointTip: c.endpointTip(),
@@ -219,6 +226,7 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			c.reads = append(c.reads, args)
 			install, goalID := flagValue(args, "--root"), flagValue(args, "--goal")
+			retry, _ := strconv.ParseInt(flagValue(args, "--retry"), 10, 64)
 			tip, present, err := branch.GitPushTransport{}.RemoteTip(install, "origin", "refs/heads/goal/"+goalID)
 			if err != nil || !present {
 				return branch.BranchReadResult{}, 1, fmt.Errorf("origin has no goal/%s: %v", goalID, err)
@@ -229,6 +237,19 @@ func (c *connectionBed) connectionOwners() intentOwners {
 				CheckClaim: func() error { return nil },
 				Gate:       func(string) (string, error) { return "gate-run-1", nil },
 				Delegate:   c.criticDispatch(install),
+				Retry:      retry,
+				// The follow-up transport is the fixture's: it records the next
+				// round of the same chain, as dispatch's follow-up would.
+				FollowUp: func(rootJob, brief string) (string, error) {
+					c.mu.Lock()
+					c.followUps = append(c.followUps, rootJob+" "+brief)
+					round := len(c.followUps) + 1
+					c.mu.Unlock()
+					child := fmt.Sprintf("%s-r%d", rootJob, round)
+					c.writeJSON(filepath.Join(install, "artifacts", "agents", "jobs", child+".json"), map[string]any{
+						"jobId": child, "role": "code-critic", "status": "running", "round": round, "parentJob": rootJob, "goalId": goalID})
+					return child, nil
+				},
 				Commit: func(request branch.CommitReadRequest) (string, branch.Attestation, error) {
 					c.commitReads++
 					commit, attestation, err := branch.CommitRead(request)
@@ -295,6 +316,10 @@ func (c *connectionBed) writeJSON(path string, value any) {
 func (c *connectionBed) closeOwner(process intentProcess) intentProcessResult {
 	c.closes = append(c.closes, process.argv)
 	job := flagValue(process.argv, "--job")
+	if c.failCloses > 0 {
+		c.failCloses--
+		return intentProcessResult{code: 1, stderr: []byte("close check: the evidence mirror is missing\n")}
+	}
 	if filepath.Base(process.argv[0]) != "dispatch.sh" || process.argv[1] != "close" || slices.Contains(process.argv, "--runner-closed") {
 		c.t.Fatalf("close must invoke the whole owner: %v", process.argv)
 	}
@@ -407,7 +432,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("build: code=%d %+v", code, result)
 	}
 	run := resultData(t, result)["run"].(string)
-	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "review", "unit", run}) {
+	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "review", c.id, "--work", "connect"}) || run == "" {
 		t.Fatalf("a green build's next act is its committed review: %+v", result.Next)
 	}
 	if head := connectionGit(t, c.worktree, "rev-parse", "HEAD"); head != base ||
@@ -477,7 +502,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// Finished but unclosed: the author's close is named, nothing collected.
 	c.writeCritic(install, "crit1", first, "completed", false)
 	_, result = c.do("review", "unit", run)
-	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "metasystem close crit1 --dispositions FILE --repo "+install) ||
+	if result.Outcome != intentInProgress || !strings.Contains(result.Decision, "review unit "+run+" --dispositions FILE") ||
 		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
 		t.Fatalf("unclosed critic: %+v", result)
 	}
@@ -591,7 +616,8 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	c.claimLost = true
 	launches := len(c.starts())
 	code, result = c.do(append([]string{"build", c.id, "unclaimed", "--brief", c.brief("unclaimed.md", "No claim.\n"), "--lines", "5"}, workCheck...)...)
-	if result.Outcome == intentConfirmed || !strings.Contains(result.Summary, "UNIT_LAUNCH_UNAUTHORIZED") {
+	// The claim is checked before any run is reserved.
+	if result.Outcome == intentConfirmed || !strings.Contains(result.Summary, "GOAL_BRANCH_NOT_HOLDER") || len(c.starts()) != launches {
 		t.Fatalf("unclaimed build: code=%d %+v", code, result)
 	}
 	code, result = c.do("fold", "unit", readFailed, "--brief", c.brief("unclaimed-fold.md", "No claim.\n"))

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -282,11 +283,45 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			}
 		}
 		owners := b.owners()
-		if code, result := b.runJSON(owners, "stop", "job", "job-a"); code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "both a launch record and the dispatch job") {
-			t.Fatalf("ambiguous job = %d %+v", code, result)
+		code, ambiguous := b.runJSON(owners, "stop", "job", "job-a")
+		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "both a launch of this user and a dispatch job") ||
+			strings.Contains(ambiguous.Decision, "internal") || !slices.Equal(ambiguous.Data.(map[string]any)["candidates"].([]any), []any{"j1:job-a", "j2:job-a"}) ||
+			!strings.Contains(fmt.Sprint(ambiguous.Data.(map[string]any)["choices"]), "[metasystem stop job j1:job-a]") {
+			t.Fatalf("ambiguous job = %d %+v", code, ambiguous)
 		}
-		if code, result := b.runJSON(owners, "stop", "job", "job"); code != 1 || result.Outcome != intentRefused || !strings.HasPrefix(result.Summary, "no job job:") {
-			t.Fatalf("prefix job = %d %+v", code, result)
+		// Each offered reference reaches exactly its own store.
+		if code, result := b.runJSON(owners, "stop", "job", "j1:job-a"); code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "launch job-a already ended") {
+			t.Fatalf("stop job j1:job-a = %d %+v", code, result)
+		}
+		if code, result := b.runJSON(owners, "status", "job", "j2:job-a"); code != 0 || result.Summary != "dispatch job job-a: running" || result.Targets[0].ID != "j2:job-a" {
+			t.Fatalf("status job j2:job-a = %d %+v", code, result)
+		}
+		code, unknown := b.runJSON(owners, "stop", "job", "job")
+		if code != 1 || unknown.Outcome != intentRefused || !strings.HasPrefix(unknown.Summary, "no job job:") || unknown.Next == nil ||
+			!slices.Equal(unknown.Next.Argv, []string{"metasystem", "status", "work", "--all"}) {
+			t.Fatalf("unknown job = %d %+v", code, unknown)
+		}
+		code, listed := b.runJSON(owners, unknown.Next.Argv[1:]...)
+		references := []string{}
+		for _, job := range listed.Data.(map[string]any)["jobs"].([]any) {
+			references = append(references, job.(map[string]any)["reference"].(string))
+		}
+		slices.Sort(references)
+		if code != 0 || !slices.Equal(references, []string{"j1:job-a", "j1:job-b", "j2:job-a", "j2:job-c"}) {
+			t.Fatalf("status work --all = %d %v %+v", code, references, listed)
+		}
+		code, running := b.runJSON(owners, "status", "work")
+		runningRefs := []string{}
+		for _, job := range running.Data.(map[string]any)["jobs"].([]any) {
+			view := job.(map[string]any)
+			runningRefs = append(runningRefs, view["reference"].(string))
+			if view["stop"] == nil || view["wait"] == nil {
+				t.Fatalf("a running job offers its wait and stop: %v", view)
+			}
+		}
+		slices.Sort(runningRefs)
+		if code != 0 || !slices.Equal(runningRefs, []string{"j2:job-a", "j2:job-c"}) || running.Next == nil {
+			t.Fatalf("status work = %d %v %+v", code, runningRefs, running)
 		}
 		if code, result := b.runJSON(owners, "stop", "job", "job-b"); code != 0 || result.Outcome != intentUnchanged {
 			t.Fatalf("ended launch = %d %+v", code, result)
@@ -299,7 +334,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			cancelled = append(cancelled, checkout+" "+job)
 			return map[string]any{"outcome": "CANCELLED", "headline": "cancelled", "jobId": job}, 0, nil
 		}
-		if code, result := b.runJSON(owners, "stop", "job", "job-c"); code != 0 || result.Outcome != intentConfirmed || len(cancelled) != 1 || !strings.HasSuffix(cancelled[0], " job-c") || !samePath(strings.TrimSuffix(cancelled[0], " job-c"), b.root()) {
+		if code, result := b.runJSON(owners, "stop", "job", "j2:job-c"); code != 0 || result.Outcome != intentConfirmed || len(cancelled) != 1 || !strings.HasSuffix(cancelled[0], " job-c") || !samePath(strings.TrimSuffix(cancelled[0], " job-c"), b.root()) {
 			t.Fatalf("dispatch cancel = %d %+v %v", code, result, cancelled)
 		}
 		if code, result := b.runJSON(owners, "status", "unit", "unit-z"); code != 1 || result.Outcome != intentRefused {

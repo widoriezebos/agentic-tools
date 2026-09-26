@@ -36,6 +36,8 @@ type Kit struct {
 }
 
 // CommandFamily is one family of the engine's verbs, as the binary routes it.
+// An empty Name is the public command table, whose commands follow the
+// executable name directly.
 type CommandFamily struct {
 	Name    string
 	Summary string
@@ -46,6 +48,8 @@ type CommandFamily struct {
 type Command struct {
 	Name    string
 	Summary string
+	// Usage is the command's accepted forms, each a complete command line.
+	Usage []string
 }
 
 // The kit files this tool reads that are named rather than pointed at.
@@ -144,10 +148,17 @@ func (r Readers) kitEntries(root string) (entries []entry, sources, problems []s
 	if r.Kit.Commands != nil {
 		for _, family := range r.Kit.Commands() {
 			for _, verb := range family.Verbs {
+				name, text := "metasystem "+verb.Name, verb.Summary
+				if family.Name != "" {
+					name = "metasystem " + family.Name + " " + verb.Name
+					text += " (" + family.Name + ": " + family.Summary + ")"
+				}
+				if len(verb.Usage) > 0 {
+					text += "; usage: " + strings.Join(verb.Usage, "; ")
+				}
 				entries = append(entries, entry{
 					owner: "command", from: "the engine's own command catalogue",
-					name: "metasystem " + family.Name + " " + verb.Name,
-					text: verb.Summary + " (" + family.Name + ": " + family.Summary + ")",
+					name: name, text: text,
 				})
 			}
 		}

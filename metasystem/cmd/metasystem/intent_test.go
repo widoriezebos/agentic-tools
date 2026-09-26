@@ -173,14 +173,17 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 	if code != 0 || problem != "" || strings.Contains(root, "usage: metasystem <family> <verb>") {
 		t.Fatalf("root help = code %d stderr %q; it must be the concise page: %q", code, problem, root)
 	}
+	_, all, _ := runCLIHelp([]string{"help", "all"}, registered)
 	for _, command := range intentCommands() {
-		if !strings.Contains(root, "  "+command.name) {
-			t.Errorf("root help does not list %s", command.name)
-		}
-		if isFamilyName(registered, command.name) {
-			// ui is also a family: its own help and verbs win (checked below
-			// with every family), so the public page is not routed by name.
-			continue
+		switch {
+		case command.primary && !strings.Contains(root, "  "+command.name):
+			t.Errorf("root help does not list the common command %s", command.name)
+		case !command.primary && strings.Contains(root, "\n  "+command.name+" "):
+			t.Errorf("root help lists the less common command %s; it belongs to its topic", command.name)
+		case command.compatibility && strings.Contains(all, "\n  metasystem "+command.name+" "):
+			t.Errorf("help all advertises the compatibility spelling %s", command.name)
+		case !command.compatibility && !strings.Contains(all, "\n  metasystem "+command.name):
+			t.Errorf("help all does not list %s", command.name)
 		}
 		code, page, problem := runCLIHelp([]string{"help", command.name}, registered)
 		if code != 0 || problem != "" || !strings.Contains(page, command.usage[0]) || !strings.Contains(page, "--repo PATH") {
@@ -193,27 +196,15 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 			t.Errorf("%s --help = code %d stdout %q stderr %q", command.name, code, stdout.String(), stderr.String())
 		}
 	}
-	// Commands whose implementation has not landed are not advertised.
-	// start, enroll, fleet and doctor landed with the process slice; claim and
-	// open with the planning slice; build, brief, fold and wait with the work
-	// slice; review, land and close with the delivery slice.
-	for _, absent := range []string{} {
-		if strings.Contains(root, "\n  "+absent+" ") {
-			t.Errorf("root help advertises unimplemented %s", absent)
-		}
-		if _, ok := findIntentCommand(absent); ok {
-			t.Errorf("router accepts unimplemented %s", absent)
-		}
-	}
-	for _, topic := range []string{"human", "agent", "internal"} {
+	for _, topic := range []string{"goals", "work", "questions", "operations", "human", "agent", "all", "internal"} {
 		code, page, problem := runCLIHelp([]string{"help", topic}, registered)
 		if code != 0 || problem != "" || page == "" {
 			t.Errorf("help %s = code %d stderr %q", topic, code, problem)
 		}
 	}
 	_, agent, _ := runCLIHelp([]string{"help", "agent"}, registered)
-	if !strings.Contains(agent, "metasystem help internal") || strings.Contains(agent, "approve G") {
-		t.Errorf("help agent must point at the internal catalogue and list only agent commands: %q", agent)
+	if strings.Contains(agent, "approve G") || strings.Contains(agent, "internal") {
+		t.Errorf("help agent must list only agent commands and no internal catalogue: %q", agent)
 	}
 	_, internal, _ := runCLIHelp([]string{"help", "internal"}, registered)
 	var legacy bytes.Buffer
@@ -221,11 +212,13 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 	if !strings.Contains(internal, legacy.String()) {
 		t.Error("help internal does not carry the complete legacy catalogue")
 	}
-	// Every family keeps its help, directly and through the internal alias.
+	// Every family keeps its help through the internal alias, and directly
+	// when no public command has its name; a public name shows only the
+	// public command.
 	for _, fam := range registered {
 		var want bytes.Buffer
 		if command, public := findIntentCommand(fam.name); public {
-			writeIntentHelpWithFamily(&want, command, registered)
+			writeIntentHelp(&want, command)
 		} else {
 			writeFamilyHelp(&want, fam)
 		}
@@ -250,33 +243,24 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 	if code, _, _ := runCLIHelp([]string{"safe", "run", "z"}, fake); code != 7 || !slices.Equal(called, []string{"z"}) {
 		t.Errorf("direct family call = code %d args %v", code, called)
 	}
-	// The Partner catalogue is the public table plus every family, unchanged.
+	// The Partner catalogue is the public table alone: no engine family and
+	// no compatibility spelling.
 	catalogue := commandCatalogue()
-	if len(catalogue) != len(registered)+1 || catalogue[0].Name != "metasystem" {
-		t.Fatalf("catalogue has %d families, want %d with the public table first", len(catalogue), len(registered)+1)
+	if len(catalogue) != 1 || catalogue[0].Name != "" {
+		t.Fatalf("catalogue has %d families (first %q), want only the public table", len(catalogue), catalogue[0].Name)
 	}
-	names := func(index int) []string {
-		var list []string
-		for _, one := range catalogue[index].Verbs {
-			list = append(list, one.Name)
-		}
-		return list
+	names := []string{}
+	for _, one := range catalogue[0].Verbs {
+		names = append(names, one.Name)
 	}
-	for _, want := range []string{"goals", "show", "approve", "budget", "pause", "resume", "done", "help", "internal"} {
-		if !slices.Contains(names(0), want) {
+	for _, want := range []string{"goals", "show", "approve", "budget", "pause", "resume", "done", "build", "review", "revise", "land", "check", "incidents", "help"} {
+		if !slices.Contains(names, want) {
 			t.Errorf("public catalogue lacks %s", want)
 		}
 	}
-	for index, fam := range registered {
-		if catalogue[index+1].Name != fam.name || len(catalogue[index+1].Verbs) != len(fam.verbs) {
-			t.Errorf("catalogue family %d = %s with %d verbs, want %s with %d", index+1, catalogue[index+1].Name, len(catalogue[index+1].Verbs), fam.name, len(fam.verbs))
-		}
-		if fam.name == "goal" {
-			for _, want := range []string{"set-pin", "grant", "reopen", "list", "show"} {
-				if !slices.Contains(names(index+1), want) {
-					t.Errorf("internal goal family lost %s", want)
-				}
-			}
+	for _, absent := range []string{"internal", "doctor", "red", "ready", "goal", "launch"} {
+		if slices.Contains(names, absent) {
+			t.Errorf("public catalogue lists %s", absent)
 		}
 	}
 }

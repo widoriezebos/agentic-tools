@@ -18,10 +18,10 @@ import (
 func TestIntentPublicCoverage(t *testing.T) {
 	t.Parallel()
 	publicNames := []string{
-		"abandon", "answer", "approve", "ask", "block", "brief", "budget", "build", "claim", "close",
+		"abandon", "accept-risk", "answer", "approve", "ask", "block", "brief", "budget", "build", "check", "claim", "close", "design",
 		"decide", "doctor", "done", "edit", "enroll", "fleet", "fold", "goals", "grant", "group",
-		"land", "notes", "open", "pause", "pin", "prioritize", "ready", "recover", "red", "release",
-		"reopen", "resolve", "restart", "resume", "review", "revoke", "settings", "show", "split", "start",
+		"incidents", "land", "notes", "open", "pause", "pin", "prioritize", "ready", "recover", "red", "release", "repair",
+		"reopen", "resolve", "restart", "resume", "review", "revise", "revoke", "settings", "show", "split", "start",
 		"status", "stop", "test", "ui", "unapprove", "unblock", "ungroup", "wait",
 	}
 	commands := intentCommands()
@@ -105,7 +105,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 			"revoke":                      {verb: "revoke"},
 			"carrying":                    {internal: "exceptional landing"},
 			"carried":                     {internal: "exceptional landing"},
-			"accept-risk":                 {verb: "decide"},
+			"accept-risk":                 {verb: "accept-risk"},
 			"discharge-review-obligation": {verb: "resolve"},
 			"split":                       {verb: "split"},
 			"set-obligation":              {verb: "edit", flag: "obligation"},
@@ -177,20 +177,23 @@ func TestIntentPublicCoverage(t *testing.T) {
 
 	t.Run("ordinary grammar", func(t *testing.T) {
 		forms := map[string][]string{
-			"start":   {"start session"},
-			"stop":    {"stop job", "stop session"},
-			"restart": {"restart checkout", "restart ui"},
-			"status":  {"status job", "status unit"},
-			"review":  {"review design", "review job", "review commit", "review unit"},
-			"fold":    {"fold review", "fold unit"},
-			"land":    {"land job"},
-			"wait":    {"wait job", "wait unit", "wait goal"},
-			"ui":      {"start|stop|status"},
-			"notes":   {"--read", "--add", "--close", "--fixed", "--moved", "--accepted"},
-			"pin":     {"--clear"},
-			"claim":   {"--take-over"},
-			"red":     {"red own", "red close"},
-			"answer":  {"answer mission"},
+			"start":     {"start session"},
+			"stop":      {"stop job", "stop session"},
+			"restart":   {"restart checkout", "restart ui"},
+			"status":    {"status G", "status job", "status work"},
+			"review":    {"review G", "review design", "review job", "review commit"},
+			"revise":    {"revise G", "--after N", "--brief FILE"},
+			"incidents": {"incidents claim", "incidents close"},
+			"repair":    {"repair review G"},
+			"fold":      {"fold review", "fold unit"},
+			"land":      {"land job", "land G --queue-only"},
+			"wait":      {"wait G", "wait G --for landing|human-act", "--since TIP", "wait job"},
+			"ui":        {"start|stop|status"},
+			"notes":     {"--read", "--add", "--close", "--fixed", "--moved", "--accepted"},
+			"pin":       {"--clear"},
+			"claim":     {"--take-over"},
+			"red":       {"red own", "red close"},
+			"answer":    {"answer Q [TEXT]", "answer M/Q TEXT"},
 		}
 		for name, wants := range forms {
 			command, ok := findIntentCommand(name)
@@ -266,7 +269,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 			}
 		}
 		pages := map[string]string{}
-		for _, args := range [][]string{{"help"}, {"help", "human"}, {"help", "agent"}} {
+		for _, args := range [][]string{{"help"}, {"help", "human"}, {"help", "agent"}, {"help", "all"}} {
 			code, page, problem := runCLIHelp(args, registered)
 			if code != 0 || problem != "" || page == "" {
 				t.Errorf("%v = code %d stderr %q", args, code, problem)
@@ -274,9 +277,16 @@ func TestIntentPublicCoverage(t *testing.T) {
 			checkStale(strings.Join(args, " "), page)
 			pages[strings.Join(args, " ")] = page
 		}
+		// The root page is an orientation; help all lists every public
+		// command and none of the compatibility spellings, which stay routed.
 		for _, name := range publicNames {
-			if !strings.Contains(pages["help"], "  "+name) {
-				t.Errorf("root help does not mention %s", name)
+			command, _ := findIntentCommand(name)
+			listed := strings.Contains(pages["help all"], "\n  metasystem "+name+" ") || strings.Contains(pages["help all"], "\n  metasystem "+name+"\n")
+			if listed == command.compatibility {
+				t.Errorf("help all lists %s = %t; compatibility %t", name, listed, command.compatibility)
+			}
+			if command.primary && !strings.Contains(pages["help"], "  "+name) {
+				t.Errorf("root help does not mention the common command %s", name)
 			}
 		}
 		missing := filepath.Join(t.TempDir(), "does-not-exist")
@@ -324,32 +334,22 @@ func TestIntentPublicCoverage(t *testing.T) {
 
 	t.Run("partner union", func(t *testing.T) {
 		catalogue := commandCatalogue()
-		if len(catalogue) != len(registered)+1 || catalogue[0].Name != "metasystem" {
-			t.Fatalf("catalogue has %d entries, want %d with the public table first", len(catalogue), len(registered)+1)
+		if len(catalogue) != 1 || catalogue[0].Name != "" {
+			t.Fatalf("catalogue has %d entries, want the public table alone", len(catalogue))
 		}
 		counts := map[string]int{}
 		for _, one := range catalogue[0].Verbs {
 			counts[one.Name]++
 		}
 		for _, name := range publicNames {
-			if counts[name] != 1 {
-				t.Errorf("Partner catalogue lists public %s %d times, want once", name, counts[name])
+			command, _ := findIntentCommand(name)
+			if want := map[bool]int{false: 1, true: 0}[command.compatibility]; counts[name] != want {
+				t.Errorf("Partner catalogue lists %s %d times, want %d", name, counts[name], want)
 			}
 		}
-		for index, fam := range registered {
-			entry := catalogue[index+1]
-			if entry.Name != fam.name {
-				t.Errorf("catalogue entry %d is %s, want family %s", index+1, entry.Name, fam.name)
-				continue
-			}
-			var listed []string
-			for _, one := range entry.Verbs {
-				listed = append(listed, one.Name)
-			}
-			for _, v := range fam.verbs {
-				if !slices.Contains(listed, v.name) {
-					t.Errorf("Partner catalogue lost %s %s", fam.name, v.name)
-				}
+		for _, fam := range registered {
+			if _, public := findIntentCommand(fam.name); !public && counts[fam.name] != 0 {
+				t.Errorf("Partner catalogue lists the engine family %s", fam.name)
 			}
 		}
 	})

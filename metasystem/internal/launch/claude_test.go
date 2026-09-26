@@ -138,9 +138,9 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 		kind, adapter, model string
 	}{
 		{"design", "claude-headless", "claude-fable-5-1"},
-		{"read", "codex-exec", "gpt-6-sol"},
+		{"read", "claude-headless", "claude-fable-5-1"},
 		{"build", "claude-headless", "claude-opus-5-5"},
-		{"critique", "codex-exec", "gpt-6-sol"},
+		{"critique", "claude-headless", "claude-opus-5-5"},
 	}
 	for index, row := range cases {
 		briefPath := brief(t)

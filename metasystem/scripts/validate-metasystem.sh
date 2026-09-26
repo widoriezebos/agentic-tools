@@ -1303,10 +1303,10 @@ if (( template_mode )); then
     || { echo "template demotion fixture: mode role overrides are not three commented examples" >&2; exit 1; }
   active_mode_roles=$(grep -E '^mode\.[a-z0-9-]+\.role\.' metasystem.conf || true)
   expected_design_mode_roles=$(printf '%s\n' \
-    'mode.design.role.implementer.runtime=codex' \
-    'mode.design.role.implementer.model.codex=gpt-6-astra')
+    'mode.design.role.implementer.runtime=claude' \
+    'mode.design.role.implementer.model.claude=claude-fable-5-1')
   [[ "$active_mode_roles" == "$expected_design_mode_roles" ]] \
-    || { echo "template demotion fixture: active mode role keys differ from the shared Codex/Astra design-author default" >&2; exit 1; }
+    || { echo "template demotion fixture: active mode role keys differ from the shared Claude/Fable design-author default" >&2; exit 1; }
   if grep -Eq '^model\.tier\.' metasystem.conf; then
     echo "template demotion fixture: an optional model tier key is still active" >&2
     exit 1

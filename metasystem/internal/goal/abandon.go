@@ -165,7 +165,11 @@ func Abandon(r VerbRequest, id string, spec AbandonSpec, proof *humanauthority.P
 		return PublishResult{}, err
 	}
 	if len(jobs) != 0 {
-		return PublishResult{}, fmt.Errorf("goal abandon refuses while non-terminal jobs name the abandoned set: %s; cancel each one with metasystem delegate --cancel <job>", strings.Join(jobs, ", "))
+		stops := make([]string, 0, len(jobs))
+		for _, job := range jobs {
+			stops = append(stops, "metasystem stop job j2:"+job)
+		}
+		return PublishResult{}, fmt.Errorf("goal abandon refuses while non-terminal jobs name the abandoned set: %s; stop each dispatch job (%s), then repeat the abandon", strings.Join(jobs, ", "), strings.Join(stops, "; "))
 	}
 	debtDetail := abandonedReviewDebtDetail(projection.Tree, arguments.set)
 	result, err := Publish(r.Endpoint, abandonRequest(r, id, spec, arguments, revisions))
@@ -256,7 +260,7 @@ func requireAbandonFleetFloor(r VerbRequest, tree *TreeGoals) error {
 	}
 	stamp := dependencies.buildStamp()
 	if floor == "" {
-		return fmt.Errorf("abandon writes a state that engines older than this build refuse, and the ledger has no record that the fleet runs it; after every enrolled seat has rebuilt and re-armed (metasystem supervise status --repo <checkout> on each machine), a human records the floor: metasystem goal engine-floor --root . --commit %s --by <name>", stamp)
+		return fmt.Errorf("abandon writes a state that engines older than this build refuse, and the ledger has no record that the fleet runs it; after every enrolled seat has rebuilt and re-armed (metasystem status --machines lists every enrolled machine), a person records the floor: metasystem settings compatibility --minimum-engine %s --by NAME", stamp)
 	}
 	commit, dirty, ok := enginebuild.StampCommit(stamp)
 	if !ok {
@@ -680,4 +684,12 @@ func sortedSet(set map[string]bool) []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+// EngineFloorOf is the ledger's newest recorded engine floor, or empty.
+func EngineFloorOf(root *RootRecord) string {
+	if root == nil {
+		return ""
+	}
+	return newestEngineFloor(root)
 }

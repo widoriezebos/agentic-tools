@@ -22,8 +22,8 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 - Give each important behavior one owner. Keep boundaries honest. Make state, failure, and observability explicit.
 - **Strictness guards invariants, never conveniences.** A check refuses loudly only for a named invariant whose violation is a real defect. A rule that breaks on benign variation—an arbitrary cap, a missing lawful path, or a format nit—is defective: handle the variation intuitively or omit the rule. No nameable invariant, no rule.
 - Use focused tests first; use expensive, model-backed, debugger, or full-suite validation only for a named question.
-- When subagents are available, delegate independent exploration and verifiable subtasks, keeping the main context for decisions. Rostered work goes through its intent (`metasystem build`, `review`, `fold`, `close`), else `metasystem internal delegate`; without exact-session resume, use the fresh-dispatch embed fallback (`docs/orchestration.md`).
-- A subagent's tool call never waits over 240 seconds. Register longer background waits with `metasystem wait register`; the stop gate then lets the seat stop.
+- Delegate independent exploration and verifiable subtasks when available; keep decisions in the main context. Use rostered intents (`metasystem design`, `build`, `review`, `revise`) and `metasystem help work`. These workflows own dispatch, collection, closure and exact-session continuation, including fallback (`docs/orchestration.md`).
+- A subagent's tool call never waits over 240 seconds. For longer work, use its public `metasystem wait` command and the continuation it returns.
 - Keep machine-verifiable requirements in schemas, tests, linters, permissions, or scripts, never in repeated prose.
 - Keep project-specific commands and policies in `docs/project-rules.md`.
 
@@ -32,7 +32,7 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 Every backlog item's intake tier sets its budget (R-54-m1): severity and
 novelty derive the tier; exposure and accumulation weight its proof.
 
-Programs START with `metasystem open` by a person: a multi-session effort gets a ledger goal before its first commit so intent survives turns; a seat's own `open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas go to `memory/backlog-notes.md`. At turn end, read `metasystem goals --ready`, one line every runtime has, hooks or none; a free seat runs `metasystem claim`, taking only that ready goal. Records explain work but never select it, nor do scanning, kickoff order or pin preference. If another seat wins, claim again. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through goal actions; manual edits go through `metasystem internal goal reconcile`.
+Programs START with `metasystem open` by a person: a multi-session effort gets a ledger goal before its first commit so intent survives turns; a seat's own `open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas go to `memory/backlog-notes.md`. At turn end, read `metasystem goals --ready`, one line every runtime has, hooks or none; a free seat runs `metasystem claim`, taking only that ready goal. Records explain work but never select it, nor do scanning, kickoff order or pin preference. If another seat wins, claim again. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through goal actions; a person publishes reviewed manual edits through `metasystem repair goals --accept-edits`.
 
 A seat leaving a goal waiting on a human starts the newest `Next step` entry with `RULING NEEDED`, `WAITING ON THE HUMAN`, `WAITING ON <one word>` followed by `CALL`, `RULING`, `DECISION`, `ANSWER`, or `WORD`, `QUESTION TO THE HUMAN`, `PARK REQUEST`, or `PARK REQUESTED`, so idle continuation leaves that goal alone.
 

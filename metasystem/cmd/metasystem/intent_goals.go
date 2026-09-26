@@ -362,6 +362,18 @@ func goalHistoryLines(prefix string, file *goal.GoalFile) []string {
 }
 
 func runIntentShow(inv *intentInvocation) int {
+	if args := inv.input.args; len(args) > 0 && slices.Contains([]string{"designs", "decisions", "record", "design"}, args[0]) {
+		return runIntentShowRecords(inv, args[0], args[1:])
+	}
+	if args := inv.input.args; len(args) == 2 && args[0] == "review" {
+		return runIntentReviewRef(inv, "show", args[1])
+	}
+	if args := inv.input.args; len(args) > 0 && args[0] == "question" {
+		return runIntentShowQuestion(inv, args[1:])
+	}
+	if len(inv.input.args) > 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "show takes one goal, or designs, decisions, record ID, design --goal G or question Q; nothing was done"})
+	}
 	id, problem := inv.singleTarget()
 	if problem != nil {
 		return inv.render(*problem)
@@ -697,6 +709,14 @@ func runIntentPause(inv *intentInvocation) int {
 // goal is unparked, and approval is not granted by it; a goal stopped by its
 // budget resumes under its standing approved box. Nothing else is resumed.
 func runIntentResume(inv *intentInvocation) int {
+	if args := inv.input.args; len(args) == 2 && args[0] == "mission" {
+		for _, other := range []string{"under", "verified", "by", "temporary-human-word", "review-by", "approved-ref", "fixture-human-authority", "id"} {
+			if inv.input.has(other) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("resume mission M takes no --%s; nothing was done", other)})
+			}
+		}
+		return runIntentMission(inv, "resume", args[1])
+	}
 	id, problem := inv.singleTarget()
 	if problem != nil {
 		return inv.render(*problem)
@@ -720,7 +740,8 @@ func runIntentResume(inv *intentInvocation) int {
 	case where != "live":
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 			Summary:  fmt.Sprintf("%s is %s; only a parked or stopped goal resumes; nothing was done", id, where),
-			Decision: "reopening an archived goal is its own act with a fresh next step: metasystem internal goal reopen --id " + id + " --next TEXT"})
+			Decision: "reopening an archived goal is its own act with a fresh next step",
+			next:     inv.publicArgv("reopen", id, "--next", "TEXT"), nextReason: "reopens the goal under its own authority with the next step it names"})
 	case file.State == goal.StateParked:
 		if inv.input.has("approved-ref") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),

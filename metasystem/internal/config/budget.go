@@ -346,3 +346,24 @@ func budgetLawValue(confPath, key, fallback string) (string, error) {
 func fixtureBudgetLawRoot(confPath string) bool {
 	return ConfValue(confPath, "metasystem.runtimes", "") == "fake"
 }
+
+// IntentReviewToolCallsKey is the independent read's tool-call allowance a
+// public build uses when neither its brief nor its caller names one.
+const (
+	IntentReviewToolCallsKey     = "intent.review.tool-calls"
+	DefaultIntentReviewToolCalls = 48
+)
+
+// IntentReviewToolCalls resolves the read allowance through the ordinary
+// configuration layers.
+func IntentReviewToolCalls(confPath string) (int, error) {
+	value, _, err := Get(GetParams{Key: IntentReviewToolCallsKey, ConfPath: confPath, Default: strconv.Itoa(DefaultIntentReviewToolCalls), DefaultSet: true})
+	if err != nil {
+		return 0, fmt.Errorf("resolve %s: %w", IntentReviewToolCallsKey, err)
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 {
+		return 0, fmt.Errorf("%s must be a positive integer, got %q", IntentReviewToolCallsKey, value)
+	}
+	return parsed, nil
+}
