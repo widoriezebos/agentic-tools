@@ -156,6 +156,16 @@ function outcomeCard(source = ""): Entry {
   return entryOf(card, "Wido", "2026-09-26");
 }
 
+/** An outcome drafted the way the Partner drafts one: prose, under its own sub-headings. */
+const SUBBED =
+  "The limit counts from last activity.\n\n### Constraints\n\nThe mobile client renews on its own clock.\n\n" +
+  "### What is left open\n\nWhether anything the twelve hours protected is lost.";
+
+function subbedCard(source = ""): Entry {
+  const card = theCard(offered({ kind: "outcome", text: SUBBED, clause: undefined, consequence: undefined }), source);
+  return entryOf(card, "Wido", "2026-09-26");
+}
+
 describe("what the sitting came to", () => {
   it("is written as the record's own Outcome section, with the deposit's mark", () => {
     const written = outcomeWritten("# Session limits\n\n- Kind: design\n", outcomeCard());
@@ -219,6 +229,34 @@ describe("what the sitting came to", () => {
     expect(read?.mark).toBe("");
     expect(recordedIn("# It\n\n## Outcome\n\nWhat I decided, typed here myself.\n").size).toBe(0);
     expect(outcomeIn("# It\n\n## Scope\n\nNo outcome at all.\n")).toBeNull();
+  });
+
+  it("keeps a sub-heading the outcome carries inside the outcome, foot and all", () => {
+    // The Partner drafts the close as prose with its own sub-headings — the
+    // constraints, what is left open — and the line that says the close was
+    // recorded is BELOW them. A section cut at the first sub-heading would leave
+    // that foot outside it: the card would show as unrecorded on a reload, and
+    // the next close would leave the tail of this one under its sub-heading.
+    const written = outcomeWritten(
+      "# Session limits\n\n- Kind: design\n\n## Outcome\n\n## Scope\n\nWhat this does not touch.\n",
+      subbedCard(),
+    );
+    const read = outcomeIn(written);
+    expect(read?.text).toBe(SUBBED);
+    expect(read?.mark).toBe("deposit:t1#0");
+    // Which is what makes the card recorded: the record says so.
+    expect(recordedIn(written).get("deposit:t1#0")?.section).toBe(OUTCOME);
+    // And the section that follows is still its own.
+    expect(written).toContain("## Scope\n\nWhat this does not touch.");
+
+    // Replaced whole on the next close: sub-headings, prose and foot.
+    const again = outcomeWritten(written, outcomeCard());
+    expect(again.match(/## Outcome/g)).toHaveLength(1);
+    expect(again).not.toContain("### Constraints");
+    expect(again).not.toContain("on its own clock");
+    expect(again).toContain("The limit counts from last activity.");
+    expect(again).toContain("## Scope\n\nWhat this does not touch.");
+    expect(outcomeIn(again)?.text).toBe(CLOSING);
   });
 
   it("says what ending without recording left behind", () => {

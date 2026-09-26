@@ -66,3 +66,30 @@ describe("the goal page's two writers", () => {
     expect(block).toContain("const mine = ledger?.rows.find((row) => row.ref.id === goal.id);");
   });
 });
+
+/**
+ * What a press on a Sittings row starts, and what it must not.
+ *
+ * The claim is about wiring for the same reason as the one above: the press is an
+ * asynchronous start followed by a navigation, and these tests render to static
+ * markup with no document to press a button in. What is asserted is the one thing
+ * that decides whether a human keeps the sitting they are in — which standing the
+ * guard is on.
+ */
+describe("the Sittings row press", () => {
+  it("starts nothing while a sitting stands, this row's or another's", () => {
+    const sittings = bodyOf("Sittings");
+
+    // The guard is on any standing sitting and not on this row's own. There is one
+    // sitting on one conversation, so a start from another row replaces the
+    // standing mark: the sitting a human is in the middle of ends there, without
+    // its outcome ever being written.
+    expect(sittings).toContain("const stands = rows.some((row) => row.standing);");
+    expect(sittings).toContain("if (stands) {\n      go();\n      return;\n    }");
+    expect(sittings).not.toContain("if (row.standing) {");
+    // One start in the whole of it, reached only past that guard.
+    expect(sittings.match(/startSitting\(/g)).toHaveLength(1);
+    // And the row says which of the two the press will do before it is pressed.
+    expect(sittings).toContain("title={opensLine(row, stands)}");
+  });
+});

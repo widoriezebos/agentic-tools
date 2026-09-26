@@ -5,7 +5,18 @@ import { describe, expect, it } from "vitest";
 
 import type { Deposit } from "./api";
 import { copyable, DepositCard } from "./Deposit";
-import { appended, cardsIn, ELSEWHERE, marked, RECORD_IT, recordedIn, type Entry } from "./sitting";
+import {
+  appended,
+  cardsIn,
+  DECIDE,
+  DISMISSED,
+  ELSEWHERE,
+  LEAVE_OPEN,
+  marked,
+  RECORD_IT,
+  recordedIn,
+  type Entry,
+} from "./sitting";
 import { PartnerAs } from "./store";
 
 /**
@@ -41,8 +52,8 @@ const RECORDED: Entry = {
 };
 
 /** The card, rendered over one sitting and one reading of its record. */
-function card(sitting: string, source = "", marks = {}): string {
-  const cards = cardsIn([{ turn: "t1", deposits: [offered()] }], marks, sitting, recordedIn(source));
+function card(sitting: string, source = "", marks = {}, over: Partial<Deposit> = {}): string {
+  const cards = cardsIn([{ turn: "t1", deposits: [offered(over)] }], marks, sitting, recordedIn(source));
   return renderToStaticMarkup(
     <MemoryRouter>
       <TooltipPrimitive.Provider>
@@ -107,5 +118,46 @@ describe("a card whose press is in flight", () => {
 
     expect(markup).toContain(`>${RECORD_IT}<`);
     expect(markup).not.toContain("readOnly");
+  });
+});
+
+/**
+ * The case card's three presses (g1-s55 D1).
+ *
+ * A case is not an entry waiting for Record it: it is a question with answers,
+ * and the card offers every one the design gives it. Decide and Leave open each
+ * record something; Dismiss records nothing, which is the third answer a human
+ * can have to a case at the edge — the card's own words say a case dismissed
+ * leaves nothing, and without the press a human with no answer to one had
+ * nothing they could do with it.
+ */
+const THE_CASE: Partial<Deposit> = {
+  kind: "case",
+  text: "a person reads a long page for an hour without touching anything.",
+  clause: "reading without input does not keep a session alive",
+  consequence: "long readers are signed out mid-sentence",
+};
+
+describe("a case at the edge", () => {
+  it("offers Dismiss beside its two answers, because a case dismissed leaves nothing", () => {
+    const markup = card(SUBJECT, "", {}, THE_CASE);
+
+    expect(markup).toContain("ms-deposit--case");
+    expect(markup).toContain(`>${DECIDE}<`);
+    expect(markup).toContain(`>${LEAVE_OPEN}<`);
+    expect(markup).toContain(">Dismiss<");
+    // And no Record it: neither answer records the case itself, and the third
+    // records nothing at all.
+    expect(markup).not.toContain(`>${RECORD_IT}<`);
+  });
+
+  it("folds to the line every dismissed card folds to, with nothing written", () => {
+    const marks = { "deposit:t1#0": { ...marked(offered(THE_CASE)), dismissed: true } };
+    const markup = card(SUBJECT, "", marks, THE_CASE);
+
+    expect(markup).toContain("ms-deposit-folded");
+    expect(markup).toContain(DISMISSED);
+    expect(markup).not.toContain(`>${DECIDE}<`);
+    expect(markup).not.toContain(">Dismiss<");
   });
 });

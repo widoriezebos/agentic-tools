@@ -1184,11 +1184,24 @@ export const NOTHING_RECORDED = "nothing recorded yet";
 /** What a row says where a sitting is open on that record right now. */
 export const STANDS_NOW = "a sitting stands on this now";
 
-/** What the press on a row does, said where a human meets it. */
-export function opensLine(row: SittingRow): string {
-  return row.standing
-    ? `Open the conversation on ${row.record.path}`
-    : `Open the conversation on ${row.record.path} and start a sitting on it`;
+/**
+ * What the press on a row does, said where a human meets it.
+ *
+ * `stands` is whether a sitting stands at all, on whichever record. It decides
+ * the words because it decides the press: there is one sitting on one
+ * conversation, so a row pressed while another row's sitting stands cannot start
+ * a second one — it would replace the standing mark and end that sitting without
+ * its outcome. So such a press only opens the conversation, and the row says so
+ * rather than promising a start it will not make.
+ */
+export function opensLine(row: SittingRow, stands: boolean): string {
+  if (row.standing) {
+    return `Open the conversation on ${row.record.path}`;
+  }
+  if (stands) {
+    return "Open the conversation. A sitting stands on another record, so this starts nothing";
+  }
+  return `Open the conversation on ${row.record.path} and start a sitting on it`;
 }
 
 /** When a row's last entry was recorded, as the row says it, or "". */
