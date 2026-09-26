@@ -382,21 +382,23 @@ func runUI(verb string, args []string) int {
 			}
 		}
 
-		// At start, and once a day while this server serves. The tick is the
-		// caller's, as the fleet fetch loop's is, so a test drives the cadence
-		// with a channel it controls instead of waiting a day for it.
-		housekeepingStopped := make(chan struct{})
+		// At start, and once a day while this server serves — inside the
+		// interval this process owns the checkout and never outside it. The
+		// first sweep waits on the same ownership gate the freshness loop
+		// waits on, because a sweep before the lock is taken would trim a
+		// transcript the incumbent server is appending to and rotate the
+		// journal its runtime is writing: two processes, two Conversation
+		// objects, two mutexes, one file. The tick is the caller's, as the
+		// fleet fetch loop's is, so a test drives the cadence with a channel
+		// it controls instead of waiting a day for it.
+		var storeTicks <-chan time.Time
 		if housekeeping != nil {
-			housekeeping.Consider()
-			go func() {
-				defer close(housekeepingStopped)
-				sweeps := time.NewTicker(storeSweep)
-				defer sweeps.Stop()
-				housekeeping.Run(ctx, sweeps.C)
-			}()
-		} else {
-			close(housekeepingStopped)
+			sweeps := time.NewTicker(storeSweep)
+			defer sweeps.Stop()
+			storeTicks = sweeps.C
 		}
+		stopHousekeeping := startStoreHousekeeping(ctx, owned, housekeeping, storeTicks)
+		defer stopHousekeeping()
 
 		err = lifecycle.Serve(ctx, lifecycle.Options{
 			Roots: roots, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
@@ -741,6 +743,10 @@ func runUI(verb string, args []string) int {
 				}, bound, bundle)
 			},
 			Ready: func(address string) {
+				// Ownership is held from here, which is what the gate says: the
+				// freshness loop, the presence fetch and the store's
+				// housekeeping all start with this line and none of them
+				// touches anything before it.
 				owned.Open()
 				if ready != nil {
 					fmt.Fprintln(ready, "ready "+address)
@@ -758,6 +764,11 @@ func runUI(verb string, args []string) int {
 				stopPresence()
 				<-presenceStopped
 				<-launchStopped
+				// Housekeeping ends here too, and not after Serve returns: a
+				// trim in flight when the successor takes the lock would be
+				// replacing a transcript the next server's Conversation is
+				// already appending to.
+				stopHousekeeping()
 			},
 		})
 		stopLoop()
@@ -765,7 +776,11 @@ func runUI(verb string, args []string) int {
 		stopPresence()
 		<-presenceStopped
 		<-launchStopped
-		<-housekeepingStopped
+		// And again for the path Releasing never ran on: a Serve that returned
+		// early — another server already owns this checkout — opened no gate,
+		// so housekeeping is still waiting at it and only its own cancellation
+		// ends that wait.
+		stopHousekeeping()
 		if err != nil {
 			return refuse(lifecycle.ServeFailure(roots.StateRoot, err))
 		}
@@ -779,6 +794,39 @@ func runUI(verb string, args []string) int {
 // adds to the store in a day is small against them (g1-s54 D1, D4).
 const storeSweep = 24 * time.Hour
 
+// startStoreHousekeeping starts one server's housekeeping and answers the stop
+// the caller owes it: cancel its context and join its goroutine.
+//
+// Housekeeping's own context is why there is a function here rather than a
+// goroutine inline. It is owed twice, and both are the point:
+//
+//   - inside Serve's Releasing, which runs while this process still owns the
+//     checkout, so a trim or a rotation in flight cannot overlap the appends of
+//     the server that takes the lock next;
+//   - after Serve returns, for the path Releasing never ran on. A Serve that
+//     refused because another server already runs opens no gate and calls no
+//     Ready, so housekeeping is still waiting at the gate on a context that
+//     ends only when this process does — and a caller that waited on it without
+//     cancelling it first would hang there rather than print the refusal.
+//
+// Calling the stop twice cancels a cancelled context and reads a closed
+// channel, which is why both callers may call it.
+func startStoreHousekeeping(ctx context.Context, owned *snapshot.Gate, keeper *storeKeeper, tick <-chan time.Time) func() {
+	housekeeping, stop := context.WithCancel(ctx)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		if keeper == nil {
+			return
+		}
+		keeper.Serve(housekeeping, owned, tick)
+	}()
+	return func() {
+		stop()
+		<-stopped
+	}
+}
+
 // storeKeeper is the private store's housekeeping: the two bounds of g1-s54,
 // asked of the owners that hold the files.
 //
@@ -790,7 +838,9 @@ const storeSweep = 24 * time.Hour
 // It is the fleet fetch loop's shape (internal/ui/fleet/fetch.go): one
 // Consider, and a Run that considers on every tick the caller sends. The server
 // sends a real ticker and a test sends a channel it controls, so the daily
-// cadence is proven without a day passing.
+// cadence is proven without a day passing. Serve is the two of them inside the
+// one interval this process owns the checkout, which is the only interval in
+// which either owner may touch a file.
 //
 // Nothing here touches a checkout or the state root. D2 is that housekeeping
 // works only on what is under the account's home, and the two owners it asks
@@ -823,12 +873,30 @@ func (k *storeKeeper) Consider() {
 		cut, err := k.trim()
 		if cut > 0 {
 			k.said("this seat's conversations were trimmed from their oldest end: " +
-				strconv.Itoa(cut) + " messages went, and what they said is in the records")
+				strconv.Itoa(cut) + " messages went; only what was saved to records survives")
 		}
 		if err != nil {
 			k.said(err.Error())
 		}
 	}
+}
+
+// Serve is housekeeping's whole life under one server: it waits until this
+// process owns the checkout, sweeps once, and sweeps again on every tick until
+// its context ends.
+//
+// The first sweep is inside the ownership interval, not before it. Before the
+// lock is taken there may be an incumbent server serving this same store, and a
+// sweep then would trim the transcript it is appending to — the two processes
+// hold two Conversation objects with two mutexes over one file — and rotate the
+// journal its runtime writes through. A server that never wins the lock waits
+// here until its context ends and sweeps nothing at all.
+func (k *storeKeeper) Serve(ctx context.Context, owned *snapshot.Gate, tick <-chan time.Time) {
+	if !owned.Wait(ctx) {
+		return
+	}
+	k.Consider()
+	k.Run(ctx, tick)
 }
 
 // Run considers on every tick until the context ends or the tick closes.
