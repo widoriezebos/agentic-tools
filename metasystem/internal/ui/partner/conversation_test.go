@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
-func TestTheConversationIsKeptUnderTheStateRootAndReadBack(t *testing.T) {
+func TestTheConversationIsKeptInItsOwnDirectoryAndReadBack(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	conversation, err := OpenConversation(root, "Wido")
