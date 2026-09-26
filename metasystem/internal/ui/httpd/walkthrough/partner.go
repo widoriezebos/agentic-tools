@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
@@ -86,6 +87,18 @@ var fakeReads = []fakeacp.Read{
 	},
 }
 
+// fixtureConversations is where this fixture's transcripts go: a directory
+// beside the fixture checkout, and NEVER the account's own.
+//
+// The server resolves the real one from the account's registry home, and a
+// walkthrough that wrote there would put a fake Partner's words into a human's
+// actual conversation — which is exactly the material g1-s53 D11 moved out of
+// the checkout to keep private. So the fixture is handed a directory of its own
+// and prints it, as it does for the notepad and the checkout it invents.
+func fixtureConversations(checkout string) string {
+	return filepath.Join(filepath.Dir(checkout), filepath.Base(checkout)+"-conversations")
+}
+
 func fakePartner(checkout string, facts partner.Facts) *partner.Service {
 	runtime := partner.Runtime{
 		Name:  "fake",
@@ -109,11 +122,12 @@ func fakePartner(checkout string, facts partner.Facts) *partner.Service {
 		Chunks:         fakeAnswer,
 		Pause:          450 * time.Millisecond,
 	}))
+	conversations := fixtureConversations(checkout)
 	service := partner.NewService(runtime, host,
 		func(human string) (*partner.Conversation, error) {
-			return partner.OpenConversation(checkout, human)
+			return partner.OpenConversation(conversations, human)
 		},
 		facts, time.Now)
-	log.Printf("Project Partner: fake runtime, conversations under %s", checkout)
+	log.Printf("Project Partner: fake runtime, conversations under %s", conversations)
 	return service
 }

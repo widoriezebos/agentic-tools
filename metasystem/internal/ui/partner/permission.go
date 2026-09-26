@@ -102,13 +102,16 @@ func toolOperation(names ...string) (string, bool) {
 }
 
 // admitted is what the conversation says about one admitted call to this
-// server. All but one of its operations are readings; the one that is not reads
-// nothing at all and prepares words for a human to decide about, and a line
-// calling that a read would be this point saying something happened that did
+// server. All but two of its operations are readings; the two that are not read
+// nothing at all and prepare something for a human to decide about, and a line
+// calling either a read would be this point saying something happened that did
 // not.
 func admitted(operation string) string {
-	if operation == uitools.OpSuggest {
+	switch operation {
+	case uitools.OpSuggest:
 		return "Allowed the interface's own tools to prepare a suggestion: nothing was read and nothing was written"
+	case uitools.OpDeposit:
+		return "Allowed the interface's own tools to prepare a deposit: nothing was read and nothing was written"
 	}
 	return "Allowed a read through the interface's own tools: " + operation
 }

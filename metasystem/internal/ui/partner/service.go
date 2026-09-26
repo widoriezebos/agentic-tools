@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,11 @@ type Event struct {
 	// carried as it is admitted, so the card appears under the answer while the
 	// answer is still arriving.
 	Suggestion *Suggestion `json:"suggestion,omitempty"`
+	// Deposit is one entry the Partner offered the sitting's record, on a
+	// deposit beat and nowhere else. It is carried as it is admitted, for the
+	// suggestion's reason: the card is on the transcript and on the table while
+	// the answer is still arriving.
+	Deposit *Deposit `json:"deposit,omitempty"`
 }
 
 // The eight event kinds.
@@ -54,6 +60,10 @@ const (
 	// words are the Partner's offer for one field, and the page renders them as
 	// a card with Use this beside it.
 	EventSuggestion = "suggestion"
+	// EventDeposit is one admitted deposit, a beat of its own for the
+	// suggestion's reason: it is an offer the human decides about, not a
+	// sentence of the answer.
+	EventDeposit = "deposit"
 )
 
 // Snapshot is what GET /api/partner answers: everything a page needs to render
@@ -84,6 +94,13 @@ type Snapshot struct {
 	// Looked is here: a reload in the middle of an answer must show the cards
 	// that have already arrived rather than lose them until the turn ends.
 	Suggestions []Suggestion `json:"suggestions"`
+	// Deposits is what the running turn has offered the sitting's record so
+	// far, for the same reason.
+	Deposits []Deposit `json:"deposits"`
+	// Sitting is the sitting this conversation is, or null. It is read from the
+	// conversation rather than from the browser's memory of it, so a reload and
+	// a second tab agree about which record is under discussion.
+	Sitting *Sitting `json:"sitting"`
 	// Index is what the conversation can point at: the goals the accepted tip
 	// carries and the records the checkout declares. It is read here, with the
 	// conversation, because the page has no other reader for it and an answer
@@ -145,7 +162,10 @@ type turn struct {
 	// suggestions is what this turn has offered and the service admitted, in
 	// the order they were admitted.
 	suggestions []Suggestion
-	stopping    bool
+	// deposits is what this turn offered the sitting's record, in the order
+	// they were admitted.
+	deposits []Deposit
+	stopping bool
 	// done closes when the turn has been written down and its terminal event
 	// published. Stop waits for it, so the snapshot the stop route answers
 	// with is the settled one rather than the one the turn was in when the
@@ -259,8 +279,10 @@ func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
 		answer.Doing = running.doing
 		answer.Looked = append([]Look{}, running.looked...)
 		answer.Suggestions = append([]Suggestion{}, running.suggestions...)
+		answer.Deposits = append([]Deposit{}, running.deposits...)
 	}
 	s.mu.Unlock()
+	answer.Sitting = conversation.Sitting()
 	answer.Messages = conversation.Messages(limit)
 	answer.Index = IndexOf(s.reading())
 	return answer, nil
@@ -284,6 +306,16 @@ var ErrBusy = errors.New("the Partner is answering; wait for it to finish or sto
 // human's question stays in the composer and the route answers 503 with the
 // runtime's own words.
 func (s *Service) Submit(ctx context.Context, human, key, text string, page Page) (string, error) {
+	return s.submit(ctx, human, key, text, page, false)
+}
+
+// submit is Submit with the one thing only this package may decide: whether the
+// question is the human's own or one this interface asked on their behalf.
+//
+// Nothing outside this package can set that mark, and nothing outside it should
+// be able to: a browser that could claim a question was the interface's could
+// dress up a question the human typed as one they did not.
+func (s *Service) submit(ctx context.Context, human, key, text string, page Page, byInterface bool) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", errors.New("a turn needs a question")
@@ -345,7 +377,7 @@ func (s *Service) Submit(ctx context.Context, human, key, text string, page Page
 
 	now := s.now().UTC()
 	asked := Message{ID: mintTurn(), Turn: id, Role: RoleHuman, Text: text,
-		At: now.Format(time.RFC3339), Key: key, Page: &page}
+		At: now.Format(time.RFC3339), Key: key, Page: &page, Interface: byInterface}
 	if err := conversation.Append(asked); err != nil {
 		s.mu.Lock()
 		s.current = nil
@@ -471,6 +503,123 @@ func notOffered(draft *Draft, field string) string {
 	return said + " is not open for proposals"
 }
 
+/* --------------------------------------------------------- the sitting -- */
+
+// ErrNoSitting is what a deposit is refused with where no sitting is open, in
+// the words a human reads on the card.
+const noSitting = "no sitting is open, so there is no record to offer this to; " +
+	"start a sitting from the record you are working on"
+
+// Sit opens a sitting on one record and asks the Partner the opening question.
+//
+// The order is the whole of what this owes a human. The purpose and the subject
+// are judged first, because a sitting on nothing is not a sitting. The mark goes
+// on the conversation next, so the opening turn is already a turn of this
+// sitting and a deposit it prepares is admitted against this subject. The
+// opening turn goes last — and the turn's own admission is what refuses a
+// runtime that cannot start, BEFORE anything is appended to the transcript, so a
+// seat with no Partner answers with the runtime's own words and the transcript
+// is untouched. A refused turn takes the mark off again: a sitting whose first
+// question never went is not a sitting a human should come back to (g1-s53 D3).
+func (s *Service) Sit(ctx context.Context, human string, subject Subject, purpose string, page Page) (Sitting, error) {
+	purpose = strings.TrimSpace(purpose)
+	subject.Kind = strings.TrimSpace(subject.Kind)
+	subject.ID = strings.TrimSpace(subject.ID)
+	subject.Title = strings.TrimSpace(subject.Title)
+	switch {
+	case purpose != PurposeShapeIntent && purpose != PurposeShapeDesign:
+		return Sitting{}, fmt.Errorf(
+			"a sitting is for %q or %q; review and learning sittings are not in this build",
+			PurposeShapeIntent, PurposeShapeDesign)
+	case subject.Kind != SubjectRecord:
+		return Sitting{}, errors.New("a sitting is about one record of this project, and nothing else yet")
+	case subject.ID == "":
+		return Sitting{}, errors.New("a sitting about a record says which one, by its path in this checkout")
+	}
+	conversation, err := s.conversation(human)
+	if err != nil {
+		return Sitting{}, err
+	}
+	previous := conversation.Sitting()
+	sitting := Sitting{Subject: subject, Purpose: purpose, StartedAt: s.now().UTC().Format(time.RFC3339)}
+	if err := conversation.Sit(sitting, s.now()); err != nil {
+		return Sitting{}, err
+	}
+	if _, err := s.submit(ctx, human, "", OpeningRequest(sitting), page, true); err != nil {
+		s.unsit(conversation, previous)
+		return Sitting{}, err
+	}
+	return sitting, nil
+}
+
+// unsit puts the conversation back the way it was after a refused opening turn.
+// A write that fails here has nothing left to say: the sitting is already
+// refused, and the mark in this process's memory is gone either way.
+func (s *Service) unsit(conversation *Conversation, previous *Sitting) {
+	if previous == nil {
+		_ = conversation.Rise(s.now())
+		return
+	}
+	_ = conversation.Sit(*previous, s.now())
+}
+
+// Rise ends the sitting on this human's conversation. What was recorded is in
+// the record, which is the whole of what a sitting leaves behind.
+func (s *Service) Rise(human string) error {
+	conversation, err := s.conversation(human)
+	if err != nil {
+		return err
+	}
+	return conversation.Rise(s.now())
+}
+
+// OpeningRequest is the one question this interface asks on a human's behalf.
+//
+// It is fixed, and it is here rather than in a browser, so that what the
+// interface says in a human's name is one sentence a reader can find. It asks
+// for what the records hold and it forbids the weighing: the paper's warning is
+// that a preparation which quietly supplies the values is the approval habit in
+// conversational form, and the first turn of a sitting is exactly where that
+// would happen.
+func OpeningRequest(sitting Sitting) string {
+	return "Open this sitting on " + sitting.Subject.ID + ", whose purpose is to " + sitting.Purpose + ".\n\n" +
+		"Bring what the records already hold about it, and nothing else: the standing human rulings that touch it, " +
+		"the decisions this project has recorded about it, the open questions on it, the intent and design records " +
+		"that name it, and what its own four sections — Facts, Proposals, Decisions, Open questions — already carry. " +
+		"Read them with your tools and anchor every claim about what this application does today in the application " +
+		"itself.\n\n" +
+		"Weigh nothing. Do not recommend, do not rank and do not say which option you would pick. " +
+		"Where two recorded wishes conflict, say that they conflict and say where each is written down. " +
+		"Where nothing is recorded, say that nothing is recorded rather than filling the gap.\n\n" +
+		"As facts, decisions and open questions come up, offer each one with the deposit tool; the human records them."
+}
+
+// admitDeposit decides whether one prepared deposit is offered to the human.
+//
+// This is the one place that can decide it, because this is the one place that
+// knows whether there is a sitting. The tool server has no conversation and the
+// host has no turn; which record this human is sitting on is on the conversation
+// this turn belongs to, and nothing else in this process knows it.
+//
+// A deposit prepared with no sitting open is not offered, and the refusal is
+// recorded as the deposit it was, with its reason, rather than dropped to an
+// activity line the drawer does not show — a Partner that deposited into nothing
+// has to be visible where the human reads the answer. A refused one is never
+// stamped with a subject, because a subject on it is the one thing that could
+// let a page offer Record it for words no record is waiting for.
+func (s *Service) admitDeposit(running *turn, conversation *Conversation, prepared Deposit) {
+	sitting := conversation.Sitting()
+	if sitting == nil {
+		prepared.Offered = false
+		prepared.NotOffered = noSitting
+		s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})
+		return
+	}
+	prepared.Subject = sitting.Subject
+	prepared.Offered = true
+	s.record(running, Event{Kind: EventDeposit, Deposit: &prepared})
+}
+
 // freshLine says what a fresh session was given, so a human can see why the
 // Partner might have forgotten something.
 func freshLine(given int) string {
@@ -498,6 +647,10 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 			if update.Suggestion != nil {
 				s.admit(running, *update.Suggestion)
 			}
+			// The same, against the sitting this conversation is.
+			if update.Deposit != nil {
+				s.admitDeposit(running, conversation, *update.Deposit)
+			}
 		}
 	})
 	if err != nil {
@@ -522,11 +675,13 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 	activity := append([]string{}, running.activity...)
 	looked := append([]Look{}, running.looked...)
 	suggestions := append([]Suggestion{}, running.suggestions...)
+	deposits := append([]Deposit{}, running.deposits...)
 	s.mu.Unlock()
 
 	answered := Message{ID: mintTurn(), Turn: running.id, Role: RolePartner, Text: text,
 		At: s.now().UTC().Format(time.RFC3339), Outcome: result.Outcome,
-		Detail: result.Detail, Activity: activity, Looked: looked, Suggestions: suggestions}
+		Detail: result.Detail, Activity: activity, Looked: looked,
+		Suggestions: suggestions, Deposits: deposits}
 	_ = conversation.Append(answered)
 
 	// Nothing is running BEFORE the terminal beat goes out, deliberately. A
@@ -574,6 +729,10 @@ func (s *Service) record(running *turn, event Event) {
 	case EventSuggestion:
 		if event.Suggestion != nil {
 			running.suggestions = append(running.suggestions, *event.Suggestion)
+		}
+	case EventDeposit:
+		if event.Deposit != nil {
+			running.deposits = append(running.deposits, *event.Deposit)
 		}
 	}
 	watchers := make([]chan Event, 0, len(s.watchers))

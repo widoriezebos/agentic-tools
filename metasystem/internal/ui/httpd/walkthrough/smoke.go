@@ -81,10 +81,12 @@ func runSmoke(runtimeName, model, engine, kit, out string) {
 	}
 
 	host := partner.NewHost(admitted, checkout,
-		filepath.Join(checkout, filepath.FromSlash(partner.Relative), "wire.jsonl"))
+		filepath.Join(fixtureConversations(checkout), "wire.jsonl"))
 	defer host.Close()
 	service := partner.NewService(admitted, host,
-		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(checkout, human) },
+		func(human string) (*partner.Conversation, error) {
+			return partner.OpenConversation(fixtureConversations(checkout), human)
+		},
 		facts, func() time.Time { return time.Now().UTC() })
 	defer service.Close()
 

@@ -14,9 +14,13 @@
 // until the working-material owner exists.
 //
 // So the file lives under the account's registry home: the one directory the
-// kit already resolves that is outside every checkout. Neither grant reaches
-// it, and the build proves both by reading them (see stickies_grants_test.go)
-// rather than by asserting it in a comment.
+// kit already resolves that is outside every checkout. Where that home is, and
+// what directory one workspace's files go in, is internal/ui/uihome's —
+// because the Partner's transcript is kept out of the checkout for the same
+// reason and by the same decision, and two copies of it would be two copies
+// that eventually differ. Neither grant reaches it, and the build proves both
+// by reading them (see grants_test.go) rather than by asserting it in a
+// comment.
 //
 // # What it is
 //
@@ -32,8 +36,6 @@
 package stickies
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,7 +48,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uihome"
 )
 
 // SchemaVersion is the shape this build writes and reads.
@@ -153,81 +155,16 @@ func refuse(kind RefusalKind, message string) *Refusal {
 	return &Refusal{Kind: kind, Message: message}
 }
 
-// Home is the account's registry home: the directory the kit already resolves
-// for seat registration, outside every checkout.
-//
-// It is derived from the registry's own selected path rather than resolved a
-// second time here, so that the fixture seam the registry offers — one
-// environment variable naming a run-scoped home — moves this file too. A test
-// that redirected one and not the other would be a test writing into the real
-// account's home, which is the one thing a test of this file must never do.
-//
-// A selected path that is not absolute is refused rather than used. Where the
-// account has no home directory the kit can read, the registry falls back to a
-// relative `.metasystem/armed-checkouts.jsonl`, and a relative path resolves
-// against the working directory — which for this server is the checkout it
-// serves. Notes would then land inside the one place this whole package exists
-// to keep them out of, silently, on the machine least able to notice it. So
-// such a build has no notepad at all, and the page says so.
-func Home() (string, error) {
-	selected, err := registry.DefaultPath()
-	if err != nil {
-		return "", err
-	}
-	if !filepath.IsAbs(selected) {
-		return "", fmt.Errorf(
-			"the account's registry home resolved to %q, which is not an absolute path, so a notepad under it would land inside whatever directory this server was started in",
-			selected)
-	}
-	return filepath.Dir(selected), nil
-}
+// Home is the account's registry home, which internal/ui/uihome owns for every
+// store the interface keeps outside the checkout. It is named here rather than
+// reached through that package by every caller so that the notepad's own tests
+// and the walkthrough fixture can ask this package where it writes.
+func Home() (string, error) { return uihome.Home() }
 
-// Path is the file one workspace's stickies live in.
-//
-// The directory is keyed by the workspace rather than named after it: a
-// checkout path is not a path segment, two checkouts can share a last name,
-// and a name derived by hand would collide or escape. So the key is the
-// checkout's own last name, which is what a human recognises, with a short
-// digest of the whole absolute path after it, which is what makes it that
-// checkout and no other.
+// Path is the file one workspace's stickies live in, under the key uihome
+// gives that workspace.
 func Path(home, checkout string) string {
-	return filepath.Join(home, "ui", "stickies", workspaceKey(checkout), "stickies.json")
-}
-
-// workspaceKey is the one directory segment a checkout is kept under.
-func workspaceKey(checkout string) string {
-	resolved := checkout
-	if absolute, err := filepath.Abs(checkout); err == nil {
-		resolved = absolute
-	}
-	resolved = filepath.Clean(resolved)
-	digest := sha256.Sum256([]byte(resolved))
-	name := filepath.Base(resolved)
-	// A base that is not a name at all — the root, a relative dot — leaves the
-	// digest to say which workspace this is on its own.
-	if name == "." || name == string(filepath.Separator) || name == ".." {
-		return hex.EncodeToString(digest[:6])
-	}
-	return safeName(name) + "-" + hex.EncodeToString(digest[:6])
-}
-
-// safeName is a checkout's last name with everything that is not a plain
-// letter, digit, dot, dash or underscore replaced, so the segment is a name on
-// every filesystem this runs on.
-func safeName(name string) string {
-	var built strings.Builder
-	for _, letter := range name {
-		switch {
-		case letter >= 'a' && letter <= 'z',
-			letter >= 'A' && letter <= 'Z',
-			letter >= '0' && letter <= '9',
-			letter == '.' || letter == '-' || letter == '_':
-			built.WriteRune(letter)
-		default:
-			built.WriteByte('-')
-		}
-	}
-	return built.String()
+	return filepath.Join(uihome.Under(home, "stickies", checkout), "stickies.json")
 }
 
 // Store is one workspace's notepad.
@@ -255,7 +192,7 @@ func New(home, checkout string, now func() time.Time) *Store {
 	}
 	return &Store{
 		path:   Path(home, checkout),
-		anchor: filepath.Dir(home),
+		anchor: uihome.Anchor(home),
 		now:    now,
 		mint:   project.NewID,
 	}
