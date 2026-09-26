@@ -195,9 +195,18 @@ func NewService(runtime Runtime, host *Host, open func(human string) (*Conversat
 }
 
 // conversation answers one human's transcript, opening it the first time.
+//
+// It is held under the name the FILE is kept under rather than the handle as it
+// was spelled, because that is what decides which transcript this is: a handle
+// with a space in it and the same handle with a dash are one file, and two
+// objects over one file would be two mutexes over it — which is the race the
+// trim's own mutex exists to prevent (g1-s54 F2). Housekeeping reaches a
+// transcript nobody has opened this run by the file's name, so the two ways in
+// have to meet at one object.
 func (s *Service) conversation(human string) (*Conversation, error) {
+	key := fileName(human)
 	s.mu.Lock()
-	held, known := s.conversations[human]
+	held, known := s.conversations[key]
 	s.mu.Unlock()
 	if known {
 		return held, nil
@@ -207,13 +216,51 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 		return nil, err
 	}
 	s.mu.Lock()
-	if again, raced := s.conversations[human]; raced {
+	if again, raced := s.conversations[key]; raced {
 		opened = again
 	} else {
-		s.conversations[human] = opened
+		s.conversations[key] = opened
 	}
 	s.mu.Unlock()
 	return opened, nil
+}
+
+// Trim keeps this seat's transcripts within the bounds, and reports how many
+// messages went.
+//
+// humans names the store's own files, so a transcript that grew under an
+// earlier run of this seat is bounded at start, before anybody has spoken —
+// otherwise housekeeping's first sweep would find no conversation open and do
+// nothing. Every one of them is trimmed through the object that owns it, this
+// service's own, because the trim is the conversation's operation under the
+// mutex its appends take.
+//
+// A transcript that cannot be opened or cannot be trimmed does not stop the
+// rest: the other files are still over their bounds, and one unreadable file is
+// a reason to say so rather than to leave the store growing.
+func (s *Service) Trim(bounds TrimBounds, humans []string) (int, error) {
+	var trouble []error
+	for _, human := range humans {
+		if _, err := s.conversation(human); err != nil {
+			trouble = append(trouble, err)
+		}
+	}
+	s.mu.Lock()
+	held := make([]*Conversation, 0, len(s.conversations))
+	for _, conversation := range s.conversations {
+		held = append(held, conversation)
+	}
+	s.mu.Unlock()
+	cut := 0
+	now := s.now()
+	for _, conversation := range held {
+		removed, err := conversation.Trim(bounds, now)
+		cut += removed
+		if err != nil {
+			trouble = append(trouble, err)
+		}
+	}
+	return cut, errors.Join(trouble...)
 }
 
 // Runtime is what this seat admitted.
