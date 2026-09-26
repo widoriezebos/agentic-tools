@@ -15,14 +15,18 @@ and lands after both.
 ## What exists and binds
 
 1. **The human's waiting proposals are already in the browser.** The
-   Partner store holds the whole conversation for the page, drawer and
-   focused view alike, every message with its `proposals[]` and their
-   live state, folded from the snapshot and the stream's beats
-   (src/partner/store.tsx:471-514, 570; g1-s58 D6, D8; g1-s60 D5). A
-   proposal names its goal by id. Nothing on the board or in the
-   Decisions queue reads it.
-2. **A goal's row carries chips.** The board's card shows a tier chip
-   where the tier is above zero and the labels (src/backlog/GoalRow.tsx:103);
+   Partner store holds the conversation as the snapshot carries it, the
+   last hundred messages (internal/ui/httpd/partner.go:55-58), for the
+   page, drawer and focused view alike, every message with its
+   `proposals[]` and their live state, folded from the snapshot and the
+   stream's beats (src/partner/store.tsx:471-514, 570; g1-s58 D6, D8;
+   g1-s60 D5). A proposal names its goal by id. Nothing on the board or
+   in the Decisions queue reads it. A proposal older than those hundred
+   messages is not in the store and gets no chip; it is still in the
+   inbox, which reads the transcript whole (g1-s60 D1).
+2. **A goal's row carries chips.** The board's card, `Card` in
+   src/backlog/Board.tsx:754, shows a tier chip where the tier is above
+   zero and the labels (the list's row is src/backlog/GoalRow.tsx:103);
    the Decisions queue row shows "yours", the tier and up to two labels,
    muted, on the right (src/decisions/InboxRow.tsx:52-101; groups.ts:209-232);
    the goal page's header shows the goal's chips (src/project/ProjectPane.tsx:774-790).
@@ -100,5 +104,19 @@ High on D1: a read of state the page already holds. High on D2, D3: one
 chip in the row's own idiom, opening what exists. Weakest: a chip that
 reads the conversation store means the board shows a proposal only
 while the Partner store is loaded, which it is on every page of the
-shell; on a page opened before the store's first snapshot the chip
-appears a moment late, as the drawer's own content does.
+shell, and only for the last hundred messages; on a page opened before
+the store's first snapshot the chip appears a moment late, as the
+drawer's own content does.
+
+## Dispositions (Astra read, 2026-09-26, under R-124)
+
+Zero material findings, "build as written"; two low, non-material
+corrections folded because each costs a line: the board renders its
+own `Card` in Board.tsx, not the list's `GoalRow` (S61-01); the store
+holds the snapshot's last hundred messages, not the whole conversation,
+so an older proposal's chip is the inbox's to show (S61-02). Astra
+confirmed the store's provider covers the three surfaces and `/brain`,
+that settled lines leave through the prerequisite designs' beats, and
+that the queue's chip is a control beside the row's own toggle. The
+read is saved verbatim in g1-s61-astra-critique.md. The design is
+closed; it builds after g1-s60.
