@@ -52,6 +52,13 @@
   border-radius: 8px;
   border: 1px solid var(--ms-marker);
   background: var(--ms-marker-bg);
+  /*
+   * The strip below is sticky and masks the 24px band above itself (the work
+   * area's padding, tabs.css) so the page scrolls behind it. The inbox's gap
+   * is 16px, so a bar that stands only that far from the strip loses its
+   * bottom 8px under the mask; this makes the distance the band's own.
+   */
+  margin-bottom: 8px;
 }
 
 .ms-decisions-signin-button {
