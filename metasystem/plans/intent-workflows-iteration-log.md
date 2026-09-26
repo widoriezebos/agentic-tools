@@ -242,3 +242,22 @@ never becomes delivery certification.
 Live main pulled through 5799bd3c6, including the new Partner/UI sitting work.
 The isolated branch will merge it after Opus continuation 4 finishes; product
 changes remain uncommitted. User-owned live logs are preserved.
+
+## Fourth checkpoint and latest main integration
+
+Continuation 4 completed at 12:06:41 CEST, exit0; 380 cumulative model calls,
+392 cumulative tool calls (104 new), 105 invocation turns, actual24m50.7s. Nine
+root starting points, UI/machine targets, exception route, public wait continuation
+and branch read-state selection are implemented. Root read its full appendix:
+real dispatch retry now reaches the register, which rejects capped critics; this
+is an unfinished owner defect. No full dispatcher pass or positive authority
+certification is claimed. The builder left run4 in progress; its result must be
+read and fixture custody preserved.
+
+Main merged through ee33be672, including 5799bd3c6 UI sitting changes; product
+reapplied cleanly. Backup stash08d5a9c3a5bddaa939c685816d3d670289693ecd retained.
+Root found the existing authentic positive-claim seam and a remaining check-remedy
+loop; both are concrete required corrections in continuation5, not new policy.
+Manual-review Fable final round runs as20260926t100811-91db57f15c; draft remains
+unapproved for product work. Root deleted duplicate registry/patch-core shortcut
+and recorded all round1 dispositions before that final critique.
