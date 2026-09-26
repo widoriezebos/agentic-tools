@@ -1480,10 +1480,16 @@ func (l *ledger) unpark(id string) error {
 	if file.State != goal.StateParked {
 		return refused("goal %s is %s, not parked", id, file.State)
 	}
-	if file.Parked != nil && file.Parked.Blocker != "" {
+	// A blocker's park lifts by itself when every blocker is done (R-93-m1e),
+	// and lifting it earlier is a human act. The engine admits that early
+	// return for a park a person directed on a proven session (verbs.go:2819-
+	// 2857), and only a park a SEAT directed needs an authority row of its own
+	// — which this fixture leaves to the engine's tests, as it leaves the verb.
+	// A human who parked a goal behind a blocker here can take it back.
+	if file.Parked != nil && file.Parked.Blocker != "" && !strings.HasPrefix(file.Parked.By, "human:") {
 		for _, blocker := range file.Blocked {
 			if held := l.tree.Live[blocker]; held != nil && held.State != goal.StateDone {
-				return refused("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e)", id, blocker)
+				return refused("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e), and lifting it earlier is a human act", id, blocker)
 			}
 		}
 	}
@@ -1524,9 +1530,11 @@ func (l *ledger) edit(id string, edited act.Edited) error {
 		return refused("goal %s is not edited from the interface in this walkthrough: "+
 			"it is the fixture's canned refusal, so that a refused save can be read where it happened", id)
 	}
+	// The state is read before the approval, and the order is the engine's own
+	// (verbs.go:3410-3430): an approval survives a claim and survives a park,
+	// so a goal a seat holds would otherwise be told to withdraw an approval
+	// when what stands in the way is the claim.
 	switch {
-	case file.Approved != nil || file.State == goal.StateApproved:
-		return refused("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
 	case file.State == goal.StateClaimed:
 		pair := "another pair"
 		if file.Claimed != nil {
@@ -1535,6 +1543,8 @@ func (l *ledger) edit(id string, edited act.Edited) error {
 		return refused("goal %s is claimed by %s; edit it at a terminal", id, pair)
 	case file.State == goal.StateParked:
 		return refused("goal %s is parked: return it to the queue to edit it", id)
+	case file.Approved != nil || file.State == goal.StateApproved:
+		return refused("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
 	case file.State != goal.StateQueued:
 		return refused("goal %s is %s; only a queued goal is edited from the interface", id, file.State)
 	}

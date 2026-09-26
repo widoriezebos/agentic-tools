@@ -68,7 +68,7 @@ function ruling(over: Partial<Ruling> = {}): Ruling {
     event: "",
     condition: "class=temporary due=2026-09-14",
     duePassed: true,
-    mentions: ["g1-s12"],
+    mentions: [{ id: "g1-s12", where: { kind: "goal", id: "g1-s12" } }],
     ...over,
   };
 }
@@ -139,7 +139,7 @@ describe("how long ago", () => {
 describe("the tabs of what was decided", () => {
   it("are the design's, in its order, each with its own count in its name", () => {
     const page: Page = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       readAt: "2026-09-25T11:00:00Z",
       signIn: false,
       needsYou: [],

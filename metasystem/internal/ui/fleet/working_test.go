@@ -134,7 +134,7 @@ func TestTheFleetLinesSayThePhaseSentencePerMachine(t *testing.T) {
 		in.Presence.Records["m1e"] = record
 	})
 	joined := strings.Join(page.Lines(now), "\n")
-	if !strings.Contains(joined, "implementer round 2 on finish-test-repairs · running 41 min, cap 120 min") {
+	if !strings.Contains(joined, "implementer round 2 on finish-test-repairs · running 41 min, cap 2 h") {
 		t.Fatalf("lines = %s", joined)
 	}
 }
@@ -151,7 +151,7 @@ func TestANamedMachineOpensItsBlockAsLines(t *testing.T) {
 		// The goal, with the title the row was composed with.
 		"- Goal: finish-test-repairs · Finish the test repairs and integrate them.",
 		"its cap ends in 79 min",
-		"- Box: attempt 3 of 10 · 610 of 720 min reserved · 7 attempts left",
+		"- Box: attempt 3 of 10 · 10 h 10 min of 12 h reserved · 7 attempts left",
 		seat.ReservedMeaning,
 		"- Chain:",
 		// It is a reading of a reading, and says so.

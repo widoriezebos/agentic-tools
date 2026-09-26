@@ -151,7 +151,7 @@ func everyKind() Inputs {
 		}},
 		Register: rulings.Register{
 			Rows: []rulings.Row{
-				{ID: "R-1", Date: "2026-08-26", Words: "The first ruling, which mentions g1-s49 by name",
+				{ID: "R-1", Date: "2026-08-26", Words: "The first ruling, which mentions g1-s49 by name and dec-1 as the record of it",
 					Context: "given at the start", Owner: "Wido", Condition: ""},
 				{ID: "R-2", Date: "2026-09-01", Words: "A temporary ruling whose review has come round",
 					Context: "given with the migration", Owner: "Wido",
@@ -311,14 +311,28 @@ func TestARenewalIsDatedFromWhenItsApprovalStoppedAdmittingWork(t *testing.T) {
 	}
 
 	// An approval that expired without naming a date of its own is dated from
-	// the approval, rather than from an instant this page invents.
+	// this read: the projection says it is expired and never says when it
+	// stopped, and the approval's own instant is when the approval was given,
+	// which is the one instant it certainly is not.
 	in := everyKind()
 	in.Rows[2].Approved.ReviewBy = ""
 	in.Rows[2].Approved.ExpiredWhy = "the fleet's first terminal was enrolled at 2026-09-10T00:00:00Z"
+	found := false
 	for _, need := range Compose(in, observed).NeedsYou {
-		if need.Kind == KindRenewal && need.ID == "g1-s42" && need.Since != ago(30*24*time.Hour) {
-			t.Errorf("an undated expiry invented an instant: %q", need.Since)
+		if need.Kind != KindRenewal || need.ID != "g1-s42" {
+			continue
 		}
+		found = true
+		if need.Since != observed.Format(time.RFC3339) {
+			t.Errorf("an undated expiry is dated %q, want this read's own instant %q",
+				need.Since, observed.Format(time.RFC3339))
+		}
+		if need.Since == ago(30*24*time.Hour) {
+			t.Error("an undated expiry was dated from when the approval was given")
+		}
+	}
+	if !found {
+		t.Error("the undated renewal left the inbox")
 	}
 }
 
@@ -429,12 +443,11 @@ func TestTheTwoCountsAreTheInboxSplitAndSumToIt(t *testing.T) {
 		t.Errorf("the two blocks do not sum to the inbox: %d + %d != %d",
 			page.Counts.Asked, page.Counts.Waiting, page.Counts.NeedsYou)
 	}
-	// Three, since every row says whether it is new and the page names the
-	// window it decided that over. The number is asserted as a literal rather
-	// than against the constant, because a reader parses the number and not
-	// the constant.
-	if page.SchemaVersion != 3 {
-		t.Errorf("schema = %d, want 3", page.SchemaVersion)
+	// Four, since a mention says where it opens. The number is asserted as a
+	// literal rather than against the constant, because a reader parses the
+	// number and not the constant.
+	if page.SchemaVersion != 4 {
+		t.Errorf("schema = %d, want 4", page.SchemaVersion)
 	}
 }
 
@@ -699,18 +712,30 @@ func TestDuePassedIsADateAndAnEventConditionIsShownAndNeverJudged(t *testing.T) 
 	}
 }
 
-func TestMentionsAreTheGoalsTheWordsNameVerbatim(t *testing.T) {
+// A ruling's mentions are the goals and the records its words name, each with
+// where it opens: a goal opens the goal, and a record opens the record at the
+// path the reader opens it by rather than at the id the words wrote.
+func TestMentionsAreTheGoalsAndRecordsTheWordsNameVerbatim(t *testing.T) {
 	t.Parallel()
 	page := Compose(everyKind(), observed)
 	for _, ruling := range page.Decided.Rulings {
 		if ruling.ID != "R-1" {
 			if len(ruling.Mentions) != 0 {
-				t.Errorf("%s mentioned a goal its words do not name: %v", ruling.ID, ruling.Mentions)
+				t.Errorf("%s mentioned something its words do not name: %v", ruling.ID, ruling.Mentions)
 			}
 			continue
 		}
-		if strings.Join(ruling.Mentions, ",") != "g1-s49" {
-			t.Errorf("R-1 mentions %v, want g1-s49", ruling.Mentions)
+		want := []Mention{
+			{ID: "g1-s49", Where: Where{Kind: WhereGoal, ID: "g1-s49"}},
+			{ID: "dec-1", Where: Where{Kind: WhereRecord, ID: "docs/decisions/roster.md"}},
+		}
+		if len(ruling.Mentions) != len(want) {
+			t.Fatalf("R-1 mentions %+v, want %+v", ruling.Mentions, want)
+		}
+		for index := range want {
+			if ruling.Mentions[index] != want[index] {
+				t.Errorf("mention %d is %+v, want %+v", index, ruling.Mentions[index], want[index])
+			}
 		}
 	}
 }
@@ -718,7 +743,13 @@ func TestMentionsAreTheGoalsTheWordsNameVerbatim(t *testing.T) {
 // A mention is the whole id and nothing inside a longer name.
 func TestAMentionIsAWholeIdAndNeverAPrefixOfALongerOne(t *testing.T) {
 	t.Parallel()
-	goals := []string{"g1-s4", "g1-s44", "g1-s44b"}
+	named := map[string]Where{}
+	for _, id := range []string{"g1-s4", "g1-s44", "g1-s44b"} {
+		named[id] = Where{Kind: WhereGoal, ID: id}
+	}
+	// A record id is a ULID in this checkout, which is one token like any
+	// other: it is found the same way and nothing about its length matters.
+	named["01M3F0YA88RXTV1A1FSEHVVJ9Z"] = Where{Kind: WhereRecord, ID: "plans/designs/a.md"}
 	for _, read := range []struct {
 		words string
 		found string
@@ -731,8 +762,14 @@ func TestAMentionIsAWholeIdAndNeverAPrefixOfALongerOne(t *testing.T) {
 		{"(g1-s4)", "g1-s4"},
 		{"xg1-s4x", ""},
 		{"g1-s4 and g1-s4 again", "g1-s4"},
+		{"recorded at 01M3F0YA88RXTV1A1FSEHVVJ9Z.", "01M3F0YA88RXTV1A1FSEHVVJ9Z"},
+		{"01M3F0YA88RXTV1A1FSEHVVJ9Zx is not it", ""},
 	} {
-		if got := strings.Join(mentions(read.words, goals), ","); got != read.found {
+		found := []string{}
+		for _, mention := range mentions(read.words, named) {
+			found = append(found, mention.ID)
+		}
+		if got := strings.Join(found, ","); got != read.found {
 			t.Errorf("%q mentions %q, want %q", read.words, got, read.found)
 		}
 	}

@@ -42,8 +42,10 @@ import {
   seenWords,
   shortEngine,
   sinceWords,
+  workingByGoal,
   workingSource,
   workingWords,
+  type WorkingGroup,
 } from "./fleet";
 import { minuteTime } from "../backlog/format";
 import { laneTitle } from "../backlog/lanes";
@@ -502,12 +504,14 @@ function MachineRow({
 }
 
 /**
- * What one machine is doing, opened: the goal, the job in hand, the goal's
- * box and the chain.
+ * What one machine is doing, opened: its goals, and under each the jobs in
+ * hand with their boxes and chains.
  *
  * This seat's row can carry several things in flight, because only this host
  * can read its own job records; every other row carries the one chain its
- * presence published, and says when that was.
+ * presence published, and says when that was. Several of them are often one
+ * goal's — a round and the critique of it — so the goal is named once, above
+ * the jobs that are on it.
  */
 function Work({ machine, now }: { machine: Machine; now: Date }) {
   if (machine.workingProblem !== "") {
@@ -518,14 +522,14 @@ function Work({ machine, now }: { machine: Machine; now: Date }) {
   }
   return (
     <div className="ms-fleet-work">
-      {machine.working.map((working) => (
-        <WorkingBlock
-          key={working.job.id}
-          working={working}
+      {workingByGoal(machine.working).map((group) => (
+        <GoalWork
+          key={group.goal}
+          group={group}
           // The goal's title, where this page already has one. It is carried
           // on the holds the row was composed with, so a goal this machine
           // does not hold has a chip and no title rather than an invented one.
-          title={machine.holds.find((held) => held.goal === working.goal)?.title ?? ""}
+          title={machine.holds.find((held) => held.goal === group.goal)?.title ?? ""}
           now={now}
         />
       ))}
@@ -534,23 +538,37 @@ function Work({ machine, now }: { machine: Machine; now: Date }) {
   );
 }
 
-function WorkingBlock({ working, title, now }: { working: Working; title: string; now: Date }) {
-  const cap = capWords(working.job, now);
+/** One goal of the opened block: the goal once, then every job on it. */
+function GoalWork({ group, title, now }: { group: WorkingGroup; title: string; now: Date }) {
   return (
-    <div className="ms-fleet-working">
+    <div className="ms-fleet-work-goal">
       <p className="ms-fleet-work-line">
         <span className="ms-fleet-work-name">Goal</span>
         {/* A goal-free critique is lawful work, and a chip naming an empty
             goal would open a page nobody could find. */}
-        {working.goal === "" ? (
+        {group.goal === "" ? (
           <span className="ms-fleet-quiet">this work names no goal</span>
         ) : (
-          <NavLink className="ms-fleet-goal" to={goalPath(working.goal)}>
-            {working.goal}
+          <NavLink className="ms-fleet-goal" to={goalPath(group.goal)}>
+            {group.goal}
           </NavLink>
         )}
         {title !== "" && <span className="ms-fleet-quiet">{title}</span>}
+        {group.working.length > 1 && (
+          <span className="ms-fleet-quiet">{group.working.length} jobs in flight</span>
+        )}
       </p>
+      {group.working.map((working) => (
+        <WorkingBlock key={working.job.id} working={working} now={now} />
+      ))}
+    </div>
+  );
+}
+
+function WorkingBlock({ working, now }: { working: Working; now: Date }) {
+  const cap = capWords(working.job, now);
+  return (
+    <div className="ms-fleet-working">
       <p className="ms-fleet-work-line">
         <span className="ms-fleet-work-name">This job</span>
         <span>

@@ -39,14 +39,19 @@ import (
 
 // SchemaVersion is the shape of the decisions resource a reader parses.
 //
-// Three, since the inbox became an inbox: every row says whether it is new
+// Four, since a ruling's mentions say where they open: a mention was a bare
+// id a reader could only read as a goal, and it is now the id with its
+// destination, so a ruling that names a record links the record. It is the
+// one field of the third shape whose members changed, and the only reason
+// this is not an addition.
+//
+// Three was the inbox becoming an inbox: every row says whether it is new
 // since the last visit here, the page names the window it decided that over,
-// and the three kinds whose row used to need a second read now carry what
-// they need — a ruling review the register row's own words, a draft and a
-// landed design the record's path, and a landed design the goals it named
-// with where each stands. Additions only: nothing was renamed and nothing was
-// removed, so a reader of the second shape reads every field it read before.
-const SchemaVersion = 3
+// and the three kinds whose row used to need a second read carry what they
+// need — a ruling review the register row's own words, a draft and a landed
+// design the record's path, and a landed design the goals it named with where
+// each stands.
+const SchemaVersion = 4
 
 // The kinds of thing that wait on a human. Each one is a row of the design's
 // own table, and each one carries its own silence line.
@@ -91,9 +96,13 @@ const (
 	WhereChannel = "channel"
 )
 
-// The window an alert is recent enough to still need a human, which is the
-// Overview's own window over the same journal.
-const alertWindow = 7 * 24 * time.Hour
+// AlertWindow is how recent an alert has to be to still need a human, which
+// is the Overview's own window over the same journal.
+//
+// It is exported because the route that reads the journal has to read back to
+// this instant: a caller that handed in one page of the newest entries would
+// hide every alert older than that page, however far inside the window it is.
+const AlertWindow = 7 * 24 * time.Hour
 
 // The register path the reader opens, where the caller names none.
 //
@@ -258,10 +267,21 @@ type Ruling struct {
 	// evaluation, with observed and unobservable outcomes, and this page
 	// shows the event and judges nothing.
 	DuePassed bool `json:"duePassed"`
-	// Mentions are the ledger goals this ruling's words name verbatim. A
-	// mention is a link and never a claimed subject: a ruling is about what
-	// it says, and naming a goal is not being filed under it.
-	Mentions []string `json:"mentions"`
+	// Mentions are the ledger goals and the checkout's records this ruling's
+	// words name verbatim. A mention is a link and never a claimed subject: a
+	// ruling is about what it says, and naming a goal is not being filed under
+	// it.
+	Mentions []Mention `json:"mentions"`
+}
+
+// Mention is one id a ruling's words name, and where that id opens.
+//
+// The id travels beside the destination because the two are not the same
+// string for a record: the words name what the record calls itself, and the
+// reader opens it by its path. A browser shows the id and follows the Where.
+type Mention struct {
+	ID    string `json:"id"`
+	Where Where  `json:"where"`
 }
 
 // Item is one decided thing that is not a ruling: a decision record, an
@@ -491,7 +511,7 @@ func registerOf(in Inputs) string {
 func needsYou(in Inputs, now time.Time) []Need {
 	needs := []Need{}
 	needs = append(needs, approvals(in.Rows)...)
-	needs = append(needs, renewals(in.Rows)...)
+	needs = append(needs, renewals(in.Rows, now)...)
 	needs = append(needs, asks(in.Asks)...)
 	needs = append(needs, questions(in.Project.Questions)...)
 	needs = append(needs, parked(in.Rows)...)
@@ -555,7 +575,7 @@ func approvals(rows []backlog.Row) []Need {
 // CREATING a claimed revision, and dispatch under an existing claim checks
 // the claim, the fence and the budget rather than the approval's expiry, so
 // work already claimed continues.
-func renewals(rows []backlog.Row) []Need {
+func renewals(rows []backlog.Row, now time.Time) []Need {
 	needs := []Need{}
 	expired := []backlog.Row{}
 	for _, row := range rows {
@@ -566,7 +586,7 @@ func renewals(rows []backlog.Row) []Need {
 	sortByRank(expired)
 	for index := range expired {
 		row := expired[index]
-		since, fromDay := expiredAt(*row.Approved)
+		since, fromDay := expiredAt(*row.Approved, now)
 		need := Need{
 			Kind: KindRenewal, ID: row.ID, Title: titleOf(row),
 			Asked: "Renew the approval of " + titleOf(row) + ": " + row.Approved.ExpiredWhy,
@@ -592,17 +612,23 @@ func renewals(rows []backlog.Row) []Need {
 // reads: that is the instant the gate began refusing. An approval that
 // expired for one of the other reasons the horizon carries — a terminal
 // enrolled, the standing authority horizon passing — names no date of its
-// own here, so the row is dated from the approval itself rather than from an
-// instant this page would have to invent.
+// own here, and the row is dated from this read instead: the projection
+// answers that the approval is expired and never says when it stopped, so the
+// one instant this page can stand behind is the instant it read the verdict.
+// The approval's own instant, which this dated it from before, is when the
+// approval was GIVEN — the one instant on the row that is certainly not when
+// it stopped admitting work, and dating a renewal from it aged the renewal by
+// however long the approval had been good for.
 //
 // The second result says which of the two it answered with: a review date is
 // a day written as midnight, and the newness test has to know that before it
-// compares it to a window that opened after midnight.
-func expiredAt(approval backlog.Approval) (string, bool) {
+// compares it to a window that opened after midnight. This read's own instant
+// is an instant and not a day.
+func expiredAt(approval backlog.Approval, now time.Time) (string, bool) {
 	if stamped := dayStamp(approval.ReviewBy); stamped != "" {
 		return stamped, true
 	}
-	return approval.At, false
+	return stamp(now), false
 }
 
 // asks is this seat's open channel questions, shown as recorded.
@@ -913,7 +939,7 @@ func rulingReviews(register rulings.Register, at string, now time.Time) []Need {
 // Nothing reads a line back, nothing expires one, and no verb acts on one, so
 // there is no recorded consequence of leaving it.
 func alerts(journal []notifications.Notice, now time.Time) []Need {
-	from := now.Add(-alertWindow)
+	from := now.Add(-AlertWindow)
 	needs := []Need{}
 	for _, notice := range journal {
 		if !addressesTheHuman(notice) {
@@ -1081,13 +1107,13 @@ func notNow(rows []backlog.Row) []NotNow {
 }
 
 // register is every row the reader could read whole, newest first, with the
-// goals its words name.
+// goals and records its words name.
 //
 // Newest first is the register's own order reversed: it is append-only, so
 // the last row is the newest, and a human reading what they decided reads
 // what they decided last.
 func register(in Inputs, now time.Time) []Ruling {
-	goals := goalIDs(in.Rows, in.Closed)
+	named := mentionable(in.Rows, in.Closed, in.Project.Records)
 	rows := in.Register.Rows
 	shown := make([]Ruling, 0, len(rows))
 	for index := len(rows) - 1; index >= 0; index-- {
@@ -1097,7 +1123,7 @@ func register(in Inputs, now time.Time) []Ruling {
 			Owner: row.Owner, Class: row.Class, Due: row.Due, Event: row.Event,
 			Condition: row.Condition,
 			DuePassed: rulings.DuePassed(row.Due, now),
-			Mentions:  mentions(row.Words, goals),
+			Mentions:  mentions(row.Words, named),
 		})
 	}
 	return shown
@@ -1180,52 +1206,38 @@ func approvedGoals(rows, closed []backlog.Row) []Approved {
 
 /* ------------------------------------------------------------- the mentions -- */
 
-// mentions is the goals this ruling's words name verbatim, in the order they
-// appear in the words.
+// mentions is the ids this ruling's words name verbatim, in the order they
+// appear in the words, each with where it opens.
 //
 // Verbatim means the whole id with nothing of an identifier on either side of
 // it: a ruling about g1-s4 does not mention g1-s44, and a ruling about g1-s44
-// does not mention g1-s4. Record ids are not scanned for: this checkout mints
-// them as ULIDs, and no ruling has ever written one into its words, so
-// scanning for six hundred of them would cost every read and find nothing.
-func mentions(words string, goals []string) []string {
-	found := []string{}
+// does not mention g1-s4. That is why the words are read as tokens — maximal
+// runs of letters, digits, underscores and hyphens — and each token is looked
+// up once, rather than every known id being tried at every position. One pass
+// and one lookup per token is what lets the checkout's records be named here
+// beside its goals: a ULID is one token, and six hundred of them cost this
+// read no more than six.
+func mentions(words string, named map[string]Where) []Mention {
+	found := []Mention{}
 	seen := map[string]bool{}
 	for position := 0; position < len(words); {
-		matched := ""
-		for _, id := range goals {
-			if len(id) < 3 || !strings.HasPrefix(words[position:], id) {
-				continue
-			}
-			if !boundedAt(words, position, len(id)) {
-				continue
-			}
-			if len(id) > len(matched) {
-				matched = id
-			}
-		}
-		if matched == "" {
+		if !identifierByte(words[position]) {
 			position++
 			continue
 		}
-		if !seen[matched] {
-			seen[matched] = true
-			found = append(found, matched)
+		end := position
+		for end < len(words) && identifierByte(words[end]) {
+			end++
 		}
-		position += len(matched)
+		token := words[position:end]
+		where, isNamed := named[token]
+		if isNamed && len(token) >= 3 && !seen[token] {
+			seen[token] = true
+			found = append(found, Mention{ID: token, Where: where})
+		}
+		position = end
 	}
 	return found
-}
-
-// boundedAt reports that the run of length characters at position is a whole
-// token: what precedes and follows it is neither a letter, a digit, an
-// underscore nor a hyphen, so an id is never found inside a longer name.
-func boundedAt(words string, position, length int) bool {
-	if position > 0 && identifierByte(words[position-1]) {
-		return false
-	}
-	after := position + length
-	return after >= len(words) || !identifierByte(words[after])
 }
 
 func identifierByte(character byte) bool {
@@ -1243,14 +1255,29 @@ func identifierByte(character byte) bool {
 	}
 }
 
-func goalIDs(rows, closed []backlog.Row) []string {
-	ids := make([]string, 0, len(rows)+len(closed))
+// mentionable is every id a ruling's words could name, with where each opens.
+//
+// The board's goals, open and closed, and the checkout's records: a ruling
+// that names a record names the design or the decision it ruled on, and a
+// human reading the ruling wants to open that. A record is keyed by what it
+// calls itself and opened by its path, because the path is what the reader
+// opens and the id is what a ruling writes. A record that declares no id is
+// keyed by its path, which no ruling can name — a path is not one token — so
+// it is present and unfindable rather than absent and special-cased.
+//
+// A goal wins a collision. Nothing in this checkout mints an id both ways,
+// and a goal id is what a ruling names most.
+func mentionable(rows, closed []backlog.Row, records []project.Record) map[string]Where {
+	named := make(map[string]Where, len(rows)+len(closed)+len(records))
+	for _, record := range records {
+		named[recordID(record)] = Where{Kind: WhereRecord, ID: record.Path}
+	}
 	for _, set := range [][]backlog.Row{rows, closed} {
 		for _, row := range set {
-			ids = append(ids, row.ID)
+			named[row.ID] = Where{Kind: WhereGoal, ID: row.ID}
 		}
 	}
-	return ids
+	return named
 }
 
 /* ----------------------------------------------------------------- the small -- */

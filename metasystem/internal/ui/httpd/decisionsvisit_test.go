@@ -2,10 +2,14 @@ package httpd
 
 import (
 	"encoding/json"
+	"errors"
+	"net/http"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 )
@@ -61,6 +65,48 @@ func TestDecisionsRecordsItsOwnVisitAndLeavesOverviewsAlone(t *testing.T) {
 	testutil.Expect(t, "the landing page has no row", len(held.Humans), 0)
 	testutil.Expect(t, "the page's own row is there", held.Pages[overview.PageDecisions][""].Seen,
 		overviewNow.Format(time.RFC3339))
+}
+
+// A read that ends in a 500 is a page nobody saw, so it is not a visit. The
+// marker is recorded after every reader that can fail: an advance here would
+// spend this human's "new since your last visit" on a page that never
+// rendered, and the window cannot be given back.
+func TestAFailedReadOfDecisionsDoesNotAdvanceTheVisit(t *testing.T) {
+	t.Parallel()
+
+	for _, one := range []struct {
+		name  string
+		shape func(*Info)
+	}{
+		{
+			name: "the channel reader fails",
+			shape: func(info *Info) {
+				info.Asks = func() ([]channel.Question, error) { return nil, errors.New("the channel file is unreadable") }
+			},
+		},
+		{
+			name: "the register reader fails",
+			shape: func(info *Info) {
+				info.Rulings = func() (rulings.Register, error) { return rulings.Register{}, errors.New("the register is unreadable") }
+			},
+		},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			clock := overviewNow
+			info := decisionsVisiting(root, &clock)
+			one.shape(&info)
+			served := New(info, loopback(), testBundle())
+
+			response := request(t, served, http.MethodGet, "/api/decisions", "127.0.0.1:7878", nil)
+			testutil.Expect(t, "the status", response.Code, http.StatusInternalServerError)
+
+			// Nothing was written at all: the first visit is still to come.
+			_, err := os.ReadFile(overview.VisitsPath(root))
+			testutil.Expect(t, "the marker file was never written", os.IsNotExist(err), true)
+		})
+	}
 }
 
 // A build with no marker store still answers a page: the marker is preference

@@ -19,9 +19,9 @@ import (
 // The act itself: three fields, landed, with the ledger naming the hand.
 func TestEditFromASignedInSessionLandsTheThreeFieldsAndNamesTheSession(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-edit")
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-edit")
+	authority := sessionFor(t, bed)
 
 	intent := "Refunds are issued within a day, with nobody touching the queue."
 	next := "Take the worker to a working end state; the approach is yours."
@@ -30,7 +30,7 @@ func TestEditFromASignedInSessionLandsTheThreeFieldsAndNamesTheSession(t *testin
 		t.Fatalf("edit: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-edit")
+	file := readGoal(t, bed, "ui-edit")
 	testutil.Expect(t, "the intent", file.Intent, intent)
 	testutil.Expect(t, "the next step", file.NextStep, next)
 	// The engine writes labels sorted and deduplicated.
@@ -52,17 +52,17 @@ func TestEditFromASignedInSessionLandsTheThreeFieldsAndNamesTheSession(t *testin
 // says nothing about the intent, and an intent changed elsewhere stands.
 func TestAnEditCarriesOnlyTheFieldsItWasGiven(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-partial")
-	authority := sessionFor(t, root)
-	before := readGoal(t, root, "ui-partial")
+	bed := ledger(t)
+	openGoal(t, bed, "ui-partial")
+	authority := sessionFor(t, bed)
+	before := readGoal(t, bed, "ui-partial")
 
 	next := "Only this line changed."
 	if err := authority.Edit("ui-partial", Edited{NextStep: &next}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-partial")
+	file := readGoal(t, bed, "ui-partial")
 	testutil.Expect(t, "the next step changed", file.NextStep, next)
 	testutil.Expect(t, "the intent was left alone", file.Intent, before.Intent)
 	testutil.Expect(t, "the labels were left alone", len(file.Labels), len(before.Labels))
@@ -76,12 +76,12 @@ func TestEditRefusesAnApprovedClaimedOrParkedGoal(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		id    string
-		stage func(t *testing.T, root string, authority Authority, id string)
+		stage func(t *testing.T, bed *ledgerBed, authority Authority, id string)
 		want  string
 	}{
 		{
 			name: "approved", id: "ui-edit-approved",
-			stage: func(t *testing.T, _ string, authority Authority, id string) {
+			stage: func(t *testing.T, _ *ledgerBed, authority Authority, id string) {
 				t.Helper()
 				if err := authority.Approve(id, box()); err != nil {
 					t.Fatalf("approve: %v", err)
@@ -91,19 +91,19 @@ func TestEditRefusesAnApprovedClaimedOrParkedGoal(t *testing.T) {
 		},
 		{
 			name: "claimed", id: "ui-edit-claimed",
-			stage: func(t *testing.T, root string, authority Authority, id string) {
+			stage: func(t *testing.T, bed *ledgerBed, authority Authority, id string) {
 				t.Helper()
 				if err := authority.Approve(id, box()); err != nil {
 					t.Fatalf("approve: %v", err)
 				}
 				// The page has read the queue. Now a seat claims the goal.
-				claim(t, root, id)
+				claim(t, bed, id)
 			},
 			want: "; edit it at a terminal",
 		},
 		{
 			name: "parked", id: "ui-edit-parked",
-			stage: func(t *testing.T, _ string, authority Authority, id string) {
+			stage: func(t *testing.T, _ *ledgerBed, authority Authority, id string) {
 				t.Helper()
 				if err := authority.Park(id, "not now"); err != nil {
 					t.Fatalf("park: %v", err)
@@ -114,11 +114,11 @@ func TestEditRefusesAnApprovedClaimedOrParkedGoal(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			root := ledger(t)
-			openGoal(t, root, test.id)
-			authority := sessionFor(t, root)
-			before := readGoal(t, root, test.id)
-			test.stage(t, root, authority, test.id)
+			bed := ledger(t)
+			openGoal(t, bed, test.id)
+			authority := sessionFor(t, bed)
+			before := readGoal(t, bed, test.id)
+			test.stage(t, bed, authority, test.id)
 
 			intent := "A rewrite this state does not admit."
 			err := authority.Edit(test.id, Edited{Intent: &intent})
@@ -131,7 +131,7 @@ func TestEditRefusesAnApprovedClaimedOrParkedGoal(t *testing.T) {
 			if !strings.Contains(refusal.Message, test.want) {
 				t.Fatalf("the refusal does not say what to do instead: %q", refusal.Message)
 			}
-			testutil.Expect(t, "the intent stands", readGoal(t, root, test.id).Intent, before.Intent)
+			testutil.Expect(t, "the intent stands", readGoal(t, bed, test.id).Intent, before.Intent)
 		})
 	}
 }
@@ -141,9 +141,9 @@ func TestEditRefusesAnApprovedClaimedOrParkedGoal(t *testing.T) {
 // open act's own sentences, because there is one rule for what an intent is.
 func TestEditRefusesWhatItCannotPublish(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-edit-guards")
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-edit-guards")
+	authority := sessionFor(t, bed)
 	blank := "   "
 	intent := "A perfectly good intent."
 
@@ -168,7 +168,7 @@ func TestEditRefusesWhatItCannotPublish(t *testing.T) {
 	}
 
 	// Nothing was published by any of them.
-	file := readGoal(t, root, "ui-edit-guards")
+	file := readGoal(t, bed, "ui-edit-guards")
 	testutil.Expect(t, "the goal's history is untouched", file.History[len(file.History)-1].Verb, "open")
 }
 

@@ -440,7 +440,23 @@ export function originOf(need: Need): string {
   return need.row === null ? "" : need.row.origin;
 }
 
-/** The labels of the rows on screen, with how many carry each, commonest first. */
+/**
+ * The label chips this narrowing offers: the labels of the rows Find and the
+ * origin chip leave, with how many carry each, commonest first.
+ *
+ * Drawn from the rows shown rather than from the whole queue, so a chip never
+ * offers a family that a search has already taken off the screen and a count
+ * beside a chip is the number of rows it would leave.
+ *
+ * The label the human already chose is the one thing not applied here. Chips
+ * drawn from rows a label chip had already filtered would leave that one chip
+ * on the line, with every other family gone and no way back to it.
+ */
+export function labelChips(needs: readonly Need[], narrowing: Narrowing): { label: string; count: number }[] {
+  return labelsIn(shownQueue(needs, { ...narrowing, label: "" }));
+}
+
+/** The labels of a set of rows, with how many carry each, commonest first. */
 export function labelsIn(needs: readonly Need[]): { label: string; count: number }[] {
   const counted = new Map<string, number>();
   for (const need of needs) {

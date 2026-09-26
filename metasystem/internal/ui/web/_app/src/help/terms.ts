@@ -232,7 +232,7 @@ export const HELP: Record<HelpId, Term> = {
   },
   "application-section": {
     term: "Application",
-    text: "What this workspace has concluded, what is known to be wrong with it, and what it says it is. The first is the ledger's own record of work that ended, week by week; the second is the known-issues register, open rows first; the third is one line of links into the reader.",
+    text: "What is known to be wrong with this workspace, what it has concluded, and what it says it is. The first is the known-issues register, open rows first, because an open problem is what a human can do something about today; the second is the ledger's own record of work that ended, week by week; the third is one line of links into the reader.",
   },
   "what-concluded": {
     term: "What concluded",

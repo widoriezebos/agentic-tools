@@ -277,6 +277,41 @@ func closed(t *testing.T, directory string) {
 	t.Cleanup(func() { _ = os.Chmod(directory, 0o700) })
 }
 
+// A file this walk listed and cannot stat is a refusal naming the directory,
+// not a file counted as nothing. The size is a number a human watches to see it
+// stop growing, and a count that is quietly smaller because one file could not
+// be read is worse than a refusal: nothing on the page would say so.
+func TestMeasuringAFileItCannotStatIsARefusal(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	workspace := filepath.Join(home, "ui", "partner", "one-111111")
+	plantMeasured(t, workspace, "wido.jsonl", 10)
+	// Readable, so the walk still lists the file, and not searchable, so the
+	// file's own metadata cannot be read. That is the state this rule is about:
+	// the walk itself did not fail, one entry of it did.
+	unsearchable(t, workspace)
+
+	_, err := sizeOf(workspace)
+
+	testutil.Require(t, "a file it cannot stat is refused", err != nil, true)
+
+	_, err = Measure(home)
+
+	testutil.Require(t, "and the store's measurement carries it", err != nil, true)
+	testutil.Expect(t, "naming the directory it could not measure",
+		strings.Contains(err.Error(), "could not be measured"), true)
+}
+
+// unsearchable leaves a directory readable and takes away the permission to
+// read what is inside it, for the length of one test.
+func unsearchable(t *testing.T, directory string) {
+	t.Helper()
+	if err := os.Chmod(directory, 0o400); err != nil {
+		t.Fatalf("cannot close %s: %v", directory, err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(directory, 0o700) })
+}
+
 // A workspace whose files went while the sweep walked is nothing to count and
 // nothing to refuse. The store is written under this account while the server
 // serves it, so a walk that refused on a name that had moved on would report a

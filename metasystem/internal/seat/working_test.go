@@ -129,7 +129,7 @@ func TestAPendingJobIsNeverCountedInMinutesHoweverItIsStamped(t *testing.T) {
 	if working == nil {
 		t.Fatal("no working")
 	}
-	if words := JobWords(working.Job, fixtureClock); words != "pending, cap 120 min" {
+	if words := JobWords(working.Job, fixtureClock); words != "pending, cap 2 h" {
 		t.Fatalf("a pending job = %q", words)
 	}
 	// The stamp and the cap's own end are untouched: they are what the block
@@ -292,7 +292,7 @@ func TestThePhaseSentenceSaysTheRoundTheGoalAndTheCap(t *testing.T) {
 	working, _ := ComposeWorking(runningJobs(), workingBox)
 	// The clock is injected: 09:40 against a start of 08:59 is 41 minutes.
 	words := PhaseWords(working, fixtureClock)
-	if words != "implementer round 2 on goal-a · running 41 min, cap 120 min" {
+	if words != "implementer round 2 on goal-a · running 41 min, cap 2 h" {
 		t.Fatalf("phase words = %q", words)
 	}
 	if PhaseWords(nil, fixtureClock) != "idle" {
@@ -318,19 +318,27 @@ func TestTheBoxSaysWhatIsSpentAndWhatIsLeft(t *testing.T) {
 	t.Parallel()
 	working, _ := ComposeWorking(runningJobs(), workingBox)
 	words := BoxWords(working.Box)
-	if words != "attempt 3 of 10 · 610 of 720 min reserved · 7 attempts left" {
+	if words != "attempt 3 of 10 · 10 h 10 min of 12 h reserved · 7 attempts left" {
 		t.Fatalf("box words = %q", words)
 	}
 }
 
-func TestNoDurationOnThisSurfaceIsEverPrintedInDays(t *testing.T) {
+func TestADurationIsMinutesThenHoursAndNeverDays(t *testing.T) {
 	t.Parallel()
 	// A budget's day is eight hours in this kit, so a duration printed in
 	// days would read as two different lengths depending on who read it.
+	// Two hours is where the count stops being the plainest reading.
+	for minutes, want := range map[int64]string{
+		0: "0 min", 1: "1 min", 59: "59 min", 60: "60 min", 119: "119 min",
+		120: "2 h", 121: "2 h 1 min", 481: "8 h 1 min", 720: "12 h", 2880: "48 h",
+	} {
+		if words := MinutesWords(minutes); words != want {
+			t.Errorf("%d minutes = %q, want %q", minutes, words, want)
+		}
+	}
 	for _, minutes := range []int64{1, 59, 60, 481, 2880} {
-		words := MinutesWords(minutes)
-		if !strings.HasSuffix(words, " min") || strings.Contains(words, "d") {
-			t.Fatalf("minutes words = %q", words)
+		if words := MinutesWords(minutes); strings.Contains(words, "d") {
+			t.Errorf("a duration was printed in days: %q", words)
 		}
 	}
 }
@@ -411,7 +419,7 @@ func TestSeatFleetTextSaysThePhaseSentence(t *testing.T) {
 	}
 	report := Report{Machines: []MachineStanding{{Machine: "m1e", Standing: Reachable, Record: &record}}}
 	report.SetNow(fixtureClock)
-	if !strings.Contains(report.Text(), "implementer round 2 on goal-a · running 41 min, cap 120 min") {
+	if !strings.Contains(report.Text(), "implementer round 2 on goal-a · running 41 min, cap 2 h") {
 		t.Fatalf("seat fleet text = %q", report.Text())
 	}
 }

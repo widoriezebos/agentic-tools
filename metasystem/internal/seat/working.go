@@ -300,14 +300,28 @@ func minutesOf(value *int) *int {
 
 /* ---------------------------------------------------------------- words -- */
 
+// minutesRollUpAt is where a count of minutes stops reading as minutes.
+const minutesRollUpAt = 120
+
 // MinutesWords is how every duration on this surface reads.
 //
-// Minutes, always, because minutes are what the records carry: a cap is a
-// count of them and so is a box's reservation. Never a day — a budget's day
-// is eight hours (internal/goalbudget/budget.go:43), so a duration printed in
-// days would read as two different lengths depending on who read it.
+// Minutes up to two hours, and hours and minutes from there: the records carry
+// minutes — a cap is a count of them and so is a box's reservation — and up to
+// two hours the count is the plainest thing to read, while "481 min" is a
+// number a human has to divide before it means anything.
+//
+// Never a day, however many hours it comes to. A budget's day is eight hours
+// (internal/goalbudget/budget.go:43), so a duration printed in days would read
+// as two different lengths depending on who read it.
 func MinutesWords(minutes int64) string {
-	return strconv.FormatInt(minutes, 10) + " min"
+	if minutes < minutesRollUpAt {
+		return strconv.FormatInt(minutes, 10) + " min"
+	}
+	words := strconv.FormatInt(minutes/60, 10) + " h"
+	if rest := minutes % 60; rest != 0 {
+		words += " " + strconv.FormatInt(rest, 10) + " min"
+	}
+	return words
 }
 
 // PhaseWords is the one sentence a machine's Running column says.
@@ -398,7 +412,9 @@ func BoxWords(box *Box) string {
 		left = strconv.FormatInt(remaining, 10) + " attempts left"
 	}
 	if box.ReservedMinutes != nil && box.ReservedMinutesLimit != nil {
-		parts = append(parts, strconv.FormatInt(*box.ReservedMinutes, 10)+" of "+
+		// Both sides read the same way: one number rolled up into hours beside
+		// one that was not would be two units in one phrase.
+		parts = append(parts, MinutesWords(*box.ReservedMinutes)+" of "+
 			MinutesWords(*box.ReservedMinutesLimit)+" reserved")
 	}
 	if left != "" {
