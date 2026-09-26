@@ -138,7 +138,13 @@ export function FleetPane() {
   }, [again]);
 
   const hint = read.state === "read" ? `Read at ${minuteTime(read.page.readAt)} · Refresh` : "Refresh";
-  useOffersRefresh(reload, hint);
+  // The in-place read, and not the blanking one. An offered re-read is made
+  // after somebody else's confirmed act — a proposal applied in the Partner's
+  // drawer, say — and a failed launch's Retry form is inline in this page, in no
+  // sheet: `reload` would unmount it and take the authorization word and the
+  // review date a human had typed with it (Astra S58-10). `reload` stays what
+  // Refresh and Retry press.
+  useOffersRefresh(again, hint);
 
   return (
     <Pane title="Fleet">

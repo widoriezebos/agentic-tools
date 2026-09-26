@@ -216,15 +216,27 @@ const ORDER = [
 export const LANDED_NOT_RECORDED = "proof-not-recorded";
 
 /**
- * The ledger outcomes that are not a rejection: the journal did not confirm the
- * act, and it did not say the act was refused either.
+ * The one ledger outcome that neither confirms nor rejects.
  *
- * `confirmed-late` means it landed after the wait was over; `lost` means nobody
- * knows; `abandoned` and `expired` are operations the engine stopped waiting for.
- * The route carries each as the code of a 409, beside the rejections, so the code
- * is what tells them apart (internal/goal/journal.go Outcome).
+ * `confirmed-late` means the act LANDED, after the wait for it was over, so
+ * calling it a refusal would be the one wrong thing to say about it; until this
+ * page shows it as landed it is unresolved, which at least sends nothing again.
+ *
+ * The other three used to be here and were wrong. `rejected`, `abandoned` and
+ * `expired` are each marked BEFORE any push lands or after every push was
+ * refused — abandoned at the pre-push gates and on a mutation that finds nothing
+ * to do, rejected on validation, expired when the compare-and-set was refused
+ * past the deadline (internal/goal/txn.go). Every one is a definite non-write, so
+ * a redundant block in a list answered 409 `abandoned` and stopped a run that
+ * should have gone on to the next line (Astra S58-12). `lost` is gone for the
+ * same reason: a competitor's change stands instead of ours, which is a definite
+ * non-write of ours.
+ *
+ * What is genuinely unknown does not arrive as a 409 at all: the act layer reads
+ * its own journal entry and answers `pushed-unknown` or `journal-unreadable`
+ * under 500, which the 5xx rule below already calls unresolved.
  */
-const UNSETTLED = ["confirmed-late", "lost", "abandoned", "expired"];
+const UNSETTLED = ["confirmed-late"];
 
 /**
  * What a failed save means, conservatively: refused where nothing landed, and

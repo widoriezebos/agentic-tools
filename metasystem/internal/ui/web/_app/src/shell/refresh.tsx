@@ -20,8 +20,23 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
  * and pressing the icon is the only thing that calls it.
  */
 
-/** What the header shows: the read to make, and what the tooltip says. */
-export type Offer = { reread: () => void; hint: string };
+/**
+ * What the header shows: the read to make, and what the tooltip says.
+ *
+ * `reread` is under a contract now, and it is the one this slice added: it KEEPS
+ * THE PAGE MOUNTED. It sets what it read in place and never passes through the
+ * loading state, which is for the first read and for Retry after a failure.
+ * Anything else may be called while a human is typing — the store asks for it
+ * after a confirmed act, and the act may have been made in the Partner's drawer
+ * over a page whose inline form is half filled in — and a re-read that unmounted
+ * the page would throw those keystrokes away (Astra S58-03, S58-10).
+ *
+ * `inStrip` says the page already carries a refresh of its own, in its own
+ * toolbar or crumbs. Such a page offers its read all the same, so that a
+ * confirmed act elsewhere moves it; what it does not want is a second icon
+ * beside the one it already has, so the header shows none.
+ */
+export type Offer = { reread: () => void; hint: string; inStrip?: boolean };
 
 type Refresh = { offered: Offer | null; offer: (offer: Offer | null) => void };
 
@@ -39,19 +54,37 @@ export function RefreshProvider({ children }: { children: ReactNode }) {
  * The read must be stable across renders — a useCallback, or a function the
  * pane does not rebuild — because it is what the effect depends on. The hint
  * may change with every response, which is the point: it says when the page
- * was read.
+ * was read. And the read must keep the page mounted, which is the Offer's own
+ * contract above: a pane whose only read blanks it passes an in-place one here
+ * and keeps the blanking one for its own Retry.
+ *
+ * `inStrip` is for a page that already shows a refresh in its own strip: it
+ * offers its read so that a confirmed act moves it, and the header shows no
+ * second icon.
  */
-export function useOffersRefresh(reread: () => void, hint: string): void {
+export function useOffersRefresh(reread: () => void, hint: string, inStrip = false): void {
   const { offer } = useContext(RefreshContext);
   useEffect(() => {
-    offer({ reread, hint });
+    offer({ reread, hint, inStrip });
     return () => {
       offer(null);
     };
-  }, [reread, hint, offer]);
+  }, [reread, hint, inStrip, offer]);
 }
 
 /** What the header shows, or null where this section offers no read. */
 export function useSectionRefresh(): Offer | null {
   return useContext(RefreshContext).offered;
+}
+
+/**
+ * Whether the header shows an icon for this offer.
+ *
+ * A page with a refresh in its own strip offers its read all the same — that is
+ * how a confirmed act made elsewhere moves it — and does not want a second icon
+ * beside the one the strip already has. So the offer stands and the header stays
+ * quiet.
+ */
+export function showsInHeader(offered: Offer | null): boolean {
+  return offered !== null && offered.inStrip !== true;
 }

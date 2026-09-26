@@ -260,13 +260,25 @@ describe("what came back from a save", () => {
   });
 
   /**
-   * And where the ledger answered with an outcome that is neither a confirmation
-   * nor a rejection: the journal lost the operation, or confirmed it late, which
-   * means it landed.
+   * And where the ledger answered with the one outcome that neither confirms nor
+   * rejects: the journal confirmed the operation LATE, which means it landed.
    */
-  it("is unresolved where the ledger neither confirmed nor rejected", () => {
-    for (const code of ["confirmed-late", "lost", "abandoned", "expired"]) {
-      expect(outcomeOf(refusal(409, code, "the ledger did not confirm goal edit")).kind).toBe("unresolved");
+  it("is unresolved where the ledger confirmed the act late", () => {
+    expect(outcomeOf(refusal(409, "confirmed-late", "the ledger did not confirm goal edit")).kind)
+      .toBe("unresolved");
+  });
+
+  /**
+   * The three that used to sit beside it are refusals, because that is what the
+   * transaction means by them: rejected, abandoned and expired are each marked
+   * before any push lands or after every push was refused, so every one is a
+   * definite non-write. A redundant block answered 409 `abandoned` and used to
+   * stop a run that should have gone on to the next line (Astra S58-12). `lost`
+   * is the same: a competitor's change stands instead of ours.
+   */
+  it("is refused where the ledger proved nothing of ours was written", () => {
+    for (const code of ["rejected", "abandoned", "expired", "lost"]) {
+      expect(outcomeOf(refusal(409, code, "there was nothing to do")).kind).toBe("refused");
     }
   });
 

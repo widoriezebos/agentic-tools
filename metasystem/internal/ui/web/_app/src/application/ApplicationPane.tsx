@@ -86,13 +86,20 @@ export function ApplicationPane() {
     };
   }, [attempt]);
 
+  // The read that keeps what is on screen, and the one that blanks the page.
+  // An offered re-read is the first: it can be asked for while a human is
+  // reading, after a confirmed act made somewhere else.
+  const again = useCallback(() => {
+    setAttempt((previous) => previous + 1);
+  }, []);
+
   const reload = useCallback(() => {
     setRead({ state: "loading" });
     setAttempt((previous) => previous + 1);
   }, []);
 
   const hint = read.state === "read" ? `Read at ${minuteTime(read.page.readAt)} · Refresh` : "Refresh";
-  useOffersRefresh(reload, hint);
+  useOffersRefresh(again, hint);
 
   // What the Partner is given: the rows on screen — their id and the first
   // sentence of what concluded — and what the human has this page narrowed

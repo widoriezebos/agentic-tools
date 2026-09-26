@@ -104,6 +104,14 @@ export function OverviewPane() {
     };
   }, [attempt]);
 
+  // The read that keeps what is on screen until the answer arrives, and the one
+  // that blanks the page. The first is what the header offers and what a
+  // confirmed act elsewhere asks for; the second is Retry after a failure, where
+  // there is nothing on screen to keep.
+  const again = useCallback(() => {
+    setAttempt((previous) => previous + 1);
+  }, []);
+
   const reload = useCallback(() => {
     setRead({ state: "loading" });
     setAttempt((previous) => previous + 1);
@@ -112,7 +120,7 @@ export function OverviewPane() {
   // The refresh the header shows for this section, with when the page was read
   // in its tooltip, which is where every other page's refresh says it.
   const hint = read.state === "read" ? `Read at ${minuteTime(read.page.readAt)} · Refresh` : "Refresh";
-  useOffersRefresh(reload, hint);
+  useOffersRefresh(again, hint);
   useAbout(aboutLine("Overview", ""), { returnTo: "/overview" });
 
   return (
