@@ -269,6 +269,10 @@ type Host struct {
 	// start opens one endpoint. The real one spawns the runtime's command;
 	// a test's opens a pipe.
 	start func(context.Context) (Endpoint, error)
+	// journal is the wire journal's writer where this host keeps one. It
+	// outlives any single process: each process opens it and closes it, and
+	// housekeeping holds the same writer across all of them.
+	journal *Journal
 
 	mu      sync.Mutex
 	live    *live
@@ -331,14 +335,24 @@ type called struct {
 // NewHost builds a host for one runtime and checkout, spawning the runtime's
 // own command. journal, when it names a file, receives every frame of the
 // process's life; the file is truncated when a process starts, so what it
-// holds is one process's wire and not a year of them.
+// holds is one process's wire and not a year of them — and its writer rotates
+// it where one process runs long enough to pass the bound (g1-s54 D1).
 func NewHost(runtime Runtime, checkout, journal string) *Host {
 	host := &Host{runtime: runtime, checkout: checkout}
+	if journal != "" {
+		host.journal = NewJournal(journal)
+	}
 	host.start = func(ctx context.Context) (Endpoint, error) {
-		return spawn(ctx, runtime, checkout, journal)
+		return spawn(ctx, runtime, checkout, host.journal)
 	}
 	return host
 }
+
+// Journal is the wire journal's own writer, or nil on a host that journals
+// nothing — every host a test or the walkthrough opens over its own endpoint.
+// It is what housekeeping asks to rotate, because the descriptor is the
+// writer's and a rename from outside would leave it writing the renamed file.
+func (h *Host) Journal() *Journal { return h.journal }
 
 // NewHostOn builds a host over an endpoint a caller opens, which is how the
 // tests and the walkthrough drive a fake ACP server.
@@ -1124,7 +1138,7 @@ func (e Endpoint) words() string {
 // wire. The process is given this server's environment plus the runtime's own
 // read-only configuration, and nothing else: it has no browser session, no
 // cookie, and no way to obtain one.
-func spawn(ctx context.Context, runtime Runtime, checkout, journal string) (Endpoint, error) {
+func spawn(ctx context.Context, runtime Runtime, checkout string, journal *Journal) (Endpoint, error) {
 	if len(runtime.Argv) == 0 {
 		return Endpoint{}, errors.New("this runtime has no command")
 	}
@@ -1144,20 +1158,22 @@ func spawn(ctx context.Context, runtime Runtime, checkout, journal string) (Endp
 	}
 	said := &words{}
 	command.Stderr = said
-	var log *os.File
-	if journal != "" {
-		log, _ = os.OpenFile(journal, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	// The journal is opened before the process starts and closed with it. A
+	// journal that cannot be opened journals nothing rather than refusing the
+	// process: the frames are evidence of the conversation, not the
+	// conversation.
+	var journalWriter io.Writer
+	if journal != nil {
+		if err := journal.Open(); err == nil {
+			journalWriter = journal
+		}
 	}
 	if err := command.Start(); err != nil {
 		stop()
-		if log != nil {
-			_ = log.Close()
+		if journal != nil {
+			_ = journal.Close()
 		}
 		return Endpoint{}, err
-	}
-	var journalWriter io.Writer
-	if log != nil {
-		journalWriter = log
 	}
 	return Endpoint{
 		Reader:  stdout,
@@ -1167,8 +1183,8 @@ func spawn(ctx context.Context, runtime Runtime, checkout, journal string) (Endp
 			stop()
 			_ = stdin.Close()
 			_ = command.Wait()
-			if log != nil {
-				_ = log.Close()
+			if journal != nil {
+				_ = journal.Close()
 			}
 		},
 		Words: said.read,

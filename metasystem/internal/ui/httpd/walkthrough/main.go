@@ -23,6 +23,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
@@ -194,12 +195,23 @@ func main() {
 		// reads "Workspace unknown" over a 500, which is the one thing on
 		// these pages that is about the fixture rather than the interface.
 		Describe: func() (workspace.Workspace, error) {
+			// The private store, measured on the fixture's own invented home
+			// and bounded at the shipped defaults: Settings' lines are read
+			// from a real directory walk, because a canned size would prove
+			// nothing about what a human is being shown (g1-s54 D3).
+			store := workspace.DescribeStore(fixtureStoreHome(checkout), "", checkout,
+				workspace.StoreBounds{
+					WireMB:           config.DefaultUIStoreWireMB,
+					ConversationMB:   config.DefaultUIStoreConversationMB,
+					ConversationDays: config.DefaultUIStoreConversationDays,
+				})
 			return workspace.Workspace{
 				SchemaVersion: workspace.SchemaVersion,
 				Subject:       "walkthrough", Mode: workspace.ModeAdopted,
 				Checkout: checkout, Installation: checkout, StateRoot: checkout,
 				EngineBuild: "walkthrough", StartedAt: startedAt,
 				ExecutableDigest: "sha256:walkthrough", SourceHead: "c5d517f",
+				Store: &store,
 			}, nil
 		},
 		// The fleet, invented: three machines, one of each standing, joined

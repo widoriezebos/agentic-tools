@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uihome"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
@@ -148,6 +149,23 @@ func runUI(verb string, args []string) int {
 		configuredHuman, humanErr := config.UIHuman(confPath)
 		if humanErr != nil {
 			return refuse(humanErr.Error())
+		}
+		// What the private store is kept to. A number this seat cannot resolve
+		// refuses the server rather than being guessed at: a seat that widened
+		// its store must not be given the default instead (g1-s54 D4).
+		storeBounds, storeBoundsErr := config.UIStoreBounds(confPath)
+		if storeBoundsErr != nil {
+			return refuse(storeBoundsErr.Error())
+		}
+		// Where that store is. It is resolved here rather than inside the
+		// Partner's own admission because the notepad lives under it too, so
+		// Settings names it on a seat that serves no Partner. A home that
+		// cannot be resolved is not a refusal: the seat keeps nothing outside
+		// its checkout, and Settings says so in the reader's own words.
+		storeHome, storeHomeErr := uihome.Home()
+		storeProblem := ""
+		if storeHomeErr != nil {
+			storeProblem = "this account has no registry home the interface can read, so this seat keeps no private store: " + storeHomeErr.Error()
 		}
 
 		// The human's own notepad, under the account's registry home rather
@@ -267,6 +285,12 @@ func runUI(verb string, args []string) int {
 			return refuse(partnerErr.Error())
 		}
 		var partnerService *partner.Service
+		// The private store's housekeeping. It is built where the two owners
+		// are — the journal's writer and the conversation owner — because
+		// neither bound is applied to a file from outside: the journal rotates
+		// through its own writer, and a transcript is trimmed by the
+		// conversation that appends to it (g1-s54 D1).
+		var housekeeping *storeKeeper
 		partnerRefusal := ""
 		if partnerRuntime != "" {
 			// Where the conversation goes, before anything is admitted. It is
@@ -330,6 +354,24 @@ func runUI(verb string, args []string) int {
 							return project.ReadPane(projectRoots(roots), time.Now().UTC())
 						},
 					}, func() time.Time { return time.Now().UTC() })
+				housekeeping = &storeKeeper{
+					journal: host.Journal(),
+					wire:    int64(storeBounds.WireMB) << 20,
+					trim: func() (int, error) {
+						// The store's own files, so a transcript that grew
+						// under an earlier run of this seat is bounded at
+						// start, before anybody has spoken.
+						humans, err := partner.Humans(conversations)
+						if err != nil {
+							return 0, err
+						}
+						return partnerService.Trim(partner.TrimBounds{
+							Bytes: int64(storeBounds.ConversationMB) << 20,
+							Age:   time.Duration(storeBounds.ConversationDays) * 24 * time.Hour,
+						}, humans)
+					},
+					say: func(line string) { fmt.Fprintln(os.Stderr, "interface store: "+line) },
+				}
 				partnerService.Announce(func(busy bool) {
 					_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) {
 						r.Partner = partnerLine(admitted, busy)
@@ -338,6 +380,22 @@ func runUI(verb string, args []string) int {
 				defer partnerService.Close()
 				fmt.Fprintln(os.Stderr, "interface Partner: "+partnerLine(admitted, false))
 			}
+		}
+
+		// At start, and once a day while this server serves. The tick is the
+		// caller's, as the fleet fetch loop's is, so a test drives the cadence
+		// with a channel it controls instead of waiting a day for it.
+		housekeepingStopped := make(chan struct{})
+		if housekeeping != nil {
+			housekeeping.Consider()
+			go func() {
+				defer close(housekeepingStopped)
+				sweeps := time.NewTicker(storeSweep)
+				defer sweeps.Stop()
+				housekeeping.Run(ctx, sweeps.C)
+			}()
+		} else {
+			close(housekeepingStopped)
 		}
 
 		err = lifecycle.Serve(ctx, lifecycle.Options{
@@ -398,11 +456,26 @@ func runUI(verb string, args []string) int {
 				}
 				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
 					Describe: func() (workspace.Workspace, error) {
-						return workspace.Describe(
+						described, describeErr := workspace.Describe(
 							workspace.Roots{Checkout: roots.Checkout, Installation: roots.Installation, StateRoot: roots.StateRoot},
 							workspace.Record{EngineBuild: rec.EngineBuild, StartedAt: rec.StartedAt, ExecutableDigest: rec.ExecutableDigest},
 							subject,
 						)
+						if describeErr != nil {
+							return described, describeErr
+						}
+						// What the private store holds and what it is kept to,
+						// on the read Settings already makes (g1-s54 D3). It is
+						// measured per request, so a human watching the number
+						// after a sweep sees the number after the sweep.
+						store := workspace.DescribeStore(storeHome, storeProblem, roots.Checkout,
+							workspace.StoreBounds{
+								WireMB:           storeBounds.WireMB,
+								ConversationMB:   storeBounds.ConversationMB,
+								ConversationDays: storeBounds.ConversationDays,
+							})
+						described.Store = &store
+						return described, nil
 					},
 					Observe: ledger.Observe,
 					Fetch:   advance,
@@ -692,12 +765,92 @@ func runUI(verb string, args []string) int {
 		stopPresence()
 		<-presenceStopped
 		<-launchStopped
+		<-housekeepingStopped
 		if err != nil {
 			return refuse(lifecycle.ServeFailure(roots.StateRoot, err))
 		}
 		return 0
 	}
 	return 2
+}
+
+// storeSweep is how often housekeeping asks. Once a day: the bounds are
+// retention targets rather than disk ceilings, and what a long-running server
+// adds to the store in a day is small against them (g1-s54 D1, D4).
+const storeSweep = 24 * time.Hour
+
+// storeKeeper is the private store's housekeeping: the two bounds of g1-s54,
+// asked of the owners that hold the files.
+//
+// It asks and never acts on a file itself. The wire journal rotates through its
+// own writer, because a rename from outside would leave the runtime writing the
+// renamed file; a transcript is trimmed by the conversation that appends to it,
+// under the mutex the appends take. Housekeeping's whole part is the cadence.
+//
+// It is the fleet fetch loop's shape (internal/ui/fleet/fetch.go): one
+// Consider, and a Run that considers on every tick the caller sends. The server
+// sends a real ticker and a test sends a channel it controls, so the daily
+// cadence is proven without a day passing.
+//
+// Nothing here touches a checkout or the state root. D2 is that housekeeping
+// works only on what is under the account's home, and the two owners it asks
+// are the only two writers of it.
+type storeKeeper struct {
+	// journal is the wire journal's own writer, or nil where this seat keeps
+	// none; wire is the size it may reach, in bytes, and zero disables it.
+	journal *partner.Journal
+	wire    int64
+	// trim asks the conversation owner to keep its transcripts within their
+	// bounds, and answers how many messages went.
+	trim func() (int, error)
+	// say is where a sweep's own words go, which is this server's error stream.
+	say func(string)
+}
+
+// Consider runs one sweep, asking both owners. A refusal from one does not stop
+// the other: they hold different files, and the store is smaller for either.
+func (k *storeKeeper) Consider() {
+	if k.journal != nil {
+		rotated, err := k.journal.Rotate(k.wire)
+		switch {
+		case err != nil:
+			k.said(err.Error())
+		case rotated:
+			k.said("the Partner's wire journal passed its bound and was rotated; one previous is kept at " + k.journal.Previous())
+		}
+	}
+	if k.trim != nil {
+		cut, err := k.trim()
+		if cut > 0 {
+			k.said("this seat's conversations were trimmed from their oldest end: " +
+				strconv.Itoa(cut) + " messages went, and what they said is in the records")
+		}
+		if err != nil {
+			k.said(err.Error())
+		}
+	}
+}
+
+// Run considers on every tick until the context ends or the tick closes.
+func (k *storeKeeper) Run(ctx context.Context, tick <-chan time.Time) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, open := <-tick:
+			if !open {
+				return
+			}
+			k.Consider()
+		}
+	}
+}
+
+func (k *storeKeeper) said(line string) {
+	if k.say == nil {
+		return
+	}
+	k.say(line)
 }
 
 // partnerLine is the one line `ui status` prints about the Partner: which

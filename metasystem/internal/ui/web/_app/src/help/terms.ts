@@ -92,6 +92,7 @@ export type HelpId =
   | "proposal"
   | "ask-the-partner"
   | "not-offered"
+  | "private-store"
   | "sitting"
   | "deposit"
   | "the-table"
@@ -253,9 +254,13 @@ export const HELP: Record<HelpId, Term> = {
     term: "Settings",
     text: "This workspace's own configuration rather than the project's records: which agent answers as the Project Partner, who is signed in, how the interface looks, and where this checkout is. Only the appearance can be changed from here in this build.",
   },
+  "private-store": {
+    term: "Private store",
+    text: "Where this interface keeps your own material, outside every checkout so that no agent and no examiner reads it: your notepad, and your conversations with the Project Partner. It is kept to a size by a sweep that runs when the server starts and once a day after that — a conversation is trimmed from its oldest end, and the Partner's record of the wire is rotated. No directory here is ever removed, and nothing in your project is touched.",
+  },
   partner: {
     term: "Project Partner",
-    text: "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and explains them; it does not write and it does not act.",
+    text: "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and explains them; it does not write and it does not act. Your conversation with it is kept privately outside this checkout and trimmed from its oldest end as it grows, so it is not a place to keep anything: the records are the memory that survives, which is why what you settle goes into one.",
   },
   "lane-draft": {
     term: "Draft",
