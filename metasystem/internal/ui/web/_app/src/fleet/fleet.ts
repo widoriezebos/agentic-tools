@@ -104,18 +104,57 @@ export function runningWords(running: Running | null, problem: string): string {
   return running.startedAt === null ? `${words} (not started)` : words;
 }
 
+/** One goal's jobs in the opened block, with the goal named once. */
+export type WorkingGroup = { goal: string; working: Working[] };
+
+/**
+ * A machine's jobs grouped by the goal they are on, each group in the place
+ * its newest job held.
+ *
+ * Only this seat's row carries several, because only this host can read its own
+ * job records, and several of them are often one goal's: a round and the
+ * critique of that round are two jobs on one goal. Listed flat they repeated
+ * the goal and its title once per job, which reads as several goals running at
+ * once. The order is the payload's own, newest first, so nothing is reordered
+ * by grouping — a group stands where its newest job stood.
+ */
+export function workingByGoal(working: readonly Working[]): WorkingGroup[] {
+  const groups: WorkingGroup[] = [];
+  for (const one of working) {
+    const found = groups.find((group) => group.goal === one.goal);
+    if (found === undefined) {
+      groups.push({ goal: one.goal, working: [one] });
+      continue;
+    }
+    found.working.push(one);
+  }
+  return groups;
+}
+
+/** Where a count of minutes stops reading as minutes: two hours. */
+const ROLLS_UP_AT = 120;
+
 /**
  * How every duration on this page reads.
  *
- * Minutes, always, because minutes are what the records carry: a cap is a
- * count of them and so is a box's reservation. Never a day — a budget's day
- * is eight hours in this kit, so a duration printed in days would read as two
- * different lengths depending on who read it. That is why this exists beside
- * `ageBetween`, which rolls up into hours and days for ages nobody is
- * measuring a budget with.
+ * Minutes up to two hours, and hours and minutes from there: the records carry
+ * minutes — a cap is a count of them and so is a box's reservation — and up to
+ * two hours the count is the plainest thing to read, while "481 min" is a
+ * number a human has to divide before it means anything.
+ *
+ * Never a day, however many hours it comes to. A budget's day is eight hours
+ * in this kit, so a duration printed in days would read as two different
+ * lengths depending on who read it. That is why this exists beside
+ * `ageBetween`, which rolls up into days for ages nobody is measuring a budget
+ * with.
  */
 export function minutesWords(minutes: number): string {
-  return `${String(minutes)} min`;
+  if (minutes < ROLLS_UP_AT) {
+    return `${String(minutes)} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest)} min`;
 }
 
 /** Whole minutes between two instants, floored, and never negative. */
@@ -252,7 +291,9 @@ export function reservedWords(box: Box): string {
   if (box.reservedMinutes === null || box.reservedMinutesLimit === null) {
     return "";
   }
-  return `${String(box.reservedMinutes)} of ${minutesWords(box.reservedMinutesLimit)} reserved`;
+  // Both sides read the same way: one number rolled up into hours beside one
+  // that was not would be two units in one phrase.
+  return `${minutesWords(box.reservedMinutes)} of ${minutesWords(box.reservedMinutesLimit)} reserved`;
 }
 
 /**

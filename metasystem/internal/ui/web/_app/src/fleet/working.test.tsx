@@ -162,7 +162,7 @@ function rendered(payload: Page): string {
 
 describe("the phase sentence", () => {
   it("says the round, the goal, how long the job has run and its cap", () => {
-    expect(phaseWords(working(), now)).toBe("implementer round 2 on g1-s15 · running 41 min, cap 120 min");
+    expect(phaseWords(working(), now)).toBe("implementer round 2 on g1-s15 · running 41 min, cap 2 h");
   });
 
   it("shows a build's round with no denominator, because a build has no limit of its own", () => {
@@ -193,7 +193,7 @@ describe("the phase sentence", () => {
       job: { ...working().job, status: "pending" },
     });
 
-    expect(jobWords(stamped.job, now)).toBe("pending, cap 120 min");
+    expect(jobWords(stamped.job, now)).toBe("pending, cap 2 h");
     // The stamp and the bound are untouched by the wording.
     expect(stamped.job.startedAt).toBe(at(-41));
     expect(capWords(stamped.job, now)).toBe("its cap ends in 79 min");
@@ -206,7 +206,7 @@ describe("the phase sentence", () => {
   });
 
   it("says a running job with no start is running rather than counting from nothing", () => {
-    expect(jobWords({ ...working().job, status: "running", startedAt: null }, now)).toBe("running, cap 120 min");
+    expect(jobWords({ ...working().job, status: "running", startedAt: null }, now)).toBe("running, cap 2 h");
   });
 
   it("is idle where a machine carries nothing", () => {
@@ -256,9 +256,26 @@ describe("the only forward-looking words", () => {
     expect(capWords(held.job, now)).toBe("");
   });
 
-  it("never print a duration in days, because a budget's day is eight hours", () => {
+  it("is minutes, then hours from two hours, and never days", () => {
+    // A budget's day is eight hours in this kit, so a duration printed in days
+    // would read as two different lengths depending on who read it.
+    const read: Record<number, string> = {
+      0: "0 min",
+      1: "1 min",
+      59: "59 min",
+      60: "60 min",
+      119: "119 min",
+      120: "2 h",
+      121: "2 h 1 min",
+      481: "8 h 1 min",
+      720: "12 h",
+      2880: "48 h",
+    };
+    for (const [minutes, words] of Object.entries(read)) {
+      expect(minutesWords(Number(minutes))).toBe(words);
+    }
     for (const minutes of [1, 59, 60, 481, 2880]) {
-      expect(minutesWords(minutes)).toBe(`${String(minutes)} min`);
+      expect(minutesWords(minutes)).not.toContain("d");
     }
   });
 });
@@ -267,7 +284,7 @@ describe("the box", () => {
   it("says what is spent, against what, and what is left", () => {
     expect(attemptWords(box())).toBe("attempt 3 of 10");
     expect(attemptsLeftWords(box())).toBe("7 attempts left");
-    expect(reservedWords(box())).toBe("610 of 720 min reserved");
+    expect(reservedWords(box())).toBe("10 h 10 min of 12 h reserved");
   });
 
   it("says nothing about attempts where the projection carries no numbers", () => {
@@ -317,7 +334,7 @@ describe("what the row opens to", () => {
     expect(markup).toContain("This job");
     expect(markup).toContain("attempt 3 of 10 · 7 attempts left");
     expect(markup).toContain(`started ${minuteTime(at(-41))}`);
-    expect(markup).toContain("610 of 720 min reserved");
+    expect(markup).toContain("10 h 10 min of 12 h reserved");
     expect(markup).toContain(RESERVED_MEANING);
     expect(markup).toContain("j-12");
   });
@@ -365,6 +382,31 @@ describe("what the row opens to", () => {
 
     expect(markup).toContain(reason);
     expect(markup).not.toContain("ms-fleet-bar-fill");
+  });
+
+  /**
+   * Two jobs on one goal are one group with the goal named once. It is what
+   * this seat's row most often carries — a round and the critique of it — and
+   * listed flat it repeated the goal and its title per job, which reads as two
+   * goals running at once.
+   */
+  it("groups this seat's jobs by goal, the goal named once, in the payload's order", () => {
+    const critique = working({
+      goal: "g1-s15",
+      job: { ...working().job, id: "j-18", startedAt: at(-12) },
+      phase: { role: "code-critic", round: 1, roundLimit: null },
+    });
+    const other = working({ goal: "g1-s26", job: { ...working().job, id: "j-20" } });
+    const markup = rendered(page([machine({ working: [critique, working(), other] })]));
+
+    // One goal line per goal, and the count where a goal has more than one.
+    expect(markup.match(/ms-fleet-goal/g)).toHaveLength(2);
+    expect(markup).toContain("2 jobs in flight");
+    // The groups stand where their newest job stood: g1-s15 opened the list.
+    expect(markup.indexOf("g1-s15")).toBeLessThan(markup.indexOf("g1-s26"));
+    // And every job is still there, each with its own phase and chain.
+    expect(markup).toContain("code-critic");
+    expect(markup).toContain("implementer");
   });
 
   it("carries the goal's title beside its chip where this page has one", () => {
@@ -450,7 +492,7 @@ describe("what a question asked from this page carries", () => {
   it("is the phase sentence per row and which rows were open", () => {
     const captured = captureOfFleet(page([machine(), machine({ machine: "m2a" })]), now, new Set(["m2a"]));
 
-    expect(captured.machines?.[0].phase).toBe("implementer round 2 on g1-s15 · running 41 min, cap 120 min");
+    expect(captured.machines?.[0].phase).toBe("implementer round 2 on g1-s15 · running 41 min, cap 2 h");
     expect(captured.machines?.[0].open).toBe(false);
     expect(captured.machines?.[1].open).toBe(true);
   });
