@@ -450,3 +450,48 @@ public corrections within existing capabilities. A separate serial audit found
 nine actual environment-mutating tests and one eligible parallel test; truthful
 exemptions/parallel change remain for integration. Coverage floors stay unchanged.
 Independent Sol brief is prepared; no Sol read or final acceptance has run yet.
+
+## Real owner journeys and recovery corrections
+
+Main8 completed13:58:03 CEST (20260926t113051-48f0551eb5). Manual submission now
+uses the actual commit/range/read owners and shared checkout lock; focused checks
+pass, but actual endpoint delivery and several failure recoveries remain. Root
+independently reproduced a real failure: cleanup after a refused same-checkout
+submission resets files that the caller had already staged. The external real-Git
+overlay fails with lost staging; main9 must preserve the original index state and
+report uncertain/failed cleanup truthfully. Explicit patches from inside the goal
+checkout are supported input, and changed briefs must bind the actual read owner.
+Main9 (20260926t120520-b255ad63c1) runs in the same original Opus context.
+
+Planning checkpoint20260926t113116-ea8923ded0 completed14:01:18 CEST. Actual
+dispatch and supervisor journeys exposed and corrected invalid review mode names,
+misreported dispatch refusal, absolute/relative subject mismatch, adopted design
+path rejection, lost design-chain lookup, repeated-read redispatch, round decoding,
+relative default-store custody, and a missing output path in the author prompt.
+Real public whole-close, refreshed round-two subject, lost-response replay,
+second-checkout publication and process cancellation pass. Required path-scoped
+fresh-root refusal, failed retry and foreign-round/revision replay remain open.
+Root computed and imported exclusive tree83eac8372570dae0212ac52a13e475aca2f6adfc,
+patch SHA256861b20090c4cace23830fed80c9ddab027c72bc218681a3b5e64400d11c69a6c.
+Shared CLI seams are a separate patch for main9; no concurrent shared-file edit.
+Planning continuation20260926t121453-b81d774e4d completes those accepted obligations
+and moves newly introduced fixture logic into Go, preserving actual owner proof.
+
+Carried checkpoint20260926t113421-2d30b3f2a1 completed14:00:17 CEST. The real
+unchanged land.sh transaction now commits/pushes the candidate with provenance
+and consumes its word. Same-word recovery after failed push, retained old subject,
+fetched consumption and linked-checkout/outside-prefix preservation pass. Explicit
+replacement remains red because the existing candidate scratch commit runs actual
+delivery hooks. Root adjudicated scratch-only hook isolation and exact-candidate
+new-plan acknowledgment in the accepted carried design. Public test recovery and
+channel-word adoption still require actual proof. Root computed/imported exclusive
+tree2db595cce6e328c440bcdd4e4464b327b0b3228a, patch SHA256
+9bdb36f599b98a069e6bbbba238e29773c7b0705b3bf7753b16ba896bb258cd6; preserved the
+independent parallel correction in the other authority test. Continuation
+20260926t121454-c3b1921a3e runs in the original carried Opus context.
+
+Live main pulled8ca54c6f4 on26September, including private interface-store bounds;
+the primary implementation still sits on merge dd1233e66 until main9 returns, so
+merging avoids racing its shared testing.json/metasystem.conf writes. Live user
+receipt/narrator rows are preserved. No product certification, final coverage or
+Sol review is claimed by these checkpoints; all remain completion requirements.

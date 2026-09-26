@@ -170,3 +170,21 @@ land continuation for afterwards. A repeated land alone cannot fix absent proof.
 Users never need to discover or supply a Git tree hash, an internal test verb or
 a proof storage path. Other failures retain their own cause and recovery. The
 real carried fixture must prove public test followed by the same exception land.
+
+## Candidate construction and deliberate plan inclusion
+
+Real replacement exposed an existing candidate-owner defect: its private scratch
+commit executes the installation's delivery hooks. Candidate construction creates
+an object to inspect; it is not a delivery commit. Keep its hooks isolated through
+the existing private materialization mechanism. The actual land/commit path still
+executes all wrapper, ledger, proof and delivery checks. The real replacement
+fixture and a focused enrolled-hook candidate fixture must distinguish these paths.
+
+The existing new-plan guard prevents accidental capture of another session's new
+plan; it does not reserve every new plan for a separate human approval. Public
+land explicitly selects the retained candidate, and the staging owner admits only
+that exact product. At that boundary the adapter may acknowledge deliberate plan
+inclusion to the unchanged commit owner. Do not duplicate the guard's pathname
+regex in the adapter or acknowledge arbitrary unrelated current staging. Reusing
+the existing acknowledgment leaves ledger and wrapper fences in force. This
+decision is grounded in pre-commit-guard.sh's stated invariant and check order.
