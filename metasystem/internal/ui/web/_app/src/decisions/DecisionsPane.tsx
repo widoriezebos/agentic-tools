@@ -6,6 +6,7 @@ import {
   loadDecisions,
   type Approved,
   type Item,
+  type Mention,
   type Need,
   type NotNow,
   type Page as DecisionsPayload,
@@ -693,7 +694,7 @@ function Rulings({ rulings, defects, now }: { rulings: Ruling[]; defects: string
 /**
  * One ruling, whole: its id and date, the human's own words, the context
  * behind a disclosure, the owner, the review condition as a chip, and the
- * goals the words name as chips that open them.
+ * goals and records the words name as chips that open them.
  */
 function RulingCard({ ruling, now }: { ruling: Ruling; now: Date }) {
   const chip = reviewChip(ruling, now);
@@ -708,9 +709,7 @@ function RulingCard({ ruling, now }: { ruling: Ruling; now: Date }) {
       <p className="ms-decisions-card-facts">
         {ruling.owner !== "" && <span className="ms-decisions-card-owner">owner {ruling.owner}</span>}
         {ruling.mentions.map((mention) => (
-          <NavLink key={mention} className="ms-decisions-mention" to={goalPath(mention)}>
-            {mention}
-          </NavLink>
+          <Mentioned key={mention.id} mention={mention} />
         ))}
       </p>
       {ruling.context !== "" && (
@@ -720,6 +719,26 @@ function RulingCard({ ruling, now }: { ruling: Ruling; now: Date }) {
         </details>
       )}
     </li>
+  );
+}
+
+/**
+ * One id a ruling names, as a chip that opens it.
+ *
+ * The words name a goal or one of the checkout's records, and the two open
+ * different things, so the chip follows the payload's own destination rather
+ * than assuming the id is a goal's. An id this build has no surface for reads
+ * as the id and nothing else: a chip that refused would be worse than a word.
+ */
+function Mentioned({ mention }: { mention: Mention }) {
+  const destination = destinationFor(mention.where);
+  if (destination.kind !== "link") {
+    return <span className="ms-decisions-mention">{mention.id}</span>;
+  }
+  return (
+    <NavLink className="ms-decisions-mention" to={destination.to}>
+      {mention.id}
+    </NavLink>
   );
 }
 

@@ -110,9 +110,18 @@ export type Ruling = {
   condition: string;
   /** A valid due date at or before the day this was read. */
   duePassed: boolean;
-  /** The ledger goals these words name verbatim. */
-  mentions: string[];
+  /** The ledger goals and the checkout's records these words name verbatim. */
+  mentions: Mention[];
 };
+
+/**
+ * One id a ruling's words name, and where that id opens.
+ *
+ * The id and the destination are two strings for a record: the words name what
+ * the record calls itself, and the reader opens it by its path. The chip shows
+ * the id and follows the where.
+ */
+export type Mention = { id: string; where: Where };
 
 /** One decided thing that is not a ruling. */
 export type Item = { id: string; title: string; note: string; at: string; where: Where };

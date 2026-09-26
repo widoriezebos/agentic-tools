@@ -54,9 +54,10 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, err.Error())
 		return
 	}
+	now := h.now()
 	journal := []notifications.Notice{}
 	if h.info.NotificationJournal != "" {
-		read, journalErr := notifications.Page(h.info.NotificationJournal, notifications.DefaultLimit, "")
+		read, journalErr := journalBackTo(h.info.NotificationJournal, now.Add(-decisions.AlertWindow))
 		if journalErr != nil {
 			writeFailure(w, journalErr.Error())
 			return
@@ -64,7 +65,6 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		journal = read
 	}
 
-	now := h.now()
 	standing := h.state(r)
 	// The visit is recorded as part of answering, because reading the page IS
 	// the visit, and it is recorded before the page is composed so that the
@@ -103,6 +103,45 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		in.Register = read
 	}
 	_ = json.NewEncoder(w).Encode(decisions.Compose(in, now))
+}
+
+// journalBackTo is the journal's history back to one instant, newest first,
+// read a page at a time.
+//
+// The alert list is the last seven days of what the steward addressed to a
+// human, and one page of two hundred entries can end inside an unusually busy
+// week: every alert older than that page would then be missing from a list
+// that says it is complete. So pages are read until one of them reaches the
+// window's own start, or until the journal has no older page to give.
+//
+// A page whose oldest entry carries no id ends the reading: the id is the only
+// cursor the journal has, so there is nothing to ask for an older page with,
+// and the alternative is asking for the same page forever.
+func journalBackTo(path string, from time.Time) ([]notifications.Notice, error) {
+	read := []notifications.Notice{}
+	before := ""
+	for {
+		page, err := notifications.Page(path, notifications.DefaultLimit, before)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			return read, nil
+		}
+		read = append(read, page...)
+		reached := false
+		for _, notice := range page {
+			at, parseErr := time.Parse(time.RFC3339, notice.At)
+			if parseErr == nil && !at.After(from) {
+				reached = true
+			}
+		}
+		oldest := page[len(page)-1].ID
+		if reached || len(page) < notifications.DefaultLimit || oldest == "" {
+			return read, nil
+		}
+		before = oldest
+	}
 }
 
 // visitDecisions records this read of the Decisions page and answers the
