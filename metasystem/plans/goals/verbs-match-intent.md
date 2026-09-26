@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Wido 2026-09-25: design and build the most intuitive, powerful, forgiving human and agent verbs possible, organized by human/agent intent rather than internal structure. Deliver a complete public command surface: discoverable help, whole-workflow commands, consistent names and flags, contextual defaults, executable recovery guidance, safe retries and advanced capabilities. Reuse existing transaction, authority, job and landing owners and preserve their guarantees. The September 6 audit and available real Claude/Codex session failures are design evidence. Incorporate the delivered human-goal-verbs-forgiving, stop/status/arm and verb-ergonomics work; map the queued startup, repository-root, human-goal-defect and landing requirements. DONE: the full reviewed intent surface is implemented, documented and proven end to end including failure/retry paths, with material review findings resolved. Minimize total implementation and maintenance complexity without reducing the complete redesign's scope. Wido 2026-09-26: the first release is insufficient. Redesign, obtain Fable critique, implement, and repeat critical runtime usability assessment and improvements until the human and agent surface is intuitive, elegant, robust and fully capable. Internals must be shielded from discovery, required inputs, workflow completion and recovery. Preserve all meaningful human/agent capabilities and authority boundaries. Completion requires full journeys and a capability audit, not only renamed verbs or shorter help.
 - Origin: main
-- Next step: Design and implement agent-optimized help without degrading human help, requested by Wido 26 September 2026. Root owns a bounded extension to the completed verb design: compact action selection, focused command contracts and structured discovery from the existing descriptors, independently critiqued by Fable; preserve every human help route and execution/authority behavior. Worktree agentic-tools-agent-help-20260926, branch codex/agent-help-20260926. Existing machinery bypass and Opus/Fable-only delegate roster continue. Previous verb implementation and verification remain complete.
+- Next step: Continue the human-authorized verb cleanup in codex/agent-help-20260926: agent help is implemented and initially verified; latest correction requires auditing all verbs for unrelated applications, separating justified MetaSystem administration, and removing obsolete public help/aliases since no other installation needs compatibility. Root designs, Fable critiques, Opus delegates only; preserve all genuine capabilities and authority. Existing machinery bypass and push/integrate authority continue. Evidence: /Users/wido/LocalStorage/agentic-tools-evidence/agent-help-20260926. Do not conclude until current cleanup and final verification/integration are complete.
 - OpenedAt: 2026-09-06T12:49:42Z
-- Revision: 41
+- Revision: 42
 - BudgetExceptions: 0
 
 History:
@@ -54,4 +54,5 @@ History:
 - 2026-09-26T17:48:56Z 1W9QG8157NVHNYK3E1JQESVRSM-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-26T17:49:51Z 0WTPCF351P2V6TX1QT8X9DXF5Z-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
 - 2026-09-26T18:00:04Z B1JPY2WZKAEN2CCQH7E11X5MJS-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
-Integrity: sha256=e6ccef76171c4604dc780ffd577eef12189a4b8d337d62dc9b3e85659e0b97e6
+- 2026-09-26T18:40:32Z 6N1EENGWNVFEXEV8VWY9M3MHJA-m1e-a2ccc4e1 edit actor=m1e+main-1790272787-5030-13dde3 targets=verbs-match-intent
+Integrity: sha256=270ab445c2dbfe2a1cdeffa84f8fe23c188bff0531141e51501645655a2b95ad
