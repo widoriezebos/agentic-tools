@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3EBD883X0CCCEYEB8W9K5AP
-- Status: draft
+- Status: accepted
 - Goals: browser-interface
 
 Wido, 2026-09-26: "read docs/paper and understand sittings. Then from a
@@ -41,8 +41,17 @@ partner." Author Fable. Every cite re-read at `bf554766c`.
    statement does not make it an authoritative decision"; Project →
    Sittings is "resumable conversations with their working records and
    resulting artifacts", a view over owned documents, "not a second
-   store"; the transcript itself is private sitting material outside the
-   checkout (:381), examiners never read it (:896).
+   store"; the transcript is meant to be private sitting material in a protected
+   server-local store outside the checkout (:381), which examiners never
+   read (:896). Today it is not: conversations live under
+   `artifacts/agents/ui/partner` beneath the state root
+   (internal/ui/partner/conversation.go:27; cmd/metasystem/ui.go:286),
+   which is the installation in template mode and the containing
+   repository otherwise (internal/stateroot/stateroot.go:140), inside the
+   read roots the Partner's permission owner and a critic hold; file mode
+   0600 keeps out other accounts, not a worker running as the same one.
+   The stickies store (g1-s50) already showed the way out: the account's
+   registry home, with a test that neither grant reaches it.
 3. **What exists.** The Partner reads and explains and, since g1-s51 and
    g1-s52, proposes text into a field the human is writing; it has one
    stdio tool server with read operations and `suggest`
@@ -52,9 +61,11 @@ partner." Author Fable. Every cite re-read at `bf554766c`.
    the drawer and the focused view at `/brain` show it. Records are
    documents of kinds intent, doctrine, decision, design, and questions
    (internal/project/project.go:45-72); the interface creates a record,
-   sets its status, names goals on it, asks a question, settles one and
-   edits a document with a revision check (httpd/write.go:33-45,
-   describe.go:55-67; project/edit.go:119). The Project pane's "New
+   sets its status, names goals on it, asks a question, settles one and edits a document by replacing its whole source under a revision
+   check, with no append and no serialization between two writes
+   (httpd/write.go:33-45, 192; describe.go:55-67; project/edit.go:89-119);
+   a document is addressed by its checkout-relative path where a record's
+   status is addressed by its id (write.go:128). The Project pane's "New
    decision" and "New question" sheets write them (project/Sheet.tsx).
    Nothing today names a sitting, brings what the records hold when one
    starts, or deposits anything while it runs.
@@ -95,8 +106,8 @@ protects." Each claim carries its anchor as a chip you can open.
 Beside the conversation stands **the room's table**: four piles, Facts,
 Proposals, Decisions, Open questions, each card with its words, its
 anchor or its reason, who put it there, and when. They are not a second
-store: they are sections of the subject's record, written as you go. The
-table is empty when you start and fills as you talk.
+store: they are sections of the subject's record, written as you go. The table is empty for a new record and holds what an existing
+record already carries, and it fills as you talk.
 
 You say the wish. The Partner answers with the cases at the edge: "a
 person reads a long page without touching anything; a laptop sleeps with
@@ -122,9 +133,10 @@ that is evidence, and the record can show it later.
 
 You move pages: open the code the anchor points at, look at the board,
 come back. The conversation is where you left it; the subject chip still
-says which sitting this is. The session dies; you reopen the browser; the
-sitting resumes from the record and the transcript, and the Partner's
-first turn says what is on the table.
+says which sitting this is. The session dies; you reopen the browser; the sitting resumes from
+the record, and the Partner's first turn says what is on the table.
+What you recorded is there; a card you had not yet recorded is not, and
+the table says so rather than pretending.
 
 You press **End the sitting**. The Partner drafts the closing deposit into
 the record: the outcome as decided, the constraints, the open questions
@@ -162,11 +174,16 @@ under its subject, resumable.
   written by the tool. A decision card requires a reason before Record
   it; a fact card requires an anchor; a question card carries its
   consequence where the Partner gave one.
-- D5. **Record it is the human's press,** and it appends the entry to the
-  record's section through the existing document edit with its revision
-  check; a conflict is shown as the sheet shows one; "recorded" appears
-  only after the write returns. Edit before recording keeps the human's
-  words; Dismiss folds the card.
+- D5. **Record it is the human's press, one at a time.** The sitting
+  holds one current reading of its record, source and revision, taken
+  when it starts and after every successful write; Record presses are
+  serialized in the store, each append composed from that last reading
+  and written through the existing document edit with its revision;
+  "recorded" appears only after the write returns and the reading is
+  refreshed from it. A conflict keeps the human's edited card, rereads
+  the record, shows what changed and offers Record it again against the
+  new reading; stale bytes are never written under a fresh revision.
+  Edit before recording keeps the human's words; Dismiss folds the card.
 - D6. **Decide and Leave open on the Partner's cases.** A case the Partner
   lists is a card; Decide opens a small sheet with the clause as heard
   and a reason line, recording a decision; Leave open records an open
@@ -190,15 +207,21 @@ under its subject, resumable.
   from the record as it stands. Project → Sittings lists records that
   carry a sitting section, by subject, newest first, opening the
   conversation at that sitting.
-- D11. **The examiner was not in the room.** Nothing changes in how a
-  design reaches Astra; the transcript is never an input, as today.
+- D11. **The examiner was not in the room, and cannot enter it.** The
+  conversation store moves out of the checkout to the account's registry
+  home in the stickies store's manner, with the same test that the
+  Partner's permission owner and a critic's read root do not reach it,
+  because the first sitting creates exactly the material an examiner
+  must not read; how a design reaches Astra does not change.
 
 ## 4. Step 1, the smallest thing that works
 
-D1, D2 from a record page and the drawer header, D3 the opening turn with
-rulings, decisions, open questions and records that name the subject, D4
-and D5 for facts, decisions and open questions (proposals wait), D7's
-table in the focused view with the drawer's four counts, D8's rule. Not in
+D1, D2 from a record page and the drawer header, D3 the opening turn
+with rulings, decisions, open questions and records that name the
+subject, D4 and D5 for facts, decisions and open questions (proposals
+wait), D7's table in the focused view with the drawer's four counts,
+D8's rule, and D11's move of the conversation store, which the first
+sitting needs before it says a word. Not in
 step 1: D6's Decide and Leave open on cases (the human records them
 through D4 by asking), D9's closing deposit and "Ask it", D10's Sittings
 list (the record itself is the resumable thing), purposes other than
@@ -210,9 +233,11 @@ The conversation gains `sitting: {subject: {kind, id}, purpose, startedAt}`
 or null; `POST /api/partner/sitting` starts one (subject or a new draft's
 title, purpose) and `/api/partner/sitting/end` ends it, both with the
 checkout-write policy; `Message.deposits[]` and a `deposit` stream event
-in the shape of suggestions with `offered` and `reason`; Record it is
-`POST /api/project/documents/<id>/edit` with the section appended and the
-revision the card read, through the existing route. The record's four
+in the shape of suggestions with `offered` and `reason`; Record it is `POST /api/project/documents/<path>/edit` with the
+document's checkout-relative path, its whole source with the entry
+appended to the section, and the revision of the sitting's current
+reading, through the existing route; the record's status stays
+addressed by its id. The record's four
 sections are plain headings the document reader already renders.
 
 ## 6. Not here, later
@@ -229,8 +254,12 @@ Go: the deposit tool's bounds and fixed form; the host and service
 carrying deposits like suggestions; the sitting on the conversation and
 its routes; the opening turn's fixed request and its capture. Frontend:
 Start a sitting from a record page and the header; the subject chip; the
-opening turn shown as the interface's; the deposit card's states and the
-Record it write with a revision conflict; the table reading the four
+opening turn shown as the interface's; the deposit card's states; two Record presses in a row landing both
+entries, and two overlapping presses serialized; a conflict keeping the
+edited card and offering Record it against the reread; a decision card
+refusing Record it without a reason and a fact card without an anchor
+after the human's edit; the conversation store outside the checkout
+with the two grants proven not to reach it; the table reading the four
 sections; the drawer's counts; the guards stay green. Walkthrough: the
 fake Partner answers a canned opening turn and two deposits; screenshots
 at 1280 and 400: the start sheet, the opening turn, a fact card with its
@@ -241,11 +270,30 @@ job-minutes.
 
 ## 8. Self-grade
 
-High on D1 and D5: the record is the memory and the human's press is the
-write, both through what exists. Medium on D3: an automatic first turn is
+High on D1 and D5: the record is the memory and the human's press is
+the write, serialized against one reading, through what exists. Medium on D3: an automatic first turn is
 the first time the interface submits a request on the human's behalf; it
 is shown as such and it reads only. Medium on D4: a second prepared-result
-tool in the suggest pattern. Weakest: the table as four sections of a
-record is plain, and a sitting that produces forty entries will want
+tool in the suggest pattern. Medium on D11: moving the conversation store is a change beneath the
+sitting, and the first one needs it. Weakest: the table as four sections
+of a record is plain, and a sitting that produces forty entries will want
 structure the sections do not give; that is the "later, when it hurts"
 list's first line.
+
+## Dispositions (Astra read, 2026-09-26, under R-124)
+
+Two material findings, three deferred; every code claim checked.
+
+| id | finding | fold |
+|---|---|---|
+| F1 | the document edit replaces the whole source under a revision check with no append and no serialization, so two Record presses against one reading refuse or, overlapping, lose the first entry | the sitting keeps one current reading; presses are serialized and composed from the last readback; a conflict keeps the card and offers Record it against the reread |
+| F2 | the transcript is not outside the checkout: it lives under the state root, inside the Partner's and a critic's read roots, so the examiner boundary the design inherits does not exist | the conversation store moves to the account's registry home in the stickies store's manner, in step 1, with the grants test |
+
+Folded because they cost nothing: the table is empty for a new record
+only; continuity means what was recorded, and the table says so; the
+document is addressed by path, the record's status by id. Astra
+confirmed the four headed sections survive the record grammar and
+project check, that the opening turn's provenance must survive
+persistence and replay (D3 already says so), that the suggest pipeline
+keeps Record it the human's act, and that the relationship is present
+in step 1.
