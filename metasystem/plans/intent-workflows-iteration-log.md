@@ -227,3 +227,18 @@ immutable briefs remain as issued; this correction governs their count claims.
 Main merged through 6a97b8afc (goal record only). Continuation 4 is running as
 20260926t094150-d14fba30a4, same Opus session, prioritizing unfinished parent
 paths then the accepted planning work. All original fixture obligations remain.
+
+## Manual work capability audit
+
+Root source audit confirmed that arbitrary manual changes lack a complete public
+feedback/submission route. Existing branch commit/read owners already support
+manual delivery without a paid builder. Root authored the focused draft
+`designs/intent-manual-review.md`, SHA256 d5c739fce4904f2cc9abfcdbf82a93c50f52268104de16aebd2f43143b1d4525.
+Fable round 1 is running as 20260926t095707-28b7fc9e0f; maximum two rounds
+for this separate concrete gap, no new product work authorized until disposition.
+Investigation follows take-a-step-back with a bounded ledger. Diagnostic feedback
+never becomes delivery certification.
+
+Live main pulled through 5799bd3c6, including the new Partner/UI sitting work.
+The isolated branch will merge it after Opus continuation 4 finishes; product
+changes remain uncommitted. User-owned live logs are preserved.
