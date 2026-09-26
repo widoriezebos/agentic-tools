@@ -26,10 +26,10 @@ import (
 //
 // The counts are of the piles as they stand, marked or not, because that is what
 // the table counts and a row that disagreed with the table would be a second
-// reading of one record. The instant is the last entry's own date, as the entry
-// was written, because a record's own words are the only dating of an entry there
-// is: the file's modification time is when the file was last touched, which a
-// typo fixed by hand would move.
+// reading of one record. The instant is the record's own dating of the last thing
+// recorded into it — an entry's head, or the foot of an Outcome — because a
+// record's own words are the only dating there is: the file's modification time is
+// when the file was last touched, which a typo fixed by hand would move.
 
 // The five headings a sitting writes under: the four piles the table shows, and
 // the Outcome the close writes. They are the browser's own spellings
@@ -74,9 +74,9 @@ type PileCounts struct {
 type Sitting struct {
 	Record SatOn      `json:"record"`
 	Counts PileCounts `json:"counts"`
-	// LastAt is the date of the last entry recorded into this record, as the
-	// entry itself carries it, or "" for a record whose only sitting material is
-	// an Outcome that says no date.
+	// LastAt is the date the last thing was recorded into this record — an entry
+	// of a pile, or the foot of an Outcome the close wrote — as the record's own
+	// words carry it, or "" where none of them carries a date.
 	LastAt string `json:"lastAt"`
 	// Standing says a sitting is open on this record right now.
 	Standing bool `json:"standing"`
@@ -117,28 +117,50 @@ func newestFirst(rows []Sitting) {
 }
 
 // satOn reads one record's body: how many entries each pile holds, the date of
-// the last entry recorded from a deposit, and whether any sitting material is
-// there at all.
+// the last thing recorded from a deposit — an entry, or an Outcome's foot — and
+// whether any sitting material is there at all.
 //
 // The heading matches at any level and without regard to case, as the slice
 // reader's does, because a record that nests its piles under a section is still
-// carrying them. A section ends at the next heading of any level.
+// carrying them. A pile ends at the next heading of any level, exactly as the
+// browser's reader of the four piles does (sitting.ts's entriesIn) — with the
+// Outcome the one exception, for the reason below.
 func satOn(body []string) (PileCounts, string, bool) {
 	counts, last, marked := PileCounts{}, "", false
-	pile := ""
+	pile, level := "", 0
 	for _, line := range body {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "#") {
-			pile = headed(strings.TrimSpace(strings.TrimLeft(trimmed, "#")))
+			deep := len(trimmed) - len(strings.TrimLeft(trimmed, "#"))
+			// A deeper heading inside the Outcome does not end it. The Outcome is
+			// the one section that is prose rather than a list, and prose carries
+			// sub-headings: the close drafts the constraints and what was left
+			// open under their own lines, and the mark that says the close was
+			// recorded is on the foot BELOW them. So a reader that ended the
+			// section at the first sub-heading would say this record was never
+			// sat on. It is the browser's own rule for the same section
+			// (sitting.ts's outcomeAt).
+			if pile == pileOutcome && deep > level {
+				continue
+			}
+			pile, level = headed(strings.TrimSpace(strings.TrimLeft(trimmed, "#"))), deep
 			continue
 		}
 		if pile == "" {
 			continue
 		}
 		// The Outcome is prose and a mark on it is a mark: it says the close was
-		// recorded here, which is the one thing this list reads it for.
+		// recorded here, which is the one thing this list reads it for — and its
+		// foot is dated, so a sitting that recorded only its outcome is dated by
+		// it rather than sorting as the oldest row of the list.
 		if pile == pileOutcome {
-			marked = marked || hasMark(trimmed)
+			if !hasMark(trimmed) {
+				continue
+			}
+			marked = true
+			if when := footDate(trimmed); when > last {
+				last = when
+			}
 			continue
 		}
 		item, is := pileEntry(line)
@@ -220,6 +242,30 @@ func dated(item string) string {
 		return ""
 	}
 	return strings.TrimSpace(said)
+}
+
+// fromTheSitting is the phrase the Outcome's foot opens with, as the browser
+// writes it (sitting.ts's FROM_THE_SITTING). It is here for the headings'
+// reason: one agreement about one record.
+const fromTheSitting = "Recorded from the sitting"
+
+// footDate is the date the Outcome's foot carries, or "" for any other line.
+//
+// The foot is that phrase and then an entry's own dated head — the date, the
+// name — so the date is read the way an entry's is, once the phrase in front of
+// it is off. A line that does not open with the phrase dates nothing: it is a
+// human's own prose, and a guess at a date inside it would date this row from
+// something nobody recorded.
+func footDate(said string) string {
+	item, is := pileEntry(said)
+	if !is {
+		return ""
+	}
+	rest, found := strings.CutPrefix(item, fromTheSitting+entryParts)
+	if !found {
+		return ""
+	}
+	return dated(rest)
 }
 
 // MarkStanding says that a sitting is open on one record right now, and lists

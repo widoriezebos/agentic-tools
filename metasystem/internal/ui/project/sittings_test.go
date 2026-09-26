@@ -97,9 +97,49 @@ func TestAnOutcomeWrittenByEndIsSittingMaterial(t *testing.T) {
 	testutil.Require(t, "it is listed", len(pane.Sittings), 1)
 	testutil.Expect(t, "by its path", pane.Sittings[0].Record.Path, "metasystem/plans/designs/closed.md")
 	testutil.Expect(t, "with no piles", pane.Sittings[0].Counts, PileCounts{})
-	// The Outcome's line is not an entry of a pile, so it dates nothing: what the
-	// row says about when is what its piles say, and this one has none.
-	testutil.Expect(t, "and no last entry", pane.Sittings[0].LastAt, "")
+	// And dated from the foot of that Outcome, which is the one thing recorded
+	// into this record: a sitting whose close is all it has is dated by the close,
+	// rather than listing with no date and sorting as the oldest row there is.
+	testutil.Expect(t, "dated by its close", pane.Sittings[0].LastAt, "2026-09-26")
+}
+
+// A sub-heading inside the Outcome does not end it. The Outcome is prose, the
+// close writes it with the sub-headings the Partner drafted, and the line that
+// says the close was recorded is below them — so a reader that ended the section
+// at the first of them would say this record was never sat on, and would date it
+// from nothing.
+func TestASubHeadingInsideTheOutcomeDoesNotEndIt(t *testing.T) {
+	t.Parallel()
+	counts, last, marked := satOn([]string{
+		"## Outcome",
+		"The limit counts from last activity.",
+		"",
+		"### Constraints",
+		"",
+		"The mobile client renews on its own clock.",
+		"",
+		"- Recorded from the sitting · 2026-09-26 · Wido [d:deposit:t9#0]",
+		"",
+		"## Scope",
+		"- 2026-09-27 · Wido · not a pile at all [d:deposit:t9#1]",
+	})
+	testutil.Expect(t, "it is sitting material", marked, true)
+	testutil.Expect(t, "dated from the foot under the sub-heading", last, "2026-09-26")
+	// The Outcome holds no pile, and the section after it at its own level is not
+	// the Outcome: a heading at the Outcome's level or higher still ends it.
+	testutil.Expect(t, "and no pile was counted", counts, PileCounts{})
+}
+
+// The Outcome's date is the one its foot carries and nothing else: a human's own
+// prose under the heading dates nothing, even where it carries a mark.
+func TestOnlyTheOutcomesFootDatesIt(t *testing.T) {
+	t.Parallel()
+	_, last, marked := satOn([]string{
+		"## Outcome",
+		"- what somebody typed here themselves · with a dot in it [d:deposit:t9#0]",
+	})
+	testutil.Expect(t, "the mark is still a mark", marked, true)
+	testutil.Expect(t, "but nothing is dated from prose", last, "")
 }
 
 // Newest entry first, and a tie is settled by the path so two reads are one

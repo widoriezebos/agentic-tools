@@ -1495,18 +1495,25 @@ export function timeOf(stamp: string): string {
  * into it yet, because that is the sitting a human is in the middle of.
  *
  * Pressing a row opens the conversation on that record and starts a sitting on
- * it where none stands. The press is the consent: a row that said "open" and
- * then quietly opened a sitting would be starting one behind a human's back, so
- * the row says which of the two it will do before it is pressed.
+ * it where none stands at all. The press is the consent: a row that said "open"
+ * and then quietly opened a sitting would be starting one behind a human's back,
+ * so the row says which of the two it will do before it is pressed.
+ *
+ * And no row starts one while a sitting stands, its own or another's. There is
+ * one sitting on one conversation: starting a second replaces the standing mark,
+ * which ends the sitting a human is in the middle of without its outcome ever
+ * being written. The record's own page already offers no Start while one stands
+ * (DocumentPane.tsx); this is that rule where the rows are.
  */
 function Sittings({ rows, nothing }: { rows: readonly SittingRow[]; nothing: ReactNode }) {
   const { startSitting } = usePartner();
   const navigate = useNavigate();
+  const stands = rows.some((row) => row.standing);
   const open = (row: SittingRow) => {
     const go = () => {
       void navigate("/brain");
     };
-    if (row.standing) {
+    if (stands) {
       go();
       return;
     }
@@ -1530,7 +1537,7 @@ function Sittings({ rows, nothing }: { rows: readonly SittingRow[]; nothing: Rea
             <button
               type="button"
               className="ms-sitting-row-open"
-              title={opensLine(row)}
+              title={opensLine(row, stands)}
               onClick={() => {
                 open(row);
               }}

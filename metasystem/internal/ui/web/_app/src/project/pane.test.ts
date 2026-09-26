@@ -330,12 +330,18 @@ describe("what one Sittings row says", () => {
   });
 
   it("says what the press will do before it is pressed, because the press is the consent", () => {
-    expect(opensLine(row)).toBe(
+    expect(opensLine(row, false)).toBe(
       "Open the conversation on plans/designs/sessions.md and start a sitting on it",
     );
     // A sitting already standing on it is opened and not started again.
-    expect(opensLine({ ...row, standing: true })).toBe(
+    expect(opensLine({ ...row, standing: true }, true)).toBe(
       "Open the conversation on plans/designs/sessions.md",
+    );
+    // And a row nothing stands on, while a sitting stands on another record: one
+    // conversation holds one sitting, so this press cannot start a second — it
+    // would end the one a human is in the middle of. So it promises no start.
+    expect(opensLine(row, true)).toBe(
+      "Open the conversation. A sitting stands on another record, so this starts nothing",
     );
     expect(STANDS_NOW).toBe("a sitting stands on this now");
   });

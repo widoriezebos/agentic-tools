@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3F0YA7PA8PCDHZPGJAXDWC8
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-26: "I want all the open ones designed and implemented
@@ -123,3 +123,40 @@ retries through the recorder without an edit; the record named by id
 and path as Project does. Deferred, step 2 works without them: Ask on a
 table already cleared by End; the phone's blank space, to be reproduced
 before another change.
+
+## Built (2026-09-26)
+
+Landed on ui-development and main as 9e8f98108; the read's four fixes
+landed as a second merge. Built by Claude on Opus, read by Codex on Sol
+under R-124: seven findings, four fixed in one round, three deferred.
+Fixed: the Outcome section was cut at the next heading of any level, so
+an outcome with a sub-heading lost its foot and its mark, and is now cut
+at its own level or higher in both readers; an Outcome-only sitting had
+no date and sorted oldest, and its foot now dates the row; a Sittings
+row started a sitting while another stood, silently ending it, and now
+only opens the conversation while any sitting stands, saying so; a case
+could not be dismissed, and can. Each fix's test fails against the
+unfixed code.
+
+Deferred from the read, because the slice works and is safe without
+them: the record writer's two-tab race predates this slice and is open
+question Q-01M3F8MCC1Z8R7PP3Q7ZP0M30X; an outcome card left unrecorded
+by End without recording is pressable again in a later sitting on the
+same record, and writes its own words if pressed; the Partner can offer
+an outcome on a turn that is not the closing turn, and a human who
+records it ends the sitting by that press; a mark-shaped line in prose
+or a fenced block would list a record as a sitting.
+
+What the read verified: the recorder serializes presses in one tab; the
+tool prepares text and writes nothing; the host and the tool parse the
+case and the outcome alike; Closing refuses a running turn and no
+sitting; the read route's resume is the server's one freshness
+decision; the phone-width rule is scoped to a focused frame with a
+table.
+
+What standing in front of it showed, beyond the design: a conflict card
+admitted nothing on retry and now retries through the recorder; a
+recorded case's chip named the wrong pile; the phone-width blank space
+under the table was an absolutely positioned hidden label, and the frame
+is now its containing block.
+
