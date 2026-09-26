@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 )
 
@@ -585,6 +586,51 @@ func admitsPurpose(purpose string) error {
 	return nil
 }
 
+// subjectKinds is what a sitting on any other kind of record is refused with, in
+// the words a human reads. It is a constant because two places say it: the
+// refusal itself, and the test that proves the refusal is the one given.
+const subjectKinds = "a sitting is about an intent or a design record"
+
+// admitsSubject says whether a sitting may be about this record (g1-s53 D1).
+//
+// A sitting shapes intent or shapes a design, and its subject is the record it
+// shapes: the four piles it writes — Facts, Proposals, Decisions, Open questions
+// — belong in one of those two kinds and nowhere else. A doctrine record, a
+// recorded decision, or a plain file of the checkout is not a thing there is a
+// sitting for. The record's page offers Start on nothing else, but the page is
+// not the gate: the route is reachable without it, and a subject arriving from
+// anywhere at all is judged here.
+//
+// The kind is the record's own declared head, read through the same document
+// reader the pages are composed from. A file declaring no head, or a head naming
+// no kind, is not a record of any kind and is refused for exactly that.
+//
+// A build with no document reader is not asked: it has no Project section and no
+// record page, so there is no Start to press and no head to read. What the reader
+// itself refuses is passed on as it is — a subject this checkout cannot read is a
+// sitting with nothing to record into, which is the route's own reason for
+// creating a draft before opening one.
+func (s *Service) admitsSubject(subject Subject) error {
+	if s.facts.Document == nil {
+		return nil
+	}
+	document, err := s.facts.Document(subject.ID)
+	if err != nil {
+		return fmt.Errorf("cannot read %s, so a sitting cannot be opened on it: %w", subject.ID, err)
+	}
+	kind := ""
+	if document.Record != nil {
+		kind = strings.TrimSpace(document.Record.Kind)
+	}
+	switch {
+	case kind == "":
+		return fmt.Errorf("%s, and %s declares neither", subjectKinds, subject.ID)
+	case kind != resolver.KindIntent && kind != resolver.KindDesign:
+		return fmt.Errorf("%s, and %s is a %s record", subjectKinds, subject.ID, kind)
+	}
+	return nil
+}
+
 // Admits says whether a sitting for this purpose could be opened at all, and
 // creates nothing.
 //
@@ -640,6 +686,9 @@ func (s *Service) Sit(ctx context.Context, human string, subject Subject, purpos
 		return Sitting{}, errors.New("a sitting is about one record of this project, and nothing else yet")
 	case subject.ID == "":
 		return Sitting{}, errors.New("a sitting about a record says which one, by its path in this checkout")
+	}
+	if err := s.admitsSubject(subject); err != nil {
+		return Sitting{}, err
 	}
 	conversation, err := s.conversation(human)
 	if err != nil {

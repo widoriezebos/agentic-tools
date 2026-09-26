@@ -9,6 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner/fakeacp"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
@@ -227,4 +228,98 @@ func TestASittingIsRefusedBeforeAnythingIsAppendedWhenTheRuntimeCannotStart(t *t
 	testutil.Require(t, "read back", readErr, nil)
 	testutil.Expect(t, "nothing was appended", len(read.Messages), 0)
 	testutil.Expect(t, "and no sitting was left on the conversation", read.Sitting == nil, true)
+}
+
+// serviceOverRecords is a Partner over a checkout that has exactly the records
+// named: each path mapped to the kind its head declares, and "" for a file that
+// declares no head at all. A path the map does not carry is a file this checkout
+// does not have, which the reader refuses as the real one does.
+func serviceOverRecords(t *testing.T, kinds map[string]string) *partner.Service {
+	t.Helper()
+	root := t.TempDir()
+	host := partner.NewHostOn(
+		partner.Runtime{Name: "fake", ReadOnly: "a fake server reads nothing"},
+		root, fakeacp.Open(fakeacp.Script{Chunks: []string{"Nothing is recorded about this yet."}}))
+	t.Cleanup(host.Close)
+	return partner.NewService(host.Runtime(), host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{Document: func(id string) (project.Document, error) {
+			kind, held := kinds[id]
+			switch {
+			case !held:
+				return project.Document{}, project.ErrNotFound
+			case kind == "":
+				return project.Document{Kind: "document", ID: id, Title: "A file"}, nil
+			}
+			return project.Document{
+				Kind: "document", ID: id, Title: "A record", Record: &project.Head{Kind: kind},
+			}, nil
+		}},
+		func() time.Time { return time.Date(2026, 9, 26, 9, 0, 0, 0, time.UTC) })
+}
+
+// A sitting is about an intent or a design record, and the service is what says
+// so: the record's page offers Start on nothing else, but the route is reachable
+// without the page (g1-s53 D1).
+func TestASittingIsOnlyAboutAnIntentOrADesignRecord(t *testing.T) {
+	t.Parallel()
+	for _, probe := range []struct {
+		what    string
+		id      string
+		kind    string
+		refused bool
+		says    string
+	}{
+		{"a design record", "plans/designs/sessions.md", "design", false, ""},
+		{"an intent record", "plans/intent/sessions.md", "intent", false, ""},
+		{"a doctrine record", "plans/doctrine/records.md", "doctrine", true,
+			"a sitting is about an intent or a design record, and plans/doctrine/records.md is a doctrine record"},
+		{"a recorded decision", "plans/decisions/r-124.md", "decision", true,
+			"a sitting is about an intent or a design record, and plans/decisions/r-124.md is a decision record"},
+		{"a file that declares no head", "development/notes.md", "", true,
+			"a sitting is about an intent or a design record, and development/notes.md declares neither"},
+	} {
+		service := serviceOverRecords(t, map[string]string{probe.id: probe.kind})
+		events, stop := service.Subscribe()
+		subject := partner.Subject{Kind: partner.SubjectRecord, ID: probe.id, Title: "Session limits"}
+		_, err := service.Sit(context.Background(), "Wido", subject, partner.PurposeShapeDesign, onTheRecord())
+		if !probe.refused {
+			testutil.Require(t, probe.what+" opens a sitting", err, nil)
+			drain(t, events)
+			stop()
+			read, readErr := service.Snapshot("Wido", 100)
+			testutil.Require(t, "read back "+probe.what, readErr, nil)
+			testutil.Require(t, probe.what+" carries the sitting", read.Sitting != nil, true)
+			testutil.Expect(t, probe.what+" is the subject", read.Sitting.Subject.ID, probe.id)
+			continue
+		}
+		stop()
+		testutil.Require(t, probe.what+" is refused", err != nil, true)
+		testutil.Expect(t, probe.what+" says why, in the words a human reads", err.Error(), probe.says)
+
+		// And refused before anything: no mark on the conversation, no turn.
+		read, readErr := service.Snapshot("Wido", 100)
+		testutil.Require(t, "read back "+probe.what, readErr, nil)
+		testutil.Expect(t, probe.what+" leaves no sitting", read.Sitting == nil, true)
+		testutil.Expect(t, probe.what+" appends nothing", len(read.Messages), 0)
+	}
+}
+
+// A subject this checkout cannot read refuses the sitting in the reader's own
+// words: a record that is not there is a sitting with nothing to record into.
+func TestASittingOnARecordThisCheckoutCannotReadIsRefused(t *testing.T) {
+	t.Parallel()
+	service := serviceOverRecords(t, map[string]string{})
+
+	_, err := service.Sit(context.Background(), "Wido",
+		partner.Subject{Kind: partner.SubjectRecord, ID: "plans/designs/gone.md", Title: "Gone"},
+		partner.PurposeShapeDesign, onTheRecord())
+	testutil.Require(t, "the sitting is refused", err != nil, true)
+	testutil.Expect(t, "naming the record it could not read",
+		strings.Contains(err.Error(), "cannot read plans/designs/gone.md"), true)
+
+	read, readErr := service.Snapshot("Wido", 100)
+	testutil.Require(t, "read back", readErr, nil)
+	testutil.Expect(t, "no sitting was opened", read.Sitting == nil, true)
+	testutil.Expect(t, "and nothing was appended", len(read.Messages), 0)
 }

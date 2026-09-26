@@ -433,6 +433,29 @@
   gap: 2px;
 }
 
+/* An entry leads into the record it came out of, at its own pile (g1-s53 D7).
+
+   The whole entry is the press, so the link carries the entry's own column and
+   reads as the entry rather than as a hyperlink: three lines of blue would make
+   the table a list of links instead of a table of what was recorded. The pad is
+   pulled back out again with a negative margin, so the piles keep their rhythm
+   and the press still has a target bigger than the text. */
+.ms-table-entry-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -3px -5px;
+  padding: 3px 5px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.ms-table-entry-link:hover,
+.ms-table-entry-link:focus-visible {
+  background: var(--ms-surface-3);
+}
+
 .ms-table-entry-text {
   margin: 0;
   color: var(--ms-text);
