@@ -537,9 +537,24 @@
       "text": "A fact, a decision or an open question your Project Partner has offered for the record of this sitting. It is an offer and nothing else: nothing is written until you press Record it, and the words are yours to change before you do. A decision is recorded with the reason you gave and a fact with the anchor where it can be checked, so Record it waits until each has one."
     },
     {
+      "id": "the-case",
+      "term": "A case at the edge",
+      "text": "A case your Project Partner has put in front of you: the awkward instance a rule has to survive — a page read for an hour without a keystroke, a laptop that slept, a session made before the rule changed. It is not recorded as it stands, because a case is a question and not an entry. Decide settles it: a small sheet opens with the clause as the Partner heard it and a line for your reason, and the decision goes into the record with that reason. Leave open records it as an open question, with what follows from leaving it open. Dismiss leaves nothing behind, which is also an answer."
+    },
+    {
+      "id": "the-outcome",
+      "term": "What this sitting came to",
+      "text": "The closing draft your Project Partner writes when you end a sitting: the outcome as you decided it, the constraints, the open questions with their consequences, and what the table holds. Nothing is weighed and nothing new is settled — it is drafted from the record's own sections and from this conversation. You read it, edit it, and press Record it: it becomes the record's Outcome section, replacing any Outcome the record already had, and the sitting ends then. Ending without recording it is allowed, and it says so: what you recorded during the sitting stays, and the outcome is not written."
+    },
+    {
       "id": "the-table",
       "term": "The table",
       "text": "The four kinds of working material this sitting has put into its record: Facts, Proposals, Decisions and Open questions. It is not a second store — it is those four sections of the record itself, so everything here is something you recorded and anything you did not record is not here. The counts beside your Project Partner are the same four."
+    },
+    {
+      "id": "sittings",
+      "term": "Sittings",
+      "text": "The records this project has sat on, newest first: what each sitting recorded into its record, how much of each pile it holds, when its last entry was written, and whether a sitting stands on it right now. It is a view over those records and not a second store — a record is here because its own entries say a sitting put them there. Opening a row takes you to the conversation on that record, and starts a sitting on it where none stands; the press is your consent to that."
     },
     {
       "id": "no-recommendation",
