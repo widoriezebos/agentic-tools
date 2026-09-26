@@ -338,3 +338,33 @@ Material findings: 2
 
 Codex session ID: 01a0dfc2-5ca5-7281-a66d-885ffb7a64e2
 Resume in Codex: codex resume 01a0dfc2-5ca5-7281-a66d-885ffb7a64e2
+
+---
+
+Round 5: Codex gpt-6-astra, read-only confirmation of revision 5 (58bd20bc7).
+
+One fold verifies; the retained-command migration still misses an executable copy of the old argv. This was a read-only source review at `58bd20bc7`; no builds, tests, file edits or Git writes were performed.
+
+**VOA-11-R4 — verified.** The [revised bootstrap](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:585) executes from the pulled hook before `session start`, removing the dependency on a newly compiled session handler. Its build-then-`up` sequence matches the [existing rearm command](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/cmd/metasystem/rearm_on_landed.go:73), and [`up` re-enrolls rebuilt engine bytes](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/up/up.go:566).
+
+**VOA-16-R5 — fold does not resolve**
+
+**Evidence:** The [migration contract](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/plans/designs/verbs-object-action.md:614) updates the retained argv and reservation digest, preserving rounds. However, the runner also materializes argv in `round-N/proof-NAME.json`. It [writes that file only when absent, then passes its path to the launcher](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/unit_run.go:369). [`PlainExec.Command`](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/plain.go:19) reads and executes that file’s argv. The reservation check [validates the plan](/Users/wido/LocalStorage/GitHub/agentic-tools-verbs/metasystem/internal/launch/unit_named.go:295); updating it does not replace an existing proof brief.
+
+**Scenario:** A run is interrupted after writing its proof brief but before launching the proof. Its saved command is the fold’s own `metasystem test --goal G` example. U1 permits cutover because the spelling has a successor. Resume migrates the plan and digest to `metasystem test run --goal G`, but the existing round brief survives and supplies the deleted spelling to `PlainExec`. This failure is inferred from the cited replay path.
+
+**Change:** Extend the owner-controlled migration to the materialized argv of pending, unlaunched proof steps, or regenerate those briefs from the migrated plan before launch. Preserve evidence for steps already launched. Add a witness interrupted after proof-brief creation that checks the command actually executed after U1.
+
+**Test 1:** Yes—changes migration’s persisted-artifact scope and the proof-resume path.
+
+**Test 2:** **WORK**—a migratable suspended run still executes the deleted command and fails despite a successfully migrated reservation.
+
+No additional independent material finding is reported.
+
+Proposed receipt, not written: `Read-only revision-5 confirmation; source inspection; one fold verified, one failed fold.`
+
+Round-4 folds verified: 1 of 2
+Material findings: 1
+
+Codex session ID: 01a0dfc7-afa8-7b22-9279-4268dcd347a3
+Resume in Codex: codex resume 01a0dfc7-afa8-7b22-9279-4268dcd347a3

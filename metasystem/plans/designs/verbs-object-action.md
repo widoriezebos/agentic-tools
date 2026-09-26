@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3FS4JWK13Z7W87G1SAEJZ06
-- Status: draft (revision 5)
+- Status: draft (revision 6)
 - Goals: verbs-match-intent
 - Supersedes: `verb-cleanup.md` rule "Do not migrate thousands of private
   process-protocol calls" and its retention of the family dispatcher;
@@ -617,6 +617,12 @@ new entries (`hook`, `pre-commit`) with their stubs.
     the new digest; the digest check (`launch/unit_named.go:295`) accepts a plan
     whose digest equals the one the migration recorded. Rounds and run lineage
     are unchanged.
+  - The migration also covers argv already materialized for a proof step that
+    has not launched: the runner writes `round-N/proof-NAME.json` once and
+    `PlainExec` executes it (`launch/unit_run.go:369`, `launch/plain.go:19`), so
+    for every such unlaunched step the owner rewrites that file through the same
+    mapping and records it in the same history entry (VOA-16-R5). A step that
+    already launched keeps its file and evidence untouched.
   - Resume applies the migration automatically before launching when every
     removed spelling in the stored argv has a successor. A stored argv with a
     removed spelling that has no successor is refused before launching, naming
@@ -627,7 +633,8 @@ new entries (`hook`, `pre-commit`) with their stubs.
     engine that understands it; once it finishes, the next session start rearms.
   - Witness: a suspended run whose proof command is `metasystem test --goal G`
     resumes after U1 as `metasystem test run --goal G` with the migration in its
-    history; a run with a removed dead-verb spelling is refused at resume, holds
+    history; a run interrupted after its proof file was written but before launch
+    executes the migrated argv (asserted on the command actually executed); a run with a removed dead-verb spelling is refused at resume, holds
     the rearm, and rearm proceeds after it completes.
 - The browser UI: acts call Go functions; displayed command strings change in U1
   (`ui/decisions/decisions.go:817`, `ui/act/act.go:20,45,220,665`,
@@ -699,3 +706,10 @@ verified, no new findings, two failed folds, both accepted.
 |---|---|---|
 | VOA-11-R4 first cutover runs on the old engine | accepted | 7: hook-side bootstrap in U1 |
 | VOA-16-R4 no abandonment owner | accepted | 7: owner-controlled argv migration |
+
+Round 5, Codex `gpt-6-astra`, confirmation read of revision 5: VOA-11-R4
+verified; one failed fold, accepted; no new findings.
+
+| Finding | Disposition | Where folded |
+|---|---|---|
+| VOA-16-R5 materialized proof argv | accepted | 7: migration covers unlaunched proof files |
