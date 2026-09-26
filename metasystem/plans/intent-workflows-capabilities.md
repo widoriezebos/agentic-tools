@@ -49,7 +49,7 @@ and runtime observations before completion. Aliases alone do not prove a route.
 | `red` | own or close a trunk-red incident | `incidents; incidents claim I --goal G; incidents close I --reason TEXT` | `intent_planning.go:373` |
 | `brief` | write a brief scaffold from a goal and its accepted design | `brief (same explicit intention, focused help)` | `intent_work.go:139` |
 | `build` | build one unit: build, proof and independent read, then await judgement | `build G [--work NAME] --brief FILE --check COMMAND...` | `intent_work.go:152` |
-| `wait` | wait for a job, a goal event or a unit run | `wait G [--work NAME]; wait question Q` | `intent_work.go:187` |
+| `wait` | wait for a job, a goal event or a unit run | `wait G [--work NAME]; wait G --for landing/human-act --since TIP; wait question Q` | `intent_work.go:187` |
 | `test` | run the risk-selected tests for this checkout | `test (same explicit intention, focused help)` | `intent_work.go:208` |
 | `settings` | show the selected installation's settings and where each value comes from | `settings [KEY]; settings coordinator; settings compatibility` | `intent_work.go:224` |
 | `review` | review a design, a finished job, a built unit or a goal-branch commit | `review G [--work NAME] [--dispositions FILE]; explicit design/job/commit subjects` | `intent_delivery.go:41` |
@@ -80,3 +80,5 @@ worker execution, canonical hashing, accounting) remain callable by their existi
 machine consumers. They are executed by owners, not presented as extra tasks a
 person or agent must manually perform. Their preservation is checked through
 consumer regression tests, not by displaying a technical catalogue in public help.
+
+Goal-event waiting is also public: `wait G --for landing|human-act [--verb V] [--since TIP]`; existing event/after aliases stay callable. This is required by IW-C8, alongside work and question waits.

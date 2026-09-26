@@ -34,3 +34,29 @@ and retry requirements rather than adding a new authority or workflow system.
 Round 2 will be the final design critique round on this thread and will check
 this entire fold, especially revision replay, closure decisions and recovery.
 No implementation has started at this entry.
+
+## Final design round
+
+Round 2: launch 20260926t082700-93f7b19165, same provider session, actual exit 0,
+model claude-fable-5-1. Full report: intent-workflows-fable-review-r2.md.
+Reviewed SHA256: 4cd91701097ea040dec208d87e21095dce6a10cd7712dcc38049ac22d917815c,
+retained at b1c0f2ea8ed5c60a8b1aecc2766d5668ec3f3920. The report's earlier HEAD
+reflects concurrent root record commits; the hashed design is authoritative and
+incoming main changed no reviewed implementation owner.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| IW-C7 | accepted | The reviewed attempt and failed correction attempt are different identities; newest failed-round outputs may be empty. Refine the proposed word collected: unresolved findings must remain usable before clean closure. | Keep the newest authentic examination's immutable findings/decisions across failed corrections; after-N names the correction base. Reject a superseded review. Named fixture TestRevisionRetainsReviewedFindingsAfterFailure. |
+| IW-C8 | accepted | Existing wait goal supports landing/human-act events and verb filtering; retaining only work/question waits would remove a public capability. | Advertise wait G --for landing|human-act --since TIP, preserve aliases, provide queued-landing hint. Named fixture TestIntentGoalEventWait. |
+
+Notes N8-N10 are wording corrections. N11-N14 are named fixtures under IW-2,
+IW-3 and IW-4. Administration choices not examined by Fable receive a source-
+grounded exact-input appendix before that implementation stage, with authority
+fixtures; none is asserted certified by this report.
+
+Root judgment: the trajectory fell from six material findings to two bounded
+binding/grammar corrections, with no remaining owner or workflow-shape dispute.
+Close at round 2 on the two named fixture obligations under fixtures-as-arbiter.
+Both are folded, neither waived. Independent code critique must check their actual
+implementation and fixtures before release. User-authorized implementation begins;
+the seven proof obligations remain MISSING until real evidence exists.

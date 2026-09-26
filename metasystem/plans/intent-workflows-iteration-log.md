@@ -46,3 +46,13 @@ or retained internal escape hatch alone does not satisfy the contract. Preserve
 an already verified candidate while making later improvements; do not repeat broad
 checks for unchanged evidence inputs. Final judgment requires no unresolved material
 findings and no demonstrated journey that still needs internal knowledge.
+
+## Design accepted for implementation
+
+Both checkouts pulled main again at 1226c71bf; incoming Partner changes merged
+cleanly. Fable reviewed twice on one provider session: material findings 6 then 2.
+Root folded all eight, refined C7 to retain authentic unresolved findings before
+collection, and closed the final two bounded corrections as named fixture
+obligations. Independent code critique remains mandatory. Main contract R126
+now also records the user's explicit requirement that internal structure never
+be required to complete a task. Product implementation is next.

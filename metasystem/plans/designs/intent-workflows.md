@@ -2,8 +2,13 @@
 
 - Kind: design
 - Id: 01M3EC3QT7M2TC36P7ZVNRF0RW
-- Status: draft
+- Status: accepted
 - Goals: verbs-match-intent
+
+Design critique: closed at round 2 on 2 fixture obligations (IW-C7 and IW-C8),
+with material findings falling from 6 to 2. Root accepted the bounded binding
+and grammar corrections below. Independent implementation critique is mandatory;
+this authorizes implementation and does not claim that the proof is complete.
 
 Author: root Codex. Wido, 26 September 2026, authorized design, Fable critique,
 implementation and repeated usability improvement until the interface is easy,
@@ -104,6 +109,7 @@ metasystem status G [--work NAME]
 metasystem review G [--work NAME] [--dispositions FILE]
 metasystem revise G [--work NAME] [--after N] --brief FILE [--dispositions FILE]
 metasystem wait G [--work NAME] [--timeout DURATION]
+metasystem wait G --for landing|human-act [--verb V] [--since TIP]
 metasystem land G
 ```
 
@@ -127,6 +133,10 @@ history unless a new revision is explicitly requested and the goal is still live
 Exactly one eligible item may be inferred; zero gives the appropriate completed,
 waiting or missing-prerequisite result; multiple items list names and exact public
 commands. No command picks the most recent timestamp.
+Goal-event waits remain first-class: `--for landing` waits for landing and
+`--for human-act` optionally filters the actual human verb. `--since` names the
+observed goal revision; existing `--event` and `--after` spellings remain aliases.
+If no work is running but landing is queued, bare wait offers `wait G --for landing`.
 The selection belongs to UnitRunner beside named build identity. Add a read API
 there for (real worktree, goal, optional work); reject corrupt bindings and
 foreign roots. CLI code does not scan private storage or create another index.
@@ -179,11 +189,20 @@ A genuine human risk acceptance is recognized only through its exact existing
 owner record and retains an explicit exception outcome, never a caller's label.
 The owner still decides closure and whether the resulting read authorizes landing.
 
-The generated disposition file includes a machine-written binding to goal, work
-attempt, immutable reviewed subject and return digest. Users fill decisions and
+The generated disposition file includes a machine-written binding to goal, work,
+reviewed attempt, immutable reviewed subject and return digest. Users fill decisions and
 evidence, not that binding. Canonical review and revise validate it and freeze
 its bytes with the request before effects; a stale file cannot resolve a different
-review. Replaying a completed decision rejoins its stored operation. Legacy
+review. The reviewed attempt is distinct from the correction base `--after N`.
+The current review is the newest authentic examination of that work, including
+unresolved findings not yet eligible for clean closure/collection. A failed
+examination with no findings does not supersede those findings. A correction
+after N may reuse that binding when N is at or after the reviewed attempt and
+no later authentic examination supersedes it. Retain the same frozen findings
+and decisions as builder input across intervening failed correction attempts;
+the failed attempt's empty read outputs cannot replace them. A superseded file
+refuses naming the current examination. Help and failed-attempt remedies explain
+this distinction. Replaying a completed decision rejoins its stored operation. Legacy
 explicit job/disposition APIs retain their existing contract. For manually prepared
 files the public command first offers the bound template; it does not silently
 assume that a same-named finding belongs to the current subject. No separate close
@@ -203,7 +222,7 @@ instructions that grant authority. No route prints a bash close-check command.
 The result says examination finished, completion pending until closure and
 publication are actually complete. Retry N is accepted only for an owner-proven terminal failed examination with
 no completed findings; it cannot bypass a live process, findings, budget or
-authority. This route does not exist today for every failure: branch/read.go
+authority. This route does not exist today for every failure: internal/goal/branch/read.go
 retains a root, and dispatch follow-up currently admits completed/protocol-error
 critics only (dispatch.sh:2480-2490). Extend those existing owners with a bounded
 failed-examination follow-up, preserving the original critic chain/round budget,
@@ -255,7 +274,7 @@ mandatory terminal question is added to otherwise complete scripted input.
 Use `accept-risk G --finding F [--review R] --reason TEXT` for the existing
 reserved act; infer the review only when unique. `incidents` lists incidents,
 `incidents claim I --goal G` and `incidents close I --reason TEXT` preserve
-ownership/closure authority. `show`/`status` present goals, work, questions,
+ownership/closure authority. `show G` presents the goal record; `status G` presents live work. They also present questions,
 project records and machines using recognizable targets. List current work to
 make cancellation/status discoverable without knowing the launch store.
 
@@ -341,6 +360,26 @@ no service restart or remote production install is implied.
 | IW-5 | HIGH | Human capabilities, questions and operations | Complete authenticated questions and mission operation | Channel/mission adapters | intent_process.go and focused adapter files | TestIntentQuestionJourney; TestIntentMissionRecovery | Fake-provider CLI delivered/undelivered/ambiguous journeys | MISSING | Implement and drive |
 | IW-6 | HIGH | Human capabilities, questions and operations | Honest diagnosis with public repair; settings/records/maintenance | Health/config/project adapters | Intent operation adapters | TestIntentOperationsJourney; TestIntentRepairAuthority | Synthetic config/health/record and exact recovery | MISSING | Implement and drive |
 | IW-7 | HIGH | Results, recovery and migration | Full capability and truthful results without required internals | Descriptor and result owners | intent.go and each typed outcome adapter | TestIntentCapabilityPreservation; TestIntentPublicContinuations | Repeat complete fresh-orientation journey corpus | MISSING | Implement and drive |
+
+
+Named fixture obligations from final design critique:
+
+- IW-C7 / `TestRevisionRetainsReviewedFindingsAfterFailure`: review attempt 1,
+  bind decisions, fail correction 2 without result, explicitly retry after 2;
+  launch once with the original findings and decisions. Refuse that file once a
+  later authentic review supersedes it. Unresolved uncollected findings qualify.
+- IW-C8 / `TestIntentGoalEventWait`: wait for queued landing and filtered human
+  acts through `--for`/`--since`, retain legacy aliases, and show the queued hint.
+- IW-2 / `TestNamedWorkSelection`: collected/published, collected/unpublished and
+  built/unread work coexist; selection consults or retains the read owner's binding.
+- IW-2 / `TestRevisionRequestReplay`: crash after request retention before launch;
+  retry and a concurrent identical request admit exactly one launch.
+- IW-3 / `TestIntentReviewRetryAuthority`: live old critic refuses retry, proved
+  stopped admits within the same chain cap, replay rejoins even after retry failure.
+- IW-4 / `TestIntentQueueOnly`: a second landing slot refuses with the earlier
+  goal's public land command; no proof or publication runs during queue-only.
+- IW-6 / `TestIntentRepairAuthority`: every source-grounded administration choice
+  exercises its exact inputs with and without the actor proof its owner requires.
 
 Implementation units, each with its own tests: discovery/public projection
 (about 1000 changed lines), complete delivery (about 1800), human/questions/
