@@ -209,7 +209,11 @@
 }
 
 /* The count beside the composer while the drawer is closed, counted across
-   answers. Pressing it opens the drawer at the newest card that has one. */
+   answers. Pressing it opens the drawer at the newest card that has one.
+
+   It stays at phone width, where the sitting's own "ended without recording"
+   line hides: that line says what did not happen and this one says something is
+   waiting on the human, and a count nobody can see is a decision nobody finds. */
 .ms-proposal-bar {
   padding: 2px 8px;
   border: 1px solid var(--ms-accent);
@@ -221,10 +225,4 @@
   line-height: 18px;
   white-space: nowrap;
   cursor: pointer;
-}
-
-@media (max-width: 720px) {
-  .ms-drawer-bar:has(.ms-drawer-field) .ms-proposal-bar {
-    display: none;
-  }
 }

@@ -9,6 +9,8 @@ import {
   barLine,
   cardsIn,
   dispatchOf,
+  dismissable,
+  dismissableIn,
   displayedFor,
   fetchFailedLine,
   footLine,
@@ -449,6 +451,9 @@ describe("what a line says about where it stands", () => {
   it("says each state in the words a human reads", () => {
     expect(lineState(lineOf(card([proposal({ state: "applying" })])), true)).toBe("applying…");
     expect(lineState(lineOf(card([proposal({ state: "applied" })])))).toBe("applied");
+    // The server leaves an empty `words` out of the payload, so an applied line
+    // with nothing to say must read as "applied" and never as "applied; undefined".
+    expect(lineState(lineOf(card([proposal({ state: "applied", words: undefined })])))).toBe("applied");
     expect(lineState(lineOf(card([proposal({ state: "refused", words: "goal is claimed" })]))))
       .toBe("refused: goal is claimed");
     expect(lineState(lineOf(card([proposal({ state: "unresolved", words: "nobody knows" })]))))
@@ -470,6 +475,21 @@ describe("what a line says about where it stands", () => {
     const one = card([proposal()], { [lineID("t1", 0)]: { ticked: true, notRun: true, refusedUnsent: "" } });
     expect(lineState(lineOf(one))).toBe(NOT_RUN);
     expect(offersContinue(one)).toBe(true);
+  });
+
+  /**
+   * A line a page went away in the middle of offers Try again and can still be
+   * put away; a line THIS page is running offers neither, because it is in
+   * flight. Without both, a line left at `applying` would stay on the card for
+   * good — which is why the outcome route admits `applying` to `dismissed`.
+   */
+  it("offers Try again and Dismiss on a line the page left in flight, and none while it runs", () => {
+    const line = lineOf(card([proposal({ state: "applying" })]));
+    expect(offersTryAgain(line)).toBe(true);
+    expect(offersTryAgain(line, true)).toBe(false);
+    expect(dismissable(line)).toBe(true);
+    expect(dismissableIn(card([proposal({ state: "applying" }), proposal({ index: 1 })]).lines)).toBe(2);
+    expect(dismissableIn(card([proposal({ state: "applied" })]).lines)).toBe(0);
   });
 
   it("offers Try again on a refused or unresolved line and on nothing else", () => {

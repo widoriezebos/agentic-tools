@@ -407,15 +407,18 @@ export function lineState(line: Line, inFlight = false): string {
   if (line.mark.notRun) {
     return NOT_RUN;
   }
+  // The words are absent on a plain outcome and present on one that carried a
+  // sentence; the server leaves an empty one out, so both read as none here.
+  const words = (line.words ?? "").trim();
   switch (line.state) {
     case "applying":
       return inFlight ? APPLYING : WAS_IN_FLIGHT;
     case "applied":
-      return line.words === "" ? APPLIED : `applied; ${line.words}`;
+      return words === "" ? APPLIED : `applied; ${words}`;
     case "refused":
-      return `refused: ${line.words}`;
+      return `refused: ${words}`;
     case "unresolved":
-      return `unresolved: ${line.words}; check the goal before trying again`;
+      return `unresolved: ${words}; check the goal before trying again`;
     case "dismissed":
       return DISMISSED;
     default:
@@ -471,11 +474,37 @@ export function selectedLine(card: Card): string {
  * make a second act rather than repair the first one's missing proof
  * (Astra S58-05).
  */
-export function offersTryAgain(line: Line): boolean {
-  if (!line.offered || line.mark.refusedUnsent !== "") {
-    return line.offered && line.mark.refusedUnsent !== "";
+export function offersTryAgain(line: Line, inFlight = false): boolean {
+  if (!line.offered) {
+    return false;
+  }
+  if (line.mark.refusedUnsent !== "") {
+    return true;
+  }
+  // A line a page went away in the middle of offers it too, and for the same
+  // reason the words beside it give: check the goal, and then press. A line THIS
+  // page is running does not — it is in flight.
+  if (line.state === "applying") {
+    return !inFlight;
   }
   return line.state === "refused" || line.state === "unresolved";
+}
+
+/**
+ * Whether this line can still be put away.
+ *
+ * Every state a line can be moved OUT of: waiting, and the one a page went away
+ * in the middle of. A line left at `applying` with nothing offering to settle it
+ * would otherwise stay on the card for good, which is why the outcome route
+ * admits `applying` to `dismissed` at all.
+ */
+export function dismissable(line: Line): boolean {
+  return line.offered && (line.state === "waiting" || line.state === "applying");
+}
+
+/** How many lines of this card can still be put away. */
+export function dismissableIn(lines: readonly Line[]): number {
+  return lines.filter((line) => dismissable(line)).length;
 }
 
 /** Whether the card offers Continue with the rest: a run stopped short. */
