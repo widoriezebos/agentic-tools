@@ -195,3 +195,37 @@ Checked revision 3 at `38c8690ea`.
    **Test 1:** Yes—clarifies the persistence contract. **Test 2:** Passes; this remains non-material to the provisional catalogue's first use.
 
 VERDICT: 1 folds not confirmed: S58-07
+
+---
+
+# Astra's scoped read of revision 5, the verb statement grammar
+
+Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic chain, against revision 5 at `bf4cb91cf`, after the verbs seat landed on main; the checklist was D1, D4 and the execution layer, nothing else. Verbatim; the disposition is the design's revision 6.
+
+---
+
+Reviewed revision 5 at `bf4cb91cf`. One material finding.
+
+1. **S58-13 — Medium — D1 both admits and refuses the same fields.**
+
+   All nine command names are current. However, the descriptors mark `label`, `unlabel`, `blocked-by`, `blocks` and `sequence` **advanced**: cmd/metasystem/intent_planning.go:40, :98, :124, :194. D1 admits these fields, refuses every advanced flag, and requires a public-only join. Its tool spelling `blockedBy` also differs from the descriptor's `blocked-by`.
+
+   **Failure:** the first `edit G --label ui` is promised by the table but rejected by the refusal rule; implementing the table instead fails the specified join test.
+
+   **Change:** reconcile the accepted forms, refusal rule and join assertion with descriptor visibility, explicitly identifying any admitted advanced data fields and using `blocked-by` at the tool boundary.
+
+   **Test 1:** Yes—admission behavior and required test assertions change. **Test 2:** fails **WORK** for ordinary advertised forms; no independent SAFE failure.
+
+   The nine route-body translations otherwise check out: open, approve, unapprove, prioritize, block, unblock, pause, resume and edit match acts.go:104. Command-equivalent risk parsing has an existing owner, `ParseRiskRecord` (internal/goal/file.go:149); label composition has `ApplyLabelDelta` (internal/goal/goal.go:459), which also rejects contradictory additions/removals.
+
+2. **Refusals — S58-13 applies; otherwise confirmed.** The edit route carries only intent, next step and replacement labels; the unpark route carries no arguments. Authority flags cannot be supplied through these bodies. Public verbs without corresponding acts correctly remain outside this slice. One distinction: `approve --budget` is a deliberate proposal restriction, rather than a route limitation—the route carries a complete budget (acts.go:104), and D1 explicitly reserves its selection to the displayed prefill.
+
+3. **Join-test placement — confirmed.** `cmd/metasystem` can inspect private descriptors and import `uitools`; `commandCatalogue` (cmd/metasystem/ui_describe.go:87) already connects them. The test can inspect the tool server's single catalogue alongside the descriptors without maintaining another inventory. It must consult descriptors directly: `commandCatalogue()` projects usage but omits flag visibility. As specified, the test catches S58-13.
+
+4. **D4 vocabulary — confirmed; alignment remains deferred.** D4 names the equivalent page button in help, while retaining the subject and arguments. Two labels for the same act do not introduce another action or hide what the human approves. **Test 2:** WORK and SAFE pass without it.
+
+5. **`explanation` — confirmed.** The separate field avoids the command's `reason`/`why` alias relationship (intent_planning.go:23). Persisting the explanation internally as `why` creates no input collision. The `blockedBy` spelling discrepancy belongs to S58-13.
+
+6. **Execution layer — confirmed, with narrower browser behavior.** `internal/ui/act` is the appropriate adapter below the CLI: it supplies browser-session authority to the goal owners and records that proof (act.go:544, :515). The descriptor table supplies names; it does not establish complete terminal parity. Differences are concrete: Open: browser fixes human origin; terminal exposes origin with default `main`. Approve: terminal omission selects tier norm; browser uses the displayed tuple. Edit: browser sets `QueuedOnly`; terminal edits have broader state eligibility (act.go:446). Pause: session authority cannot displace another seat's claim (verbs.go:2694). Resume: terminal dispatches parked goals to unpark and budget-stopped goals to `goal.Resume`; browser only unparks (cmd/metasystem/intent_goals.go:711; act.go:319). Unapprove, prioritize, block and unblock: the admitted arguments reach the corresponding shared owners. **Test 2:** WORK and SAFE pass for the existing nine browser acts: unsupported states produce explicit refusals under the already specified engine-state rule; budget-stopped resume remains unavailable from this interface.
+
+VERDICT: 1 material findings (fail test 2): S58-13

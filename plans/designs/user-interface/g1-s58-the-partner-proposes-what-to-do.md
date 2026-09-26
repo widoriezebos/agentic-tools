@@ -210,7 +210,13 @@ and touched no other cited file.
    a help group and a scope; `publicIntentCommands()` (intent.go:902) is
    the 44 current public commands, and `commandCatalogue()`
    (cmd/metasystem/ui_describe.go:87-96) projects them, name, summary,
-   scope and usage, into the Partner's `kit` tool. The nine public forms
+   scope and usage, into the Partner's `kit` tool. A flag's `advanced`
+   mark keeps it off the command's short help, and several data flags
+   carry it: `label`, `unlabel`, `blocked-by`, `blocks`, `sequence` and
+   `priority`-as-a-flag (intent_planning.go:40, 98, 124, 194); the
+   authority flags `by`, `temporary-human-word` and `review-by`, and the
+   hidden `lineage`, `fixture-human-authority` and `approved-ref`, carry
+   it too (intent.go:71-88), as does `under` on approve and resume. The nine public forms
    the interface's nine acts correspond to, from `help all` of the merged
    executable: `open G --intent TEXT --next TEXT --risk ANSWERS --basis
    TEXT` with `--label`, `--blocked-by` and `--blocks` repeatable;
@@ -384,7 +390,7 @@ common case.
 
   | verb statement | route | body |
   |---|---|---|
-  | `open G --intent TEXT --next TEXT --risk severity=N,novelty=N,exposure=N,accumulation=N --basis TEXT [--label L]… [--blocked-by G2]… [--blocks G3]…` | `open-goal` | id, intent, nextStep, the four answers parsed from `risk` as the command parses them, basis, labels, blockedBy, blocks; the tier derived on the card; why empty |
+  | `open G --intent TEXT --next TEXT --risk severity=N,novelty=N,exposure=N,accumulation=N --basis TEXT [--label L]… [--blocked-by G2]… [--blocks G3]…` | `open-goal` | id, intent, nextStep, the four answers parsed from `risk` by the command's own owner (`goal.ParseRiskRecord`, internal/goal/file.go:149), basis, labels, blockedBy, blocks; the tier derived on the card; why empty |
   | `approve G` | `approve-goal` | the tuple the card displays (D3) and never one the Partner names: `--budget` is refused in words, the command's own default being the tier's norm box and the interface's the sheet's prefill |
   | `unapprove G --reason TEXT` | `withdraw-goal` | reason |
   | `prioritize G 1|2|3 [--sequence N]` | `set-goal-priority` | priority, sequence |
@@ -392,29 +398,43 @@ common case.
   | `unblock G --on G2` | `unblock-goal` | blocker G2, with G in the path |
   | `pause G --reason TEXT` | `park-goal` | because |
   | `resume G` | `unpark-goal` | empty |
-  | `edit G [--intent TEXT] [--next TEXT] [--label L]… [--unlabel L]…` | `edit-goal` | intent, nextStep, and the whole label list the route takes, composed at admission from the goal's labels as read plus `--label` minus `--unlabel` |
+  | `edit G [--intent TEXT] [--next TEXT] [--label L]… [--unlabel L]…` | `edit-goal` | intent, nextStep, and the whole label list the route takes, composed at admission by the command's own owner from the goal's labels as read (`goal.ApplyLabelDelta`, internal/goal/goal.go:459, which also refuses a label named in both) |
 
-  The tool's fields are the flags' own names, `intent`, `next`, `risk`,
-  `basis`, `label`, `unlabel`, `blockedBy`, `blocks`, `reason`, `on`,
-  `priority`, `sequence`, beside `verb`, `goal` and `explanation`, the
-  Partner's own words for the card, named so as not to collide with the
-  commands' `--why` alias of `--reason`. A form the interface's route
-  cannot carry is refused in words that say where it can be done:
-  `--next-append`, `--risk`, `--basis`, `--tier` and `--evidence` on an
-  edit; `--budget` and `--under` on an approve; `--under` and
-  `--verified` on a resume; and every advanced or hidden flag, `--by`,
-  `--id`, `--temporary-human-word`, `--review-by`, `--origin`, which is
-  authority or plumbing and never a proposal. A public verb the
-  interface has no act for is refused with that command's own usage line
-  from the catalogue, "not an act the interface has; at a terminal:
-  metasystem abandon G --reason TEXT", so the Partner tells the human
-  where. The catalogue is one table in the tool server and a projection
-  of the descriptor table, held by a join test in `cmd/metasystem`,
-  which has both: every catalogue verb is a public intent command of
-  that name, and every catalogue field is one of that command's public
-  flags or its positional. What the message persists and the runner
-  dispatches on is the route id; the public name is the tool's boundary,
-  so a later rename touches the table and never a persisted proposal.
+  The tool's fields are the flags' own names and spellings, `intent`,
+  `next`, `risk`, `basis`, `label`, `unlabel`, `blocked-by`, `blocks`,
+  `reason`, `on`, `priority`, `sequence`, beside `verb`, `goal` and
+  `explanation`, the Partner's own words for the card, named so as not
+  to collide with the commands' `--why` alias of `--reason`. The
+  descriptors mark five of those data flags advanced, `label`,
+  `unlabel`, `blocked-by`, `blocks` and `sequence` (cmd/metasystem/intent_planning.go:40,
+  98, 124, 194), and the catalogue admits them by name all the same:
+  advanced in the terminal's help means off the short page, not
+  reserved. What is refused is named, not classed: the authority and
+  plumbing flags `--by`, `--id`, `--temporary-human-word`, `--review-by`,
+  `--origin`, `--under`, `--verified`, `--approved-ref`, the `-file`
+  forms, and the forms the interface's route cannot carry, `--next-append`,
+  `--risk`, `--basis`, `--tier` and `--evidence` on an edit, `--budget`
+  on an approve, `--under` and `--verified` on a resume; each refused in
+  words that say where it can be done. A public verb the interface has
+  no act for is refused with that command's own usage line from the
+  catalogue, "not an act the interface has; at a terminal: metasystem
+  abandon G --reason TEXT", so the Partner tells the human where. The
+  catalogue is one table in the tool server and a projection of the
+  descriptor table, held by a join test in `cmd/metasystem`, which has
+  both and reads the descriptors themselves, since `commandCatalogue()`
+  projects usage and not visibility: every catalogue verb is a current
+  public intent command of that name; every catalogue field is a flag of
+  that command that is not hidden, under the descriptor's own spelling,
+  or its positional; and no catalogue field is one of the authority
+  flags named above. The browser's nine acts are narrower than the same
+  nine verbs at a terminal, by design and not by the grammar: an open is
+  of origin human, an edit is queued-only, a pause cannot displace
+  another seat's claim, a resume only unparks and never resumes a
+  budget-stopped goal, and an approve carries the displayed tuple; each
+  narrowing is the engine's refusal in words on the line. What the
+  message persists and the runner dispatches on is the route id; the
+  public name is the tool's boundary, so a later rename touches the
+  table and never a persisted proposal.
 - D2. **The host keeps it whole; the service admits it against the tip and
   carries what it read.** A completed `propose` call is read into
   `Action{verb, goal, fields, why}` beside its look, a failed call
@@ -650,14 +670,17 @@ work-area provider exposes `covered`. Nothing else changes shape.
 
 Go: the tool's catalogue, every verb's required fields and bounds, an
 unknown verb and a foreign field refused in words, a public verb outside
-the catalogue refused with its own usage line, an advanced flag and an
-unsupported form refused by name, `risk` parsed as the command parses
-it, the fixed frame; the join test in `cmd/metasystem` that every
-catalogue verb is a public intent command and every catalogue field one
-of its public flags or its positional; the host reading a completed
+the catalogue refused with its own usage line, each named authority
+flag and each unsupported form refused by name, `label` and `blocked-by`
+admitted, `risk` parsed by `ParseRiskRecord`, the fixed frame; the join
+test in `cmd/metasystem`, reading the descriptors themselves, that every
+catalogue verb is a current public intent command, every catalogue
+field a non-hidden flag of it under its own spelling or its positional,
+and no catalogue field an authority flag; the host reading a completed
 `propose` into a whole action and a failed one into none, the
 explanation opaque past the separator; the service composing an edit's
-label list from the labels read; the service admitting an
+label list through `ApplyLabelDelta` from the labels read, a label in
+both lists refused; the service admitting an
 action whose goal is at the tip with `read` filled, admitting a block
 whose blocker an earlier `open` of the same answer named, refusing an
 `open` of an existing id and an act on an unknown goal with their
@@ -794,6 +817,21 @@ or to give the go, is Wido's.
 Written against the descriptor table at `8a22b6284`, as ruled last:
 D1's table of nine public verb statements, their routes and bodies, the
 refusals for forms the interface cannot carry, the join test, and D4's
-one vocabulary on the card. Not yet read by Astra: a scoped read of
-this unit alone follows, so the whole design has been read by the
-critic.
+one vocabulary on the card.
+
+## Dispositions (Astra's scoped read of the grammar, 2026-09-26)
+
+Checked at `bf4cb91cf`. All nine names and route bodies confirmed; the
+refusals, the join test's placement, D4's vocabulary, the `explanation`
+field and the execution layer confirmed, the last with the note that
+the browser's nine acts are narrower than the terminal's nine verbs,
+now said in D1. One material finding, folded in revision 6:
+
+| id | finding | fold |
+|---|---|---|
+| S58-13 | D1 admitted `label`, `unlabel`, `blocked-by`, `blocks` and `sequence` while refusing "every advanced flag", and the descriptors mark those five advanced; the tool spelt `blockedBy` where the descriptor says `blocked-by` | the refusal names the authority and plumbing flags and the unsupported forms; the five data flags are admitted by name under the descriptor's spelling; the join test reads the descriptors and asserts non-hidden flags under their own spelling and no authority flag (D1, section 6) |
+
+The two existing owners Astra pointed at are taken: `goal.ParseRiskRecord`
+for `risk` and `goal.ApplyLabelDelta` for an edit's labels. The design
+is closed, read whole by the critic across its mechanism and its
+grammar; the build waits on Wido's go.
