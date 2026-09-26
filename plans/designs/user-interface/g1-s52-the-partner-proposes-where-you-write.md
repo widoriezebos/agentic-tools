@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3E64FM8AGQ5K8KSMB2RZ50T
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-26, after the first sitting with g1-s51: "I asked the
@@ -199,3 +199,24 @@ them: two same-named sheets open at once; last-writer saves on one field,
 inherited from Save. The field in hand (D6) was added after the read
 began; Astra read the tip that carried it and called it what serves the
 actual interaction.
+
+## Built (2026-09-26)
+
+Landed on ui-development and main; the slice went live before the read
+and the read's fix landed as a second merge. Built by Claude on Opus,
+read by Codex on Sol under R-124: one material finding, the draft chip
+appeared only with the drawer open, so a sheet opened over a collapsed
+drawer handed itself over invisibly with its ✕ unreachable; the chip now
+stands beside the collapsed composer too. One deferred item folded
+because it cost one line: a suggestion recorded before this build read
+as refused; a refusal is now known by its reason.
+
+Later, when it hurts: "n more" opens the drawer at the next-newest card
+rather than unfolding in place; the chip carries both the field words
+and "writing in <field>".
+
+Departures the read accepted: the fixture needs `--partner fake`; the
+chip appends the field-in-hand clause to its label; g1-s51's "n
+suggestions" link is gone, superseded by the proposal under the field;
+testing.json is unchanged because the touched paths fall to groups that
+run the whole packages.
