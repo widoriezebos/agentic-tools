@@ -58,7 +58,11 @@ with their current owners. No new public verb, certificate or general workflow.
    An existing word reuses its retained tuple; newer goal work never changes it.
    A channel word without that tuple may compose once, but only exact equality to
    its workspace permits adoption. Missing/ambiguous retained identities refuse
-   without guessing; the original exact request can name its composed endpoint.
+   without guessing. Ambiguity offers the existing explicit replacement action
+   for the current composition; the user need not select an internal endpoint hash.
+   For an unbound word, consult retained compositions before treating it as a
+   channel word: reuse the unique tuple, refuse ambiguity, and compose only when
+   none exists. A channel word still requires exact workspace equality.
 4. Validate the tuple against FETCHED code-origin main's projected tree. Product
    movement AFTER composition calls for a person's explicit public
    `land G --exception CODE --replace-exception ID --reason TEXT --by NAME`,
