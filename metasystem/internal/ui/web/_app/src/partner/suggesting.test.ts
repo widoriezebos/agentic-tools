@@ -1,27 +1,38 @@
 import { describe, expect, it } from "vitest";
 
 import type { Suggestion } from "./api";
-import { draftOf, type Field } from "./drafting";
+import { draftOf, valueIn, type Field } from "./drafting";
 import {
+  answered,
   askLine,
   cardHead,
   cardIn,
   closedLine,
+  FEWER,
   folded,
   holding,
   idOf,
+  IN_FLIGHT,
   moreLabel,
   offeredIn,
   mintOpening,
   proposalsFor,
   reach,
   refusedLine,
+  refusedSave,
+  refusedSaveLine,
+  SAVED,
+  saving,
   standingOf,
   undoable,
   undone,
+  unresolvedSave,
+  unresolvedSaveLine,
   usable,
   used,
+  USED_AND_SAVED,
   wasOffered,
+  type Mark,
   type Marks,
   type Offered,
   type Registered,
@@ -69,6 +80,8 @@ function registered(fields: Field[], sheet = "Edit goal"): Registered & { writte
     sheet,
     written,
     read: () => draftOf(OPENING, sheet, [...held].map(([name, value]) => ({ name, value })), [...held.keys()]),
+    // As the sheet holds it: untrimmed, and answered for an empty field too.
+    raw: (field: string) => held.get(field) ?? "",
     set: (field: string, text: string) => {
       written.push([field, text]);
       const was = held.get(field) ?? "";
@@ -76,6 +89,11 @@ function registered(fields: Field[], sheet = "Edit goal"): Registered & { writte
       return was;
     },
   };
+}
+
+/** A mark as it stands after one press, spelled out so the fields are read. */
+function mark(over: Partial<Mark> = {}): Mark {
+  return { previous: null, holds: false, dismissed: false, sent: "", words: "", ...over };
 }
 
 /** The conversation's cards, from one answer's suggestions. */
@@ -92,13 +110,29 @@ describe("a card's standing", () => {
   });
 
   it("says it was used, and says the words are the human's once they have typed", () => {
-    expect(standingOf({ previous: "was", holds: true, dismissed: false }, true)).toBe("used");
-    expect(standingOf({ previous: "was", holds: false, dismissed: false }, true)).toBe("edited");
+    expect(standingOf(mark({ previous: "was", holds: true }), true)).toBe("used");
+    expect(standingOf(mark({ previous: "was" }), true)).toBe("edited");
   });
 
-  it("folds to one line when it is dismissed, whatever else is true of it", () => {
-    expect(standingOf({ previous: null, holds: false, dismissed: true }, true)).toBe("dismissed");
-    expect(standingOf({ previous: "was", holds: true, dismissed: true }, false)).toBe("dismissed");
+  it("folds to one line when it is dismissed, while its sheet is open", () => {
+    expect(standingOf(mark({ dismissed: true }), true)).toBe("dismissed");
+  });
+
+  /**
+   * And the closing wins over the folding, which is the way round it was not.
+   *
+   * A card folded away before its sheet closed stayed folded afterwards, so the
+   * one thing left to do with the words — copy them — appeared only if the human
+   * happened to unfold a line that said nothing but "dismissed" (g1-s52 Built,
+   * deferred). Nothing can be pressed on a closed opening whatever was done with
+   * the card, so what it says is that the sheet is gone.
+   */
+  it("says the sheet is closed even where the human had folded the card away", () => {
+    expect(standingOf(mark({ previous: "was", holds: true, dismissed: true }), false)).toBe("closed");
+    expect(standingOf(mark({ dismissed: true }), false)).toBe("closed");
+    const card = cards(folded({}, idOf("t1", 0), true), [])[0];
+    expect(card.standing).toBe("closed");
+    expect(closedLine(card)).toBe("The Edit goal sheet is closed");
   });
 
   it("says the sheet is closed once its opening has gone", () => {
@@ -117,8 +151,8 @@ describe("a card's standing", () => {
     const card = cards({}, [OPENING], refused())[0];
     expect(card.standing).toBe("refused");
     expect(refusedLine(card)).toBe("Intent is not open for proposals");
-    expect(standingOf({ previous: "was", holds: true, dismissed: true }, true, false)).toBe("refused");
-    expect(standingOf({ previous: null, holds: false, dismissed: false }, false, false)).toBe("refused");
+    expect(standingOf(mark({ previous: "was", holds: true, dismissed: true }), true, false)).toBe("refused");
+    expect(standingOf(mark({ sent: "saved" }), false, false)).toBe("refused");
     // Nothing may be pressed on it, and it reaches no sheet: it carries no
     // opening, so there is nowhere for the words to go.
     expect(usable(card, [OPENING])).toBe(false);
@@ -257,6 +291,26 @@ describe("Undo", () => {
     const marks = used({}, id, "was");
     expect(undoable(cards(marks, [])[0], [])).toBe(false);
   });
+
+  /**
+   * What the field holds is asked of the field, whole.
+   *
+   * The draft the Partner is told is trimmed and drops what is empty, so a field
+   * holding the suggestion's words with the human's own spacing around them reads
+   * through it as the suggestion's words exactly. Undoing it would throw that
+   * spacing away for a difference the comparison could not see, so the
+   * registration answers raw and the store compares whole (g1-s51 Built).
+   */
+  it("asks the field for its raw value rather than the trimmed draft", () => {
+    const sheet = registered([{ name: "Intent", value: `  ${SAID}  ` }]);
+    expect(valueIn(sheet.read(), "Intent")).toBe(SAID);
+    expect(sheet.raw("Intent")).toBe(`  ${SAID}  `);
+    expect(sheet.raw("Intent") === SAID).toBe(false);
+    // And an empty field answers, where the draft would not carry it at all.
+    const empty = registered([{ name: "Next step", value: "" }]);
+    expect(valueIn(empty.read(), "Next step")).toBe("");
+    expect(empty.raw("Next step")).toBe("");
+  });
 });
 
 /**
@@ -285,6 +339,9 @@ describe("the proposals under a field", () => {
     expect(proposalsFor(offered, OPENING, "Labels")).toEqual([]);
     expect(moreLabel(1)).toBe("1 more");
     expect(moreLabel(3)).toBe("3 more");
+    // Unfolded, the same line folds them away again: they are shown in place,
+    // under the newest, rather than in the Partner's own column.
+    expect(FEWER).toBe("Fewer");
   });
 
   /**
@@ -314,6 +371,90 @@ describe("the proposals under a field", () => {
   // because a block that trusted its caller would offer Use this into nothing.
   it("drop a card whose sheet has closed", () => {
     expect(proposalsFor(cards({}, []), OPENING, "Intent")).toEqual([]);
+  });
+});
+
+/**
+ * Use and save: one press, two acts, and the words say which of them landed.
+ *
+ * The press belongs to the sheet — it builds the next draft, sets it and sends
+ * that value — and what is here is everything the card has to be able to say
+ * about it afterwards. A card that said "Used and saved" of a refused request
+ * would be the one thing g1-s52 refused to build (Astra F2), so saved is a
+ * standing of its own and the other two answers are shown in their own words.
+ */
+describe("Use and save", () => {
+  const id = idOf("t1", 0);
+
+  it("puts the words in the field and says so while the save is in flight", () => {
+    const marks = saving({}, id, "The board reads the ledger somehow.");
+    const card = cards(marks)[0];
+    expect(card.standing).toBe("used");
+    expect(card.mark.sent).toBe("saving");
+    expect(card.mark.previous).toBe("The board reads the ledger somehow.");
+    // And no Undo, because the words are already on their way to the ledger.
+    expect(undoable(card, [OPENING])).toBe(false);
+    // Nor is it used a second time.
+    expect(usable(card, [OPENING])).toBe(false);
+  });
+
+  it("says Used and saved on the one outcome that is a save", () => {
+    const marks = answered(saving({}, id, "was"), id, SAVED);
+    const card = cards(marks)[0];
+    expect(card.standing).toBe("saved");
+    expect(card.mark.words).toBe("");
+    expect(USED_AND_SAVED).toBe("Used and saved");
+    expect(undoable(card, [OPENING])).toBe(false);
+  });
+
+  /**
+   * The words stay in the field and the refusal is said beside them, in the
+   * engine's own sentence: the field holds what the Partner wrote, because the
+   * human put it there, and the ledger holds nothing, because it said no.
+   */
+  it("keeps the words and says why the save was refused", () => {
+    const refusal = "goal ui-1 is approved: withdraw the approval, edit it, then approve it again";
+    const marks = answered(saving({}, id, "was"), id, refusedSave(refusal));
+    const card = cards(marks)[0];
+    expect(card.standing).toBe("used");
+    expect(card.mark.sent).toBe("refused");
+    expect(card.mark.words).toBe(refusal);
+    expect(refusedSaveLine(refusal)).toBe(`Used; the save was refused: ${refusal}`);
+    expect(undoable(card, [OPENING])).toBe(false);
+  });
+
+  it("never calls an unconfirmed save a refusal", () => {
+    const said = "the act landed at tip 6984cde, but its authority proof did not: do not run it again";
+    const marks = answered(saving({}, id, "was"), id, unresolvedSave(said));
+    const card = cards(marks)[0];
+    expect(card.mark.sent).toBe("unresolved");
+    expect(unresolvedSaveLine(said)).toBe(`Used; the save was not confirmed: ${said}`);
+    expect(unresolvedSaveLine(said)).not.toContain("refused");
+  });
+
+  /**
+   * A save closes the sheet it saved, so the card in the transcript is the only
+   * place the press is still on screen. It has to keep saying what happened
+   * rather than becoming "the Edit goal sheet is closed" the instant it worked.
+   */
+  it("says Used and saved after the sheet it saved has closed", () => {
+    const marks = answered(saving({}, id, "was"), id, SAVED);
+    expect(cards(marks, [])[0].standing).toBe("saved");
+    // A refused save leaves the sheet open, so that card is where it was.
+    const stopped = answered(saving({}, id, "was"), id, refusedSave("no"));
+    expect(cards(stopped, [])[0].standing).toBe("closed");
+  });
+
+  it("stands under its field while the sheet is still there", () => {
+    const marks = answered(saving({}, id, "was"), id, SAVED);
+    const standing = proposalsFor(cards(marks), OPENING, "Intent");
+    expect(standing.map((card) => card.standing)).toEqual(["saved"]);
+  });
+
+  // The words a second press in the same render is answered with, kept here so
+  // the sheet and the block cannot say it two different ways.
+  it("answers a second press while one is in flight in one sentence", () => {
+    expect(refusedSave(IN_FLIGHT)).toEqual({ kind: "refused", words: "a save is in flight" });
   });
 });
 

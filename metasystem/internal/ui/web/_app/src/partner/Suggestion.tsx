@@ -11,6 +11,10 @@ import {
   mintOpening,
   NOT_OFFERED,
   refusedLine,
+  refusedSaveLine,
+  SAVING,
+  unresolvedSaveLine,
+  USED_AND_SAVED,
 } from "./suggesting";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
@@ -51,10 +55,15 @@ export function useOpening(): string {
 /**
  * One card, in the transcript, under the answer that offered it.
  *
- * Its five shapes are the five things that can be true of one suggestion: it was
- * not offered at all, it is waiting for the human, they used it, they folded it
- * away, or the editor it was for has been closed and all that is left to do with
- * the words is copy them.
+ * Its six shapes are the six things that can be true of one suggestion: it was
+ * not offered at all, it is waiting for the human, they used it, they used it and
+ * saved it in one press, they folded it away, or the editor it was for has been
+ * closed and all that is left to do with the words is copy them.
+ *
+ * The saved one is why this card outlives its sheet with something to say. A save
+ * closes the sheet it saved, so the record of that press is here and nowhere else
+ * (g1-s56 D2); it is also the one shape that offers nothing, because the words are
+ * in the field and in the ledger and there is nothing left to decide.
  *
  * The card is the record. Since g1-s52 the offer itself stands under the field it
  * is for, inside the sheet, and this is where the conversation keeps it — both
@@ -131,7 +140,21 @@ export function SuggestionCard({ id }: { id: string }) {
             </Button>
           </>
         )}
-        {card.standing === "used" && (
+        {card.standing === "saved" && <span className="ms-suggestion-said">{USED_AND_SAVED}</span>}
+        {card.standing === "used" && card.mark.sent === "saving" && (
+          <span className="ms-suggestion-said">{SAVING}</span>
+        )}
+        {card.standing === "used" && card.mark.sent === "refused" && (
+          <span className="ms-suggestion-said" role="status">
+            {refusedSaveLine(card.mark.words)}
+          </span>
+        )}
+        {card.standing === "used" && card.mark.sent === "unresolved" && (
+          <span className="ms-suggestion-said" role="status">
+            {unresolvedSaveLine(card.mark.words)}
+          </span>
+        )}
+        {card.standing === "used" && card.mark.sent === "" && (
           <>
             <span className="ms-suggestion-said">Used</span>
             <Button

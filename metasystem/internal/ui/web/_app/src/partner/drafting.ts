@@ -57,8 +57,19 @@ export type SheetDraft = {
 /** How much of one field's value the chip shows before it trails off. */
 const CHIP_FIELD = 40;
 
-/** How many of a sheet's fields the chip names. A chip is a label, not a form. */
+/**
+ * How many of a sheet's fields the chip names, before and after a field has held
+ * the caret. A chip is a label, not a form.
+ *
+ * It drops to one once a field is in hand, because the chip then has something
+ * better to say with the room: which field a request naming none is about. What
+ * the one remaining field is for is telling two drafts apart — the goal an edit
+ * is of, the id a new goal is being opened under — and the words of the field the
+ * human is writing in are on the screen in front of them, in the sheet itself
+ * (g1-s52 Built, deferred).
+ */
 const CHIP_FIELDS = 2;
+const CHIP_FIELDS_WRITING = 1;
 
 /**
  * The draft as it will travel: the sheet's name, the opening it came from, the
@@ -102,12 +113,17 @@ export function offersDraft(draft: SheetDraft): boolean {
 
 /**
  * What the chip says: the sheet, then the first of its fields, then where the
- * caret is — so a human scanning the composer reads "Draft: New goal ·
- * refund-worker · Refunds are issued within a day… · writing in Intent" and
- * knows which sheet, which draft, and what a request naming no field will mean.
+ * caret is — so a human scanning the composer reads "Draft: Edit goal · g1-s12 ·
+ * writing in Intent" and knows which sheet, which draft, and what a request
+ * naming no field will mean.
+ *
+ * Before any field has held the caret there is nothing to say about where the
+ * human is, so the room goes to a second field instead: "Draft: New goal ·
+ * refund-worker · Refunds are issued within a day… · writing in nothing yet".
  */
 export function draftLabel(draft: SheetDraft): string {
-  const said = draft.fields.slice(0, CHIP_FIELDS).map((field) => firstWords(field.value));
+  const room = draft.writing.trim() === "" ? CHIP_FIELDS : CHIP_FIELDS_WRITING;
+  const said = draft.fields.slice(0, room).map((field) => firstWords(field.value));
   return ["Draft: " + draft.sheet, ...said, writingClause(draft.writing)].join(" · ");
 }
 

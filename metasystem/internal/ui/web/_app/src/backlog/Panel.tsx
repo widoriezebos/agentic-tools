@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import type { Row } from "./api";
 import { AskAboutSheet } from "../partner/AskSheet";
 import type { Field } from "../partner/drafting";
+import type { Outcome } from "../partner/suggesting";
 import { useOpenSheet } from "../partner/store";
 import { Button } from "../shell/controls";
 import { DEFAULT_MODALITY, useOpener, useWorkModal, type Modality } from "../shell/workmodal";
@@ -60,6 +61,7 @@ export function Panel({
   opening,
   writable = [],
   set,
+  save,
   busy = false,
   onClose,
   children,
@@ -125,6 +127,17 @@ export function Panel({
    * It is the sheet's own, because the sheet owns the draft.
    */
   set?: (field: string, text: string) => string;
+  /**
+   * Put words in one of those fields and send the sheet, in one act, and answer
+   * what the sending did.
+   *
+   * Only a sheet that owns a submission path supplies one — one that takes the
+   * next draft explicitly, guards a save in flight and reports its real outcome
+   * — and a proposal under a field of a sheet that supplies none is offered Use
+   * this alone. This panel neither sends nor knows how: it hands the sheet's own
+   * path to the one place a press can reach it.
+   */
+  save?: (field: string, text: string) => Promise<Outcome>;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -209,6 +222,7 @@ export function Panel({
               opening={opening}
               writable={writable}
               set={set}
+              save={save}
             />
           )}
         </div>

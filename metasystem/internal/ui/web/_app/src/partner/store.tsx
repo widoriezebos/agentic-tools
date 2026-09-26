@@ -24,21 +24,23 @@ import {
   passageIn,
   refreshDraft,
   remove,
+  retireOnOpeningClosed,
   retireOnSent,
-  retireOnSheetClosed,
   subjectIn,
   type Attachment,
 } from "./attachments";
 import { captureOf, readingMoved } from "./capture";
 import { chipped, insertAt } from "./composing";
-import { valueIn, type SheetDraft } from "./drafting";
+import { type SheetDraft } from "./drafting";
 import {
+  answered,
   cardIn,
   folded,
   holding,
   NOWHERE,
   reach,
   offeredIn,
+  saving,
   undoable,
   undone,
   usable,
@@ -170,8 +172,14 @@ type Partner = {
    * bringing it up to date.
    */
   noteDraft: (draft: SheetDraft) => void;
-  /** Stop offering this sheet's draft, which is what its unmount does. */
-  dropDraft: (sheet: string) => void;
+  /**
+   * Stop offering this opening's draft, which is what its unmount does.
+   *
+   * By the opening and not by the sheet's name: two edit sheets can stand open
+   * over two goals, and the first one to close must leave the other one's draft
+   * exactly where it is (Astra F2 on g1-s56).
+   */
+  dropDraft: (opening: string) => void;
   /**
    * One opening of an editor, while it is on screen: how it reads its own
    * fields right now, so that a question carries the draft as the sheet stands
@@ -197,6 +205,15 @@ type Partner = {
    * same name opened again — because there is nothing left to write into.
    */
   use: (id: string) => void;
+  /**
+   * Use this and save, as one press: the words go into the field and the sheet
+   * sends what it would then hold, and the card says which of the two happened.
+   *
+   * It does nothing where the opening has gone, where the card was already used,
+   * or where the sheet offers no submission path — which is every sheet but the
+   * one that has one, so every other proposal is offered Use this alone.
+   */
+  useAndSave: (id: string) => Promise<void>;
   /** Undo: what the field held at the moment of use goes back. */
   undo: (id: string) => void;
   /** Dismiss: the card folds to one line. */
@@ -336,6 +353,7 @@ const nothing: Partner = {
   offerFields: () => {},
   offered: [],
   use: () => {},
+  useAndSave: async () => {},
   undo: () => {},
   dismiss: () => {},
   reopen: () => {},
@@ -688,8 +706,16 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setAttachments((held) => refreshDraft(held, draft));
   }, []);
 
-  const dropDraft = useCallback((sheet: string) => {
-    setAttachments((held) => remove(held, idFor("draft", sheet)));
+  /**
+   * One opening of a sheet has gone, so the draft it handed over goes with it.
+   *
+   * It is the second of the two retiring events, and it is the lifetime that
+   * decides: the attachment says which opening it lives by, so nothing here
+   * knows what kinds of attachment there are, and a draft from another opening
+   * of a sheet of the same name stands (Astra F2 on g1-s56).
+   */
+  const dropDraft = useCallback((opening: string) => {
+    setAttachments((held) => retireOnOpeningClosed(held, opening));
   }, []);
 
   /**
@@ -753,6 +779,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * that field, and a field whose link is not on screen — a sheet's disclosure
    * folded away — would otherwise have the human's own words replaced in the
    * name of undoing ours. The field's own answer decides.
+   *
+   * It asks for the field's RAW value and compares it whole. The draft the
+   * Partner is told is trimmed, and a field holding the suggestion's words with
+   * the human's own spacing around them is not the suggestion's words: undoing
+   * it would throw their spacing away for a difference a trimmed comparison
+   * cannot see (g1-s51 Built, deferred).
    */
   const undo = useCallback((id: string) => {
     const card = cardIn(offered, id);
@@ -760,12 +792,43 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     if (card === undefined || registered === null || !undoable(card, [...openings.current.keys()])) {
       return;
     }
-    if (valueIn(registered.read(), card.field) !== card.text.trim()) {
+    if (registered.raw(card.field) !== card.text) {
       setMarks((held) => holding(held, offered, card.opening, card.field, ""));
       return;
     }
     registered.set(card.field, card.mark.previous ?? "");
     setMarks((held) => undone(held, id));
+  }, [offered]);
+
+  /**
+   * Use this and save, as one press.
+   *
+   * The sheet does both halves, because only the sheet can: it builds the draft
+   * it would send from the words it is putting in, and sends that value rather
+   * than waiting for a render to tell it what it now holds (Astra F1 on g1-s52).
+   * What is done here is the bookkeeping either way — the words are in the field
+   * the instant the press lands, which is why the mark is written before the
+   * sending answers, and what the sending answered is written on the card when
+   * it does. Undo is not offered in between or after: the words are already on
+   * their way, and this interface has no undo for an act (g1-s56 D2).
+   *
+   * A proposal whose sheet offers no submission path is not offered this at all,
+   * so reaching here without one is nothing happening rather than a press that
+   * silently uses the words without saving them.
+   */
+  const useAndSave = useCallback(async (id: string) => {
+    const card = cardIn(offered, id);
+    const registered = reach(openings.current, card);
+    if (card === undefined || registered?.save === undefined) {
+      return;
+    }
+    if (!usable(card, [...openings.current.keys()])) {
+      return;
+    }
+    const previous = registered.raw(card.field);
+    setMarks((held) => saving(held, id, previous));
+    const outcome = await registered.save(card.field, card.text);
+    setMarks((held) => answered(held, id, outcome));
   }, [offered]);
 
   const dismiss = useCallback((id: string) => {
@@ -811,12 +874,11 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         const at = held.lastIndexOf(name);
         return at < 0 ? held : [...held.slice(0, at), ...held.slice(at + 1)];
       });
-      // The second of the two retiring events. A draft's life is its sheet's:
-      // cancelled, the thing it described is gone; opened, it is a goal now.
-      // Either way the chip would describe nothing (Wido, 2026-09-24). It is
-      // the lifetime that decides, so a draft from another sheet stands and
-      // nothing here knows what kinds of attachment there are.
-      setAttachments((held) => retireOnSheetClosed(held, name));
+      // And nothing else. Retiring the draft is the OPENING's event, not this
+      // one: two sheets of one name are the same answer to "where is the human"
+      // and two different drafts, so a name closing here would take the draft
+      // of the one still standing (Astra F2 on g1-s56). It is done where the
+      // opening is known, which is the sheet's own unmount in AskSheet.
     };
   }, []);
 
@@ -1127,7 +1189,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       store, busy: running, draft, setDraft, send, stop, sending,
       attachments, detach, chosen, ask, clearChosen, passage, askPassage,
       sheetDraft, askAbout, handOver, noteDraft, dropDraft, offerFields, noteSheet,
-      offered, use, undo, dismiss, reopen, show, showing, noteField, revealed,
+      offered, use, useAndSave, undo, dismiss, reopen, show, showing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
@@ -1137,7 +1199,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
       clearChosen, passage, askPassage, sheetDraft, askAbout, handOver, noteDraft,
       dropDraft, offerFields, noteSheet,
-      offered, use, undo, dismiss, reopen, show, showing, noteField, revealed,
+      offered, use, useAndSave, undo, dismiss, reopen, show, showing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
       sitting, begin, end, sittingRefusal, sittingBusy,

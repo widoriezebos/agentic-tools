@@ -395,6 +395,11 @@ export function DecisionsPane() {
             setEditing(null);
             reload();
           }}
+          // A save nobody could confirm may have landed, so this page reads its
+          // own payload again and leaves the sheet, and its words, where they are.
+          onReread={() => {
+            reload();
+          }}
         />
       )}
     </Pane>

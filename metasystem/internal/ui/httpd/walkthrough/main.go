@@ -1495,11 +1495,22 @@ func (l *ledger) unpark(id string) error {
 	return nil
 }
 
+// refusesEdit is the one goal whose edit this fixture always refuses.
+//
+// A save that lands and a save that is refused are two different things for a
+// human to read, and since g1-s56 one press can make either of them happen from
+// the proposal under a field. Every other queued goal here saves, so without one
+// that says no there would be no way to stand in front of the refusal — the block
+// keeping the Partner's words while the ledger keeps nothing, in the engine's own
+// sentence. It is the fixture's own rule and no engine's, which is why it says so.
+const refusesEdit = "g1-s18"
+
 // edit is the fixture's own goal edit, holding the three rules the page
 // reads: only a queued goal nobody has approved is edited here, each of the
 // other three states refuses in the engine's own sentence, and the label
 // grammar is the engine's. Only the fields the sheet sent are written, so a
-// walkthrough can show that an untouched field is left exactly as it was.
+// walkthrough can show that an untouched field is left exactly as it was — and
+// one goal refuses whatever is sent, so a refused save can be read too.
 func (l *ledger) edit(id string, edited act.Edited) error {
 	if edited.Intent == nil && edited.NextStep == nil && edited.Labels == nil {
 		return &act.Refusal{Kind: act.KindRequest, Code: "no-change",
@@ -1508,6 +1519,10 @@ func (l *ledger) edit(id string, edited act.Edited) error {
 	file := l.tree.Live[id]
 	if file == nil {
 		return refused("goal %s is not live; the archive edits through reopen", id)
+	}
+	if id == refusesEdit {
+		return refused("goal %s is not edited from the interface in this walkthrough: "+
+			"it is the fixture's canned refusal, so that a refused save can be read where it happened", id)
 	}
 	switch {
 	case file.Approved != nil || file.State == goal.StateApproved:

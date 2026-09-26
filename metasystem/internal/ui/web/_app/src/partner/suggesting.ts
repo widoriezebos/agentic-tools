@@ -9,7 +9,7 @@ import type { SheetDraft } from "./drafting";
  * human handed over. Nothing enters that field on its own: the card waits in
  * the drawer, the field says one is waiting, and Use this is the human's press.
  * This file is the whole of the rules around that press — what identifies a
- * card, which of its five standings it is in, whether Use this can still be
+ * card, which of its standings it is in, whether Use this can still be
  * done, whether Undo is still honest, and how many are waiting for one field —
  * so that every one of them can be read, and tested, without a browser.
  *
@@ -41,12 +41,79 @@ export type Registered = {
   /** Its fields as they stand, for the question that carries them. */
   read: () => SheetDraft;
   /**
+   * What one field holds, exactly as the sheet holds it: not trimmed, and there
+   * whether or not there is anything in it.
+   *
+   * It is what Undo compares against, and it is why Undo does not ask the draft
+   * above. A draft is what the Partner is told — its fields trimmed, its empty
+   * ones left out — and a field differing from the suggestion only in the
+   * whitespace around it would pass a trimmed comparison and have the human's
+   * own spacing thrown away in the name of undoing ours (g1-s51 Built).
+   */
+  raw: (field: string) => string;
+  /**
    * Put this text in that field, whole, and answer what the field held before.
    * The previous value is what Undo puts back, so it is read from the sheet at
    * the moment of the press rather than remembered from earlier.
    */
   set: (field: string, text: string) => string;
+  /**
+   * Put this text in that field and send the sheet, in one act, and answer what
+   * the sending did — where the sheet has a submission path at all.
+   *
+   * It is the sheet's own, because only the sheet can build the draft it would
+   * send. It takes the next draft explicitly rather than reading it back from a
+   * render that has not happened yet, guards a save in flight itself, and
+   * answers what it did rather than that it tried: the three things Astra's read
+   * of g1-s52 named as why one press could not do both before (F1, F2). A sheet
+   * that supplies none is offered Use this alone.
+   */
+  save?: (field: string, text: string) => Promise<Outcome>;
 };
+
+/**
+ * What one submission of a sheet did, in the three answers that can be told
+ * apart from this side of the wire.
+ *
+ * Saved is the ledger's own confirmation, and nothing else is. Refused is a no
+ * with nothing behind it: this page's own validation, or a definite rejection
+ * from the engine. Unresolved is everything that is neither — an answer that
+ * does not say the act was refused, a transport that failed, a body nobody
+ * could read — and it is the one the page must never send again by itself,
+ * because the act may have landed.
+ *
+ * The route has no unresolved of its own: the act layer collapses every
+ * publication error into a refusal, and one of its answers says the act landed
+ * and must not be repeated (internal/ui/act/act.go settle). So the mapping from
+ * what comes back to these three is the page's own, and it is conservative —
+ * what is not confirmed and not definitely rejected is unresolved (Astra F1 on
+ * g1-s56). It is written once, in src/backlog/editing.ts.
+ */
+export type Outcome =
+  | { kind: "saved" }
+  | { kind: "refused"; words: string }
+  | { kind: "unresolved"; words: string };
+
+/**
+ * The two outcomes that carry words: everything a save can answer but yes.
+ *
+ * It is what the mapping from a failed request answers with, so that a caller
+ * showing the words does not have to ask whether there are any.
+ */
+export type NotSaved = Extract<Outcome, { words: string }>;
+
+/** The ledger confirmed it. */
+export const SAVED: Outcome = { kind: "saved" };
+
+/** A no, in the words of whoever said it, with nothing landed behind it. */
+export function refusedSave(words: string): NotSaved {
+  return { kind: "refused", words };
+}
+
+/** Neither a yes nor a no: the page rereads and never sends it again itself. */
+export function unresolvedSave(words: string): NotSaved {
+  return { kind: "unresolved", words };
+}
 
 /**
  * One opening's id, minted when a sheet mounts.
@@ -89,6 +156,16 @@ export function writingIn(writing: InHand, opening: string): string {
   return writing.opening === opening ? writing.field : "";
 }
 
+/**
+ * Where a save asked for in the same press as Use this stands, or "" where no
+ * save was asked for at all.
+ *
+ * It is kept on the card rather than in the block, because the card outlives the
+ * block: a save closes the sheet, and "Used and saved" has to still be true in
+ * the transcript afterwards (g1-s56 D2).
+ */
+export type Sent = "" | "saving" | "saved" | "refused" | "unresolved";
+
 /** What the human has done with one suggestion. */
 export type Mark = {
   /**
@@ -100,12 +177,16 @@ export type Mark = {
   holds: boolean;
   /** Folded to one line by Dismiss, and unfolded by pressing that line. */
   dismissed: boolean;
+  /** Where a save asked for with the same press stands, or "" for none. */
+  sent: Sent;
+  /** The words that save answered with, for the two answers that carry them. */
+  words: string;
 };
 
 /** Every card's mark, by the card's own id. A card with none is waiting. */
 export type Marks = Readonly<Record<string, Mark>>;
 
-const WAITING: Mark = { previous: null, holds: false, dismissed: false };
+const WAITING: Mark = { previous: null, holds: false, dismissed: false, sent: "", words: "" };
 
 /** One turn's suggestions, as the transcript and the running turn carry them. */
 export type Carried = { turn: string; suggestions: readonly Suggestion[] };
@@ -113,12 +194,13 @@ export type Carried = { turn: string; suggestions: readonly Suggestion[] };
 /**
  * Where a card stands.
  *
- * Six standings and five cards: used and edited are one card saying two
+ * Seven standings and six cards: used and edited are one card saying two
  * different things, because what changed is not the card but whether Undo would
- * still be honest. Refused is the fifth card, and it is the only one that says
- * nothing was offered at all.
+ * still be honest. Refused is the card that says nothing was offered at all, and
+ * saved is the card whose words went into a field and into the ledger by one
+ * press.
  */
-export type Standing = "refused" | "waiting" | "used" | "edited" | "dismissed" | "closed";
+export type Standing = "refused" | "saved" | "waiting" | "used" | "edited" | "dismissed" | "closed";
 
 /** One card: the suggestion, what identifies it, and where it stands. */
 export type Offered = Suggestion & {
@@ -136,21 +218,29 @@ export type Offered = Suggestion & {
  * The order is the order a human would read them in. Refused first, and it wins
  * over everything: a suggestion the service did not offer is not something the
  * human dismissed, used or lost to a closing sheet — it never reached them, and
- * the only true thing to say about it is why. Dismissed next: folding the card
- * was their own act, and an act of theirs is not undone by a sheet closing.
- * Closed after that: a card whose editor has gone cannot offer Use this or Undo,
- * whatever was done with it, and offering either would be offering to write into
- * something that is not there. Then used, and then waiting.
+ * the only true thing to say about it is why. Saved next, and it outranks the
+ * closing sheet on purpose: a save closes the sheet it saved, so a card that
+ * became "the Edit goal sheet is closed" the instant its words landed would be
+ * telling a human the one thing they least need to hear about the act they just
+ * made (g1-s56 D2). Closed after that: a card whose editor has gone cannot
+ * offer Use this or Undo, and offering either would be offering to write into
+ * something that is not there — which is also why closed outranks dismissed
+ * now, so that a card folded away before its sheet closed offers Copy rather
+ * than staying folded over nothing (g1-s52 Built). Then dismissed, then used,
+ * then waiting.
  */
 export function standingOf(mark: Mark, open: boolean, offered = true): Standing {
   if (!offered) {
     return "refused";
   }
-  if (mark.dismissed) {
-    return "dismissed";
+  if (mark.sent === "saved") {
+    return "saved";
   }
   if (!open) {
     return "closed";
+  }
+  if (mark.dismissed) {
+    return "dismissed";
   }
   if (mark.previous === null) {
     return "waiting";
@@ -205,12 +295,14 @@ export function cardIn(offered: readonly Offered[], id: string): Offered | undef
  * is writing, not in a column whose default height hides a card behind the
  * composer (g1-s52 §1, D2).
  *
- * Three standings belong here and three do not. Waiting is the offer; used and
+ * Four standings belong here and three do not. Waiting is the offer; used and
  * edited are the same card still saying what happened and, while Undo is honest,
- * offering it. Dismissed was the human folding it away, and a block that kept
- * showing it would be refusing their act; closed cannot happen at all, because a
- * closed opening is a sheet that is not on screen to render this; and refused was
- * never offered for a field, so it belongs only where the answer is read.
+ * offering it; saved is the press that did both, and it says so here as well as
+ * on the card, for as long as the sheet it saved is still on screen. Dismissed
+ * was the human folding it away, and a block that kept showing it would be
+ * refusing their act; closed cannot happen at all, because a closed opening is a
+ * sheet that is not on screen to render this; and refused was never offered for
+ * a field, so it belongs only where the answer is read.
  */
 export function proposalsFor(
   offered: readonly Offered[],
@@ -222,7 +314,10 @@ export function proposalsFor(
       (card) =>
         card.opening === opening &&
         card.field === field &&
-        (card.standing === "waiting" || card.standing === "used" || card.standing === "edited"),
+        (card.standing === "waiting" ||
+          card.standing === "used" ||
+          card.standing === "edited" ||
+          card.standing === "saved"),
     )
     .reverse();
 }
@@ -261,9 +356,18 @@ export function usable(card: Offered | undefined, openings: readonly string[]): 
   return card.mark.previous === null && openings.includes(card.opening);
 }
 
-/** Whether Undo can still be done: it was used, and the field still holds it. */
+/**
+ * Whether Undo can still be done: it was used, the field still holds it, and no
+ * save was asked for in the same press.
+ *
+ * The last clause is why one press that saves does not offer an undo. What Undo
+ * puts back is a field's words, and a save has already carried the other words
+ * past this page: an undo of the field alone would leave the sheet and the
+ * ledger saying different things, and an undo of the act is not something this
+ * interface has (g1-s56 D2).
+ */
 export function undoable(card: Offered | undefined, openings: readonly string[]): boolean {
-  if (card === undefined || card.mark.dismissed) {
+  if (card === undefined || card.mark.dismissed || card.mark.sent !== "") {
     return false;
   }
   return card.mark.previous !== null && card.mark.holds && openings.includes(card.opening);
@@ -271,7 +375,29 @@ export function undoable(card: Offered | undefined, openings: readonly string[])
 
 /** Used: the field held this before, and it holds the suggestion now. */
 export function used(marks: Marks, id: string, previous: string): Marks {
-  return { ...marks, [id]: { previous, holds: true, dismissed: false } };
+  return { ...marks, [id]: { previous, holds: true, dismissed: false, sent: "", words: "" } };
+}
+
+/**
+ * Used, with a save asked for in the same press: the words are in the field and
+ * the sheet is sending them.
+ *
+ * It is written before the sending answers, because it is already true — the
+ * field holds the Partner's words — and because what it withholds matters: while
+ * a save is in flight the card offers no Undo, so nothing can put the human's
+ * old words back into a field whose new ones are already on their way.
+ */
+export function saving(marks: Marks, id: string, previous: string): Marks {
+  return { ...marks, [id]: { previous, holds: true, dismissed: false, sent: "saving", words: "" } };
+}
+
+/** What that save answered, on the card that asked for it. */
+export function answered(marks: Marks, id: string, outcome: Outcome): Marks {
+  const mark = marks[id] ?? WAITING;
+  return {
+    ...marks,
+    [id]: { ...mark, sent: outcome.kind, words: outcome.kind === "saved" ? "" : outcome.words },
+  };
 }
 
 /** Undone: the card waits again, because the field holds the human's words. */
@@ -340,6 +466,48 @@ export function refusedLine(card: Suggestion & { reason?: string }): string {
 /** What stands under a proposal while older ones for that field are behind it. */
 export function moreLabel(count: number): string {
   return `${String(count)} more`;
+}
+
+/** The same line, once they are unfolded: pressing it folds them away again. */
+export const FEWER = "Fewer";
+
+/** What the older proposals head themselves with, once they are unfolded. */
+export const PROPOSED_EARLIER = "The Partner proposed earlier";
+
+/** The second button under a proposal, where the sheet can send what it holds. */
+export const USE_AND_SAVE = "Use and save";
+
+/** What the card and the block say when one press did both, and it landed. */
+export const USED_AND_SAVED = "Used and saved";
+
+/** What they say in between: the words are in, and the sheet is sending them. */
+export const SAVING = "Used · saving…";
+
+/** A second press while one save is in flight, in the words it is answered in. */
+export const IN_FLIGHT = "a save is in flight";
+
+/**
+ * The words went in and the save was refused: what the block says, with the
+ * refusal's own sentence after it.
+ *
+ * The two halves are said separately because they are separately true. The
+ * field holds the Partner's words — nobody is taking them back — and the ledger
+ * holds nothing, for the reason the engine gave. Save at the foot of the sheet
+ * is still there, under its normal validation, which is what a human does next.
+ */
+export function refusedSaveLine(words: string): string {
+  return `Used; the save was refused: ${words}`;
+}
+
+/**
+ * The words went in and nobody can say whether the save landed.
+ *
+ * It never says refused, because that would be a claim about the ledger this
+ * page cannot make, and it never invites another press: the page has reread
+ * what the ledger says and sends nothing again by itself (g1-s56 D1).
+ */
+export function unresolvedSaveLine(words: string): string {
+  return `Used; the save was not confirmed: ${words}`;
 }
 
 /**

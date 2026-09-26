@@ -1,13 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { usePartner } from "./store";
 import {
   ASK_THE_PARTNER,
   askLine,
   EDITED_SINCE,
+  FEWER,
   moreLabel,
+  PROPOSED_EARLIER,
   PROPOSES,
   proposalsFor,
+  refusedSaveLine,
+  SAVING,
+  unresolvedSaveLine,
+  USE_AND_SAVE,
+  USED_AND_SAVED,
+  type Offered,
 } from "./suggesting";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
@@ -24,12 +32,15 @@ import { Button } from "../shell/controls";
  * under its field. The card in the transcript stays as the record, and both read
  * the same store state, so the two cannot disagree about one proposal.
  *
- * Nothing here saves and nothing here writes by itself. Use this puts the words
- * in the field and stops; Save is the human's, one press away, at the foot of the
- * same sheet. There is deliberately no button that does both: the sheet's save
- * reads its draft from the render and guards busy on its own button, so a second
- * caller would save the previous words or report a save it cannot confirm (Astra
- * F1, F2). That press waits for a submission path that can tell the truth.
+ * Nothing here writes by itself, and nothing here knows how to save. Use this
+ * puts the words in the field and stops; Save is the human's, at the foot of the
+ * same sheet. Beside it, where the sheet owns a submission path that takes the
+ * next draft explicitly and reports what the ledger did with it, stands the one
+ * press that does both: Use and save (g1-s56 D2). What it says afterwards is what
+ * actually happened — used and saved, or used with the save refused in the
+ * engine's own words, or used with the save unconfirmed — because the sheet
+ * answers with its outcome rather than with the fact that it tried (Astra F1, F2
+ * on g1-s52, answered by the path this block now calls).
  */
 
 /**
@@ -87,11 +98,17 @@ export function FieldProposals({
   opening,
   field,
   value,
+  saves = false,
 }: {
   opening: string;
   field: string;
   /** What the field holds right now. */
   value: string;
+  /**
+   * Whether this sheet can send what it holds, which is what makes Use and save
+   * possible. A sheet without a submission path offers Use this alone.
+   */
+  saves?: boolean;
 }) {
   const { offered, noteField } = usePartner();
   // Every render, because every render is a keystroke or a press: the value
@@ -99,59 +116,123 @@ export function FieldProposals({
   useEffect(() => {
     noteField(opening, field, value);
   });
+  // Whether the earlier proposals for this field are unfolded. It is this
+  // block's own state and nothing else's: unfolding is a way of looking, not
+  // something that happened to a proposal.
+  const [unfolded, setUnfolded] = useState(false);
   const standing = proposalsFor(offered, opening, field);
   const newest = standing.at(0);
   if (newest === undefined) {
     return null;
   }
+  const older = standing.slice(1);
   return (
-    <div className="ms-proposal" data-proposal={newest.id}>
-      <p className="ms-proposal-head">
-        <span>{PROPOSES}</span>
-        <Help id="proposal" />
-      </p>
-      <p className="ms-proposal-text">{newest.text}</p>
-      <div className="ms-proposal-foot">
-        <Foot id={newest.id} standing={newest.standing} />
-        {standing.length > 1 && <Older id={standing[1].id} count={standing.length - 1} field={field} />}
+    <div className="ms-proposals">
+      <div className="ms-proposal" data-proposal={newest.id}>
+        <p className="ms-proposal-head">
+          <span>{PROPOSES}</span>
+          <Help id="proposal" />
+        </p>
+        <p className="ms-proposal-text">{newest.text}</p>
+        <div className="ms-proposal-foot">
+          <Foot card={newest} saves={saves} />
+          {older.length > 0 && (
+            <Older
+              count={older.length}
+              field={field}
+              unfolded={unfolded}
+              onToggle={() => {
+                setUnfolded((shown) => !shown);
+              }}
+            />
+          )}
+        </div>
       </div>
+      {unfolded &&
+        older.map((card) => (
+          <div className="ms-proposal ms-proposal--older" key={card.id} data-proposal={card.id}>
+            <p className="ms-proposal-head">
+              <span>{PROPOSED_EARLIER}</span>
+            </p>
+            <p className="ms-proposal-text">{card.text}</p>
+            <div className="ms-proposal-foot">
+              <Foot card={card} saves={saves} />
+            </div>
+          </div>
+        ))}
     </div>
   );
 }
 
 /**
- * The three things a proposal under a field can be doing: waiting to be used,
- * used and undoable, or used and typed over.
+ * What a proposal under a field is doing: waiting to be used, used and undoable,
+ * used and typed over, or used by the press that also saved — which then says
+ * what the saving did.
  *
- * Undo is offered only while the field still holds the Partner's words. Once the
- * human has typed over them, putting back what was there would throw away their
- * words in the name of undoing ours, so the proposal says what happened and stops
- * offering (g1-s51 F2).
+ * Undo is offered only while the field still holds the Partner's words and only
+ * where no save was asked for. Once the human has typed over them, putting back
+ * what was there would throw away their words in the name of undoing ours
+ * (g1-s51 F2); once a save has carried them past this page, undoing the field
+ * alone would leave the sheet and the ledger disagreeing (g1-s56 D2).
+ *
+ * The three sentences a save can end in are said in the order they become true,
+ * and each is only ever about this press: what the field holds is never taken
+ * back by any of them, which is why every one of them begins "Used".
  */
-function Foot({ id, standing }: { id: string; standing: string }) {
-  const { use, undo } = usePartner();
-  if (standing === "waiting") {
+function Foot({ card, saves }: { card: Offered; saves: boolean }) {
+  const { use, useAndSave, undo } = usePartner();
+  const { sent, words } = card.mark;
+  if (card.standing === "waiting") {
     return (
       <>
         <Button
           primary
           onClick={() => {
-            use(id);
+            use(card.id);
           }}
         >
           Use this
         </Button>
-        <Dismiss id={id} />
+        {saves && (
+          <Button
+            onClick={() => {
+              void useAndSave(card.id);
+            }}
+          >
+            {USE_AND_SAVE}
+          </Button>
+        )}
+        <Dismiss id={card.id} />
       </>
     );
   }
-  if (standing === "used") {
+  if (card.standing === "saved") {
+    return <span className="ms-proposal-said">{USED_AND_SAVED}</span>;
+  }
+  if (sent === "saving") {
+    return <span className="ms-proposal-said">{SAVING}</span>;
+  }
+  if (sent === "refused") {
+    return (
+      <span className="ms-proposal-said" role="status">
+        {refusedSaveLine(words)}
+      </span>
+    );
+  }
+  if (sent === "unresolved") {
+    return (
+      <span className="ms-proposal-said" role="status">
+        {unresolvedSaveLine(words)}
+      </span>
+    );
+  }
+  if (card.standing === "used") {
     return (
       <>
         <span className="ms-proposal-said">Used</span>
         <Button
           onClick={() => {
-            undo(id);
+            undo(card.id);
           }}
         >
           Undo
@@ -177,25 +258,40 @@ function Dismiss({ id }: { id: string }) {
 }
 
 /**
- * The older proposals for this field, behind one line.
+ * The older proposals for this field, behind one line — and unfolded in place by
+ * pressing it.
  *
- * They are the record rather than the offer, so the line opens the drawer at the
- * card that holds the next one, which is where a conversation's own history is
- * read. What the field shows whole is the newest, because that is the one a human
- * is deciding about.
+ * It used to open the drawer at the next-newest card, which sent a human away
+ * from the field they were deciding about in order to read a proposal for it, and
+ * into a column whose height is why the proposal came down here in the first
+ * place (g1-s52 Built, deferred). So they unfold here, under the newest, each
+ * with its own press. The newest is still the one that stands whole and unasked
+ * for: what a human is deciding about is the words the Partner wrote last.
  */
-function Older({ id, count, field }: { id: string; count: number; field: string }) {
-  const { show } = usePartner();
+function Older({
+  count,
+  field,
+  unfolded,
+  onToggle,
+}: {
+  count: number;
+  field: string;
+  unfolded: boolean;
+  onToggle: () => void;
+}) {
   return (
     <button
       type="button"
       className="ms-proposal-more"
-      title={`Open your Project Partner at the earlier proposals for ${field}`}
-      onClick={() => {
-        show(id);
-      }}
+      aria-expanded={unfolded}
+      title={
+        unfolded
+          ? `Fold the earlier proposals for ${field} away again`
+          : `Show the earlier proposals for ${field}, here under this one`
+      }
+      onClick={onToggle}
     >
-      {moreLabel(count)}
+      {unfolded ? FEWER : moreLabel(count)}
     </button>
   );
 }

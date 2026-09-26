@@ -229,18 +229,69 @@ describe("where the Partner's proposal stands", () => {
   });
 
   /**
-   * No press does Use this and Save at once, in this step.
-   *
-   * Astra's two material findings are why (F1, F2): this sheet's save reads its
-   * draft and its "nothing changed" guard from the render, and guards busy on its
-   * own button, so a second caller that first set the words would save the
-   * previous delta, or refuse, or report a save it cannot confirm. One press
-   * waits for a submission path that takes the next draft explicitly and returns
-   * its real outcome.
+   * And each block is told that this sheet can send what it holds, which is what
+   * puts Use and save beside Use this. A sheet without a submission path passes
+   * nothing, and its proposals are offered Use this alone.
    */
-  it("offers no press that uses and saves at once", () => {
-    expect(SOURCE).not.toMatch(/Use and save/i);
-    expect(SOURCE).not.toMatch(/Used and saved/i);
+  it("tells each block that this sheet can save", () => {
+    for (const field of ["Intent", "Next step", "Labels"]) {
+      expect(SOURCE).toContain(`field="${field}" value={draft.`);
+      expect(SOURCE).toMatch(new RegExp(`field="${field}" value=\\{draft\\.\\w+\\} saves /`));
+    }
+  });
+});
+
+/**
+ * The one way out of this sheet to the ledger.
+ *
+ * Astra's two material findings on g1-s52 were about a second caller: the save
+ * read its draft and its "nothing changed" guard from the render, so a press that
+ * set the words first would have sent the previous delta, and it reported no
+ * outcome, so "Used and saved" could have been said of a refusal. Both are
+ * answered by one path that takes the draft it is to send as an argument, guards a
+ * save in flight in a ref a press in the same render can see, and answers with
+ * what the route said (g1-s56 D1). None of it can be read from a static render —
+ * nothing here presses anything — so it is read where it is written.
+ */
+describe("the sheet's submission path", () => {
+  it("takes the next draft explicitly and measures the delta from it", () => {
+    expect(SOURCE).toContain("const submit = async (next: EditDraft): Promise<Outcome> => {");
+    expect(SOURCE).toContain("const asked = changedIn(opened, next);");
+    expect(SOURCE).toContain("const stop = blockedForEdit(next, asked);");
+    expect(SOURCE).toContain("await editGoal(goal.ref.id, asked)");
+  });
+
+  it("refuses an empty delta in words, and a second press while one is in flight", () => {
+    expect(SOURCE).toContain("return refusedSave(stop);");
+    expect(SOURCE).toContain("if (inFlight.current) {");
+    expect(SOURCE).toContain("return refusedSave(IN_FLIGHT);");
+    // A ref and not render state: two presses in one render would both see
+    // `sending` as it was when that render began.
+    expect(SOURCE).toContain("const inFlight = useRef(false);");
+  });
+
+  it("keeps everything Save had: its validation, its retry, and its closing", () => {
+    expect(SOURCE).toContain("void submit(draft);");
+    expect(SOURCE).toContain("askToSignIn(() => {");
+    expect(SOURCE).toContain("void submit(next).then(settle);");
+    expect(SOURCE).toContain("onDone(edited, goal.ref.id);");
+    expect(SOURCE).toContain("return SAVED;");
+  });
+
+  it("answers by the conservative reading, and rereads rather than resending", () => {
+    expect(SOURCE).toContain("const outcome = outcomeOf(error);");
+    expect(SOURCE).toContain('if (outcome.kind === "unresolved" && onReread !== undefined) {');
+    expect(SOURCE).toContain("loadBacklog()");
+    // One act, in one place. Nothing here sends it again by itself.
+    expect(SOURCE.match(/editGoal\(/g)).toHaveLength(1);
+  });
+
+  it("is what one press of Use and save calls, with the words it is putting in", () => {
+    expect(SOURCE).toContain("const putWordsAndSave = (field: string, text: string): Promise<Outcome> => {");
+    expect(SOURCE).toContain("const next = { ...draft, [at]: text };");
+    expect(SOURCE).toContain("setDraft(next);");
+    expect(SOURCE).toContain("return submit(next);");
+    expect(SOURCE).toContain("save={putWordsAndSave}");
   });
 });
 
