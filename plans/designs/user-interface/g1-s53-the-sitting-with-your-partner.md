@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3EBD883X0CCCEYEB8W9K5AP
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-26: "read docs/paper and understand sittings. Then from a
@@ -297,3 +297,35 @@ project check, that the opening turn's provenance must survive
 persistence and replay (D3 already says so), that the suggest pipeline
 keeps Record it the human's act, and that the relationship is present
 in step 1.
+
+## Built (2026-09-26), step 1
+
+Landed on ui-development and main; the sitting went live before the
+read because Wido wanted to look at it, and the read's fixes landed as
+a second merge. Built by Claude on Opus, read by Codex on Sol under
+R-124: five material findings, fixed in one round. A card from an ended
+sitting could record into the next sitting's record; the press now needs
+the card's subject to be the active one and a late answer never moves
+another table. The store's move left existing transcripts behind; the
+interface now carries them out of the checkout on first open and refuses
+to serve an empty history on failure (on this host they were carried by
+hand first). A refused Start could leave a stray draft; validation comes
+first and a late failure returns the draft's path. A reload let a card
+be recorded twice; each entry carries its deposit's mark and the card's
+state is read from the record. Fields could be edited during the write;
+they freeze.
+
+Later, when it hurts: a table entry does not open the record at its
+line; Start a sitting is offered on record kinds beyond intent and
+design; the closed drawer bar wraps its title while a sitting stands at
+1280; the table leaves blank space below itself on a phone; a deposit
+card is easiest to read in the focused view. Step 2 of the design: cases
+with Decide and Leave open, the closing deposit, the Sittings list.
+
+Departures the read accepted: the wire journal moved with the
+conversation; the four counts stand in the drawer's bar once open and
+leave it at phone width; the document route's real spelling; the card's
+state machine tested as pure functions; the entry's deposit mark is a
+visible trailing token, not a hidden comment, because the reader renders
+markup as text and hiding text from a reader is not a thing a record may
+do.
