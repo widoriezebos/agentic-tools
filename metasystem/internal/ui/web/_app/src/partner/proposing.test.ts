@@ -254,7 +254,7 @@ describe("what one press sends", () => {
         proposal({ index: 3, goal: "gone", offered: false, reason: "the accepted tip carries no goal gone" }),
         proposal({ index: 4, goal: "already", state: "applied" }),
       ],
-      { [lineID("t1", 1)]: { ticked: false, notRun: false, refusedUnsent: "" } },
+      { [lineID("t1", 1)]: { ticked: false, notRun: false, refusedUnsent: "", unrecorded: null } },
     );
     expect(sendable(one).map((line) => line.goal)).toEqual(["fleet-presence", "bank-sandbox"]);
     expect(applyLabel(one)).toBe("Apply 2");
@@ -479,7 +479,7 @@ describe("what a line says about where it stands", () => {
   });
 
   it("says not run for a line a stopped run never reached", () => {
-    const one = card([proposal()], { [lineID("t1", 0)]: { ticked: true, notRun: true, refusedUnsent: "" } });
+    const one = card([proposal()], { [lineID("t1", 0)]: { ticked: true, notRun: true, refusedUnsent: "", unrecorded: null } });
     expect(lineState(lineOf(one))).toBe(NOT_RUN);
     expect(offersContinue(one)).toBe(true);
   });
@@ -514,7 +514,7 @@ describe("what a line says about where it stands", () => {
       proposal({ index: 1, state: "applied" }),
       proposal({ index: 2, state: "refused", words: "claimed" }),
       proposal({ index: 3, state: "unresolved", words: "?" }),
-    ], { [lineID("t1", 3)]: { ticked: true, notRun: false, refusedUnsent: "" } });
+    ], { [lineID("t1", 3)]: { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null } });
     expect(footLine(one)).toBe("2 applied · 1 refused · 1 unresolved");
   });
 
@@ -777,16 +777,64 @@ describe("the run, in order", () => {
       .toEqual([lines[1].id, lines[2].id]);
   });
 
-  /** An outcome write that fails leaves the line saying that much, and nothing more. */
-  it("says so where the conversation could not record an outcome", async () => {
+  /**
+   * An outcome write that fails keeps the ACT'S OWN ANSWER on the line.
+   *
+   * The write is a failure to record, not a failure to act: the approval
+   * landed. A line that said only "the conversation could not record this" and
+   * offered Try again invited a second one — and the persisted line is still at
+   * `applying`, which the transition table would let a press move (Sol S58-C-02).
+   */
+  it("keeps the act's own answer where the conversation could not record it", async () => {
     const lines = three();
     const driven = driving(lines, {
       writes: { [`${lines[0].id}:applied`]: { kind: "failed", words: "unreachable" } },
     });
     await runProposals(lines, driven.ports);
-    expect(driven.marked).toContainEqual({ line: lines[0].id, change: { refusedUnsent: COULD_NOT_RECORD } });
+    expect(driven.marked).toContainEqual({
+      line: lines[0].id, change: { unrecorded: { state: "applied", words: "" } },
+    });
+    // Never the other mark: an unsent refusal is a different thing and would
+    // take precedence over what the ledger did.
+    expect(driven.marked.some((one) => one.change.refusedUnsent === COULD_NOT_RECORD)).toBe(false);
     // The act landed, so the run goes on: the failure was the writing down of it.
     expect(driven.sent).toEqual([lines[0].id, lines[1].id, lines[2].id]);
+  });
+
+  /**
+   * And the card reads it as applied, says the record failed, and offers no way
+   * to send it again.
+   */
+  it("shows a landed act whose record failed as applied, with no Try again", () => {
+    const applied = card([proposal({ state: "applying" })], {
+      [lineID("t1", 0)]: {
+        ticked: true, notRun: false, refusedUnsent: "",
+        unrecorded: { state: "applied", words: "" },
+      },
+    });
+    expect(lineState(lineOf(applied))).toBe(`applied; ${COULD_NOT_RECORD}`);
+    expect(offersTryAgain(lineOf(applied))).toBe(false);
+
+    // A refusal that could not be recorded still offers it: nothing landed.
+    const refusedLine = card([proposal({ state: "applying" })], {
+      [lineID("t1", 0)]: {
+        ticked: true, notRun: false, refusedUnsent: "",
+        unrecorded: { state: "refused", words: "goal is claimed" },
+      },
+    });
+    expect(lineState(lineOf(refusedLine))).toBe(`refused: goal is claimed; ${COULD_NOT_RECORD}`);
+    expect(offersTryAgain(lineOf(refusedLine))).toBe(true);
+
+    // And an unresolved one, as before.
+    const unresolved = card([proposal({ state: "applying" })], {
+      [lineID("t1", 0)]: {
+        ticked: true, notRun: false, refusedUnsent: "",
+        unrecorded: { state: "unresolved", words: "nobody knows" },
+      },
+    });
+    expect(lineState(lineOf(unresolved)))
+      .toBe(`unresolved: nobody knows; check the goal before trying again; ${COULD_NOT_RECORD}`);
+    expect(offersTryAgain(lineOf(unresolved))).toBe(true);
   });
 
   /**

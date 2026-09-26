@@ -192,7 +192,7 @@ describe("the card the Partner's proposed acts stand on", () => {
         proposal({ index: 1, goal: "refunds", state: "refused", words: "claimed" }),
         proposal({ index: 2, goal: "bank-sandbox" }),
       ],
-      { [lineID("t1", 2)]: { ticked: true, notRun: true, refusedUnsent: "" } },
+      { [lineID("t1", 2)]: { ticked: true, notRun: true, refusedUnsent: "", unrecorded: null } },
     );
     expect(markup).toContain("1 applied · 1 refused · 1 not run");
     expect(markup).toContain("Continue with the rest");

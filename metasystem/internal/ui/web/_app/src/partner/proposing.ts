@@ -76,11 +76,23 @@ export type Mark = {
   notRun: boolean;
   /** Why this line will not be sent, in words, or "" where it will be. */
   refusedUnsent: string;
+  /**
+   * What the act answered where the conversation could not write it down, and
+   * null where there is nothing of the kind.
+   *
+   * It is kept apart from every other mark because the act's answer WINS. A
+   * write that failed after the act is a failure to record, not a failure to
+   * act: the approval landed, and a line that said only "the conversation could
+   * not record this" and offered Try again invited a second one (Sol S58-C-02).
+   * So the answer is held here, the line reads as that answer, and what the line
+   * offers is decided by it.
+   */
+  unrecorded: { state: ProposalState; words: string } | null;
 };
 
 export type Marks = Readonly<Record<string, Mark>>;
 
-const TICKED: Mark = { ticked: true, notRun: false, refusedUnsent: "" };
+const TICKED: Mark = { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null };
 
 export function markOf(marks: Marks, id: string): Mark {
   return marks[id] ?? TICKED;
@@ -400,18 +412,31 @@ export function lineState(line: Line, inFlight = false): string {
   if (!line.offered) {
     return NOT_OFFERED;
   }
+  // The act's own answer, where the conversation could not write it down. It is
+  // read before everything else because it is the only thing here that knows
+  // what the LEDGER did; the persisted line is still at `applying`, and saying
+  // so would hide the act that landed.
+  if (line.mark.unrecorded !== null) {
+    return `${said(line.mark.unrecorded.state, line.mark.unrecorded.words)}; ${COULD_NOT_RECORD}`;
+  }
   if (line.mark.refusedUnsent !== "") {
     return line.mark.refusedUnsent;
   }
   if (line.mark.notRun) {
     return NOT_RUN;
   }
+  if (line.state === "applying") {
+    return inFlight ? APPLYING : WAS_IN_FLIGHT;
+  }
+  return said(line.state, line.words ?? "");
+}
+
+/** One settled state in the words a human reads, with what it carried. */
+function said(state: ProposalState, carried: string): string {
   // The words are absent on a plain outcome and present on one that carried a
   // sentence; the server leaves an empty one out, so both read as none here.
-  const words = (line.words ?? "").trim();
-  switch (line.state) {
-    case "applying":
-      return inFlight ? APPLYING : WAS_IN_FLIGHT;
+  const words = carried.trim();
+  switch (state) {
     case "applied":
       return words === "" ? APPLIED : `applied; ${words}`;
     case "refused":
@@ -476,6 +501,12 @@ export function selectedLine(card: Card): string {
 export function offersTryAgain(line: Line, inFlight = false): boolean {
   if (!line.offered) {
     return false;
+  }
+  // An act whose answer could not be written down offers what that answer
+  // offers. An applied one offers nothing: the act landed, and a second press
+  // would make a second act rather than repair the record (Sol S58-C-02).
+  if (line.mark.unrecorded !== null) {
+    return line.mark.unrecorded.state !== "applied";
   }
   if (line.mark.refusedUnsent !== "") {
     return true;
@@ -952,9 +983,10 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     if (finished.kind === "conflict") {
       ports.reconcile(finished.proposal);
     } else if (finished.kind === "failed") {
-      // The act happened and the conversation could not say so. The line keeps
-      // what it knows for the page's life and says that much.
-      ports.mark(line, { refusedUnsent: COULD_NOT_RECORD });
+      // The act happened and the conversation could not say so. What the act
+      // answered is kept on the line for the page's life, because that is the
+      // only thing here that knows what the ledger did, and the line says both.
+      ports.mark(line, { unrecorded: written });
     }
     if (answered.kind === "applied") {
       // The ledger moved, so the reading every later compare rests on has.
