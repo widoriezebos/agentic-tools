@@ -87,6 +87,7 @@ export function Drawer({
               down: Start a sitting, or the record under discussion with the four
               counts of what it now holds (g1-s53 D2, D7). */}
           <SittingControl
+            compact={!open}
             onOpenTable={() => {
               void navigate("/brain");
             }}

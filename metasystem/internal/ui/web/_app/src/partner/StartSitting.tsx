@@ -152,8 +152,23 @@ export function StartSittingSheet({
  * record's own four sections as the sitting's reading holds them, and pressing
  * them opens the table — because the counts are the summary and the table is the
  * thing (D7).
+ *
+ * Closed, the drawer's bar also carries the one-line composer, the Seeing line
+ * and the drawer's own two controls, and forty-eight pixels will not hold the
+ * strip beside them: the chip clipped to "Sitting: T…" and four counts cut off
+ * mid-word say less than nothing. So closed the bar keeps the chip — which is
+ * the answer to "which sitting is this" and is itself the way to the table — and
+ * the strip stands in the bar the moment the drawer is open, where the composer
+ * has moved into the panel and there is room for it.
  */
-export function SittingControl({ onOpenTable }: { onOpenTable: () => void }) {
+export function SittingControl({
+  onOpenTable,
+  compact = false,
+}: {
+  onOpenTable: () => void;
+  /** True while the drawer is closed and its bar is carrying the composer. */
+  compact?: boolean;
+}) {
   const { sitting, endSitting, sittingBusy } = usePartner();
   const [starting, setStarting] = useState(false);
 
@@ -175,11 +190,16 @@ export function SittingControl({ onOpenTable }: { onOpenTable: () => void }) {
   }
   return (
     <span className="ms-sitting-standing">
-      <span className="ms-sitting-chip" title={sitting.subject.id}>
+      <button
+        type="button"
+        className="ms-sitting-chip"
+        title={`${sitting.subject.id} · open ${TABLE}`}
+        onClick={onOpenTable}
+      >
         {sittingChip(sitting)}
-      </span>
+      </button>
       <Help id="sitting" />
-      <SittingCounts onOpen={onOpenTable} />
+      {!compact && <SittingCounts onOpen={onOpenTable} />}
       <button type="button" className="ms-sitting-end" disabled={sittingBusy} onClick={endSitting}>
         {END}
       </button>

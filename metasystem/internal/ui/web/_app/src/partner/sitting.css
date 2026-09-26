@@ -33,17 +33,55 @@
   cursor: default;
 }
 
-/* While a sitting stands: which record, the four counts, and the way out. It
-   wraps, because the drawer's bar also carries the composer at every width. */
+/* While a sitting stands: which record, the four counts, and the way out.
+
+   It gives way before the composer does, which is the drawer bar's own rule for
+   the line that says what the page is about: where to type matters more than what
+   the typing would be about. So the block the sitting stands in is allowed to
+   shrink, the counts and the chip shrink inside it, and the closed bar's field
+   keeps a floor it cannot be squeezed past. */
+.ms-drawer-who:has(.ms-sitting-standing) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.ms-drawer-bar:has(.ms-sitting-standing) .ms-drawer-field {
+  min-width: 18ch;
+}
+
 .ms-sitting-standing {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
+/* At the width of a phone the closed bar holds the composer, the Seeing line and
+   the drawer's own two controls, and that is the whole of it: a chip clipped to
+   one letter says nothing, and where to type matters more. So the sitting leaves
+   the closed bar at this width and stands in it the moment the drawer is opened.
+   The record's own page still offers Start a sitting, which is where a human is
+   when they decide to sit down.
+
+   The closed bar is the one with the field in it; the open one has none. */
+@media (max-width: 720px) {
+  .ms-drawer-bar:has(.ms-drawer-field) .ms-sitting-standing,
+  .ms-drawer-bar:has(.ms-drawer-field) .ms-sitting-start {
+    display: none;
+  }
+
+  /* The four counts leave the bar altogether at this width: four names and four
+     numbers do not fit beside the chip and the way out, and four clipped to
+     "Facts 0 Propo" is a summary of nothing. The chip is the way to the table,
+     and the table itself names the four sections and counts them. */
+  .ms-drawer-bar .ms-sitting-counts {
+    display: none;
+  }
+}
+
+/* Which sitting this is, and the way into what it holds. */
 .ms-sitting-chip {
+  flex: 0 1 auto;
   overflow: hidden;
   max-width: 22ch;
   padding: 2px 8px;
@@ -51,17 +89,28 @@
   border-radius: 999px;
   background: var(--ms-surface-2);
   color: var(--ms-text);
+  font: inherit;
   font-size: 12px;
   line-height: 18px;
   white-space: nowrap;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.ms-sitting-chip:hover {
+  background: var(--ms-surface-3);
 }
 
 /* The four counts, as one control: they are a summary of one thing — what the
    record holds — so they open the table together rather than four at a time. */
 .ms-sitting-counts {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 1 auto;
+  /* One row and never two: the drawer's bar is forty-eight pixels high, so a
+     strip that wrapped would stand outside it rather than in it. */
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
   gap: 8px;
   padding: 2px 8px;
   border: 1px solid var(--ms-border);
@@ -413,11 +462,34 @@
 }
 
 /* At the width of a phone the table follows the conversation instead of standing
-   beside it, and it stops being a scroller of its own: the page scrolls. */
+   beside it, and it stops being a scroller of its own: the page scrolls.
+
+   The frame stops being a full-height flex column too, but only while a table is
+   in it. Beside the conversation the frame is the height of the work area and the
+   conversation scrolls inside it, which is right for two columns and wrong for
+   three stacked boxes: the conversation would be squeezed to nothing so that the
+   table below it could have its own height, and the table would end up painted
+   over the cards a human is deciding about. Stacked, the three read in order and
+   the page scrolls, which is what every other stacked pane does. A frame with no
+   table is left exactly as it was. */
 @media (max-width: 720px) {
   .ms-table {
     overflow-y: visible;
     max-width: none;
+  }
+
+  .ms-focused-frame:has(.ms-table) {
+    flex: none;
+    height: auto;
+  }
+
+  /* The conversation stops being a scroller of its own for the same reason, and
+     stops flexing with it: `flex: 1; min-height: 0` in a column whose own height
+     is its content lets the transcript collapse to a few lines so that the boxes
+     below it can have their height, which is the opposite of what it is for. */
+  .ms-focused-frame:has(.ms-table) .ms-dock-statement {
+    flex: none;
+    overflow-y: visible;
   }
 
   .ms-focused-frame .ms-table {

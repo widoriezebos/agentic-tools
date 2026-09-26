@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:f8cf66f0577ea0e196e385df0a5bdef745df1acf872f7f58ae1761ef9c0f9925",
+  "sourceDigest": "sha256:8f49d8fe5a45ac99983d33a1be2bd6c3a5c064e60e252b902b8ec29b49f90427",
   "source": [
     {
       "path": ".npmrc",
@@ -564,7 +564,7 @@
     },
     {
       "path": "src/partner/StartSitting.tsx",
-      "sha256": "2446ea7548263e456796cfcbdc54dcfe6b9826d18a7d0dc37985353bedfc435d"
+      "sha256": "9b951803af3e1567c50a1135d4653644269baf3873ba85b42ca804fff59196f9"
     },
     {
       "path": "src/partner/Suggestion.tsx",
@@ -664,7 +664,7 @@
     },
     {
       "path": "src/partner/sitting.css",
-      "sha256": "e48ddd669aec15ea8bfd3de1e19afcc49a0454a2871d1f9e125280e6ea039de0"
+      "sha256": "5805ee1aadd6bc7128db16550f913b50b78d87f6a42e3cdf4ddfbf156834b85c"
     },
     {
       "path": "src/partner/sitting.test.ts",
@@ -804,7 +804,7 @@
     },
     {
       "path": "src/shell/Drawer.tsx",
-      "sha256": "f1e36522799e5881c67610ce5d8a6854757d154bd1bbcc7a0793bbcb2a65c719"
+      "sha256": "f4e08e78bda04bd8c87c9da8280487fac7b2bd32c70f92b311935b29f8bef74e"
     },
     {
       "path": "src/shell/ErrorBoundary.tsx",
@@ -990,11 +990,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "21f01611fcbda24c6b10f60a87b1c81f57407bb781a1b200ba7c1c7fa835556f"
+      "sha256": "a803569f911a4f053377d6511a0c51307f9e530f54966cb073e975d44eb545ea"
     },
     {
       "path": "assets/index.js",
-      "sha256": "399888e36af73ece59fd368352c594d4ead6b5ff0d88e7aa905162f71edcd1dd"
+      "sha256": "22cb6a218c505e16b9096dc68bf9ad984d23446ebdc60be07e438772d2fc3f69"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
