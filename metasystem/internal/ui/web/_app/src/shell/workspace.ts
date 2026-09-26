@@ -9,6 +9,30 @@
 
 export type WorkspaceMode = "self-hosted" | "adopted";
 
+/**
+ * One workspace's share of the private store, as the server measured it: the
+ * directory's own key, what it holds in words, and whether it is the one in
+ * front of the human.
+ */
+export type StoreWorkspace = {
+  name: string;
+  size: string;
+  current?: boolean;
+};
+
+/**
+ * The private store the interface keeps outside every checkout: where it is,
+ * what it holds per workspace, and the bounds it is kept to, in sentences.
+ * The server composes the words, because the numbers are its configuration and
+ * the sizes are its own walk of a directory this page cannot see.
+ */
+export type Store = {
+  path: string;
+  workspaces?: StoreWorkspace[];
+  bounds?: string[];
+  problem?: string;
+};
+
 export type Workspace = {
   schemaVersion: number;
   subject: string;
@@ -23,6 +47,7 @@ export type Workspace = {
   sourceHead: string;
   adoptedFrom: string;
   adoptionRecord: string;
+  store?: Store;
 };
 
 export async function loadWorkspace(signal?: AbortSignal): Promise<Workspace> {

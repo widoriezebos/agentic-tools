@@ -32,7 +32,7 @@ func describedWorkspace() workspace.Workspace {
 		Store: &workspace.Store{
 			Path: "/home/one/.metasystem/ui",
 			Workspaces: []workspace.StoreWorkspace{
-				{Name: "repository-0a1b2c", Size: "49 KB", This: true},
+				{Name: "repository-0a1b2c", Size: "49 KB", Current: true},
 			},
 			Bounds: []string{"The Partner's wire journal is rotated at 8 MB, keeping one previous."},
 		},

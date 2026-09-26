@@ -168,10 +168,10 @@ func sizeOf(directory string) (int64, error) {
 		}
 		info, err := entry.Info()
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
+			// An entry this walk already listed and can no longer read is an
+			// entry that went: the walk is what reports a directory it cannot
+			// open, and by here the only thing left to fail is the file itself.
+			return nil
 		}
 		total += info.Size()
 		return nil

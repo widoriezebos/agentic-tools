@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:5a96ad3c9fe8bb64104c0405620f989d2d22e537112c2cc649b27ce3a7735725",
+  "sourceDigest": "sha256:91e1d35225d7958635b7a27e9e7fc4e215de1996db21cf09d928cc7d8efbb359",
   "source": [
     {
       "path": ".npmrc",
@@ -416,7 +416,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "792d02e7dece62fa1379889a97aa5cf47b57cd17bf3966fc99855491711d46bc"
+      "sha256": "d6528a66d7deb830e003b75f0b2589294485a77a604bcb280d97f6503b369a52"
     },
     {
       "path": "src/index.css",
@@ -499,8 +499,12 @@
       "sha256": "c83bd9e4b50d7753cd032e14b278319ee68d30d5337394d93f9ea40211c416a2"
     },
     {
+      "path": "src/panes/Settings.test.tsx",
+      "sha256": "860de0001c99354414a4452457664d8420d9ff86691551411fbbd4087656e1cf"
+    },
+    {
       "path": "src/panes/Settings.tsx",
-      "sha256": "9c3e17411ace8181d4cc10ba09bc089d42d9915078d3d8a97e3b89318541ea55"
+      "sha256": "7d6b01034a56b43973e2f3fc4f8cdc169d74c9e8588775553503730a289d8478"
     },
     {
       "path": "src/panes/Tabs.test.ts",
@@ -912,7 +916,7 @@
     },
     {
       "path": "src/shell/workspace.ts",
-      "sha256": "cb6966d98bb438bd386e0d5a620e5f4a2f2e11d1688f7b6ccf6f4ab776a77276"
+      "sha256": "a5b6032c40ed1a958b04c5b4774ca397dcd0af1327c0be63d11e57f50b63b06b"
     },
     {
       "path": "src/stickies/Block.tsx",
@@ -998,11 +1002,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "9c37dcf5c3c0df86cdf72dd08dced4701c9e0811d491b47d732b1e7e1edd70a9"
+      "sha256": "f6e58c244e0437d23afea7f787bce6ae1dc602313bb5f2ebf0eea07e0bdc31fb"
     },
     {
       "path": "assets/index.js",
-      "sha256": "ecbdbc47c834116ba97642967bb3b8997e6b768d8234cef5dda4320f98f75820"
+      "sha256": "4638d830623a451209dedadd56b714161381504a42956a447dad80232e94c75c"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
@@ -1026,7 +1030,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "26c2657b3f3be4293b9d232d8dce8810cf3669eeeaefc8b119b454090daf99f1"
+      "sha256": "4dec4cb401f3281a236aef97f2fb9aa407d7ca537fff8129d30abac2c3ba6e62"
     },
     {
       "path": "theme.js",

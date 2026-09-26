@@ -30,10 +30,10 @@ func TestTheStoreSaysItsPathItsSizePerWorkspaceAndItsBoundsInWords(t *testing.T)
 	testutil.Require(t, "one line per workspace", len(store.Workspaces), 2)
 	testutil.Expect(t, "the largest first", store.Workspaces[0].Name, "elsewhere-abcdef")
 	testutil.Expect(t, "in megabytes once it is one", store.Workspaces[0].Size, "2.0 MB")
-	testutil.Expect(t, "and it is not this one", store.Workspaces[0].This, false)
+	testutil.Expect(t, "and it is not this one", store.Workspaces[0].Current, false)
 	testutil.Expect(t, "this workspace is named too", store.Workspaces[1].Name, key(t, checkout))
 	testutil.Expect(t, "with both owners counted in one figure", store.Workspaces[1].Size, "4 KB")
-	testutil.Expect(t, "and marked as the one in front of the human", store.Workspaces[1].This, true)
+	testutil.Expect(t, "and marked as the one in front of the human", store.Workspaces[1].Current, true)
 	testutil.Require(t, "three sentences of bounds", len(store.Bounds), 3)
 	testutil.Expect(t, "the journal's bound", store.Bounds[0],
 		"The Partner's wire journal is rotated at 8 MB, keeping one previous.")
@@ -55,7 +55,7 @@ func TestAWorkspaceTheStoreHoldsNothingForIsStillNamed(t *testing.T) {
 
 	testutil.Expect(t, "nothing went wrong", store.Problem, "")
 	testutil.Require(t, "this workspace is named", len(store.Workspaces), 1)
-	testutil.Expect(t, "as this one", store.Workspaces[0].This, true)
+	testutil.Expect(t, "as this one", store.Workspaces[0].Current, true)
 	testutil.Expect(t, "holding nothing", store.Workspaces[0].Size, "0 bytes")
 }
 
@@ -122,4 +122,24 @@ func plant(t *testing.T, home, owner, workspace, name string, size int) {
 func key(t *testing.T, checkout string) string {
 	t.Helper()
 	return filepath.Base(DescribeStore(t.TempDir(), "", checkout, StoreBounds{}).Workspaces[0].Name)
+}
+
+// A store that cannot be measured says so where the sizes would be, and still
+// says what the bounds are: the bounds are this seat's configuration and are
+// true whether or not a directory could be walked.
+func TestAStoreThatCannotBeMeasuredSaysSoAndStillSaysItsBounds(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	// The store's own directory is a file, so measuring it refuses.
+	if err := os.WriteFile(filepath.Join(home, "ui"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("cannot plant the fixture: %v", err)
+	}
+
+	store := DescribeStore(home, "", "/work/repository", StoreBounds{WireMB: 8, ConversationMB: 2, ConversationDays: 90})
+
+	testutil.Expect(t, "the store's path is still named", store.Path, filepath.Join(home, "ui"))
+	testutil.Expect(t, "the reason is the reader's own",
+		strings.Contains(store.Problem, "could not be read"), true)
+	testutil.Expect(t, "no size is claimed", len(store.Workspaces), 0)
+	testutil.Expect(t, "and the bounds are still said", len(store.Bounds), 3)
 }

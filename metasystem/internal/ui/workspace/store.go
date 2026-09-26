@@ -39,9 +39,9 @@ type StoreWorkspace struct {
 	Name string `json:"name"`
 	// Size is what it holds, in words.
 	Size string `json:"size"`
-	// This marks the workspace this server serves, so a human reading several
-	// knows which one is in front of them.
-	This bool `json:"this,omitempty"`
+	// Current marks the workspace this server serves, so a human reading
+	// several knows which one is in front of them.
+	Current bool `json:"current,omitempty"`
 }
 
 // StoreBounds is the three numbers the store is kept to, as the seat resolved
@@ -70,7 +70,7 @@ func DescribeStore(home, homeProblem, checkout string, bounds StoreBounds) Store
 	here := uihome.Key(checkout)
 	for _, one := range measured {
 		store.Workspaces = append(store.Workspaces, StoreWorkspace{
-			Name: one.Key, Size: sizeWords(one.Bytes), This: one.Key == here,
+			Name: one.Key, Size: sizeWords(one.Bytes), Current: one.Key == here,
 		})
 	}
 	// A store that holds nothing for this workspace yet still says so, because
@@ -78,7 +78,7 @@ func DescribeStore(home, homeProblem, checkout string, bounds StoreBounds) Store
 	// are different answers and the card must not read as the second.
 	if !holds(store.Workspaces, here) {
 		store.Workspaces = append(store.Workspaces, StoreWorkspace{
-			Name: here, Size: sizeWords(0), This: true,
+			Name: here, Size: sizeWords(0), Current: true,
 		})
 	}
 	return store

@@ -2,9 +2,10 @@ import { Settings as SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { EmptyState, Pane } from "./Pane";
+import { Help } from "../help/Help";
 import { Button, Skeleton } from "../shell/controls";
 import { useWorkspaceState } from "../shell/identity";
-import type { Workspace } from "../shell/workspace";
+import type { Store, Workspace } from "../shell/workspace";
 import type { ThemePreference } from "../theme";
 import { ThemeControl } from "../shell/ThemeControl";
 
@@ -24,6 +25,7 @@ export function SettingsPane({
     <Pane title="Settings">
       <div className="ms-pane-stack">
         <AboutCard />
+        <StoreCard />
         <section className="ms-card">
           <h2 className="ms-card-title">Appearance</h2>
           <ThemeControl preference={theme} onChange={onTheme} labelled />
@@ -53,6 +55,59 @@ function AboutCard() {
         Open-source notices
       </a>
     </section>
+  );
+}
+
+/**
+ * The private store, which is the one thing on this page that is not about the
+ * checkout: where the interface keeps this account's own material, what it holds
+ * per workspace, and what it is kept to.
+ *
+ * It says nothing where the workspace resource is not there yet or could not be
+ * read — the About card above carries that story for the same read, and a second
+ * copy of it would be a second thing to keep true. A server that describes no
+ * store, which is a seat whose account has no home the kit can read, says so in
+ * the store's own words instead.
+ */
+function StoreCard() {
+  const { workspace } = useWorkspaceState();
+  if (workspace.state !== "known" || workspace.workspace.store === undefined) {
+    return null;
+  }
+  return (
+    <section className="ms-card">
+      <h2 className="ms-card-title">
+        Private store <Help id="private-store" />
+      </h2>
+      <StoreFacts store={workspace.workspace.store} />
+    </section>
+  );
+}
+
+/**
+ * The store's own lines. Exported because the card reads the workspace from
+ * context and the lines are what a test reads.
+ */
+export function StoreFacts({ store }: { store: Store }) {
+  if (store.problem !== undefined && store.problem !== "") {
+    return (
+      <dl className="ms-facts">
+        <Fact name="Kept at">{store.problem}</Fact>
+      </dl>
+    );
+  }
+  return (
+    <dl className="ms-facts">
+      <Fact name="Kept at">
+        <span className="ms-mono">{store.path}</span>
+      </Fact>
+      {(store.workspaces ?? []).map((one) => (
+        <Fact key={one.name} name={one.current === true ? "This workspace" : "Another workspace"}>
+          <span className="ms-mono">{one.name}</span> — {one.size}
+        </Fact>
+      ))}
+      <Fact name="Kept to">{(store.bounds ?? []).join(" ")}</Fact>
+    </dl>
   );
 }
 
