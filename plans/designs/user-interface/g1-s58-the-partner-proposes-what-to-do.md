@@ -44,7 +44,17 @@ and touched no other cited file. Revision 7, on Wido's UX question of
 where proposals belong: the conversation is where a proposal is made
 and answered, and the wrong place to keep one that waits; step 1 folds
 older cards to one line, and the Decisions inbox becomes the waiting
-proposals' home in step 2 (D8, section 4).
+proposals' home in step 2 (D8, section 4). Revision 8, on Wido's word
+later the same evening: "The work on the verb system is unfortunately
+not finished. There will be complete restructure of the verb system,
+so do not yet get into the details of the verbs themselves. Once the
+work on the verb system has completed, you can pull that in and then
+continue with that." So nothing in step 1 depends on the public verbs'
+names, flags or descriptor table: D1's grammar goes back to the
+interface's own route ids and route bodies, D4's words back to the
+pages' buttons, and the public grammar is the unit that waits for that
+work to land (section 4). Revision 5's grammar and Astra's read of it
+stand in the record below as what will be taken up then.
 
 ## 1. What exists and binds
 
@@ -200,9 +210,13 @@ proposals' home in step 2 (D8, section 4).
    operation failed or never happened" (:780); "refresh affected saved
    records and lists after a confirmed mutation. Preserve unsaved editor
    buffers" (:346).
-7. **The public verbs have landed, and they are one table.** Goal
-   `verbs-match-intent` (metasystem/plans/goals/verbs-match-intent.md,
-   waiting on the human for acceptance) and its designs
+7. **The public verbs are one table, and that table is being
+   restructured.** Wido, 2026-09-26, late: the verb system's work is not
+   finished and will be restructured completely; nothing here may depend
+   on the verbs' details until it lands. What follows in this item is
+   the state of the table as merged, kept so the grammar unit can be
+   taken up against its successor. Goal `verbs-match-intent`
+   (metasystem/plans/goals/verbs-match-intent.md) and its designs
    (metasystem/plans/designs/intent-workflows.md, verb-cleanup.md,
    agent-help.md) rule that "one existing descriptor table owns grammar,
    audience, help group and visibility. No second command inventory",
@@ -246,14 +260,14 @@ lands, the card's buttons wake:
 
 ```
 ╭ The Partner proposes 6 actions ────────────────────────────────────╮
-│ ☑ Pause · Fleet presence is read from the census, not polled        │
-│     reason: superseded by the seat inventory (g1-s42)               │
-│ ☑ Pause · A silent seat's claim is shown, never lifted              │
-│     reason: superseded by the seat inventory (g1-s42)               │
-│ ☑ Pause · …                                                         │
-│ ☑ Pause · …                                                         │
-│ ☑ Pause · …                                                         │
-│ ☑ Unapprove · Refunds land within a day                             │
+│ ☑ Not now · Fleet presence is read from the census, not polled      │
+│     because: superseded by the seat inventory (g1-s42)              │
+│ ☑ Not now · A silent seat's claim is shown, never lifted            │
+│     because: superseded by the seat inventory (g1-s42)              │
+│ ☑ Not now · …                                                       │
+│ ☑ Not now · …                                                       │
+│ ☑ Not now · …                                                       │
+│ ☑ Withdraw approval · Refunds land within a day                     │
 │     reason: the budget assumed a July start                         │
 │   The Partner: the five name the fleet inventory g1-s42 built; the  │
 │   sixth was approved against a date that has passed.                │
@@ -305,13 +319,13 @@ keeps it:
 - **Nothing happens unless I press.** The Partner can only propose. Your
   press is the act, under your sign-in; the ledger names you as the
   hand, as it does for every act from this browser.
-- **I read what will happen before it happens, in one vocabulary.** The
-  verb on the line is the public verb's own name, the word the terminal
-  and the Partner use: Open, Approve, Unapprove, Prioritize, Block,
-  Unblock, Pause, Resume, Edit; the card's help term says which button
-  on which page does the same, until the pages' buttons say the same
-  word (section 4). The subject is the goal's title, as the pages say
-  it, with its id small. Every argument the act will carry is on the card, whole,
+- **I read what will happen before it happens, in the interface's own
+  words.** The verb on the line is the button's word on the page that
+  offers it: Approve, Withdraw approval, Set priority, Open goal, Not
+  now, Return to queue, Edit, and the goal page's own words for block
+  and unblock; when the public verb system lands, the buttons and the
+  card take its words together (section 4). The subject is the goal's
+  title, as the pages say it, with its id small. Every argument the act will carry is on the card, whole,
   rendered by the interface from the validated proposal and never from
   the Partner's prose; the Partner's own words are its "why", shown as
   its words. An approval shows the intent and the next step whole, as
@@ -393,10 +407,31 @@ common case.
   action on a card and decides whether to apply it". Its result carries
   the action in the fixed frame the host already reads once: a header
   line naming the verb, labelled lines for the fields, the separator,
-  and the explanation opaque to the end. **The grammar is the public
-  verb's.** The verb is the public command's name and the fields are its
+  and the explanation opaque to the end. **Step 1's catalogue is the
+  interface's own** (revision 8): the nine verbs are the route ids the
+  interface's act table names, `open-goal`, `approve-goal`,
+  `withdraw-goal`, `set-goal-priority`, `block-goal`, `unblock-goal`,
+  `park-goal`, `unpark-goal`, `edit-goal`, and each verb's fields are its
+  route body's own, under the body's names (section 1 item 2): open
+  takes `id`, `intent`, `nextStep`, `severity`, `novelty`, `exposure`,
+  `accumulation`, `basis`, `labels`, `blockedBy`, `blocks`; withdraw
+  `reason`; park `because`; priority `priority` and `sequence`; block
+  and unblock `blocker`; edit `intent`, `nextStep`, `labels`, at least
+  one, the whole label list as the route takes it; approve nothing, the
+  card supplying the tuple. The tool's description lists the nine with
+  the button word each has on the pages. Nothing in step 1 reads the
+  CLI's descriptor table or imports anything of it; the join test holds
+  the catalogue to the interface's act table (`Acts()`, describe.go)
+  and nowhere else. What the message persists and the runner dispatches
+  on is the route id, so the public grammar can be put on later without
+  touching a persisted proposal. **The public grammar below waits for
+  the verb system to land** (Wido, 2026-09-26: the verb system is being
+  restructured; do not get into the verbs' details yet); revision 5's
+  grammar and Astra's read of it are kept here as what will be taken up
+  against the successor table, and nothing below it binds the build.
+  The verb is the public command's name and the fields are its
   public flags, so the Partner, a human at a terminal and the interface's
-  help say one word. The nine of step 1, each with the route it
+  help say one word. The nine, each with the route it
   dispatches to and the body the tool composes:
 
   | verb statement | route | body |
@@ -478,16 +513,17 @@ common case.
   dialog listing what the card already lists would be a press that adds
   nothing to read. Pressing Apply runs the ticked actions in order.
 - D4. **A line is the verb's word, the subject and every argument.** The
-  verb word is the public verb's name, Open, Approve, Unapprove,
-  Prioritize, Block, Unblock, Pause, Resume or Edit, one vocabulary with
-  the terminal and the Partner, and the card's help term names the
-  button on the page that does the same, Not now, Return to queue,
-  Withdraw, Set priority, until those buttons are renamed (section 4);
-  the subject is the title with the id small, linked to the goal page
-  ("Open the goal"); the arguments in the flags' own words: reason, on,
-  priority and sequence, intent, next, labels, and for an open the tier
-  derived from the four answers with the answers named, the basis,
-  labels, blocked by and blocks. An approve line shows the
+  verb word is the button's word on the page that offers the act:
+  Approve, Withdraw approval, Set priority, Open goal, Not now, Return
+  to queue, Edit, and the goal page's own words for block and unblock,
+  kept in one map from route id to word so that the day the verb system
+  lands the card and the buttons take the public words together
+  (section 4); the subject is the title with the id small, linked to
+  the goal page ("Open the goal"); the arguments in the sheets' own
+  labels: because, reason, priority and position, waits for, intent,
+  next step, labels, and for an open the tier derived from the four
+  answers with the answers named, the basis, labels, waits for and
+  unblocks. An approve line shows the
   intent and the next step whole from `read` and "with budget <the tuple
   in the sheet's five words>, from <the source's words>", or "needs its
   budget first: approve it alone", unticked and not sendable
@@ -638,14 +674,19 @@ common case.
 
 ## 4. Step 1, and what waits
 
-Step 1 is D1 to D9 for the nine public goal verbs of D1's table, the
-grammar included now that the seat has landed. It is what a human can
-use after one slice: propose
+Step 1 is D1 to D9 for the nine acts by their route ids, with the
+pages' button words on the card; the public grammar waits for the verb
+system (revision 8). It is what a human can use after one slice: propose
 one act or many, tick, apply, watch the page move, read a refusal in the
 engine's words, continue, try again, ask the Partner, sign in when
 asked, reload and find the truth.
 
-Later, when it hurts: the checkout writes as verbs (set a record's
+Later, when it hurts: **first, when the verb system lands**, the public
+grammar of D1 (revision 5's table, re-read against the successor
+descriptor table: the public names and flags at the tool's boundary,
+the join test to that table, and the card's words) together with
+g1-s59's button alignment, so the card, the buttons, the terminal and
+the Partner take one word in one slice; then the checkout writes as verbs (set a record's
 status, settle a question, ask a question, write a record: one catalogue
 row, one admission rule against the project reader and one client each);
 "Review in the sheet" on a line, opening the verb's own sheet prefilled
@@ -679,11 +720,12 @@ R-125's shape first.
 
 ## 5. Payload and routes
 
-The tool: `propose` as D1, its result in the fixed frame `Proposal: <verb>`,
-a `Goal: ` line, then one labelled line per public flag given, `Intent: `,
-`Next: `, `Risk: `, `Basis: `, `Label: ` (repeated), `Unlabel: `,
-`Blocked-by: `, `Blocks: `, `Reason: `, `On: `, `Priority: `, `Sequence: `,
-then the separator and the explanation. `Message.proposals: [{ index, verb, goal, title, fields: {…},
+The tool: `propose` as D1, its result in the fixed frame `Proposal: <route id>`,
+a `Goal: ` line, then one labelled line per body field given, `Reason: `,
+`Because: `, `Priority: `, `Sequence: `, `Blocker: `, `Intent: `,
+`Next step: `, `Labels: `, `Id: `, `Severity: `, `Novelty: `, `Exposure: `,
+`Accumulation: `, `Basis: `, `Blocked by: `, `Blocks: `, then the
+separator and the explanation. `Message.proposals: [{ index, verb, goal, title, fields: {…},
 read: { intent, nextStep, tier, labels } | null, why, offered, reason,
 state, words, at }]` on a Partner message, the same object on the stream
 as `proposal` events as each is admitted, and on the snapshot's running
@@ -704,18 +746,11 @@ work-area provider exposes `covered`. Nothing else changes shape.
 ## 6. Verification and box
 
 Go: the tool's catalogue, every verb's required fields and bounds, an
-unknown verb and a foreign field refused in words, a public verb outside
-the catalogue refused with its own usage line, each named authority
-flag and each unsupported form refused by name, `label` and `blocked-by`
-admitted, `risk` parsed by `ParseRiskRecord`, the fixed frame; the join
-test in `cmd/metasystem`, reading the descriptors themselves, that every
-catalogue verb is a current public intent command, every catalogue
-field a non-hidden flag of it under its own spelling or its positional,
-and no catalogue field an authority flag; the host reading a completed
-`propose` into a whole action and a failed one into none, the
-explanation opaque past the separator; the service composing an edit's
-label list through `ApplyLabelDelta` from the labels read, a label in
-both lists refused; the service admitting an
+unknown verb and a foreign field refused in words, the fixed frame; the
+join test that every catalogue verb is a route id in the interface's
+act table under `ledgerHand` and every goal act there is in the
+catalogue; the host reading a completed `propose` into a whole action
+and a failed one into none, the explanation opaque past the separator; the service admitting an
 action whose goal is at the tip with `read` filled, admitting a block
 whose blocker an earlier `open` of the same answer named, refusing an
 `open` of an existing id and an act on an unknown goal with their
@@ -783,12 +818,11 @@ of D6 being true of the transaction, and the six fixtures of section 6
 are what hold it; the freshness guard is the page's compare after a
 fetch and not the owner's digest. Medium on D6: the first write into a
 Partner message after it was appended, one route with six states, and
-two corrections to code every act shares. Weakest: the card says Pause
-and Unapprove where the pages' buttons still say Not now and Withdraw,
-two words for one act on one screen until the presentation slice in
-section 4 aligns the buttons; the help term bridges them meanwhile, and
-one vocabulary across the terminal, the Partner and the card is worth
-that interval.
+two corrections to code every act shares. Weakest: the public grammar
+waits for a verb system that is being restructured, so the Partner
+speaks route ids until then and the words a human reads on the line
+are the pages' buttons; the map from route id to word is kept in one
+place for that day.
 
 ## Dispositions (Astra round 1, 2026-09-26, under R-124)
 
@@ -875,6 +909,9 @@ for `risk` and `goal.ApplyLabelDelta` for an edit's labels. The design
 is closed, read whole by the critic across its mechanism and its
 grammar; the build waits on Wido's go.
 
+Superseded for the build by revision 8 until the verb system lands;
+taken up then, against the successor table.
+
 ## Revision 7: where a proposal waits
 
 Wido, 2026-09-26: "With your UX cap on, is the location of the
@@ -891,3 +928,18 @@ changes: the fold reuses the field proposals' own, and the inbox group
 reads what D6 already persists. Not sent to Astra: a presentation rule
 inside a pattern the critic has read twice, and a later-list entry; the
 code read covers the fold.
+
+## Revision 8: the verb system is not finished
+
+Wido, 2026-09-26, late: "The work on the verb system is unfortunately
+not finished. There will be complete restructure of the verb system, so
+do not yet get into the details of the verbs themselves. Once the work
+on the verb system has completed, you can pull that in and then
+continue with that." Folded: D1's catalogue is the interface's route
+ids and route bodies, with a join test to the interface's own act
+table; D4's words are the pages' buttons; the public grammar of
+revision 5, with Astra's read and its fold, waits in section 4's later
+list beside g1-s59, which is on hold. The builder, mid-build, was told
+the same in the same words. Not sent to Astra: it restores the form
+revisions 2 to 4 carried, which the critic read in rounds 1 and 2 and
+in the confirmation read.

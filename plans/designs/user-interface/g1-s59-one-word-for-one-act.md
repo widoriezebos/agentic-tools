@@ -5,6 +5,12 @@
 - Status: draft
 - Goals: browser-interface
 
+**On hold** (Wido, 2026-09-26, late): the verb system is not finished
+and will be restructured completely, so the words this slice would
+rename to are not settled. It waits for that work to land, then is
+re-read against the successor table's names before it is built.
+Nothing else here changes.
+
 Wido, 2026-09-26, on g1-s58's recommendation that the pages' button words
 follow the public verbs: "I will follow all your recommendations". A
 presentation slice, half a page, in the ceremony the plan gives one: this
