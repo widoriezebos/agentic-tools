@@ -432,3 +432,12 @@ completion pending with owner detail and public repair. Supplemental CloseCheck
 facts do not justify a guessed permission/I/O label. This bounded owner-boundary
 correction replaces posthoc guessing, requires no new wire protocol, and is part
 of IW review proof and mandatory Sol critique.
+
+
+## Exceptional delivery completion
+
+IW-4 additionally binds plans/intent-carried-delivery-design.md, accepted after
+Fable4->2 and root's exact receipt/Advance owner corrections. Its four named
+carried-delivery/staging/replay fixtures are mandatory in final independent Sol
+review. No fake carried success, ordinary proof placeholder, missing goal receipt,
+stale code/ledger consumption or projected-tree checkout may complete this row.

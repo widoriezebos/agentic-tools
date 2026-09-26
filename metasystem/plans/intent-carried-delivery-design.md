@@ -1,7 +1,7 @@
 # Complete exceptional delivery through human intent
 
 Root-authored implementation correction to accepted designs/intent-workflows.md,
-IW-4. Status: revised draft for Fable round 2. Goal: verbs-match-intent. 26 September 2026.
+IW-4. Status: accepted with required owner fixtures; Fable rounds complete. Goal: verbs-match-intent. 26 September 2026.
 This fixes a demonstrated missing composition, not a new authority policy.
 
 ## First use and smallest contract
@@ -38,76 +38,86 @@ with their current owners. No new public verb, certificate or general workflow.
   resumes local, origin and ledger consumption before staging. Its cleanup abandons
   reservations but deliberately retains staged changes/local commits.
 
-## Composition
+## Composition (final order)
 
-1. Resolve the corresponding primary installation with the existing linked-checkout
-   resolver, and require its actual branch main. Do not switch branches, move HEAD,
-   create another repository or silently target a different project. A non-main
-   primary gives a public checkout correction, before recording an exception.
-2. Use the existing branch candidate owner unchanged. Freeze a small SUBJECT IDENTITY
-   before recording the carry: goal, endpoint commit, projected endpoint and
-   projected candidate. Store the tuple atomically under existing PRIMARY
-   intent-land/G artifacts keyed by its endpoint and workspace. Do not store a
-   duplicate patch: Workspace.Diff derives it deterministically from those trees.
-   This is immutable input, not a job registry. Preflight that projected-to-projected
-   patch on the destination's full index without writes. Preserve
-   existing admission/claim/read requirements for canonical branch composition.
-3. Record or rejoin the exact carry word via existing owner. Retain its association
-   to the frozen subject alongside the existing exception message. The pre-word
-   subject identity closes a lost-response gap: read back the proven word's
-   workspace and adopt only an unambiguous matching identity (the original exact
-   request also names its composed endpoint). Never guess between distinct bases.
-   Retain the exact tuple beside the exception message keyed by its actual opid.
-   Explicit --replace-exception must invoke the owner's replacement semantics;
-   an old word for the same workspace is not a successful replacement. A replacement is a new explicit
-   human act, never automatic because code moved.
-4. Refresh code origin and the canonical goal ledger using the SAME owner fetches
-   as land.sh BEFORE any staging: fetch_origin and goal fetch --root PRIMARY,
-   obtaining the accepted ledger tip for ReadCarryStatus(PRIMARY, ...). A missing
-   required code remote or failed fetch refuses before recording/staging; never
-   create a remote alias or infer consumption from stale local refs. Canonical
-   goal-state resolution remains with the existing endpoint owner, not guessed
-   from a checkout path. Then read carry status before installing. local/origin/ledger consumption goes
-   straight to the existing recovery path, with NO staging. Superseded, expired,
-   unproven or mismatched words keep the owner's refusal. An unconsumed word uses
-   the patch derived from its retained endpoint/workspace tuple, never newer goal work. A word recorded through the
-   channel may have no artifact: compose the CURRENT goal candidate once and retain
-   it only if its projection equals the word. Otherwise refuse with the public
-   replacement-exception act; never reinterpret the word.
-5. Stage via a small existing landing-owner extension under
-   LockBounded(LockPath(PRIMARY), ...), shared with Advance in that same primary
-   installation for human and agent callers. Artifacts, drift, posture and
-   ReadCarryStatus all use PRIMARY; Git application resolves its actual repository
-   TOP LEVEL and runs there, so changes outside nested metasystem/ are included. Check actual main branch, expected product endpoint,
-   no unmerged entries, index equal HEAD OR the exact already-prepared candidate,
-   and no non-register dirty/untracked paths. Append-shaped shared registers are
-   preserved under existing drift rules; the projected patch never touches them.
-   A main tip that moved only in excluded coordination state can still qualify by
-   matching projected endpoint; product movement refuses unchanged before staging. Its public recovery is a
-   person's new `land G --exception CODE --replace-exception ID --reason TEXT
-   --by NAME`, which recomposes on the current endpoint and asks the existing carry
-   owner to supersede the old word; no automatic acceptance or endpoint rewind.
-   Recheck under lock, private-index preflight, then plain --index --binary once at the repository top level.
-   Repeated staging is a no-op only when actual index projection equals the word
-   AND the worktree agrees on every staged product path. No reset/clean rollback.
-   Failure reports actual staged state, retaining the exact subject for retry.
-6. Release the staging lock before calling the existing main installation's
-   land.sh -m MESSAGE --goal G --carried ID --staged-only. Existing carried
-   verification rechecks its workspace across reservation/fetch/commit; it stays
-   authoritative. Do not hold a checkout lock across a nested owner that acquires
-   it. No rewrite of the carried transaction. Failure returns a public
-   `land G --using-exception ID` continuation and truthful retained stage/commit.
+1. Resolve PRIMARY through the existing linked-checkout installation resolver and
+   require its attached branch main. All artifacts, locks, drift/posture checks,
+   receipt decisions and ReadCarryStatus use PRIMARY. Git whole-project operations
+   resolve its repository TOP LEVEL. Canonical goal state stays endpoint-owned.
+   Do not switch branches, discard local commits or select another project.
+2. FIRST perform the code-origin and goal-ledger fetches land.sh owns, obtaining
+   the accepted ledger tip. Missing remote/fetch failure records and stages nothing.
+   Never create an origin alias. For --using-exception read the refreshed word/status
+   now: local/origin/ledger consumption goes directly to the existing recovery path,
+   without staging. Unproven/expired/superseded words keep the owner's decisions.
+3. For fresh input, compose via the existing branch candidate owner. Its Endpoint
+   is the live code endpoint AT COMPOSITION, not the goal's original branch base.
+   Freeze only goal, endpoint commit, projected endpoint and projected candidate
+   atomically in PRIMARY's existing intent-land/G artifacts, keyed by endpoint and
+   workspace. Diff derives the patch; no duplicate patch storage or job registry.
+   An existing word reuses its retained tuple; newer goal work never changes it.
+   A channel word without that tuple may compose once, but only exact equality to
+   its workspace permits adoption. Missing/ambiguous retained identities refuse
+   without guessing; the original exact request can name its composed endpoint.
+4. Validate the tuple against FETCHED code-origin main's projected tree. Product
+   movement AFTER composition calls for a person's explicit public
+   `land G --exception CODE --replace-exception ID --reason TEXT --by NAME`,
+   which recomposes on the current endpoint and supersedes through the carry owner.
+   Local main merely BEHIND that same fetched endpoint is a different case: if
+   attached main, clean index and local HEAD ancestor of fetched main, call existing
+   landing.Advance(PRIMARY, fetchedMain, ...) before staging, then reread posture.
+   Advance owns LockPath(PRIMARY); do not hold that lock while calling it. Its
+   no-clobber rules preserve append-only rows. No silent rebase of divergent local
+   commits. This routine advancement is part of land intent; a behind checkout
+   must not loop through --replace-exception. If either owner refuses, preserve
+   its actual cause and source bytes, not a guessed stale-word explanation.
+5. Preflight the projected-endpoint -> projected-candidate patch against the full
+   local index with private-index Workspace.Apply. Record/rejoin the exact human
+   carry through its existing owner, then bind the actual opid beside the exception
+   message to the frozen tuple. Lost-response adoption matches the word workspace
+   and unambiguous tuple. Explicit --replace-exception really invokes replacement;
+   an old same-workspace word is not a completed replacement. A later error keeps
+   the recorded word and returns `land G --using-exception ID`.
+6. Acquire LockBounded(LockPath(PRIMARY), ...). Recheck main, fetched product base,
+   no unmerged entries, index equal HEAD OR exactly the retained prepared product
+   candidate, and no non-register dirty/untracked paths. All actual staged product
+   paths must agree with the worktree. Preserve valid append-shaped register drift.
+   Private-index preflight then plain git apply --index --binary at TOP LEVEL,
+   once; an exact already-staged candidate is a no-op. No --3way, reset or clean.
 
-The standalone exact staging helper belongs with landing (the consumer of projected
-workspace/carry status), while candidate selection remains branch.PrepareLanding.
-No branch source mutation, fabricated ordinary landing proof, pending receipt in
-main, new testing policy, or duplicate carry state machine.
+   Complete the existing receipt-line obligation while under this same lock.
+   ObserveReceiptLine names its actual tracked Ledger path. Exempt/pass needs no
+   invented row. For missing receipt, first stage an existing valid append to that
+   exact ledger and recheck (crash-after-append must not duplicate the row). If still
+   missing, call receipt.Add with Root PRIMARY and explicit File equal to that
+   decision's resolved ledger path, Type implement, Outcome reworked, Verify
+   skipped, Goal G, and note naming exception CODE/opid and preparation for carried
+   delivery. These are actual supported fields (receipt.go:170, defaults in
+   receipt_verbs.go); no ordinary proof/verify=clean claim or premature shipped
+   claim. Stage the ledger, then require ObserveReceiptLine to pass. Preserve all
+   existing rows; never use branch appendReceiptRow's pending/proof placeholder.
+   A failure reports actual stage and retains identity for retry. The receipt is
+   excluded from the projected workspace, so it does not change the approved word.
+7. Release the staging lock before running PRIMARY's unchanged
+   land.sh -m MESSAGE --goal G --carried ID --staged-only. That owner retains
+   receipt checks, proof, fetch/reservation/commit, consumption and recovery.
+   It rechecks the workspace and remains authoritative; no alternate publish path.
+   A refusal keeps truthful stage/local-commit facts and a public same-word
+   continuation. Existing diff --check refusal remains; no gate is weakened.
+
+The staging helper belongs with landing, which owns workspace/carry/receipt
+semantics. Candidate selection remains branch.PrepareLanding. There is no branch
+source mutation, fabricated ordinary landing proof, PENDING placeholder receipt,
+duplicate carry state machine or new testing policy. The actual receipt row is
+staged with the product, through its existing owner.
 
 ## Proof required before IW-4 completes
 
 - TestIntentCarriedGoalDeliveryGitAdapter: authentic reviewed goal branch -> public
   exception -> real carry word, actual staging and unmodified land.sh transaction,
-  main contains payload, carried provenance and consumed word. Existing fixture-only
+  main contains payload, carried provenance and consumed word. The actual
+  receipt-line step must pass with a truthful goal receipt, no PENDING/proof
+  placeholder. Crash-after-append reuses the row rather than duplicating it. Existing fixture-only
   human proof/proof-token seams are permitted, no fake successful land callback.
 - Same fixture starts from linked goal checkout and preserves main's existing
   append-only rows; no projected-tree deletions or pending receipt can land.
@@ -117,7 +127,9 @@ main, new testing policy, or duplicate carry state machine.
   refuses without guessed replay. Explicit replacement really reaches the owner. local/origin/ledger recovery
   never stages. Channel word adopts only matching current composition.
 - TestCarriedStagePreservesCheckout: unrelated index/dirty files, endpoint movement,
-  conflicting patch, concurrent mutation lock, repeated exact staging. Refusals
+  conflicting patch, concurrent mutation lock, repeated exact staging, local
+  main behind fetched origin (automatic safe advancement), and origin movement
+  after composition (explicit replacement, no rewind). Refusals
   preserve bytes/index; no conflict state from --3way or destructive cleanup.
 
 Full independent Sol critique remains mandatory. Maximum two Fable rounds for
@@ -133,3 +145,17 @@ undoing newer product work; there is no retained expected endpoint left to rejec
 that mutation. The canonical branch candidate cannot recover the old subject after
 the goal branch changed. Therefore retain only the base/workspace tuple, deriving
 patch bytes when needed. No new lifecycle registry or duplicate patch file.
+
+## Final adjudication and implementation authority
+
+Fable material trajectory4 ->2. Final IC-C6 correctly identifies an omitted
+receipt producer that makes every real code landing fail. It calls that a
+contract-shape failure; root verified it is resolved by the already-existing
+receipt.Add + ObserveReceiptLine owners with supported truthful fields and an
+explicit tracked file, without new policy/certification. IC-C7 is resolved by the
+existing Advance owner plus distinct local/fetched predicates. IC-C8 is removed
+by rewriting the order above. These concrete owner compositions are specified,
+not delegated design choices. Under the user's explicit machinery bypass and
+instruction to implement/iterate, proceed with named runtime fixtures and mandatory
+independent Sol critique. No Fable-approved runtime or green carried delivery is
+claimed. No third prose round is being substituted for implementation evidence.

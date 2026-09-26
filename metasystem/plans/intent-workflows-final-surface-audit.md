@@ -25,3 +25,16 @@ Required by the user's full intent/no-internals contract, not an expanded design
   invoked manually by the test is not evidence of a public complete journey.
 
 No extra top-level commands or speculative parser framework are requested.
+
+
+## Actual author transport needs a visible output path
+
+Read-only recipe preparation found a first-use gap: intent_design.go's generated
+contract says "the staged page you were given" but names no path.
+design_request.go seeds the draft and sets StartSpec.Page/Outputs; ClaudeHeadless
+Command sends the brief and read packet only, so those fields alone do not tell
+the author where to write. Confirm against final source and fix through the existing
+author prompt/declared-output contract. A fake author that secretly reads store
+metadata or receives Page from a test callback would hide the bug. The real-process
+fake-author fixture must obtain its output path from the actual prompt, just as
+the paid author would. Independent Sol must inspect this boundary.

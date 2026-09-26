@@ -380,3 +380,27 @@ no code endpoint, and diff(new main, old approved tree) could undo newer product
 Final Fable r2 is20260926t110543-be619ff15f, same session
 3e48acf8-042b-4abb-b5df-c0909ff54a1f. No carried product extension authorized yet.
 Live main pull still up to date at e3a86b67e; user-owned logs preserved.
+
+
+## Carried design accepted for implementation, not certified
+
+Fable final r2 completed13:11:42 CEST with2 material findings and1 minor. Full
+report and IC-C6..8 dispositions retained. Root confirmed receipt.Add's actual
+field schema, explicit File requirement and ObserveReceiptLine ownership, plus
+Advance's own mutex/no-clobber behavior. The composition was rewritten in one
+pass: fetch first, distinguish remote movement from lagging local main, stage the
+product plus a truthful existing-owner receipt, then unchanged carried transaction.
+Fable called missing receipt a contract-shape blocker; root adjudicated its exact
+existing-owner correction as implementation-ready under the user's bypass. No
+third prose round or runtime approval is claimed; actual fixtures and Sol review
+remain required. Parent IW-4 now links these obligations.
+
+Independent carried builder20260926t111623-8e55e2946e runs in sibling
+intent-carried checkout from private seed05881caa339964f9162decd5fc6be2c59d920548,
+treebd8c0ad04a831ba9cf53c691b0979a73273159ca. It reads the primary ACCEPTED design
+inputs (its seed holds the older draft), owns only exception adapter/staging and
+carried-only tests, and avoids shared delivery/testing registry files. Main Opus7
+continues manual/public workflow implementation. Root prepared a thin external
+Go coverage harness and unchanged prior selector; build passed against current
+source, but no acceptance tests have run. Both must be repinned/rebuilt against
+final immutable candidate before actual verification.
