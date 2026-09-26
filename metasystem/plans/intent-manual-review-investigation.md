@@ -55,3 +55,22 @@ manual delivery is required before this overall user task is complete.
 - Budget and stop condition: two Fable rounds, 35-minute design cycle; no third round for prose polish.
 - Recoverable checkpoint: root-authored draft and critique/dispositions remain tracked; no product changes for this draft yet.
 - Expected classification and next action: contract-improved if design closes the identified capability with actual owners; then Opus implements and Sol reviews.
+
+- C2 result: both Fable reports read; 3 then2 material findings. Removed proposed
+  manual request registry/CommitPatch, retained real branch/index/push owners,
+  resolved namespace and top-level capture, and bounded staging/concurrency proof.
+- Classification: contract-improved (design contract and owner facts, not runtime).
+- Checkpoint: root-authored design and all dispositions; implementation has not begun.
+- Next action: validate stop-loss, then contract C3 implementation of accepted design.
+
+### Cycle C3
+- Mechanism/question: implement the accepted direct read and manual branch composition.
+- Novel decision-relevant fact: Fable2 bounded remaining capture/staging clauses; token is identity, so existing bounded mutation lock is necessary for staging, while CAS remains publication protection.
+- Command/artifact/files: intent-manual-review-build-brief.md; same Opus implementation context after current parent/planning work.
+- Contract signal for progress: actual public diagnostic and certified manual journeys, named IM1..4 proof, independent Sol conformance/defect review.
+- Budget and stop condition:150 new tools or35 actual minutes per coherent implementation checkpoint; no repeated expensive suites while source changes; a demonstrated design failure returns to root rather than guessed authority.
+- Recoverable checkpoint: accepted design, two reports and full dispositions tracked; product candidate preserved before final proof.
+- Expected classification and next action: contract-improved with executable proof; if a concrete owner premise fails, record that fact and smallest correction before retry.
+
+Before C3, stop-loss validator passed:2 cycles,0 no-progress,budget3. Design phase
+finished inside its35-minute budget; implementation is the now-contracted C3.

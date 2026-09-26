@@ -261,3 +261,17 @@ loop; both are concrete required corrections in continuation5, not new policy.
 Manual-review Fable final round runs as20260926t100811-91db57f15c; draft remains
 unapproved for product work. Root deleted duplicate registry/patch-core shortcut
 and recorded all round1 dispositions before that final critique.
+
+## Manual design accepted; independent discovery checkpoint
+
+Final manual Fable report read in full:3->2 material trajectory, closed at round2
+on nested capture and staging-refusal fixtures. Root also corrected token-as-lock
+and adoption replay semantics with existing owner primitives, recording IM-C1..7.
+Manual build brief is ready for the same Opus context after current work. It does
+not replace IW/IP obligations. No product/runtime certification is claimed.
+
+Root drove checkpoint4 binary from a disposable directory: bare root exits0 in24
+lines with nine starting points; focused help succeeds, malformed wait proof/file/
+resume refuses2. Design help still2 (unbuilt). Binary hash, all commands and exits
+are in artifacts/agents/intent-workflows-verification/checkpoint-4/result.json.
+Continuation5 is running as20260926t101048-ddde2f31b7. Current main already merged.

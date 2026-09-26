@@ -22,3 +22,23 @@ The report's own tool-count estimate differs; launch measurements govern.
 
 Round 2 is the final declared round and challenges the smaller owner composition,
 particularly concrete staging/replay and no invented counter. No third prose round.
+
+## Final round and implementation exit
+
+Round 2 reviewed SHA25680e94a9d3f832e9bacb107efe6184243cffdfdcb22f54341eb0b662c360b7f29.
+Report read in full. Launch20260926t100811-91db57f15c, same provider, actual5m28.9s;
+cumulative30 model/28 tool calls, 9 new tools and10 current turns. MATERIAL2;
+trajectory3->2, both bounded clauses. No third prose round.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| IM-C5 | accepted | gittree.Snapshot deliberately scopes its Workspace.Dir prefix; complete-checkout capture must construct it at Git top level. | Explicit top-level capture, paths and replay; TestManualCaptureFromNestedCheckout (IM-1). |
+| IM-C6 | accepted | The destination is persistent; copying scratch --3way could leave conflict stages. Plain --index --binary checks all hunks first. | Explicit no --3way in destination, scratch unchanged; TestManualStageRefusalPreservesCheckout (IM-3). |
+| IM-C4 | accepted | Root strengthens the critic's non-material classification: the new stage-plus-commit section mutates shared index/files before update-ref CAS, so publication CAS alone cannot protect those inputs from concurrent staging/rollback. withGoalBranchCommitTokenAt:1025-1046 writes/removes one identity file and takes no flock. lease.LockBounded is the existing bounded exclusion primitive; RequireHolder normally reads an already-established holder. | Establish holder first, use existing checkout-mutation lock and recheck, mint token inside it; shared goal commit wrapper serializes all relevant calls, no nested lock or lock across push/review. Named concurrent case in TestManualSubmissionReplayAndAmend (IM-4). This is bounded existing-owner locking, not a new workflow store. |
+| IM-C7 | accepted | Safe refusal is insufficient for the explicit replay contract after adoption. CommitStaged uses scratch --3way; plain Apply differs. | Reuse owner scratch application for per-unit tree comparison; adopt-then-resubmit case in TestManualSubmissionReplayAndAmend (IM-4). |
+
+Closed at final round on the named executable obligations, plus mandatory full Sol
+code critique. Root agrees on the smaller implementation: no manual registry,
+no invented attempt counter, no CommitPatch, no alternative attestation system.
+If code reveals lock reentrancy or lost-input defects, correct them before calling
+IM-4 done; the fixture exit does not certify unbuilt behavior.

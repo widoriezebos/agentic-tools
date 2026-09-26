@@ -2,12 +2,14 @@
 
 - Kind: design
 - Id: 01M3EJ5W1JX95BA2NHD4G6Z1N7
-- Status: draft
+- Status: accepted
 - Goals: verbs-match-intent
 
 Author: root Codex, 26 September 2026. This completes a demonstrated capability
 gap in the user's full intent redesign; accepted parent and planning contracts
-remain required. Investigation: plans/intent-manual-review-investigation.md.
+remain required. Critique closed at round 2 on two named fixture obligations
+(material trajectory 3 -> 2), plus the required concurrency/replay fixtures;
+independent Sol implementation critique is mandatory. Investigation: plans/intent-manual-review-investigation.md.
 
 ## Contract and first usable slice
 
@@ -80,7 +82,11 @@ A goal named changes can never change the meaning of `review changes`. Public
 continuations use the explicit goal form when the id would collide.
 
 For changes, the capture is the invoking Git checkout's complete tracked and
-untracked, unignored changes against its HEAD. It preserves the caller's actual
+untracked, unignored changes against its HEAD. Resolve Git's checkout top level
+before constructing the snapshot workspace; captures, displayed paths and replay
+comparisons are top-level relative even from nested metasystem/ or application
+directories. TestManualCaptureFromNestedCheckout proves outside-prefix changes
+are included and the source index is unchanged. It preserves the caller's actual
 index; the brief and generated reports live outside the captured tree. Show the
 selected file list and exact base/diff identity in the result. Empty changes are
 an unchanged result, not a paid read. Supplied PATCH is frozen exactly; no claim
@@ -132,14 +138,21 @@ Default work is main when there is no work; ambiguity names executable --work
 choices. Manual work versions are commits, not invented build-attempt numbers.
 
 Freeze the patch and brief before effects, using existing read input custody.
-Use existing lawful claim and prepareGoalWorktree. Under the SAME existing checkout
-commit token, inspect the branch and selected work, check replay, stage the frozen
+Use existing lawful claim and prepareGoalWorktree. Establish the holder before locking; use the existing bounded checkout-mutation
+lock across stage plus commit, then recheck the holder and mint the existing
+commit token inside that critical section. The token is identity for the hook,
+NOT exclusion. Apply the same lock in the shared goal-commit wrapper so a raw
+commit cannot race public staging. Do not reacquire it in nested commit calls
+or hold it across push, paid review or waits. Under that lock, inspect the branch and selected work, check replay, stage the frozen
 change and call CommitStaged unchanged. Staged paths, binary patch, index tree,
 installation preflight and amendment must all describe the SAME candidate; do not
 inject only the Patch function. A distinct destination must be clean or already
 hold exactly this captured candidate, otherwise refuse without overwriting it.
-Stage the frozen patch through Git's existing --index application so both index
-and destination files agree. A supplied patch that does not apply is refused with
+Stage the frozen patch with `git apply --index --binary`, WITHOUT --3way in
+the persistent destination, so both index and destination files agree. Three-way
+application stays in disposable scratch owned by CommitStaged.
+TestManualStageRefusalPreservesCheckout uses a patch that needs a three-way merge
+and asserts the destination index and files remain byte-identical on refusal. A supplied patch that does not apply is refused with
 its inputs preserved; no generic importer or automatic conflict resolver.
 
 When source equals destination, the captured edits are already present: stage
@@ -159,13 +172,22 @@ if it remains current, the existing amendment owner may apply the correction; if
 already replaced, compare the requested result on the named old unit with the
 current unit before rejoining. Never compare the whole current branch tip, which
 may include other work and read records. A stale/unavailable base or mismatch
-refuses; it cannot silently authorize another amendment. No-change in the source
+refuses; it cannot silently authorize another amendment. Replay comparison uses the commit owner's actual scratch three-way application
+semantics, not plain prefix-scoped gittree.Apply: an adopted branch can install
+a patch through three-way application. Reuse/expose that bounded scratch-tree
+comparison, without committing or changing the source. An adopt-then-resubmit
+case in TestManualSubmissionReplayAndAmend must rejoin the actual unit.
+No-change in the source
 checkout after successful installation rejoins the selected existing work before
 attempting to create an empty commit. Changed brief is checked by the existing
 read owner's frozen-brief binding, never treated as a new clean certification.
 
-These comparisons are owner reads under the same checkout token as commit, so
-concurrent repeated callers cannot both install. A crash before installation may
+These comparisons and staging are serialized by the bounded checkout lock;
+the identity token alone does not serialize. Existing branch update-ref
+compare-and-swap and range checks remain the final publication protection.
+TestManualSubmissionReplayAndAmend interleaves repeated and differing submissions,
+proves no overwritten input/token or duplicate unit, and proves the losing caller
+can repeat safely. Release the lock before any other workflow stage. A crash before installation may
 leave only a dangling scratch commit; a repeat commits once to the branch. A lost
 commit response is resolved from the actual range and candidate comparison; a
 lost push response uses branch.Push's existing journal reconciliation. Do not
@@ -185,16 +207,18 @@ mandatory before this user's goal is done.
 
 | Obligation id | Severity | Required behavior | Owner | Test proof | Runtime proof | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| IM-1 | HIGH | Manual diff/current-change feedback with no builder; source untouched | Launch retained read/partition owners | TestIntentManualDiffReview; TestStandaloneReadPartition | Public commands, actual capture/retention with fake reader | MISSING |
+| IM-1 | HIGH | Manual diff/current-change feedback with no builder; source untouched | Launch retained read/partition owners | TestIntentManualDiffReview; TestStandaloneReadPartition; TestManualCaptureFromNestedCheckout | Public commands, actual capture/retention with fake reader | MISSING |
 | IM-2 | CRITICAL | Replays, failed retry and live/compacted outcomes honest | Existing launch custody and request retention | TestStandaloneReadReplayAndRecovery | One launch per request; show/wait/stop use public REF | MISSING |
-| IM-3 | CRITICAL | Manual submission has authentic commit/review/landing authority | Goal branch commit/read owners | TestIntentManualWorkDelivery | Manual edit -> public submission -> bound review -> land, no builder | MISSING |
+| IM-3 | CRITICAL | Manual submission has authentic commit/review/landing authority | Goal branch commit/read owners | TestIntentManualWorkDelivery; TestManualStageRefusalPreservesCheckout | Manual edit -> public submission -> bound review -> land, no builder | MISSING |
 | IM-4 | CRITICAL | Lost response, amendment and unrelated/source work preservation | Existing branch range/commit/amend owners | TestManualSubmissionReplayAndAmend | Lost commit/push result, repeat and correction with another work item | MISSING |
 
 Round 1 folded IM-C1..3: deleted the proposed manual request registry and
 CommitPatch, retained exact branch-owner comparison and existing indexed commit,
 and made subject-word collisions unambiguous. Dispositions are recorded in
-plans/intent-manual-review-dispositions.md. No implementation is authorized until
-this bounded critique closes.
+plans/intent-manual-review-dispositions.md. Round 2 IM-C5 and IM-C6 became the named nested-capture and staging-refusal
+fixtures above. Root also corrected IM-C4's mistaken token-as-lock premise and
+IM-C7's replay semantics; all seven findings have dispositions. Implementation
+is authorized, but no runtime or delivery certification is claimed.
 
 Fable: maximum two rounds on this new concrete capability, failsafe round 2;
 criterion is whether step 1 works/safely meets its contract, plus whether the
