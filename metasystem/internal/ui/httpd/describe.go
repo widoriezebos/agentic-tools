@@ -61,6 +61,12 @@ func Acts() []manifest.Act {
 			Does: "Pauses a goal with the reason a human gave, so it leaves the queue until somebody returns it."},
 		{ID: routeUnpark, Title: "Return a parked goal to the queue", Requires: ledgerHand,
 			Does: "Lifts a park, returning the goal to approved where its approval still stands and to queued otherwise."},
+		// The goal editor's own act. It was routed and dispatched before it was
+		// described, which meant a human asking the Partner what they could do
+		// to a goal was told eight of the nine acts this interface has — and a
+		// proposal catalogue joined to this table could not name it at all.
+		{ID: routeEditGoal, Title: "Edit a goal", Requires: ledgerHand,
+			Does: "Rewrites the intent, the next step and the labels of a goal nobody has approved yet."},
 		{ID: routeCreateRecord, Title: "Write a record", Requires: checkoutHand,
 			Does: "Creates one decision, design, doctrine or intent record in the home its kind names."},
 		{ID: routeRecordStatus, Title: "Set a record's status", Requires: checkoutHand,

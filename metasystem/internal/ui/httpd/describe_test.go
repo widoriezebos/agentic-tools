@@ -25,7 +25,7 @@ func TestEveryWriteRouteIsAnActWithAHand(t *testing.T) {
 		routeQuestionStatus, routeEditDocument, routePreviewSource,
 		routeSignIn, routeSignOut,
 		routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
-		routePark, routeUnpark,
+		routePark, routeUnpark, routeEditGoal,
 		routePartnerTurn, routePartnerStop, routePartnerSeeing,
 		routePartnerSitting, routePartnerClose, routePartnerRise,
 		routeAddSticky, routeEditSticky, routeRemoveSticky,
@@ -60,7 +60,7 @@ func TestTheLedgerActsNameTheHandMayActRequires(t *testing.T) {
 	for _, act := range Acts() {
 		switch act.ID {
 		case routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
-			routePark, routeUnpark:
+			routePark, routeUnpark, routeEditGoal:
 			testutil.Expect(t, act.ID+" needs a signed-in human",
 				strings.Contains(act.Requires, "a signed-in human"), true)
 			testutil.Expect(t, act.ID+" names the one exception",
