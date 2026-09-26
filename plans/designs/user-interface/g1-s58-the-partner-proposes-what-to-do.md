@@ -34,7 +34,9 @@ every one a consequence of a round-1 fold, every one a bounded choice,
 every one folded and named as a fixture obligation in section 6; the
 loop is closed at round 2 on those six obligations, as the critique
 skill's principled exit provides, and a scoped confirmation read of the
-six folds follows. Every cite re-read at `b19a413cf`.
+six folds followed: five confirmed, with the D1 sentence, and one held
+on a narrow point, folded in revision 4 as a seventh fixture obligation.
+Every cite re-read at `b19a413cf`.
 
 ## 1. What exists and binds
 
@@ -102,6 +104,11 @@ six folds follows. Every cite re-read at `b19a413cf`.
    branch once and then observe, which the Refresh button uses and a
    mount does not (src/backlog/api.ts:296-305); the plain read answers
    from the accepted ref as it stands (internal/ui/snapshot/snapshot.go:116-135).
+   The payload says what that fetch did: `fetch.outcome` is `advanced`,
+   `current`, `failed`, `running` or `never`, with a failure's message
+   (src/backlog/api.ts:162-203; internal/ui/snapshot/loop.go:205-220),
+   and the route answers 200 from the accepted ledger whether or not the
+   fetch succeeded (internal/ui/httpd/backlog.go:170-186).
 4. **The page already runs a list of acts, and its outcome mapping has two
    false branches.** `runInOrder` sends one publication per goal in order,
    never retries, and stops at the first answer that is not one
@@ -411,9 +418,13 @@ common case.
   at.** The runner sends the ticked lines in order through the existing
   clients (backlog/api.ts:312-397), one act each, never retried. Before
   the first line it reads the backlog once with the fetch-first form
-  (`loadBacklog(signal, true)`), so the compare below is against the
-  canonical branch as of the press and not the loop's last cadence; an
-  approve or edit line whose goal's current intent, next step, tier or
+  (`loadBacklog(signal, true)`) and reads the payload's `fetch.outcome`:
+  only `advanced` or `current` means the compare below is against the
+  canonical branch as of the press, and on `failed` every approve and
+  edit line is refused unsent with the fetch's own message, "the
+  canonical branch could not be read: <words>; try again", while the
+  lines that need no compare run as they would; an approve or edit line
+  whose goal's current intent, next step, tier or
   labels differ from `read`, or whose `prefillFor` now answers a tuple
   other than the one the line displays, is refused on the line without
   being sent, "the goal changed since this was proposed; open it and ask
@@ -597,10 +608,12 @@ place with the rest of the transcript untouched; the context block's
 line from recorded states; the describe table's row and a join test
 that every ledger act in the catalogue is in the table and every table
 row the catalogue admits is in the catalogue. The six fixture
-obligations from Astra's round 2, one test each, in the act layer and
-the page: (S58-07) the run's first read is the fetch-first form, and a
-goal whose intent changed between the card and the press is refused on
-the line unsent; (S58-08) an approve line sends the tuple it displayed,
+obligations from Astra's round 2 and the one from its confirmation
+read, one test each, in the act layer and the page: (S58-07) the run's
+first read is the fetch-first form, a goal whose intent changed between
+the card and the press is refused on the line unsent, and a payload
+whose fetch failed refuses every approve and edit line unsent with its
+message while an unguarded line still runs; (S58-08) an approve line sends the tuple it displayed,
 and a line whose `prefillFor` now answers another tuple is refused
 unsent; (S58-09) `settle` answers `pushed-unknown` for a publish error
 whose journal entry is pushed and not terminal, `journal-unreadable` for
@@ -697,3 +710,20 @@ re-read before folding.
 Non-material, folded because it costs one sentence: a rename after the
 grammar lands touches the tool's table and the word map and never a
 persisted proposal, because the message persists the route id (D1).
+
+## Dispositions (Astra's scoped confirmation read, 2026-09-26)
+
+Checked at `38c8690ea`, on the six folds and the D1 sentence only.
+S58-08, S58-09, S58-10, S58-11, S58-12 and the D1 sentence confirmed as
+folded; Astra also confirmed D10's premise that the existing Approve
+buttons submit without a basis compare (ActSheet.tsx:83, BulkSheet.tsx:102,
+DecisionsPane.tsx:178). S58-07 not confirmed on one narrow point,
+folded in revision 4:
+
+| id | finding | fold |
+|---|---|---|
+| S58-07 | the fetch-first read answers 200 from the accepted ledger even when its canonical fetch failed, so the compare can run against a stale tip; the payload records the failure and D5 did not read it | the runner reads `fetch.outcome`; on `failed` every approve and edit line is refused unsent with the fetch's message, unguarded lines run as they would; the seventh fixture obligation in section 6 (D5) |
+
+The loop is closed. No further design round is run on the designer's
+own judgment; whether to spend one more scoped read on this one rule,
+or to give the go, is Wido's.

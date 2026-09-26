@@ -147,3 +147,51 @@ Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic cha
 - No additional unsafe mixed-verb combination was demonstrated beyond the basis and outcome defects above.
 
 VERDICT: 6 material findings (fail test 2): S58-07, S58-08, S58-09, S58-10, S58-11, S58-12
+
+---
+
+# Astra's scoped confirmation read, on revision 3
+
+Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic chain, against revision 3 at `38c8690ea`; the checklist was the six folds of round 2 and the D1 sentence, nothing else. Verbatim; the disposition is the design's revision 4.
+
+---
+
+Checked revision 3 at `38c8690ea`.
+
+1. **S58-07 — not confirmed.** The fetch-first call is folded in D5, but it does not guarantee the claimed canonical reading.
+
+   D10's premise about existing buttons holds: ActSheet (src/backlog/ActSheet.tsx:83) and BulkSheet (src/decisions/BulkSheet.tsx:102) submit without a basis comparison; Decisions opens them using ordinary reads at DecisionsPane.tsx:178.
+
+   However, a failed fetch is recorded in the payload by loop.go:207 (metasystem/internal/ui/snapshot/loop.go); backlog.go:183 (metasystem/internal/ui/httpd/backlog.go) still answers HTTP 200 from the accepted ledger. Concrete failure: canonical G already contains B, the card and accepted tip contain A, the preflight fetch fails, the comparison passes against A, and the subsequent approval fetch succeeds and approves B. D5 specifies no check of the returned fetch failure.
+
+   Require a successful canonical read before sending guarded lines.
+
+   **Test 1:** Yes—changes preflight control flow and its fixture. **Test 2:** Fails **SAFE**: the accepted-tip stale-read failure remains possible, independently of the explicitly deferred transaction window.
+
+2. **S58-08 — confirmed.** D3 retains the displayed tuple and source; D5 refuses a differing prefill and sends only the displayed tuple. This closes the substitution identified in round 2.
+
+   **Test 1:** Yes—changes captured data and submission. **Test 2:** Passes for this fold: the confirmed budget cannot silently become another tuple.
+
+3. **S58-09 — confirmed for fresh browser operations.** D6 distinguishes unreadable, pushed and definite non-write cases; ReadEntry (metasystem/internal/goal/journal.go:217) preserves the underlying error for distinguishing absence.
+
+   `PhasePushed` can exist without a landed write: txn.go:800 records it before publication, and a refused CAS followed by failed terminalization can leave it there. Treating that as unresolved is conservative. On the traced fresh-operation paths, landed-but-unconfirmed returns retain pushed state; successful terminal confirmation returns no publication error at txn.go:833. Confirmed-operation replay has different possibilities, but browser requests mint fresh operation IDs at act.go:566.
+
+   **Test 1:** Yes—changes outcome mapping. **Test 2:** Passes for the scoped browser path: unreadable evidence no longer becomes a definite refusal.
+
+4. **S58-10 — confirmed as a design fold.** D5 now requires every offered reread to preserve the mounted page. Fleet's `again` (src/fleet/FleetPane.tsx:112) avoids the forced loading transition that erased the inline Retry draft.
+
+   **Test 1:** Yes—changes refresh callbacks and their contract. **Test 2:** Passes for the identified failure: an automatic reread must preserve the editor and its text.
+
+5. **S58-11 — confirmed.** D5 refreshes both payloads in place. That matches the separate state in ProjectPane.tsx:149 and the project-derived title, state and intent in GoalBlock (ProjectPane.tsx:826).
+
+   **Test 1:** Yes—changes the refresh inputs. **Test 2:** Passes: confirmed changes can update the visible goal without unmounting its columns.
+
+6. **S58-12 — confirmed.** D6 corrects the unsettled list. For fresh browser operations, rejection and abandonment occur before a landed push; expiry follows refused CAS attempts at txn.go:853; `NothingToDo`, competitor loss and mutation rejection are classified at txn.go:901. Landed and unknown attempts exit rather than continuing into those classifications.
+
+   **Test 1:** Yes—changes outcome mapping and continuation. **Test 2:** Passes: the redundant-block example becomes refused and the next line runs.
+
+7. **D1 naming sentence — confirmed.** D1 explicitly persists stable route IDs and body fields, translating public grammar at the tool boundary. A public rename therefore leaves stored proposals intact.
+
+   **Test 1:** Yes—clarifies the persistence contract. **Test 2:** Passes; this remains non-material to the provisional catalogue's first use.
+
+VERDICT: 1 folds not confirmed: S58-07
