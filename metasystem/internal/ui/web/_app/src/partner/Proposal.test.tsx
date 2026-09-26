@@ -176,12 +176,27 @@ describe("the card the Partner's proposed acts stand on", () => {
   });
 
   /**
-   * A line the page went away in the middle of says it was being applied, and
-   * never says fresh.
+   * A line the page went away in the middle of says it was being applied, never
+   * says fresh, and can still be put away.
+   *
+   * The second half is what a card without it costs: nothing will ever settle
+   * that line — the run that wrote `applying` is gone — so the card would keep
+   * it for good. The route admits `applying` to `dismissed` for exactly this
+   * (Sol S58-C-06).
    */
-  it("says a line left in flight was being applied when the page left", () => {
-    expect(rendered([proposal({ state: "applying" })]))
-      .toContain("was being applied when the page left; check the goal before applying again");
+  it("offers Try again and Dismiss for a line left in flight", () => {
+    const markup = rendered([proposal({ state: "applying" })]);
+    expect(markup).toContain("was being applied when the page left; check the goal before applying again");
+    expect(markup).toContain("Try again");
+    expect(markup).toContain("Dismiss");
+    // And no Apply: there is nothing waiting on this card to apply.
+    expect(markup).not.toContain(">Apply<");
+  });
+
+  /** A card whose every line is settled offers no Dismiss: there is nothing to put away. */
+  it("offers no Dismiss where every line is settled", () => {
+    const markup = rendered([proposal({ state: "applied" })]);
+    expect(markup).not.toContain("Dismiss");
   });
 
   /** The foot counts what happened, and offers Continue where a run stopped short. */

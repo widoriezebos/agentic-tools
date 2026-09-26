@@ -99,6 +99,7 @@ import {
   cardsIn as proposalCardsIn,
   dispatchOf,
   coverChanged,
+  dismissable as dismissableLine,
   displayedFor,
   lineID as proposalLineID,
   markOf as proposalMarkOf,
@@ -1734,7 +1735,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       return;
     }
     for (const line of found.lines) {
-      if (!waitingLine(line)) {
+      // Every line that can still be moved out of where it is, which includes a
+      // line a page went away in the middle of: nothing else will settle that
+      // one, and the route admits `applying` to `dismissed` for exactly this
+      // (Sol S58-C-06). The version is the entry's own, so a line somebody else
+      // moved first answers with a conflict and stays as they left it.
+      if (!dismissableLine(line)) {
         continue;
       }
       void writeState(line, card, "dismissed", "").catch(() => {

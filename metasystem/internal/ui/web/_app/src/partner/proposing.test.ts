@@ -497,6 +497,10 @@ describe("what a line says about where it stands", () => {
     expect(dismissable(line)).toBe(true);
     expect(dismissableIn(card([proposal({ state: "applying" }), proposal({ index: 1 })]).lines)).toBe(2);
     expect(dismissableIn(card([proposal({ state: "applied" })]).lines)).toBe(0);
+    // And every settled state is past putting away: the record says what it says.
+    for (const state of ["applied", "refused", "unresolved", "dismissed"] as const) {
+      expect(dismissable(lineOf(card([proposal({ state })])))).toBe(false);
+    }
   });
 
   it("offers Try again on a refused or unresolved line and on nothing else", () => {

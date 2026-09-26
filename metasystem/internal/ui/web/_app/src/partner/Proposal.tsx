@@ -11,6 +11,7 @@ import {
   cardHead,
   cardIn,
   CONTINUE,
+  dismissableIn,
   DISMISS,
   footLine,
   foldedLine,
@@ -173,7 +174,7 @@ function ProposalLine({ card, line }: { card: Card; line: Line }) {
           {said}
         </p>
       )}
-      {offersTryAgain(line) && !running && (
+      {offersTryAgain(line, running) && !running && (
         <div className="ms-proposal-recovery">
           <button
             type="button"
@@ -224,6 +225,11 @@ function Foot({ card }: { card: Card }) {
   const running = runningProposals === card.id;
   const wake = !busyAnswering(card, store.live.turn) && runningProposals === "";
   const waitingLines = waitingIn(card.lines);
+  // What can still be put away: the waiting lines, and a line a page went away
+  // in the middle of. Nothing else will ever settle that one — the run that
+  // wrote `applying` is gone — so a card without this offer keeps it for good
+  // (Sol S58-C-06). The route admits `applying` to `dismissed` for exactly this.
+  const openLines = dismissableIn(card.lines);
   const foot = footLine(card);
   const many = card.lines.filter((line) => line.offered).length > 1;
 
@@ -274,7 +280,7 @@ function Foot({ card }: { card: Card }) {
           {CONTINUE}
         </Button>
       )}
-      {waitingLines > 0 && (
+      {openLines > 0 && (
         <Button
           disabled={!wake}
           onClick={() => {
