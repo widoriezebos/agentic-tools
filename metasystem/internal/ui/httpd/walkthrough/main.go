@@ -266,7 +266,7 @@ func main() {
 		Unblock: func(_ *session.Session, dependent, blocker string) error {
 			return state.unblock(dependent, blocker)
 		},
-		Project: func() (project.Pane, error) { return state.project(), nil },
+		Project: func() (project.Pane, error) { return satOnPane(state.project(), roots), nil },
 		// The document reader and the in-place editor, over the fixture
 		// checkout, through the same package the engine wires.
 		Document: func(id string) (project.Document, error) {
@@ -348,7 +348,7 @@ func main() {
 		// this fixture's own board rather than an empty block.
 		service := fakePartner(checkout, partner.Facts{
 			Observe: state.observe,
-			Project: func() (project.Pane, error) { return state.project(), nil },
+			Project: func() (project.Pane, error) { return satOnPane(state.project(), roots), nil },
 			Document: func(id string) (project.Document, error) {
 				return project.Read(roots, id, time.Now().UTC())
 			},
@@ -1016,6 +1016,27 @@ func (l *ledger) goalFile(id string) *goal.GoalFile {
 		return file
 	}
 	return l.tree.Abandoned[id]
+}
+
+// satOnPane is the canned pane with one list read from the fixture checkout: the
+// records this fixture has been sat on (g1-s55 D3).
+//
+// Everything else here is invented, and that is right for a walkthrough — the
+// goals, the designs and the decisions are what the tabs need to be stood in
+// front of. The Sittings list cannot be: it is a view over the records
+// THEMSELVES, and a sitting on this fixture writes into the checkout beside it
+// through the same writer the engine wires. So a canned list would show nothing
+// however many sittings were held, and this reads the one thing that is real.
+//
+// A checkout it cannot read leaves the list as it was rather than refusing the
+// pane: every other row of it is still what this fixture invents.
+func satOnPane(pane project.Pane, roots project.Roots) project.Pane {
+	read, err := project.ReadPane(roots, time.Now().UTC())
+	if err != nil {
+		return pane
+	}
+	pane.Sittings = read.Sittings
+	return pane
 }
 
 // project is the canned Project pane the goal page reads. It carries what a

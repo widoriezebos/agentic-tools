@@ -553,13 +553,28 @@
 /* ------------------------------------------------------- Project → Sittings -- */
 
 /* One record this project has sat on. It is a row of the Project pane's own
-   list, and it is a column rather than that list's four-column grid: what it
-   carries is a title, a line of counts and a path, none of which line up with
-   another row's status and act. */
+   list and carries that list's rhythm, but not its class: the record rows are a
+   four-column grid of title, status, act and path, and this carries a title, a
+   line of counts and a path, none of which line up with those. Taking the grid's
+   class and overriding its display would leave the two rules fighting over
+   whichever stylesheet the bundle happened to put last. */
 .ms-sitting-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 6px 0;
+  border-block-end: 1px solid var(--ms-border);
+}
+
+.ms-sitting-row:last-child {
+  border-block-end: 0;
+}
+
+/* The path reads under the row rather than at its far edge: it is the last line
+   of a column, and the record rows it borrows the style from put it in a column
+   of its own on the right. */
+.ms-sitting-row .ms-project-row-path {
+  text-align: start;
 }
 
 /* The press that opens the conversation on this record. It reads as the row's
@@ -650,6 +665,24 @@
     flex: none;
     align-self: stretch;
     max-height: none;
+  }
+
+  /* And while it is content-height, the frame is the containing block for what
+     is inside it. That is the blank space g1-s53's Built list left open, and it
+     was never the table's height (g1-s55 D4): the labels this build hides behind
+     its fields are `.ms-visually-hidden`, which is absolutely positioned, and an
+     absolutely positioned element with no positioned ancestor is placed against
+     the PAGE. Beside the conversation the frame is the height of the work area
+     and those labels sit inside it; stacked, the frame is ten thousand pixels
+     tall, the composer's own label is at the foot of it, and the document grew
+     to reach a box one pixel high.
+
+     Measured on the walkthrough at 400 with a sitting standing: the document
+     scrolled 10731px for 780px of content, and scrolling to the end of it showed
+     an empty screen under the table. With the frame positioned, the document is
+     780px and the page ends where the table does. */
+  .ms-focused-frame:has(.ms-table) {
+    position: relative;
   }
 }
 

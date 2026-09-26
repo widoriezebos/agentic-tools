@@ -1497,7 +1497,7 @@ function Sittings({ rows, nothing }: { rows: readonly SittingRow[]; nothing: Rea
     <Block title={SITTINGS_TITLE} count={rows.length}>
       <ul className="ms-project-rows">
         {rows.map((row) => (
-          <li key={row.record.path} className="ms-project-row ms-sitting-row">
+          <li key={row.record.path} className="ms-sitting-row">
             <button
               type="button"
               className="ms-sitting-row-open"

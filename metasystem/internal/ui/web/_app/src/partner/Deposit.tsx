@@ -160,7 +160,11 @@ export function DepositCard({ id }: { id: string }) {
       <p className="ms-deposit-head">
         <span>{cardHead(card.kind)}</span>
         <Help id={card.kind === "outcome" ? "the-outcome" : "deposit"} />
-        <span className="ms-deposit-where">{sectionOf(card.kind)}</span>
+        {/* Where it would land, or — once the record has taken it — where the
+            record put it. The two are not always the same thing: a case lands on
+            no pile by itself, and what lands is the decision or the open
+            question the human made of it (g1-s55 D1). */}
+        <span className="ms-deposit-where">{recorded ? card.mark.recorded : sectionOf(card.kind)}</span>
       </p>
       {/* The entry and its clause are the human's to change until the record has
           taken them. Once it has, they are what the record says, so the card
