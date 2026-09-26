@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3E64FM8AGQ5K8KSMB2RZ50T
-- Status: draft
+- Status: accepted
 - Goals: browser-interface
 
 Wido, 2026-09-26, after the first sitting with g1-s51: "I asked the
@@ -64,26 +64,26 @@ Intent                                          Ask the Partner
 ```
 
 You press Use this; the field holds the proposal, the block says "Used ·
-Undo", Save is yours. Or you press "Use and save" and the sheet saves in
-the same press, which is the one act the master allows the Partner's
-words to become, on your press, for a queued goal's intent, next step
-and labels.
+Undo", and Save is yours, one press away, at the foot of the same sheet.
 
 What changes, and why:
 
 - **Opening the sheet is the hand-over.** The chip appears when a sheet
-  with writable fields opens and goes when it closes or when you press
-  its ✕, and the Partner may propose for those fields from then on. No
-  hidden first press. The rule stays honest because the chip is on
-  screen the whole time.
+  with writable fields opens, without opening the drawer or moving your
+  caret, and goes when the sheet closes; its ✕ leaves the draft out of
+  every later question. No hidden first press. The rule stays honest
+  because the chip stands wherever the composer is shown, and the Seeing
+  line says "Edit goal sheet open" whether the drawer is open or not.
 - **The proposal is where you write.** It renders under the field it
   names, inside the sheet; the transcript keeps the card as the record.
   The drawer's height stops mattering.
 - **A refusal is said where you can read it.** If the Partner proposes
   for a field that is not open, the drawer shows it under the answer as
-  a card in its closed state: "Intent is not open for proposals; open
-  the sheet and ask again". The Partner's tool result says the same, so
-  it never narrates a card that was not offered.
+  a card in its "not offered" state with the reason: "Intent is not open
+  for proposals" and, where the draft was detached, "the draft was left
+  out; press Ask about this to hand it over again". The Partner's tool
+  result says that preparing a suggestion does not confirm it was shown;
+  the card is the authoritative answer where the human reads.
 - **The entry is on the field.** "Ask the Partner" beside each writable
   field's label fills the composer with a request for that field and
   takes the caret there; the human edits or sends.
@@ -96,19 +96,20 @@ What changes, and why:
   "writing in nothing yet" and the Partner names the field or asks. Wido,
   2026-09-26: "do you know which field I was editing when I started
   editing in the project partner panel? Because you will have to."
-- **Use and save.** Beside Use this on the proposal, when the sheet is
-  the edit sheet: one press that uses the words and saves the sheet with
-  its existing save, the same act as pressing Save after Use this. Never
-  without the press; never on any other sheet in this step.
+- **Use, then Save.** Two presses, both yours and both on the same
+  sheet. One press that does both is step 3, once the sheet owns a
+  submission path that takes the next draft explicitly, guards busy and
+  reports its real outcome.
 
 ## 3. Decisions
 
-- D1. **Hand-over on open.** `AskSheet` hands the draft over when a sheet
-  with writable fields mounts, exactly what "Ask about this" does today,
-  and takes it back on unmount or on the chip's ✕; "Ask about this" stays
-  and does the same for a sheet whose chip was removed. The service's
-  admission is unchanged: a handed-over draft with its opening and
-  writable fields.
+- D1. **Hand-over on open.** `AskSheet` attaches the draft when a sheet
+  with writable fields mounts, as "Ask about this" does today but
+  without opening the drawer or taking the caret; it detaches on unmount,
+  and the chip's ✕ leaves the draft out of later questions (a proposal
+  already asked for keeps its opening's registration, as today);
+  "Ask about this" stays and re-attaches a removed draft. The service's
+  admission is unchanged.
 - D2. **The proposal renders under its field.** The sheet places one
   `FieldProposals` beside each writable field, from the store's
   suggestions for that opening and field: the newest waiting proposal
@@ -118,16 +119,19 @@ What changes, and why:
 - D3. **A refused proposal is shown.** The service records a refused
   suggestion with a reason instead of dropping it to an activity line;
   the transcript renders it as a card in a "not offered" state with the
-  reason; the tool's result says "prepared; it is offered only if that
-  field is open on a sheet the human has on screen".
+  reason; the tool's result says "prepared; preparing does not confirm
+  it was shown: it is offered only for a field of a draft the human has
+  handed over".
 - D4. **"Ask the Partner" on the field.** One small link the sheet places
   beside each writable field's label; pressing it puts "Suggest a better
   <field>" in the composer, or "Suggest a <field>" where the field is
   empty, and takes the caret there; it sends nothing.
-- D5. **Use and save on the edit sheet.** A second button on a proposal
-  in the edit sheet only: uses the words and calls the sheet's existing
-  save, so the same route, refusals and busy guard apply; the card and
-  the block say "Used and saved". Other sheets get Use this alone.
+- D5. **Use this, then the sheet's own Save.** No combined button in
+  this step: the edit sheet's save reads its draft from the render and
+  guards busy on its button only, so a second caller would save the
+  previous words or report a save it cannot confirm. Step 3 gives the
+  sheet a submission path that takes the next draft explicitly, guards
+  busy and returns its outcome, and then one press may do both.
 - D6. **The field in hand travels.** Each writable field reports focus
   to the sheet, which keeps the last one and hands it to the store beside
   the draft; the chip shows it; the capture's draft carries `writing`;
@@ -145,8 +149,11 @@ and `reason` on a refused one, and the same on the stream event.
 
 ## 5. Not here, later
 
-The document editor and the stickies composer (g1-s51 step 2 items, now
-step 3). The Partner saving on its own request. Proposals for several
+"Use and save" as one press, on a sheet-owned submission path. Two
+sheets of one name open at once, whose attachments share a name.
+Revoking a proposal already asked for when the chip is removed. The
+document editor and the stickies composer. The Partner saving on its
+own request. Proposals for several
 fields at once as one act. Diffs.
 
 ## 6. Verification and box
@@ -156,9 +163,8 @@ stream carrying it; the tool's result words. Frontend: the chip appearing on ope
 draft carried by a question without a prior press; the field in hand
 following focus, shown on the chip and carried in the capture, empty
 before any focus; the proposal block under the field with its
-states; the field link filling the composer; Use and save calling the
-sheet's save once and refusing while busy; the transcript's not-offered
-card; the guards stay green. Walkthrough: the fake Partner's canned
+states; the field link filling the composer; the drawer not opening and the caret not moving on hand-over; the
+transcript's not-offered card with its reason; the guards stay green. Walkthrough: the fake Partner's canned
 suggestion arrives without "Ask about this"; screenshots at 1280 and 400:
 the chip on open, the proposal under Intent, "Used · Undo", the
 not-offered card. Budgets as always. Box: one build lane (Claude on
@@ -169,8 +175,27 @@ after Astra's read; two attempts, 120 to 180 job-minutes.
 
 High on D1, D2, D4: they move existing pieces to where the human looks.
 Medium on D3: a refusal becomes a visible object, which is right, and a
-second card state. Medium on D5: one press does two things the human
-could do in two; it is the act the human asked for by name, and it is
-one sheet. Weakest: the chip on open is the human's consent by being
+second card state. Medium on D5: two presses where the human asked for one; the one
+press waits for a submission path that can report the truth. Weakest: the chip on open is the human's consent by being
 seen; if a sitting shows it is not noticed, "Ask about this" returns as
 the gate.
+
+## Dispositions (Astra read, 2026-09-26, under R-124)
+
+Two material findings, both in the combined "Use and save", five
+deferred; every code claim checked.
+
+| id | finding | fold |
+|---|---|---|
+| F1 | the edit sheet's save reads its draft and its "nothing changed" guard from the render, so a second caller that first sets the words would save the previous delta or refuse | the combined press is step 3, on a sheet-owned submission path that takes the next draft explicitly; step 2 is Use this, then Save |
+| F2 | the save reports no outcome and guards busy on its button only, so "Used and saved" could be said of a refused or unresolved request | the same: no combined button until the path returns its real outcome |
+
+Folded because they cost nothing: hand-over on open attaches the chip
+without opening the drawer or moving the caret; the ✕ leaves the draft
+out of later questions rather than revoking a proposal already asked
+for; the tool's result says preparing does not confirm showing, and the
+refusal card names the detached case. Deferred, step 2 works without
+them: two same-named sheets open at once; last-writer saves on one field,
+inherited from Save. The field in hand (D6) was added after the read
+began; Astra read the tip that carried it and called it what serves the
+actual interaction.
