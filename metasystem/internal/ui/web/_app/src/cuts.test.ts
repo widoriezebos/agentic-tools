@@ -171,6 +171,11 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // exactly one place in this build that reaches the network from here. The end
   // address lies under the start address and is listed on its own, because it is
   // an exact path and not an id between a prefix and a suffix.
+  // Recording what a press did to one proposed action joins it too: it is the
+  // same request with a body, to one action beneath its turn, so there is still
+  // exactly one place in this build that reaches the network from here. The act
+  // itself is not here and must not be: it goes to the ledger's own routes,
+  // under the human's session, which is backlog/api.ts's call site.
   [
     "partner/api.ts",
     1,
@@ -181,6 +186,7 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       "/api/partner/sitting",
       "/api/partner/sitting/end",
       "/api/partner/sitting/close",
+      "/proposals/",
       "/stop",
     ],
   ],

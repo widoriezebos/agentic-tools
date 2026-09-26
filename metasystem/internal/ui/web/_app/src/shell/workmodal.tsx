@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 /**
  * How much of the window a sheet is modal for.
@@ -36,11 +36,29 @@ export const SIGN_IN_MODALITY: Modality = "window";
  * Both are null where there is no work area, which is the focused page and
  * every render outside the shell.
  */
-type WorkArea = { layer: HTMLElement | null; under: HTMLElement | null };
+type WorkArea = {
+  layer: HTMLElement | null;
+  under: HTMLElement | null;
+  /** True while at least one sheet is covering the work area. */
+  covered: boolean;
+  /** One sheet says it has begun covering, or has stopped. */
+  note: (covering: boolean) => void;
+};
 
-const WorkAreaContext = createContext<WorkArea>({ layer: null, under: null });
+const WorkAreaContext = createContext<WorkArea>({ layer: null, under: null, covered: false, note: () => undefined });
 
-/** The shell says where its work area is. Nothing else may. */
+/**
+ * The shell says where its work area is. Nothing else may.
+ *
+ * It also counts the sheets covering it, in state, because something outside a
+ * sheet now has to know: a re-read asked while a sheet is open would unmount the
+ * columns that sheet is rendered over, and an unsaved draft in it would go with
+ * them (Astra S58-03). So the count is here, where every sheet passes through,
+ * and `covered` is what the store asks before it re-reads.
+ *
+ * It is a count rather than a flag for the reason the element's own count is one:
+ * two sheets open at once must not let the first to close uncover the area.
+ */
 export function WorkAreaProvider({
   layer,
   under,
@@ -50,8 +68,28 @@ export function WorkAreaProvider({
   under: HTMLElement | null;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ layer, under }), [layer, under]);
+  const [covering, setCovering] = useState(0);
+  const note = useCallback((begun: boolean) => {
+    setCovering((held) => Math.max(0, held + (begun ? 1 : -1)));
+  }, []);
+  const value = useMemo(
+    () => ({ layer, under, covered: covering > 0, note }),
+    [layer, under, covering, note],
+  );
   return <WorkAreaContext.Provider value={value}>{children}</WorkAreaContext.Provider>;
+}
+
+/**
+ * Whether a sheet is covering the work area.
+ *
+ * It is what a re-read asked from outside the page has to know. The content
+ * under an open sheet is inert and the sheet is rendered over it; a read that
+ * replaced what is under there would take the sheet's own columns with it, and
+ * whatever the human had typed into them. So a re-read asked while this is true
+ * is deferred and made when it goes false.
+ */
+export function useWorkAreaCovered(): boolean {
+  return useContext(WorkAreaContext).covered;
 }
 
 /**
@@ -69,7 +107,7 @@ export function WorkAreaProvider({
  * the caret to one would be returning it to nowhere.
  */
 export function useWorkModal(modality: Modality, open = true): HTMLElement | null {
-  const { layer, under } = useContext(WorkAreaContext);
+  const { layer, under, note } = useContext(WorkAreaContext);
   const host = modality === "work" ? layer : null;
   // Where the sheet is mounted whether or not it is open — the font chooser
   // is, because the control and its sheet are one component — only an open one
@@ -81,10 +119,16 @@ export function useWorkModal(modality: Modality, open = true): HTMLElement | nul
       return;
     }
     cover(under);
+    // And the provider is told, so that something outside this sheet can know
+    // the work area is covered without reading the DOM. The element's own count
+    // above stays the element's: it decides the inert, and its cleanup ordering
+    // is what hands the caret back safely.
+    note(true);
     return () => {
       uncover(under);
+      note(false);
     };
-  }, [covered, under]);
+  }, [covered, under, note]);
   return host;
 }
 

@@ -7,14 +7,14 @@ import type { Backlog, Ledger, Row } from "./api";
 import { Board, observedAt, Unplaceable, type Asked } from "./Board";
 import { boardColumns } from "./columns";
 import { ANY, arcsOn, NONE, noFilters, seatsOn, windowTitle, type Filters, type Window } from "./filters";
-import { clockTime, shortTip } from "./format";
+import { clockTime, minuteTime, shortTip } from "./format";
 import { DraftGroup, LaneGroup } from "./LaneGroup";
 import { anchorFor, closedLanes, shownLanes, UNPLACEABLE, type LaneId } from "./lanes";
 import { OpenSheet } from "./OpenSheet";
 import { appliedLine, askedFor, returnAddress, type Asked as Arrival } from "./returning";
 import { landingFor, placementOf, SHOWN, type Landing } from "./showing";
 import { Statement } from "./Statement";
-import { useBacklog, useSlicePlans } from "./state";
+import { useBacklog, useSlicePlans, type BacklogState } from "./state";
 import { syncOf } from "./sync";
 import { BoardToolbar } from "./Toolbar";
 import { Pane } from "../panes/Pane";
@@ -30,6 +30,7 @@ import {
 } from "../storage";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button } from "../shell/controls";
+import { useOffersRefresh } from "../shell/refresh";
 
 /**
  * How many goals of one lane travel with a question. It is the server's own
@@ -60,7 +61,7 @@ const LANE_ROWS = 25;
  * almost every board costs the work no room.
  */
 export function BacklogPane() {
-  const { backlog, refresh, moved, attempt } = useBacklog();
+  const { backlog, refresh, again, moved, attempt } = useBacklog();
   // What the checkout's design records say about each goal's slices, read
   // beside the ledger and refreshed with it. A project that cannot be read
   // leaves the cards without their slice line and changes nothing else.
@@ -75,6 +76,12 @@ export function BacklogPane() {
   // was asked with. Both are read once and dropped from the address, so a
   // reload is this page rather than that arrival a second time.
   const asked = useMemo(() => askedFor(address), [address]);
+
+  // The board offers its own read, in place, so that a confirmed act made
+  // somewhere else — a proposal applied in the Partner's drawer — moves the
+  // cards. It is marked as living in this page's own strip, so the header shows
+  // no second icon beside the toolbar's own Refresh.
+  useOffersRefresh(again, boardHint(backlog), true);
 
   if (backlog.state === "loading") {
     return (
@@ -115,6 +122,18 @@ export function BacklogPane() {
       />
     </Pane>
   );
+}
+
+/**
+ * What the offered read says about itself. Nothing shows it — the board's own
+ * toolbar says when it was read, which is why the offer is marked as being in
+ * this page's strip — and the offer carries one all the same, so that a page
+ * that ever did show it has something true to show.
+ */
+function boardHint(backlog: BacklogState): string {
+  return backlog.state === "known"
+    ? `Read at ${minuteTime(backlog.backlog.observedAt)} · Refresh`
+    : "Refresh";
 }
 
 function Read({

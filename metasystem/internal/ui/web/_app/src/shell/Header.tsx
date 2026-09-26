@@ -2,7 +2,7 @@ import { Menu, PanelBottom, RefreshCw } from "lucide-react";
 
 import { IconButton } from "./controls";
 import { useWorkspaceState } from "./identity";
-import { useSectionRefresh } from "./refresh";
+import { showsInHeader, useSectionRefresh } from "./refresh";
 import { SignInControl } from "./SignInControl";
 import { WorkspaceIdentity } from "./WorkspaceIdentity";
 import { Help } from "../help/Help";
@@ -78,7 +78,10 @@ export function Header({
         <span className="ms-header-name">
           <span className="ms-header-title">{sectionTitle}</span>
           {help !== null && <Help id={help} />}
-          {refresh !== null && (
+          {/* A page that carries a refresh in its own strip offers its read all
+              the same, so a confirmed act elsewhere moves it; the header shows
+              no second icon beside the one that strip already has. */}
+          {showsInHeader(refresh) && refresh !== null && (
             <IconButton label="Refresh" hint={refresh.hint} onClick={refresh.reread}>
               <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
             </IconButton>

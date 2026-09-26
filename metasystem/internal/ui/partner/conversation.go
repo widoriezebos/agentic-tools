@@ -473,6 +473,17 @@ type Message struct {
 	// Record it is the human's press — so they are kept with the answer for the
 	// same reason the suggestions are.
 	Deposits []Deposit `json:"deposits,omitempty"`
+	// Proposals is the acts this answer proposed on goals, admitted and refused
+	// alike, each with the state it now stands in.
+	//
+	// They are kept here rather than in a store of their own because this is the
+	// record of what happened: an approve applied twice is two approval records,
+	// so the one thing the page must never do is forget that a line was applied.
+	// A reload reads this and shows applied as applied, and a line left at
+	// `applying` as having been in flight. The state is written by the outcome
+	// route, which rewrites this message in place and touches nothing else in
+	// the transcript.
+	Proposals []Proposal `json:"proposals,omitempty"`
 	// Key is the client-minted turn key, on a human's message only. It is
 	// what makes a retry after a lost answer the same turn rather than a
 	// second one, and it is kept in the file so a restart cannot forget it.

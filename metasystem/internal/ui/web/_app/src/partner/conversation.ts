@@ -1,4 +1,16 @@
-import type { Deposit, Index, Look, Message, Outcome, PartnerEvent, Page, Sitting, Snapshot, Suggestion } from "./api";
+import type {
+  Deposit,
+  Index,
+  Look,
+  Message,
+  Outcome,
+  PartnerEvent,
+  Page,
+  Proposal,
+  Sitting,
+  Snapshot,
+  Suggestion,
+} from "./api";
 
 /**
  * The conversation, as one value the drawer and the focused page both read.
@@ -41,10 +53,18 @@ export type Live = {
    * the transcript and on the table before the words have finished.
    */
   deposits: Deposit[];
+  /**
+   * The acts this answer has proposed so far. They arrive while the answer is
+   * still arriving, which is what fills the card line by line; its buttons stay
+   * asleep until the answer's terminal beat, because until then there is no
+   * message for an outcome to be recorded on.
+   */
+  proposals: Proposal[];
 };
 
 export const nothingRunning: Live = {
   turn: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [], deposits: [],
+  proposals: [],
 };
 
 export type State = "loading" | "ready" | "unavailable";
@@ -149,6 +169,7 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
           looked: snapshot.looked ?? [],
           suggestions: snapshot.suggestions ?? [],
           deposits: snapshot.deposits ?? [],
+          proposals: snapshot.proposals ?? [],
         }
       : nothingRunning,
   };
@@ -193,6 +214,10 @@ export function received(store: Store, event: PartnerEvent): Store {
       return event.deposit === undefined
         ? { ...store, live }
         : { ...store, live: { ...live, deposits: [...live.deposits, event.deposit] } };
+    case "proposal":
+      return event.proposal === undefined
+        ? { ...store, live }
+        : { ...store, live: { ...live, proposals: [...live.proposals, event.proposal] } };
     case "done":
       return settled(store, live, "complete", event);
     case "stopped":
@@ -223,6 +248,7 @@ function settled(store: Store, live: Live, outcome: Outcome, event: PartnerEvent
     looked: live.looked,
     suggestions: live.suggestions,
     deposits: live.deposits,
+    proposals: live.proposals,
   };
   return { ...store, messages: [...store.messages, answered], live: nothingRunning };
 }
@@ -268,4 +294,31 @@ export function refused(store: Store, reason: string, install: string): Store {
 /** A send the human is retrying: the refusal goes and the draft stays. */
 export function retrying(store: Store): Store {
   return { ...store, refusal: "", install: "" };
+}
+
+/**
+ * One proposed action as the server now holds it, folded into the message that
+ * carries it.
+ *
+ * It is how a press becomes what the card shows without a second read of the
+ * whole conversation: the outcome route answers with the entry, and this puts it
+ * where the card reads its lines from. A message the transcript no longer carries
+ * — a trim took it — leaves the store exactly as it was.
+ */
+export function proposalMoved(store: Store, turn: string, held: Proposal): Store {
+  let changed = false;
+  const messages = store.messages.map((message) => {
+    if (message.turn !== turn || message.role !== "partner" || (message.proposals ?? []).length === 0) {
+      return message;
+    }
+    const proposals = (message.proposals ?? []).map((proposal) => {
+      if (proposal.index !== held.index) {
+        return proposal;
+      }
+      changed = true;
+      return held;
+    });
+    return { ...message, proposals };
+  });
+  return changed ? { ...store, messages } : store;
 }

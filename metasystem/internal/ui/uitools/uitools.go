@@ -20,16 +20,18 @@
 //   - Nothing here writes. There is no operation that could, and the process
 //     that serves these tools opens the checkout read-only.
 //
-// Two operations read nothing. `suggest` takes words the Partner has written
+// Three operations read nothing. `suggest` takes words the Partner has written
 // for a field of the editor the human handed over; `deposit` takes one entry
-// the Partner offers the record of the sitting the human is in. Each hands what
+// the Partner offers the record of the sitting the human is in; `propose` takes
+// one act on one goal that the Partner would make and cannot. Each hands what
 // it was given back in a fixed form, so that the interface can offer it to the
-// human as a card. Both keep all three rules. Neither writes and neither can:
+// human as a card. All three keep all three rules. None writes and none can:
 // this process has no capture, no conversation, no session and no way to reach
 // the human's browser, so each validates its arguments and says what it
 // prepared. Whether the offer reaches the human at all is decided by the
-// human's own server — against the draft they handed over, or against the
-// sitting they opened — and what happens to it then is decided by the human.
+// human's own server — against the draft they handed over, against the
+// sitting they opened, or against the goals the accepted tip carries — and what
+// happens to it then is decided by the human.
 package uitools
 
 import (
@@ -53,15 +55,16 @@ import (
 // presents them as mcp__metasystem__board — composes that prefix from this.
 const ServerName = "metasystem"
 
-// The twelve operations. They are named here, once, because two things depend
-// on the same list: the tool catalogue this server publishes, and the
+// The fourteen operations. They are named here, once, because two things
+// depend on the same list: the tool catalogue this server publishes, and the
 // permission rule that admits calls to it.
 //
 // Nine read this workspace. The next two read what the workspace is made of:
 // the interface's own manifest, and the kit's own glossary, verbs, rulings and
 // routes. They answer from owners rather than from anything written for the
-// Partner, which is what keeps one account of each fact. The last reads
-// nothing at all: it prepares words for a field of an open editor, which the
+// Partner, which is what keeps one account of each fact. The last three read
+// nothing at all: they prepare words for a field of an open editor, an entry
+// for the record of a sitting, and one act on one goal — each of which the
 // human then decides about.
 const (
 	OpBoard         = "board"
@@ -77,6 +80,7 @@ const (
 	OpKit           = "kit"
 	OpSuggest       = "suggest"
 	OpDeposit       = "deposit"
+	OpPropose       = "propose"
 )
 
 // Operations is every operation this server answers, in the order the
@@ -84,7 +88,7 @@ const (
 var Operations = []string{
 	OpBoard, OpGoal, OpDocument, OpRecords, OpQuestions,
 	OpOverview, OpFleet, OpNotifications, OpSearch, OpInterface, OpKit,
-	OpSuggest, OpDeposit,
+	OpSuggest, OpDeposit, OpPropose,
 }
 
 // Names reports whether a bare operation name is one this server answers.
@@ -128,10 +132,10 @@ type Result struct {
 	// own words where a call was refused on its arguments. A result with a
 	// problem carries no rows and is never a look.
 	Problem string
-	// Prepared is the whole result text of the one operation that reads
-	// nothing: the fixed form a suggestion travels in, or the refusal that
-	// stands in for it. A result that carries it wears no source, because it
-	// read nothing, and counts no rows, because there was no whole.
+	// Prepared is the whole result text of an operation that reads nothing:
+	// the fixed form a suggestion, a deposit or a proposal travels in, or the
+	// refusal that stands in for it. A result that carries it wears no source,
+	// because it read nothing, and counts no rows, because there was no whole.
 	Prepared string
 }
 
@@ -227,6 +231,8 @@ func (r Readers) Answer(operation string, args Args) Result {
 	case OpDeposit:
 		return deposit(args.Text("kind"), args.Text("text"),
 			args.Text("anchor"), args.Text("reason"), args.Text("consequence"), args.Text("clause"))
+	case OpPropose:
+		return propose(args)
 	default:
 		return Result{Problem: "this server answers " + strings.Join(Operations, ", ") + ", not " + operation}
 	}

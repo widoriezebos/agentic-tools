@@ -98,6 +98,56 @@ Open questions: what the current twelve-hour limit protects — leaving it open 
 
 On the table: 1 fact, 1 decision, 1 open question.`
 
+// The actions this fake proposes, and the two prompts they are narrowed to.
+//
+// They are narrowed for the reason the deposits are: a fake that proposed six
+// pauses for every question would have the service refuse them wherever the
+// goals were not at the tip, which is a true refusal and a noisy fixture. Asked
+// with either phrase below, the card appears under the answer with its lines and
+// its Apply; asked anything else, nothing is proposed, which is also what the
+// design says about words.
+//
+// The three of "put them away" are what the whole of the run can be stood in
+// front of: the first pause applies, the second is refused by name in the
+// engine's own sentence and the run goes ON to the third, and the withdrawal
+// comes back with an answer that does not say what happened and stops the run
+// there. So one press shows a line landing, a refusal passed, and an unresolved
+// answer with Try again and Ask the Partner beside it.
+//
+// The one of "Create it" is the other shape the design draws: a goal talked
+// through for ten minutes and then opened whole, with its intent, its first next
+// step, the four risk answers the card derives a tier from, the basis, the labels
+// and what it waits for.
+const (
+	proposedPauseApplies = "g1-s44"
+	proposedPauseRefused = refusesPause
+	proposedWithdraw     = unresolvedWithdraw
+	proposedOpen         = "refund-worker"
+)
+
+const (
+	pausePhrase = "put them away"
+	openPhrase  = "Create it"
+)
+
+// proposed is one canned propose call, in the tool's own fixed form.
+func proposed(when, verb, subject string, lines []string, explanation string) fakeacp.Read {
+	frame := uitools.ProposalHeader + verb + "\n"
+	if verb != uitools.ProposeOpen {
+		frame += uitools.ProposalGoal + subject + "\n"
+	}
+	for _, line := range lines {
+		frame += line + "\n"
+	}
+	return fakeacp.Read{
+		When:  when,
+		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpPropose,
+		Title: "propose(" + verb + " " + subject + ")",
+		Result: uitools.PreparedProposalLine + "\n" + frame +
+			uitools.ProposalSeparator + "\n" + explanation + "\n",
+	}
+}
+
 // The lines of the two fixed requests the deposits are narrowed to. Each is one
 // phrase of partner.OpeningRequest and partner.ClosingRequest, so a fixture that
 // drifted from a request would stop offering them rather than offer them on
@@ -152,6 +202,27 @@ var fakeReads = []fakeacp.Read{
 			uitools.DepositHeader + uitools.DepositOutcome + "\n" +
 			uitools.DepositSeparator + "\n" + depositedOutcome + "\n",
 	},
+	proposed(pausePhrase, uitools.ProposePark, proposedPauseApplies,
+		[]string{uitools.ProposalBecause + "superseded by the seat inventory (g1-s42)"},
+		"the three name the fleet inventory g1-s42 built, so the census answers what they were for"),
+	proposed(pausePhrase, uitools.ProposePark, proposedPauseRefused,
+		[]string{uitools.ProposalBecause + "superseded by the seat inventory (g1-s42)"},
+		"the same inventory covers the phase this one publishes"),
+	proposed(pausePhrase, uitools.ProposeWithdraw, proposedWithdraw,
+		[]string{uitools.ProposalReason + "the budget assumed a July start"},
+		"this one was approved against a date that has passed"),
+	proposed(openPhrase, uitools.ProposeOpen, proposedOpen, []string{
+		uitools.ProposalIntent + "Every refund lands within a day, with nobody touching the queue.",
+		uitools.ProposalNextStep + "Read the refund worker's retry loop and write the case where the bank answers late.",
+		uitools.ProposalLabels + "payments, robustness",
+		uitools.ProposalID + proposedOpen,
+		uitools.ProposalSeverity + "2",
+		uitools.ProposalNovelty + "1",
+		uitools.ProposalExposure + "2",
+		uitools.ProposalAccumulation + "1",
+		uitools.ProposalBasis + "payments, one team, one month of history",
+		uitools.ProposalBlockedBy + "g1-s24",
+	}, "as discussed: the July incident and the two open asks it left behind"),
 	{
 		Title: "document(plans/designs/reading.md)",
 		Result: "Source: plans/designs/reading.md as it stands, revision blob:7f31c0\n" +

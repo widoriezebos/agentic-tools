@@ -147,6 +147,14 @@ export function DecisionsPane() {
     };
   }, [attempt]);
 
+  // The read that keeps what is on screen until the answer arrives. It is what
+  // the header offers and what a confirmed act asks for, and it leaves this
+  // page's own state alone: a refusal a human is still reading is not something
+  // a re-read made on their behalf should clear.
+  const again = useCallback(() => {
+    setAttempt((previous) => previous + 1);
+  }, []);
+
   const reload = useCallback(() => {
     setRead({ state: "loading" });
     setBusy("");
@@ -280,7 +288,7 @@ export function DecisionsPane() {
   );
 
   const hint = read.state === "read" ? `Read at ${minuteTime(read.page.readAt)} · Refresh` : "Refresh";
-  useOffersRefresh(reload, hint);
+  useOffersRefresh(again, hint);
 
   // What the Partner is given: the inbox rows on screen — their kind, their
   // id and what they ask — and which view of the page is open. A ruling's own

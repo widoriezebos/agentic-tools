@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 
 import {
@@ -74,6 +74,7 @@ import { laneTitle } from "../backlog/lanes";
 import { showLabel } from "../backlog/showing";
 import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
+import { useOffersRefresh } from "../shell/refresh";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
 import { backlogPath, documentPath, goalPath, projectPath } from "../routes";
 import { CardMenu } from "../backlog/CardMenu";
@@ -204,6 +205,30 @@ function Briefed({ goal }: { goal: string | null }) {
     setAttempt((previous) => previous + 1);
   };
 
+  /**
+   * Both payloads again, in place: the project's and the ledger's, with nothing
+   * unmounted while they arrive.
+   *
+   * Both, because the two answer different halves of what this page shows and a
+   * reader would notice either half going stale. The title, the state chip and
+   * the intent come from the project payload; the relation between goals comes
+   * from the ledger's. A re-read of one alone left a confirmed edit of the goal
+   * in view looking unchanged (Astra S58-11).
+   *
+   * In place, because this is what the page OFFERS: it is asked for after a
+   * confirmed act, which may have been made in the Partner's drawer over these
+   * very columns with an edit sheet open in them. Unmounting them would take an
+   * unsaved draft with them (Astra S58-03). `reload` stays what Retry presses,
+   * where there is nothing on screen to keep.
+   */
+  const again = useCallback(() => {
+    setAttempt((previous) => previous + 1);
+  }, []);
+
+  // The page carries its own refresh in its crumbs, so it offers its read and
+  // says the header needs no second icon for it.
+  useOffersRefresh(again, refreshHint(read), true);
+
   return (
     <Pane title={goal === null ? "Project" : "Backlog"}>
       {read.state === "loading" && <LoadingCards />}
@@ -219,6 +244,15 @@ function Briefed({ goal }: { goal: string | null }) {
       )}
     </Pane>
   );
+}
+
+/**
+ * What the offered read says about itself. The crumbs' own icon is what a human
+ * presses, which is why the offer is marked as being in this page's strip; it
+ * carries a hint all the same, so nothing can show an empty one.
+ */
+function refreshHint(read: PaneState): string {
+  return read.state === "read" ? "Read again" : "Refresh";
 }
 
 function Columns({

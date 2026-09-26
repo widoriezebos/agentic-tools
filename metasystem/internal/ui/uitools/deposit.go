@@ -115,7 +115,8 @@ func deposit(kind, text, anchor, reason, consequence, clauseSaid string) Result 
 	switch {
 	case kind == DepositProposal:
 		return refusedCall("this interface records facts, decisions, open questions, cases at the edge and " +
-			"the closing outcome in a sitting; a proposal is not one of them, so say it in words instead")
+			"the closing outcome in a sitting; a proposal is not one of them, so say it in words instead" +
+			"; an act on a goal is proposed with " + OpPropose)
 	case !depositKind(kind):
 		return refusedCall("a deposit is a " + strings.Join(DepositKinds, ", a ") +
 			"; " + quotedKind(kind) + " is none of them")

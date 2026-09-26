@@ -13,6 +13,7 @@ import (
 
 	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
 // The Partner, as the server's routes see it: one runtime, one host, one
@@ -45,6 +46,11 @@ type Event struct {
 	// suggestion's reason: the card is on the transcript and on the table while
 	// the answer is still arriving.
 	Deposit *Deposit `json:"deposit,omitempty"`
+	// Proposal is one act the Partner proposed on one goal, on a proposal beat
+	// and nowhere else. It is carried as it is admitted, for the suggestion's
+	// reason: the card fills line by line while the answer is still arriving,
+	// and its buttons wake when the answer ends.
+	Proposal *Proposal `json:"proposal,omitempty"`
 }
 
 // The eight event kinds.
@@ -65,6 +71,10 @@ const (
 	// suggestion's reason: it is an offer the human decides about, not a
 	// sentence of the answer.
 	EventDeposit = "deposit"
+	// EventProposal is one admitted or refused action, a beat of its own for the
+	// suggestion's reason: it is an act the human decides about, not a sentence
+	// of the answer.
+	EventProposal = "proposal"
 )
 
 // Snapshot is what GET /api/partner answers: everything a page needs to render
@@ -98,6 +108,12 @@ type Snapshot struct {
 	// Deposits is what the running turn has offered the sitting's record so
 	// far, for the same reason.
 	Deposits []Deposit `json:"deposits"`
+	// Proposals is the actions the running turn has proposed so far, for the
+	// same reason: a reload in the middle of an answer must show the card that
+	// is filling rather than lose the lines that have already arrived. Their
+	// buttons stay asleep until the answer's terminal beat, because until then
+	// there is no message for an outcome to be recorded on.
+	Proposals []Proposal `json:"proposals"`
 	// Sitting is the sitting this conversation is, or null. It is read from the
 	// conversation rather than from the browser's memory of it, so a reload and
 	// a second tab agree about which record is under discussion.
@@ -174,6 +190,14 @@ type turn struct {
 	// deposits is what this turn offered the sitting's record, in the order
 	// they were admitted.
 	deposits []Deposit
+	// proposals is the actions this turn proposed, admitted and refused alike,
+	// in the order they arrived. The order is the index the outcome route names
+	// a line by, so a refused action holds its place.
+	proposals []Proposal
+	// observed is the ledger reading this turn was composed against, held so
+	// that an action is admitted against what the Partner was told rather than
+	// against a later reading of a moving ledger.
+	observed snapshot.Observation
 	stopping bool
 	// done closes when the turn has been written down and its terminal event
 	// published. Stop waits for it, so the snapshot the stop route answers
@@ -336,6 +360,7 @@ func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
 		answer.Looked = append([]Look{}, running.looked...)
 		answer.Suggestions = append([]Suggestion{}, running.suggestions...)
 		answer.Deposits = append([]Deposit{}, running.deposits...)
+		answer.Proposals = append([]Proposal{}, running.proposals...)
 	}
 	s.mu.Unlock()
 	answer.Sitting = conversation.Sitting()
@@ -452,6 +477,12 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	// what this answer was read from. A snapshot recomposed for the stamp would
 	// be a second reading of a moving ledger.
 	seen := See(s.reading(), page, now)
+	// The reading that composition made is held on the turn, so an action the
+	// Partner proposes is admitted against the ledger the Partner was told
+	// about rather than against a second reading taken while it answered.
+	s.mu.Lock()
+	running.observed = seen.Observed
+	s.mu.Unlock()
 	s.record(running, Event{Kind: EventLook, Look: lookedAtPage(seen)})
 
 	// The first prompt of a session carries how to answer here and a map of
@@ -474,7 +505,10 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 		}
 	}
 
-	prompt := ComposeOpening(seen, page, human, opening) + "\n\n"
+	// What happened to the actions the last two answers proposed, from the
+	// states the messages record: the Partner builds on what the human actually
+	// did rather than on what it prepared.
+	prompt := ComposeOpening(seen, page, human, opening, proposalsBlock(conversation.Messages(recoveryMessages))) + "\n\n"
 	if given > 0 {
 		prompt += history + "\n\n"
 		s.record(running, Event{Kind: EventActivity, Text: freshLine(given)})
@@ -916,6 +950,12 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 			if update.Deposit != nil {
 				s.admitDeposit(running, conversation, *update.Deposit)
 			}
+			// And the same, against the ledger reading this turn was composed
+			// from: an act on a goal nothing carries is an act that would be
+			// refused, and the human is told so on the card.
+			if update.Action != nil {
+				s.admitProposal(running, *update.Action)
+			}
 		}
 	})
 	if err != nil {
@@ -941,12 +981,13 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 	looked := append([]Look{}, running.looked...)
 	suggestions := append([]Suggestion{}, running.suggestions...)
 	deposits := append([]Deposit{}, running.deposits...)
+	proposals := append([]Proposal{}, running.proposals...)
 	s.mu.Unlock()
 
 	answered := Message{ID: mintTurn(), Turn: running.id, Role: RolePartner, Text: text,
 		At: s.now().UTC().Format(time.RFC3339), Outcome: result.Outcome,
 		Detail: result.Detail, Activity: activity, Looked: looked,
-		Suggestions: suggestions, Deposits: deposits}
+		Suggestions: suggestions, Deposits: deposits, Proposals: proposals}
 	_ = conversation.Append(answered)
 
 	// Nothing is running BEFORE the terminal beat goes out, deliberately. A
@@ -998,6 +1039,10 @@ func (s *Service) record(running *turn, event Event) {
 	case EventDeposit:
 		if event.Deposit != nil {
 			running.deposits = append(running.deposits, *event.Deposit)
+		}
+	case EventProposal:
+		if event.Proposal != nil {
+			running.proposals = append(running.proposals, *event.Proposal)
 		}
 	}
 	watchers := make([]chan Event, 0, len(s.watchers))
