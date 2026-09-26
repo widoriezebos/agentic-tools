@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CONFLICT, recorder, type Reading, type Written } from "./recording";
+import { CONFLICT, ELSEWHERE, movesTheTable, recorder, type Reading, type Written } from "./recording";
 import { countsIn, entriesIn, type Entry } from "./sitting";
 
 /**
@@ -49,7 +49,7 @@ class Record {
   };
 
   reading(): Reading {
-    return { id: "plans/designs/sessions.md", revision: String(this.revision), source: this.source };
+    return { id: SUBJECT, revision: String(this.revision), source: this.source };
   }
 }
 
@@ -61,8 +61,19 @@ class Stale extends Error {
 
 const isStale = (error: unknown) => error instanceof Stale;
 
+/** The record every press below is for, and the one this recorder holds. */
+const SUBJECT = "plans/designs/sessions.md";
+
+let minted = 0;
+
+/**
+ * One entry, with an identity of its own: each call mints a fresh mark, because
+ * the mark is what says which deposit an entry was recorded from and two entries
+ * of one press would be the one thing it exists to prevent.
+ */
 function entry(text: string, section: Entry["section"] = "Facts"): Entry {
-  return { when: "2026-09-26", who: "Wido", text, clause: "a.md", section };
+  minted += 1;
+  return { when: "2026-09-26", who: "Wido", text, clause: "a.md", section, mark: `deposit:t#${String(minted)}` };
 }
 
 const START = "# Session limits\n\n## Facts\n\n## Decisions\n";
@@ -72,7 +83,7 @@ describe("one press", () => {
     const record = new Record(START);
     const held = recorder(record.reading(), record.save, record.read, isStale);
 
-    const outcome = await held.press(entry("the limit is twelve hours"), "fact");
+    const outcome = await held.press(entry("the limit is twelve hours"), "fact", SUBJECT);
 
     expect(outcome.kind).toBe("recorded");
     expect(record.asked).toHaveLength(1);
@@ -87,7 +98,7 @@ describe("one press", () => {
   it("names the section the record took it into", async () => {
     const record = new Record(START);
     const held = recorder(record.reading(), record.save, record.read, isStale);
-    const outcome = await held.press(entry("it counts from last activity", "Decisions"), "decision");
+    const outcome = await held.press(entry("it counts from last activity", "Decisions"), "decision", SUBJECT);
     expect(outcome).toMatchObject({ kind: "recorded", section: "Decisions" });
   });
 });
@@ -100,8 +111,8 @@ describe("two presses", () => {
     const record = new Record(START);
     const held = recorder(record.reading(), record.save, record.read, isStale);
 
-    const first = await held.press(entry("the limit is twelve hours"), "fact");
-    const second = await held.press(entry("the mobile client renews differently"), "fact");
+    const first = await held.press(entry("the limit is twelve hours"), "fact", SUBJECT);
+    const second = await held.press(entry("the mobile client renews differently"), "fact", SUBJECT);
 
     expect([first.kind, second.kind]).toEqual(["recorded", "recorded"]);
     expect(entriesIn(record.source).map((one) => one.text)).toEqual([
@@ -118,8 +129,8 @@ describe("two presses", () => {
     const held = recorder(record.reading(), record.save, record.read, isStale);
 
     const both = await Promise.all([
-      held.press(entry("first"), "fact"),
-      held.press(entry("second"), "fact"),
+      held.press(entry("first"), "fact", SUBJECT),
+      held.press(entry("second"), "fact", SUBJECT),
     ]);
 
     expect(both.map((one) => one.kind)).toEqual(["recorded", "recorded"]);
@@ -132,8 +143,8 @@ describe("two presses", () => {
     const record = new Record(START);
     const held = recorder(record.reading(), record.save, record.read, isStale);
     await Promise.all([
-      held.press(entry("a fact"), "fact"),
-      held.press(entry("a decision", "Decisions"), "decision"),
+      held.press(entry("a fact"), "fact", SUBJECT),
+      held.press(entry("a decision", "Decisions"), "decision", SUBJECT),
     ]);
     expect(countsIn(record.source)).toEqual({ Facts: 1, Proposals: 0, Decisions: 1, "Open questions": 0 });
   });
@@ -149,7 +160,7 @@ describe("a record that moved", () => {
     record.revision = 7;
     record.source = `${START}\n## Open questions\n\n- 2026-09-26 · Someone · what does the limit protect?\n`;
 
-    const refused = await held.press(entry("the limit is twelve hours"), "fact");
+    const refused = await held.press(entry("the limit is twelve hours"), "fact", SUBJECT);
 
     expect(refused).toMatchObject({ kind: "conflict", reason: CONFLICT });
     expect(record.asked).toHaveLength(1);
@@ -160,7 +171,7 @@ describe("a record that moved", () => {
     // from it — and the other person's entry survives.
     expect(held.reading().revision).toBe("7");
 
-    const again = await held.press(entry("the limit is twelve hours"), "fact");
+    const again = await held.press(entry("the limit is twelve hours"), "fact", SUBJECT);
     expect(again.kind).toBe("recorded");
     expect(entriesIn(record.source).map((one) => one.text)).toEqual([
       "the limit is twelve hours",
@@ -176,8 +187,8 @@ describe("a record that moved", () => {
     record.revision = 4;
     record.source = `${START}\n## Open questions\n\n- 2026-09-26 · Someone · a question\n`;
 
-    await held.press(entry("mine"), "fact");
-    await held.press(entry("mine"), "fact");
+    await held.press(entry("mine"), "fact", SUBJECT);
+    await held.press(entry("mine"), "fact", SUBJECT);
 
     expect(record.asked).toHaveLength(2);
     expect(record.asked[1].revision).toBe("4");
@@ -189,13 +200,75 @@ describe("a record that moved", () => {
     const held = recorder(record.reading(), record.save, record.read, isStale);
     record.revision = 3;
 
-    const both = await Promise.all([held.press(entry("first"), "fact"), held.press(entry("second"), "fact")]);
+    const both = await Promise.all([
+      held.press(entry("first"), "fact", SUBJECT),
+      held.press(entry("second"), "fact", SUBJECT),
+    ]);
 
     // The first meets the moved record; the second is composed from the reread
     // and lands, rather than waiting for ever behind a rejected promise.
     expect(both[0].kind).toBe("conflict");
     expect(both[1].kind).toBe("recorded");
     expect(entriesIn(record.source).map((one) => one.text)).toEqual(["second"]);
+  });
+});
+
+/**
+ * Sol's first finding, at the recorder's own gate.
+ *
+ * A card offered in a sitting on A stays on the transcript after that sitting
+ * ends. The card refuses the press itself, but the recorder is the gate that has
+ * to hold whatever a page does: a press for another record writes nothing here,
+ * so words offered to A can never reach B's record.
+ */
+describe("a press for another record", () => {
+  it("writes nothing, and says so", async () => {
+    const record = new Record(START);
+    const held = recorder(record.reading(), record.save, record.read, isStale);
+
+    const refused = await held.press(entry("A's words"), "fact", "plans/designs/other.md");
+
+    expect(refused).toEqual({ kind: "elsewhere", reason: ELSEWHERE });
+    expect(record.asked).toHaveLength(0);
+    expect(record.rereads).toBe(0);
+    expect(entriesIn(record.source)).toHaveLength(0);
+    // And it leaves the reading where it was, so the press behind it is still
+    // against the record this recorder holds.
+    expect(held.reading().revision).toBe("1");
+    const mine = await held.press(entry("mine"), "fact", SUBJECT);
+    expect(mine.kind).toBe("recorded");
+    expect(entriesIn(record.source).map((one) => one.text)).toEqual(["mine"]);
+  });
+
+  /**
+   * And the other half of the same finding: a press that was in flight when the
+   * sitting moved answers about the record it wrote to. Its entry is in that
+   * record and nothing is lost — but the table on screen is another record's, so
+   * that answer must not become it.
+   */
+  it("and a late answer from the record before does not move the table on screen", async () => {
+    const before = new Record(START);
+    const landed = await recorder(before.reading(), before.save, before.read, isStale)
+      .press(entry("A's fact"), "fact", SUBJECT);
+
+    expect(landed.kind).toBe("recorded");
+    // The sitting has moved: the reading on screen is another record's.
+    const now: Reading = { id: "plans/designs/other.md", revision: "1", source: START };
+    expect(movesTheTable(landed, now)).toBe(false);
+    // The sitting has ended: there is no table at all.
+    expect(movesTheTable(landed, null)).toBe(false);
+    // And on the record it was pressed on, it moves the table, so the guard is
+    // saying where the boundary is rather than refusing everything.
+    expect(movesTheTable(landed, before.reading())).toBe(true);
+  });
+
+  it("and a refusal moves no table at all", () => {
+    const standing: Reading = { id: SUBJECT, revision: "1", source: START };
+    expect(movesTheTable({ kind: "elsewhere", reason: ELSEWHERE }, standing)).toBe(false);
+    expect(movesTheTable({ kind: "failed", reason: "the checkout is read-only" }, standing)).toBe(false);
+    // A conflict answered with a reading of this record, which the table takes:
+    // it is what the next press composes from.
+    expect(movesTheTable({ kind: "conflict", reason: CONFLICT, reading: standing }, standing)).toBe(true);
   });
 });
 
@@ -209,7 +282,7 @@ describe("a write that failed for another reason", () => {
       isStale,
     );
 
-    const outcome = await held.press(entry("the limit is twelve hours"), "fact");
+    const outcome = await held.press(entry("the limit is twelve hours"), "fact", SUBJECT);
 
     expect(outcome).toEqual({ kind: "failed", reason: "the checkout is read-only" });
     expect(record.rereads).toBe(0);

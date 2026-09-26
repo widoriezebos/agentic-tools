@@ -1,6 +1,7 @@
 package httpd
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -143,6 +144,73 @@ func TestASittingThisBuildDoesNotOfferIsRefusedAsABadRequest(t *testing.T) {
 	cold := partnerSnapshot(t, get(t, served, partnerPath, nil))
 	testutil.Expect(t, "no sitting", cold.Sitting == nil, true)
 	testutil.Expect(t, "and no messages", len(cold.Messages), 0)
+}
+
+// A sitting this build does not offer creates NOTHING, even when the human named
+// a title for a new draft.
+//
+// Sol's third finding: the draft went in before the purpose was judged, so a
+// purpose with no moves in this build left a record in the project that nobody
+// asked for, that no sitting names, and that the human was never told about.
+func TestASittingThisBuildDoesNotOfferCreatesNoDraftForIt(t *testing.T) {
+	t.Parallel()
+	served, _, rec := servedSitting(t, fakeacp.Script{Chunks: []string{"never asked"}})
+
+	refused := post(t, served, partnerSittingPath,
+		`{"purpose":"review","title":"Session limits","about":{"section":"Project","path":"/project"}}`, nil)
+
+	testutil.Expect(t, "it is a bad request", refused.Code, http.StatusBadRequest)
+	testutil.Expect(t, "saying which purposes this build has",
+		strings.Contains(refused.Body.String(), "review and learning sittings are not in this build"), true)
+	testutil.Expect(t, "and the project's writer was never reached", len(rec.records), 0)
+	testutil.Expect(t, "so there is no draft to offer again",
+		strings.Contains(refused.Body.String(), `"draft"`), false)
+
+	cold := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	testutil.Expect(t, "no sitting", cold.Sitting == nil, true)
+	testutil.Expect(t, "and no messages", len(cold.Messages), 0)
+}
+
+// A sitting refused AFTER its draft exists answers with that draft's path.
+//
+// The draft is a real record in the project now, so the page has to be able to
+// offer Start again on it: a second press for one wish must be a second attempt,
+// not a second record. What refuses here is the one refusal that can still come
+// after the admission — a turn started in between.
+func TestASittingRefusedAfterItsDraftWasCreatedAnswersWithTheDraftsPath(t *testing.T) {
+	t.Parallel()
+	served, service, rec := servedSitting(t, fakeacp.Script{
+		Chunks: []string{"a", "b", "c"}, Pause: 200 * time.Millisecond})
+	events, stop := service.Subscribe()
+	defer stop()
+
+	// A turn is running: the first send is accepted, and the sitting's own
+	// opening turn cannot be admitted while it streams.
+	asked := post(t, served, partnerTurnsPath, `{"key":"k1","text":"a question","about":{}}`, nil)
+	testutil.Require(t, "the question was accepted", asked.Code, http.StatusAccepted)
+	waitForKind(t, events, partner.EventText)
+
+	refused := post(t, served, partnerSittingPath,
+		`{"purpose":"shape a design","title":"Session limits","about":{"section":"Project","path":"/project"}}`, nil)
+
+	testutil.Require(t, "the sitting was refused as busy", refused.Code, http.StatusConflict)
+	testutil.Require(t, "the draft was created before the refusal", len(rec.records), 1)
+	var body struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+		Draft string `json:"draft"`
+	}
+	testutil.Require(t, "reading the refusal", json.Unmarshal(refused.Body.Bytes(), &body), nil)
+	testutil.Expect(t, "it is the busy refusal", body.Code, "busy")
+	testutil.Expect(t, "and it names the draft it created", body.Draft, writtenRecord().Path)
+	drain(t, events)
+
+	// And nothing was opened: the record exists, the sitting does not, and the
+	// page has what it needs to press Start on that draft rather than make a
+	// second one.
+	cold := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	testutil.Expect(t, "no sitting was opened", cold.Sitting == nil, true)
+	testutil.Expect(t, "and only one record was ever written", len(rec.records), 1)
 }
 
 // Ending the sitting answers the conversation without it, and leaves the

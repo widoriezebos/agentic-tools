@@ -228,8 +228,12 @@
   background: var(--ms-surface-2);
 }
 
-/* Nothing was offered: there was no sitting to offer it to. */
-.ms-deposit--refused {
+/* Nothing was offered: there was no sitting to offer it to. And offered to
+   another record: the sitting it belonged to has ended or moved on, so there is
+   nothing to press here either. Both lose the accent, because the accent says
+   this is an offer standing. */
+.ms-deposit--refused,
+.ms-deposit--elsewhere {
   border-inline-start-color: var(--ms-border-strong);
 }
 

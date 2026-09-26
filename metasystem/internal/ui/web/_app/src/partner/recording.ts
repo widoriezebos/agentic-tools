@@ -23,6 +23,14 @@ import { appended, type Entry } from "./sitting";
  *    happened, and the reading is taken again so the same press against the new
  *    reading is one more press of Record it. Stale bytes are never written under
  *    a fresh revision, because the source is recomposed from the reread.
+ * 4. **One record.** A press names the record it was composed against, and a
+ *    recorder writes nothing for any other. It is Sol's first finding at the
+ *    second gate: the card checks the sitting it can see, and this checks the
+ *    record it holds, so a card from a sitting that has ended cannot reach the
+ *    record of the one now standing even if a press for it gets this far. And
+ *    `movesTheTable` is the other side of the same finding: a press that was in
+ *    flight when the sitting moved answers about the record it wrote to, and
+ *    that answer must not become the table of the record now on screen.
  */
 
 /** One reading of the record: which document, its revision, its whole source. */
@@ -50,15 +58,23 @@ export type IsStale = (error: unknown) => boolean;
 export type Outcome =
   | { kind: "recorded"; section: string; reading: Reading }
   | { kind: "conflict"; reason: string; reading: Reading }
+  | { kind: "elsewhere"; reason: string }
   | { kind: "failed"; reason: string };
+
+/** An outcome that answered with a reading: it reached the record, or it read it. */
+export type Landed = Extract<Outcome, { reading: Reading }>;
 
 export type Recorder = {
   /** The reading as it stands, which is what the table reads. */
   reading: () => Reading;
   /** Take a fresh reading, which is what starting a sitting does. */
   reread: () => Promise<Reading>;
-  /** Press Record it for one entry. It queues behind every earlier press. */
-  press: (entry: Entry, kind: string) => Promise<Outcome>;
+  /**
+   * Press Record it for one entry, into the record named. It queues behind every
+   * earlier press, and it writes nothing where the record named is not the one
+   * this recorder holds.
+   */
+  press: (entry: Entry, kind: string, into: string) => Promise<Outcome>;
 };
 
 /**
@@ -70,6 +86,17 @@ export type Recorder = {
  */
 export const CONFLICT =
   "The record changed while you were writing, so nothing was written. Your words are still here — press Record it again to add them to the record as it now stands.";
+
+/**
+ * What a human is told when the press was for another record.
+ *
+ * It should not be reachable from the interface at all — a card from another
+ * sitting offers no press — so it says what happened rather than what to do: the
+ * one thing that must not happen is words landing in a record nobody offered
+ * them to, and this is the gate that refuses it.
+ */
+export const ELSEWHERE =
+  "This was offered to another record, so nothing was written into the one this sitting is on.";
 
 /** Open a recorder over one reading. */
 export function recorder(
@@ -90,11 +117,14 @@ export function recorder(
 
   const reread = async (): Promise<Reading> => take(await read(held.id));
 
-  const press = (entry: Entry, kind: string): Promise<Outcome> => {
+  const press = (entry: Entry, kind: string, into: string): Promise<Outcome> => {
     // The entry is composed from the reading as it stands WHEN THIS RUNS, which
     // is the whole of why the composition is inside the queued task and not
     // outside it: the press before this one has already moved the reading.
     const next = queue.then(async (): Promise<Outcome> => {
+      if (into !== held.id) {
+        return { kind: "elsewhere", reason: ELSEWHERE };
+      }
       try {
         const answered = await save(held.id, appended(held.source, entry, kind), held.revision);
         return { kind: "recorded", section: entry.section, reading: take(answered) };
@@ -118,6 +148,25 @@ export function recorder(
   };
 
   return { reading: () => held, reread, press };
+}
+
+/**
+ * Whether one press's answer may become the table on screen.
+ *
+ * A press that was in flight when the sitting ended, or moved to another record,
+ * answers about the record it was composed against. Its entry is in that record
+ * — nothing is lost — but the table this page shows is another record's, and a
+ * reading of A written over B's table would show a human entries their record
+ * does not carry and a revision their next press would write under.
+ *
+ * `standing` is the reading the page now holds, or null where no sitting is
+ * open at all; in that case nothing on screen is a table, so nothing moves it.
+ */
+export function movesTheTable(outcome: Outcome, standing: Reading | null): outcome is Landed {
+  if (outcome.kind === "failed" || outcome.kind === "elsewhere") {
+    return false;
+  }
+  return standing !== null && outcome.reading.id === standing.id;
 }
 
 function reasonOf(error: unknown): string {
