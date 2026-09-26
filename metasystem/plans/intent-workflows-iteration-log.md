@@ -151,3 +151,30 @@ maximum 2 for this new requirement gap. Parent C1-C8 stay closed on their mandat
 fixtures; this is not another round to polish their prose. Project check passes
 147 records and the resolver finds the new draft. Root will disposition this
 critique before authorizing its additional implementation.
+
+## Second build checkpoint and continued work
+
+Continuation 2, launch 20260926t090311-bf1bba8367, returned exit 0 with
+187 measured calls and 100 turns. Its partial return is retained at
+artifacts/agents/intent-workflows-build-return-2.md. Actual complete-review
+composition, bound decisions, a bounded retry admission extension and automatic
+claim were built. The return explicitly distinguishes real whole-close proof from
+mocked dispatch/wait connections; several final fixtures and all major operations
+still remain. Root has not certified or committed product changes.
+
+Live main was pulled again and merged into the isolated implementation branch
+through 31f26c53e; only two goal-record commits had moved since the prior merge.
+User-owned live receipt/narrator changes remain unstaged and preserved.
+Continuation 3, launch 20260926t092330-64b6eb51ce in the same Opus session,
+now tackles the remaining human/administration/question routes and final parent
+proof holes. It explicitly requires actual stopped-process proof and the real
+retry shell branch, not a successful mocked callback alone.
+
+Planning Fable round 1 reported three material contract corrections. All are
+adjudicated in intent-planning-dispositions.md: author admission without build
+claim/worktree, atomic stranded-start recovery, public production of proof wait
+references. Root refined the recovery to use Supervise's existing locked claim
+before any child, rejecting an age-only inference of process death. Fable final
+round 2 is launch 20260926t092513-fbee9d93d4, same provider session. Planning
+remains draft until that report is adjudicated. Parent C1-C8 stay closed on their
+mandatory fixtures.

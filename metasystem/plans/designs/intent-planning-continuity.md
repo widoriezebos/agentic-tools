@@ -61,14 +61,28 @@ metasystem review design FILE [--dispositions FILE] [--after N]
 ```
 
 `design` is one real additional intention, in focused work/agent help. It uses
-exactly the parent build route's lawful goal/approval/claim admission; no approval,
-claim takeover or higher model tier is inferred. The existing design-lane settings
-select author runtime/model. The brief supplies the design request, boundaries and
+the existing review admission's approved-goal and positive review-round-budget
+facts, followed by the existing launch design admission. It does not acquire a
+build claim or create/select a goal execution worktree. The invoking checkout is
+the working and publication checkout, including when invoked in another worktree.
+No approval, claim takeover or higher model tier is inferred. Design authoring
+uses the existing launch.design lane's limits and measurement; it does not consume
+execution attempts or start an execution claim's elapsed clock. Those launch
+limits are not an aggregate spending budget, and this design does not pretend
+they are or invent a new budget store. An explicit new author request is required
+to spend again. Review rounds retain their separate existing aggregate admission.
+The existing design-lane settings select author runtime/model. The brief supplies the design request, boundaries and
 missing human decisions; the adapter adds the design-author contract, never the
-normal implementer's contradictory preamble. It never approves its own result.
+normal implementer's contradictory preamble. The generated contract names the
+reserved Kind design, Id, Status draft and Goals header, the single staged output,
+the frozen prior draft and the instruction to stop on missing human decisions.
+It forbids edits to the live document or other project records. It never approves
+its own result.
 
 When --out is omitted, use the goal's unique active draft design, or choose the
-project owner's default design-home path from the goal when none exists. Multiple
+first nonhistorical KindDesign home in project.Homes order, with <goal>.md,
+when none exists. A collision with anything except this goal's draft refuses
+with an explicit --out choice. Multiple
 records require an explicit displayed document choice. An explicit file must be
 within the project's resolved design home. Existing record ID is stable; first
 creation reserves a project ID. Output status is draft. An accepted or done record
@@ -79,11 +93,24 @@ The launch owner adds one focused Design request operation beside its other
 retained operations. Under a per-document lock in its existing store, bind goal,
 record ID/path, public attempt N, expected document bytes, exact brief bytes,
 resolved design runtime/model, and resulting launch ID. Store those facts in the
-existing launch record; do not create a workflow database or second job index.
+existing launch records and one per-document retained request entry, following
+the named operation's .inputs/<key>/request.json precedent. This entry owns exact
+request replay and the current attempt; no separate job index or workflow database.
+The lock key is the canonical absolute destination path, not just the record ID:
+separate worktrees have separate documents, the same resolved file shares a lock.
 Freeze inputs before admission. A stable request reserves its launch ID before
-spawning; a crash rejoins that same launch under the supervisor's custody rules. An
-uncertain process-start outcome never authorizes another child; report the
-existing custody refusal until the owner can prove its state.
+spawning; a crash rejoins that same launch. Add a bounded starting-record recovery
+operation in the launch owner: after the existing StartCap expires, atomically
+recheck State=Starting, absent supervisor/child/process-group references and no
+OutputOwnerUnproven flag under Store.Update, then mark Failed with reason
+supervisor-start-unrecorded. Do not use an unlocked status read followed by m.fail.
+The supervisor's existing first action claims its reference under that same
+record lock and refuses terminal records before any child can spawn. Thus either
+it wins the claim and recovery refuses, or recovery wins and even an already
+spawned but delayed supervisor cannot start a child. Elapsed time and absent PIDs
+alone are not death proof. Any recorded owner or uncertain child custody retains
+the existing proof-of-death rules; this recovery cannot erase it. Replay reports
+the same failed N with design G --after N, never silently relaunches N.
 Same-request replay is checked before inspecting the now-mutated output document.
 It rejoins terminal failures as failures. A new attempt requires the prior writer
 to be proven stopped; an older retained proposal cannot publish after a newer
@@ -92,7 +119,8 @@ new author attempt after N, reusing a brief when appropriate; stale N refuses.
 Changed inputs bind the current attempt only after identical prior requests have
 been considered. Follow the parent revision request's retry/rerun semantics.
 
-The author writes a fresh staged draft, declared as Page/Output to the existing
+The author writes a fresh staged draft under the invoking checkout's ignored
+artifacts/agents/intent-design/<record>-<attempt>/draft.md, declared as Page/Output to the existing
 launch owner. It reads the project plus a frozen copy of the prior design; it
 never writes the current project document as its launch output. After successful
 exit, validate the retained output as the exact design record and goal with draft
@@ -125,7 +153,8 @@ parent's bound disposition/full-close behavior.
 
 A changed design with an open critique uses that same chain. Before any new
 examination, every previous finding has the author's bound decision. The parent
-binding applies to the exact old subject/return; it is not confused with the
+binding uses work=design:<recordID>, attempt=<examination round>, the exact old
+subject digest, root, round and return digest. It applies to the old subject/return; it is not confused with the
 new design being examined. `accepted` means the author changed the design to
 address it; the new independent critique decides whether that correction works.
 An unresolved decision prints the complete bound template. Manual design edits
@@ -158,7 +187,13 @@ design, review, findings, tests, delivery, question, decision. Internal units,
 chains, state stores and collection mechanics cannot be required concepts.
 Add public `wait proof ATTEMPT [--timeout DURATION]` and `wait file PATH
 [--until present|absent] [--timeout DURATION]`; default file event is present.
-These directly compose existing proof/path observers and durable wait behavior.
+Resolve a relative file path against the invoking working directory. Public
+status G and test/landing results expose the actual proof reference and the
+continuation wait proof REF while proof is running. Read it through the proof
+owner's goal/candidate observation, not CLI scans of private files. Ambiguous
+proofs list their visible references; no timestamp guessing. The wait fixture
+must obtain REF from public output, never private fixture knowledge. These forms
+directly compose existing proof/path observers and durable wait behavior.
 Legacy flags remain compatible; registration/custody are not extra caller steps.
 Update AGENTS and ordinary orchestration/skill examples to the working public
 routes, leaving maintainer protocol explanations explicitly diagnostic.
@@ -167,10 +202,10 @@ routes, leaving maintainer protocol explanations explicitly diagnostic.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| IP-1 | CRITICAL | Public task | Correct design roster; exact retained retry; no overwritten user document | Launch design request plus project record writer | internal/launch and internal/project; intent design adapter | TestIntentDesignAuthorJourney; TestDesignRequestReplay; TestDesignPublicationConflict | Public design through fake provider and actual retention/publication owners | MISSING | Critique then implement |
-| IP-2 | CRITICAL | Bounded examination | Same critic chain, frozen old findings/new subject, replay and cap | Dispatch read/follow-up owners | internal/dispatch; intent design review | TestIntentDesignCritiqueContinuation; TestDesignCritiqueReplayAndCap | Two design versions, decision, one follow-up, replay, exhausted refusal | MISSING | Critique then implement |
-| IP-3 | HIGH | Public task | Status, wait, stop and failed-result recovery need only goal/document | Existing launch observation/cancellation | intent status/wait/stop adapters | TestIntentDesignLifecycle | Running, ambiguous, failed and stopped author outcomes | MISSING | Critique then implement |
-| IP-4 | HIGH | Orientation and waits | Compact task language; proof/file waits discoverable and owner-driven | Descriptors and wait owner | intent help/wait plus agent docs | TestIntentPublicOrientation; TestIntentPublicProofAndFileWait | Built CLI help and real isolated proof/file observers | MISSING | Critique then implement |
+| IP-1 | CRITICAL | Public task | Correct design roster; exact retained retry; no overwritten user document | Launch design request plus project record writer | internal/launch and internal/project; intent design adapter | TestIntentDesignAuthorJourney; TestIntentDesignAdmissionNoClaim; TestDesignRequestReplay; TestDesignRequestCrashBeforeSupervisor; TestDesignPublicationConflict | Public design through fake provider and actual retention/publication owners | MISSING | Fold critique then implement |
+| IP-2 | CRITICAL | Bounded examination | Same critic chain, frozen old findings/new subject, replay and cap | Dispatch read/follow-up owners | internal/dispatch; intent design review | TestIntentDesignCritiqueContinuation; TestDesignCritiqueReplayAndCap | Two design versions, decision, one follow-up, replay, exhausted refusal | MISSING | Fold critique then implement |
+| IP-3 | HIGH | Public task | Status, wait, stop and failed-result recovery need only goal/document | Existing launch observation/cancellation | intent status/wait/stop adapters | TestIntentDesignLifecycle | Running, ambiguous, failed and stopped author outcomes | MISSING | Fold critique then implement |
+| IP-4 | HIGH | Orientation and waits | Compact task language; proof/file waits discoverable and owner-driven | Descriptors and wait owner | intent help/wait plus agent docs | TestIntentPublicOrientation; TestIntentPublicProofAndFileWait | Built CLI help and real isolated proof/file observers | MISSING | Fold critique then implement |
 
 Fable critiques this newly observed requirement gap in at most two rounds, with
 round 2 declared as failsafe before round 1. This is a new user-authorized usability
