@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:975377b3caded43ca23514f7f32a54074fa9c1ea6c8d5311eb9b040750d33bdf",
+  "sourceDigest": "sha256:3d44b0dba6f88e461c6ac2cb20828e72c330b151ab9ab28deae066038986c8f1",
   "source": [
     {
       "path": ".npmrc",
@@ -584,7 +584,7 @@
     },
     {
       "path": "src/partner/attachments.ts",
-      "sha256": "8af4fe7e13d0b691864e318f3258a2df707e54b01f332be7812c1e0c9fcb3dd3"
+      "sha256": "6cfda7b81e3db66f7e6de82e70d1cc50e96d7dbd0cb11c5f05e71a0732bca12e"
     },
     {
       "path": "src/partner/capture.test.ts",
@@ -644,7 +644,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "4c569b013f92a13b9165fb37a72d9cc4417e950b8b4137ef1ae3db40e59dd42b"
+      "sha256": "40145f3a93746c7b129d397b1d0121951dece7882e2d9f01a5e32b5b8ec97c9c"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -656,11 +656,11 @@
     },
     {
       "path": "src/partner/suggesting.test.ts",
-      "sha256": "588d5946c89984aa24093b92e767e77e0427b72e18917a8558bda9c7af54985c"
+      "sha256": "3c6395d4b926fe67a690876b270ee5c6196d3a71468a670867e58d33773b42be"
     },
     {
       "path": "src/partner/suggesting.ts",
-      "sha256": "d9236a7014edbc602e3f1ce4842a4c44fb172ce894ac4cb5edd305f33ffe818f"
+      "sha256": "f6dd54f90d6033d05bbf167608219e3d0d2d03a791d1d170c1b6dd1a63a964e4"
     },
     {
       "path": "src/partner/suggestions.ts",
@@ -771,8 +771,12 @@
       "sha256": "491128d34a3f833bdf7103ab69f28d917203bebc097d36fda1cd9d448a9fabd6"
     },
     {
+      "path": "src/shell/Drawer.test.tsx",
+      "sha256": "5caaf5c6049ffca6d5ba146fe23d4526d1b29e97776380f77ea5f53106b154ce"
+    },
+    {
       "path": "src/shell/Drawer.tsx",
-      "sha256": "fbb21684d6dd111c46246c85566de6e796b06c67ffb82864b3871249a17febba"
+      "sha256": "273903b550c5464d31bca9552ee24aee1c71b096ff1d738160ed56c1bf7934bb"
     },
     {
       "path": "src/shell/ErrorBoundary.tsx",
@@ -860,7 +864,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "94e09ecf26f307ce93d1cdb0440160d9315ef40f95f43a7a3af7da31b12b47b4"
+      "sha256": "e19cefbf318005f41b55d00232ee039b4f475966ffa6ea19704829de9cdc4c4b"
     },
     {
       "path": "src/shell/workmodal.test.ts",
@@ -958,11 +962,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "36290b7fa823982cc5bc1a614efc56b64a689c5f85372786ade925cb092654df"
+      "sha256": "e3fd06f8c9259782fbf20d4c9169cb7a470e408bcafe5e9b0a283aeeb8f64fd2"
     },
     {
       "path": "assets/index.js",
-      "sha256": "658a5507a8db20d0e00ea881da90274f84540fbb4281a14ef1d0867ac0994c7a"
+      "sha256": "0f665b39ed3b8e93b445ffb6edb77e5a869103bdff7f8fd53de65c019c3aa9fe"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

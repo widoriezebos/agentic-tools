@@ -171,11 +171,25 @@ export function offeredIn(carried: readonly Carried[], marks: Marks, open: reado
         id,
         open: standing,
         mark,
-        standing: standingOf(mark, standing, suggestion.offered),
+        standing: standingOf(mark, standing, wasOffered(suggestion)),
       });
     });
   }
   return cards;
+}
+
+/**
+ * Whether one suggestion was offered, read from its reason and not its flag.
+ *
+ * The service refuses nothing without saying why (internal/ui/partner/service.go
+ * admit, notOffered), and it sets no reason on one it offers, so the reason is
+ * what identifies a refusal. The flag alone could not: a suggestion recorded
+ * before this build carries neither field, and reading the flag made every card
+ * in an older conversation a refusal that said "Intent was not offered" of words
+ * the human had been shown and may have used.
+ */
+export function wasOffered(card: Suggestion): boolean {
+  return (card.reason ?? "").trim() === "";
 }
 
 /** One card by its id, or nothing where the conversation has no such card. */
@@ -312,8 +326,11 @@ export function closedLine(card: Suggestion): string {
 }
 
 /**
- * Why nothing was offered, as the card says it: the service's own reason, and a
- * plain sentence where a record written before this build carries none.
+ * Why nothing was offered, as the card says it: the service's own reason.
+ *
+ * The reason is what makes a card a refusal, so a refused card has one. The
+ * plain sentence is the floor under a caller that asked for the line anyway,
+ * so that a card cannot show an empty why.
  */
 export function refusedLine(card: Suggestion & { reason?: string }): string {
   const said = (card.reason ?? "").trim();
