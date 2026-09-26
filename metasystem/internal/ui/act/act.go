@@ -56,6 +56,54 @@ type Authority struct {
 	root           string
 	proof          humanauthority.Proof
 	classification lease.ClassifyResult
+	reads          reads
+}
+
+// reads are the four readings a verb request is assembled from that stand on
+// Git: the ledger fence's enrollment probe, the endpoint and the machine name
+// the checkout's configuration answers, and the branch-safety check a park
+// runs.
+//
+// They are fields rather than direct calls so that a test in this package can
+// hand in an in-memory ledger through goal.Endpoint's own Repository seam. This
+// repository's rules ask that a behaviour test stub Git, fixture setup
+// included, and every one of these four runs it. The zero value is the
+// production reading — each accessor falls back to the package it names — so
+// nothing outside a test ever chooses, and nothing here is settable from
+// another package.
+type reads struct {
+	fence     func(root string) error
+	endpoint  func(root string) (goal.Endpoint, error)
+	machine   func(root string) (string, error)
+	parkCheck func(root string, endpoint goal.Endpoint) func(goalID, next string) (string, error)
+}
+
+func (r reads) ensureFence(root string) error {
+	if r.fence != nil {
+		return r.fence(root)
+	}
+	return ledgerfence.Ensure(root)
+}
+
+func (r reads) resolveEndpoint(root string) (goal.Endpoint, error) {
+	if r.endpoint != nil {
+		return r.endpoint(root)
+	}
+	return goal.ResolveEndpoint(root)
+}
+
+func (r reads) resolveMachine(root string) (string, error) {
+	if r.machine != nil {
+		return r.machine(root)
+	}
+	return goal.ResolveMachine(root)
+}
+
+func (r reads) parkBranchCheck(root string, endpoint goal.Endpoint) func(goalID, next string) (string, error) {
+	if r.parkCheck != nil {
+		return r.parkCheck(root, endpoint)
+	}
+	return goalbranch.ParkCheck(root, endpoint)
 }
 
 // Prove takes the one observation. invokerPID is the process whose ancestry
@@ -497,10 +545,10 @@ func (a Authority) request() (goal.VerbRequest, error) {
 	if !a.proven {
 		return goal.VerbRequest{}, refuse(KindUnproven, "unproven", a.reason)
 	}
-	if err := ledgerfence.Ensure(a.root); err != nil {
+	if err := a.reads.ensureFence(a.root); err != nil {
 		return goal.VerbRequest{}, refuse(KindFailed, "no-fence", err.Error())
 	}
-	endpoint, err := goal.ResolveEndpoint(a.root)
+	endpoint, err := a.reads.resolveEndpoint(a.root)
 	if err != nil {
 		return goal.VerbRequest{}, refuse(KindFailed, "no-endpoint", err.Error())
 	}
@@ -511,7 +559,7 @@ func (a Authority) request() (goal.VerbRequest, error) {
 		}
 		return counselor.AppendCarriedLanding(root, line)
 	})
-	machine, err := goal.ResolveMachine(a.root)
+	machine, err := a.reads.resolveMachine(a.root)
 	if err != nil {
 		return goal.VerbRequest{}, refuse(KindFailed, "no-machine", err.Error())
 	}
@@ -529,7 +577,7 @@ func (a Authority) request() (goal.VerbRequest, error) {
 		// own: a goal whose branch is not on origin is a goal a park would
 		// strand. It is carried on every request because it costs nothing
 		// until a park calls it, and only a park does.
-		ParkBranchCheck: goalbranch.ParkCheck(a.root, endpoint),
+		ParkBranchCheck: a.reads.parkBranchCheck(a.root, endpoint),
 		Actor:           goal.Actor{Machine: machine, Lineage: a.lineage, Human: a.human},
 		// The proof travels as the request's authority, never as a name: a
 		// human name without this object authorizes nothing.

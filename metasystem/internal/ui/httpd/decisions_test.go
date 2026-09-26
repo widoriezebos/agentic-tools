@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -85,8 +89,9 @@ func TestDecisionsPayload(t *testing.T) {
 	testutil.Expect(t, "the register's words came through whole",
 		page.Decided.Rulings[0].Words,
 		"The board's two drag moves are the only acts, and g1-s22 is where they land")
-	testutil.Expect(t, "and the goal it names is a mention",
-		page.Decided.Rulings[0].Mentions, []string{"g1-s22"})
+	testutil.Expect(t, "and the goal it names is a mention that opens the goal",
+		page.Decided.Rulings[0].Mentions,
+		[]decisions.Mention{{ID: "g1-s22", Where: decisions.Where{Kind: decisions.WhereGoal, ID: "g1-s22"}}})
 	testutil.Expect(t, "the register's defect is listed",
 		page.Decided.Defects, []string{"R-9: review condition needs due= or event="})
 }
@@ -109,6 +114,51 @@ func TestDecisionsWithoutAChannelOrARegister(t *testing.T) {
 	testutil.Expect(t, "no rulings", len(page.Decided.Rulings), 0)
 	testutil.Expect(t, "and no register count", page.Counts.Rulings, 0)
 	testutil.Expect(t, "the approval still waits", page.Counts.NeedsYou, 1)
+}
+
+// An alert inside the seven-day window reaches the inbox however busy the
+// week was: the route reads pages of the journal until one of them reaches the
+// window's start, rather than one page of two hundred that a noisy fortnight
+// can fill entirely with lines addressed to nobody.
+func TestTheAlertsInTheWindowAreReadPastTheFirstPageOfTheJournal(t *testing.T) {
+	t.Parallel()
+
+	lines := []string{}
+	// Oldest first, which is the journal's own order: the one alert, then more
+	// than a page of ticks recorded after it.
+	lines = append(lines, journalAt(t, "n-alert", "alert",
+		"the steward could not reach the operator", overviewNow.Add(-6*24*time.Hour)))
+	for index := 0; index < notifications.DefaultLimit+20; index++ {
+		lines = append(lines, journalAt(t, "n-tick-"+strconv.Itoa(index), "tick",
+			"a tick ran", overviewNow.Add(-time.Duration(index+1)*time.Minute)))
+	}
+
+	info := decisionsInfo()
+	info.NotificationJournal = journalWith(t, lines...)
+	page := decisionsPage(t, New(info, loopback(), testBundle()), "the read")
+
+	alerts := []decisions.Need{}
+	for _, need := range page.NeedsYou {
+		if need.Kind == decisions.KindAlert {
+			alerts = append(alerts, need)
+		}
+	}
+	testutil.Require(t, "how many alerts the inbox carries", len(alerts), 1)
+	testutil.Expect(t, "and it is the one the second page holds", alerts[0].ID, "n-alert")
+}
+
+// A journal the interface cannot read is a 500 for this page too, and the
+// reading of older pages does not swallow it.
+func TestDecisionsSaysWhyTheJournalCouldNotBeRead(t *testing.T) {
+	t.Parallel()
+
+	info := decisionsInfo()
+	info.NotificationJournal = filepath.Join(t.TempDir(), "notifications.jsonl")
+	if err := os.Mkdir(info.NotificationJournal, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	response := request(t, New(info, loopback(), testBundle()), http.MethodGet, "/api/decisions", "127.0.0.1:7878", nil)
+	testutil.Expect(t, "the status", response.Code, http.StatusInternalServerError)
 }
 
 // A reader that fails is a 500 carrying its own reason, like every other

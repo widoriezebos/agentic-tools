@@ -4,7 +4,7 @@ import type { Need } from "./api";
 import {
   ANY_ORIGIN,
   isNarrowed,
-  labelsIn,
+  labelChips,
   noNarrowing,
   queueCount,
   SEATS,
@@ -62,7 +62,7 @@ export function QueueBlock({
   now: Date;
 }) {
   const shown = useMemo(() => shownQueue(waiting, narrowing), [waiting, narrowing]);
-  const labels = useMemo(() => labelsIn(waiting), [waiting]);
+  const labels = useMemo(() => labelChips(waiting, narrowing), [waiting, narrowing]);
   // What a bulk act would act on is what is ticked AND on screen: a human who
   // narrows after ticking is looking at a different set, and acting on rows
   // they can no longer see is the one thing a queue must never do.

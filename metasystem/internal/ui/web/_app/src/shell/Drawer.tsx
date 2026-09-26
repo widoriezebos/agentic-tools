@@ -59,12 +59,44 @@ import { usePartner } from "../partner/store";
  */
 export type Caret = "none" | "toggle" | "panel";
 
+/**
+ * The room one deposit card and the composer need, in pixels.
+ *
+ * Measured in the browser, at 1280 on the walkthrough's own sitting: the bar is
+ * 48, a card with its heading, its two fields and its two buttons is 232, the
+ * composer card is 174 and the panel's own padding is 28 — 482 — and this is
+ * that with a line of room over it, so that a card whose fields a human has
+ * opened a little is still whole. Two fifths of the work area gave the messages 149 of the 232 a
+ * card needs, and a card is the one thing in here a human has to read closely
+ * before they press Record it.
+ *
+ * Pixels, like the drawer's two minima, because it is about what fits rather
+ * than about a share of anything. A number rather than a measurement taken as
+ * the card arrives: the drawer asks once, for the first card, and a drawer that
+ * re-measured itself at every card would be a drawer that kept taking the page.
+ */
+export const CARD_ROOM = 520;
+
+/**
+ * Whether a drawer standing at this many pixels asks for that room.
+ *
+ * The larger of the two stands, and the larger is not always the card's: a
+ * drawer a human has dragged taller than a card needs asks for nothing. Nor
+ * does one whose height is nothing — a drawer not on the screen has no height
+ * to compare, and asking on behalf of a measurement that was never made would
+ * grow a drawer nobody had opened.
+ */
+export function asksForRoom(standing: number): boolean {
+  return standing > 0 && standing < CARD_ROOM;
+}
+
 export function Drawer({
   open,
   caret,
   onCompose,
   onToggle,
   onEscape,
+  onRoom,
 }: {
   open: boolean;
   caret: Caret;
@@ -72,10 +104,21 @@ export function Drawer({
   onCompose: () => void;
   onToggle: () => void;
   onEscape: () => void;
+  /**
+   * Ask the work area for a taller drawer, in pixels. The shell owns the
+   * height — it is one panel of the group the divider sits in — and refuses
+   * where a human has said what the height is.
+   */
+  onRoom?: (pixels: number) => void;
 }) {
   const navigate = useNavigate();
   const toggle = useRef<HTMLButtonElement | null>(null);
-  const { draft, setDraft, busy, attachments, detach } = usePartner();
+  const drawer = useRef<HTMLElement | null>(null);
+  // Asked once, for the first card of this drawer's life. A sitting deposits
+  // many cards, and a drawer that grew at each of them would be a drawer that
+  // took the page one card at a time.
+  const asked = useRef(false);
+  const { draft, setDraft, busy, attachments, detach, deposits } = usePartner();
   // The draft a sheet handed over, where a sheet has. Only the draft: the
   // subject and a passage are chips a human made by their own press, in the
   // panel where they pressed it, and they know they are there. The draft is the
@@ -89,9 +132,25 @@ export function Drawer({
     }
   }, [caret]);
 
+  // The first deposit card asks for the room a card needs, and only where the
+  // drawer has less than that: the larger of what it stands at and what one
+  // card plus the composer need, which is why a drawer a human has already
+  // dragged taller is left exactly as it is. A drag after this is theirs and is
+  // remembered as always; the shell refuses this ask outright once they have
+  // made one.
+  useEffect(() => {
+    if (asked.current || !open || deposits.length === 0 || onRoom === undefined) {
+      return;
+    }
+    asked.current = true;
+    if (asksForRoom(drawer.current?.clientHeight ?? 0)) {
+      onRoom(CARD_ROOM);
+    }
+  }, [open, deposits.length, onRoom]);
+
 
   return (
-    <aside className="ms-drawer" aria-label="Project Partner" data-open={open ? "true" : "false"}>
+    <aside ref={drawer} className="ms-drawer" aria-label="Project Partner" data-open={open ? "true" : "false"}>
       <div className="ms-drawer-bar">
         <span className="ms-drawer-who">
           <span className="ms-drawer-title">Project Partner</span>

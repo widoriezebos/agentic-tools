@@ -2914,7 +2914,9 @@ func blockRequest(r VerbRequest, id, blocker string, human bool) PublishRequest 
 		})},
 		Message: "goal block " + id + " behind " + blocker,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			// Through the endpoint, so a caller that owns the committed
+			// state itself is read from there rather than from Git.
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2938,7 +2940,7 @@ func blockRequest(r VerbRequest, id, blocker string, human bool) PublishRequest 
 			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -2984,7 +2986,9 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 		})},
 		Message: "goal unblock " + id + " from " + blocker,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			// Through the endpoint, so a caller that owns the committed
+			// state itself is read from there rather than from Git.
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3065,7 +3069,7 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 

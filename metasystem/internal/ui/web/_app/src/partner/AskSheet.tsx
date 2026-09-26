@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { draftOf, draftSource, offersDraft, type Field } from "./drafting";
 import { usePartner } from "./store";
 import { useOpening } from "./Suggestion";
-import { writingIn } from "./suggesting";
+import { writingIn, type Outcome } from "./suggesting";
 
 /**
  * The hand-over: a sheet with writable fields offers its draft by opening, and
@@ -47,6 +47,7 @@ export function AskAboutSheet({
   opening,
   writable = [],
   set,
+  save,
 }: {
   sheet: string;
   fields: Field[];
@@ -56,6 +57,8 @@ export function AskAboutSheet({
   writable?: string[];
   /** Put words in one of them, and answer what it held. */
   set?: (field: string, text: string) => string;
+  /** Put words in one of them and send the sheet, where the sheet can send. */
+  save?: (field: string, text: string) => Promise<Outcome>;
 }) {
   const { askAbout, handOver, noteDraft, dropDraft, offerFields, writing } = usePartner();
   // A sheet that does not mint its own — the Project pane's, which hand their
@@ -75,7 +78,11 @@ export function AskAboutSheet({
     offerFields(id, {
       sheet,
       read: () => draftOf(id, sheet, fields, writable, inHand),
+      // What the sheet holds, as it holds it: the draft above is trimmed and
+      // drops what is empty, and Undo has to compare the field whole.
+      raw: (field: string) => fields.find((one) => one.name === field)?.value ?? "",
       set: (field: string, text: string) => set?.(field, text) ?? "",
+      save,
     });
   });
   // And one registration is taken back exactly once: when the sheet goes.
@@ -85,8 +92,7 @@ export function AskAboutSheet({
     },
     [offerFields, id],
   );
-  // The hand-over, once, when a sheet with writable fields opens — and the draft
-  // is dropped when it closes, because the thing it described has gone.
+  // The hand-over, once, when a sheet with writable fields opens.
   //
   // A sheet with nothing writable is not handed over by opening: it has no field
   // the Partner may be asked to write, so the only reason to attach it is that a
@@ -97,14 +103,23 @@ export function AskAboutSheet({
       return;
     }
     handOver(draftOf(id, sheet, fields, writable, ""));
-    return () => {
-      dropDraft(sheet);
-    };
     // The fields are read at this moment and not watched: the effect runs when
     // the sheet opens, and what it attaches is what was in it then. The chip is
     // brought up to date below and at every send, which is why they are not
     // among the dependencies — a keystroke must not re-run the hand-over.
-  }, [handOver, dropDraft, id, sheet, writes]);
+  }, [handOver, id, sheet, writes]);
+  // And the draft goes when this sheet goes, because the thing it described has
+  // gone — by THIS opening, so that two sheets of one name each take their own
+  // and neither takes the other's (Astra F2 on g1-s56). It is its own effect
+  // rather than the hand-over's cleanup because it is not the hand-over's
+  // business: a draft attached by "Ask about this" on a sheet with nothing
+  // writable is retired here too.
+  useEffect(
+    () => () => {
+      dropDraft(id);
+    },
+    [dropDraft, id],
+  );
   // The chip says where the caret is, so it is brought up to date when the field
   // in hand changes — through the refresh that never resurrects a draft, so the
   // × is not undone by moving the caret.

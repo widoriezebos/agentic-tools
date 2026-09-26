@@ -97,6 +97,20 @@ describe("a draft offered from a sheet", () => {
       ["Intent", "Next step"], "Intent");
     expect(writing.writing).toBe("Intent");
     expect(draftLabel(writing)).toBe("Draft: Edit goal · The board reads the ledger. · writing in Intent");
+    // And it takes the room for that from the second field's words: once the
+    // caret is somewhere, the words of the fields are on the screen in front of
+    // the human, and what the chip still has to say is which draft this is and
+    // which field a request naming none is about (g1-s52 Built, deferred).
+    const edit = [
+      { name: "Goal", value: "g1-s12" },
+      { name: "Intent", value: "The board reads the accepted ledger and nothing else." },
+    ];
+    expect(draftLabel(draftOf(OPENING, "Edit goal", edit, ["Intent"], "Intent"))).toBe(
+      "Draft: Edit goal · g1-s12 · writing in Intent",
+    );
+    expect(draftLabel(draftOf(OPENING, "Edit goal", edit, ["Intent"], ""))).toBe(
+      "Draft: Edit goal · g1-s12 · The board reads the accepted ledger and… · writing in nothing yet",
+    );
     expect(writingClause("Next step")).toBe("writing in Next step");
     expect(writingClause("")).toBe("writing in nothing yet");
     expect(writingClause("   ")).toBe("writing in nothing yet");

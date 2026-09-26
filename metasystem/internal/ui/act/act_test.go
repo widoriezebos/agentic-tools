@@ -1,16 +1,18 @@
 package act
 
 import (
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgoal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -45,8 +47,8 @@ func TestAnUnprovenServerWritesNothingAndSaysWhy(t *testing.T) {
 
 func TestAProvenServerSaysWhoItActsAs(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	authority, err := Fixture(root, "Wido", "terminal-ttys004-1", fixtureNow)
+	bed := ledger(t)
+	authority, err := Fixture(bed.root, "Wido", "terminal-ttys004-1", fixtureNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,15 +60,15 @@ func TestAProvenServerSaysWhoItActsAs(t *testing.T) {
 // the browser writes is the line an approval at the terminal writes.
 func TestApproveFromTheInterfaceWritesTheHumansOwnHistoryLine(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-one")
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-one")
+	authority := provenFor(t, bed)
 
 	if err := authority.Approve("ui-one", box()); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-one")
+	file := readGoal(t, bed, "ui-one")
 	testutil.Expect(t, "the goal is approved", file.State, goal.StateApproved)
 	testutil.Expect(t, "the approval's actor", file.Approved.By, "human:Wido")
 	testutil.Expect(t, "the approval's authority", file.Approved.Authority, goal.ApprovalAuthorityProven)
@@ -82,9 +84,9 @@ func TestApproveFromTheInterfaceWritesTheHumansOwnHistoryLine(t *testing.T) {
 
 func TestWithdrawReturnsAnApprovedGoalToTheQueue(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-two")
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-two")
+	authority := provenFor(t, bed)
 	if err := authority.Approve("ui-two", box()); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -93,7 +95,7 @@ func TestWithdrawReturnsAnApprovedGoalToTheQueue(t *testing.T) {
 		t.Fatalf("withdraw: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-two")
+	file := readGoal(t, bed, "ui-two")
 	testutil.Expect(t, "the goal is queued again", file.State, goal.StateQueued)
 	testutil.Expect(t, "no approval stands", file.Approved == nil, true)
 	last := file.History[len(file.History)-1]
@@ -108,19 +110,19 @@ func TestWithdrawReturnsAnApprovedGoalToTheQueue(t *testing.T) {
 // refusal the engine does not make.
 func TestWithdrawingClaimedWorkParksItRatherThanUnwindingIt(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-three")
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-three")
+	authority := provenFor(t, bed)
 	if err := authority.Approve("ui-three", box()); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	claim(t, root, "ui-three")
+	claim(t, bed, "ui-three")
 
 	if err := authority.Withdraw("ui-three", "second thoughts"); err != nil {
 		t.Fatalf("withdraw on claimed work: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-three")
+	file := readGoal(t, bed, "ui-three")
 	testutil.Expect(t, "the work is parked, not queued", file.State, goal.StateParked)
 	testutil.Expect(t, "the park carries the human's reason", file.Parked.Because,
 		"approval revoked: second thoughts")
@@ -130,9 +132,9 @@ func TestWithdrawingClaimedWorkParksItRatherThanUnwindingIt(t *testing.T) {
 // sentence is what the browser shows, under the engine's own code.
 func TestWithdrawingUnapprovedWorkIsTheEnginesRefusal(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-six")
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-six")
+	authority := provenFor(t, bed)
 
 	err := authority.Withdraw("ui-six", "never mind")
 
@@ -144,14 +146,14 @@ func TestWithdrawingUnapprovedWorkIsTheEnginesRefusal(t *testing.T) {
 	if refusal.Message == "" {
 		t.Fatal("the engine's refusal reached the browser with no words")
 	}
-	testutil.Expect(t, "the goal was not touched", readGoal(t, root, "ui-six").State, goal.StateQueued)
+	testutil.Expect(t, "the goal was not touched", readGoal(t, bed, "ui-six").State, goal.StateQueued)
 }
 
 func TestApproveRefusesAnIncompleteBudgetBeforeItReachesTheLedger(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-four")
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-four")
+	authority := provenFor(t, bed)
 
 	err := authority.Approve("ui-four", goalbudget.Budget{ElapsedLimit: "4h"})
 
@@ -160,20 +162,20 @@ func TestApproveRefusesAnIncompleteBudgetBeforeItReachesTheLedger(t *testing.T) 
 		t.Fatalf("approve with half a budget = %v, want an act.Refusal", err)
 	}
 	testutil.Expect(t, "the request is at fault", refusal.Kind, KindRequest)
-	testutil.Expect(t, "the goal was not touched", readGoal(t, root, "ui-four").State, goal.StateQueued)
+	testutil.Expect(t, "the goal was not touched", readGoal(t, bed, "ui-four").State, goal.StateQueued)
 }
 
 func TestTheProofIsRecordedBesideTheActItAuthorized(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-five")
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-five")
+	authority := provenFor(t, bed)
 	if err := authority.Approve("ui-five", box()); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-five")
-	proofPath := filepath.Join(root, "artifacts", "agents", "authority", "proofs", file.Approved.Opid+".json")
+	file := readGoal(t, bed, "ui-five")
+	proofPath := filepath.Join(bed.root, "artifacts", "agents", "authority", "proofs", file.Approved.Opid+".json")
 	recorded, err := os.ReadFile(proofPath)
 	if err != nil {
 		t.Fatalf("the act's proof was not recorded at %s: %v", proofPath, err)
@@ -205,11 +207,11 @@ func opening(id string) Opened {
 // requested one-based position and renumbers the whole band behind it.
 func TestSetPriorityPlacesAGoalAndRenumbersTheBandAsTheHuman(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
+	bed := ledger(t)
 	for _, id := range []string{"ui-one", "ui-two", "ui-three"} {
-		openGoal(t, root, id)
+		openGoal(t, bed, id)
 	}
-	authority := provenFor(t, root)
+	authority := provenFor(t, bed)
 	// A goal the fixture opened carries no rank at all, so the band is built
 	// here: the first two land in order, and the third is the one that moves.
 	const band = uint8(2)
@@ -223,11 +225,11 @@ func TestSetPriorityPlacesAGoalAndRenumbersTheBandAsTheHuman(t *testing.T) {
 		t.Fatalf("set-priority: %v", err)
 	}
 
-	testutil.Expect(t, "the goal is first in the band", rank(t, root, "ui-three"), ranked{band, 1})
-	testutil.Expect(t, "the goal behind it moved down", rank(t, root, "ui-one"), ranked{band, 2})
-	testutil.Expect(t, "and so did the one behind that", rank(t, root, "ui-two"), ranked{band, 3})
+	testutil.Expect(t, "the goal is first in the band", rank(t, bed, "ui-three"), ranked{band, 1})
+	testutil.Expect(t, "the goal behind it moved down", rank(t, bed, "ui-one"), ranked{band, 2})
+	testutil.Expect(t, "and so did the one behind that", rank(t, bed, "ui-two"), ranked{band, 3})
 
-	file := readGoal(t, root, "ui-three")
+	file := readGoal(t, bed, "ui-three")
 	last := file.History[len(file.History)-1]
 	testutil.Expect(t, "the re-rank is the human's own line", last.Actor, "human:Wido")
 	testutil.Expect(t, "and it is the verb the terminal writes", last.Verb, "set-priority")
@@ -240,9 +242,9 @@ func TestSetPriorityPlacesAGoalAndRenumbersTheBandAsTheHuman(t *testing.T) {
 // clamping it, so nothing in the interface clamps one either.
 func TestSetPriorityCarriesTheEnginesRefusalOfAnImpossiblePosition(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-one")
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-one")
+	authority := provenFor(t, bed)
 	const band = uint8(2)
 	if err := authority.SetPriority("ui-one", band, sequence(1)); err != nil {
 		t.Fatalf("building the band: %v", err)
@@ -258,7 +260,7 @@ func TestSetPriorityCarriesTheEnginesRefusalOfAnImpossiblePosition(t *testing.T)
 	if !strings.Contains(refusal.Message, "outside the current destination range") {
 		t.Fatalf("the refusal is not the engine's own: %q", refusal.Message)
 	}
-	testutil.Expect(t, "and nothing moved", rank(t, root, "ui-one"), ranked{band, 1})
+	testutil.Expect(t, "and nothing moved", rank(t, bed, "ui-one"), ranked{band, 1})
 }
 
 func TestSetPriorityRefusesARankThatIsNotOneBeforeItReachesTheLedger(t *testing.T) {
@@ -283,14 +285,14 @@ func TestSetPriorityRefusesARankThatIsNotOneBeforeItReachesTheLedger(t *testing.
 // answers derive, and the History line a terminal open writes.
 func TestOpenCreatesAQueuedGoalAsTheHuman(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	authority := provenFor(t, bed)
 
 	if err := authority.Open(opening("ui-new")); err != nil {
 		t.Fatalf("open: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-new")
+	file := readGoal(t, bed, "ui-new")
 	testutil.Expect(t, "the goal is queued", file.State, goal.StateQueued)
 	testutil.Expect(t, "the origin is the human's intake", file.Origin, goal.OriginHuman)
 	testutil.Expect(t, "the intent is the human's own", file.Intent, "Make ui-new work end to end.")
@@ -332,9 +334,9 @@ func TestOpenRefusesAnIncompleteIntakeBeforeItReachesTheLedger(t *testing.T) {
 // ledger's refusal, not this package's.
 func TestOpenCarriesTheEnginesRefusalOfAnIdItAlreadyHas(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-one")
-	authority := provenFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-one")
+	authority := provenFor(t, bed)
 
 	err := authority.Open(opening("ui-one"))
 
@@ -350,46 +352,78 @@ type ranked struct {
 	sequence uint64
 }
 
-func rank(t *testing.T, root, id string) ranked {
+func rank(t *testing.T, bed *ledgerBed, id string) ranked {
 	t.Helper()
-	file := readGoal(t, root, id)
+	file := readGoal(t, bed, id)
 	return ranked{file.Priority, file.Sequence}
 }
 
 func sequence(at uint64) *uint64 { return &at }
 
-func provenFor(t *testing.T, root string) Authority {
+// The readings a bed hands in are a test's and nothing else's: an authority
+// nobody handed them to asks the checkout itself, so a directory that is no
+// checkout refuses rather than answering. This is what keeps the fixture from
+// standing in for the server's own reading of a real one.
+func TestTheDefaultReadingsAreTheCheckoutsOwn(t *testing.T) {
+	t.Parallel()
+	plain := reads{}
+	root := t.TempDir()
+
+	if err := plain.ensureFence(root); err == nil {
+		t.Error("a directory shipping no executable guard passed the ledger fence")
+	}
+	// The endpoint it answers is the checkout's own, and it owns no committed
+	// state of its own: a reading that came back carrying a repository would be
+	// a fixture's, and this one is the server's.
+	switch at, err := plain.resolveEndpoint(root); {
+	case err != nil:
+		// A directory that is no checkout may refuse instead, which is an answer.
+	case at.Root != root || at.Repository != nil:
+		t.Errorf("the default endpoint reading answered %+v, want this checkout with no repository", at)
+	}
+	if _, err := plain.resolveMachine(root); err == nil {
+		t.Error("a directory that is no checkout resolved a machine name")
+	}
+	if plain.parkBranchCheck(root, goal.Endpoint{Root: root}) == nil {
+		t.Error("no park branch check was carried, so every park would fail closed")
+	}
+}
+
+func provenFor(t *testing.T, bed *ledgerBed) Authority {
 	t.Helper()
-	authority, err := Fixture(root, "Wido", "terminal-ttys004-1", fixtureNow)
+	authority, err := Fixture(bed.root, "Wido", "terminal-ttys004-1", fixtureNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return authority
+	return bed.acting(t, authority)
 }
 
-// ledger builds one clone of one bare origin whose accepted tip carries a
-// lawful root record, declares the fake runtime, and ships the executable
-// pre-commit guard every goal mutation stands on.
-func ledger(t *testing.T) string {
-	t.Helper()
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	git(t, t.TempDir(), "init", "-q", "--bare", "-b", "main", origin)
-	seed := filepath.Join(t.TempDir(), "seed")
-	git(t, t.TempDir(), "clone", "-q", origin, seed)
-	write(t, filepath.Join(seed, "README.md"), "seed\n", 0o644)
-	write(t, filepath.Join(seed, "metasystem.conf"),
-		"metasystem.runtimes=fake\nmetasystem.budget.review-round-max=3\n", 0o644)
-	git(t, seed, "add", "README.md", "metasystem.conf")
-	git(t, seed, "commit", "-qm", "seed")
-	git(t, seed, "push", "-q", "origin", "main")
+// ledgerBed is one private accepted ledger and the checkout beside it.
+//
+// Nothing here runs Git, and nothing here is shared between tests. The
+// committed state is goal.Endpoint's own Repository seam, held in memory by
+// internal/testgoal, whose first commit carries a lawful root record; the
+// checkout is a directory with the one file a mutation reads from disk, the
+// configuration that declares the fake runtime. The readings an act would
+// otherwise ask Git for — the ledger fence's enrollment, this checkout's
+// endpoint and machine name, and a goal branch's safety — are handed to the
+// authority as its own, so the whole publication path runs with Git absent,
+// which is what this repository's rules ask of a behaviour test.
+type ledgerBed struct {
+	root       string
+	repository *testgoal.Repository
+}
 
+// The bed's own seed commit: forty characters, because a commit id is what the
+// engine compares and carries.
+const bedSeedCommit = "0000000000000000000000000000000000000001"
+
+func ledger(t *testing.T) *ledgerBed {
+	t.Helper()
 	root := filepath.Join(t.TempDir(), "clone")
-	git(t, t.TempDir(), "clone", "-q", origin, root)
-	git(t, root, "config", "metasystem.goal.machine", "mac-ui")
-	// The guard is what ledgerfence.Ensure requires before any mutation. It
-	// is never executed here: a publication builds its tree with
-	// commit-tree, which runs no hook.
-	write(t, filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh"), "#!/usr/bin/env bash\nexit 0\n", 0o755)
+	write(t, filepath.Join(root, "README.md"), "seed\n", 0o644)
+	write(t, filepath.Join(root, "metasystem.conf"),
+		"metasystem.runtimes=fake\nmetasystem.budget.review-round-max=3\n", 0o644)
 
 	record := &goal.RootRecord{
 		Identity: "01J5X000000000000000000000", FormatVersion: "1",
@@ -400,57 +434,99 @@ func ledger(t *testing.T) string {
 			Verb: "migrate", Actor: "mac-ui+terminal-ttys004-1", Keep: -1,
 		}},
 	}
-	result, err := goal.Publish(endpoint(root), goal.PublishRequest{
-		Opid: "01J5X0000000000000000000A1-mac-ui-1a2b3c4d", Machine: "mac-ui", Lineage: "terminal-ttys004-1",
-		Intent:  goal.Intent{Verb: "migrate", Targets: []string{"backlog"}},
-		Message: "seed the ledger root record",
-		Mutate: func(string) ([]goal.Change, error) {
-			return []goal.Change{{Path: "plans/goals/backlog.md", Content: goal.RenderRoot(record)}}, nil
-		},
-	})
-	if err != nil || result.Outcome != goal.OutcomeConfirmed {
-		t.Fatalf("seeding the ledger: %+v %v", result, err)
-	}
-	return root
+	files := map[string][]byte{"plans/goals/backlog.md": []byte(goal.RenderRoot(record))}
+	return &ledgerBed{root: root, repository: testgoal.New(files, fixtureNow, bedSeedCommit)}
 }
 
-func endpoint(root string) goal.Endpoint {
-	return goal.Endpoint{Root: root, Remote: "origin", Branch: "refs/heads/main"}
+// acting is one authority with this bed's own readings on it, which is what
+// keeps an act off Git. Each reading answers for this bed's root and refuses
+// any other, so a reading reached for the wrong checkout fails here rather
+// than answering quietly.
+func (bed *ledgerBed) acting(t *testing.T, authority Authority) Authority {
+	t.Helper()
+	authority.reads = reads{
+		// That the fence refuses a checkout shipping no executable guard is
+		// internal/ledgerfence's own test; its probe is a Git command.
+		fence: func(root string) error { return bed.mine(root) },
+		endpoint: func(root string) (goal.Endpoint, error) {
+			if err := bed.mine(root); err != nil {
+				return goal.Endpoint{}, err
+			}
+			return bed.endpoint(), nil
+		},
+		machine: func(root string) (string, error) {
+			if err := bed.mine(root); err != nil {
+				return "", err
+			}
+			return "mac-ui", nil
+		},
+		// The branch package's own park check, over its three readings rather
+		// than a repository: this checkout has no goal branch, which is the
+		// case that answers without reading a remote at all, and a remote
+		// reading that IS reached fails the test rather than answering.
+		parkCheck: func(root string, at goal.Endpoint) func(goalID, next string) (string, error) {
+			return goalbranch.ParkCheckWithReaders(root, at,
+				func(string, string) (string, bool, error) { return "", false, nil },
+				func(string, goal.Endpoint) (string, error) {
+					t.Errorf("the park check read the endpoint's main on a remote")
+					return "", fmt.Errorf("this bed has no remote")
+				},
+				func(string, goal.Endpoint, string) (string, bool, error) {
+					t.Errorf("the park check read a goal branch on a remote")
+					return "", false, fmt.Errorf("this bed has no remote")
+				})
+		},
+	}
+	return authority
+}
+
+func (bed *ledgerBed) mine(root string) error {
+	if root != bed.root {
+		return fmt.Errorf("undeclared checkout root %q", root)
+	}
+	return nil
+}
+
+// endpoint is the bed's ledger: the endpoint the command edge would resolve,
+// with the in-memory repository owning the committed state. The branch is main
+// because that is the endpoint a park's branch check accepts.
+func (bed *ledgerBed) endpoint() goal.Endpoint {
+	return goal.Endpoint{Root: bed.root, Remote: "origin", Branch: "refs/heads/main", Repository: bed.repository}
 }
 
 // request is the engine request the bed's own setup verbs ride, which is the
 // seat's request rather than the human's: no proof, no human name.
-func request(t *testing.T, root string) goal.VerbRequest {
+func request(t *testing.T, bed *ledgerBed) goal.VerbRequest {
 	t.Helper()
 	ulid, err := goal.NewOperationULID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return goal.VerbRequest{
-		Endpoint: endpoint(root), Actor: goal.Actor{Machine: "mac-ui", Lineage: "terminal-ttys004-1"},
+		Endpoint: bed.endpoint(), Actor: goal.Actor{Machine: "mac-ui", Lineage: "terminal-ttys004-1"},
 		Ulid: ulid, Now: fixtureNow, ClaimEpoch: 1,
 	}
 }
 
-func openGoal(t *testing.T, root, id string) {
+func openGoal(t *testing.T, bed *ledgerBed, id string) {
 	t.Helper()
-	result, err := goal.Open(request(t, root), id, "Make "+id+" work end to end.", "main", "Start "+id+".")
+	result, err := goal.Open(request(t, bed), id, "Make "+id+" work end to end.", "main", "Start "+id+".")
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("open %s: %+v %v", id, result, err)
 	}
 }
 
-func claim(t *testing.T, root, id string) {
+func claim(t *testing.T, bed *ledgerBed, id string) {
 	t.Helper()
-	result, err := goal.Claim(request(t, root), id)
+	result, err := goal.Claim(request(t, bed), id)
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("claim %s: %+v %v", id, result, err)
 	}
 }
 
-func readGoal(t *testing.T, root, id string) *goal.GoalFile {
+func readGoal(t *testing.T, bed *ledgerBed, id string) *goal.GoalFile {
 	t.Helper()
-	projection, err := goal.Project(endpoint(root), false, fixtureNow)
+	projection, err := goal.Project(bed.endpoint(), false, fixtureNow)
 	if err != nil {
 		t.Fatalf("projecting the ledger: %v", err)
 	}
@@ -459,16 +535,6 @@ func readGoal(t *testing.T, root, id string) *goal.GoalFile {
 		t.Fatalf("goal %s is not live at the accepted tip", id)
 	}
 	return file
-}
-
-func git(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", dir,
-		"-c", "user.name=t", "-c", "user.email=t@t",
-		"-c", "protocol.file.allow=always"}, args...)...)
-	if out, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
 }
 
 func write(t *testing.T, path, content string, mode os.FileMode) {

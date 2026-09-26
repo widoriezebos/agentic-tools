@@ -460,7 +460,9 @@ function Columns({
       {(pane.problems.length > 0 || briefing.goal !== null) && (
         <div className="ms-briefing-preamble">
           {pane.problems.length > 0 && <Problems problems={pane.problems} />}
-          {briefing.goal !== null && <GoalBlock briefing={briefing} ledger={ledger} onEdited={onReload} />}
+          {briefing.goal !== null && (
+            <GoalBlock briefing={briefing} ledger={ledger} onEdited={onReload} onReread={onLedger} />
+          )}
           {goal !== null && <Dependencies goal={goal} ledger={ledger} onLedger={onLedger} />}
           {/* What the human wrote to themselves about this goal, under its
               header where they will meet it again. It is the notepad's own
@@ -775,12 +777,31 @@ function GoalBlock({
   briefing,
   ledger,
   onEdited,
+  onReread,
 }: {
   briefing: Briefing;
   /** The board as it stands, which is where the row the sheet fills from is. */
   ledger: Backlog | null;
   /** Said after a save landed: the page reads itself again, records and all. */
   onEdited: () => void;
+  /**
+   * Said after a save nobody could confirm: the board as the sheet's own read
+   * left it, put where this page holds the board and nowhere else.
+   *
+   * It is not `onEdited`. That one reads the whole page again from the top,
+   * which means a loading state, which means this block and the sheet inside
+   * it are gone — and with them the human's words and the words saying the
+   * save was not confirmed, which for a save that landed without a proof say
+   * not to run it again. The sheet has already read the ledger; the page takes
+   * that read and puts the row back on the screen without a second one.
+   *
+   * The project payload behind the sheet — the lede, the counts — is left as
+   * it was read. Refreshing it would be a second read of a page whose own
+   * words already say the ledger may not have the save, and the human has
+   * Refresh above for when they want to look; a save that is confirmed still
+   * reads the whole page through `onEdited`.
+   */
+  onReread: (after: Backlog) => void;
 }) {
   // Which view the Backlog will open in, read the way that page reads it:
   // once, as what this browser was last left on.
@@ -843,6 +864,14 @@ function GoalBlock({
             setEditing(false);
             onEdited();
           }}
+          // A save nobody could confirm may have landed, so the row on this
+          // page is the read the sheet already made, and the sheet — its draft
+          // and the words saying the save was not confirmed — stays mounted
+          // and on the screen. The board is set in place: no loading state,
+          // nothing unmounted, and no second read of the ledger. `mine` is
+          // found in that board on the next render, so the row here is the row
+          // as the ledger now has it.
+          onReread={onReread}
         />
       )}
     </section>

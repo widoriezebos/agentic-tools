@@ -1075,6 +1075,13 @@
  * puts the words in the field above it and stops — Save is at the foot of the
  * same sheet, and it is the human's.
  */
+/* One field's proposals: the newest, and the earlier ones when they are
+   unfolded in place under it. */
+.ms-proposals {
+  display: flex;
+  flex-direction: column;
+}
+
 .ms-proposal {
   display: flex;
   flex-direction: column;
@@ -1120,8 +1127,15 @@
   line-height: 16px;
 }
 
-/* The earlier proposals for this field, behind one line: they are the record
-   rather than the offer, so the line opens the Partner's own column at them. */
+/* An earlier proposal, unfolded under the newest: the same card, set back a
+   little, because what a human is deciding about is the one above it. */
+.ms-proposal--older {
+  border-inline-start-color: var(--ms-border);
+  background: none;
+}
+
+/* The earlier proposals for this field, behind one line, which unfolds them
+   here rather than sending a human to the Partner's own column. */
 .ms-proposal-more {
   margin-inline-start: auto;
   padding: 0;

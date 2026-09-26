@@ -129,7 +129,7 @@ export function freshLine(group: Group): string {
  * and then the first group with something new is the honest answer, because
  * something new is the reason to be here at all.
  */
-export function openGroup(groups: readonly Group[], remembered: string | null): GroupId | null {
+export function openGroup(groups: readonly { id: GroupId; fresh: number }[], remembered: string | null): GroupId | null {
   if (groups.length === 0) {
     return null;
   }
@@ -138,6 +138,34 @@ export function openGroup(groups: readonly Group[], remembered: string | null): 
     return kept.id;
   }
   return (groups.find((group) => group.fresh > 0) ?? groups[0]).id;
+}
+
+/**
+ * The group that IS open on the page, from the payload and the stored choice.
+ *
+ * One resolution, used by the page that draws the groups and by the capture the
+ * Partner is given, so that what a human is told they are looking at is what
+ * they are looking at. A stored name is a preference: the page overrules it
+ * when that group has gone, and a capture naming the preference would send the
+ * Partner to a group that is not on the screen.
+ *
+ * An empty name is a viewer who closed the open group, which is a choice and
+ * not an absence, so nothing is open. The answer needs no clock: which group
+ * opens depends on what the inbox holds and what is new in it, never on the
+ * hour, which is why the ages this page says are not computed here.
+ */
+export function groupOnScreen(needs: readonly Need[], remembered: string | null): GroupId | null {
+  if (remembered === "") {
+    return null;
+  }
+  const present: { id: GroupId; fresh: number }[] = [];
+  for (const group of GROUPS) {
+    const mine = needs.filter((need) => need.kind === group.kind);
+    if (mine.length !== 0) {
+      present.push({ id: group.id, fresh: mine.filter((need) => need.new).length });
+    }
+  }
+  return openGroup(present, remembered);
 }
 
 /* -------------------------------------------------------------- a row -- */

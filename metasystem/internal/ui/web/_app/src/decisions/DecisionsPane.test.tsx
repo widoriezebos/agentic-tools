@@ -100,7 +100,10 @@ function ruling(over: Partial<Ruling> = {}): Ruling {
     event: "",
     condition: "class=temporary due=2026-09-19",
     duePassed: true,
-    mentions: ["g1-s12"],
+    mentions: [
+      { id: "g1-s12", where: { kind: "goal", id: "g1-s12" } },
+      { id: "dec-1", where: { kind: "record", id: "docs/decisions/roster.md" } },
+    ],
     ...over,
   };
 }
@@ -558,6 +561,10 @@ describe("what you decided", () => {
     expect(markup).toContain("review passed 6 days ago");
     expect(markup).toContain("/backlog/goal/g1-s12");
     expect(markup).toContain("Given with the board design");
+    // A record it names opens the record, at the path the reader opens rather
+    // than at the id the words wrote.
+    expect(markup).toContain(">dec-1<");
+    expect(markup).toContain("/project/doc/docs/decisions/roster.md");
   });
 
   it("lists the register's broken rows rather than hiding them", () => {

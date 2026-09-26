@@ -168,10 +168,15 @@ func sizeOf(directory string) (int64, error) {
 		}
 		info, err := entry.Info()
 		if err != nil {
-			// An entry this walk already listed and can no longer read is an
-			// entry that went: the walk is what reports a directory it cannot
-			// open, and by here the only thing left to fail is the file itself.
-			return nil
+			// A file that went between the listing and this read is a file
+			// this run does not count, exactly as above. Any other answer is
+			// reported: a number a human is watching to see it stop growing
+			// must not be quietly smaller because one file could not be
+			// stat'ed, and "0 bytes for this one" is what ignoring it says.
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
 		}
 		total += info.Size()
 		return nil

@@ -65,14 +65,32 @@ describe("the hand-over on open", () => {
     expect(ASK_SHEET).toContain("if (!writes) {");
     // The fields are read at that moment and not watched: a keystroke must not
     // re-run the hand-over, so they are not among the dependencies.
-    expect(ASK_SHEET).toContain("}, [handOver, dropDraft, id, sheet, writes]);");
+    expect(ASK_SHEET).toContain("}, [handOver, id, sheet, writes]);");
   });
 
-  it("drops the draft when the sheet goes", () => {
-    expect(ASK_SHEET).toContain("dropDraft(sheet);");
+  it("is not what closes it: the hand-over runs once, on the way in", () => {
+    expect(ASK_SHEET).toContain("}, [handOver, id, sheet, writes]);");
+  });
+
+  /**
+   * The draft goes when THIS opening goes, and by nothing else.
+   *
+   * It is its own effect, on every sheet that registers an opening rather than
+   * only on the ones with writable fields, because a draft attached by "Ask about
+   * this" on a sheet with nothing writable has to be retired too — and it is
+   * retired by the opening's id, so that the other of two sheets of one name
+   * keeps its own (Astra F2 on g1-s56). The store's sheet stack does not retire
+   * it any more: a name knows nothing about which of two openings closed.
+   */
+  it("drops the draft of its own opening when the sheet goes, and no other", () => {
+    expect(ASK_SHEET).toContain("dropDraft(id);");
+    expect(STORE).toContain("retireOnOpeningClosed(held, opening)");
+    expect(STORE).not.toContain("retireOnSheetClosed");
     const list = attach([], attachedDraft(edited()));
     expect(draftIn(list)).not.toBeNull();
-    expect(draftIn(remove(list, idFor("draft", "Edit goal")))).toBeNull();
+    expect(draftIn(remove(list, idFor("draft", OPENING)))).toBeNull();
+    // Another opening of a sheet of the same name is not this one.
+    expect(draftIn(remove(list, idFor("draft", "opening-2")))).not.toBeNull();
   });
 
   /**
@@ -84,7 +102,7 @@ describe("the hand-over on open", () => {
    * being offered.
    */
   it("leaves a draft the human took back out of every later question", () => {
-    const taken = remove(attach([], attachedDraft(edited())), idFor("draft", "Edit goal"));
+    const taken = remove(attach([], attachedDraft(edited())), idFor("draft", OPENING));
     expect(draftIn(taken)).toBeNull();
     expect(refreshDraft(taken, edited("Intent"))).toBe(taken);
     expect(draftIn(refreshDraft(taken, edited("Intent")))).toBeNull();
@@ -125,29 +143,66 @@ describe("the field in hand", () => {
 });
 
 /**
- * What this step does not build.
+ * The one press that does both, and the two places it is allowed to exist.
  *
- * Astra's two material findings were both in the combined press, and both are
- * about telling the truth: this sheet's save reads its draft and its "nothing
- * changed" guard from the render, and guards busy on its own button, so a second
- * caller that first set the words would save the previous delta, or refuse, or
- * report a save it cannot confirm. One press waits for a submission path that
- * takes the next draft explicitly and returns its real outcome.
+ * Astra's two material findings on g1-s52 were both in this press, and both about
+ * telling the truth: a caller that set the words and then read the draft back
+ * from the render would send the previous delta, and a save that reported no
+ * outcome could say "Used and saved" of a request that was refused. Both are
+ * answered by the sheet owning one submission path that takes the next draft
+ * explicitly and returns what the ledger did (g1-s56 D1), so the words are in the
+ * build now — in the block that offers the press, in the register that explains
+ * it, and nowhere that sends anything without it.
  */
-describe("no press that uses and saves at once", () => {
-  it("is nowhere in what this build ships", () => {
+describe("the press that uses and saves at once", () => {
+  it("is offered where the sheet can send, and explained where it is offered", () => {
     const shipped = sources();
     // The scan asserts its own reach before it asserts anything else.
     expect(shipped).toContain("backlog/EditSheet.tsx");
     expect(shipped).toContain("partner/FieldProposals.tsx");
-    const offenders: string[] = [];
+    const saying: string[] = [];
     for (const file of shipped) {
       const contents = readFileSync(path.join(SRC, file), "utf8");
       if (/use and save|used and saved/i.test(contents)) {
-        offenders.push(file);
+        saying.push(file);
       }
     }
-    expect(offenders).toEqual([]);
+    // The card in the transcript and the store say it through the one constant
+    // the words are written in, which is why they are not on this list.
+    expect(saying).toEqual([
+      "backlog/EditSheet.tsx",
+      "help/terms.ts",
+      "partner/FieldProposals.tsx",
+      "partner/suggesting.ts",
+    ]);
+  });
+
+  /**
+   * And it goes through the one path, with the draft as its argument. Read where
+   * it is written, because no static render can press it.
+   */
+  it("sends the draft it is putting the words into, not the one on screen", () => {
+    const sheet = readFileSync(path.join(SRC, "backlog", "EditSheet.tsx"), "utf8");
+    expect(sheet).toContain("const submit = async (next: EditDraft): Promise<Outcome> => {");
+    expect(sheet).toContain("const asked = changedIn(opened, next);");
+    expect(sheet).toContain("const next = { ...draft, [at]: text };");
+    expect(sheet).toContain("return submit(next);");
+    // Save is the same path, called with what the fields hold.
+    expect(sheet).toContain("void submit(draft);");
+    // The guard a second press in the same render can see.
+    expect(sheet).toContain("if (inFlight.current) {");
+    expect(sheet).toContain("return refusedSave(IN_FLIGHT);");
+  });
+
+  /**
+   * Undo after a save would put the field back and leave the ledger where the
+   * save left it, so the store does not offer it — and what a press reaches is
+   * the sheet's own save, never a second way to the route.
+   */
+  it("reports what the save answered, and offers no undo of an act", () => {
+    expect(STORE).toContain("const outcome = await registered.save(card.field, card.text);");
+    expect(STORE).toContain("setMarks((held) => answered(held, id, outcome));");
+    expect(STORE).toContain("setMarks((held) => saving(held, id, previous));");
   });
 });
 

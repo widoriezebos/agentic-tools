@@ -6,6 +6,7 @@ import {
   decidedCount,
   freshLine,
   goalLine,
+  groupOnScreen,
   groupsOf,
   openGroup,
   rowFacts,
@@ -154,6 +155,24 @@ describe("which group opens", () => {
     const accepted = everyKind.filter((one) => one.kind !== "draft");
     expect(openGroup(groupsOf(accepted, now), "drafts")).toBe("questions");
     expect(openGroup([], "drafts")).toBeNull();
+  });
+
+  /**
+   * And the same answer without a clock, which is the one the page draws and
+   * the one the Partner's capture names: a stored group that has gone, and a
+   * viewer who closed the group they had open, both have an answer.
+   */
+  it("is one answer for the page and for the capture", () => {
+    expect(groupOnScreen(everyKind, "queue")).toBe("queue");
+    expect(groupOnScreen(everyKind, null)).toBe("questions");
+    expect(groupOnScreen(everyKind.filter((one) => one.kind !== "draft"), "drafts")).toBe("questions");
+    // An empty name is a group this viewer closed, so nothing is open.
+    expect(groupOnScreen(everyKind, "")).toBeNull();
+    expect(groupOnScreen([], null)).toBeNull();
+    // It agrees with the clocked resolution the page's groups give.
+    for (const remembered of [null, "queue", "drafts", "reviews"]) {
+      expect(groupOnScreen(everyKind, remembered)).toBe(openGroup(groupsOf(everyKind, now), remembered));
+    }
   });
 });
 

@@ -50,6 +50,20 @@ func journalLine(t *testing.T, id, source, message string, delivered bool) strin
 	return string(encoded)
 }
 
+// journalAt is one line recorded at a stated instant, for a reader that is
+// about when a line was written rather than about what it says.
+func journalAt(t *testing.T, id, source, message string, at time.Time) string {
+	t.Helper()
+	encoded, err := json.Marshal(map[string]any{
+		"id": id, "at": at.UTC().Format(time.RFC3339), "message": message,
+		"source": source, "delivered": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
 func appendJournal(t *testing.T, path, text string) {
 	t.Helper()
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)

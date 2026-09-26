@@ -388,6 +388,20 @@
   min-width: 0;
 }
 
+/* One goal of the opened block: the goal's own line, then its jobs. */
+.ms-fleet-work-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Only this seat's row has a second goal, and the rule says where one ends. */
+.ms-fleet-work-goal + .ms-fleet-work-goal {
+  padding-top: 10px;
+  border-top: 1px solid var(--ms-border);
+}
+
 .ms-fleet-working {
   display: flex;
   flex-direction: column;
@@ -395,10 +409,9 @@
   min-width: 0;
 }
 
-/* Only this seat's row has a second one, and the rule says where one ends. */
+/* A second job on the same goal is set in from the goal it is under. */
 .ms-fleet-working + .ms-fleet-working {
-  padding-top: 10px;
-  border-top: 1px solid var(--ms-border);
+  padding-top: 6px;
 }
 
 .ms-fleet-work-line {

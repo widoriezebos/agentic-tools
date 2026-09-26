@@ -24,15 +24,15 @@ import (
 // ruling admits it here.
 func TestParkFromASignedInSessionLandsAndNamesTheSession(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-park")
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-park")
+	authority := sessionFor(t, bed)
 
 	if err := authority.Park("ui-park", "not now; the census format is still being decided"); err != nil {
 		t.Fatalf("park: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-park")
+	file := readGoal(t, bed, "ui-park")
 	testutil.Expect(t, "the goal is parked", file.State, goal.StateParked)
 	testutil.Expect(t, "the park's actor", file.Parked.By, "human:Wido")
 	testutil.Expect(t, "the park's reason", file.Parked.Because,
@@ -63,13 +63,13 @@ func TestUnparkFromASignedInSessionReturnsTheGoalAndNamesTheSession(t *testing.T
 		{name: "a goal whose approval stands returns to approved", approved: true, want: goal.StateApproved},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := ledger(t)
+			bed := ledger(t)
 			id := "ui-unpark-queued"
 			if test.approved {
 				id = "ui-unpark-approved"
 			}
-			openGoal(t, root, id)
-			authority := sessionFor(t, root)
+			openGoal(t, bed, id)
+			authority := sessionFor(t, bed)
 			if test.approved {
 				if err := authority.Approve(id, box()); err != nil {
 					t.Fatalf("approve: %v", err)
@@ -83,7 +83,7 @@ func TestUnparkFromASignedInSessionReturnsTheGoalAndNamesTheSession(t *testing.T
 				t.Fatalf("unpark: %v", err)
 			}
 
-			file := readGoal(t, root, id)
+			file := readGoal(t, bed, id)
 			testutil.Expect(t, "the resting state", file.State, test.want)
 			testutil.Expect(t, "no park stands", file.Parked == nil, true)
 			last := file.History[len(file.History)-1]
@@ -100,14 +100,14 @@ func TestUnparkFromASignedInSessionReturnsTheGoalAndNamesTheSession(t *testing.T
 // asks a grade the session does not carry.
 func TestParkingAnotherPairsClaimStillRefusesASession(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-race")
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-race")
+	authority := sessionFor(t, bed)
 	if err := authority.Approve("ui-race", box()); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	// The page has read the queue. Now a seat claims the goal.
-	claim(t, root, "ui-race")
+	claim(t, bed, "ui-race")
 
 	err := authority.Park("ui-race", "not now")
 
@@ -121,7 +121,7 @@ func TestParkingAnotherPairsClaimStillRefusesASession(t *testing.T) {
 	if !strings.Contains(refusal.Message, "park of another pair's claim") {
 		t.Fatalf("the refusal does not name the row it refused at: %q", refusal.Message)
 	}
-	file := readGoal(t, root, "ui-race")
+	file := readGoal(t, bed, "ui-race")
 	testutil.Expect(t, "the claim still holds the goal", file.State, goal.StateClaimed)
 	testutil.Expect(t, "nothing was displaced", file.Parked == nil, true)
 }
@@ -131,27 +131,27 @@ func TestParkingAnotherPairsClaimStillRefusesASession(t *testing.T) {
 // admission is three rows wide and not two verbs wide.
 func TestLiftingASeatsBlockerParkEarlyStillRefusesASession(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-blocker")
-	openGoal(t, root, "ui-held")
-	if err := sessionFor(t, root).Approve("ui-held", box()); err != nil {
+	bed := ledger(t)
+	openGoal(t, bed, "ui-blocker")
+	openGoal(t, bed, "ui-held")
+	if err := sessionFor(t, bed).Approve("ui-held", box()); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	claim(t, root, "ui-held")
+	claim(t, bed, "ui-held")
 	// goal block records the edge and parks the waiting goal behind it, with
 	// the seat as the hand: the park's By is the seat's pair, not a human's.
-	result, err := goal.Block(request(t, root), "ui-held", "ui-blocker", nil)
+	result, err := goal.Block(request(t, bed), "ui-held", "ui-blocker", nil)
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("block: %+v %v", result, err)
 	}
-	held := readGoal(t, root, "ui-held")
+	held := readGoal(t, bed, "ui-held")
 	testutil.Expect(t, "the goal is parked behind its blocker", held.State, goal.StateParked)
 	testutil.Expect(t, "the park names the blocker", held.Parked.Blocker, "ui-blocker")
 	if strings.HasPrefix(held.Parked.By, "human:") {
 		t.Fatalf("the fixture recorded a human's park, so nothing here is proven: %q", held.Parked.By)
 	}
 
-	err = sessionFor(t, root).Unpark("ui-held")
+	err = sessionFor(t, bed).Unpark("ui-held")
 
 	refusal, ok := err.(*Refusal)
 	if !ok {
@@ -162,7 +162,7 @@ func TestLiftingASeatsBlockerParkEarlyStillRefusesASession(t *testing.T) {
 	if !strings.Contains(refusal.Message, "early unpark of a blocker park") {
 		t.Fatalf("the refusal does not name the row it refused at: %q", refusal.Message)
 	}
-	testutil.Expect(t, "the park still holds", readGoal(t, root, "ui-held").State, goal.StateParked)
+	testutil.Expect(t, "the park still holds", readGoal(t, bed, "ui-held").State, goal.StateParked)
 }
 
 // A park without a reason is refused before anything is published, because a
@@ -170,9 +170,9 @@ func TestLiftingASeatsBlockerParkEarlyStillRefusesASession(t *testing.T) {
 // nothing either way.
 func TestParkAndUnparkRefuseWhatTheyCannotPublish(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-guard")
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-guard")
+	authority := sessionFor(t, bed)
 
 	for name, err := range map[string]error{
 		"no goal":   authority.Park("", "not now"),
@@ -185,7 +185,7 @@ func TestParkAndUnparkRefuseWhatTheyCannotPublish(t *testing.T) {
 		}
 		testutil.Expect(t, name+" is the request's own fault", refusal.Kind, KindRequest)
 	}
-	testutil.Expect(t, "nothing was published", readGoal(t, root, "ui-guard").State, goal.StateQueued)
+	testutil.Expect(t, "nothing was published", readGoal(t, bed, "ui-guard").State, goal.StateQueued)
 
 	unproven := Unproven("the interface was started by an agent process (claude-code); " + Restart)
 	for name, err := range map[string]error{
@@ -206,8 +206,8 @@ func TestParkAndUnparkRefuseWhatTheyCannotPublish(t *testing.T) {
 // local read.
 func TestEveryRequestCarriesTheParkBranchCheck(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	authority := sessionFor(t, bed)
 	request, err := authority.request()
 	if err != nil {
 		t.Fatalf("request: %v", err)

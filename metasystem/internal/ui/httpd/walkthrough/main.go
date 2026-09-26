@@ -1480,10 +1480,16 @@ func (l *ledger) unpark(id string) error {
 	if file.State != goal.StateParked {
 		return refused("goal %s is %s, not parked", id, file.State)
 	}
-	if file.Parked != nil && file.Parked.Blocker != "" {
+	// A blocker's park lifts by itself when every blocker is done (R-93-m1e),
+	// and lifting it earlier is a human act. The engine admits that early
+	// return for a park a person directed on a proven session (verbs.go:2819-
+	// 2857), and only a park a SEAT directed needs an authority row of its own
+	// — which this fixture leaves to the engine's tests, as it leaves the verb.
+	// A human who parked a goal behind a blocker here can take it back.
+	if file.Parked != nil && file.Parked.Blocker != "" && !strings.HasPrefix(file.Parked.By, "human:") {
 		for _, blocker := range file.Blocked {
 			if held := l.tree.Live[blocker]; held != nil && held.State != goal.StateDone {
-				return refused("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e)", id, blocker)
+				return refused("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e), and lifting it earlier is a human act", id, blocker)
 			}
 		}
 	}
@@ -1495,11 +1501,22 @@ func (l *ledger) unpark(id string) error {
 	return nil
 }
 
+// refusesEdit is the one goal whose edit this fixture always refuses.
+//
+// A save that lands and a save that is refused are two different things for a
+// human to read, and since g1-s56 one press can make either of them happen from
+// the proposal under a field. Every other queued goal here saves, so without one
+// that says no there would be no way to stand in front of the refusal — the block
+// keeping the Partner's words while the ledger keeps nothing, in the engine's own
+// sentence. It is the fixture's own rule and no engine's, which is why it says so.
+const refusesEdit = "g1-s18"
+
 // edit is the fixture's own goal edit, holding the three rules the page
 // reads: only a queued goal nobody has approved is edited here, each of the
 // other three states refuses in the engine's own sentence, and the label
 // grammar is the engine's. Only the fields the sheet sent are written, so a
-// walkthrough can show that an untouched field is left exactly as it was.
+// walkthrough can show that an untouched field is left exactly as it was — and
+// one goal refuses whatever is sent, so a refused save can be read too.
 func (l *ledger) edit(id string, edited act.Edited) error {
 	if edited.Intent == nil && edited.NextStep == nil && edited.Labels == nil {
 		return &act.Refusal{Kind: act.KindRequest, Code: "no-change",
@@ -1509,9 +1526,15 @@ func (l *ledger) edit(id string, edited act.Edited) error {
 	if file == nil {
 		return refused("goal %s is not live; the archive edits through reopen", id)
 	}
+	if id == refusesEdit {
+		return refused("goal %s is not edited from the interface in this walkthrough: "+
+			"it is the fixture's canned refusal, so that a refused save can be read where it happened", id)
+	}
+	// The state is read before the approval, and the order is the engine's own
+	// (verbs.go:3410-3430): an approval survives a claim and survives a park,
+	// so a goal a seat holds would otherwise be told to withdraw an approval
+	// when what stands in the way is the claim.
 	switch {
-	case file.Approved != nil || file.State == goal.StateApproved:
-		return refused("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
 	case file.State == goal.StateClaimed:
 		pair := "another pair"
 		if file.Claimed != nil {
@@ -1520,6 +1543,8 @@ func (l *ledger) edit(id string, edited act.Edited) error {
 		return refused("goal %s is claimed by %s; edit it at a terminal", id, pair)
 	case file.State == goal.StateParked:
 		return refused("goal %s is parked: return it to the queue to edit it", id)
+	case file.Approved != nil || file.State == goal.StateApproved:
+		return refused("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
 	case file.State != goal.StateQueued:
 		return refused("goal %s is %s; only a queued goal is edited from the interface", id, file.State)
 	}

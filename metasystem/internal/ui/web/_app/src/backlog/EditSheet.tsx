@@ -4,14 +4,22 @@ import { actingAs } from "./acting";
 import { AskThePartner, FieldProposals } from "../partner/FieldProposals";
 import { useOpening } from "../partner/Suggestion";
 import { useFieldInHand } from "../partner/writing";
-import { BacklogError, editGoal, type Backlog, type Row } from "./api";
-import { blockedForEdit, changedIn, draftOf, editNote, labelRefusal, type EditDraft } from "./editing";
+import { BacklogError, editGoal, loadBacklog, type Backlog, type Row } from "./api";
+import {
+  blockedForEdit,
+  changedIn,
+  draftOf,
+  editNote,
+  labelRefusal,
+  outcomeOf,
+  type EditDraft,
+} from "./editing";
+import { IN_FLIGHT, refusedSave, SAVED, type Outcome } from "../partner/suggesting";
 import { INTENT_RULE, NEXT_STEP_RULE } from "./opening";
 import { Panel } from "./Panel";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { TokenField } from "../shell/TokenField";
-import { failureMessage } from "../shell/workspace";
 
 /**
  * A queued goal's three fields, before the edit is published.
@@ -41,6 +49,16 @@ import { failureMessage } from "../shell/workspace";
  * and is shown in its own words: an approval or a claim that landed since the
  * page read the row is refused at the tip, and the sheet says so with the
  * fields still filled in and nothing moved.
+ *
+ * There is one way out of this sheet to the ledger, and it takes the draft it is
+ * to send as an argument: `submit`. Save calls it with what the fields hold, and
+ * a proposal's Use and save calls it with the draft the words it is putting in
+ * would make — because a second caller that set the words and then asked the
+ * render what they were would send the draft of a render that has not happened
+ * (Astra F1 on g1-s52). It guards a save in flight in a ref rather than in
+ * render state, for the same reason: two presses in one render would both see
+ * `sending` false. And it answers what happened rather than that it tried, by a
+ * conservative reading of what the route said (D1, Astra F1 on g1-s56).
  */
 /**
  * The three fields of this sheet the Partner may offer words for, in the order
@@ -62,12 +80,23 @@ export function EditSheet({
   backlog,
   onClose,
   onDone,
+  onReread,
 }: {
   goal: Row;
   backlog: Backlog;
   onClose: () => void;
   /** The ledger as it stands after the act, which is what the page re-reads. */
   onDone: (edited: Backlog, id: string) => void;
+  /**
+   * The ledger as it stands after a save nobody could confirm, where the page
+   * that opened this sheet has somewhere to put it.
+   *
+   * It is a read and not a resend: an act this page could not confirm may have
+   * landed, so the row it shows may be stale, and the one honest thing to do
+   * about that is to look (D1). The sheet stays open, because the words saying
+   * the save was not confirmed are in it.
+   */
+  onReread?: (after: Backlog) => void;
 }) {
   // What the sheet opened with, kept as it was: it is what the fields were
   // filled from and it is what "changed" is measured against, so the two
@@ -84,6 +113,9 @@ export function EditSheet({
   const [sending, setSending] = useState(false);
   const { session, askToSignIn } = useSession();
   const retried = useRef(false);
+  // Whether a save is in flight, held where a press in the same render can see
+  // it. `sending` is for the panel and for the button's word; this is the guard.
+  const inFlight = useRef(false);
   const authority = actingAs(backlog.authority, session);
   const edit = changedIn(opened, draft);
   const blocked = blockedForEdit(draft, edit);
@@ -110,26 +142,94 @@ export function EditSheet({
     return was;
   };
 
-  const send = () => {
-    if (blocked !== "") {
-      return;
+  /**
+   * Send this draft, and answer what the ledger did with it.
+   *
+   * The draft is the argument and not the render's, which is the whole point:
+   * the delta is measured from what the sheet opened with to the draft the
+   * caller is sending, so a press that sets words and sends them in one act
+   * sends those words. Everything Save had is here — its validation, its
+   * once-only sign-in retry, its busy guard on the panel, and its closing of the
+   * sheet when the ledger confirms — and nothing that was not.
+   */
+  const submit = async (next: EditDraft): Promise<Outcome> => {
+    const asked = changedIn(opened, next);
+    const stop = blockedForEdit(next, asked);
+    if (stop !== "") {
+      // This page's own no, in the words the note under the button already
+      // carries. Nothing was sent, so nothing is said about the ledger.
+      return refusedSave(stop);
     }
+    // Held in a ref and read synchronously: a second press in the same render
+    // as the first must see the first one, and render state cannot show it.
+    if (inFlight.current) {
+      return refusedSave(IN_FLIGHT);
+    }
+    inFlight.current = true;
     setSending(true);
     setRefusal("");
-    editGoal(goal.ref.id, edit)
-      .then((edited) => {
-        setSending(false);
-        onDone(edited, goal.ref.id);
-      })
-      .catch((error: unknown) => {
-        setSending(false);
-        if (error instanceof BacklogError && error.signIn && !retried.current) {
-          retried.current = true;
-          askToSignIn(send);
-          return;
-        }
-        setRefusal(failureMessage(error));
-      });
+    try {
+      const edited = await editGoal(goal.ref.id, asked);
+      inFlight.current = false;
+      setSending(false);
+      onDone(edited, goal.ref.id);
+      return SAVED;
+    } catch (error: unknown) {
+      inFlight.current = false;
+      setSending(false);
+      // The remedy for this one is in this page: the sign-in sheet opens and
+      // the act is retried once, and what this press answers is what that
+      // retry answered — so a card cannot say a save was refused for want of a
+      // human and then have it land behind the words. A sign-in the human walks
+      // away from leaves this press unanswered, and the card goes on saying the
+      // save is in hand: that says less than the truth rather than more, and
+      // Save at the foot of the sheet is still theirs.
+      if (error instanceof BacklogError && error.signIn && !retried.current) {
+        retried.current = true;
+        return new Promise<Outcome>((settle) => {
+          askToSignIn(() => {
+            void submit(next).then(settle);
+          });
+        });
+      }
+      const outcome = outcomeOf(error);
+      setRefusal(outcome.words);
+      if (outcome.kind === "unresolved" && onReread !== undefined) {
+        // Nothing is sent again, ever, by this page: an act nobody could confirm
+        // may have landed. What is done instead is one read, so the page stops
+        // showing a row the ledger may have moved.
+        loadBacklog()
+          .then((after) => {
+            onReread(after);
+          })
+          .catch(() => {
+            // The words above already say the save was not confirmed; a failed
+            // read on top of it has nothing to add.
+          });
+      }
+      return outcome;
+    }
+  };
+
+  const send = () => {
+    void submit(draft);
+  };
+
+  /**
+   * Put the Partner's words in one of the three and send the sheet, as one act.
+   *
+   * The next draft is built here, set here, and sent here, all from the same
+   * value: the sheet never asks a later render what it now holds, because there
+   * is no later render between the two halves of one press (D2).
+   */
+  const putWordsAndSave = (field: string, text: string): Promise<Outcome> => {
+    const at = WRITABLE_FIELDS[field];
+    if (at === undefined) {
+      return Promise.resolve(refusedSave(`${field} is not a field of this sheet`));
+    }
+    const next = { ...draft, [at]: text };
+    setDraft(next);
+    return submit(next);
   };
 
   return (
@@ -150,6 +250,7 @@ export function EditSheet({
       opening={opening}
       writable={Object.keys(WRITABLE_FIELDS)}
       set={putWords}
+      save={putWordsAndSave}
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}
       note={blocked === "" ? editNote(goal.ref.id, edit) : blocked}
@@ -187,7 +288,7 @@ export function EditSheet({
             setDraft({ ...draft, intent: event.target.value });
           }}
         />
-        <FieldProposals opening={opening} field="Intent" value={draft.intent} />
+        <FieldProposals opening={opening} field="Intent" value={draft.intent} saves />
         <p className="ms-act-hint" id="ms-edit-intent-hint">
           {INTENT_RULE}
         </p>
@@ -212,7 +313,7 @@ export function EditSheet({
             setDraft({ ...draft, nextStep: event.target.value });
           }}
         />
-        <FieldProposals opening={opening} field="Next step" value={draft.nextStep} />
+        <FieldProposals opening={opening} field="Next step" value={draft.nextStep} saves />
         <p className="ms-act-hint" id="ms-edit-nextStep-hint">
           {NEXT_STEP_RULE}
         </p>
@@ -237,7 +338,7 @@ export function EditSheet({
             setDraft({ ...draft, labels: value });
           }}
         />
-        <FieldProposals opening={opening} field="Labels" value={draft.labels} />
+        <FieldProposals opening={opening} field="Labels" value={draft.labels} saves />
         <p className="ms-act-hint" id="ms-edit-labels-hint">
           Lowercase words the board narrows by, separated by spaces or commas. Emptying the field clears them.
         </p>

@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3F0YA80SGFHCGPYEHC6D500
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-26: "I want all the open ones designed and implemented
@@ -103,3 +103,34 @@ survives the sheet's close on the card; the words "Save follows its
 normal validation". Deferred: which of two same-named drafts the
 question carries, the last attached today; chip wording for other
 sheets.
+
+## Built (2026-09-26)
+
+Landed on ui-development and main as 69c5c49c7; the read's one fix
+landed as a second merge. Built by Claude on Opus, read by Codex on Sol
+under R-124: one material finding, fixed in one round. The Project page
+answered an unconfirmed save by reloading itself, which unmounted the
+sheet with the human's words and the warning that says not to run the
+act again; it now takes the board the sheet already read and sets it in
+place, so the sheet stays and the ledger is read once. The Decisions
+page and the Board were already right. The fix's wiring test fails
+against the unfixed code.
+
+What the read verified: Save and Use and save send the delta from the
+opened baseline to the draft given; the busy ref is set before the
+request; a completed sign-in retry settles the original press; nothing
+unconfirmed is ever called saved or refused.
+
+Later, when it hurts: a 4xx without a readable server sentence is
+called refused rather than unresolved (every edit route's 4xx carries a
+sentence today); a sign-in the human abandons leaves the card saying
+"Used · saving…" until they act again, which claims nothing false and
+retries nothing; the walkthrough cannot produce an unresolved outcome,
+so that path is proven by the mapping's tests only; a concurrent close
+of the goal by someone else would still unmount the Project page's
+sheet.
+
+Departures the read accepted: older proposals unfolded in place carry
+the newest proposal's whole foot, Use and save included; the chip keeps
+the draft's goal id and drops only the second field's words.
+

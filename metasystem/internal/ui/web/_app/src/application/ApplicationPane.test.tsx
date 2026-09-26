@@ -141,6 +141,29 @@ describe("the header", () => {
   });
 });
 
+describe("the order of the blocks", () => {
+  /**
+   * Known problems stands above What concluded. An open problem is what a human
+   * can do something about today, and four expanded weeks of conclusions are
+   * long enough to push the problems off the screen.
+   */
+  it("puts the known problems above the weeks, and the links last", () => {
+    const markup = rendered(page());
+
+    expect(markup.indexOf("Known problems")).toBeGreaterThan(-1);
+    expect(markup.indexOf("Known problems")).toBeLessThan(markup.indexOf("What concluded"));
+    expect(markup.indexOf("What concluded")).toBeLessThan(markup.indexOf("What it is"));
+  });
+
+  it("still opens four weeks, with the rest behind Show earlier", () => {
+    const markup = rendered(page());
+
+    expect(markup).toContain("Week of 21 September 2026");
+    expect(markup).not.toContain("Week of 24 August 2026");
+    expect(markup).toContain("Show earlier");
+  });
+});
+
 describe("what concluded", () => {
   it("is the latest four weeks, with the rest behind Show earlier", () => {
     const markup = rendered(page());
