@@ -20,6 +20,9 @@ const PARTNER = "/api/partner";
 const TURNS = "/api/partner/turns";
 /** What the Partner will be given for the next question, from a capture. */
 const SEEING = "/api/partner/seeing";
+/** The sitting: one address starts one, and the one under it ends one. */
+const SITTING = "/api/partner/sitting";
+const SITTING_END = "/api/partner/sitting/end";
 /** Stopping the running turn: the turn's id, with this after it. */
 const STOP = "/stop";
 
@@ -192,6 +195,53 @@ export type Suggestion = {
   reason?: string;
 };
 
+/**
+ * What a sitting is about: one record of this project, addressed by the path the
+ * document reader serves it under.
+ */
+export type Subject = { kind: string; id: string; title: string };
+
+/**
+ * The sitting this conversation is, or null.
+ *
+ * It holds no working material: the record is the memory, and the four sections
+ * of that record are what the table reads. What this says is which record, what
+ * the sitting is for, and when it began.
+ */
+export type Sitting = { subject: Subject; purpose: string; startedAt: string };
+
+/**
+ * One entry the Partner offered the record of the sitting the human is in.
+ *
+ * It is an offer and nothing else: nothing was written, and Record it is the
+ * human's press. A card the human edits before pressing keeps their words.
+ */
+export type Deposit = {
+  /** fact, decision or question. */
+  kind: string;
+  /** The entry itself, as the Partner wrote it. */
+  text: string;
+  /** Where a fact can be checked. */
+  anchor?: string;
+  /** The reason the Partner heard for a decision. */
+  reason?: string;
+  /** What follows from leaving a question open. */
+  consequence?: string;
+  /**
+   * The record it was admitted against, stamped by the server from the sitting.
+   * The page writes an admitted deposit into that record and no other, so which
+   * record it is cannot be this browser's guess.
+   */
+  subject?: Subject;
+  /** Whether the human was shown it as something to record. */
+  offered: boolean;
+  /**
+   * Why it was not offered, in the words a human reads. It is not called a
+   * reason, because a decision's reason is one of the fields above.
+   */
+  notOffered?: string;
+};
+
 /** What the conversation can point at, for the links in an answer. */
 export type Index = {
   goals: string[] | null;
@@ -230,8 +280,20 @@ export type Message = {
    * are rendered from here.
    */
   suggestions?: Suggestion[] | null;
+  /**
+   * What this answer offered the sitting's record. They are offers kept with the
+   * answer: the card a human presses Record it on is rendered from here, and the
+   * record is what holds anything they pressed.
+   */
+  deposits?: Deposit[] | null;
   key?: string;
   page?: Page;
+  /**
+   * True on the one question this interface asked on the human's behalf: a
+   * sitting's opening turn. It is in the transcript, so a reload does not turn
+   * it into the human's own words.
+   */
+  interface?: boolean;
 };
 
 /** Everything the page needs to render the conversation from cold. */
@@ -250,6 +312,10 @@ export type Snapshot = {
   looked: Look[] | null;
   /** What the running turn has offered so far, so a reload keeps the cards. */
   suggestions: Suggestion[] | null;
+  /** What the running turn has offered the sitting's record so far. */
+  deposits: Deposit[] | null;
+  /** The sitting this conversation is, read from the server and not remembered. */
+  sitting: Sitting | null;
   /** The goals and records an answer's names can be resolved against. */
   index: Index | null;
   readOnly: string;
@@ -262,6 +328,7 @@ export type EventKind =
   | "doing"
   | "look"
   | "suggestion"
+  | "deposit"
   | "done"
   | "error"
   | "stopped";
@@ -281,6 +348,8 @@ export type PartnerEvent = {
    * has finished arriving.
    */
   suggestion?: Suggestion;
+  /** One admitted deposit, on a deposit beat and nowhere else. */
+  deposit?: Deposit;
 };
 
 /**
@@ -360,6 +429,29 @@ export async function sendTurn(key: string, text: string, about: Page): Promise<
  */
 export async function seeing(about: Page): Promise<Seeing> {
   return request<Seeing>(SEEING, { about });
+}
+
+/**
+ * Start a sitting on one record — an existing one by its path, or a draft the
+ * server creates now under the title given — and read back the conversation with
+ * the sitting on it and its opening turn already in the transcript.
+ *
+ * It answers the whole conversation rather than the sitting alone because the
+ * opening turn is a turn this page did not send: the server asked it, on the
+ * human's behalf, and the page has to be handed the transcript that holds it.
+ */
+export async function startSitting(asked: {
+  purpose: string;
+  subject?: Subject;
+  title?: string;
+  about: Page;
+}): Promise<Snapshot> {
+  return request<Snapshot>(SITTING, asked);
+}
+
+/** End the sitting. What was recorded stays in the record. */
+export async function endSitting(): Promise<Snapshot> {
+  return request<Snapshot>(SITTING_END, {});
 }
 
 /** Stop the running turn, and read back what it settled as. */

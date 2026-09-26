@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
-func TestTheConversationIsKeptUnderTheStateRootAndReadBack(t *testing.T) {
+func TestTheConversationIsKeptInItsOwnDirectoryAndReadBack(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	conversation, err := OpenConversation(root, "Wido")
@@ -31,7 +31,7 @@ func TestTheConversationIsKeptUnderTheStateRootAndReadBack(t *testing.T) {
 	testutil.Expect(t, "the human's page context survives the file", messages[0].Page.Subject, "g1")
 	testutil.Expect(t, "the outcome survives the file", messages[1].Outcome, OutcomeComplete)
 	testutil.Expect(t, "the file is where the design says",
-		fileExists(filepath.Join(root, filepath.FromSlash(Relative), "Wido.jsonl")), true)
+		fileExists(filepath.Join(root, "Wido.jsonl")), true)
 }
 
 // A retry after a lost answer is the same turn, because the key is in the

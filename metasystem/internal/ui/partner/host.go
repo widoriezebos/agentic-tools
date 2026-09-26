@@ -70,6 +70,15 @@ type Update struct {
 	// it reads what the call prepared and the turn's owner decides whether the
 	// human handed that field over.
 	Suggestion *Suggestion
+	// Deposit is one entry the Partner offered the record of a sitting, on the
+	// look of the call that prepared it and nowhere else. It rides with that
+	// look for the suggestion's reason: a deposit cannot reach a turn without
+	// the call it came from being accounted for.
+	//
+	// It is whole here and it is not offered here either: this host has no
+	// conversation, so it reads what the call prepared and the turn's owner
+	// decides whether there is a sitting to offer it to.
+	Deposit *Deposit
 }
 
 // The four update kinds.
@@ -145,6 +154,45 @@ type Suggestion struct {
 	// Reason is why it was not offered, in the words a human reads, and "" for
 	// one that was.
 	Reason string `json:"reason,omitempty"`
+}
+
+// Deposit is one entry the Partner offered the record of the sitting the human
+// is in, before the human has done anything with it.
+//
+// It is not a write and it is not written. The paper's rule for a sitting is
+// that the room proposes and only records rule: the Partner names a fact with
+// its anchor, a decision with the reason it heard, or an open question with its
+// consequence, and the entry enters the record when the human presses Record it
+// and not before. A card the human edits keeps their words.
+type Deposit struct {
+	// Kind is fact, decision or question.
+	Kind string `json:"kind"`
+	// Text is the entry itself, as the Partner wrote it. It is kept whole
+	// rather than shortened as a look's excerpt is: an excerpt is something a
+	// human checks an answer against, and this is the words themselves.
+	Text string `json:"text"`
+	// Anchor is where a fact can be checked; Reason is the reason the Partner
+	// heard for a decision; Consequence is what follows from leaving a question
+	// open. One of the three at most, decided by the kind.
+	Anchor      string `json:"anchor,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	Consequence string `json:"consequence,omitempty"`
+	// Subject is the record this deposit was admitted against, stamped by the
+	// service from the sitting. The page writes an admitted deposit into that
+	// record and no other, so which record it is cannot be the browser's guess.
+	Subject Subject `json:"subject,omitzero"`
+	// Offered says whether the human was shown it as something to record.
+	//
+	// The host never sets it: it reads what the tool prepared, and whether a
+	// prepared deposit is offered at all is the turn-owning service's decision,
+	// made against the sitting on the conversation. A refused one is carried
+	// rather than dropped, because a Partner that deposited into no sitting has
+	// to be visible to the human rather than silent.
+	Offered bool `json:"offered"`
+	// NotOffered is why it was not offered, in the words a human reads, and ""
+	// for one that was. It is not called a reason, because a decision's reason
+	// is one of the fields above and one word cannot be both.
+	NotOffered string `json:"notOffered,omitempty"`
 }
 
 // The three outcomes a look can have.
@@ -880,11 +928,16 @@ func (l *live) tool(started bool, body toolCall) {
 		delete(l.calls, id)
 		l.callsMu.Unlock()
 	}
-	// The one call whose result is more than a look.
-	prepared := operation == uitools.OpSuggest
+	// The two calls whose result is more than a look.
+	prepared := operation == uitools.OpSuggest || operation == uitools.OpDeposit
 	update := Update{Kind: UpdateLook, Look: lookAt(what, body, prepared)}
 	if prepared && body.Status == "completed" {
-		update.Suggestion = suggestedIn(resultText(body))
+		switch operation {
+		case uitools.OpSuggest:
+			update.Suggestion = suggestedIn(resultText(body))
+		case uitools.OpDeposit:
+			update.Deposit = depositedIn(resultText(body))
+		}
 	}
 	l.emit(update)
 }
@@ -934,6 +987,63 @@ func suggestedIn(text string) *Suggestion {
 		return nil
 	}
 	return nil
+}
+
+// depositedIn reads one completed deposit call's result into a whole deposit,
+// and answers nothing where the framing is not there: a refused call, a result
+// from a build that does not write this form, or anything else this host should
+// not read a deposit out of.
+//
+// The framing is read once, exactly as the suggestion's is. The first header
+// line names the kind; the labelled lines after it, up to the first separator,
+// carry the one clause the kind takes; and everything from the separator to the
+// end is the deposit's own words — so a fact whose words happen to begin
+// "Reason: …" carries that as its own text rather than having it read as
+// framing.
+func depositedIn(text string) *Deposit {
+	lines := strings.Split(text, "\n")
+	for at, line := range lines {
+		if !strings.HasPrefix(line, uitools.DepositHeader) {
+			continue
+		}
+		kind := strings.TrimSpace(strings.TrimPrefix(line, uitools.DepositHeader))
+		if kind == "" {
+			return nil
+		}
+		held := Deposit{Kind: kind}
+		for after := at + 1; after < len(lines); after++ {
+			if strings.TrimSpace(lines[after]) == uitools.DepositSeparator {
+				said := strings.Trim(strings.Join(lines[after+1:], "\n"), "\n")
+				if said == "" {
+					return nil
+				}
+				held.Text = said
+				return &held
+			}
+			clause(&held, lines[after])
+		}
+		return nil
+	}
+	return nil
+}
+
+// clause reads one labelled framing line onto a deposit. A line the framing
+// does not name is ignored rather than guessed at: the framing is fixed, and a
+// build that met an unknown label would be reading a form it does not know.
+func clause(held *Deposit, line string) {
+	for _, one := range []struct {
+		label string
+		into  *string
+	}{
+		{uitools.DepositAnchor, &held.Anchor},
+		{uitools.DepositReason, &held.Reason},
+		{uitools.DepositConsequence, &held.Consequence},
+	} {
+		if rest, named := strings.CutPrefix(line, one.label); named {
+			*one.into = strings.TrimSpace(rest)
+			return
+		}
+	}
 }
 
 // lookAt reads one completion into a look. The source and the outcome are the

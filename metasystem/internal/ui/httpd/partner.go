@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
+	resolver "github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
 
@@ -33,6 +35,14 @@ const (
 	routePartnerTurn   = "partner-turn"
 	routePartnerStop   = "partner-stop"
 	routePartnerSeeing = "partner-seeing"
+	// The sitting's own two: one opens a working conversation on a record, one
+	// ends it. The end path is exact and lies under the start path's own
+	// address; no sitting is named by an id, because there is one sitting on one
+	// conversation.
+	partnerSittingPath    = "/api/partner/sitting"
+	partnerSittingEndPath = "/api/partner/sitting/end"
+	routePartnerSitting   = "partner-sitting"
+	routePartnerRise      = "partner-sitting-end"
 )
 
 // partnerMessages is how much of the transcript the read route carries. A
@@ -58,6 +68,14 @@ func partnerRouteOf(path string) (written, bool) {
 	// and the Partner is told nothing by it.
 	if path == partnerSeeingPath {
 		return written{route: routePartnerSeeing}, true
+	}
+	// The end path first: it lies under the start path, and an exact match is
+	// what tells the two apart.
+	if path == partnerSittingEndPath {
+		return written{route: routePartnerRise}, true
+	}
+	if path == partnerSittingPath {
+		return written{route: routePartnerSitting}, true
 	}
 	if id, ok := idBetween(path, partnerTurnsPre, stopSuffix); ok {
 		return written{route: routePartnerStop, id: id}, true
@@ -173,23 +191,7 @@ func (h *handler) partnerTurn(w http.ResponseWriter, r *http.Request) {
 		}{Turn: id})
 		return
 	}
-	if errors.Is(err, partner.ErrBusy) {
-		w.WriteHeader(http.StatusConflict)
-		writeActRefusal(w, "busy", err.Error())
-		return
-	}
-	var start *partner.StartError
-	if errors.As(err, &start) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(struct {
-			Error   string `json:"error"`
-			Code    string `json:"code"`
-			Install string `json:"install,omitempty"`
-		}{Error: start.Reason, Code: "runtime", Install: start.Install})
-		return
-	}
-	w.WriteHeader(http.StatusBadRequest)
-	writeActRefusal(w, "request", err.Error())
+	h.refuseTurn(w, err)
 }
 
 // seeingBody is one capture, asked about rather than sent.
@@ -227,6 +229,140 @@ func (h *handler) partnerSeeing(w http.ResponseWriter, r *http.Request) {
 		Supplied: seen.Supplied, Total: seen.Total,
 		Block: partner.ComposeSeen(seen, body.About, ""),
 	})
+}
+
+// sittingBody is one sitting, as the page opens it: what it is for, the record
+// it is about, and where the human was standing when they pressed Start.
+//
+// Subject and Title are the two ways of naming the record, and exactly one of
+// them is used: a subject names a record this checkout already has, and a title
+// names a draft to create now, in the home the purpose's own kind names. A body
+// carrying both uses the subject, because a human who was on a record's page
+// pressed Start there.
+type sittingBody struct {
+	Purpose string          `json:"purpose"`
+	Subject partner.Subject `json:"subject"`
+	Title   string          `json:"title"`
+	About   partner.Page    `json:"about"`
+}
+
+// partnerSitting opens a sitting, and answers the conversation as it now stands
+// — with the sitting on it and the opening turn already in the transcript.
+//
+// It answers the snapshot rather than the sitting alone, for the stop route's
+// reason: the opening turn is a turn this page did not send, so the page has to
+// be handed the transcript that now holds it rather than left to guess that one
+// appeared.
+//
+// The draft, where the human named one, is created BEFORE the sitting, through
+// the project's own writer and its own refusals. A sitting whose subject does
+// not exist is a sitting with nothing to record into, and the order means a
+// refused creation refuses the whole act with the project's own words.
+func (h *handler) partnerSitting(w http.ResponseWriter, r *http.Request) {
+	if h.info.Partner == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeActRefusal(w, "partner", h.partnerRefusal())
+		return
+	}
+	var body sittingBody
+	if !decodeDocument(w, r, &body) {
+		return
+	}
+	subject := body.Subject
+	if strings.TrimSpace(subject.ID) == "" {
+		created, ok := h.draftFor(w, body)
+		if !ok {
+			return
+		}
+		subject = created
+	}
+	if _, err := h.info.Partner.Sit(r.Context(), h.partnerHuman(r), subject, body.Purpose, body.About); err != nil {
+		h.refuseTurn(w, err)
+		return
+	}
+	h.answerPartner(w, r)
+}
+
+// draftFor creates the draft a sitting was started on, and reports whether the
+// route may go on. The kind is the purpose's own: shaping intent writes an
+// intent record and shaping a design writes a design, so nothing here asks a
+// human for a kind they have already chosen by choosing what the sitting is for.
+func (h *handler) draftFor(w http.ResponseWriter, body sittingBody) (partner.Subject, bool) {
+	if h.info.CreateRecord == nil {
+		writeFailure(w, "this engine was built without a project writer")
+		return partner.Subject{}, false
+	}
+	kind := resolver.KindDesign
+	if strings.TrimSpace(body.Purpose) == partner.PurposeShapeIntent {
+		kind = resolver.KindIntent
+	}
+	written, err := h.info.CreateRecord(project.NewRecord{Kind: kind, Title: body.Title})
+	if err != nil {
+		var refusal *project.Refusal
+		if errors.As(err, &refusal) {
+			writeRefusal(w, statusOf(refusal.Kind), refusal.Message, refusal.Problems)
+			return partner.Subject{}, false
+		}
+		writeFailure(w, err.Error())
+		return partner.Subject{}, false
+	}
+	return partner.Subject{
+		Kind: partner.SubjectRecord, ID: written.Path, Title: written.Record.Title,
+	}, true
+}
+
+// partnerRise ends the sitting, and answers the conversation without it. What
+// was recorded stays in the record, which is the whole of what a sitting leaves.
+func (h *handler) partnerRise(w http.ResponseWriter, r *http.Request) {
+	if h.info.Partner == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeActRefusal(w, "partner", h.partnerRefusal())
+		return
+	}
+	var body struct{}
+	if !decode(w, r, &body) {
+		return
+	}
+	if err := h.info.Partner.Rise(h.partnerHuman(r)); err != nil {
+		writeFailure(w, err.Error())
+		return
+	}
+	h.answerPartner(w, r)
+}
+
+// answerPartner writes the conversation as it stands, which is what every route
+// that changes it answers with.
+func (h *handler) answerPartner(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := h.info.Partner.Snapshot(h.partnerHuman(r), partnerMessages)
+	if err != nil {
+		writeFailure(w, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(snapshot)
+}
+
+// refuseTurn is the turn route's own three answers, reached from both routes
+// that admit one: 409 for a turn already running, 503 with the runtime's own
+// words and the line that installs it, and 400 for a request this server could
+// read and would not act on.
+func (h *handler) refuseTurn(w http.ResponseWriter, err error) {
+	if errors.Is(err, partner.ErrBusy) {
+		w.WriteHeader(http.StatusConflict)
+		writeActRefusal(w, "busy", err.Error())
+		return
+	}
+	var start *partner.StartError
+	if errors.As(err, &start) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(struct {
+			Error   string `json:"error"`
+			Code    string `json:"code"`
+			Install string `json:"install,omitempty"`
+		}{Error: start.Reason, Code: "runtime", Install: start.Install})
+		return
+	}
+	w.WriteHeader(http.StatusBadRequest)
+	writeActRefusal(w, "request", err.Error())
 }
 
 // partnerStop stops the running turn. It answers the snapshot, so the page

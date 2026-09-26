@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uihome"
 )
 
 // The conversation: one per human per checkout, owned here and nowhere else.
@@ -19,15 +21,41 @@ import (
 // decides turn identity, admission, busy state, partial text and the terminal
 // outcome, and the page reads all five from it.
 //
-// It is kept as one JSON line per message, under the state root's artifacts,
-// beside a small state file that names the live session. A line is appended
-// and never rewritten, so a reader that is halfway through the file reads a
-// prefix of the truth rather than a torn record.
+// It is kept as one JSON line per message, in this account's own directory for
+// this workspace, beside a small state file that names the live session and the
+// sitting. A line is appended and never rewritten, so a reader that is halfway
+// through the file reads a prefix of the truth rather than a torn record.
+//
+// # Why it is not in the state root
+//
+// It was, under `artifacts/agents/ui/partner`, and that was Astra's F2 on
+// g1-s53: the state root lies inside the checkout on both layouts, the
+// Partner's own permission owner grants native reads anywhere inside the
+// checkout, and a critic is handed the repository as a read root. The master
+// says the transcript is private sitting material in a protected server-local
+// store outside the checkout, which examiners never read — and the first
+// sitting creates exactly the material an examiner must not read. File mode
+// 0600 keeps out other accounts, not a worker running as this one.
+//
+// So the conversation lives under the account's registry home, in the notepad's
+// manner and through the same owner (internal/ui/uihome), and grants_test.go
+// proves neither grant reaches it by reading the grants themselves. The formats
+// are unchanged: the same JSON line per message, the same small state file
+// beside it.
 
-// Relative is where a checkout keeps its Partner conversations, under the
-// state root. It is the agents' own artifacts directory, one directory deeper,
-// because this is the interface's agent and not the steward's.
-const Relative = "artifacts/agents/ui/partner"
+// Owner is this store's own directory under the account's registry home. It is
+// the interface's agent and not the steward's, which is what the name says.
+const Owner = "partner"
+
+// Home is the account's registry home, refused where it cannot be resolved as
+// an absolute path. A seat whose home cannot be read keeps no conversation at
+// all rather than writing one into the checkout it serves.
+func Home() (string, error) { return uihome.Home() }
+
+// Directory is where one workspace's conversations live under that home.
+func Directory(home, checkout string) string {
+	return uihome.Under(home, Owner, checkout)
+}
 
 // The two roles a message can have.
 const (
@@ -267,10 +295,26 @@ type Message struct {
 	// with the answer rather than applied anywhere: the card a human presses Use
 	// this on is rendered from here, and what a field holds is the human's.
 	Suggestions []Suggestion `json:"suggestions,omitempty"`
+	// Deposits is what this answer offered the sitting's record: facts with
+	// their anchors, decisions with the reason the Partner heard, open
+	// questions with their consequences. They are offers and nothing else —
+	// Record it is the human's press — so they are kept with the answer for the
+	// same reason the suggestions are.
+	Deposits []Deposit `json:"deposits,omitempty"`
 	// Key is the client-minted turn key, on a human's message only. It is
 	// what makes a retry after a lost answer the same turn rather than a
 	// second one, and it is kept in the file so a restart cannot forget it.
 	Key string `json:"key,omitempty"`
+	// Interface marks a question this interface submitted on the human's
+	// behalf rather than one they typed: the sitting's opening turn, and
+	// nothing else today.
+	//
+	// It is on a human's message, and it is in the file. A provenance only the
+	// live page knew would be a provenance a reload quietly turns into the
+	// human's own words — and the one turn nobody typed is exactly the one a
+	// human must be able to tell apart weeks later. The transcript renders it
+	// from here, so persistence and replay carry it (g1-s53 D3).
+	Interface bool `json:"interface,omitempty"`
 	// Page is where the human was, on a human's message only.
 	Page *Page `json:"page,omitempty"`
 }
@@ -283,24 +327,70 @@ type Conversation struct {
 	mu       sync.Mutex
 	messages []Message
 	session  string
+	sitting  *Sitting
 }
+
+// Subject is what a sitting is about: one record of this project, by the kind
+// it is addressed under and its id.
+//
+// A record is addressed by its checkout-relative path, because that is what the
+// document reader serves it under and what the edit route writes it by; the
+// record's own ulid addresses its status and nothing here. So kind is "record"
+// and id is that path (g1-s53 §5).
+type Subject struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	// Title is the record's own title as the page showed it, so the chip and
+	// the table can name the subject without a second read.
+	Title string `json:"title,omitempty"`
+}
+
+// Sitting is the working conversation a human opened on one record.
+//
+// It is not a second store and it holds no working material: the record is the
+// memory. What a sitting is, here, is the mark that says this conversation is
+// one — which record it is about, what it is for, and when it began — so that
+// every turn carries it, a deposit can be admitted against it, and a human who
+// closed the browser comes back to the same sitting (g1-s53 D1).
+type Sitting struct {
+	Subject Subject `json:"subject"`
+	// Purpose is what this sitting is for, from the two step 1 admits.
+	Purpose   string `json:"purpose"`
+	StartedAt string `json:"startedAt"`
+}
+
+// The two purposes this build admits. Review and learning sittings have moves
+// of their own — the narrator's report, the withheld diagnosis — and neither is
+// here, so neither is offered (g1-s53 §4).
+const (
+	PurposeShapeIntent = "shape intent"
+	PurposeShapeDesign = "shape a design"
+)
+
+// SubjectRecord is the one kind of subject a sitting has today.
+const SubjectRecord = "record"
 
 // stateFile is what the small file holds: the live session's id, so a build
-// that learns to load sessions natively has it, and the moment it was written.
+// that learns to load sessions natively has it, the sitting this conversation
+// is, and the moment it was written.
 type stateFile struct {
-	Human     string `json:"human"`
-	Session   string `json:"session"`
-	UpdatedAt string `json:"updatedAt"`
+	Human     string   `json:"human"`
+	Session   string   `json:"session"`
+	Sitting   *Sitting `json:"sitting,omitempty"`
+	UpdatedAt string   `json:"updatedAt"`
 }
 
-// OpenConversation reads one human's conversation under a state root, creating
+// OpenConversation reads one human's conversation in one directory, creating
 // the directory if it is not there. A file that cannot be read is a refusal
 // rather than an empty conversation: a transcript that silently starts over is
 // a transcript nobody can trust.
-func OpenConversation(stateRoot, human string) (*Conversation, error) {
+//
+// The directory is the caller's: the server's is Directory(Home(), checkout),
+// and the walkthrough's is one beside its own fixture checkout, so no fixture
+// writes into a human's actual conversations.
+func OpenConversation(directory, human string) (*Conversation, error) {
 	name := fileName(human)
-	directory := filepath.Join(stateRoot, filepath.FromSlash(Relative))
-	if err := os.MkdirAll(directory, 0o755); err != nil {
+	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, fmt.Errorf("the Partner's conversation directory could not be made: %w", err)
 	}
 	conversation := &Conversation{
@@ -379,6 +469,7 @@ func (c *Conversation) readState() error {
 		return nil
 	}
 	c.session = held.Session
+	c.sitting = held.Sitting
 	return nil
 }
 
@@ -453,14 +544,73 @@ func (c *Conversation) RecordSession(session string, now time.Time) {
 	c.mu.Lock()
 	c.session = session
 	c.mu.Unlock()
-	body, err := json.Marshal(stateFile{
-		Session:   session,
-		UpdatedAt: now.UTC().Format(time.RFC3339),
-	})
-	if err != nil {
-		return
+	_ = c.writeState(now)
+}
+
+// Sitting is the sitting this conversation is, or nil.
+func (c *Conversation) Sitting() *Sitting {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sitting == nil {
+		return nil
 	}
-	_ = os.WriteFile(c.state, append(body, '\n'), 0o600)
+	held := *c.sitting
+	return &held
+}
+
+// Sit marks this conversation with a sitting, and Rise takes the mark off.
+//
+// Unlike the session id, this one is not preference-shaped: a sitting that was
+// lost is a human whose deposits would be refused and whose table would be
+// empty on the record they are working on. So the write's failure is returned,
+// and the caller refuses the act rather than reporting a sitting that is only
+// in this process's memory.
+func (c *Conversation) Sit(sitting Sitting, now time.Time) error {
+	c.mu.Lock()
+	previous := c.sitting
+	c.sitting = &sitting
+	c.mu.Unlock()
+	if err := c.writeState(now); err != nil {
+		c.mu.Lock()
+		c.sitting = previous
+		c.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+// Rise ends the sitting. The record it was about keeps everything that was
+// recorded in it, which is the whole of what a sitting leaves behind.
+func (c *Conversation) Rise(now time.Time) error {
+	c.mu.Lock()
+	previous := c.sitting
+	c.sitting = nil
+	c.mu.Unlock()
+	if err := c.writeState(now); err != nil {
+		c.mu.Lock()
+		c.sitting = previous
+		c.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+// writeState replaces the small file beside the transcript, whole, from the
+// state as it stands. It is whole rather than a field at a time because the two
+// things it holds are written by different acts, and a write that carried only
+// its own field would drop the other's.
+func (c *Conversation) writeState(now time.Time) error {
+	c.mu.Lock()
+	held := stateFile{Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)}
+	c.mu.Unlock()
+	body, err := json.Marshal(held)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(c.state, append(body, '\n'), 0o600); err != nil {
+		return fmt.Errorf("the Partner's conversation state could not be written: %w", err)
+	}
+	return nil
 }
 
 // The recovery block's two bounds, from the design: the last twenty messages,

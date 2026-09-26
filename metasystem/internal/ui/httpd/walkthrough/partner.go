@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
@@ -60,6 +61,28 @@ var fakeAnswer = []string{
 // transcript shows the not-offered card with its reason.
 const suggestedIntent = "Every refund lands within a day, with nobody touching the queue."
 
+// The two deposits this fake offers a sitting: a fact with its anchor and a
+// decision with the reason it heard.
+//
+// They are narrowed to the sitting's own opening turn — the one question this
+// interface asks on the human's behalf, whose fixed request names the deposit
+// tool — so that the whole of the sitting can be stood in front of on this
+// fixture: press Start a sitting, and the opening turn arrives marked as the
+// interface's with a fact card and a decision card under it, each with Record it
+// beside it. Asked from anywhere else the same calls are refused, which is a true
+// refusal and shows the not-offered card with its reason.
+const (
+	depositedFact   = "The intent record says a session lasts twelve hours, and nothing recorded says what that limit protects."
+	depositedAnchor = "plans/intent/sessions.md:14"
+	depositedChoice = "The limit counts from last activity rather than from sign-in."
+	depositedReason = "a page nobody has touched for an hour is not a session in use"
+)
+
+// The line of the opening request the two deposits are narrowed to. It is one
+// phrase of partner.OpeningRequest, so a fixture that drifted from the request
+// would stop offering them rather than offer them on every question.
+const openingPhrase = "Bring what the records already hold about it"
+
 var fakeReads = []fakeacp.Read{
 	{
 		When:  "Open sheet: Edit goal",
@@ -68,6 +91,24 @@ var fakeReads = []fakeacp.Read{
 		Result: uitools.PreparedLine + "\n" +
 			uitools.SuggestionHeader + "Edit goal" + uitools.SuggestionJoin + "Intent\n" +
 			uitools.SuggestionSeparator + "\n" + suggestedIntent + "\n",
+	},
+	{
+		When:  openingPhrase,
+		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpDeposit,
+		Title: "deposit(fact)",
+		Result: uitools.DepositedLine + "\n" +
+			uitools.DepositHeader + uitools.DepositFact + "\n" +
+			uitools.DepositAnchor + depositedAnchor + "\n" +
+			uitools.DepositSeparator + "\n" + depositedFact + "\n",
+	},
+	{
+		When:  openingPhrase,
+		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpDeposit,
+		Title: "deposit(decision)",
+		Result: uitools.DepositedLine + "\n" +
+			uitools.DepositHeader + uitools.DepositDecision + "\n" +
+			uitools.DepositReason + depositedReason + "\n" +
+			uitools.DepositSeparator + "\n" + depositedChoice + "\n",
 	},
 	{
 		Title: "document(plans/designs/reading.md)",
@@ -84,6 +125,18 @@ var fakeReads = []fakeacp.Read{
 			"- waiting: waiting · Do waiting. · tier 2 · parked\n" +
 			"- ready: running · Do running. · tier 3 · 2:6 · claimed · seat m1e\n",
 	},
+}
+
+// fixtureConversations is where this fixture's transcripts go: a directory
+// beside the fixture checkout, and NEVER the account's own.
+//
+// The server resolves the real one from the account's registry home, and a
+// walkthrough that wrote there would put a fake Partner's words into a human's
+// actual conversation — which is exactly the material g1-s53 D11 moved out of
+// the checkout to keep private. So the fixture is handed a directory of its own
+// and prints it, as it does for the notepad and the checkout it invents.
+func fixtureConversations(checkout string) string {
+	return filepath.Join(filepath.Dir(checkout), filepath.Base(checkout)+"-conversations")
 }
 
 func fakePartner(checkout string, facts partner.Facts) *partner.Service {
@@ -109,11 +162,12 @@ func fakePartner(checkout string, facts partner.Facts) *partner.Service {
 		Chunks:         fakeAnswer,
 		Pause:          450 * time.Millisecond,
 	}))
+	conversations := fixtureConversations(checkout)
 	service := partner.NewService(runtime, host,
 		func(human string) (*partner.Conversation, error) {
-			return partner.OpenConversation(checkout, human)
+			return partner.OpenConversation(conversations, human)
 		},
 		facts, time.Now)
-	log.Printf("Project Partner: fake runtime, conversations under %s", checkout)
+	log.Printf("Project Partner: fake runtime, conversations under %s", conversations)
 	return service
 }

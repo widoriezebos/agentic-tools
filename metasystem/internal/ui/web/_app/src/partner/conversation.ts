@@ -1,4 +1,4 @@
-import type { Index, Look, Message, Outcome, PartnerEvent, Page, Snapshot, Suggestion } from "./api";
+import type { Deposit, Index, Look, Message, Outcome, PartnerEvent, Page, Sitting, Snapshot, Suggestion } from "./api";
 
 /**
  * The conversation, as one value the drawer and the focused page both read.
@@ -35,10 +35,16 @@ export type Live = {
    * whole point: the card is under the words before the words have finished.
    */
   suggestions: Suggestion[];
+  /**
+   * What this answer has offered the sitting's record so far. They arrive while
+   * the answer is still arriving, for the suggestions' reason: the card is on
+   * the transcript and on the table before the words have finished.
+   */
+  deposits: Deposit[];
 };
 
 export const nothingRunning: Live = {
-  turn: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [],
+  turn: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [], deposits: [],
 };
 
 export type State = "loading" | "ready" | "unavailable";
@@ -53,6 +59,13 @@ export type Store = {
   live: Live;
   /** What an answer's names can be resolved against, from the same snapshot. */
   index: Index;
+  /**
+   * The sitting this conversation is, or null.
+   *
+   * It is the server's, read from the snapshot rather than remembered here, so a
+   * reload and a second tab agree about which record is under discussion.
+   */
+  sitting: Sitting | null;
   /**
    * The last refusal, verbatim, and the line that installs the runtime where
    * the server gave one. It is shown as a Partner message in the danger
@@ -71,6 +84,7 @@ export const emptyStore: Store = {
   messages: [],
   live: nothingRunning,
   index: { goals: [], records: [] },
+  sitting: null,
   refusal: "",
   install: "",
 };
@@ -124,6 +138,7 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
     readOnly: snapshot.readOnly,
     messages,
     index: snapshot.index ?? { goals: [], records: [] },
+    sitting: snapshot.sitting,
     live: running
       ? {
           turn: snapshot.turn,
@@ -133,6 +148,7 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
           doing: snapshot.doing,
           looked: snapshot.looked ?? [],
           suggestions: snapshot.suggestions ?? [],
+          deposits: snapshot.deposits ?? [],
         }
       : nothingRunning,
   };
@@ -173,6 +189,10 @@ export function received(store: Store, event: PartnerEvent): Store {
       return event.suggestion === undefined
         ? { ...store, live }
         : { ...store, live: { ...live, suggestions: [...live.suggestions, event.suggestion] } };
+    case "deposit":
+      return event.deposit === undefined
+        ? { ...store, live }
+        : { ...store, live: { ...live, deposits: [...live.deposits, event.deposit] } };
     case "done":
       return settled(store, live, "complete", event);
     case "stopped":
@@ -202,6 +222,7 @@ function settled(store: Store, live: Live, outcome: Outcome, event: PartnerEvent
     activity: live.activity,
     looked: live.looked,
     suggestions: live.suggestions,
+    deposits: live.deposits,
   };
   return { ...store, messages: [...store.messages, answered], live: nothingRunning };
 }

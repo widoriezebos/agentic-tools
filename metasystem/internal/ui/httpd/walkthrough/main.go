@@ -263,6 +263,12 @@ func main() {
 		EditDocument: func(id, source, revision string) (project.Document, error) {
 			return project.EditDocument(roots, id, source, revision, time.Now().UTC())
 		},
+		// Creating a record, over the fixture checkout, so that a sitting
+		// started on a new draft can be stood in front of: the draft is written
+		// in the home its kind names, and the sitting is then about it.
+		CreateRecord: func(asked project.NewRecord) (project.Written, error) {
+			return project.CreateRecord(roots, asked, time.Now().UTC())
+		},
 		// The two writes a design's own page makes, over the fixture checkout
 		// and through the same package the engine wires: marking a design done
 		// rewrites its Status line, and naming a goal on it rewrites its Goals

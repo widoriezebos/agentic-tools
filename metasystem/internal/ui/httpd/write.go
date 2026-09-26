@@ -254,6 +254,10 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.partnerSeeing(w, r)
 	case routePartnerStop:
 		h.partnerStop(w, r, route.id)
+	case routePartnerSitting:
+		h.partnerSitting(w, r)
+	case routePartnerRise:
+		h.partnerRise(w, r)
 	}
 }
 
