@@ -42,8 +42,9 @@ func intentDeliveryCommands() []intentCommand {
 	return []intentCommand{
 		{
 			name: "review", group: "work", primary: true, audience: "both", summary: "independently review a goal's built work, a design, a job or a commit",
-			usage: []string{"metasystem review G [--work NAME] [--dispositions FILE]", "metasystem review G --changes|--patch PATCH --brief FILE [--work NAME] [--after COMMIT] [--dispositions FILE]", "metasystem review G --finding F --test NAME", "metasystem review design FILE [--goal G] [--dispositions FILE [--after N]] [--retry N]", "metasystem review job J [--dispositions FILE]", "metasystem review commit SHA --goal G",
-				"metasystem review changes --brief FILE [--goal G] [--retry N]", "metasystem review diff PATCH --brief FILE [--goal G] [--retry N]", "metasystem review goal G [--work NAME]"},
+			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage, reviewDesignUsage,
+				reviewJobUsage, reviewCommitUsage, reviewChangesUsage, reviewDiffUsage, reviewExplicitGoalUsage},
+			helpForms: reviewHelpForms(),
 			details: []string{
 				"review G records the goal's built result as the candidate and requests its independent examination: the one named with --work,",
 				"or the only work item whose result is built. Repeat the same command to see the examination's progress and findings.",

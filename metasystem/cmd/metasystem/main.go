@@ -785,33 +785,7 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 		return 0
 	}
 	if args[0] == "help" {
-		if len(args) == 1 {
-			writeIntentRootHelp(stdout)
-			return 0
-		}
-		if len(args) != 2 {
-			fmt.Fprintln(stderr, "usage: metasystem help [TOPIC|COMMAND]")
-			fmt.Fprintln(stderr, "       metasystem help goals|work|questions|operations|human|agent|all|COMMAND")
-			return 2
-		}
-		if command, ok := findIntentCommand(args[1]); ok {
-			writeIntentHelp(stdout, command)
-			return 0
-		}
-		if intentTopic(args[1]) {
-			writeIntentTopicHelp(stdout, args[1], registered)
-			return 0
-		}
-		// A family's own help stays available to the scripts that ask for
-		// it by name; no public page lists the families.
-		for _, fam := range registered {
-			if fam.name == args[1] {
-				writeFamilyHelp(stdout, fam)
-				return 0
-			}
-		}
-		writeUnknownIntentCommand(stderr, args[1])
-		return 2
+		return runIntentHelp(args[1:], stdout, stderr, registered)
 	}
 	if args[0] == "--help" || args[0] == "-h" {
 		if len(args) != 1 {

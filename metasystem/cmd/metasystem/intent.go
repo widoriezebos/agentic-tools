@@ -44,15 +44,16 @@ type intentFlag struct {
 
 // intentCommand is one public command: its grammar, its help and its handler.
 type intentCommand struct {
-	name     string
-	audience string // human, agent, or both
-	summary  string
-	usage    []string
-	details  []string
-	flags    []intentFlag
-	maxArgs  int // -1 is unlimited
-	examples []string
-	run      func(*intentInvocation) int
+	name      string
+	audience  string // human, agent, or both
+	summary   string
+	usage     []string
+	details   []string
+	flags     []intentFlag
+	maxArgs   int // -1 is unlimited
+	examples  []string
+	helpForms []intentHelpForm
+	run       func(*intentInvocation) int
 	// legacy, when set, keeps an existing call of the same name on its own
 	// handler: the old flag-only top-level calls and a family's own verbs.
 	legacy func([]string) bool
@@ -979,10 +980,7 @@ func writeIntentTopicHelp(w io.Writer, topic string, registered []family) {
 		fmt.Fprintln(w, "For people (metasystem help COMMAND for options):")
 		writeIntentLong(w, intentCommandsWhere(func(command intentCommand) bool { return command.audience != "agent" }))
 	case "agent":
-		fmt.Fprintln(w, "For agents (metasystem help COMMAND for options):")
-		writeIntentLong(w, intentCommandsWhere(func(command intentCommand) bool { return command.audience != "human" }))
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "Acts reserved for a person are listed by metasystem help human.")
+		writeIntentAgentHelp(w)
 	case "all":
 		for index, group := range intentGroups {
 			if index > 0 {
