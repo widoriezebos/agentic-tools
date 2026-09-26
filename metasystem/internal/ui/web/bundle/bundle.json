@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:91e1d35225d7958635b7a27e9e7fc4e215de1996db21cf09d928cc7d8efbb359",
+  "sourceDigest": "sha256:bc8c3d7739bdd1bb33de273930370f8fcb595ef32eaa25b12782ed5e00f12bb8",
   "source": [
     {
       "path": ".npmrc",
@@ -579,8 +579,12 @@
       "sha256": "be2508f1fc256977d5b449bcb40987fa5f837c73a59b6ae1d5a939337028cc33"
     },
     {
+      "path": "src/partner/Table.test.tsx",
+      "sha256": "600af63bea6be18e59d60404371c81537d927da779b8360ecdea37d2dc9d8a76"
+    },
+    {
       "path": "src/partner/Table.tsx",
-      "sha256": "0774b8d5f6cd12e28fdd33e92174bbd84602c55933de7072a8c5294f23e8e608"
+      "sha256": "c9ae87f8d8498cb9f575ef12590acd73f902dc0271bb126ce59537ed7302ac80"
     },
     {
       "path": "src/partner/Transcript.tsx",
@@ -672,7 +676,7 @@
     },
     {
       "path": "src/partner/sitting.css",
-      "sha256": "802b5e2b64ce4ae1facdf9807fa9e6b68914ff6433195c2af5e786f146d13bb9"
+      "sha256": "47c55bc197b8af8a1b6ffd5b7155b9cb65a430f229db4cf6bbca21f11dfc0289"
     },
     {
       "path": "src/partner/sitting.test.ts",
@@ -680,7 +684,7 @@
     },
     {
       "path": "src/partner/sitting.ts",
-      "sha256": "af4a08544841a1aae077177d3d0941425624a0b519138068fd78134b79835677"
+      "sha256": "426dd0b1ec6a453381d6b35c50b90fac6b5bf34611e86de82093b8395184ee8f"
     },
     {
       "path": "src/partner/store.tsx",
@@ -723,8 +727,12 @@
       "sha256": "5179715c6fc48e9243abc09b8f7a28b966f16eebce7f932cc49fcea41fee3900"
     },
     {
+      "path": "src/project/DocumentPane.test.tsx",
+      "sha256": "af57518ace3d5bb10eb98a29a89939d4fd82d7948d915d5240cb3e09808533a8"
+    },
+    {
       "path": "src/project/DocumentPane.tsx",
-      "sha256": "366e5c0de79d17d0854c35239fb4b341dee9a967a4a969aedaaf62ac3d4d625f"
+      "sha256": "7a589de3862a896a476a566d02cdad25e4f2c84f9e460c880a8e7944796de03c"
     },
     {
       "path": "src/project/Editor.tsx",
@@ -1002,11 +1010,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "f6e58c244e0437d23afea7f787bce6ae1dc602313bb5f2ebf0eea07e0bdc31fb"
+      "sha256": "f406153f885a0d3353c5668b3ef8b71be44e1a892e08525f6a7237f076db4709"
     },
     {
       "path": "assets/index.js",
-      "sha256": "4638d830623a451209dedadd56b714161381504a42956a447dad80232e94c75c"
+      "sha256": "f0b0ebe23c5b431765979a45cca102984c2cb21396d8f915555df8021d1dc5f7"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

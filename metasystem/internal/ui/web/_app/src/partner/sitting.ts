@@ -1,4 +1,5 @@
 import type { Deposit, Sitting } from "./api";
+import { documentPath } from "../routes";
 
 /**
  * What a sitting is, from the browser's side: the four sections of one record,
@@ -72,6 +73,40 @@ const CLAUSE_OF: Readonly<Record<string, string>> = {
 
 export function clauseOf(kind: string): string {
   return CLAUSE_OF[kind] ?? "Anchor";
+}
+
+/**
+ * The heading id the document reader gives each of the four sections.
+ *
+ * Four literals rather than a slug function, because there is exactly one thing
+ * they have to agree with — the ids the reader itself writes, lower case with
+ * the spaces hyphenated (internal/ui/markdown) — and four spellings cannot
+ * drift from that the way a second implementation of the rule could.
+ */
+const ANCHOR_OF: Readonly<Record<Section, string>> = {
+  Facts: "facts",
+  Proposals: "proposals",
+  Decisions: "decisions",
+  "Open questions": "open-questions",
+};
+
+/**
+ * Where one entry of the table leads: its own record, opened at the pile it
+ * stands in (g1-s53 D7).
+ *
+ * At the pile, and not at the line. The reader anchors headings and only
+ * headings — a list item carries no id — so an entry-level anchor would need the
+ * reader to mint ids for list items and the table to know which item of the
+ * source this entry was: new mechanism on both sides, for a scroll of a few
+ * lines inside a pile that is already short. The heading exists, it is where the
+ * entry is, and pressing an entry opens the record there.
+ *
+ * A record carrying two headings of one name would have the reader number the
+ * second, and this leads to the first. That is also the heading a recorded entry
+ * is written under, so the link and the write agree about which pile is meant.
+ */
+export function entryPath(record: string, section: Section): string {
+  return `${documentPath(record)}#${ANCHOR_OF[section]}`;
 }
 
 /**
@@ -293,6 +328,24 @@ export type Purpose = (typeof PURPOSES)[number];
 /** What each purpose is called where a human chooses one. */
 export function purposeLabel(purpose: string): string {
   return purpose === "shape intent" ? "Shape intent" : "Shape a design";
+}
+
+/**
+ * The record kinds a sitting is about (g1-s53 D1).
+ *
+ * The two the purposes name and no others: a sitting shapes intent or shapes a
+ * design, and its subject is the record it shapes. A doctrine record, a recorded
+ * decision, a question row or a plain file of the checkout is not a thing there
+ * is a sitting for, and offering Start on one offered a conversation whose four
+ * piles would be written into a record that has no business carrying them.
+ *
+ * A file that declares no head at all is not a record and is not sittable
+ * either, which is why this is asked of the kind rather than of the file.
+ */
+export const SITTABLE_KINDS = ["intent", "design"] as const;
+
+export function sittable(kind: string | null | undefined): boolean {
+  return (SITTABLE_KINDS as readonly string[]).includes((kind ?? "").trim());
 }
 
 /** What the chip above the composer says while a sitting stands. */
