@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3FS4JWK13Z7W87G1SAEJZ06
-- Status: draft (revision 2)
+- Status: draft (revision 3)
 - Goals: verbs-match-intent
 - Supersedes: `verb-cleanup.md` rule "Do not migrate thousands of private
   process-protocol calls" and its retention of the family dispatcher;
@@ -227,6 +227,14 @@ current family verb has the same name as a new public action (for example family
 `goal approve --id G` versus public `goal approve G`), the public action takes the
 pair and every caller of the family form moves in U1 (6.5).
 
+One pair is both (VOA-13): `test plan` is a public action and the machine
+protocol a retained or candidate engine answers (`test.go:909,932`,
+`test_protection.go:233`). It is one public registration that keeps its existing
+argv and its raw plan JSON as its `--json` output (not the ordinary public JSON
+envelope, `intent.go:596`); machinery-only options are hidden from help. Its test
+calls it with the argv the preceding engine generation uses and decodes the
+result strictly, as `test.go:932` does. No other pair may be both.
+
 | Entrypoint (existing argv) | Launched by | Why a process |
 |---|---|---|
 | `supervise owner`, `supervise component` | `internal/supervise/arming.go:963`, `supervise_owner.go:142` | daemon in its own session, enrolled binary |
@@ -240,7 +248,7 @@ pair and every caller of the family form moves in U1 (6.5).
 | `proof-run watchdog`, `proof-run custody-exec` | `internal/proofrun/launcher.go:928`, `resource_custody.go:641` | sibling watchdog; exec barrier |
 | `proof-run preserve` | `internal/proofrun/watchdog.go:228` | bounded copier the watchdog can kill; a blocked copy must not stop cleanup (VOA-05) |
 | `proof-run worker-authorized` | suite commands via `METASYSTEM_PROOF_AUTH_BIN` (`proofrun/launcher.go:260`) | called by the suite process under proof; removed when the last suite script caller is gone (U7) |
-| `test worker`, `test worker-capabilities`, `test plan` | `test.go:117,2037`, `test_protection.go:233,374` | runs the pinned or candidate engine, a different binary |
+| `test worker`, `test worker-capabilities`, `test plan` (also public, see above) | `test.go:117,2037`, `test_protection.go:233,374` | runs the pinned or candidate engine, a different binary |
 | `brain boot-inputs` | `brain_boot.go:121` | killable child on a deadline |
 | `run wrap` | `run.go:146-154`, `gate_cadence.go:385` | detached wrapper with log and nonce |
 | `testing merge-driver` | git via `.gitattributes` | git merge driver |
@@ -285,10 +293,14 @@ something outside Go must start it by path.
   for the stamp. Actions: `build` (replaces `go-build.sh`, including `--out` and
   `--trimpath`), `static` (the fast static/build leaf that `fast-static-build`
   runs; replaces `go-gate.sh --fast`), `gate` (the full Go gate; replaces
-  `go-gate.sh`). `go-build.sh` becomes a one-line stub `exec go run ./cmd/devgate
-  build "$@"` for as long as anything outside Go names it, then is deleted.
-  Proof cases: clean, dirty, engine absent, stale marker, own gate, foreign live
-  gate.
+  `go-gate.sh`). `go-build.sh` becomes a stub for as long as anything outside Go names
+  it, then is deleted. The stub resolves its own installation directory as the
+  script does today (`go-build.sh:10`) and runs `go -C "$installation" run
+  ./cmd/devgate build "$@"`, so a caller in another directory (`adopt.sh:216`,
+  which resolves the source root in a subshell, `adopt.sh:94`) still works
+  (VOA-08-R2). Proof cases: clean, dirty, engine absent, stale marker, own gate,
+  foreign live gate, and the stub invoked from the repository top and from an
+  unrelated directory.
 - Scripts that do not call the binary stay: `benchmark/attest.sh`, `grade.sh`,
   `compare.sh`, `extract.sh`, case gates, `environment/vms/*`,
   `plans/first-headless-run/*.sh`, `optional-skills/debug-java/scripts/preflight.sh`.
@@ -334,12 +346,24 @@ builder names.
 **Wave 0 (serial)**
 
 - U0 Witnesses. R1-R9 tests with today's counts as ceilings. No behavior change.
+- U0b Bootstrap build. `cmd/devgate build` and the self-resolving `go-build.sh`
+  stub (3.3), with the Go callers (`test.go:1506`, `rearm_on_landed.go:73,399`,
+  `seat/launch/sequence.go:450`) moved to it. Lands before any unit whose cutover
+  needs a rebuild (VOA-11-R2).
 - U1 Grammar. The `(object, action)` table with hidden entry pairs, router,
   generated help, the reference contract (G3), all public forms of 3.1 including
   the public homes of agent-facing internal verbs. Deletes every old public
   spelling and `intentYieldsToLegacy`/`command.legacy`; the only fallthrough left
   is to family verbs whose `(word, verb)` pair is neither a public action nor an
-  entry (transitional, R1 ratchet). Moves every caller of a family form whose
+  entry (transitional, R1 ratchet). The top-level machinery branches of
+  `dispatchInternal` that are not entries (`wait`, `delegate`, `watch`, `health`,
+  `arm`, and the flag forms of `stop` and `status`, `main.go:822-850`) are not
+  families: U1 moves every caller of them (for example `dispatch.sh:1131`
+  `wait --job`, `stoptransition/families.go:241` `delegate --cancel`,
+  `goal_branch.go:216` `delegate --follow-up`, `intent_delivery.go:884`) either to
+  an owner call under 6.2 or, where the caller is a script awaiting its port, to
+  the explicit `internal` form, which stays routed until that port lands
+  (VOA-03-R2). Cancellation, wait and follow-up tests run in U1. Moves every caller of a family form whose
   pair a public action now takes (6.5), in shell and in Go argv. Updates skills,
   role packets, `AGENTS.md`, `wow.md`, docs, UI strings (including the fleet
   card's `stop --repo`, `httpd/walkthrough/fleet.go:231-288`) and remedy texts.
@@ -359,9 +383,7 @@ builder names.
 - U4 Hook. `supervision-hook.sh` and `stop-degraded-forms.sh` become `internal
   hook` under `internal/hooks`; the stub of 3.3; hook fixtures port; the reader of
   the fixture file (`internal/audit/hookstartexits.go:44`) moves to the Go tests.
-- U7a Bootstrap. `cmd/devgate` with `build`; `go-build.sh` becomes its stub; Go
-  callers (`test.go:1506`, `rearm_on_landed.go:399`, `seat/launch/sequence.go:450`)
-  run `go run ./cmd/devgate build`. Then `static` and `gate` replace
+- U7a Gate. `devgate static` and `devgate gate` replace
   `go-gate.sh` and `witness-gate.sh` under the two-step transition (6.4): step A
   lands `devgate` and switches `fast-static-build` and the gate groups to it
   while the scripts still exist; step B deletes the scripts.
@@ -430,13 +452,35 @@ classification (`:706`); the landing owner announces its own pid and gives its
 children explicit lineage (`landing_batch_owner.go:179,365`). A function call
 inside the parent would classify the parent's parent instead.
 
-So the owner functions take an explicit **invocation context**: the effective
-caller process identity (pid, start time), its authenticated classification and
-claim epoch, the human-proof context, the selected roots, and the lineage. The
-public command builds it once at entry from its own caller, exactly as the child
-did (the child's parent was this process, and classification walks ancestry
-from there). The landing owner builds it naming itself as caller, as its
-children saw it. Hidden reads of `os.Getppid()` and of
+So the owner functions take an explicit **invocation context**: the supplied
+process identity (pid, start time) that classification starts from, its
+authenticated classification and claim epoch, the human-proof context, the
+selected roots, and the lineage. The supplied identity is fixed per call edge
+(VOA-02-R2):
+
+- Where a child is replaced, the supplied identity is the **current process**,
+  because that is the parent the child supplied. The classifier starts
+  runtime-signature checks at the supplied process's parent
+  (`lease/classify.go:426`, `lease/directinvoker.go:11`), so starting from the
+  current process's caller would skip the invoking runtime and could classify an
+  unannounced, terminal-bearing agent as HUMAN (`classify.go:463`).
+- Where an owner is already called directly, it keeps its existing supplied
+  identity.
+- The landing owner supplies itself, as its children did.
+
+Witness beyond R7: an unannounced agent runtime with a controlling terminal runs
+`settings coordinator --declare --by NAME` directly and is refused by the human
+gate (`brain.go:28-32`), as today.
+
+Per-invocation execution state moves with the call (VOA-14). A replaced child
+discarded its environment on exit; an in-process call inside a resident owner
+does not. Every environment variable the reached code reads or writes as
+invocation state (for example `METASYSTEM_PREPARATION_RESTARTED`,
+`test.go:485-498`) becomes a field of the request; the builder lists them by
+searching `os.Getenv`, `os.Setenv` and `os.LookupEnv` in the reached code and
+records the list in the return. Witness: two consecutive preparations in one
+resident owner, each with one base movement, both admitted; two movements within
+one invocation still refused. Hidden reads of `os.Getppid()` and of
 `METASYSTEM_OWNER_LINEAGE` inside these owner paths are removed; no code sets
 process-global environment to imitate a child. R7 witnesses each replacement.
 
@@ -522,10 +566,15 @@ new entries (`hook`, `pre-commit`) with their stubs.
 - The stubs tolerate an older engine by rebuilding once (3.3). A unit that
   changes the hook stub lands only with the engine that serves it in the same
   commit, so a checkout that pulls and rebuilds is consistent.
-- After each landing, each affected checkout runs quiesce, rebuild, restart:
-  `system stop`, `go run ./cmd/devgate build`, `system start`. On m1e the seat
-  does this; the landing note tells m1b and m1c the same, since the machinery
-  there rearms on its own landed commits, not on pulled ones.
+- The cutover executor is the existing authorized rearm-on-landed path
+  (`rearm_on_landed.go:73-83`): a checkout's steward whose enrolled engine is
+  behind its tip by landed commits rebuilds and re-arms itself. `system stop`
+  and `system start` stay human-only (`process_verbs.go:172,479`) and are not
+  part of the automatic cutover (VOA-11-R2). U0b moves that rebuild to
+  `devgate build` before any later cutover depends on it; until then it uses
+  today's `go-build.sh`. Peers (m1b, m1c) cut over when their checkout's tip
+  includes the landing, through the same path; if a peer's steward is not armed,
+  its human restarts it.
 - A unit that removes a verb a live delegate might call lands only when the
   checkout's job registry shows no running delegate launched before it.
 - The browser UI: acts call Go functions; displayed command strings change in U1
@@ -568,3 +617,15 @@ findings, all accepted. Verbatim critique: `verbs-object-action-astra.md`.
 | VOA-10 proof per landing | accepted | 6.4; 6.8 |
 | VOA-11 generation cutover | accepted | 3.2 argv kept; 3.3 stub rebuild; 7 |
 | VOA-12 work reference contract | accepted | G3 |
+
+Round 2, Codex `gpt-6-astra`, against revision 2: eight folds verified, six
+material findings, all accepted.
+
+| Finding | Disposition | Where folded |
+|---|---|---|
+| VOA-02-R2 supplied identity per call edge | accepted | 6.2 |
+| VOA-03-R2 top-level machinery branches | accepted | U1 |
+| VOA-08-R2 stub location independence | accepted | 3.3; U0b |
+| VOA-11-R2 cutover executor and bootstrap order | accepted | 7; U0b |
+| VOA-13 `test plan` public and entry | accepted | 3.2 |
+| VOA-14 invocation-local state | accepted | 6.2 |
