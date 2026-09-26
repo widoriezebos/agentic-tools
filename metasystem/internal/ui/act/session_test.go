@@ -13,17 +13,17 @@ import (
 // records. A bearer never reaches this package at all.
 const testSession = "sess-8Rk2Qp"
 
-func sessionFor(t *testing.T, root string) Authority {
+func sessionFor(t *testing.T, bed *ledgerBed) Authority {
 	t.Helper()
-	proof, err := humanauthority.SignedInSessionProof(root, "Wido", testSession, "browser", fixtureNow)
+	proof, err := humanauthority.SignedInSessionProof(bed.root, "Wido", testSession, "browser", fixtureNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	authority, err := SignedIn(root, "Wido", testSession, proof)
+	authority, err := SignedIn(bed.root, "Wido", testSession, proof)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return authority
+	return bed.acting(t, authority)
 }
 
 // An approval from a browser a human signed into is the human's own approval:
@@ -31,9 +31,9 @@ func sessionFor(t *testing.T, root string) Authority {
 // back clean afterwards.
 func TestApproveUnderASignedInSessionWritesSessionAuthority(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-session")
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-session")
+	authority := sessionFor(t, bed)
 
 	testutil.Expect(t, "who it acts as", authority.Human(), "Wido")
 	testutil.Expect(t, "the lineage a browser act carries", SessionLineage, "browser-session")
@@ -42,7 +42,7 @@ func TestApproveUnderASignedInSessionWritesSessionAuthority(t *testing.T) {
 		t.Fatalf("approve: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-session")
+	file := readGoal(t, bed, "ui-session")
 	testutil.Expect(t, "the goal is approved", file.State, goal.StateApproved)
 	testutil.Expect(t, "the approval's actor", file.Approved.By, "human:Wido")
 	testutil.Expect(t, "the approval's authority", file.Approved.Authority, goal.ApprovalAuthoritySession)
@@ -68,9 +68,9 @@ func TestApproveUnderASignedInSessionWritesSessionAuthority(t *testing.T) {
 // record it removed is gone.
 func TestWithdrawUnderASignedInSessionNamesTheSession(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-session-undo")
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-session-undo")
+	authority := sessionFor(t, bed)
 	if err := authority.Approve("ui-session-undo", box()); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestWithdrawUnderASignedInSessionNamesTheSession(t *testing.T) {
 		t.Fatalf("withdraw: %v", err)
 	}
 
-	file := readGoal(t, root, "ui-session-undo")
+	file := readGoal(t, bed, "ui-session-undo")
 	testutil.Expect(t, "the goal is queued again", file.State, goal.StateQueued)
 	testutil.Expect(t, "no approval stands", file.Approved == nil, true)
 	last := file.History[len(file.History)-1]
@@ -96,10 +96,10 @@ func TestWithdrawUnderASignedInSessionNamesTheSession(t *testing.T) {
 // leaves names the hand that moved that goal.
 func TestSetPriorityUnderASignedInSessionNamesTheSessionOnEveryLine(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
-	openGoal(t, root, "ui-rank-a")
-	openGoal(t, root, "ui-rank-b")
-	authority := sessionFor(t, root)
+	bed := ledger(t)
+	openGoal(t, bed, "ui-rank-a")
+	openGoal(t, bed, "ui-rank-b")
+	authority := sessionFor(t, bed)
 
 	if err := authority.SetPriority("ui-rank-b", 1, sequence(1)); err != nil {
 		t.Fatalf("set-priority: %v", err)
@@ -107,7 +107,7 @@ func TestSetPriorityUnderASignedInSessionNamesTheSessionOnEveryLine(t *testing.T
 
 	moved := 0
 	for _, id := range []string{"ui-rank-a", "ui-rank-b"} {
-		file := readGoal(t, root, id)
+		file := readGoal(t, bed, id)
 		last := file.History[len(file.History)-1]
 		if last.Verb != "set-priority" {
 			continue
@@ -131,10 +131,10 @@ func TestSetPriorityUnderASignedInSessionNamesTheSessionOnEveryLine(t *testing.T
 // name it carries is the name the ledger records.
 func TestASessionAuthorityMustMatchItsOwnProof(t *testing.T) {
 	t.Parallel()
-	root := ledger(t)
+	bed := ledger(t)
 	elsewhere := t.TempDir()
 
-	here, err := humanauthority.SignedInSessionProof(root, "Wido", testSession, "browser", fixtureNow)
+	here, err := humanauthority.SignedInSessionProof(bed.root, "Wido", testSession, "browser", fixtureNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,19 +145,19 @@ func TestASessionAuthorityMustMatchItsOwnProof(t *testing.T) {
 
 	// The lawful case first, so the refusals below are read as being about
 	// what they name rather than about a constructor that refuses everything.
-	lawful, err := SignedIn(root, "Wido", testSession, here)
+	lawful, err := SignedIn(bed.root, "Wido", testSession, here)
 	if err != nil || !lawful.Proven() {
 		t.Fatalf("a session proof for this checkout was refused: %+v %v", lawful, err)
 	}
 
 	for name, built := range map[string]func() (Authority, error){
-		"no human":        func() (Authority, error) { return SignedIn(root, "", testSession, here) },
-		"no session":      func() (Authority, error) { return SignedIn(root, "Wido", "", here) },
-		"another root":    func() (Authority, error) { return SignedIn(root, "Wido", testSession, there) },
-		"no proof":        func() (Authority, error) { return SignedIn(root, "Wido", testSession, humanauthority.Proof{}) },
-		"boot proof":      func() (Authority, error) { return SignedIn(root, "Wido", testSession, provenFor(t, root).proof) },
-		"another human":   func() (Authority, error) { return SignedIn(root, "Somebody-Else", testSession, here) },
-		"another session": func() (Authority, error) { return SignedIn(root, "Wido", "sess-NotThisOne", here) },
+		"no human":        func() (Authority, error) { return SignedIn(bed.root, "", testSession, here) },
+		"no session":      func() (Authority, error) { return SignedIn(bed.root, "Wido", "", here) },
+		"another bed":     func() (Authority, error) { return SignedIn(bed.root, "Wido", testSession, there) },
+		"no proof":        func() (Authority, error) { return SignedIn(bed.root, "Wido", testSession, humanauthority.Proof{}) },
+		"boot proof":      func() (Authority, error) { return SignedIn(bed.root, "Wido", testSession, provenFor(t, bed).proof) },
+		"another human":   func() (Authority, error) { return SignedIn(bed.root, "Somebody-Else", testSession, here) },
+		"another session": func() (Authority, error) { return SignedIn(bed.root, "Wido", "sess-NotThisOne", here) },
 	} {
 		authority, err := built()
 		if err == nil {

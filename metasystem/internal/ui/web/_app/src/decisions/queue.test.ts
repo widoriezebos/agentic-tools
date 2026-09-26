@@ -8,6 +8,7 @@ import {
   blockedLine,
   budgetLine,
   isNarrowed,
+  labelChips,
   labelsIn,
   mayDismiss,
   maySend,
@@ -87,6 +88,23 @@ describe("the queue's three tools", () => {
       { label: "headless-fleet", count: 1 },
       { label: "robustness", count: 1 },
     ]);
+    // On screen means after Find and the origin chip: a family a search has
+    // taken off the screen is not a chip, and a count is what the chip leaves.
+    expect(labelChips(queue, noNarrowing)).toEqual(labelsIn(queue));
+    expect(labelChips(queue, { ...noNarrowing, find: "g1-s41" })).toEqual([
+      { label: "browser-interface", count: 1 },
+      { label: "robustness", count: 1 },
+    ]);
+    expect(labelChips(queue, { ...noNarrowing, origin: SEATS })).toEqual([{ label: "headless-fleet", count: 1 }]);
+  });
+
+  /**
+   * The one narrowing the chips are not drawn through is the label itself.
+   * Chips drawn from rows a label chip had already filtered would leave that
+   * chip alone on the line, with no way to another family.
+   */
+  it("keeps every family on the line while one of them is chosen", () => {
+    expect(labelChips(queue, { ...noNarrowing, label: "headless-fleet" })).toEqual(labelsIn(queue));
   });
 
   it("narrows to one label at a time", () => {
