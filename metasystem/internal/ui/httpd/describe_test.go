@@ -26,7 +26,7 @@ func TestEveryWriteRouteIsAnActWithAHand(t *testing.T) {
 		routeSignIn, routeSignOut,
 		routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
 		routePark, routeUnpark, routeEditGoal,
-		routePartnerTurn, routePartnerStop, routePartnerSeeing,
+		routePartnerTurn, routePartnerStop, routePartnerSeeing, routePartnerProposal,
 		routePartnerSitting, routePartnerClose, routePartnerRise,
 		routeAddSticky, routeEditSticky, routeRemoveSticky,
 	}

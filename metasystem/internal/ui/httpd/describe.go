@@ -107,6 +107,8 @@ func Acts() []manifest.Act {
 			Does: "Opens a working conversation on one record — an existing one, or a draft created now in the home its kind names — and asks the Partner what the records already hold about it."},
 		{ID: routePartnerClose, Title: "Draft the sitting's outcome", Requires: conversationHand,
 			Does: "Asks the Partner for the closing deposit — the outcome as decided, the constraints, the open questions with their consequences, and what the table holds. It ends nothing: the sitting stands until the human has recorded the outcome or left without it."},
+		{ID: routePartnerProposal, Title: "Record what your press did to a proposed action", Requires: conversationHand,
+			Does: "Writes applying, applied, refused, unresolved or dismissed onto one action the Partner proposed, where the proposal is. It makes no act: the act itself goes to the ledger's own route under your session."},
 		{ID: routePartnerRise, Title: "End the sitting", Requires: conversationHand,
 			Does: "Takes the sitting off the conversation. What was recorded stays in the record, which is the whole of what a sitting leaves behind."},
 	}

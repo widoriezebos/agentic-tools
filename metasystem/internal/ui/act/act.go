@@ -24,7 +24,9 @@
 package act
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -513,8 +515,9 @@ func (a Authority) Unblock(dependent, blocker string) error {
 // that cannot be written after the act landed is reported as such: the act is
 // not undone and must not be retried.
 func (a Authority) settle(request goal.VerbRequest, result goal.PublishResult, publishErr error, action string) error {
+	operation := goal.Opid(request.Ulid, request.Actor.Machine, request.Actor.Lineage)
 	if publishErr != nil {
-		return refuse(KindEngine, "refused", publishErr.Error())
+		return a.unsettled(operation, publishErr)
 	}
 	if result.Outcome != goal.OutcomeConfirmed {
 		detail := result.Detail
@@ -523,7 +526,6 @@ func (a Authority) settle(request goal.VerbRequest, result goal.PublishResult, p
 		}
 		return refuse(KindEngine, string(result.Outcome), detail)
 	}
-	operation := goal.Opid(request.Ulid, request.Actor.Machine, request.Actor.Lineage)
 	// The evidence beside the act is the proof that carried it, which for a
 	// browser session is a session proof rather than an ancestry.
 	record := humanauthority.RecordProof
@@ -535,6 +537,51 @@ func (a Authority) settle(request goal.VerbRequest, result goal.PublishResult, p
 			"the act landed at tip "+result.Tip+", but its authority proof did not: "+err.Error()+"; do not run it again")
 	}
 	return nil
+}
+
+// unsettled is what a publication error means, read from this operation's own
+// journal entry rather than assumed.
+//
+// It used to be assumed, and the assumption was wrong in the one case that
+// matters. A push can LAND and then fail its confirmation — the refetch fails,
+// the opid is not visible on the refetched tip, or a confirmed follow-on effect
+// fails — and the transaction returns an empty outcome with an error whose
+// detail begins "pushed;" (internal/goal/txn.go runTransaction). Calling that
+// refused told a human, and the Partner, that an approval had not been made when
+// it had, and offered them the one press that would make a second one.
+//
+// The journal knows the difference, because it is written before the push leaves
+// this process: an entry still at pushed with no terminal outcome is an act
+// whose fate nobody here can state. So:
+//
+//   - pushed and not terminal is UNRESOLVED, under `pushed-unknown`. The page
+//     stops the run there and reads the ledger; nothing is sent again.
+//   - an entry that cannot be read AT ALL is unresolved too, under
+//     `journal-unreadable`, because one persistent journal fault fails
+//     MarkTerminal and this read alike, and nothing then proves the push did not
+//     land. Assuming it did not is the one assumption that invites a repeat.
+//   - an ABSENT entry, one still at created, and a terminal one are refused, as
+//     they always were: the push never left, or it was refused, and the outcome
+//     the entry carries says which.
+//
+// Both new codes are failures rather than engine refusals, so the routes answer
+// 500 and the page's mapping calls them unresolved.
+func (a Authority) unsettled(operation string, publishErr error) error {
+	entry, err := goal.ReadEntry(a.root, operation)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return refuse(KindEngine, "refused", publishErr.Error())
+	case err != nil:
+		return refuse(KindFailed, "journal-unreadable",
+			"whether it landed is unresolved: this act's own journal entry could not be read ("+
+				err.Error()+"); check the goal before acting again")
+	case entry.Phase == goal.PhasePushed && entry.Outcome == "":
+		return refuse(KindFailed, "pushed-unknown",
+			"pushed; whether it landed is unresolved: "+publishErr.Error()+
+				"; the page's next read says what the ledger did")
+	default:
+		return refuse(KindEngine, "refused", publishErr.Error())
+	}
 }
 
 // request assembles the same goal.VerbRequest the command edge assembles for

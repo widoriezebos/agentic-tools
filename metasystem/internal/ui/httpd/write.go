@@ -57,10 +57,14 @@ const maxWriteBody = 64 << 10
 const maxDocumentBody = 8 << 20
 
 // written names one of the four routes, with the id the path carried where the
-// route takes one.
+// route takes one, and the second name a path carries two of.
 type written struct {
 	route string
 	id    string
+	// at is the second name in a path that has one: the index of one proposed
+	// action beneath its turn. It is a field rather than a second id packed into
+	// the first because a route that reads two names should be handed two.
+	at string
 }
 
 // The five routes, by name, and the document's two.
@@ -254,6 +258,8 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.partnerSeeing(w, r)
 	case routePartnerStop:
 		h.partnerStop(w, r, route.id)
+	case routePartnerProposal:
+		h.partnerProposal(w, r, route.id, route.at)
 	case routePartnerSitting:
 		h.partnerSitting(w, r)
 	case routePartnerClose:

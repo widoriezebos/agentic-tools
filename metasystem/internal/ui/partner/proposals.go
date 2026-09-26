@@ -1,6 +1,7 @@
 package partner
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -353,4 +354,100 @@ func proposalsLine(proposals []Proposal) string {
 		line += " (" + strings.Join(named, "; ") + ")"
 	}
 	return line + "."
+}
+
+/* --------------------------------------------- where an outcome is written -- */
+
+// ProposalConflict is what a write to one proposed action loses to: somebody
+// else moved that line first.
+//
+// It carries the entry as it stands, because that is the whole remedy. A second
+// tab, or a second press in the same tab, has to be able to show the line as it
+// really is rather than as it rendered it — and a runner that lost the race must
+// not send the act, because the writer that won may have sent it already.
+type ProposalConflict struct {
+	Held Proposal
+}
+
+func (c *ProposalConflict) Error() string {
+	return "this action is at version " + strconv.Itoa(c.Held.Version) + " and says " + c.Held.State +
+		"; read it again before pressing"
+}
+
+// RecordProposal writes one state onto one proposed action of one answer, and
+// answers the entry as it now stands.
+//
+// It is the whole of the compare-and-set that makes two tabs safe, and it is
+// here because here is where the mutex over this transcript is. The caller sends
+// the version of the entry it last rendered; the write is admitted only when the
+// persisted version is still that one AND the pair of states is one the line may
+// pass through; and the version moves under it, so the loser of a race is told
+// with the entry rather than being allowed to write over the winner.
+//
+// The message is rewritten in place through the writer the trim uses: one
+// publication of the whole file, so a reader halfway through it reads the old
+// file whole rather than a torn mixture, and nothing else in the transcript
+// moves.
+func (c *Conversation) RecordProposal(turn string, index, version int, state, words string, now time.Time) (Proposal, error) {
+	if !ProposalState(state) {
+		return Proposal{}, errors.New("an action's state is " + strings.Join(ProposalStates, ", ") + ", not " + state)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	at := -1
+	for index, message := range c.messages {
+		if message.Role == RolePartner && message.Turn == turn {
+			at = index
+		}
+	}
+	if at < 0 {
+		return Proposal{}, errors.New("this conversation has no answer for turn " + turn)
+	}
+	proposals := c.messages[at].Proposals
+	if index < 0 || index >= len(proposals) {
+		return Proposal{}, errors.New("that answer proposed " + strconv.Itoa(len(proposals)) +
+			" actions, so it has no action " + strconv.Itoa(index))
+	}
+	held := proposals[index]
+	if held.Version != version || !ProposalMayBecome(held.State, state) {
+		return Proposal{}, &ProposalConflict{Held: held}
+	}
+	// The slice is copied before it is written into: the messages the snapshot
+	// handed a reader a moment ago share this backing array, and a state written
+	// through it would change what they already showed.
+	rewritten := append([]Proposal{}, proposals...)
+	held.State = state
+	held.Words = words
+	held.At = now.UTC().Format(time.RFC3339)
+	held.Version = version + 1
+	rewritten[index] = held
+	messages := append([]Message{}, c.messages...)
+	messages[at].Proposals = rewritten
+	if err := writeTranscript(c.transcript, messages); err != nil {
+		return Proposal{}, err
+	}
+	c.messages = messages
+	return held, nil
+}
+
+// Proposed records what happened to one proposed action, for the route that is
+// the only way into it.
+//
+// A turn that is still running is refused in words: until the answer's terminal
+// beat there is no message to record an outcome on, and the card's own buttons
+// are asleep for exactly that reason. It is refused here rather than in the
+// route because whether a turn is running is this service's own fact.
+func (s *Service) Proposed(human, turn string, index, version int, state, words string) (Proposal, error) {
+	s.mu.Lock()
+	running := s.current
+	s.mu.Unlock()
+	if running != nil && running.id == turn {
+		return Proposal{}, errors.New("the Partner is still answering this turn, so its actions cannot be " +
+			"applied yet; they wake when the answer ends")
+	}
+	conversation, err := s.conversation(human)
+	if err != nil {
+		return Proposal{}, err
+	}
+	return conversation.RecordProposal(turn, index, version, state, words, s.now())
 }
