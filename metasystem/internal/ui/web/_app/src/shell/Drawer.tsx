@@ -7,6 +7,7 @@ import { IconButton } from "./controls";
 import { Help } from "../help/Help";
 import { FontControl } from "../partner/FontControl";
 import { Seeing } from "../partner/Seeing";
+import { SittingControl } from "../partner/StartSitting";
 import { Transcript } from "../partner/Transcript";
 import { usePartner } from "../partner/store";
 
@@ -82,6 +83,14 @@ export function Drawer({
           <span className="ms-drawer-title">Project Partner</span>
           <Help id="partner" />
           <FontControl />
+          {/* The sitting stands here, where a human is when they decide to sit
+              down: Start a sitting, or the record under discussion with the four
+              counts of what it now holds (g1-s53 D2, D7). */}
+          <SittingControl
+            onOpenTable={() => {
+              void navigate("/brain");
+            }}
+          />
         </span>
         {!open && (
           <>

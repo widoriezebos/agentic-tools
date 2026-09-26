@@ -210,6 +210,19 @@ export function isNotFound(error: unknown): boolean {
   return error instanceof ResourceError && error.status === 404;
 }
 
+/**
+ * A write refused because the file no longer hashes to the revision the caller
+ * was holding: somebody else changed it, and nothing was written.
+ *
+ * It is named here, beside the refusal it reads, because it is a fact about this
+ * resource and not about whichever caller asks. The editor tells a human the
+ * sentence the server gave; the sitting's Record press rereads the record and
+ * offers the press again against what it now says.
+ */
+export function isStale(error: unknown): boolean {
+  return error instanceof ResourceError && error.status === 409;
+}
+
 /** What a refusal's body carries, where the server sent one. */
 type Refusal = { error?: string; problems?: Problem[] };
 

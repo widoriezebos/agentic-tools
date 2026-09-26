@@ -5,6 +5,7 @@ import { NavLink, useNavigate } from "react-router";
 import type { Message, Page } from "./api";
 import { chipOf, sheetNote, whenOf } from "./capture";
 import { nameOf } from "./conversation";
+import { DepositCard } from "./Deposit";
 import { useTypefaceOn } from "./FontControl";
 import { Looked } from "./Looked";
 import { namesIn, runsIn, type Names } from "./references";
@@ -12,6 +13,7 @@ import { ring } from "./ringing";
 import { atEnd, scrollerOf } from "./scrolling";
 import { usePartner } from "./store";
 import { SuggestionCard } from "./Suggestion";
+import { depositID, THE_INTERFACES } from "./sitting";
 import { idOf } from "./suggesting";
 import "./partner.css";
 import { previewDocument, type Block } from "../project/api";
@@ -127,6 +129,7 @@ export function Transcript() {
     store.live.doing,
     store.live.looked.length,
     store.live.suggestions.length,
+    store.live.deposits.length,
     store.refusal,
   ]);
 
@@ -175,7 +178,12 @@ function Said({
   if (message.role === "human") {
     return (
       <div className="ms-turn ms-turn--human">
+        {/* The one question nobody typed. A sitting's opening turn is submitted
+            by this interface on the human's behalf, and it says so here — from
+            the message itself, so a reload cannot turn it into their own words
+            (g1-s53 D3). */}
         <TurnHead who="human" name={asker} at={message.at}>
+          {message.interface === true && <span className="ms-turn-by">{THE_INTERFACES}</span>}
           {message.page !== undefined && <AskedFrom capture={message.page} />}
         </TurnHead>
         <div className="ms-turn-body">
@@ -197,6 +205,11 @@ function Said({
             is where the human decides; nothing has been written anywhere. */}
         {(message.suggestions ?? []).map((suggestion, at) => (
           <SuggestionCard key={idOf(message.turn, at)} id={idOf(message.turn, at)} />
+        ))}
+        {/* What this answer offered the sitting's record. Record it is the
+            human's press, and nothing is in the record until they make it. */}
+        {(message.deposits ?? []).map((deposit, at) => (
+          <DepositCard key={depositID(message.turn, at)} id={depositID(message.turn, at)} />
         ))}
         <Looked looked={message.looked ?? []} />
       </div>
@@ -312,6 +325,9 @@ function Running() {
             answer's last word. It is under the words either way. */}
         {live.suggestions.map((suggestion, at) => (
           <SuggestionCard key={idOf(live.turn, at)} id={idOf(live.turn, at)} />
+        ))}
+        {live.deposits.map((deposit, at) => (
+          <DepositCard key={depositID(live.turn, at)} id={depositID(live.turn, at)} />
         ))}
       </div>
     </div>

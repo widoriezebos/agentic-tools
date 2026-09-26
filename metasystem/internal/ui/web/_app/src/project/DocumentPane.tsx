@@ -63,6 +63,8 @@ import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
 import { documentIdFromPath, documentPath } from "../routes";
 import { ASK_REVISION, ASK_SOURCE, ASK_SURFACE } from "../partner/AskSelection";
+import { START } from "../partner/sitting";
+import { StartSittingSheet } from "../partner/StartSitting";
 import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
@@ -1041,7 +1043,11 @@ function FileActions({
 }) {
   const [copies, setCopies] = useState(0);
   const [refused, setRefused] = useState(false);
-  const { ask } = usePartner();
+  // Whether the sheet that starts a sitting on this record is open. It is here,
+  // on the record's own act row, because a record's page is where a human is
+  // when they decide to sit down on it (g1-s53 D2).
+  const [sitting, setSitting] = useState(false);
+  const { ask, sitting: standing } = usePartner();
 
   const copy = () => {
     try {
@@ -1084,6 +1090,25 @@ function FileActions({
           Edit
         </button>
       )}
+      {/* Start a sitting on this record. It is offered while no sitting stands:
+          there is one sitting on one conversation, and a second Start would be a
+          second answer to "which record is under discussion". */}
+      {standing === null && (
+        <button
+          type="button"
+          className="ms-project-act"
+          onClick={() => {
+            setSitting(true);
+          }}
+        >
+          {START}
+        </button>
+      )}
+      <StartSittingSheet
+        open={sitting}
+        onOpenChange={setSitting}
+        subject={{ kind: "record", id: read.id, title: read.title === "" ? read.id : read.title }}
+      />
       {onNewGoal !== null && (
         <button type="button" className="ms-project-act" disabled={busy !== ""} onClick={onNewGoal}>
           {NEW_GOAL}

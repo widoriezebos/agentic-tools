@@ -61,6 +61,28 @@ var fakeAnswer = []string{
 // transcript shows the not-offered card with its reason.
 const suggestedIntent = "Every refund lands within a day, with nobody touching the queue."
 
+// The two deposits this fake offers a sitting: a fact with its anchor and a
+// decision with the reason it heard.
+//
+// They are narrowed to the sitting's own opening turn — the one question this
+// interface asks on the human's behalf, whose fixed request names the deposit
+// tool — so that the whole of the sitting can be stood in front of on this
+// fixture: press Start a sitting, and the opening turn arrives marked as the
+// interface's with a fact card and a decision card under it, each with Record it
+// beside it. Asked from anywhere else the same calls are refused, which is a true
+// refusal and shows the not-offered card with its reason.
+const (
+	depositedFact   = "The intent record says a session lasts twelve hours, and nothing recorded says what that limit protects."
+	depositedAnchor = "plans/intent/sessions.md:14"
+	depositedChoice = "The limit counts from last activity rather than from sign-in."
+	depositedReason = "a page nobody has touched for an hour is not a session in use"
+)
+
+// The line of the opening request the two deposits are narrowed to. It is one
+// phrase of partner.OpeningRequest, so a fixture that drifted from the request
+// would stop offering them rather than offer them on every question.
+const openingPhrase = "Bring what the records already hold about it"
+
 var fakeReads = []fakeacp.Read{
 	{
 		When:  "Open sheet: Edit goal",
@@ -69,6 +91,24 @@ var fakeReads = []fakeacp.Read{
 		Result: uitools.PreparedLine + "\n" +
 			uitools.SuggestionHeader + "Edit goal" + uitools.SuggestionJoin + "Intent\n" +
 			uitools.SuggestionSeparator + "\n" + suggestedIntent + "\n",
+	},
+	{
+		When:  openingPhrase,
+		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpDeposit,
+		Title: "deposit(fact)",
+		Result: uitools.DepositedLine + "\n" +
+			uitools.DepositHeader + uitools.DepositFact + "\n" +
+			uitools.DepositAnchor + depositedAnchor + "\n" +
+			uitools.DepositSeparator + "\n" + depositedFact + "\n",
+	},
+	{
+		When:  openingPhrase,
+		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpDeposit,
+		Title: "deposit(decision)",
+		Result: uitools.DepositedLine + "\n" +
+			uitools.DepositHeader + uitools.DepositDecision + "\n" +
+			uitools.DepositReason + depositedReason + "\n" +
+			uitools.DepositSeparator + "\n" + depositedChoice + "\n",
 	},
 	{
 		Title: "document(plans/designs/reading.md)",
