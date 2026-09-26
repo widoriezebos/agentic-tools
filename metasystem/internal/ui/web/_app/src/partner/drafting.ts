@@ -40,6 +40,18 @@ export type SheetDraft = {
    * rewrite. The sheet that owns the state says which are which.
    */
   writable: string[];
+  /**
+   * The writable field the human's caret was last in, or "" before any of them
+   * has held it.
+   *
+   * It is what makes "make this shorter" mean something. A request that names no
+   * field is about the field the human is writing in, and nothing else in a
+   * draft says which that is: the fields travel in the order the sheet asks
+   * them, not in the order a human moved through them. Wido, 2026-09-26: "do you
+   * know which field I was editing when I started editing in the project partner
+   * panel? Because you will have to."
+   */
+  writing: string;
 };
 
 /** How much of one field's value the chip shows before it trails off. */
@@ -57,7 +69,13 @@ const CHIP_FIELDS = 2;
  * never made. Its name still travels among the writable ones, because a field
  * nobody has filled in is a field the Partner can be asked for words for.
  */
-export function draftOf(opening: string, sheet: string, fields: Field[], writable: string[] = []): SheetDraft {
+export function draftOf(
+  opening: string,
+  sheet: string,
+  fields: Field[],
+  writable: string[] = [],
+  writing = "",
+): SheetDraft {
   return {
     sheet,
     opening,
@@ -65,6 +83,7 @@ export function draftOf(opening: string, sheet: string, fields: Field[], writabl
       .map((field) => ({ name: field.name, value: field.value.trim() }))
       .filter((field) => field.value !== ""),
     writable: writable.filter((name) => name.trim() !== ""),
+    writing: writing.trim(),
   };
 }
 
@@ -82,13 +101,28 @@ export function offersDraft(draft: SheetDraft): boolean {
 }
 
 /**
- * What the chip says: the sheet, then the first of its fields, so a human
- * scanning the composer reads "Draft: New goal · refund-worker · Refunds are
- * issued within a day…" and knows both which sheet and which draft.
+ * What the chip says: the sheet, then the first of its fields, then where the
+ * caret is — so a human scanning the composer reads "Draft: New goal ·
+ * refund-worker · Refunds are issued within a day… · writing in Intent" and
+ * knows which sheet, which draft, and what a request naming no field will mean.
  */
 export function draftLabel(draft: SheetDraft): string {
   const said = draft.fields.slice(0, CHIP_FIELDS).map((field) => firstWords(field.value));
-  return ["Draft: " + draft.sheet, ...said].join(" · ");
+  return ["Draft: " + draft.sheet, ...said, writingClause(draft.writing)].join(" · ");
+}
+
+/**
+ * What the chip says about the field in hand.
+ *
+ * It is on the chip because the chip is what a human can see of what the Partner
+ * is being told, and the field in hand is now part of that: a request that names
+ * no field is answered about this one. Before any field has held the caret it
+ * says so rather than saying nothing, because "none yet" is the case in which
+ * the Partner has to ask instead of guessing.
+ */
+export function writingClause(writing: string): string {
+  const said = writing.trim();
+  return said === "" ? "writing in nothing yet" : "writing in " + said;
 }
 
 /** Where the chip says the draft came from, in the words a human would use. */

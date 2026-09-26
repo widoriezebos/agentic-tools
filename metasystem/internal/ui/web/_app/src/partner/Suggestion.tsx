@@ -9,21 +9,26 @@ import {
   DISMISSED,
   EDITED_SINCE,
   mintOpening,
-  newestFor,
-  waitingFor,
-  waitingLabel,
+  NOT_OFFERED,
+  refusedLine,
 } from "./suggesting";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 
 /**
- * The words the Partner offered, as a card under its answer — and, beside the
- * field they are for, the line that says one is waiting.
+ * The words the Partner offered, as a card under its answer: the conversation's
+ * own record of what was proposed, and of what was refused.
  *
  * The card is the reusable result card the master asks for, first used here. It
  * is a card and not prose because a human has to be able to see whose words
  * these are: in the drawer they are the Partner's, set apart with the field's
  * name over them; in the field, after Use this, they are the human's draft.
+ *
+ * Where a human decides about them is not here any more. Since g1-s52 the offer
+ * stands under the field it is for, inside the sheet — src/partner/FieldProposals.tsx
+ * — because the drawer's default height hid a card behind the composer. This card
+ * keeps every state it had, reads the same store, and gained the one the drawer is
+ * now the only place for: a suggestion the service did not offer, with its reason.
  *
  * Nothing here writes to the ledger and nothing here saves. Use this puts the
  * words in the field the card names and stops; the sheet's own Save is still
@@ -44,61 +49,16 @@ export function useOpening(): string {
 }
 
 /**
- * What a field says beside its label while suggestions wait for it, placed by
- * the sheet that owns the label.
- *
- * It says how many are waiting and takes the human to them; it never shows the
- * words. A suggestion waits in the drawer, and the field only says one is
- * there — which is the whole of what makes the draft the human's.
- *
- * It is also how a card learns that the human has typed since: the field says
- * what it now holds, and the card stops offering Undo once that is no longer
- * the words it offered.
- */
-export function FieldSuggestions({
-  opening,
-  field,
-  value,
-}: {
-  /** The opening this field belongs to, as the sheet minted it. */
-  opening: string;
-  /** The field, as its own label says it. */
-  field: string;
-  /** What the field holds right now. */
-  value: string;
-}) {
-  const { offered, show, noteField } = usePartner();
-  // Every render, because every render is a keystroke or a press: the value
-  // above is what the field holds now, and nothing else tells the store.
-  useEffect(() => {
-    noteField(opening, field, value);
-  });
-  const waiting = waitingFor(offered, opening, field);
-  if (waiting === 0) {
-    return null;
-  }
-  const newest = newestFor(offered, opening, field);
-  return (
-    <button
-      type="button"
-      className="ms-field-suggestions"
-      title={`Open your Project Partner at the newest suggestion for ${field}`}
-      onClick={() => {
-        show(newest);
-      }}
-    >
-      {waitingLabel(waiting)}
-    </button>
-  );
-}
-
-/**
  * One card, in the transcript, under the answer that offered it.
  *
- * Its four shapes are the four things that can be true of one suggestion: it is
- * waiting for the human, they used it, they folded it away, or the editor it
- * was for has been closed and all that is left to do with the words is copy
- * them.
+ * Its five shapes are the five things that can be true of one suggestion: it was
+ * not offered at all, it is waiting for the human, they used it, they folded it
+ * away, or the editor it was for has been closed and all that is left to do with
+ * the words is copy them.
+ *
+ * The card is the record. Since g1-s52 the offer itself stands under the field it
+ * is for, inside the sheet, and this is where the conversation keeps it — both
+ * read the same store state, so the two cannot disagree about one suggestion.
  */
 export function SuggestionCard({ id }: { id: string }) {
   const { offered, use, undo, dismiss, reopen, showing } = usePartner();
@@ -112,6 +72,23 @@ export function SuggestionCard({ id }: { id: string }) {
   }, [showing, id]);
   if (card === undefined) {
     return null;
+  }
+  // Nothing was offered. It is the one card with nothing to press: no field of
+  // the draft the human handed over was named, so there is nowhere to put the
+  // words and no offer to fold away. What it owes them is the reason.
+  if (card.standing === "refused") {
+    return (
+      <div className="ms-suggestion ms-suggestion--refused" ref={box} data-suggestion={id}>
+        <p className="ms-suggestion-head">
+          <span>{NOT_OFFERED}</span>
+          <Help id="not-offered" />
+        </p>
+        <p className="ms-suggestion-refused" role="status">
+          {refusedLine(card)}
+        </p>
+        <p className="ms-suggestion-text">{card.text}</p>
+      </div>
+    );
   }
   if (card.standing === "dismissed") {
     return (

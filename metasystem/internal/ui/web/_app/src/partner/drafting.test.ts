@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { draftClearLabel, draftLabel, draftOf, draftSource, offersDraft, valueIn } from "./drafting";
+import {
+  draftClearLabel,
+  draftLabel,
+  draftOf,
+  draftSource,
+  offersDraft,
+  valueIn,
+  writingClause,
+} from "./drafting";
 
 /** One opening of a sheet, which every draft in these tests is from. */
 const OPENING = "opening-1";
@@ -32,6 +40,7 @@ describe("a draft offered from a sheet", () => {
         { name: "First next step", value: "Take the worker to a working end state." },
       ],
       writable: [],
+      writing: "",
     });
   });
 
@@ -61,18 +70,38 @@ describe("a draft offered from a sheet", () => {
     expect(offersDraft(draftOf(OPENING, "New goal", NEW_GOAL))).toBe(true);
   });
 
-  // The label the design names: the sheet, the id, and the intent's first
-  // words. The third field is in the draft and not in the chip, because a chip
-  // is a label and not a second copy of the form.
+  // The label the design names: the sheet, the id, the intent's first words, and
+  // where the caret is. The third field is in the draft and not in the chip,
+  // because a chip is a label and not a second copy of the form.
   it("says the sheet and its first two fields, the second cut to its first words", () => {
     expect(draftLabel(draftOf(OPENING, "New goal", NEW_GOAL))).toBe(
-      "Draft: New goal · refund-worker · Refunds are issued within a day, with…",
+      "Draft: New goal · refund-worker · Refunds are issued within a day, with… · writing in nothing yet",
     );
   });
 
   it("keeps a short field whole, and folds a field written over two lines onto one", () => {
     const draft = draftOf(OPENING, "New question", [{ name: "Question", value: "  Why are\n  these waiting?  " }]);
-    expect(draftLabel(draft)).toBe("Draft: New question · Why are these waiting?");
+    expect(draftLabel(draft)).toBe("Draft: New question · Why are these waiting? · writing in nothing yet");
+  });
+
+  /**
+   * The field in hand, on the chip.
+   *
+   * It is on the chip because the chip is what a human can see of what the
+   * Partner is being told, and since g1-s52 that includes where the caret was: a
+   * request naming no field is answered about this one. "Nothing yet" is said
+   * rather than left out, because it is the case in which the Partner has to ask.
+   */
+  it("says which field the caret is in, and says so when none has held it", () => {
+    const writing = draftOf(OPENING, "Edit goal", [{ name: "Intent", value: "The board reads the ledger." }],
+      ["Intent", "Next step"], "Intent");
+    expect(writing.writing).toBe("Intent");
+    expect(draftLabel(writing)).toBe("Draft: Edit goal · The board reads the ledger. · writing in Intent");
+    expect(writingClause("Next step")).toBe("writing in Next step");
+    expect(writingClause("")).toBe("writing in nothing yet");
+    expect(writingClause("   ")).toBe("writing in nothing yet");
+    // Whitespace is not a field, in the draft either.
+    expect(draftOf(OPENING, "Edit goal", NEW_GOAL, ["Intent"], "  ").writing).toBe("");
   });
 
   it("names its source as the sheet it came from, in both places a human reads it", () => {

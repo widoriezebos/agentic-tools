@@ -32,7 +32,9 @@ import {
 } from "./opening";
 import { laneTitle } from "./lanes";
 import { Panel } from "./Panel";
-import { FieldSuggestions, useOpening } from "../partner/Suggestion";
+import { AskThePartner, FieldProposals } from "../partner/FieldProposals";
+import { useOpening } from "../partner/Suggestion";
+import { useFieldInHand } from "../partner/writing";
 import { Button, Hint } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
 import { useSession } from "../shell/identity";
@@ -109,6 +111,8 @@ export function OpenSheet({
   // This opening of this sheet, minted once, which is what a suggestion for one
   // of its fields belongs to.
   const opening = useOpening();
+  // Which field the caret is in, reported by the field's own row.
+  const inHand = useFieldInHand(opening);
   const [risk, setRisk] = useState<Risk>(emptyRisk);
   /** Whether a human has named the goal, after which nothing suggests an id. */
   const [named, setNamed] = useState(false);
@@ -316,7 +320,11 @@ export function OpenSheet({
         label="Id"
         hint={ID_RULE}
         refuse={refuseId}
-        beside={<FieldSuggestions opening={opening} field="Id" value={asked.id} />}
+        beside={<AskThePartner opening={opening} field="Id" value={asked.id} />}
+        below={<FieldProposals opening={opening} field="Id" value={asked.id} />}
+        onFocus={() => {
+          inHand("Id");
+        }}
       >
         <input
           id="ms-open-id"
@@ -335,7 +343,11 @@ export function OpenSheet({
         id="ms-open-intent"
         label="Intent"
         hint={INTENT_RULE}
-        beside={<FieldSuggestions opening={opening} field="Intent" value={intake.intent} />}
+        beside={<AskThePartner opening={opening} field="Intent" value={intake.intent} />}
+        below={<FieldProposals opening={opening} field="Intent" value={intake.intent} />}
+        onFocus={() => {
+          inHand("Intent");
+        }}
       >
         <textarea
           id="ms-open-intent"
@@ -353,7 +365,11 @@ export function OpenSheet({
         id="ms-open-nextStep"
         label="Next step"
         hint={NEXT_STEP_RULE}
-        beside={<FieldSuggestions opening={opening} field="Next step" value={intake.nextStep} />}
+        beside={<AskThePartner opening={opening} field="Next step" value={intake.nextStep} />}
+        below={<FieldProposals opening={opening} field="Next step" value={intake.nextStep} />}
+        onFocus={() => {
+          inHand("Next step");
+        }}
       >
         <textarea
           id="ms-open-nextStep"
@@ -381,7 +397,11 @@ export function OpenSheet({
           id="ms-open-basis"
           label="Why these answers"
           hint="One line saying why those four answers are the answers."
-          beside={<FieldSuggestions opening={opening} field="Why these answers" value={risk.basis} />}
+          beside={<AskThePartner opening={opening} field="Why these answers" value={risk.basis} />}
+          below={<FieldProposals opening={opening} field="Why these answers" value={risk.basis} />}
+          onFocus={() => {
+            inHand("Why these answers");
+          }}
         >
           <input
             id="ms-open-basis"
@@ -465,7 +485,11 @@ export function OpenSheet({
           id="ms-open-labels"
           label="Labels"
           hint="Lowercase words the board narrows by, separated by spaces or commas. What the board already uses is suggested; anything else is marked new."
-          beside={<FieldSuggestions opening={opening} field="Labels" value={intake.labels} />}
+          beside={<AskThePartner opening={opening} field="Labels" value={intake.labels} />}
+          below={<FieldProposals opening={opening} field="Labels" value={intake.labels} />}
+          onFocus={() => {
+            inHand("Labels");
+          }}
         >
           <TokenField
             id="ms-open-labels"
@@ -533,6 +557,8 @@ function Field({
   hint,
   refuse = "",
   beside,
+  below,
+  onFocus,
   children,
 }: {
   id: string;
@@ -540,17 +566,26 @@ function Field({
   hint: string;
   /** What this field itself refuses, before anything is sent, or "". */
   refuse?: string;
-  /** What stands at the end of the label's own line: the Partner's count. */
+  /** What stands at the end of the label's own line: the Partner's own link. */
   beside?: ReactNode;
+  /**
+   * What stands under the field itself: what the Partner has proposed for it.
+   * It is under and not beside because a human deciding about words has to read
+   * them where they are writing (g1-s52 D2).
+   */
+  below?: ReactNode;
+  /** The caret arrived somewhere inside this field. */
+  onFocus?: () => void;
   children: ReactNode;
 }) {
   return (
-    <div className="ms-act-field">
+    <div className="ms-act-field" onFocus={onFocus}>
       <div className="ms-act-label">
         <label htmlFor={id}>{label}</label>
         {beside}
       </div>
       {children}
+      {below}
       <p className="ms-act-hint" id={`${id}-hint`}>
         {hint}
       </p>

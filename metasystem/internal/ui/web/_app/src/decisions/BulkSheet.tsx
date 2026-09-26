@@ -16,7 +16,9 @@ import {
 } from "./decisions";
 import { approveGoal, BacklogError, parkGoal, type Backlog } from "../backlog/api";
 import { Panel } from "../backlog/Panel";
-import { FieldSuggestions, useOpening } from "../partner/Suggestion";
+import { AskThePartner, FieldProposals } from "../partner/FieldProposals";
+import { useOpening } from "../partner/Suggestion";
+import { useFieldInHand } from "../partner/writing";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
@@ -80,6 +82,8 @@ export function BulkSheet({
   // This opening of this sheet, minted once. Not now has one field the Partner
   // may write; approving in bulk has none.
   const opening = useOpening();
+  // Which field the caret is in, reported by the field's own row.
+  const inHand = useFieldInHand(opening);
   const [run, setRun] = useState<RunState>({ state: "ready" });
   const { askToSignIn } = useSession();
   const because = reason.trim();
@@ -165,10 +169,15 @@ export function BulkSheet({
       }
     >
       {!approving && (
-        <div className="ms-act-field">
+        <div
+          className="ms-act-field"
+          onFocus={() => {
+            inHand("Reason");
+          }}
+        >
           <div className="ms-act-label">
             <label htmlFor="ms-decisions-because">Reason, on every goal</label>
-            <FieldSuggestions opening={opening} field="Reason" value={reason} />
+            <AskThePartner opening={opening} field="Reason" value={reason} />
           </div>
           <input
             id="ms-decisions-because"
@@ -178,6 +187,7 @@ export function BulkSheet({
               setReason(event.target.value);
             }}
           />
+          <FieldProposals opening={opening} field="Reason" value={reason} />
         </div>
       )}
       <ul className="ms-decisions-plan">

@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 
 import { actingAs } from "./acting";
-import { FieldSuggestions, useOpening } from "../partner/Suggestion";
+import { AskThePartner, FieldProposals } from "../partner/FieldProposals";
+import { useOpening } from "../partner/Suggestion";
+import { useFieldInHand } from "../partner/writing";
 import { BacklogError, editGoal, type Backlog, type Row } from "./api";
 import { blockedForEdit, changedIn, draftOf, editNote, labelRefusal, type EditDraft } from "./editing";
 import { INTENT_RULE, NEXT_STEP_RULE } from "./opening";
@@ -75,6 +77,9 @@ export function EditSheet({
   // This opening of this sheet, minted once. It is what a suggestion for one of
   // these fields belongs to.
   const opening = useOpening();
+  // Which of the three the caret is in, reported by the field's own row: the
+  // Partner is told it, so "make this shorter" means the field they are in.
+  const inHand = useFieldInHand(opening);
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
   const { session, askToSignIn } = useSession();
@@ -160,10 +165,18 @@ export function EditSheet({
         </Button>
       }
     >
-      <div className="ms-act-field">
+      {/* Each field's own row reports the caret, so what the Partner is told is
+          where the human actually was. Focus bubbles, so the row answers for the
+          control inside it and for its own "Ask the Partner". */}
+      <div
+        className="ms-act-field"
+        onFocus={() => {
+          inHand("Intent");
+        }}
+      >
         <div className="ms-act-label">
           <label htmlFor="ms-edit-intent">Intent</label>
-          <FieldSuggestions opening={opening} field="Intent" value={draft.intent} />
+          <AskThePartner opening={opening} field="Intent" value={draft.intent} />
         </div>
         <textarea
           id="ms-edit-intent"
@@ -174,15 +187,21 @@ export function EditSheet({
             setDraft({ ...draft, intent: event.target.value });
           }}
         />
+        <FieldProposals opening={opening} field="Intent" value={draft.intent} />
         <p className="ms-act-hint" id="ms-edit-intent-hint">
           {INTENT_RULE}
         </p>
       </div>
 
-      <div className="ms-act-field">
+      <div
+        className="ms-act-field"
+        onFocus={() => {
+          inHand("Next step");
+        }}
+      >
         <div className="ms-act-label">
           <label htmlFor="ms-edit-nextStep">Next step</label>
-          <FieldSuggestions opening={opening} field="Next step" value={draft.nextStep} />
+          <AskThePartner opening={opening} field="Next step" value={draft.nextStep} />
         </div>
         <textarea
           id="ms-edit-nextStep"
@@ -193,15 +212,21 @@ export function EditSheet({
             setDraft({ ...draft, nextStep: event.target.value });
           }}
         />
+        <FieldProposals opening={opening} field="Next step" value={draft.nextStep} />
         <p className="ms-act-hint" id="ms-edit-nextStep-hint">
           {NEXT_STEP_RULE}
         </p>
       </div>
 
-      <div className="ms-act-field">
+      <div
+        className="ms-act-field"
+        onFocus={() => {
+          inHand("Labels");
+        }}
+      >
         <div className="ms-act-label">
           <label htmlFor="ms-edit-labels">Labels</label>
-          <FieldSuggestions opening={opening} field="Labels" value={draft.labels} />
+          <AskThePartner opening={opening} field="Labels" value={draft.labels} />
         </div>
         <TokenField
           id="ms-edit-labels"
@@ -212,6 +237,7 @@ export function EditSheet({
             setDraft({ ...draft, labels: value });
           }}
         />
+        <FieldProposals opening={opening} field="Labels" value={draft.labels} />
         <p className="ms-act-hint" id="ms-edit-labels-hint">
           Lowercase words the board narrows by, separated by spaces or commas. Emptying the field clears them.
         </p>

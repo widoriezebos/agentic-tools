@@ -134,6 +134,17 @@ type Suggestion struct {
 	// something a human checks an answer against, and this is the words
 	// themselves.
 	Text string `json:"text"`
+	// Offered says whether the human was shown it as something to use.
+	//
+	// The host never sets it: it reads what the tool prepared, and whether a
+	// prepared suggestion is offered at all is the turn-owning service's
+	// decision, made against the draft the human handed over. A refused one is
+	// carried rather than dropped, because a human who asked for a better
+	// wording and got no card has to be able to read why.
+	Offered bool `json:"offered"`
+	// Reason is why it was not offered, in the words a human reads, and "" for
+	// one that was.
+	Reason string `json:"reason,omitempty"`
 }
 
 // The three outcomes a look can have.

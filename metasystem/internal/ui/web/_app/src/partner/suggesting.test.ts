@@ -3,23 +3,24 @@ import { describe, expect, it } from "vitest";
 import type { Suggestion } from "./api";
 import { draftOf, type Field } from "./drafting";
 import {
+  askLine,
   cardHead,
   cardIn,
   closedLine,
   folded,
   holding,
   idOf,
-  newestFor,
+  moreLabel,
   offeredIn,
   mintOpening,
+  proposalsFor,
   reach,
+  refusedLine,
   standingOf,
   undoable,
   undone,
   usable,
   used,
-  waitingFor,
-  waitingLabel,
   type Marks,
   type Offered,
   type Registered,
@@ -38,7 +39,12 @@ const OPENING = "opening-1";
 const SAID = "Every refund lands within a day, with nobody touching the queue.";
 
 function suggestion(over: Partial<Suggestion> = {}): Suggestion {
-  return { opening: OPENING, editor: "Edit goal", field: "Intent", text: SAID, ...over };
+  return { opening: OPENING, editor: "Edit goal", field: "Intent", text: SAID, offered: true, ...over };
+}
+
+/** One the service refused: no opening, and the reason in the human's words. */
+function refused(over: Partial<Suggestion> = {}): Suggestion {
+  return suggestion({ opening: "", offered: false, reason: "Intent is not open for proposals", ...over });
 }
 
 /** One sheet's registration, which records what was written into it. */
@@ -85,6 +91,38 @@ describe("a card's standing", () => {
     const card = cards({}, [])[0];
     expect(card.standing).toBe("closed");
     expect(closedLine(card)).toBe("The Edit goal sheet is closed");
+  });
+
+  /**
+   * Refused wins over everything, and it has to. A suggestion the service did not
+   * offer was never on the human's screen: it is not something they dismissed,
+   * used, or lost to a closing sheet, and every one of those cards offers a press
+   * that would be a press on nothing. What it owes them is the reason.
+   */
+  it("says nothing was offered, whatever else is true of it", () => {
+    const card = cards({}, [OPENING], refused())[0];
+    expect(card.standing).toBe("refused");
+    expect(refusedLine(card)).toBe("Intent is not open for proposals");
+    expect(standingOf({ previous: "was", holds: true, dismissed: true }, true, false)).toBe("refused");
+    expect(standingOf({ previous: null, holds: false, dismissed: false }, false, false)).toBe("refused");
+    // Nothing may be pressed on it, and it reaches no sheet: it carries no
+    // opening, so there is nowhere for the words to go.
+    expect(usable(card, [OPENING])).toBe(false);
+    expect(undoable(card, [OPENING])).toBe(false);
+    expect(reach(new Map(), card)).toBeNull();
+  });
+
+  it("says the draft was left out where that is why", () => {
+    const card = cards({}, [OPENING], refused({
+      reason: "the draft was left out; press Ask about this to hand it over again",
+    }))[0];
+    expect(refusedLine(card)).toBe("the draft was left out; press Ask about this to hand it over again");
+  });
+
+  // A record written before this build carries no reason, so the card says the
+  // one true thing that is left rather than an empty line.
+  it("still says something where a record carries no reason", () => {
+    expect(refusedLine(refused({ reason: "" }))).toBe("Intent was not offered");
   });
 });
 
@@ -192,8 +230,15 @@ describe("Undo", () => {
   });
 });
 
-describe("what a field says beside its label", () => {
-  it("counts the ones waiting for that field of that opening, and no others", () => {
+/**
+ * What stands under one field of one sheet.
+ *
+ * It is the whole of where g1-s52 moved the offer to: the words a human is
+ * deciding about render under the field they are for, so the block has to pick
+ * exactly that field's proposals, newest first, and nothing else's.
+ */
+describe("the proposals under a field", () => {
+  it("are that field's, of that opening, newest first", () => {
     const offers = [
       suggestion(),
       suggestion({ text: "A second wording." }),
@@ -201,26 +246,59 @@ describe("what a field says beside its label", () => {
       suggestion({ opening: "opening-2", text: "Another goal's intent." }),
     ];
     const offered = cards({}, [OPENING, "opening-2"], ...offers);
-    expect(waitingFor(offered, OPENING, "Intent")).toBe(2);
-    expect(waitingFor(offered, OPENING, "Next step")).toBe(1);
-    expect(waitingFor(offered, OPENING, "Labels")).toBe(0);
-    expect(waitingLabel(1)).toBe("1 suggestion");
-    expect(waitingLabel(2)).toBe("2 suggestions");
+    expect(proposalsFor(offered, OPENING, "Intent").map((card) => card.id)).toEqual([
+      idOf("t1", 1),
+      idOf("t1", 0),
+    ]);
+    expect(proposalsFor(offered, OPENING, "Next step").map((card) => card.text)).toEqual([
+      "Take it to an end state.",
+    ]);
+    expect(proposalsFor(offered, OPENING, "Labels")).toEqual([]);
+    expect(moreLabel(1)).toBe("1 more");
+    expect(moreLabel(3)).toBe("3 more");
   });
 
-  it("opens the drawer at the newest of them", () => {
-    const offered = cards({}, [OPENING], suggestion(), suggestion({ text: "A second wording." }));
-    expect(newestFor(offered, OPENING, "Intent")).toBe(idOf("t1", 1));
-    expect(newestFor(offered, OPENING, "Labels")).toBe("");
-  });
-
-  it("says nothing about a suggestion that was used, dismissed, or left by a closed sheet", () => {
+  /**
+   * Three standings belong here and three do not. A used one still stands, saying
+   * what happened and offering Undo while that is honest; a dismissed one does
+   * not, because folding it away was the human's own act; and one that was never
+   * offered does not, because it was refused for a field and belongs where the
+   * answer is read.
+   */
+  it("keep a used one and drop what the human folded away or was never offered", () => {
     const id = idOf("t1", 0);
-    expect(waitingFor(cards(used({}, id, "was")), OPENING, "Intent")).toBe(0);
-    expect(waitingFor(cards(folded({}, id, true)), OPENING, "Intent")).toBe(0);
-    expect(waitingFor(cards({}, []), OPENING, "Intent")).toBe(0);
-    // Undone, it waits again, and the field says so again.
-    expect(waitingFor(cards(undone(used({}, id, "was"), id)), OPENING, "Intent")).toBe(1);
+    expect(proposalsFor(cards(used({}, id, "was")), OPENING, "Intent")).toHaveLength(1);
+    expect(proposalsFor(cards(used({}, id, "was")), OPENING, "Intent")[0].standing).toBe("used");
+    // Typed over: it still stands, and it says the human's words stay.
+    const edited = holding(used({}, id, "was"), cards(used({}, id, "was")), OPENING, "Intent", "mine");
+    expect(proposalsFor(cards(edited), OPENING, "Intent")[0].standing).toBe("edited");
+    expect(proposalsFor(cards(folded({}, id, true)), OPENING, "Intent")).toEqual([]);
+    expect(proposalsFor(cards({}, [OPENING], refused()), OPENING, "Intent")).toEqual([]);
+    // Undone, it waits again, and the block offers it again.
+    expect(proposalsFor(cards(undone(used({}, id, "was"), id)), OPENING, "Intent")[0].standing).toBe(
+      "waiting",
+    );
+  });
+
+  // A closed opening cannot reach here at all: the sheet that would render the
+  // block is not on screen. The assertion is that it is filtered out anyway,
+  // because a block that trusted its caller would offer Use this into nothing.
+  it("drop a card whose sheet has closed", () => {
+    expect(proposalsFor(cards({}, []), OPENING, "Intent")).toEqual([]);
+  });
+});
+
+/**
+ * What the field's own link puts in the composer.
+ *
+ * An empty field is asked for at all rather than asked to be bettered: "a better
+ * Next step" is a strange thing to ask for a next step nobody has written.
+ */
+describe("Ask the Partner", () => {
+  it("asks for a better one where there is one, and for one at all where there is not", () => {
+    expect(askLine("Intent", "The board reads the ledger.")).toBe("Suggest a better Intent");
+    expect(askLine("Next step", "")).toBe("Suggest a Next step");
+    expect(askLine("Next step", "   ")).toBe("Suggest a Next step");
   });
 });
 

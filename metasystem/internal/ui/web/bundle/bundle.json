@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:7f478af9d1232de969fbeff6892bf21e2ceb33f223ef1396a30636c2db9fff07",
+  "sourceDigest": "sha256:975377b3caded43ca23514f7f32a54074fa9c1ea6c8d5311eb9b040750d33bdf",
   "source": [
     {
       "path": ".npmrc",
@@ -96,7 +96,7 @@
     },
     {
       "path": "src/backlog/ActSheet.tsx",
-      "sha256": "6ef0acc9dc2225396a9e1bdb6053c23e763512d611b9569b4c72b6056b080bc3"
+      "sha256": "c9fe2ed543f20a3c04ec530cb2e8e35ad3df8032d164465b20966945557eddb6"
     },
     {
       "path": "src/backlog/BacklogPane.tsx",
@@ -116,11 +116,11 @@
     },
     {
       "path": "src/backlog/EditSheet.test.tsx",
-      "sha256": "1699e0ee88f0a72410619c141d36ce10db96afc79e8ef728bcafbb381da64a1b"
+      "sha256": "1ca8737f471dbe1a56fd94a1745ee82f79c644345e4944000a95b869157c09d4"
     },
     {
       "path": "src/backlog/EditSheet.tsx",
-      "sha256": "55f5f6f83f247e934e91f2562d6aba7c797e831ac16095317477572eed836e32"
+      "sha256": "72b4a25b680801fd7f4c4030398d27b2a3f180e805b4131d6f365c102bc6fe6e"
     },
     {
       "path": "src/backlog/GoalRow.tsx",
@@ -136,7 +136,7 @@
     },
     {
       "path": "src/backlog/OpenSheet.tsx",
-      "sha256": "5591cbc22e2574de868af296715e32ed15100cb845f22d0010257736bf7b00ee"
+      "sha256": "fe5b2e1f9d440dfa757edc32cd96b372da8ab1cbefde9265a3a0c8024019c4ca"
     },
     {
       "path": "src/backlog/Panel.tsx",
@@ -296,7 +296,7 @@
     },
     {
       "path": "src/decisions/BulkSheet.tsx",
-      "sha256": "49921f6c282fa99b1856a626dad71f2beff187e926328150da345f85904a01d6"
+      "sha256": "c8f33a4190c28325f29ebf78d74651e5c65ee68bd708897dea7e8eb4534b36b0"
     },
     {
       "path": "src/decisions/DecisionsPane.test.tsx",
@@ -416,7 +416,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "5624a77b94639761a1d711a61fec9802befd61247a798d1fe4a5078867785607"
+      "sha256": "aab8ffa2b04ad78fec35ff7f001f1c8919df45afdee0f2ff56e3aa385f438a70"
     },
     {
       "path": "src/index.css",
@@ -532,11 +532,15 @@
     },
     {
       "path": "src/partner/AskSheet.tsx",
-      "sha256": "4cd0fe05943964cf9ee96b1f597466c5b0dacecb0d762b73d16168cfd18e4b96"
+      "sha256": "be8920219a8abfdad4fabdbbde81c0e3e25b545bc07342c951016ed2a3183013"
     },
     {
       "path": "src/partner/Chips.tsx",
       "sha256": "1aea9fc0846d230a8c5246982b7c5def7607dbae6f3e6d656f78ab9db944c046"
+    },
+    {
+      "path": "src/partner/FieldProposals.tsx",
+      "sha256": "a37093d72dfd571e087888e8e8545582afbce8e52b6fbe1b6d49840a3e4623d0"
     },
     {
       "path": "src/partner/FontControl.tsx",
@@ -556,7 +560,7 @@
     },
     {
       "path": "src/partner/Suggestion.tsx",
-      "sha256": "419ed1536c793cb262b330c5fe337daf3ec7fb7a616bd5e0baf425b738c32e53"
+      "sha256": "a6e1de8835890be0e28f34c7417a277ebfe126e6e04a9622a98418bd0894c673"
     },
     {
       "path": "src/partner/Transcript.tsx",
@@ -564,7 +568,7 @@
     },
     {
       "path": "src/partner/api.ts",
-      "sha256": "099b8bf853e47e25a8c04a0e398896780ebf2756bfe84bcecd66cc26b1b738ff"
+      "sha256": "40905b871b5d790eaf6bdde817868e9e3c6b428a64071f02b53124ca0b3024fc"
     },
     {
       "path": "src/partner/asking.test.ts",
@@ -576,7 +580,7 @@
     },
     {
       "path": "src/partner/attachments.test.ts",
-      "sha256": "3e2b7a2b195aa81b96de0cb3fc1d025d7ff04d06ff88797695514939e51156e9"
+      "sha256": "379098d2311d9437b4ba04337f557670fe80705a10d585a0bbc9a166f4a7ae06"
     },
     {
       "path": "src/partner/attachments.ts",
@@ -608,15 +612,19 @@
     },
     {
       "path": "src/partner/drafting.test.ts",
-      "sha256": "a3eda3c2125892cf8093e3b0c8cfc4a88fb4dfdd2780e28cb6d6cf0c5fe24706"
+      "sha256": "be940474a54a7166cc79beb58461cf5d8859e94a891a99e0f236304a006155f1"
     },
     {
       "path": "src/partner/drafting.ts",
-      "sha256": "053863d247942ccf3e3b6b9a9caedfb46dbb05aaa1f909055bd1a523dba2beea"
+      "sha256": "f680ae4a38c2488936a56fc48c5d4dbfbbc0e0f1a1b7510a618deaf27d5b23bc"
+    },
+    {
+      "path": "src/partner/handover.test.ts",
+      "sha256": "e6306b8f403cf5554669ce5a22e515bf92fe2328bd65cfdee6331ff1cd6715a3"
     },
     {
       "path": "src/partner/partner.css",
-      "sha256": "ee3276a54457fd08c6d088fd87215df130bcd69e89b8f45785c255b3d8febfda"
+      "sha256": "3cea1e737555e01d4d6fb8b75209660a3e5d92a95a9c351712d4ae497fb76b00"
     },
     {
       "path": "src/partner/references.test.ts",
@@ -636,7 +644,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "de2337590f5ecdf92ebd77bf6821a278c5977a0acb758124c9e40f30b3a9fc05"
+      "sha256": "4c569b013f92a13b9165fb37a72d9cc4417e950b8b4137ef1ae3db40e59dd42b"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -648,11 +656,11 @@
     },
     {
       "path": "src/partner/suggesting.test.ts",
-      "sha256": "10f6ea169368994c612dc201b6737af791d148a90d7c68edbf490294e84dd21f"
+      "sha256": "588d5946c89984aa24093b92e767e77e0427b72e18917a8558bda9c7af54985c"
     },
     {
       "path": "src/partner/suggesting.ts",
-      "sha256": "74dc8b95361d50957bfbf3f832b71cbd8deaa09c8afb2fc02a671ce5ce0c5391"
+      "sha256": "d9236a7014edbc602e3f1ce4842a4c44fb172ce894ac4cb5edd305f33ffe818f"
     },
     {
       "path": "src/partner/suggestions.ts",
@@ -669,6 +677,10 @@
     {
       "path": "src/partner/typeface.ts",
       "sha256": "42003abbf6d3017100e3df4eb0a99214615bf335bc0aa9a24d765f8fe9a101f0"
+    },
+    {
+      "path": "src/partner/writing.ts",
+      "sha256": "5179715c6fc48e9243abc09b8f7a28b966f16eebce7f932cc49fcea41fee3900"
     },
     {
       "path": "src/project/DocumentPane.tsx",
@@ -946,11 +958,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "5142da28137106b2a19768f93fe61d32097430663f4755e190533dfadc65adcf"
+      "sha256": "36290b7fa823982cc5bc1a614efc56b64a689c5f85372786ade925cb092654df"
     },
     {
       "path": "assets/index.js",
-      "sha256": "bbc2702d16dd1e5f5743e17305d91148827a8ec7705e8e704ed05242779f82db"
+      "sha256": "658a5507a8db20d0e00ea881da90274f84540fbb4281a14ef1d0867ac0994c7a"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
@@ -974,7 +986,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "0ddb5b77e7666f7e4b1377d82c1b3704608d0e33e762835da6f886c8376cdd4b"
+      "sha256": "3cbc6724cbc1ac02fc97f3eceae00798e93089ca4aea05b6f43b991070c25d6a"
     },
     {
       "path": "theme.js",

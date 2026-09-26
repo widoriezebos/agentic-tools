@@ -1027,13 +1027,27 @@
   color: var(--ms-text-2);
 }
 
+/* Nothing was offered: the reason first, then the words that were prepared, and
+   no press at all — there is nowhere to put them and nothing to fold away. */
+.ms-suggestion--refused {
+  border-style: dashed;
+}
+
+.ms-suggestion-refused {
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 /*
- * What a field says beside its label while suggestions wait for it.
+ * The link on a writable field's own label: "Ask the Partner".
  *
- * It never shows the words. A suggestion waits in the drawer and the field only
- * says one is there, which is the whole of what keeps the draft the human's.
+ * It is the entry, and it is on the field because that is where the human is
+ * when they want it. Pressing it writes the request into the composer and takes
+ * the caret there; nothing is sent.
  */
-.ms-field-suggestions {
+.ms-field-ask {
   padding: 0;
   border: 0;
   background: none;
@@ -1047,6 +1061,81 @@
   cursor: pointer;
 }
 
-.ms-field-suggestions:hover {
+.ms-field-ask:hover {
   color: var(--ms-accent-hover);
+}
+
+/*
+ * The proposal, under the field it is for, inside the sheet.
+ *
+ * This is where the words a human is deciding about belong. They used to arrive
+ * in the drawer, whose default height hides a card behind the composer: a human
+ * was told a card had been put on their sheet and saw nothing (g1-s52 §1). The
+ * accent edge marks it as the Partner's rather than the sheet's, and Use this
+ * puts the words in the field above it and stops — Save is at the foot of the
+ * same sheet, and it is the human's.
+ */
+.ms-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border);
+  border-inline-start: 2px solid var(--ms-accent);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-proposal-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* The words as the Partner wrote them, line breaks and all: a proposal for a
+   field is that field's whole new value, not a paragraph about it. */
+.ms-proposal-text {
+  margin: 0;
+  color: var(--ms-text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ms-proposal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-proposal-said {
+  color: var(--ms-text-3);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The earlier proposals for this field, behind one line: they are the record
+   rather than the offer, so the line opens the Partner's own column at them. */
+.ms-proposal-more {
+  margin-inline-start: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ms-text-3);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.ms-proposal-more:hover {
+  color: var(--ms-text-2);
 }

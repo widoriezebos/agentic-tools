@@ -104,6 +104,7 @@ describe("what replaces what", () => {
         { name: "Intent", value: "Refunds are issued within a day." },
       ],
       writable: [],
+      writing: "",
     });
     expect(list[3].content).toEqual(STATUS);
   });

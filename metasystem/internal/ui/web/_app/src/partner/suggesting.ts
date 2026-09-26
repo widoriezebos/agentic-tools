@@ -71,6 +71,24 @@ export function idOf(turn: string, at: number): string {
   return `${turn}#${String(at)}`;
 }
 
+/**
+ * The field in hand: which writable field last held the caret, and the opening it
+ * belongs to.
+ *
+ * The opening travels with it because a field's name alone would follow the human
+ * from one sheet to another: "Intent" is a field of the edit sheet and of the new
+ * goal sheet, and a caret remembered from one is not a caret in the other.
+ */
+export type InHand = { opening: string; field: string };
+
+/** Before any writable field has held the caret. */
+export const NOWHERE: InHand = { opening: "", field: "" };
+
+/** The field in hand for one opening, or "" where the caret is in another's. */
+export function writingIn(writing: InHand, opening: string): string {
+  return writing.opening === opening ? writing.field : "";
+}
+
 /** What the human has done with one suggestion. */
 export type Mark = {
   /**
@@ -95,11 +113,12 @@ export type Carried = { turn: string; suggestions: readonly Suggestion[] };
 /**
  * Where a card stands.
  *
- * Five standings and four cards: used and edited are one card saying two
+ * Six standings and five cards: used and edited are one card saying two
  * different things, because what changed is not the card but whether Undo would
- * still be honest.
+ * still be honest. Refused is the fifth card, and it is the only one that says
+ * nothing was offered at all.
  */
-export type Standing = "waiting" | "used" | "edited" | "dismissed" | "closed";
+export type Standing = "refused" | "waiting" | "used" | "edited" | "dismissed" | "closed";
 
 /** One card: the suggestion, what identifies it, and where it stands. */
 export type Offered = Suggestion & {
@@ -111,15 +130,22 @@ export type Offered = Suggestion & {
 };
 
 /**
- * Where one card stands, from its mark and whether its opening is still open.
+ * Where one card stands, from its mark, whether its opening is still open, and
+ * whether it was offered at all.
  *
- * The order is the order a human would read them in. Dismissed first: folding
- * the card was their own act, and an act of theirs is not undone by a sheet
- * closing. Closed next: a card whose editor has gone cannot offer Use this or
- * Undo, whatever was done with it, and offering either would be offering to
- * write into something that is not there. Then used, and then waiting.
+ * The order is the order a human would read them in. Refused first, and it wins
+ * over everything: a suggestion the service did not offer is not something the
+ * human dismissed, used or lost to a closing sheet — it never reached them, and
+ * the only true thing to say about it is why. Dismissed next: folding the card
+ * was their own act, and an act of theirs is not undone by a sheet closing.
+ * Closed after that: a card whose editor has gone cannot offer Use this or Undo,
+ * whatever was done with it, and offering either would be offering to write into
+ * something that is not there. Then used, and then waiting.
  */
-export function standingOf(mark: Mark, open: boolean): Standing {
+export function standingOf(mark: Mark, open: boolean, offered = true): Standing {
+  if (!offered) {
+    return "refused";
+  }
   if (mark.dismissed) {
     return "dismissed";
   }
@@ -140,7 +166,13 @@ export function offeredIn(carried: readonly Carried[], marks: Marks, open: reado
       const id = idOf(one.turn, at);
       const mark = marks[id] ?? WAITING;
       const standing = open.includes(suggestion.opening);
-      cards.push({ ...suggestion, id, open: standing, mark, standing: standingOf(mark, standing) });
+      cards.push({
+        ...suggestion,
+        id,
+        open: standing,
+        mark,
+        standing: standingOf(mark, standing, suggestion.offered),
+      });
     });
   }
   return cards;
@@ -152,26 +184,33 @@ export function cardIn(offered: readonly Offered[], id: string): Offered | undef
 }
 
 /**
- * How many suggestions are waiting for one field of one opening, which is what
- * the field says beside its label. A card that was used, dismissed or left
- * behind by a closed sheet is not waiting for anything.
+ * Every proposal standing under one field of one opening, newest first.
+ *
+ * It is what the block beside that field renders from, and it is why the drawer's
+ * height stopped mattering: the words the Partner offered belong where the human
+ * is writing, not in a column whose default height hides a card behind the
+ * composer (g1-s52 §1, D2).
+ *
+ * Three standings belong here and three do not. Waiting is the offer; used and
+ * edited are the same card still saying what happened and, while Undo is honest,
+ * offering it. Dismissed was the human folding it away, and a block that kept
+ * showing it would be refusing their act; closed cannot happen at all, because a
+ * closed opening is a sheet that is not on screen to render this; and refused was
+ * never offered for a field, so it belongs only where the answer is read.
  */
-export function waitingFor(offered: readonly Offered[], opening: string, field: string): number {
-  return watching(offered, opening, field).length;
-}
-
-/**
- * The newest card waiting for that field, which is the one the field's link
- * opens the drawer at, or "" where none is.
- */
-export function newestFor(offered: readonly Offered[], opening: string, field: string): string {
-  return watching(offered, opening, field).at(-1)?.id ?? "";
-}
-
-function watching(offered: readonly Offered[], opening: string, field: string): readonly Offered[] {
-  return offered.filter(
-    (card) => card.standing === "waiting" && card.opening === opening && card.field === field,
-  );
+export function proposalsFor(
+  offered: readonly Offered[],
+  opening: string,
+  field: string,
+): readonly Offered[] {
+  return offered
+    .filter(
+      (card) =>
+        card.opening === opening &&
+        card.field === field &&
+        (card.standing === "waiting" || card.standing === "used" || card.standing === "edited"),
+    )
+    .reverse();
 }
 
 /* --------------------------------------------------------- the four presses -- */
@@ -261,15 +300,46 @@ export function cardHead(card: Suggestion): string {
   return `Suggestion for ${card.field}`;
 }
 
+/** What the block beside a field heads itself with. */
+export const PROPOSES = "The Partner proposes";
+
+/** What a card heads itself with when nothing was offered at all. */
+export const NOT_OFFERED = "Not offered";
+
 /** What a closed editor's card says instead of offering Use this. */
 export function closedLine(card: Suggestion): string {
   return `The ${card.editor} sheet is closed`;
 }
 
-/** What the field says beside its label while suggestions wait for it. */
-export function waitingLabel(count: number): string {
-  return count === 1 ? "1 suggestion" : `${String(count)} suggestions`;
+/**
+ * Why nothing was offered, as the card says it: the service's own reason, and a
+ * plain sentence where a record written before this build carries none.
+ */
+export function refusedLine(card: Suggestion & { reason?: string }): string {
+  const said = (card.reason ?? "").trim();
+  return said === "" ? `${card.field} was not offered` : said;
 }
+
+/** What stands under a proposal while older ones for that field are behind it. */
+export function moreLabel(count: number): string {
+  return `${String(count)} more`;
+}
+
+/**
+ * What the field's own link puts in the composer: a request for that field, in
+ * the words a human would have typed.
+ *
+ * A field with something in it is asked to be bettered; an empty one is asked
+ * for at all, because "a better Next step" is a strange thing to ask for a next
+ * step nobody has written. It is put in the composer and not sent: the request
+ * is still the human's to finish (g1-s52 D4).
+ */
+export function askLine(field: string, value: string): string {
+  return value.trim() === "" ? `Suggest a ${field}` : `Suggest a better ${field}`;
+}
+
+/** The field's own link, which is one name in one place. */
+export const ASK_THE_PARTNER = "Ask the Partner";
 
 /** Why Undo is gone: the human typed, and what they typed stands. */
 export const EDITED_SINCE = "edited since; your words stay";
