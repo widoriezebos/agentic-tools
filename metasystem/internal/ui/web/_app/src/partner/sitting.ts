@@ -332,16 +332,28 @@ export function outcomeFoot(entry: Entry): string {
   return `- ${FROM_THE_SITTING}${DOT}${entry.when}${DOT}${entry.who} ${markOf(entry.mark).trim()}`;
 }
 
-/** Where the record's Outcome section stands, or null where it has none. */
+/**
+ * Where the record's Outcome section stands, or null where it has none.
+ *
+ * It ends at the next heading of its own level or higher — never at a deeper
+ * one — because an outcome is prose and prose carries sub-headings: the Partner
+ * drafts the constraints and what was left open under their own "### " lines,
+ * and a section cut at the first of them would leave the attribution foot
+ * outside the section this reads. Which would say the outcome was never
+ * recorded, and leave the tail of the old one under its sub-heading when the
+ * next close replaced it.
+ */
 function outcomeAt(lines: readonly string[]): { at: number; end: number } | null {
   for (let index = 0; index < lines.length; index += 1) {
-    const heading = /^#{1,6}\s+(.*)$/.exec(lines[index]);
-    if (heading === null || heading[1].trim() !== OUTCOME) {
+    const heading = /^(#{1,6})\s+(.*)$/.exec(lines[index]);
+    if (heading === null || heading[2].trim() !== OUTCOME) {
       continue;
     }
+    const level = heading[1].length;
     let end = lines.length;
     for (let after = index + 1; after < lines.length; after += 1) {
-      if (/^#{1,6}\s+/.test(lines[after])) {
+      const next = /^(#{1,6})\s+/.exec(lines[after]);
+      if (next !== null && next[1].length <= level) {
         end = after;
         break;
       }

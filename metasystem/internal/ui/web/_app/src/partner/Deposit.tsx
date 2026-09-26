@@ -271,13 +271,18 @@ export function DepositCard({ id }: { id: string }) {
  * the Partner's own words, with the consequence it attached. Neither is the case:
  * a case lands on no pile by itself, and a case dismissed leaves nothing behind.
  *
+ * Which is the third press, and it is here because a case the human has no answer
+ * to and no wish to leave open has to be able to go: a card offering only the two
+ * answers would keep asking for one of them. Dismissed, it folds to the line every
+ * dismissed card folds to and writes nothing — there is nothing to undo.
+ *
  * Both write through the one serialized recorder, against the one reading of the
  * record, exactly as every other press does — and both mark the entry with this
  * card, so the record says which deposit it came from and neither press can be
  * made twice.
  */
 function CaseCard({ card }: { card: Card }) {
-  const { recordDeposit } = usePartner();
+  const { recordDeposit, dismissDeposit } = usePartner();
   const [deciding, setDeciding] = useState(false);
   const inFlight = card.mark.recording;
   return (
@@ -322,6 +327,13 @@ function CaseCard({ card }: { card: Card }) {
               }}
             >
               {LEAVE_OPEN}
+            </Button>
+            <Button
+              onClick={() => {
+                dismissDeposit(card.id);
+              }}
+            >
+              Dismiss
             </Button>
           </>
         )}
