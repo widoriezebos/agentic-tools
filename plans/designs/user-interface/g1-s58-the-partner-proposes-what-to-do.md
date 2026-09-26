@@ -1025,5 +1025,6 @@ abandoned one, whatever the pairs. Folded as the textbook mechanism:
 the entry carries a version that every admitted write increments and
 every press must present; `from` is withdrawn, the two-write retry is
 withdrawn, and Try again on an in-flight line is one exclusive write
-again. The builder was told in the same words; Astra walks the same
-three races against it in a last one-point read.
+again. The builder was told in the same words; Astra walked the same
+three races against it in a last one-point read and confirmed it,
+"build as written": one admitted write per version.

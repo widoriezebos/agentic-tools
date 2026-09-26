@@ -144,3 +144,31 @@ Every write is serialized, matches `from`, and changes state. Neither receives a
 **Test 2 — works and is safe without correction: no.** Two ordinary tabs can send the same approval twice, within the stated threat model. The design explicitly notes that duplicate approval creates two records.
 
 VERDICT: 1 folds not confirmed: S60-06
+
+---
+
+# Astra's last one-point read: the version on the entry (revision 5, g1-s58 revision 12)
+
+Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic chain, against `20ed605c6`. Verbatim.
+
+---
+
+**confirmed — S60-06.** Both designs' latest commits are `20ed605c6` on `ui-development`. D6 now compares and increments the persisted version inside the serialized writer; the payload carries that version.
+
+For each race, both presses captured version `v`:
+
+1. **Two-tab Try again on abandoned `applying`.** A's `applying → applying` succeeds and increments the version to `v+1`; A sends one act. B's version `v` fails, regardless of the current state. B sends nothing and renders the returned entry: `applying` stops its run with Continue offered; a later outcome is shown and handled according to its state.
+
+2. **Two-tab Apply on `waiting`.** A's `waiting → applying` succeeds at `v`, producing `v+1`, and sends one act. B's stale version fails. B sends nothing and reconciles exactly as above. Returning to an earlier state cannot restore version `v`.
+
+3. **Try again racing Dismiss.** If Dismiss wins, it records `dismissed, v+1`; retry fails, so **zero acts** are sent. The losing retry tab shows dismissed, and its inbox row disappears on reconciliation. If retry wins, it records `applying, v+1` and sends **one act**; Dismiss fails and shows the current entry. An in-flight entry stops that run with Continue offered. These conflict rules are explicit in g1-s60 D5.
+
+**Any two presses:** on the same rendered version, they cannot both send an act, in any state. Two presses using different rendered versions can send separate attempts through an explicit retry; that is the manual recovery the design permits. The guarantee is one admitted write per version.
+
+**Nonterminal states:** none is stranded. `waiting`, `refused`, and `unresolved` permit Apply/Try again or Dismiss; `applying` permits Try again or Dismiss. Each admitted write advances the version.
+
+**Test 1:** no remaining implementation-changing defect in this fold; the version removes the demonstrated stale-retry admission.
+
+**Test 2:** yes—the scoped races work and are safe without another correction.
+
+VERDICT: confirmed; build as written

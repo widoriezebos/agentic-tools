@@ -272,4 +272,8 @@ parent's revision 12:
 |---|---|---|
 | S60-06 | with any pair table, a line back at `applying` lets a stale `from: applying` pass again | the entry carries a version that every admitted write increments and every press presents; `from` and the two-write retry are withdrawn; Try again on an in-flight line is one exclusive write (D3, D5, g1-s58 D6) |
 
-A last one-point read walks the same three races against the version.
+A last one-point read walked the same three races against the version
+and confirmed it, "build as written": one admitted write per version,
+so no two presses on one rendered entry can both send an act, in any
+state, and no non-terminal state is stranded. The design is closed,
+read whole by the critic; it builds after g1-s58 step 1 lands.
