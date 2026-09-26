@@ -141,6 +141,14 @@ type Service struct {
 	// session is given this moment instead, so the Partner knows how old its
 	// map is without being handed a new one that would look current.
 	indexedAt time.Time
+	// opened says that a session was started outside a turn — by Admits, which
+	// asks the runtime whether a sitting could be opened at all before anything
+	// is created for it — and has been given no prompt yet. The turn that
+	// follows is therefore still that session's first, and is given how to
+	// answer here and the map of the project's memory. Without it, asking
+	// whether the runtime is there would silently cost the next turn its
+	// instructions.
+	opened bool
 }
 
 // turn is the running turn's state, which the snapshot reads and the events
@@ -361,6 +369,12 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 		s.mu.Unlock()
 		return "", ErrBusy
 	}
+	// A session opened outside a turn has been given no prompt, so this turn is
+	// its first however Ready answered just now.
+	if s.opened {
+		fresh = true
+		s.opened = false
+	}
 	id := mintTurn()
 	running := &turn{id: id, human: human, key: key, page: page, done: make(chan struct{})}
 	s.current = running
@@ -510,6 +524,51 @@ func notOffered(draft *Draft, field string) string {
 const noSitting = "no sitting is open, so there is no record to offer this to; " +
 	"start a sitting from the record you are working on"
 
+// admitsPurpose is the one place that says which sittings this build offers.
+//
+// It is a function of its own because two callers need the same answer at two
+// moments: Sit, which will not open a sitting this build has no moves for, and
+// Admits, which is asked BEFORE a draft record is created for one.
+func admitsPurpose(purpose string) error {
+	if purpose != PurposeShapeIntent && purpose != PurposeShapeDesign {
+		return fmt.Errorf(
+			"a sitting is for %q or %q; review and learning sittings are not in this build",
+			PurposeShapeIntent, PurposeShapeDesign)
+	}
+	return nil
+}
+
+// Admits says whether a sitting for this purpose could be opened at all, and
+// creates nothing.
+//
+// Sol's third finding: the route created the draft record a sitting was started
+// on before anything had judged the purpose or asked the runtime whether it could
+// take a turn. A purpose this build does not offer, or a runtime that is not
+// installed, therefore left a record in the project that nobody asked for, that
+// no sitting names, and that the human was never told about. So the two things
+// that can be asked without writing anything are asked here first.
+//
+// Admitting the runtime starts its process, which is what makes the answer worth
+// having: "not installed" and "not signed in" are only knowable by asking it. The
+// session it opens is remembered as one nothing has been said in yet, so the turn
+// that follows is still that session's first and is given how to answer here and
+// the map of the project's memory.
+func (s *Service) Admits(ctx context.Context, purpose string) error {
+	if err := admitsPurpose(strings.TrimSpace(purpose)); err != nil {
+		return err
+	}
+	fresh, err := s.host.Ready(ctx)
+	if err != nil {
+		return err
+	}
+	if fresh {
+		s.mu.Lock()
+		s.opened = true
+		s.mu.Unlock()
+	}
+	return nil
+}
+
 // Sit opens a sitting on one record and asks the Partner the opening question.
 //
 // The order is the whole of what this owes a human. The purpose and the subject
@@ -526,11 +585,10 @@ func (s *Service) Sit(ctx context.Context, human string, subject Subject, purpos
 	subject.Kind = strings.TrimSpace(subject.Kind)
 	subject.ID = strings.TrimSpace(subject.ID)
 	subject.Title = strings.TrimSpace(subject.Title)
+	if err := admitsPurpose(purpose); err != nil {
+		return Sitting{}, err
+	}
 	switch {
-	case purpose != PurposeShapeIntent && purpose != PurposeShapeDesign:
-		return Sitting{}, fmt.Errorf(
-			"a sitting is for %q or %q; review and learning sittings are not in this build",
-			PurposeShapeIntent, PurposeShapeDesign)
 	case subject.Kind != SubjectRecord:
 		return Sitting{}, errors.New("a sitting is about one record of this project, and nothing else yet")
 	case subject.ID == "":

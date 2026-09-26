@@ -49,15 +49,17 @@ import {
   type Registered,
 } from "./suggesting";
 import { keyFor } from "./asking";
-import { recorder, type Reading, type Recorder } from "./recording";
+import { movesTheTable, recorder, type Reading, type Recorder } from "./recording";
 import {
   cardIn as depositIn,
   cardsIn as depositsIn,
   countsIn,
+  editable,
   entriesIn,
   entryOf,
   marked,
-  missing,
+  NOT_READ_YET,
+  recordedIn,
   type Card as DepositCard,
   type Counts,
   type Entry,
@@ -279,10 +281,11 @@ type Partner = {
 
   /**
    * Every deposit this conversation carries, oldest first, each with where it
-   * stands. The card on the transcript is rendered from this one list.
+   * stands against the sitting now standing and the record as it now reads. The
+   * card on the transcript is rendered from this one list.
    */
   deposits: readonly DepositCard[];
-  /** The words of one card, as the human now has them. */
+  /** The words of one card, while they are still the human's to change. */
   editDeposit: (id: string, text: string) => void;
   /** The clause of one card: its anchor, its reason or its consequence. */
   editClause: (id: string, clause: string) => void;
@@ -292,6 +295,10 @@ type Partner = {
    * the reading from what the write answered. Presses are serialized: two in a
    * row land both entries, and two at once land both in the order they were
    * pressed.
+   *
+   * It writes only into the record the card was offered against, and only while
+   * that is the record this sitting is on: a card left standing by a sitting that
+   * has ended is not a way into the next sitting's record.
    */
   recordDeposit: (id: string) => void;
   /** Dismiss: the card folds to one line. */
@@ -887,9 +894,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    */
   const subjectID = sitting?.subject.id ?? "";
   useEffect(() => {
+    // The old sitting's recorder and reading go before the new one's is asked
+    // for, not when it arrives: a table that went on showing A's entries under
+    // B's chip would be showing a human a record they are not sitting on, and a
+    // press composed from A's reading is exactly what must not reach B.
+    recording.current = null;
+    setReading(null);
     if (subjectID === "") {
-      recording.current = null;
-      setReading(null);
       return;
     }
     let alive = true;
@@ -971,8 +982,10 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
           { turn: store.live.turn, deposits: store.live.deposits },
         ],
         depositMarks,
+        subjectID,
+        recordedIn(reading?.source ?? ""),
       ),
-    [store.messages, store.live.turn, store.live.deposits, depositMarks],
+    [store.messages, store.live.turn, store.live.deposits, depositMarks, subjectID, reading],
   );
 
   const changeMark = useCallback(
@@ -988,18 +1001,39 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     [deposits],
   );
 
+  /**
+   * The words of one card, where they are still the human's to change.
+   *
+   * A card whose press is in flight is frozen: the entry the press composed is
+   * the entry the record takes, and a field that went on accepting keystrokes
+   * through the write let a human watch the card say "recorded" over words it
+   * never carried (Sol's fifth finding). The field itself is read-only while the
+   * press runs; this is the same rule where the state is kept, so nothing else
+   * can write past it.
+   */
+  const changeWords = useCallback(
+    (id: string, change: (mark: DepositMarks[string]) => DepositMarks[string]) => {
+      const card = depositIn(deposits, id);
+      if (card === undefined || !editable(card.standing)) {
+        return;
+      }
+      changeMark(id, change);
+    },
+    [deposits, changeMark],
+  );
+
   const editDeposit = useCallback(
     (id: string, text: string) => {
-      changeMark(id, (mark) => ({ ...mark, text, refusal: "" }));
+      changeWords(id, (mark) => ({ ...mark, text, refusal: "" }));
     },
-    [changeMark],
+    [changeWords],
   );
 
   const editClause = useCallback(
     (id: string, clause: string) => {
-      changeMark(id, (mark) => ({ ...mark, clause, refusal: "" }));
+      changeWords(id, (mark) => ({ ...mark, clause, refusal: "" }));
     },
-    [changeMark],
+    [changeWords],
   );
 
   const dismissDeposit = useCallback(
@@ -1019,11 +1053,19 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   /**
    * Record it.
    *
-   * The card that is pressed must be admitted, must still need nothing, and must
-   * not already be in flight — a second press of one card is one entry, not two.
+   * The card that is pressed must be waiting — admitted, needing nothing, not
+   * already in flight, not already in the record, and offered against the record
+   * this sitting is on. That last one is Sol's first finding: the press used to
+   * ask only whether the card was offered, so a card left on the transcript by a
+   * sitting that had ended wrote its words into whatever record the next sitting
+   * was about. The recorder is asked for the same record by name, so the gate
+   * holds even if a press gets past the card.
+   *
    * Everything else is the recorder's: the entry is composed from the reading as
    * it stands when the press runs, the write goes under that reading's revision,
-   * and the reading is refreshed from what the write answered.
+   * and the reading is refreshed from what the write answered — unless the
+   * sitting has moved on since, in which case that answer is about another
+   * record and no table on screen is its.
    *
    * A conflict keeps the card exactly as the human has it and says so; pressing
    * again is one more press, now against the record the reread brought back.
@@ -1031,17 +1073,22 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const recordDeposit = useCallback(
     (id: string) => {
       const card = depositIn(deposits, id);
-      const held = recording.current;
-      if (card === undefined || held === null || !card.offered) {
+      if (card === undefined || card.standing !== "waiting") {
         return;
       }
-      if (card.mark.recording || card.mark.recorded !== "" || missing(card.kind, card.mark) !== "") {
+      const into = card.subject?.id ?? "";
+      const held = recording.current;
+      // No reading of this record yet: a sitting's opening turn can be answered
+      // before this page has read the record it is on. Nothing is composed from
+      // no reading, and the card says so rather than doing nothing.
+      if (held === null || held.reading().id !== into) {
+        changeMark(id, (mark) => ({ ...mark, refusal: NOT_READ_YET }));
         return;
       }
       changeMark(id, (mark) => ({ ...mark, recording: true, refusal: "" }));
       const entry = entryOf(card, nameOf(store.human), stampOf(new Date()));
-      void held.press(entry, card.kind).then((outcome) => {
-        if (outcome.kind !== "failed") {
+      void held.press(entry, card.kind, into).then((outcome) => {
+        if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
           setReading(outcome.reading);
         }
         setDepositMarks((marks) => {

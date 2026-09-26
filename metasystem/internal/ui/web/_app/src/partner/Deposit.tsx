@@ -6,6 +6,8 @@ import {
   cardIn,
   clauseOf,
   DISMISSED,
+  editable,
+  elsewhereLine,
   missing,
   NOT_OFFERED,
   notOfferedLine,
@@ -14,6 +16,7 @@ import {
   recordedLine,
   sectionOf,
 } from "./sitting";
+import { Copy } from "./Suggestion";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 import "./sitting.css";
@@ -36,7 +39,30 @@ import "./sitting.css";
  * And a press the record refused because it had moved keeps every word the human
  * typed and offers Record it again against the record as it now stands — nothing
  * is written, and nothing of theirs is lost.
+ *
+ * Two of the states came from Sol's read. A card offered to another record — the
+ * sitting it belonged to ended, or moved on — offers no press at all, because
+ * the press it used to offer wrote its words into whichever record the sitting
+ * was now about; what is left to do with it is copy the words. And the two
+ * fields are frozen while the press is in flight, because the entry the press
+ * composed is the entry the record takes, and a field that kept accepting
+ * keystrokes through the write let the card say "recorded" over words the record
+ * never carried.
  */
+/**
+ * The words to copy from a card nobody can record here: the entry, and its one
+ * clause where it has one, labelled as the card labelled it.
+ *
+ * Both, because the clause is half of what the card was: a decision without its
+ * reason and a fact without its anchor are exactly the entries a sitting refuses
+ * to record, so handing a human only the words would hand them the half that
+ * cannot be recorded again.
+ */
+export function copyable(text: string, clause: string, label: string): string {
+  const said = clause.trim();
+  return said === "" ? text : `${text}\n${label}: ${said}`;
+}
+
 export function DepositCard({ id }: { id: string }) {
   const { deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit } = usePartner();
   const card = cardIn(deposits, id);
@@ -64,6 +90,28 @@ export function DepositCard({ id }: { id: string }) {
     );
   }
 
+  // Offered to another record: the sitting it belonged to ended, or the human is
+  // sitting on something else now. There is nothing here to press — its words
+  // are not this record's — so the card says which record it was for and offers
+  // the words to copy.
+  if (card.standing === "elsewhere") {
+    return (
+      <div className="ms-deposit ms-deposit--elsewhere" data-deposit={id} data-kind={card.kind}>
+        <p className="ms-deposit-head">
+          <span>{cardHead(card.kind)}</span>
+          <Help id="deposit" />
+        </p>
+        <p className="ms-deposit-reason" role="status">
+          {elsewhereLine(card)}
+        </p>
+        <p className="ms-deposit-text">{card.mark.text}</p>
+        <div className="ms-deposit-foot">
+          <Copy text={copyable(card.mark.text, card.mark.clause, clauseOf(card.kind))} />
+        </div>
+      </div>
+    );
+  }
+
   if (card.standing === "dismissed") {
     return (
       <button
@@ -82,6 +130,10 @@ export function DepositCard({ id }: { id: string }) {
   const recorded = card.standing === "recorded";
   const clause = clauseOf(card.kind);
   const needs = missing(card.kind, card.mark);
+  // Frozen for the press in flight, and read-only rather than disabled: the
+  // words are still what the human wrote and still there to be read, they are
+  // just no longer theirs to change until the record has answered.
+  const frozen = !editable(card.standing);
   return (
     <div className="ms-deposit" data-deposit={id} data-kind={card.kind}>
       <p className="ms-deposit-head">
@@ -112,6 +164,7 @@ export function DepositCard({ id }: { id: string }) {
             className="ms-deposit-field"
             rows={3}
             value={card.mark.text}
+            readOnly={frozen}
             onChange={(event) => {
               editDeposit(id, event.target.value);
             }}
@@ -125,6 +178,7 @@ export function DepositCard({ id }: { id: string }) {
             type="text"
             value={card.mark.clause}
             placeholder={clause === "Anchor" ? "where it can be checked" : ""}
+            readOnly={frozen}
             onChange={(event) => {
               editClause(id, event.target.value);
             }}

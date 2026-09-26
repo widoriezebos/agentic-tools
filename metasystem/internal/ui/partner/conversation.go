@@ -3,9 +3,13 @@ package partner
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +46,12 @@ import (
 // proves neither grant reaches it by reading the grants themselves. The formats
 // are unchanged: the same JSON line per message, the same small state file
 // beside it.
+//
+// A conversation written before that move is carried into the new place by Carry
+// below, on the first open of a workspace's directory. Moving where a store is
+// read from without moving what is already in it would have left a human with an
+// empty history and the old files still inside the checkout, which is the whole
+// of what the move was for.
 
 // Owner is this store's own directory under the account's registry home. It is
 // the interface's agent and not the steward's, which is what the name says.
@@ -55,6 +65,167 @@ func Home() (string, error) { return uihome.Home() }
 // Directory is where one workspace's conversations live under that home.
 func Directory(home, checkout string) string {
 	return uihome.Under(home, Owner, checkout)
+}
+
+// LegacyRelative is where a checkout kept its Partner conversations before the
+// store moved out of it: under the state root, in the agents' own artifacts
+// directory, one directory deeper. Carry is the only thing that reads it.
+const LegacyRelative = "artifacts/agents/ui/partner"
+
+// Carry brings a conversation written before the store moved out of the checkout
+// into the directory the store now keeps it in.
+//
+// Sol's second finding: the move (D11) changed where the conversation is written
+// and read, and nothing brought the one already written. A human who had talked
+// to the Partner opened the new build and found an empty history — while the old
+// files stayed inside the checkout, which is the one place this move exists to
+// keep them out of. An empty transcript is not a smaller problem than a refusal:
+// it is the same private material, still readable by a critic, with nothing on
+// screen to say so.
+//
+// What it does, and when:
+//
+//   - Nothing at all where the old place is absent. On a machine where the files
+//     were already carried by hand this is the whole of it, and it must cost
+//     nothing to say so.
+//   - Nothing where this workspace's new directory already holds a conversation
+//     file. The carry is for the FIRST open of that directory; a directory that
+//     already holds a transcript, a state file or a wire journal is a store in
+//     use, and a carry into it would be this function deciding which of two
+//     conversations is the real one.
+//   - Otherwise every conversation file of the old place moves — a move, so
+//     nothing private is left behind in the checkout — and a name the new place
+//     has already taken refuses the whole carry before anything is moved, rather
+//     than being written over.
+//
+// It answers how many files it moved, and an error the caller reports as the
+// reason the Partner is not served. Serving an empty history instead would be
+// the finding again in a quieter form.
+func Carry(directory, was string) (int, error) {
+	old, err := os.ReadDir(was)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("the Partner's earlier conversation at %s could not be read: %w", was, err)
+	}
+	taking := []string{}
+	for _, entry := range old {
+		if entry.IsDir() || !conversationFile(entry.Name()) {
+			continue
+		}
+		taking = append(taking, entry.Name())
+	}
+	if len(taking) == 0 {
+		return 0, nil
+	}
+	sort.Strings(taking)
+
+	held, err := os.ReadDir(directory)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return 0, fmt.Errorf("the Partner's conversation directory at %s could not be read: %w", directory, err)
+	}
+	for _, entry := range held {
+		if !entry.IsDir() && conversationFile(entry.Name()) {
+			return 0, nil
+		}
+	}
+	// Every name is checked before anything moves: a carry that refused halfway
+	// would leave one conversation in two places, which is worse than not having
+	// started. The names that reach this are names no conversation file of the
+	// new place holds, so what takes one is something else standing in the way.
+	for _, name := range taking {
+		if _, err := os.Lstat(filepath.Join(directory, name)); err == nil {
+			return 0, fmt.Errorf(
+				"the Partner's earlier conversation cannot be carried out of the checkout: %s already exists at %s, and this will not write over it",
+				name, directory)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return 0, fmt.Errorf("%s could not be looked for at %s: %w", name, directory, err)
+		}
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return 0, fmt.Errorf("the Partner's conversation directory could not be made: %w", err)
+	}
+	moved := 0
+	for _, name := range taking {
+		if err := carryOne(filepath.Join(was, name), filepath.Join(directory, name)); err != nil {
+			return moved, err
+		}
+		moved++
+	}
+	// The old directory goes where it is empty, so the checkout is left without
+	// even the shape of a store it no longer holds. Anything else in it — a file
+	// a newer build wrote, a directory — keeps it, and that is not a failure.
+	_ = os.Remove(was)
+	return moved, nil
+}
+
+// conversationFile reports whether one name in a conversation directory is part
+// of the conversation: a human's transcript or state file, the unnamed seat's
+// pair, or the wire journal.
+//
+// It is recognised by the extension rather than by a list of names, because two
+// of the four carry a human's own handle and this runs before any human has
+// asked this server for anything.
+func conversationFile(name string) bool {
+	switch filepath.Ext(name) {
+	case ".json", ".jsonl":
+		return true
+	}
+	return false
+}
+
+// carryOne moves one file, and never over another.
+//
+// A link and an unlink rather than a rename: a rename writes over whatever is at
+// the name it is given, and this is carrying private material into a directory
+// this process does not own alone. The two places can be on different
+// filesystems — the checkout is anywhere and the account's home is under the
+// account — so a link that cannot cross falls back to a copy that refuses to
+// create a file that exists, and the original goes only once the copy is whole.
+func carryOne(from, to string) error {
+	if err := os.Link(from, to); err == nil {
+		if err := os.Remove(from); err != nil {
+			// The copy is whole but the original is still in the checkout, which
+			// is the one thing this must not leave behind. So the copy goes and
+			// the next open tries again.
+			_ = os.Remove(to)
+			return fmt.Errorf("%s could not be removed from the checkout after being carried out of it: %w", from, err)
+		}
+		return nil
+	}
+	if err := copyOne(from, to); err != nil {
+		return err
+	}
+	if err := os.Remove(from); err != nil {
+		_ = os.Remove(to)
+		return fmt.Errorf("%s could not be removed from the checkout after being carried out of it: %w", from, err)
+	}
+	return nil
+}
+
+// copyOne writes one file into a name nothing holds, at the mode this store
+// keeps: one account's own, and no other's.
+func copyOne(from, to string) error {
+	source, err := os.Open(from)
+	if err != nil {
+		return fmt.Errorf("%s could not be read: %w", from, err)
+	}
+	defer func() { _ = source.Close() }()
+	target, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("%s could not be written: %w", to, err)
+	}
+	if _, err := io.Copy(target, source); err != nil {
+		_ = target.Close()
+		_ = os.Remove(to)
+		return fmt.Errorf("%s could not be carried to %s: %w", from, to, err)
+	}
+	if err := target.Close(); err != nil {
+		_ = os.Remove(to)
+		return fmt.Errorf("%s could not be written: %w", to, err)
+	}
+	return nil
 }
 
 // The two roles a message can have.

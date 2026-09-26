@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import type { Deposit } from "./api";
+import { draftOf, PartnerError, type Deposit } from "./api";
 import {
   appended,
   cardsIn,
   clauseFrom,
   countsIn,
+  draftMadeLine,
+  editable,
+  ELSEWHERE,
+  elsewhereLine,
   entriesIn,
   entryOf,
   lineOf,
   marked,
   missing,
+  recordedIn,
   sectionOf,
   standingOf,
   type Entry,
@@ -33,6 +38,7 @@ const ENTRY: Entry = {
   text: "the mobile client renews the session differently from the web one",
   clause: "internal/session/session.go:212",
   section: "Facts",
+  mark: "",
 };
 
 describe("one entry of a section", () => {
@@ -101,6 +107,7 @@ describe("the record's four sections", () => {
       text: "the limit is twelve hours",
       clause: "plans/intent/sessions.md",
       section: "Facts",
+      mark: "",
     });
     expect(entries[1].section).toBe("Decisions");
     expect(entries[1].clause).toBe("a page nobody touched is not a session in use");
@@ -126,6 +133,35 @@ describe("the record's four sections", () => {
     const read = entriesIn(written);
     expect(read).toHaveLength(1);
     expect(read[0]).toEqual(ENTRY);
+  });
+
+  /**
+   * Sol's fourth finding: the identity of the deposit an entry was recorded from
+   * is written into the entry, so a reload can tell an entry the record already
+   * carries from a card offering to write one.
+   *
+   * It is written at the end of the line, and the reader takes it off again, so
+   * the words the table shows are the words and not the bookkeeping.
+   */
+  it("carry the deposit they were recorded from, and give its words back without it", () => {
+    const written = appended("## Facts\n", { ...ENTRY, mark: "deposit:t1#0" }, "fact");
+    expect(written).toContain("differently from the web one [d:deposit:t1#0]\n");
+
+    const read = entriesIn(written);
+    expect(read[0].mark).toBe("deposit:t1#0");
+    expect(read[0].text).toBe(ENTRY.text);
+    expect(read[0].clause).toBe(ENTRY.clause);
+
+    const held = recordedIn(written);
+    expect(held.get("deposit:t1#0")?.section).toBe("Facts");
+    expect(held.get("deposit:t1#0")?.text).toBe(ENTRY.text);
+    expect(held.has("deposit:t1#1")).toBe(false);
+  });
+
+  it("carry no mark where a human wrote the line, and are read all the same", () => {
+    const byHand = "## Facts\n\n- 2026-09-26 · Wido · a line somebody typed\n";
+    expect(entriesIn(byHand)[0].mark).toBe("");
+    expect(recordedIn(byHand).size).toBe(0);
   });
 });
 
@@ -196,8 +232,18 @@ describe("appending one entry", () => {
 
 /* ------------------------------------------------------------- the card -- */
 
+/** The record the sitting below is on, and what every card is stamped with. */
+const SUBJECT = "plans/designs/sessions.md";
+
 function offered(over: Partial<Deposit> = {}): Deposit {
-  return { kind: "fact", text: "the limit is twelve hours", anchor: "a.md", offered: true, ...over };
+  return {
+    kind: "fact",
+    text: "the limit is twelve hours",
+    anchor: "a.md",
+    subject: { kind: "record", id: SUBJECT, title: "Session limits" },
+    offered: true,
+    ...over,
+  };
 }
 
 describe("a deposit card", () => {
@@ -214,36 +260,41 @@ describe("a deposit card", () => {
   it("refuses Record it for a decision with no reason and a fact with no anchor", () => {
     const decision = offered({ kind: "decision", reason: "" });
     expect(missing("decision", marked(decision))).toContain("the reason you gave");
-    expect(standingOf(decision, marked(decision))).toBe("blocked");
+    expect(standingOf(decision, marked(decision), SUBJECT)).toBe("blocked");
     expect(missing("decision", { ...marked(decision), clause: "it counts from last activity" })).toBe("");
 
     const fact = offered({ anchor: "" });
     expect(missing("fact", marked(fact))).toContain("anchored where it can be checked");
-    expect(standingOf(fact, marked(fact))).toBe("blocked");
+    expect(standingOf(fact, marked(fact), SUBJECT)).toBe("blocked");
     expect(missing("fact", { ...marked(fact), clause: "session.go:212" })).toBe("");
   });
 
   it("needs neither for an open question, and always needs words", () => {
     const question = offered({ kind: "question", anchor: "", consequence: "" });
     expect(missing("question", marked(question))).toBe("");
-    expect(standingOf(question, marked(question))).toBe("waiting");
+    expect(standingOf(question, marked(question), SUBJECT)).toBe("waiting");
     expect(missing("question", { ...marked(question), text: "  " })).toContain("says nothing yet");
   });
 
   it("stands where its mark says, and refused wins over everything", () => {
     const card = offered();
     const start = marked(card);
-    expect(standingOf(card, start)).toBe("waiting");
-    expect(standingOf(card, { ...start, recording: true })).toBe("recording");
-    expect(standingOf(card, { ...start, recorded: "Facts" })).toBe("recorded");
-    expect(standingOf(card, { ...start, refusal: "the record changed" })).toBe("conflict");
-    expect(standingOf(card, { ...start, dismissed: true })).toBe("dismissed");
+    expect(standingOf(card, start, SUBJECT)).toBe("waiting");
+    expect(standingOf(card, { ...start, recording: true }, SUBJECT)).toBe("recording");
+    expect(standingOf(card, { ...start, recorded: "Facts" }, SUBJECT)).toBe("recorded");
+    expect(standingOf(card, { ...start, refusal: "the record changed" }, SUBJECT)).toBe("conflict");
+    expect(standingOf(card, { ...start, dismissed: true }, SUBJECT)).toBe("dismissed");
     const none = offered({ offered: false, notOffered: "no sitting is open" });
-    expect(standingOf(none, { ...marked(none), dismissed: true })).toBe("refused");
+    expect(standingOf(none, { ...marked(none), dismissed: true }, SUBJECT)).toBe("refused");
   });
 
   it("is identified by the turn it arrived in and its place in it", () => {
-    const cards = cardsIn([{ turn: "t1", deposits: [offered(), offered({ kind: "decision", reason: "r" })] }], {});
+    const cards = cardsIn(
+      [{ turn: "t1", deposits: [offered(), offered({ kind: "decision", reason: "r" })] }],
+      {},
+      SUBJECT,
+      new Map(),
+    );
     expect(cards.map((card) => card.id)).toEqual(["deposit:t1#0", "deposit:t1#1"]);
     expect(cards[1].kind).toBe("decision");
   });
@@ -254,6 +305,8 @@ describe("a deposit card", () => {
     const cards = cardsIn(
       [{ turn: "t1", deposits: [offered()] }],
       { "deposit:t1#0": { ...marked(offered()), text: "the limit is twelve hours, from last activity", clause: "s.go:1" } },
+      SUBJECT,
+      new Map(),
     );
     expect(entryOf(cards[0], "Wido", "2026-09-26")).toEqual({
       when: "2026-09-26",
@@ -261,6 +314,147 @@ describe("a deposit card", () => {
       text: "the limit is twelve hours, from last activity",
       clause: "s.go:1",
       section: "Facts",
+      mark: "deposit:t1#0",
     });
+  });
+});
+
+/**
+ * Sol's first finding: the press used to ask only whether a deposit was offered.
+ *
+ * End the sitting on A, start one on B, and A's cards are still on the
+ * transcript. The words on them were offered to A's record; a press that asked
+ * nothing about which record they were for wrote them into B's.
+ */
+describe("a card offered to another record", () => {
+  const OTHER = "plans/designs/other.md";
+
+  it("offers no press, and says which record it was for", () => {
+    const card = offered();
+    expect(standingOf(card, marked(card), OTHER)).toBe("elsewhere");
+    expect(elsewhereLine(card)).toContain(SUBJECT);
+    expect(elsewhereLine(card)).toContain(ELSEWHERE);
+    // And its fields are nobody's to edit any more, because there is nothing
+    // here to write.
+    expect(editable("elsewhere")).toBe(false);
+  });
+
+  it("stands elsewhere where no sitting is open at all", () => {
+    const card = offered();
+    expect(standingOf(card, marked(card), "")).toBe("elsewhere");
+    const unstamped = offered({ subject: undefined });
+    expect(standingOf(unstamped, marked(unstamped), SUBJECT)).toBe("elsewhere");
+    expect(elsewhereLine(unstamped)).toContain("another sitting");
+  });
+
+  // Recorded is the truer fact: an entry that landed in A's record landed there
+  // whatever the human is sitting on now, and the card says so rather than
+  // offering the words again.
+  it("still says recorded where the record took it", () => {
+    const card = offered();
+    expect(standingOf(card, { ...marked(card), recorded: "Facts" }, OTHER)).toBe("recorded");
+  });
+
+  it("is not elsewhere on the record it was offered to", () => {
+    const card = offered();
+    expect(standingOf(card, marked(card), SUBJECT)).toBe("waiting");
+  });
+});
+
+/**
+ * Sol's fourth finding: the recorded mark lived in this browser's memory, so a
+ * reload reconstructed every persisted deposit as a fresh card offering Record
+ * it — for an entry the record already carried.
+ */
+describe("a card the record already carries", () => {
+  const carried = [{ turn: "t1", deposits: [offered()] }];
+
+  it("is recorded after a reload, with the record's own words, and offers no press", () => {
+    // A reload: the browser remembers nothing about this card, and the reading
+    // of the record is what it has.
+    const source = appended(
+      "# Session limits\n",
+      { when: "2026-09-26", who: "Wido", text: "the limit is twelve hours", clause: "a.md", section: "Facts", mark: "deposit:t1#0" },
+      "fact",
+    );
+
+    const cards = cardsIn(carried, {}, SUBJECT, recordedIn(source));
+
+    expect(cards[0].standing).toBe("recorded");
+    expect(cards[0].mark.recorded).toBe("Facts");
+    expect(cards[0].mark.text).toBe("the limit is twelve hours");
+    expect(cards[0].mark.clause).toBe("a.md");
+    expect(editable(cards[0].standing)).toBe(false);
+  });
+
+  it("shows what the record says rather than what was offered or typed", () => {
+    const source = appended(
+      "# Session limits\n",
+      {
+        when: "2026-09-26",
+        who: "Wido",
+        text: "the limit is twelve hours, counted from last activity",
+        clause: "internal/session/session.go:212",
+        section: "Facts",
+        mark: "deposit:t1#0",
+      },
+      "fact",
+    );
+
+    const cards = cardsIn(carried, { "deposit:t1#0": { ...marked(offered()), text: "half a sentence" } }, SUBJECT, recordedIn(source));
+
+    expect(cards[0].mark.text).toBe("the limit is twelve hours, counted from last activity");
+    expect(cards[0].mark.clause).toBe("internal/session/session.go:212");
+    expect(cards[0].standing).toBe("recorded");
+  });
+
+  it("is waiting again only where the record does not carry it", () => {
+    const cards = cardsIn(carried, {}, SUBJECT, recordedIn("## Facts\n\n- 2026-09-26 · Wido · something else\n"));
+    expect(cards[0].standing).toBe("waiting");
+  });
+});
+
+/**
+ * Sol's fifth finding: the fields stayed editable through the write, and the
+ * press had already composed its entry — so the card said "recorded" over words
+ * the record never took.
+ */
+/**
+ * Sol's third finding, on the page's side: the draft a refused Start left behind.
+ *
+ * The record exists in the project now. What the sheet owes the human is to say
+ * so and to press Start on THAT draft next time, because the alternative is one
+ * wish leaving two drafts nobody asked for.
+ */
+describe("a Start refused after its draft was created", () => {
+  it("carries the draft's path out of the refusal", () => {
+    expect(draftOf(new PartnerError(409, "a turn is running", "", "plans/designs/limits.md"))).toBe(
+      "plans/designs/limits.md",
+    );
+    expect(draftOf(new PartnerError(400, "a sitting is for shape intent"))).toBe("");
+    expect(draftOf(new Error("something else"))).toBe("");
+  });
+
+  it("says which draft was made and what pressing Start again does", () => {
+    const said = draftMadeLine("plans/designs/limits.md");
+    expect(said).toContain("plans/designs/limits.md");
+    expect(said).toContain("opens the sitting on that record rather than making a second one");
+  });
+});
+
+describe("a card whose press is in flight", () => {
+  it("is not the human's to change, and neither is one the record has taken", () => {
+    expect(editable("recording")).toBe(false);
+    expect(editable("recorded")).toBe(false);
+    expect(editable("dismissed")).toBe(false);
+    expect(editable("refused")).toBe(false);
+  });
+
+  it("leaves the words editable while nothing is in flight", () => {
+    expect(editable("waiting")).toBe(true);
+    expect(editable("blocked")).toBe(true);
+    // A refused press keeps the human's words and offers the press again, so the
+    // words are theirs to change before they press it.
+    expect(editable("conflict")).toBe(true);
   });
 });

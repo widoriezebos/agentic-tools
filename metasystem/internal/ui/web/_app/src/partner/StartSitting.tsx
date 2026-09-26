@@ -1,7 +1,9 @@
 import { useId, useState } from "react";
 
+import { draftOf } from "./api";
 import { usePartner } from "./store";
 import {
+  draftMadeLine,
   END,
   PURPOSES,
   purposeLabel,
@@ -51,20 +53,38 @@ export function StartSittingSheet({
   const { startSitting, sittingBusy, sittingRefusal } = usePartner();
   const [purpose, setPurpose] = useState<Purpose>("shape a design");
   const [title, setTitle] = useState("");
+  // The draft a refused press created before it was refused, or "". It is the
+  // page's half of Sol's third finding: the record exists now, so pressing Start
+  // again opens the sitting on it rather than writing a second record for the
+  // same wish.
+  const [made, setMade] = useState("");
   const purposeField = useId();
   const titleField = useId();
   const onThisRecord = subject !== null;
 
+  const asked = () => {
+    if (onThisRecord) {
+      return { purpose, subject };
+    }
+    if (made !== "") {
+      return { purpose, subject: { kind: "record", id: made, title: title.trim() } };
+    }
+    return { purpose, title };
+  };
+
   const start = () => {
-    void startSitting(
-      onThisRecord ? { purpose, subject } : { purpose, title },
-    ).then(
+    void startSitting(asked()).then(
       () => {
         onOpenChange(false);
       },
-      () => {
+      (error: unknown) => {
         // The refusal is on the sheet, in the server's own words, and the sheet
-        // stays open so the human can read it beside what they asked for.
+        // stays open so the human can read it beside what they asked for. Where
+        // it left a draft behind, that draft is what the next press is about.
+        const created = draftOf(error);
+        if (created !== "") {
+          setMade(created);
+        }
       },
     );
   };
@@ -133,6 +153,11 @@ export function StartSittingSheet({
       {sittingRefusal !== "" && (
         <p className="ms-sitting-refusal" role="status">
           {sittingRefusal}
+        </p>
+      )}
+      {made !== "" && (
+        <p className="ms-sitting-said" role="status">
+          {draftMadeLine(made)}
         </p>
       )}
       <div className="ms-sitting-foot">
