@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation } from "react-router";
 
 import {
+  closeSitting,
   endSitting,
   isBusy,
   loadPartner,
@@ -55,15 +56,18 @@ import {
   cardsIn as depositsIn,
   countsIn,
   editable,
+  ENDED_WITHOUT,
   entriesIn,
   entryOf,
   marked,
   NOT_READ_YET,
+  OUTCOME,
   recordedIn,
   type Card as DepositCard,
   type Counts,
   type Entry,
   type Marks as DepositMarks,
+  type Records,
 } from "./sitting";
 import { busy, emptyStore, loaded, nameOf, received, refused, retrying, unavailable, asked, type Store } from "./conversation";
 import type { Chosen } from "./subject";
@@ -272,11 +276,24 @@ type Partner = {
    * transcript the answer carries.
    */
   startSitting: (asked: { purpose: string; subject?: Subject; title?: string }) => Promise<void>;
+  /**
+   * Ask the Partner to draft what this sitting came to (g1-s55 D2). The sitting
+   * stands: the card it offers is admitted against this record, and the record
+   * takes it when the human presses Record it.
+   */
+  closeSitting: () => Promise<void>;
   /** End the sitting. What was recorded stays in the record. */
   endSitting: () => void;
-  /** What a Start or End press was refused with, in the server's own words. */
+  /**
+   * End it without recording an outcome, which is allowed and said: the line
+   * below is what it leaves behind, and it is shown where the press was made.
+   */
+  endWithoutRecording: () => Promise<void>;
+  /** What the last end-without-recording left behind, or "". */
+  sittingEnded: string;
+  /** What a Start, Close or End press was refused with, in the server's words. */
   sittingRefusal: string;
-  /** True while a Start or End press is in flight. */
+  /** True while a Start, Close or End press is in flight. */
   sittingBusy: boolean;
 
   /**
@@ -299,8 +316,14 @@ type Partner = {
    * It writes only into the record the card was offered against, and only while
    * that is the record this sitting is on: a card left standing by a sitting that
    * has ended is not a way into the next sitting's record.
+   *
+   * `records` says what the press is writing where that is not the card's own
+   * words: a case card's Decide records a decision and its Leave open records an
+   * open question (g1-s55 D1). The entry still carries the card's own mark, so
+   * the record says which deposit it came from and the card is a once-only press.
+   * An outcome recorded ends the sitting, and nothing before it does.
    */
-  recordDeposit: (id: string) => void;
+  recordDeposit: (id: string, records?: Records) => void;
   /** Dismiss: the card folds to one line. */
   dismissDeposit: (id: string) => void;
   /** The folded line, pressed: the card is back. */
@@ -310,7 +333,18 @@ type Partner = {
    * the table shows and what the drawer's four counts count. They are the record
    * and not a second store, so a card nobody recorded is not among them.
    */
-  table: { counts: Counts; entries: readonly Entry[]; revision: string };
+  table: {
+    counts: Counts;
+    entries: readonly Entry[];
+    revision: string;
+    /**
+     * The record's whole source as the reading holds it. It is here because the
+     * table is the one place that has to read something of the record that is
+     * not an entry: the ledger goals its head names, which are the scope a
+     * question asked out of this sitting carries (g1-s55 F1).
+     */
+    source: string;
+  };
 };
 
 const nothing: Partner = {
@@ -356,7 +390,10 @@ const nothing: Partner = {
   returnFocus: () => {},
   sitting: null,
   startSitting: async () => {},
+  closeSitting: async () => {},
   endSitting: () => {},
+  endWithoutRecording: async () => {},
+  sittingEnded: "",
   sittingRefusal: "",
   sittingBusy: false,
   deposits: [],
@@ -365,7 +402,12 @@ const nothing: Partner = {
   recordDeposit: () => {},
   dismissDeposit: () => {},
   reopenDeposit: () => {},
-  table: { counts: { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0 }, entries: [], revision: "" },
+  table: {
+    counts: { Facts: 0, Proposals: 0, Decisions: 0, "Open questions": 0 },
+    entries: [],
+    revision: "",
+    source: "",
+  },
 };
 
 const PartnerContext = createContext<Partner>(nothing);
@@ -453,6 +495,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [reading, setReading] = useState<Reading | null>(null);
   const [sittingRefusal, setSittingRefusal] = useState("");
   const [sittingBusy, setSittingBusy] = useState(false);
+  // What the last end-without-recording left behind. It is kept because it is
+  // the one act of this section that writes nothing and has to say so.
+  const [sittingEnded, setSittingEnded] = useState("");
   // The key this draft was minted with. It survives a refusal, so pressing
   // Send again after a 503 is the same turn rather than a second one.
   const key = useRef("");
@@ -938,6 +983,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     async (asked: { purpose: string; subject?: Subject; title?: string }) => {
       setSittingBusy(true);
       setSittingRefusal("");
+      setSittingEnded("");
       try {
         const answered = await startSitting({ ...asked, about: capture });
         setStore((held) => loaded(held, answered));
@@ -951,20 +997,48 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     [capture],
   );
 
-  const end = useCallback(() => {
+  /**
+   * End the sitting: the first half of it, which is the Partner drafting what the
+   * sitting came to (g1-s55 D2).
+   *
+   * The sitting is still standing when this returns, deliberately: the closing
+   * turn's own deposit is admitted against this record, and the mark comes off
+   * when the outcome is recorded — or when the human says they are leaving
+   * without it.
+   */
+  const close = useCallback(async () => {
     setSittingBusy(true);
     setSittingRefusal("");
-    endSitting()
-      .then((answered) => {
-        setStore((held) => loaded(held, answered));
-      })
-      .catch((error: unknown) => {
-        setSittingRefusal(reasonOf(error));
-      })
-      .finally(() => {
-        setSittingBusy(false);
-      });
+    setSittingEnded("");
+    try {
+      const answered = await closeSitting(capture);
+      setStore((held) => loaded(held, answered));
+    } catch (error: unknown) {
+      setSittingRefusal(reasonOf(error));
+      throw error;
+    } finally {
+      setSittingBusy(false);
+    }
+  }, [capture]);
+
+  const end = useCallback(async (): Promise<void> => {
+    setSittingBusy(true);
+    setSittingRefusal("");
+    try {
+      const answered = await endSitting();
+      setStore((held) => loaded(held, answered));
+    } catch (error: unknown) {
+      setSittingRefusal(reasonOf(error));
+      throw error;
+    } finally {
+      setSittingBusy(false);
+    }
   }, []);
+
+  const endWithout = useCallback(async () => {
+    await end();
+    setSittingEnded(ENDED_WITHOUT);
+  }, [end]);
 
   /**
    * Every deposit the conversation carries, with where each one stands: the
@@ -1071,7 +1145,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * again is one more press, now against the record the reread brought back.
    */
   const recordDeposit = useCallback(
-    (id: string) => {
+    (id: string, records?: Records) => {
       const card = depositIn(deposits, id);
       if (card === undefined || card.standing !== "waiting") {
         return;
@@ -1086,8 +1160,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         return;
       }
       changeMark(id, (mark) => ({ ...mark, recording: true, refusal: "" }));
-      const entry = entryOf(card, nameOf(store.human), stampOf(new Date()));
-      void held.press(entry, card.kind, into).then((outcome) => {
+      const entry = entryOf(card, nameOf(store.human), stampOf(new Date()), records);
+      void held.press(entry, records?.kind ?? card.kind, into).then((outcome) => {
         if (movesTheTable(outcome, recording.current?.reading() ?? null)) {
           setReading(outcome.reading);
         }
@@ -1101,9 +1175,16 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
           }
           return { ...marks, [id]: { ...mark, recording: false, refusal: outcome.reason } };
         });
+        // The outcome recorded is where the sitting ends, and only after the
+        // record has taken it (g1-s55 D2). A press that was refused or that met
+        // a conflict leaves the sitting exactly where it was, because the human
+        // has something left to do in it.
+        if (outcome.kind === "recorded" && outcome.section === OUTCOME) {
+          void end();
+        }
       });
     },
-    [deposits, changeMark, store.human],
+    [deposits, changeMark, store.human, end],
   );
 
   /**
@@ -1118,6 +1199,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       counts: countsIn(reading?.source ?? ""),
       entries: entriesIn(reading?.source ?? ""),
       revision: reading?.revision ?? "",
+      source: reading?.source ?? "",
     }),
     [reading],
   );
@@ -1131,7 +1213,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
-      sitting, startSitting: begin, endSitting: end, sittingRefusal, sittingBusy,
+      sitting, startSitting: begin, closeSitting: close, endSitting: end,
+      endWithoutRecording: endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
     }),
     [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
@@ -1140,7 +1223,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       offered, use, undo, dismiss, reopen, show, showing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
-      sitting, begin, end, sittingRefusal, sittingBusy,
+      sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table],
   );
 

@@ -47,7 +47,7 @@ function table(source: string): string {
               purpose: "shape a design",
               startedAt: "2026-09-26T09:00:00Z",
             },
-            table: { counts: countsIn(source), entries: entriesIn(source), revision: "r1" },
+            table: { counts: countsIn(source), entries: entriesIn(source), revision: "r1", source },
           }}
         >
           <SittingTable />

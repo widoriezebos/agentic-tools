@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { NavLink } from "react-router";
 
 import { usePartner } from "./store";
-import { entryPath, SECTIONS, TABLE, TABLE_EMPTY } from "./sitting";
+import { askedFromSitting, ASK_IT, entryPath, goalsIn, SECTIONS, TABLE, TABLE_EMPTY, type Entry } from "./sitting";
 import { Help } from "../help/Help";
+import { Sheet as WritingSheet } from "../project/Sheet";
 import "./sitting.css";
 
 /**
@@ -20,6 +22,8 @@ import "./sitting.css";
  */
 export function SittingTable() {
   const { sitting, table } = usePartner();
+  // The open question the human pressed Ask it on, while its sheet is open.
+  const [asking, setAsking] = useState<Entry | null>(null);
   if (sitting === null) {
     return null;
   }
@@ -58,12 +62,48 @@ export function SittingTable() {
                       {entry.who === "" ? entry.when : `${entry.who} · ${entry.when}`}
                     </p>
                   </NavLink>
+                  {/* An open question of this record goes to the register with
+                      one press (g1-s55 D2). It is beside the entry and not
+                      inside its link, because a press inside a link is a press
+                      that navigates. */}
+                  {section === "Open questions" && (
+                    <button
+                      type="button"
+                      className="ms-table-ask"
+                      onClick={() => {
+                        setAsking(entry);
+                      }}
+                    >
+                      {ASK_IT}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
           </section>
         );
       })}
+      {/* The Project pane's own question sheet, over the work area, prefilled
+          with this question as one question: its words, what follows from
+          leaving it open, and the record it came out of. The scope is the
+          record's own goals, because the route scopes by ledger goal id and
+          refuses a record path (Astra's F1). */}
+      {asking !== null && (
+        <WritingSheet
+          request={{
+            mode: "question",
+            scope: null,
+            question: askedFromSitting(asking, sitting.subject.id),
+            goals: [...goalsIn(table.source)],
+          }}
+          onClose={() => {
+            setAsking(null);
+          }}
+          onDone={() => {
+            setAsking(null);
+          }}
+        />
+      )}
     </aside>
   );
 }

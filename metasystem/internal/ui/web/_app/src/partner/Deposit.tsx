@@ -1,24 +1,36 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 
 import { usePartner } from "./store";
 import {
   cardHead,
   cardIn,
+  clausedKind,
+  clauseHeard,
   clauseOf,
+  DECIDE,
+  DECIDE_CLAUSE,
+  DECIDE_REASON,
+  DECIDE_SAID,
+  DECIDE_TITLE,
   DISMISSED,
   editable,
   elsewhereLine,
+  LEAVE_OPEN,
+  leftOpenLine,
   missing,
   NOT_OFFERED,
   notOfferedLine,
   RECORD_IT,
+  RECORD_OUTCOME,
   RECORDING,
   recordedLine,
   sectionOf,
+  type Card,
 } from "./sitting";
 import { Copy } from "./Suggestion";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
+import { Sheet } from "../shell/Sheet";
 import "./sitting.css";
 
 /**
@@ -117,7 +129,7 @@ export function DepositCard({ id }: { id: string }) {
       <button
         type="button"
         className="ms-deposit-folded"
-        title={`Show what the Partner offered for ${sectionOf(card.kind)} again`}
+        title={`Show what the Partner offered again`}
         onClick={() => {
           reopenDeposit(id);
         }}
@@ -125,6 +137,15 @@ export function DepositCard({ id }: { id: string }) {
         {DISMISSED}
       </button>
     );
+  }
+
+  // A case is not an entry and is not offered as one: it lands on no pile by
+  // itself, and the human settles it or leaves it open (g1-s55 D1). So the card
+  // for one has no fields and no Record it — two presses, and what each of them
+  // records is a different entry. Once one of them has landed, it is what the
+  // record says it is, and the card below says so like any other.
+  if (card.kind === "case" && card.standing !== "recorded") {
+    return <CaseCard card={card} />;
   }
 
   const recorded = card.standing === "recorded";
@@ -138,7 +159,7 @@ export function DepositCard({ id }: { id: string }) {
     <div className="ms-deposit" data-deposit={id} data-kind={card.kind}>
       <p className="ms-deposit-head">
         <span>{cardHead(card.kind)}</span>
-        <Help id="deposit" />
+        <Help id={card.kind === "outcome" ? "the-outcome" : "deposit"} />
         <span className="ms-deposit-where">{sectionOf(card.kind)}</span>
       </p>
       {/* The entry and its clause are the human's to change until the record has
@@ -162,27 +183,35 @@ export function DepositCard({ id }: { id: string }) {
           <textarea
             id={entryField}
             className="ms-deposit-field"
-            rows={3}
+            /* An outcome is a whole section — what was decided, the constraints,
+               what was left open and what the table holds — so the box it is
+               read and edited in is the size of the thing rather than of an
+               entry. */
+            rows={card.kind === "outcome" ? 12 : 3}
             value={card.mark.text}
             readOnly={frozen}
             onChange={(event) => {
               editDeposit(id, event.target.value);
             }}
           />
-          <label className="ms-deposit-label" htmlFor={clauseField}>
-            {clause}
-          </label>
-          <input
-            id={clauseField}
-            className="ms-deposit-clause-field"
-            type="text"
-            value={card.mark.clause}
-            placeholder={clause === "Anchor" ? "where it can be checked" : ""}
-            readOnly={frozen}
-            onChange={(event) => {
-              editClause(id, event.target.value);
-            }}
-          />
+          {clausedKind(card.kind) && (
+            <>
+              <label className="ms-deposit-label" htmlFor={clauseField}>
+                {clause}
+              </label>
+              <input
+                id={clauseField}
+                className="ms-deposit-clause-field"
+                type="text"
+                value={card.mark.clause}
+                placeholder={clause === "Anchor" ? "where it can be checked" : ""}
+                readOnly={frozen}
+                onChange={(event) => {
+                  editClause(id, event.target.value);
+                }}
+              />
+            </>
+          )}
         </>
       )}
       {needs !== "" && (
@@ -207,7 +236,7 @@ export function DepositCard({ id }: { id: string }) {
                 recordDeposit(id);
               }}
             >
-              {card.mark.recording ? RECORDING : RECORD_IT}
+              {card.mark.recording ? RECORDING : card.kind === "outcome" ? RECORD_OUTCOME : RECORD_IT}
             </Button>
             <Button
               disabled={card.mark.recording}
@@ -221,5 +250,171 @@ export function DepositCard({ id }: { id: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * A case at the edge, with the two presses that settle it (g1-s55 D1).
+ *
+ * The Partner's job in a sitting is to produce the cases at the edge — "a person
+ * reads a long page without touching anything; a laptop sleeps with the page
+ * open" — and the human's is to say what the rule is for each of them, or to say
+ * that it stays open. So this card is not an entry waiting for a press: it is a
+ * question with two answers, and each answer records something different.
+ *
+ * Decide opens a small sheet with the clause as the Partner heard it and a line
+ * for the reason, and records a decision. Leave open records an open question in
+ * the Partner's own words, with the consequence it attached. Neither is the case:
+ * a case lands on no pile by itself, and a case dismissed leaves nothing behind.
+ *
+ * Both write through the one serialized recorder, against the one reading of the
+ * record, exactly as every other press does — and both mark the entry with this
+ * card, so the record says which deposit it came from and neither press can be
+ * made twice.
+ */
+function CaseCard({ card }: { card: Card }) {
+  const { recordDeposit } = usePartner();
+  const [deciding, setDeciding] = useState(false);
+  const inFlight = card.mark.recording;
+  return (
+    <div className="ms-deposit ms-deposit--case" data-deposit={card.id} data-kind={card.kind}>
+      <p className="ms-deposit-head">
+        <span>{cardHead(card.kind)}</span>
+        <Help id="the-case" />
+      </p>
+      <p className="ms-deposit-text">{card.mark.text}</p>
+      {card.mark.clause.trim() !== "" && (
+        <p className="ms-deposit-clause">
+          <span className="ms-deposit-label">{clauseOf(card.kind)}</span>
+          {card.mark.clause}
+        </p>
+      )}
+      {card.mark.refusal !== "" && (
+        <p className="ms-deposit-refusal" role="status">
+          {card.mark.refusal}
+        </p>
+      )}
+      <div className="ms-deposit-foot">
+        {inFlight ? (
+          <span className="ms-deposit-said">{RECORDING}</span>
+        ) : (
+          <>
+            <Button
+              primary
+              onClick={() => {
+                setDeciding(true);
+              }}
+            >
+              {DECIDE}
+            </Button>
+            <Button
+              title={leftOpenLine(card.mark.clause)}
+              onClick={() => {
+                recordDeposit(card.id, {
+                  kind: "question",
+                  text: card.mark.text,
+                  clause: card.mark.clause,
+                });
+              }}
+            >
+              {LEAVE_OPEN}
+            </Button>
+          </>
+        )}
+      </div>
+      {/* The sheet stands until the record has taken the decision, so a press the
+          record refused keeps the words the human wrote in it rather than sending
+          them back to an empty box. */}
+      <DecideSheet
+        card={card}
+        open={deciding && card.standing !== "recorded"}
+        onOpenChange={setDeciding}
+      />
+    </div>
+  );
+}
+
+/**
+ * The small sheet Decide opens: the clause as heard, and the reason.
+ *
+ * The reason is required, and that is the one rule in here worth arguing about:
+ * a sitting exists so that a choice is recorded with the reason the human gave,
+ * then and there, rather than reconstructed afterwards. So Record it waits until
+ * there is one, and says so.
+ */
+function DecideSheet({
+  card,
+  open,
+  onOpenChange,
+}: {
+  card: Card;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { recordDeposit } = usePartner();
+  const [clause, setClause] = useState(() => clauseHeard(card));
+  const [reason, setReason] = useState("");
+  const clauseField = useId();
+  const reasonField = useId();
+  const needs = missing("decision", { ...card.mark, text: clause, clause: reason });
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      side="right"
+      label={DECIDE_TITLE}
+      title={DECIDE_TITLE}
+      closeLabel="Close without deciding this case"
+      bodyClassName="ms-sitting-sheet"
+      sheetName={DECIDE_TITLE}
+    >
+      <p className="ms-sitting-said">{DECIDE_SAID}</p>
+      <p className="ms-deposit-text">{card.mark.text}</p>
+      <label className="ms-sitting-label" htmlFor={clauseField}>
+        {DECIDE_CLAUSE}
+      </label>
+      <textarea
+        id={clauseField}
+        className="ms-deposit-field"
+        rows={3}
+        value={clause}
+        onChange={(event) => {
+          setClause(event.target.value);
+        }}
+      />
+      <label className="ms-sitting-label" htmlFor={reasonField}>
+        {DECIDE_REASON}
+      </label>
+      <textarea
+        id={reasonField}
+        className="ms-deposit-field"
+        rows={2}
+        value={reason}
+        onChange={(event) => {
+          setReason(event.target.value);
+        }}
+      />
+      {needs !== "" && (
+        <p className="ms-deposit-needs" role="status">
+          {needs}
+        </p>
+      )}
+      {card.mark.refusal !== "" && (
+        <p className="ms-deposit-refusal" role="status">
+          {card.mark.refusal}
+        </p>
+      )}
+      <div className="ms-sitting-foot">
+        <Button
+          primary
+          disabled={needs !== "" || card.mark.recording}
+          onClick={() => {
+            recordDeposit(card.id, { kind: "decision", text: clause, clause: reason });
+          }}
+        >
+          {card.mark.recording ? RECORDING : RECORD_IT}
+        </Button>
+      </div>
+    </Sheet>
   );
 }
