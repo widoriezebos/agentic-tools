@@ -1515,9 +1515,11 @@ func (l *ledger) edit(id string, edited act.Edited) error {
 	if file == nil {
 		return refused("goal %s is not live; the archive edits through reopen", id)
 	}
+	// The state is read before the approval, and the order is the engine's own
+	// (verbs.go:3410-3430): an approval survives a claim and survives a park,
+	// so a goal a seat holds would otherwise be told to withdraw an approval
+	// when what stands in the way is the claim.
 	switch {
-	case file.Approved != nil || file.State == goal.StateApproved:
-		return refused("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
 	case file.State == goal.StateClaimed:
 		pair := "another pair"
 		if file.Claimed != nil {
@@ -1526,6 +1528,8 @@ func (l *ledger) edit(id string, edited act.Edited) error {
 		return refused("goal %s is claimed by %s; edit it at a terminal", id, pair)
 	case file.State == goal.StateParked:
 		return refused("goal %s is parked: return it to the queue to edit it", id)
+	case file.Approved != nil || file.State == goal.StateApproved:
+		return refused("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
 	case file.State != goal.StateQueued:
 		return refused("goal %s is %s; only a queued goal is edited from the interface", id, file.State)
 	}
