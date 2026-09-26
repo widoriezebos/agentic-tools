@@ -606,19 +606,27 @@ describe("the run, in order", () => {
     lines: readonly Line[],
     over: Partial<{
       look: Looked;
+      /** One reading per call, for a run that reads again after an act lands. */
+      looks: readonly Looked[];
       answers: Record<string, Answered>;
       writes: Record<string, Written>;
     }> = {},
   ) {
     const sent: string[] = [];
+    const looks: Looked[] = [];
     const written: { line: string; state: string; words: string; version: number }[] = [];
     const marked: { line: string; change: Partial<Mark> }[] = [];
     const reconciled: Proposal[] = [];
     const rereads: number[] = [];
     const signIns: (readonly Line[])[] = [];
     const ports: RunPorts = {
-      look: () =>
-        Promise.resolve(over.look ?? { rows: [], defaults: {}, outcome: "current", message: "" }),
+      look: () => {
+        const at = looks.length;
+        const read = over.looks?.[Math.min(at, (over.looks.length ?? 1) - 1)] ??
+          over.look ?? { rows: [], defaults: {}, outcome: "current", message: "" };
+        looks.push(read);
+        return Promise.resolve(read);
+      },
       record: (line, state, words) => {
         written.push({ line: line.id, state, words, version: line.version });
         const forced = over.writes?.[`${line.id}:${state}`];
@@ -647,7 +655,7 @@ describe("the run, in order", () => {
         signIns.push(rest);
       },
     };
-    return { ports, sent, written, marked, reconciled, rereads, signIns };
+    return { ports, sent, written, marked, reconciled, rereads, signIns, looks };
   }
 
   const three = () => card([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" }),
@@ -807,6 +815,48 @@ describe("the run, in order", () => {
     const after = driving(driven.signIns[0]);
     await runProposals(driven.signIns[0], after.ports);
     expect(after.sent).toEqual([lines[1].id, lines[2].id]);
+  });
+
+  /**
+   * An act of THIS run can be what changed the goal a later line is about.
+   *
+   * `[edit G, approve G]`: the edit lands and G's intent is B; the approval
+   * displays A and used to compare against the reading taken before the run, so
+   * it passed and authorised B. The run now reads again after a confirmed act,
+   * before the next line that depends on what a goal says (Sol S58-C-01).
+   */
+  it("reads again after a confirmed act and refuses a later line whose goal it changed", async () => {
+    const read = { intent: "Fleet presence is read from the census, not polled.", nextStep: "Read the census.", tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, verb: "edit-goal", fields: { intent: "Something else entirely." }, read }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    const before: Looked = { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" };
+    const after: Looked = {
+      rows: [row({ intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    const driven = driving(one.lines, { looks: [before, after] });
+    await runProposals(one.lines, driven.ports);
+
+    // The edit went; the approval did not, and says why without being sent.
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+    // Two readings: one before the first line, one after the act that landed.
+    expect(driven.looks.length).toBe(2);
+  });
+
+  /** And it reads again only where a later line actually depends on a goal. */
+  it("reads again once per confirmed act, and not at all where no later line is guarded", async () => {
+    const lines = three();
+    const driven = driving(lines);
+    await runProposals(lines, driven.ports);
+    // Three parks land and none of the lines after them compares anything.
+    expect(driven.looks.length).toBe(1);
   });
 
   /** And the run asks for the page's re-read once when it ends, however it ended. */

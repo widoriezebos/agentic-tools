@@ -886,8 +886,10 @@ export function settledState(state: ProposalState): boolean {
  *
  * Read down it, the rules are:
  *
- *   - the canonical branch is read ONCE, before the first line, so the compare
- *     below is against the branch as of the press rather than per line;
+ *   - the canonical branch is read before the first line, so the compare below is
+ *     against the branch as of the press rather than per line — and read again
+ *     after any act of this run lands, before the next line that depends on what
+ *     a goal says, because one of these acts can be what changed it;
  *   - a line the compare refuses is refused UNSENT and the run goes on, because
  *     nothing was published, which is exactly what a refusal means;
  *   - `applying` is written BEFORE the act. A write that failed sends nothing and
@@ -907,9 +909,21 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
   for (const line of lines) {
     ports.mark(line, { notRun: false, refusedUnsent: "" });
   }
-  const looked = await ports.look();
+  let looked = await ports.look();
+  // An act of this run can change the very goal a later line is about: an edit
+  // of G lands, and the approve of G behind it would otherwise compare against
+  // the reading taken before the run and approve work the card never showed
+  // (Sol S58-C-01). So a confirmed act makes the reading stale, and the next
+  // line that depends on what a goal says takes a fresh one before it compares.
+  // At most one read per confirmed act, and none at all where no later line is
+  // guarded.
+  let stale = false;
   let stoppedAt = -1;
   for (const [at, line] of lines.entries()) {
+    if (stale && needsTheCompare(line.verb)) {
+      looked = await ports.look();
+      stale = false;
+    }
     const refusal = guardFor(line, looked.rows, looked.defaults, looked.outcome, looked.message);
     if (refusal !== "") {
       ports.mark(line, { refusedUnsent: refusal });
@@ -943,6 +957,8 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       ports.mark(line, { refusedUnsent: COULD_NOT_RECORD });
     }
     if (answered.kind === "applied") {
+      // The ledger moved, so the reading every later compare rests on has.
+      stale = true;
       ports.reread();
     }
     if (!goesOn(answered)) {
