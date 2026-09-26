@@ -5,6 +5,8 @@ import { useNavigate } from "react-router";
 import { Composer, COMPOSER_HINT, COMPOSER_LABEL } from "./Composer";
 import { IconButton } from "./controls";
 import { Help } from "../help/Help";
+import { draftChipIn } from "../partner/attachments";
+import { AttachmentChip } from "../partner/Chips";
 import { FontControl } from "../partner/FontControl";
 import { Seeing } from "../partner/Seeing";
 import { Transcript } from "../partner/Transcript";
@@ -30,6 +32,12 @@ import { usePartner } from "../partner/store";
  * The bar's field is one line and the panel's is not. Reaching the one-line
  * field opens the panel, which is where the writing happens, and the sentence
  * and the caret go with it.
+ *
+ * A handed-over draft stands beside that field too. The chip stands wherever the
+ * composer is shown (g1-s52 D1): a sheet opening is the hand-over, and a drawer
+ * left closed would have made the hand-over invisible and its × unreachable —
+ * silent sharing, which is the one thing the master's rule about unsaved edits
+ * forbids.
  *
  * It arrives closed. The bar is the whole of what an unasked-for collaborator
  * owes the page; the panel is what a human opens, and what this build then
@@ -66,7 +74,13 @@ export function Drawer({
 }) {
   const navigate = useNavigate();
   const toggle = useRef<HTMLButtonElement | null>(null);
-  const { draft, setDraft, busy } = usePartner();
+  const { draft, setDraft, busy, attachments, detach } = usePartner();
+  // The draft a sheet handed over, where a sheet has. Only the draft: the
+  // subject and a passage are chips a human made by their own press, in the
+  // panel where they pressed it, and they know they are there. The draft is the
+  // one attachment that appears because a sheet opened, so it is the one that
+  // has to be visible — and removable — without opening anything.
+  const handed = draftChipIn(attachments);
 
   useEffect(() => {
     if (caret === "toggle") {
@@ -102,6 +116,14 @@ export function Drawer({
               onFocus={onCompose}
             />
             <Seeing />
+            {handed !== null && (
+              <AttachmentChip
+                attachment={handed}
+                onRemove={() => {
+                  detach(handed.id);
+                }}
+              />
+            )}
           </>
         )}
         <span className="ms-drawer-actions">
