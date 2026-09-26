@@ -24,8 +24,14 @@ const DECISIONS = "/api/decisions";
 /** Where one row opens, said as what kind of thing it is, never as an address. */
 export type Where = { kind: string; id: string };
 
-/** What a row asks this human to do, where this interface has the act. */
-export type Act = "approve" | "withdraw" | "";
+/**
+ * What a row asks this human to do, where this interface has the act.
+ *
+ * Two are the board's. The other two are this page's own, admitted from a
+ * signed-in browser under R-125-m1u: park is "Not now", and unpark returns a
+ * paused goal to the queue.
+ */
+export type Act = "approve" | "withdraw" | "park" | "unpark" | "";
 
 /** One thing that is waiting on a human. */
 export type Need = {
@@ -48,6 +54,46 @@ export type Need = {
   command: string;
   /** The whole backlog row, for the rows whose act is the board's sheet. */
   row: Row | null;
+  /**
+   * Whether this row was recorded after the start of the window below.
+   *
+   * The server decides it, because the server is what read the dates and what
+   * knows when this human was last here. It is by recorded dates and is honest
+   * about them rather than exact: an instant is compared as an instant, a
+   * calendar date counts from the window's own day, and a row nothing dated is
+   * never new.
+   */
+  new: boolean;
+  /**
+   * The register row a ruling review names: what was actually ruled, why, who
+   * owns it, and the schedule. Every other kind carries them empty.
+   */
+  words: string;
+  context: string;
+  owner: string;
+  class: string;
+  due: string;
+  /** Where the record this row is about lives, relative to the checkout. */
+  path: string;
+  /** The goals a landed design named, with where each one stands. */
+  goals: GoalState[];
+};
+
+/** One goal a record names, and where the ledger says it stands. */
+export type GoalState = { id: string; state: string };
+
+/**
+ * The window a page's "new" was decided against: the end of this human's
+ * previous visit to THIS page, or a day back on a first one.
+ *
+ * It travels so the page can say what it means by new rather than leaving a
+ * reader to infer a boundary from the dots.
+ */
+export type Visit = {
+  /** The start of the window in RFC3339, or "" where there was none. */
+  since: string;
+  /** Whether the window is a first visit's day rather than a previous visit. */
+  first: boolean;
 };
 
 /** One row of the rulings register, whole. */
@@ -82,6 +128,19 @@ export type Approved = {
   row: Row;
 };
 
+/** One goal a person paused, with the whole of what they said. */
+export type NotNow = {
+  id: string;
+  title: string;
+  by: string;
+  at: string;
+  /** The reason the park recorded, which is the whole of why. */
+  because: string;
+  /** The goal this park waits for, where a human directed it at one. */
+  blocker: string;
+  where: Where;
+};
+
 export type Decided = {
   rulings: Ruling[];
   /** The register's broken rows, in the steward's own words. */
@@ -89,9 +148,16 @@ export type Decided = {
   decisions: Item[];
   answered: Item[];
   approved: Approved[];
+  /** Every park a person made, newest first. */
+  notNow: NotNow[];
 };
 
-export type Counts = { needsYou: number; rulings: number };
+/**
+ * The figures the page shows: the whole inbox, its two blocks, and the whole
+ * register. `asked` and `waiting` always sum to `needsYou` — the page splits
+ * the one list the server composed rather than reading two.
+ */
+export type Counts = { needsYou: number; asked: number; waiting: number; rulings: number };
 
 export type Page = {
   schemaVersion: number;
@@ -101,6 +167,14 @@ export type Page = {
   needsYou: Need[];
   decided: Decided;
   counts: Counts;
+  /** The window every row's `new` was decided against. */
+  visit: Visit;
+  /**
+   * Where the rulings register is, relative to the checkout — which is what
+   * the document reader opens a path against. Every register destination in
+   * this payload names it.
+   */
+  register: string;
 };
 
 /** A response that was not what was asked for, with the server's own words. */

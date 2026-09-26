@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { Approved, Need, Page, Ruling } from "./api";
 import {
-  actLabel,
   ageLine,
   ANY_CLASS,
   approvalLine,
@@ -10,7 +9,6 @@ import {
   classesIn,
   defectLine,
   destinationFor,
-  kindLabel,
   NO_CLASS,
   reviewChip,
   shownRulings,
@@ -46,6 +44,14 @@ function need(over: Partial<Need> = {}): Need {
     act: "approve",
     command: "",
     row: null,
+    new: false,
+    words: "",
+    context: "",
+    owner: "",
+    class: "",
+    due: "",
+    path: "",
+    goals: [],
     ...over,
   };
 }
@@ -66,14 +72,6 @@ function ruling(over: Partial<Ruling> = {}): Ruling {
     ...over,
   };
 }
-
-describe("a row's kind", () => {
-  it("is the word the design gives it, and the server's own for a kind this build has no word for", () => {
-    expect(kindLabel("ruling-review")).toBe("review");
-    expect(kindLabel("approval")).toBe("approval");
-    expect(kindLabel("something-later")).toBe("something-later");
-  });
-});
 
 describe("where a row opens", () => {
   it("is a goal, a document, the register, the panel, the channel, or nothing", () => {
@@ -138,17 +136,10 @@ describe("how long ago", () => {
   });
 });
 
-describe("the act on a row", () => {
-  it("is named for what it publishes", () => {
-    expect(actLabel("approve")).toBe("Approve");
-    expect(actLabel("withdraw")).toBe("Withdraw approval");
-  });
-});
-
-describe("the four tabs", () => {
+describe("the tabs of what was decided", () => {
   it("are the design's, in its order, each with its own count in its name", () => {
     const page: Page = {
-      schemaVersion: 1,
+      schemaVersion: 3,
       readAt: "2026-09-25T11:00:00Z",
       signIn: false,
       needsYou: [],
@@ -158,12 +149,17 @@ describe("the four tabs", () => {
         decisions: [{ id: "d-1", title: "A decision", note: "accepted", at: "", where: { kind: "record", id: "a.md" } }],
         answered: [],
         approved: [],
+        notNow: [],
       },
-      counts: { needsYou: 0, rulings: 148 },
+      counts: { needsYou: 0, asked: 0, waiting: 0, rulings: 148 },
+      visit: { since: "2026-09-24T11:00:00Z", first: false },
+      register: "metasystem/memory/rulings.md",
     };
     expect(tabs(page).map((tab) => tab.id)).toEqual([...tabOrder]);
     // The register's count is the whole register, not the page of it shown.
-    expect(tabs(page).map((tab) => tab.title)).toEqual(["Rulings 148", "Decisions 1", "Answered 0", "Approved 0"]);
+    expect(tabs(page).map((tab) => tab.title)).toEqual([
+      "Rulings 148", "Decisions 1", "Answered 0", "Approved 0", "Not now 0",
+    ]);
   });
 });
 

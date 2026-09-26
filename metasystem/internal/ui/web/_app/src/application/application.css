@@ -1,0 +1,423 @@
+/*
+ * Application: a header, and three blocks in the order of the jobs.
+ *
+ * The page at rest is the header, the latest four weeks of concluded work as
+ * one line per goal, the open rows of the register, and one line of document
+ * links. A row opens in place into the whole of what it is; nothing is a card,
+ * nothing animates, and nothing moves on its own.
+ *
+ * The rows are the Decisions inbox's own idiom in this page's own words: a
+ * line is the thing itself with its facts muted at the end, and what opens is
+ * the whole of it. Every colour is a token.
+ */
+
+.ms-application {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1100px;
+  min-width: 0;
+}
+
+/* ----------------------------------------------------------- the header -- */
+
+.ms-application-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ms-application-subject {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+/* The one sentence that keeps the machinery and the subject apart. */
+.ms-application-mode {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-application-engine,
+.ms-application-counts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------- the blocks -- */
+
+.ms-application-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.ms-application-block-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-application-none {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-3);
+}
+
+.ms-application-reason {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------ the tools -- */
+
+.ms-application-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ms-application-find-field {
+  flex: 1 1 220px;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+  background: var(--ms-surface);
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.ms-application-find-field::placeholder {
+  color: var(--ms-text-3);
+}
+
+.ms-application-tools-count {
+  margin-left: auto;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-application-chip {
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-2);
+  background: var(--ms-surface-2);
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.ms-application-chip:hover {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+.ms-application-chip--on {
+  background: var(--ms-marker-bg);
+  border-color: var(--ms-marker);
+  color: var(--ms-marker-fg);
+}
+
+/* ------------------------------------------------------------ the weeks -- */
+
+.ms-application-weeks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ms-application-week {
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  min-width: 0;
+}
+
+.ms-application-week-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 12px;
+  min-width: 0;
+}
+
+.ms-application-week-name {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+  min-width: 0;
+}
+
+.ms-application-week-count {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--ms-border);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.ms-application-week-new {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-marker-fg);
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------- the rows -- */
+
+.ms-application-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.ms-application-row-item {
+  border-top: 1px solid var(--ms-border);
+  min-width: 0;
+}
+
+.ms-application-rows > .ms-application-row-item:first-child {
+  border-top: 0;
+}
+
+.ms-application-row-item--open {
+  background: var(--ms-surface-2);
+}
+
+.ms-application-row-open {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--ms-text);
+  background: none;
+  border: 0;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.ms-application-row-open:hover .ms-application-row-said {
+  color: var(--ms-accent);
+}
+
+.ms-application-row-id {
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+  flex: 0 0 auto;
+}
+
+/* The thing itself, cut at one line and never at one word. */
+.ms-application-row-said {
+  font-size: 13px;
+  line-height: 20px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* And what it concluded with, muted, in what room is left. */
+.ms-application-row-note {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--ms-text-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-application-row-facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.ms-application-row-when {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Concluded since the last visit: a dot, because a word here would be thirty
+   words down a list of thirty rows. */
+.ms-application-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ms-accent);
+  flex: 0 0 auto;
+}
+
+/* --------------------------------------------------------- an open row -- */
+
+.ms-application-open {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 2px 12px 12px;
+  min-width: 0;
+}
+
+.ms-application-open-id {
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-application-open-words {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-application-open-fact {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-application-open-name {
+  display: block;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-application-open-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+}
+
+/* ------------------------------------------------- problems and the way -- */
+
+.ms-application-unread {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-marker-fg);
+}
+
+.ms-application-docs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+}
+
+.ms-application-way {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ms-application-way:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------- a phone -- */
+
+@media (max-width: 719px) {
+  .ms-application-row-open {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  /* The conclusion goes under the intent rather than beside it: two truncated
+     halves of one line say less than one whole one. */
+  .ms-application-row-said,
+  .ms-application-row-note {
+    flex: 1 1 100%;
+  }
+
+  .ms-application-row-facts {
+    justify-content: flex-start;
+  }
+
+  .ms-application-tools-count {
+    margin-left: 0;
+  }
+
+  .ms-application-week-new {
+    margin-left: 0;
+  }
+}

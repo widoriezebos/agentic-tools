@@ -9,7 +9,10 @@ import { useTypefaceOn } from "./FontControl";
 import { Looked } from "./Looked";
 import { namesIn, runsIn, type Names } from "./references";
 import { ring } from "./ringing";
+import { atEnd, scrollerOf } from "./scrolling";
 import { usePartner } from "./store";
+import { SuggestionCard } from "./Suggestion";
+import { idOf } from "./suggesting";
 import "./partner.css";
 import { previewDocument, type Block } from "../project/api";
 import { Markdown } from "../project/Markdown";
@@ -55,13 +58,6 @@ import { Markdown } from "../project/Markdown";
  * paragraphs, which is what they looked like while they were arriving.
  */
 const RENDERED = 25;
-
-/**
- * How near the end counts as being at it. A line of prose is under this, so a
- * human who has read to the bottom is followed down rather than offered a pill
- * for the pixel they are short of.
- */
-const AT_END = 24;
 
 /** What the Partner is called in the row above everything it says. */
 const PARTNER = "Project Partner";
@@ -125,7 +121,14 @@ export function Transcript() {
       return;
     }
     setBehind(true);
-  }, [messages.length, store.live.text, store.live.doing, store.live.looked.length, store.refusal]);
+  }, [
+    messages.length,
+    store.live.text,
+    store.live.doing,
+    store.live.looked.length,
+    store.live.suggestions.length,
+    store.refusal,
+  ]);
 
   const toEnd = () => {
     const scroller = scrollerOf(column.current);
@@ -156,24 +159,6 @@ export function Transcript() {
       )}
     </div>
   );
-}
-
-/** The nearest ancestor that scrolls, or null where nothing does. */
-function scrollerOf(from: Element | null): HTMLElement | null {
-  let at = from?.parentElement ?? null;
-  while (at !== null) {
-    const overflow = globalThis.getComputedStyle(at).overflowY;
-    if (overflow === "auto" || overflow === "scroll") {
-      return at;
-    }
-    at = at.parentElement;
-  }
-  return null;
-}
-
-/** True while the scroller is showing the end of what is in it. */
-function atEnd(scroller: HTMLElement): boolean {
-  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= AT_END;
 }
 
 function Said({
@@ -208,6 +193,11 @@ function Said({
           (rendered ? <Answer text={message.text} names={names} /> : <Paragraphs text={message.text} />)}
         {message.outcome === "stopped" && <p className="ms-partner-note">Stopped.</p>}
         {failed && <p className="ms-partner-failed">{message.detail ?? "The turn did not finish."}</p>}
+        {/* What this answer offered, under the words that offered it. The card
+            is where the human decides; nothing has been written anywhere. */}
+        {(message.suggestions ?? []).map((suggestion, at) => (
+          <SuggestionCard key={idOf(message.turn, at)} id={idOf(message.turn, at)} />
+        ))}
         <Looked looked={message.looked ?? []} />
       </div>
     </div>
@@ -318,6 +308,11 @@ function Running() {
         ) : (
           <p className="ms-partner-working">{live.doing === "" ? "Thinking…" : live.doing}</p>
         )}
+        {/* A card arrives as the server admits it, which can be before the
+            answer's last word. It is under the words either way. */}
+        {live.suggestions.map((suggestion, at) => (
+          <SuggestionCard key={idOf(live.turn, at)} id={idOf(live.turn, at)} />
+        ))}
       </div>
     </div>
   );

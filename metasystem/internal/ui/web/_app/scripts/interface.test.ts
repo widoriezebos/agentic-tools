@@ -34,16 +34,24 @@ describe("the interface manifest", () => {
   });
 
   // The whole point of the availability field. A Partner asked where to
-  // inspect the fleet must say that this build has no Fleet page, and it can
-  // only say that if purpose, availability and what it may itself do are
-  // three fields rather than one paragraph.
+  // change a setting must say that this build has no Settings pages, and one
+  // asked where to inspect the fleet must say that Fleet is here; it can only
+  // say either if purpose, availability and what it may itself do are three
+  // fields rather than one paragraph.
   it("tells a section's purpose apart from whether this build has it", async () => {
     const manifest = await real();
+    const settings = manifest.sections.find((section) => section.id === "settings");
+    expect(settings?.projected).toBe(false);
+    expect(settings?.availability).toContain("This build does not project Settings");
+    expect(settings?.availability).toContain("Arrives with gate 7");
+    expect(settings?.purpose).toContain("workspace's own configuration");
+    expect(settings?.purpose).not.toContain("This build");
+
     const fleet = manifest.sections.find((section) => section.id === "fleet");
-    expect(fleet?.projected).toBe(false);
-    expect(fleet?.availability).toContain("This build does not project Fleet");
-    expect(fleet?.availability).toContain("Arrives with g1-s13");
-    expect(fleet?.purpose).toContain("machines and seats");
+    expect(fleet?.projected).toBe(true);
+    expect(fleet?.availability).toContain("This build projects Fleet");
+    expect(fleet?.purpose).toContain("machines working on this project");
+    expect(fleet?.purpose).not.toContain("This build");
 
     const backlog = manifest.sections.find((section) => section.id === "backlog");
     expect(backlog?.projected).toBe(true);
@@ -111,7 +119,7 @@ describe("a source with nothing to say about itself", () => {
   it("refuses an unprojected section with no empty state", async () => {
     const read = await sources();
     expect(() => buildInterface({ ...read, empties: [] })).toThrow(
-      /the unprojected section fleet has no description/,
+      /the unprojected section settings has no description/,
     );
   });
 

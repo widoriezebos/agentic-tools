@@ -255,12 +255,6 @@ body {
   gap: 4px;
 }
 
-.ms-rail-rule {
-  height: 1px;
-  margin: 8px 0;
-  background: var(--ms-border);
-  border: 0;
-}
 
 .ms-rail-spacer {
   flex: 1;

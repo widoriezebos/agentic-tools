@@ -45,15 +45,6 @@ export type Empty = {
 
 export const empties: readonly Empty[] = [
   {
-    id: "application",
-    kind: "not projected",
-    heading: "Application is not projected yet",
-    body: "Implemented and released behaviour and its evidence are recorded and will be shown here.",
-    note: "Arrives with gate 6",
-    link: null,
-    action: null,
-  },
-  {
     id: "settings",
     kind: "not projected",
     heading: "Settings pages are not built yet",

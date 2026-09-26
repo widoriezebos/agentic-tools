@@ -14,7 +14,46 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/application"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 )
+
+// lastVisit is how long ago the walkthrough's previous visit to Decisions was.
+//
+// Twenty days, because that is where the fixture's own dates fall either side
+// of it: the questions, the drafts, the alerts, the asks, the stopped goal and
+// about a third of the queue were recorded inside it, and the older half of
+// the queue and the register's reviews outside it. A fixture with no previous
+// visit would open on an inbox with no dots anywhere, which is the one state
+// the rule is not for.
+const lastVisit = 20 * 24 * time.Hour
+
+// plantPageVisits records a previous visit to each page that keeps an entry of
+// its own, for each handle this fixture can act under: Decisions twenty days
+// ago and Application four days ago.
+//
+// It records it through the owner of the file rather than by writing the file,
+// so the walkthrough's window is the window the rule produces: the read a
+// human then makes is more than thirty minutes later, which ends that visit
+// and makes its last read the boundary this page compares against.
+//
+// The landing page's own entry is not touched, which is the point of the
+// entry being its own: Overview goes on comparing against the last time
+// somebody read Overview.
+func plantPageVisits(checkout string, handles []string, now time.Time) {
+	seen := map[string]bool{}
+	for _, human := range handles {
+		if seen[human] {
+			continue
+		}
+		seen[human] = true
+		// Best effort, like every other read of this file: a marker that
+		// could not be written costs the walkthrough its dots and nothing
+		// else.
+		_, _, _ = overview.VisitPage(checkout, overview.PageDecisions, human, now.Add(-lastVisit))
+		_, _, _ = overview.VisitPage(checkout, application.PageName, human, now.Add(-applicationLastVisit))
+	}
+}
 
 // fixtureRulings is eight rulings and one broken row.
 //

@@ -34,8 +34,10 @@ import { DEFAULT_MODALITY, useOpener, useWorkModal, type Modality } from "../she
  * always did — there is nothing beside it there to hold focus for.
  *
  * Its head carries "Ask about this", which hands the fields as they stand to
- * the Partner as a draft. Its caller says what the sheet is called and which
- * fields are its own.
+ * the Partner as a draft. Its caller says what the sheet is called, which
+ * fields are its own, which of those the Partner may offer words for, and how
+ * to put words into one of them. This panel writes into nothing itself: the
+ * sheet owns its draft state, so the sheet owns the setter.
  */
 
 /** Everything that can hold focus inside the panel, in the order it is met. */
@@ -55,6 +57,10 @@ export function Panel({
   modal = DEFAULT_MODALITY,
   sheetName,
   fields = [],
+  opening,
+  writable = [],
+  set,
+  busy = false,
   onClose,
   children,
 }: {
@@ -86,8 +92,39 @@ export function Panel({
   modal?: Modality;
   /** What the capture calls this sheet while it is open. Its title, by default. */
   sheetName?: string;
+  /**
+   * Work is in flight that closing would not stop.
+   *
+   * A sheet that publishes one act per goal goes on publishing whether or not
+   * it is on screen, so while it is busy this panel cannot be dismissed:
+   * Cancel is disabled and Escape does nothing. The scrim never closed
+   * anything. The sheet says when it is busy; this only stops a human
+   * dismissing the one place that says so.
+   */
+  busy?: boolean;
   /** The fields "Ask about this" hands over, in the order the sheet asks them. */
   fields?: Field[];
+  /**
+   * The one opening this sheet is, minted by the sheet when it mounted.
+   *
+   * A suggestion belongs to an opening and not to a sheet's name: goal A's edit
+   * sheet and goal B's are both "Edit goal", and words prepared while A stood
+   * must not be usable once it has closed, nor woken by B. A sheet that offers
+   * nothing writable need not mint one.
+   */
+  opening?: string;
+  /**
+   * Which of those fields the Partner may be offered words for, including the
+   * ones with nothing in them yet, in the order the sheet asks them. A
+   * confirmation supplies none, and so does a sheet whose values are chosen
+   * from a menu rather than written.
+   */
+  writable?: string[];
+  /**
+   * Put words in one of those fields, whole, and answer what it held before.
+   * It is the sheet's own, because the sheet owns the draft.
+   */
+  set?: (field: string, text: string) => string;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -108,10 +145,17 @@ export function Panel({
     };
   }, [opener]);
 
+  // The one way out, guarded once so Escape and Cancel cannot disagree.
+  const dismiss = () => {
+    if (!busy) {
+      onClose();
+    }
+  };
+
   const keys = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.stopPropagation();
-      onClose();
+      dismiss();
       return;
     }
     // Focus is held inside only while this is modal for the whole window.
@@ -158,7 +202,15 @@ export function Panel({
               {title}
             </h2>
           </div>
-          {fields.length > 0 && <AskAboutSheet sheet={sheetName ?? title} fields={fields} />}
+          {fields.length > 0 && (
+            <AskAboutSheet
+              sheet={sheetName ?? title}
+              fields={fields}
+              opening={opening}
+              writable={writable}
+              set={set}
+            />
+          )}
         </div>
         {goal !== undefined && (
           <div className="ms-act-goal">
@@ -181,7 +233,9 @@ export function Panel({
           )}
           <div className="ms-act-buttons">
             {act}
-            <Button onClick={onClose}>Cancel</Button>
+            <Button disabled={busy} onClick={dismiss}>
+              Cancel
+            </Button>
           </div>
           {note !== "" && <p className="ms-act-note">{note}</p>}
         </div>

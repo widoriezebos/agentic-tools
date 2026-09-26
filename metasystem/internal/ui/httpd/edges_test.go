@@ -322,6 +322,10 @@ func TestAnEarlyUnblockReachesTheEngineUnderASignedInHuman(t *testing.T) {
 		Unblock: func(signed *session.Session, dependent, blocker string) error {
 			return actingHand(t, root, signed).Unblock(dependent, blocker)
 		},
+		Park: func(signed *session.Session, id, because string) error {
+			return actingHand(t, root, signed).Park(id, because)
+		},
+		Unpark: func(signed *session.Session, id string) error { return actingHand(t, root, signed).Unpark(id) },
 	}
 	served := New(info, loopback(), testBundle())
 
@@ -373,6 +377,8 @@ func TestAnEarlyUnblockIsRefusedWhenNoHumanIsBehindTheAct(t *testing.T) {
 			// act package carries one.
 			return seatUnblock(root, dependent, blocker)
 		},
+		Park:   func(*session.Session, string, string) error { return nil },
+		Unpark: func(*session.Session, string) error { return nil },
 	}
 	served := New(info, loopback(), testBundle())
 

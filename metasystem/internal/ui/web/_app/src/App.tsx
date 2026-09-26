@@ -5,6 +5,7 @@ import { NotificationsProvider } from "./notifications/store";
 import { TOOLTIP_DELAY } from "./shell/controls";
 import { IdentityProvider } from "./shell/identity";
 import { Shell } from "./shell/Shell";
+import { StickiesProvider } from "./stickies/store";
 
 /**
  * The application: a router, the workspace the header reads once, what the
@@ -15,6 +16,12 @@ import { Shell } from "./shell/Shell";
  * surfaces it feeds are not in the shell's layout at all: the panel is a sheet
  * and the toasts stand over everything, and only the bell is a control in the
  * header.
+ *
+ * The notepad is beside it for the first half of that reason: a goal page and
+ * the document reader each show the stickies about them, so the list has to
+ * stand above every route. Its PANEL does not stand here — it is rendered
+ * inside the shell, where the page's subject, the conversation and the work
+ * area are, because it needs all three and this is above them.
  */
 export function App() {
   return (
@@ -22,7 +29,9 @@ export function App() {
       <Tooltip.Provider delayDuration={TOOLTIP_DELAY}>
         <IdentityProvider>
           <NotificationsProvider>
-            <Shell />
+            <StickiesProvider>
+              <Shell />
+            </StickiesProvider>
           </NotificationsProvider>
         </IdentityProvider>
       </Tooltip.Provider>

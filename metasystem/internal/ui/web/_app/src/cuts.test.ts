@@ -79,6 +79,11 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // The two edge routes name the goal that WAITS, whichever end of the
   // relation the page acted from, so a goal page reads one call site and not
   // two mirrored ones.
+  // The Decisions queue's park and unpark are here for the same reason: they
+  // are not board moves, but they are the same request to the same
+  // collection, and a second fetching file would be a second cut. The goal
+  // editor's own "/edit" joins them: it is the same collection, the same
+  // call site, and the same id between the prefix and the suffix.
   // The query is Refresh's and nobody else's: it asks the server to fetch the
   // canonical branch once before it answers. It is the same resource and the
   // same call site — a read a human asked for, not a read anything repeats.
@@ -95,6 +100,9 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
       "/priority",
       "/block",
       "/unblock",
+      "/park",
+      "/unpark",
+      "/edit",
     ],
   ],
   // The Project section's writes join its two reads at the one call site it
@@ -170,6 +178,22 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // requests and the backlog read they need are backlog/api.ts's call site
   // and not a second one.
   ["decisions/api.ts", 1, ["/api/decisions"]],
+  // The notepad. One read when the page loads, and the three acts when a
+  // human makes one — all four through the one request below. Nothing here
+  // polls: a sticky changes when its owner changes it, and its owner is the
+  // human at this keyboard. Every act answers the whole notepad, which is why
+  // there is one call site rather than one that writes and one that re-reads.
+  // The edit and the removal name a sticky by its id between the prefix and,
+  // for the removal, its own suffix, which is why "/remove" is listed on its
+  // own.
+  ["stickies/api.ts", 1, ["/api/stickies", "/api/stickies/", "/remove"]],
+  // Application. One read when the pane mounts and one when a human presses
+  // the section's refresh, both through the one request below. The page holds
+  // no timer and no second reader: the ledger's conclusions, the known-issues
+  // register, this seat's own engine build and the document links are all
+  // composed on the server, so there is one resource here and not four. The
+  // page publishes nothing, so there is no act beside it either.
+  ["application/api.ts", 1, ["/api/application"]],
 ];
 
 /**

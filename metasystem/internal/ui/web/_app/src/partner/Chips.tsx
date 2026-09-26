@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import { lifeOf, takeBackLabel, type Attachment } from "./attachments";
 import { usePartner } from "./store";
 import { registerFor } from "./subject";
-import { suggestionsFor } from "./suggestions";
+import { DRAFT_REGISTER, suggestionsFor } from "./suggestions";
 import { Hint } from "../shell/controls";
 
 /**
@@ -62,6 +62,38 @@ export function Suggestions() {
         </Hint>
       ))}
     </div>
+  );
+}
+
+/**
+ * The two questions a handed-over sheet is worth asking, beside its own chip.
+ *
+ * They are the ordinary suggested questions and go the ordinary way: with an
+ * empty composer each one sends, and with something half-written its words go
+ * in at the cursor, because the sentence a human was composing is theirs. They
+ * stand beside the chip rather than among the pills above the field because
+ * they are about that chip: they ask the Partner to write in the sheet the chip
+ * hands over, and they are gone the moment the chip is.
+ */
+export function DraftQuestions() {
+  const { suggest, busy } = usePartner();
+  return (
+    <>
+      {suggestionsFor(DRAFT_REGISTER).map((question) => (
+        <Hint key={question.text} label={`Asks about ${question.scope}`}>
+          <button
+            type="button"
+            className="ms-partner-suggestion"
+            disabled={busy}
+            onClick={() => {
+              suggest(question.text);
+            }}
+          >
+            {question.text}
+          </button>
+        </Hint>
+      ))}
+    </>
   );
 }
 

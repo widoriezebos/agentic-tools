@@ -20,11 +20,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/application"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
@@ -33,6 +35,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
@@ -145,6 +148,22 @@ func runUI(verb string, args []string) int {
 		configuredHuman, humanErr := config.UIHuman(confPath)
 		if humanErr != nil {
 			return refuse(humanErr.Error())
+		}
+
+		// The human's own notepad, under the account's registry home rather
+		// than under this checkout's state root. A sticky is personal working
+		// material and never a record: keeping it inside the checkout would
+		// put it inside the Project Partner's native read grant and inside a
+		// critic's read root, and "no seat reads your stickies" would be false
+		// from the first one. A home this process cannot resolve is a build
+		// with no notepad, which the routes say — it costs a human their
+		// reminders and nothing about the rest of the interface, so it is not
+		// a reason to refuse to serve.
+		var notepad *stickies.Store
+		if home, homeErr := stickies.Home(); homeErr == nil {
+			notepad = stickies.New(home, roots.Checkout, time.Now)
+		} else {
+			fmt.Fprintln(os.Stderr, "interface notepad: unavailable: "+homeErr.Error())
 		}
 
 		// The ledger reader answers requests from the accepted ref as it
@@ -479,6 +498,49 @@ func runUI(verb string, args []string) int {
 						advance()
 						return nil
 					},
+					// Not now, and back. Admitted from a signed-in browser
+					// under R-125-m1u, at the three rows that ruling names
+					// and at no others; every other refusal is the engine's
+					// and reaches the page in its own words.
+					Park: func(signed *session.Session, id, because string) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Park(id, because); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					Unpark: func(signed *session.Session, id string) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Unpark(id); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					// The one direct edit the master design admits: the
+					// intent, the next step and the labels of a goal nobody
+					// has approved. The state it must be in is the
+					// mutation's own allowlist, so a goal approved or
+					// claimed since the page read it is refused here rather
+					// than rewritten.
+					Edit: func(signed *session.Session, id string, edited act.Edited) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Edit(id, edited); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
 					BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 						return tierBudgets(roots.Installation)
 					},
@@ -505,9 +567,30 @@ func runUI(verb string, args []string) int {
 						open, _ := channel.WalkOpenQuestions(roots.Checkout)
 						return open, nil
 					},
+					// The register is read from the INSTALLATION, because
+					// that is where the kit's memory home is on every layout
+					// this interface serves: a checkout that is not the
+					// installation has no memory/ of its own, and reading
+					// there answered an empty register for a file that exists.
+					// The channel and the journal stay at the checkout, where
+					// the steward writes them.
 					Rulings: func() (rulings.Register, error) {
-						return rulings.Read(roots.Checkout)
+						return rulings.Read(roots.Installation)
 					},
+					// And where that register is from the checkout, so that
+					// every destination naming it opens in the reader, which
+					// resolves against the checkout.
+					RegisterPath: registerFromCheckout(roots),
+					// The known-issues register, read from the INSTALLATION
+					// for the rulings register's reason: that is where the
+					// kit's memory home is on every layout this interface
+					// serves. And where it is from the checkout, so that
+					// "Open the register" opens in the reader, which resolves
+					// against the checkout.
+					KnownIssues: func() (knownissues.Register, error) {
+						return knownissues.Read(roots.Installation)
+					},
+					KnownIssuesPath: knownIssuesFromCheckout(roots),
 					// The landing page's last-visit marker, beside this
 					// server's own lifecycle state. It is the one thing the
 					// interface writes for itself rather than for the
@@ -517,6 +600,27 @@ func runUI(verb string, args []string) int {
 					Visit: func(human string, now time.Time) (time.Time, bool, error) {
 						return overview.Visit(roots.StateRoot, human, now)
 					},
+					// The Decisions page's own marker, in the same file,
+					// through the same owner, under an entry of its own. A
+					// read there must not move the landing page's boundary:
+					// the two pages are read on different rhythms, and one
+					// marker for both would hide from a human what they never
+					// saw on the other.
+					VisitDecisions: func(human string, now time.Time) (time.Time, bool, error) {
+						return overview.VisitPage(roots.StateRoot, overview.PageDecisions, human, now)
+					},
+					// The Application page's own marker, under an entry of
+					// its own, for the reason Decisions keeps one: a human
+					// reads the three pages on three rhythms, and one marker
+					// for all of them would hide from them what they never
+					// saw on the others.
+					VisitApplication: func(human string, now time.Time) (time.Time, bool, error) {
+						return overview.VisitPage(roots.StateRoot, application.PageName, human, now)
+					},
+					// The notepad, resolved once above. It is the one piece of
+					// state this interface keeps OUTSIDE the checkout, which
+					// is the whole of why it is its own owner.
+					Stickies: notepad,
 					// The Project Partner. The flag travels whether or not the
 					// runtime was admitted, because it decides the act routes'
 					// policy and not only the Partner's own.
@@ -700,4 +804,44 @@ func tierBudgets(installation string) (map[string]goalbudget.Budget, error) {
 // its own triple, which is the conversion this wiring exists for.
 func projectRoots(roots lifecycle.Roots) project.Roots {
 	return project.Roots{Checkout: roots.Checkout, Installation: roots.Installation, StateRoot: roots.StateRoot}
+}
+
+// registerFromCheckout is where the rulings register is RELATIVE TO THE
+// CHECKOUT, which is the root the document reader opens a path against.
+//
+// The register itself is read from the installation, because that is the
+// kit's memory home; the reader that opens a destination is the checkout's.
+// On the self-hosted layout the two are the same directory and this answers
+// "memory/rulings.md"; on the layout this interface most often serves — a
+// checkout whose installation is a directory inside it — it answers
+// "metasystem/memory/rulings.md", which is the path that opens.
+//
+// Where the installation is not under the checkout at all, no
+// checkout-relative path names that file, so this answers nothing and the
+// composer keeps its own default: a destination that cannot open is not
+// improved by a path that walks out of the repository.
+func registerFromCheckout(roots lifecycle.Roots) string {
+	relative, err := filepath.Rel(roots.Checkout, rulings.Path(roots.Installation))
+	if err != nil {
+		return ""
+	}
+	slashed := filepath.ToSlash(relative)
+	if slashed == ".." || strings.HasPrefix(slashed, "../") {
+		return ""
+	}
+	return slashed
+}
+
+// knownIssuesFromCheckout is the same for the known-issues register, which is
+// read from the same memory home and opened through the same reader.
+func knownIssuesFromCheckout(roots lifecycle.Roots) string {
+	relative, err := filepath.Rel(roots.Checkout, knownissues.Path(roots.Installation))
+	if err != nil {
+		return ""
+	}
+	slashed := filepath.ToSlash(relative)
+	if slashed == ".." || strings.HasPrefix(slashed, "../") {
+		return ""
+	}
+	return slashed
 }

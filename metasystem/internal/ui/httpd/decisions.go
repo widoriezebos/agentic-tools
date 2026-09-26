@@ -15,6 +15,7 @@ package httpd
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
@@ -63,13 +64,27 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		journal = read
 	}
 
+	now := h.now()
+	standing := h.state(r)
+	// The visit is recorded as part of answering, because reading the page IS
+	// the visit, and it is recorded before the page is composed so that the
+	// window the page is composed over is the window this read established.
+	// It is this page's own entry: the landing page keeps its own, and a read
+	// here must not move it.
+	since, first := h.visitDecisions(standing.Human, now)
+
 	board := backlogOf(h.info.Observe())
 	in := decisions.Inputs{
 		Project: pane,
 		Rows:    plainRows(board.Rows),
 		Closed:  plainRows(board.Closed),
 		Journal: journal,
-		Human:   decisions.Standing{Proven: h.state(r).SignedIn},
+		// Where the register is from the checkout, which is the one root a
+		// destination in this payload can be opened against.
+		RegisterPath: h.info.RegisterPath,
+		Human:        decisions.Standing{Proven: standing.SignedIn},
+		Since:        since,
+		First:        first,
 	}
 	if h.info.Asks != nil {
 		asked, asksErr := h.info.Asks()
@@ -87,5 +102,22 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		}
 		in.Register = read
 	}
-	_ = json.NewEncoder(w).Encode(decisions.Compose(in, h.now()))
+	_ = json.NewEncoder(w).Encode(decisions.Compose(in, now))
+}
+
+// visitDecisions records this read of the Decisions page and answers the
+// window it compares against. A build with no marker store, and a marker that
+// could not be read or written, both answer the first visit's window: the page
+// still renders, over a day of history.
+func (h *handler) visitDecisions(human string, now time.Time) (time.Time, bool) {
+	if h.info.VisitDecisions == nil {
+		return now.Add(-24 * time.Hour), true
+	}
+	since, first, err := h.info.VisitDecisions(human, now)
+	if err != nil {
+		// The window came back beside the error and is the usable one; the
+		// error is about the file, which nothing on the page depends on.
+		return since, first
+	}
+	return since, first
 }

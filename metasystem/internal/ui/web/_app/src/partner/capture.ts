@@ -1,4 +1,4 @@
-import type { Page } from "./api";
+import type { CapturedSticky, Page } from "./api";
 import type { SheetDraft } from "./drafting";
 import type { Chosen } from "./subject";
 import { activeSection } from "../routes";
@@ -39,6 +39,14 @@ export type Capturing = {
   sheet?: string;
   /** A sheet a human offered with "Ask about this", or null. */
   draft?: SheetDraft | null;
+  /**
+   * The human's own notepad as the page was showing it, and how many of it is
+   * open. Astra's F2: a note about no subject reaches the Partner only through
+   * the panel, so what travels is what the panel shows while it is open and
+   * what the page shows otherwise — which the notepad's own owner decides, not
+   * this file.
+   */
+  notepad?: { stickies: CapturedSticky[]; open: number };
 };
 
 /** Compose one capture. */
@@ -104,6 +112,16 @@ export function captureOf(from: Capturing): Page {
   if (page_.fleet !== undefined) {
     page.fleet = page_.fleet;
   }
+  // The notepad, last: it is what the human wrote to themselves rather than
+  // what the project says, and the count travels even when no sticky does so
+  // that "none of them is about this page" is an answer rather than a silence.
+  if (from.notepad !== undefined && (from.notepad.open > 0 || from.notepad.stickies.length > 0)) {
+    if (from.notepad.stickies.length > 0) {
+      page.stickies = from.notepad.stickies;
+    }
+    page.stickiesOpen = from.notepad.open;
+  }
+
   put(page, "return", returnTo(from));
   return page;
 }

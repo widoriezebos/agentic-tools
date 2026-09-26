@@ -1,6 +1,6 @@
 {
   "packages": {
-    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 541,
+    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 540,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/acp": 60,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/adapter": 162,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/atif": 7,
@@ -33,7 +33,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun": 42,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/gittree": 63,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/goal": 0,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch": 4,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch": 5,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget": 7,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision": 4,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages": 0,
@@ -536,6 +536,16 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv",
       "test": "TestRegistrySidecarCleanupWaitsForInheritedLeaseAndCustodian",
       "reason": "sets the process-wide inherited supervision registry home and owner nonce"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies",
+      "test": "TestTheHomeFollowsTheRegistrysOwnFixtureSeam",
+      "reason": "sets the process-wide supervision registry home to prove the notepad follows the registry's own fixture seam, which is what keeps every other test in the package out of the real account's home"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies",
+      "test": "TestARelativeRegistryHomeIsRefusedRatherThanResolvedInTheCheckout",
+      "reason": "sets the process-wide supervision registry home and the account's home directory to prove a relative registry home is refused rather than resolved inside the checkout the server was started in"
     }
   ]
 }

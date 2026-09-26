@@ -55,6 +55,8 @@ import {
   type Backlog,
   type Row as GoalRow,
 } from "../backlog/api";
+import { editable, editReason } from "../backlog/editing";
+import { EditSheet } from "../backlog/EditSheet";
 import { laneTitle } from "../backlog/lanes";
 import { showLabel } from "../backlog/showing";
 import { Help } from "../help/Help";
@@ -67,6 +69,7 @@ import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
+import { StickiesBlock } from "../stickies/Block";
 import { useSession } from "../shell/identity";
 import { failureMessage as actFailureMessage } from "../shell/workspace";
 import {
@@ -457,8 +460,13 @@ function Columns({
       {(pane.problems.length > 0 || briefing.goal !== null) && (
         <div className="ms-briefing-preamble">
           {pane.problems.length > 0 && <Problems problems={pane.problems} />}
-          {briefing.goal !== null && <GoalBlock briefing={briefing} />}
+          {briefing.goal !== null && <GoalBlock briefing={briefing} ledger={ledger} onEdited={onReload} />}
           {goal !== null && <Dependencies goal={goal} ledger={ledger} onLedger={onLedger} />}
+          {/* What the human wrote to themselves about this goal, under its
+              header where they will meet it again. It is the notepad's own
+              list narrowed to this goal, so it cannot disagree with the
+              panel's. */}
+          {goal !== null && <StickiesBlock named={{ kind: "goal", id: goal }} />}
         </div>
       )}
       <div className="ms-briefing">
@@ -763,14 +771,31 @@ function Block({
  * did not reach it. It names what it does, in the view this browser is going
  * to get, and the Backlog does it on arrival.
  */
-function GoalBlock({ briefing }: { briefing: Briefing }) {
+function GoalBlock({
+  briefing,
+  ledger,
+  onEdited,
+}: {
+  briefing: Briefing;
+  /** The board as it stands, which is where the row the sheet fills from is. */
+  ledger: Backlog | null;
+  /** Said after a save landed: the page reads itself again, records and all. */
+  onEdited: () => void;
+}) {
   // Which view the Backlog will open in, read the way that page reads it:
   // once, as what this browser was last left on.
   const [view] = useState(() => readBacklogView());
+  const [editing, setEditing] = useState(false);
   const goal = briefing.goal;
   if (goal === null) {
     return null;
   }
+  // The goal's own row, which is what the sheet is prefilled from and what
+  // says whether it may be edited at all. The project payload knows the
+  // goal's state; it does not carry its next step or its labels, and a sheet
+  // cannot be filled from a page that has not read the board.
+  const mine = ledger?.rows.find((row) => row.ref.id === goal.id);
+  const reason = mine === undefined ? "" : editReason(mine);
   return (
     <section className="ms-briefing-block">
       <p className="ms-facts-eyebrow ms-mono">{goal.id}</p>
@@ -778,6 +803,24 @@ function GoalBlock({ briefing }: { briefing: Briefing }) {
         <h2 className="ms-briefing-title">{goal.title}</h2>
         {goal.state !== "" && <Chip>{goal.state}</Chip>}
         <span className="ms-project-count">{goal.count}</span>
+        {/* The edit, beside the intent it changes. A goal the ledger will
+            not take an edit of says which act would let it, because "no
+            button" and "the wrong state" look the same from here. */}
+        {mine !== undefined && editable(mine) && (
+          <span className="ms-briefing-act">
+            <button
+              type="button"
+              className="ms-act-link"
+              onClick={() => {
+                setEditing(true);
+              }}
+            >
+              Edit…
+            </button>
+            <Help id="edit-goal" />
+          </span>
+        )}
+        {reason !== "" && <span className="ms-project-count">{reason}</span>}
         <span className="ms-briefing-act">
           <NavLink className="ms-briefing-link" to={backlogPath(goal.id)}>
             {showLabel(view)}
@@ -788,6 +831,19 @@ function GoalBlock({ briefing }: { briefing: Briefing }) {
         goal.intent !== "" && <Lede intent={goal.intent} />
       ) : (
         <p className="ms-project-reason">The ledger carries no goal named {goal.id}.</p>
+      )}
+      {editing && mine !== undefined && ledger !== null && (
+        <EditSheet
+          goal={mine}
+          backlog={ledger}
+          onClose={() => {
+            setEditing(false);
+          }}
+          onDone={() => {
+            setEditing(false);
+            onEdited();
+          }}
+        />
       )}
     </section>
   );

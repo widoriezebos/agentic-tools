@@ -34,6 +34,18 @@ func TestThePermissionPointAdmitsTheInterfacesOwnTools(t *testing.T) {
 	}
 }
 
+// The one operation of this server that reads nothing is admitted like the
+// rest, and the line the conversation shows says what actually happened: a
+// human reading "allowed a read" under an answer that read nothing would be
+// reading a claim this point never had any business making.
+func TestThePointSaysWhatAnAdmittedCallActuallyDid(t *testing.T) {
+	t.Parallel()
+	decided := judge(mustParams(t, toolPermission("mcp__metasystem__suggest", "", "")), "s1", t.TempDir())
+	testutil.Expect(t, "it is admitted", decided.allowed, true)
+	testutil.Expect(t, "and it is not called a read", decided.activity,
+		"Allowed the interface's own tools to prepare a suggestion: nothing was read and nothing was written")
+}
+
 // The exception is this server's operations and nothing beside them: another
 // server's tools, a tool this server does not have, and a name that merely
 // contains the server's are all refused.

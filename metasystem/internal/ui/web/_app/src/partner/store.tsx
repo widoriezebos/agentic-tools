@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router";
 
-import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn, type Page } from "./api";
+import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn, type CapturedSticky, type Page } from "./api";
 import {
   attach,
   attachedDraft,
@@ -19,12 +19,28 @@ import {
 } from "./attachments";
 import { captureOf, readingMoved } from "./capture";
 import { chipped, insertAt } from "./composing";
-import type { SheetDraft } from "./drafting";
+import { valueIn, type SheetDraft } from "./drafting";
+import {
+  cardIn,
+  folded,
+  holding,
+  reach,
+  offeredIn,
+  undoable,
+  undone,
+  usable,
+  used,
+  type Marks,
+  type Offered,
+  type Registered,
+} from "./suggesting";
 import { keyFor } from "./asking";
 import { busy, emptyStore, loaded, received, refused, retrying, unavailable, asked, type Store } from "./conversation";
 import type { Chosen } from "./subject";
 import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
 import { useAboutLine, useSubject } from "../shell/about";
+import { captured } from "../stickies/stickies";
+import { useStickies } from "../stickies/store";
 
 /**
  * The conversation, held once for the whole page.
@@ -102,11 +118,48 @@ type Partner = {
   /** Offer this sheet's fields, and take the caret to the composer. */
   askAbout: (draft: SheetDraft) => void;
   /**
-   * How an open sheet reads its own fields right now, so that a question
-   * carries the draft as the sheet stands rather than as it stood when it was
-   * handed over. A sheet that has handed nothing over is still never read.
+   * One opening of an editor, while it is on screen: how it reads its own
+   * fields right now, so that a question carries the draft as the sheet stands
+   * rather than as it stood when it was handed over, and how to put words into
+   * one of its fields. Null takes the registration back, which is what the
+   * sheet's own unmount does.
+   *
+   * It is keyed by the opening the sheet minted when it mounted, not by the
+   * sheet's name: two openings of "Edit goal" are two different goals, and a
+   * suggestion prepared for one must never be usable in the other.
    */
-  offerFields: (sheet: string, read: (() => SheetDraft) | null) => void;
+  offerFields: (opening: string, registered: Registered | null) => void;
+  /**
+   * Every suggestion this conversation carries, oldest first, each with where
+   * it stands. The cards in the transcript and the link beside a field are
+   * both read from this one list.
+   */
+  offered: readonly Offered[];
+  /**
+   * Use this: the suggestion's words replace that field's whole value, and
+   * what the field held is kept for Undo. It does nothing where the editor
+   * opening it was prepared for has gone — a closed sheet, or a sheet of the
+   * same name opened again — because there is nothing left to write into.
+   */
+  use: (id: string) => void;
+  /** Undo: what the field held at the moment of use goes back. */
+  undo: (id: string) => void;
+  /** Dismiss: the card folds to one line. */
+  dismiss: (id: string) => void;
+  /** The folded line, pressed: the card is back. */
+  reopen: (id: string) => void;
+  /** Open the drawer at one card, which is what a field's link does. */
+  show: (id: string) => void;
+  /** The card the drawer was last opened at, or "". */
+  showing: string;
+  /**
+   * A field says what it now holds, so that Undo is offered only while the
+   * field still holds the suggestion's words. Nothing changes where the answer
+   * is the same as it was.
+   */
+  noteField: (opening: string, field: string, value: string) => void;
+  /** How many times a card has been asked for; the shell opens the drawer. */
+  revealed: number;
   /**
    * Say that this sheet is open, for as long as it is. The capture carries
    * its name, the Seeing line ends with it, and the message a question becomes
@@ -153,6 +206,15 @@ const nothing: Partner = {
   sheetDraft: null,
   askAbout: () => {},
   offerFields: () => {},
+  offered: [],
+  use: () => {},
+  undo: () => {},
+  dismiss: () => {},
+  reopen: () => {},
+  show: () => {},
+  showing: "",
+  noteField: () => {},
+  revealed: 0,
   noteSheet: () => () => {},
   capture: { section: "", path: "" },
   moved: false,
@@ -206,6 +268,19 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // stands, which prepares the next capture and changes no stamp.
   const [baseline, setBaseline] = useState<Page | null>(null);
   const [wanted, setWanted] = useState(0);
+  // What the human has done with each suggestion: what the field held before
+  // Use this, whether it still holds the words, and whether the card is
+  // folded. It is the page's own state and not the server's — the server
+  // admitted the suggestion, and what happens to a field afterwards is the
+  // human's.
+  const [marks, setMarks] = useState<Marks>({});
+  // Which editor openings are on screen, by the id each minted when it
+  // mounted. It is state rather than a ref because a card has to change what it
+  // says when its sheet closes; the registration's own functions are in the ref
+  // below, which is refreshed on every render and re-renders nothing.
+  const [open, setOpen] = useState<readonly string[]>([]);
+  const [showing, setShowing] = useState("");
+  const [revealed, setRevealed] = useState(0);
   // The key this draft was minted with. It survives a refusal, so pressing
   // Send again after a 503 is the same turn rather than a second one.
   const key = useRef("");
@@ -213,11 +288,14 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const cameFrom = useRef<HTMLElement | null>(null);
   // How the composer on screen inserts at its own cursor.
   const insert = useRef<((text: string) => void) | null>(null);
-  // How each open sheet reads its own fields, by the sheet's own name. It is
-  // read at one moment and no other: the instant a question is sent.
-  const openFields = useRef(new Map<string, () => SheetDraft>());
+  // How each open editor reads its own fields and writes into them, by the
+  // opening it minted when it mounted. The reading happens at one moment and no
+  // other — the instant a question is sent — and the writing only when a human
+  // presses Use this or Undo.
+  const openings = useRef(new Map<string, Registered>());
   const location = useLocation();
   const subject = useSubject();
+  const stickies = useStickies();
   const label = useAboutLine("");
 
   const read = useCallback((signal?: AbortSignal) => {
@@ -268,6 +346,11 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // The innermost sheet is the one a human is standing in, and the one the
   // capture names.
   const sheet = sheets.at(-1) ?? "";
+  // The human's own notepad, as the page is showing it. It is read here rather
+  // than described by each pane, because what travels depends on something no
+  // pane knows: whether the panel is open over it.
+  const notepad = captured(stickies.notepad, stickies.panelIsOpen, stickies.doneIsOpen, subject);
+  const noted = JSON.stringify(notepad);
   const compose = useCallback(
     (list: readonly Attachment[]) =>
       captureOf({
@@ -275,11 +358,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         page: subject,
         label,
         sheet,
+        notepad: JSON.parse(noted) as { stickies: CapturedSticky[]; open: number },
         chosen: subjectIn(list),
         passage: passageIn(list),
         draft: draftIn(list),
       }),
-    [location.pathname, subject, label, sheet],
+    [location.pathname, subject, label, sheet, noted],
   );
   const capture = useMemo(() => compose(attachments), [compose, attachments]);
 
@@ -290,8 +374,8 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    */
   const refreshed = useCallback((held: readonly Attachment[]) => {
     let next = held;
-    for (const fields of openFields.current.values()) {
-      next = refreshDraft(next, fields());
+    for (const registered of openings.current.values()) {
+      next = refreshDraft(next, registered.read());
     }
     return next;
   }, []);
@@ -404,14 +488,99 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     wantComposer();
   }, [wantComposer]);
 
-  /** A sheet says how to read its fields, for as long as it is on screen. */
-  const offerFields = useCallback((name: string, read: (() => SheetDraft) | null) => {
-    if (read === null) {
-      openFields.current.delete(name);
+  /**
+   * One opening of an editor, for as long as it is on screen.
+   *
+   * It is called on every render of the sheet, because the functions it carries
+   * close over the sheet's own state and a stale one would read or write last
+   * keystroke's draft. The list of open ids is what the cards watch, and it
+   * changes only when the membership does: passing the same opening again
+   * leaves the state as it was, so re-registering re-renders nothing.
+   */
+  const offerFields = useCallback((opening: string, registered: Registered | null) => {
+    if (registered === null) {
+      openings.current.delete(opening);
+      setOpen((held) => (held.includes(opening) ? held.filter((one) => one !== opening) : held));
       return;
     }
-    openFields.current.set(name, read);
+    openings.current.set(opening, registered);
+    setOpen((held) => (held.includes(opening) ? held : [...held, opening]));
   }, []);
+
+  /**
+   * Every suggestion the conversation carries, with where each one stands: the
+   * answers already written down, then the answer arriving now. It is composed
+   * here, from the transcript and the marks, so that the card in the drawer and
+   * the link beside a field cannot disagree about one suggestion.
+   */
+  const offered = useMemo(
+    () =>
+      offeredIn(
+        [
+          ...store.messages
+            .filter((message) => (message.suggestions ?? []).length > 0)
+            .map((message) => ({ turn: message.turn, suggestions: message.suggestions ?? [] })),
+          { turn: store.live.turn, suggestions: store.live.suggestions },
+        ],
+        marks,
+        open,
+      ),
+    [store.messages, store.live.turn, store.live.suggestions, marks, open],
+  );
+
+  /**
+   * Use this. The setter is the sheet's own, so what a field ends up holding is
+   * decided by the sheet that owns it; what comes back is what it held before,
+   * which is what Undo puts back.
+   */
+  const use = useCallback((id: string) => {
+    const card = cardIn(offered, id);
+    const registered = reach(openings.current, card);
+    if (card === undefined || registered === null || !usable(card, [...openings.current.keys()])) {
+      return;
+    }
+    const previous = registered.set(card.field, card.text);
+    setMarks((held) => used(held, id, previous));
+  }, [offered]);
+
+  /**
+   * Undo. It asks the sheet what the field holds before it writes, and not only
+   * the mark the card is showing: the mark is kept up to date by the link beside
+   * that field, and a field whose link is not on screen — a sheet's disclosure
+   * folded away — would otherwise have the human's own words replaced in the
+   * name of undoing ours. The field's own answer decides.
+   */
+  const undo = useCallback((id: string) => {
+    const card = cardIn(offered, id);
+    const registered = reach(openings.current, card);
+    if (card === undefined || registered === null || !undoable(card, [...openings.current.keys()])) {
+      return;
+    }
+    if (valueIn(registered.read(), card.field) !== card.text.trim()) {
+      setMarks((held) => holding(held, offered, card.opening, card.field, ""));
+      return;
+    }
+    registered.set(card.field, card.mark.previous ?? "");
+    setMarks((held) => undone(held, id));
+  }, [offered]);
+
+  const dismiss = useCallback((id: string) => {
+    setMarks((held) => folded(held, id, true));
+  }, []);
+
+  const reopen = useCallback((id: string) => {
+    setMarks((held) => folded(held, id, false));
+  }, []);
+
+  /** A field's link: the drawer opens, and it opens at this card. */
+  const show = useCallback((id: string) => {
+    setShowing(id);
+    setRevealed((at) => at + 1);
+  }, []);
+
+  const noteField = useCallback((opening: string, field: string, value: string) => {
+    setMarks((held) => holding(held, offered, opening, field, value));
+  }, [offered]);
 
   /**
    * A sheet says it is open, and says so again by its own name rather than by
@@ -475,11 +644,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       store, busy: running, draft, setDraft, send, stop, sending,
       attachments, detach, chosen, ask, clearChosen, passage, askPassage,
       sheetDraft, askAbout, offerFields, noteSheet,
+      offered, use, undo, dismiss, reopen, show, showing, noteField, revealed,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
     }),
     [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
       clearChosen, passage, askPassage, sheetDraft, askAbout, offerFields, noteSheet,
+      offered, use, undo, dismiss, reopen, show, showing, noteField, revealed,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus],
   );
 

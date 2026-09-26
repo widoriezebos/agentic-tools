@@ -19,6 +19,7 @@
  * the guard rather than the review.
  */
 
+import type { GoalEdit } from "./editing";
 import type { LaneId } from "./lanes";
 import type { NewGoal } from "./opening";
 
@@ -35,6 +36,20 @@ const PRIORITY = "/priority";
 /** The two edge acts. The id before them is always the goal that WAITS. */
 const BLOCK = "/block";
 const UNBLOCK = "/unblock";
+/**
+ * The Decisions queue's two. They are not board moves — the board grows no
+ * park button — but they are the same kind of request to the same collection,
+ * so they ride the one call site this build reaches the network from rather
+ * than opening a second one.
+ */
+const PARK = "/park";
+const UNPARK = "/unpark";
+/**
+ * The goal editor's first gate: the three fields of a goal nobody has
+ * approved. It is the same request to the same collection as the rest, so it
+ * rides the one call site rather than opening a second one.
+ */
+const EDIT = "/edit";
 
 /** What could be read of the accepted ledger. */
 export type LedgerState = "read" | "absent" | "no-ledger" | "broken" | "unreadable" | "refused";
@@ -351,4 +366,34 @@ export async function blockGoal(dependent: string, blocker: string): Promise<Bac
 export async function unblockGoal(dependent: string, blocker: string): Promise<Backlog> {
   const act = edgeAct(dependent, blocker, "unblock");
   return request(act.resource, act.body);
+}
+
+/**
+ * goal park, for one goal, with the reason the human typed.
+ *
+ * The reason is never invented here and never defaulted: the engine refuses a
+ * park without one, and a page that supplied a sentence would be writing a
+ * why nobody wrote. It travels as it was typed, trimmed, and an empty one is
+ * refused where every other refusal is — at the engine, in its own words.
+ */
+export async function parkGoal(id: string, because: string): Promise<Backlog> {
+  return request(`${GOALS}${encodeURIComponent(id)}${PARK}`, { because });
+}
+
+/** goal unpark, for one goal. The engine decides what it returns to. */
+export async function unparkGoal(id: string): Promise<Backlog> {
+  return request(`${GOALS}${encodeURIComponent(id)}${UNPARK}`, {});
+}
+
+/**
+ * goal edit, for one queued goal, carrying the fields a human changed and no
+ * others.
+ *
+ * What is not in the body is not a field set to nothing: it is a field this
+ * save says nothing about, which the engine leaves as it found it. That is
+ * how a terminal's edit of the next step survives a browser's save of the
+ * intent, and it is why nothing is filled in here from what the page read.
+ */
+export async function editGoal(id: string, edit: GoalEdit): Promise<Backlog> {
+  return request(`${GOALS}${encodeURIComponent(id)}${EDIT}`, edit);
 }

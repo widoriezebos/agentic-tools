@@ -12,6 +12,7 @@ import { Rail } from "./Rail";
 import { RefreshProvider } from "./refresh";
 import { Sheet } from "./Sheet";
 import { WorkAreaProvider } from "./workmodal";
+import { ApplicationPane } from "../application/ApplicationPane";
 import { BacklogPane } from "../backlog/BacklogPane";
 import { DecisionsPane } from "../decisions/DecisionsPane";
 import { FleetPane } from "../fleet/FleetPane";
@@ -27,6 +28,7 @@ import { SettingsPane } from "../panes/Settings";
 import { DocumentPane } from "../project/DocumentPane";
 import { GoalPane, ProjectPane } from "../project/ProjectPane";
 import { activeSection, HOME_PATH, projectSections } from "../routes";
+import { StickiesPanel } from "../stickies/Panel";
 import {
   DEFAULT_DOCK_HEIGHT,
   MINIMUM_DOCK_HEIGHT,
@@ -115,7 +117,7 @@ function Frame() {
   // Ask on a card, and Cmd/Ctrl+J, ask for the composer by counting. The
   // drawer opens for them, because a composer nobody can see is a composer
   // that must never be given the caret.
-  const { wanted } = usePartner();
+  const { wanted, revealed } = usePartner();
 
   // The stored height is read once, as the layout this group opens with; from
   // there the group owns the arithmetic and a drag is what changes it.
@@ -151,6 +153,22 @@ function Frame() {
       writeDockOpen(true);
     }
   }, [wanted]);
+
+  // Opening at a card. A field's "n suggestions" link asks for the drawer the
+  // same way Ask asks for it, and for the same reason — a card nobody can see
+  // is a card nobody can press — but it does NOT take the caret: the human is
+  // typing in the sheet, and the link is beside the field they are in.
+  const shown = useRef(0);
+  useEffect(() => {
+    if (revealed === shown.current) {
+      return;
+    }
+    shown.current = revealed;
+    if (revealed > 0) {
+      setDrawerOpen(true);
+      writeDockOpen(true);
+    }
+  }, [revealed]);
 
   useEffect(() => {
     applyTheme(document.documentElement, effectiveTheme(theme, systemDark));
@@ -271,6 +289,10 @@ function Frame() {
           open channel questions and the rulings register at once, so it is a
           route of its own as well. */}
       <Route path="/decisions" element={<DecisionsPane />} />
+      {/* Application reads the workspace, the ledger, the known-issues
+          register, this seat's own presence record and the project's
+          documents at once, so it is a route of its own as well. */}
+      <Route path="/application" element={<ApplicationPane />} />
       {/* The sections this build does not project. Which they are is the
           section table's own field, so the routes, the empty register and
           what the Partner is told about availability cannot disagree.
@@ -411,6 +433,16 @@ function Frame() {
           It is mounted once, above every pane, because a selection is the
           page's and not any one pane's. */}
       <AskSelection />
+      {/* The notepad's panel. The list itself is held above the shell, where
+          a goal page and the reader can read it; the panel is here, inside the
+          three things it needs and the shell alone provides. The page's
+          subject, so the composer opens about the goal being looked at rather
+          than about nothing. The conversation, so the capture knows this sheet
+          is open over the work area. And the work area, so the sheet is modal
+          for that box alone and the Partner drawer stays live beneath it —
+          without which "open the panel and ask", which is how a note about no
+          subject reaches a question at all, is a gesture nobody can make. */}
+      <StickiesPanel />
     </WorkAreaProvider>
   );
 }

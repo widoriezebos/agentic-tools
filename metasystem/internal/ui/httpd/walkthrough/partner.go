@@ -6,6 +6,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner/fakeacp"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
 // The walkthrough's Project Partner: the real host, the real conversation
@@ -45,7 +46,23 @@ var fakeAnswer = []string{
 // What the fake server reads on the way, in the tool server's own shape: one
 // read whole and one that left rows behind, so the drawer's "Looked at 2
 // things" and its outcomes can be stood in front of.
+// The suggestion this fake prepares, for the one editor this slice offers it
+// in: the edit sheet's Intent, as the tool's own fixed form carries it.
+//
+// It is narrowed to the prompts that carry the edit sheet, because a fake that
+// prepared it for every question would have the service refuse it on every page
+// that handed nothing over — which is a true refusal and a noisy fixture.
+const suggestedIntent = "Every refund lands within a day, with nobody touching the queue."
+
 var fakeReads = []fakeacp.Read{
+	{
+		When:  "offered the Edit goal sheet",
+		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpSuggest,
+		Title: "suggest(Edit goal · Intent)",
+		Result: "prepared as a suggestion for Intent; the human decides whether it is offered and used\n" +
+			uitools.SuggestionHeader + "Edit goal" + uitools.SuggestionJoin + "Intent\n" +
+			uitools.SuggestionSeparator + "\n" + suggestedIntent + "\n",
+	},
 	{
 		Title: "document(plans/designs/reading.md)",
 		Result: "Source: plans/designs/reading.md as it stands, revision blob:7f31c0\n" +

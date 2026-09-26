@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
@@ -27,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
@@ -122,7 +124,8 @@ type Info struct {
 	// than through the ancestry of the process that started the server. A nil
 	// store is a build that cannot sign anyone in, which the routes say.
 	Sessions *session.Store
-	// The backlog's six acts, each one the human working their own backlog
+	// The backlog's six acts and the Decisions queue's two, each one the human
+	// working their own backlog
 	// in their own checkout: admitting work, withdrawing that admission,
 	// placing a goal in a priority band, opening a new goal at intake, and
 	// saying which goal waits for which.
@@ -144,6 +147,18 @@ type Info struct {
 	// relation the page acted from, so both directions reach one mutation.
 	Block   func(signed *session.Session, dependent, blocker string) error
 	Unblock func(signed *session.Session, dependent, blocker string) error
+	// Park pauses one goal with its reason and Unpark lifts a park. They are
+	// the Decisions queue's "Not now" and its undo, admitted from a browser
+	// under R-125-m1u; the board offers neither. A nil field is an engine
+	// that cannot act, which the route says.
+	Park   func(signed *session.Session, id, because string) error
+	Unpark func(signed *session.Session, id string) error
+	// Edit rewrites the intent, the next step and the labels of a goal nobody
+	// has approved yet, from the goal's own page or the board's card menu.
+	// Only the fields a human changed are carried, so a terminal edit of an
+	// untouched field survives the save; the state the goal must be in is the
+	// mutation's own allowlist rather than this server's check.
+	Edit func(signed *session.Session, id string, edited act.Edited) error
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.
@@ -168,6 +183,23 @@ type Info struct {
 	// says. A nil Rulings is a build with no register reader, which costs
 	// the Decisions page its Rulings tab and nothing else.
 	Rulings func() (rulings.Register, error)
+	// RegisterPath is where that register is relative to the CHECKOUT, which
+	// is not where Rulings read it from: the kit keeps its memory under the
+	// installation, and the document reader opens paths against the checkout.
+	// The caller knows both roots and derives the one path this payload can
+	// carry. An empty path leaves the composer its own default.
+	RegisterPath string
+	// KnownIssues answers the known-issues register, whole rows and all. It is
+	// the same read for every caller, through one package, so the page and
+	// anything else that reads it cannot disagree about what the register
+	// says. A nil KnownIssues is a build with no register reader, which costs
+	// the Application page its problems block and nothing else.
+	KnownIssues func() (knownissues.Register, error)
+	// KnownIssuesPath is where that register is relative to the CHECKOUT, for
+	// the reason RegisterPath is: the kit keeps its memory under the
+	// installation, and the document reader opens paths against the checkout.
+	// An empty path leaves the composer its own default.
+	KnownIssuesPath string
 	// Visit records that a human is looking at the landing page and answers
 	// the window it compares against: the end of their previous visit, or a
 	// day back on a first one. It is a function rather than a root because
@@ -176,6 +208,26 @@ type Info struct {
 	// answers as a first visit rather than as a refusal — the marker is
 	// preference state, and losing it changes a window and nothing else.
 	Visit func(human string, now time.Time) (since time.Time, first bool, err error)
+	// VisitDecisions is the same for the Decisions page, under an entry of
+	// that page's own. It is a second function rather than a page name on the
+	// one above because the two are two markers: a human reads Decisions and
+	// Overview on different rhythms, and a page that advanced the other's
+	// entry would hide from them what they never saw there. A nil one is a
+	// build that keeps no marker, and the route answers it as a first visit.
+	VisitDecisions func(human string, now time.Time) (since time.Time, first bool, err error)
+	// VisitApplication is the same for the Application page, under an entry of
+	// that page's own, for the reason Decisions keeps one: three pages read on
+	// three rhythms, and a page that advanced another's entry would hide from
+	// a human what they never saw there. A nil one is a build that keeps no
+	// marker, and the route answers it as a first visit.
+	VisitApplication func(human string, now time.Time) (since time.Time, first bool, err error)
+	// Stickies is this account's notepad: the reminders a human jots while
+	// they work, kept per human under the account's registry home and outside
+	// every checkout, so that no seat and no critic reads them. It is a store
+	// rather than four functions because the four acts are one owner's, and
+	// splitting them here would let a build wire three of them. A nil store is
+	// an engine with no notepad, which the routes say.
+	Stickies *stickies.Store
 	// Now is this server's clock, so that a test can say when a page was
 	// composed. A nil Now is time.Now, which is what every run uses.
 	Now func() time.Time
@@ -301,6 +353,18 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// existed, so a request with the wrong verb learns which verb the resource
 	// takes and nothing else about this server.
 	route, isWrite := writeRouteOf(r.URL.Path)
+	// The notepad's collection is the one address this server both reads and
+	// writes, because a notepad is one list and every act on it answers the
+	// whole of it. The method says which act a request is; a request naming a
+	// third verb learns all three rather than one of them.
+	if r.URL.Path == stickiesPath {
+		if r.Method != http.MethodPost && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		route, isWrite = written{route: routeAddSticky}, r.Method == http.MethodPost
+	}
 	if isWrite && r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -350,6 +414,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.notifications(w, r)
 		return
 	}
+	if r.URL.Path == stickiesPath {
+		h.stickies(w, r)
+		return
+	}
 	// The stream is a read like any other and takes the same checks above;
 	// what is different is that it does not end when the response is written.
 	if r.URL.Path == notificationsStreamPath {
@@ -374,6 +442,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == fleetPath {
 		h.fleet(w)
+		return
+	}
+	if r.URL.Path == applicationPath {
+		h.application(w, r)
 		return
 	}
 	if r.URL.Path == partnerPath {

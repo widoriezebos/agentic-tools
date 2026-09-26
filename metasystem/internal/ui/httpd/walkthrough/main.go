@@ -25,9 +25,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/application"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/fleet"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
@@ -101,10 +103,20 @@ func main() {
 	smokeEngine := flag.String("smoke-engine", "bin/metasystem", "the metasystem executable that serves the Partner's read tools")
 	smokeKit := flag.String("smoke-kit", ".", "the metasystem installation whose glossary, rulings, routes and skills the fixture copies")
 	smokeOut := flag.String("smoke-out", "partner-smoke.md", "where the smoke run writes its answers")
+	// Which column set the known-issues register is planted with. There are
+	// two in the world — the kit's own and the one an adoption ships — and the
+	// fifth column's title is the one a reader must never rename, so a
+	// walkthrough that could only plant one could only show half of what the
+	// Application page's reader does.
+	register := flag.String("register", registerKit,
+		"which known-issues column set this fixture plants: kit or adopted")
 	flag.Parse()
 	if *smoke != "" {
 		runSmoke(*smoke, *smokeModel, *smokeEngine, *smokeKit, *smokeOut)
 		return
+	}
+	if *register != registerKit && *register != registerAdopted {
+		log.Fatalf("-register takes kit or adopted, not %q", *register)
 	}
 	if *freshness != string(snapshot.FreshnessCurrent) &&
 		*freshness != string(snapshot.FreshnessBehind) &&
@@ -124,8 +136,17 @@ func main() {
 	// in-place editor have something real to open: the editor writes to disk,
 	// reads it back, and answers what is there, and a walkthrough over a
 	// canned payload would prove none of that.
-	checkout := fixtureCheckout(*calm)
+	checkout := fixtureCheckout(*calm, *register)
 	fmt.Println("checkout " + checkout)
+	// A previous visit to Decisions, so the inbox opens with half of it new.
+	// Both handles, because -proven acts as Wido and an unproven seat acts
+	// under the handle this fixture was given, which is empty by default.
+	plantPageVisits(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
+	// The notepad, planted for every handle this fixture can act as, under a
+	// home of its own beside the fixture checkout. It is never the account's
+	// own home: the store resolves that one, and a walkthrough that wrote
+	// there would put fixture notes into a human's actual notepad.
+	notepad := fixtureStickies(checkout, []string{"", *human, "Wido"}, time.Now().UTC())
 	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
 	state.roots = roots
 	authority := httpd.AuthorityInfo{Reason: agentReason}
@@ -163,6 +184,10 @@ func main() {
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
 		NotificationJournal: journal,
 		Observe:             state.observe,
+		// The human's own notepad, through the same store the engine wires,
+		// over a home this fixture invented: a walkthrough over a canned list
+		// would prove nothing about the store, the order or the counts.
+		Stickies: notepad,
 		// What this seat is. The real server resolves it from the layout and
 		// the adoption line; this one has neither, so it answers the same
 		// shape from the fixture's own facts — without it every page's header
@@ -206,6 +231,19 @@ func main() {
 			return state.approve(id, budget)
 		},
 		Withdraw: func(_ *session.Session, id, reason string) error { return state.withdraw(id, reason) },
+		// Not now, and back. The fixture parks and unparks its own canned
+		// rows: what it proves in a browser is the queue's two sheets, the
+		// Not now tab and the button that returns a goal — the verb itself,
+		// its authority row and its branch check are the engine's own tests'
+		// to prove, and this ledger has no endpoint to publish to.
+		Park:   func(_ *session.Session, id, because string) error { return state.park(id, because) },
+		Unpark: func(_ *session.Session, id string) error { return state.unpark(id) },
+		// The goal editor's first gate. The fixture edits its own canned
+		// rows: what it proves in a browser is the sheet prefilled from the
+		// row, the fields it sends, the three states that refuse it and the
+		// words they refuse in — the verb's own allowlist and its session
+		// line are the engine's tests' to prove.
+		Edit: func(_ *session.Session, id string, edited act.Edited) error { return state.edit(id, edited) },
 		SetPriority: func(_ *session.Session, id string, priority uint8, sequence *uint64) error {
 			return state.setPriority(id, priority, sequence)
 		},
@@ -258,6 +296,25 @@ func main() {
 		// whole of what the rule is for.
 		Visit: func(human string, now time.Time) (time.Time, bool, error) {
 			return overview.Visit(checkout, human, now)
+		},
+		// The Decisions page's own marker, under its own entry. The fixture
+		// plants a previous visit for it below, so half the inbox arrives new
+		// on the first load rather than none of it: a walkthrough that showed
+		// an inbox with no dots on it would be showing the one state the rule
+		// is not for.
+		VisitDecisions: func(human string, now time.Time) (time.Time, bool, error) {
+			return overview.VisitPage(checkout, overview.PageDecisions, human, now)
+		},
+		// The known-issues register and the Application page's own marker,
+		// both over the fixture checkout and through the packages the engine
+		// wires: a walkthrough that canned either would prove nothing about
+		// the reader or about the window.
+		KnownIssues: func() (knownissues.Register, error) {
+			return knownissues.Read(checkout)
+		},
+		KnownIssuesPath: "memory/known-issues.md",
+		VisitApplication: func(human string, now time.Time) (time.Time, bool, error) {
+			return overview.VisitPage(checkout, application.PageName, human, now)
 		},
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
@@ -427,7 +484,7 @@ The rail, the header and the work area are one shell every section is read in.
 // resolver reads: a configuration file, an agents directory, a one-goal
 // ledger, and a design home. It is thrown away with the temporary directory,
 // so a walkthrough that saves over a file changes nothing a human keeps.
-func fixtureCheckout(calm bool) string {
+func fixtureCheckout(calm bool, register string) string {
 	// The calm workspace's finished design is marked done on disk, because
 	// the two designs below are read back from the file rather than from the
 	// pane: a design whose goals have all landed and which nobody has closed
@@ -462,6 +519,16 @@ func fixtureCheckout(calm bool) string {
 		// The rulings register, which the Decisions page reads through the
 		// same package the steward's sweep reads it with.
 		{"memory/rulings.md", fixtureRulings(calm, time.Now().UTC())},
+		// The known-issues register, which the Application page reads through
+		// the same reader the engine wires, under whichever column set was
+		// asked for.
+		{"memory/known-issues.md", fixtureKnownIssues(register, time.Now().UTC())},
+		// The three documents the Application page's "What it is" links, so
+		// that its links open a real document in the reader rather than a
+		// 404: the page names them and the reader renders them.
+		{"README.md", walkthroughReadme},
+		{"docs/concepts.md", walkthroughConcepts},
+		{"docs/glossary.md", walkthroughGlossary},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -577,6 +644,10 @@ func newLedger(calm bool) *ledger {
 	// written down, because a fixed date drifts out of every window the day
 	// after it is written and the walkthrough would then show an empty lane.
 	now := time.Now().UTC()
+	// And the Application page's own six weeks of them, which is what makes
+	// its block weeks rather than a list. They are their own generation of
+	// ids, so nothing here is both live and concluded at once.
+	addConcludedWeeks(tree, now)
 	add(concluded(walkthroughGoal("g1-s9", goal.StateDone, "The application shell, the rail and the header"), now.Add(-6*time.Hour)))
 	add(concluded(walkthroughGoal("g1-s10", goal.StateDone, "The backlog's data path and the list"), now.Add(-4*24*time.Hour)))
 	add(concluded(walkthroughGoal("g1-s8", goal.StateDone, "The frontend toolchain and the committed bundle"), now.Add(-40*24*time.Hour)))
@@ -610,6 +681,45 @@ func newLedger(calm bool) *ledger {
 			StopID: "stop-g1-s33", Revision: 5, ClosedAt: stampedAgo(3 * time.Hour),
 			Reason: "ELAPSED_LIMIT: the claim ran past its four-hour box",
 		}
+	}
+
+	// The queue itself: enough unapproved goals that the page is the thing
+	// the design is about — a list a human works in sittings rather than
+	// reads in one — with the four facts the queue row and its tools read.
+	// Labels so the chips have something to draw and narrow by, both origins
+	// so the "yours" chip and the origin chips do, tiers above and at zero so
+	// the tier chip appears on some rows and not others, and priority bands
+	// so backlog order is not the order they were written in.
+	for _, queued := range walkthroughQueue {
+		row := ranked(walkthroughGoal(queued.id, goal.StateQueued, queued.intent), queued.priority, queued.sequence)
+		row.Tier, row.Origin, row.Labels = queued.tier, queued.origin, queued.labels
+		row.OpenedAt = stampedAgo(queued.openedDaysAgo * 24 * time.Hour)
+		add(row)
+	}
+
+	// Three parks a person made and one a seat made. The three are the Not
+	// now tab — one of them a blocker park a human directed, which is named
+	// with its blocker and returns by itself — and the seat's park is the one
+	// that stays in the inbox, because a human has not seen it.
+	if !calm {
+		pause := func(id, intent, because string, ago time.Duration, by, blocker string) *goal.GoalFile {
+			row := add(ranked(walkthroughGoal(id, goal.StateParked, intent), 2, 40))
+			row.Parked = &goal.ParkRecord{
+				By: by, At: stampedAgo(ago), Because: because, Blocker: blocker,
+			}
+			if blocker != "" {
+				row.Blocked = []string{blocker}
+			}
+			return row
+		}
+		pause("g1-s34", "The queue narrows by label and by origin",
+			"not before the board's own filters settle", 40*time.Hour, "human:Wido", "")
+		pause("g1-s35", "The approve sheet takes many goals at once",
+			"after the single-goal sheet has been used for a week", 11*24*time.Hour, "human:Wido", "")
+		pause("g1-s36", "The register opens from the review card",
+			"waiting for g1-s24; the census format decides the path", 6*24*time.Hour, "human:Wido", "g1-s24")
+		pause("g1-s37", "The notification panel groups by day",
+			"the implementer paused it to finish g1-s33 first", 5*time.Hour, "m2a+implementer", "")
 	}
 
 	dropped := add(walkthroughGoal("g1-s7", goal.StateAbandoned, "A second bundler beside the first"))
@@ -679,6 +789,54 @@ func touch(file *goal.GoalFile, verb string, ago time.Duration) *goal.GoalFile {
 		At: stampedAgo(ago), Opid: "op-" + verb + "-" + file.Id, Verb: verb, Actor: "m1e+coordinator",
 	})
 	return file
+}
+
+// walkthroughQueue is the queue block's own rows: thirty goals nobody has
+// authorized, which is what makes the second block a queue rather than a
+// list. The numbers are the live page's in miniature — most of them tier 2
+// and 3, a little over half opened by a human, the labels repeating so a chip
+// narrows to a family rather than to one row — and the ages spread over three
+// months so the age column and the newest-first order mean something.
+var walkthroughQueue = []struct {
+	id            string
+	intent        string
+	priority      uint8
+	sequence      uint64
+	tier          uint8
+	origin        string
+	labels        []string
+	openedDaysAgo time.Duration
+}{
+	{"g1-s40", "The queue row opens in place and shows the whole intent", 1, 2, 2, "human", []string{"browser-interface"}, 3},
+	{"g1-s41", "The header counts what is asked of you and what waits", 1, 3, 2, "human", []string{"browser-interface"}, 4},
+	{"g1-s42", "Selecting many goals approves them one publication at a time", 1, 4, 3, "human", []string{"browser-interface", "robustness"}, 6},
+	{"g1-s43", "The label chips are drawn from the rows on screen", 2, 20, 2, "main", []string{"browser-interface"}, 8},
+	{"g1-s44", "The seat census answers which machines are alive", 2, 21, 3, "main", []string{"headless-fleet"}, 9},
+	{"g1-s45", "A machine publishes its phase with every tick", 2, 22, 3, "main", []string{"headless-fleet"}, 12},
+	{"g1-s46", "The fleet page reads a seat's whole chain", 2, 23, 2, "human", []string{"headless-fleet"}, 13},
+	{"g1-s47", "A stopped seat says why it stopped, in the engine's words", 2, 24, 3, "main", []string{"headless-fleet", "robustness"}, 15},
+	{"g1-s48", "The channel gateway retries a refused delivery", 2, 25, 3, "main", []string{"headless-fleet"}, 16},
+	{"g1-s49", "A seat's ask carries its options and their consequences", 2, 26, 2, "human", []string{"seat-communication"}, 18},
+	{"g1-s50", "The human answers an ask from the channel with a code", 2, 27, 3, "human", []string{"seat-communication"}, 19},
+	{"g1-s51", "An unanswered ask ages into the steward's digest", 2, 28, 2, "main", []string{"seat-communication"}, 21},
+	{"g1-s52", "The budget law is declared per tier and read per goal", 2, 29, 3, "human", []string{"budgets"}, 23},
+	{"g1-s53", "A goal that outruns its box stops rather than slows", 2, 30, 3, "main", []string{"budgets", "robustness"}, 25},
+	{"g1-s54", "Reserved job minutes count open jobs at their full cap", 2, 31, 2, "main", []string{"budgets"}, 27},
+	{"g1-s55", "The ledger's accepted ref advances under one lock", 2, 32, 3, "main", []string{"robustness"}, 30},
+	{"g1-s56", "A crashed publication is recovered from its journal", 2, 33, 3, "main", []string{"robustness"}, 33},
+	{"g1-s57", "Two seats on one host are told apart by lineage", 2, 34, 2, "human", []string{"robustness", "headless-fleet"}, 36},
+	{"g1-s58", "The document reader anchors a heading from a link", 3, 1, 1, "human", []string{"browser-interface"}, 40},
+	{"g1-s59", "A record is written from the browser into its home", 3, 2, 2, "human", []string{"browser-interface"}, 44},
+	{"g1-s60", "The Project pane reads the checkout's declared records", 3, 3, 0, "main", nil, 48},
+	{"g1-s61", "A design's landing is read out of its goals", 3, 4, 0, "main", nil, 52},
+	{"g1-s62", "The retro reads its receipts and proposes one change", 3, 5, 2, "human", []string{"memory"}, 56},
+	{"g1-s63", "A ruling's review condition is swept once a day", 3, 6, 2, "main", []string{"memory"}, 60},
+	{"g1-s64", "The register refuses a row it cannot read, by name", 3, 7, 0, "main", []string{"memory"}, 64},
+	{"g1-s65", "The steward's journal keeps one line per delivery", 3, 8, 0, "main", nil, 70},
+	{"g1-s66", "An adopted application supplies its own test command", 3, 9, 3, "human", []string{"testing"}, 76},
+	{"g1-s67", "The suite runs in parallel inside its worker grant", 3, 10, 3, "human", []string{"testing"}, 82},
+	{"g1-s68", "A test that needs real git says which adapter it proves", 3, 11, 2, "main", []string{"testing"}, 88},
+	{"g1-s69", "The coverage floor holds at the package it was set on", 3, 12, 0, "main", []string{"testing"}, 94},
 }
 
 func walkthroughGoal(id, state, intent string) *goal.GoalFile {
@@ -1014,6 +1172,11 @@ func (l *ledger) project() project.Pane {
 			{Path: walkthroughRecord, Title: "The reading pane"},
 			{Path: walkthroughPartly, Title: "The document reader"},
 			{Path: walkthroughLanded, Title: "The application shell"},
+			// The three the Application page's "What it is" names. They are
+			// planted in the fixture checkout, so the links open them.
+			{Path: "README.md", Title: "walkthrough"},
+			{Path: "docs/concepts.md", Title: "Concepts"},
+			{Path: "docs/glossary.md", Title: "Glossary"},
 		},
 	}
 	if l.calm {
@@ -1251,6 +1414,114 @@ func (l *ledger) plantGoal(id, intent string) {
 	full := filepath.Join(l.roots.StateRoot, "plans", "goals", id+".md")
 	_ = os.WriteFile(full, []byte("# "+id+"\n\n- State: queued\n- Intent: "+intent+"\n"), 0o644)
 	l.opened = append(l.opened, id)
+}
+
+// park and unpark are the fixture's own, holding the engine's rules that the
+// page reads: a reason is required, a goal already parked refuses, a goal
+// another pair claimed refuses rather than being displaced — which is the
+// refusal a walkthrough is the place to see — and an unpark returns the goal
+// to approved where its approval still stands and to queued otherwise.
+// refused is the shape the real act layer hands a route: a refusal the page
+// shows in the engine's words with the status that says what a human can do
+// about it, rather than a failure the page reports as a broken engine.
+func refused(format string, args ...any) error {
+	return &act.Refusal{Kind: act.KindEngine, Code: "refused", Message: fmt.Sprintf(format, args...)}
+}
+
+func (l *ledger) park(id, because string) error {
+	if strings.TrimSpace(because) == "" {
+		return &act.Refusal{Kind: act.KindRequest, Code: "no-reason",
+			Message: "park needs its reason — a pause without a why is a stall in disguise"}
+	}
+	file := l.tree.Live[id]
+	if file == nil {
+		return refused("goal %s is not live; nothing to park", id)
+	}
+	if file.State == goal.StateParked {
+		return refused("goal %s is already parked", id)
+	}
+	if file.State != goal.StateQueued && file.State != goal.StateApproved && file.State != goal.StateClaimed {
+		return refused("goal %s is %s; only queued, approved, or claimed goals park", id, file.State)
+	}
+	if file.State == goal.StateClaimed && file.Claimed != nil {
+		return refused("goal %s is claimed by %s+%s; parking another's claim is a human act",
+			id, file.Claimed.Machine, file.Claimed.Lineage)
+	}
+	file.State = goal.StateParked
+	file.Parked = &goal.ParkRecord{
+		By: "human:Wido", At: time.Now().UTC().Format(time.RFC3339), Because: because,
+	}
+	return nil
+}
+
+func (l *ledger) unpark(id string) error {
+	file := l.tree.Live[id]
+	if file == nil {
+		return refused("goal %s is not live; nothing to unpark", id)
+	}
+	if file.State != goal.StateParked {
+		return refused("goal %s is %s, not parked", id, file.State)
+	}
+	if file.Parked != nil && file.Parked.Blocker != "" {
+		for _, blocker := range file.Blocked {
+			if held := l.tree.Live[blocker]; held != nil && held.State != goal.StateDone {
+				return refused("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e)", id, blocker)
+			}
+		}
+	}
+	file.Parked = nil
+	file.State = goal.StateQueued
+	if file.Approved != nil {
+		file.State = goal.StateApproved
+	}
+	return nil
+}
+
+// edit is the fixture's own goal edit, holding the three rules the page
+// reads: only a queued goal nobody has approved is edited here, each of the
+// other three states refuses in the engine's own sentence, and the label
+// grammar is the engine's. Only the fields the sheet sent are written, so a
+// walkthrough can show that an untouched field is left exactly as it was.
+func (l *ledger) edit(id string, edited act.Edited) error {
+	if edited.Intent == nil && edited.NextStep == nil && edited.Labels == nil {
+		return &act.Refusal{Kind: act.KindRequest, Code: "no-change",
+			Message: "an edit changes at least one of the intent, the next step or the labels"}
+	}
+	file := l.tree.Live[id]
+	if file == nil {
+		return refused("goal %s is not live; the archive edits through reopen", id)
+	}
+	switch {
+	case file.Approved != nil || file.State == goal.StateApproved:
+		return refused("goal %s is approved: withdraw the approval, edit it, then approve it again", id)
+	case file.State == goal.StateClaimed:
+		pair := "another pair"
+		if file.Claimed != nil {
+			pair = file.Claimed.Machine + "+" + file.Claimed.Lineage
+		}
+		return refused("goal %s is claimed by %s; edit it at a terminal", id, pair)
+	case file.State == goal.StateParked:
+		return refused("goal %s is parked: return it to the queue to edit it", id)
+	case file.State != goal.StateQueued:
+		return refused("goal %s is %s; only a queued goal is edited from the interface", id, file.State)
+	}
+	if edited.Labels != nil {
+		if err := goal.ValidateLabels(*edited.Labels); err != nil {
+			return refused("%s", err.Error())
+		}
+	}
+	if edited.Intent != nil {
+		file.Intent = *edited.Intent
+	}
+	if edited.NextStep != nil {
+		file.NextStep = *edited.NextStep
+	}
+	if edited.Labels != nil {
+		labels := append([]string(nil), (*edited.Labels)...)
+		sort.Strings(labels)
+		file.Labels = labels
+	}
+	return nil
 }
 
 func (l *ledger) withdraw(id, reason string) error {

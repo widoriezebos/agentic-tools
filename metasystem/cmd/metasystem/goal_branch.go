@@ -17,7 +17,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -25,16 +24,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+// The four raw readers below moved into internal/goal/branch, where the
+// interface's own park reaches them too; these are the command edge's
+// one-line names for them.
 func goalBranchGit(root string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	cmd.Env = gittree.ScrubbedEnviron()
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(stderr.String()), err)
-	}
-	return strings.TrimSpace(string(out)), nil
+	return branch.ScrubbedGit(root, args...)
 }
 
 func runGoalBranch(args []string) int {
@@ -716,48 +710,15 @@ func goalBranchEndpoint(root string) (goal.Endpoint, error) {
 }
 
 func goalBranchEndpointTip(root string, endpoint goal.Endpoint) (tip string, err error) {
-	return goalBranchEndpointTipWithGit(root, endpoint, goalBranchGit)
+	return branch.EndpointTip(root, endpoint)
 }
 
 func goalBranchEndpointTipWithGit(root string, endpoint goal.Endpoint, git func(string, ...string) (string, error)) (tip string, err error) {
-	opid, err := branchOperationID()
-	if err != nil {
-		return "", err
-	}
-	temporary := "refs/metasystem/goals/endpoint/" + opid
-	defer func() {
-		if _, clearErr := git(root, "update-ref", "-d", temporary); err == nil && clearErr != nil {
-			err = clearErr
-		}
-	}()
-	if _, err = git(root, "fetch", "--no-tags", "--refmap=", endpoint.Remote, "+refs/heads/main:"+temporary); err != nil {
-		return "", err
-	}
-	return git(root, "rev-parse", "--verify", temporary+"^{commit}")
+	return branch.EndpointTipWithGit(root, endpoint, git)
 }
 
 func goalBranchOriginTip(root string, endpoint goal.Endpoint, goalID string) (tip string, present bool, err error) {
-	transport := branch.GitPushTransport{}
-	opid, err := branchOperationID()
-	if err != nil {
-		return "", false, err
-	}
-	temporary := "refs/metasystem/goals/check/" + opid
-	defer func() {
-		if _, clearErr := goalBranchGit(root, "update-ref", "-d", temporary); err == nil && clearErr != nil {
-			err = clearErr
-		}
-	}()
-	goalRef := "refs/heads/goal/" + goalID
-	if fetchErr := transport.Fetch(root, endpoint.Remote, goalRef, temporary); fetchErr != nil {
-		_, present, err = transport.RemoteTip(root, endpoint.Remote, goalRef)
-		if err != nil || !present {
-			return "", present, err
-		}
-		return "", false, fetchErr
-	}
-	tip, err = goalBranchGit(root, "rev-parse", "--verify", temporary+"^{commit}")
-	return tip, true, err
+	return branch.OriginTip(root, endpoint, goalID)
 }
 
 func goalBranchClaimCheck(root, goalID string, endpoint goal.Endpoint) func() error {
@@ -1056,13 +1017,7 @@ func withGoalBranchCommitTokenAt(root, holderRoot string, commit func() error) e
 	return commit()
 }
 
-func branchOperationID() (string, error) {
-	raw := make([]byte, 12)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return "branch-" + hex.EncodeToString(raw), nil
-}
+func branchOperationID() (string, error) { return branch.OperationID() }
 
 func runGoalBranchPush(args []string) int {
 	flags := flag.NewFlagSet("goal branch push", flag.ContinueOnError)

@@ -31,6 +31,15 @@ const (
 	// conversationHand is what the Partner's own two writes need. They carry
 	// no authority at all: one admits a question, one stops the answer.
 	conversationHand = "a request from this browser; it carries no authority of any kind and changes nothing but the conversation"
+	// notepadHand is what the notepad's own read and three acts need. It is
+	// the checkout writes' policy exactly — a POST from this browser to this
+	// loopback server, judged for its host, its site and its origin, carrying
+	// no proof of ledger authority — said about where the write actually
+	// lands. A sticky is not a file of the checkout and is deliberately not
+	// kept in one, so promising a human that it lands there would be this
+	// table telling them the one thing about their own notes that is not
+	// true.
+	notepadHand = "a request from this browser to this loopback server; the write lands in this account's own notepad, outside every checkout, and records no ledger authority"
 )
 
 // Acts is every act this interface offers, with the hand each one needs.
@@ -48,6 +57,10 @@ func Acts() []manifest.Act {
 			Does: "Records that one goal waits for another; the waiting goal parks unless the goal it waits for is already done."},
 		{ID: routeUnblock, Title: "Say a goal no longer waits for another", Requires: ledgerHand,
 			Does: "Removes one such edge; the park lifts only when the dependency created it and every remaining goal it waits for is done."},
+		{ID: routePark, Title: "Park a goal", Requires: ledgerHand,
+			Does: "Pauses a goal with the reason a human gave, so it leaves the queue until somebody returns it."},
+		{ID: routeUnpark, Title: "Return a parked goal to the queue", Requires: ledgerHand,
+			Does: "Lifts a park, returning the goal to approved where its approval still stands and to queued otherwise."},
 		{ID: routeCreateRecord, Title: "Write a record", Requires: checkoutHand,
 			Does: "Creates one decision, design, doctrine or intent record in the home its kind names."},
 		{ID: routeRecordStatus, Title: "Set a record's status", Requires: checkoutHand,
@@ -62,6 +75,14 @@ func Acts() []manifest.Act {
 			Does: "Saves one document of the checkout against the revision it was opened at."},
 		{ID: routePreviewSource, Title: "Preview what is being typed", Requires: checkoutHand,
 			Does: "Renders unsaved text through the reader's own parser. It opens nothing and writes nothing."},
+		{ID: routeStickies, Title: "Read your stickies", Requires: notepadHand,
+			Does: "Answers this human's own notepad: every sticky, open ones newest first, with how many are open and how many are done."},
+		{ID: routeAddSticky, Title: "Write a sticky", Requires: notepadHand,
+			Does: "Writes one reminder, with what it is about, and answers the whole notepad."},
+		{ID: routeEditSticky, Title: "Change a sticky", Requires: notepadHand,
+			Does: "Rewrites one sticky's text or what it is about, or marks it done or open again, and answers the whole notepad."},
+		{ID: routeRemoveSticky, Title: "Remove a sticky", Requires: notepadHand,
+			Does: "Takes one sticky off this human's notepad for good, and answers the rest."},
 		{ID: routeSignIn, Title: "Sign in", Requires: "this seat's one-time code",
 			Does: "Opens a browser session in this human's name, which is what the ledger's acts publish under."},
 		{ID: routeSignOut, Title: "Sign out", Requires: "a live browser session",

@@ -14,6 +14,7 @@ import {
   type Move,
 } from "./moves";
 import { Panel } from "./Panel";
+import { FieldSuggestions, useOpening } from "../partner/Suggestion";
 import { Button } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
@@ -56,11 +57,24 @@ export function ActSheet({
   const prefill = prefillFor(request.goal, backlog.budgetDefaults, backlog.rows);
   const [draft, setDraft] = useState<BudgetDraft>(() => draftOf(prefill.budget));
   const [reason, setReason] = useState("");
+  // This opening of this sheet, minted once. Withdrawing has one field the
+  // Partner may write; approving has none, and both are this one opening.
+  const opening = useOpening();
   const { session, askToSignIn } = useSession();
   const retried = useRef(false);
   const authority = actingAs(backlog.authority, session);
   const blocked = blockedFor(request.move, draft);
   const approving = request.move === "approve";
+
+  /** Put the Partner's words in the one field this sheet has a human write. */
+  const putWords = (field: string, text: string): string => {
+    if (approving || field !== "Reason") {
+      return "";
+    }
+    const was = reason;
+    setReason(text);
+    return was;
+  };
 
   const send = () => {
     const budget = budgetOf(draft);
@@ -113,6 +127,12 @@ export function ActSheet({
             ]
       }
       goal={request.goal}
+      opening={opening}
+      // Approving is a confirmation: every one of the five limits is shown and
+      // confirmed, and none of them is text the Partner writes. Withdrawing
+      // asks for one sentence, which is.
+      writable={approving ? [] : ["Reason"]}
+      set={putWords}
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}
       note={blocked === "" ? noteFor(request.move, authority.human) : blocked}
@@ -127,7 +147,10 @@ export function ActSheet({
         <BudgetFields draft={draft} source={prefill.source} onChange={setDraft} />
       ) : (
         <div className="ms-act-field">
-          <label htmlFor="ms-act-reason">Reason (optional)</label>
+          <div className="ms-act-label">
+            <label htmlFor="ms-act-reason">Reason (optional)</label>
+            <FieldSuggestions opening={opening} field="Reason" value={reason} />
+          </div>
           <input
             id="ms-act-reason"
             type="text"

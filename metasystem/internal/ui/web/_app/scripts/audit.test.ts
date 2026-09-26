@@ -1,3 +1,4 @@
+import { type ChildProcess, spawn } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
@@ -22,20 +23,88 @@ import { auditArgs, DECLARED_REGISTRY, runAudit } from "./bundle.mjs";
  * Each case is paired with a control that removes one flag and shows what
  * fails without it. The cases are what must hold; the controls are what the
  * flags are for.
+ *
+ * The recorders answer on this worker's event loop, and runAudit waits for npm
+ * synchronously, so every networked case runs the real runAudit in a child
+ * Node process and awaits its result; run here, it would block the loop npm is
+ * waiting on.
  */
 
 const TIMEOUT = 120_000;
+/** Ends a child audit, and the npm it is waiting on, before the case's own timeout. */
+const CHILD_DEADLINE = 100_000;
 const BULK = "/-/npm/v1/security/advisories/bulk";
 
 type Recorded = { method: string; url: string; body: string };
 
 type Recorder = { origin: string; seen: Recorded[]; stop: () => Promise<void> };
 
+type Audit = ReturnType<typeof runAudit>;
+
 const running: Recorder[] = [];
+const audits: ChildProcess[] = [];
+
+/** Kills a child audit's whole process group, npm included, if it has not exited. */
+function end(child: ChildProcess): void {
+  if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {
+      // The group is already gone.
+    }
+  }
+}
 
 afterEach(async () => {
+  audits.splice(0).forEach(end);
   await Promise.all(running.splice(0).map((recorder) => recorder.stop()));
 });
+
+/** Imports the actual bundle script and prints what its runAudit returns. */
+const CHILD = `const { runAudit } = await import(process.argv[1]);
+process.stdout.write(JSON.stringify(runAudit(process.env, JSON.parse(process.argv[2]), process.argv[3])));`;
+
+/**
+ * Runs the actual runAudit in a child Node process that leads its own process
+ * group, with the fixture environment as the child's environment. A deadline
+ * or a failed case kills the group, so no npm outlives the case.
+ */
+function audit(env: NodeJS.ProcessEnv, args: string[], cwd: string): Promise<Audit> {
+  const bundle = new URL("./bundle.mjs", import.meta.url).href;
+  const child = spawn(
+    process.execPath,
+    ["--input-type=module", "--eval", CHILD, bundle, JSON.stringify(args), cwd],
+    { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  audits.push(child);
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+  return new Promise<Audit>((resolve, reject) => {
+    const deadline = setTimeout(() => {
+      end(child);
+      reject(new Error(`the child audit did not finish within ${String(CHILD_DEADLINE)} ms`));
+    }, CHILD_DEADLINE);
+    child.on("error", (error) => {
+      clearTimeout(deadline);
+      end(child);
+      reject(error);
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(deadline);
+      if (code !== 0) {
+        reject(
+          new Error(
+            `the child audit exited ${String(code ?? signal)}: ${Buffer.concat(stderr).toString("utf8")}`,
+          ),
+        );
+        return;
+      }
+      resolve(JSON.parse(Buffer.concat(stdout).toString("utf8")) as Audit);
+    });
+  });
+}
 
 async function recorder(respond: (response: ServerResponse) => void): Promise<Recorder> {
   const seen: Recorded[] = [];
@@ -143,8 +212,17 @@ function fixtureProject(): string {
   return dir;
 }
 
+/**
+ * npm's update notifier asks the registry for npm's own latest version, which
+ * is not the audit; off here, so the registries see only what the audit sends.
+ */
 function environment(cwd: string, ambient: Record<string, string>): NodeJS.ProcessEnv {
-  return { ...process.env, NPM_CONFIG_CACHE: path.join(cwd, "npm-cache"), ...ambient };
+  return {
+    ...process.env,
+    NPM_CONFIG_CACHE: path.join(cwd, "npm-cache"),
+    NPM_CONFIG_UPDATE_NOTIFIER: "false",
+    ...ambient,
+  };
 }
 
 function userConfig(cwd: string, lines: string[]): string {
@@ -204,7 +282,7 @@ describe("ambient configuration cannot make the audit green", () => {
         const pinned = await pinnedRegistry();
         const ambient = await ambientRegistry();
 
-        const { verdict } = runAudit(environment(cwd, testCase.ambient(ambient, cwd)), auditArgs(pinned.origin), cwd);
+        const { verdict } = await audit(environment(cwd, testCase.ambient(ambient, cwd)), auditArgs(pinned.origin), cwd);
 
         expect(verdict.green).toBe(false);
         expect(expectOneBulkCall(pinned)).toEqual({ a: ["1.0.0"], d: ["1.0.0"], o: ["1.0.0"], p: ["1.0.0"] });
@@ -225,7 +303,7 @@ describe("each flag has a control that fails without it", () => {
       const pinned = await pinnedRegistry();
       const ambient = await ambientRegistry();
 
-      const { verdict } = runAudit(
+      const { verdict } = await audit(
         environment(cwd, { NPM_CONFIG_OFFLINE: "true" }),
         without("--no-offline", pinned.origin),
         cwd,
@@ -244,7 +322,7 @@ describe("each flag has a control that fails without it", () => {
       const cwd = fixtureProject();
       const pinned = await pinnedRegistry();
 
-      runAudit(environment(cwd, { NPM_CONFIG_OMIT: "optional" }), without("--include=optional", pinned.origin), cwd);
+      await audit(environment(cwd, { NPM_CONFIG_OMIT: "optional" }), without("--include=optional", pinned.origin), cwd);
 
       expect(Object.keys(expectOneBulkCall(pinned)).sort()).toEqual(["a", "d", "p"]);
     },
@@ -257,7 +335,7 @@ describe("each flag has a control that fails without it", () => {
       const cwd = fixtureProject();
       const pinned = await pinnedRegistry();
 
-      runAudit(
+      await audit(
         environment(cwd, { NPM_CONFIG_OMIT: "dev", NODE_ENV: "production" }),
         without("--include=dev", pinned.origin),
         cwd,
@@ -274,7 +352,7 @@ describe("each flag has a control that fails without it", () => {
       const cwd = fixtureProject();
       const pinned = await pinnedRegistry();
 
-      runAudit(environment(cwd, { NPM_CONFIG_OMIT: "peer" }), without("--include=peer", pinned.origin), cwd);
+      await audit(environment(cwd, { NPM_CONFIG_OMIT: "peer" }), without("--include=peer", pinned.origin), cwd);
 
       expect(Object.keys(expectOneBulkCall(pinned)).sort()).toEqual(["a", "d", "o"]);
     },
@@ -288,7 +366,7 @@ describe("each flag has a control that fails without it", () => {
       const pinned = await pinnedRegistry();
       const ambient = await ambientRegistry();
 
-      const { verdict } = runAudit(
+      const { verdict } = await audit(
         environment(cwd, { NPM_CONFIG_REGISTRY: ambient.origin }),
         without(`--registry=${pinned.origin}`, pinned.origin),
         cwd,

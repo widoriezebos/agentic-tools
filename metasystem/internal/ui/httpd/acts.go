@@ -13,7 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
 
-// The board's six acts.
+// The board's six acts, and the Decisions page's two.
 //
 // Two are the drag-and-drop moves between lanes that are real: To Do to Ready
 // for Work is goal approve, and Ready for Work back to To Do is goal
@@ -23,10 +23,23 @@ import (
 // two write the relation between two goals rather than the state of one: goal
 // block and goal unblock, from the goal's own page where both directions of
 // that relation are read. Every other move on the board would need a fact
-// this server cannot manufacture — a seat's claim, a park with its reason, a
-// landing — and is refused in the browser without ever reaching here.
+// this server cannot manufacture — a seat's claim, a landing — and is refused
+// in the browser without ever reaching here.
 //
-// All six take the same policy every other route takes: the allowed host,
+// Two more arrive with the Decisions queue under R-125-m1u: goal park, which
+// is that page's "Not now", and goal unpark, which returns a paused goal to
+// the queue. They are not board moves and the board grows no button for them;
+// the engine admits this hand's session proof at the three rows the ruling
+// names and at no others, so every other refusal stands exactly as it did.
+//
+// One more arrives with the goal editor's first gate: goal edit, which
+// rewrites the intent, the next step and the labels of a goal nobody has
+// approved yet. The allowlist is the mutation's own, not this route's — a
+// goal approved or claimed between the page's read and the act is refused at
+// the tip rather than displaced — and the body carries only the fields the
+// sheet says changed, so a terminal edit of an untouched field survives it.
+//
+// All nine take the same policy every other route takes: the allowed host,
 // the same-site check, the single allowed origin, POST and nothing else, a
 // bounded JSON object with no unknown fields. What they add is the one thing
 // no read route needs: a human's proof. Two can supply one — the live browser
@@ -38,20 +51,32 @@ const (
 	// goalsPath names the collection: a POST to it opens a goal. goalsPrefix
 	// is the same resource with an id beneath it, which is where the acts on
 	// one goal live.
-	goalsPath       = "/api/backlog/goals"
-	goalsPrefix     = "/api/backlog/goals/"
-	approveSuffix   = "/approve"
-	withdrawSuffix  = "/withdraw"
-	prioritySuffix  = "/priority"
-	blockSuffix     = "/block"
-	unblockSuffix   = "/unblock"
+	goalsPath      = "/api/backlog/goals"
+	goalsPrefix    = "/api/backlog/goals/"
+	approveSuffix  = "/approve"
+	withdrawSuffix = "/withdraw"
+	prioritySuffix = "/priority"
+	blockSuffix    = "/block"
+	unblockSuffix  = "/unblock"
+	parkSuffix     = "/park"
+	unparkSuffix   = "/unpark"
+	// editGoalSuffix is the goal's own edit. The document editor's editSuffix
+	// is the same word under another prefix, and the two are written apart so
+	// that neither can be renamed into the other by accident.
+	editGoalSuffix  = "/edit"
 	routeApprove    = "approve-goal"
 	routeWithdraw   = "withdraw-goal"
 	routePriority   = "set-goal-priority"
 	routeOpen       = "open-goal"
 	routeBlock      = "block-goal"
 	routeUnblock    = "unblock-goal"
+	routePark       = "park-goal"
+	routeUnpark     = "unpark-goal"
+	routeEditGoal   = "edit-goal"
 	unprovenRefusal = "this interface cannot act as a human"
+	// oneLineRefusal is what an intake and an edit both say about a field the
+	// ledger keeps on one line. It is written once so the two cannot drift.
+	oneLineRefusal = "a goal's intent and next step are each one line in the ledger; fold the line breaks before sending"
 	// expiredRefusal is the one refusal a human fixes without reading
 	// anything: the session ran out while the page stayed open.
 	expiredRefusal = "your session expired; sign in again"
@@ -88,6 +113,17 @@ type withdrawBody struct {
 	Reason string `json:"reason"`
 }
 
+// parkBody is the reason a human gave for pausing one goal. It is required,
+// because the engine requires it: a pause without a why is a stall in
+// disguise, and this route refuses an empty one rather than inventing a
+// sentence the human did not write. An unpark carries nothing at all, and its
+// body is an empty object like every other act's.
+type parkBody struct {
+	Because string `json:"because"`
+}
+
+type unparkBody struct{}
+
 // priorityBody is where in the backlog a human put one goal: the band, and
 // the one-based position in it. A null sequence appends, which is what the
 // command edge does when it is given no --sequence.
@@ -122,6 +158,22 @@ type openBody struct {
 	Exposure     uint8    `json:"exposure"`
 	Accumulation uint8    `json:"accumulation"`
 	Basis        string   `json:"basis"`
+}
+
+// editGoalBody is what a human changed about one queued goal, and nothing
+// else about it.
+//
+// Every field is a pointer because a field that was not sent and a field that
+// was sent empty are two different statements: the sheet sends only what
+// differs from what it opened with, so an intent nobody touched is absent
+// here and the terminal edit that changed it in the meantime stands, while a
+// label list a human emptied arrives as an empty array and clears them. A
+// body with all three absent changes nothing and is refused rather than
+// published as a no-op.
+type editGoalBody struct {
+	Intent   *string   `json:"intent"`
+	NextStep *string   `json:"nextStep"`
+	Labels   *[]string `json:"labels"`
 }
 
 // edgeBody is one end of one edge. The path names the goal that waits; this
@@ -193,6 +245,9 @@ func actRouteOf(path string) (written, bool) {
 		prioritySuffix: routePriority,
 		blockSuffix:    routeBlock,
 		unblockSuffix:  routeUnblock,
+		parkSuffix:     routePark,
+		unparkSuffix:   routeUnpark,
+		editGoalSuffix: routeEditGoal,
 	}
 	for suffix, route := range suffixes {
 		if id, ok := actID(path, suffix); ok {
@@ -248,6 +303,34 @@ func (h *handler) withdrawGoal(w http.ResponseWriter, r *http.Request, id string
 	h.answerAct(w, h.info.Withdraw(signed, id, body.Reason))
 }
 
+// parkGoal and unparkGoal are the Decisions queue's "Not now" and its undo.
+// The engine owns every refusal they can draw — a goal already parked, a
+// claim another pair holds, a branch that is not on origin — and the route
+// answers each one in the engine's own words.
+func (h *handler) parkGoal(w http.ResponseWriter, r *http.Request, id string) {
+	signed, may := h.mayAct(w, r)
+	if !may {
+		return
+	}
+	var body parkBody
+	if !decode(w, r, &body) {
+		return
+	}
+	h.answerAct(w, h.info.Park(signed, id, strings.TrimSpace(body.Because)))
+}
+
+func (h *handler) unparkGoal(w http.ResponseWriter, r *http.Request, id string) {
+	signed, may := h.mayAct(w, r)
+	if !may {
+		return
+	}
+	var body unparkBody
+	if !decode(w, r, &body) {
+		return
+	}
+	h.answerAct(w, h.info.Unpark(signed, id))
+}
+
 func (h *handler) setGoalPriority(w http.ResponseWriter, r *http.Request, id string) {
 	signed, may := h.mayAct(w, r)
 	if !may {
@@ -274,7 +357,7 @@ func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
 	// before a broken record can be written.
 	if strings.ContainsAny(body.Intent, "\r\n") || strings.ContainsAny(body.NextStep, "\r\n") {
 		w.WriteHeader(http.StatusBadRequest)
-		writeActRefusal(w, "one-line", "a goal's intent and next step are each one line in the ledger; fold the line breaks before sending")
+		writeActRefusal(w, "one-line", oneLineRefusal)
 		return
 	}
 	h.answerAct(w, h.info.Open(signed, act.Opened{
@@ -286,6 +369,45 @@ func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
 			Accumulation: body.Accumulation, Basis: body.Basis,
 		},
 	}))
+}
+
+// editGoal rewrites the three fields of a goal nobody has approved yet.
+//
+// Every refusal but one is the engine's own: the state the goal is in, and
+// the label grammar it validates against. The one this route owns is the one
+// the open route owns for the same reason — the ledger keeps an intent and a
+// next step on one line each, so a body that carried a line break would
+// write a broken record, and it is refused before the act rather than after.
+// The nil check is this route's own rather than mayAct's, because an engine
+// that can approve and park but was built without the editor should still
+// approve and park: a missing act refuses its own route and no others.
+func (h *handler) editGoal(w http.ResponseWriter, r *http.Request, id string) {
+	if h.info.Edit == nil {
+		writeFailure(w, "this engine was built without the backlog's edit")
+		return
+	}
+	signed, may := h.mayAct(w, r)
+	if !may {
+		return
+	}
+	var body editGoalBody
+	if !decode(w, r, &body) {
+		return
+	}
+	if brokenLine(body.Intent) || brokenLine(body.NextStep) {
+		w.WriteHeader(http.StatusBadRequest)
+		writeActRefusal(w, "one-line", oneLineRefusal)
+		return
+	}
+	h.answerAct(w, h.info.Edit(signed, id, act.Edited{
+		Intent: body.Intent, NextStep: body.NextStep, Labels: body.Labels,
+	}))
+}
+
+// brokenLine reports a field that was sent and carries a line break. A field
+// that was not sent carries nothing and breaks nothing.
+func brokenLine(value *string) bool {
+	return value != nil && strings.ContainsAny(*value, "\r\n")
 }
 
 // blockGoal and unblockGoal write and remove one edge. The id in the path is
@@ -322,7 +444,7 @@ func (h *handler) unblockGoal(w http.ResponseWriter, r *http.Request, dependent 
 // says so. The reason a refusal carries is both proofs' own, in full.
 func (h *handler) mayAct(w http.ResponseWriter, r *http.Request) (*session.Session, bool) {
 	if h.info.Approve == nil || h.info.Withdraw == nil || h.info.SetPriority == nil || h.info.Open == nil ||
-		h.info.Block == nil || h.info.Unblock == nil {
+		h.info.Block == nil || h.info.Unblock == nil || h.info.Park == nil || h.info.Unpark == nil {
 		writeFailure(w, "this engine was built without the backlog's acts")
 		return nil, false
 	}

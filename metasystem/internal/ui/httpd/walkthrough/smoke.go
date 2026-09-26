@@ -205,7 +205,7 @@ func smokeLanes(state *ledger) []partner.Lane {
 // It is a copy and a temporary directory: a real agent runs against it, and
 // nothing it could do reaches the repository a human is working in.
 func smokeCheckout(kit string) string {
-	checkout := fixtureCheckout(false)
+	checkout := fixtureCheckout(false, registerKit)
 	for _, relative := range []string{
 		"AGENTS.md", "wow.md", "docs/glossary.md", "docs/backlog-mechanism.md",
 		"memory/rulings.md", "docs/collaboration.md", "docs/project-rules.md",

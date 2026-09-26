@@ -26,6 +26,8 @@ type acted struct {
 	opened     []act.Opened
 	blocked    [][2]string
 	unblocked  [][2]string
+	parked     [][2]string
+	unparked   []string
 	refusal    error
 	budgetLaw  map[string]goalbudget.Budget
 	authorized AuthorityInfo
@@ -80,6 +82,16 @@ func (rec *acted) acting() Info {
 			rec.unblocked = append(rec.unblocked, [2]string{dependent, blocker})
 			return rec.refusal
 		},
+		Park: func(signed *session.Session, id, because string) error {
+			rec.hand(signed)
+			rec.parked = append(rec.parked, [2]string{id, because})
+			return rec.refusal
+		},
+		Unpark: func(signed *session.Session, id string) error {
+			rec.hand(signed)
+			rec.unparked = append(rec.unparked, id)
+			return rec.refusal
+		},
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) { return rec.budgetLaw, nil },
 	}
 }
@@ -94,7 +106,7 @@ func (rec *acted) hand(signed *session.Session) {
 
 func (rec *acted) reached() int {
 	return len(rec.approvals) + len(rec.withdrawn) + len(rec.ranked) + len(rec.opened) +
-		len(rec.blocked) + len(rec.unblocked)
+		len(rec.blocked) + len(rec.unblocked) + len(rec.parked) + len(rec.unparked)
 }
 
 func proven() AuthorityInfo {

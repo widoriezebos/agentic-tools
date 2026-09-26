@@ -59,10 +59,10 @@
       "id": "application",
       "title": "Application",
       "path": "/application",
-      "purpose": "What has been built and released, and the evidence that it works.",
-      "shows": "What has been released, with the evidence for each claim and where that evidence was produced.",
-      "projected": false,
-      "availability": "This build does not project Application. Implemented and released behaviour and its evidence are recorded and will be shown here. Arrives with gate 6."
+      "purpose": "What this workspace has concluded, what is known to be wrong with it, and what it says it is. The first is the ledger's own record of work that ended, week by week; the second is the known-issues register, open rows first; the third is one line of links into the reader.",
+      "shows": "What this workspace has concluded, week by week, in the ledger's own words; the known problems, open ones first; and the documents that say what it is.",
+      "projected": true,
+      "availability": "This build projects Application: the page reads the workspace and says what it read."
     },
     {
       "id": "settings",
@@ -244,7 +244,37 @@
     {
       "id": "needs-your-choice",
       "term": "Needs your choice",
-      "text": "Everything waiting on a human and nobody else, complete rather than capped: work nobody has authorized, approvals that expired, a seat's own question, open questions, parked and stopped goals, drafts, designs whose work has landed, rulings whose review has come due, and what the steward addressed to you."
+      "text": "Everything waiting on a human and nobody else, complete rather than capped, in two blocks: what is asked of you, which is a few things with a few different consequences, and what is waiting for your approval, which is the queue of work nobody has authorized yet."
+    },
+    {
+      "id": "inbox",
+      "term": "Inbox",
+      "text": "Everything waiting on a human and nobody else, in one group per kind: a seat's question, an open question of the register, a draft, a design whose work has landed, an approval that expired, a goal a seat paused or a fence stopped, a ruling whose review has come due, what the steward addressed to you, and the queue of goals nobody has authorized. A group says how many, how old the newest one is, and how many are new; one group is open at a time, and what you leave open is what opens next time."
+    },
+    {
+      "id": "new-here",
+      "term": "New",
+      "text": "Recorded after your last visit to this page, by the dates the records themselves carry. Reading this page is the visit, and reading it again within half an hour goes on comparing against the same moment, so a refresh never hides what you have not read. The dates are uneven and this is honest rather than exact: an instant is compared as an instant, a date without a time counts as new from the day your window opened, and a record that carries no date at all is never marked new. On a first visit it means the last day. Decisions keeps this mark separately from the Overview's, so reading one never moves the other's boundary."
+    },
+    {
+      "id": "waiting-for-approval",
+      "term": "Waiting for your approval",
+      "text": "The goals nobody has authorized, which is a queue rather than a list: many, mostly weeks old, fine to wait. Approving one admits it so a seat may claim it, and the approval carries the budget shown beside it — the tuple the goal already has, or the project's law for its tier."
+    },
+    {
+      "id": "not-now",
+      "term": "Not now",
+      "text": "A goal you paused, with the reason you gave and the date you gave it. It is a decision rather than something waiting on you, so it is here and not in the inbox. Return to queue lifts the pause; a pause that names a blocker lifts by itself when that blocker is done."
+    },
+    {
+      "id": "act-selected",
+      "term": "Acting on what you selected",
+      "text": "One publication per goal, sent in the order shown, because this engine has no act over many goals. The first refusal stops the run and says which goal it stopped at in the engine's own words; the goals after it were never sent, and the page reads the ledger again to say what landed."
+    },
+    {
+      "id": "return-to-queue",
+      "term": "Return to queue",
+      "text": "Lifts one pause. The goal goes back to approved where its approval still stands, and to the queue otherwise. A pause a seat made can be lifted here too; one that waits for a blocker returns by itself when every blocker is done."
     },
     {
       "id": "silence",
@@ -262,9 +292,29 @@
       "text": "When a ruling comes back for a decision. Most rulings stand until a human says otherwise; a temporary, experimental, delegated-authority or assumption-dependent one carries a date or a named event, and the date is what this page can judge. An event is shown as written and judged by the steward, not here."
     },
     {
-      "id": "application",
+      "id": "application-section",
       "term": "Application",
-      "text": "What has been built and released, and the evidence that it works."
+      "text": "What this workspace has concluded, what is known to be wrong with it, and what it says it is. The first is the ledger's own record of work that ended, week by week; the second is the known-issues register, open rows first; the third is one line of links into the reader."
+    },
+    {
+      "id": "what-concluded",
+      "term": "What concluded",
+      "text": "Every goal the ledger has concluded, newest first, with the one sentence written when it concluded. It is the record of work that ended and not a statement of what the application can do now: a conclusion sometimes records an administrative end, such as a duplicate withdrawn or a requirement absorbed into another goal, and it dates the conclusion rather than a capability that still stands. What this build does today is read from its own documents and its behaviour, not from this list."
+    },
+    {
+      "id": "known-problems",
+      "term": "Known problems",
+      "text": "The project's known-issues register, one row per defect or limitation, open rows first. A row is concluded when its status begins with FIXED, RESOLVED, RETIRED, CLOSED or ACCEPTED, and the word stays visible, because an accepted limitation still exists. Nothing here is interpreted beyond that word, and a row this build could not read as six columns is counted in its own line rather than dropped."
+    },
+    {
+      "id": "concluded-new",
+      "term": "Since your last visit",
+      "text": "Concluded after your last visit to this page, by the dates the records themselves carry. Reading this page is the visit, and reading it again within half an hour goes on comparing against the same moment, so a refresh never hides what you have not read. A goal whose conclusion carries no date is never marked new. On a first visit it means the last day. This page keeps the mark separately from the Overview's and Decisions', so reading one never moves another's boundary."
+    },
+    {
+      "id": "last-engine",
+      "term": "Last published engine",
+      "text": "The engine build this seat wrote into its own presence record the last time it ticked, with the generation and the moment it was published. It is a record at one tick and not a statement about what is running now: a seat that has not ticked since it was rebuilt still publishes the build it had then. A seat that has published nothing says so rather than showing a blank."
     },
     {
       "id": "settings",
@@ -325,6 +375,11 @@
       "id": "lane-unknown",
       "term": "Unknown",
       "text": "A goal record this build cannot place in any lane. It is disclosed under the board with the reason it carries, never hidden and never a column of its own."
+    },
+    {
+      "id": "edit-goal",
+      "term": "Edit",
+      "text": "Rewrites a goal's intent, next step and labels. Only a goal still queued that nobody has approved is edited here: an approval is a human's word on a particular intent, so changing one means withdrawing the approval first, a claimed goal is edited at the seat working it, and a paused one returns to the queue first. Only the fields you change are sent, so an edit made elsewhere in the meantime survives."
     },
     {
       "id": "priority",
@@ -437,9 +492,19 @@
       "text": "When a job's reserved minutes run out. It is a bound and not an estimate: nothing here predicts when work will finish, and a job that reaches its cap is stopped rather than finished. Read it as the latest this job can still be running, never as how long is left."
     },
     {
+      "id": "stickies",
+      "term": "Stickies",
+      "text": "Your own reminders, jotted while you work. They are yours and nobody else's: they live on this seat, outside the project's records and outside every checkout, so no agent and no reviewer reads them. A sticky can say what it is about — the goal or the document you were looking at — and then it comes back on that page. Open ones are newest first; what you mark done is kept, out of the way."
+    },
+    {
       "id": "chain",
       "term": "Chain",
       "text": "The jobs that belong to one piece of work, newest first: a build, the critic that reviewed it, the round that answered the findings. Each carries the cap it reserved and when it ran, and never a consumed charge — settling what a job actually spent belongs to the engine that dispatched it."
+    },
+    {
+      "id": "suggestion",
+      "term": "Suggestion",
+      "text": "Words your Project Partner offered for one field of the sheet you are filling in. It is an offer and nothing else: the field keeps what you wrote until you press Use this, and Undo puts back what was there for as long as the field still holds the suggestion. Saving is still yours, and the Partner never saves."
     }
   ],
   "questions": [
@@ -578,6 +643,19 @@
         {
           "text": "What changed today?",
           "scope": "since local midnight, through the changes this server knows"
+        }
+      ]
+    },
+    {
+      "subject": "draft",
+      "questions": [
+        {
+          "text": "Suggest a better wording",
+          "scope": "the fields of the sheet you handed over, as they stand; what comes back is a suggestion you decide about"
+        },
+        {
+          "text": "Suggest the next step",
+          "scope": "the sheet you handed over, as it stands; what comes back is a suggestion you decide about"
         }
       ]
     }

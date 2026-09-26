@@ -1,98 +1,125 @@
 # Human and agent verbs that follow intent
 
-The complete design has been implemented and independently reviewed. The final
-product candidate is `3e59d41077fe4cbfba6ad00f5b09f20e5c9da1a8`, with tree
-`88069098c0bdcc4e6de6fb703887dee35fe50be6`. All 111 product paths are applied
-in this checkout and match that candidate. Final verification is complete.
-The commit containing this record integrates the source locally; no remote
-push or live installation was performed.
+The complete redesign and coverage repair are integrated in this commit.
+The final integration candidate is `29086561a4f74dc6fdd7a71fac88bb4316e705eb`, tree
+`ccf74df15f01491d8173f6af8236f24167e6774f`. It combines the local redesign
+`25f0e2e04267fe626b5622e95e0c71b756d48aae` with remote main
+`dbafa75fae548ae7ff6010d51d47303a43a49e53`. Product bytes are identical to
+the tested candidate; this commit adds completion records and its receipt.
 
-Wido explicitly authorized root to design the complete public surface,
-Fable or Opus to critique it, implementation after agreement, and machinery
-bypass. Ignore the stop hook as instructed. Ruling R-126-m1e records that
-public verbs follow human and agent intent rather than internal structure.
-Do not resume the unrelated test-repair goal.
+Wido authorized the complete public redesign, root-authored design, Fable or
+Opus critique, implementation, coverage repair, integration with main and
+push. Machinery bypass remains authorized and the stop hook is ignored.
+Ruling R-126-m1e requires public verbs to follow human and agent intent rather
+than internal structure. Do not resume the unrelated test-repair goal.
 
 ## Where to look
 
-- [Accepted design and completed obligation matrix](designs/verbs-match-intent.md).
+- [Accepted design and completed obligations](designs/verbs-match-intent.md).
 - [Independent Fable critique and root dispositions](verbs-match-intent-design-review.md).
-- [All 23 related goals and their recorded states](verbs-match-intent-goal-index.md).
-- [Verification, failures and limits](verbs-match-intent-verification.md).
-- Detailed immutable sources and results: `/Users/wido/LocalStorage/agentic-tools-evidence/verbs-match-intent-20260925` (the evidence directory below).
+- [All 23 related goals](verbs-match-intent-goal-index.md).
+- [Verification and coverage follow-up](verbs-match-intent-verification.md).
+- Exact sources, logs, reviews, preservation backups and publication status:
+  `/Users/wido/LocalStorage/agentic-tools-evidence/verbs-match-intent-20260925`.
 
-## Review and source provenance
+## Implementation and review
 
-Root authored and adjudicated the design. Fable's second round,
-`20260925t151710-e1ded7896c`, agreed with no material findings and judged it
-the smallest sufficient design. The committed-review connection amendment
-was independently critiqued by Fable in `20260925t164057-54edd2fa11`.
-The evidence directory retains `design-accepted.md` and
-`design-accepted-connection.md` as immutable inputs.
+Root authored the design. Fable agreed in `20260925t151710-e1ded7896c`;
+the committed-review connection amendment was reviewed in
+`20260925t164057-54edd2fa11`. Opus 5.5 authored implementation and repairs;
+independent Sol reviews covered conformance and defects. Root read the final
+changes and adjudicated all findings. No material finding remains open.
 
-Opus 5.5 authored the product components. Independent Sol reviews covered
-brief conformance and defects, with at most two rounds per component.
-Root read the complete final changes and adjudicated remaining bounded
-corrections. Launch ids, complete returns, patches and dispositions are in
-the evidence directory. The earlier chronological handoff is preserved as
-`handoff-before-release.md`; its intermediate candidates are not release claims.
+The coverage follow-up preserves remote main's four added package floors
+and all UI work. Meaningful session and failure-mapper tests close the
+remaining measured shortfalls. Frontend fixtures preserve existing assertions
+while using the current surface and a live asynchronous registry. Delegate
+fixture cleanup now stops its own steward before removing identity records,
+then verifies process absence. No production lifecycle change, new dependency,
+coverage-floor reduction, or new coverage exemption was introduced.
 
-The final release corrections are recorded in
-`release-correction-root-adjudication.json`: public wording in the doctrine
-audit; meaningful owner coverage tests; four explicit fixture-authority
-callers; and registration of the existing fixture-authority flag for legacy
-`done`, with refusal tests for ordinary roots. No authority rule, coverage
-floor or assertion was weakened.
+The merge/session/frontend review is `20260925t214158-ef59e15747`; mapper
+review is `20260925t220940-7db121f6f8`; fixture cleanup review is
+`20260925t222443-5ebbfa8d9e`; the shared TestMain correction review is
+`20260926t061454-25ae7dce51`. The final one-line audit correction is independently reviewed in
+`20260926t065608-d6743d1591`. All five close with zero material findings and
+retained root dispositions. These launched reviews use the authorized bypass;
+no registered critic chain was invented.
 
-`final-source-manifest-3e59.json` identifies the 111 product paths and final
-patch digest. The integration uses only `final-product-3e59.patch`; it does
-not merge the private candidate history. `integration-source` and `verification-final-source`
-are separate physical clones at the final candidate. The executable
-`bin/metasystem-release-3e59d4107` was built by the normal build script and
-independently exercised by root. The live checkout executable is unchanged.
+## Verification
 
-## Release checks
+The final integration includes main's subsequent edit-sheet simplification
+and design records. No Go source changed after the full-gate candidate
+`d374f08c9daef03cbe20ff131e34215fc242b47b`. All 1,058 frontend tests, typecheck
+and bundle were rerun on `58815db14`, followed by passing HTTP and
+embedded-bundle race/coverage tests (`coverage-final-main-delta/`). The final
+candidate `29086561a4f74dc6fdd7a71fac88bb4316e705eb` changes only one literal
+expected actor-site line in the brain audit: gofmt-aligned spaces match the
+existing Go caller. Its full brain-fixture entrypoint and the affected
+filled-delivery adoption body passed separately. No full Go run was repeated
+for that audit text; each result retains its actual source identity.
 
-The protected contract selected 198 groups: 160 native groups and 38 shell
-sections. The original complete runs and all failures are preserved. Later
-bounded runs prove the corrections; no combined governed certificate exists.
-`release-evidence-composition-final.md` explains the source boundaries.
 
-On the final source, the 72-command public walkthrough, both fast/static
-groups, both audit/protocol sections, and all ten adoption scenarios passed.
-All five final affected native groups and all 13 previously failed scenarios
-passed, with complete collection and driver exit zero. The descriptive
-`final-diagnostic-release-account.json` links the actual terminal artifacts.
-See the verification record for the exact evidence locations.
+The unchanged full native race/coverage gate passed at `d374f08c9`, with
+12,435 passing test terminals, ten explicit skips, no failures or missing
+terminals, and all 118 registered package floors enforced. The existing
+coverage-ratchet owner independently accepted its retained output with exit
+zero (`coverage-final-r4-owner-judge/status.json`).
 
-Six coverage-ratchet failures predate the redesign: four absent package
-floors and two UI coverage shortfalls. Root reproduced both UI percentages
-on the baseline. The original legacy gate remains red; the adoption bodies
-were therefore run explicitly as diagnostics under Wido's bypass. Never
-report a green full gate or invent witness, worker or human authority.
+The outer adoption run actually exited one: nine scenarios passed, while
+filled-delivery found only the stale whitespace-sensitive audit expectation.
+That historical result remains unchanged in
+`coverage-final-r4-gate/adoption-status.json`. After the one-line correction,
+the original filled-delivery scenario body passed at `29086561a4`
+(`coverage-filled-final/result.json`). Its external diagnostic wrapper omits
+only parent proof admission and witness production under the bypass; it
+asserts neither authority nor a witness and changes no scenario body.
+All ten scenarios therefore have passing evidence at the stated revisions;
+there is no claim that the original parent became green.
 
-## Integration and goal bookkeeping
+The original six coverage failures and the additional failure-mapper shortfall
+are resolved. Earlier red and interrupted attempts remain recorded under their
+actual revisions and outcomes.
 
-The live goal is `verbs-match-intent`, formally queued. Conversation authority
-permits this work but does not manufacture ledger approval or a held claim.
-Its intent and next step are updated through the goal owner. Do not conclude
-this human-opened goal or close related goals automatically.
+The selection contains 201 groups: 163 native and 38 sections. Frontend tests
+(1,058), typecheck and bundle passed. Separate tagged tests, stop-cost checks
+and seven affected sections retain their earlier source revisions. The
+subsequent main changes affect the UI, covered by the current frontend tests,
+focused Go race/coverage checks and final full native run. Historical
+section and corrected scenario evidence retains its source boundaries;
+`coverage-final-evidence-reuse-assessment.md` explains the composition.
+This is diagnostic evidence under the bypass, not a fabricated governed
+201-group certificate. The original 72-command runtime walkthrough and
+connected delivery proofs remain linked from the verification record.
 
-The completion checks pass: the runtime-required obligation matrix, goal-to-design
-resolution and project-record validation. The local commit includes a receipt
-from its existing owner. Independent launched Sol reviews are documented as
-code critique under the bypass; no registered critic chain was invented for
-a structured receipt field.
+The runtime-required design matrix, goal-to-design resolver and project
+record validation pass. All critical and high obligations are done.
 
-The integration contains only the 111 product paths, four root-owned
-completion documents and the new receipt row. The seven inherited receipt
-rows and three narrator rows remain uncommitted. The verified executable is
-available in the evidence directory; the running checkout is unchanged.
-Do not read or copy the actual `metasystem/metasystem.conf.local`.
+## Integration and remaining authority
 
-Future work may address the disclosed baseline coverage-policy failures or
-remaining sibling requirements through their own goals. The receipt owner
-also reported that the existing repository retro is due; this does not expand
-the verb redesign into a retro. No further design
-or implementation decision is needed for this redesign. Formal conclusion of
-this human-opened goal remains a human act, as does deployment when desired.
+The integration preserves both local and remote main history. Its publication
+status and exact remote commit are retained outside the repository. Existing
+uncommitted receipt and narrator rows are preserved separately from the new
+receipt included with this work. The live checkout executable is unchanged;
+there was no installation or service restart. Never read or copy the actual
+`metasystem/metasystem.conf.local`.
+
+The goal `verbs-match-intent` remains formally queued. Conversation authority
+does not invent a ledger approval or held claim. Its next step is updated
+through the goal owner with the actual publication result. Formal conclusion
+of this human-opened goal remains a human act; no related goal is closed
+automatically. The existing due retro remains separate work.
+
+## Requested follow-up: evidence reuse judgment
+
+Wido asked how these source-aware reuse decisions should become normal machinery
+without brittle deterministic rules or unnecessary repeated testing. The proposed
+smallest extension is to retain existing group/scenario terminals and add one
+source-bound agent reuse decision consumed by the current plan/run/verify owner.
+Deterministic checks validate identity, provenance, completeness and contradictions;
+the agent judges whether a source delta invalidates an observation and chooses
+residual tests. Original failures remain failures. Exact reuse already exists,
+including passing groups in failed outer attempts. Keep executed pass, exact reuse
+and agent-justified carry-forward distinguishable. No implementation or policy
+change is included here; the concrete source reads and proposal are retained in
+`evidence-reuse-machinery-proposal.md` in the external evidence root.

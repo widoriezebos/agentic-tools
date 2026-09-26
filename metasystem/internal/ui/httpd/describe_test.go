@@ -25,15 +25,23 @@ func TestEveryWriteRouteIsAnActWithAHand(t *testing.T) {
 		routeQuestionStatus, routeEditDocument, routePreviewSource,
 		routeSignIn, routeSignOut,
 		routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
+		routePark, routeUnpark,
 		routePartnerTurn, routePartnerStop, routePartnerSeeing,
+		routeAddSticky, routeEditSticky, routeRemoveSticky,
 	}
+	// The one read this table describes. A notepad's read belongs beside its
+	// three acts because it is the answer all three give: what a human can do
+	// from the panel is read theirs, write one, change one and remove one, and
+	// a table that named three of the four would be answering "what can I do
+	// here?" with three quarters of it.
+	reads := []string{routeStickies}
 	described := map[string]manifest.Act{}
 	for _, act := range Acts() {
 		described[act.ID] = act
 	}
 	testutil.Expect(t, "no act describes a route this server does not dispatch",
-		len(described), len(routes))
-	for _, route := range routes {
+		len(described), len(routes)+len(reads))
+	for _, route := range append(append([]string{}, routes...), reads...) {
 		act, known := described[route]
 		testutil.Expect(t, route+" is described", known, true)
 		testutil.Expect(t, route+" says what it does", act.Does != "", true)
@@ -50,7 +58,8 @@ func TestTheLedgerActsNameTheHandMayActRequires(t *testing.T) {
 	t.Parallel()
 	for _, act := range Acts() {
 		switch act.ID {
-		case routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock:
+		case routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
+			routePark, routeUnpark:
 			testutil.Expect(t, act.ID+" needs a signed-in human",
 				strings.Contains(act.Requires, "a signed-in human"), true)
 			testutil.Expect(t, act.ID+" names the one exception",

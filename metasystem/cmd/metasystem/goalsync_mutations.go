@@ -49,36 +49,19 @@ func (p goalRecoveryPolicy) ParkBranchCheck(endpoint goal.Endpoint) func(string,
 	return goalParkBranchCheck(p.root, endpoint)
 }
 
+// The park branch check and its reader types moved into internal/goal/branch,
+// where the interface's own park reaches them too (R-125-m1u); these are the
+// command edge's one-line names for them.
 func goalParkBranchCheck(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
-	return goalParkBranchCheckWithReaders(root, endpoint, nil, goalBranchEndpointTip, goalBranchOriginTip)
+	return goalbranch.ParkCheck(root, endpoint)
 }
 
-type parkLocalTipReader func(repo, ref string) (string, bool, error)
-type parkEndpointTipReader func(root string, endpoint goal.Endpoint) (string, error)
-type parkOriginTipReader func(root string, endpoint goal.Endpoint, goalID string) (string, bool, error)
+type parkLocalTipReader = goalbranch.ParkLocalTipReader
+type parkEndpointTipReader = goalbranch.ParkEndpointTipReader
+type parkOriginTipReader = goalbranch.ParkOriginTipReader
 
 func goalParkBranchCheckWithReaders(root string, endpoint goal.Endpoint, localTip parkLocalTipReader, endpointTipReader parkEndpointTipReader, originTipReader parkOriginTipReader) func(string, string) (string, error) {
-	return func(goalID, next string) (string, error) {
-		readRemote := func() (string, string, bool, error) {
-			if endpoint.Branch != "refs/heads/main" {
-				return "", "", false, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", endpoint.Branch)
-			}
-			endpointTip, err := endpointTipReader(root, endpoint)
-			if err != nil {
-				return "", "", false, err
-			}
-			originTip, present, err := originTipReader(root, endpoint, goalID)
-			return endpointTip, originTip, present, err
-		}
-		var state goalbranch.ParkBranchState
-		var err error
-		if localTip == nil {
-			state, err = goalbranch.CheckParkBranch(root, goalID, next, readRemote)
-		} else {
-			state, err = goalbranch.CheckParkBranchWithLocalTip(root, goalID, next, readRemote, localTip)
-		}
-		return state.Summary, err
-	}
+	return goalbranch.ParkCheckWithReaders(root, endpoint, localTip, endpointTipReader, originTipReader)
 }
 
 func bindHandoverTargetRoot(request *goal.VerbRequest, targetRoot string) {

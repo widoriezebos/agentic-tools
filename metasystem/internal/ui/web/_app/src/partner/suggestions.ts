@@ -70,7 +70,25 @@ const REGISTER: Readonly<Record<string, readonly Suggestion[]>> = {
     { text: "What is in this tab?", scope: "the records this tab is listing" },
     { text: "What changed today?", scope: "since local midnight, through the changes this server knows" },
   ],
+  draft: [
+    {
+      text: "Suggest a better wording",
+      scope: "the fields of the sheet you handed over, as they stand; what comes back is a suggestion you decide about",
+    },
+    {
+      text: "Suggest the next step",
+      scope: "the sheet you handed over, as it stands; what comes back is a suggestion you decide about",
+    },
+  ],
 };
+
+/**
+ * The register a handed-over sheet asks from, which is the one register that is
+ * not about a kind of thing on a page: it is about the draft a human is
+ * filling in, and the two questions are the two that ask the Partner to write
+ * rather than to explain.
+ */
+export const DRAFT_REGISTER = "draft";
 
 /** The questions for one register, or none where this build suggests none. */
 export function suggestionsFor(register: string): readonly Suggestion[] {

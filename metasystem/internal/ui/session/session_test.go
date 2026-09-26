@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -279,6 +280,76 @@ func TestASeatThatCannotRecordTheFloorSignsNobodyIn(t *testing.T) {
 			t.Fatalf("the code was refused after the floor became writable: %v", err)
 		}
 	})
+}
+
+// The floor moves before either identifier exists, so a random source that
+// fails after the write leaves the code spent. Neither identifier may come
+// back half made, and the failure is not a way to present the code again.
+func TestIdentifierFailureMintsNoSessionAndLeavesTheCodeSpent(t *testing.T) {
+	t.Parallel()
+	for _, failing := range []struct {
+		name string
+		call int
+	}{{"the bearer", 1}, {"the reference", 2}} {
+		t.Run(failing.name, func(t *testing.T) {
+			t.Parallel()
+			broken := errors.New("entropy unavailable")
+			calls := 0
+			var minted []string
+			held := newBed(t, func(o *Options, b *bed) {
+				o.Random = func(into []byte) error {
+					calls++
+					if calls == failing.call {
+						return broken
+					}
+					for i := range into {
+						into[i] = byte(calls*37 + i)
+					}
+					minted = append(minted, base64.RawURLEncoding.EncodeToString(into))
+					return nil
+				}
+			})
+			code := codeAt(t, signedInAt)
+
+			signed, bearer, err := held.store.SignIn("127.0.0.1", code, "")
+
+			if !errors.Is(err, broken) {
+				t.Fatalf("sign in = %v, want the random source's failure", err)
+			}
+			if signed != nil || bearer != "" {
+				t.Fatalf("a failed mint returned %+v %q", signed, bearer)
+			}
+			testutil.Expect(t, "the code is recorded as spent", len(held.recorded), 1)
+			testutil.Expect(t, "nothing is signed in", len(held.store.Lines()), 0)
+			testutil.Expect(t, "no line is published", len(held.lines), 0)
+			for _, value := range minted {
+				if _, liveness := held.store.Lookup(value); liveness != Absent {
+					t.Fatalf("an identifier minted before the failure opens a session: %v", liveness)
+				}
+			}
+
+			// The same code, with randomness back, is refused as spent and
+			// mints nothing.
+			spentAt := calls
+			_, again, err := held.store.SignIn("127.0.0.1", code, "")
+			testutil.Expect(t, "the code", refusalOf(t, err).Code, CodeReplayed)
+			testutil.Expect(t, "no bearer", again, "")
+			testutil.Expect(t, "no identifier is minted", calls, spentAt)
+			testutil.Expect(t, "no second floor write", len(held.recorded), 1)
+			testutil.Expect(t, "still nothing is signed in", len(held.store.Lines()), 0)
+
+			// The next step still signs in: the floor refused the replay, not
+			// the seat.
+			held.clock.at = signedInAt.Add(time.Duration(channel.TOTPStep) * time.Second)
+			recovered, bearer, err := held.store.SignIn("127.0.0.1", codeAt(t, held.clock.at), "")
+			if err != nil {
+				t.Fatalf("the next step was refused: %v", err)
+			}
+			found, liveness := held.store.Lookup(bearer)
+			testutil.Expect(t, "the cookie finds it", liveness, Live)
+			testutil.Expect(t, "it is the recovered session", found.Reference, recovered.Reference)
+		})
+	}
 }
 
 func TestASessionStopsActingWhenItsHoursRunOut(t *testing.T) {

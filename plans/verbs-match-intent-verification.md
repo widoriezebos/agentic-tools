@@ -1,16 +1,113 @@
 # Verification of the intent-based command redesign
 
-The implementation candidate is `3e59d41077fe4cbfba6ad00f5b09f20e5c9da1a8`,
-tree `88069098c0bdcc4e6de6fb703887dee35fe50be6`. Root independently verified
-that source in a physical clone with separate Git administration. All product runtime obligations and final correction checks passed. The
-commit containing this record integrates that source locally. It does not
-install the executable into the running checkout or publish a remote branch.
+The coverage follow-up is complete. The unchanged full race/coverage gate
+passes all 118 registered floors. Nine adoption scenarios passed in that run;
+the last passed separately after an audit expectation correction. Current
+frontend and HTTP/bundle checks also pass. All six
+original coverage-policy failures and the subsequently discovered untested
+failure mapper are resolved without lowering a floor.
 
-All detailed artifacts below are retained under
+Detailed sources and actual results are retained under
 `/Users/wido/LocalStorage/agentic-tools-evidence/verbs-match-intent-20260925`.
-The complete accepted design and obligation matrix are in
-[the design](designs/verbs-match-intent.md). The inventory contains
-[23 related goals](verbs-match-intent-goal-index.md).
+The accepted [design](designs/verbs-match-intent.md) has all critical and high
+obligations done; the [inventory](verbs-match-intent-goal-index.md) lists the
+23 related goals.
+
+## Coverage repair and main integration — September 26, 2026
+
+Wido subsequently requested that the coverage failures be repaired and the
+redesign integrated with remote main and pushed. The integration preserves
+remote main's UI changes and all of its existing coverage floors. The original
+local redesign is commit `25f0e2e04267fe626b5622e95e0c71b756d48aae`.
+
+The final tested candidate is `29086561a4f74dc6fdd7a71fac88bb4316e705eb`,
+tree `ccf74df15f01491d8173f6af8236f24167e6774f`, incorporating remote main
+`dbafa75fae548ae7ff6010d51d47303a43a49e53`. The published integration has
+the same product bytes; completion records and its receipt are added afterward.
+
+The four missing package floors came from the intervening remote main changes.
+The merged HTTP owner clears its unchanged floor. A new session regression
+covers token-generation failure, spent pairing codes, absence of a session
+on failure, and successful recovery. The full native run also exposed an
+untested failure-to-ledger mapper; its new tests cover filtering, evidence,
+identity and detached ownership, with four mutations caught. No floor was
+lowered and no exemption was added.
+
+The delegate integration fixture also leaked its background steward after
+removing the runner identity file. Its existing cleanup now disarms through
+the steward owner before removing fixture state and checks that the captured
+kernel identity is gone. Both real delegate cases passed, and both owned
+processes were absent afterward. Older unrelated processes were left alone.
+
+The first full native coverage run passed all tests but failed solely on the
+mapper floor; that red result remains recorded. A queued second attempt was
+interrupted before native admission to repair the process leak. The third
+completed native run failed the shared test-initialization audit: the new
+mapper package needed its standard TestMain wrapper. That ten-line correction
+passed both failing checks and independent review before the final run.
+
+The fourth unchanged full native gate passed: 12,435 passing test terminals,
+ten explicit skips, zero failures and no started test missing a terminal.
+All 118 floors passed; the existing ratchet owner independently judged the
+retained native output with exit zero (`coverage-final-r4-owner-judge/status.json`).
+The enclosing adoption command still exited one: nine scenarios passed,
+while filled-delivery exposed only an expected actor-site line whose spacing
+was stale after gofmt aligned a new upstream field. That historical exit
+remains one in `coverage-final-r4-gate/adoption-status.json`.
+
+The final one-line correction changes only that expected spacing. The full
+brain fixture entrypoint passes, independent Sol review has no material
+findings, and the unchanged filled-delivery scenario body passes at
+`29086561a4` (`coverage-filled-final/result.json`). The external wrapper
+omits only outer proof admission and witness production under the explicit
+bypass, with no authority or witness asserted and no scenario body altered.
+Nine original passes plus the corrected scenario provide complete scenario
+evidence with exact revision labels. No parent result was rewritten or
+synthetic governed certificate created. Earlier red and interrupted runs remain
+evidence of those attempts.
+
+Independent Sol reviews of the merge/session/frontend repairs, mapper tests
+fixture teardown and the shared TestMain correction are retained with root dispositions in the evidence
+directory. The final frontend's 1,058 tests, typecheck and bundle passed on the
+current integrated UI source (`coverage-final-r4-frontend`). Separate tagged tests, stop-cost checks and affected
+contract sections retain their actual source revisions; the final evidence
+reuse assessment records the boundaries. No governed testing certificate,
+production human authority, or live installation is claimed.
+
+The final integration includes main's subsequent edit-sheet simplification
+and design records. No Go source changed after the full-gate candidate
+`d374f08c9daef03cbe20ff131e34215fc242b47b`. All 1,058 frontend tests, typecheck
+and bundle were rerun on `58815db14`, followed by passing HTTP and
+embedded-bundle race/coverage tests (`coverage-final-main-delta/`). The final
+candidate `29086561a4f74dc6fdd7a71fac88bb4316e705eb` changes only one literal
+expected actor-site line in the brain audit: gofmt-aligned spaces match the
+existing Go caller. Its full brain-fixture entrypoint and the affected
+filled-delivery adoption body passed separately. No full Go run was repeated
+for that audit text; each result retains its actual source identity.
+
+Actual full-run coverage (all 118 registered floors pass):
+
+| Package | Measured | Required floor |
+| --- | ---: | ---: |
+| `internal/rulings` | 96.1% | 96.1% |
+| `internal/seat/launch` | 74.6% | 74.6% |
+| `internal/ui/decisions` | 94.7% | 94.7% |
+| `internal/ui/fleet` | 87.4% | 87.4% |
+| `internal/ui/httpd` | 88.9% | 88.5% |
+| `internal/ui/session` | 91.0% | 89.5% |
+| `internal/landing/trunkredmap` | 100.0% | 42.1% |
+
+The measurements and original producer output are retained under
+`coverage-final-r4-gate/native-retained/`. Ten explicit optional or platform
+skips remain recorded; skipped bodies are not counted as executed proof.
+
+## Original redesign verification record
+
+The remainder records the original local release at
+`3e59d41077fe4cbfba6ad00f5b09f20e5c9da1a8`, tree
+`88069098c0bdcc4e6de6fb703887dee35fe50be6`, integrated locally as `25f0e2e04`.
+Its original failures and source-specific diagnostics are historical evidence;
+the later coverage and integration outcome is recorded above.
 
 ## Scope and authority
 
@@ -121,7 +218,7 @@ that an exact configured fake root succeeds and ordinary or unconfigured
 roots refuse without ledger effects; its mutation check fails without the
 one-line parser correction.
 
-Six unrelated coverage-ratchet problems predate this redesign:
+The original local release recorded six coverage-ratchet problems that predated the redesign:
 
 - Missing floor registrations for unchanged `internal/rulings`,
   `internal/seat/launch`, `internal/ui/decisions` and `internal/ui/fleet`.
@@ -131,9 +228,10 @@ Six unrelated coverage-ratchet problems predate this redesign:
 Root ran both UI packages at baseline `4ebc7c157` with race and coverage.
 All tests passed and the measured percentages exactly matched the candidate.
 `release-baseline-ui-coverage-status.json` records the actual command and
-successful exit. The six ratchet failures remain unresolved; no floor was
-lowered. This release has diagnostic evidence under explicit machinery
-bypass, not a green legacy full gate or a governed testing certificate.
+successful exit. Those six ratchet failures were unresolved at that local release. The follow-up
+above records their repair and the later successful full gate. No floor was
+lowered. The original release evidence remains diagnostic; no governed
+testing certificate is asserted.
 
 No dependencies were added. Necessary process-wide fixtures remain serial;
 eligible new tests were made parallel first. The command-package serial count

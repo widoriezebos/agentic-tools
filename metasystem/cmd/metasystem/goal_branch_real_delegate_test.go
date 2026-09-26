@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -289,7 +290,10 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 		`{"repoIdentity":"`+worktree+`","generation":1,"installPath":"`+installed+`","installDigest":"sha256:`+strings.TrimSpace(string(digest))+
 			`","mintedAt":"1970-01-01T00:00:00Z","enrollment":"fixture"}`+"\n"), 0o600)
 	// Supervision is armed the way the dispatch fixture bed arms it and shut
-	// down when the case ends.
+	// down when the case ends. Shutdown stops the supervision rings but not
+	// the steward runner they start, and the runner's record lives in this
+	// worktree, so the runner is disarmed here, after the rings can no longer
+	// revive it and before the temp directory takes the record away.
 	arm := filepath.Join(worktree, "scripts", "agents", "arm-supervision.sh")
 	armEnv := append(os.Environ(), "METASYSTEM_BIN="+installed, "METASYSTEM_AGENT_RUNTIME=claude")
 	t.Cleanup(func() {
@@ -297,6 +301,30 @@ func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, 
 		shutdown.Env = armEnv
 		if output, err := shutdown.CombinedOutput(); err != nil {
 			t.Errorf("supervision shutdown: %v: %s", err, output)
+		}
+		runner, armed := steward.LiveRunner(worktree)
+		outcome, err := steward.Disarm(worktree)
+		if err != nil {
+			t.Errorf("steward disarm: %v", err)
+		}
+		t.Logf("steward runner pid=%d startTicks=%d bootId=%q pidStartedAt=%d armed=%t disarm=%s/%s/%s",
+			runner.Pid, runner.StartTicks, runner.BootID, runner.PidStartedAt, armed, outcome.Result, outcome.Signal, outcome.Reason)
+		if runner.Pid < 1 {
+			return
+		}
+		// Disarm's own wait also ends when the record changes, so the
+		// recorded process itself must be absent by its kernel identity.
+		live, state, err := (identity.KernelProber{}).Probe(runner.Pid)
+		if err != nil {
+			t.Errorf("probe steward runner %d: %v", runner.Pid, err)
+			return
+		}
+		same := runner.PidStartedAt > 0 && live.StartedAt.Unix() == runner.PidStartedAt
+		if runner.StartTicks > 0 && runner.BootID != "" && live.StartTicks > 0 && live.BootID != "" {
+			same = live.StartTicks == runner.StartTicks && live.BootID == runner.BootID
+		}
+		if state == identity.Alive && same {
+			t.Errorf("steward runner %d outlived fixture cleanup: disarm=%s/%s", runner.Pid, outcome.Result, outcome.Reason)
 		}
 	})
 	started, err := exec.Command(installed, "proc", "started-at", "--pid", strconv.Itoa(os.Getpid())).Output()
