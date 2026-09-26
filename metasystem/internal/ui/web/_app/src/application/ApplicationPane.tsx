@@ -34,15 +34,18 @@ import { Button, Chip, Skeleton } from "../shell/controls";
 import { useOffersRefresh } from "../shell/refresh";
 
 /**
- * Application: what this workspace has concluded, what is known to be wrong
- * with it, and what it says it is.
+ * Application: what is known to be wrong with this workspace, what it has
+ * concluded, and what it says it is.
  *
- * Three blocks in the order of the jobs a human arrives with. What concluded
- * is the work history — the ledger's own conclusions, by week, newest first —
- * and it is named that rather than "what it does", because a conclusion dates
- * an end and some of those ends are administrative. Known problems is the
- * register, open rows first, with the rows the reader could not read counted
- * rather than dropped. What it is, is one line of links into the reader.
+ * Three blocks in the order of the jobs a human arrives with, and the open
+ * problems are the first of them: they are what somebody can do something
+ * about today, and the weeks below are long enough to push them off the screen.
+ * Known problems is the register, open rows first, with the rows the reader
+ * could not read counted rather than dropped. What concluded is the work
+ * history — the ledger's own conclusions, by week, newest first — and it is
+ * named that rather than "what it does", because a conclusion dates an end and
+ * some of those ends are administrative. What it is, is one line of links into
+ * the reader.
  *
  * Nothing here acts. The page reads, and every act belongs to the goal's own
  * page or to the document reader. The read is made when the pane mounts and
@@ -171,6 +174,13 @@ export function Blocks({
   return (
     <div className="ms-application">
       <Header page={page} />
+      <Problems
+        page={page}
+        open={openProblem}
+        onOpen={onOpenProblem}
+        concluded={concluded}
+        onConcluded={onConcluded}
+      />
       <Concluded
         page={page}
         narrowing={narrowing}
@@ -179,13 +189,6 @@ export function Blocks({
         onOpenRow={onOpenRow}
         earlier={earlier}
         onEarlier={onEarlier}
-      />
-      <Problems
-        page={page}
-        open={openProblem}
-        onOpen={onOpenProblem}
-        concluded={concluded}
-        onConcluded={onConcluded}
       />
       <WhatItIs page={page} />
     </div>
