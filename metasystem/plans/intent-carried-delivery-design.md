@@ -159,3 +159,14 @@ not delegated design choices. Under the user's explicit machinery bypass and
 instruction to implement/iterate, proceed with named runtime fixtures and mandatory
 independent Sol critique. No Fable-approved runtime or green carried delivery is
 claimed. No third prose round is being substituted for implementation evidence.
+
+## Missing proof recovery uses public intent
+
+Actual carried delivery verifies retained test evidence; it does not produce it.
+The existing public `test --goal G --repo PRIMARY` runs that owner against the real
+staged index by default. When missing retained proof is the actual cause, the
+partial result must name that public action and preserve the exact same-exception
+land continuation for afterwards. A repeated land alone cannot fix absent proof.
+Users never need to discover or supply a Git tree hash, an internal test verb or
+a proof storage path. Other failures retain their own cause and recovery. The
+real carried fixture must prove public test followed by the same exception land.

@@ -404,3 +404,49 @@ continues manual/public workflow implementation. Root prepared a thin external
 Go coverage harness and unchanged prior selector; build passed against current
 source, but no acceptance tests have run. Both must be repinned/rebuilt against
 final immutable candidate before actual verification.
+
+## Main refreshed, completion work split by owner
+
+Live main pulled9d6002b09 (Partner/UI plus goal record). Main builder7 completed
+13:22:13 CEST,30m10s,162 new tool calls (716 cumulative),1 compaction, peak966377.
+Return7 fully read. Actual landing-event observation now passes its real Git owner
+fixture; short waits retain usable capture time, owner JSON refusals keep their
+reason, and read selection distinguishes publication. Diagnostic public review is
+connected. Real planning follow-up and full manual submission remained missing;
+these are not completed by that checkpoint.
+
+Root committed capture corrections/explicit completion briefs e411b6cd8, then
+merged latest main as5cd534d8d9e01c0f9d0d02bc10cc0ff2e1b8df90. Task-only product
+backup stashc2a5f70529b8c26238551d90965e9d239f254e8a was applied cleanly and retained.
+Live user receipt/narrator changes were untouched. Private planning seed
+0ab9824964c2a2211c55690e904152615eac8999, tree4602a66714d833434d4565b1821fe34d17c63a29,
+captures this unreviewed combined state; it is not a delivery commit.
+
+Original Opus8 runs20260926t113051-48f0551eb5, manual submission/shared surface.
+Independent planning completion runs20260926t113116-ea8923ded0 in its sibling
+checkout, accepted actual dispatch/author/public-close obligations. Carried return1
+20260926t111623-8e55e2946e completed13:32:12 CEST,76 tools,15m49s (its guessed40min
+was not actual). It reaches real staged product/receipt but proof is still missing.
+Same-context continuation2 is20260926t113421-2d30b3f2a1. The source recipe confirms
+public test can prove the staged index; real transaction/recovery fixtures remain.
+
+Read-owner correction4 was imported as delta1ab2d3 ->440972dcca508255cf71be4f9f13923717f67cae,
+SHA256a963b3a36032013c07ce905b7051dd70984126a29ea84b5889aed98a7c359fca.
+It excludes the explicitly named in-repo brief from implicit diagnostic capture,
+keeps supplied patches and other changes, and preserves copied-index mtime. A
+read-only independent real-Git reproduction proves a fresh private-index timestamp
+can silently omit a same-size edit. Original Opus added its deterministic adapter
+regression in continuation5, delta440972 ->2678096eed92dd25b7b9156f17830002747ce771,
+SHA256aa653fa52aa84e72675690954d751c8646738f616949e29d692672b35889689e.
+Mutation fails5/5; fixed test passes5/5; relevant capture suite0,6.0s. Root's own
+three imported brief/capture adapter checks pass0,0.963s in the combined checkout.
+No full launch rerun or final certification claimed. Final-symlink brief alias is
+noted for later under R124; no ordinary source/index corruption was found.
+
+Fresh source audit found first-use brief preparation, qualified goal/question
+continuations, task discovery/disambiguation and archived-goal recovery still
+expose internals or dead-end. Root's final-surface audit specifies the minimal
+public corrections within existing capabilities. A separate serial audit found
+nine actual environment-mutating tests and one eligible parallel test; truthful
+exemptions/parallel change remain for integration. Coverage floors stay unchanged.
+Independent Sol brief is prepared; no Sol read or final acceptance has run yet.

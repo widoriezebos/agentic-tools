@@ -51,3 +51,49 @@ the explicitly named in-repo brief from implicit candidate capture: a normal
 brief.md otherwise becomes code, a plans/ brief blocks the unit. Diagnostic review
 otherwise remains complete. These are actual first-use scope corrections, not
 permission to weaken CommitStaged or silently rewrite user-supplied patches.
+
+## Remaining source-backed public continuations
+
+The independent source audit is retained at
+artifacts/agents/intent-public-continuation-audit.md; root read it fully. These
+are existing capability obligations, not new top-level verbs:
+
+- A generated brief currently turns the absence of a worktree into a false
+  MISSING DECISION, then build rejects that brief before its automatic preparation.
+  Ordinary absence should say build prepares the workspace; genuine unreadable
+  state remains an error. No manual Git setup is required for first build.
+- Generated work review continuations must use `review goal G`, and goal display
+  continuations use `show --goal G`, so valid names such as design/job/changes or
+  designs/question cannot be misinterpreted. Keep repository and work selection.
+- Posted questions continue through `wait question channel:Q`; failed delivery
+  uses exact-question `ask --retry Q`, never a global poll. Preserve the channel
+  qualifier across a bounded wait. A posted-but-unrecorded thread still needs its
+  specific repair; blindly reposting that branch could duplicate the message.
+- Job discovery belongs at `status work`, including active retained work of this
+  user and dispatch work in the selected repository; `--all` includes ended work.
+  State scope truthfully, show purpose/goal/location, and actionable status/wait/stop
+  references. Use the existing owners, no new registry or scheduler. Existing raw
+  IDs remain accepted when unique. Root chooses generated opaque references
+  `j1:ID` and `j2:ID` for the two existing stores, decoded only at the selector;
+  callers copy a job reference without learning those backing stores. Ambiguity
+  offers those references with task descriptions and preserves the requested
+  action. Owner calls receive their original ID; never pass a qualified reference
+  into a legacy owner. Unknown IDs point to public status work --all. No internal
+  list/cancel command is a normal continuation.
+- Archived-goal resume uses existing public `reopen G --next TEXT`, preserving
+  current authority and the caller's repository selection.
+
+Focused fixtures must follow generated commands, not merely assert their strings.
+No optional parser framework, migration registry or extra root command is needed.
+
+## Manual refusal cleanup: independently reproduced loss of staging
+
+Root's external Go overlay drives actual stageManual with a fully pre-staged
+code.go, then its commit-refusal undo. The staged diff becomes empty (exit1,
+TestRootManualUndoPreservesExistingStagingGitAdapter). Artifacts are outside Git
+under agentic-tools-evidence/intent-redesign-20260926/manual-staging-diagnostic.
+The command must preserve pre-existing staging, undo only its own effects, and
+report cleanup failure/uncertain installation honestly. An explicit supplied patch
+must also work from a clean target goal checkout; cwd alone never means a patch
+is already applied. Complete manual delivery still needs actual endpoint payload,
+not only the current fixture's successful batch join with fake landing effects.

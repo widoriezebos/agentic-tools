@@ -137,7 +137,11 @@ result. Both producers share names; an existing item is never silently replaced.
 Default work is main when there is no work; ambiguity names executable --work
 choices. Manual work versions are commits, not invented build-attempt numbers.
 
-Freeze the patch and brief before effects, using existing read input custody.
+Freeze the patch and brief before effects as immutable input files through the
+existing atomic-file owner. These files carry content, not submission state or
+an attempt counter; the committed-read owner freezes and verifies the brief it
+actually examines. Validate the selected goal before using its name in custody
+paths. Reuse those files on an exact content repeat.
 Use existing lawful claim and prepareGoalWorktree. Establish the holder before locking; use the existing bounded checkout-mutation
 lock across stage plus commit, then recheck the holder and mint the existing
 commit token inside that critical section. The token is identity for the hook,
@@ -155,7 +159,7 @@ TestManualStageRefusalPreservesCheckout uses a patch that needs a three-way merg
 and asserts the destination index and files remain byte-identical on refusal. A supplied patch that does not apply is refused with
 its inputs preserved; no generic importer or automatic conflict resolver.
 
-When source equals destination, the captured edits are already present: stage
+When source equals destination for --changes, the captured edits are already present: stage
 only the captured paths after checking HEAD and captured bytes still match, rather
 than applying them twice. The real commit owner installs the goal tip; help states
 these effects. Preserve unrelated paths, refuse another writer, retain ordinary
@@ -163,6 +167,11 @@ claim/path-class/range/remote-divergence checks and the owner token. Before comm
 a failed staging operation restores only its own index/files under the same token;
 never reset or discard other work. An interrupted staging operation recognizes
 only an exact staged candidate on repeat, otherwise refuses with public guidance.
+An explicit supplied patch follows the ordinary clean/exact-candidate apply path
+even when invoked inside the target checkout; its location does not mean it is
+already applied. Commit refusal never discards staging the caller brought in.
+Cleanup may undo only proven effects of this submission, and an uncertain changed
+HEAD or failed cleanup is reported as retained partial state, not a false rollback.
 
 Replay uses branch identity, not a new operation registry. For initial submission,
 look up the work name before staging: if frozen patch applied to that unit's actual
