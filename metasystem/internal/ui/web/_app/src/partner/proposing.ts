@@ -3,7 +3,6 @@ import { BacklogError, type Budget, type Row } from "../backlog/api";
 import { LANDED_NOT_RECORDED, outcomeOf, type GoalEdit } from "../backlog/editing";
 import { prefillFor, type BudgetSource } from "../backlog/moves";
 import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/opening";
-import { failureMessage } from "../shell/workspace";
 
 /**
  * What the human may do with the acts the Partner proposed, and when.
@@ -817,11 +816,6 @@ export function newestWaitingCard(cards: readonly Card[]): string {
     }
   }
   return "";
-}
-
-/** What a request that never came back says, in the words a human reads. */
-export function reasonOf(error: unknown): string {
-  return failureMessage(error);
 }
 
 /* ------------------------------------------------------- the run, in order -- */
