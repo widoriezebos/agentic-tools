@@ -180,7 +180,10 @@ export function EditSheet({
       // The remedy for this one is in this page: the sign-in sheet opens and
       // the act is retried once, and what this press answers is what that
       // retry answered — so a card cannot say a save was refused for want of a
-      // human and then have it land behind the words.
+      // human and then have it land behind the words. A sign-in the human walks
+      // away from leaves this press unanswered, and the card goes on saying the
+      // save is in hand: that says less than the truth rather than more, and
+      // Save at the foot of the sheet is still theirs.
       if (error instanceof BacklogError && error.signIn && !retried.current) {
         retried.current = true;
         return new Promise<Outcome>((settle) => {

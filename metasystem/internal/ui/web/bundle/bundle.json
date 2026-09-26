@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:85f78af59576cb65e0ccc7ea2ca705271f7221c0bde3f9445c5d1818820fbee5",
+  "sourceDigest": "sha256:c85c19f9032ad31df0f558bcb0fe1a617f18b59c2d6359ffbd9b1fd0e8974513",
   "source": [
     {
       "path": ".npmrc",
@@ -120,7 +120,7 @@
     },
     {
       "path": "src/backlog/EditSheet.tsx",
-      "sha256": "22209f584f65066bf66b5adc605422e9c23a645b21bb0201747690d0ced21c36"
+      "sha256": "540677306c5955a60273eadafd396827d5f9c7c6188fea8791d1269a937f7b3a"
     },
     {
       "path": "src/backlog/GoalRow.tsx",
