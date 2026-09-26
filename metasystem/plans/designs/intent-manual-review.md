@@ -55,6 +55,7 @@ metasystem review changes --brief FILE [--goal G]
 metasystem review diff PATCH --brief FILE [--goal G]
 metasystem review G --changes --brief FILE [--work NAME]
 metasystem review G --patch PATCH --brief FILE [--work NAME]
+metasystem review goal G [--work NAME]
 metasystem show review REF
 metasystem wait review REF [--timeout DURATION]
 metasystem stop review REF
@@ -66,9 +67,17 @@ not mint execution approval or a landing attestation. The latter two submit real
 work to the goal's certified-review path, which already commits/publishes review
 subjects. Help states that effect. Ordinary review G, its --dispositions/--retry,
 status G, revise G and land G remain continuations after submission. A manual
-correction can be submitted again with --changes/--patch and --after N; it amends
+correction can be submitted again with --changes/--patch and --after COMMIT; the
+full current commit is supplied by public status/review (an unambiguous prefix is
+accepted). This authorizes replacing exactly that version and amends
 that work through the existing commit owner and invalidates the old read. It need
 not hire a builder through revise. A new real correction is explicit, not a retry.
+
+The subject words design, job, unit, commit, changes, diff and goal are reserved
+in this command. `review goal G` is the unambiguous spelling for EVERY goal id,
+including those words; the explicit goal form accepts the same goal-review flags.
+A goal named changes can never change the meaning of `review changes`. Public
+continuations use the explicit goal form when the id would collide.
 
 For changes, the capture is the invoking Git checkout's complete tracked and
 untracked, unignored changes against its HEAD. It preserves the caller's actual
@@ -90,7 +99,8 @@ reads use one policy. Larger inputs never require package/wide engine flags.
 Existing caps, output custody and non-counting compaction behavior remain.
 
 A private disposable reader checkout captures the context tree; it contains no
-local secret config or ignored files. The reader writes only retained reports in
+ignored source files or conf.local; linked Git repository configuration is shared
+and is not claimed to be a sandbox. The reader writes only retained reports in
 that private area, not the caller's work. For a supplied patch, record its context
 base separately; if it cannot apply there, the feedback reports that limitation
 rather than claiming the workspace was verified. Diagnostic snapshot/archive
@@ -113,38 +123,63 @@ reader tries to write its current working directory.
 
 ## Submit manual work through goal-branch owners
 
-Add a focused manual-submission request operation to internal/goal/branch. Its
-retained request lives beside existing branch operation/read state and freezes
-source/base/patch/brief, goal/work name, request identity, admitted destination and
-commit/publication result. It owns replay; the CLI must not scan private files or
-fabricate a UnitRunner result. Goal/work names share the public namespace: an
-existing model-built item is not silently replaced by a manual item. Default
-work is main when the goal has no work; ambiguity requires --work as in the parent.
-Owner reads let status/review see manually submitted work alongside built work.
+No new manual-submission registry, attempt counter or CommitPatch entry point.
+The authoritative work is the existing goal branch range, addressed by work name
+and immutable Goal-Unit commit. Read it through branch.InspectStatus, combining
+that real work view with NamedWork for model builds without fabricating a build
+result. Both producers share names; an existing item is never silently replaced.
+Default work is main when there is no work; ambiguity names executable --work
+choices. Manual work versions are commits, not invented build-attempt numbers.
 
-Use existing lawful claim and prepareGoalWorktree; no source branch manipulation
-is required from the caller. Add CommitPatch as a narrow entry to the SAME commit
-core used by CommitStaged, taking the frozen binary patch instead of reading it
-from the index. Retain current claim, checkout lease/commit token, path-class,
-range, branch-divergence and install checks. Record the computed subject and
-commit operation before publication so a lost commit or push response resolves
-the authentic existing result, never duplicates it. Preserve the original source
-checkout when it is distinct from the goal checkout; when invoked inside that
-goal checkout, installation has the same documented commit effects as review G,
-with existing unstaged-path protections. Never discard unrelated work or force
-through an active writer. Conflicts preserve both inputs and give the public
-work/status choice; no automatic merge resolution.
+Freeze the patch and brief before effects, using existing read input custody.
+Use existing lawful claim and prepareGoalWorktree. Under the SAME existing checkout
+commit token, inspect the branch and selected work, check replay, stage the frozen
+change and call CommitStaged unchanged. Staged paths, binary patch, index tree,
+installation preflight and amendment must all describe the SAME candidate; do not
+inject only the Patch function. A distinct destination must be clean or already
+hold exactly this captured candidate, otherwise refuse without overwriting it.
+Stage the frozen patch through Git's existing --index application so both index
+and destination files agree. A supplied patch that does not apply is refused with
+its inputs preserved; no generic importer or automatic conflict resolver.
 
-Push the authentic Goal-Unit through branch.Push. The existing committed review
-owner runs its fast gate and actual independent critic against the installed
-subject, then the parent's bound decisions/full-close/collect/publish flow applies.
-Its exact brief binds the manual work; no synthetic preliminary read, fake build
-exit or hand-written attestation is admissible. land G uses its normal exact
-candidate proof and publication. Status describes the actual stage. Repeating
-submission after completion must locate its retained request before interpreting
-an already installed/empty workspace as different work. Changed bytes require an
-explicit new submission after N; its amendment preserves other work and removes
-only this work's obsolete attestation, as the existing amendment owner does.
+When source equals destination, the captured edits are already present: stage
+only the captured paths after checking HEAD and captured bytes still match, rather
+than applying them twice. The real commit owner installs the goal tip; help states
+these effects. Preserve unrelated paths, refuse another writer, retain ordinary
+claim/path-class/range/remote-divergence checks and the owner token. Before commit,
+a failed staging operation restores only its own index/files under the same token;
+never reset or discard other work. An interrupted staging operation recognizes
+only an exact staged candidate on repeat, otherwise refuses with public guidance.
+
+Replay uses branch identity, not a new operation registry. For initial submission,
+look up the work name before staging: if frozen patch applied to that unit's actual
+parent produces its exact tree, rejoin that authentic commit. A different tree
+requires explicit --after COMMIT. With --after, compare against that named version:
+if it remains current, the existing amendment owner may apply the correction; if
+already replaced, compare the requested result on the named old unit with the
+current unit before rejoining. Never compare the whole current branch tip, which
+may include other work and read records. A stale/unavailable base or mismatch
+refuses; it cannot silently authorize another amendment. No-change in the source
+checkout after successful installation rejoins the selected existing work before
+attempting to create an empty commit. Changed brief is checked by the existing
+read owner's frozen-brief binding, never treated as a new clean certification.
+
+These comparisons are owner reads under the same checkout token as commit, so
+concurrent repeated callers cannot both install. A crash before installation may
+leave only a dangling scratch commit; a repeat commits once to the branch. A lost
+commit response is resolved from the actual range and candidate comparison; a
+lost push response uses branch.Push's existing journal reconciliation. Do not
+promise CommitRequest.OpID alone provides commit idempotence: it does not.
+
+Push that authentic Goal-Unit through branch.Push. The existing committed-review
+owner runs its fast gate and actual independent critic; reuse reviewCommit's
+bound decisions/full-close/collect/publish composition for manual work. This is
+one review lifecycle regardless of author. Manual amendments preserve later work
+and remove only this work's obsolete read through the existing amendment owner.
+Status and ordinary review G see it through the range; land G already consumes
+the branch's attestations. No fake preliminary read/build exit, hand-written
+attestation or additional delivery protocol. The complete public journey remains
+mandatory before this user's goal is done.
 
 ## Proof and critique
 
@@ -153,7 +188,13 @@ only this work's obsolete attestation, as the existing amendment owner does.
 | IM-1 | HIGH | Manual diff/current-change feedback with no builder; source untouched | Launch retained read/partition owners | TestIntentManualDiffReview; TestStandaloneReadPartition | Public commands, actual capture/retention with fake reader | MISSING |
 | IM-2 | CRITICAL | Replays, failed retry and live/compacted outcomes honest | Existing launch custody and request retention | TestStandaloneReadReplayAndRecovery | One launch per request; show/wait/stop use public REF | MISSING |
 | IM-3 | CRITICAL | Manual submission has authentic commit/review/landing authority | Goal branch commit/read owners | TestIntentManualWorkDelivery | Manual edit -> public submission -> bound review -> land, no builder | MISSING |
-| IM-4 | CRITICAL | Lost response, amendment and unrelated/source work preservation | Branch request/commit/amend owners | TestManualSubmissionReplayAndAmend | Lost commit/push result, repeat and correction with another work item | MISSING |
+| IM-4 | CRITICAL | Lost response, amendment and unrelated/source work preservation | Existing branch range/commit/amend owners | TestManualSubmissionReplayAndAmend | Lost commit/push result, repeat and correction with another work item | MISSING |
+
+Round 1 folded IM-C1..3: deleted the proposed manual request registry and
+CommitPatch, retained exact branch-owner comparison and existing indexed commit,
+and made subject-word collisions unambiguous. Dispositions are recorded in
+plans/intent-manual-review-dispositions.md. No implementation is authorized until
+this bounded critique closes.
 
 Fable: maximum two rounds on this new concrete capability, failsafe round 2;
 criterion is whether step 1 works/safely meets its contract, plus whether the
