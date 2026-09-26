@@ -362,6 +362,15 @@ func propose(args Args) Result {
 }
 
 // framed is the action in the fixed form, the frame's own order.
+//
+// A field the caller SUPPLIED is written even when its value is empty, and that
+// is the one rule here worth stating. A field nobody sent and a field sent empty
+// are two different statements, and one act depends on the difference: an edit
+// whose label list arrives empty CLEARS the labels, while an edit that says
+// nothing about them leaves them alone. A frame that dropped the empty one would
+// turn "clear the labels" into "change nothing", which the route then refuses as
+// an edit that changes nothing at all. So the map's own keys decide what is
+// written, and the map holds a field the caller gave whatever it gave.
 func framed(act ProposedAct, subject string, fields map[string]string) string {
 	var built strings.Builder
 	built.WriteString(ProposalHeader + act.Route + "\n")
@@ -372,7 +381,7 @@ func framed(act ProposedAct, subject string, fields map[string]string) string {
 		built.WriteString(ProposalGoal + subject + "\n")
 	}
 	for _, line := range ProposalFrame {
-		if said := fields[line.Field]; said != "" {
+		if said, given := fields[line.Field]; given {
 			built.WriteString(line.Label + said + "\n")
 		}
 	}

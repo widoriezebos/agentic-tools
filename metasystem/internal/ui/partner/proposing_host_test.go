@@ -125,3 +125,42 @@ func TestALabelTheFramingDoesNotNameIsIgnored(t *testing.T) {
 	testutil.Expect(t, "and the unknown one is not", read.Fields["tier"], "")
 	testutil.Expect(t, "nor under any other spelling", len(read.Fields), 1)
 }
+
+// The round trip: what the tool was given, through the frame, into the action
+// the runner composes a route body from.
+//
+// It is one test across the two halves because the defect it holds was between
+// them. An edit that CLEARS a goal's labels sends an empty list; the frame used
+// to drop an empty value, so the host saw no labels field at all, the runner
+// composed a body that said nothing about them, and the act layer refused the
+// whole edit as one that changes nothing — leaving the labels exactly where they
+// were. The two halves each looked right on their own.
+func TestAnEmptiedLabelListSurvivesTheFrame(t *testing.T) {
+	t.Parallel()
+	prepared := uitools.Readers{}.Answer(uitools.OpPropose, uitools.Args{
+		"verb": uitools.ProposeEdit, "goal": "fleet-presence",
+		"labels": []any{}, "explanation": "the labels moved to the arc",
+	})
+	testutil.Require(t, "the call is prepared", prepared.Failed(), false)
+
+	read := proposedIn(prepared.Text())
+	testutil.Require(t, "one action", read != nil, true)
+	testutil.Expect(t, "the route", read.Verb, uitools.ProposeEdit)
+	// Present and empty, which is what says "clear them". A field the caller did
+	// not send is absent from this map, and the runner leaves such a field alone.
+	said, given := read.Fields[uitools.FieldLabels]
+	testutil.Expect(t, "the labels field is there", given, true)
+	testutil.Expect(t, "and says nothing, which is how they are cleared", said, "")
+
+	// And a field nobody sent is still absent, so an edit of the intent alone
+	// still leaves the labels as the ledger has them.
+	intentOnly := uitools.Readers{}.Answer(uitools.OpPropose, uitools.Args{
+		"verb": uitools.ProposeEdit, "goal": "fleet-presence",
+		"intent": "Tighter.", "explanation": "one line",
+	})
+	testutil.Require(t, "that call is prepared too", intentOnly.Failed(), false)
+	alone := proposedIn(intentOnly.Text())
+	testutil.Require(t, "that one is an action too", alone != nil, true)
+	_, touched := alone.Fields[uitools.FieldLabels]
+	testutil.Expect(t, "an edit that says nothing about labels carries none", touched, false)
+}

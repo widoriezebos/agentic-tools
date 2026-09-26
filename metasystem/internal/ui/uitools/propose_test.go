@@ -152,7 +152,10 @@ func TestTheActsThatCarryNothingButTheGoal(t *testing.T) {
 	})
 	testutil.Expect(t, "an emptied label list is a change",
 		strings.Contains(text, uitools.ProposalHeader+"edit-goal\n"), true)
-	testutil.Expect(t, "and carries no label line", strings.Contains(text, uitools.ProposalLabels), false)
+	// And it is IN the frame, empty: a field nobody sent and a field sent empty
+	// are two different statements, and the second is how labels are cleared.
+	testutil.Expect(t, "and the frame carries the emptied list",
+		strings.Contains(text, "\n"+uitools.ProposalLabels+"\n"), true)
 }
 
 // An unknown act is refused with the nine this interface has; a goal verb this
