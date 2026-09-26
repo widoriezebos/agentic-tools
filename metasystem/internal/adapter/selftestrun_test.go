@@ -138,6 +138,10 @@ stop and report a gap; never fill it silently.
 // legs fail as empty_reply denials, and cancel flips the record to
 // cancelled. The self-test's orchestration then runs end to end with no real
 // model in the loop.
+// acceptSelftestReturns stands in for the shipped return checker: the stub
+// dispatch writes records, not schema-complete returns.
+func acceptSelftestReturns(root, job string) []string { return nil }
+
 func stageSelftestFixture(t *testing.T, writeEnforcement, networkEnforcement string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -228,8 +232,7 @@ case "$1" in
   *) exit 2 ;;
 esac
 `,
-		filepath.Join(root, "scripts", "assert-return-complete.sh"): "#!/usr/bin/env bash\nexit 0\n",
-		filepath.Join(root, "adapter.sh"):                           "#!/usr/bin/env bash\nexit 0\n",
+		filepath.Join(root, "adapter.sh"): "#!/usr/bin/env bash\nexit 0\n",
 	} {
 		if err := testexec.WriteFile(path, []byte(content), 0o755); err != nil {
 			t.Fatal(err)
@@ -242,7 +245,7 @@ func TestSelftestRunMergedLegs(t *testing.T) {
 	root := stageSelftestFixture(t, "mapped", "mapped")
 	var out strings.Builder
 	p := SelftestParams{
-		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"), returnCheck: acceptSelftestReturns,
 		Usage: "native", TurnCeilingSec: 10,
 	}
 	if err := SelftestRun(p, "stub-model", &out); err != nil {
@@ -271,7 +274,7 @@ func TestSelftestRunSplitLegsWithDevinChecks(t *testing.T) {
 	root := stageSelftestFixture(t, "mapped", "notEnforced")
 	var out strings.Builder
 	p := SelftestParams{
-		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"), returnCheck: acceptSelftestReturns,
 		Usage: "native", TurnCeilingSec: 10, DenialEndsTurn: true,
 	}
 	devinProbe, err := SelftestProbeFor("devin", "symlinked-skill-discovery")
@@ -324,7 +327,7 @@ func TestSelftestRunRefusesSessionDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := SelftestParams{
-		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"), returnCheck: acceptSelftestReturns,
 		Usage: "native", TurnCeilingSec: 10,
 	}
 	err = SelftestRun(p, "stub-model", &strings.Builder{})
@@ -395,7 +398,7 @@ func TestSelftestRunRefusals(t *testing.T) {
 	}
 	params := func(root string) SelftestParams {
 		return SelftestParams{
-			Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+			Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"), returnCheck: acceptSelftestReturns,
 			Usage: "native", TurnCeilingSec: 10,
 		}
 	}
@@ -478,7 +481,7 @@ func TestSelftestRunEvidenceRefusals(t *testing.T) {
 	}
 	params := func(root string) SelftestParams {
 		return SelftestParams{
-			Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
+			Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"), returnCheck: acceptSelftestReturns,
 			Usage: "native", TurnCeilingSec: 10,
 		}
 	}

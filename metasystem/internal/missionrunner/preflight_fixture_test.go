@@ -1506,14 +1506,13 @@ func equipFullCycleFiles(t *testing.T, engine *Engine) {
 	// authority artifacts below make its pass honest instead of stubbed.
 	// The prompt authority artifacts, verbatim from the repository: without
 	// them AssemblePrompt refuses and the cycle parks before any host runs.
-	// The return checker and its role schema travel the same way:
-	// without them EVERY orchestrator return is rejected and each
+	// The return checker's role schema travels the same way:
+	// without it EVERY orchestrator return is rejected and each
 	// mission ends in a host-failure park that loose terminal
 	// assertions read as success.
 	for _, artifact := range []string{
 		filepath.Join("scripts", "agents", "roles", "orchestrator.md"),
 		filepath.Join("scripts", "agents", "templates", "host-turn-instruction.md"),
-		filepath.Join("scripts", "assert-return-complete.sh"),
 		filepath.Join("scripts", "agents", "schemas", "orchestrator.schema.json"),
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", artifact))

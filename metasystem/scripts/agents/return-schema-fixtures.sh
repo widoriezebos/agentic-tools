@@ -127,11 +127,13 @@ cp "$fixture/candidate.json" "$fixture/extra.json"
 # (TestMaterializedSchemasObeyStructuredOutputRules, internal/returnschema,
 # under the go gate — script-fixtures-002/D37): generator invariants of
 # Go-owned code belong where they survive fixture retirement. This file
-# keeps its thin normalize_return and assert-return-complete legs.
+# keeps its thin normalize_return and return-complete legs.
+
+return_complete() { "$ms" validate return-complete --root "$root" "$@"; }
 
 if [[ "$fixture_scenario" == implementer-v1-v2 ]]; then
 
-"$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/v1.json"
+return_complete --role implementer --file "$fixture/v1.json"
 
 # Exercise the adapter's real normalization owner, not a fixture reimplementation.
 source "$root/scripts/agents/adapters/runtime-common.sh"
@@ -148,7 +150,7 @@ normalize_return "$fixture/candidate.json"
 [[ "$("$ms" json get --file "$fixture/return.json" --field claimed)" == \
    "$("$ms" json get --value '{"root":{"sessionId":"claimed-session","model":"claimed-model"}}' --field root)" ]] \
   || { echo "normalized return did not preserve both claims" >&2; cat "$fixture/return.json" >&2; exit 1; }
-"$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/return.json"
+return_complete --role implementer --file "$fixture/return.json"
 
 # A claim on ONE member and agreement on the other still carries both keys.
 # OpenAI structured output rejects an object schema that leaves any property
@@ -164,13 +166,13 @@ normalize_return "$fixture/one-claim.json"
 [[ "$("$ms" json get --file "$fixture/return.json" --field claimed)" == \
    "$("$ms" json get --value '{"root":{"sessionId":null,"model":"claimed-model"}}' --field root)" ]] \
   || { echo "a claim on one member did not keep both claimed keys" >&2; cat "$fixture/return.json" >&2; exit 1; }
-"$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/return.json"
+return_complete --role implementer --file "$fixture/return.json"
 
-if "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/missing-version.json" >/dev/null 2>&1; then
+if return_complete --role implementer --file "$fixture/missing-version.json" >/dev/null 2>&1; then
   echo "version-2-shaped return without schemaVersion passed the frozen v1 schema" >&2
   exit 1
 fi
-if "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/extra.json" >/dev/null 2>&1; then
+if return_complete --role implementer --file "$fixture/extra.json" >/dev/null 2>&1; then
   echo "version-2 return with an undeclared property passed" >&2
   exit 1
 fi

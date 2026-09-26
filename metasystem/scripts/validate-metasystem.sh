@@ -1089,8 +1089,7 @@ for link in \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
   scripts/agents/conformance-fixtures.sh \
-  scripts/agents/path-classes.txt \
-  scripts/assert-return-complete.sh; do
+  scripts/agents/path-classes.txt; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
 }
@@ -1181,7 +1180,6 @@ bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/devin.sh
 bash -n scripts/agents/hosts/fake.sh
-bash -n scripts/assert-return-complete.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
@@ -2059,15 +2057,23 @@ cp "$return_fixtures/design-critic-positive.json" "$return_fixtures/critic-misco
 cp "$return_fixtures/design-critic-positive.json" "$return_fixtures/critic-missing-verdict.json"
 json_remove_field "$return_fixtures/critic-missing-verdict.json" verdictMaterialCount
 
+# The return checker is the engine's validate return-complete verb; root is
+# the checkout whose schemas and job records it reads.
+return_complete() { # root, then the verb's arguments
+  local checkout=$1
+  shift
+  "$engine" validate return-complete --root "$checkout" "$@"
+}
+
 for role in orchestrator design-critic implementer code-critic verifier investigator behavior-judge; do
-  scripts/assert-return-complete.sh --role "$role" --file "$return_fixtures/$role-positive.json"
+  return_complete "$PWD" --role "$role" --file "$return_fixtures/$role-positive.json"
 done
 
 check_bad_return() { # role, file, required diagnostic text
   local role=$1 file=$2 expected=$3 output status
   output="$tmp/${role}-negative.out"
   set +e
-  scripts/assert-return-complete.sh --role "$role" --file "$file" >"$output" 2>&1
+  return_complete "$PWD" --role "$role" --file "$file" >"$output" 2>&1
   status=$?
   set -e
   if [[ $status -eq 0 ]]; then
@@ -2112,7 +2118,7 @@ if (( template_mode )); then
 fi
 
 set +e
-scripts/assert-return-complete.sh >"$tmp/return-usage.out" 2>&1
+return_complete "$PWD" >"$tmp/return-usage.out" 2>&1
 return_usage_status=$?
 set -e
 [[ $return_usage_status -eq 2 ]] \
@@ -2445,12 +2451,6 @@ job_fixture="$tmp/job-metasystem"
 mkdir -p "$job_fixture/scripts/agents" \
   "$job_fixture/artifacts/agents/jobs" \
   "$job_fixture/artifacts/agents/fixture-job/rounds/1"
-cp scripts/assert-return-complete.sh "$job_fixture/scripts/"
-# The copied assert script resolves its engine as <fixture>/bin/metasystem;
-# give the fixture checkout the real one (the python schema helper it used
-# to copy is gone — the binary materializes schemas itself).
-mkdir -p "$job_fixture/bin"
-cp bin/metasystem "$job_fixture/bin/metasystem"
 cp -R scripts/agents/schemas "$job_fixture/scripts/agents/"
 cat >"$job_fixture/artifacts/agents/jobs/fixture-job.json" <<'EOF'
 {
@@ -2464,7 +2464,7 @@ cat >"$job_fixture/artifacts/agents/jobs/fixture-job.json" <<'EOF'
 EOF
 cp "$return_fixtures/implementer-positive.json" \
   "$job_fixture/artifacts/agents/fixture-job/rounds/1/return.json"
-(cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job)
+return_complete "$job_fixture" --job fixture-job
 
 mkdir -p "$job_fixture/artifacts/agents/fixture-job/rounds/2"
 cat >"$job_fixture/artifacts/agents/jobs/fixture-job-r2.json" <<'EOF'
@@ -2481,7 +2481,7 @@ cp "$return_fixtures/implementer-positive.json" \
   "$job_fixture/artifacts/agents/fixture-job/rounds/2/return.json"
 "$engine" json set --file "$job_fixture/artifacts/agents/fixture-job/rounds/2/return.json" \
   --field jobId=fixture-job-r2 --int round=2 --field sessionId=session-2
-(cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job-r2)
+return_complete "$job_fixture" --job fixture-job-r2
 
 # One mismatched identity field per fixture, each derived from the same
 # schema-valid positive return.
@@ -2497,7 +2497,7 @@ for field in jobId round runtime sessionId; do
   cp "$return_fixtures/identity-$field.json" \
     "$job_fixture/artifacts/agents/fixture-job/rounds/1/return.json"
   set +e
-  (cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job) >"$tmp/identity-$field.out" 2>&1
+  return_complete "$job_fixture" --job fixture-job >"$tmp/identity-$field.out" 2>&1
   identity_status=$?
   set -e
   if [[ $identity_status -eq 0 ]]; then

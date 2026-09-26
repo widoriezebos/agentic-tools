@@ -137,6 +137,9 @@ cas_terminal() { # target, error, phase
   }
 }
 
+# The shipped return checker, run on this job's round return.
+return_complete() { "$ms" validate return-complete --root "$root" --job "$job"; }
+
 write_valid_return() {
   "$ms" adapter fake-return --record "$record" --prompt "$prompt" \
     --output "$round_dir/return.json"
@@ -146,7 +149,7 @@ write_valid_return() {
 complete_valid() {
   local violation="$round_dir/protocol-violation.txt"
   write_valid_return
-  if "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1; then
+  if return_complete >"$violation" 2>&1; then
     rm -f "$violation"
     cas_terminal completed null completed
   else
@@ -328,7 +331,7 @@ supervise() { # verb and remaining args
     printf '{malformed\n' >"$round_dir/return.json"
     printf 'malformed return\n' >>"$log"
     violation="$round_dir/protocol-violation.txt"
-    if "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1; then
+    if return_complete >"$violation" 2>&1; then
       cas_terminal completed null completed
     else
       cat "$violation" >>"$log"

@@ -518,7 +518,7 @@ cp -R scripts/agents "$agent_repo/scripts/"
 # the reviewed design blob at that path too.
 mkdir -p "$agent_repo/metasystem/scripts/agents/roles"
 cp scripts/agents/roles/design-critic.md "$agent_repo/metasystem/scripts/agents/roles/design-critic.md"
-cp scripts/metasystem-config.sh scripts/assert-return-complete.sh \
+cp scripts/metasystem-config.sh \
   scripts/watch-background-jobs.sh "$agent_repo/scripts/"
 cp docs/project-rules.md docs/orchestration.md "$agent_repo/docs/"
 cp -R skills/code-critique skills/design-critique skills/take-a-step-back skills/verify "$agent_repo/skills/"

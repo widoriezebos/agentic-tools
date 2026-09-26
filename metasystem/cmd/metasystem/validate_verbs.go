@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -193,9 +194,9 @@ func runValidateReturnComplete(args []string) int {
 	var violations []string
 	switch {
 	case *job != "" && *role == "" && *file == "":
-		violations = validate.ReturnCompleteJob(*root, *job)
+		violations = returnschema.ReturnCompleteJob(*root, *job)
 	case *job == "" && *role != "" && *file != "":
-		violations = validate.ReturnCompleteRole(*root, *role, *file)
+		violations = returnschema.ReturnCompleteRole(*root, *role, *file)
 	default:
 		fmt.Fprintln(os.Stderr, "validate return-complete: --job, or --role with --file")
 		return 2
