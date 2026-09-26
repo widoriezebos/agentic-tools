@@ -30,3 +30,9 @@ func commitShaped(commit string) bool {
 	}
 	return true
 }
+
+// DevelopmentStamp is the stamp of a build whose compiled engine inputs differ
+// from the commit it names: the only dirty form StampCommit accepts.
+func DevelopmentStamp(commit string) string {
+	return "dev-" + commit + "-dirty"
+}

@@ -1098,7 +1098,17 @@ type candidateEngineIO struct {
 	open   func(gittree.Workspace, string) (candidateDetachedWorkspace, error)
 	// rename publishes a stage into the v2 namespace; nil is os.Rename.
 	rename func(string, string) error
-	native bool
+	// buildArgv is the build owner's command, run in the candidate's
+	// installation root; nil is candidateEngineBuildArgv.
+	buildArgv func(output string) []string
+	native    bool
+}
+
+// candidateEngineBuildArgv runs the candidate tree's own fenced, stamped
+// bootstrap build (cmd/devgate), so the build rules that compile a candidate
+// are the candidate's, not this engine's.
+func candidateEngineBuildArgv(output string) []string {
+	return []string{"go", "run", "./cmd/devgate", "build", "--trimpath", "--out", output}
 }
 
 func nativeCandidateEngineIO() candidateEngineIO {
@@ -1490,6 +1500,11 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 		return nil, fmt.Errorf("candidate engine build failed while allocating its private output: %v (cleanup: %v)", err, closeErr)
 	}
 	build := &candidateEngineBuild{Path: filepath.Join(directory, "metasystem"), Commit: candidateCommit, directory: directory}
+	buildArgv := io.buildArgv
+	if buildArgv == nil {
+		buildArgv = candidateEngineBuildArgv
+	}
+	argv := buildArgv(build.Path)
 	fail := func(cause error, output []byte) (*candidateEngineBuild, error) {
 		closeErr := removeDetached()
 		removeErr := build.Close()
@@ -1500,10 +1515,10 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 		if closeErr != nil || removeErr != nil {
 			cause = fmt.Errorf("%w (cleanup: worktree=%v output=%v)", cause, closeErr, removeErr)
 		}
-		return nil, fmt.Errorf("candidate engine build failed at commit %s through scripts/agents/go-build.sh --trimpath --out: %w", candidateCommit, cause)
+		return nil, fmt.Errorf("candidate engine build failed at commit %s through %s: %w", candidateCommit, strings.Join(argv, " "), cause)
 	}
 	installationRoot := filepath.Join(detached.Workspace().Dir, filepath.FromSlash(installationPrefix))
-	command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh", "--trimpath", "--out", build.Path)
+	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	command.Dir = installationRoot
 	command.Env = candidateEngineBuildEnvironment(environment, candidateCommit)
 	if scratch != nil {
@@ -1528,7 +1543,7 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 	info, err := os.Stat(build.Path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
 		_ = build.Close()
-		return nil, fmt.Errorf("candidate engine build failed: scripts/agents/go-build.sh did not produce a regular executable: %v", err)
+		return nil, fmt.Errorf("candidate engine build failed: %s did not produce a regular executable: %v", strings.Join(argv, " "), err)
 	}
 	build.Digest, err = fileSHA256(build.Path)
 	if err != nil {

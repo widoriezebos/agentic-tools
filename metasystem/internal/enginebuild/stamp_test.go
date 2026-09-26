@@ -30,3 +30,11 @@ func TestStampCommitAcceptsOnlyClosedSourceLinkedForms(t *testing.T) {
 		})
 	}
 }
+
+func TestDevelopmentStampRoundTripsThroughStampCommit(t *testing.T) {
+	commit := strings.Repeat("b", 40)
+	got, dirty, ok := StampCommit(DevelopmentStamp(commit))
+	if got != commit || !dirty || !ok {
+		t.Fatalf("StampCommit(DevelopmentStamp) = (%q, %v, %v), want (%q, true, true)", got, dirty, ok, commit)
+	}
+}

@@ -1410,6 +1410,11 @@ case "${1:-}" in
         [[ "$#" -eq 2 && "${2:-}" == ./... ]] || exit 97
         exit 0
         ;;
+      ./cmd/devgate)
+        [[ "${2:-}" == build ]] || exit 97
+        shift 2
+        exec bash scripts/agents/go-build.sh "$@"
+        ;;
     esac
     [[ "${1:-}" == ./cmd/metasystem ]] || exit 97
     shift
@@ -2219,6 +2224,7 @@ chmod +x "$3"
 	if err := os.Chmod(filepath.Join(root, "scripts", "agents", "go-build.sh"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeFixtureDevgate(t, root)
 }
 
 func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T) {

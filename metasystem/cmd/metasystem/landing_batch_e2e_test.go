@@ -488,6 +488,7 @@ else
 fi
 chmod +x "$out"
 `, strconv.Quote(engine), strconv.Quote(engine)), 0o755)
+	writeFixtureDevgate(fixture.t, root)
 	write("scripts/receipt.sh", "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p memory\nprintf '%s\\n' \"$*\" >> memory/receipts.log\ngit add memory/receipts.log\n", 0o755)
 	write("scripts/agents/commit.sh", batchE2ECommitScript, 0o755)
 	write("metasystem.conf", "metasystem.runtimes=fake\ntesting.contract=testing.json\ngoal.human.wido=Wido Example <wido@example.invalid>\nproof.admission.top-level-max=0\n", 0o644)

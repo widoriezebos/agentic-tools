@@ -429,7 +429,8 @@ func (s *Sequencer) tracking(record *Record) (stepRun, error) {
 /* -------------------------------------------------------------- 3 engine -- */
 
 // engine builds the new machine's own engine through the kit's one fenced,
-// stamped build script, which is the designated build owner named in
+// stamped bootstrap build, `go run ./cmd/devgate build` in the clone's
+// installation, which is the designated build owner named in
 // docs/architecture.md.
 func (s *Sequencer) engine(record *Record) (stepRun, error) {
 	binary := s.binary(record.Destination)
@@ -447,7 +448,8 @@ func (s *Sequencer) engine(record *Record) (stepRun, error) {
 	install := s.install(record.Destination)
 	if _, err := s.run(Command{
 		Dir:    install,
-		Name:   filepath.Join(install, "scripts", "agents", "go-build.sh"),
+		Name:   "go",
+		Args:   []string{"run", "./cmd/devgate", "build"},
 		Budget: s.BuildBudget,
 	}); err != nil {
 		return stepRun{}, err

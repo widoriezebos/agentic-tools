@@ -346,6 +346,7 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "go-gate.sh"), []byte(gate), 0o755)
 	build := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --trimpath && \"${2:-}\" == --out && -n \"${3:-}\" ]]\ncp %q \"$3\"\nchmod +x \"$3\"\n", engine)
 	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "go-build.sh"), []byte(build), 0o755)
+	writeFixtureDevgate(t, filepath.Join(clone, filepath.FromSlash(prefix)))
 	// The carried commit runs the contract's battery for real; this is
 	// land-fixtures.sh's carried-prefixed contract over the bed's paths.
 	conf := filepath.Join(clone, filepath.FromSlash(prefix), "metasystem.conf")

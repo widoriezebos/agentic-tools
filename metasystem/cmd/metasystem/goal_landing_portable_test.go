@@ -82,6 +82,7 @@ func newPortableProofFixtureWithSetup(t *testing.T, baselineSource string, setup
 	fixture.write("scripts/check.sh", portableCommandCheck, 0o755)
 	buildScript := fmt.Sprintf(portableCandidateBuild, strconv.Quote(fixture.buildCounter), strconv.Quote(fixture.engine))
 	fixture.write("scripts/agents/go-build.sh", buildScript, 0o755)
+	writeFixtureDevgate(t, root)
 	if setup != nil {
 		setup(fixture)
 	}

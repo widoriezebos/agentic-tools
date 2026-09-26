@@ -92,7 +92,7 @@ func rearm(facts []Fact) []string {
 	remote := fact(facts, "remote", "origin")
 	tip := fact(facts, "tip", remote+"/main")
 	checkout := fact(facts, "checkout", ".")
-	return []string{"git fetch " + quoted(remote), "git merge --ff-only " + quoted(tip), "scripts/agents/go-build.sh", "bin/metasystem up --repo " + quoted(checkout)}
+	return []string{"git fetch " + quoted(remote), "git merge --ff-only " + quoted(tip), "go run ./cmd/devgate build", "bin/metasystem up --repo " + quoted(checkout)}
 }
 
 func one(command string) func([]Fact) []string {
@@ -183,7 +183,7 @@ var Table = []Cause{
 		Path("tracked-path", "docs/local.txt"), Path("untracked-path", "generated/local.txt"), Path("ledger-path", "memory/receipts.log"),
 	}, remedy: fastForwardBlocked},
 	{Token: "rebuild-failed", Commands: 2, remedy: func(f []Fact) []string {
-		return []string{"scripts/agents/go-build.sh", "bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
+		return []string{"go run ./cmd/devgate build", "bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
 	}},
 	{Token: "rearm-failed", Commands: 1, remedy: func(f []Fact) []string {
 		return []string{"bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
@@ -194,7 +194,7 @@ var Table = []Cause{
 	{Token: "base-moved", Commands: 1, remedy: one("rerun the same metasystem test command from the current landing ref")},
 	{Token: "decision-mismatch", Commands: 1, remedy: one("re-arm the enrolled policy engine, then rerun the same metasystem test command")},
 	{Token: TokenEngineUnavailable, Commands: 2, remedy: func(f []Fact) []string {
-		return []string{"scripts/agents/go-build.sh", "bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
+		return []string{"go run ./cmd/devgate build", "bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
 	}},
 	{Token: "child-failed", Commands: 1, remedy: one("run the named enrolled policy engine directly and repair its reported failure")},
 	{Token: "child-output", Commands: 1, remedy: one("repair the named enrolled policy engine's policy output, then rerun the same metasystem test command")},
