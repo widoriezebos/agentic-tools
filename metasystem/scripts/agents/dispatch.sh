@@ -61,7 +61,7 @@ if [[ ${BASH_SOURCE[0]} == "$0" && -z "${METASYSTEM_DELEGATE_INTERNAL:-}" ]]; th
   esac
   case "${1:-dispatch}" in
     dispatch|follow-up|cancel|--*)
-      printf '%s\n' '{"outcome":"REFUSED-REQUEST","headline":"refused","detail":"the legacy dispatch authority grammar was removed; use metasystem delegate"}'
+      printf '%s\n' '{"outcome":"REFUSED-REQUEST","headline":"refused","detail":"the legacy dispatch authority grammar was removed; use metasystem internal delegate"}'
       exit 2 ;;
   esac
 fi

@@ -292,7 +292,7 @@ func TestMissingConfiguredLandingRefNamesItsActualRepair(t *testing.T) {
 
 func TestNotLandedRebuildNamesFetchAndTerminalRepairs(t *testing.T) {
 	root := t.TempDir()
-	want := fmt.Sprintf("run git -C %s fetch origin once, then rerun metasystem up, or from an agent-free terminal run metasystem internal steward restart --repo %s", root, root)
+	want := fmt.Sprintf("run git -C %s fetch origin once, then rerun metasystem session start, or from an agent-free terminal run metasystem internal steward restart --repo %s", root, root)
 	for name, message := range map[string]string{
 		"commit is not landed":         "rebuilt engine was built from abcdef0, which is not landed on refs/remotes/origin/trunk",
 		"witness is not proven landed": "rebuilt engine was built from witness-0123456789ab, which is not proven landed on refs/remotes/origin/trunk: no matching commit",
@@ -317,32 +317,32 @@ func TestBeforeMintFailuresNameTheirActualRepair(t *testing.T) {
 		{
 			name:    "notification command",
 			message: "no notification channel is configured; an unreachable watchdog guards nothing",
-			want:    fmt.Sprintf("set the notification command with git -C %s config --local metasystem.steward.notify-command <command>, then rerun metasystem up", root),
+			want:    fmt.Sprintf("set the notification command with git -C %s config --local metasystem.steward.notify-command <command>, then rerun metasystem session start", root),
 		},
 		{
 			name:    "runner directory",
 			message: "create runner directory: permission denied",
-			want:    fmt.Sprintf("make the steward runner directory %s writable, then rerun metasystem up", filepath.Dir(armLock)),
+			want:    fmt.Sprintf("make the steward runner directory %s writable, then rerun metasystem session start", filepath.Dir(armLock)),
 		},
 		{
 			name:    "arm lock open",
 			message: "open arm lock: permission denied",
-			want:    fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem up", armLock),
+			want:    fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem session start", armLock),
 		},
 		{
 			name:    "arm lock acquisition",
 			message: "take arm lock: resource temporarily unavailable",
-			want:    fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem up", armLock),
+			want:    fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem session start", armLock),
 		},
 		{
 			name:    "identity publication",
 			message: "re-publish identity with durability pending: input/output error",
-			want:    "repair the enrollment identity publication, then rerun metasystem up",
+			want:    "repair the enrollment identity publication, then rerun metasystem session start",
 		},
 		{
 			name:    "unrecognized failure",
 			message: "unexpected before-mint failure",
-			want:    "repair the named enrollment publication failure, then rerun metasystem up",
+			want:    "repair the named enrollment publication failure, then rerun metasystem session start",
 		},
 	}
 	for _, test := range tests {
@@ -417,7 +417,7 @@ func TestRecoveryNeverRearmsChangedEnrolledBytes(t *testing.T) {
 		RecoverOnly: true, IfDown: true,
 	})
 	if result.Outcome != "ENROLLMENT_DRIFT" || result.ReArmed != "" ||
-		!strings.Contains(result.Remedy, "run metasystem up from a session") {
+		!strings.Contains(result.Remedy, "run metasystem session start from a session") {
 		t.Fatalf("recovery did not refuse the rebuild with its session remedy: %+v", result)
 	}
 	installed, err := steward.VerifyIdentity(steward.RepoIdentityPath(root), canonicalRuntimePath(root))
@@ -527,10 +527,10 @@ func TestSchedulerEntryIsRecoveryOnlyAndDoesNotWrite(t *testing.T) {
 }
 
 func TestFailureNamesOneComponentAndRemedy(t *testing.T) {
-	result := failure(nil, "repo-watcher", os.ErrInvalid, "rerun metasystem up")
+	result := failure(nil, "repo-watcher", os.ErrInvalid, "rerun metasystem session start")
 	lines := result.Lines()
 	if result.ExitCode() == 0 || len(lines) != 2 ||
-		lines[1] != `up outcome=failed component=repo-watcher remedy="rerun metasystem up"` {
+		lines[1] != `up outcome=failed component=repo-watcher remedy="rerun metasystem session start"` {
 		t.Fatalf("wrong aggregate failure: %#v", lines)
 	}
 }

@@ -282,8 +282,8 @@ FIXTURE_TOOL_SHELL
   (( refusal_rc == 1 )) \
     || { echo "a non-terminal caller was allowed to stop the metasystem" >&2; cat "$tmp/wrong-terminal.refusal" >&2; exit 1; }
   printf '%s\n' \
-    "metasystem stop: stop is a human act at a terminal; this caller is DELEGATE." \
-    "at an agent-free terminal, run: metasystem stop --repo $expected_checkout" \
+    "metasystem system stop: stop is a human act at a terminal; this caller is DELEGATE." \
+    "at an agent-free terminal, run: metasystem system stop --repo $expected_checkout" \
     >"$tmp/wrong-terminal.expected"
   cmp -s "$tmp/wrong-terminal.expected" "$tmp/wrong-terminal.refusal" \
     || { echo "wrong-terminal refusal did not match the process-verb grammar" >&2; diff -u "$tmp/wrong-terminal.expected" "$tmp/wrong-terminal.refusal" >&2 || true; exit 1; }
@@ -301,12 +301,12 @@ FIXTURE_TOOL_SHELL
   fence_changed=$("$clone/bin/metasystem" json get --file "$clone/artifacts/agents/supervision/transition.json" --field changedAt)
   fence_pid=$("$clone/bin/metasystem" json get --file "$clone/artifacts/agents/supervision/transition.json" --field by.pid)
   printf '%s\n' "checkout $expected_checkout" "nothing is running" \
-    "stopped $expected_checkout; start again: metasystem arm --repo $expected_checkout" >"$tmp/wrong-terminal.stop.expected"
+    "stopped $expected_checkout; start again: metasystem system start --repo $expected_checkout" >"$tmp/wrong-terminal.stop.expected"
   cmp -s "$tmp/wrong-terminal.stop.expected" "$tmp/wrong-terminal.stop" \
     || { echo "the fixture-human stop report changed grammar" >&2; diff -u "$tmp/wrong-terminal.stop.expected" "$tmp/wrong-terminal.stop" >&2 || true; exit 1; }
   "$clone/bin/metasystem" internal status --repo "$clone" >"$tmp/wrong-terminal.status"
   printf '%s\n' "checkout $expected_checkout" "nothing is running" \
-    "stopped since $fence_changed by stop pid $fence_pid; start again: metasystem arm --repo $expected_checkout" >"$tmp/wrong-terminal.status.expected"
+    "stopped since $fence_changed by stop pid $fence_pid; start again: metasystem system start --repo $expected_checkout" >"$tmp/wrong-terminal.status.expected"
   cmp -s "$tmp/wrong-terminal.status.expected" "$tmp/wrong-terminal.status" \
     || { echo "status did not report the fixture-human stop" >&2; diff -u "$tmp/wrong-terminal.status.expected" "$tmp/wrong-terminal.status" >&2 || true; exit 1; }
   exit 0

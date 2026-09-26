@@ -3431,7 +3431,7 @@ func mainSplitRatification(id, digest string, classification lease.ClassifyResul
 		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s is main-origin; its split draft is ratified by the coordinator — re-run goal split from the MAIN checkout-lease holder session (a human may also run it with --by)", id)
 	}
 	if classification.ClaimEpoch == nil {
-		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s has a MAIN holder classification but no checkout lease epoch; run metasystem up to establish the authenticated lease, then retry", id)
+		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s has a MAIN holder classification but no checkout lease epoch; run metasystem session start to establish the authenticated lease, then retry", id)
 	}
 	return goal.SplitRatification{Tier: goal.RatifierMain, MainID: classification.MainId, ClaimEpoch: *classification.ClaimEpoch, DraftSHA256: digest}, nil
 }

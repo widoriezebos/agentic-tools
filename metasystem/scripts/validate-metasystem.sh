@@ -525,7 +525,7 @@ fi
 # fixture below keeps that leniency honest: a usage bug fails there loudly.
 if [[ "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x bin/metasystem ]]; then
   gate_fence_rc=0
-  bin/metasystem gate fence --root "$root" --self-pid $$ || gate_fence_rc=$?
+  bin/metasystem internal gate fence --root "$root" --self-pid $$ || gate_fence_rc=$?
   if [[ "$gate_fence_rc" == 1 ]]; then
     echo "a gate run is already live in this checkout; refusing a concurrent suite (METASYSTEM_ALLOW_CONCURRENT_GATE=1 overrides)" >&2
     exit 1
@@ -542,7 +542,7 @@ fi
 # clean bootstrap no binary exists anywhere yet, bounded by the first build.
 gate_run_marker=
 if [[ -x bin/metasystem ]]; then
-  gate_run_marker=$(bin/metasystem gate register --root "$root" \
+  gate_run_marker=$(bin/metasystem internal gate register --root "$root" \
     --gate validate-metasystem.sh --pid $$) || {
     echo "gate registration failed; refusing to run invisibly" >&2
     exit 1
@@ -604,7 +604,7 @@ grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod && m
 covenant_evidence_pre_rebuild_section() {
 if [[ -e covenant.json || -L covenant.json ]] && [[ -x bin/metasystem ]]; then
   early_evidence_rc=0
-  bin/metasystem covenant evidence --root "$root" || early_evidence_rc=$?
+  bin/metasystem internal covenant evidence --root "$root" || early_evidence_rc=$?
   case "$early_evidence_rc" in
     0) echo "covenant evidence gate passed (pre-rebuild)" ;;
     2|127) echo "covenant evidence gate deferred: the present engine predates the verb; the post-rebuild gate judges" ;;
@@ -629,7 +629,7 @@ go_engine_gate_section() {
     && bin/metasystem test verify --root "$root" --tree "$(git write-tree)" \
       >"$stage_work/delivery-testing-verification.log" 2>&1; then
     delivery_reuse=1
-    [[ "$(bin/metasystem json get --value '{"ok":1}' --field ok)" == 1 ]] \
+    [[ "$(bin/metasystem internal json get --value '{"ok":1}' --field ok)" == 1 ]] \
       || { echo "delivery contract: the verified binary did not answer" >&2; exit 1; }
     echo "go gate: PASSED (completed schema-2 delivery proof verified)"
     # No witness is armed on this branch; the state file still declares it.
@@ -663,7 +663,7 @@ go_engine_gate_section() {
     # decision verb, and when the outer run's witness matches this tree
     # the binary's ldflags stamp must carry that digest — binary
     # identity is part of the equivalence, not an assumption.
-    [[ "$(bin/metasystem json get --value '{"ok":1}' --field ok)" == 1 ]] \
+    [[ "$(bin/metasystem internal json get --value '{"ok":1}' --field ok)" == 1 ]] \
       || { echo "delivery contract: the rebuilt binary did not answer" >&2; exit 1; }
     if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]] \
       && METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
@@ -714,11 +714,11 @@ gate_fence_fixtures_section() {
 if (( run_gate_fence_fixture )); then
   gate_fence_foreign=
   trap '[[ -z "$gate_fence_foreign" ]] || { kill "$gate_fence_foreign" 2>/dev/null || true; wait "$gate_fence_foreign" 2>/dev/null || true; }' EXIT
-  bin/metasystem gate fence --root "$root" --self-pid $$ \
+  bin/metasystem internal gate fence --root "$root" --self-pid $$ \
     || { echo "the suite's own gate marker blocked its fence" >&2; exit 1; }
   sleep 60 & gate_fence_foreign=$!
-  bin/metasystem gate register --root "$root" --gate fence-fixture --pid "$gate_fence_foreign" >/dev/null
-  if bin/metasystem gate fence --root "$root" --self-pid $$ 2>/dev/null; then
+  bin/metasystem internal gate register --root "$root" --gate fence-fixture --pid "$gate_fence_foreign" >/dev/null
+  if bin/metasystem internal gate fence --root "$root" --self-pid $$ 2>/dev/null; then
     echo "a foreign live gate run did not block the fence" >&2; exit 1
   fi
   gate_fence_err=$(mktemp)
@@ -731,7 +731,7 @@ if (( run_gate_fence_fixture )); then
   rm -f "$gate_fence_err"
   kill "$gate_fence_foreign" 2>/dev/null || true; wait "$gate_fence_foreign" 2>/dev/null || true
   gate_fence_foreign=
-  bin/metasystem gate fence --root "$root" --self-pid $$ \
+  bin/metasystem internal gate fence --root "$root" --self-pid $$ \
     || { echo "a dead foreign gate run kept blocking the fence" >&2; exit 1; }
   echo "gate fence fixtures passed"
   trap - EXIT
@@ -765,7 +765,7 @@ fi
 covenant_evidence_post_rebuild_section() {
 if [[ -e covenant.json || -L covenant.json ]]; then
   if [[ -x bin/metasystem ]]; then
-    bin/metasystem covenant evidence --root "$root" \
+    bin/metasystem internal covenant evidence --root "$root" \
       || { echo "the covenant evidence gate refused; the table and the covenant disagree" >&2; exit 1; }
     echo "covenant evidence gate passed"
   else

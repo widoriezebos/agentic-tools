@@ -556,7 +556,7 @@ if [[ "$fixture_scenario" == mission-stop ]]; then
     "$repo/bin/metasystem" internal stop --repo "$repo" >"$output" 2>&1
     status=$?
     set -e
-    closing="stopped $resolved_repo; start again: metasystem arm --repo $resolved_repo"
+    closing="stopped $resolved_repo; start again: metasystem system start --repo $resolved_repo"
     if [[ $status -ne 0 ]] || grep -q '^NOT STOPPED ' "$output" \
       || [[ "$(tail -n 1 "$output")" != "$closing" ]]; then
       echo "$name did not stop every component with the complete-stop grammar (exit $status)" >&2
@@ -595,7 +595,7 @@ if [[ "$fixture_scenario" == mission-stop ]]; then
   [[ "$("$repo/bin/metasystem" json get --file "$cooperating_runner" --field status)" == stopped \
     && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field status)" == failed \
     && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field error)" == turn-lost \
-    && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field detail)" == 'stopped by metasystem stop' \
+    && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field detail)" == 'stopped by metasystem system stop' \
     && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field hostTermination)" == term ]] \
     || { echo "cooperating host did not conclude as a stopped mission turn" >&2; cat "$fixture_root/cooperating-host.stop" >&2; cat "$cooperating_runner" >&2; cat "$cooperating_turn_record" >&2; exit 1; }
   [[ ! -e "$repo/artifacts/agents/missions/cooperating-host/lease.d" \

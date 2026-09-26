@@ -327,5 +327,5 @@ export function failedRemedy(record: Launch): string {
 
 /** How the health of a machine that armed but has not published is read. */
 export function healthCommand(record: Launch): string {
-  return `metasystem internal steward health --repo ${record.destination}/metasystem`;
+  return `metasystem system check --repo ${record.destination}/metasystem`;
 }

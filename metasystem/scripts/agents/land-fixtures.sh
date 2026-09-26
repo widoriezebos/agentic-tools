@@ -2949,7 +2949,7 @@ mv "$leg_local/metasystem.conf.new" "$leg_local/metasystem.conf"
   sed -n '1,160p' "$full_chain_missing_output" >&2
   exit 1
 }
-grep -Fqx "land refused: chain full-chain requires sufficient schema-2 testing evidence; run metasystem landing test-receipt --root . --tree <whole-project-tree> --mode auto and pass it with --test-receipt" \
+grep -Fqx "land refused: chain full-chain requires sufficient schema-2 testing evidence; run metasystem internal landing test-receipt --root . --tree <whole-project-tree> --mode auto and pass it with --test-receipt" \
   "$full_chain_missing_output"
 [[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
 

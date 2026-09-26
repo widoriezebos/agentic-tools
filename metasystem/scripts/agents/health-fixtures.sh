@@ -236,14 +236,14 @@ hook_report_alias=1
 hook_report_dir=$repo/artifacts/agents/supervision/stop-verdicts
 hook_report_path=$hook_report_dir/$hook_report_id.md
 mkdir -p "$hook_report_dir"
-hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id %s' "$hook_report_alias")
+hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem session report --id %s' "$hook_report_alias")
 printf '# Health fixture\n\n<!-- metasystem-stop-report-v1 {"installation":"%s","runtime":"fake","session":"health-fixture","sessionKey":"%s","attempt":"%s"} -->\n\n## Console text\n\n```text\n%s\n```\n\n## Health\n\n```json\n{"line":"HEALTH fixture"}\n```\n' \
   "$repo" "$hook_report_key" "$hook_report_attempt" "$hook_visible" >"$hook_report_path"
 hook_report_sha=$("$ms" util sha256 <"$hook_report_path")
 mkdir -p "$hook_report_dir/aliases"
 printf '{"schemaVersion":1,"state":"published","alias":"%s","reportId":"%s","sha256":"%s"}\n' \
   "$hook_report_alias" "$hook_report_id" "$hook_report_sha" >"$hook_report_dir/aliases/$hook_report_alias.json"
-hook_payload=$(printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id %s"}' "$hook_report_alias")
+hook_payload=$(printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem session report --id %s"}' "$hook_report_alias")
 printf '%s\n' "$hook_payload" >"$tmp/hook-response.json"
 hook_payload_sha=$(printf '%s' "$hook_payload" | "$ms" util sha256)
 mkdir -p "$hook_report_dir/responses"
@@ -424,7 +424,7 @@ run_health narrator-stalled
 [[ "$health_rc" -eq 1 ]] || { cat "$tmp/narrator-stalled.err" >&2; fail "stopped narrator equality boundary returned $health_rc"; }
 grep -Fq 'narrator-freshness=dead' "$tmp/narrator-stalled.out" \
   || fail "narrator was not stale at exactly two producer intervals"
-grep -Fq 'metasystem up --repo' "$tmp/narrator-stalled.out" || fail "stale narrator omitted the up remedy"
+grep -Fq 'metasystem session start --repo' "$tmp/narrator-stalled.out" || fail "stale narrator omitted the up remedy"
 if [[ -n "$health_clock_was_set" ]]; then
   export METASYSTEM_GOAL_NOW=$health_clock_before
 else
@@ -477,7 +477,7 @@ run_health runner-dead
 dead_rc=$health_rc
 [[ "$dead_rc" -eq 1 ]] || { cat "$tmp/runner-dead.err" >&2; fail "dead bed returned $dead_rc"; }
 grep -Fq 'steward-runner=dead' "$tmp/runner-dead.out" || fail "dead verdict did not name the killed runner"
-grep -Fq 'metasystem up --repo' "$tmp/runner-dead.out" || fail "dead verdict omitted the up remedy"
+grep -Fq 'metasystem session start --repo' "$tmp/runner-dead.out" || fail "dead verdict omitted the up remedy"
 initial_failure_digest=$("$ms" json get --file "$repo/artifacts/agents/steward/health.json" --field verdict.findingDigest) \
   || fail "first failure finding digest was unreadable"
 if [[ -f "$alert_delivery_log" ]] && grep -Fq 'HEALTH unhealthy' "$alert_delivery_log"; then

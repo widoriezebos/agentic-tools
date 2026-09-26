@@ -407,7 +407,7 @@ func supervisionOptions(options Options) (supervise.EnsureOptions, error) {
 func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, components []ComponentOutcome) ([]ComponentOutcome, supervise.EnsureResult, *Result) {
 	armingOptions, err := supervisionOptions(options)
 	if err != nil {
-		failed := failure(components, "supervision-owner", err, "fix the named supervision configuration or fingerprint input, then rerun metasystem up")
+		failed := failure(components, "supervision-owner", err, "fix the named supervision configuration or fingerprint input, then rerun metasystem session start")
 		return nil, supervise.EnsureResult{}, &failed
 	}
 	fence, err := stopfence.Read(options.Root)
@@ -435,11 +435,11 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 			return nil, supervise.EnsureResult{}, &drift
 		}
 		component := "supervision-owner"
-		remedy := "inspect artifacts/agents/supervision/owner.log, repair the named blocker, then rerun metasystem up"
+		remedy := "inspect artifacts/agents/supervision/owner.log, repair the named blocker, then rerun metasystem session start"
 		var componentFailure *supervise.ComponentFailure
 		if errors.As(err, &componentFailure) {
 			component = componentFailure.Component
-			remedy = "prove the recorded component identity and process group are gone, then rerun metasystem up"
+			remedy = "prove the recorded component identity and process group are gone, then rerun metasystem session start"
 		}
 		failed := failure(components, component, err, remedy)
 		return nil, supervise.EnsureResult{}, &failed
@@ -448,7 +448,7 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 	if err != nil || second.State == stopfence.StateClosed || second.Generation != fence.Generation {
 		prefix := "metasystem-supervision-owner-" + lease.Slug(options.Scope) + "-"
 		_, _ = supervise.ShutdownAt(options.Root, installationRoot(options), options.Root, prefix, options.WaitScaleMilli)
-		remedy := "repair the process-creation fence, then rerun metasystem up"
+		remedy := "repair the process-creation fence, then rerun metasystem session start"
 		if err == nil && second.State == stopfence.StateClosed {
 			description, renderErr := stopfence.ClosedDescription(second, options.Scope)
 			command, commandErr := stopfence.ClosedCommand(second, options.Scope)
@@ -462,7 +462,7 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 			}
 		} else if err == nil {
 			err = fmt.Errorf("the checkout %s was stopped and armed again while the supervision owner started; the supervision owner has been ended; the caller may retry", options.Scope)
-			remedy = "retry metasystem up"
+			remedy = "retry metasystem session start"
 		}
 		failed := failure(components, "supervision-owner", err, remedy)
 		return nil, supervise.EnsureResult{}, &failed
@@ -476,7 +476,7 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 			components = append(components, ownerOutcome)
 		}
 		failed := failure(components, result.Inspection.Component, fmt.Errorf("%s", result.Inspection.Reason),
-			"inspect artifacts/agents/supervision/owner.log and rerun metasystem up after the component can complete one pass")
+			"inspect artifacts/agents/supervision/owner.log and rerun metasystem session start after the component can complete one pass")
 		return nil, result, &failed
 	}
 	components = append(components, ownerOutcome)
@@ -499,7 +499,7 @@ func ensureStewardRunner(options Options, enrolled *steward.EnrolledBinary, comp
 			return nil, &drift
 		}
 		failed := failure(components, "steward-runner", err,
-			"configure a working notification channel, inspect artifacts/agents/steward/runner.log, then rerun metasystem up")
+			"configure a working notification channel, inspect artifacts/agents/steward/runner.log, then rerun metasystem session start")
 		return nil, &failed
 	}
 	detail := fmt.Sprintf("pid=%d generation=%d", result.Pid, result.Generation)
@@ -519,7 +519,7 @@ func enrollmentDrift(components []ComponentOutcome, err error, installationRoot,
 	} else if strings.Contains(err.Error(), "owns no remote-tracking landing ref") {
 		remedy = fmt.Sprintf("run git -C %s config --local metasystem.steward.landing-ref refs/remotes/<remote>/<branch> once on this machine, or re-arm at the terminal", installationRoot)
 	} else if remote, ok := notLandedRemote(err.Error()); ok {
-		remedy = fmt.Sprintf("run git -C %s fetch %s once, then rerun metasystem up, or from an agent-free terminal run metasystem internal steward restart --repo %s", installationRoot, remote, repoRoot)
+		remedy = fmt.Sprintf("run git -C %s fetch %s once, then rerun metasystem session start, or from an agent-free terminal run metasystem internal steward restart --repo %s", installationRoot, remote, repoRoot)
 	}
 	components = append(components, ComponentOutcome{
 		Component: "accepted-engine", Outcome: "ENROLLMENT_DRIFT", Detail: err.Error(), Remedy: remedy,
@@ -551,15 +551,15 @@ func beforeMintRemedy(err error, repoRoot string) string {
 	message := err.Error()
 	switch {
 	case strings.Contains(message, "no notification channel is configured"):
-		return fmt.Sprintf("set the notification command with git -C %s config --local metasystem.steward.notify-command <command>, then rerun metasystem up", repoRoot)
+		return fmt.Sprintf("set the notification command with git -C %s config --local metasystem.steward.notify-command <command>, then rerun metasystem session start", repoRoot)
 	case strings.Contains(message, "create runner directory"):
-		return fmt.Sprintf("make the steward runner directory %s writable, then rerun metasystem up", filepath.Join(repoRoot, "artifacts", "agents", "steward"))
+		return fmt.Sprintf("make the steward runner directory %s writable, then rerun metasystem session start", filepath.Join(repoRoot, "artifacts", "agents", "steward"))
 	case strings.Contains(message, "open arm lock"), strings.Contains(message, "take arm lock"):
-		return fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem up", filepath.Join(repoRoot, "artifacts", "agents", "steward", "arm.flock"))
+		return fmt.Sprintf("make the steward arm lock file %s creatable, openable, and lockable by this user by checking its directory permissions, free space, and the open-file limit, then rerun metasystem session start", filepath.Join(repoRoot, "artifacts", "agents", "steward", "arm.flock"))
 	case strings.Contains(message, "re-publish identity with durability pending"):
-		return "repair the enrollment identity publication, then rerun metasystem up"
+		return "repair the enrollment identity publication, then rerun metasystem session start"
 	default:
-		return "repair the named enrollment publication failure, then rerun metasystem up"
+		return "repair the named enrollment publication failure, then rerun metasystem session start"
 	}
 }
 
@@ -664,11 +664,11 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 				rearmed.EngineBuild, shortCommit(rearmed.LandedCommit), rearmed.LandingRef,
 				rearmed.StoppedRunnerPid, err, rearmed.PreviousGeneration)
 			return finish(failure(components, "accepted-engine", detail,
-				fmt.Sprintf("prove runner pid %d is gone in artifacts/agents/steward/runner.json, then rerun metasystem up", rearmed.StoppedRunnerPid)))
+				fmt.Sprintf("prove runner pid %d is gone in artifacts/agents/steward/runner.json, then rerun metasystem session start", rearmed.StoppedRunnerPid)))
 		case steward.StageStopped:
 			return finish(failure(components, "accepted-engine",
 				fmt.Errorf("runner pid %d was confirmed stopped, but the new enrollment could not be minted: %w", rearmed.StoppedRunnerPid, err),
-				"rerun metasystem up; the stopped runner will be replaced after a durable mint"))
+				"rerun metasystem session start; the stopped runner will be replaced after a durable mint"))
 		case steward.StageMinted:
 			components = append(components, ComponentOutcome{
 				Component: "accepted-engine", Outcome: "re-armed",
@@ -679,7 +679,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 				return finish(enrollmentDrift(components, err, installationRoot(options), options.Root))
 			}
 			return finish(failure(components, "steward-runner", fmt.Errorf("after re-arm: %w", err),
-				"inspect artifacts/agents/steward/runner.log and engine-pins, then rerun metasystem up"))
+				"inspect artifacts/agents/steward/runner.log and engine-pins, then rerun metasystem session start"))
 		default:
 			if errors.Is(err, steward.ErrEnrollmentDrift) {
 				return finish(enrollmentDrift(components, err, installationRoot(options), options.Root))
@@ -705,7 +705,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	announcement, err := lease.AnnounceWithProofAt(options.Root, installationRoot(options), session.Session, session.Pid, session.StartTime,
 		session.StartTicks, session.BootID, session.Tag, session.Runtime, session.OwnerLineage, &session.Provenance)
 	if err != nil {
-		return finish(failure(components, "session-announcement", err, "repair the named announcement or lease state, then rerun metasystem up"))
+		return finish(failure(components, "session-announcement", err, "repair the named announcement or lease state, then rerun metasystem session start"))
 	}
 	components = append(components, ComponentOutcome{
 		Component: "session-announcement", Outcome: "verified", Detail: announcement,
@@ -713,14 +713,14 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	appendArmingLog(options.Root, fmt.Sprintf("announcement-written registry=%s pid=%d start=%d", announcement, session.Pid, session.StartTime))
 	view, err := lease.ClassifyVerbAt(options.Root, installationRoot(options), session.Pid)
 	if err != nil {
-		return finish(failure(components, "checkout-lease", err, "repair the checkout lease and rerun metasystem up"))
+		return finish(failure(components, "checkout-lease", err, "repair the checkout lease and rerun metasystem session start"))
 	}
 	event := "stop"
 	if options.StartSource != "" {
 		event = "start"
 	}
 	if err := associateRuntimeSession(options, view.MainId, event); err != nil {
-		return finish(failure(components, "session-announcement", err, "repair the named announcement and rerun metasystem up"))
+		return finish(failure(components, "session-announcement", err, "repair the named announcement and rerun metasystem session start"))
 	}
 	authority := "writer"
 	holderName := view.MainId
@@ -728,7 +728,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 		authority = "read-only"
 		holder, holderErr := lease.CurrentHolder(options.Root)
 		if holderErr != nil {
-			return finish(failure(components, "checkout-lease", holderErr, "repair the checkout lease and rerun metasystem up"))
+			return finish(failure(components, "checkout-lease", holderErr, "repair the checkout lease and rerun metasystem session start"))
 		}
 		holderName = holder.MainId
 		if holder.SessionId != "" {
@@ -779,13 +779,13 @@ func recovery(options Options) Result {
 	components := []ComponentOutcome{}
 	if !options.IfDown {
 		return failure(components, "recovery-mode", fmt.Errorf("--recover-only requires --if-down"),
-			"invoke ordinary metasystem up from a session, or add --if-down for the scheduler recovery path")
+			"invoke ordinary metasystem session start from a session, or add --if-down for the scheduler recovery path")
 	}
 	enrolled, _, err := openInvokingEnrollment(options, false)
 	if err != nil {
 		result := enrollmentDrift(components, err, installationRoot(options), options.Root)
 		if errors.Is(err, steward.ErrEngineRebuilt) {
-			result.Remedy = "run metasystem up from a session, which re-arms a rebuilt engine at its enrolled path; or run metasystem internal steward arm at an agent-free terminal"
+			result.Remedy = "run metasystem session start from a session, which re-arms a rebuilt engine at its enrolled path; or run metasystem internal steward arm at an agent-free terminal"
 			result.Components[len(result.Components)-1].Remedy = result.Remedy
 		}
 		return result
@@ -806,13 +806,13 @@ func recovery(options Options) Result {
 	}
 	repair, err := steward.RepairEnrolledRunner(options.Root)
 	if err != nil {
-		result := failure(components, "steward-runner", err, "run ordinary metasystem up from a session to repair steward enrollment")
+		result := failure(components, "steward-runner", err, "run ordinary metasystem session start from a session to repair steward enrollment")
 		result.Outcome = "recovery-partial"
 		return result
 	}
 	if repair.Status == "NOT_ENROLLED" || repair.Status == "ENROLLMENT_CHANGED" || repair.Status == steward.AutoHealEnded {
 		result := failure(components, "steward-runner", fmt.Errorf("recovery stopped with %s", repair.Status),
-			"run ordinary metasystem up from a session to establish the steward generation")
+			"run ordinary metasystem session start from a session to establish the steward generation")
 		result.Outcome = "recovery-partial"
 		return result
 	}
@@ -849,7 +849,7 @@ func clearInheritedExecutionID() {
 func Run(options Options) Result {
 	clearInheritedExecutionID()
 	if err := preflightCommands(); err != nil {
-		return failure(nil, "host-preflight", err, "install the named commands and rerun metasystem up")
+		return failure(nil, "host-preflight", err, "install the named commands and rerun metasystem session start")
 	}
 	if closed, record, err := stopfence.Closed(options.Root); err != nil {
 		return failure(nil, "stopped", err, "repair the stop fence before starting the metasystem")

@@ -452,7 +452,7 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 		if !agent {
 			return nil, nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(target),
 				Summary:  "cannot tell which session acts: no --lineage and no METASYSTEM_OWNER_LINEAGE; nothing was done",
-				Decision: "the session holding the work passes its own lineage with --lineage LINEAGE (a session is started with metasystem up)"}
+				Decision: "the session holding the work passes its own lineage with --lineage LINEAGE (a session is started with metasystem session start)"}
 		}
 		return args, nil, nil
 	}

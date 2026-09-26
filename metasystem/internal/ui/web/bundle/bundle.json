@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:e75ba5db798c1a4e0b1ed84f4f15e625eeba6d400a1f8ffb1bc65d2b5606d632",
+  "sourceDigest": "sha256:e6d6b39fa1453bdbd44a410e9c1709947bfbf12fdb094e4f49ad2faf4bf97966",
   "source": [
     {
       "path": ".npmrc",
@@ -356,7 +356,7 @@
     },
     {
       "path": "src/fleet/LaunchCard.test.tsx",
-      "sha256": "8554148abe64a508918662eb77056847f12f18e121b0b9a8e35f95fbf06eb726"
+      "sha256": "8ffd39d81e6c738721754d00569ab88f4540c23e88f016066754982c0374f6ae"
     },
     {
       "path": "src/fleet/LaunchCard.tsx",
@@ -384,11 +384,11 @@
     },
     {
       "path": "src/fleet/launching.test.ts",
-      "sha256": "1a8cba8255ff23be3b519e61a77ecdb3901349a3b110b5af452dfe134526ad1d"
+      "sha256": "0d4eec8523d8c86fdbfbcd688572323cf128e9933f23d4001773ecfff4774459"
     },
     {
       "path": "src/fleet/launching.ts",
-      "sha256": "2127ac2cff107407d53305d520c486bb912e1cb2009102bcdb96ae15dfd377e1"
+      "sha256": "7d85f0fae6550b503519450364c769613b046203dc3796337d03ed87981b34c4"
     },
     {
       "path": "src/fleet/rendering.test.tsx",
@@ -1030,7 +1030,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "0093bda8f1a8713cfc34ae5e12422fa9f27bd32842a10e3747509a17b3d588ca"
+      "sha256": "8a27c65747345fdcd17b59587967d402c278b16255bd5fd4e9a7744aae948860"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

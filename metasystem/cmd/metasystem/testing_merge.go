@@ -23,11 +23,11 @@ func runTestingMerge(args []string) int {
 	theirs := flags.String("theirs", "", "incoming-side testing contract")
 	out := flags.String("out", "", "merged output path")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *base == "" || *ours == "" || *theirs == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem testing merge --base FILE --ours FILE --theirs FILE --out FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal testing merge --base FILE --ours FILE --theirs FILE --out FILE")
 		return 2
 	}
 	if err := mergeTestingFiles(*base, *ours, *theirs, *out); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem testing merge:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal testing merge:", err)
 		return 1
 	}
 	return 0
@@ -71,12 +71,12 @@ func runTestingAddTests(args []string) int {
 	group := flags.String("group", "", "group id")
 	tests := flags.String("tests", "", "comma-separated Go test names")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *path == "" || *group == "" || *tests == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem testing add-tests --file FILE --group ID --tests NAME,NAME")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal testing add-tests --file FILE --group ID --tests NAME,NAME")
 		return 2
 	}
 	data, err := os.ReadFile(*path)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem testing add-tests:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal testing add-tests:", err)
 		return 1
 	}
 	contract, err := testpolicy.Decode(data)
@@ -93,7 +93,7 @@ func runTestingAddTests(args []string) int {
 		err = writeTestingContract(*path, data)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem testing add-tests:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal testing add-tests:", err)
 		return 1
 	}
 	return 0

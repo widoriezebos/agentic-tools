@@ -88,7 +88,7 @@ for schema in "$kit"/schemas/evidence/*.schema.json; do
   if [[ "$derived_roles" == *" $role "* ]]; then
     "$top/metasystem/bin/metasystem" schema materialize --root "$top/metasystem"       --role "$role" --version 2 --output "$tmp/derived-$name"
     cmp -s "$schema" "$tmp/derived-$name" || {
-      echo "kit drift: schemas/evidence/$name differs from the engine's materialized v2 schema; regenerate it with 'metasystem schema materialize --version 2'" >&2
+      echo "kit drift: schemas/evidence/$name differs from the engine's materialized v2 schema; regenerate it with 'metasystem internal schema materialize --version 2'" >&2
       exit 1
     }
     continue

@@ -160,13 +160,13 @@ start_notice_json() { # catalog key; result in start_notice and start_notice_sta
     process-identity)
       start_notice='{"systemMessage":"Metasystem SessionStart could not identify the owning runtime process: this session received no role context; if this checkout is a declared brain it is uninstructed. Restart through the installed runtime launcher. Then start a new session."}' ;;
     brain-boot)
-      start_notice='{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
+      start_notice='{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
     brain-timeout)
-      start_notice='{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
+      start_notice='{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
     arming)
-      start_notice='{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem up there. Then start a new session."}' ;;
+      start_notice='{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem session start there. Then start a new session."}' ;;
     wait-recovery)
-      start_notice='{"systemMessage":"Metasystem SessionStart could not read durable wait recovery rows: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem up there. Then start a new session."}' ;;
+      start_notice='{"systemMessage":"Metasystem SessionStart could not read durable wait recovery rows: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem session start there. Then start a new session."}' ;;
     temporary-cleanup)
       start_notice='{"systemMessage":"Metasystem SessionStart could not remove its temporary files: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore temporary-directory access and remove leftover metasystem hook temporary files. Then start a new session."}' ;;
     interrupted)
@@ -2094,7 +2094,7 @@ $brain_payload"
       brain_boot_result="exit $brain_boot_rc"
     fi
     brain_boot_tail=$(tail -c 500 "$brain_boot_err" 2>/dev/null | tr '\r\n' '  ' || true)
-    failure="Metasystem brain boot failed ($brain_boot_result; stderr tail: $brain_boot_tail): this session received no role context; if this checkout is a declared brain it is uninstructed: run metasystem brain boot --root $repo --repo $repo by hand and rebuild if it fails"
+    failure="Metasystem brain boot failed ($brain_boot_result; stderr tail: $brain_boot_tail): this session received no role context; if this checkout is a declared brain it is uninstructed: run metasystem internal brain boot --root $repo --repo $repo by hand and rebuild if it fails"
     collect_start_notice "$failure"
   fi
   rm -f "$brain_boot_out" "$brain_boot_err" || true

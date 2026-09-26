@@ -415,7 +415,7 @@ func healthStopped(repoRoot string, now time.Time, roles []RoleVerdict, spend Sp
 		return nil, err
 	}
 	for index := range roles {
-		if strings.Contains(roles[index].Remedy, "metasystem up") {
+		if strings.Contains(roles[index].Remedy, "metasystem session start") {
 			roles[index].Remedy = remedy
 		}
 		roles[index].ConsecutiveUnknown = 0
@@ -823,7 +823,7 @@ func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) 
 }
 
 func checkStewardRunnerWithCadence(repoRoot string, now time.Time, prober identity.Prober, tickSeconds func(string) int) RoleVerdict {
-	remedy := fmt.Sprintf("metasystem up --repo %q", repoRoot)
+	remedy := fmt.Sprintf("metasystem session start --repo %q", repoRoot)
 	installed, durabilityPending, installationErr := installedEnrollment(repoRoot)
 	withEnrollment := func(verdict RoleVerdict) RoleVerdict {
 		if installationErr != nil {
@@ -1013,7 +1013,7 @@ func checkCensusFreshness(repoRoot string, now time.Time, state map[string]any, 
 }
 
 func checkNarratorFreshness(repoRoot string, now time.Time) RoleVerdict {
-	remedy := fmt.Sprintf("metasystem up --repo %q", repoRoot)
+	remedy := fmt.Sprintf("metasystem session start --repo %q", repoRoot)
 	generation, err := installedGeneration(repoRoot)
 	if err != nil {
 		return roleUnknown(RoleNarratorFreshness, "the steward installation generation is unreadable", remedy)
@@ -1348,7 +1348,7 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 			role := roleDead(RoleStopCapabilityEpoch,
 				fmt.Sprintf("goal %s stop capability claim epoch %d differs from live lease claim epoch %d under owner lineage %s",
 					file.Id, capabilityEpoch, holder.ClaimEpoch, holder.OwnerLineage),
-				fmt.Sprintf("metasystem internal goal restamp --id %s, or re-arm with metasystem up", file.Id))
+				fmt.Sprintf("metasystem internal goal restamp --id %s, or re-arm with metasystem session start", file.Id))
 			role.RemedyFacts = []RemedyFact{{Cause: CauseEpochMismatch, Goal: file.Id}}
 			return role
 		}
@@ -1654,7 +1654,7 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 			unknown = append(unknown, attemptID)
 		}
 	}
-	remedy := "the job reaper reconciles a dead launcher's attempt on its next pass; if the reaper is not running, metasystem up --repo <checkout> re-arms it"
+	remedy := "the job reaper reconciles a dead launcher's attempt on its next pass; if the reaper is not running, metasystem session start --repo <checkout> re-arms it"
 	if len(dead) > 0 {
 		return roleDead(RoleProofAttempts, "live proof attempts whose launcher is dead: "+strings.Join(dead, ","), remedy)
 	}
@@ -1717,7 +1717,7 @@ func boundedConfig(repoRoot, key string, fallback, minimum int) (int, error) {
 }
 
 func supervisionRemedy(repoRoot string) string {
-	return fmt.Sprintf("metasystem up --repo %q", repoRoot)
+	return fmt.Sprintf("metasystem session start --repo %q", repoRoot)
 }
 
 func readHealthObject(path string) (map[string]any, error) {

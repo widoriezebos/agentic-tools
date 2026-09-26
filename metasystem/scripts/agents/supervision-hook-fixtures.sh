@@ -847,7 +847,7 @@ for failure_mode in exit sleep invalid; do
   failure_out=$tmp/brain-failure-$failure_mode.out
   [[ $(wc -l <"$failure_out" | tr -d ' ') -eq 1 ]] \
     && grep -Fq 'Metasystem brain boot failed' "$failure_out" \
-    && grep -Fq 'metasystem brain boot --root' "$failure_out" \
+    && grep -Fq 'metasystem internal brain boot --root' "$failure_out" \
     || { echo "brain boot $failure_mode failure omitted its one by-hand notice" >&2; cat "$failure_out" >&2; exit 1; }
   grep -Fq 'hookSpecificOutput' "$failure_out" \
     && { echo "brain boot $failure_mode failure injected context" >&2; exit 1; }
@@ -1093,7 +1093,7 @@ name_block_completion=${name_block_line%%$'\n'*}
 name_block_task=${name_block_line#*$'\n'}
 [[ "$name_block_completion" == 'Just completed: unknown for this turn.' ]] \
   && [[ "${name_block_task%%; Stop blocked*}" == 'Task: stop refusal fits on one screen' ]] \
-  && [[ "$name_block_task" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id '* ]] \
+  && [[ "$name_block_task" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem session report --id '* ]] \
   || { echo "STOP-TASK-NAME-HOOK block did not carry the completion line, exact slug name and both intervention flags" >&2; cat "$tmp/stop-task-name-block.out" >&2; exit 1; }
 name_block_report=$(fixture_stop_status_report \
   "$tmp/stop-task-name-block.out" "$line_root" claude stop-task-name-block) \
@@ -1116,7 +1116,7 @@ name_allow_completion=${name_allow_line%%$'\n'*}
 name_allow_task=${name_allow_line#*$'\n'}
 [[ "$name_allow_completion" == 'Just completed: unknown for this turn.' ]] \
   && [[ "${name_allow_task%%; Stop allowed*}" == 'Task: stop refusal fits on one screen' ]] \
-  && [[ "$name_allow_task" == 'Task: stop refusal fits on one screen; Stop allowed; needs supervision repair; Report: metasystem report stop-status --id '* ]] \
+  && [[ "$name_allow_task" == 'Task: stop refusal fits on one screen; Stop allowed; needs supervision repair; Report: metasystem session report --id '* ]] \
   || { echo "STOP-TASK-NAME-HOOK allowance did not carry the completion line, exact slug name, repair flag and human report locator" >&2; cat "$tmp/stop-task-name-allow.out" >&2; exit 1; }
 name_allow_report=$(fixture_stop_status_report \
   "$tmp/stop-task-name-allow.out" "$line_root" claude stop-task-name-allow) \
@@ -1421,8 +1421,8 @@ if [[ $step == runtime-list && ${1:-} == runtime && ${2:-} == list ]]; then
   exit 41
 fi
 if [[ $step == arming-failure && ${1:-} == up ]]; then
-  echo 'component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run metasystem steward restart from an agent-free terminal"'
-  echo 'up outcome=failed component=steward-runner remedy="ENROLLMENT_DRIFT: run '\''metasystem steward restart'\'' from an agent-free terminal"'
+  echo 'component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run metasystem internal steward restart from an agent-free terminal"'
+  echo 'up outcome=failed component=steward-runner remedy="ENROLLMENT_DRIFT: run '\''metasystem internal steward restart'\'' from an agent-free terminal"'
   exit 44
 fi
 if [[ $step == narrator-failure && ${1:-} == steward && ${2:-} == digest-pending ]]; then
@@ -1646,11 +1646,11 @@ arming_2_report=$(fixture_stop_status_report "$tmp/arming-2.out" "$line_root" cl
   || { echo "second arming failure exposed no identity-bound report" >&2; exit 1; }
 grep -Fq 'occurrence 2' <<<"$arming_2_report" \
   && grep -Fq 'supervision arming failed' <<<"$arming_2_report" \
-  && grep -Fq "ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal" <<<"$arming_2_report" \
+  && grep -Fq "ENROLLMENT_DRIFT: run 'metasystem internal steward restart' from an agent-free terminal" <<<"$arming_2_report" \
   || { echo "repeated arming failure omitted its cause, count, or exact remedy" >&2; cat "$tmp/arming-2.out" >&2; exit 1; }
 # The report retains the command output as JSON; the quotes inside the
 # component line are escaped there.
-grep -Fq 'component=steward-runner outcome=failed detail=\"ENROLLMENT_DRIFT\" remedy=\"run metasystem steward restart from an agent-free terminal\"' <<<"$arming_1_report" \
+grep -Fq 'component=steward-runner outcome=failed detail=\"ENROLLMENT_DRIFT\" remedy=\"run metasystem internal steward restart from an agent-free terminal\"' <<<"$arming_1_report" \
   && grep -Fq 'up outcome=' <<<"$arming_1_report" \
   || { echo "arming failure lost its component detail, remedy, or aggregate" >&2; cat "$tmp/arming-1.out" >&2; exit 1; }
 grep -Fq 'stop-condition infrastructure supervision-arming-failed supervision-arming ' \

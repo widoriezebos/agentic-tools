@@ -268,7 +268,7 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "bounded-goal") ||
 			!strings.Contains(role.Reason, "claim epoch 1") || !strings.Contains(role.Reason, "claim epoch 5") ||
 			!strings.Contains(role.Remedy, "metasystem internal goal restamp --id bounded-goal") ||
-			!strings.Contains(role.Remedy, "metasystem up") {
+			!strings.Contains(role.Remedy, "metasystem session start") {
 			t.Fatalf("same-lineage divergence = %+v", role)
 		}
 		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseEpochMismatch, Goal: "bounded-goal"}) {

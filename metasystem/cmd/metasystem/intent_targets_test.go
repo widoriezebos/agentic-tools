@@ -98,7 +98,7 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 		{steward.RoleTrunkRed, false, []string{"metasystem", "incident", "list"}},
 		{steward.RoleProofAttempts, false, []string{"metasystem", "test", "run"}},
 	} {
-		public, _ := publicHealthRemedy(steward.RoleVerdict{Role: row.role, Remedy: "metasystem up --repo /x"}, row.stopped)
+		public, _ := publicHealthRemedy(steward.RoleVerdict{Role: row.role, Remedy: "metasystem session start --repo /x"}, row.stopped)
 		if !slices.Equal(public, row.want) {
 			t.Errorf("%s stopped=%t = %v, want %v", row.role, row.stopped, public, row.want)
 		}

@@ -71,7 +71,7 @@ type landedRearmDecision struct {
 }
 
 func landedRearmCommand(checkout string) string {
-	return "scripts/agents/go-build.sh && bin/metasystem up --repo " + shellQuote(checkout)
+	return "scripts/agents/go-build.sh && bin/metasystem session start --repo " + shellQuote(checkout)
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }

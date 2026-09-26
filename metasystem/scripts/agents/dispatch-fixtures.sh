@@ -413,7 +413,7 @@ if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == br
   setup_brain_dispatch_bed
 	if [[ "$fixture_scenario" == brain-delegate-refuses ]]; then
 	    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" internal delegate --role implementer --brief "$tmp/missing" --goal none-explicit --destructive-reach MECHANICAL)
-	    [[ "$out" == *"the brain never dispatches"* && "$out" == *"metasystem delegate --role"* ]] || { echo "delegate refusal omitted the node remedy" >&2; exit 1; }
+	    [[ "$out" == *"the brain never dispatches"* && "$out" == *"metasystem internal delegate --role"* ]] || { echo "delegate refusal omitted the node remedy" >&2; exit 1; }
 	    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" internal delegate --follow-up missing-job --brief "$tmp/missing")
 	    [[ "$out" == *"the brain never dispatches"* ]] || { echo "follow-up refusal omitted the brain detail" >&2; exit 1; }
 		out=$(assert_brain_dispatch_refusal env -u METASYSTEM_DELEGATE_INTERNAL "$brain_repo/scripts/agents/dispatch.sh" dispatch)
@@ -1193,8 +1193,8 @@ set -e
 [[ $seat_stop_rc -eq 1 ]] \
   || { echo "a fake delegate's stop returned $seat_stop_rc instead of refusing" >&2; cat "$agent_fixture/seat-stop.out" >&2; exit 1; }
 seat_stop_expected=$(printf '%s\n%s' \
-  'metasystem stop: stop is a human act at a terminal; this caller is DELEGATE.' \
-  "at an agent-free terminal, run: metasystem stop --repo $agent_repo")
+  'metasystem system stop: stop is a human act at a terminal; this caller is DELEGATE.' \
+  "at an agent-free terminal, run: metasystem system stop --repo $agent_repo")
 seat_stop_actual=$(cat "$agent_fixture/seat-stop.out")
 [[ "$seat_stop_actual" == "$seat_stop_expected" ]] \
   || { echo "a fake delegate's stop did not print the exact terminal refusal" >&2; cat "$agent_fixture/seat-stop.out" >&2; exit 1; }
@@ -4644,7 +4644,7 @@ mission_lease_staged=$(mktemp "$agent_repo/artifacts/agents/missions/mission-alp
 printf '{"missionId":"mission-alpha","pid":%s,"pgid":%s,"instanceTag":"mission-lease-tag","startedAt":"%s","renewedAt":"%s"}\n' \
   "$mission_pid" "$mission_pgid" "$mission_lease_now" "$mission_lease_now" >"$mission_lease_staged"
 mv "$mission_lease_staged" "$agent_repo/artifacts/agents/missions/mission-alpha/lease.json"
-printf '{"%s":{"pgid":%s,"command":"metasystem util hold --tag mission-lease-tag"}}\n' \
+printf '{"%s":{"pgid":%s,"command":"metasystem internal util hold --tag mission-lease-tag"}}\n' \
   "$mission_pid" "$mission_pgid" >"$mission_identity"
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
 run_agent_fixture envelope-model-override envelope-model-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
@@ -5778,7 +5778,7 @@ run_fixture_arm "steward end-to-end initial arm" - \
 steward_placeholder_out=$(cd "$steward_repo" && METASYSTEM_BIN="$steward_enrolled_engine" \
   "$steward_enrolled_engine" steward revive --repo "$steward_repo" 2>&1) \
   && { echo "steward placeholder: a launch with the template model was not refused: $steward_placeholder_out" >&2; exit 1; }
-grep -Fq "role steward-continuation resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem config tailor --conf" <<<"$steward_placeholder_out" \
+grep -Fq "role steward-continuation resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem internal config tailor --conf" <<<"$steward_placeholder_out" \
   || { echo "steward placeholder: the refusal did not name the key and the command: $steward_placeholder_out" >&2; exit 1; }
 grep -Fq -e "--set role.default.model.fake=" <<<"$steward_placeholder_out" \
   || { echo "steward placeholder: the refusal did not name the key to set: $steward_placeholder_out" >&2; exit 1; }
