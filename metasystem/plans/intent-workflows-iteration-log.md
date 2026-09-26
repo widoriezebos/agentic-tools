@@ -119,7 +119,7 @@ Source-grounded, not yet judgments on the unfinished build:
 ## First build checkpoint and next usability iteration
 
 Opus launch 20260926t084154-3eae3d3163 completed with exit 0, provider session
-124b0e5a-c6b5-42d0-835b-87b46082ce1e, 90 measured tool calls and 97 turns.
+124b0e5a-c6b5-42d0-835b-87b46082ce1e, 90 cumulative model calls, 96 cumulative tool calls and 97 invocation turns.
 Authoritative start/end: 08:41:54.379064Z to 09:00:02.972678Z (18m 8.6s).
 Its return incorrectly claims 150 calls/40 minutes reached and gives guessed
 local times. Root's initial continuation brief approximation of 23 minutes was
@@ -155,7 +155,7 @@ critique before authorizing its additional implementation.
 ## Second build checkpoint and continued work
 
 Continuation 2, launch 20260926t090311-bf1bba8367, returned exit 0 with
-187 measured calls and 100 turns. Its partial return is retained at
+187 cumulative model calls, 195 cumulative tool calls and 100 invocation turns. Its partial return is retained at
 artifacts/agents/intent-workflows-build-return-2.md. Actual complete-review
 composition, bound decisions, a bounded retry admission extension and automatic
 claim were built. The return explicitly distinguishes real whole-close proof from
@@ -200,3 +200,30 @@ Goal Next step now records both accepted designs, partial implementation, requir
 proof and the outstanding pull/push/integration. Separate evidence-reuse work
 remains separate. Project record check passes 147 records; diff whitespace check
 passes. Live user-owned logs remain preserved.
+
+## Third checkpoint; counting correction grounded in the measurement owner
+
+Opus continuation 3 completed at 11:40:34 CEST, launch
+20260926t092330-64b6eb51ce, exit 0. Administration, question routing/locked retry
+and withdrawal, accepted-risk lookup, project record reads and initial death-proof
+admission are implemented. Return 3 clearly leaves exceptional landing, process
+targets, typed health remedies and several real owner/positive-authority fixtures
+unfinished. Root accepts channel:Q as the explicit ambiguity choice alongside M/Q.
+Root separately drove the intermediate CLI; checkpoint-3/result.json binds its
+binary hash and twelve actual commands/exits. Root still has 45 lines, design
+help is absent and start lacks ui/machine: expected incomplete work, not proof of
+finished discovery. No product commit or code certification exists yet.
+
+Measurement precision: internal/launch/claude.go:measureClaudeTranscript scans
+the WHOLE resumed provider session. calls counts unique model response IDs;
+toolCalls counts tool_use blocks. Both are CUMULATIVE; turns comes from this
+invocation's result. Earlier prose calling calls per-launch tool calls was wrong.
+The three checkpoint snapshots are model calls 90/187/280 and tool calls
+96/195/288, so new tool calls were 96/99/93. Actual duration: first 18m8.6s,
+second 18m30.0s, third 17m3.7s. Agent approximations are not authoritative. No
+internal budget violation is inferred from a cumulative counter. Historical
+immutable briefs remain as issued; this correction governs their count claims.
+
+Main merged through 6a97b8afc (goal record only). Continuation 4 is running as
+20260926t094150-d14fba30a4, same Opus session, prioritizing unfinished parent
+paths then the accepted planning work. All original fixture obligations remain.

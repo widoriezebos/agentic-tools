@@ -23,7 +23,22 @@ root plans/rulings/AGENTS edits or real services/providers. Root owns design and
 orchestration records. Implement product/test/public docs. Use Go owners and
 existing locks/state; shell only plumbing. No dependencies or workflow database.
 
-Complete the new planning journey after the current parent's coherent checkpoint:
+PRIORITY: finish the parent gaps explicitly listed in return 3 first: exceptional
+landing, process ui/machine targets, actual shell retry/death/wait proof, collected
+work selection and retained request match, claim fixtures, typed check remedies,
+public wait resumption and legacy job closure. Then implement the accepted planning
+journey below as time permits; root will continue it in the SAME context. Do not
+abandon a parent gap because a new design now exists. No top-level completion
+claim while any critical/high row remains partial.
+
+Return-3 choice channel:Q alongside M/Q is accepted as the explicit choice for
+colliding public question IDs. Positive human administration proof remains an
+obligation, not waived because the current test bed reaches only refusals. Reuse
+existing owner fixture seams and their positive tests with exact adapter bindings;
+no new production authority escape and no global fixture state. The final matrix
+must name where the positive and negative paths are actually proved.
+
+Complete the new planning journey:
 1. design G --brief FILE [--out FILE] [--after N], show design --goal G
    [--out FILE] [--attempt N], stop design G [--out FILE] [--attempt N].
    Existing launch design roster and admission, invoking checkout, staged output,
@@ -89,3 +104,11 @@ exhaustion. Report actual metrics or say unmeasured. Return to
 metasystem/artifacts/agents/intent-workflows-build-return-4.md, with actual exits,
 owner proof vs seams, precise remaining work and any concrete design failure.
 Root will continue until complete; no certification from a checkpoint alone.
+
+Root independently drove the checkpoint-3 binary: root remains 45 lines with
+read-units/certified-chain wording; start lacks ui/machine; help design exits2.
+These are recorded incomplete checkpoints, not fresh design requests. Artifacts:
+artifacts/agents/intent-workflows-verification/checkpoint-3/result.json and
+root-checkpoint-notes.json. Malformed retry/admin/question combinations correctly
+exit2. check still forwards raw health remedies; finish the accepted typed mapping.
+Root merged main through 6a97b8afc before this launch (goal-only change).

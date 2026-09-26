@@ -27,8 +27,9 @@ remain named mandatory implementation fixtures and independent Sol review scope.
 
 Fable reviewed SHA256 89d5f0261cdf70f2bae5faf25c869b66d3fe1ccd444f619e2f669045eaa3d47d
 (preserved ee0549093); launch 20260926t092513-fbee9d93d4, same provider session,
-exit 0, 18 launch-measured calls / 9 provider turns. Its report says 9 tool calls;
-these counts use different units and are not interchangeable. Two material
+exit 0. The launch's 18 model calls are cumulative over the resumed session;
+9 provider turns describe this invocation. These are different units from tool
+calls; internal/launch/claude.go:measureClaudeTranscript owns that distinction. Two material
 findings, both accepted and retained. No third prose round.
 
 | Finding id | Disposition | Reasoning and evidence | Amendment |
