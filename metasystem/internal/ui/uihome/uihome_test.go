@@ -1,6 +1,7 @@
 package uihome
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -137,4 +138,53 @@ func TestTheAnchorIsTheDirectoryAboveTheHome(t *testing.T) {
 	t.Parallel()
 	testutil.Expect(t, "the anchor pre-exists the home",
 		Anchor("/home/someone/.metasystem"), "/home/someone")
+}
+
+// What the store holds, per workspace, across every owner in it — and nothing
+// that is not in it.
+//
+// D2 of g1-s54 is that housekeeping and everything reporting on it work only on
+// what is under the account's home. This is the measurement's half of that: the
+// walk starts at <home>/ui and reaches neither the rest of the home nor anything
+// beside it.
+func TestMeasureSumsEveryOwnerPerWorkspaceAndReadsNothingElse(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	one := "/work/one"
+	two := "/work/two"
+	plantMeasured(t, filepath.Join(home, "ui", "partner", Key(one)), "wido.jsonl", 2000)
+	plantMeasured(t, filepath.Join(home, "ui", "partner", Key(one)), "wire.jsonl", 1000)
+	plantMeasured(t, filepath.Join(home, "ui", "stickies", Key(one)), "stickies.json", 500)
+	plantMeasured(t, filepath.Join(home, "ui", "partner", Key(two)), "wido.jsonl", 10)
+	// Under the home but outside the store, and outside the home entirely.
+	plantMeasured(t, home, "armed-checkouts.jsonl", 9999)
+	plantMeasured(t, filepath.Dir(home), "beside-the-home", 9999)
+
+	measured, err := Measure(home)
+
+	testutil.Require(t, "measuring", err, nil)
+	testutil.Require(t, "one entry per workspace", len(measured), 2)
+	testutil.Expect(t, "the largest first", measured[0].Key, Key(one))
+	testutil.Expect(t, "with every owner's files in the one figure", measured[0].Bytes, int64(3500))
+	testutil.Expect(t, "then the smaller", measured[1].Key, Key(two))
+	testutil.Expect(t, "at its own size", measured[1].Bytes, int64(10))
+}
+
+// A store that is not there yet is no entries and no failure: a seat whose human
+// has written nothing has a store of nothing, and that is the true answer.
+func TestMeasureAnswersNothingForAStoreThatIsNotThereYet(t *testing.T) {
+	t.Parallel()
+	measured, err := Measure(t.TempDir())
+	testutil.Require(t, "measuring", err, nil)
+	testutil.Expect(t, "no entries", len(measured), 0)
+}
+
+func plantMeasured(t *testing.T, directory, name string, size int) {
+	t.Helper()
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatalf("cannot make %s: %v", directory, err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, name), make([]byte, size), 0o600); err != nil {
+		t.Fatalf("cannot write %s: %v", name, err)
+	}
 }

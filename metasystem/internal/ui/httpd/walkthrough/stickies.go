@@ -10,6 +10,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/stickies"
 )
 
+// fixtureStoreHome is the registry home this fixture invents, which is the
+// private store Settings measures and names. It is beside the fixture checkout
+// and never the account's own, for the reason the notepad's own comment gives.
+func fixtureStoreHome(checkout string) string {
+	return filepath.Join(filepath.Dir(checkout), filepath.Base(checkout)+"-notepad", ".metasystem")
+}
+
 // The fixture's notepad: six stickies, for every handle this fixture can act
 // as, under a home of its own.
 //
@@ -26,7 +33,7 @@ import (
 // through the panel; and two already struck off, so "Done (2)" has something
 // behind its disclosure.
 func fixtureStickies(checkout string, handles []string, now time.Time) *stickies.Store {
-	home := filepath.Join(filepath.Dir(checkout), filepath.Base(checkout)+"-notepad", ".metasystem")
+	home := fixtureStoreHome(checkout)
 	if err := os.MkdirAll(filepath.Dir(home), 0o700); err != nil {
 		log.Fatalf("cannot make the walkthrough notepad: %v", err)
 	}

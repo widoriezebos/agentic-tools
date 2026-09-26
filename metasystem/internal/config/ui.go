@@ -35,7 +35,86 @@ const (
 	// ui.partner.command.codex, ui.partner.command.devin. Unset is the
 	// runtime's published entry point on PATH.
 	UIPartnerCommandPrefix = "ui.partner.command."
+	// The private store's three bounds (g1-s54 D4). They are retention
+	// targets rather than disk ceilings — two hundred kept messages can
+	// exceed the conversation's megabytes on their own, and a day passes
+	// between sweeps — and zero disables that bound.
+	//
+	// UIStoreWireMBKey is how large the Partner's wire journal may grow
+	// before its own writer rotates it, keeping one previous.
+	UIStoreWireMBKey     = "ui.store.wire-mb"
+	DefaultUIStoreWireMB = 8
+	// UIStoreConversationMBKey is how large one human's transcript may grow
+	// before its head is trimmed.
+	UIStoreConversationMBKey     = "ui.store.conversation-mb"
+	DefaultUIStoreConversationMB = 2
+	// UIStoreConversationDaysKey is how old the oldest message of a
+	// transcript may be before its head is trimmed.
+	UIStoreConversationDaysKey     = "ui.store.conversation-days"
+	DefaultUIStoreConversationDays = 90
 )
+
+// UIStore is the private store's three bounds as this seat resolves them: the
+// numbers, in the units the keys are named in.
+type UIStore struct {
+	// WireMB is the wire journal's rotation size in megabytes.
+	WireMB int
+	// ConversationMB and ConversationDays are one transcript's two bounds.
+	ConversationMB   int
+	ConversationDays int
+}
+
+// UIStoreBounds resolves the three keys the private store is kept to.
+//
+// They are read like every other `ui.` key, and a value that is not a whole
+// number within range is a refusal rather than a silent fallback: a seat that
+// meant to widen its store must not be given the default instead. Zero is in
+// range and disables that bound, which is the one way to turn a bound off.
+func UIStoreBounds(confPath string) (UIStore, error) {
+	return uiStoreBounds(confPath, os.LookupEnv)
+}
+
+func uiStoreBounds(confPath string, lookupEnv func(string) (string, bool)) (UIStore, error) {
+	wire, err := uiStoreNumber(confPath, UIStoreWireMBKey, DefaultUIStoreWireMB, maxUIStoreMB, lookupEnv)
+	if err != nil {
+		return UIStore{}, err
+	}
+	conversation, err := uiStoreNumber(confPath, UIStoreConversationMBKey, DefaultUIStoreConversationMB, maxUIStoreMB, lookupEnv)
+	if err != nil {
+		return UIStore{}, err
+	}
+	days, err := uiStoreNumber(confPath, UIStoreConversationDaysKey, DefaultUIStoreConversationDays, maxUIStoreDays, lookupEnv)
+	if err != nil {
+		return UIStore{}, err
+	}
+	return UIStore{WireMB: wire, ConversationMB: conversation, ConversationDays: days}, nil
+}
+
+// The ceilings the three numbers are admitted within: a hundred gigabytes and a
+// hundred years. Neither is a bound anybody should set; they are there so that a
+// mistyped value is refused with the range in it rather than accepted.
+const (
+	maxUIStoreMB   = 100000
+	maxUIStoreDays = 36500
+)
+
+func uiStoreNumber(confPath, key string, fallback, ceiling int, lookupEnv func(string) (string, bool)) (int, error) {
+	value, _, err := Get(GetParams{
+		Key:        key,
+		Default:    strconv.Itoa(fallback),
+		DefaultSet: true,
+		ConfPath:   confPath,
+		LookupEnv:  lookupEnv,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("resolve %s: %w", key, err)
+	}
+	number, convErr := strconv.ParseInt(strings.TrimSpace(value), 10, 32)
+	if convErr != nil || number < 0 || number > int64(ceiling) {
+		return 0, fmt.Errorf("%s must be a whole number from 0 to %d, where 0 disables the bound", key, ceiling)
+	}
+	return int(number), nil
+}
 
 // UIListen resolves the interface listen address and returns it unvalidated;
 // the loopback rule lives in lifecycle.ValidateListen alone.
@@ -203,6 +282,12 @@ func UISettings() []UISetting {
 			Purpose: "The model the Partner's session runs. Unset is the runtime's own default."},
 		{Key: UIPartnerCommandPrefix + "<runtime>", Default: "", Family: true,
 			Purpose: "How to start one runtime's ACP server, as a command line. Unset is that runtime's published entry point on PATH."},
+		{Key: UIStoreWireMBKey, Default: strconv.Itoa(DefaultUIStoreWireMB),
+			Purpose: "How many megabytes the Partner's wire journal may reach before its writer rotates it, keeping one previous. Zero disables the bound."},
+		{Key: UIStoreConversationMBKey, Default: strconv.Itoa(DefaultUIStoreConversationMB),
+			Purpose: "How many megabytes one human's transcript may reach before its oldest messages are trimmed. The last two hundred messages are always kept. Zero disables the bound."},
+		{Key: UIStoreConversationDaysKey, Default: strconv.Itoa(DefaultUIStoreConversationDays),
+			Purpose: "How many days old the oldest message of a transcript may be before it is trimmed. The last two hundred messages are always kept. Zero disables the bound."},
 	}
 }
 

@@ -33,8 +33,12 @@ package uihome
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
@@ -70,6 +74,10 @@ func Home() (string, error) {
 	return filepath.Dir(selected), nil
 }
 
+// Root is the one directory the interface's own stores live under, which is
+// what Settings names as the private store: <home>/ui.
+func Root(home string) string { return filepath.Join(home, "ui") }
+
 // Under is the directory one owner keeps one workspace's files in:
 // <home>/ui/<owner>/<workspace key>.
 //
@@ -80,7 +88,98 @@ func Home() (string, error) {
 // digest of the whole absolute path after it, which is what makes it that
 // checkout and no other.
 func Under(home, owner, checkout string) string {
-	return filepath.Join(home, "ui", owner, workspaceKey(checkout))
+	return filepath.Join(Root(home), owner, Key(checkout))
+}
+
+// Measured is one workspace's share of the store: the key its directories are
+// named by, and what it holds across every owner in it.
+type Measured struct {
+	Key   string
+	Bytes int64
+}
+
+// Measure is what the store holds, one entry per workspace, largest first.
+//
+// It reads the store's own directory and nothing else. That is D2 of g1-s54 in
+// the one place a human is told a number: what is reported on is what is kept
+// under the account's home, never a checkout and never the state root.
+//
+// A store that is not there yet is no entries and no error: a seat whose human
+// has not spoken to the Partner and written no notes has a store of nothing,
+// and saying so is the true answer rather than a failure.
+func Measure(home string) ([]Measured, error) {
+	root := Root(home)
+	owners, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("the interface's private store at %s could not be read: %w", root, err)
+	}
+	held := map[string]int64{}
+	for _, owner := range owners {
+		if !owner.IsDir() {
+			continue
+		}
+		workspaces, err := os.ReadDir(filepath.Join(root, owner.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("the interface's private store at %s could not be read: %w", root, err)
+		}
+		for _, workspace := range workspaces {
+			if !workspace.IsDir() {
+				continue
+			}
+			bytes, err := sizeOf(filepath.Join(root, owner.Name(), workspace.Name()))
+			if err != nil {
+				return nil, err
+			}
+			held[workspace.Name()] += bytes
+		}
+	}
+	measured := make([]Measured, 0, len(held))
+	for key, bytes := range held {
+		measured = append(measured, Measured{Key: key, Bytes: bytes})
+	}
+	sort.Slice(measured, func(left, right int) bool {
+		if measured[left].Bytes != measured[right].Bytes {
+			return measured[left].Bytes > measured[right].Bytes
+		}
+		return measured[left].Key < measured[right].Key
+	})
+	return measured, nil
+}
+
+// sizeOf is what one directory holds, in the bytes of its files.
+func sizeOf(directory string) (int64, error) {
+	total := int64(0)
+	err := filepath.WalkDir(directory, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			// A file that went while this walked is a file this run does not
+			// count. The store is written under this account while the server
+			// serves it, so a walk that refused on a vanished name would report
+			// a failure where a human's own conversation had merely moved on.
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("%s could not be measured: %w", directory, err)
+	}
+	return total, nil
 }
 
 // Anchor is the directory an atomic write may make durable up to: the one
@@ -88,8 +187,9 @@ func Under(home, owner, checkout string) string {
 // below it a store may create for itself.
 func Anchor(home string) string { return filepath.Dir(home) }
 
-// workspaceKey is the one directory segment a checkout is kept under.
-func workspaceKey(checkout string) string {
+// Key is the one directory segment a checkout is kept under, which is also the
+// name a human reads in Settings beside that workspace's size.
+func Key(checkout string) string {
 	resolved := checkout
 	if absolute, err := filepath.Abs(checkout); err == nil {
 		resolved = absolute
