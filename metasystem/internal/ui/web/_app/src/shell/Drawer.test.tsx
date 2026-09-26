@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import { Drawer } from "./Drawer";
+import { asksForRoom, CARD_ROOM, Drawer } from "./Drawer";
 import { attachedDraft, type Attachment } from "../partner/attachments";
 import { draftOf } from "../partner/drafting";
 import { PartnerAs } from "../partner/store";
@@ -77,5 +77,35 @@ describe("the closed drawer's bar", () => {
     const markup = drawer(HANDED, true);
     expect(markup).not.toContain('id="drawer-composer"');
     expect(markup.split("ms-partner-draft-chip").length - 1).toBe(1);
+  });
+});
+
+/**
+ * A deposit card is the one thing in the drawer a human has to read closely
+ * before they press Record it, and two fifths of the work area is not enough
+ * for a card and the conversation above it. The first card asks the shell for
+ * the room a card and the composer need — the larger of that and what the
+ * drawer already has, which is why a drawer a human dragged taller is left
+ * alone. The shell refuses the ask outright once they have dragged at all.
+ */
+describe("the room a deposit card asks for", () => {
+  it("is asked for only where the drawer has less than a card needs", () => {
+    expect(asksForRoom(200)).toBe(true);
+    expect(asksForRoom(CARD_ROOM - 1)).toBe(true);
+    expect(asksForRoom(CARD_ROOM)).toBe(false);
+    expect(asksForRoom(CARD_ROOM + 200)).toBe(false);
+  });
+
+  it("is asked for nothing by a drawer with no height at all", () => {
+    // A drawer that is not on the screen has not been measured, and asking on
+    // behalf of a measurement nobody made would grow a drawer nobody opened.
+    expect(asksForRoom(0)).toBe(false);
+  });
+
+  it("leaves a drawer with no card at its own height", () => {
+    // Nothing on the closed bar or the open panel changes until a card arrives:
+    // the rendered drawer is the same drawer it was.
+    expect(drawer([], true)).toContain("ms-drawer-panel");
+    expect(drawer([])).toContain("ms-drawer-bar");
   });
 });

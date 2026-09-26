@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Group, Panel, Separator, type Layout, type LayoutChangedMeta } from "react-resizable-panels";
+import { Group, Panel, Separator, useGroupRef, type Layout, type LayoutChangedMeta } from "react-resizable-panels";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 
 import { AboutProvider } from "./about";
@@ -122,6 +122,12 @@ function Frame() {
   // The stored height is read once, as the layout this group opens with; from
   // there the group owns the arithmetic and a drag is what changes it.
   const [openedAt] = useState(() => readDockHeight());
+  // And the work area's own group, with the element it lays out, so that the one
+  // thing the drawer may ask for — the room a deposit card needs — is applied
+  // where the height lives. The group rather than the drawer's own panel: the
+  // panel is mounted only while the drawer is open, and the group is always here.
+  const workarea = useGroupRef();
+  const workareaElement = useRef<HTMLDivElement | null>(null);
   const layout = useMemo(() => ({ [WORK_PANEL]: 100 - openedAt, [DRAWER_PANEL]: openedAt }), [openedAt]);
 
   // The rail's stored choice applies only where an expanded rail fits; below
@@ -309,6 +315,38 @@ function Frame() {
   );
   const work = <ErrorBoundary>{panes}</ErrorBoundary>;
   const drawn = drawerOpen && !focused;
+  // The room the drawer asks for, once, when its first deposit card arrives.
+  //
+  // A human who has dragged the divider has said how tall this is, and that
+  // still rules: the stored height is what a drag writes, so a stored height
+  // that is no longer the default is a choice, and this ask is refused. The
+  // growth itself is not remembered — only a human's own drag is — so the next
+  // window opens at the height they chose or at the default they left alone.
+  const roomForACard = useCallback(
+    (pixels: number) => {
+      if (readDockHeight() !== DEFAULT_DOCK_HEIGHT) {
+        return;
+      }
+      const group = workarea.current;
+      const area = workareaElement.current;
+      if (group === null || area === null || area.clientHeight <= 0) {
+        return;
+      }
+      // The pixels the drawer asked for, as the share of the work area this
+      // group speaks in. The group validates a layout against both panels'
+      // minima, so a window too short for the ask lands at what does fit.
+      const share = (pixels / area.clientHeight) * 100;
+      // A drawer this group is not laying out has no height to grow: its panel
+      // is mounted only while the drawer is open, and an ask that arrived as it
+      // closed would be a layout naming a panel that is not there.
+      const standing = group.getLayout()[DRAWER_PANEL];
+      if (standing === undefined || share <= standing) {
+        return;
+      }
+      group.setLayout({ [WORK_PANEL]: 100 - share, [DRAWER_PANEL]: share });
+    },
+    [workarea],
+  );
   const drawer = (
     <ErrorBoundary>
       <Drawer
@@ -325,6 +363,7 @@ function Frame() {
         onEscape={() => {
           setDrawer(false, "toggle");
         }}
+        onRoom={roomForACard}
       />
     </ErrorBoundary>
   );
@@ -369,6 +408,8 @@ function Frame() {
                   orientation="vertical"
                   defaultLayout={layout}
                   onLayoutChanged={remember}
+                  groupRef={workarea}
+                  elementRef={workareaElement}
                 >
                   <Panel id={WORK_PANEL} className="ms-work-panel" minSize={MINIMUM_WORK_HEIGHT}>
                     <div className="ms-work-under" ref={setUnder}>
