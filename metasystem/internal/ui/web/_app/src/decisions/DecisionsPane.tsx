@@ -33,7 +33,7 @@ import {
   type Narrowing,
   type TabId,
 } from "./decisions";
-import { decidedCount, groupsOf, openGroup, viewTitle, type ViewId } from "./groups";
+import { decidedCount, groupOnScreen, groupsOf, viewTitle, type ViewId } from "./groups";
 import { Inbox } from "./Inbox";
 import type { Acts } from "./InboxRow";
 import { useNarrowing } from "./QueueBlock";
@@ -295,8 +295,15 @@ export function DecisionsPane() {
   // they have ticked. A Partner asked "what am I looking at" answers from
   // these and not from a guess about the whole payload.
   const filters = useMemo(
-    () => captureLines(view, chosen, openRow, narrowing, selected.length),
-    [view, chosen, openRow, narrowing, selected],
+    () =>
+      captureLines(
+        view,
+        read.state === "read" ? groupOnScreen(read.page.needsYou, chosen) : null,
+        openRow,
+        narrowing,
+        selected.length,
+      ),
+    [view, read, chosen, openRow, narrowing, selected],
   );
   useAbout(aboutLine("Decisions", view === "decided" ? tab : "inbox"), {
     tab: view,
@@ -462,7 +469,7 @@ export function Views({
 }) {
   const acting = signedIn ?? !page.signIn;
   const groups = groupsOf(page.needsYou, now);
-  const open = chosen === "" ? null : openGroup(groups, chosen);
+  const open = groupOnScreen(page.needsYou, chosen);
   return (
     <div className="ms-decisions">
       {page.signIn && <SignIn onSignIn={acts.onSignIn} />}
@@ -543,12 +550,15 @@ function SignIn({ onSignIn }: { onSignIn: () => void }) {
  */
 function captureLines(
   view: ViewId,
-  chosen: string | null,
+  open: string | null,
   openRow: string,
   narrowing: Narrowing,
   selected: number,
 ): string[] {
-  const lines = [`view: ${view}`, `group open: ${chosen === null ? "the first with something new" : chosen}`];
+  // The group the page resolved, not the one this viewer's browser remembers:
+  // a closed inbox and an inbox whose remembered group has gone both have an
+  // answer, and it is the one on the screen.
+  const lines = [`view: ${view}`, `group open: ${open ?? "none"}`];
   if (openRow !== "") {
     lines.push(`row open: ${openRow}`);
   }

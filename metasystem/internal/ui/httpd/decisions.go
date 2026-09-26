@@ -66,13 +66,6 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	standing := h.state(r)
-	// The visit is recorded as part of answering, because reading the page IS
-	// the visit, and it is recorded before the page is composed so that the
-	// window the page is composed over is the window this read established.
-	// It is this page's own entry: the landing page keeps its own, and a read
-	// here must not move it.
-	since, first := h.visitDecisions(standing.Human, now)
-
 	board := backlogOf(h.info.Observe())
 	in := decisions.Inputs{
 		Project: pane,
@@ -83,8 +76,6 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		// destination in this payload can be opened against.
 		RegisterPath: h.info.RegisterPath,
 		Human:        decisions.Standing{Proven: standing.SignedIn},
-		Since:        since,
-		First:        first,
 	}
 	if h.info.Asks != nil {
 		asked, asksErr := h.info.Asks()
@@ -102,6 +93,16 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		}
 		in.Register = read
 	}
+
+	// The visit is recorded as part of answering, because reading the page IS
+	// the visit — and it is recorded after every reader that can fail, because
+	// a read that ends in a 500 is a page nobody saw. A marker advanced by a
+	// failed read would spend this human's "new since your last visit" on a
+	// page that never rendered, and the window cannot be given back. It still
+	// stands before the page is composed, so the window the page is composed
+	// over is the window this read established. It is this page's own entry:
+	// the landing page keeps its own, and a read here must not move it.
+	in.Since, in.First = h.visitDecisions(standing.Human, now)
 	_ = json.NewEncoder(w).Encode(decisions.Compose(in, now))
 }
 
