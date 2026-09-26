@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M3EHSKGNBHDJEW5HM2PQVYMW
-- Status: accepted
+- Status: done
 - Goals: browser-interface
 
 Wido, 2026-09-26, on the conversation store's move to the account's
@@ -115,3 +115,28 @@ transcripts disposable, and the design no longer says so; the numbers
 are retention targets; the daily loop follows the fleet fetch loop's
 synthetic-tick pattern; the workspace key hashes the cleaned absolute
 path without resolving links.
+
+## Built (2026-09-26)
+
+Landed on ui-development and main; the bounds went live before the read
+and the read's fixes landed as a second merge. Built by Claude on Opus,
+read by Codex on Sol under R-124: three material findings, fixed in one
+round. The first sweep ran before the server held the checkout's
+ownership, so a second server attempt could trim a transcript the first
+was appending to; every sweep now waits on the gate that Ready opens.
+Ownership was released before housekeeping stopped, and an early return
+from Serve could hang; housekeeping has its own context, cancelled and
+joined inside Releasing and after an early return. An old runtime's
+teardown could close the new runtime's journal, after which writes
+reported success while recording nothing; the journal binds writes and
+closes to the generation that opened it. Each fix was shown to fail
+against the unfixed code.
+
+Later, when it hurts: the size measurement ignores every metadata error
+rather than only a vanished file; the trim notice's stderr line says only
+what was saved to records survives.
+
+Departures the read accepted: a trimmed mark on the first remaining
+message so repeated sweeps do not stack notices; the trailing-turn clamp
+reachable only past two hundred messages; the payload marker named
+`current`; the store card on the Settings read the page already makes.
