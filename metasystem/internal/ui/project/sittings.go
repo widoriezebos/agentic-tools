@@ -141,7 +141,7 @@ func satOn(body []string) (PileCounts, string, bool) {
 			marked = marked || hasMark(trimmed)
 			continue
 		}
-		item, is := listItem(trimmed)
+		item, is := pileEntry(line)
 		if !is {
 			continue
 		}
@@ -155,6 +155,24 @@ func satOn(body []string) (PileCounts, string, bool) {
 		}
 	}
 	return counts, last, marked
+}
+
+// pileEntry is one entry of a pile: an unindented list item, exactly as the
+// browser reads one back (web/_app/src/partner/sitting.ts's entriesIn).
+//
+// Unindented is the whole of the rule, and it is the rule because of what an
+// entry's own clause looks like: "  - Anchor: internal/session/session.go:212"
+// is a nested item under the entry above it, and a reader that counted it would
+// say a pile of one entry holds two. So the indentation is not trimmed away
+// before the question is asked, and the counts here are the counts the table
+// shows.
+func pileEntry(line string) (string, bool) {
+	for _, marker := range []string{"- ", "* "} {
+		if rest, found := strings.CutPrefix(line, marker); found {
+			return strings.TrimSpace(rest), true
+		}
+	}
+	return "", false
 }
 
 // hasMark reports whether one line carries a deposit's mark: the opener, and a

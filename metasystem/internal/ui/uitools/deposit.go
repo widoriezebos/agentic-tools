@@ -122,7 +122,7 @@ func deposit(kind, text, anchor, reason, consequence, clauseSaid string) Result 
 	case strings.TrimSpace(text) == "":
 		return refusedCall("this tool needs the words of the " + kind + " to offer; a deposit is one entry of the record")
 	case utf8.RuneCountInString(text) > bound(kind):
-		return refusedCall("a " + kind + " carries at most " + strconv.Itoa(bound(kind)) +
+		return refusedCall("the " + kind + " carries at most " + strconv.Itoa(bound(kind)) +
 			" characters and this one is " + strconv.Itoa(utf8.RuneCountInString(text)) +
 			"; offer the entry itself, shorter")
 	}
