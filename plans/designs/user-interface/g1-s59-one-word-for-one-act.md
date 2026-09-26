@@ -36,9 +36,9 @@ One act, one word, everywhere a human reads it, the public verb's:
 
 | today | after | where |
 |---|---|---|
-| Withdraw approval, Withdraw | Unapprove | card menu, act sheet title and button, Approved tab |
-| Set priority | Prioritize | card menu, rank sheet title |
-| Not now, Not now for n selected | Pause, Pause n selected | queue row, selection bar, bulk sheet title and button, inbox row |
+| Withdraw approval, Withdraw | Unapprove | card menu, act sheet title and button, Approved tab (the question sheet's own "Withdraw", which withdraws a question, is not a goal act and keeps its word) |
+| Set priority | Prioritize | card menu, rank sheet title and its submit button (RankSheet.tsx:95) |
+| Not now, Not now for n selected | Pause, Pause n selected | queue row, selection bar, bulk sheet title, button, eyebrow "To Do → Not now" and sheet name "Not now for selected" (BulkSheet.tsx:140-142), inbox row |
 | Return to queue | Resume | Not now tab, seat-park row |
 | the Decided tab "Not now" | Paused | the tab's name and its count |
 | Open goal, Approve, Edit… | unchanged | they already are the verb |
@@ -64,8 +64,10 @@ refusal is quoted as the engine says it. The CLI. Any act's behaviour.
 ## Verification and box
 
 Frontend: every test that asserted an old word asserts the new one; a
-grep over `src/` finds none of the old words outside the help terms'
-"called … until" clauses and comments; the vocabulary file regenerated;
+grep over `src/` finds none of the four goal acts' old words outside
+the help terms' "called … until" clauses and comments, the question
+sheet's "Withdraw" standing as it is; the vocabulary file regenerated
+and its drift test (src/help/terms.test.ts:142) green;
 the guards stay green; the bundle rebuilt. Screenshots: the queue with
 the selection bar, the bulk sheet, the Paused tab, the board's card menu,
 the act sheet. Box: one build lane (Claude on Opus), one code read (Codex
@@ -79,3 +81,15 @@ High: a rename with the routes untouched. Weakest: "Paused" as a tab
 name beside "Rulings", "Decisions", "Answered", "Approved" is an
 adjective among nouns; "Pauses" reads worse, and the count beside it
 carries the meaning either way.
+
+## Dispositions (Astra read, 2026-09-26, under R-124)
+
+Zero material findings, "build as written"; two non-material
+clarifications, folded because each costs one line: the absence check
+is scoped to the four goal acts, since the question sheet's "Withdraw"
+withdraws a question (S59-01); the table names the rank sheet's submit
+button and the bulk sheet's eyebrow and sheet name (S59-02). Astra
+confirmed the four names against the descriptors, the vocabulary drift
+test, "Paused" beside the other tabs, and that nothing in g1-s58's step
+1 depends on the old words: the serialisation is the bundle's alone.
+The read is saved verbatim in g1-s59-astra-critique.md.
