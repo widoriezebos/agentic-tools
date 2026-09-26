@@ -28,7 +28,13 @@ and three rulings Wido gave while it ran: "yes, only through verbs. Which
 is powerful because all the UI can do can also be done with a verb in
 principle"; "so yes, the agent must formulate in verb statements"; and
 "do the actual verb statement design last because there is a parallel
-seat working on verbs". Every cite re-read at `b19a413cf`.
+seat working on verbs". Revision 3, later the same evening, after
+Astra's round 2, the declared failsafe round: six material findings,
+every one a consequence of a round-1 fold, every one a bounded choice,
+every one folded and named as a fixture obligation in section 6; the
+loop is closed at round 2 on those six obligations, as the critique
+skill's principled exit provides, and a scoped confirmation read of the
+six folds follows. Every cite re-read at `b19a413cf`.
 
 ## 1. What exists and binds
 
@@ -88,52 +94,82 @@ seat working on verbs". Every cite re-read at `b19a413cf`.
    `Approve` loads the tree at the tip inside `Mutate` and `bindApproval`
    digests that goal's intent, tier, budget and risk (internal/goal/approval.go:455-466,
    548-560); the route takes the id and the budget and nothing that names
-   what was reviewed (acts.go:272-289).
-4. **The page already runs a list of acts, and its outcome mapping has one
-   false branch.** `runInOrder` sends one publication per goal in order,
+   what was reviewed (acts.go:272-289). The budget the approve sheet
+   offers is `prefillFor`'s: the goal's own tuple, else the project's law
+   for its tier, else the last approved goal's, else none
+   (src/backlog/moves.ts:104-122). The backlog read has a fetch-first
+   form: `loadBacklog(signal, true)` makes the server fetch the canonical
+   branch once and then observe, which the Refresh button uses and a
+   mount does not (src/backlog/api.ts:296-305); the plain read answers
+   from the accepted ref as it stands (internal/ui/snapshot/snapshot.go:116-135).
+4. **The page already runs a list of acts, and its outcome mapping has two
+   false branches.** `runInOrder` sends one publication per goal in order,
    never retries, and stops at the first answer that is not one
    (src/decisions/decisions.ts:671-687); a stopped run is terminal (:654-656);
    the sheet cannot be dismissed mid-run (:642-644); an approval's budget
    is `prefillFor`'s, and a goal with no prefill is listed and excluded
    with "needs its budget first: approve it alone" (:576-603). `outcomeOf`
    maps a failed act: a 4xx with the engine's sentence is refused; 5xx,
-   the journal's unsettled codes, the `proof-not-recorded` answer and a
-   transport failure are unresolved (src/backlog/editing.ts:216-260). The
-   refused branch is not always "nothing landed": when a push lands and
-   its confirming refetch fails, or the opid is not on the refetched tip,
-   or the confirmed follow-on effect fails, the transaction returns an
-   empty outcome whose detail begins "pushed;" together with an error
-   (internal/goal/txn.go:805-830), and `settle` turns any publish error
-   into `KindEngine` with code `refused`, a 409 (internal/ui/act/act.go:515-518,
-   510-521 of httpd/acts.go), which `outcomeOf` calls refused. The journal
-   knows better: the entry is still at `PhasePushed` with no terminal
-   outcome, readable by its opid (`goal.ReadEntry`, internal/goal/journal.go:217;
-   `PushedBlocking`, :508-519). `proof-not-recorded` is the one answer
-   that says the act landed and must not be run again (act.go:533-535),
-   and `outcomeOf` folds it into unresolved (editing.ts:256). The act
-   clients are one `request()` each (src/backlog/api.ts:259-270, 312-397).
-   No act carries a client key: the act layer mints a fresh operation id
-   per request (act.go:566), so a repeated POST is a second attempt, and a
+   the codes it lists as unsettled (`confirmed-late`, `lost`, `abandoned`,
+   `expired`), the `proof-not-recorded` answer and a transport failure are
+   unresolved (src/backlog/editing.ts:216-260). Both halves misread the
+   transaction. Its terminal outcomes `rejected`, `abandoned`, `expired`
+   and `lost` are each marked before any push lands or after every push
+   was refused: abandoned at the pre-push gates and on a mutation that
+   finds nothing to do, rejected on validation, lost to a competitor
+   whose change stands instead of ours, expired when the compare-and-set
+   was refused past the deadline (internal/goal/txn.go:717-773, 856-865,
+   895-925); every one is a definite non-write, so a redundant block in a
+   list (`NothingToDo`, verbs.go:2930) answers 409 `abandoned` and the
+   page calls it unresolved. And when a push lands and its confirming
+   refetch fails, or the opid is not on the refetched tip, or the
+   confirmed follow-on effect fails, the transaction returns an empty
+   outcome whose detail begins "pushed;" together with an error
+   (txn.go:805-830), and `settle` turns any publish error into
+   `KindEngine` with code `refused`, a 409 (internal/ui/act/act.go:515-518,
+   510-521 of httpd/acts.go), which the page calls refused. The journal
+   knows the difference: the entry is still at `PhasePushed` with no
+   terminal outcome, readable by its opid (`goal.ReadEntry`,
+   internal/goal/journal.go:217-228, which wraps a missing file and a
+   malformed one as errors; `PushedBlocking`, :508-519); `MarkTerminal`
+   itself reads the entry first and fails on the same fault
+   (journal.go:395-412), so one persistent journal fault can leave a
+   landed act unmarked. `proof-not-recorded` is the one answer that says
+   the act landed and must not be run again (act.go:533-535), and
+   `outcomeOf` folds it into unresolved (editing.ts:256). The act clients
+   are one `request()` each (src/backlog/api.ts:259-270, 312-397). No act
+   carries a client key: the act layer mints a fresh operation id per
+   request (act.go:566), so a repeated POST is a second attempt, and a
    repeated approve is not a no-op but a second approval record
    (approval.go:502-503); park, unpark, open and block refuse a repeat in
    the engine's words. A refusal's `signIn` flag opens the sign-in sheet
    through `askToSignIn(again)`, which runs `again` once when the human
    signs in and discards it, silently, when the sheet is closed instead
    (src/shell/identity.tsx:106-118, 132-136).
-5. **A page re-reads whole after an act; some offer that read to the shell;
-   a re-read can unmount an editor.** Decisions, Overview, Fleet and
-   Application offer their re-read through `useOffersRefresh`
-   (src/shell/refresh.tsx:44-52; DecisionsPane.tsx:283); the board and the
-   goal page carry their own refresh in their strip and offer none. The
-   goal page's `reload` sets a loading state that unmounts its columns,
-   and the edit sheet is owned by a block inside them (src/project/ProjectPane.tsx:202-205,
-   825); the sheet's own save avoids that by setting the board in place
-   (:886, g1-s56 Built). Every sheet renders into the work area's modal
-   layer, which makes the content under it inert while a sheet is open
-   and counts the sheets covering it in a private map
-   (src/shell/workmodal.tsx:78-95, 128-142). Nothing on the stream
-   announces a ledger change; the pages read on mount, on Refresh and
-   after their own acts.
+5. **A page re-reads whole after an act; four offer that read to the
+   shell; every offered re-read blanks the page, and two pages hold text
+   outside any sheet.** Decisions, Overview, Fleet and Application offer
+   their re-read through `useOffersRefresh` (src/shell/refresh.tsx:44-52),
+   and each offered `reload` sets a loading state that unmounts the page
+   (DecisionsPane.tsx:150-155, OverviewPane.tsx:107-110,
+   ApplicationPane.tsx:89-92, FleetPane.tsx:116-119). Fleet also has an
+   in-place re-read, `again`, which its presence event and the stream's
+   reconnect use and which "keeps whatever is on screen until the answer
+   arrives" (FleetPane.tsx:112-115, 121-142); its failed launch's Retry
+   form, an authorization word and a review date, is inline in the page
+   and in no sheet (src/fleet/LaunchCard.tsx:136-175). The goal page holds
+   two payloads: the project's, from which the goal's title, state and
+   intent are shown, and the ledger's, for the relation between goals
+   (src/project/ProjectPane.tsx:149-165, 792-800); its `reload` blanks
+   the page (:202-205) and its edit sheet's confirmed save re-reads the
+   project the same way through `onEdited`, while an unconfirmed save
+   sets the board in place and keeps the sheet mounted (:878-891). The
+   board carries its own refresh in its strip and offers none. Every
+   sheet renders into the work area's modal layer, which makes the
+   content under it inert while a sheet is open and counts the sheets
+   covering it in a private map (src/shell/workmodal.tsx:78-95, 128-142).
+   Nothing on the stream announces a ledger change; the pages read on
+   mount, on Refresh and after their own acts.
 6. **The master wants exactly this shape.** The capability inventory
    records whether the brain may read, propose or perform each action;
    "all other changes are proposal-first" (plans/designs/user-interface-design.md:119);
@@ -247,9 +283,10 @@ keeps it:
 - **I see each one land, or not, on the page I am looking at.** Each line
   says applying, applied, refused with the engine's sentence, or
   unresolved with what was said; the page in view reads again after each
-  confirmed act and when the run ends, unless a sheet of mine is open on
-  it, in which case it reads again the moment I close the sheet and
-  nothing I typed is touched.
+  confirmed act and when the run ends, keeping what is on the screen
+  until the answer arrives, and not at all while a sheet of mine is open
+  on it, in which case it reads again the moment I close the sheet.
+  Nothing I typed anywhere is touched.
 - **A failure tells me what and why, leaves the rest intact, and offers
   the way on.** A refusal is the engine's own sentence on that line, and
   the run goes on to the next, because a refusal is a no with nothing
@@ -265,10 +302,13 @@ keeps it:
   recorded" and offers no Try again at all. A reload during a run shows
   the line that was in flight as "was being applied when the page left",
   not as fresh.
-- **What I approve is what I read.** An approval or an edit applied
-  against a goal that changed since the Partner read it is refused on
-  the line, "the goal changed since this was proposed", with Open the
-  goal, so a stale card never authorises work I did not read.
+- **What I approve is what I read, with the budget I read.** Before a
+  run the page fetches the canonical branch once. An approval or an edit
+  applied against a goal whose intent, next step, tier or labels changed
+  since the Partner read it, or whose budget would now differ from the
+  one on the card, is refused on the line, "the goal changed since this
+  was proposed", with Open the goal, so a stale card never authorises
+  work or a budget I did not read.
 - **Ignoring is allowed.** A card you do not act on stays proposed, with
   its ticks; Dismiss folds it to one line that reopens; nothing expires
   into an act.
@@ -318,8 +358,11 @@ common case.
   `unpark-goal`, `edit-goal`) with the fields their bodies take, an
   approval taking no budget because the interface supplies the one the
   approve sheet would. Nothing below depends on which names the grammar
-  ends with: the catalogue is one table in the tool server, and the
-  card's words are one map from verb to the page's button word.
+  ends with: what the message persists and the runner dispatches on is
+  the route id, which does not change; the grammar is the tool's table
+  from public name and field to route id and body, and the card's words
+  are one map from route id to the page's button word, so a rename
+  touches those two and never a persisted proposal.
 - D2. **The host keeps it whole; the service admits it against the tip and
   carries what it read.** A completed `propose` call is read into
   `Action{verb, goal, fields, why}` beside its look, a failed call
@@ -345,10 +388,12 @@ common case.
   Dismiss and no checkbox. Lines render as they are admitted; the
   checkboxes and buttons are enabled at the answer's terminal beat
   (done, stopped or error), because until then the message the outcome
-  of D6 is recorded on does not exist. The card carries the whole
-  reviewed basis, so no sheet repeats it: a second dialog listing what
-  the card already lists would be a press that adds nothing to read.
-  Pressing Apply runs the ticked actions in order.
+  of D6 is recorded on does not exist. At that beat the card reads the
+  backlog once to fill each approve line's budget from `prefillFor`, and
+  keeps the tuple and its source it displayed with the line. The card
+  carries the whole reviewed basis, so no sheet repeats it: a second
+  dialog listing what the card already lists would be a press that adds
+  nothing to read. Pressing Apply runs the ticked actions in order.
 - D4. **A line is the verb's word, the subject and every argument.** The
   verb word is the button's on the page that offers the act; the subject
   is the title with the id small, linked to the goal page ("Open the
@@ -365,14 +410,19 @@ common case.
 - D5. **The run: one act per line, refusals passed, the unknown stopped
   at.** The runner sends the ticked lines in order through the existing
   clients (backlog/api.ts:312-397), one act each, never retried. Before
-  a line is sent the runner loads the backlog once for the run: an
-  approve line takes its budget from `prefillFor` as the bulk sheet does,
-  and an approve or edit line whose goal's current intent, next step,
-  tier or labels differ from `read` is refused on the line without being
-  sent, "the goal changed since this was proposed; open it and ask
-  again". A sent line takes its outcome from `outcomeOf`
-  (editing.ts:252-260): a definite refusal is the engine's sentence on
-  the line and the run goes on, since nothing landed; an unresolved
+  the first line it reads the backlog once with the fetch-first form
+  (`loadBacklog(signal, true)`), so the compare below is against the
+  canonical branch as of the press and not the loop's last cadence; an
+  approve or edit line whose goal's current intent, next step, tier or
+  labels differ from `read`, or whose `prefillFor` now answers a tuple
+  other than the one the line displays, is refused on the line without
+  being sent, "the goal changed since this was proposed; open it and ask
+  again"; an approve line that passes sends the tuple it displayed and
+  no other. A sent line takes its outcome from `outcomeOf`
+  (editing.ts:252-260), corrected as D6 says: a definite refusal, which
+  is every 4xx the engine explains, including the transaction's own
+  `rejected`, `abandoned`, `expired` and `lost`, is the engine's sentence
+  on the line and the run goes on, since nothing landed; an unresolved
   answer stops the run, the lines after it say "not run", and the foot
   offers Continue with the rest, which runs them from the first not-run
   line; the answer whose code is `proof-not-recorded` is recorded as
@@ -386,14 +436,20 @@ common case.
   section's offered re-read, but only while no sheet covers the work
   area: the modal layer's provider keeps its cover count in state and
   exposes `covered`, and a re-read asked while covered is made when the
-  count returns to zero, so no mounted editor is unmounted under a human
-  who is typing. The board and the goal page offer their re-read through
-  `useOffersRefresh` with one added flag, `inStrip`, that keeps the
-  header from showing a second icon beside the one their strip has; the
-  goal page's offer re-reads its ledger in place, as its own save does
-  (ProjectPane.tsx:886), never through the loading state.
+  count returns to zero. **An offered re-read keeps the page mounted**:
+  it sets what it read in place and never passes through the loading
+  state, which is for the first read and for Retry after a failure; the
+  four pages that offer one today change their offered function to say
+  so, Fleet offering the in-place `again` it already has, so its inline
+  Retry form and every other text outside a sheet survives. The board
+  and the goal page offer their re-read through `useOffersRefresh` with
+  one added flag, `inStrip`, that keeps the header from showing a second
+  icon beside the one their strip has; the goal page's offer re-reads
+  both its payloads, the project's and the ledger's, and sets both in
+  place, so the title, the state chip and the intent it shows follow a
+  confirmed act on the goal in view.
 - D6. **The outcome is recorded where the proposal is, before and after
-  the act; the act layer says "pushed" when that is all it knows.**
+  the act; the act layer says what it knows and no more.**
   `Message.proposals[]` on the Partner's message, one entry per admitted
   or refused action, each with `state: waiting | applying | applied |
   refused | unresolved | dismissed`, `words` and `at`. Before sending a
@@ -413,15 +469,23 @@ common case.
   the one press that writes one. Dismiss records `dismissed` on every
   waiting line. If an outcome write fails after the act, the line keeps
   its state for the page's life and says "the conversation could not
-  record this". In the act layer, `settle` learns the one distinction it
+  record this". In the act layer, `settle` learns the distinctions it
   lacks: on a publish error it reads its own journal entry by opid
-  (`goal.ReadEntry`), and an entry still at `PhasePushed` with no terminal
-  outcome is answered as `KindFailed` with code `pushed-unknown`, "pushed;
-  whether it landed is unresolved: <the detail>; the page's next read says
-  what the ledger did", which the existing mapping already calls
-  unresolved because it is a 500; every other publish error stays
-  `refused`. Every act from this browser inherits that correction, the
-  edit sheet's Use and save included.
+  (`goal.ReadEntry`); an entry at `PhasePushed` with no terminal outcome
+  answers `KindFailed` with code `pushed-unknown`, "pushed; whether it
+  landed is unresolved: <the detail>; the page's next read says what the
+  ledger did"; an entry the journal cannot read for any reason but its
+  absence answers `KindFailed` with code `journal-unreadable` and the
+  read's own words, because nothing then proves the push did not land;
+  an absent entry, one at `PhaseCreated`, or a terminal one answers
+  `refused` as today, because the push never left or was refused. Both
+  new codes are 500 and the page's mapping already calls them unresolved.
+  The page's mapping itself is corrected in the one place it is written:
+  its unsettled list keeps `confirmed-late` alone, so `rejected`,
+  `abandoned`, `expired` and `lost` are refused, which is what the
+  transaction means by them. Every act from this browser inherits both
+  corrections, the edit sheet's Use and save and the Decisions bulk
+  sheet included.
 - D7. **Sign-in is as every act's, and never holds the run.** With no
   proven session the card's button reads "Sign in to apply" and opens
   the sign-in sheet through `askToSignIn(run)`. A refusal carrying
@@ -460,11 +524,13 @@ common case.
 - D10. **Nothing else moves.** No abandon (a ruling in R-125's shape would
   be needed first); no checkout writes, stickies or questions in the
   catalogue; no editing of an argument on the card; no undo; no
-  owner-side basis digest (the freshness guard of D5 is the page's
-  compare of what it read, and the engine's checks at the act remain the
-  authority; the digest `bindApproval` already computes is the next
-  step's material); no Partner authorship in the ledger's History; no
-  marker on the subject's row on the board.
+  owner-side basis compare inside the transaction: the fetch-first read
+  and the page's compare of D5 leave the card the window between that
+  read and the transaction's own compare-and-set, which is the window
+  every Approve button from this browser has today and narrower than the
+  sheet's, whose row can be five seconds old; the digest `bindApproval`
+  already computes is the next step's material; no Partner authorship in
+  the ledger's History; no marker on the subject's row on the board.
 
 ## 4. Step 1, and what waits
 
@@ -484,11 +550,12 @@ row, one admission rule against the project reader and one client each);
 so an argument can be edited before applying; a "proposed" marker on the
 subject's row on the board and in the queue; abandon, after its ruling;
 the Partner's authorship on the ledger's history line; the owner-side
-basis digest per action, checked inside the transaction (gate 2's review
-basis, on `ApprovalDigest`); keyboard operation of the card; proposals
-across several answers as one list; bulk Try again; the launch route's
-row in the act table; the Decisions bulk sheet taking the same
-refusal-passed run rule.
+basis compare on the approve and edit routes, checked inside the
+transaction on `ApprovalDigest` (gate 2's review basis); keyboard
+operation of the card; proposals across several answers as one list;
+bulk Try again; the launch route's row in the act table; the Decisions
+bulk sheet taking the same refusal-passed run rule; `confirmed-late`
+shown as landed rather than unresolved.
 
 ## 5. Payload and routes
 
@@ -504,13 +571,15 @@ turn as `proposals`. The route `POST /api/partner/turns/<turn>/proposals/<index>
 with `{state, words}`, the conversation hand's policy, answering the
 snapshot; a state that is not one of the six, an index the message does
 not carry, a turn that is not this conversation's or one still running
-is refused with words. The act refusal code `pushed-unknown` under 500.
-The describe table gains `{ID: routeEditGoal, Title: "Edit a goal",
-Requires: ledgerHand}` and the new route's own row, and the completeness
-test's route list (describe_test.go:22-31) gains both, so the table
-cannot lose them again; the launch route's missing row is noted for
-later, not this slice's. The refresh offer gains `inStrip`; the work-area
-provider exposes `covered`. Nothing else changes shape.
+is refused with words. The act refusal codes `pushed-unknown` and
+`journal-unreadable` under 500; the page's unsettled list reduced to
+`confirmed-late`. The describe table gains `{ID: routeEditGoal, Title:
+"Edit a goal", Requires: ledgerHand}` and the new route's own row, and
+the completeness test's route list (describe_test.go:22-31) gains both,
+so the table cannot lose them again; the launch route's missing row is
+noted for later, not this slice's. The refresh offer gains `inStrip` and
+its contract that the offered function keeps the page mounted; the
+work-area provider exposes `covered`. Nothing else changes shape.
 
 ## 6. Verification and box
 
@@ -525,38 +594,47 @@ reasons, the title carried; the message, the stream and the snapshot
 carrying it; the outcome route's policy, its six states, its refusal of
 a running turn and of an unknown index, and the message rewritten in
 place with the rest of the transcript untouched; the context block's
-line from recorded states; `settle` answering `pushed-unknown` for a
-publish error whose journal entry is pushed and not terminal, and
-`refused` for one whose entry is terminal or absent, through a fixture
-publish that returns the transaction's own "pushed;" result with its
-error; the describe table's row and a join test that every ledger act in
-the catalogue is in the table and every table row the catalogue admits
-is in the catalogue. Frontend: the line's words for each verb, the tier
-derived and the answers named, the approval's intent, budget and the
-excluded line; the card's states as pure functions with the run's
+line from recorded states; the describe table's row and a join test
+that every ledger act in the catalogue is in the table and every table
+row the catalogue admits is in the catalogue. The six fixture
+obligations from Astra's round 2, one test each, in the act layer and
+the page: (S58-07) the run's first read is the fetch-first form, and a
+goal whose intent changed between the card and the press is refused on
+the line unsent; (S58-08) an approve line sends the tuple it displayed,
+and a line whose `prefillFor` now answers another tuple is refused
+unsent; (S58-09) `settle` answers `pushed-unknown` for a publish error
+whose journal entry is pushed and not terminal, `journal-unreadable` for
+one whose entry cannot be read, and `refused` for an absent, created or
+terminal entry, through a fixture publish that returns the transaction's
+own "pushed;" result with its error and a journal made unreadable;
+(S58-10) Fleet's offered re-read keeps its Retry form mounted with its
+text; (S58-11) the goal page's offered re-read refreshes the title and
+the intent it shows and keeps its columns mounted; (S58-12) a redundant
+block answered `abandoned` is refused, not unresolved, and the next line
+is sent. Frontend, beyond those: the line's words for each verb, the
+tier derived and the answers named, the approval's intent, budget and
+the excluded line; the card's states as pure functions with the run's
 rules, a refusal passed and the next line sent, an unresolved answer
 stopping the run and Continue running the rest from the first not-run
 line, `proof-not-recorded` recorded as applied without Try again, Try
 again sending one, the ref guard refusing a second Apply mid-run, the
-buttons disabled until the terminal beat; the freshness guard refusing
-an approve and an edit whose goal changed and passing one whose goal did
-not; the two outcome writes per line, a failed `applying` write stopping
-the run unsent, and the reload showing `applying` as in flight; Sign in
-to apply, a `signIn` refusal ending the run with the sheet's success
-running on from the line, and a closed sheet leaving the card settled;
-the offered re-read called after a confirmed act, deferred while
-`covered` and made when it clears; the `inStrip` flag hiding the
-header's icon; the goal page's offer keeping its columns mounted; the
-bar's count; the guards stay green, with the new call sites rowed in
-`cuts.test.ts`. Walkthrough: the fake Partner answers a canned proposal
-of three actions and a canned single open; the fixture's canned acts
-refuse one goal by name and answer 500 for another, so a refused line
-passed and an unresolved line stopping the run are both seen;
-screenshots at 1280 and 400: the card of six, four applied and one
-refused, the single open, the reload with a line in flight, the bar's
-count. Budgets as always. Box: one build lane (Claude on Opus), one code
-read (Codex on Sol) with one fix round under R-124, after Astra's read;
-two attempts, 240 to 360 job-minutes.
+buttons disabled until the terminal beat; the two outcome writes per
+line, a failed `applying` write stopping the run unsent, and the reload
+showing `applying` as in flight; Sign in to apply, a `signIn` refusal
+ending the run with the sheet's success running on from the line, and a
+closed sheet leaving the card settled; the offered re-read called after
+a confirmed act, deferred while `covered` and made when it clears; the
+`inStrip` flag hiding the header's icon; every offered re-read keeping
+its page mounted; the bar's count; the guards stay green, with the new
+call sites rowed in `cuts.test.ts`. Walkthrough: the fake Partner answers
+a canned proposal of three actions and a canned single open; the
+fixture's canned acts refuse one goal by name and answer 500 for
+another, so a refused line passed and an unresolved line stopping the
+run are both seen; screenshots at 1280 and 400: the card of six, four
+applied and one refused, the single open, the reload with a line in
+flight, the bar's count. Budgets as always. Box: one build lane (Claude
+on Opus), one code read (Codex on Sol) with one fix round under R-124,
+after Astra's confirmation read; two attempts, 240 to 360 job-minutes.
 
 ## 7. Self-grade
 
@@ -565,16 +643,16 @@ two, the act clients and the sign-in path every button uses, with the
 run never waiting on a sheet. High on D3 and D4: the card says what the
 sheets say, in their words, and is the master's own result card with
 the reviewed basis on it. Medium on D5: the run rule differs from the
-bulk sheet's in passing a refusal, which rests on `outcomeOf`'s refused
-branch being a definite no, and the act layer's one correction is what
-makes that branch true; the freshness guard is the page's compare and
-not the owner's digest. Medium on D6: the first write into a Partner
-message after it was appended, one route with six states, needed so a
-reload cannot show an applied act as fresh. Weakest: the grammar comes
+bulk sheet's in passing a refusal, which rests on the corrected mapping
+of D6 being true of the transaction, and the six fixtures of section 6
+are what hold it; the freshness guard is the page's compare after a
+fetch and not the owner's digest. Medium on D6: the first write into a
+Partner message after it was appended, one route with six states, and
+two corrections to code every act shares. Weakest: the grammar comes
 last by ruling, so the build proves the mechanism against route ids and
 the words a human reads on the line are the one thing that may change
-after the seat lands; the map from verb to word is kept in one place for
-that reason.
+after the seat lands; the map from route id to word is kept in one place
+for that reason.
 
 ## Dispositions (Astra round 1, 2026-09-26, under R-124)
 
@@ -595,3 +673,27 @@ scene's count. Folded from Wido's rulings during the read: a refusal is
 passed and only an unresolved answer stops the run; the principle and
 the skill sentence of D9; the grammar of D1 designed last against the
 verbs seat's catalogue, with a provisional catalogue for the build.
+
+## Dispositions (Astra round 2, the failsafe round, 2026-09-26, under R-124)
+
+Six material findings, every one a consequence of a round-1 fold, which
+the critique skill names as the loop critiquing itself and the point to
+stop. Every one is mechanical-grain, a bounded choice rather than an
+invariant, and every one is folded and named as a fixture obligation in
+section 6, so the loop closes at round 2 on six fixture obligations
+under the skill's principled exit; the code read is the arbiter prose
+review stopped being. One finding is accepted in part. Every code claim
+re-read before folding.
+
+| id | finding | fold |
+|---|---|---|
+| S58-07 | the freshness compare reads the browser's accepted tip, which can lag the canonical branch, and stands outside the transaction's compare-and-set | accepted in part: the run's first read is the fetch-first form, so the compare is against the canonical branch as of the press (D5); the in-transaction compare is refuted as step 1: the window left is the one every Approve button has today and narrower than the sheet's, and the owner-side digest is the next step (D10, section 4) |
+| S58-08 | the card displays one budget and the run takes another from a fresh `prefillFor`, so the confirmed tuple is not the sent one | the card keeps the tuple and source it displayed with the line and sends that tuple; a fresh prefill that differs refuses the line unsent (D3, D5) |
+| S58-09 | a journal that cannot be read leaves `MarkTerminal` and the new `ReadEntry` failing alike, so a landed act reads as refused with a retry | an unreadable entry answers `journal-unreadable` under 500, unresolved; only an absent, created or terminal entry is refused (D6) |
+| S58-10 | Fleet's inline Retry form, an authorization word and a date, is in no sheet, and Fleet's offered `reload` blanks the page | every offered re-read keeps its page mounted; Fleet offers the in-place `again` it has (D5) |
+| S58-11 | the goal page's title, state and intent come from the project payload, which an in-place ledger re-read leaves unchanged | the goal page's offer re-reads both payloads and sets both in place (D5) |
+| S58-12 | a redundant block answers 409 `abandoned`, which the page's unsettled list calls unresolved, so a definite no-op stops the run | the unsettled list keeps `confirmed-late` alone; `rejected`, `abandoned`, `expired` and `lost` are refused, as the transaction means them (D6) |
+
+Non-material, folded because it costs one sentence: a rename after the
+grammar lands touches the tool's table and the word map and never a
+persisted proposal, because the message persists the route id (D1).

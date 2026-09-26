@@ -70,3 +70,80 @@ Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, against revision 1 of 
 - Richer card editing, keyboard shortcuts and ledger-level Partner attribution remain deferred; none is needed to resolve the failures above.
 
 VERDICT: 6 material findings (fail test 2): S58-01, S58-02, S58-03, S58-04, S58-05, S58-06
+
+---
+
+# Astra's round 2, the failsafe round, on revision 2
+
+Produced 2026-09-26 by Codex on `gpt-6-astra`, read-only, on the same critic chain, against revision 2 at `e520a9194`. Verbatim; the dispositions are the design's revision 3.
+
+---
+
+1. **S58-07 — High — The freshness check does not bind the transaction to the reviewed goal.**
+
+   **Evidence:** Design D5; `loadBacklog` (metasystem/internal/ui/web/_app/src/backlog/api.ts:303); `Observe` (metasystem/internal/ui/snapshot/snapshot.go:116); `runTransaction` (metasystem/internal/goal/txn.go:715); `Approve` (metasystem/internal/goal/approval.go:548).
+
+   **Failure:** The card shows queued goal G with intent A. Canonical G changes to B while the browser's accepted tip still contains A. The runner's ordinary backlog read returns A, so its comparison passes; the approval transaction fetches canonical B and approves B. Even forcing a fresh fetch before submission leaves the comparison outside the transaction and its CAS retries.
+
+   **Change:** Carry the reviewed basis into approve/edit and compare it inside each transaction mutation before publishing.
+
+   **Test 1:** Yes—changes the request contract and owner checks. **Test 2:** Fails **SAFE**: stale reads can authorize unreviewed work or overwrite an intervening edit; this part of the deferred owner check is necessary for step 1.
+
+2. **S58-08 — High — Approval can send a different budget from the one displayed.**
+
+   **Evidence:** Design D4, D5, the proposal payload; `prefillFor` (src/backlog/moves.ts:104).
+
+   **Failure:** The card displays budget A. G's budget changes to B before Apply, without changing intent, next step, tier or labels. D5 reloads the backlog and takes B from `prefillFor`; all four freshness comparisons pass. The press that confirmed A therefore submits B. The proposal payload retains neither the displayed tuple nor its source.
+
+   **Change:** Capture the displayed budget and source with the approval line and submit that tuple, requiring renewed confirmation before substituting another.
+
+   **Test 1:** Yes—changes the captured approval data and runner inputs. **Test 2:** Fails **SAFE**: the submitted budget is not necessarily the budget the human confirmed.
+
+3. **S58-09 — High — An unreadable journal still turns a landed act into "refused."**
+
+   **Evidence:** Design D6; `runTransaction` (txn.go:833); `MarkTerminal` (metasystem/internal/goal/journal.go:395); `ReadEntry` (journal.go:217).
+
+   **Failure:** A push lands and its trailer is verified. A journal I/O failure then prevents `MarkTerminal` from reading the entry, so publication returns an error. The same failure prevents D6's subsequent `ReadEntry`. No readable `PhasePushed` entry satisfies its condition, and "every other publish error stays refused." The card reports a definite non-write and offers retry although the act landed. This requires one persistent journal-read fault, not two independent failures.
+
+   **Change:** Treat journal-read failure as unresolved unless separate publication evidence proves that nothing was sent.
+
+   **Test 1:** Yes—changes the new outcome rule and its failure-path test. **Test 2:** Fails **SAFE**: a landed act receives a false refusal and an invitation to repeat it.
+
+4. **S58-10 — High — The modal guard misses Fleet's inline authorization editor.**
+
+   **Evidence:** Design D5; `LaunchCard` Retry (src/fleet/LaunchCard.tsx:136); `FleetPane` reload (src/fleet/FleetPane.tsx:116); refresh offer (FleetPane.tsx:141).
+
+   **Failure:** On Fleet, the human types authorization text and a review date into a failed launch's inline Retry form. No sheet covers the work area. They apply a goal proposal in the Partner drawer. Its automatic reread invokes Fleet's `reload`, which switches to loading and unmounts `Blocks`, `LaunchCard` and `Retry`. Both unsent fields disappear.
+
+   **Change:** Make Fleet's proposal-triggered reread preserve the mounted retry editor, using its existing in-place reread path.
+
+   **Test 1:** Yes—changes which Fleet refresh callback automatic updates invoke. **Test 2:** Fails **SAFE**: ordinary use loses unsaved human text despite the modal guard.
+
+5. **S58-11 — Medium — The goal-page reread leaves the changed goal visibly unchanged.**
+
+   **Evidence:** Design D5; `Briefed` (src/project/ProjectPane.tsx:149); `GoalBlock` (ProjectPane.tsx:792).
+
+   **Failure:** While viewing G, apply a proposal changing its intent. D5 rereads only `ledger`, but the title, state chip and intent come from `briefing.goal`, derived from the separate project payload. They retain the old values after confirmation. The cited callback at line 886 deliberately preserves that payload after an **unconfirmed** save; a confirmed save instead calls `onEdited` to reread the project.
+
+   **Change:** Refresh both payloads in place after a confirmed proposal act while preserving the mounted columns.
+
+   **Test 1:** Yes—corrects the cited premise and the goal-page refresh implementation. **Test 2:** Fails **WORK**: the first successful edit or approval does not update the goal information the human is viewing.
+
+6. **S58-12 — Medium — A definite no-op still stops the refusal-passed run as unresolved.**
+
+   **Evidence:** Design D5; `blockRequest` (metasystem/internal/goal/verbs.go:2930); `terminalFromMutate` (txn.go:901); `settle` (act.go:519); `UNSETTLED` (src/backlog/editing.ts:227).
+
+   **Failure:** Apply `[block Y by X, set priority Z]` when Y already waits for X. Admission permits both. The block returns `NothingToDo`, which becomes `OutcomeAbandoned` with no publish error, then HTTP 409/code `abandoned`. `outcomeOf` calls that unresolved, so Z is not run. D6 changes only publish-error handling and never reaches this definite non-write.
+
+   **Change:** Give proven no-write outcomes a refusal classification that lets the runner continue.
+
+   **Test 1:** Yes—changes outcome mapping and the refusal-passed verification case. **Test 2:** Fails **WORK**: an ordinary redundant proposal stops the run contrary to Wido's ruling.
+
+**Deferred and non-material**
+
+- Step 1 and its deferred list are explicit.
+- Terminal-beat gating, failed-`applying` write handling, `proof-not-recorded` treatment and non-awaiting sign-in address their earlier findings.
+- The provisional grammar can serve step 1; later renaming must account for persisted proposal names and field parsing, beyond the button-word map.
+- No additional unsafe mixed-verb combination was demonstrated beyond the basis and outcome defects above.
+
+VERDICT: 6 material findings (fail test 2): S58-07, S58-08, S58-09, S58-10, S58-11, S58-12
