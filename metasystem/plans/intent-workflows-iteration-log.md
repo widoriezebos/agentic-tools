@@ -351,3 +351,32 @@ Correction1 launch20260926t104918-a3b719920f completed12:52:10 CEST: full launch
 20260926t105527-7f2362031e. Final computed import and independent Sol critique are
 still pending. Read-owner design_request.go is a read-only primary dependency,
 not part of its returned patch. No product is certified by these checkpoints.
+
+
+## Integrated independent read and owner-test changes
+
+Root computed and imported read-owner final four-file patch after both source
+corrections, tree1ab2d3fc26f67253fb7461e55972719921fe4173, patch SHA256
+08ea63aa28e15429d84e36595eef453971f2c149eaf24540d2be04444713a9ad.
+The copied design_request.go dependency matched primary byte-for-byte and was
+excluded. Full launch previously passed; final naming/display focused tests and
+mutation check pass. Main builder's integration marker names actual API and fresh
+public-surface audit. Import is not independent Sol certification.
+
+Positive tests imported as exactly two new files, tree
+16b7d52c56c520c077fbab9d113eb0ea558e02f3, SHA256
+b0e894b500876e38892c12d15f03b5af1293b535b3023e17135540239cd47d7c.
+Return2 reports8 actual owner positives (including controlled pending question
+wait -> authenticated channel answer -> public continuation), and2 preserved
+failing reproducers: landing-event observation and actual carried land.sh staging.
+Main builder reproduced the first and reports a focused fix; final combined proof
+is pending. Carried transport still fails and remains required.
+
+Carried Fable r1 completed13:02:11 CEST, report fully read,4 declared material
+findings plus IC-C5 minor. Root joined all5 and folded fetch preconditions, PRIMARY
+mutex/root, top-level apply and public replacement remedy. Duplicate patch storage
+was deleted; the minimal old base/workspace identity remains because CarryWord has
+no code endpoint, and diff(new main, old approved tree) could undo newer product.
+Final Fable r2 is20260926t110543-be619ff15f, same session
+3e48acf8-042b-4abb-b5df-c0909ff54a1f. No carried product extension authorized yet.
+Live main pull still up to date at e3a86b67e; user-owned logs preserved.

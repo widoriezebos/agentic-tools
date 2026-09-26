@@ -1,7 +1,7 @@
 # Complete exceptional delivery through human intent
 
 Root-authored implementation correction to accepted designs/intent-workflows.md,
-IW-4. Status: draft for Fable. Goal: verbs-match-intent. 26 September 2026.
+IW-4. Status: revised draft for Fable round 2. Goal: verbs-match-intent. 26 September 2026.
 This fixes a demonstrated missing composition, not a new authority policy.
 
 ## First use and smallest contract
@@ -44,33 +44,50 @@ with their current owners. No new public verb, certificate or general workflow.
    resolver, and require its actual branch main. Do not switch branches, move HEAD,
    create another repository or silently target a different project. A non-main
    primary gives a public checkout correction, before recording an exception.
-2. Use the existing branch candidate owner unchanged. Freeze a SUBJECT ARTIFACT
-   before recording the carry: goal, endpoint commit, projected endpoint, projected
-   candidate, binary patch and its digest. Put it under existing intent-land/G
-   artifacts keyed by candidate workspace; write temp+rename, identical replay
-   allowed, mismatched bytes refused. This is immutable input, not a job registry.
-   Preflight the patch on the destination's full index without writes. Preserve
+2. Use the existing branch candidate owner unchanged. Freeze a small SUBJECT IDENTITY
+   before recording the carry: goal, endpoint commit, projected endpoint and
+   projected candidate. Store the tuple atomically under existing PRIMARY
+   intent-land/G artifacts keyed by its endpoint and workspace. Do not store a
+   duplicate patch: Workspace.Diff derives it deterministically from those trees.
+   This is immutable input, not a job registry. Preflight that projected-to-projected
+   patch on the destination's full index without writes. Preserve
    existing admission/claim/read requirements for canonical branch composition.
 3. Record or rejoin the exact carry word via existing owner. Retain its association
    to the frozen subject alongside the existing exception message. The pre-word
-   workspace-keyed artifact closes a lost-response gap: read back the proven word's
-   workspace and adopt only the matching artifact. A replacement is a new explicit
+   subject identity closes a lost-response gap: read back the proven word's
+   workspace and adopt only an unambiguous matching identity (the original exact
+   request also names its composed endpoint). Never guess between distinct bases.
+   Retain the exact tuple beside the exception message keyed by its actual opid.
+   Explicit --replace-exception must invoke the owner's replacement semantics;
+   an old word for the same workspace is not a successful replacement. A replacement is a new explicit
    human act, never automatic because code moved.
-4. Read real carry status before installing. local/origin/ledger consumption goes
+4. Refresh code origin and the canonical goal ledger using the SAME owner fetches
+   as land.sh BEFORE any staging: fetch_origin and goal fetch --root PRIMARY,
+   obtaining the accepted ledger tip for ReadCarryStatus(PRIMARY, ...). A missing
+   required code remote or failed fetch refuses before recording/staging; never
+   create a remote alias or infer consumption from stale local refs. Canonical
+   goal-state resolution remains with the existing endpoint owner, not guessed
+   from a checkout path. Then read carry status before installing. local/origin/ledger consumption goes
    straight to the existing recovery path, with NO staging. Superseded, expired,
    unproven or mismatched words keep the owner's refusal. An unconsumed word uses
-   its frozen patch, never recomposes newer goal work. A word recorded through the
+   the patch derived from its retained endpoint/workspace tuple, never newer goal work. A word recorded through the
    channel may have no artifact: compose the CURRENT goal candidate once and retain
    it only if its projection equals the word. Otherwise refuse with the public
    replacement-exception act; never reinterpret the word.
-5. Stage via a small existing landing-owner extension under LockBounded, shared for
-   human and agent callers. Check actual main branch, expected product endpoint,
+5. Stage via a small existing landing-owner extension under
+   LockBounded(LockPath(PRIMARY), ...), shared with Advance in that same primary
+   installation for human and agent callers. Artifacts, drift, posture and
+   ReadCarryStatus all use PRIMARY; Git application resolves its actual repository
+   TOP LEVEL and runs there, so changes outside nested metasystem/ are included. Check actual main branch, expected product endpoint,
    no unmerged entries, index equal HEAD OR the exact already-prepared candidate,
    and no non-register dirty/untracked paths. Append-shaped shared registers are
    preserved under existing drift rules; the projected patch never touches them.
    A main tip that moved only in excluded coordination state can still qualify by
-   matching projected endpoint; product movement refuses unchanged before staging.
-   Recheck under lock, private-index preflight, then plain --index --binary once.
+   matching projected endpoint; product movement refuses unchanged before staging. Its public recovery is a
+   person's new `land G --exception CODE --replace-exception ID --reason TEXT
+   --by NAME`, which recomposes on the current endpoint and asks the existing carry
+   owner to supersede the old word; no automatic acceptance or endpoint rewind.
+   Recheck under lock, private-index preflight, then plain --index --binary once at the repository top level.
    Repeated staging is a no-op only when actual index projection equals the word
    AND the worktree agrees on every staged product path. No reset/clean rollback.
    Failure reports actual staged state, retaining the exact subject for retry.
@@ -95,7 +112,9 @@ main, new testing policy, or duplicate carry state machine.
 - Same fixture starts from linked goal checkout and preserves main's existing
   append-only rows; no projected-tree deletions or pending receipt can land.
 - TestIntentCarriedReplay: failure before push -> --using-exception resumes the same
-  subject/word; moving source goal does not change it. local/origin/ledger recovery
+  subject/word; moving source goal does not change it. Fetch discovers previously unknown
+  origin consumption and stages nothing; missing or ambiguous retained base
+  refuses without guessed replay. Explicit replacement really reaches the owner. local/origin/ledger recovery
   never stages. Channel word adopts only matching current composition.
 - TestCarriedStagePreservesCheckout: unrelated index/dirty files, endpoint movement,
   conflicting patch, concurrent mutation lock, repeated exact staging. Refusals
@@ -104,3 +123,13 @@ main, new testing policy, or duplicate carry state machine.
 Full independent Sol critique remains mandatory. Maximum two Fable rounds for
 this concrete correction; falling bounded findings may become named fixtures,
 never permission to certify an unsafe or non-working implementation.
+
+## Why the minimal retained base remains
+
+A carry word records Workspace but no code endpoint (goal/verbs.go:4581 CarryWord;
+file.go:446 HistoryLine). Suppose main moved product A -> B after word W approved
+candidate C. Diff(project(B), W.Workspace=C) restores C's old version of B, quietly
+undoing newer product work; there is no retained expected endpoint left to reject
+that mutation. The canonical branch candidate cannot recover the old subject after
+the goal branch changed. Therefore retain only the base/workspace tuple, deriving
+patch bytes when needed. No new lifecycle registry or duplicate patch file.
