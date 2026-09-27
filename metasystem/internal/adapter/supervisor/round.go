@@ -135,6 +135,11 @@ func superviseRound(s *Supervision, args []string, ops Operations) int {
 		return code
 	}
 	t.HandshakeDone, t.SessionID = s.handshakeDone, s.sessionID
+	t.handshake = func(events Events) bool {
+		ok := s.handshakeFrom(events)
+		t.HandshakeDone, t.SessionID = s.handshakeDone, s.sessionID
+		return ok
+	}
 	final, err := ops.Finalize(t, FinalInput{Launch: launch, Status: status, Usage: usageFile})
 	if err != nil {
 		fmt.Fprintln(s.d.Stderr, err)

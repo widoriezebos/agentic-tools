@@ -364,7 +364,9 @@ func designBrief(template string) ([]byte, error) {
 // engineDelegate runs `ENGINE internal delegate ARGS` with extra environment
 // and returns its status.
 func engineDelegate(d Deps, stdout io.Writer, env []string, args ...string) int {
-	command := exec.Command(d.Engine, append([]string{"internal", "delegate"}, args...)...)
+	// The self-test's children run this binary: the delegate front door
+	// admits --adapter-selftest only from a parent of the same executable.
+	command := exec.Command(d.self(), append([]string{"internal", "delegate"}, args...)...)
 	command.Env = withEnv(d.Environ, env...)
 	command.Stdout = stdout
 	command.Stderr = d.Stderr

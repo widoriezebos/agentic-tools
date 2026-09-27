@@ -40,7 +40,10 @@ type SelftestParams struct {
 	RunProbe    func() error
 	// ExtraEnv are assignments every delegate child of the self-test
 	// inherits (a runtime's model override for the critic role).
-	ExtraEnv       []string
+	ExtraEnv []string
+	// Engine is the binary the delegate children run; empty is
+	// ROOT/bin/metasystem.
+	Engine         string
 	Usage          string // native, unavailable, or metered
 	Probe          *SelftestProbe
 	TurnCeilingSec int  // how long one self-test turn may take
@@ -54,7 +57,16 @@ func (p SelftestParams) jobsDir() string   { return filepath.Join(p.agentsDir(),
 func (p SelftestParams) dispatch() string {
 	return filepath.Join(p.Root, "scripts", "agents", "dispatch.sh")
 }
-func (p SelftestParams) delegate() string { return filepath.Join(p.Root, "bin", "metasystem") }
+
+// delegate is the engine the self-test's delegate children run: Engine (the
+// running binary, because the delegate front door admits --adapter-selftest
+// only from a parent of the same executable), else ROOT/bin/metasystem.
+func (p SelftestParams) delegate() string {
+	if p.Engine != "" {
+		return p.Engine
+	}
+	return filepath.Join(p.Root, "bin", "metasystem")
+}
 
 // ValidateSelftestModel refuses an absent or still-templated model value: a
 // placeholder like <model> dispatches nothing and the self-test must say so

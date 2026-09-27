@@ -496,7 +496,13 @@ func (devinOps) finalizeACP(t *Turn, p *devinTurn, in FinalInput) (Final, error)
 	// worse than a failed one (critique F6).
 	if !handshaken {
 		if wire, _ := fieldOr(p.outcome, "sessionId", ""); wire != "" {
-			final.Handshake = &Events{Session: wire, RecordPatch: transportPin(t)}
+			// Recorded before the collector reads the job record, whose
+			// session the return must match; a shared layer that does not
+			// record in place takes it from the answer.
+			events := Events{Session: wire, RecordPatch: transportPin(t)}
+			if !t.Handshake(events) {
+				final.Handshake = &events
+			}
 			session, handshaken = wire, true
 		}
 	}

@@ -35,6 +35,10 @@ type Deps struct {
 	// Engine is the engine binary children run (the claude SessionStart
 	// hook, the fixture holds): METASYSTEM_BIN, else ROOT/bin/metasystem.
 	Engine string
+	// Self is the running executable, the binary a self-test's delegate
+	// children run (the front door admits --adapter-selftest only from a
+	// parent of the same executable); empty falls back to Engine.
+	Self string
 	// Environ is the environment children inherit before per-launch
 	// additions.
 	Environ []string
@@ -96,9 +100,13 @@ func ProcessDeps(root string) Deps {
 	if engine == "" {
 		engine = filepath.Join(root, "bin", "metasystem")
 	}
+	self, err := os.Executable()
+	if err != nil {
+		self = ""
+	}
 	environ := os.Environ()
 	return Deps{
-		Root: root, Engine: engine, Environ: environ, Getenv: os.Getenv,
+		Root: root, Engine: engine, Self: self, Environ: environ, Getenv: os.Getenv,
 		Pid: os.Getpid(), Stdout: os.Stdout, Stderr: os.Stderr,
 		Clock:        SystemClock(),
 		Dispatch:     ScriptDispatcher{Root: root, Environ: environ},
@@ -150,4 +158,12 @@ func waitStatusCode(state *os.ProcessState) int {
 		return 128 + signal
 	}
 	return 1
+}
+
+// self is the binary a self-test's delegate children run.
+func (d Deps) self() string {
+	if d.Self != "" {
+		return d.Self
+	}
+	return d.Engine
 }

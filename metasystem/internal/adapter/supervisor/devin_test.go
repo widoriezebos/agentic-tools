@@ -715,7 +715,7 @@ func TestDevinACPHappyPathCompletes(t *testing.T) {
 	compact := strings.Join(strings.Fields(f.validReturn), " ")
 	f.stub("acp-server.sh", acpServerScript(t, "sess-1", compact))
 	if code := f.run("dispatch"); code != 0 {
-		t.Fatalf("exit %d\ncalls %v\nstderr %s\nlog %s", code, f.dispatch.verbs(), f.stderr, f.jobLog())
+		t.Fatalf("exit %d\ncalls %v\nstderr %s\nlog %s\nrecord %v", code, f.dispatch.verbs(), f.stderr, f.jobLog(), f.dispatch.readRecord())
 	}
 	f.expectTerminal("completed", "")
 	verbs := strings.Join(f.dispatch.verbs(), " ")

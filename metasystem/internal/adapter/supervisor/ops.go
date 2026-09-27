@@ -112,10 +112,26 @@ type Turn struct {
 	SessionID     string
 	// Env is the environment the CLI starts from.
 	Env []string
+	// handshake, set by a shared layer that records handshakes itself (the
+	// delegate round), records one now.
+	handshake func(Events) bool
 }
 
 // Deps is the turn's process seams.
 func (t *Turn) Deps() Deps { return t.d }
+
+// Handshake records a handshake the runtime observed only at finalize,
+// before the runtime reads the record it lands in (a collector matching the
+// return's session against the job record). It reports false when this
+// shared layer does not record handshakes in place; the runtime then answers
+// with Final.Handshake.
+func (t *Turn) Handshake(events Events) bool {
+	if t.handshake == nil || events.Session == "" || t.HandshakeDone {
+		return false
+	}
+	t.handshake(events)
+	return true
+}
 
 // Refusal is a named failure the runtime chooses: the error code and phase
 // the shared layer lands on the record (pending before the handshake,
