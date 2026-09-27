@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
 	"time"
 
@@ -109,25 +108,6 @@ func runSuperviseLaunchDetached(args []string) int {
 	fmt.Println(cmd.Process.Pid)
 	// The child is its own session; it is not waited on here.
 	_ = cmd.Process.Release()
-	return 0
-}
-
-// runSuperviseWatchdogReport relays `supervise watchdog-report`: the health
-// judgment lives in supervise.WatchdogReport, and this verb prints its
-// lines — nothing when everything is healthy.
-func runSuperviseWatchdogReport(args []string) int {
-	flags := flag.NewFlagSet("supervise watchdog-report", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "supervise watchdog-report: --repo is required")
-		return 2
-	}
-	if lines := supervise.WatchdogReport(*repo, time.Now()); len(lines) > 0 {
-		fmt.Println(strings.Join(lines, "\n"))
-	}
 	return 0
 }
 

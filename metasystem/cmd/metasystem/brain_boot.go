@@ -532,71 +532,35 @@ func clipBrainLine(line string) string {
 	return line[:cut] + "…"
 }
 
-func runBrainDigestAdvance(args []string) int {
-	flags := flag.NewFlagSet("brain digest-advance", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout state root")
-	repo := pathFlag(flags, "repo", "", "checkout containing the digest")
-	cursor := flags.Int64("cursor", -1, "emitted digest cursor")
-	prefix := flags.String("prefix-sha256", "", "emitted digest prefix digest")
-	if flags.Parse(args) != nil || *root == "" || *repo == "" || *cursor < 0 || *prefix == "" {
-		fmt.Fprintln(os.Stderr, "brain digest-advance needs --root, --repo, --cursor, and --prefix-sha256")
-		return 2
+// brainStartDelivered records that a published SessionStart delivered the
+// read-only brain packet: the declaration it observed must still be current,
+// the brain's status is written, and the brain digest advances to the cursor
+// the packet emitted (cursor < 0 when it emitted none).
+func brainStartDelivered(root, repo, declarationSHA string, digestCursor int64, digestPrefix string, ledgerIdentity func(string) string, resolveLayout func(string) (stateroot.Layout, error)) error {
+	if root == "" || repo == "" || declarationSHA == "" {
+		return fmt.Errorf("the delivery needs a root, a repository and a declaration")
 	}
-	_ = root
-	if err := narratordigest.Advance(*repo, *cursor, *prefix, "brain"); err != nil {
-		fmt.Fprintln(os.Stderr, "brain digest-advance:", err)
-		return 1
+	if (digestCursor >= 0) != (digestPrefix != "") {
+		return fmt.Errorf("the delivery needs both digest delivery facts or neither")
 	}
-	return 0
-}
-
-func runBrainStartDelivered(args []string) int {
-	return runBrainStartDeliveredWithIdentity(args, goal.ExistingLedgerIdentity)
-}
-
-func runBrainStartDeliveredWithIdentity(args []string, ledgerIdentity func(string) string) int {
-	return runBrainStartDeliveredWithReaders(args, ledgerIdentity, stateroot.ResolveLayout)
-}
-
-func runBrainStartDeliveredWithReaders(args []string, ledgerIdentity func(string) string, resolveLayout func(string) (stateroot.Layout, error)) int {
-	flags := flag.NewFlagSet("brain start-delivered", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout state root")
-	repo := pathFlag(flags, "repo", "", "checkout containing the digest")
-	declarationSHA := flags.String("declaration-sha256", "", "declaration observed by read-only boot")
-	digestCursor := flags.Int64("digest-cursor", -1, "emitted digest cursor")
-	digestPrefix := flags.String("digest-prefix-sha256", "", "emitted digest prefix digest")
-	if flags.Parse(args) != nil || *root == "" || *repo == "" || *declarationSHA == "" {
-		fmt.Fprintln(os.Stderr, "brain start-delivered needs --root, --repo, and --declaration-sha256")
-		return 2
-	}
-	if (*digestCursor >= 0) != (*digestPrefix != "") {
-		fmt.Fprintln(os.Stderr, "brain start-delivered needs both digest delivery arguments or neither")
-		return 2
-	}
-	state := brain.Read(*root, ledgerIdentity(*root))
+	state := brain.Read(root, ledgerIdentity(root))
 	if state.State != brain.Declared || state.Record == nil {
-		fmt.Fprintln(os.Stderr, "brain start-delivered: the delivered declaration is no longer current")
-		return 1
+		return fmt.Errorf("the delivered declaration is no longer current")
 	}
 	encoded, err := json.Marshal(*state.Record)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "brain start-delivered:", err)
-		return 1
+		return err
 	}
-	currentSHA := fmt.Sprintf("%x", sha256.Sum256(encoded))
-	if currentSHA != *declarationSHA {
-		fmt.Fprintln(os.Stderr, "brain start-delivered: the declaration changed before delivery acknowledgment")
-		return 1
+	if fmt.Sprintf("%x", sha256.Sum256(encoded)) != declarationSHA {
+		return fmt.Errorf("the declaration changed before delivery acknowledgment")
 	}
-	if err := brain.WriteStatus(*root, *state.Record, time.Now().UTC()); err != nil {
-		fmt.Fprintln(os.Stderr, "brain start-delivered: write brain status:", err)
-		return 1
+	if err := brain.WriteStatus(root, *state.Record, time.Now().UTC()); err != nil {
+		return fmt.Errorf("write brain status: %w", err)
 	}
-	if *digestCursor >= 0 {
-		if err := narratordigest.AdvanceWithLayoutReader(*repo, *digestCursor, *digestPrefix, resolveLayout, "brain"); err != nil {
-			fmt.Fprintln(os.Stderr, "brain start-delivered: advance brain digest:", err)
-			return 1
+	if digestCursor >= 0 {
+		if err := narratordigest.AdvanceWithLayoutReader(repo, digestCursor, digestPrefix, resolveLayout, "brain"); err != nil {
+			return fmt.Errorf("advance brain digest: %w", err)
 		}
 	}
-	return 0
+	return nil
 }

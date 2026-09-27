@@ -37,6 +37,10 @@ func TestRuntimeClassification(t *testing.T) {
 		// NOT claude.
 		{"excluded session-signal", "python3 claude-session-signal.py", ""},
 		{"excluded supervision hook", "bash supervision-hook.sh claude stop", ""},
+		// The stub execs the engine's hook entry; that process names the
+		// runtime only as an argument and is never the runtime itself.
+		{"engine hook entry", "/repo/metasystem/bin/metasystem internal hook claude stop", ""},
+		{"engine hook entry for fake", "/repo/metasystem/bin/metasystem internal hook fake stop", ""},
 		{"excluded adapter", "bash scripts/agents/adapters/claude.sh probe", ""},
 		// A shell whose argv merely CONTAINS 'claude' mid-word is not
 		// matched (the word-boundary anchor).

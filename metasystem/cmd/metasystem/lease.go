@@ -103,31 +103,6 @@ func runLeaseClassify(args []string) int {
 	return 0
 }
 
-func runLeaseHookDelegate(args []string) int {
-	flags := flag.NewFlagSet("lease hook-delegate", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "canonical state root containing delegate job records")
-	metasystemRoot := flags.String("metasystem-root", "", "canonical installation root containing identity fixtures and engine")
-	caller := flags.Int64("caller-pid", 0, "hook caller pid")
-	job := flags.String("job", "", "adapter-supplied job identifier (optional evidence locator)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *metasystemRoot == "" || *caller < 1 {
-		fmt.Fprintln(os.Stderr, "lease hook-delegate: --root, --metasystem-root, and --caller-pid are required")
-		return 2
-	}
-	result, err := lease.HookDelegate(*root, *metasystemRoot, *job, *caller)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if !result.Delegate {
-		return 3
-	}
-	printJSON(result)
-	return 0
-}
-
 func runLeaseRequireHolder(args []string) int {
 	flags := flag.NewFlagSet("lease require-holder", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")
@@ -137,22 +112,6 @@ func runLeaseRequireHolder(args []string) int {
 		return 2
 	}
 	out, err := lease.RequireHolder(*root, *caller, optionalEpoch(flags, epoch))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	printJSON(out)
-	return 0
-}
-
-func runLeaseRenew(args []string) int {
-	flags := flag.NewFlagSet("lease renew", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	caller := flags.Int64("caller-pid", 0, "caller pid")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	out, err := lease.Renew(*root, *caller)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -179,38 +138,6 @@ func runLeaseRunHeld(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 	}
 	return code
-}
-
-func runLeaseProtocolGrowth(args []string) int {
-	flags := flag.NewFlagSet("lease protocol-growth", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	mainID := flags.String("main-id", "", "main id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	out, err := lease.ProtocolGrowth(*root, *mainID)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	printJSON(out)
-	return 0
-}
-
-func runLeaseProtocolAdvance(args []string) int {
-	flags := flag.NewFlagSet("lease protocol-advance", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	mainID := flags.String("main-id", "", "main id")
-	caller := flags.Int64("caller-pid", 0, "caller pid")
-	counts := flags.String("counts", "", "JSON object of protocol-error counts")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if err := lease.ProtocolAdvance(*root, *mainID, *caller, *counts); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
 }
 
 // runLeaseCommitToken atomically writes the live wrapper token that the
