@@ -517,12 +517,8 @@ type commandTaggedProcessScanner struct {
 }
 
 func (s commandTaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time) census.TaggedProcessCensus {
-	shapes := janitor.ShapesAt(s.root)
 	dependencies := census.TaggedScanDependencies{
-		MatchesTag: func(argv []string, tag string) bool {
-			_, matches := janitor.MatchShape(shapes, argv, tag)
-			return matches
-		}, ReservationCreatedAt: reservationCreatedAt,
+		MatchesTag: positionedJobTagAt(s.root), ReservationCreatedAt: reservationCreatedAt,
 	}
 	processes, configured, err := census.ConfiguredProcessFixture(s.root)
 	if err != nil {
@@ -584,9 +580,14 @@ func (r commandConfiguredProcessReader) ReadArgv(pid int64) ([]string, bool) {
 	return r.argv[pid], r.argvKnown[pid]
 }
 
-func positionedJobTag(argv []string, tag string) bool {
-	_, matches := janitor.MatchShape(janitor.DefaultShapes(), argv, tag)
-	return matches
+// positionedJobTagAt matches a tag in a known argv position among an
+// installation's shapes (its external runtimes' included).
+func positionedJobTagAt(root string) func(argv []string, tag string) bool {
+	shapes := janitor.ShapesAt(root)
+	return func(argv []string, tag string) bool {
+		_, matches := janitor.MatchShape(shapes, argv, tag)
+		return matches
+	}
 }
 
 func runDispatchCustodyGroups(args []string) int {

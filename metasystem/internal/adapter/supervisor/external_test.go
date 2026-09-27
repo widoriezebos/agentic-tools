@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -67,11 +68,16 @@ func operationsLogged(t *testing.T, log string) []string {
 
 // externalRequest is the part of an operation request the fixture reads.
 type externalRequest struct {
-	Operation string `json:"operation"`
-	Root      string `json:"root"`
-	Job       string `json:"job"`
-	Usage     string `json:"usage"`
-	Turn      struct {
+	Operation  string `json:"operation"`
+	Stage      string `json:"stage"`
+	Probe      string `json:"probe"`
+	Scratch    string `json:"scratch"`
+	Nonce      string `json:"nonce"`
+	ReturnPath string `json:"returnPath"`
+	Root       string `json:"root"`
+	Job        string `json:"job"`
+	Usage      string `json:"usage"`
+	Turn       struct {
 		Role, Verb, Dir, Record, Prompt, Tag, Round, RootJob, Model, ResumeSession, Requested, Effective string
 	} `json:"turn"`
 	Private struct {
@@ -199,6 +205,24 @@ func externalFixture(mode, operation string, request externalRequest) (string, i
 			"turn": "newagent-turn-" + turn.Round, "handshakeModel": turn.Model}), 0
 	case "cancel":
 		return "", 0
+	case "selftest":
+		// The custom probe's stages: a scratch fixture, the prompt text,
+		// and the evidence check against the nonce.
+		switch request.Stage {
+		case "prepare-scratch":
+			if err := os.WriteFile(filepath.Join(request.Scratch, "probe-"+request.Probe), []byte(request.Nonce), 0o644); err != nil {
+				return err.Error(), 1
+			}
+			return "", 0
+		case "prompt-text":
+			return jsonText(map[string]any{"schemaVersion": 1, "text": "echo " + request.Nonce}), 0
+		case "verify-evidence":
+			data, _ := os.ReadFile(request.ReturnPath)
+			if !strings.Contains(string(data), request.Nonce) {
+				return "", 1
+			}
+			return "", 0
+		}
 	}
 	return "", 64
 }
@@ -386,5 +410,33 @@ func TestExternalRuntimeSmallVerbs(t *testing.T) {
 	}
 	if value := readJSON(t, snapshot); value["runtime"] != "newagent" {
 		t.Fatalf("snapshot = %v", value)
+	}
+}
+
+// TestExternalSelftestProbeStages: an external runtime's custom self-test
+// probe needs no Go registration; its stages run through the selftest
+// operation.
+func TestExternalSelftestProbeStages(t *testing.T) {
+	t.Parallel()
+	f, _ := externalInstall(t, installOptions{})
+	entry, err := registryEntry(f.deps(), "newagent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := newExternalOps(entry).selftestProbe(f.deps(), external.SelftestProbe{Name: "tools", BehaviorLabels: []string{"tool-use"}})
+	scratch := t.TempDir()
+	if err := probe.PrepareScratch(scratch, "nonce-1"); err != nil || readText(t, filepath.Join(scratch, "probe-tools")) != "nonce-1" {
+		t.Fatalf("prepare-scratch = %v", err)
+	}
+	if got := probe.PromptText("nonce-1"); got != "echo nonce-1" {
+		t.Fatalf("prompt-text = %q", got)
+	}
+	evidence := filepath.Join(scratch, "return.json")
+	mustWrite(t, evidence, `{"evidence":"nonce-1"}`)
+	if err := probe.VerifyEvidence(evidence, "nonce-1"); err != nil {
+		t.Fatalf("verify-evidence refused its evidence: %v", err)
+	}
+	if err := probe.VerifyEvidence(evidence, "nonce-2"); err == nil {
+		t.Fatal("verify-evidence accepted evidence without the nonce")
 	}
 }
