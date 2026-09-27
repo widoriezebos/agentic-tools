@@ -681,14 +681,14 @@ func (a Authority) request(id, action string) (goal.VerbRequest, func(), error) 
 		return goal.VerbRequest{}, nil, refuse(KindUnproven, "unproven", a.reason)
 	}
 	held := ownerOf(a.root)
-	clear, err := held.begin(id, action)
+	endHold, err := held.begin(id, action)
 	if err != nil {
 		return goal.VerbRequest{}, nil, err
 	}
 	held.publications.Lock()
 	release := func() {
 		held.publications.Unlock()
-		clear()
+		endHold()
 	}
 	request, err := a.assemble()
 	if err != nil {
@@ -720,7 +720,9 @@ func (a Authority) assemble() (goal.VerbRequest, error) {
 	// An unclassified push wedges this clone: the engine refuses every
 	// mutation while one stands, and nothing in the browser could reach the
 	// classification. So this press makes it, through the engine's own
-	// recovery rule, before it publishes (Reconcile).
+	// recovery rule, before it publishes. It is the rule Reconcile runs, run
+	// here inside the lock this request already holds rather than through
+	// Reconcile, which takes that same lock for a Refresh.
 	if err := a.reads.reconcile(a.root, endpoint); err != nil {
 		return goal.VerbRequest{}, err
 	}
