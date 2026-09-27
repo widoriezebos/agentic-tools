@@ -230,9 +230,14 @@ type WaitOptions struct {
 	Now                   func() time.Time
 	BootClock             func() (string, time.Duration, error)
 	Sleep                 func(context.Context, time.Duration) error
-	OpenHintReceiver      OpenHintReceiver
-	Runtime               string
-	EmitEvent             func(root, event, summary string, fields map[string]string) error
+	// WithTimeout bounds a source read, a check or a delivery by time left
+	// before the wait's deadline. It belongs to the same clock as Now,
+	// BootClock and Sleep: a caller that replaces the clock replaces this
+	// too, so a deadline measured on one clock is never enforced on another.
+	WithTimeout      func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+	OpenHintReceiver OpenHintReceiver
+	Runtime          string
+	EmitEvent        func(root, event, summary string, fields map[string]string) error
 }
 
 type finishStamps struct {
@@ -428,6 +433,9 @@ func normalizeWaitOptions(options WaitOptions) WaitOptions {
 	}
 	if options.Sleep == nil {
 		options.Sleep = defaultWaitSleep
+	}
+	if options.WithTimeout == nil {
+		options.WithTimeout = context.WithTimeout
 	}
 	if options.EmitEvent == nil {
 		options.EmitEvent = waitEvents.EmitChecked
@@ -666,7 +674,7 @@ func (s *Store) initialObservation(ctx context.Context, selector WaitSelector, o
 	if remaining > 10*time.Second {
 		remaining = 10 * time.Second
 	}
-	readCtx, cancel := context.WithTimeout(ctx, remaining)
+	readCtx, cancel := options.WithTimeout(ctx, remaining)
 	defer cancel()
 	return readWaitSource(readCtx, selector, WaiterTarget{}, selector.After, options)
 }
@@ -679,7 +687,7 @@ func (s *Store) observe(ctx context.Context, row Waiter, options WaitOptions, de
 	if remaining > 10*time.Second {
 		remaining = 10 * time.Second
 	}
-	readCtx, cancel := context.WithTimeout(ctx, remaining)
+	readCtx, cancel := options.WithTimeout(ctx, remaining)
 	defer cancel()
 	return readWaitSource(readCtx, row.Selector, row.Target, row.LastCheckedTip, options)
 }
@@ -702,7 +710,7 @@ func deliverBeforeDeadline(ctx context.Context, deadline time.Time, options Wait
 	if remaining > 10*time.Second {
 		remaining = 10 * time.Second
 	}
-	deliveryCtx, cancel := context.WithTimeout(ctx, remaining)
+	deliveryCtx, cancel := options.WithTimeout(ctx, remaining)
 	defer cancel()
 	return options.Deliver(deliveryCtx, waitID, nonce, deadline, session)
 }
@@ -886,7 +894,7 @@ func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, option
 			if remaining > 10*time.Second {
 				remaining = 10 * time.Second
 			}
-			actionCtx, cancel := context.WithTimeout(ctx, remaining)
+			actionCtx, cancel := options.WithTimeout(ctx, remaining)
 			reason, changed, actionErr := options.Actionable(actionCtx, row)
 			cancel()
 			actionStamps := observedAfterRead(options, false)
@@ -1097,7 +1105,7 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 		defer os.Remove(waiterHintPath(rowPath, nonce))
 	}
 	if !initial.ClaimableRead && options.Claimable != nil && request.Selector.Kind == "goal" && request.Selector.Event == "human-act" {
-		claimCtx, cancel := context.WithTimeout(ctx, minDuration(10*time.Second, deadline.Sub(options.Now())))
+		claimCtx, cancel := options.WithTimeout(ctx, minDuration(10*time.Second, deadline.Sub(options.Now())))
 		row.ClaimableGoals, err = options.Claimable(claimCtx, row)
 		cancel()
 		if ctx.Err() != nil {
@@ -1382,7 +1390,7 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 	if readBudget <= 0 {
 		return waitResult(row, ExitWaitDeadline, "deadline", "this wait reached its renewal deadline", "wait-deadline", "", row.LastCheckedTip, "", now)
 	}
-	readCtx, cancel := context.WithTimeout(ctx, readBudget)
+	readCtx, cancel := options.WithTimeout(ctx, readBudget)
 	// A renewal reads from the last checked tip, as a running wait does. A
 	// registration or renewal that matched its event and then ended before
 	// publishing never advanced that tip past the event, so the event is
@@ -1420,7 +1428,7 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 		if scanBudget <= 0 {
 			return waitResult(row, ExitWaitDeadline, "deadline", "this wait reached its renewal deadline during the open-work scan", "wait-deadline", "", row.LastCheckedTip, "", options.Now())
 		}
-		scanCtx, scanCancel := context.WithTimeout(ctx, scanBudget)
+		scanCtx, scanCancel := options.WithTimeout(ctx, scanBudget)
 		var scanErr error
 		openWorkSignature, scanErr = options.OpenWorkSignature(scanCtx)
 		scanCancel()

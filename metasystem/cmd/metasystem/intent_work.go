@@ -55,6 +55,9 @@ type intentWorkOwners struct {
 	subprocess func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
 	settings   func(confPath string) (launch.Settings, error)
 	config     func(key, confPath string) (value, source string, code int, err error)
+	// waitClock replaces the default wait owner's clock (see
+	// runWaitCommandOnClock); nil keeps the kernel clock.
+	waitClock func(*metarun.WaitOptions)
 }
 
 // intentConfPath is the selected installation's configuration file.
@@ -89,8 +92,9 @@ func (inv *intentInvocation) work() intentWorkOwners {
 		}
 	}
 	if owners.wait == nil {
+		clock := owners.waitClock
 		owners.wait = func(args []string, print func(metarun.WaitResult, bool)) int {
-			return runWaitCommand(args, nil, waitCallerPID(), print)
+			return runWaitCommandOnClock(args, nil, waitCallerPID(), print, clock)
 		}
 	}
 	if owners.subprocess == nil {
