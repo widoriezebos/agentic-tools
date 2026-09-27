@@ -16,6 +16,7 @@ import (
 // close of the critic chain rebind the critic root first, so the follow-up's
 // exhaustion check admits the next round instead of reading the stale limit.
 func TestChainBudgetRebindReopensAnExhaustedCodeCritique(t *testing.T) {
+	t.Parallel()
 	bed := newGoalAdmissionBed(t, 2)
 	repo := bed.root
 	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
