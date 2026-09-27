@@ -108,34 +108,39 @@ func (f *scratchPublicFixture) command(args ...string) (int, string) {
 	idleSince := time.Now()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	// One ticker paces everything: the progress check, the grace after the
+	// dump request, and the join after the kill.
 	var waitErr error
+	dumpTicks, killTicks := -1, -1
 wait:
 	for {
 		select {
 		case waitErr = <-done:
 			break wait
 		case <-tick.C:
+		}
+		switch {
+		case killTicks >= 0:
+			if killTicks++; time.Duration(killTicks)*time.Second >= bound {
+				f.t.Fatalf("metasystem %s made no progress for %s and was not joined after SIGKILL", strings.Join(args, " "), bound)
+			}
+		case dumpTicks >= 0:
+			if dumpTicks++; dumpTicks >= 5 {
+				_ = syscall.Kill(-pid, syscall.SIGKILL)
+				killTicks = 0
+			}
+		default:
 			if size, newest := output.size(), newestModification(records); size != lastOutput || newest.After(lastRecords) {
 				lastOutput, lastRecords, idleSince = size, newest, time.Now()
-				continue
+			} else if time.Since(idleSince) >= bound {
+				_ = syscall.Kill(pid, syscall.SIGQUIT)
+				dumpTicks = 0
 			}
-			if time.Since(idleSince) < bound {
-				continue
-			}
-			_ = syscall.Kill(pid, syscall.SIGQUIT)
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				_ = syscall.Kill(-pid, syscall.SIGKILL)
-				select {
-				case <-done:
-				case <-time.After(bound):
-					f.t.Fatalf("metasystem %s made no progress for %s and was not joined after SIGKILL", strings.Join(args, " "), bound)
-				}
-			}
-			_ = syscall.Kill(-pid, syscall.SIGKILL)
-			f.t.Fatalf("metasystem %s made no progress for %s; output (with its goroutine dump)=%s", strings.Join(args, " "), bound, output.String())
 		}
+	}
+	if dumpTicks >= 0 {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		f.t.Fatalf("metasystem %s made no progress for %s; output (with its goroutine dump)=%s", strings.Join(args, " "), bound, output.String())
 	}
 	if waitErr == nil {
 		return 0, output.String()
