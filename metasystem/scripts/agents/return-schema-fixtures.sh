@@ -127,44 +127,15 @@ cp "$fixture/candidate.json" "$fixture/extra.json"
 # (TestMaterializedSchemasObeyStructuredOutputRules, internal/returnschema,
 # under the go gate — script-fixtures-002/D37): generator invariants of
 # Go-owned code belong where they survive fixture retirement. This file
-# keeps its thin normalize_return and assert-return-complete legs.
+# keeps its thin assert-return-complete legs.
 
 if [[ "$fixture_scenario" == implementer-v1-v2 ]]; then
 
 "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/v1.json"
 
-# Exercise the adapter's real normalization owner, not a fixture reimplementation.
-source "$root/scripts/agents/adapters/runtime-common.sh"
-record=$fixture/record.json
-round_dir=$fixture
-session_id=observed-session
-normalize_return "$fixture/candidate.json"
-[[ "$("$ms" json get --file "$fixture/return.json" --field schemaVersion)" == 2 ]] \
-  || { echo "normalized return lost its schema version" >&2; cat "$fixture/return.json" >&2; exit 1; }
-[[ "$("$ms" json get --file "$fixture/return.json" --field sessionId)" == observed-session ]] \
-  || { echo "normalized return did not adopt the observed session" >&2; cat "$fixture/return.json" >&2; exit 1; }
-[[ "$("$ms" json get --file "$fixture/return.json" --field model.effective)" == observed-model ]] \
-  || { echo "normalized return did not adopt the record's observed model" >&2; cat "$fixture/return.json" >&2; exit 1; }
-[[ "$("$ms" json get --file "$fixture/return.json" --field claimed)" == \
-   "$("$ms" json get --value '{"root":{"sessionId":"claimed-session","model":"claimed-model"}}' --field root)" ]] \
-  || { echo "normalized return did not preserve both claims" >&2; cat "$fixture/return.json" >&2; exit 1; }
-"$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/return.json"
-
-# A claim on ONE member and agreement on the other still carries both keys.
-# OpenAI structured output rejects an object schema that leaves any property
-# out of `required`, and that rejection failed every codex delegate dispatch
-# before the model produced a token, so the shape is checked here rather than
-# discovered live again.
-cp "$fixture/candidate.json" "$fixture/one-claim.json"
-"$ms" json set --file "$fixture/one-claim.json" --field sessionId=observed-session
-json_replace_field "$fixture/one-claim.json" model \
-  '{"requested":"requested-model","effective":"claimed-model"}'
-json_remove_field "$fixture/one-claim.json" claimed
-normalize_return "$fixture/one-claim.json"
-[[ "$("$ms" json get --file "$fixture/return.json" --field claimed)" == \
-   "$("$ms" json get --value '{"root":{"sessionId":null,"model":"claimed-model"}}' --field root)" ]] \
-  || { echo "a claim on one member did not keep both claimed keys" >&2; cat "$fixture/return.json" >&2; exit 1; }
-"$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/return.json"
+# The normalize_return legs (the observed-identity adoption and the
+# one-claim shape) moved to the go gate with the adapters' port:
+# internal/adapter's TestReturnSchemaBedNormalizeAdoptsObservedIdentity.
 
 if "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/missing-version.json" >/dev/null 2>&1; then
   echo "version-2-shaped return without schemaVersion passed the frozen v1 schema" >&2
@@ -282,16 +253,5 @@ grep -Fq '"mechanical"' "$fixture/code-critic-v5.schema.json" \
   && grep -Fq '"fixture"' "$fixture/code-critic-v5.schema.json" \
   || { echo "version-5 critic schema omitted grain or mechanical proof fields" >&2; exit 1; }
 
-cat >"$fixture/fake-critic-record.json" <<'JSON'
-{"jobId":"fake-critic-v3","round":1,"role":"code-critic","sessionId":"fake-session",
- "requestedModel":"fake-model","effectiveModel":"fake-model"}
-JSON
-printf 'Working Mode: critique\n' >"$fixture/fake-critic-prompt.md"
-"$ms" adapter fake-return --record "$fixture/fake-critic-record.json" \
-  --prompt "$fixture/fake-critic-prompt.md" --output "$fixture/fake-critic-return.json"
-"$ms" validate return-complete --root "$root" --role code-critic \
-  --file "$fixture/fake-critic-return.json"
-[[ "$("$ms" json get --file "$fixture/fake-critic-return.json" --field schemaVersion)" == 3 ]] \
-  || { echo "fake critic did not speak return schema version 3" >&2; exit 1; }
-[[ "$("$ms" json get --file "$fixture/fake-critic-return.json" --field rigor)" == '[]' ]] \
-  || { echo "zero-finding fake critic did not emit empty rigor" >&2; exit 1; }
+# The fake critic's version-3 return moved to the go gate with the adapters'
+# port: internal/adapter's TestReturnSchemaBedFakeCriticSpeaksVersionThree.

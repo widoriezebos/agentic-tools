@@ -385,11 +385,7 @@ export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
 # signature before mission-stop reaches its staged terminal fact, matching the
 # supervision bed's agent-free fixture ancestry.
 if [[ "$fixture_scenario" == mission-stop ]]; then
-  for adapter in "$repo"/scripts/agents/adapters/*.sh; do
-    case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
-      *) rm -f "$adapter" ;;
-    esac
-  done
+  export METASYSTEM_FIXTURE_SIGNATURE_RUNTIMES=fake
 fi
 # Refresh the supervision facts to now; json set stages beside each file
 # and renames, so no reader can observe a torn record.
@@ -505,7 +501,7 @@ if [[ "$fixture_scenario" == mission-stop ]]; then
   printf 'outside fixture control\n' >"$outside_turn/prompt.md"
   for control in METASYSTEM_FAKE_HOST_HOLD METASYSTEM_FAKE_HOST_IGNORE_TERM; do
     set +e
-    env "$control=1" "$root/scripts/agents/hosts/fake.sh" start-turn \
+    env "$control=1" "$root/bin/metasystem" delegate-supervisor fake start-turn --root "$root" \
       --mission outside --turn-id outside-t1 --prompt "$outside_turn/prompt.md" \
       --result "$outside_turn/result.json" --instance-tag outside-fixture-control \
       >"$outside_turn/$control.out" 2>&1
@@ -721,7 +717,7 @@ printf '{"missionId":"host-session","turnId":"host-session-t1-aaaa","cycle":1,"m
 printf 'host adapter session fixture prompt\n' >"$host_turn/prompt.md"
 
 FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
-  "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
+  "$root/bin/metasystem" delegate-supervisor claude start-turn --root "$root" --mission host-session \
   --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
   --result "$host_turn/result.json" --instance-tag fixture-host-session-tag \
   --resume-session announced-session
@@ -731,7 +727,7 @@ FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
   || { echo "the result envelope did not report the rotated session" >&2; cat "$host_turn/result.json" >&2; exit 1; }
 set +e
 FAKE_CLAUDE_SESSION=none PATH="$host_bin:$PATH" \
-  "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
+  "$root/bin/metasystem" delegate-supervisor claude start-turn --root "$root" --mission host-session \
   --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
   --result "$host_turn/result-missing.json" --instance-tag fixture-host-session-tag \
   --resume-session announced-session >"$fixture_root/host-missing-session.out" 2>&1
@@ -745,8 +741,7 @@ set -e
 
 touch "$host_fixture/gate-expired"
 host_gate_installation=$host_fixture/gate-installation
-mkdir -p "$host_gate_installation/scripts/agents" "$host_gate_installation/bin"
-cp -R "$root/scripts/agents/hosts" "$host_gate_installation/scripts/agents/"
+mkdir -p "$host_gate_installation/bin"
 cp "$root/bin/metasystem" "$host_gate_installation/bin/metasystem"
 chmod +x "$host_gate_installation/bin/metasystem"
 printf '%s\n' 'metasystem.runtimes=fake' >"$host_gate_installation/metasystem.conf"
@@ -755,7 +750,7 @@ FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
   METASYSTEM_HOST_START_GATE="$host_fixture/never-released" \
   METASYSTEM_HOST_START_GATE_TIMEOUT_SEC=1 \
   METASYSTEM_START_GATE_EXPIRY_EVENT="$host_fixture/gate-expired" \
-  "$host_gate_installation/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
+  "$host_gate_installation/bin/metasystem" delegate-supervisor claude start-turn --root "$host_gate_installation" --mission host-session \
   --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
   --result "$host_turn/result-gate.json" --instance-tag fixture-host-session-tag \
   >"$fixture_root/host-gate-timeout.out" 2>&1

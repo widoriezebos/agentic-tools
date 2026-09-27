@@ -7,9 +7,12 @@ import (
 	"strings"
 )
 
-// gitOutput runs one read-only git query in dir and returns its trimmed
-// stdout. It is a variable so tests stub Git per test instance.
-var gitOutput = func(dir string, args ...string) (string, bool) {
+// GitQuery runs one read-only git query in dir and returns its trimmed
+// stdout; ok is false when git refuses.
+type GitQuery func(dir string, args ...string) (string, bool)
+
+// gitOutput is the production GitQuery.
+func gitOutput(dir string, args ...string) (string, bool) {
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	output, err := command.Output()
 	if err != nil {
@@ -39,7 +42,7 @@ func realDir(path string) (string, bool) {
 // qualifies: a seat checkout that is itself a linked worktree, or a landing's
 // detached one, has a git dir the envelope never grants. A job without a
 // worktree gets nothing.
-func jobBuildCacheEnv(agents, workspace string) []string {
+func jobBuildCacheEnv(git GitQuery, agents, workspace string) []string {
 	jobsRoot, ok := realDir(filepath.Join(agents, "worktrees"))
 	if !ok {
 		return nil
@@ -48,7 +51,7 @@ func jobBuildCacheEnv(agents, workspace string) []string {
 	if !ok || !strings.HasPrefix(ws+"/", jobsRoot+"/") {
 		return nil
 	}
-	gitdir, ok := gitOutput(workspace, "rev-parse", "--absolute-git-dir")
+	gitdir, ok := git(workspace, "rev-parse", "--absolute-git-dir")
 	if !ok || !strings.Contains(gitdir, "/.git/worktrees/") {
 		return nil
 	}
@@ -69,9 +72,9 @@ func jobBuildCacheEnv(agents, workspace string) []string {
 
 // recordBuildCachePath writes the round's build-cache.txt: the chain cache
 // a round used, empty for a job without a worktree.
-func recordBuildCachePath(agents, workspace, roundDir string) {
+func recordBuildCachePath(git GitQuery, agents, workspace, roundDir string) {
 	cache := ""
-	for _, assignment := range jobBuildCacheEnv(agents, workspace) {
+	for _, assignment := range jobBuildCacheEnv(git, agents, workspace) {
 		if value, found := strings.CutPrefix(assignment, "GOCACHE="); found {
 			cache = value
 		}
@@ -85,8 +88,8 @@ func recordBuildCachePath(agents, workspace, roundDir string) {
 // for non-worktree jobs. The shared object store stays read-only to the
 // delegate; reads fall through the alternates link the engine created at
 // worktree dispatch.
-func jobGitQuarantineEnv(workspace string) []string {
-	gitdir, ok := gitOutput(workspace, "rev-parse", "--absolute-git-dir")
+func jobGitQuarantineEnv(git GitQuery, workspace string) []string {
+	gitdir, ok := git(workspace, "rev-parse", "--absolute-git-dir")
 	if !ok {
 		return nil
 	}
@@ -94,7 +97,7 @@ func jobGitQuarantineEnv(workspace string) []string {
 	if info, err := os.Stat(quarantine); err != nil || !info.IsDir() {
 		return nil
 	}
-	common, _ := gitOutput(workspace, "rev-parse", "--git-common-dir")
+	common, _ := git(workspace, "rev-parse", "--git-common-dir")
 	common += "/objects"
 	if !strings.HasPrefix(common, "/") {
 		common = workspace + "/" + common

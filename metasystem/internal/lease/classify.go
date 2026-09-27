@@ -255,7 +255,7 @@ func authenticatedAnnouncement(pid int64, records []announcementFile, probe iden
 // delegate of any installed runtime must be recognised as a delegate), from
 // the runtime registry's one process definition.
 func allAdapterSignatures(root string) ([]census.Signature, error) {
-	sigs, err := census.AllAdapterSignatures()
+	sigs, _, _, err := census.InstalledAdapterSignatures(root)
 	if err != nil {
 		return nil, classificationDataFailure("adapter signature", root, err)
 	}

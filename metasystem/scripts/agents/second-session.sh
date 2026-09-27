@@ -23,9 +23,10 @@ git -C "$checkout" worktree add -q -b "$branch" "$destination" HEAD
 
 paths=$(mktemp "${TMPDIR:-/tmp}/metasystem-local-config-paths.XXXXXX")
 trap 'rm -f "$paths"' EXIT
-for adapter in "$script_dir"/adapters/*.sh; do
-  [[ ${adapter##*/} != runtime-common.sh ]] || continue
-  "$adapter" local-config-paths >>"$paths"
+# Every adapter-bearing runtime of the registry (the Go test
+# TestSecondSessionAsksEveryAdapterRuntime pins this list to it).
+for runtime in claude codex devin fake; do
+  "$ms" delegate-supervisor "$runtime" local-config-paths --root "$harness_root" >>"$paths"
 done
 sort -u -o "$paths" "$paths"
 

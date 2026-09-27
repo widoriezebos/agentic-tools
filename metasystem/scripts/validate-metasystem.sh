@@ -1054,7 +1054,6 @@ for link in \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-fixtures.sh \
-  scripts/agents/telemetry-census-fixtures.sh \
   scripts/agents/return-schema-fixtures.sh \
   scripts/agents/config-identity-fixtures.sh \
   scripts/agents/authority-regression-fixtures.sh \
@@ -1071,21 +1070,12 @@ for link in \
   scripts/agents/second-session-fixtures.sh \
   scripts/agents/lease-succession-fixtures.sh \
   scripts/agents/flight-recorder-fixtures.sh \
-  scripts/agents/acp-fixtures.sh \
   scripts/agents/mission-fixtures.sh \
   scripts/agents/delegate-caps-fixtures.sh \
-  scripts/agents/adapter-deadline-fixtures.sh \
   scripts/adopt-fixtures.sh \
   scripts/agents/dispatch-fixtures.sh \
-  scripts/agents/hosts/host-common.sh \
-  scripts/agents/hosts/claude.sh \
-  scripts/agents/hosts/codex.sh \
-  scripts/agents/hosts/devin.sh \
-  scripts/agents/hosts/fake.sh \
   scripts/agents/schemas/mission-state.schema.json \
   scripts/agents/schemas/wall-evidence.schema.json \
-  scripts/agents/adapters/fake.sh \
-  scripts/agents/adapters/runtime-common.sh \
   scripts/agents/conformance-fixtures.sh \
   scripts/agents/path-classes.txt \
   scripts/assert-return-complete.sh; do
@@ -1142,7 +1132,6 @@ bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
-bash -n scripts/agents/telemetry-census-fixtures.sh
 bash -n scripts/agents/return-schema-fixtures.sh
 bash -n scripts/agents/config-identity-fixtures.sh
 bash -n scripts/agents/record-protocol-fixtures.sh
@@ -1150,7 +1139,6 @@ bash -n scripts/agents/evidence-segment-fixtures.sh
 bash -n scripts/agents/second-session-fixtures.sh
 bash -n scripts/agents/lease-succession-fixtures.sh
 bash -n scripts/agents/flight-recorder-fixtures.sh
-bash -n scripts/agents/acp-fixtures.sh
 bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/static-reproof-fixtures.sh
@@ -1165,20 +1153,14 @@ bash -n scripts/agents/checkout-execution-guard.sh
 bash -n scripts/agents/checkout-execution-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
-bash -n scripts/agents/adapter-deadline-fixtures.sh
 bash -n scripts/adopt-fixtures.sh
 bash -n scripts/agents/dispatch-fixtures.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/goal-cli-fixtures.sh
 bash -n scripts/agents/brain-fixtures.sh
-bash -n scripts/agents/hosts/claude.sh
-bash -n scripts/agents/hosts/codex.sh
-bash -n scripts/agents/hosts/devin.sh
-bash -n scripts/agents/hosts/fake.sh
 bash -n scripts/assert-return-complete.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
-bash -n scripts/agents/adapters/runtime-common.sh
 bash -n scripts/agents/oldest-bash-gate.sh
 bash scripts/agents/oldest-bash-gate.sh --self-test >/dev/null
 bash scripts/agents/oldest-bash-gate.sh >/dev/null
@@ -1198,9 +1180,17 @@ if section_selected brain-fixtures; then
   delivery_contract_skip brain-fixtures \
     || run_section brain-fixtures needs-engine bash scripts/agents/brain-fixtures.sh
 fi
+# Fixture beds retired with the runtime adapters' port to Go
+# (verbs-object-action U6a): their scenarios are Go tests the go groups
+# select and run. The sections stay registered until the base's section
+# groups are retired in the follow-up landing (design 6.4, step B).
+retired_fixture_section() { # section id, where its scenarios went
+  printf '%s: retired to Go tests; its scenarios run in %s\n' "$1" "$2"
+}
 if section_selected telemetry-census-fixtures; then
   delivery_contract_skip telemetry-census-fixtures \
-    || run_section telemetry-census-fixtures needs-engine bash scripts/agents/telemetry-census-fixtures.sh
+    || run_section telemetry-census-fixtures needs-engine retired_fixture_section telemetry-census-fixtures \
+      "internal/census and internal/adapter/supervisor"
 fi
 if section_selected return-schema-fixtures; then
   delivery_contract_skip return-schema-fixtures \
@@ -1272,7 +1262,8 @@ if section_selected flight-recorder-fixtures; then
 fi
 if section_selected acp-fixtures; then
   delivery_contract_skip acp-fixtures \
-    || run_section acp-fixtures needs-engine bash scripts/agents/acp-fixtures.sh
+    || run_section acp-fixtures needs-engine retired_fixture_section acp-fixtures \
+      "internal/adapter/supervisor, internal/missionrunner/hostturn and internal/acp"
 fi
 if section_selected delegate-caps-fixtures; then
   delivery_contract_skip delegate-caps-fixtures \
@@ -1280,7 +1271,8 @@ if section_selected delegate-caps-fixtures; then
 fi
 if section_selected adapter-deadline-fixtures; then
   delivery_contract_skip adapter-deadline-fixtures \
-    || run_section adapter-deadline-fixtures needs-engine bash scripts/agents/adapter-deadline-fixtures.sh
+    || run_section adapter-deadline-fixtures needs-engine retired_fixture_section adapter-deadline-fixtures \
+      "internal/adapter/supervisor"
 fi
 enumeration_mode_fixtures_section() {
   enumeration_fixture_output=$(bash scripts/agents/enumerate-suite-fixtures.sh 2>&1) \
@@ -1317,94 +1309,10 @@ for enforcement_source in scripts/enforcement/claude-code-hooks.json \
   [[ "$enforcement_hooks" == *supervision-hook.sh* ]] \
     || { echo "$enforcement_source hooks never invoke supervision-hook.sh" >&2; exit 1; }
 done
-# The common-lifecycle source-shape rows iterate the DECLARED
-# population (agnosticism B1, ric critique r4-4: independent of the
-# static enforcement map; fake's standalone shape is excluded by
-# declaration, not by name).
-common_lifecycle_population=$("$root/bin/metasystem" runtime list --with-common-lifecycle) \
-  || { echo "the common-lifecycle population query refused" >&2; exit 1; }
-[[ -n "$common_lifecycle_population" ]] \
-  || { echo "the common-lifecycle population is empty" >&2; exit 1; }
-while IFS= read -r runtime; do
-  adapter="scripts/agents/adapters/$runtime.sh"
-  [[ -f "$adapter" ]] || { echo "missing $runtime runtime adapter: $adapter" >&2; exit 1; }
-  [[ -x "$adapter" ]] || { echo "$runtime runtime adapter is not executable: $adapter" >&2; exit 1; }
-  bash -n "$adapter"
-  adapter_usage=$($adapter --help 2>&1)
-  for verb in identity config-identity signature enforcement-map contract probe dispatch follow-up cancel selftest; do
-    grep -Fq "adapters/$runtime.sh $verb" <<<"$adapter_usage" \
-      || { echo "$runtime adapter usage does not advertise $verb" >&2; exit 1; }
-  done
-  grep -Fq "adapter_common_init $runtime" "$adapter" \
-    || { echo "$runtime adapter does not bind its snapshot runtime identity" >&2; exit 1; }
-  grep -Fq "write_capability_snapshot $runtime \"\$version\" \"\$hash\"" "$adapter" \
-    || { echo "$runtime adapter does not write its named capability snapshot" >&2; exit 1; }
-done <<<"$common_lifecycle_population"
-# EVERY declared adapter — fake included — proves its contract through
-# the real snapshot construction path with dummy facts (ric critique
-# r4-9's deterministic-construction resolution; no schema field, no
-# live cutover).
-adapter_population=$("$root/bin/metasystem" runtime list --with-adapter) \
-  || { echo "the adapter population query refused" >&2; exit 1; }
-[[ -n "$adapter_population" ]] \
-  || { echo "the adapter population is empty" >&2; exit 1; }
-while IFS= read -r runtime; do
-  contract_json=$("scripts/agents/adapters/$runtime.sh" contract)
-  contract_runtime=$("$root/bin/metasystem" json get --value "$contract_json" --field runtime)
-  [[ "$contract_runtime" == "$runtime" ]] \
-    || { echo "$runtime adapter contract snapshot carries wrong identity: $contract_runtime" >&2; exit 1; }
-  # The FULL production snapshot shape, not a fragment (finding 12):
-  # every required top-level member and the complete enforcement
-  # object must decode.
-  for contract_field in cliVersion configHash capabilities permissions envelopeEnforcement.writeRoots envelopeEnforcement.readRoots envelopeEnforcement.network; do
-    "$root/bin/metasystem" json get --value "$contract_json" --field "$contract_field" >/dev/null \
-      || { echo "$runtime adapter contract snapshot lacks $contract_field" >&2; exit 1; }
-  done
-done <<<"$adapter_population"
-# The envelope-enforcement compare is GENERIC (agnosticism B1, ric
-# critique r6-8): the registry's declared map and the adapter's
-# side-effect-free enforcement-map verb are both decoded and
-# canonicalized by the engine before comparison, for every runtime
-# declaring a static map. Devin's all-notEnforced row is the measured
-# truth (O-9/O-10 in records/misc/devin-support.md, demonstrated 2026-08-08):
-# its declaration lives in internal/runtimes with that provenance, and
-# changing it back requires evidence that enforcement returned.
-enforcement_population=$("$root/bin/metasystem" runtime list --with-adapter) \
-  || { echo "the enforcement population query refused" >&2; exit 1; }
-enforcement_compared=0
-while IFS= read -r rt_name; do
-  registry_map=$("$root/bin/metasystem" runtime enforcement-map "$rt_name" 2>/dev/null) || continue
-  adapter_map=$("scripts/agents/adapters/$rt_name.sh" enforcement-map)
-  adapter_writeroots=$("$root/bin/metasystem" json get --value "$adapter_map" --field writeRoots)
-  adapter_readroots=$("$root/bin/metasystem" json get --value "$adapter_map" --field readRoots)
-  adapter_network=$("$root/bin/metasystem" json get --value "$adapter_map" --field network)
-  registry_writeroots=$("$root/bin/metasystem" json get --value "$registry_map" --field writeRoots)
-  registry_readroots=$("$root/bin/metasystem" json get --value "$registry_map" --field readRoots)
-  registry_network=$("$root/bin/metasystem" json get --value "$registry_map" --field network)
-  [[ "$adapter_writeroots" == "$registry_writeroots" && "$adapter_readroots" == "$registry_readroots" && "$adapter_network" == "$registry_network" ]] \
-    || { echo "$rt_name adapter envelope enforcement drifted from the registry declaration" >&2; exit 1; }
-  # Field-count equality kills extra members (finding 11): three keys
-  # on both sides, no fourth passenger.
-  adapter_keys=$(printf '%s' "$adapter_map" | tr -cd ':' | wc -c | tr -d ' ')
-  registry_keys=$(printf '%s' "$registry_map" | tr -cd ':' | wc -c | tr -d ' ')
-  [[ "$adapter_keys" == 3 && "$registry_keys" == 3 ]] \
-    || { echo "$rt_name enforcement map carries unexpected members (adapter=$adapter_keys registry=$registry_keys)" >&2; exit 1; }
-  enforcement_compared=$((enforcement_compared + 1))
-done <<<"$enforcement_population"
-(( enforcement_compared >= 3 )) \
-  || { echo "only $enforcement_compared static enforcement maps compared — the population went missing" >&2; exit 1; }
-# The host contract loop rides the DECLARED population (B1 critique
-# finding 10: the hardcoded three already omitted devin).
-host_population=$("$root/bin/metasystem" runtime list --with-host) \
-  || { echo "the host population query refused" >&2; exit 1; }
-[[ -n "$host_population" ]] \
-  || { echo "the host population is empty" >&2; exit 1; }
-while IFS= read -r runtime; do
-  host="scripts/agents/hosts/$runtime.sh"
-  [[ -x "$host" ]] || { echo "$runtime host adapter is missing or not executable: $host" >&2; exit 1; }
-  grep -Fq 'start-turn' <<<"$($host --help 2>&1)" \
-    || { echo "$runtime host adapter does not advertise start-turn" >&2; exit 1; }
-done <<<"$host_population"
+# The runtime adapter and host contracts (each declared adapter's contract
+# snapshot shape, its envelope-enforcement map against the registry, and a
+# host turn for each declared host) are Go tests with the adapters' port:
+# internal/adapter/supervisor's TestRuntimeAdapterContracts.
 # The capability snapshot naming contract is pinned BEHAVIORALLY:
 # TestSnapshotNameGrammar (internal/adapter) under the go gate, plus the
 # fake-probe sequence fixture below — never by grepping Go source text
@@ -1560,14 +1468,11 @@ runtime_contract_audits_probe_section() {
 # denied write and network-call paths and reports the observed nonzero status;
 # real adapters are inspected only for their declarations above.
 fake_probe_root="$tmp/fake-envelope-probe"
-mkdir -p "$fake_probe_root/scripts/agents/adapters"
-cp scripts/agents/adapters/fake.sh "$fake_probe_root/scripts/agents/adapters/"
-cp scripts/agents/fixture-budget.sh "$fake_probe_root/scripts/agents/"
+mkdir -p "$fake_probe_root"
 fake_probe_result="$tmp/fake-envelope-probe-result.json"
-# The bare probe root carries no engine; point the adapter at this checkout's.
+# The bare probe root carries no engine; this checkout's engine probes it.
 fake_snapshot=$(METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="$fake_probe_result" \
-  METASYSTEM_BIN="$PWD/bin/metasystem" \
-  "$fake_probe_root/scripts/agents/adapters/fake.sh" probe)
+  "$PWD/bin/metasystem" delegate-supervisor fake probe --root "$fake_probe_root")
 [[ "$("$engine" json get --file "$fake_snapshot" --field envelopeEnforcement)" == \
    "$(canonical_json '{"writeRoots": "mapped", "readRoots": "notEnforced", "network": "mapped"}')" ]] \
   || { echo "fake snapshot envelope enforcement drifted" >&2; cat "$fake_snapshot" >&2; exit 1; }

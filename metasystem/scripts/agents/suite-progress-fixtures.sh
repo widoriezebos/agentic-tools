@@ -215,14 +215,13 @@ watch_state="$tmp/watch.state"
 watch_out="$tmp/watch.out"
 dispatch_watch_out="$tmp/dispatch-watch.out"
 mkdir -p "$watch_workspace/artifacts/agents/supervision" \
-  "$watch_root/artifacts/agents/jobs" "$watch_root/scripts/agents/adapters" \
+  "$watch_root/artifacts/agents/jobs" "$watch_root/scripts/agents" \
   "$watch_root/bin" "$watch_jobs"
 git -C "$watch_repository" init -q -b main
 # dispatch.sh derives jobs and waiter directories from its own location, so its
 # private installation needs a copied binary rather than a symlink.
 cp "$root/scripts/agents/dispatch.sh" "$watch_root/scripts/agents/dispatch.sh"
 cp "$root/scripts/agents/checkout-execution-guard.sh" "$watch_root/scripts/agents/checkout-execution-guard.sh"
-cp "$root/scripts/agents/adapters/fake.sh" "$watch_root/scripts/agents/adapters/fake.sh"
 cp "$bin" "$watch_root/bin/metasystem"
 printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' >"$watch_root/metasystem.conf"
 watch_run_id=$(printf '%s' "${tmp##*/}" | tr '[:upper:]' '[:lower:]' | tr . -)
@@ -411,10 +410,8 @@ wait_for_exact_death "stopped-owner-killed detached member" "$stopped_owner_deta
 fake_owner="$tmp/fake-host-owner-killed"
 fake_root="$fake_owner/root"
 fake_turn="$fake_root/turn"
-mkdir -p "$fake_root/bin" "$fake_root/scripts/agents/hosts" "$fake_turn"
+mkdir -p "$fake_root/bin" "$fake_turn"
 cp "$bin" "$fake_root/bin/metasystem"
-cp "$root/scripts/agents/hosts/fake.sh" "$root/scripts/agents/hosts/host-common.sh" \
-  "$fake_root/scripts/agents/hosts/"
 cp "$root/metasystem.conf" "$fake_root/metasystem.conf"
 conf_edit "$fake_root/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' \
   'metasystem.runtimes=fake'
@@ -430,8 +427,8 @@ METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" bash -c '
   harness_fixture_key fake-host-owner-killed
   METASYSTEM_FAKE_HOST_HOLD=1 METASYSTEM_FAKE_HOST_IGNORE_TERM=1 \
     METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
-    "$fixture_root/scripts/agents/hosts/fake.sh" "$harness_fixture_tag" start-turn \
-      --mission fixture-host --turn-id fixture-turn --prompt "$turn/prompt.md" \
+    "$fixture_root/bin/metasystem" delegate-supervisor "$harness_fixture_tag" fake start-turn \
+      --root "$fixture_root" --mission fixture-host --turn-id fixture-turn --prompt "$turn/prompt.md" \
       --result "$turn/result.json" --instance-tag fixture-host 9>&- &
   host=$!
   harness_fixture_hold_pid "$host"

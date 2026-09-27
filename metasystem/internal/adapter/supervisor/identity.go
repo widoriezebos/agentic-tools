@@ -29,7 +29,7 @@ func (d Deps) cliVersion(cli string) (string, error) {
 // projectRoot is the git top level of the installation, the project whose
 // runtime settings a session launched here merges.
 func (d Deps) projectRoot() (string, error) {
-	top, ok := gitOutput(d.Root, "rev-parse", "--show-toplevel")
+	top, ok := d.Git(d.Root, "rev-parse", "--show-toplevel")
 	if !ok {
 		return "", errors.New("the installation is not inside a git work tree")
 	}

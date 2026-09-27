@@ -199,7 +199,7 @@ last=$repo/artifacts/agents/supervision/last-census.json
 brief=$tmp/brief.md
 sed 's/^Working Mode:.*/Working Mode: design/' "$repo/scripts/agents/templates/brief.md" >"$brief"
 probe_output=$tmp/fake-probe.out
-"$repo/scripts/agents/adapters/fake.sh" probe >"$probe_output" 2>&1 || {
+"$repo/bin/metasystem" delegate-supervisor fake probe --root "$repo" >"$probe_output" 2>&1 || {
   cat "$probe_output" >&2
   echo "fingerprint harness fake adapter probe failed" >&2
   exit 1

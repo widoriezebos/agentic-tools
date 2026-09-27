@@ -1482,14 +1482,10 @@ prepare_process_acceptance() {
 
   repo=$(cd "$repo" && pwd -P)
 
-  # Only the configured fake adapter participates in these process fixtures.
-  # Removing unrelated copied adapters prevents the ambient test runner from
-  # being mistaken for a delegate before the staged terminal fact is read.
-  for adapter in "$repo"/scripts/agents/adapters/*.sh; do
-    case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
-      *) rm -f "$adapter" ;;
-    esac
-  done
+  # Only the configured fake runtime's signature participates in these
+  # process fixtures, so the ambient test runner is not mistaken for a
+  # delegate before the staged terminal fact is read.
+  export METASYSTEM_FIXTURE_SIGNATURE_RUNTIMES=fake
   export METASYSTEM_CENSUS_PROCESS_FILE=$process_fixture
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_fixture
   export METASYSTEM_WATCH_INTERVAL_SEC=1
@@ -1562,11 +1558,11 @@ stop_minimal_acceptance() { # output file
 acceptance_start_job() {
   local brief=$tmp/stop-everything-brief.md outputs=$tmp/stop-everything-outputs.txt
   local record=$repo/artifacts/agents/jobs/stop-fixture-job.json
-  (cd "$repo" && scripts/agents/adapters/fake.sh probe >/dev/null)
+  "$repo/bin/metasystem" delegate-supervisor fake probe --root "$repo" >/dev/null
   sed 's/^Working Mode:.*/Working Mode: design/' \
     "$repo/scripts/agents/templates/brief.md" >"$brief"
   printf '\nFAKE:custodial-critique=%s\n' "$tmp/stop-everything-job-release" >>"$brief"
-  printf '%s\n' 'metasystem/scripts/agents/adapters/fake.sh' >"$outputs"
+  printf '%s\n' 'metasystem/scripts/agents/dispatch.sh' >"$outputs"
   # A census verdict older than its window refuses the dispatch and says
   # "retry in a moment": on a busy box (cadence run 18, 2026-09-12, load 37)
   # the census cycle outran the fixture's two-second window once. The
@@ -1834,14 +1830,12 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   [[ ! -e "$repo/artifacts/agents/steward/runner.json" ]] \
     || { echo "the watcher repair launched a steward under the closed fence" >&2; exit 1; }
   acceptance_process_snapshot "$tmp/stop-fence.processes.during-watcher" stop-fence-
-  # Besides its own row, the watcher may only be caught mid read-only signature
-  # probe of this fixture's adapter; the after snapshot below stays unfiltered.
+  # Besides its own row, the watcher creates no process (its runtime
+  # signatures are the engine's registry); the after snapshot below stays
+  # unfiltered.
   FENCE_WATCHER_PID="$fence_watcher_pid" \
-    FENCE_WATCHER_PROBE="bash $repo/scripts/agents/adapters/fake.sh signature" \
     awk '
-      { command = $0; sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[0-9]+[ \t]/, "", command) }
       $1 == ENVIRON["FENCE_WATCHER_PID"] { next }
-      $2 == ENVIRON["FENCE_WATCHER_PID"] && command == ENVIRON["FENCE_WATCHER_PROBE"] { next }
       { print }
     ' "$tmp/stop-fence.processes.during-watcher" >"$tmp/stop-fence.processes.during-watcher-without-self"
   cmp -s "$tmp/stop-fence.processes.before" "$tmp/stop-fence.processes.during-watcher-without-self" \
@@ -1881,7 +1875,7 @@ if [[ "$fixture_scenario" == stop-fence ]]; then
   fence_outputs=$tmp/stop-fence-outputs.txt
   sed 's/^Working Mode:.*/Working Mode: design/' \
     "$repo/scripts/agents/templates/brief.md" >"$fence_brief"
-  printf '%s\n' 'scripts/agents/adapters/fake.sh' >"$fence_outputs"
+  printf '%s\n' 'scripts/agents/dispatch.sh' >"$fence_outputs"
   [[ "$(json_field "$repo/artifacts/agents/supervision/last-census.json" verdict)" == CENSUS-FAILED ]] \
     || { echo "stop-fence requires a failed census to prove the stopped refusal takes precedence" >&2; exit 1; }
   set +e
@@ -2676,7 +2670,7 @@ grep -Fq 'pidStartedAt' "$source_root/docs/orchestration.md" \
   || { echo "S4-1/S4-10: host-turn contract does not document pidStartedAt" >&2; exit 1; }
 for owner_asset in \
   scripts/agents/dispatch.sh scripts/watch-background-jobs.sh \
-  scripts/agents/adapters/runtime-common.sh scripts/agents/supervision-hook.sh \
+  scripts/agents/supervision-hook.sh \
   scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json \
   scripts/enforcement/devin-hooks.json; do
   [[ -f "$source_root/$owner_asset" ]] \
@@ -2876,7 +2870,7 @@ cp "$gate_repo/scripts/agents/roles/design-critic.md" "$gate_repo/$gate_design"
 git -C "$gate_repo" add "$gate_design"
 git -C "$gate_repo" -c user.name=metasystem -c user.email=metasystem.invalid \
   commit -qm 'add fixture design artifact'
-"$gate_repo/scripts/agents/adapters/fake.sh" probe >/dev/null
+"$gate_repo/bin/metasystem" delegate-supervisor fake probe --root "$gate_repo" >/dev/null
 become_main "$gate_repo" gate-session
 read -r gate_now_epoch gate_now < <(date -u '+%s %Y-%m-%dT%H:%M:%SZ')
 dispatch_fails() { # name, expected
@@ -3183,10 +3177,8 @@ cp "$source_root/scripts/agents/supervision-hook.sh" \
    "$source_root/scripts/agents/arm-supervision.sh" \
    "$source_root/scripts/agents/pre-commit-guard.sh" "$stop_root/scripts/agents/"
 # The hook (and the announcement step below) derive the caller's
-# main through the runtime-signature ancestor walk, and that walk
-# reads the adapters from THIS root — without them find-ancestor
-# refuses and every derived main is empty.
-cp -R "$source_root/scripts/agents/adapters" "$stop_root/scripts/agents/adapters"
+# main through the runtime-signature ancestor walk, whose signatures are
+# the engine's runtime registry.
 # The hook resolves its engine as <root>/bin/metasystem; the open-work,
 # stop-block, identity, and lease helpers it used to need as .py files all
 # live inside it now.

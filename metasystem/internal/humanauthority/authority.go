@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -24,7 +23,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 const (
@@ -617,22 +615,18 @@ func sameArguments(first, second []string) bool {
 }
 
 func signatureSet(root string) ([]census.Signature, string, error) {
-	hash := sha256.New()
-	var signatures []census.Signature
-	names := runtimes.WithAdapter()
-	sort.Strings(names)
-	for _, runtime := range names {
-		signature, text, err := census.RuntimeSignature(runtime)
-		if err != nil {
-			return nil, "", err
-		}
-		signatures = append(signatures, signature)
-		hash.Write([]byte(runtime))
-		hash.Write([]byte{0})
-		hash.Write([]byte(text))
+	signatures, names, texts, err := census.InstalledAdapterSignatures(root)
+	if err != nil {
+		return nil, "", err
 	}
 	if len(signatures) == 0 {
 		return nil, "", fmt.Errorf("no adapter signatures are declared for %s", root)
+	}
+	hash := sha256.New()
+	for index, runtime := range names {
+		hash.Write([]byte(runtime))
+		hash.Write([]byte{0})
+		hash.Write([]byte(texts[index]))
 	}
 	return signatures, hex.EncodeToString(hash.Sum(nil)), nil
 }

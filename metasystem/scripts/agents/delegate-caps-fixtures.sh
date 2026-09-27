@@ -118,7 +118,7 @@ git -C "$harness" init -q -b main
 git -C "$harness" add .
 git -C "$harness" -c user.name=fixture -c user.email=fixture.invalid commit -qm fixture
 armed_repo=$harness
-"$harness/scripts/agents/adapters/fake.sh" probe >/dev/null
+"$harness/bin/metasystem" delegate-supervisor fake probe --root "$harness" >/dev/null
 
 # Fake-runtime fixtures authorize their disposable enrollment by staging the
 # accepted engine identity directly. Keep that engine under the scratch root

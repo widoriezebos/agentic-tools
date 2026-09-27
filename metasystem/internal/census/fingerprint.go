@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
@@ -62,23 +63,51 @@ func RuntimeSignature(runtime string) (Signature, string, error) {
 	return sig, text, nil
 }
 
+// FixtureSignatureRuntimesEnv narrows the adapter signature universe in a
+// fixture-mode root (metasystem.runtimes=fake) to the named runtimes, so a
+// process fixture's ancestry is agent-free although the test runner itself
+// may run under a real runtime. It stands in for what fixture beds did when
+// the signatures were scripts: delete the unrelated adapter scripts from the
+// scratch installation. Outside a fixture-mode root it is ignored.
+const FixtureSignatureRuntimesEnv = "METASYSTEM_FIXTURE_SIGNATURE_RUNTIMES"
+
 // AllAdapterSignatures compiles the delegate signature of every runtime
-// that declares an adapter, (all of them, not
-// only the configured runtimes: a delegate of any installed runtime must be
-// recognised as a delegate). The order is the runtime names' sort order,
-// the order the adapter scripts' directory listing used to give.
+// that declares an adapter (all of them, not only the configured runtimes: a
+// delegate of any installed runtime must be recognised as a delegate). The
+// order is the runtime names' sort order, the order the adapter scripts'
+// directory listing used to give.
 func AllAdapterSignatures() ([]Signature, error) {
+	sigs, _, err := adapterSignatures(runtimes.WithAdapter())
+	return sigs, err
+}
+
+// InstalledAdapterSignatures is AllAdapterSignatures for an installation
+// root, honoring FixtureSignatureRuntimesEnv in a fixture-mode root. It also
+// returns each runtime's signature text in the same order.
+func InstalledAdapterSignatures(root string) ([]Signature, []string, []string, error) {
 	names := runtimes.WithAdapter()
+	if narrowed := os.Getenv(FixtureSignatureRuntimesEnv); narrowed != "" && fixtureauth.FixtureModeRoot(root) {
+		names = strings.Fields(strings.ReplaceAll(narrowed, ",", " "))
+	}
+	sort.Strings(names)
+	sigs, texts, err := adapterSignatures(names)
+	return sigs, names, texts, err
+}
+
+func adapterSignatures(names []string) ([]Signature, []string, error) {
+	names = append([]string(nil), names...)
 	sort.Strings(names)
 	var sigs []Signature
+	var texts []string
 	for _, runtime := range names {
-		sig, _, err := RuntimeSignature(runtime)
+		sig, text, err := RuntimeSignature(runtime)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		sigs = append(sigs, sig)
+		texts = append(texts, text)
 	}
-	return sigs, nil
+	return sigs, texts, nil
 }
 
 // Fingerprint computes the supervision fingerprint for a repo, hashing files

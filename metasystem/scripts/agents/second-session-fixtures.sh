@@ -18,36 +18,20 @@ unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios second-session "second-session fixtures passed" \
-    "$fixture_bed_script" config-manifest human-shell-bootstrap
+    "$fixture_bed_script" human-shell-bootstrap
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-second-session.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
-if [[ "$fixture_scenario" == config-manifest ]]; then
-manifest="$tmp/paths"
-for adapter in "$root"/scripts/agents/adapters/*.sh; do
-  [[ ${adapter##*/} != runtime-common.sh ]] || continue
-  "$adapter" local-config-paths
-done | sort -u >"$manifest"
-# The manifest is a contract: exactly these files, no more, no fewer.
-printf '%s\n' \
-  '.claude/settings.json' \
-  '.claude/settings.local.json' \
-  '.codex/config.toml' \
-  '.devin/config.json' \
-  '.devin/config.local.json' \
-  '.devin/hooks.v1.json' >"$tmp/expected-paths"
-diff -u "$tmp/expected-paths" "$manifest" >&2 \
-  || { echo "second-session fixtures: adapter local-config-paths drifted from the declared manifest" >&2; exit 1; }
-# The copy-verification and symlink-into-primary refusal legs retired to
-# the go gate (script-fixtures-015): internal/validate's
+# The config-manifest scenario moved to the go gate with the adapters'
+# port: internal/seat/launch's TestTheManifestIsTheAdaptersDeclaredContract
+# pins the registry's declared local-config-paths, and
+# TestSecondSessionAsksEveryAdapterRuntime pins second-session.sh's runtime
+# list to the registry. The copy-verification and symlink-into-primary
+# refusal legs retired earlier (script-fixtures-015): internal/validate's
 # TestSessionIsolationCopiesAndResolvesHarness and
-# TestSessionIsolationRejectsSymlinkIntoPrimary prove the same
-# properties. What stays here is what shell owns: the adapters'
-# local-config-paths manifest above, and WC-8's human-shell bootstrap.
-
-exit 0
-fi
+# TestSessionIsolationRejectsSymlinkIntoPrimary. What stays here is WC-8's
+# human-shell bootstrap.
 
 # WC-8: the paved command must work from a human shell, whose ancestry has no
 # runtime signature. Build the smallest committed source checkout and replace
@@ -56,7 +40,7 @@ bootstrap_parent="$tmp/bootstrap-parent"
 bootstrap_source="$bootstrap_parent/source"
 bootstrap_destination="$bootstrap_parent/human-session"
 bootstrap_harness="$bootstrap_source/metasystem"
-mkdir -p "$bootstrap_harness/scripts/agents/adapters"
+mkdir -p "$bootstrap_harness/scripts/agents"
 cp "$root/scripts/agents/second-session.sh" \
   "$bootstrap_harness/scripts/agents/second-session.sh"
 # The paved script resolves its engine as <harness>/bin/metasystem. The stub
@@ -72,18 +56,12 @@ if [[ "\${1:-} \${2:-}" == "proc started-at" ]]; then
 fi
 exec "$ms" "\$@"
 SH
-cat >"$bootstrap_harness/scripts/agents/adapters/fake.sh" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-[[ ${1:-} == local-config-paths ]] || exit 2
-SH
 cat >"$bootstrap_harness/scripts/agents/arm-supervision.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" >"$METASYSTEM_SECOND_SESSION_ARM_LOG"
 SH
 chmod +x "$bootstrap_harness/scripts/agents/second-session.sh" \
-  "$bootstrap_harness/scripts/agents/adapters/fake.sh" \
   "$bootstrap_harness/bin/metasystem" \
   "$bootstrap_harness/scripts/agents/arm-supervision.sh"
 git -C "$bootstrap_source" init -q -b main

@@ -95,7 +95,7 @@ func superviseCodex(s *Supervision, args []string) int {
 	if !s.prepareOrUsage(args) {
 		return 2
 	}
-	recordBuildCachePath(s.d.agents(), s.workspace, s.roundDir)
+	recordBuildCachePath(s.d.Git, s.d.agents(), s.workspace, s.roundDir)
 	usageFile := filepath.Join(s.roundDir, "usage.json")
 	if err := s.recordWorkspaceWriteScope(); err != nil {
 		fmt.Fprintln(s.d.Stderr, err)
@@ -136,8 +136,8 @@ func superviseCodex(s *Supervision, args []string) int {
 	// so entering the workspace makes the recorded boundary true on both
 	// paths. The chain's build cache: the sandbox cannot write the user's
 	// Go cache.
-	env := withEnv(s.childEnv, jobGitQuarantineEnv(s.workspace)...)
-	env = withEnv(env, jobBuildCacheEnv(s.d.agents(), s.workspace)...)
+	env := withEnv(s.childEnv, jobGitQuarantineEnv(s.d.Git, s.workspace)...)
+	env = withEnv(env, jobBuildCacheEnv(s.d.Git, s.d.agents(), s.workspace)...)
 	cli, err := s.launch(command, env, s.prompt, s.events, nil)
 	if err != nil {
 		s.failPending("custody_registration", "handshake", "")

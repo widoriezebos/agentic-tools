@@ -479,7 +479,7 @@ if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == br
 			--set model.tier.1=fake:fake-model \
 			--set model.tier.2=fake:fake-model
 		enroll_fixture_repo "$node_repo"
-		METASYSTEM_BIN="$enrolled_engine" "$node_repo/scripts/agents/adapters/fake.sh" probe >/dev/null
+		"$enrolled_engine" delegate-supervisor fake probe --root "$node_repo" >/dev/null
 		track_armed_supervision "$node_repo"
 		node_start=$("$engine" proc started-at --pid "$$")
 		run_fixture_arm "brain absent-node arm" "$tmp/node-arm.out" \
@@ -549,7 +549,7 @@ mkdir -p "$agent_repo/bin"
 cp "$engine" "$agent_repo/bin/metasystem"
 enroll_fixture_repo "$agent_repo"
 agent_dispatch="$agent_repo/scripts/agents/dispatch.sh"
-fake_adapter="$agent_repo/scripts/agents/adapters/fake.sh"
+fake_adapter=("$agent_repo/bin/metasystem" delegate-supervisor fake)
 agent_config="$agent_repo/scripts/metasystem-config.sh"
 good_agent_conf="$agent_fixture/good-metasystem.conf"
 cp "$agent_repo/metasystem.conf" "$good_agent_conf"
@@ -618,8 +618,8 @@ fi
 # Capability snapshots belong to the fixture run that consumes them. Mint the
 # fake snapshots before cloning the other fixture repositories so none of the
 # beds inherits a dated snapshot from an earlier run.
-first_snapshot=$($fake_adapter probe)
-second_snapshot=$($fake_adapter probe)
+first_snapshot=$("${fake_adapter[@]}" probe --root "$agent_repo")
+second_snapshot=$("${fake_adapter[@]}" probe --root "$agent_repo")
 [[ "$first_snapshot" == *-001.json && "$second_snapshot" == *-002.json && "$first_snapshot" != "$second_snapshot" ]] \
   || { echo "fake probe did not create immutable sequence-suffixed snapshots" >&2; exit 1; }
 
@@ -3260,13 +3260,9 @@ run_agent_fixture cache-chain-b cache-chain-b "$agent_dispatch" dispatch --role 
   || { echo "two chains shared one build cache" >&2; exit 1; }
 [[ -z "$(<"$agent_repo/artifacts/agents/happy/rounds/1/build-cache.txt")" ]] \
   || { echo "a shared-checkout job recorded a build cache" >&2; exit 1; }
-# The real adapters compute the path with job_build_cache_env; it must name
-# the same cache the fake runtime recorded, and nothing for a shared checkout.
-helper_cache=$(bash -c 'source "$1/scripts/agents/adapters/runtime-common.sh"; agents="$1/artifacts/agents"; job_build_cache_env "$2" | sed -n "s/^GOCACHE=//p"' _ "$agent_repo" "$cache_worktree")
-[[ "$helper_cache" == "$cache_round1" ]] \
-  || { echo "job_build_cache_env names a different cache than the rounds recorded: helper=$helper_cache recorded=$cache_round1" >&2; exit 1; }
-[[ -z "$(bash -c 'source "$1/scripts/agents/adapters/runtime-common.sh"; agents="$1/artifacts/agents"; job_build_cache_env "$1"' _ "$agent_repo")" ]] \
-  || { echo "job_build_cache_env exported a cache for a shared checkout" >&2; exit 1; }
+# The real runtimes and the fake one record the path through one Go
+# function (internal/adapter/supervisor recordBuildCachePath); its worktree
+# and shared-checkout cases are TestJobBuildCacheEnv's.
 # A reap that finds every member of the chain terminal removes its cache;
 # the worktree stays.
 run_agent_fixture cache-chain-reap cache-chain "$agent_dispatch" reap --job cache-chain
@@ -4340,7 +4336,7 @@ run_agent_fixture no-snapshot-selfheal no-snapshot "$agent_dispatch" dispatch --
 [[ -n "$(ls "$snapshot_dir"/*.json 2>/dev/null)" ]] \
   || { echo "snapshot self-heal did not re-probe" >&2; exit 1; }
 rm -f "$snapshot_dir"/*.json
-"$fake_adapter" probe --age-days 31 >/dev/null
+"${fake_adapter[@]}" probe --root "$agent_repo" --age-days 31 >/dev/null
 run_agent_fixture stale-snapshot-selfheal stale-snapshot "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id stale-snapshot --wait
 # An unhealable miss refuses: break the adapter's probe verb via its
 # fault hook, then dispatch with no matching snapshot.
@@ -4355,7 +4351,7 @@ mv "$snapshot_save"/*.json "$snapshot_dir/"
 old_save="$agent_fixture/current-snapshots"
 mkdir -p "$old_save"
 mv "$snapshot_dir"/*.json "$old_save/"
-"$fake_adapter" probe --profile old >/dev/null
+"${fake_adapter[@]}" probe --root "$agent_repo" --profile old >/dev/null
 old_brief="$agent_fixture/old-capabilities.md"
 make_agent_brief "$old_brief" implement 'FAKE:old-capability-set' 'FAKE:no-event-stream' 'FAKE:hook-unavailable'
 run_agent_fixture old-capabilities old-capabilities "$agent_dispatch" dispatch --role implementer --brief "$old_brief" --job-id old-capabilities --worktree --wait
@@ -4424,7 +4420,7 @@ cp "$requirements" "$saved_requirements"
 # probes ran before it.
 mkdir -p "$agent_fixture/pre-unverified"
 mv "$snapshot_dir"/*.json "$agent_fixture/pre-unverified/" 2>/dev/null || true
-"$fake_adapter" probe --profile unverified-network >/dev/null
+"${fake_adapter[@]}" probe --root "$agent_repo" --profile unverified-network >/dev/null
 # This refusal is about a runtime that cannot verify a field the envelope
 # restricts, so the envelope has to restrict it. Since the presets now grant
 # network, the request is made restrictive explicitly rather than by default.
@@ -4454,7 +4450,7 @@ fi
 run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id waived-deny --wait
 cp "$saved_requirements" "$requirements"
 mv "$agent_fixture/pre-unverified"/*.json "$snapshot_dir/" 2>/dev/null || true
-"$fake_adapter" probe >/dev/null
+"${fake_adapter[@]}" probe --root "$agent_repo" >/dev/null
 
 # An EMPTY write scope is still restrictive on a runtime whose write boundary
 # is notEnforced (it can write through a shell), so such a role is refused
@@ -5687,8 +5683,8 @@ run_fixture_arm "adapter selftest initial arm" "$agent_fixture/selftest-arming.o
     --repo "$agent_selftest_repo" --session selftest-validator --pid "$$" \
     --start-time "$agent_selftest_main_start" --tag metasystem-main-fake-selftest-validator \
   || { echo "adapter selftest fixture could not arm supervision" >&2; exit 1; }
-fake_selftest_adapter="$agent_selftest_repo/scripts/agents/adapters/fake.sh"
-run_agent_fixture_captured fake-selftest - "$agent_fixture/fake-selftest.out" "$fake_selftest_adapter" selftest
+run_agent_fixture_captured fake-selftest - "$agent_fixture/fake-selftest.out" \
+  "$agent_selftest_repo/bin/metasystem" delegate-supervisor fake selftest --root "$agent_selftest_repo"
 grep -Fq 'full protocol sequence' "$agent_fixture/fake-selftest.out" \
   || { echo "fake adapter selftest did not run its full protocol sequence" >&2; exit 1; }
 selftest_newest=$(ls -t "$agent_selftest_repo/artifacts/agents/selftests"/fake-selftest-*.json 2>/dev/null | head -1)
@@ -5765,7 +5761,7 @@ run_fixture_arm "steward end-to-end initial arm" - \
 # The dispatch pipeline requires a fresh capability snapshot for the
 # runtime it launches; probe the fake adapter like every dispatching
 # fixture repository does.
-"$steward_repo/scripts/agents/adapters/fake.sh" probe >/dev/null \
+"$steward_repo/bin/metasystem" delegate-supervisor fake probe --root "$steward_repo" >/dev/null \
   || { echo "steward end-to-end: fake adapter probe failed" >&2; exit 1; }
 
 # A template placeholder as the steward's model refuses before anything

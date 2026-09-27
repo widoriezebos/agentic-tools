@@ -291,11 +291,7 @@ FIXTURE_TOOL_SHELL
   # The bed stages the refusal's delegate ancestry. The fixture-human half
   # deliberately drops it, then makes the scratch installation's signature
   # universe agent-free before its staged terminal fact is read.
-  for adapter in "$clone"/scripts/agents/adapters/*.sh; do
-    case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
-      *) rm -f "$adapter" ;;
-    esac
-  done
+  export METASYSTEM_FIXTURE_SIGNATURE_RUNTIMES=fake
   printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_file"
   "$clone/bin/metasystem" internal stop --repo "$clone" >"$tmp/wrong-terminal.stop"
   fence_changed=$("$clone/bin/metasystem" json get --file "$clone/artifacts/agents/supervision/transition.json" --field changedAt)

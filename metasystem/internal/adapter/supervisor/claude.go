@@ -163,7 +163,7 @@ func superviseClaude(s *Supervision, args []string) int {
 	if !s.prepareOrUsage(args) {
 		return 2
 	}
-	recordBuildCachePath(s.d.agents(), s.workspace, s.roundDir)
+	recordBuildCachePath(s.d.Git, s.d.agents(), s.workspace, s.roundDir)
 	settingsFile := filepath.Join(s.roundDir, "claude-settings.json")
 	signalFile := filepath.Join(s.roundDir, "claude-session-signal.json")
 	resultFile := filepath.Join(s.roundDir, "claude-result.json")
@@ -218,11 +218,11 @@ func superviseClaude(s *Supervision, args []string) int {
 		"TMPDIR="+scratch,
 		"GOCACHE="+filepath.Join(scratch, "go-cache"),
 		"GOTMPDIR="+filepath.Join(scratch, "go-tmp"))
-	env = withEnv(env, jobBuildCacheEnv(s.d.agents(), s.workspace)...)
+	env = withEnv(env, jobBuildCacheEnv(s.d.Git, s.d.agents(), s.workspace)...)
 	env = withEnv(env,
 		"METASYSTEM_CLAUDE_SESSION_SIGNAL="+signalFile,
 		"METASYSTEM_CLAUDE_EVENTS="+s.events)
-	env = withEnv(env, jobGitQuarantineEnv(s.workspace)...)
+	env = withEnv(env, jobGitQuarantineEnv(s.d.Git, s.workspace)...)
 	launchErr := os.MkdirAll(filepath.Join(scratch, "go-tmp"), 0o755)
 	if launchErr == nil {
 		launchErr = os.MkdirAll(envValue(env, "GOCACHE"), 0o755)
