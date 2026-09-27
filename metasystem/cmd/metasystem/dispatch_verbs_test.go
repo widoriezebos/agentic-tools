@@ -755,7 +755,7 @@ func TestCommandTaggedProcessScannerUsesAuthorizedCompleteFixtureTable(t *testin
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processes)
-	result := (commandTaggedProcessScanner{root: root}).ScanTag("reservation-tag", time.Now())
+	result := (commandTaggedProcessScanner{Root: root}).ScanTag("reservation-tag", time.Now())
 	if !result.Complete() || result.EnumerationError != "" || len(result.Tagged) != 0 {
 		t.Fatalf("complete empty fixture table = %+v", result)
 	}
@@ -790,7 +790,6 @@ func runCensusFreshCommandClockBody(t *testing.T) {
 		root := t.TempDir()
 		for _, rel := range []string{
 			"scripts/agents/arm-supervision.sh",
-			"scripts/agents/dispatch.sh",
 			"bin/metasystem",
 			"scripts/agents/adapters/runtime-common.sh",
 			"scripts/watch-background-jobs.sh",
@@ -943,7 +942,7 @@ func TestCommandTaggedProcessScannerHonorsEmptyConfiguredUniverse(t *testing.T) 
 	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processes)
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", identities)
 
-	result := (commandTaggedProcessScanner{root: root}).ScanTag("metasystem-job-empty-nonce", time.Time{})
+	result := (commandTaggedProcessScanner{Root: root}).ScanTag("metasystem-job-empty-nonce", time.Time{})
 	if !result.Complete() || result.EnumerationError != "" || len(result.Tagged) != 0 {
 		t.Fatalf("empty configured process universe was not a complete absence proof: %+v", result)
 	}

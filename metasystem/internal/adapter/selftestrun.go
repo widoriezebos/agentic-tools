@@ -20,8 +20,8 @@ import (
 // return validation, session-identity resume, cancellation, the permission
 // probes against the runtime's own envelope declaration, and the pass record
 // stating what was actually proven. Composition stays with the entry-point
-// scripts: dispatch.sh, the adapter script, and the return-completeness
-// assertion are EXEC'D, never reimplemented, because they are the authority
+// owners: the delegate lifecycle, the adapter script, and the
+// return-completeness assertion are reached, never reimplemented, never reimplemented, because they are the authority
 // paths every real job rides. The decisions live here: the model-placeholder
 // check, the denial taxonomy, session equality, and the evidence assertions
 // as parsed reads of return.json.
@@ -39,16 +39,16 @@ type SelftestParams struct {
 	Probe          *SelftestProbe
 	TurnCeilingSec int  // how long one self-test turn may take
 	DenialEndsTurn bool // the runtime ends a turn on a denied tool
-	statusProbe    func(string) string
-	reapProbe      func(string)
+	// Status and Reap are the delegate lifecycle's status and single-job
+	// reap. The lifecycle composes above the adapter owner (design 6.3), so
+	// the command layer supplies them.
+	Status func(job string) string
+	Reap   func(job string)
 }
 
 func (p SelftestParams) agentsDir() string { return filepath.Join(p.Root, "artifacts", "agents") }
 func (p SelftestParams) jobsDir() string   { return filepath.Join(p.agentsDir(), "jobs") }
-func (p SelftestParams) dispatch() string {
-	return filepath.Join(p.Root, "scripts", "agents", "dispatch.sh")
-}
-func (p SelftestParams) delegate() string { return filepath.Join(p.Root, "bin", "metasystem") }
+func (p SelftestParams) delegate() string  { return filepath.Join(p.Root, "bin", "metasystem") }
 
 // ValidateSelftestModel refuses an absent or still-templated model value: a
 // placeholder like <model> dispatches nothing and the self-test must say so
@@ -416,22 +416,16 @@ func (p SelftestParams) waitForJob(job string) bool {
 }
 
 func (p SelftestParams) dispatchStatus(job string) string {
-	if p.statusProbe != nil {
-		return p.statusProbe(job)
-	}
-	out, err := exec.Command(p.dispatch(), "status", "--job", job).Output()
-	if err != nil {
+	if p.Status == nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return p.Status(job)
 }
 
 func (p SelftestParams) reapJob(job string) {
-	if p.reapProbe != nil {
-		p.reapProbe(job)
-		return
+	if p.Reap != nil {
+		p.Reap(job)
 	}
-	_ = runSilent(p.dispatch(), "reap", "--job", job)
 }
 
 // jobField reads one string field from a job record; absence is an empty
@@ -502,15 +496,6 @@ func runSelftestDelegateQuiet(command string, args ...string) error {
 	cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// runSilent discards both streams — the tolerated calls (reap between polls,
-// a denial-shaped dispatch) whose noise the shell suppressed entirely.
-func runSilent(command string, args ...string) error {
-	cmd := exec.Command(command, args...)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
 	return cmd.Run()
 }
 

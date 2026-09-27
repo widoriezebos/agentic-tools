@@ -1183,7 +1183,6 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 		"scripts/agents/supervision-hook.sh",
 		"scripts/agents/evidence-gc.sh",
 		"scripts/agents/arm-supervision.sh",
-		"scripts/agents/dispatch.sh",
 		"scripts/agents/adapters/fake.sh",
 		"scripts/agents/adapters/runtime-common.sh",
 		"scripts/watch-background-jobs.sh",

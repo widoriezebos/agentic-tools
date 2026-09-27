@@ -1,11 +1,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"syscall"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 )
@@ -35,49 +34,18 @@ func runSuperviseLaunchDetached(args []string) int {
 		fmt.Fprintln(os.Stderr, "supervise launch-detached: a command is required")
 		return 2
 	}
-	logPath := *log
-	if logPath == "" {
-		logPath = os.DevNull
+	pid, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{
+		Argv: argv, Dir: *cwd, Log: *log, Env: env,
+		GuardRoot: *executionGuardRoot, GuardOwner: *executionGuardOwner,
+	})
+	if errors.Is(err, gaterun.ErrGuardPairIncomplete) {
+		fmt.Fprintln(os.Stderr, "supervise launch-detached:", err)
+		return 2
 	}
-	logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	defer logFile.Close()
-	devNull, err := os.Open(os.DevNull)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer devNull.Close()
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Stdin = devNull
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmd.Dir = *cwd
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if *executionGuardRoot != "" || *executionGuardOwner != "" {
-		if *executionGuardRoot == "" || *executionGuardOwner == "" {
-			_ = cmd.Process.Kill()
-			fmt.Fprintln(os.Stderr, "supervise launch-detached: --execution-guard-root and --execution-guard-owner are required together")
-			return 2
-		}
-		if err := gaterun.RegisterSpawnedExecutionGuardMember(*executionGuardRoot, int64(cmd.Process.Pid), *executionGuardOwner); err != nil {
-			_ = cmd.Process.Kill()
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	}
-	fmt.Println(cmd.Process.Pid)
-	// The child is its own session; it is not waited on here.
-	_ = cmd.Process.Release()
+	fmt.Println(pid)
 	return 0
 }

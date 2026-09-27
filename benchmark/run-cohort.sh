@@ -82,11 +82,22 @@ fi
 # Flight-recorder witness: the driver exports the cohort id as the execution
 # id (it IS the cohort id -- nothing is minted; plans/flight-recorder.md
 # D-1a) and emits a driver-phase event on every transition.
-if [[ -f "$top/metasystem/scripts/agents/emit-event.sh" ]]; then
-  source "$top/metasystem/scripts/agents/emit-event.sh"
-else
-  emit_event() { :; }
-fi
+# The emitter never fails its caller (docs/design/flight-recorder.md D-3):
+# the writer is this process, with its own start time and sequence.
+cohort_event_seq=0
+cohort_event_started=
+emit_event() { # component, event, key=value...
+  local component=${1:-unknown} event=${2:-unknown} engine=${METASYSTEM_BIN:-$top/metasystem/bin/metasystem}
+  shift 2 2>/dev/null || true
+  [[ -x "$engine" ]] || return 0
+  if [[ -z "$cohort_event_started" ]]; then
+    cohort_event_started=$("$engine" internal proc started-at --pid $$ 2>/dev/null) || true
+    [[ "$cohort_event_started" =~ ^[0-9]+$ ]] || cohort_event_started=0
+  fi
+  cohort_event_seq=$((cohort_event_seq + 1))
+  "$engine" internal event emit "root=${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" "component=$component" \
+    "event=$event" "pid=$$" "pidStartedAt=$cohort_event_started" "seq=$cohort_event_seq" "$@" >/dev/null 2>&1 || true
+}
 
 atomic_state() { # state path, phase, repetition index
   python3 - "$1" "$2" "$3" <<'PY'

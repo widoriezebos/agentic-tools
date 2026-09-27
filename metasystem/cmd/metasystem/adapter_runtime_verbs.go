@@ -400,7 +400,7 @@ func runAdapterDevinConfig(args []string) int {
 
 // runAdapterAdjudicateTurn relays `adapter adjudicate-turn`: the terminal-
 // outcome state machine lives in adapter.AdjudicateTurn. Pure decision —
-// the CAS stays in the shell wrappers riding dispatch.sh's lease-held
+// the CAS stays in the shell wrappers riding the delegate lifecycle's
 // re-exec.
 func runAdapterAdjudicateTurn(args []string) int {
 	flags := flag.NewFlagSet("adapter adjudicate-turn", flag.ContinueOnError)

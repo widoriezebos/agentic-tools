@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -32,7 +32,7 @@ import (
 // into a follow-up, close a finished chain and land a goal. Each one resolves
 // the named subject to its recorded evidence and hands it to the existing
 // owner: the delegate boundary for critic dispatch and follow-ups, the goal
-// branch read for a unit commit, dispatch.sh for the whole chain close, and
+// branch read for a unit commit, the delegate lifecycle for the whole chain close, and
 // the batch join or the hand land-prep and land-push for landing. The owners
 // keep their authority, proof and retry identity; these commands never judge
 // a finding, certify a standalone result or conclude a goal.
@@ -205,11 +205,14 @@ type intentDeliveryOwners struct {
 	// engine may write the named chain's records, before anything writes.
 	recordWriter func(root, job string) (cause string, err error)
 	process      func(intentProcess) intentProcessResult
-	executable   func() (string, error)
-	branchRead   func([]string) (branch.BranchReadResult, int, error)
-	branchState  func(root, goalID string) (intentBranchState, error)
-	landPrep     func([]string) (goalBranchLandPrepOutcome, int, error)
-	landPush     func([]string) (branch.PreparedLanding, string, int, error)
+	// closeOwner runs the delegate lifecycle's close command (the whole
+	// chain close) for an installation root.
+	closeOwner  func(root string, args []string) intentProcessResult
+	executable  func() (string, error)
+	branchRead  func([]string) (branch.BranchReadResult, int, error)
+	branchState func(root, goalID string) (intentBranchState, error)
+	landPrep    func([]string) (goalBranchLandPrepOutcome, int, error)
+	landPush    func([]string) (branch.PreparedLanding, string, int, error)
 	// landCandidate composes the pending landing and returns the candidate
 	// tree its receipt must prove.
 	landCandidate func([]string) (goalBranchLandPrepOutcome, int, error)
@@ -236,6 +239,7 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 	return &intentDeliveryOwners{
 		recordWriter: recordWriterPreflight,
 		process:      runIntentOwnerProcess,
+		closeOwner:   inProcessCloseOwner,
 		executable:   os.Executable,
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			binary, err := os.Executable()
@@ -272,6 +276,12 @@ func (inv *intentInvocation) delivery() *intentDeliveryOwners {
 		inv.owners.delivery = defaultIntentDeliveryOwners()
 	}
 	return inv.owners.delivery
+}
+
+// inProcessCloseOwner runs the delegate lifecycle's close in this process.
+func inProcessCloseOwner(root string, args []string) intentProcessResult {
+	stdout, stderr, code := delegateInProcess(root)(args...)
+	return intentProcessResult{stdout: []byte(stdout), stderr: []byte(stderr), code: code}
 }
 
 // runIntentOwnerProcess runs one owner with its own output pipes; the
@@ -1272,11 +1282,15 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		return intentResult{Targets: targets, Outcome: intentInProgress,
 			Summary: fmt.Sprintf("chain %s still has round %s %s", job, recordText(newest, "jobId"), recordText(newest, "status"))}
 	}
-	argv := []string{filepath.Join(inv.layout.InstallationRoot, "scripts", "agents", "dispatch.sh"), "close", "--job", job}
+	argv := []string{"close", "--job", job}
 	if evidence := inv.input.text("evidence"); evidence != "" {
 		argv = append(argv, "--reconcile-evidence", evidence)
 	}
-	ran := inv.delivery().process(intentProcess{argv: argv, dir: inv.layout.InstallationRoot})
+	closeOwner := inv.delivery().closeOwner
+	if closeOwner == nil {
+		closeOwner = inProcessCloseOwner
+	}
+	ran := closeOwner(inv.layout.InstallationRoot, argv)
 	after, readErr := inv.jobRecord(job)
 	closed := false
 	if readErr == nil {

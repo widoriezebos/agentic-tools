@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -88,7 +87,7 @@ func TestIntentDoneJobCompletesOnlyTheJob(t *testing.T) {
 	if code != 0 || result.Outcome != intentConfirmed || len(b.calls) != 1 {
 		t.Fatalf("done job = code %d %+v calls %v", code, result, b.calls)
 	}
-	if call := b.calls[0]; filepath.Base(call[0]) != "dispatch.sh" || !slices.Equal(call[1:], []string{"close", "--job", "inv1", "--reconcile-evidence", "crit1"}) {
+	if call := b.calls[0]; call[0] != "close-owner" || !slices.Equal(call[1:], []string{"close", "--job", "inv1", "--reconcile-evidence", "crit1"}) {
 		t.Fatalf("the close owner was called as %v", call)
 	}
 	if code, result := b.do("work", "close", "j2:inv1"); code != 0 || result.Outcome != intentUnchanged || len(b.calls) != 1 {

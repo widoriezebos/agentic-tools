@@ -492,36 +492,6 @@ chmod +x "${out:-bin/metasystem}"
 	portable.write("scripts/agents/go-build.sh", buildScript, 0o755)
 	portable.write("scripts/agents/commit.sh", batchE2ECommitScript, 0o755)
 	portable.write("scripts/agents/pre-commit-guard.sh", "#!/bin/sh\nexit 0\n", 0o755)
-	// The portable hook drives the same public stop-batch verbs as the
-	// installed dispatch script. A bare breach-stop only closes the fence;
-	// it does not cancel queued proofs or complete the stop batch.
-	portable.write("scripts/agents/dispatch.sh", fmt.Sprintf(`#!/bin/sh
-set -eu
-[ "$1" = __breach-stop-goal ] || exit 2
-shift
-ms=%s
-root=$(pwd -P)
-batch=$("$ms" job breach-stop --root "$root" "$@")
-stop_id=$(printf '%%s\n' "$batch" | sed -n 's/.*"stopId":"\([^"]*\)".*/\1/p')
-[ -n "$stop_id" ] || exit 3
-for pass in 1 2 3 4; do
-  verdict=$("$ms" job stop-batch-reconcile --root "$root" --stop "$stop_id")
-  state=$(printf '%%s\n' "$verdict" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')
-  if [ "$state" = COMPLETE ]; then
-    printf 'stop=%%s state=COMPLETE\n' "$stop_id"
-    exit 0
-  fi
-  [ "$state" = OPEN ] || exit 4
-  pending_jobs=$("$ms" job stop-batch-pending --root "$root" --stop "$stop_id")
-  [ -z "$pending_jobs" ] || exit 5
-  pending_proofs=$("$ms" job stop-batch-proof-pending --root "$root" --stop "$stop_id")
-  [ -n "$pending_proofs" ] || exit 6
-  for proof_attempt in $pending_proofs; do
-    "$ms" job stop-proof-cancel --root "$root" --stop "$stop_id" --attempt "$proof_attempt"
-  done
-done
-exit 7
-`, strconv.Quote(portable.engine)), 0o755)
 	// The steward may append during the stop. Keep the real append-only
 	// registers present in the base tree so rearming can prove their suffixes.
 	portable.write("records/narrator-digest.log", "", 0o644)
@@ -786,7 +756,8 @@ exit 7
 		t.Fatalf("public elapsed breach route absent for active B: revision=%d routes=%s error=%v budget=%+v", revision, routesOutput, routesErr, dispatchcore.ProjectBudget(controlRoot, projection.Tree.Live["goal-b"], t1))
 	}
 	// The enrolled steward is the authorized stop custodian while the owner
-	// holds the checkout. Its dispatch script only forwards the actual CLI verb.
+	// holds the checkout; its tick runs the delegate lifecycle's breach stop in
+	// process.
 	stop := exec.Command(portable.engine, "steward", "tick", "--repo", controlRoot)
 	stop.Dir = controlRoot
 	stop.Env = clockEnvironment(t1)

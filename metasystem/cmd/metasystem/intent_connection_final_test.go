@@ -29,7 +29,7 @@ import (
 // under exactly that environment. The selected pair is the roster default,
 // not an override (no escalation); an explicit model still escalates by the
 // unchanged policy; without the selected installation the worktree refuses.
-// Declared fakes: the delegate executable (no dispatch.sh, lease, brain or
+// Declared fakes: the delegate executable (no delegate lifecycle, lease, brain or
 // model), and the synthetic configuration files.
 func TestIntentCriticDelegateSelectedRoster(t *testing.T) {
 	selected, worktree := t.TempDir(), t.TempDir()

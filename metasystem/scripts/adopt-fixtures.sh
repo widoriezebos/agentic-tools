@@ -562,7 +562,7 @@ if adopt_leg default; then
   [[ -f "$tgt/.claude/agents/verify.md" ]] || { echo "adopt: claude agent profile missing" >&2; exit 1; }
   [[ -L "$tgt/.claude/skills/code-critique" && -f "$tgt/.claude/agents/code-critique.md" ]] \
     || { echo "adopt: code-critique was not registered for claude" >&2; exit 1; }
-  [[ -f "$tgt/scripts/agents/dispatch.sh" && -f "$tgt/metasystem.conf" ]] \
+  [[ -f "$tgt/scripts/agents/role-packets.json" && -f "$tgt/metasystem.conf" ]] \
     || { echo "adopt: orchestration payload missing" >&2; exit 1; }
   [[ -f "$tgt/go.mod" && -d "$tgt/internal" && -d "$tgt/cmd" \
     && -f "$tgt/testing-parallel-ratchet.json" ]] \

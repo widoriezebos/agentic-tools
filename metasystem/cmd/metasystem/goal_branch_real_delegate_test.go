@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,11 +16,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 // TestGoalBranchReadRealDelegateReachesSelectedClaude drives `goal branch
 // read --selected-installation` from a generated goal worktree through the
-// built engine's delegate, the worktree's real dispatch.sh and claude.sh
+// built engine's delegate lifecycle, the worktree's real claude.sh
 // adapter, to an absolute fake `claude` executable. The worktree's tracked
 // roster names a different model and it has no local overlay; the model the
 // fake receives is the selected installation's code-critic for the frozen

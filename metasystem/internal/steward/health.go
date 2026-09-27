@@ -1474,7 +1474,7 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 			unknown = append(unknown, jobID)
 		}
 	}
-	remedy := fmt.Sprintf("%q reap", filepath.Join(repoRoot, "scripts", "agents", "dispatch.sh"))
+	remedy := fmt.Sprintf("%q internal delegate reap", filepath.Join(repoRoot, "bin", "metasystem"))
 	if len(dead) > 0 {
 		return roleDead(RoleNonterminalJobs, "non-terminal jobs with dead recorded processes: "+strings.Join(dead, ","), remedy)
 	}

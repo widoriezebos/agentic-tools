@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # F4/D32 fixtures: the custodian's own-deadline enforcement, driven against
-# the REAL runtime-common.sh with a stub dispatch and a real child process.
+# the REAL runtime-common.sh with a stub delegate callback and a real child process.
 # The supervisor-crash leg (dead custodian finalized by the standing reaper)
 # is proven in Go by internal/supervise/reaper_test.go's core transitions —
 # a dead custodian is the reaper's existing case, not new behavior.
@@ -35,7 +35,7 @@ trap cleanup EXIT
 passed=()
 pass_fixture() { passed+=("$1"); echo "$1 passed" >&2; }
 
-cat >"$tmp/stub-dispatch.sh" <<'EOF'
+cat >"$tmp/stub-delegate.sh" <<'EOF'
 #!/usr/bin/env bash
 echo "$@" >>"$STUB_CAS_LOG"
 # Simulate a lost CAS (the waiter's verdict landed first): rc 3 from the
@@ -43,7 +43,7 @@ echo "$@" >>"$STUB_CAS_LOG"
 [[ -z "${STUB_CAS_LOSES:-}" ]] || exit 3
 exit 0
 EOF
-chmod +x "$tmp/stub-dispatch.sh"
+chmod +x "$tmp/stub-delegate.sh"
 
 # A pass-through ms wrapper whose `proc group-members` reports a phantom
 # member forever: the domain can never be proven dead.
@@ -61,7 +61,7 @@ mode=\$1 dir=\$2
 export STUB_CAS_LOG="\$dir/cas.log"; : >"\$STUB_CAS_LOG"
 if [[ -n \${DRIVER_EVENT_FIFO:-} ]]; then exec 7>"\$DRIVER_EVENT_FIFO"; fi
 job=f4fix; record="\$dir/job.json"; round_dir="\$dir"; log="\$dir/job.log"; heartbeat="\$dir/hb"
-ms="\${DRIVER_MS:-$ms_real}"; dispatch="$tmp/stub-dispatch.sh"
+ms="\${DRIVER_MS:-$ms_real}"
 requested_model=m; requested_session=; session_id=; effective="\$dir/eff.json"; echo '{}' >"\$effective"
 case "\$mode" in
   cap|race|survivor) handshake_done=1; printf '{"jobId":"f4fix","status":"running","capDeadline":"2020-01-01T00:00:00Z"}\n' >"\$record" ;;
@@ -69,6 +69,8 @@ case "\$mode" in
   standdown)         handshake_done=1; printf '{"jobId":"f4fix","status":"running","handshakeDeadline":5}\n' >"\$record" ;;
 esac
 source "$source_root/scripts/agents/adapters/runtime-common.sh"
+# The delegate lifecycle callbacks go to the stub (the CAS log above).
+delegate_callback() { "$tmp/stub-delegate.sh" "\$@"; }
 if [[ \$mode == standdown ]]; then
   eval "\$(declare -f check_record_deadlines | sed '1s/check_record_deadlines/original_check_record_deadlines/')"
   check_record_deadlines() {

@@ -235,7 +235,7 @@ func families() []family {
 				{"critique-register-advance", "fold one critic round into its canonical register", runDispatchCritiqueRegisterAdvance},
 				{"critique-open-finding-ids", "print a critic register's open finding identifiers", runDispatchCritiqueOpenFindingIDs},
 				{"critique-register-close", "close or defer a critic register", runDispatchCritiqueRegisterClose},
-				{"critique-close", "close a critic chain: closure and chainClosed in one record write; reached only through dispatch.sh close", runDispatchCritiqueClose},
+				{"critique-close", "close a critic chain: closure and chainClosed in one record write; reached only through the delegate lifecycle close", runDispatchCritiqueClose},
 				{"critique-budget-rebind", "copy the goal review-round limit onto a critic root", runDispatchCritiqueBudgetRebind},
 				{"read-subject", "compute and persist a critic round's read subject before launch", runDispatchReadSubject},
 				{"critique-read-admission", "admit a computed critic read before publishing its job", runDispatchCritiqueReadAdmission},

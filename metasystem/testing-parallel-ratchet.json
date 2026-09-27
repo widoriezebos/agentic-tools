@@ -684,23 +684,8 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestIntentDesignAuthorRealOwnerJourney",
-      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where both design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestIntentDesignReviewRealOwnerJourney",
-      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where both design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestLaunchManagerReadsClaudeTranscriptsWhereClaudeKeepsThem",
       "reason": "sets CLAUDE_CONFIG_DIR with t.Setenv, the process environment the launch manager's Claude adapter wiring reads"
-    },
-    {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
-      "test": "TestIntentDesignRetryRealOwnerJourney",
-      "reason": "runs only inside the dispatcher fixture bed (dispatch-fixtures.sh cluster b), where the design journeys drive the one bed repository and supervision root that bed hands over, so they cannot run concurrently"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",

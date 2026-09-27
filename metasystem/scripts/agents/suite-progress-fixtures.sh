@@ -218,10 +218,9 @@ mkdir -p "$watch_workspace/artifacts/agents/supervision" \
   "$watch_root/artifacts/agents/jobs" "$watch_root/scripts/agents/adapters" \
   "$watch_root/bin" "$watch_jobs"
 git -C "$watch_repository" init -q -b main
-# dispatch.sh derives jobs and waiter directories from its own location, so its
-# private installation needs a copied binary rather than a symlink.
-cp "$root/scripts/agents/dispatch.sh" "$watch_root/scripts/agents/dispatch.sh"
-cp "$root/scripts/agents/checkout-execution-guard.sh" "$watch_root/scripts/agents/checkout-execution-guard.sh"
+# The delegate lifecycle derives jobs and waiter directories from its
+# installation root, so the private installation needs a copied binary
+# rather than a symlink.
 cp "$root/scripts/agents/adapters/fake.sh" "$watch_root/scripts/agents/adapters/fake.sh"
 cp "$bin" "$watch_root/bin/metasystem"
 printf 'metasystem.runtimes=fake\nrole.default.model.fake=fake-model\n' >"$watch_root/metasystem.conf"
@@ -258,8 +257,8 @@ dispatch_watch_job="suite-prefix-$watch_run_id"
 watch_dispatch_record="$watch_root/artifacts/agents/jobs/$dispatch_watch_job.json"
 printf '{"jobId":"%s","operationId":"reserve-%s","round":1,"status":"completed","startedAt":"%s","endedAt":"%s","workspaceRoot":"%s"}\n' \
   "$dispatch_watch_job" "$dispatch_watch_job" "$watch_now" "$watch_now" "$watch_workspace" >"$watch_dispatch_record"
-METASYSTEM_BIN="$watch_root/bin/metasystem" "$watch_root/scripts/agents/dispatch.sh" watch \
-  --job "$dispatch_watch_job" >"$dispatch_watch_out" 2>&1
+METASYSTEM_BIN="$watch_root/bin/metasystem" METASYSTEM_DELEGATE_ROOT="$watch_root" \
+  "$watch_root/bin/metasystem" internal delegate watch --job "$dispatch_watch_job" >"$dispatch_watch_out" 2>&1
 grep -Eq '^inner:child since [0-9]+min' "$dispatch_watch_out" \
   || { echo "suite-progress fixture: dispatch watch did not print the deepest heartbeat" >&2; cat "$dispatch_watch_out" >&2; exit 1; }
 

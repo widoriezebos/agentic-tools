@@ -235,7 +235,7 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 				return "", &OpError{
 					Code:    11,
 					Reason:  concurrentReadRefusal,
-					Message: fmt.Sprintf("CONCURRENT_READ: critic root %s has outstanding round %d for subject %s; let that read finish and fold, or cancel it with dispatch.sh cancel --job %s, then dispatch the critic again", criticRoot, latestRound, result.SubjectDigest, asString(latest["jobId"])),
+					Message: fmt.Sprintf("CONCURRENT_READ: critic root %s has outstanding round %d for subject %s; let that read finish and fold, or stop it with metasystem work stop j2:%s, then dispatch the critic again", criticRoot, latestRound, result.SubjectDigest, asString(latest["jobId"])),
 				}
 			}
 		}

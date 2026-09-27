@@ -17,7 +17,6 @@ func TestDispatchBriefBoundsAdmission(t *testing.T) {
 	installRoot, _ := filepath.Abs(filepath.Join("..", ".."))
 	repoRoot := filepath.Dir(installRoot)
 	brief := filepath.Join(t.TempDir(), "brief.md")
-	script, _ := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "dispatch.sh"))
 	briefSource, _ := os.ReadFile(filepath.Join("..", "..", "internal", "dispatch", "brief.go"))
 	run := func(t *testing.T, body string, extra ...string) (int, string, string) {
 		must(t, os.WriteFile(brief, []byte(body), 0o600) == nil, "write brief")
@@ -52,8 +51,6 @@ func TestDispatchBriefBoundsAdmission(t *testing.T) {
 			} else {
 				must(t, code == 0 && out == tc.want && problem == "", "exit %d, stdout %q, stderr %q", code, out, problem)
 			}
-			must(t, tc.name != "mode-only" || strings.Contains(string(script), `job brief-mode --mode-only`), "early mode discovery does not use mode-only")
-			must(t, tc.name != "root-prefix" || strings.Contains(string(script), `job brief-mode --authority-only --brief "$1" --root "$root"`), "authority admission does not pass root")
 			must(t, tc.name != "mode-stdout" || strings.Count(string(briefSource), "os.ReadFile(briefPath)") == 3 && strings.Contains(string(briefSource), "validateBriefAuthority(admitted, bounds"), "public admission can reread authority bytes")
 		})
 	}
@@ -85,12 +82,5 @@ func TestDispatchBriefBoundsPrefixLookupOrdering(t *testing.T) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, problem)
 			}
 		})
-	}
-}
-
-func TestDispatchBriefBoundsFailureSuffix(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "dispatch.sh"))
-	if err != nil || !strings.Contains(string(data), "brief headers are invalid; Working Mode must be filled and Boundary and Ceiling must appear together") {
-		t.Fatalf("dispatch suffix missing: %v", err)
 	}
 }

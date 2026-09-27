@@ -37,7 +37,10 @@ USAGE
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
-dispatch="$root/scripts/agents/dispatch.sh"
+# The delegate lifecycle's callbacks run in the engine's delegate entry.
+delegate_callback() {
+  METASYSTEM_DELEGATE_ROOT="$root" "$ms" internal delegate "$@"
+}
 agents="$root/artifacts/agents"
 jobs="$agents/jobs"
 
@@ -131,7 +134,7 @@ cas_terminal() { # target, error, phase
   usage="$round_dir/fake-usage.json"
   "$ms" adapter fake-usage --output "$usage"
   "$ms" adapter result-patch --output "$patch" --error "$error" --phase "$phase" --usage "$usage"
-  "$dispatch" __record-cas --job "$job" --expect running --status "$target" --patch "$patch" || {
+  delegate_callback __record-cas --job "$job" --expect running --status "$target" --patch "$patch" || {
     status=$?
     [[ $status -eq 3 ]] || return "$status"
   }
@@ -151,7 +154,7 @@ complete_valid() {
     cas_terminal completed null completed
   else
     cat "$violation" >>"$log"
-    "$dispatch" __protocol-error --job "$job" --expect running --violation-file "$violation"
+    delegate_callback __protocol-error --job "$job" --expect running --violation-file "$violation"
   fi
 }
 
@@ -210,7 +213,7 @@ supervise() { # verb and remaining args
     # Through the one patch writer like every other failure path; the patch
     # gains the explicit usage:null that fail_pending's shape already carries.
     "$ms" adapter result-patch --output "$patch" --error authentication_failed --phase handshake --usage ""
-    "$dispatch" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
+    delegate_callback __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
     exit 1
   fi
 
@@ -239,10 +242,10 @@ supervise() { # verb and remaining args
     reference_path=$(printf '%s\n' "$reference_report" | sed -n 's/^REFERENCE_MISMATCH path=\([^ ]*\) .*/\1/p' | head -1)
     patch="$round_dir/reference-mismatch.json"
     "$ms" adapter result-patch --output "$patch" --error "reference_mismatch:${reference_path:-composition}" --phase launch --usage ""
-    "$dispatch" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
+    delegate_callback __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
     exit 1
   fi
-  "$dispatch" __handshake --job "$job" --session "$session" --turn "fake-turn-$round" \
+  delegate_callback __handshake --job "$job" --session "$session" --turn "fake-turn-$round" \
     --model "$(field "$record" requestedModel)" --effective "$effective" --signal "$signal" || exit 1
   if ! behavior_present no-event-stream; then
     printf '{"event":"session-established","sessionId":"%s","round":%s}\n' "$session" "$round" >>"$events"
@@ -261,7 +264,7 @@ supervise() { # verb and remaining args
       || { cas_terminal failed invalid_fixture_control execute; exit 1; }
     "$ms" util hold --tag "$instance_tag" &
     critique_pid=$!
-    "$dispatch" __register-custody --job "$job" --pid "$critique_pid" \
+    delegate_callback __register-custody --job "$job" --pid "$critique_pid" \
       || { kill -TERM "$critique_pid" 2>/dev/null || true; wait "$critique_pid" 2>/dev/null || true; cas_terminal failed custody_registration execute; exit 1; }
     printf '%s\n' "$critique_pid" >"$round_dir/custody-child.pid"
     critique_deadline=$(( $(date +%s) + critique_cap ))
@@ -332,7 +335,7 @@ supervise() { # verb and remaining args
       cas_terminal completed null completed
     else
       cat "$violation" >>"$log"
-      "$dispatch" __protocol-error --job "$job" --expect running --violation-file "$violation"
+      delegate_callback __protocol-error --job "$job" --expect running --violation-file "$violation"
     fi
     exit 0
   fi
@@ -437,7 +440,7 @@ case "$command" in
   dispatch|follow-up) supervise "$command" "$@" ;;
   cancel)
     [[ ${1:-} == --job && $# -eq 2 ]] || { usage; exit 2; }
-    "$dispatch" __cancel-owned --job "$2"
+    delegate_callback __cancel-owned --job "$2"
     ;;
   selftest)
     (($# == 0)) || { usage; exit 2; }

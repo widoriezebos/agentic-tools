@@ -551,6 +551,17 @@ type syncRequestDependencies struct {
 	// report, when set, receives the owner's typed outcome instead of the
 	// printed one; the public intent commands render it themselves.
 	report *ownerReport
+	// caller is the supplied process identity classification and human
+	// proof start from; zero is this process's parent, the caller of a verb
+	// run as a child (design 6.2).
+	caller int64
+}
+
+func (d syncRequestDependencies) callerPID() int64 {
+	if d.caller != 0 {
+		return d.caller
+	}
+	return int64(os.Getppid())
 }
 
 func defaultSyncRequestDependencies() syncRequestDependencies {
@@ -590,7 +601,9 @@ func syncReqWithProofAt(verb, root, by, lineageFlag string, observedProof *human
 }
 
 func syncReqWithProofAtWithDependencies(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, error) {
-	classification, classifyErr := brainHumanWordClassificationWithFacts(verb, root, by, observedProof, dependencies.authorityFacts)
+	facts := dependencies.authorityFacts
+	facts.caller = dependencies.caller
+	classification, classifyErr := brainHumanWordClassificationWithFacts(verb, root, by, observedProof, facts)
 	if classifyErr != nil {
 		return goal.VerbRequest{}, classifyErr
 	}
@@ -628,7 +641,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		if nowErr != nil {
 			return goal.VerbRequest{}, nowErr
 		}
-		fullProof, fullErr := dependencies.proveHuman(root, int64(os.Getppid()), nil, now)
+		fullProof, fullErr := dependencies.proveHuman(root, dependencies.callerPID(), nil, now)
 		if fullErr == nil && fullProof.ValidFor(root) {
 			authority = &fullProof
 		} else {
@@ -638,7 +651,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 				}
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove enrolled human ancestry: %w", fullErr)
 			}
-			terminalProof, terminalErr := dependencies.proveTerminal(root, int64(os.Getppid()), nil, now)
+			terminalProof, terminalErr := dependencies.proveTerminal(root, dependencies.callerPID(), nil, now)
 			if terminalErr != nil {
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove terminal human ancestry: %w", terminalErr)
 			}
@@ -678,7 +691,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		if authority != nil {
 			proof = *authority
 		} else {
-			proof, proofErr = dependencies.proveHuman(root, int64(os.Getppid()), nil, now)
+			proof, proofErr = dependencies.proveHuman(root, dependencies.callerPID(), nil, now)
 		}
 		if proofErr != nil || proof.Outcome != humanauthority.OutcomeProven || !proof.ValidFor(root) {
 			outcome := proof.Outcome
@@ -721,6 +734,8 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 type goalAuthorityReadFacts struct {
 	repositoryTop  func(string) (string, error)
 	ledgerIdentity func(string) string
+	// caller is the supplied process identity; zero is this process's parent.
+	caller int64
 }
 
 func defaultGoalAuthorityReadFacts() goalAuthorityReadFacts {
@@ -735,7 +750,11 @@ func brainHumanWordClassification(verb, root, by string, observedProof *humanaut
 }
 
 func brainHumanWordClassificationWithFacts(verb, root, by string, observedProof *humanauthority.Proof, facts goalAuthorityReadFacts) (lease.ClassifyResult, error) {
-	classification, classifyErr := classifyVerbCallerWith(root, int64(os.Getppid()), facts.repositoryTop)
+	caller := facts.caller
+	if caller == 0 {
+		caller = int64(os.Getppid())
+	}
+	classification, classifyErr := classifyVerbCallerWith(root, caller, facts.repositoryTop)
 	brainState := brain.Read(root, facts.ledgerIdentity(root))
 	if brainState.State != brain.Undeclared {
 		command := fmt.Sprintf("metasystem goal %s --root <checkout> --id <id> --by <name> <the verb's own flags>", verb)
@@ -2893,7 +2912,15 @@ func runGoalExtendBudget(args []string) int {
 }
 
 func runGoalExtendBudgetWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, reads dispatchcore.ProofAdmissionReads) int {
+	return goalExtendBudgetTo(args, commandNow, dependencies, reads, os.Stdout, os.Stderr)
+}
+
+// goalExtendBudgetTo is goal extend-budget onto the caller's streams; the
+// delegation lifecycle calls it in-process with its own supplied caller in
+// dependencies (design 6.2).
+func goalExtendBudgetTo(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, reads dispatchcore.ProofAdmissionReads, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("goal extend-budget", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
@@ -2903,54 +2930,62 @@ func runGoalExtendBudgetWithInputs(args []string, commandNow func(string) (time.
 	destructiveReach := flags.String("destructive-reach", "", "MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
 	lineage := flags.String("lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *revision == 0 || *proposedCap == 0 || *role == "" || *dispatchMode == "" || *destructiveReach == "" {
-		fmt.Fprintln(os.Stderr, "goal extend-budget needs --id, --revision, a positive --proposed-cap, --role, --dispatch-mode, and --destructive-reach")
+		fmt.Fprintln(stderr, "goal extend-budget needs --id, --revision, a positive --proposed-cap, --role, --dispatch-mode, and --destructive-reach")
 		return 2
 	}
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal extend-budget works the synced backlog; this checkout still carries the legacy ledger")
+		fmt.Fprintln(stderr, "goal extend-budget works the synced backlog; this checkout still carries the legacy ledger")
 		return 1
 	}
 	req, err := syncReqWithProofAtWithDependencies("extend-budget", *root, "", *lineage, nil, commandNow, dependencies)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	held, err := goalrevision.Acquire(*root, *id, *revision, "goal-extend-budget")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "goal extend-budget could not acquire the goal-revision lock:", err)
+		fmt.Fprintln(stderr, "goal extend-budget could not acquire the goal-revision lock:", err)
 		return 1
 	}
 	defer held.Release()
 	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatchWithReads(*root, *id, *revision, *proposedCap, req.Now, *role, *dispatchMode, reads, dispatchcore.HazardClass(*destructiveReach))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if !verdict.Refused() {
-		fmt.Fprintf(os.Stderr, "goal %s revision %d is admitted; there is no budget refusal to extend\n", *id, *revision)
+		fmt.Fprintf(stderr, "goal %s revision %d is admitted; there is no budget refusal to extend\n", *id, *revision)
 		return 1
 	}
 	if verdict.PolicyRefusal != "" {
-		fmt.Fprintln(os.Stderr, verdict.PolicyRefusal)
+		fmt.Fprintln(stderr, verdict.PolicyRefusal)
 		return 1
 	}
 	if verdict.LiveStopReason != "" || verdict.Extension == nil {
 		for _, line := range dispatchcore.FormatGoalRevisionAdmission(verdict) {
-			fmt.Fprintln(os.Stderr, line)
+			fmt.Fprintln(stderr, line)
 		}
 		if verdict.LiveStopReason != "" {
-			fmt.Fprintf(os.Stderr, "goal %s revision %d names a live stop, not an extendable exhaustion\n", *id, *revision)
+			fmt.Fprintf(stderr, "goal %s revision %d names a live stop, not an extendable exhaustion\n", *id, *revision)
 		} else {
-			fmt.Fprintf(os.Stderr, "goal %s revision %d has no consumption-earned budget extension offer\n", *id, *revision)
+			fmt.Fprintf(stderr, "goal %s revision %d has no consumption-earned budget extension offer\n", *id, *revision)
 		}
 		return 1
 	}
 	if err := verdict.Extension.Validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	res, err := goal.ExtendBudget(req, *id, verdict.Extension.GoalOffer())
-	return printSyncResult(res, err)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	writeJSONLine(stdout, stderr, map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+	if res.Outcome != goal.OutcomeConfirmed {
+		return 1
+	}
+	return 0
 }
 
 func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int {

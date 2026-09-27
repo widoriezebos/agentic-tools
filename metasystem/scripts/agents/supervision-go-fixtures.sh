@@ -77,7 +77,6 @@ printf '%s\n' 'metasystem.runtimes=fake' 'watch.interval-sec=1' >"$fixture_root/
 cp "$bin" "$fixture_root/bin/metasystem"
 for dependency in \
   scripts/agents/arm-supervision.sh \
-  scripts/agents/dispatch.sh \
   scripts/agents/adapters/runtime-common.sh \
   scripts/agents/adapters/fake.sh \
   scripts/watch-background-jobs.sh; do

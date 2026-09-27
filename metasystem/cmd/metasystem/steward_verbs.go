@@ -350,6 +350,7 @@ func runStewardTick(args []string) int {
 		return 2
 	}
 	tickConfig.StaleTicks, tickConfig.MaxRevivals = *staleTicks, *maxRevivals
+	tickConfig.BreachStop = delegateBreachStop(*repo)
 	result, err := steward.RunTick(*repo, tickConfig, stewardCensusFor(*repo))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward tick: %v\n", err)
@@ -588,6 +589,7 @@ func runStewardRun(args []string) int {
 		return 2
 	}
 	tickConfig.ArmedLineage = *lineage
+	tickConfig.BreachStop = delegateBreachStop(*repo)
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
 		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)

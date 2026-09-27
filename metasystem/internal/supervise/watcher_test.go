@@ -40,7 +40,6 @@ func stageCheckout(t *testing.T) string {
 	// The remaining fingerprint inputs need only exist and be readable.
 	for _, rel := range []string{
 		"scripts/agents/arm-supervision.sh",
-		"scripts/agents/dispatch.sh",
 		"bin/metasystem",
 		"scripts/agents/adapters/runtime-common.sh",
 		"scripts/watch-background-jobs.sh",

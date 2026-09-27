@@ -430,7 +430,7 @@ func syntheticFingerprintRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	for _, relative := range []string{
-		"scripts/agents/arm-supervision.sh", "scripts/agents/dispatch.sh", "bin/metasystem",
+		"scripts/agents/arm-supervision.sh", "bin/metasystem",
 		"scripts/agents/adapters/runtime-common.sh", "scripts/watch-background-jobs.sh",
 	} {
 		path := filepath.Join(root, relative)

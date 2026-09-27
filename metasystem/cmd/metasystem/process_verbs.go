@@ -90,7 +90,7 @@ func processTransition(scope processScope, scale int) *stoptransition.Transition
 		Root: scope.Root, Checkout: scope.Checkout, ScaleMilli: scale,
 		Families: stoptransition.LocalFamilies(stoptransition.LocalConfig{
 			Root: scope.Root, Checkout: scope.Checkout, Installation: scope.Installation,
-			Binary: scope.Binary, ScaleMilli: scale,
+			Binary: scope.Binary, ScaleMilli: scale, CancelJob: delegateCancel(scope.Installation),
 		}),
 	}
 }

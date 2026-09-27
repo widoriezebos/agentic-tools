@@ -3,8 +3,6 @@ package steward
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,7 +41,13 @@ type TickConfig struct {
 	// from the identity it was enrolled with. A tick with no runner context
 	// publishes no presence, so a command process running the manual tick
 	// verb can never publish this machine's rollout confirmation.
-	Runner            *seat.RunnerContext
+	Runner *seat.RunnerContext
+	// BreachStop closes one breached goal revision and completes its
+	// cancellation pass through the delegate lifecycle, returning the
+	// lifecycle's report. The lifecycle composes above the steward (design
+	// 6.3), so the command layer supplies it; a tick without one reports
+	// every stoppable route FAILED by name.
+	BreachStop        func(goalID string, revision uint64) (string, error)
 	narrationLocation *time.Location
 }
 
@@ -98,12 +102,12 @@ type BreachStopReport struct {
 	Detail   string `json:"detail,omitempty"`
 }
 
-func runBreachStopCustodian(repoRoot string, now time.Time) []BreachStopReport {
-	return runBreachStopCustodianWithScanner(repoRoot, now, dispatch.FindBreachStops)
+func runBreachStopCustodian(repoRoot string, now time.Time, stop func(string, uint64) (string, error)) []BreachStopReport {
+	return runBreachStopCustodianWithScanner(repoRoot, now, dispatch.FindBreachStops, stop)
 }
 
 func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
-	scanner func(string, time.Time) ([]dispatch.StopRoute, error)) []BreachStopReport {
+	scanner func(string, time.Time) ([]dispatch.StopRoute, error), stop func(string, uint64) (string, error)) []BreachStopReport {
 	routes, err := scanner(repoRoot, now)
 	if err != nil {
 		return []BreachStopReport{{State: "FAILED", Detail: err.Error()}}
@@ -116,19 +120,21 @@ func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
 			reports = append(reports, report)
 			continue
 		}
-		cmd := exec.Command(filepath.Join(repoRoot, "scripts", "agents", "dispatch.sh"),
-			"__breach-stop-goal", "--goal", route.GoalID, "--revision", fmt.Sprint(route.Revision))
-		cmd.Dir = repoRoot
-		out, runErr := cmd.CombinedOutput()
-		if runErr != nil {
+		if stop == nil {
+			report.State, report.Detail = "FAILED", "the steward tick has no delegate lifecycle wired to run the breach stop"
+			reports = append(reports, report)
+			continue
+		}
+		out, stopErr := stop(route.GoalID, route.Revision)
+		if stopErr != nil {
 			report.State = "FAILED"
-			report.Detail = strings.TrimSpace(string(out))
+			report.Detail = strings.TrimSpace(out)
 			if report.Detail == "" {
-				report.Detail = runErr.Error()
+				report.Detail = stopErr.Error()
 			}
 		} else {
 			report.State = "COMPLETE"
-			report.Detail = strings.TrimSpace(string(out))
+			report.Detail = strings.TrimSpace(out)
 		}
 		reports = append(reports, report)
 	}
@@ -187,7 +193,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// Budget healing runs before health and notification. A successful stop is
 	// machinery history only; a failure remains visible to the ordinary health
 	// breaker, which is the sole escalation owner.
-	goalStops := runBreachStopCustodian(repoRoot, cfg.now())
+	goalStops := runBreachStopCustodian(repoRoot, cfg.now(), cfg.BreachStop)
 	governedRefreshFailures := refreshGovernedObligations(repoRoot, cfg.now())
 	if len(governedRefreshFailures) > 0 {
 		return degradedTick(repoRoot, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))

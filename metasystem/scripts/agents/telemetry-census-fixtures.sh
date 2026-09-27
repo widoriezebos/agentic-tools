@@ -19,10 +19,12 @@ fixture_root="$cas_repository/metasystem"
 mkdir -p "$fixture_root/scripts/agents" "$fixture_root/artifacts/agents/jobs" \
   "$fixture_root/artifacts/agents/record-locks" "$fixture_root/bin"
 git -C "$cas_repository" init -q -b main
-cp "$root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/"
-cp "$root/scripts/agents/checkout-execution-guard.sh" "$fixture_root/scripts/agents/"
 cp "$root/bin/metasystem" "$fixture_root/bin/metasystem"
-dispatch="$fixture_root/scripts/agents/dispatch.sh"
+# The adapter's callbacks reach the delegate lifecycle of this scratch
+# installation, not the checkout the adapter functions were sourced from.
+delegate_callback() {
+  METASYSTEM_DELEGATE_ROOT="$fixture_root" "$fixture_root/bin/metasystem" internal delegate "$@"
+}
 # The record CAS is a control-plane write. Under an agent-run suite
 # the ambient ancestry classifies UNTRUSTED in this sandbox, so this
 # shell announces itself as the sandbox's main — what a starting

@@ -241,7 +241,7 @@ case "$command_name" in
   dispatch|follow-up) supervise "$command_name" "$@" ;;
   cancel)
     [[ ${1:-} == --job && $# -eq 2 ]] || { usage; exit 2; }
-    "$dispatch" __cancel-owned --job "$2"
+    delegate_callback __cancel-owned --job "$2"
     ;;
   selftest)
     (($# == 0)) || { usage; exit 2; }

@@ -15,10 +15,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"golang.org/x/sys/unix"
 )
@@ -351,7 +351,7 @@ func runDispatchClaimLaunchWithGoalReads(args []string, reads *dispatchcore.Proo
 		CreatorPID: *creatorPID, IdentityReader: startReader, ProcessVerifier: commandClaimProcessVerifier{},
 		Reconcile: func(root, job string) (dispatchcore.ReconciliationResult, error) {
 			return dispatchcore.ReconcileReservation(root, job, dispatchcore.ReconciliationDependencies{
-				Scanner: commandTaggedProcessScanner{root: root}, Creator: startReader,
+				Scanner: commandTaggedProcessScanner{Root: root}, Creator: startReader,
 				Emit: func(line string) { fmt.Fprintln(os.Stderr, line) },
 			})
 		},
@@ -440,48 +440,12 @@ func runDispatchFixturePauseBeforeLaunch(args []string) int {
 }
 
 // claimLaunchInternalAuthorized keeps reservation publication behind the
-// delegate verb. The environment marker identifies the internal route but
-// carries no authority by itself: a real delegate must also present the
-// short-lived bearer word it minted, and the authoritative claim spends that
-// word under the job record lock. The complete process-table fixture remains
-// the one test seam that may exercise the custody machine directly.
+// delegate verb (the owner is dispatchproc.ClaimAuthorized).
 func claimLaunchInternalAuthorized(root string, binding dispatchcore.DelegateClaimCapabilityBinding, preflight bool) bool {
-	if os.Getenv("METASYSTEM_DELEGATE_INTERNAL") != "1" {
-		return false
-	}
-	if claimLaunchFakeFixtureAuthorized(root) {
-		return true
-	}
-	raw := os.Getenv(delegateClaimCapabilityEnv)
-	if raw == "" {
-		return false
-	}
-	var err error
-	if preflight {
-		err = dispatchcore.ValidateDelegateClaimCapability(root, raw, binding)
-	} else {
-		err = dispatchcore.ConsumeDelegateClaimCapability(root, raw, binding)
-	}
-	return err == nil
-}
-
-func claimLaunchFakeFixtureAuthorized(root string) bool {
-	processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE")
-	identityFile := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
-	for _, path := range []string{processFile, identityFile} {
-		if path == "" {
-			return false
-		}
-		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() {
-			return false
-		}
-	}
-	configuration, err := os.ReadFile(filepath.Join(root, "metasystem.conf"))
-	if err != nil {
-		return false
-	}
-	return strings.Contains("\n"+string(configuration), "\nmetasystem.runtimes=fake\n")
+	return dispatchproc.ClaimAuthorized(root, dispatchproc.ClaimSurface{
+		DelegateInternal: os.Getenv("METASYSTEM_DELEGATE_INTERNAL") == "1",
+		Capability:       os.Getenv(delegateClaimCapabilityEnv),
+	}, binding, preflight)
 }
 
 func runDispatchClaimOccupancyPrepare(args []string) int {
@@ -524,86 +488,12 @@ func runDispatchLaunchCapabilityConsume(args []string) int {
 	return recordExit(dispatchcore.ConsumeLaunchCapability(*root, *job, *capability, *adapterVerb, *instanceTag, *supervisorPID, reader))
 }
 
-type commandClaimProcessVerifier struct{}
+type commandClaimProcessVerifier = dispatchproc.ClaimProcessVerifier
 
-func (commandClaimProcessVerifier) Verify(pid int64, instanceTag string) identity.Verification {
-	return identity.VerifyProcess(identity.KernelProber{}, pid, func(argv []string) bool {
-		_, matches := janitor.MatchShape(janitor.DefaultShapes(), argv, instanceTag)
-		return matches
-	})
-}
-
-type commandTaggedProcessScanner struct {
-	root string
-}
-
-func (s commandTaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time) census.TaggedProcessCensus {
-	dependencies := census.TaggedScanDependencies{
-		MatchesTag: positionedJobTag, ReservationCreatedAt: reservationCreatedAt,
-	}
-	processes, configured, err := census.ConfiguredProcessFixture(s.root)
-	if err != nil {
-		return census.TaggedProcessCensus{EnumerationError: err.Error()}
-	}
-	if configured {
-		reader, readerErr := dispatchStartReader(s.root)
-		if readerErr != nil {
-			return census.TaggedProcessCensus{EnumerationError: readerErr.Error()}
-		}
-		pids := make([]int64, 0, len(processes))
-		byPID := make(map[int64]census.Process, len(processes))
-		argv := make(map[int64][]string, len(processes))
-		argvKnown := make(map[int64]bool, len(processes))
-		for _, process := range processes {
-			if !process.Alive {
-				continue
-			}
-			pids = append(pids, process.Pid)
-			byPID[process.Pid] = process
-			// Fixture process rows store a flat command string. Only simple
-			// whitespace-separated commands can recover exact token boundaries;
-			// quoted or escaped commands remain unreadable and cannot prove a tag.
-			if !strings.ContainsAny(process.Argv, "'\"\\") {
-				argv[process.Pid] = strings.Fields(process.Argv)
-				argvKnown[process.Pid] = true
-			}
-		}
-		dependencies.PIDs = func() ([]int64, error) { return pids, nil }
-		dependencies.Signal = func(pid int64) error {
-			if _, exists := byPID[pid]; !exists {
-				return unix.ESRCH
-			}
-			return nil
-		}
-		dependencies.PGID = func(pid int64) (int64, error) {
-			process, exists := byPID[pid]
-			if !exists {
-				return 0, unix.ESRCH
-			}
-			return process.PGID, nil
-		}
-		dependencies.Reader = commandConfiguredProcessReader{starts: reader, argv: argv, argvKnown: argvKnown}
-	}
-	return census.ScanTaggedProcesses(tag, dependencies)
-}
-
-type commandConfiguredProcessReader struct {
-	starts    identity.StartReader
-	argv      map[int64][]string
-	argvKnown map[int64]bool
-}
-
-func (r commandConfiguredProcessReader) ReadStart(pid int64) (identity.Exact, identity.Liveness, error) {
-	return r.starts.ReadStart(pid)
-}
-
-func (r commandConfiguredProcessReader) ReadArgv(pid int64) ([]string, bool) {
-	return r.argv[pid], r.argvKnown[pid]
-}
+type commandTaggedProcessScanner = dispatchproc.TaggedProcessScanner
 
 func positionedJobTag(argv []string, tag string) bool {
-	_, matches := janitor.MatchShape(janitor.DefaultShapes(), argv, tag)
-	return matches
+	return dispatchproc.PositionedJobTag(argv, tag)
 }
 
 func runDispatchPreforkMark(args []string) int {
@@ -679,7 +569,7 @@ func runDispatchReconcileReservation(args []string) int {
 		return recordExit(err)
 	}
 	result, err := dispatchcore.ReconcileReservation(*root, *job, dispatchcore.ReconciliationDependencies{
-		Scanner: commandTaggedProcessScanner{root: *root}, Creator: reader,
+		Scanner: commandTaggedProcessScanner{Root: *root}, Creator: reader,
 		Emit: func(line string) { fmt.Fprintln(os.Stderr, line) },
 	})
 	if err != nil {
@@ -718,13 +608,7 @@ func runDispatchOwnershipPatch(args []string) int {
 }
 
 func dispatchStartReader(root string) (identity.StartReader, error) {
-	authorization, err := fixtureauth.New(root)
-	if err != nil {
-		return nil, err
-	}
-	return identity.FixtureStartReader{
-		Kernel: identity.KernelProber{}, Fixture: authorization.Identity(),
-	}, nil
+	return dispatchproc.StartReader(root)
 }
 
 func runDispatchRecordSetup(args []string) int {

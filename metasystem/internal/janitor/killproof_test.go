@@ -105,12 +105,30 @@ func TestKillable(t *testing.T) {
 }
 
 func TestMatchShapeRequiresAllIncludes(t *testing.T) {
-	// "dispatch.sh" alone must not match the reaper shape without its
-	// "reap" subcommand — dispatch runs many verbs that are not
-	// supervision components.
-	argv := []string{"bash", "/repo/scripts/agents/dispatch.sh", "dispatch", "--instance-tag", tag}
+	// "metasystem mission" alone must not match the run-loop shape without
+	// its "run-loop" subcommand: the mission family runs many verbs that
+	// are not the detached loop.
+	argv := []string{"/repo/bin/metasystem", "mission", "status", "--instance-tag", tag}
 	if _, ok := MatchShape(DefaultShapes(), argv, tag); ok {
-		t.Fatal("a non-reap dispatch verb matched the reaper shape")
+		t.Fatal("a non-run-loop mission verb matched the run-loop shape")
+	}
+}
+
+// The retired dispatch.sh's standing shell reaper no longer exists (the
+// delegate lifecycle reaps in-process, lease-held, single-shot), so no
+// shape recognizes a process by the script's name (design 6.6).
+func TestNoShapeRecognizesTheRetiredDispatchScript(t *testing.T) {
+	t.Parallel()
+	for _, shape := range DefaultShapes() {
+		for _, include := range shape.Includes {
+			if include == "dispatch.sh" {
+				t.Fatalf("shape %s still recognizes the retired dispatch.sh", shape.Name)
+			}
+		}
+	}
+	argv := []string{"bash", "/repo/scripts/agents/dispatch.sh", "reap", "--instance-tag", tag}
+	if _, ok := MatchShape(DefaultShapes(), argv, tag); ok {
+		t.Fatal("a dispatch.sh reap argv still proves ownership")
 	}
 }
 
@@ -127,6 +145,10 @@ func TestGroupOwnershipShapesRequireTheTagPosition(t *testing.T) {
 		{
 			name: "adapter supervisor follow-up behind the execution guard",
 			argv: []string{"bash", "/repo/scripts/agents/checkout-execution-guard.sh", "run-member", "--", "/repo/scripts/agents/adapters/codex.sh", "follow-up", "--job", "job-b", "--instance-tag=" + tag},
+		},
+		{
+			name: "adapter supervisor behind the delegate guard member wrapper",
+			argv: []string{"/repo/bin/metasystem", "internal", "delegate", "__run-member", "--root", "/repo", "--", "/repo/scripts/agents/adapters/codex.sh", "follow-up", "--job", "job-b", "--instance-tag", tag},
 		},
 		{
 			name: "claude adapter supervisor",

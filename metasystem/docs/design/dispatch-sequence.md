@@ -1,5 +1,10 @@
 # The dispatch path's actual call sequence
 
+> PORTED (verbs-object-action U6b): `dispatch.sh` is gone; its lifecycle is
+> Go in `internal/delegation` (the `__` callbacks are function calls), with
+> the same phases and verdicts. This map stays pinned to its commit as
+> history; read the package for current anchors.
+
 Status: MAP, not design. This document records what `dispatch.sh` does
 today, step by step, with file:line anchors into the code as of commit
 `48442ef`. It exists because the core-vs-plumbing ruling (recorded in

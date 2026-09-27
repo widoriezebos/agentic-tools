@@ -260,7 +260,7 @@ devin_transport() {
 record_acp_transport_pin() { # best-effort after handshake; the refusal guards enforce
   local patch="$round_dir/transport-patch.json"
   "$ms" adapter transport-patch --output "$patch" --transport acp >>"$log" 2>&1 \
-    && "$dispatch" __record-cas --job "$job" --expect running --status running --patch "$patch" >>"$log" 2>&1 \
+    && delegate_callback __record-cas --job "$job" --expect running --status running --patch "$patch" >>"$log" 2>&1 \
     || true
 }
 
@@ -714,7 +714,7 @@ devin_delivery_repair() { # usage file
   fi
 
   set +e
-  "$dispatch" __repair-claim --job "$job" >>"$log" 2>&1
+  delegate_callback __repair-claim --job "$job" >>"$log" 2>&1
   claim_rc=$?
   set -e
   if (( claim_rc == 3 )); then
@@ -824,7 +824,7 @@ case "$command_name" in
   dispatch|follow-up) supervise "$command_name" "$@" ;;
   cancel)
     [[ ${1:-} == --job && $# -eq 2 ]] || { usage; exit 2; }
-    "$dispatch" __cancel-owned --job "$2"
+    delegate_callback __cancel-owned --job "$2"
     ;;
   selftest)
     (($# == 0)) || { usage; exit 2; }

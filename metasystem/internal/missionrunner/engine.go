@@ -74,6 +74,12 @@ type Engine struct {
 	// AnchorEffect replaces the anchor commit for this engine only; nil
 	// anchors through mission.AnchorNamed. Fixtures without Git set it.
 	AnchorEffect func(statePath, ledgerPath, identityName string) error
+	// Delegate runs one delegate lifecycle command (reap, close) in this
+	// process and returns its standard output, diagnostics and exit code.
+	// The lifecycle composes above the runner (design 6.3), so the command
+	// layer supplies it; an engine without one refuses every delegate
+	// command by name.
+	Delegate func(args ...string) (stdout, stderr string, code int)
 	// LastAnswer is what the most recent Answer on this engine committed.
 	LastAnswer AnswerEffects
 	emitter    events.Emitter
@@ -195,6 +201,14 @@ func NewEngine(root, mission string) *Engine {
 		Mission: mission,
 		emitter: events.Emitter{Component: "runner", Pid: int64(os.Getpid())},
 	}
+}
+
+// delegate runs one delegate lifecycle command through Delegate.
+func (e *Engine) delegate(args ...string) (string, string, int) {
+	if e.Delegate == nil {
+		return "", "the mission runner has no delegate lifecycle wired", 1
+	}
+	return e.Delegate(args...)
 }
 
 func (e *Engine) beginSignalHandling(ignore bool) func() {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -43,7 +44,7 @@ func runAdapterNormalizeReturn(args []string) int {
 
 // runAdapterSelftestRun drives the full-contract self-test: Go
 // orchestrates the sequence by exec'ing
-// dispatch.sh and the adapter script, and owns the decisions — the
+// the delegate boundary and the adapter script, and owns the decisions — the
 // model-placeholder refusal, the denial taxonomy, session equality, and the
 // evidence assertions as parsed reads of return.json. The per-runtime knobs
 // (turn ceiling, denial-ends-turn) arrive as flags from the adapter.
@@ -65,6 +66,15 @@ func runAdapterSelftestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter selftest-run --root DIR --runtime NAME --adapter SCRIPT --usage native|unavailable|metered [--probe NAME] [--turn-ceiling-sec N] [--denial-ends-turn]")
 		return 2
 	}
+	run := delegateInProcess(p.Root)
+	p.Status = func(job string) string {
+		stdout, _, code := run("status", "--job", job)
+		if code != 0 {
+			return ""
+		}
+		return strings.TrimSpace(stdout)
+	}
+	p.Reap = func(job string) { run("reap", "--job", job) }
 	if *probeName != "" {
 		probe, err := adapter.SelftestProbeFor(p.Runtime, *probeName)
 		if err != nil {

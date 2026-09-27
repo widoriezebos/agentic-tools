@@ -659,7 +659,7 @@ func TestNonterminalJobWithProvablyDeadProcessIsNamed(t *testing.T) {
 	}
 	role := checkNonterminalJobs(root, healthProbe{44001: {state: identity.Dead}})
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "dead-job") ||
-		!strings.Contains(role.Remedy, "dispatch.sh") || !strings.Contains(role.Remedy, "reap") {
+		!strings.Contains(role.Remedy, "internal delegate reap") {
 		t.Fatalf("the dead-process job and its current remedy must be named: %+v", role)
 	}
 }

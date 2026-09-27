@@ -2675,7 +2675,7 @@ grep -Fq '"pidStartedAt"' "$source_root/internal/dispatch/ownership.go" \
 grep -Fq 'pidStartedAt' "$source_root/docs/orchestration.md" \
   || { echo "S4-1/S4-10: host-turn contract does not document pidStartedAt" >&2; exit 1; }
 for owner_asset in \
-  scripts/agents/dispatch.sh scripts/watch-background-jobs.sh \
+  internal/delegation/lifecycle.go scripts/watch-background-jobs.sh \
   scripts/agents/adapters/runtime-common.sh scripts/agents/supervision-hook.sh \
   scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json \
   scripts/enforcement/devin-hooks.json; do

@@ -34,7 +34,7 @@ var patienceLawfulNonterminal = map[string]bool{
 // patienceNeverStarted is the never-started error vocabulary, named
 // exactly from the shipped writers: HandshakeEval's
 // pre-running refusals (internal/dispatch/handshake.go) and the adapter
-// setup failures (scripts/agents/dispatch.sh, runtime-common.sh). A
+// setup failures (the delegate lifecycle, runtime-common.sh). A
 // cancelled or failed record with one of these errors and no spend-proving
 // usage never started: nobody worked, so no one's patience is debited.
 // resume_collision is deliberately absent: a pre-start collision carries no
