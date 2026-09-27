@@ -80,6 +80,12 @@ func prepareFakeRound(t *Turn) (Launch, error) {
 			return Launch{}, err
 		}
 	}
+	if r.present("effective-unreadable") {
+		// An envelope nobody can compare: the shared layer must refuse it.
+		if err := os.WriteFile(t.Effective, []byte("[]\n"), 0o644); err != nil {
+			return Launch{}, err
+		}
+	}
 	if r.present("effective-narrower") {
 		if err := adapter.SetEffectiveNetwork(t.Effective, "deny"); err != nil {
 			return Launch{}, err

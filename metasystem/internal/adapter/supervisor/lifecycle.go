@@ -335,13 +335,14 @@ func (s *Supervision) registerCustody(c *child) error {
 }
 
 // failIfEffectiveWider refuses a launch whose effective grant is wider than
-// the request. An unreadable comparison passes, as the shell adapter's
-// captured-output check did (recorded as a finding for its own goal).
+// the request. An unreadable comparison refuses too (fail closed): a launch
+// never proceeds on a grant nobody could compare.
 func (s *Supervision) failIfEffectiveWider() bool {
 	mismatch, err := adapter.ComparePermissions(s.record, s.effective)
 	if err != nil {
 		fmt.Fprintln(s.d.Stderr, err)
-		return true
+		s.failPending("permissions_check_unreadable", "handshake", "")
+		return false
 	}
 	if mismatch != "" {
 		s.failPending("permissions_mismatch:"+mismatch, "handshake", "")

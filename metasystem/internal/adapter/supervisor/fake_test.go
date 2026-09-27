@@ -255,6 +255,21 @@ func TestFakeEffectiveWider(t *testing.T) {
 	assertPatch(t, assertCAS(t, calls[0], f.job, "pending", "failed"), "permissions_mismatch:network", "handshake", false)
 }
 
+// TestFakeEffectiveUnreadableFailsClosed: an effective envelope the shared
+// comparison cannot read refuses the launch, never passes it.
+func TestFakeEffectiveUnreadableFailsClosed(t *testing.T) {
+	t.Parallel()
+	f := newFakeInstall(t, installOptions{prompt: "FAKE:effective-unreadable\n"})
+	if code := f.run(); code != 1 {
+		t.Fatalf("exit %d, want 1", code)
+	}
+	calls := f.dispatcher.calls(t)
+	if len(calls) != 1 {
+		t.Fatalf("calls = %q", calls)
+	}
+	assertPatch(t, assertCAS(t, calls[0], f.job, "pending", "failed"), "permissions_check_unreadable", "handshake", false)
+}
+
 // TestFakeHandshakeFailure fails the pending round before any effective
 // permissions exist.
 func TestFakeHandshakeFailure(t *testing.T) {
