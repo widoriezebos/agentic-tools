@@ -306,7 +306,12 @@ func runUIServe(args []string) int {
 			// session/new. A seat that cannot name its own executable gets
 			// a Partner that reads the page and nothing beyond it, which is
 			// the previous slice's Partner rather than no Partner at all.
-			if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation, presenceRun); toolsErr != nil {
+			// And the file this seat marks each answer in, beside the
+			// conversation: it is what lets the tool server tell one answer
+			// from the next, so the fifty-first proposal of an answer is
+			// refused at the call (R-130-ui, Astra F-06).
+			if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation, presenceRun,
+				filepath.Join(conversations, "answer")); toolsErr != nil {
 				fmt.Fprintln(os.Stderr, "interface Partner: "+toolsErr.Error())
 			} else {
 				admitted.Tools = tools

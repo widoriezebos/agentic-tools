@@ -502,9 +502,9 @@ func TestWhatHappenedToAProposalOutlastsTenExchangesWithoutOne(t *testing.T) {
 	turn := ask("key-1", "this one is superseded; put it away")
 
 	// The human applies it, in the two writes the runner makes.
-	applying, err := service.Proposed("Wido", turn, 0, 1, partner.ProposalApplying, "")
+	applying, err := service.Proposed("Wido", turn, 0, 1, partner.ProposalApplying, "", "")
 	testutil.Require(t, "the line is taken", err, nil)
-	_, err = service.Proposed("Wido", turn, 0, applying.Version, partner.ProposalApplied, "")
+	_, err = service.Proposed("Wido", turn, 0, applying.Version, partner.ProposalApplied, "", "")
 	testutil.Require(t, "and settled", err, nil)
 
 	// Ten exchanges that propose nothing: twenty messages, the whole of the

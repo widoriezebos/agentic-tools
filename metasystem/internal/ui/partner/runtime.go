@@ -79,6 +79,17 @@ type ToolServer struct {
 	Args    []string
 	// Env is what this seat adds to that process's environment, as NAME=value.
 	Env []string
+	// Answers is the file this seat writes the current answer's mark into, and
+	// "" where it keeps none.
+	//
+	// It is the one thing the tool server cannot work out for itself: it serves
+	// a whole Partner session over one stdio process, and nothing in the
+	// protocol says where one answer ends, so the count that refuses the
+	// fifty-first proposal of an answer would have nothing to count against
+	// (Astra F-06). The seat writes the mark because the seat starts and ends
+	// every answer; the path travels in the process's environment, under
+	// uitools.AnswerFile, because it is settled at launch and never again.
+	Answers string
 }
 
 // ToolsFor names the tool server for one checkout: this executable, with the
@@ -87,7 +98,7 @@ type ToolServer struct {
 // It is this executable rather than a configured path because the tools ARE
 // the engine: a second binary could answer a different ledger than the pages
 // do, and the whole point of the hand-off is that it cannot.
-func ToolsFor(checkout, installation, presenceRun string) (*ToolServer, error) {
+func ToolsFor(checkout, installation, presenceRun, answers string) (*ToolServer, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("this seat cannot name its own executable, so the Partner gets no read tools: %w", err)
@@ -107,6 +118,7 @@ func ToolsFor(checkout, installation, presenceRun string) (*ToolServer, error) {
 			// the fetches it records do not.
 			"--presence-run", presenceRun,
 		},
+		Answers: answers,
 	}, nil
 }
 
@@ -123,6 +135,9 @@ func (t *ToolServer) wire() []any {
 			continue
 		}
 		env = append(env, map[string]any{"name": name, "value": value})
+	}
+	if t.Answers != "" {
+		env = append(env, map[string]any{"name": uitools.AnswerFile, "value": t.Answers})
 	}
 	args := make([]any, 0, len(t.Args))
 	for _, argument := range t.Args {

@@ -103,5 +103,5 @@ func (p recovering) ParkBranchCheck(endpoint goal.Endpoint) func(goalID, next st
 
 func (p recovering) BreachStop(goal.Endpoint, goal.Entry) (goal.PublishRequest, func(), error) {
 	return goal.PublishRequest{}, nil, fmt.Errorf(
-		"a breach-stop is not recovered from the interface: it needs the live budget projection under the goal-revision lock; run bin/metasystem goal recover from your own terminal")
+		"a breach-stop is not recovered from the interface: it needs the live budget projection under the goal-revision lock; run metasystem goal sync --recover from your own terminal")
 }

@@ -695,7 +695,20 @@ func Unapprove(r VerbRequest, id, because string, proof *humanauthority.Proof) (
 				return nil, err
 			}
 			f := t.Live[id]
-			if f == nil || f.Approved == nil {
+			if f == nil {
+				return nil, approvalRequired(f, "unapprove")
+			}
+			if f.Approved == nil {
+				// The goal carries no approval, which is the state this act
+				// asks for. From a browser session that is the act HAVING its
+				// effect (R-129-ui) rather than a refusal of an act the human
+				// already made: the first withdrawal landed and its answer was
+				// lost, or a second tab held the same card. A goal that is not
+				// live is refused above — this rule reads a live goal's own
+				// approval and says nothing about one that has left the tree.
+				if fromSignedInSession(proof) {
+					return nil, NothingToDo{Reason: "goal " + id + " carries no approval: the same withdrawal from this signed-in session"}
+				}
 				return nil, approvalRequired(f, "unapprove")
 			}
 			if opidLanded(f, r) {
