@@ -762,6 +762,15 @@ func (inv *intentInvocation) stopJob(ref string) int {
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: fmt.Sprintf("launch %s cancelled: %s", id, record.State),
 			text: []string{launchReport(record)}, Data: map[string]any{"kind": "launch", "record": record}})
 	}
+	if status, _ := job.dispatch["status"].(string); dispatchcore.TerminalStatus(status) {
+		// A job that already ended is already stopped: the repeat is success
+		// and never reaches the cancellation owner (R-129-ui).
+		summary := fmt.Sprintf("%s is already stopped: %s", jobReference(job), status)
+		if ended, _ := job.dispatch["endedAt"].(string); ended != "" {
+			summary += " (at " + ended + ")"
+		}
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary, Data: map[string]any{"kind": "dispatch", "status": status}})
+	}
 	outcome, code, err := inv.owners.processes.cancelDispatch(inv.layout.GitRoot, id)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: max(code, 1), Targets: targets, Summary: fmt.Sprintf("dispatch job %s cancel: %v", id, err)})
