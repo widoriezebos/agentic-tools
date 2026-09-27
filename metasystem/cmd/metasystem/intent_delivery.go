@@ -43,7 +43,7 @@ func intentDeliveryCommands() []intentCommand {
 		{
 			object: "work", action: "review", primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
 			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage,
-				reviewJobUsage, reviewCommitUsage, reviewRunUsage, reviewChangesUsage, reviewDiffUsage},
+				reviewJobUsage, reviewCommitUsage, reviewRunUsage, reviewChangesUsage, reviewDiffUsage, reviewCheckUsage},
 			helpForms: reviewHelpForms(),
 			details: []string{
 				"work review G records the goal's built result as the candidate and requests its independent examination: the one named with --work,",
@@ -70,6 +70,8 @@ func intentDeliveryCommands() []intentCommand {
 				"and --retry N asks for one new attempt after attempt N failed or was stopped.",
 				"run:RUN commits the newest round on its goal branch, replacing an earlier round commit, and requests independent review; --model names its critic.",
 				"A design is reviewed with design review FILE.",
+				"--check-only asks no critic: j2:J --stage review|recertify|merge checks the job's review boundary, and --findings RETURN",
+				"--dispositions FILE checks that every finding of a round is decided (against the chain's register when j2:ROOT names it).",
 			},
 			flags: []intentFlag{
 				goalFlag,
@@ -92,6 +94,11 @@ func intentDeliveryCommands() []intentCommand {
 				{name: "tool-calls", value: "N", usage: "job review: the reader's maximum tool calls, stated in its brief"},
 				{name: "model", value: "MODEL", usage: "run and commit review: the critic model, subject to roster authorization; kept with the read"},
 				{name: "effort", value: "VALUE", hidden: true, usage: "refused: every review's reasoning effort is set by its hazard class's configuration obligations"},
+				{name: "check-only", usage: "check without asking a critic: j2:J's boundary at --stage, or a round's --findings against --dispositions"},
+				{name: "stage", value: "STAGE", advanced: true, usage: "with --check-only and j2:J: review, recertify or merge"},
+				{name: "test-command", value: "COMMAND", advanced: true, usage: "with --check-only --stage recertify: the explicit recertification test command"},
+				{name: "recertification", value: "RECORD", advanced: true, usage: "with --check-only --stage merge: the recertification proof of the same job"},
+				{name: "findings", value: "RETURN", advanced: true, usage: "with --check-only: the critic return whose findings must all be decided in --dispositions"},
 			},
 			maxArgs: 1,
 			accepts: []string{refGoal, refJ2, refRun},
@@ -164,24 +171,23 @@ func intentDeliveryCommands() []intentCommand {
 			run:      runIntentLand,
 		},
 		{
-			object: "work", action: "close", audience: "both", summary: "complete a finished job's or review's records",
-			usage: []string{"metasystem work close j2:J [--dispositions FILE] [--evidence R]", "metasystem work close G [--work NAME]"},
+			object: "work", action: "finish", audience: "both", summary: "record a finished job with nothing to review or land as complete",
+			usage: []string{"metasystem work finish j2:J", "metasystem work finish j2:J --evidence R", "metasystem work finish j2:J --dispositions FILE"},
 			details: []string{
-				"j2:J completes the finished job after checking its authority, results and review decisions. Use the reference work status printed.",
-				"It concludes no goal, lands nothing and grants no approval.",
-				"A review chain needs its author's --dispositions; work review j2:J --dispositions FILE is the route while reviewing.",
-				"--evidence R reconciles review R's evidence into the chain before it closes. An already closed chain is reported unchanged.",
-				"G completes and publishes a goal's finished review using its recorded decisions. It never decides a finding.",
+				"For a job whose result is findings, not code: an investigation, or a read that is not reviewed further. Use the reference work status printed.",
+				"The job's authority, its members' results and their durability are checked before its records are completed. It concludes no goal,",
+				"lands nothing and grants no approval. A reviewed job completes inside work review, and landed work inside work land.",
+				"--evidence R reconciles read R's evidence into the job before it completes; a review chain names its author's --dispositions.",
+				"An already completed job is reported unchanged.",
 			},
 			flags: []intentFlag{
-				{name: "dispositions", value: "FILE", usage: "with j2:J: the Markdown dispositions table for a review chain"},
-				{name: "evidence", value: "R", advanced: true, usage: "with j2:J: a review evidence job reconciled into the chain before it closes"},
-				{name: "work", value: "NAME", usage: "with G: the goal's named work"},
+				{name: "evidence", value: "R", usage: "a read whose evidence is reconciled into the job before it completes"},
+				{name: "dispositions", value: "FILE", advanced: true, usage: "a review chain's Markdown dispositions table"},
 			},
 			maxArgs:  1,
-			accepts:  []string{refGoal, refJ2},
-			examples: []string{"metasystem work close j2:impl-01", "metasystem work close verbs-match-intent"},
-			run:      runIntentWorkClose,
+			accepts:  []string{refJ2},
+			examples: []string{"metasystem work finish j2:inv-01", "metasystem work finish j2:crit-01 --evidence crit-02"},
+			run:      runIntentWorkFinish,
 		},
 	}
 }
@@ -529,6 +535,14 @@ func (inv *intentInvocation) sameCommand() []string {
 // submission, or a finding's discharge), a dispatch job, a unit run, one
 // commit with --commit, or with no target feedback on changes.
 func runIntentReview(inv *intentInvocation) int {
+	if inv.input.switched("check-only") {
+		return runIntentReviewCheckOnly(inv)
+	}
+	for _, only := range []string{"stage", "test-command", "recertification", "findings"} {
+		if inv.input.has(only) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to work review --check-only; nothing was done", only)})
+		}
+	}
 	manual := inv.input.has("changes") || inv.input.has("patch")
 	if inv.input.has("commit") {
 		if len(inv.input.args) > 0 || manual {
@@ -613,26 +627,67 @@ func (inv *intentInvocation) reviewCommonChecks(kind string) *intentResult {
 	return nil
 }
 
-// runIntentWorkClose completes a finished dispatch job's records, or a
-// goal's finished review from its recorded decisions.
-func runIntentWorkClose(inv *intentInvocation) int {
+// runIntentReviewCheckOnly checks without asking a critic: an implementer
+// job's review boundary at a stage (j2:J --stage S), or that a critic
+// round's findings are all decided (--findings RETURN --dispositions FILE,
+// against the chain's register when j2:ROOT names it). Its output and exit
+// code are the checks' own: 0 passes, 1 fails, 2 is a usage mistake.
+func runIntentReviewCheckOnly(inv *intentInvocation) int {
+	allowed := []string{"check-only", "stage", "test-command", "recertification", "findings", "dispositions", "repo", "json"}
+	for name := range inv.input.values {
+		if !slices.Contains(allowed, name) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work review --check-only asks no critic; --%s belongs to a review; nothing was done", name)})
+		}
+	}
+	root := inv.cwd
+	if inv.input.has("repo") {
+		root = inv.textPath(inv.input.text("repo"))
+	}
+	job := ""
+	if len(inv.input.args) == 1 {
+		kind, id := splitReference(inv.input.args[0])
+		if kind != "" && kind != refJ2 {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work review --check-only checks a dispatch job (j2:J), not %s; nothing was done", inv.input.args[0])})
+		}
+		job = id
+		if kind == "" {
+			job = inv.input.args[0]
+		}
+	}
+	if inv.input.has("findings") || inv.input.has("dispositions") {
+		for _, other := range []string{"stage", "test-command", "recertification"} {
+			if inv.input.has(other) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s checks a job's boundary; --findings and --dispositions check a round's decisions; give one; nothing was done", other)})
+			}
+		}
+		args := []string{"--findings", inv.flagPath("findings"), "--dispositions", inv.flagPath("dispositions")}
+		if job != "" {
+			args = append(args, "--repo", root, "--root-job", job)
+		}
+		return runValidateCritiqueClosed(args)
+	}
+	if job == "" || !inv.input.has("stage") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "work review --check-only needs j2:J --stage review|recertify|merge, or --findings RETURN --dispositions FILE; nothing was done"})
+	}
+	args := []string{"--root", root, "--stage", inv.input.text("stage"), "--job", job}
+	for _, name := range []string{"test-command", "recertification"} {
+		if inv.input.has(name) {
+			args = append(args, "--"+name, inv.input.text(name))
+		}
+	}
+	return runValidateConformance(args)
+}
+
+// runIntentWorkFinish completes one finished dispatch job's records through
+// the close owner, with its authority and durability checks.
+func runIntentWorkFinish(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work close needs the job reference or the goal: metasystem work close j2:J | G; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work finish needs the job reference: metasystem work finish j2:J; nothing was done"})
 	}
 	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 	if problem != nil {
 		return inv.render(*problem)
-	}
-	if ref.kind == refGoal {
-		for _, other := range []string{"dispositions", "evidence"} {
-			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to closing a job, work close j2:J; nothing was done", other)})
-			}
-		}
-		return runIntentReviewGoal(inv, ref.id)
-	}
-	if inv.input.has("work") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: work close G --work NAME; nothing was done"})
 	}
 	return runIntentDoneJob(inv, ref.qualified())
 }
@@ -941,6 +996,9 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 	if err != nil {
 		return delegateOutcome{}, &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error()}
 	}
+	if len(args) > 1 && args[0] == "--follow-up" {
+		inv.rebindCritiqueBudget(args[1])
+	}
 	ran := owners.process(intentProcess{argv: append([]string{binary, "internal", "delegate"}, args...), dir: inv.layout.InstallationRoot})
 	var outcome delegateOutcome
 	if ran.err != nil || json.Unmarshal(bytes.TrimSpace(ran.stdout), &outcome) != nil || outcome.Outcome == "" {
@@ -964,6 +1022,22 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 	}
 	return outcome, &intentResult{Targets: targets, Outcome: intentRefused, code: max(ran.code, 1),
 		Summary: strings.TrimSpace(outcome.Outcome + ": " + outcome.Detail), Data: map[string]any{"delegate": outcome}}
+}
+
+// rebindCritiqueBudget carries the goal's current review-round limit onto a
+// critic chain before the review continues it, so a limit a person raised
+// takes effect without a separate step. It changes nothing when the chain is
+// not a critic's or the limit is already bound; a limit that cannot be
+// resolved is left to the follow-up owner, which refuses in its own words.
+func (inv *intentInvocation) rebindCritiqueBudget(root string) {
+	record, err := inv.jobRecord(root)
+	if err != nil {
+		return
+	}
+	switch recordText(record, "role") {
+	case "design-critic", "code-critic", "warden":
+		_, _ = dispatchcore.CritiqueBudgetRebind(inv.layout.InstallationRoot, root)
+	}
 }
 
 func (inv *intentInvocation) collectReview(targets []intentTarget, outcome delegateOutcome) intentResult {
@@ -1008,7 +1082,7 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 			result.text = []string{"correct: " + shellCommand(inv.publicArgv("work", "revise", qualifiedJob(job), "--dispositions", "FILE", "--brief", "FILE")),
 				"close: " + shellCommand(inv.publicArgv("work", "review", qualifiedJob(reviewed), "--dispositions", "FILE"))}
 		} else {
-			result.text = []string{"close: " + shellCommand(inv.publicArgv("work", "close", qualifiedJob(job), "--dispositions", "FILE"))}
+			result.text = []string{"close: " + shellCommand(inv.publicArgv("work", "finish", qualifiedJob(job), "--dispositions", "FILE"))}
 		}
 	} else if len(targets) > 0 && targets[0].Kind == "job" {
 		result.next, result.nextReason = inv.publicArgv("work", "review", qualifiedJob(targets[0].ID), "--dispositions", "FILE"), "close the review with the author's (empty) decisions"
@@ -1175,6 +1249,15 @@ func (inv *intentInvocation) composeFoldMessage(review string, round int64, subj
 	return message, writeIntentInputs(dir, map[string]string{message: body})
 }
 
+// textPath is a caller-relative path made absolute from the directory the
+// command runs in.
+func (inv *intentInvocation) textPath(path string) string {
+	if path != "" && !filepath.IsAbs(path) {
+		path = filepath.Join(inv.cwd, path)
+	}
+	return path
+}
+
 func (inv *intentInvocation) flagPath(name string) string {
 	path := inv.input.text(name)
 	if path != "" && !filepath.IsAbs(path) {
@@ -1230,7 +1313,7 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	}
 	if parent := recordText(root, "parentJob"); parent != "" {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
-			Summary: fmt.Sprintf("job %s is a round of chain %s", job, parent), next: inv.publicArgv("work", "close", qualifiedJob(parent)), nextReason: "done job names the chain's root"}
+			Summary: fmt.Sprintf("job %s is a round of chain %s", job, parent), next: inv.publicArgv("work", "finish", qualifiedJob(parent)), nextReason: "work finish names the chain's root"}
 	}
 	if closed, _ := root["chainClosed"].(bool); closed {
 		return intentResult{Targets: targets, Outcome: intentUnchanged, Summary: fmt.Sprintf("chain %s is already closed", job), Data: map[string]any{"chainClosed": true}}

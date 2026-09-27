@@ -73,7 +73,7 @@ func CloseCheck(repoRoot, root string) error {
 		if len(blockers) > 0 {
 			next := ""
 			if severeBlocker {
-				next = "; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind"
+				next = "; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and review again (the review carries the raised limit onto the chain)"
 			}
 			return fmt.Errorf("%s%s", strings.Join(blockers, "\n"), next)
 		}

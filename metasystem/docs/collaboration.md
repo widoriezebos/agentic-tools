@@ -35,7 +35,7 @@ Keep reviews small and cheap:
 ## Weight-Triggered Direct Validation
 
 Ordinary landings consume the risk-selected shared testing result through
-`test verify`; they add no governance command or approval form. Per-landing
+`test status`; they add no governance command or approval form. Per-landing
 depth is decided by the change, never by the goal's risk answers: a protected
 policy change, an unowned path, a surface whose declared raise or critical
 obligations demand it, or an explicit `--mode deep` runs deep; every other

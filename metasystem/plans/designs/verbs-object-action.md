@@ -386,6 +386,27 @@ After U1d the objects are goal, design, decision, grant, work, test, question,
 incident, session, mission, system, machine, ui, settings, receipt, experiment,
 and the top-level `status`. `help agent` and skills name only these.
 
+U1d build notes (the forms as built, recorded here per section 3.1's refinement
+rule): `goal sync` keeps the two administrative modes the old `goal repair`
+held, `--accept-remote-history --by NAME` and `--upgrade ...`, beside the four
+above; `--publish` requires at least one `--goal`, and the owner's refusal code
+is `RECONCILE_OUTSIDE_SCOPE`. `work finish` accepts `j2:` only and keeps the
+close owner's `--evidence R` (the `REDUNDANT_READ` remedy) and `--dispositions
+FILE`. `work wait --exit-code` takes `j2:J` (or a bare job id), and a tracked
+run (the `internal run` store, not a unit run) as `--run ID`; `--list` takes
+`--session S`. `work review --check-only` takes `j2:J --stage
+review|recertify|merge [--test-command C] [--recertification R]`, or
+`[j2:ROOT] --findings RETURN --dispositions FILE`. `session status` keeps
+`--id ID` required (no newest-report lookup exists to default it).
+`receipt add --corrects EPOCH:SHA1` names the corrected line by the epoch and
+SHA-1 the receipt owner already keys it by. `test status` takes `--tree T` for
+retained proof and `--result FILE --expensive-ms N` for a recorded result's
+cost (the old `test report`). The review flows' follow-up of a critic chain
+rebinds its round budget first (`CritiqueBudgetRebind`, idempotent); register
+close already ran inside the close owner. `system check` reports the
+covenant's shape when a `covenant.json` exists at the installation or
+repository root.
+
 **Rule C1 (clean code, Wido 2026-09-27: "There's nothing in the wild out
 there. There's only us. So we can have clean code.").** There are no external
 installations, so the build carries no compatibility code for old spellings: no
@@ -418,7 +439,7 @@ later unit (a ratchet: numbers, not lists, except where a list is the rule).
 | R9 | Orchestration sits above owners (6.3). | `go list -deps` test: no package under `internal/` that is an owner imports an orchestration package. |
 | R10 | Hard cutover per slice. | R1-R9 green at every landing. |
 | R11 | No metasystem scripts outside declared extension points; nothing in `metasystem/` depends on `environment/vms` (3.3). | Static test over `git ls-files` under `metasystem/`: extension-point allowlist by directory, zero other `*.sh`/`*.bash`, zero references to `environment/vms`. |
-| R12 | Every public action states an intent (3.4, G7). | Router test pins the revision 7 table; removed U1a spellings refuse with their successor. |
+| R12 | Every public action states an intent (3.4, G7). | Router test pins the revision 7 table; an unknown command's "did you mean" comes from the current table only (C1). |
 
 ## 5. Units
 

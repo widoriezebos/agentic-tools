@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -426,6 +427,23 @@ func TestIntentSettingsKeysAndCheck(t *testing.T) {
 	contract := []byte(`{"schemaVersion":1,"projectRisk":{"severity":1,"exposure":1,"reversibility":"revert","detection":"immediate","recovery":"bounded"},"surfaces":[{"id":"app","paths":["src/**"],"dependsOn":[],"standard":["section/smoke"],"deep":[],"critical":[]}],"groups":[{"id":"section/smoke","kind":"integration","adapter":"section","cwd":".","inputs":["metasystem.conf"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":1000,"section":"smoke"}],"always":{"canary":["section/smoke"],"standard":[]},"unknown":["section/smoke"],"cadence":["section/smoke"]}`)
 	os.WriteFile(conf, valid, 0o644)
 	os.WriteFile(filepath.Join(bed.root(), "testing.json"), contract, 0o644)
+	// The testing contract is checked with the settings; it belongs to a
+	// project, so the installation is a Git work tree.
+	if code, outside := run("settings", "check"); code == 0 || outside.Outcome != intentRefused || !strings.Contains(outside.Summary, "testing contract") {
+		t.Fatalf("check settings outside a work tree: code=%d %+v", code, outside)
+	}
+	if output, err := exec.Command("git", "-C", bed.root(), "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, output)
+	}
+	// Native discovery reads the section catalog the installation's selector
+	// prints; this one knows the contract's one section.
+	selector := filepath.Join(bed.root(), "scripts", "agents", "validate-section-selector.sh")
+	if err := os.MkdirAll(filepath.Dir(selector), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(selector, []byte("#!/bin/sh\n[ \"$1\" = catalog ] && printf 'smoke\\tfixture\\n'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if code, accepted := run("settings", "check"); code != 0 || accepted.Outcome != intentConfirmed {
 		t.Fatalf("check settings on a valid configuration: code=%d %+v", code, accepted)
 	}

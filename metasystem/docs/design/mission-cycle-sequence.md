@@ -503,7 +503,7 @@ this mission+turn stamp.
 
 **What the runner cannot know today**: whether a critique round *closed*.
 Closure — every material finding dispositioned
-(`metasystem work check` joining a round return's findings
+(`metasystem work review --check-only` joining a round return's findings
 against a Markdown dispositions table) — is a skill-level check over
 artifacts the runner never reads (round `return.json` files and dispositions
 documents in `plans/`). No job-record field records closure; the runner sees

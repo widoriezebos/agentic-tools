@@ -21,7 +21,7 @@ func runReportStopStatus(args []string) int {
 		return 2
 	}
 	if *id == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem session report --id ID [--root INSTALLATION]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem session status --id ID [--root INSTALLATION]")
 		return 2
 	}
 	if err := report.ValidateStopStatusID(*id); err != nil {

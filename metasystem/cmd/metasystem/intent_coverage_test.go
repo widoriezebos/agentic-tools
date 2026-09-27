@@ -12,33 +12,34 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// publicPairs is the object-action table of the design page's section 3.1,
-// with the top-level status: the complete public surface.
+// publicPairs is the object-action table of the design page's section 3.1
+// as revision 7's section 3.4 leaves it (R12: every public action states an
+// intent), with the top-level status: the complete public surface.
 var publicPairs = []string{
 	"goal list", "goal show", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "goal open", "goal edit",
 	"goal claim", "goal release", "goal accept-risk", "goal pin", "goal prioritize", "goal reopen", "goal abandon", "goal block",
-	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal repair", "goal check",
+	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync",
 	"grant add", "grant revoke", "grant list",
 	"decision list", "decision show",
-	"design write", "design show", "design list", "design review", "design stop", "design find", "design check-moves",
-	"work brief", "work build", "work wait", "work review", "work revise", "work land", "work close", "work status", "work stop",
-	"work watch", "work report", "work check",
-	"test run", "test wait", "test plan", "test list", "test check", "test verify", "test report",
+	"design write", "design show", "design list", "design review", "design stop",
+	"work brief", "work build", "work wait", "work review", "work revise", "work land", "work finish", "work status", "work stop",
+	"test run", "test wait", "test plan", "test list", "test status",
 	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
 	"incident list", "incident claim", "incident close",
 	"status",
-	"session start", "session stop", "session report", "session handoff", "session context", "session verify",
+	"session start", "session stop", "session status", "session handoff",
 	"mission start", "mission status", "mission resume", "mission repair",
-	"system start", "system stop", "system restart", "system status", "system check", "system repair",
+	"system start", "system stop", "system restart", "system status", "system check", "system enroll",
 	"machine list", "machine start",
 	"ui start", "ui stop", "ui restart", "ui status",
 	"settings show", "settings keys", "settings check", "settings coordinator",
-	"terminal enroll",
-	"receipt add", "receipt check", "receipt stats", "receipt correct", "receipt retro",
+	"receipt add", "receipt status", "receipt retro",
 	"experiment record", "experiment challenge", "experiment status", "experiment check",
-	"critique rebind-budget", "critique close-register",
-	"covenant check",
 }
+
+// revisionSevenObjects are the objects section 3.4 leaves, in help order.
+var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work", "test", "question", "incident",
+	"session", "mission", "system", "machine", "ui", "settings", "receipt", "experiment"}
 
 // hiddenPairs are the process entrypoints whose first word is an object.
 var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "ui serve", "ui tools"}
@@ -164,7 +165,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 			"discharge-review-obligation": {action: "work review", flag: "finding", kind: "work review G --finding F --test NAME"},
 			"split":                       {action: "goal split"},
 			"set-obligation":              {action: "goal edit", flag: "obligation"},
-			"enroll-terminal":             {action: "terminal enroll"},
+			"enroll-terminal":             {action: "system enroll"},
 			"resume":                      {action: "goal resume"},
 			"release":                     {action: "goal release"},
 			"steal":                       {action: "goal claim", flag: "take-over"},
@@ -178,12 +179,12 @@ func TestIntentPublicCoverage(t *testing.T) {
 			"list":                        {action: "goal list"},
 			"show":                        {action: "goal show"},
 			"next":                        {action: "goal list", flag: "ready", internal: "seat launch entry"},
-			"reconcile":                   {internal: "reviewed recovery"},
+			"reconcile":                   {action: "goal sync", flag: "publish", internal: "reviewed recovery"},
 			"migrate":                     {internal: "installation cutover"},
 			"fetch":                       {action: "goal list", flag: "fetch", internal: "seat launch entry"},
-			"repair":                      {internal: "authority recovery (goal repair --accept-remote-history is its public form)"},
+			"repair":                      {internal: "authority recovery (goal sync --accept-remote-history is its public form)"},
 			"source-digest":               {internal: "migration support"},
-			"recover":                     {action: "goal repair"},
+			"recover":                     {action: "goal sync", flag: "recover"},
 		}
 		var goalFamily *family
 		for index := range registered {
@@ -230,21 +231,24 @@ func TestIntentPublicCoverage(t *testing.T) {
 	t.Run("ordinary grammar", func(t *testing.T) {
 		forms := map[string][]string{
 			"status":          {"metasystem status", "metasystem status G [--work NAME]"},
-			"work status":     {"work status [--all]", "work status G", "work status REF"},
 			"work review":     {"work review G", "work review j2:J", "work review --commit SHA --goal G", "work review run:RUN", "work review G --finding F --test NAME", "work review --changes", "work review --patch PATCH"},
 			"work revise":     {"work revise G", "--after N", "--brief FILE", "work revise j2:R --dispositions FILE --brief FILE", "work revise run:RUN --brief FILE"},
-			"work close":      {"work close j2:J [--dispositions FILE] [--evidence R]", "work close G"},
+			"work finish":     {"work finish j2:J", "work finish j2:J --evidence R"},
 			"work land":       {"work land j2:J", "work land G --queue-only"},
-			"work wait":       {"work wait G", "work wait G --for landing|human-act", "--since TIP", "work wait REF", "work wait --path PATH --until present|absent"},
+			"work wait":       {"work wait G", "work wait G --for landing|human-act", "--since TIP", "work wait REF", "work wait --path PATH --until present|absent", "work wait j2:J --exit-code", "work wait --run ID --exit-code", "work wait --list"},
 			"work build":      {"work build G [--work NAME] --brief FILE --check COMMAND...", "work build run:RUN"},
 			"goal done":       {"goal done G --reason TEXT"},
 			"goal notes":      {"--read", "--add", "--close", "--fixed", "--moved", "--accepted"},
 			"goal pin":        {"--clear"},
 			"goal claim":      {"--take-over"},
-			"goal repair":     {"goal repair --accept-edits --by NAME", "goal repair --upgrade"},
+			"goal sync":       {"goal sync --recover", "goal sync --refresh", "goal sync --publish --goal G... --by NAME", "goal sync --upgrade"},
+			"work status":     {"work status [--all]", "work status G", "work status REF", "work status [G | j1:ID] --history [--since RFC3339]"},
+			"session handoff": {"session handoff --status", "session handoff --verify NONCE"},
+			"receipt add":     {"receipt add --corrects EPOCH:SHA1"},
+			"test status":     {"test status --tree TREE", "test status --result FILE"},
 			"question answer": {"question answer Q [TEXT]", "question answer M/Q TEXT"},
 			"test wait":       {"test wait proof:ID"},
-			"design review":   {"design review FILE"},
+			"design review":   {"design review FILE", "design review FILE --check-only"},
 			"system start":    {"system start --if-down"},
 			"system status":   {"system status --steward"},
 			"incident claim":  {"incident claim I --goal G"},
@@ -267,9 +271,10 @@ func TestIntentPublicCoverage(t *testing.T) {
 			prefix string
 			needs  []string
 			when   string
+			except string
 		}{
 			{prefix: "metasystem goal open ", needs: []string{"--risk", "--basis"}},
-			{prefix: "metasystem design review ", needs: []string{"--tool-calls"}},
+			{prefix: "metasystem design review ", needs: []string{"--tool-calls"}, except: "--check-only"},
 			{prefix: "metasystem work review j2:", needs: []string{"--tool-calls"}},
 			{prefix: "metasystem work review --commit ", needs: []string{"--goal"}},
 			{prefix: "metasystem goal notes ", needs: []string{"--read"}, when: "--add"},
@@ -284,7 +289,7 @@ func TestIntentPublicCoverage(t *testing.T) {
 					}
 				}
 				for _, rule := range mandatory {
-					if !strings.HasPrefix(example, rule.prefix) || (rule.when != "" && !slices.Contains(words, rule.when)) {
+					if !strings.HasPrefix(example, rule.prefix) || (rule.when != "" && !slices.Contains(words, rule.when)) || (rule.except != "" && slices.Contains(words, rule.except)) {
 						continue
 					}
 					for _, need := range rule.needs {

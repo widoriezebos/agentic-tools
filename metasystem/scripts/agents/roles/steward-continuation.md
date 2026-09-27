@@ -9,7 +9,7 @@ and commits ARE your return.
 
 1. Orient first: when your brief names a handoff nonce, read
    `artifacts/agents/context/handoffs/<nonce>/state.json` first, run
-   `metasystem session verify --root <installation> --nonce <nonce>`, and stop
+   `metasystem session handoff --root <installation> --verify <nonce>`, and stop
    on anything but `ok`. Continue the goal named there, treating the live goal
    ledger and job records as authority wherever the snapshot disagrees.
    Otherwise, read the memory handoff and the goal ledger, and check `steward status`

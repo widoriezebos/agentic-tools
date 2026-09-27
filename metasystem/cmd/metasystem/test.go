@@ -173,12 +173,12 @@ func runTestCheck(args []string) int {
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test check --root INSTALLATION [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem settings check [--repo INSTALLATION]")
 		return 2
 	}
 	installation, contract, path, err := loadPhysicalTestingContract(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test check:", err)
+		fmt.Fprintln(os.Stderr, "testing contract:", err)
 		return 1
 	}
 	projectRoot, err := (gittree.Workspace{Dir: installation}).TopLevel()
@@ -198,7 +198,7 @@ func runTestCheck(args []string) int {
 		}
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test check:", err)
+		fmt.Fprintln(os.Stderr, "testing contract:", err)
 		return 1
 	}
 	if *jsonOutput {
@@ -2410,13 +2410,13 @@ func runTestVerify(args []string) int {
 		return status
 	}
 	if request.Tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test verify --root INSTALLATION [--goal ID] --tree TREE [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem test status --tree TREE [--goal ID] [--root INSTALLATION] [--json]")
 		return 2
 	}
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(request)
-		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
+		fmt.Fprintln(os.Stderr, "metasystem test status:", err)
 		return 1
 	}
 	if jsonOutput {

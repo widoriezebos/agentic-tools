@@ -218,9 +218,9 @@ artifacts (`covenant.json`, `docs/app-doctrine.md`,
 `docs/covenant-evidence.md`, the `docs/project-rules.md` facts) and
 the filled `metasystem.conf` — then prove the shape mechanically:
 
-    bin/metasystem covenant check
+    bin/metasystem system check
 
-Its success line says "shape valid; adequacy not established" — repeat
+Its covenant line says "shape valid; adequacy not established" — repeat
 that honesty to the human, because it is the truth: the parser proves
 the rows parse, never that the proofs guard the intent. Then run
 `scripts/validate-metasystem.sh`; it must pass with zero placeholders.

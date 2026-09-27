@@ -695,7 +695,7 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 		return strings.Fields(result.Decision[at:])[1:]
 	}
 	want := []string{"work", "review", c.id, "--work", "alpha", "--retry", "1"}
-	for _, args := range [][]string{{"work", "close", c.id}, {"work", "review", c.id, "--work", "alpha", "--dispositions", j.dispositions}} {
+	for _, args := range [][]string{{"work", "review", c.id}, {"work", "review", c.id, "--work", "alpha", "--dispositions", j.dispositions}} {
 		if _, again := manualDo(t, j, root, args...); !slices.Equal(printed(again), want) {
 			t.Fatalf("%v printed %q, want %v", args, again.Decision, want)
 		}

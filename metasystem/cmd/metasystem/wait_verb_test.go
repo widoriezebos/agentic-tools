@@ -1654,8 +1654,8 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 			if message == "" {
 				message = payload["systemMessage"]
 			}
-			if at := strings.LastIndex(message, "session report --id "); at >= 0 {
-				alias := strings.TrimSpace(message[at+len("session report --id "):])
+			if at := strings.LastIndex(message, "session status --id "); at >= 0 {
+				alias := strings.TrimSpace(message[at+len("session status --id "):])
 				if data, _, readErr := report.ReadStopStatus(hookRoot, alias); readErr == nil {
 					reportText = string(data)
 				}

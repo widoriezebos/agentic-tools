@@ -250,7 +250,7 @@ func TestIntentHelpAndCompatibility(t *testing.T) {
 			t.Errorf("public catalogue lacks %s", want)
 		}
 	}
-	for _, absent := range append([]string{"internal", "goal", "launch", "goal fetch", "ui serve"}, removedIntentAliases...) {
+	for _, absent := range []string{"internal", "goal", "launch", "goal fetch", "ui serve"} {
 		if slices.Contains(names, absent) {
 			t.Errorf("public catalogue lists %s", absent)
 		}

@@ -276,7 +276,7 @@ func scanActions(root string, scan ScanResult, watches authenticatedWatches) []T
 		if item.Ownership == "owned" && (item.Status == "pending" || item.Status == "running") && !watches.watchesJob(item.Id) {
 			actions = append(actions, TurnAction{Kind: "watch-job", TargetId: item.Id,
 				Instruction: "watch the owned delegate job before ending the turn",
-				Command:     "metasystem work watch --root " + shellArgument(root) + " --job " + shellArgument(item.Id) + " --caller-pid $$", Owner: "seat"})
+				Command:     "metasystem work wait j2:" + shellArgument(item.Id) + " --exit-code --repo " + shellArgument(root) + " --caller-pid $$", Owner: "seat"})
 		}
 	}
 	for _, item := range scan.Runs {
@@ -284,7 +284,7 @@ func scanActions(root string, scan ScanResult, watches authenticatedWatches) []T
 		if owned && (item.Status == "launching" || item.Status == "running" || item.Status == "draining") && !watches.watchesRun(item) {
 			actions = append(actions, TurnAction{Kind: "watch-run", TargetId: item.Id,
 				Instruction: "watch the owned run before ending the turn",
-				Command:     "metasystem work watch --run " + shellArgument(item.Id) + " --root " + shellArgument(root), Owner: "seat"})
+				Command:     "metasystem work wait --run " + shellArgument(item.Id) + " --exit-code --repo " + shellArgument(root), Owner: "seat"})
 		}
 	}
 	for _, item := range append(append([]Item{}, scan.Questions...), scan.WaitingOnHuman...) {

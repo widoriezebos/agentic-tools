@@ -73,7 +73,7 @@ func TestIntentRepairAuthority(t *testing.T) {
 		// the remote history of the same ledger; here it reaches its fetch,
 		// which has no remote in this bed. This row proves the exact route,
 		// not an authority refusal.
-		{[]string{"goal", "repair", "--accept-remote-history", "--by", "Wido"}, []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root"}, "git fetch"},
+		{[]string{"goal", "sync", "--accept-remote-history", "--by", "Wido"}, []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root"}, "git fetch"},
 		{[]string{"settings", "coordinator", "--declare", "--by", "Wido"}, []string{"brain", "declare", "--root"}, "is a human act; run it from an agent-free terminal"},
 		{[]string{"settings", "coordinator", "--withdraw", "--by", "Wido"}, []string{"brain", "withdraw", "--root"}, "is a human act; run it from an agent-free terminal"},
 		{[]string{"mission", "repair", "demo", "--problem", "2", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "restored"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
@@ -89,10 +89,14 @@ func TestIntentRepairAuthority(t *testing.T) {
 	}
 	// Refused before any owner runs.
 	for _, args := range [][]string{
-		{"goal", "repair", "--accept-edits", "--refresh", "--by", "Wido"},
-		{"goal", "repair", "--accept-edits"},
-		{"goal", "repair", "--refresh", "--by", "Wido"},
-		{"goal", "repair", "--upgrade", "--by", "Wido", "--sync-mode", "sideways"},
+		{"goal", "sync", "--publish", "--refresh", "--by", "Wido"},
+		{"goal", "sync", "--publish", "--goal", "g"},
+		{"goal", "sync", "--publish", "--by", "Wido"},
+		{"goal", "sync", "--goal", "g", "--by", "Wido"},
+		{"goal", "sync", "--recover", "--refresh"},
+		{"goal", "sync", "--recover", "--by", "Wido"},
+		{"goal", "sync", "--refresh", "--by", "Wido"},
+		{"goal", "sync", "--upgrade", "--by", "Wido", "--sync-mode", "sideways"},
 		{"mission", "repair", "demo", "--problem", "0", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "r"},
 		{"mission", "repair", "demo", "--problem", "2", "--confirm-restored", "not-a-tree", "--by", "Wido", "--reason", "r"},
 		{"mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--by", "Wido", "--reason", "r"},
@@ -115,26 +119,31 @@ func TestIntentRepairAuthority(t *testing.T) {
 	if code, result, _ := owner("settings", "show", "compatibility"); code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "there is no setting compatibility") {
 		t.Errorf("retired compatibility read: %d %+v", code, result)
 	}
-	if code, result, _ := owner("goal", "repair"); code != 0 || !strings.Contains(result.Summary, "whole installation") {
+	if code, result, _ := owner("goal", "sync", "--recover"); code != 0 || !strings.Contains(result.Summary, "whole installation") {
 		t.Errorf("journal recovery names its scope: %d %+v", code, result)
+	}
+	// The preview runs no owner; this bed has no published base, which it
+	// reports rather than reading as "no edits".
+	if code, result, ran := owner("goal", "sync"); code == 0 || result.Outcome != intentFailed || ran != nil || !strings.Contains(result.Summary, "published base") {
+		t.Errorf("goal sync preview: %d %+v %v", code, result, ran)
 	}
 	// The upgrade shows the digest to review, and runs only on it.
 	legacy := []byte("# Goals\n")
 	b.writeFile(filepath.Join(state, "plans", "goals.md"), string(legacy))
 	digest := goal.SourceDigestOf(legacy)
-	if _, result, ran := owner("goal", "repair", "--upgrade", "--by", "Wido"); result.Outcome != intentRefused || ran != nil || !strings.Contains(result.Decision, digest) {
+	if _, result, ran := owner("goal", "sync", "--upgrade", "--by", "Wido"); result.Outcome != intentRefused || ran != nil || !strings.Contains(result.Decision, digest) {
 		t.Errorf("bare upgrade: %+v %v", result, ran)
 	}
-	if _, result, ran := owner("goal", "repair", "--upgrade", "--by", "Wido", "--source-digest", strings.Repeat("c", 64)); result.Outcome != intentRefused || ran != nil {
+	if _, result, ran := owner("goal", "sync", "--upgrade", "--by", "Wido", "--source-digest", strings.Repeat("c", 64)); result.Outcome != intentRefused || ran != nil {
 		t.Errorf("stale digest: %+v %v", result, ran)
 	}
-	if _, result, ran := owner("goal", "repair", "--upgrade", "--by", "Wido", "--source-digest", digest, "--amendments", "amend.md", "--sync-mode", "local"); result.Outcome != intentRefused ||
+	if _, result, ran := owner("goal", "sync", "--upgrade", "--by", "Wido", "--source-digest", digest, "--amendments", "amend.md", "--sync-mode", "local"); result.Outcome != intentRefused ||
 		!strings.Contains(strings.Join(ran, " "), "goal migrate --root") || !strings.Contains(strings.Join(ran, " "), "--source-digest "+digest+" --by Wido --manifest") {
 		t.Errorf("reviewed upgrade reaches the owner, whose authority refuses this caller: %+v %v", result, ran)
 	}
 	// A legacy installation is sent to the public upgrade, never to an
 	// internal command.
-	if _, result, _ := owner("goal", "list"); result.Outcome != intentRefused || !strings.Contains(result.Decision, "metasystem goal repair --upgrade") || strings.Contains(result.Decision, "internal") {
+	if _, result, _ := owner("goal", "list"); result.Outcome != intentRefused || !strings.Contains(result.Decision, "metasystem goal sync --upgrade") || strings.Contains(result.Decision, "internal") {
 		t.Errorf("legacy ledger remedy: %+v", result)
 	}
 }

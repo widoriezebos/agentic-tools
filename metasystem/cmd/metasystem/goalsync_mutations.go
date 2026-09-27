@@ -1105,9 +1105,12 @@ func parseSyncFlagValuesWithOutput(name string, args []string, output io.Writer)
 	f := &syncFlags{}
 	pathFlagVar(fs, &f.root, "root", ".", "checkout root")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
-	if name == "approve" {
+	switch name {
+	case "approve":
 		fs.Var(&f.ids, "id", "goal id (repeatable)")
-	} else {
+	case "reconcile":
+		fs.Var(&f.ids, "id", "a goal whose reviewed edits may publish (repeatable); any other edited goal refuses the whole session")
+	default:
 		fs.StringVar(&f.id, "id", "", "goal id")
 	}
 	fs.StringVar(&f.intent, "intent", "", "one-line intent")
@@ -2067,6 +2070,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		if proven, _, proofErr := provenGoalRequest("reconcile", f, humanauthority.ProveOrTemporaryGoalAuthority); proofErr == nil {
 			req = proven
 		}
+		req.ReconcileScope = f.ids
 		res, err := goal.Reconcile(req)
 		if err != nil {
 			dependencies.complain(err)

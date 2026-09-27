@@ -246,7 +246,7 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 		if checkErr := dispatchcore.CloseCheck(root, rootJob); checkErr != nil {
 			data["closeCheck"] = checkErr.Error()
 		}
-		repair := inv.publicArgv("work", "close", work.goal, "--work", work.work)
+		repair := inv.publicArgv("work", "review", work.goal, "--work", work.work)
 		closed.next, closed.nextReason = repair,
 			"once the cause named above is resolved, this replays the whole close with the retained decisions; it never decides a finding"
 		if inv.riskRemedy(&closed, root, work.goal, rootJob, repair) {

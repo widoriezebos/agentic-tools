@@ -204,7 +204,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 			t.Fatalf("an unclosed critic must print its public decision route: code=%d %+v", code, result)
 		}
 		calls := len(b.calls)
-		if code, result = do("work", "close", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || result.Outcome != intentConfirmed {
+		if code, result = do("work", "finish", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("close %s: code=%d %+v calls=%v", critic, code, result, b.calls[calls:])
 		}
 		record := job(c.worktree, critic)
@@ -215,7 +215,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 			t.Fatalf("close left %s's lock behind", critic)
 		}
 		calls = len(b.calls)
-		if code, result = do("work", "close", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || len(b.calls) != calls {
+		if code, result = do("work", "finish", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || len(b.calls) != calls {
 			t.Fatalf("a repeated close must change nothing: code=%d %+v calls=%v", code, result, b.calls[calls:])
 		}
 		publications := c.publications

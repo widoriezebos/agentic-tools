@@ -313,7 +313,7 @@ func critiqueRoundAccountingWithReads(repoRoot string, state critiqueState, root
 }
 
 func malformedRoundAccounting(rootJob string, err error) error {
-	return fmt.Errorf("critique root record %s has malformed round accounting: %v; next: job critique-budget-rebind --root-job %s", rootJob, err, rootJob)
+	return fmt.Errorf("critique root record %s has malformed round accounting: %v; next: review chain %s again (the review rebinds its round accounting)", rootJob, err, rootJob)
 }
 
 func foldProtocolError(register []registerFinding, role, roundJob string, roundRecord map[string]any) []registerFinding {
@@ -638,7 +638,7 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 				if asString(root["role"]) == "design-critic" && roundOK && foldedRound == 2 {
 					return roundTwoHumanRaise(roundTwoHumanFindingIDs(root, register, unresolved, blockerIDs))
 				}
-				return fmt.Errorf("%s; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind", strings.Join(blockers, "\n"))
+				return fmt.Errorf("%s; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and review again (the review carries the raised limit onto the chain)", strings.Join(blockers, "\n"))
 			}
 			if len(unresolved) == 0 {
 				// Section 4 bullet 3 closes a clean folded second round.

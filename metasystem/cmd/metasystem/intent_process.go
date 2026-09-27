@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/covenant"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
@@ -101,20 +102,20 @@ func processIntentCommands() []intentCommand {
 		{
 			object: "system", action: "check", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
 			usage:    []string{"metasystem system check"},
-			details:  []string{"Checks this checkout once and repairs nothing. Each problem names the command that fixes it, where there is one."},
+			details:  []string{"Checks this checkout once, with the shape of its app covenant when it has one, and repairs nothing.", "Each problem names the command that fixes it, where there is one."},
 			flags:    []intentFlag{intentInstallationFlag},
 			maxArgs:  0,
 			examples: []string{"metasystem system check", "metasystem system check --json"},
 			run:      runIntentDoctor,
 		},
 		{
-			object: "system", action: "repair", audience: "both", summary: "list this checkout's durable wait continuations",
-			usage:    []string{"metasystem system repair [--session S]"},
-			details:  []string{"Lists this checkout's durable wait continuations, checked against the holder's --session when given."},
-			flags:    []intentFlag{{name: "session", value: "S", advanced: true, usage: "the runtime session that must hold the checkout"}},
+			object: "system", action: "enroll", audience: "human", summary: "authenticate your terminal for human decisions in MetaSystem",
+			usage:    []string{"metasystem system enroll --name NAME"},
+			details:  []string{"Run it at an agent-free terminal. The local enrollment and its fleet publication are reported separately."},
+			flags:    []intentFlag{{name: "name", aliases: []string{"by"}, value: "NAME", usage: "your name"}, intentLineageFlag},
 			maxArgs:  0,
-			examples: []string{"metasystem system repair"},
-			run:      runIntentRepairWaits,
+			examples: []string{"metasystem system enroll --name Wido"},
+			run:      runIntentEnroll,
 		},
 		{
 			object: "session", action: "start", audience: "agent", summary: "prepare the current agent session to work",
@@ -126,9 +127,9 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentSessionStart,
 		},
 		{
-			object: "session", action: "stop", audience: "human", summary: "authorize one quiet stop of the announced main session",
+			object: "session", action: "stop", audience: "human", summary: "stop this session's work quietly",
 			usage:    []string{"metasystem session stop --by NAME"},
-			details:  []string{"The checkout keeps running; a person authorizes this at the enrolled terminal."},
+			details:  []string{"A person authorizes one quiet stop of the announced main session at the enrolled terminal; the checkout keeps running."},
 			flags:    []intentFlag{{name: "by", value: "NAME", usage: "the attending person"}},
 			maxArgs:  0,
 			examples: []string{"metasystem session stop --by Wido"},
@@ -222,26 +223,20 @@ func processIntentCommands() []intentCommand {
 			},
 		},
 		{
-			object: "terminal", action: "enroll", audience: "human", summary: "authenticate your terminal for human decisions in MetaSystem",
-			usage:    []string{"metasystem terminal enroll --name NAME"},
-			details:  []string{"Run it at an agent-free terminal. The local enrollment and its fleet publication are reported separately."},
-			flags:    []intentFlag{{name: "name", aliases: []string{"by"}, value: "NAME", usage: "your name"}, intentLineageFlag},
-			maxArgs:  0,
-			examples: []string{"metasystem terminal enroll --name Wido"},
-			run:      runIntentEnroll,
-		},
-		{
 			object: "work", action: "status", primary: true, audience: "both", summary: "running work, or one goal's work, job, run or read",
-			usage: []string{"metasystem work status [--all]", "metasystem work status G [--work NAME]", "metasystem work status REF"},
+			usage: []string{"metasystem work status [--all]", "metasystem work status G [--work NAME]", "metasystem work status REF",
+				"metasystem work status [G | j1:ID] --history [--since RFC3339]"},
 			details: []string{
 				"Without a target: this user's running launches and this repository's running dispatch jobs, each with its reference; --all adds ended ones.",
 				"REF is a goal, or a reference as a result printed it: j1:ID (a launch), j2:ID (a dispatch job), run:ID (a unit run) or read:REF (a diagnostic read).",
 				"A bare id is searched in each of those stores; several matches refuse and list each reference. A reference is matched exactly, never by prefix.",
+				"--history reports how launches ended and why any was refused: every launch, one goal's, or one launch; --since keeps activity at or after that instant.",
 			},
-			flags:    []intentFlag{{name: "all", usage: "without a target: ended jobs too"}, {name: "work", value: "NAME", usage: "with G: only this named work"}},
+			flags: []intentFlag{{name: "all", usage: "without a target: ended jobs too"}, {name: "work", value: "NAME", usage: "with G: only this named work"},
+				{name: "history", usage: "how launches ended and why any was refused"}, {name: "since", value: "RFC3339", usage: "with --history: activity at or after this instant"}},
 			maxArgs:  1,
 			accepts:  []string{refGoal, refJ1, refJ2, refRun, refRead},
-			examples: []string{"metasystem work status", "metasystem work status verbs-match-intent", "metasystem work status j2:design-r2-4f1c"},
+			examples: []string{"metasystem work status", "metasystem work status verbs-match-intent", "metasystem work status j2:design-r2-4f1c", "metasystem work status verbs-match-intent --history"},
 			run:      runIntentWorkStatus,
 		},
 		{
@@ -817,6 +812,12 @@ func runIntentSystemStatus(inv *intentInvocation) int {
 // runIntentWorkStatus lists running work, or reads the one goal, job, run
 // or read a reference names.
 func runIntentWorkStatus(inv *intentInvocation) int {
+	if inv.input.switched("history") {
+		return runIntentWorkHistory(inv)
+	}
+	if inv.input.has("since") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--since belongs to work status --history; nothing was done"})
+	}
 	if len(inv.input.args) == 0 {
 		if inv.input.has("work") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work names a goal's work: work status G --work NAME; nothing was done"})
@@ -932,7 +933,7 @@ func runIntentEnroll(inv *intentInvocation) int {
 	name := strings.TrimSpace(inv.input.text("name"))
 	if name == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "enroll needs your name: --name NAME; nothing was done",
-			next: inv.publicArgv("terminal", "enroll", "--name", "NAME"), nextReason: "at an agent-free terminal, with your name"})
+			next: inv.publicArgv("system", "enroll", "--name", "NAME"), nextReason: "at an agent-free terminal, with your name"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1157,12 +1158,74 @@ func runIntentDoctor(inv *intentInvocation) int {
 		lines = append(lines, line)
 		remedies = append(remedies, map[string]any{"role": role.Role, "public": public, "instruction": instruction, "facts": role.RemedyFacts, "ownerRemedy": role.Remedy})
 	}
-	result := intentResult{Outcome: intentConfirmed, code: verdict.ExitCode(), Targets: inv.checkoutTarget(scope),
-		Summary: verdict.Line(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies})}
+	code := verdict.ExitCode()
+	covenantData := map[string]any{"present": false}
+	if path, problem := checkCovenantShape(scope); path != "" {
+		covenantData = map[string]any{"present": true, "path": path, "valid": problem == nil}
+		if problem != nil {
+			covenantData["reason"] = problem.Error()
+			lines = append(lines, "covenant invalid: "+problem.Error()+"; the app's covenant must parse before any mission trusts it")
+			code = max(code, 1)
+		} else {
+			lines = append(lines, "covenant shape valid: "+path+"; adequacy not established: shape says the rows parse, never that the proofs guard the intent")
+		}
+	}
+	result := intentResult{Outcome: intentConfirmed, code: code, Targets: inv.checkoutTarget(scope),
+		Summary: verdict.Line(), text: lines, Data: additiveData(steward.NewHookHealthPreview(verdict), map[string]any{"publicRemedies": remedies, "covenant": covenantData})}
 	if first != nil {
 		result.next, result.nextReason = first, "the first public remedy check found"
 	}
 	return inv.render(result)
+}
+
+// runIntentWorkHistory reports how launches ended and why any was refused:
+// every launch, one goal's, or one launch (j1:ID), through the launch
+// report owner.
+func runIntentWorkHistory(inv *intentInvocation) int {
+	for _, other := range []string{"all", "work"} {
+		if inv.input.has(other) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work status --history takes a goal or j1:ID and --since, not --%s; nothing was done", other)})
+		}
+	}
+	var args []string
+	if len(inv.input.args) == 1 {
+		switch kind, id := splitReference(inv.input.args[0]); kind {
+		case refJ1:
+			if inv.input.has("since") {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--since narrows a goal's or every launch's history, not one launch's; nothing was done"})
+			}
+			args = []string{"--id", id}
+		case "":
+			args = []string{"--goal", inv.input.args[0]}
+		default:
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work status --history reads launches: a goal or j1:ID, not %s; nothing was done", inv.input.args[0])})
+		}
+	}
+	if inv.input.has("since") {
+		args = append(args, "--since", inv.input.text("since"))
+	}
+	if inv.input.switched("json") {
+		args = append(args, "--json")
+	}
+	return runLaunchReport(args)
+}
+
+// checkCovenantShape checks the app covenant's shape when the checkout has
+// one, at its installation or its repository root: the path read, and the
+// reason it does not parse. Shape is all it proves, never adequacy.
+func checkCovenantShape(scope processScope) (string, error) {
+	for _, dir := range []string{scope.Installation, scope.Checkout} {
+		if dir == "" {
+			continue
+		}
+		path := filepath.Join(dir, covenant.Filename)
+		if _, err := os.Lstat(path); err != nil {
+			continue
+		}
+		_, err := covenant.Load(path)
+		return path, err
+	}
+	return "", nil
 }
 
 // publicHealthRemedy is the public command, or the plain instruction, for

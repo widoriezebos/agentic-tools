@@ -16,7 +16,7 @@ done
 receipt_instruction='Leave `metasystem/memory/receipts.log` unchanged; the seat writes the receipt at landing.'
 grep -Fqx "$receipt_instruction" "$source_root/scripts/agents/templates/brief.md" \
   || { echo "builder brief template does not reserve receipts for the seat" >&2; exit 1; }
-grep -Fq 'metasystem session verify --root' "$source_root/scripts/agents/roles/steward-continuation.md" \
+grep -Fq 'metasystem session handoff --root <installation> --verify' "$source_root/scripts/agents/roles/steward-continuation.md" \
   || { echo "steward-continuation role does not verify a named context handoff" >&2; exit 1; }
 grep -Fq 'metasystem session handoff --root' "$source_root/docs/orchestration.md" \
   || { echo "orchestration instructions do not hand off a context over the bound" >&2; exit 1; }
@@ -426,7 +426,7 @@ expect_failure waiver-control-plane 'agent control plane contains delegate-creat
 # recorded-implementer-successor budget reopen, record-round-beats-
 # lying-return). The one refusal string covers both the second-budget
 # and human-only-remedy assertions the shell greps split across. The
-# The `metasystem work check` stage-level E2E above remains this
+# The `metasystem work review --check-only` stage-level E2E above remains this
 # file's job.
 
 echo "conformance fixtures passed"

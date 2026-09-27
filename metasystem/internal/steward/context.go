@@ -62,7 +62,7 @@ func ContextBudgetLine(stateRoot, installationRoot string, now time.Time, opts C
 }
 
 func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Time, opts ContextOptions, prober identity.Prober) (RoleVerdict, usage.Reading, error) {
-	remedy := "metasystem session context --root " + installationRoot
+	remedy := "metasystem session handoff --status --root " + installationRoot
 	diagnostic := opts.Transcript != ""
 	budget, err := config.ContextBudget(installationRoot)
 	if err != nil {
@@ -292,7 +292,7 @@ func contextGitToplevel(installationRoot string) (string, error) {
 }
 
 func contextVerdict(reading usage.Reading, budget config.Budget, installationRoot string, diagnostic bool) RoleVerdict {
-	statusRemedy := "metasystem session context --root " + installationRoot
+	statusRemedy := "metasystem session handoff --status --root " + installationRoot
 	if reading.Latest == nil {
 		if contextBenignUnknown(reading.Capability, reading.Reason) {
 			return labelContextDiagnostic(roleAlive(RoleContext, reading.Reason), diagnostic)

@@ -59,7 +59,7 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 				handoff := "metasystem session handoff --root " + root + " --note <configured-note-path> --no-delegates"
 				switch {
 				case test.status == HealthDead && diagnostic:
-					if !role.NoAutomaticRemedy || !strings.Contains(role.Remedy, "session context") || strings.Contains(role.Remedy, "transcript") {
+					if !role.NoAutomaticRemedy || !strings.Contains(role.Remedy, "session handoff --status") || strings.Contains(role.Remedy, "transcript") {
 						t.Fatalf("diagnostic ceiling breach has a lawful automatic remedy: %+v", role)
 					}
 				case test.status == HealthDead:

@@ -55,6 +55,10 @@ type intentWorkOwners struct {
 	subprocess func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
 	settings   func(confPath string) (launch.Settings, error)
 	config     func(key, confPath string) (value, source string, code int, err error)
+	// jobWatch and runWatch are the job and tracked-run waiters work wait
+	// --exit-code blocks in, with their own pinned exit codes.
+	jobWatch func(args []string) int
+	runWatch func(args []string) int
 }
 
 // intentConfPath is the selected installation's configuration file.
@@ -111,6 +115,12 @@ func (inv *intentInvocation) work() intentWorkOwners {
 			}
 			return output, 0, nil
 		}
+	}
+	if owners.jobWatch == nil {
+		owners.jobWatch = runJobWatchVerb
+	}
+	if owners.runWatch == nil {
+		owners.runWatch = runRunWatch
 	}
 	if owners.settings == nil {
 		owners.settings = func(confPath string) (launch.Settings, error) {
@@ -193,7 +203,10 @@ func intentWorkCommands() []intentCommand {
 			usage: []string{"metasystem work wait G [--work NAME] [--timeout DURATION]",
 				"metasystem work wait G --for landing|human-act [--verb V] [--since TIP] [--timeout DURATION]",
 				"metasystem work wait REF [--timeout DURATION]",
-				"metasystem work wait --path PATH --until present|absent [--timeout DURATION]"},
+				"metasystem work wait j2:J --exit-code [--caller-pid PID]",
+				"metasystem work wait --run ID --exit-code",
+				"metasystem work wait --path PATH --until present|absent [--timeout DURATION]",
+				"metasystem work wait --list [--session S]"},
 			details: []string{
 				"work wait G continues the goal's running work: the one named with --work, or the only work item that is running.",
 				"With nothing running it says so; when the goal is queued to land it offers work wait G --for landing.",
@@ -203,6 +216,8 @@ func intentWorkCommands() []intentCommand {
 				"or wait:ID, which resumes that recorded wait instead of starting a new one. A bare id works when it names exactly one record.",
 				"A wait that reaches its timeout reports the work as still in progress and prints the exact command that continues the wait.",
 				"--path waits for a file to be present or absent; a relative PATH is from the current directory.",
+				"--exit-code blocks until the dispatch job, or the tracked run --run names, is terminal and exits with its pinned code.",
+				"--list shows this checkout's recorded waits that a later work wait wait:ID resumes, checked against --session when given.",
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work to wait for"},
@@ -214,18 +229,24 @@ func intentWorkCommands() []intentCommand {
 				{name: "until", value: "STATE", usage: "with --path: present or absent"},
 				{name: "question", value: "ID", advanced: true, usage: "answer waits: the question"},
 				{name: "chain", value: "ROOT", advanced: true, usage: "landing waits: the delegate chain root"},
+				{name: "exit-code", usage: "with j2:J or --run ID: block until terminal and exit with the pinned code"},
+				{name: "run", value: "ID", usage: "with --exit-code: the tracked run (a suite, cohort or custom run) to wait for"},
+				{name: "caller-pid", value: "PID", advanced: true, usage: "with --exit-code: the caller whose exit ends the wait (default: the parent process)"},
+				{name: "list", usage: "list the recorded waits a later work wait wait:ID resumes"},
+				{name: "session", value: "S", advanced: true, usage: "with --list: the runtime session that must hold the checkout"},
 			},
-			maxArgs:  1,
-			accepts:  []string{refGoal, refJ1, refJ2, refRun, refRead, refWait},
-			examples: []string{"metasystem work wait verbs-match-intent", "metasystem work wait verbs-match-intent --for landing", "metasystem work wait verbs-match-intent --for human-act --verb approve", "metasystem work wait j2:20260925-job-1 --timeout 10m"},
-			run:      runIntentWorkWait,
+			maxArgs: 1,
+			accepts: []string{refGoal, refJ1, refJ2, refRun, refRead, refWait},
+			examples: []string{"metasystem work wait verbs-match-intent", "metasystem work wait verbs-match-intent --for landing", "metasystem work wait verbs-match-intent --for human-act --verb approve",
+				"metasystem work wait j2:20260925-job-1 --timeout 10m", "metasystem work wait j2:impl-01 --exit-code", "metasystem work wait --list"},
+			run: runIntentWorkWait,
 		},
 		{
 			object: "test", action: "run", audience: "both", summary: "run the risk-selected tests for this checkout",
 			usage: []string{"metasystem test run [--goal G] [--authority H] [--mode auto|standard|deep]"},
 			details: []string{
 				"Runs the risk-selected tests for this checkout and reports the result, naming its proof attempt; test wait proof:ID reads that attempt's recorded end.",
-				"test plan previews the selected tests and their reasons without running them; test verify checks retained proof for an exact tree.",
+				"test plan previews the selected tests and their reasons without running them; test status says whether retained proof already covers an exact tree.",
 			},
 			flags: []intentFlag{
 				{name: "goal", value: "G", usage: "the accepted goal owning the delivery"},
@@ -272,8 +293,9 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettingsKeys,
 		},
 		{
-			object: "settings", action: "check", audience: "both", summary: "validate every setting of the selected installation, changing nothing",
+			object: "settings", action: "check", audience: "both", summary: "validate every setting and the testing contract, changing nothing",
 			usage:    []string{"metasystem settings check"},
+			details:  []string{"Validates metasystem.conf, then the testing contract it names and the contract's declared tools; no test runs."},
 			maxArgs:  0,
 			examples: []string{"metasystem settings check"},
 			run:      runIntentSettingsCheck,
@@ -1055,6 +1077,37 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 func runIntentWorkWait(inv *intentInvocation) int {
 	args := inv.input.args
 	eventSelectors := []string{"since", "verb", "question", "chain"}
+	waitModes := append([]string{"work", "for", "path", "until", "timeout"}, eventSelectors...)
+	if inv.input.switched("list") {
+		for _, other := range append([]string{"exit-code", "caller-pid", "run"}, waitModes...) {
+			if inv.input.has(other) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work wait --list takes only --session, not --%s; nothing was done", other)})
+			}
+		}
+		if len(args) > 0 {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --list names no target; nothing was done"})
+		}
+		if problem := inv.selectRoot(); problem != nil {
+			return inv.render(*problem)
+		}
+		return inv.render(inv.recoverWaits())
+	}
+	if inv.input.has("session") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--session belongs to work wait --list; nothing was done"})
+	}
+	if inv.input.switched("exit-code") {
+		for _, other := range waitModes {
+			if inv.input.has(other) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work wait --exit-code takes a job or run and --caller-pid, not --%s; nothing was done", other)})
+			}
+		}
+		return runIntentWaitExitCode(inv)
+	}
+	for _, only := range []string{"caller-pid", "run"} {
+		if inv.input.has(only) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to work wait --exit-code; nothing was done", only)})
+		}
+	}
 	if inv.input.has("path") {
 		if len(args) > 0 {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --path PATH names no other target; nothing was done"})
@@ -1395,7 +1448,21 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	return inv.render(ownerVerbResult(ran, nil, "the settings of "+root+" are valid", map[string]any{"installation": root}))
+	settings := ownerVerbResult(ran, nil, "the settings of "+root+" are valid", map[string]any{"installation": root})
+	if settings.Outcome != intentConfirmed {
+		return inv.render(settings)
+	}
+	// The testing contract the settings name is validated with its declared
+	// tools; no test runs.
+	ran, problem = inv.engineVerb("test", "check", "--root", root)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	contract := ownerVerbResult(ran, nil, "the settings of "+root+" and their testing contract are valid", map[string]any{"installation": root})
+	if contract.Outcome == intentConfirmed {
+		contract.text = append(settings.text, contract.text...)
+	}
+	return inv.render(contract)
 }
 
 func runIntentSettings(inv *intentInvocation) int {
@@ -1432,6 +1499,36 @@ func runIntentSettings(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Data: map[string]any{"conf": confPath, "settings": values}, text: text,
 		Summary: fmt.Sprintf("%d setting(s) of %s", len(values), inv.layout.InstallationRoot)})
+}
+
+// runIntentWaitExitCode blocks until one delegate job or tracked run is
+// terminal and exits with its pinned code, through the job and run waiters.
+// Their records are read under --repo, or the directory the command runs in.
+func runIntentWaitExitCode(inv *intentInvocation) int {
+	root := inv.cwd
+	if inv.input.has("repo") {
+		root = inv.textPath(inv.input.text("repo"))
+	}
+	if inv.input.has("run") {
+		if len(inv.input.args) != 0 || inv.input.has("caller-pid") {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --run ID --exit-code names one tracked run and nothing else; nothing was done"})
+		}
+		return inv.work().runWatch([]string{"--root", root, "--id", inv.input.text("run")})
+	}
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --exit-code needs the job or a tracked run: metasystem work wait j2:J --exit-code | --run ID --exit-code; nothing was done"})
+	}
+	job := inv.input.args[0]
+	if kind, id := splitReference(job); kind == refJ2 {
+		job = id
+	} else if kind != "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work wait --exit-code waits for a dispatch job (j2:J) or a tracked run (--run ID), not %s; nothing was done", job)})
+	}
+	args := []string{"--root", root, "--job", job}
+	if inv.input.has("caller-pid") {
+		args = append(args, "--caller-pid", inv.input.text("caller-pid"))
+	}
+	return inv.work().jobWatch(args)
 }
 
 // brief

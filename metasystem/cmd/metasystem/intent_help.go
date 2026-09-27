@@ -296,10 +296,10 @@ func runIntentHelp(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(selectors) >= 2 && isIntentObject(selectors[0]) {
-		writeUnknownIntentAction(stderr, selectors[0], selectors[1])
+		writeUnknownIntentAction(stderr, selectors[0], selectors[1], nil)
 		return 2
 	}
-	writeUnknownIntentCommand(stderr, selectors[0])
+	writeUnknownIntentCommand(stderr, selectors[0], nil)
 	return 2
 }
 

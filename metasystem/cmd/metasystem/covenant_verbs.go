@@ -25,7 +25,7 @@ func runCovenantValidate(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem covenant check [--root DIR]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal covenant validate [--root DIR]")
 		return 2
 	}
 	c, err := covenant.Load(filepath.Join(*root, covenant.Filename))

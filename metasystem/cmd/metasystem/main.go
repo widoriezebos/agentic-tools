@@ -753,7 +753,7 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 	if args[0] == "up" {
 		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
 	}
-	writeUnknownIntentCommand(stderr, args[0])
+	writeUnknownIntentCommand(stderr, args[0], args[1:])
 	return 2
 }
 
@@ -788,7 +788,7 @@ func dispatchObject(args []string, stdout, stderr io.Writer, registered []family
 	if familyHasVerb(registered, object, args[1]) {
 		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
 	}
-	writeUnknownIntentAction(stderr, object, args[1])
+	writeUnknownIntentAction(stderr, object, args[1], args[2:])
 	return 2
 }
 
@@ -865,24 +865,24 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 		writeFamilyHelp(stderr, fam)
 		return 2
 	}
-	writeUnknownIntentCommand(stderr, args[0])
+	writeUnknownIntentCommand(stderr, args[0], args[1:])
 	return 2
 }
 
-// writeUnknownIntentCommand refuses a first word no object answers to,
-// offering only public spellings.
-func writeUnknownIntentCommand(w io.Writer, name string) {
+// writeUnknownIntentCommand refuses a first word no object answers to and
+// names the current command that was probably meant.
+func writeUnknownIntentCommand(w io.Writer, name string, rest []string) {
 	fmt.Fprintf(w, "metasystem: unknown object %q; nothing was done\n", name)
-	if near := suggestIntent(name); len(near) > 0 {
+	if near := suggestIntent(name, rest); len(near) > 0 {
 		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
 	}
 	fmt.Fprintln(w, "metasystem lists the objects; metasystem OBJECT lists its actions")
 }
 
 // writeUnknownIntentAction refuses an action the object does not have.
-func writeUnknownIntentAction(w io.Writer, object, action string) {
+func writeUnknownIntentAction(w io.Writer, object, action string, rest []string) {
 	fmt.Fprintf(w, "metasystem %s: unknown action %q; nothing was done\n", object, action)
-	if near := suggestIntentAction(object, action); len(near) > 0 {
+	if near := suggestIntentAction(object, action, rest); len(near) > 0 {
 		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
 	}
 	fmt.Fprintf(w, "metasystem %s lists its actions\n", object)

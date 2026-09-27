@@ -58,7 +58,7 @@ stale observations remain unobserved.
 ## The universal fallback (no hooks required)
 
 On a blocked Stop, the instruction entrypoint requires the seat to run the
-exact `metasystem session report --id ...` command before another work
+exact `metasystem session status --id ...` command before another work
 action or Stop. A free seat then uses `goal next --machine <own-nick>
 --fetch`; a held seat continues without another claim. On an allowed
 report-bearing Stop, the task line itself says `Read, then continue lawful

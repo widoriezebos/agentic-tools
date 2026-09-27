@@ -12,7 +12,7 @@ import (
 func TestGoalRepairRequiresAcceptRemoteAndNamesItInUsage(t *testing.T) {
 	stderr, code := captureStderr(t, func() int { return runGoalRepair(nil) })
 	if code != 2 || !strings.Contains(stderr,
-		"usage: metasystem goal repair --accept-remote --by <human> --root <checkout>") {
+		"usage: metasystem goal sync --accept-remote-history --by <human> [--repo <checkout>]") {
 		t.Fatalf("bare goal repair did not print usage naming --accept-remote: code=%d stderr=%q", code, stderr)
 	}
 }

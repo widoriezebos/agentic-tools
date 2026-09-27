@@ -83,9 +83,9 @@ func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
 	// These lines assert rendered wording or construct fixture bytes. None
 	// derives a report reference from the visible text.
 	allowed := map[string]string{
-		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem session report --id %s' "$hook_report_alias")`:                      "fixture report text",
-		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_payload=$(printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem session report --id %s"}' "$hook_report_alias")`: "fixture payload text",
-		`scripts/agents/supervision-fixtures.sh` + "\x00" + `&& grep -Fq '; Stop allowed; needs supervision repair; Report: metasystem session report --id ' <<<"$degraded" \`:                                                                 "wording assertion",
+		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem session status --id %s' "$hook_report_alias")`:                      "fixture report text",
+		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_payload=$(printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem session status --id %s"}' "$hook_report_alias")`: "fixture payload text",
+		`scripts/agents/supervision-fixtures.sh` + "\x00" + `&& grep -Fq '; Stop allowed; needs supervision repair; Report: metasystem session status --id ' <<<"$degraded" \`:                                                                 "wording assertion",
 	}
 	paths, err := filepath.Glob(filepath.Join("..", "..", "scripts", "agents", "*.sh"))
 	if err != nil {
@@ -99,7 +99,7 @@ func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
 		}
 		for _, sourceLine := range strings.Split(string(data), "\n") {
 			line := strings.TrimSpace(sourceLine)
-			if !strings.Contains(line, "session report --id") && !strings.Contains(line, "stop-status --id") {
+			if !strings.Contains(line, "session status --id") && !strings.Contains(line, "stop-status --id") {
 				continue
 			}
 			key := filepath.ToSlash(filepath.Join("scripts", "agents", filepath.Base(path))) + "\x00" + line

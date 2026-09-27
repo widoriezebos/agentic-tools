@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,12 +51,13 @@ func designIntentCommands() []intentCommand {
 		},
 		{
 			object: "design", action: "review", audience: "both", summary: "independently critique an existing project design",
-			usage:     []string{reviewDesignUsage},
+			usage:     []string{reviewDesignUsage, reviewDesignCheck},
 			helpForms: designReviewHelpForms(),
 			details: []string{
 				"An independent critique of a design document; the goal comes from the document or --goal.",
 				"Findings stop at the author's decision: decide each finding and repeat with --dispositions FILE [--after N].",
 				"An examination round that fails without findings is retried with --retry N under the same round limit.",
+				"The review checks the page's moved-effect inventory against the code; --check-only runs that check alone, without a critic.",
 			},
 			flags: []intentFlag{
 				{name: "goal", value: "G", usage: "the goal the design serves (default: the one the document names)"},
@@ -65,9 +67,10 @@ func designIntentCommands() []intentCommand {
 				{name: "tool-calls", value: "N", usage: "the reader's maximum tool calls, stated in its brief"},
 				{name: "effort", value: "VALUE", hidden: true, usage: "refused: every review's reasoning effort is set by its hazard class's configuration obligations"},
 				{name: "model", value: "MODEL", hidden: true, usage: "refused: a design critique's critic comes from the roster"},
+				{name: "check-only", usage: "check the page's moved-effect inventory against the code; no critic is asked"},
 			},
 			maxArgs:  1,
-			examples: []string{"metasystem design review plans/designs/intent.md --tool-calls 60"},
+			examples: []string{"metasystem design review plans/designs/intent.md --tool-calls 60", "metasystem design review plans/designs/intent.md --check-only"},
 			run:      runIntentDesignReview,
 		},
 		{
@@ -97,14 +100,6 @@ func designIntentCommands() []intentCommand {
 			examples: []string{"metasystem decision show 01M3EC3QT7M2TC36P7ZVNRF0RW"},
 			run:      func(inv *intentInvocation) int { return runIntentShowRecords(inv, "record", inv.input.args) },
 		},
-		passthroughAction("design", "find", "both", "the design records that name one goal",
-			[]string{"metasystem design find --root CHECKOUT --goal G"},
-			[]intentFlag{documented("root", "CHECKOUT", "the checkout whose design records are searched"), documented("goal", "G", "the goal")},
-			[]string{"metasystem design find --root . --goal verbs-match-intent"}, runProjectDesignOf),
-		passthroughAction("design", "check-moves", "both", "check a design page's moved-effect inventory against the code",
-			[]string{"metasystem design check-moves --file PAGE [--root REPOSITORY]"},
-			[]intentFlag{documented("file", "PAGE", "the design page"), documented("root", "REPOSITORY", "the repository root containing the metasystem root")},
-			[]string{"metasystem design check-moves --file plans/designs/intent.md"}, runValidateMovedEffects),
 	}
 }
 
@@ -128,30 +123,82 @@ func runIntentDesignReview(inv *intentInvocation) int {
 			Summary:  "design review takes no --model: the delegate accepts a critic model override only for a run or commit read's code critic",
 			Decision: "omit --model; the roster decides the design critic"})
 	}
+	if inv.input.switched("check-only") {
+		return runIntentDesignCheckOnly(inv, inv.input.args[0])
+	}
 	if result := inv.selectRoot(); result != nil {
 		return inv.render(*result)
 	}
-	return inv.render(inv.reviewDesign(inv.input.args[0]))
+	result := inv.reviewDesign(inv.input.args[0])
+	inv.attachMovedEffects(&result, inv.input.args[0])
+	return inv.render(result)
+}
+
+// runIntentDesignCheckOnly checks a design page's moved-effect inventory
+// against the repository's code, without asking a critic.
+func runIntentDesignCheckOnly(inv *intentInvocation, file string) int {
+	for _, other := range []string{"goal", "dispositions", "after", "retry", "tool-calls"} {
+		if inv.input.has(other) {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: fmt.Sprintf("--check-only asks no critic; --%s belongs to the critique; nothing was done", other)})
+		}
+	}
+	if problem := inv.resolveLayout(); problem != nil {
+		return inv.render(*problem)
+	}
+	path := inv.textPath(file)
+	page, err := os.ReadFile(path)
+	target := []intentTarget{{Kind: "design", ID: file}}
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: target, Summary: fmt.Sprintf("the design page %s is unreadable: %v; nothing was checked", shellCommand([]string{file}), err)})
+	}
+	lines, problems := movedEffectsReport(page, inv.layout.GitRoot)
+	data := map[string]any{"problems": problems, "lines": lines}
+	if problems > 0 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: target, Data: data, text: lines,
+			Summary: fmt.Sprintf("the moved-effect inventory of %s has %d problem(s)", file, problems)})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Targets: target, Data: data, text: lines,
+		Summary: fmt.Sprintf("the moved-effect inventory of %s checks against the code", file)})
+}
+
+// attachMovedEffects adds the page's moved-effect check to a design review's
+// result, so every review carries it; a result that is not a plain record
+// is left as it is.
+func (inv *intentInvocation) attachMovedEffects(result *intentResult, file string) {
+	page, err := os.ReadFile(inv.textPath(file))
+	if err != nil || inv.layout.GitRoot == "" {
+		return
+	}
+	lines, problems := movedEffectsReport(page, inv.layout.GitRoot)
+	switch data := result.Data.(type) {
+	case nil:
+		result.Data = map[string]any{"movedEffects": map[string]any{"problems": problems, "verdict": lines[len(lines)-1]}}
+	case map[string]any:
+		data["movedEffects"] = map[string]any{"problems": problems, "verdict": lines[len(lines)-1]}
+	}
 }
 
 func practiceIntentCommands() []intentCommand {
-	receiptFlags := []intentFlag{documented("root", "CHECKOUT", "the checkout root"), documented("type", "TYPE", "add: the receipt type"),
-		documented("outcome", "OUTCOME", "add: the outcome"), documented("goal", "G", "add: the goal the receipt belongs to")}
+	receiptFlags := []intentFlag{documented("root", "CHECKOUT", "the checkout root"), documented("type", "TYPE", "the receipt type"),
+		documented("outcome", "OUTCOME", "the outcome"), documented("goal", "G", "the goal the receipt belongs to"),
+		documented("corrects", "EPOCH:SHA1", "correct the receipt line with this epoch and SHA-1 instead of adding one"),
+		documented("field", "FIELD", "with --corrects: the corrected field"), documented("was", "VALUE", "with --corrects: the field's recorded value"),
+		documented("now", "VALUE", "with --corrects: the field's correct value"), documented("reason", "TEXT", "with --corrects: why")}
 	frontierFlags := []intentFlag{documented("file", "FILE", "the frontier file (default plans/frontier)"), documented("score", "SCORE", "the candidate score"),
 		documented("eval", "COMMAND", "the evaluation command that produced the score"), documented("artifact", "PATH", "the run artifact"),
 		documented("min-delta", "N", "the noise floor"), documented("direction", "max|min", "which way is better"), {name: "force", usage: "re-baseline after an evaluation change"}}
-	rootJob := []intentFlag{documented("repo", "CHECKOUT", "the checkout root"), documented("root-job", "JOB", "the critic register's root job")}
 	contextRoot := documented("root", "ROOT", "the installation or containing template root")
 	return []intentCommand{
-		passthroughAction("receipt", "add", "agent", "append one task receipt at completion",
-			[]string{"metasystem receipt add --type TYPE --outcome OUTCOME [--goal G] [--skills LIST] [--verify RESULT]"}, receiptFlags,
-			[]string{"metasystem receipt add --type implementation --outcome done --goal verbs-match-intent"}, withLead("add", runReceipt)),
-		passthroughAction("receipt", "check", "both", "exit 1 when a metasystem retro is due",
-			[]string{"metasystem receipt check [--root CHECKOUT]"}, receiptFlags[:1], []string{"metasystem receipt check"}, withLead("check", runReceipt)),
-		passthroughAction("receipt", "stats", "both", "the retro period's numbers as key=value lines",
-			[]string{"metasystem receipt stats [--root CHECKOUT]"}, receiptFlags[:1], []string{"metasystem receipt stats"}, withLead("stats", runReceipt)),
-		passthroughAction("receipt", "correct", "agent", "append a correction referencing an existing receipt line",
-			[]string{"metasystem receipt correct --line N [...]"}, receiptFlags[:1], []string{"metasystem receipt correct --line 12 --outcome rework"}, withLead("correct", runReceipt)),
+		passthroughAction("receipt", "add", "agent", "append one task receipt at completion, or a correction of one",
+			[]string{"metasystem receipt add --type TYPE --outcome OUTCOME [--goal G] [--skills LIST] [--verify RESULT]",
+				"metasystem receipt add --corrects EPOCH:SHA1 --field FIELD --was OLD --now NEW --reason TEXT"}, receiptFlags,
+			[]string{"metasystem receipt add --type implementation --outcome done --goal verbs-match-intent",
+				"metasystem receipt add --corrects 1788441779:3f2a9c1e0d4b5a6978695a4b3c2d1e0f98765432 --field outcome --was done --now rework --reason 'reopened'"}, runReceiptAdd),
+		passthroughAction("receipt", "status", "both", "whether a metasystem retro is due, and the period's numbers; exit 1 when due",
+			[]string{"metasystem receipt status [--all] [--root CHECKOUT]"},
+			[]intentFlag{receiptFlags[0], {name: "all", usage: "count the whole ledger, not only the period since the last retro"}},
+			[]string{"metasystem receipt status"}, runReceiptStatus),
 		passthroughAction("receipt", "retro", "agent", "record that a retro ran and reset the cadence",
 			[]string{"metasystem receipt retro SUMMARY [--root CHECKOUT]"}, receiptFlags[:1], []string{"metasystem receipt retro 'kept 3, reverted 1'"}, withLead("retro", runReceipt)),
 		passthroughAction("experiment", "record", "agent", "record the measured-improvement frontier",
@@ -165,29 +212,18 @@ func practiceIntentCommands() []intentCommand {
 		passthroughAction("experiment", "check", "agent", "block another investigation cycle when the ledger's stop-loss fired",
 			[]string{"metasystem experiment check --file LEDGER"}, []intentFlag{documented("file", "LEDGER", "the investigation ledger")},
 			[]string{"metasystem experiment check --file plans/investigation.md"}, runValidateStopLoss),
-		passthroughAction("critique", "rebind-budget", "agent", "copy the goal's raised review-round limit onto an open critic register",
-			[]string{"metasystem critique rebind-budget --root-job JOB [--repo CHECKOUT]"}, rootJob,
-			[]string{"metasystem critique rebind-budget --root-job crit-01"}, runDispatchCritiqueBudgetRebind),
-		passthroughAction("critique", "close-register", "agent", "close or defer an exhausted critic register",
-			[]string{"metasystem critique close-register --root-job JOB [--repo CHECKOUT]"}, rootJob,
-			[]string{"metasystem critique close-register --root-job crit-01"}, runDispatchCritiqueRegisterClose),
-		passthroughAction("covenant", "check", "both", "check the covenant document's shape",
-			[]string{"metasystem covenant check [--root DIR]"}, []intentFlag{documented("root", "DIR", "the repository root holding covenant.json")},
-			[]string{"metasystem covenant check"}, runCovenantValidate),
-		passthroughAction("session", "report", "agent", "read one exact Stop report",
-			[]string{"metasystem session report --id ID [--root INSTALLATION]"},
-			[]intentFlag{documented("id", "ID", "the Stop report's short alias"), documented("root", "INSTALLATION", "the installation")},
-			[]string{"metasystem session report --id r-7f3a"}, runReportStopStatus),
-		passthroughAction("session", "handoff", "agent", "record a noted, task-aware context handoff, or cancel one",
-			[]string{"metasystem session handoff --root ROOT --note FILE [--no-delegates]", "metasystem session handoff --root ROOT --cancel NONCE"},
-			[]intentFlag{contextRoot, documented("note", "FILE", "the lessons note"), documented("cancel", "NONCE", "the live handoff to cancel"), {name: "no-delegates", usage: "no background task remains in flight"}},
-			[]string{"metasystem session handoff --root . --note memory/handoff.md"}, runContextHandoff),
-		passthroughAction("session", "context", "agent", "the session's recorded context-budget evidence",
-			[]string{"metasystem session context --root ROOT [--json]"}, []intentFlag{contextRoot},
-			[]string{"metasystem session context --root ."}, runContextStatus),
-		passthroughAction("session", "verify", "agent", "verify an immutable context handoff",
-			[]string{"metasystem session verify --root ROOT --nonce NONCE"}, []intentFlag{contextRoot, documented("nonce", "NONCE", "the handoff nonce")},
-			[]string{"metasystem session verify --root . --nonce 3f2a9c"}, runContextVerify),
+		passthroughAction("session", "status", "agent", "why this session may or may not stop: one exact Stop report",
+			[]string{"metasystem session status --id ID [--root INSTALLATION]"},
+			[]intentFlag{documented("id", "ID", "the Stop report's short alias, as the Stop line printed it"), documented("root", "INSTALLATION", "the installation")},
+			[]string{"metasystem session status --id r-7f3a"}, runReportStopStatus),
+		passthroughAction("session", "handoff", "agent", "hand this session's work to a successor, cancel a handoff, or read the session's context budget",
+			[]string{"metasystem session handoff --root ROOT --note FILE [--no-delegates]", "metasystem session handoff --root ROOT --cancel NONCE",
+				"metasystem session handoff --status --root ROOT [--json]", "metasystem session handoff --verify NONCE --root ROOT"},
+			[]intentFlag{contextRoot, documented("note", "FILE", "the lessons note"), documented("cancel", "NONCE", "the live handoff to cancel"),
+				{name: "no-delegates", usage: "no background task remains in flight"},
+				{name: "status", usage: "the session's recorded context-budget evidence; nothing is handed off"},
+				documented("verify", "NONCE", "a successor verifies the immutable handoff it continues")},
+			[]string{"metasystem session handoff --root . --note memory/handoff.md", "metasystem session handoff --status --root .", "metasystem session handoff --verify 3f2a9c --root ."}, runSessionHandoff),
 		passthroughAction("test", "plan", "both", "preview the risk-selected tests and their reasons without running them",
 			[]string{"metasystem test plan --root INSTALLATION [--goal G] --json"},
 			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("goal", "G", "the goal owning the delivery")},
@@ -195,61 +231,120 @@ func practiceIntentCommands() []intentCommand {
 		passthroughAction("test", "list", "both", "every group in the committed testing contract",
 			[]string{"metasystem test list [--root INSTALLATION] [--json]"}, []intentFlag{documented("root", "INSTALLATION", "the installation")},
 			[]string{"metasystem test list --root ."}, runTestList),
-		passthroughAction("test", "check", "both", "validate the testing contract and its declared tools without running tests",
-			[]string{"metasystem test check [--root INSTALLATION]"}, []intentFlag{documented("root", "INSTALLATION", "the installation")},
-			[]string{"metasystem test check --root ."}, runTestCheck),
-		passthroughAction("test", "verify", "both", "check whether retained proof covers an exact tree, without rerunning tests",
-			[]string{"metasystem test verify --root INSTALLATION --tree TREE [--goal G] --json"},
-			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("tree", "TREE", "the exact tree"), documented("goal", "G", "the goal")},
-			[]string{"metasystem test verify --root . --tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 --json"}, runTestVerify),
-		passthroughAction("test", "report", "both", "summarize a recorded test result's measured cost",
-			[]string{"metasystem test report --result FILE --expensive-ms N"},
-			[]intentFlag{documented("result", "FILE", "the recorded test result"), documented("expensive-ms", "N", "the positive threshold for expensive tests")},
-			[]string{"metasystem test report --result result.json --expensive-ms 5000"}, runTestReport),
-		passthroughAction("work", "watch", "agent", "block until a delegate job or a tracked run is terminal; exit with its pinned code",
-			[]string{"metasystem work watch --root CHECKOUT --job J [--caller-pid PID]", "metasystem work watch --root CHECKOUT --run RUN"},
-			[]intentFlag{documented("root", "CHECKOUT", "the checkout root"), documented("job", "J", "the delegate job"), documented("run", "RUN", "the tracked run"), documented("caller-pid", "PID", "the caller whose exit ends the watch")},
-			[]string{"metasystem work watch --root . --job impl-01"}, runWorkWatch),
-		passthroughAction("work", "report", "both", "summarize launch outcomes and refusals",
-			[]string{"metasystem work report [--id ID | --goal G [--since RFC3339]] [--json]"},
-			[]intentFlag{documented("id", "ID", "one launch"), documented("goal", "G", "one goal's launches"), documented("since", "RFC3339", "activity at or after this instant")},
-			[]string{"metasystem work report --goal verbs-match-intent"}, runLaunchReport),
-		passthroughAction("work", "check", "agent", "check an implementer job's conformance, or that a critic round's findings are all dispositioned",
-			[]string{"metasystem work check --stage review|recertify|merge --job J [--test-command COMMAND]", "metasystem work check --findings RETURN --dispositions FILE [--repo CHECKOUT --root-job JOB]"},
-			[]intentFlag{documented("stage", "STAGE", "conformance: review, recertify or merge"), documented("job", "J", "conformance: the implementer job"),
-				documented("findings", "RETURN", "critique: the critic return"), documented("dispositions", "FILE", "critique: the dispositions table")},
-			[]string{"metasystem work check --stage review --job impl-01", "metasystem work check --findings return.json --dispositions dispositions.md"}, runWorkCheck),
+		passthroughAction("test", "status", "both", "whether an exact tree is already proven, and what its tests cost; nothing is run",
+			[]string{"metasystem test status --tree TREE [--goal G] [--root INSTALLATION] [--json]", "metasystem test status --result FILE --expensive-ms N"},
+			[]intentFlag{documented("root", "INSTALLATION", "the installation"), documented("tree", "TREE", "the exact tree"), documented("goal", "G", "the goal"),
+				documented("result", "FILE", "a recorded test result whose measured cost is summarized"), documented("expensive-ms", "N", "with --result: the positive threshold for expensive tests")},
+			[]string{"metasystem test status --tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 --root . --json", "metasystem test status --result result.json --expensive-ms 5000"}, runTestStatus),
 	}
 }
 
-// runWorkWatch waits on a delegate job (--job) or a tracked run (--run),
-// each through its own waiter.
-func runWorkWatch(args []string) int {
-	for index, arg := range args {
-		name, value, joined := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-		if !strings.HasPrefix(arg, "-") || name != "run" {
+// takeIntentFlag removes one option from a passthrough's words: its value
+// (when it takes one) and whether it was given, in --name value, --name=value
+// or single-dash form.
+func takeIntentFlag(args []string, name string, takesValue bool) (string, bool, []string) {
+	rest := make([]string, 0, len(args))
+	value, found := "", false
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if arg == "--" {
+			rest = append(rest, args[index:]...)
+			break
+		}
+		spelled, joinedValue, joined := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(arg, "-"), "-"), "=")
+		if !strings.HasPrefix(arg, "-") || spelled != name {
+			rest = append(rest, arg)
 			continue
 		}
-		rewritten := slices.Clone(args)
-		if joined {
-			rewritten[index] = "--id=" + value
-		} else {
-			rewritten[index] = "--id"
+		found = true
+		switch {
+		case joined:
+			value = joinedValue
+		case takesValue && index+1 < len(args):
+			index++
+			value = args[index]
+		case !takesValue:
+			value = "true"
 		}
-		return runRunWatch(rewritten)
 	}
-	return runJobWatchVerb(args)
+	return value, found, rest
 }
 
-// runWorkCheck runs the conformance check for --stage and otherwise the
-// critique-closed join.
-func runWorkCheck(args []string) int {
-	for _, arg := range args {
-		if name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "="); strings.HasPrefix(arg, "-") && name == "stage" {
-			return runValidateConformance(args)
-		}
+// runReceiptAdd appends a receipt, or with --corrects EPOCH:SHA1 a
+// correction of the receipt line with that epoch and SHA-1.
+func runReceiptAdd(args []string) int {
+	words, problem := receiptAddWords(args)
+	if problem != "" {
+		fmt.Fprintln(os.Stderr, "metasystem receipt add: "+problem)
+		return 2
 	}
-	return runValidateCritiqueClosed(args)
+	return runReceipt(words)
+}
+
+// receiptAddWords are the receipt owner's words for a receipt add: an add,
+// or with --corrects EPOCH:SHA1 a correction of that line.
+func receiptAddWords(args []string) ([]string, string) {
+	line, corrects, rest := takeIntentFlag(args, "corrects", true)
+	if !corrects {
+		return append([]string{"add"}, args...), ""
+	}
+	epoch, sha, ok := strings.Cut(line, ":")
+	if !ok || epoch == "" || sha == "" {
+		return nil, "--corrects takes the corrected line's EPOCH:SHA1; nothing was recorded"
+	}
+	return append([]string{"correct", "--ref-epoch", epoch, "--ref-sha1", sha}, rest...), ""
+}
+
+// runReceiptStatus says whether a retro is due and prints the period's
+// numbers; its exit code is the due check's (1 when a retro is due).
+func runReceiptStatus(args []string) int {
+	all, _, checkArgs := takeIntentFlag(args, "all", false)
+	due := runReceipt(append([]string{"check"}, checkArgs...))
+	if due > 1 {
+		return due
+	}
+	statsArgs := checkArgs
+	if all == "true" {
+		statsArgs = append(slices.Clone(checkArgs), "--all")
+	}
+	if stats := runReceipt(append([]string{"stats"}, statsArgs...)); stats != 0 {
+		return stats
+	}
+	return due
+}
+
+// runSessionHandoff hands off, cancels, reads the context budget (--status)
+// or verifies a handoff (--verify NONCE) through the context owners.
+func runSessionHandoff(args []string) int {
+	handler, rest := sessionHandoffRoute(args)
+	return handler(rest)
+}
+
+// sessionHandoffRoute is the context owner a session handoff's words reach,
+// with the words that owner takes.
+func sessionHandoffRoute(args []string) (func([]string) int, []string) {
+	if _, status, rest := takeIntentFlag(args, "status", false); status {
+		return runContextStatus, rest
+	}
+	if nonce, verify, rest := takeIntentFlag(args, "verify", true); verify {
+		return runContextVerify, append(rest, "--nonce", nonce)
+	}
+	return runContextHandoff, args
+}
+
+// runTestStatus reads whether retained proof covers an exact tree, or with
+// --result the measured cost of one recorded result; neither runs a test.
+func runTestStatus(args []string) int {
+	return testStatusRoute(args)(args)
+}
+
+// testStatusRoute is the owner a test status's words reach: the result
+// report for --result, else the retained-proof verifier.
+func testStatusRoute(args []string) func([]string) int {
+	if _, result, _ := takeIntentFlag(args, "result", true); result {
+		return runTestReport
+	}
+	return runTestVerify
 }
 
 // hiddenIntentEntries are the process entrypoints whose first word is also a

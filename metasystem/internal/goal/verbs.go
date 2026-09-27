@@ -216,6 +216,10 @@ type VerbRequest struct {
 	Authority *humanauthority.Proof
 	Ulid      string // caller-minted; the opid derives from it
 	Now       time.Time
+	// ReconcileScope, when not empty, is the exact set of goals a reconcile
+	// session may publish: the session refuses, before it records any
+	// pending publication, when the edits it captured touch another goal.
+	ReconcileScope []string
 	// ApprovedRef names a recorded human exception for verbs that admit an
 	// over-norm goal budget. Other verbs reject the flag at the command edge.
 	ApprovedRef string
