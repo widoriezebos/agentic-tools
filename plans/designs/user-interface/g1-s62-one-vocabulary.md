@@ -134,7 +134,25 @@ Author Fable. Every cite read at `2c87659a4`, the merge of main's
 
 The checkout writes as verbs (`question ask`, `question withdraw`,
 `design …`), each one catalogue row, one admission rule and one client;
-the U1d set, none of which is a goal action.
+the U1d set, which changes none of the nine proposable actions and,
+among the goal actions the interface refuses with their usage line,
+renames `goal check` and `goal repair` to `goal sync`, whose usage text
+comes from the catalogue and follows by itself.
+
+## Dispositions (Astra scoped read, 2026-09-27, under R-124)
+
+Zero material findings, "build as written"; one low, non-material
+correction folded above (S62-01: U1d does rename two refused goal
+actions; the nine proposable ones stand). Astra confirmed the nine
+names and fields against the descriptors, the advanced data flags
+admitted and no hidden or authority flag, the fourteen refused actions'
+usage lines from the executable, the join test's placement with
+audience and hidden marks, the rename scope with the question sheet's
+`Withdraw` and "Open goal" left alone, the vocabulary regeneration, the
+tab name, and that stored proposals need no migration while tool-input
+fixtures take the public grammar. The read is saved verbatim in
+g1-s62-astra-critique.md. The design is closed; it builds now, in
+parallel with g1-s64, and lands after g1-s63.
 
 ## Verification and box
 

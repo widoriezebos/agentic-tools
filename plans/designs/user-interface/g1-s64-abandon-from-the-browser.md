@@ -13,7 +13,9 @@ goal from the interface, the session proof admitted for `goal abandon`
 at the grade that verb requires of a human, recorded on the history
 line as park and unpark are; and abandon joins the Partner's catalogue
 as one more public goal action. Author Fable. Every cite read at
-`2c87659a4`.
+`2c87659a4`. Revision 2, after Astra's round-1 read: two material
+findings and two low, all folded at the foot; the ruling captured in
+the register.
 
 ## What exists and binds
 
@@ -55,15 +57,27 @@ as one more public goal action. Author Fable. Every cite read at
   proof that is `ValidFor` the root or `SessionValidFor` it; the
   mutation calls `recordSessionAuthority` on the history line it
   appends, as park does, so the ledger names the session as the hand.
-  Nothing else in the verb changes: the reason rule, the dependents rule
-  and the successor rule stand, and a session cannot waive or
-  also-abandon dependents from the browser (D2).
-- D2. **The act layer carries it.** `act.Authority.Abandon(id, because,
-  successor)` beside `Park`, publishing `goal.Abandon` with
-  `AbandonSpec{Because, Carried}` and no `Waive` or `Also`, through
-  `request()` and `settle`; a goal with live dependents is refused by the
-  engine in its words, which name the terminal forms, and the line shows
-  them.
+  Nothing else in the verb changes but one word: the refusal for a live
+  dependent names the public flag, `--successor`, where it names the
+  internal `--carried` today (abandon.go:240; Astra S64-03). The reason
+  rule, the dependents rule and the successor rule stand, and a session
+  cannot waive or also-abandon dependents from the browser (D2).
+- D2. **The act layer carries it, and the card says what a successor
+  does.** `act.Authority.Abandon(id, because, successor)` beside `Park`,
+  publishing `goal.Abandon` with `AbandonSpec{Because, Carried}` and no
+  `Waive` or `Also`, through `request()` and `settle`. Without a
+  successor, a goal with live dependents is refused by the engine in its
+  words, which name the terminal forms, and the line shows them. With a
+  successor the engine does not refuse: it repoints every live dependent
+  from the abandoned goal to the successor in the same act
+  (abandon.go:233-239, 315-329; Astra S64-02), so the proposal is read
+  with the dependents in hand. At admission the service lists the
+  goal's live dependents from the observation, the rows whose blockers
+  name it, and carries them under `read` beside the intent, next step,
+  tier and labels as for an approve or an edit; the card's line says
+  "n goals wait for it: X, Y" and, with a successor, "they will wait for
+  S instead", or, without one, "the engine will refuse until they are
+  waived or abandoned at a terminal", so the press is an informed one.
 - D3. **One route, one row.** `POST /api/backlog/goals/<id>/abandon`
   with `{because, successor}` (`successor` optional), refused empty as
   the engine refuses it, the policy of every act route; `routeAbandon =
@@ -77,7 +91,14 @@ as one more public goal action. Author Fable. Every cite read at
   successor}`; `waive` and `also` refused by name with the terminal form;
   the card's word is `Abandon`; the client `abandonGoal(id, because,
   successor)`; the inbox row and the chip take the word through the map.
-  The skill's list of nine becomes ten.
+  The skill's list of nine becomes ten. **Abandon is a guarded line**
+  (Astra S64-01): like an approve and an edit, its `read` carries the
+  goal's intent, next step, tier, labels and live dependents as admitted,
+  the line shows the intent whole, and the runner refuses it unsent,
+  "the goal changed since this was proposed; open it and ask again",
+  when the fetch-first read shows any of them changed, dependents
+  included, since abandoning is not reversed by a press (`goal reopen`
+  is a terminal act).
 - D5. **Nothing else moves.** No Abandon button on the board or the
   Decisions page (the Partner's verb is the ask; a button is one later
   slice); no `done`, `reopen`; no waive or also from the browser.
@@ -108,8 +129,27 @@ after g1-s62.
 
 ## Self-grade
 
-High on D2 to D4: park's pattern copied row for row. Medium on D1: a
-second verb admits the session, on the ruling's words as recorded here;
-the tests name the admitted and the refused. Weakest: the ruling is
-Wido's sentence read as one, not a row in the rulings register; it is
-recorded here and the register row is his to add.
+High on D2 to D4: park's pattern copied row for row, with the guard
+the irreversible act needs. Medium on D1: a second verb admits the
+session, on the ruling's words as recorded here and, since revision 2,
+in the rulings register; the tests name the admitted and the refused.
+Weakest: the dependents are listed from the observation's rows at
+admission and compared again at the press, which is the page's
+compare and not the owner's; the engine's own dependents rule inside
+the transaction is what holds the act.
+
+## Dispositions (Astra round 1, 2026-09-27, under R-124)
+
+Two material findings, two low, all accepted; every code claim checked.
+
+| id | finding | fold |
+|---|---|---|
+| S64-01 | the freshness guard covered approve and edit only, so a stale card could abandon a goal whose intent or next step had changed in another tab | abandon is a guarded line: `read` carries intent, next step, tier, labels and live dependents; the line shows the intent; the runner refuses a changed goal unsent (D4) |
+| S64-02 | with a successor the engine does not refuse live dependents, it repoints them, and the card said nothing of it while D2 claimed a refusal | D2 says what a successor does; admission lists the live dependents from the observation and the line says "n goals wait for it" and what becomes of them with and without a successor |
+| S64-03 (low) | the engine's refusal for a live dependent names the internal `--carried` where the public flag is `--successor` | one word in the refusal, inside the D1 edit of abandon.go |
+| S64-04 (low) | the ruling was left for Wido to add to the register, which must not leave the only copy in an owning document | the coordinator captures Wido's sentence in `metasystem/memory/rulings.md` with its context, in the same commit as this revision |
+
+Astra confirmed D1 otherwise: the act layer's `SignedIn` supplies the
+human's name, `request()` carries it with the proof, and abandon's
+appended history event can take `recordSessionAuthority`; D3's route
+and the `successor` mapping fit the existing owners.
