@@ -11,6 +11,7 @@ import (
 // contract still validates. The repository facts come from the Git-free
 // contract source.
 func TestMissionBedDispatchAllowSurvivesSealAndStillValidates(t *testing.T) {
+	t.Parallel()
 	f := newContractSource(t, 2, false)
 	const line = "envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol"
 	authored, err := os.ReadFile(f.path)

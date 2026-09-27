@@ -28,6 +28,7 @@ const missionBedCandidateBadGate = "#!/usr/bin/env bash\nset -euo pipefail\n[[ !
 // supervisor set, a mission lease another holder owns, and a candidate the
 // frozen gate cannot measure, each by name.
 func TestMissionBedPreflightRefusesByName(t *testing.T) {
+	t.Parallel()
 	t.Run("unarmed supervisor set", func(t *testing.T) {
 		engine, source := newGitFreePreflightBed(t, "")
 		t.Cleanup(source.done)
@@ -78,6 +79,7 @@ func TestMissionBedPreflightRefusesByName(t *testing.T) {
 // one fake-host turn to completion, and the driver-facing status reports
 // that terminal as completed with exit 10.
 func TestMissionBedEndStatesReportCompleted(t *testing.T) {
+	t.Parallel()
 	for _, behavior := range []string{"FAKEHOST:close-stream", "FAKEHOST:dispatch-terminal"} {
 		t.Run(behavior, func(t *testing.T) {
 			engine := buildGitFreeHostCycle(t, behavior)

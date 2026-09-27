@@ -751,6 +751,26 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestIntentCarriedChannelWordAdoptionStopsWhenBindingFails",
       "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestSupBOrderlyShutdownEndsTheOwnerAndReportsItsComponentsGoneByTheOwner",
+      "reason": "sets the process-wide METASYSTEM_SUPERVISION_REGISTRY_HOME the owner's registry row is written under"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestSupCShutdownRefusesAForeignOwnerLock",
+      "reason": "sets the process-wide METASYSTEM_SUPERVISION_REGISTRY_HOME the shutdown reads"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestSupCWatchdogSurfacesDriftAndADeadOwnerTogether",
+      "reason": "sets the process-wide METASYSTEM_FAKE_PROCESS_IDENTITY_FILE the watchdog's process reads use"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/up",
+      "test": "TestSupCOmittedIdentityIsInferredFromTheRuntimeAncestor",
+      "reason": "sets the process session environment (METASYSTEM_SESSION_ID, METASYSTEM_AGENT_RUNTIME) the identity inference reads"
     }
   ]
 }
