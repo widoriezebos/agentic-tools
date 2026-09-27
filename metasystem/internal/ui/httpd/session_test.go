@@ -11,6 +11,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner/fakeacp"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
 
@@ -76,6 +78,7 @@ type answered struct {
 	SignedIn bool   `json:"signedIn"`
 	Until    string `json:"until"`
 	Source   string `json:"source"`
+	Trouble  string `json:"trouble"`
 }
 
 func sessionAnswer(t *testing.T, response *httptest.ResponseRecorder) answered {
@@ -419,3 +422,64 @@ func TestTheSheetNamesTheHumanOnlyWhereTheSeatDoesNot(t *testing.T) {
 		testutil.Expect(t, "who signed in", sessionAnswer(t, response).Human, "Wido")
 	})
 }
+
+// A sign-in whose conversation could not be moved says so, and signs the human
+// in anyway.
+//
+// The two halves are both the point. The code is spent and the session is real,
+// so refusing would lock out a human who has just proved who they are; and a
+// transfer that failed in silence is a human watching their own transcript
+// disappear at the moment they are named. So the answer carries the failure's
+// own words, and the seat's transcript still holds the conversation (Astra
+// A-03).
+func TestASignInSaysWhenTheSeatsConversationCouldNotBeMoved(t *testing.T) {
+	t.Parallel()
+	held := newSigning(t, "", workingSecret)
+	root := t.TempDir()
+	runtime := partner.Runtime{Name: "fake", Model: "fake-1", ReadOnly: "a fake server reads nothing"}
+	host := partner.NewHostOn(runtime, root,
+		fakeacp.Open(fakeacp.Script{Models: []string{"fake-1"}, Chunks: []string{"I have put it away."}}))
+	t.Cleanup(host.Close)
+	// The human's own conversation cannot be opened — a store this account
+	// cannot write, which is what a transfer fails on.
+	service := partner.NewService(runtime, host,
+		func(human string) (*partner.Conversation, error) {
+			if human == "Wido" {
+				return nil, errors.New(cannotOpen)
+			}
+			return partner.OpenConversation(root, human)
+		},
+		partner.Facts{Observe: readObservation}, func() time.Time { return routeNow })
+	served := New(Info{
+		Observe:           readObservation,
+		Authority:         agentStarted(),
+		Sessions:          held.store,
+		Partner:           service,
+		PartnerConfigured: true,
+	}, loopback(), testBundle())
+	events, stop := service.Subscribe()
+	defer stop()
+
+	accepted := post(t, served, partnerTurnsPath,
+		`{"key":"k1","text":"put it away","about":{"section":"Decisions"}}`, nil)
+	testutil.Require(t, "the turn is admitted before anybody is named", accepted.Code, http.StatusAccepted)
+	drain(t, events)
+
+	signedIn := post(t, served, signInPath, `{"code":"`+routeCode(t, routeNow)+`","human":"Wido"}`, nil)
+
+	testutil.Require(t, "the sign-in stands", signedIn.Code, http.StatusOK)
+	answer := sessionAnswer(t, signedIn)
+	testutil.Expect(t, "it names the human it bound", answer.Human, "Wido")
+	testutil.Expect(t, "who is signed in", answer.SignedIn, true)
+	testutil.Expect(t, "and it says what could not be done", answer.Trouble, cannotOpen)
+	// And the conversation is still where it was, which is what the human can
+	// be told to come back to.
+	seat, err := partner.OpenConversation(root, "seat")
+	testutil.Require(t, "the seat's transcript reads back", err, nil)
+	testutil.Expect(t, "holding the question and the answer", len(seat.Messages(0)), 2)
+}
+
+// cannotOpen is the store's refusal, in the words the conversation owner uses
+// for it. It is a constant because the test asserts the answer carries those
+// words rather than words of the route's own.
+const cannotOpen = "the Partner's conversation directory could not be made: permission denied"

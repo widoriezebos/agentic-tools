@@ -1,8 +1,11 @@
 package partner_test
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -273,6 +276,152 @@ func TestTheSeatsMessagesMoveToTheHumanAndLeaveTheSeatEmpty(t *testing.T) {
 	seat, err := partner.OpenConversation(root, "seat")
 	testutil.Require(t, "the seat's transcript reads back too", err, nil)
 	testutil.Expect(t, "with nothing left in it", len(seat.Messages(0)), 0)
+}
+
+// A sitting the human opened before signing in moves with the messages.
+//
+// The mark is not on the messages: it is in the state file beside them, which
+// is why a move that carried the transcript alone left it behind. A human who
+// started a sitting from a record's page and then signed in would find their
+// own conversation sitting on nothing — every deposit refused for want of a
+// sitting — while the emptied seat went on claiming the record (Astra A-03).
+func TestTheSeatsSittingMovesWithItsMessages(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	host := partner.NewHostOn(
+		partner.Runtime{Name: "fake", ReadOnly: "a fake server reads nothing"},
+		root, fakeacp.Open(fakeacp.Script{Chunks: []string{"here is what the record holds"}}))
+	t.Cleanup(host.Close)
+	service := partner.NewService(host.Runtime(), host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{}, func() time.Time { return time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC) })
+	events, stop := service.Subscribe()
+	defer stop()
+
+	// The seat is who the human is until they sign in, and Start is on the
+	// record's page before that as much as after it.
+	_, err := service.Sit(context.Background(), "seat", subjectOf(), partner.PurposeShapeDesign, onTheRecord())
+	testutil.Require(t, "the sitting opened on the seat", err, nil)
+	drain(t, events)
+
+	testutil.Require(t, "the seat's conversation is handed over", service.Adopt("seat", "Wido"), nil)
+
+	read, err := service.Snapshot("Wido", 100)
+	testutil.Require(t, "Wido's conversation reads back", err, nil)
+	testutil.Require(t, "the sitting is theirs now", read.Sitting != nil, true)
+	testutil.Expect(t, "on the record it was opened on", read.Sitting.Subject.ID, subjectOf().ID)
+	left, err := service.Snapshot("seat", 100)
+	testutil.Require(t, "the seat reads back too", err, nil)
+	testutil.Expect(t, "and the seat sits on nothing", left.Sitting == nil, true)
+
+	// And on the files, because what a later run of this seat reads is the file.
+	mine, err := partner.OpenConversation(root, "Wido")
+	testutil.Require(t, "Wido's state file reads back", err, nil)
+	testutil.Expect(t, "the mark is in it", mine.Sitting() != nil, true)
+	seat, err := partner.OpenConversation(root, "seat")
+	testutil.Require(t, "the seat's state file reads back", err, nil)
+	testutil.Expect(t, "and gone from the seat's", seat.Sitting() == nil, true)
+}
+
+// A first sign-in while the Partner is answering lands that answer in the
+// human's conversation, and not in the seat the move has just emptied.
+//
+// It is the sequence the sign-in sheet itself invites: the human asks
+// something, the Partner starts answering, and they sign in while it does.
+// Adopt moves what is written down, and the running turn's answer is not
+// written down yet — so the turn has to move with it, or the words and the
+// actions they propose arrive in a transcript nobody reads again (Astra A-03).
+func TestASignInDuringAnAnswerLandsItInTheHumansConversation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	release := make(chan struct{})
+	opens := fakeacp.Open(fakeacp.Script{Chunks: []string{"half an answer"}})
+	host := partner.NewHostOn(
+		partner.Runtime{Name: "fake", ReadOnly: "a fake server reads nothing"}, root,
+		func(ctx context.Context) (partner.Endpoint, error) {
+			endpoint, err := opens(ctx)
+			if err != nil {
+				return endpoint, err
+			}
+			// The turn is held after the chunk the page has just been shown, so
+			// the sign-in below happens inside the answer rather than after it.
+			endpoint.Reader = holdAfter(endpoint.Reader, "agent_message_chunk", release)
+			return endpoint, nil
+		})
+	t.Cleanup(host.Close)
+	service := partner.NewService(host.Runtime(), host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{}, func() time.Time { return time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC) })
+	events, stop := service.Subscribe()
+	defer stop()
+
+	turn, err := service.Submit(context.Background(), "seat", "key-1", "what is this goal?", partner.Page{})
+	testutil.Require(t, "the turn is admitted before anybody is named", err, nil)
+	waitFor(t, events, partner.EventText)
+
+	testutil.Require(t, "the seat's conversation is handed over mid-answer",
+		service.Adopt("seat", "Wido"), nil)
+
+	// The page is the human's own now, and the turn it is watching is the one
+	// still arriving.
+	mid, err := service.Snapshot("Wido", 100)
+	testutil.Require(t, "Wido's conversation reads back", err, nil)
+	testutil.Expect(t, "the turn is running for them", mid.Busy, true)
+	testutil.Expect(t, "it is the turn that was asked", mid.Turn, turn)
+	testutil.Expect(t, "with what has been said so far", mid.Partial, "half an answer")
+
+	close(release)
+	collect(t, events, partner.EventDone)
+
+	kept, err := service.Snapshot("Wido", 100)
+	testutil.Require(t, "Wido's conversation reads back again", err, nil)
+	testutil.Require(t, "the question and the answer", len(kept.Messages), 2)
+	testutil.Expect(t, "the question is theirs", kept.Messages[0].Text, "what is this goal?")
+	testutil.Expect(t, "and so is the answer", kept.Messages[1].Text, "half an answer")
+	// On the files too: what a later run reads is the file, and everything the
+	// answer carries — the actions it proposed above all — rides on that line.
+	seat, err := partner.OpenConversation(root, "seat")
+	testutil.Require(t, "the seat's transcript reads back", err, nil)
+	testutil.Expect(t, "with nothing left on the seat", len(seat.Messages(0)), 0)
+}
+
+// holdAfter is the fake runtime's stream, stopped after the line carrying what
+// is named until the test lets it go.
+//
+// It is how a turn is held in the middle of its answer without a clock: the
+// chunk reaches the page, and the frame that would settle the turn waits on a
+// channel. A pause between chunks would be a race dressed up as a duration.
+func holdAfter(reader io.Reader, after string, release <-chan struct{}) io.Reader {
+	return &heldStream{lines: bufio.NewReader(reader), after: after, release: release}
+}
+
+type heldStream struct {
+	lines   *bufio.Reader
+	after   string
+	release <-chan struct{}
+	holding bool
+	rest    []byte
+}
+
+// Read answers one line at a time, waiting before the line that follows the
+// one that tripped it. A reader that handed back more than a line at a time
+// would hand back the settling frame with the chunk.
+func (h *heldStream) Read(into []byte) (int, error) {
+	if len(h.rest) == 0 {
+		if h.holding {
+			<-h.release
+			h.holding = false
+		}
+		line, err := h.lines.ReadBytes('\n')
+		if len(line) == 0 {
+			return 0, err
+		}
+		h.holding = bytes.Contains(line, []byte(h.after))
+		h.rest = line
+	}
+	written := copy(into, h.rest)
+	h.rest = h.rest[written:]
+	return written, nil
 }
 
 func serviceOn(t *testing.T, script fakeacp.Script) (*partner.Service, *partner.Host) {

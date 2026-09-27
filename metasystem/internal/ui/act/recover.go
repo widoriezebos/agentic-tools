@@ -23,7 +23,19 @@ import (
 // read: the happy path costs no capture and no remote. What recovery may not
 // touch it leaves — a live owner's entry is never taken from it — and the
 // refusal then names the entry that stands and the engine's own word for why.
+//
+// It runs under this clone's one publication lock. A live owner is another
+// PROCESS, and that test says nothing about a request of this one: an act
+// whose push has landed and whose confirmation has not yet returned is, to
+// recovery, an entry to classify, and classifying it made the request that
+// landed the act answer refused and record no authority proof (Astra D-01).
+// So a Refresh that arrives mid-publication waits for it, and then finds the
+// entry terminal and touches nothing. The act routes do not come through here:
+// they hold the lock for their whole request and run the same rule inside it.
 func Reconcile(root string, endpoint goal.Endpoint) error {
+	held := ownerOf(root)
+	held.publications.Lock()
+	defer held.publications.Unlock()
 	return reads{}.reconcile(root, endpoint)
 }
 

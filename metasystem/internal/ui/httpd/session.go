@@ -64,6 +64,13 @@ type sessionState struct {
 	// authority has no expiry and carries none.
 	Until  string `json:"until"`
 	Source string `json:"source"`
+	// Trouble is what went wrong BESIDE a sign-in that worked, in the failure's
+	// own words, and empty when nothing did. There is one thing today: the
+	// conversation the unnamed seat was having could not be moved to the name.
+	// The sign-in stands either way — the code is spent and the session is real
+	// — so this is how the page says that something is not where the human left
+	// it, rather than the server discarding it (Astra A-03).
+	Trouble string `json:"trouble,omitempty"`
 }
 
 // cookieOf reads the bearer a request carries, or "" for none.
@@ -149,8 +156,16 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
 	// A transfer that fails does not fail the sign-in. The code is spent and the
 	// session is real; refusing here would lock out a human who just proved who
 	// they are, and the messages are still in the seat's own transcript.
+	//
+	// It is said in the answer instead. A conversation that stayed behind in
+	// silence is a human watching their own transcript disappear at the moment
+	// they are named; told, they know what happened and the seat's transcript is
+	// still there to move again.
+	trouble := ""
 	if was == partnerSeat && h.info.Partner != nil && signed.Human != partnerSeat {
-		_ = h.info.Partner.Adopt(partnerSeat, signed.Human)
+		if err := h.info.Partner.Adopt(partnerSeat, signed.Human); err != nil {
+			trouble = err.Error()
+		}
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     session.Cookie,
@@ -163,6 +178,7 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(sessionState{
 		Human: signed.Human, SignedIn: true,
 		Until: signed.Until.UTC().Format(time.RFC3339), Source: sourceCode,
+		Trouble: trouble,
 	})
 }
 

@@ -73,15 +73,28 @@ func ProposalState(state string) bool {
 // moves under it.
 //
 // Reading the table: to the state named by the key, from any of the states
-// listed. `applied`, `refused` and `unresolved` come only from `applying`,
-// because they are what an act answered and nothing sends an act without
-// recording `applying` first. `dismissed` comes from anything unsettled,
-// including a line left in flight: a human putting a card away is allowed to
-// put away a line nobody can settle any more.
+// listed. `unresolved` comes only from `applying`, because it is what an act
+// answered and nothing sends an act without recording `applying` first.
+//
+// `applied` and `refused` come from `applying` for that same reason, and also
+// from `unresolved`, because the press that received an act's answer settles
+// the entry whichever tab last touched it. Two tabs hold one card: the one
+// that sent the act holds the truth about that line, and the other, told the
+// act was already in flight here, writes `unresolved` and holds no result at
+// all. Admitting the answer only from `applying` left the tab that HAD the
+// answer unable to write it — the route refused it as a state it may not
+// reach — and the line converged only on a later Try again. `unresolved` to
+// `unresolved` stays out: two tabs that both know nothing settle nothing, and
+// the pair would leave the state where it was, which is the one thing every
+// pair here changes.
+//
+// `dismissed` comes from anything unsettled, including a line left in flight:
+// a human putting a card away is allowed to put away a line nobody can settle
+// any more.
 var proposalTransitions = map[string][]string{
 	ProposalApplying:   {ProposalWaiting, ProposalRefused, ProposalUnresolved, ProposalApplying},
-	ProposalApplied:    {ProposalApplying},
-	ProposalRefused:    {ProposalApplying},
+	ProposalApplied:    {ProposalApplying, ProposalUnresolved},
+	ProposalRefused:    {ProposalApplying, ProposalUnresolved},
 	ProposalUnresolved: {ProposalApplying},
 	ProposalDismissed:  {ProposalWaiting, ProposalRefused, ProposalUnresolved, ProposalApplying},
 }

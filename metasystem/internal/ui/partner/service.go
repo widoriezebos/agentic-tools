@@ -174,6 +174,14 @@ type turn struct {
 	id    string
 	human string
 	key   string
+	// conversation is the transcript this turn writes its answer into, and the
+	// sitting a deposit it prepares is admitted against. It is held here rather
+	// than by the goroutine that runs the turn because the first sign-in moves
+	// it: the seat's conversation becomes the human's while the answer is still
+	// arriving, and the answer belongs with the question it followed (Astra
+	// A-03). It is read under the service's mutex at the moment it is used, and
+	// never captured earlier.
+	conversation *Conversation
 	// page is the capture this turn was asked with, held to its bounds. It is
 	// the one thing that says which editor opening the human handed over and
 	// which of its fields they may be written into, so it is what a suggestion
@@ -265,6 +273,13 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 // are the ones just spoken. Both transcripts are written under the mutex their
 // own appends take, the seat's first, so no turn writes into either halfway
 // through the move.
+//
+// Three things move, because a conversation is all three. The messages are the
+// transcript. The sitting is the mark beside it, and a human who opened one
+// before signing in is still sitting on that record afterwards. And a turn
+// still running is rebound to the human under the service's own mutex, so the
+// answer it has not written down yet — and the actions it proposed in it —
+// land where the question already is rather than in the seat just emptied.
 func (s *Service) Adopt(seat, human string) error {
 	if fileName(seat) == fileName(human) {
 		return nil
@@ -279,22 +294,77 @@ func (s *Service) Adopt(seat, human string) error {
 	}
 	was.mu.Lock()
 	defer was.mu.Unlock()
-	if len(was.messages) == 0 {
+	if len(was.messages) == 0 && was.sitting == nil && !s.running(was) {
 		return nil
 	}
 	mine.mu.Lock()
 	defer mine.mu.Unlock()
-	moved := append(append([]Message{}, mine.messages...), was.messages...)
-	if err := writeTranscript(mine.transcript, moved); err != nil {
+	if len(was.messages) > 0 {
+		moved := append(append([]Message{}, mine.messages...), was.messages...)
+		if err := writeTranscript(mine.transcript, moved); err != nil {
+			return err
+		}
+		mine.messages = moved
+		// The seat's file is emptied only once the human's holds the messages, so a
+		// failure between the two leaves them where they were rather than nowhere.
+		if err := writeTranscript(was.transcript, nil); err != nil {
+			return err
+		}
+		was.messages = nil
+	}
+	if err := s.adoptSitting(was, mine); err != nil {
 		return err
 	}
-	mine.messages = moved
-	// The seat's file is emptied only once the human's holds the messages, so a
-	// failure between the two leaves them where they were rather than nowhere.
-	if err := writeTranscript(was.transcript, nil); err != nil {
+	s.mu.Lock()
+	if s.current != nil && s.current.conversation == was {
+		s.current.conversation = mine
+		// And whose turn it is, or the page that has just been named would read
+		// a snapshot with no running turn on it and take the arriving answer off
+		// the screen until it ended.
+		s.current.human = human
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+// running says whether the turn in flight is this conversation's, which is one
+// of the three reasons there is something to adopt.
+//
+// An empty transcript is not proof that there is nothing: a turn is admitted,
+// and bound to its conversation, a moment before its question is written down,
+// and a sign-in that landed in that moment would leave the turn behind.
+func (s *Service) running(conversation *Conversation) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.current != nil && s.current.conversation == conversation
+}
+
+// adoptSitting moves the seat's sitting to the human, with both conversations
+// held.
+//
+// The mark is not in the transcript, it is in the state file beside it, so a
+// move that carried the messages alone left the human sitting on nothing while
+// the emptied seat went on claiming the record. A sitting the human already had
+// is replaced: what they are adopting is the conversation they are having now,
+// and one conversation is one sitting.
+//
+// The human's file is written first, as the messages are, so a failure between
+// the two leaves the sitting where it was rather than nowhere.
+func (s *Service) adoptSitting(was, mine *Conversation) error {
+	if was.sitting == nil {
+		return nil
+	}
+	moved, previous := was.sitting, mine.sitting
+	mine.sitting = moved
+	if err := mine.writeStateHeld(s.now()); err != nil {
+		mine.sitting = previous
 		return err
 	}
-	was.messages = nil
+	was.sitting = nil
+	if err := was.writeStateHeld(s.now()); err != nil {
+		was.sitting = moved
+		return err
+	}
 	return nil
 }
 
@@ -497,7 +567,8 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 		s.opened = false
 	}
 	id := mintTurn()
-	running := &turn{id: id, human: human, key: key, page: page, done: make(chan struct{})}
+	running := &turn{id: id, human: human, key: key, page: page,
+		conversation: conversation, done: make(chan struct{})}
 	s.current = running
 	s.spokeLast = human
 	s.mu.Unlock()
@@ -513,7 +584,7 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	now := s.now().UTC()
 	asked := Message{ID: mintTurn(), Turn: id, Role: RoleHuman, Text: text,
 		At: now.Format(time.RFC3339), Key: key, Page: &page, Interface: byInterface}
-	if err := conversation.Append(asked); err != nil {
+	if err := s.appendMessage(running, asked); err != nil {
 		s.mu.Lock()
 		s.current = nil
 		s.mu.Unlock()
@@ -571,7 +642,7 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	prompt += "The human asks:\n" + text
 
 	s.said(true)
-	go s.run(running, conversation, prompt)
+	go s.run(running, prompt)
 	return id, nil
 }
 
@@ -961,7 +1032,10 @@ func ResumingRequest(sitting Sitting) string {
 // has to be visible where the human reads the answer. A refused one is never
 // stamped with a subject, because a subject on it is the one thing that could
 // let a page offer Record it for words no record is waiting for.
-func (s *Service) admitDeposit(running *turn, conversation *Conversation, prepared Deposit) {
+func (s *Service) admitDeposit(running *turn, prepared Deposit) {
+	s.mu.Lock()
+	conversation := running.conversation
+	s.mu.Unlock()
 	sitting := conversation.Sitting()
 	if sitting == nil {
 		prepared.Offered = false
@@ -982,7 +1056,7 @@ func freshLine(given int) string {
 }
 
 // run drives one turn and writes its outcome into the transcript.
-func (s *Service) run(running *turn, conversation *Conversation, prompt string) {
+func (s *Service) run(running *turn, prompt string) {
 	result, err := s.host.Prompt(context.Background(), prompt, func(update Update) {
 		switch update.Kind {
 		case UpdateText:
@@ -1003,7 +1077,7 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 			}
 			// The same, against the sitting this conversation is.
 			if update.Deposit != nil {
-				s.admitDeposit(running, conversation, *update.Deposit)
+				s.admitDeposit(running, *update.Deposit)
 			}
 			// And the same, against the ledger reading this turn was composed
 			// from: an act on a goal nothing carries is an act that would be
@@ -1043,7 +1117,7 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 		At: s.now().UTC().Format(time.RFC3339), Outcome: result.Outcome,
 		Detail: result.Detail, Activity: activity, Looked: looked,
 		Suggestions: suggestions, Deposits: deposits, Proposals: proposals}
-	_ = conversation.Append(answered)
+	_ = s.appendMessage(running, answered)
 
 	// Nothing is running BEFORE the terminal beat goes out, deliberately. A
 	// page that reads the conversation after that beat must be told the turn
@@ -1066,6 +1140,39 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 	s.record(running, Event{Kind: kind, Text: result.Detail})
 	s.said(false)
 	close(running.done)
+}
+
+// appendMessage writes one of a turn's two messages — the question it was
+// admitted with, then the answer — into the conversation the turn is bound to
+// at the moment of the write.
+//
+// The binding is taken under the conversation's own lock and checked under the
+// service's, because a first sign-in moves it while the answer is being
+// composed: Adopt holds both transcripts for the whole move and rebinds the
+// turn inside them, so a write that read the binding a moment earlier would
+// append the answer to the seat the move has just emptied.
+//
+// Either order is right, and the check is what makes it one or the other rather
+// than both. The answer that gets the seat first is written before the move and
+// travels with it; the answer that arrives after finds the human's conversation
+// and lands where its question already is.
+func (s *Service) appendMessage(running *turn, message Message) error {
+	for {
+		s.mu.Lock()
+		conversation := running.conversation
+		s.mu.Unlock()
+		conversation.mu.Lock()
+		s.mu.Lock()
+		moved := running.conversation != conversation
+		s.mu.Unlock()
+		if moved {
+			conversation.mu.Unlock()
+			continue
+		}
+		err := conversation.appendHeld(message)
+		conversation.mu.Unlock()
+		return err
+	}
 }
 
 // record numbers one event against its turn, folds it into the turn's own
