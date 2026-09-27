@@ -273,6 +273,21 @@ type Partner = {
   /** The card the drawer was last opened at, or "". */
   showing: string;
   /**
+   * The drawer was closed, so nothing is being shown at any more.
+   *
+   * The target outlives the column that read it: the panel is mounted only
+   * while the drawer is open, so a chip's press writes the card and the next
+   * mount reads it — and without this, EVERY later mount read it. A human who
+   * pressed a chip in the morning and opened the drawer with its own toggle in
+   * the afternoon was taken back to that morning's answer, which is not where
+   * they asked to be and not where a conversation opens (g1-s61, as built).
+   *
+   * It is the shell's call and not the drawer's own, because the shell is what
+   * knows the drawer has closed: the header's toggle, the panel's, and Escape
+   * are three presses and one place that answers them.
+   */
+  clearShowing: () => void;
+  /**
    * A field says what it now holds, so that Undo is offered only while the
    * field still holds the suggestion's words. Nothing changes where the answer
    * is the same as it was.
@@ -490,6 +505,7 @@ const nothing: Partner = {
   reopen: () => {},
   show: () => {},
   showing: "",
+  clearShowing: () => {},
   noteField: () => {},
   writing: NOWHERE,
   noteWriting: () => {},
@@ -1047,6 +1063,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const show = useCallback((id: string) => {
     setShowing(id);
     setRevealed((at) => at + 1);
+  }, []);
+
+  // The drawer closed, so the card it was opened at is spent. The asking count
+  // is left alone: it counts presses and never a state, and a close is not one
+  // of them.
+  const clearShowing = useCallback(() => {
+    setShowing("");
   }, []);
 
   const noteField = useCallback((opening: string, field: string, value: string) => {
@@ -1746,7 +1769,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       store, busy: running, draft, setDraft, send, stop, sending,
       attachments, detach, chosen, ask, clearChosen, passage, askPassage,
       sheetDraft, askAbout, handOver, noteDraft, dropDraft, offerFields, noteSheet,
-      offered, use, useAndSave, undo, dismiss, reopen, show, showing, noteField, revealed,
+      offered, use, useAndSave, undo, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
@@ -1761,7 +1784,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
       clearChosen, passage, askPassage, sheetDraft, askAbout, handOver, noteDraft,
       dropDraft, offerFields, noteSheet,
-      offered, use, useAndSave, undo, dismiss, reopen, show, showing, noteField, revealed,
+      offered, use, useAndSave, undo, dismiss, reopen, show, showing, clearShowing, noteField, revealed,
       writing, noteWriting, fillComposer,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus,
       sitting, begin, close, end, endWithout, sittingEnded, sittingRefusal, sittingBusy,

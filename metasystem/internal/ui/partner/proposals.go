@@ -140,7 +140,21 @@ type Proposal struct {
 	// Words are what the last state change said: the engine's own sentence on a
 	// refusal, what was said on an unresolved answer, "" on a plain one.
 	Words string `json:"words,omitempty"`
-	At    string `json:"at"`
+	// At is when this action was PROPOSED: the instant the service admitted it,
+	// stamped once and never again.
+	//
+	// It used to be the instant of the last write, and that was the wrong fact
+	// for the one place it is read. An answered row sorted to the end of its
+	// group and read "today", so the inbox's ages were the ages of the human's
+	// own presses rather than of the asking, and "n new" counted a proposal from
+	// last week as new because somebody had just refused it (Sol's read of
+	// g1-s60, deferred). Every list that dates a proposal dates the asking.
+	At string `json:"at"`
+	// UpdatedAt is when this entry was last written, and "" on one nothing has
+	// written since it was admitted. It is what At used to carry, kept beside it
+	// rather than in place of it, because both facts are true of a line that was
+	// proposed on Monday and refused on Friday.
+	UpdatedAt string `json:"updatedAt,omitempty"`
 	// Version is how many times this entry has been written, counting the
 	// service's own admission as the first. Every press sends the version of
 	// the entry it last rendered, and the writer admits the write only against
@@ -220,17 +234,45 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 			}
 		}
 	}
-	// A blocker is a goal too, and an edge naming one nobody has is an edge the
-	// act would refuse. It is checked after the subject so the refusal names
-	// whichever end is missing.
-	if blocker := strings.TrimSpace(prepared.Fields[uitools.FieldBlocker]); blocker != "" {
-		if _, there := rows[blocker]; !there && !opened[blocker] {
-			s.refuseProposal(running, admitted, "the accepted tip carries no goal "+blocker)
+	// The goal at the other end of an edge is a goal too, and an edge naming one
+	// nobody has is an edge the act would refuse. It is checked after the subject
+	// so the refusal names whichever end is missing.
+	for _, named := range edgesNamedBy(prepared.Fields) {
+		if _, there := rows[named]; !there && !opened[named] {
+			s.refuseProposal(running, admitted, "the accepted tip carries no goal "+named)
 			return
 		}
 	}
 	admitted.Offered = true
 	s.record(running, Event{Kind: EventProposal, Proposal: &admitted})
+}
+
+// edgesNamedBy is every OTHER goal one prepared action's fields name.
+//
+// Three fields carry one: the blocker a block or an unblock waits on, and the two
+// lists an open takes — the goals it will wait for, and the goals that will wait
+// for it. All three are the same claim, that a goal at the other end of an edge
+// exists, and all three were not checked: the blocker was, and an open's lists
+// went through unread, so a card could offer to open a goal waiting for a goal
+// nobody has and the refusal arrived after the human pressed (Sol's read of
+// g1-s58, deferred).
+//
+// The lists arrive as the tool joined them, comma-separated, because that is how
+// the frame carries a list of names and how the route body reads one. An empty
+// name is not a name: a trailing comma says nothing about a goal.
+//
+// In the frame's own order, so a refusal names the first missing end a reader of
+// the card would look for rather than whichever the map happened to yield.
+func edgesNamedBy(fields map[string]string) []string {
+	named := []string{}
+	for _, field := range []string{uitools.FieldBlocker, uitools.FieldBlockedBy, uitools.FieldBlocks} {
+		for _, id := range strings.Split(fields[field], ",") {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				named = append(named, trimmed)
+			}
+		}
+	}
+	return named
 }
 
 // refuseProposal records one action the human is not offered, with its reason.
@@ -418,7 +460,10 @@ func (c *Conversation) RecordProposal(turn string, index, version int, state, wo
 	rewritten := append([]Proposal{}, proposals...)
 	held.State = state
 	held.Words = words
-	held.At = now.UTC().Format(time.RFC3339)
+	// The write's own instant, beside the asking's rather than over it: the
+	// entry's At is when the action was proposed, which is what every list that
+	// dates a proposal reads.
+	held.UpdatedAt = now.UTC().Format(time.RFC3339)
 	held.Version = version + 1
 	rewritten[index] = held
 	messages := append([]Message{}, c.messages...)

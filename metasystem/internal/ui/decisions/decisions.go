@@ -41,6 +41,12 @@ import (
 
 // SchemaVersion is the shape of the decisions resource a reader parses.
 //
+// Six, since a proposal row carries the instant of the last write to its entry
+// beside the instant it was proposed. The row's Since is the asking, which is
+// what its age and its "new" have always been about; the write's own instant is
+// the other fact, on the proposal member. It is an addition, and it is a version
+// all the same.
+//
 // Five, since the actions the Project Partner proposed wait here: one more kind
 // of row, carrying the action it would make on the kind's own member and null
 // on every other kind. It is an addition — an older reader skips a kind it has
@@ -59,7 +65,7 @@ import (
 // need — a ruling review the register row's own words, a draft and a landed
 // design the record's path, and a landed design the goals it named with where
 // each stands.
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 // The kinds of thing that wait on a human. Each one is a row of the design's
 // own table, and each one carries its own silence line.
@@ -275,8 +281,13 @@ type Proposed struct {
 	State       string `json:"state"`
 	// Words are what the last state change said: the engine's own sentence on a
 	// refusal, what was said on an unresolved answer, "" on a plain one.
-	Words   string `json:"words"`
-	Version int    `json:"version"`
+	Words string `json:"words"`
+	// UpdatedAt is when the entry was last written, and "" on one nothing has
+	// written since it was admitted. The row's own Since is when the action was
+	// PROPOSED, which is what the group's ages and its "n new" are about; this is
+	// the other fact, for a surface that wants to say when the last press was.
+	UpdatedAt string `json:"updatedAt,omitempty"`
+	Version   int    `json:"version"`
 }
 
 // GoalState is one goal a record names and where the ledger says it stands.
@@ -618,7 +629,8 @@ func proposals(in Inputs) []Need {
 			Proposal: &Proposed{
 				Turn: held.Turn, Index: held.Index, Verb: held.Verb,
 				Fields: fieldsOf(held), Read: held.Read, Explanation: held.Why,
-				State: held.State, Words: held.Words, Version: held.Version,
+				State: held.State, Words: held.Words, UpdatedAt: held.UpdatedAt,
+				Version: held.Version,
 			},
 		}
 		// The goal's own row, where the ledger carries it. An `open` proposes a

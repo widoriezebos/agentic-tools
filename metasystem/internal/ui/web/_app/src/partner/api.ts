@@ -293,7 +293,18 @@ export type Proposal = {
   state: ProposalState;
   /** What the last state change said: the engine's own sentence on a refusal. */
   words?: string;
+  /**
+   * When this action was PROPOSED: the instant the server admitted it, stamped
+   * once and never again, so every list that dates a proposal dates the asking.
+   */
   at: string;
+  /**
+   * When this entry was last written, and absent on one nothing has written since
+   * it was admitted. It is what `at` used to carry, kept beside it rather than in
+   * place of it: both facts are true of a line proposed on Monday and refused on
+   * Friday.
+   */
+  updatedAt?: string;
   /**
    * How many times this entry has been written, the server's own admission
    * counting as the first.
