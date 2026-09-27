@@ -55,7 +55,8 @@ type RegistrationRow struct {
 	Key                string // json-strip-key only
 }
 
-// registrationRows transcribes adopt.sh:292-345 per runtime.
+// registrationRows are each runtime's registrations, written at adoption and
+// by runtime setup.
 var registrationRows = map[string][]RegistrationRow{
 	"claude": {
 		{ID: "skill-tree", Operation: OpTree,

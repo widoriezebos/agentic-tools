@@ -73,8 +73,8 @@ checklist; no step is optional and none may be reordered:
    every diff a lie. Escalate to the human.
 2. On a dedicated branch in the target, compute the change set:
    `git -C <template> diff <recorded-sha>..HEAD -- <allowlisted payload paths>`.
-   The template's `scripts/adopt.sh` source is the authority for what the
-   payload contains at each version.
+   The template's adoption owner (`internal/adopt`, behind `metasystem system
+   adopt`) is the authority for what the payload contains at each version.
 3. Apply the three-bucket rule, file by file, recording every decision in the
    reconciliation ledger:
    - **Project-owned, never overwrite:** `docs/project-rules.md`, everything
@@ -160,4 +160,4 @@ moved to the family whose staleness it detects:
 
 The disposition registry (scripts/agents/shell-dispositions.json) is
 deleted: nothing executable read it, and adoption's allowlist in
-adopt.sh remains the single export contract.
+internal/adopt remains the single export contract.

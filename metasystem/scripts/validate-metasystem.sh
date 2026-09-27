@@ -2953,9 +2953,14 @@ if section_selected workflow-tooling-fixtures; then
   run_section workflow-tooling-fixtures needs-fixture-budget workflow_tooling_fixtures_section
 fi
 
-# adopt.sh self-test: extracted to its own sub-suite (script-validate-4/D35).
+# Adoption: the system adopt owner's Go tests, then the delivery comparison of
+# two adopted installations.
+adoption_fixtures_section() {
+  go test -count=1 -timeout 60m ./internal/adopt/
+  METASYSTEM_ADOPTION_COMPARISON=1 go test -count=1 -timeout 60m -run '^TestAdoptionComparisonSelectedScenarios$' ./cmd/metasystem
+}
 if (( template_mode )) && section_selected adoption-fixtures; then
-  run_section adoption-fixtures needs-engine bash scripts/adopt-fixtures.sh
+  run_section adoption-fixtures needs-engine adoption_fixtures_section
 fi
 if (( template_mode )) && section_selected witness-gate-fixtures; then
   run_section witness-gate-fixtures needs-engine bash scripts/agents/witness-gate-fixtures.sh
