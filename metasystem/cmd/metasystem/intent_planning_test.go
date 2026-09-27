@@ -331,7 +331,7 @@ var intentPlanningDisposition = map[string]string{
 	"release": "goal release", "land-ready": "work land", "accept-risk": "goal accept-risk", "set-pin": "goal pin", "set-priority": "goal prioritize",
 	"reopen": "goal reopen", "abandon": "goal abandon", "carry": "goal abandon", "block": "goal block", "unblock": "goal unblock",
 	"unapprove": "goal unapprove", "grant": "grant add", "revoke": "grant revoke", "split": "goal split", "set-arc": "goal group", "detach": "goal ungroup",
-	"discharge-review-obligation": "work review", "read-items": "goal notes", "recover": "goal repair", "trunk-red": "incident claim",
+	"discharge-review-obligation": "work review", "read-items": "goal notes", "recover": "goal sync", "trunk-red": "incident claim",
 	"next": "goal list", "tier-probe": "goal list", "set-budget": "goal budget",
 }
 
@@ -371,7 +371,8 @@ func TestIntentPlanningDescriptorCoverage(t *testing.T) {
 		"goal notes":      {"add", "add-file", "read", "close", "fixed", "moved", "accepted"},
 		"incident claim":  {"goal", "branch", "to"},
 		"incident close":  {"reason"},
-		"system repair":   {"session"},
+		"work wait":       {"list", "session", "exit-code", "run", "caller-pid"},
+		"goal sync":       {"recover", "refresh", "publish", "goal"},
 	}
 	for name, flags := range expect {
 		command, _ := findIntentCommand(name)

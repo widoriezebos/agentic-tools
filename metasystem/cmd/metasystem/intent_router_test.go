@@ -153,77 +153,97 @@ func TestIntentRouterTransitionalFallthrough(t *testing.T) {
 	}
 	// The ceiling ratchets down as scripts are ported and verbs deleted; it
 	// reaches zero when the family registry goes.
-	const fallthroughCeiling = 424
+	const fallthroughCeiling = 373
 	if fallthroughPairs > fallthroughCeiling {
 		t.Errorf("%d family pairs fall through without internal; the ceiling is %d", fallthroughPairs, fallthroughCeiling)
 	}
 }
 
-// removedSpellings are the old public command lines; each is refused before
-// any effect, with a suggestion of a public form.
-var removedSpellings = [][]string{
-	{"goals"}, {"goals", "--ready"}, {"show", "g"}, {"show", "designs"}, {"show", "decisions"}, {"show", "record", "01A"},
-	{"show", "question", "q"}, {"show", "review", "read-1"}, {"approve", "g"}, {"budget", "g", "norm"}, {"pause", "g"},
-	{"resume", "g"}, {"resume", "mission", "m"}, {"done", "g", "--reason", "x"}, {"done", "job", "j"}, {"open", "g"},
-	{"edit", "g"}, {"claim"}, {"release"}, {"accept-risk", "g"}, {"pin", "g", "m1"}, {"prioritize", "g", "1"}, {"reopen", "g"},
-	{"abandon", "g"}, {"block", "g"}, {"unblock", "g"}, {"unapprove", "g"}, {"revoke", "x"}, {"split", "g"},
-	{"group", "g", "a"}, {"ungroup", "g"}, {"notes", "g"}, {"repair", "goals"}, {"repair", "waits"}, {"incidents"},
-	{"brief", "g"}, {"build", "g"}, {"build", "--resume", "r"}, {"wait", "g"}, {"wait", "--job", "j"}, {"wait", "job", "j"},
-	{"review", "g"}, {"review", "design", "f"}, {"review", "job", "j"}, {"revise", "g"}, {"land", "g"}, {"land", "job", "j"},
-	{"start"}, {"start", "ui"}, {"start", "session"}, {"start", "mission", "m"}, {"start", "machine", "m9"},
-	{"stop"}, {"stop", "--repo", "x"}, {"stop", "job", "j"}, {"stop", "session"}, {"restart", "checkout"}, {"restart", "ui"},
-	{"enroll", "--name", "x"}, {"ask", "g"}, {"answer", "q"}, {"check"}, {"check", "goals"},
-	{"delegate", "--cancel", "j"}, {"watch"}, {"health"}, {"arm"},
-}
-
-// TestIntentRouterRefusesRemovedSpellings: no compatibility alias remains;
-// each old spelling is refused before any handler runs and names a public
-// form.
-func TestIntentRouterRefusesRemovedSpellings(t *testing.T) {
+// TestIntentRouterSuggestsTheCurrentCommand (rule C1): an unknown command
+// is refused before any handler runs and names the current command that was
+// probably meant, computed from the current table alone. A first word that
+// is a current action suggests OBJECT ACTION with the remaining words, one
+// line per object that has it; any other word is replaced by the nearest
+// current object or action by spelling.
+func TestIntentRouterSuggestsTheCurrentCommand(t *testing.T) {
 	t.Parallel()
 	sentinel := &sentinelFamilies{}
 	registered := sentinel.registry()
-	for _, args := range removedSpellings {
-		code, stdout, stderr := routeWith(registered, args...)
+	for _, row := range []struct {
+		args []string
+		want []string
+	}{
+		// Rule 1: a current action as the first word.
+		{[]string{"approve", "x"}, []string{"metasystem goal approve x"}},
+		{[]string{"sync", "--recover"}, []string{"metasystem goal sync --recover"}},
+		{[]string{"finish", "j2:inv-1"}, []string{"metasystem work finish j2:inv-1"}},
+		{[]string{"enroll", "--name", "Wido"}, []string{"metasystem system enroll --name Wido"}},
+		{[]string{"review", "g"}, []string{"metasystem work review g", "metasystem design review g"}},
+		{[]string{"list"}, []string{"metasystem goal list", "metasystem design list", "metasystem decision list", "metasystem grant list",
+			"metasystem test list", "metasystem question list", "metasystem incident list", "metasystem machine list"}},
+		{[]string{"show", "g", "--json"}, []string{"metasystem goal show g --json", "metasystem design show g --json", "metasystem decision show g --json", "metasystem question show g --json", "metasystem settings show g --json"}},
+		// Rule 2: the nearest current object or action by spelling.
+		{[]string{"goel", "list"}, []string{"metasystem goal list"}},
+		{[]string{"wrk", "land", "g"}, []string{"metasystem work land g"}},
+		{[]string{"statsu"}, []string{"metasystem status"}},
+		{[]string{"aprove", "g"}, []string{"metasystem goal approve g"}},
+	} {
+		code, stdout, stderr := routeWith(registered, row.args...)
 		if code != 2 || stdout != "" || !strings.Contains(stderr, "nothing was done") || !strings.Contains(stderr, "metasystem lists the objects") {
-			t.Errorf("%v = %d %q %q; want a refusal with a suggestion", args, code, stdout, stderr)
+			t.Errorf("%v = %d %q %q; want a refusal before any effect", row.args, code, stdout, stderr)
+		}
+		if got := suggestedLine(stderr); !slices.Equal(got, sortedCopy(row.want)) {
+			t.Errorf("%v suggests %q, want %q", row.args, got, row.want)
 		}
 		if calls := sentinel.taken(); len(calls) != 0 {
-			t.Errorf("%v reached a handler: %v", args, calls)
+			t.Errorf("%v reached a handler: %v", row.args, calls)
 		}
 	}
+	// An unknown action of a current object: its nearest actions by
+	// spelling, else the objects that have that exact action.
 	for _, row := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"approve", "g"}, "metasystem goal approve"},
-		{[]string{"goals"}, "metasystem goal"},
-		{[]string{"review", "g"}, "metasystem work review"},
-		{[]string{"enroll"}, "metasystem terminal enroll"},
-		{[]string{"show", "g"}, "metasystem goal show"},
-		{[]string{"start", "ui"}, "metasystem ui start"},
-		{[]string{"goal", "aprove"}, "metasystem goal approve"},
-		{[]string{"wrk", "land"}, "metasystem work"},
+		{[]string{"goal", "aprove", "g"}, "did you mean: metasystem goal approve g\n"},
+		{[]string{"work", "finsh", "j2:x"}, "did you mean: metasystem work finish j2:x\n"},
+		{[]string{"session", "enroll"}, "did you mean: metasystem system enroll\n"},
 	} {
-		if _, _, stderr := routeWith(registered, row.args...); !strings.Contains(stderr, row.want) {
-			t.Errorf("%v suggests %q, want %q", row.args, stderr, row.want)
+		code, stdout, stderr := routeWith(registered, row.args...)
+		if code != 2 || stdout != "" || !strings.Contains(stderr, "nothing was done") || !strings.Contains(stderr, row.want) {
+			t.Errorf("%v = %d %q %q; want %q", row.args, code, stdout, stderr, row.want)
 		}
 	}
-	// status takes one goal: the old kinds refuse and name work status.
-	for _, args := range [][]string{{"status", "job", "j"}, {"status", "run", "r"}, {"status", "ui", "x"}} {
-		code, _, stderr := routeWith(registered, args...)
-		if code != 2 || !strings.Contains(stderr, "nothing was done") || !strings.Contains(stderr, "metasystem work status REF") {
-			t.Errorf("%v = %d %q", args, code, stderr)
-		}
-	}
-	for _, args := range [][]string{{"status", "--machines"}, {"status", "--all"}} {
-		if code, _, stderr := routeWith(registered, args...); code != 2 || !strings.Contains(stderr, "Nothing was done") {
-			t.Errorf("%v = %d %q; the old status flags are refused", args, code, stderr)
+	// Every suggestion is a current public command: it routes to its own
+	// descriptor.
+	for _, word := range []string{"approve", "review", "list", "goel", "wrk", "sync", "finsh"} {
+		for _, suggestion := range suggestIntent(word, nil) {
+			words := strings.Fields(suggestion)[1:]
+			if _, _, ok := resolveIntentArgv(words); !ok && !(len(words) == 1 && isIntentObject(words[0])) {
+				t.Errorf("%s suggests %q, which is not a current command", word, suggestion)
+			}
 		}
 	}
 	if calls := sentinel.taken(); len(calls) != 0 {
 		t.Errorf("a refusal reached a handler: %v", calls)
 	}
+}
+
+// suggestedLine is the sorted suggestions of a refusal's "did you mean"
+// line.
+func suggestedLine(stderr string) []string {
+	for _, line := range strings.Split(stderr, "\n") {
+		if rest, found := strings.CutPrefix(line, "did you mean: "); found {
+			return sortedCopy(strings.Split(rest, " | "))
+		}
+	}
+	return nil
+}
+
+func sortedCopy(values []string) []string {
+	sorted := slices.Clone(values)
+	slices.Sort(sorted)
+	return sorted
 }
 
 // TestIntentRouterObjectPages: an object alone lists its actions; an

@@ -103,11 +103,11 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	// decisions.
 	c.failCloses = 1
 	_, result = c.do("work", "review", c.id)
-	if result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "close", c.id, "--work", "connect"}) ||
+	if result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "review", c.id, "--work", "connect"}) ||
 		len(c.closes) != 1 || c.commitReads != 0 {
 		t.Fatalf("a failed whole close: %+v", result)
 	}
-	code, result = c.do("work", "close", c.id)
+	code, result = c.do("work", "review", c.id)
 	if code != 0 || result.Outcome != intentConfirmed || len(c.closes) != 2 || c.commitReads != 1 || c.publications == 0 ||
 		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", c.id}) {
 		t.Fatalf("the repaired close completes the review: code=%d %+v closes=%d reads=%d", code, result, len(c.closes), c.commitReads)

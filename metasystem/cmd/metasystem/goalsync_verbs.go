@@ -167,7 +167,7 @@ func runGoalRepair(args []string) int {
 func runGoalRepairWithInputs(args []string, facts goalAuthorityReadFacts, resolveEndpoint func(string) (goal.Endpoint, error)) int {
 	flags := flag.NewFlagSet("goal repair", flag.ContinueOnError)
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "usage: metasystem goal repair --accept-remote --by <human> --root <checkout>")
+		fmt.Fprintln(flags.Output(), "usage: metasystem goal sync --accept-remote-history --by <human> [--repo <checkout>]")
 		flags.PrintDefaults()
 	}
 	acceptRemote := flags.Bool("accept-remote", false, "accept the current remote tip despite a rewind")

@@ -68,8 +68,9 @@ Round 2 folded with no material finding closes the loop. Round 2 folded with onl
 
 For code critique and the warden, only an approved token raising the goal's
 five-member tuple can raise its stored review-round member, and the three-round
-ceiling still applies; the internal owner `metasystem internal job critique-budget-rebind` copies the raised member
-onto an open root. When their rounds are spent, the register close (`metasystem internal job critique-register-close`)
+ceiling still applies; the chain's next follow-up (`metasystem design review FILE --dispositions`, `metasystem work revise
+j2:<review>`) or close (`metasystem work review j2:<job> --dispositions`, `metasystem work finish`) first carries the raised
+member onto its root. When their rounds are spent, closing the review (inside `metasystem work review`)
 defers exhausted bounded findings into review obligations on the goal (`metasystem work review <goal> --review R --finding F --test NAME` discharges them later against the chain,
 artifact and test that carry them) or closes after a human records `metasystem goal accept-risk <goal> --finding F --review R --reason <text>`; whenever a severe or unproven finding remains, stop with the
 design waiting on the human. Never dispatch a silent fourth round.
@@ -110,7 +111,7 @@ rounds: 21, 15, 10, 4, 3, 2).
 
 A round is closed only when every material finding carries a disposition — and that is a claim to be checked, not asserted. Parse the critique into a structured worklist (stable identifier, severity, proposal) and join it against the dispositions; the round closes when the two sets are equal. Working from prose invites the failure this prevents: "N corrections applied" reads like closure while unaddressed findings sit in the body, and the next round spends itself rediscovering them instead of finding anything new. If the critique carries no stable identifier per finding, ask for one — an unjoinable critique can be estimated, not closed.
 
-The mechanical form uses the canonical `findings` array in the critic's `return.json` and a Markdown dispositions table headed `| Finding id | Disposition | Reasoning and evidence | Amendment |`; `metasystem design review <file> --dispositions <file>`, `metasystem work revise j2:<review> --dispositions <file> --brief <file>` and `metasystem work review <goal> --dispositions <file>` perform that join before acting; `bin/metasystem work check --findings <return.json> --dispositions <file>` checks it alone.
+The mechanical form uses the canonical `findings` array in the critic's `return.json` and a Markdown dispositions table headed `| Finding id | Disposition | Reasoning and evidence | Amendment |`; `metasystem design review <file> --dispositions <file>`, `metasystem work revise j2:<review> --dispositions <file> --brief <file>` and `metasystem work review <goal> --dispositions <file>` perform that join before acting; `bin/metasystem work review --check-only --findings <return.json> --dispositions <file>` checks it alone.
 
 When a round's findings are retained or carried elsewhere (a watch-list, a later round's brief), count the retained findings against the round's own verdict number before calling the round closed. A retention that silently drops findings reads exactly like a complete one, which is the same failure the join above prevents; it has happened twice in this repository's own loops.
 

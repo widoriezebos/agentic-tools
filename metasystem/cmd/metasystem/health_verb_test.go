@@ -36,7 +36,7 @@ func TestHealthHookPreviewJSONMatchesTextFromOneEvaluation(t *testing.T) {
 		Schema: 1, ObservedAt: now, Aggregate: "unknown",
 		Roles: []steward.RoleVerdict{
 			{Role: steward.RoleStewardRunner, Status: steward.HealthUnknown, Reason: "runner state unknown", Remedy: "restart runner"},
-			{Role: steward.RoleRetroDebt, Status: steward.HealthDead, Reason: "retro due", Remedy: "run metasystem receipt check", NoAutomaticRemedy: true},
+			{Role: steward.RoleRetroDebt, Status: steward.HealthDead, Reason: "retro due", Remedy: "run metasystem receipt status", NoAutomaticRemedy: true},
 			{Role: steward.RoleSpendFence, Status: steward.HealthAlive, Reason: "daily spend crossed 2x", Remedy: "review the ceiling"},
 			{Role: steward.RoleRepoWatcher, Status: steward.HealthDead, Reason: "watcher is dead", Remedy: "restart supervision"},
 		},

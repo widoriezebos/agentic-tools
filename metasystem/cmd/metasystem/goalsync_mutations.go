@@ -584,6 +584,24 @@ type syncRequestDependencies struct {
 	// report, when set, receives the owner's typed outcome instead of the
 	// printed one; the public intent commands render it themselves.
 	report *ownerReport
+	// stdout and stderr are the streams a printing owner writes to; nil is
+	// the process's own. A caller that owns its streams (a parallel test)
+	// sets both, so no other goroutine's output can reach them.
+	stdout, stderr io.Writer
+}
+
+func (d syncRequestDependencies) outStream() io.Writer {
+	if d.stdout != nil {
+		return d.stdout
+	}
+	return os.Stdout
+}
+
+func (d syncRequestDependencies) errStream() io.Writer {
+	if d.stderr != nil {
+		return d.stderr
+	}
+	return os.Stderr
 }
 
 func defaultSyncRequestDependencies() syncRequestDependencies {
@@ -822,11 +840,15 @@ func classifyGoalAuthorityFirstWithFacts(verb string, f *syncFlags, facts goalAu
 }
 
 func printSyncResult(res goal.PublishResult, err error) int {
+	return writeSyncResult(os.Stdout, os.Stderr, res, err)
+}
+
+func writeSyncResult(stdout, stderr io.Writer, res goal.PublishResult, err error) int {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+	writeJSONLine(stdout, stderr, map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
 	if res.Outcome != goal.OutcomeConfirmed {
 		return 1
 	}
@@ -1148,9 +1170,12 @@ func parseSyncFlagValuesWithOutput(name string, args []string, output io.Writer)
 	f := &syncFlags{}
 	pathFlagVar(fs, &f.root, "root", ".", "checkout root")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
-	if name == "approve" {
+	switch name {
+	case "approve":
 		fs.Var(&f.ids, "id", "goal id (repeatable)")
-	} else {
+	case "reconcile":
+		fs.Var(&f.ids, "id", "a goal whose reviewed edits may publish (repeatable); any other edited goal refuses the whole session")
+	default:
 		fs.StringVar(&f.id, "id", "", "goal id")
 	}
 	fs.StringVar(&f.intent, "intent", "", "one-line intent")
@@ -2110,6 +2135,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		if proven, _, proofErr := provenGoalRequest("reconcile", f, humanauthority.ProveOrTemporaryGoalAuthority); proofErr == nil {
 			req = proven
 		}
+		req.ReconcileScope = f.ids
 		res, err := goal.Reconcile(req)
 		if err != nil {
 			dependencies.complain(err)
@@ -3806,23 +3832,26 @@ func goalEditEffectAppending(req goal.VerbRequest, f *syncFlags, commandNow func
 	return res, err
 }
 
-var (
-	runGoalClaim = runSyncOnly("claim", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		budget, err := f.budgetTuple(false)
-		if err != nil {
-			return goal.PublishResult{}, err
-		}
-		if f.arc != "" {
-			if budget != nil {
-				return goal.ClaimArc(req, f.id, *budget)
-			}
-			return goal.ClaimArc(req, f.id)
-		}
+// claimGoalOwner claims a goal, or its whole arc with --arc, for this machine.
+func claimGoalOwner(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	budget, err := f.budgetTuple(false)
+	if err != nil {
+		return goal.PublishResult{}, err
+	}
+	if f.arc != "" {
 		if budget != nil {
-			return goal.Claim(req, f.id, *budget)
+			return goal.ClaimArc(req, f.id, *budget)
 		}
-		return goal.Claim(req, f.id)
-	}, "id")
+		return goal.ClaimArc(req, f.id)
+	}
+	if budget != nil {
+		return goal.Claim(req, f.id, *budget)
+	}
+	return goal.Claim(req, f.id)
+}
+
+var (
+	runGoalClaim   = runSyncOnly("claim", claimGoalOwner, "id")
 	runGoalRestamp = runSyncOnly("restamp", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.Restamp(req, f.id)
 	}, "id")

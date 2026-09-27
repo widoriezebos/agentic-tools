@@ -23,26 +23,27 @@ func TestIntentSwitchedRemediesReachTheFamilyOwner(t *testing.T) {
 		// rest is the argument vector the handler receives.
 		rest []string
 	}{
-		{printed: "metasystem session report --id r-7f3a", family: "metasystem report stop-status --id r-7f3a",
-			object: "session", action: "report", handler: runReportStopStatus, rest: []string{"--id", "r-7f3a"}},
+		{printed: "metasystem session status --id r-7f3a", family: "metasystem report stop-status --id r-7f3a",
+			object: "session", action: "status", handler: runReportStopStatus, rest: []string{"--id", "r-7f3a"}},
+		// session handoff runs runContextHandoff, or runContextStatus for
+		// --status and runContextVerify for --verify NONCE; runSessionHandoff
+		// is that split (TestIntentSessionHandoffSplit).
 		{printed: "metasystem session handoff --root /i --note memory/handoff.md --no-delegates", family: "metasystem context handoff --root /i --note memory/handoff.md --no-delegates",
-			object: "session", action: "handoff", handler: runContextHandoff, rest: []string{"--root", "/i", "--note", "memory/handoff.md", "--no-delegates"}},
-		{printed: "metasystem session context --root /i", family: "metasystem context status --root /i",
-			object: "session", action: "context", handler: runContextStatus, rest: []string{"--root", "/i"}},
-		{printed: "metasystem session verify --root /i --nonce 3f2a", family: "metasystem context verify --root /i --nonce 3f2a",
-			object: "session", action: "verify", handler: runContextVerify, rest: []string{"--root", "/i", "--nonce", "3f2a"}},
-		// work watch runs runJobWatchVerb for --job and runRunWatch (--run as
-		// --id) for --run; runWorkWatch is that split and nothing else.
-		{printed: "metasystem work watch --root /c --job impl-01 --caller-pid 7", family: "metasystem job watch --root /c --job impl-01 --caller-pid 7",
-			object: "work", action: "watch", handler: runWorkWatch, rest: []string{"--root", "/c", "--job", "impl-01", "--caller-pid", "7"}},
-		{printed: "metasystem work watch --run r1 --root /c", family: "metasystem run watch --id r1 --root /c",
-			object: "work", action: "watch", handler: runWorkWatch, rest: []string{"--run", "r1", "--root", "/c"}},
+			object: "session", action: "handoff", handler: runSessionHandoff, rest: []string{"--root", "/i", "--note", "memory/handoff.md", "--no-delegates"}},
+		{printed: "metasystem session handoff --status --root /i", family: "metasystem context status --root /i",
+			object: "session", action: "handoff", handler: runSessionHandoff, rest: []string{"--status", "--root", "/i"}},
+		{printed: "metasystem session handoff --root /i --verify 3f2a", family: "metasystem context verify --root /i --nonce 3f2a",
+			object: "session", action: "handoff", handler: runSessionHandoff, rest: []string{"--root", "/i", "--verify", "3f2a"}},
+		// work wait --exit-code runs runJobWatchVerb for j2:J and runRunWatch
+		// for --run ID (TestIntentWaitExitCodeRoutes).
+		{printed: "metasystem work wait j2:impl-01 --exit-code --repo /c --caller-pid 7", family: "metasystem job watch --root /c --job impl-01 --caller-pid 7", object: "work", action: "wait"},
+		{printed: "metasystem work wait --run r1 --exit-code --repo /c", family: "metasystem run watch --id r1 --root /c", object: "work", action: "wait"},
 		// Adapted actions: the owner tests named drive each to its owner.
 		// work stop j2:J cancels through runDelegateIn --cancel J
 		// (TestIntentProcessAndAnswerTargets, "work stop j2:job-c").
 		{printed: "metasystem work stop j2:job-c", family: "metasystem delegate --cancel job-c", object: "work", action: "stop"},
-		// work close j2:J is done job J's owner (TestIntentConnectedJourneyRealClose).
-		{printed: "metasystem work close j2:crit1", family: "metasystem done job crit1", object: "work", action: "close"},
+		// work finish j2:J is done job J's owner (TestIntentConnectedJourneyRealClose).
+		{printed: "metasystem work finish j2:crit1", family: "metasystem done job crit1", object: "work", action: "finish"},
 		// work wait wait:ID resumes through the waiter owner with --resume ID
 		// (TestIntentWaitGoalEventGitAdapterObservesAPersonsAct).
 		{printed: metarun.WaitResumeCommand(metarun.Waiter{WaitID: "w-1"}), family: "metasystem wait --resume w-1", object: "work", action: "wait"},

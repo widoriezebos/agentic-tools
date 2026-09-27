@@ -731,3 +731,38 @@ func TestArmRefusesALinkedWorktree(t *testing.T) {
 		t.Fatalf("a linked worktree must refuse to arm, got %q", msg)
 	}
 }
+
+// A runner that takes longer than any fixed bound to publish its record is
+// still the launch's success, and an exit before publication its failure:
+// the launch waits on those facts, not on elapsed time.
+func TestRunnerLaunchWaitsForConfirmationOrExitNotTime(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	const pollsBeforeConfirm = 1200 // one minute of 50ms polls
+	polls, slept := 0, time.Duration(0)
+	sleep := func(interval time.Duration) { slept += interval }
+	record := RunnerRecord{Pid: 4242}
+	got, err := awaitRunnerConfirmation(root, func() (RunnerRecord, bool) {
+		polls++
+		return record, polls > pollsBeforeConfirm
+	}, make(chan error), sleep)
+	if err != nil || got != record {
+		t.Fatalf("slow confirmation after %s of polling = %+v %v", slept, got, err)
+	}
+	if slept != pollsBeforeConfirm*50*time.Millisecond {
+		t.Fatalf("polled for %s; want %s", slept, pollsBeforeConfirm*50*time.Millisecond)
+	}
+
+	exited := make(chan error, 1)
+	polls = 0
+	_, err = awaitRunnerConfirmation(root, func() (RunnerRecord, bool) {
+		polls++
+		if polls == 3 {
+			exited <- nil
+		}
+		return RunnerRecord{}, false
+	}, exited, sleep)
+	if err == nil || !strings.Contains(err.Error(), "died before guarding") || polls != 3 {
+		t.Fatalf("exit before confirmation after %d polls = %v", polls, err)
+	}
+}

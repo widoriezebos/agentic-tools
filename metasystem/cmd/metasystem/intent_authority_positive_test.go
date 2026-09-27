@@ -277,7 +277,7 @@ func runIntentRealOwner(t *testing.T, root string, calls *[][]string, args ...st
 	return code, result
 }
 
-// TestIntentRepairGoalsGitAdapterAcceptsRewoundRemoteHistory: repair goals
+// TestIntentRepairGoalsGitAdapterAcceptsRewoundRemoteHistory: goal sync
 // --accept-remote-history --by NAME runs the real goal repair owner as its
 // own process, with exactly the adapter's argv. The canonical ledger was
 // rewound behind this clone's accepted tip; outside a declared coordinator
@@ -295,7 +295,7 @@ func TestIntentRepairGoalsGitAdapterAcceptsRewoundRemoteHistory(t *testing.T) {
 	goalSyncMutationGit(t, upstream, "update-ref", "refs/heads/main", base)
 
 	var calls [][]string
-	code, result := runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-remote-history", "--by", "Wido")
+	code, result := runIntentRealOwner(t, root, &calls, "goal", "sync", "--accept-remote-history", "--by", "Wido")
 	if len(calls) != 1 || !slicesEqual(calls[0][2:], []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root", root}) {
 		t.Fatalf("owner argv = %v", calls)
 	}
@@ -315,8 +315,8 @@ func TestIntentRepairGoalsGitAdapterAcceptsRewoundRemoteHistory(t *testing.T) {
 	}
 }
 
-// TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile: repair
-// goals --accept-edits --by NAME runs the real goal reconcile owner as its
+// TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile: goal
+// sync --publish --goal G --by NAME runs the real goal reconcile owner as its
 // own process with the adapter's exact argv. A hand edit of a goal page in
 // the checkout is republished to the accepted ledger as one edit on that
 // goal; a repeat finds nothing new. Git is the claim because the owner
@@ -337,8 +337,34 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 	writeTestingFixtureFile(t, page, goal.RenderFile(file), 0o644)
 
 	var calls [][]string
-	code, result := runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-edits", "--by", "Wido")
-	if len(calls) != 1 || !slicesEqual(calls[0][2:], []string{"goal", "reconcile", "--root", root, "--by", "Wido"}) {
+	// The preview changes nothing, runs no owner, and names the edited goal
+	// in the publication it offers.
+	code, result := runIntentRealOwner(t, root, &calls, "goal", "sync")
+	if code != 0 || result.Outcome != intentConfirmed || len(calls) != 0 || result.Next == nil ||
+		!slicesEqual(result.Next.Argv[:7], []string{"metasystem", "goal", "sync", "--publish", "--goal", "standing-validation", "--by"}) {
+		t.Fatalf("goal sync preview: %d %+v %v", code, result, calls)
+	}
+	// The publication is scoped inside the owner: naming another goal
+	// refuses the whole session, names the edited goal and publishes
+	// nothing.
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "sync", "--publish", "--goal", "another-goal", "--by", "Wido")
+	if len(calls) != 1 || !slicesEqual(calls[0][2:], []string{"goal", "reconcile", "--root", root, "--by", "Wido", "--id", "another-goal"}) {
+		t.Fatalf("scoped owner argv = %v", calls)
+	}
+	if code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "RECONCILE_OUTSIDE_SCOPE") || !strings.Contains(result.Summary, "standing-validation") {
+		t.Fatalf("publication outside its named goals: %d %+v", code, result)
+	}
+	if record, exists, err := goal.ReadBase(root); err != nil || exists && (record.RefreshDue || record.Publishing) {
+		t.Fatalf("the refused publication left a pending record: %+v %v %v", record, exists, err)
+	}
+	if endpoint, err := goal.ResolveEndpoint(root); err != nil {
+		t.Fatal(err)
+	} else if refused, err := goal.Project(endpoint, false, time.Now().UTC()); err != nil || refused.Tip != base {
+		t.Fatalf("the refused publication moved the ledger: %s (base %s) %v", refused.Tip, base, err)
+	}
+	calls = nil
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "sync", "--publish", "--goal", "standing-validation", "--by", "Wido")
+	if len(calls) != 1 || !slicesEqual(calls[0][2:], []string{"goal", "reconcile", "--root", root, "--by", "Wido", "--id", "standing-validation"}) {
 		t.Fatalf("owner argv = %v", calls)
 	}
 	expectOutcome(t, "accept edits", code, result, intentConfirmed)
@@ -360,15 +386,15 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 		t.Fatalf("the republished edit: history %+v, owner %+v, tip %s", last, owner, projection.Tip)
 	}
 	// Nothing new is reconciled twice.
-	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-edits", "--by", "Wido")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "sync", "--publish", "--goal", "standing-validation", "--by", "Wido")
 	if owner := result.Data.(map[string]any)["owner"].(map[string]any); code != 0 || owner["rows"] != float64(0) {
-		t.Fatalf("repeat accept-edits: %d %+v", code, result)
+		t.Fatalf("repeat publish: %d %+v", code, result)
 	}
 	if again, err := goal.Project(endpoint, false, time.Now().UTC()); err != nil || again.Tip != projection.Tip {
 		t.Fatalf("a clean repeat published: %s %v", again.Tip, err)
 	}
 
-	// repair goals --refresh completes a refresh that died after its
+	// goal sync --refresh completes a refresh that died after its
 	// publication: the page still holds the hand edit as it was before the
 	// publication synthesized its revision and history, and the base says
 	// refreshDue with that durably captured snapshot. It takes no person and
@@ -382,7 +408,7 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 		t.Fatal(err)
 	}
 	before := len(calls)
-	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--refresh")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "sync", "--refresh")
 	if len(calls) != before+1 || !slicesEqual(calls[before][2:], []string{"goal", "reconcile", "--root", root, "--refresh-only"}) {
 		t.Fatalf("refresh owner argv = %v", calls[before:])
 	}
@@ -398,14 +424,14 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 	if record, exists, err := goal.ReadBase(root); err != nil || !exists || record.RefreshDue || record.Commit != projection.Tip {
 		t.Fatalf("base after refresh: %+v %v %v", record, exists, err)
 	}
-	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--refresh")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "sync", "--refresh")
 	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "no refresh is pending") {
 		t.Fatalf("second refresh: %d %+v", code, result)
 	}
 }
 
-// TestIntentRepairGoalsGitAdapterUpgradesOnlyTheReviewedDigest: repair
-// goals --upgrade runs the real goal migrate owner as its own process, only
+// TestIntentRepairGoalsGitAdapterUpgradesOnlyTheReviewedDigest: goal
+// sync --upgrade runs the real goal migrate owner as its own process, only
 // on the digest the person reviewed and with exactly the adapter's argv,
 // and the owner publishes the native ledger while main keeps the human
 // initialization commit. The owner's authority here is the named person
@@ -416,11 +442,11 @@ func TestIntentRepairGoalsGitAdapterUpgradesOnlyTheReviewedDigest(t *testing.T) 
 	root, digest := legacyHumanTerminalRoot(t, "upgrade-machine")
 	mainBefore := runReceiptGit(t, root, "rev-parse", "refs/heads/main")
 	var calls [][]string
-	code, result := runIntentRealOwner(t, root, &calls, "goal", "repair", "--upgrade", "--by", "Wido")
+	code, result := runIntentRealOwner(t, root, &calls, "goal", "sync", "--upgrade", "--by", "Wido")
 	if result.Outcome != intentRefused || code == 0 || len(calls) != 0 || result.Data.(map[string]any)["sourceDigest"] != digest {
 		t.Fatalf("unreviewed upgrade: %d %+v %v", code, result, calls)
 	}
-	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--upgrade", "--by", "Wido", "--source-digest", digest, "--sync-mode", "local", "--identity", "01J5XA00000000000000000000")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "sync", "--upgrade", "--by", "Wido", "--source-digest", digest, "--sync-mode", "local", "--identity", "01J5XA00000000000000000000")
 	want := []string{"goal", "migrate", "--root", root, "--source-digest", digest, "--by", "Wido", "--identity", "01J5XA00000000000000000000", "--sync-mode", "local"}
 	if len(calls) != 1 || !slicesEqual(calls[0][1:], append([]string{"internal"}, want...)) {
 		t.Fatalf("owner argv = %v, want %v", calls, want)
@@ -483,14 +509,14 @@ func TestIntentRepairGoalsGitAdapterAcceptsRemoteHistoryInADeclaredCoordinator(t
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", emptyTable)
 	var calls [][]string
-	code, result := runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-remote-history", "--by", "Wido")
+	code, result := runIntentRealOwner(t, root, &calls, "goal", "sync", "--accept-remote-history", "--by", "Wido")
 	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "the brain never carries a human's word into goal repair") ||
 		goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef) != later {
 		t.Fatalf("declared coordinator, no terminal fact: %d %+v", code, result)
 	}
 
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", humanTable)
-	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-remote-history", "--by", "Wido")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "sync", "--accept-remote-history", "--by", "Wido")
 	want := []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root", root}
 	if len(calls) != 2 || !slicesEqual(calls[0][2:], want) || !slicesEqual(calls[1][2:], want) {
 		t.Fatalf("owner argv = %v", calls)

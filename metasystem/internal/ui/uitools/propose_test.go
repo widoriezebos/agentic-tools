@@ -290,7 +290,7 @@ func TestAGoalActionTheInterfaceHasNoActForIsRefusedWithItsUsageLine(t *testing.
 	// when R-128-ui admitted it (g1-s64).
 	for _, action := range []string{
 		"done", "reopen", "budget", "claim", "release", "accept-risk", "pin",
-		"split", "group", "ungroup", "notes", "repair", "check",
+		"split", "group", "ungroup", "notes", "sync",
 	} {
 		said := refusedBy(t, readers, action, uitools.Args{"verb": action, "goal": "g", "explanation": "x"})
 		testutil.Expect(t, "the interface has no act for "+action,

@@ -54,7 +54,7 @@ Two agents, or two sessions, in one repository are peers. Nothing coordinates th
 
 ## Driving the work yourself
 
-Commands say what you want done, not how the system is built. Run them from any directory inside the repository, or pass `--repo PATH` naming the repository top or any directory below it. `metasystem help human` is the one list of your actions, with their arguments; `metasystem help VERB` shows the full grammar and examples for one of them. Each line below is a separate example, not a sequence to run in order:
+Commands say what you want done, not how the system is built. Run them from any directory inside the repository, or pass `--repo PATH` naming the repository top or any directory below it. `metasystem help human` is the one list of your actions, with their arguments; `metasystem help OBJECT ACTION` shows the full grammar and examples for one of them. Each line below is a separate example, not a sequence to run in order:
 
 ```sh
 metasystem goal list                              # what is open
@@ -67,7 +67,7 @@ metasystem goal resume faster-landing              # back on its standing approv
 metasystem goal done faster-landing --reason "landed in 3f2a1c0, verified live"   # only once it has actually landed and been verified
 ```
 
-The same pattern covers opening and editing goals (`open`, `edit`), starting, stopping and restarting this checkout, the browser interface, a mission or a new machine (`start`, `stop`, `restart`, `start ui`, `start mission M`, `start machine NAME`), enrolling your terminal (`enroll --name NAME`), answering a question (`answer Q [TEXT]`), accepting a finding's risk (`accept-risk`), diagnosing and repairing (`check`, `repair`), and settings (`settings`, `settings coordinator`). Agents use the matching agent actions (`claim`, `brief`, `build`, `review`, `revise`, `wait`, `land`, `ask`), listed by `metasystem help agent`; `metasystem help all` lists every command.
+The same pattern covers opening and editing goals (`goal open`, `goal edit`), starting, stopping and restarting this checkout, the browser interface, a mission or a new machine (`system start`, `system stop`, `system restart`, `ui start`, `mission start M`, `machine start NAME`), enrolling your terminal (`system enroll --name NAME`), answering a question (`question answer Q [TEXT]`), accepting a finding's risk (`goal accept-risk`), diagnosing problems (`system check`), bringing hand-edited goal files and the ledger into agreement (`goal sync`), and settings (`settings show`, `settings check`, `settings coordinator`). Agents use the matching agent actions (`goal claim`, `work brief`, `work build`, `work review`, `work revise`, `work wait`, `work land`, `question ask`), listed by `metasystem help agent`; `metasystem help all` lists every command.
 
 Two things these commands never do on your behalf. They never make a decision that is yours: when a human act or a missing answer is needed, the command stops and names it rather than guessing. And a successful `build` ends awaiting review: built, proved and given a preliminary read that is feedback only; `review G` then has the result examined independently, completes it when there are no findings, and asks for your decisions when there are. Landing and concluding a goal stay separate, explicit acts.
 
@@ -79,7 +79,7 @@ The system stays honest through a few small human acts:
 
 1. **Answer escalations promptly.** A reserved-decision question blocks that stream until you do. The stream's handoff note keeps the standing list of everything waiting on you.
 2. **Accept or veto dispositions**: reconciliation ledgers, correction captures, retro proposals. They are designed as short lists you can approve item by item.
-3. **Run the retro when it is due** (`metasystem receipt check` tells you, or the agent will). The agent first reviews the previous retro's changes against evidence, keeping, amending, or reverting them, then proposes new ones from receipt patterns. You veto. This is the only mechanism by which the metasystem learns, and it costs about twenty minutes a month.
+3. **Run the retro when it is due** (`metasystem receipt status` tells you, or the agent will). The agent first reviews the previous retro's changes against evidence, keeping, amending, or reverting them, then proposes new ones from receipt patterns. You veto. This is the only mechanism by which the metasystem learns, and it costs about twenty minutes a month.
 4. **Spot-check receipts against reality** now and then. A "shipped" receipt followed by three fix commits is rework the next retro should hear about.
 
 ## Day one

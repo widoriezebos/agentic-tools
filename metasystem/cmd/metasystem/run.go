@@ -79,7 +79,7 @@ func holdGovernedGoalRevision(root, goalID string, obligationRevision uint64, st
 
 // watchLine is THE printed waiter command — one grammar, everywhere.
 func watchLine(root, id string) string {
-	return fmt.Sprintf("bin/metasystem work watch --run %s --root %s", id, root)
+	return fmt.Sprintf("bin/metasystem work wait --run %s --exit-code --repo %s", id, root)
 }
 
 func runRunLaunch(args []string) int {

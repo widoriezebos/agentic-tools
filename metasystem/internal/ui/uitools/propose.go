@@ -476,7 +476,7 @@ func RefusedProposalFlags() []string {
 // itself.
 var actsNotInTheInterface = []string{
 	"done", "reopen", "budget", "claim", "release", "accept-risk", "pin",
-	"split", "group", "ungroup", "notes", "repair", "check",
+	"split", "group", "ungroup", "notes", "sync",
 }
 
 // ActsNotInTheInterface is those actions, for the join test that holds them

@@ -13,14 +13,13 @@ import (
 
 func reserveOwnershipReviewFixture(f ownershipFixture, goal, plan string, groups map[string]string, episode, binding string, offset time.Duration) (Attempt, LaunchResult) {
 	f.t.Helper()
-	fixtureHostAdmissionMu.Lock()
-	defer fixtureHostAdmissionMu.Unlock()
 	identity := BindIdentityInputs(f.identity, append(append([]string(nil), f.identity.IdentityInputs...), "plan:"+plan))
 	request := candidateAdmission(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
 		GoalID: goal, GoalRevision: 1, AccountingRevision: 1, ReservedMinutes: 2,
 		Identity: identity, Launcher: f.launcher, Now: f.now.Add(offset),
 		ComponentIdentities: groups, SharedComponents: true, FreshnessEpisode: episode, FreshnessBinding: binding})
 	request.loadOptions = []loadSampleOption{withTestHostLoad("0")}
+	request = WithTestHostAdmissionDirectory(request, f.admissionDir)
 	guard, err := AcquireMutation(f.root)
 	if err != nil {
 		f.t.Fatal(err)

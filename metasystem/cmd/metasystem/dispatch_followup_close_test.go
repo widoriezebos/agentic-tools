@@ -43,7 +43,7 @@ func assertDispatchFollowUpCloseFixture(t *testing.T, repo string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantRecovery := "close --job " + implementation + " --reconcile-evidence " + critic
+	wantRecovery := "next: metasystem work close j2:" + implementation + " --evidence " + critic + ";"
 	if refusalCode != 11 || !strings.Contains(string(refusal), "REDUNDANT_READ") || !strings.Contains(string(refusal), wantRecovery) {
 		t.Fatalf("fresh equal read = exit %d output %q", refusalCode, refusal)
 	}

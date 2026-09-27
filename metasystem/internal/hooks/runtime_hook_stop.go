@@ -311,9 +311,9 @@ func (l *lifecycle) surface(message string) string {
 func (l *lifecycle) receipt() {
 	_, _, status := l.ops.ReceiptCheck(l.harnessRoot)
 	if status == 1 {
-		_ = writeLine(l.inv.Stdout, l.surface("Metasystem retro due: run metasystem receipt check for details, then skills/retro."))
+		_ = writeLine(l.inv.Stdout, l.surface("Metasystem retro due: run metasystem receipt status for details, then skills/retro."))
 	} else if status != 0 {
-		_ = writeLine(l.inv.Stdout, l.surface("Metasystem receipt check errored; run metasystem receipt check to see why."))
+		_ = writeLine(l.inv.Stdout, l.surface("Metasystem receipt check errored; run metasystem receipt status to see why."))
 	}
 	exitHook(0)
 }

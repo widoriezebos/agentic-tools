@@ -8,7 +8,7 @@ func TestDelegateReceiptRefusalRegistration(t *testing.T) {
 		Owner:    "internal/validate",
 		Site:     "conformance.go:771",
 		Shape:    Agent,
-		Override: "remove the delegate change to memory/receipts.log, then validate conformance --stage review --job <that round>",
+		Override: "remove the delegate change to memory/receipts.log, then work review j2:<that round> --check-only --stage review",
 		Commands: 2,
 	}
 	var got Row

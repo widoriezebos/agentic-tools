@@ -85,18 +85,18 @@ func runContextStatus(args []string) int {
 		}
 	})
 	if *root == "" || flags.NArg() != 0 || (*runtimeName == "") != (*session == "") || (transcriptSupplied && *transcript == "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem session context --root ROOT [--runtime R --session S] [--transcript PATH] [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem session handoff --status --root ROOT [--runtime R --session S] [--transcript PATH] [--json]")
 		return 2
 	}
 	if *runtimeName != "" {
 		if _, ok := runtimes.Lookup(*runtimeName); !ok {
-			fmt.Fprintf(os.Stderr, "metasystem session context: unknown runtime: %s\n", *runtimeName)
+			fmt.Fprintf(os.Stderr, "metasystem session handoff --status: unknown runtime: %s\n", *runtimeName)
 			return 1
 		}
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session context:", err)
+		fmt.Fprintln(os.Stderr, "metasystem session handoff --status:", err)
 		return 1
 	}
 	role, reading, readErr := steward.ContextBudgetLine(stateRoot, stateRoot, time.Now().UTC(), steward.ContextOptions{
@@ -112,11 +112,11 @@ func runContextStatus(args []string) int {
 		}
 	}
 	if windowErr != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session context:", windowErr)
+		fmt.Fprintln(os.Stderr, "metasystem session handoff --status:", windowErr)
 		return 1
 	}
 	if readErr != nil {
-		fmt.Fprintln(os.Stderr, "metasystem session context:", readErr)
+		fmt.Fprintln(os.Stderr, "metasystem session handoff --status:", readErr)
 		return 1
 	}
 	return 0
@@ -539,7 +539,7 @@ func runContextVerify(args []string) int {
 		return 2
 	}
 	if *root == "" || *nonce == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem session verify --root ROOT --nonce NONCE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem session handoff --verify NONCE --root ROOT")
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
@@ -613,9 +613,9 @@ func contextPublicName(verb string) string {
 	case "handoff":
 		return "session handoff"
 	case "status":
-		return "session context"
+		return "session handoff --status"
 	case "verify":
-		return "session verify"
+		return "session handoff --verify"
 	}
 	return "internal context " + verb
 }

@@ -85,7 +85,7 @@ func runValidateCritiqueClosed(args []string) int {
 		return 2
 	}
 	if *findings == "" || *dispositions == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem work check --findings F --dispositions F")
+		fmt.Fprintln(os.Stderr, "usage: metasystem work review [j2:ROOT] --check-only --findings F --dispositions F")
 		return 2
 	}
 	if (*repo == "") != (*rootJob == "") {
@@ -285,7 +285,7 @@ pipe characters; the column parser cannot see an escaped pipe as content.
 // usage.
 func runValidateConformance(args []string) int {
 	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage: metasystem work check --stage review|recertify|merge --job <job-id> [--test-command <command>] [--recertification <record>]
+		fmt.Fprint(os.Stderr, `Usage: metasystem work review j2:<job-id> --check-only --stage review|recertify|merge [--test-command <command>] [--recertification <record>]
 
 The review stage computes the implementer worktree's exact review object. A
 temporary index contains every tracked file plus every untracked, unignored
@@ -417,7 +417,8 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 func runValidateMovedEffects(args []string) int {
 	usage := func() {
 		fmt.Fprint(os.Stderr, `Usage:
-  metasystem design check-moves --file <page.md> [--root <repository-root>]
+  metasystem internal validate moved-effects --file <page.md> [--root <repository-root>]
+  (a person or critic uses metasystem design review PAGE --check-only)
 
 Checks a Moved effects inventory with this table header:
 | Effect | From | To | Code |
@@ -445,7 +446,20 @@ Use the exact line "No owner moves." when the page moves no owner.
 		fmt.Fprintf(os.Stderr, "validate moved-effects: read %s: %v\n", *file, err)
 		return 2
 	}
-	repositoryRoot := *root
+	lines, problems := movedEffectsReport(page, *root)
+	for _, line := range lines {
+		fmt.Println(line)
+	}
+	if problems > 0 {
+		return 1
+	}
+	return 0
+}
+
+// movedEffectsReport checks a design page's moved-effect inventory against
+// the files of repositoryRoot: one line per row and problem, then the
+// verdict line, and the number of problems.
+func movedEffectsReport(page []byte, repositoryRoot string) ([]string, int) {
 	exists := func(path string) bool {
 		clean := filepath.Clean(filepath.FromSlash(path))
 		if filepath.IsAbs(path) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
@@ -455,6 +469,7 @@ Use the exact line "No owner moves." when the page moves no owner.
 		return err == nil && (info.Mode().IsRegular() || info.IsDir())
 	}
 	report := validate.CheckMovedEffects(page, exists)
+	var lines []string
 	for _, row := range report.Rows {
 		paths := make([]string, 0, len(row.Paths))
 		for _, path := range row.Paths {
@@ -467,19 +482,16 @@ Use the exact line "No owner moves." when the page moves no owner.
 		if len(paths) == 0 {
 			paths = append(paths, "(none)")
 		}
-		fmt.Printf("row %d: %s | %s -> %s | code %s\n", row.Line, row.Effect, row.From, row.To, strings.Join(paths, " "))
+		lines = append(lines, fmt.Sprintf("row %d: %s | %s -> %s | code %s", row.Line, row.Effect, row.From, row.To, strings.Join(paths, " ")))
 	}
 	for _, problem := range report.Problems {
-		fmt.Printf("%s: line %d: %s\n", problem.Code, problem.Line, problem.Detail)
+		lines = append(lines, fmt.Sprintf("%s: line %d: %s", problem.Code, problem.Line, problem.Detail))
 	}
 	if report.Inventory == "absent" {
-		fmt.Println("moved-effects: no Moved effects section; the design critic decides whether this page moves an owner, and a page that does without this section is a material finding")
+		lines = append(lines, "moved-effects: no Moved effects section; the design critic decides whether this page moves an owner, and a page that does without this section is a material finding")
 	}
-	fmt.Printf("moved-effects: inventory=%s rows=%d problems=%d\n", report.Inventory, len(report.Rows), len(report.Problems))
-	if len(report.Problems) > 0 {
-		return 1
-	}
-	return 0
+	lines = append(lines, fmt.Sprintf("moved-effects: inventory=%s rows=%d problems=%d", report.Inventory, len(report.Rows), len(report.Problems)))
+	return lines, len(report.Problems)
 }
 
 // runValidateRefactorBaseline relays the refactor gate:

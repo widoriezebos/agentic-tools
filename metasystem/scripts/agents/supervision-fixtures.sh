@@ -3318,7 +3318,7 @@ grep -Fq '"class": "infrastructure"' <<<"$degraded_report" \
   && grep -Fq '"causeCode": "turn-verdict-state"' <<<"$degraded_report" \
   && grep -Fq '"judgmentAvailable": true' <<<"$degraded_report" \
   && grep -Fq '"cause": "the frozen judgment facts were unavailable"' <<<"$degraded_report" \
-  && grep -Fq '; Stop allowed; needs supervision repair; Report: metasystem session report --id ' <<<"$degraded" \
+  && grep -Fq '; Stop allowed; needs supervision repair; Report: metasystem session status --id ' <<<"$degraded" \
   && ! grep -q "$decision_block_pattern" <<<"$degraded" \
   || { echo "an unreadable verdict state did not publish its cause under a report-backed allowance" >&2; echo "$degraded" >&2; exit 1; }
 grep -Fq 'NOTHING LEFT' <<<"$degraded" \

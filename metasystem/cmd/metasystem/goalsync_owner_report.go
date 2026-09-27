@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -17,7 +16,7 @@ import (
 // failure a public command renders.
 func (d syncRequestDependencies) complain(parts ...any) {
 	if d.report == nil {
-		fmt.Fprintln(os.Stderr, parts...)
+		fmt.Fprintln(d.errStream(), parts...)
 		return
 	}
 	d.report.failure = errors.New(strings.TrimSuffix(fmt.Sprintln(parts...), "\n"))
@@ -25,7 +24,7 @@ func (d syncRequestDependencies) complain(parts ...any) {
 
 func (d syncRequestDependencies) complainf(format string, args ...any) {
 	if d.report == nil {
-		fmt.Fprintf(os.Stderr, format, args...)
+		fmt.Fprintf(d.errStream(), format, args...)
 		return
 	}
 	d.report.failure = errors.New(strings.TrimSuffix(fmt.Sprintf(format, args...), "\n"))
@@ -46,7 +45,7 @@ func (d syncRequestDependencies) parseSyncFlags(name string, args []string) (*sy
 // its refusal sentence or kept for the public result.
 func (d syncRequestDependencies) outcomeBeforeRefusal(res goal.PublishResult) {
 	if d.report == nil {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		writeJSONLine(d.outStream(), d.errStream(), map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
 		return
 	}
 	d.report.result = &res
@@ -56,7 +55,7 @@ func (d syncRequestDependencies) outcomeBeforeRefusal(res goal.PublishResult) {
 // seat names with --under, or keeps both for the public result.
 func (d syncRequestDependencies) publishGrant(res goal.PublishResult, entry string) int {
 	if d.report == nil {
-		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "entry": entry, "detail": res.Detail})
+		writeJSONLine(d.outStream(), d.errStream(), map[string]any{"outcome": res.Outcome, "tip": res.Tip, "entry": entry, "detail": res.Detail})
 		if res.Outcome != goal.OutcomeConfirmed {
 			return 1
 		}

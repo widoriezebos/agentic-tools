@@ -535,4 +535,4 @@ exit 0
 else
   echo "target is not a git repository; the new-plan guard hook was not installed (install it when git init happens)" >&2
 fi
-echo "  4. Run bin/metasystem test check --root \"$target\" and scripts/validate-metasystem.sh in the target; both must pass."
+echo "  4. Run bin/metasystem settings check --repo \"$target\" and scripts/validate-metasystem.sh in the target; both must pass."

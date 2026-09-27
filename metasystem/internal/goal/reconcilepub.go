@@ -18,6 +18,27 @@ import (
 	"strings"
 )
 
+// outsideReconcileScope names every goal a mapped row would publish that
+// the scope does not hold; an empty scope holds every goal.
+func outsideReconcileScope(rows []MappedVerb, scope []string) []string {
+	if len(scope) == 0 {
+		return nil
+	}
+	allowed := map[string]bool{}
+	for _, id := range scope {
+		allowed[id] = true
+	}
+	var outside []string
+	for _, row := range rows {
+		for _, id := range append([]string{row.Id}, row.ArcIds...) {
+			if id != "" && !allowed[id] {
+				outside = append(outside, id)
+			}
+		}
+	}
+	return sortedUnique(outside)
+}
+
 // ReconcileResult reports one reconcile session.
 type ReconcileResult struct {
 	Publish PublishResult
@@ -59,6 +80,14 @@ func reconcileFor(r VerbRequest, head func(string) (string, error), anchor func(
 	rows, err := mapDeltasFor(r.Endpoint, base, snap)
 	if err != nil {
 		return ReconcileResult{}, err
+	}
+	// The scope is checked against the very rows this session publishes,
+	// inside its lock and before the pending record: an edit that reached
+	// another goal after the caller looked is refused, never published
+	// under the caller's name.
+	if outside := outsideReconcileScope(rows, r.ReconcileScope); len(outside) > 0 {
+		return ReconcileResult{}, fmt.Errorf("RECONCILE_OUTSIDE_SCOPE: the goal files also hold edits of %s, outside the named %s; nothing was published",
+			strings.Join(outside, ", "), strings.Join(sortedUnique(append([]string(nil), r.ReconcileScope...)), ", "))
 	}
 	if len(rows) == 0 {
 		return ReconcileResult{Rows: rows}, nil

@@ -365,33 +365,71 @@ func main(){
 	defer next.Close()
 }
 
-// A fixture drain is bounded by complete censuses, never by wall time. On a
-// crowded host one census walk took longer than the old two-second bound, so
-// a drain with nothing left to stop reported "declared fixture custody did
-// not drain within 2s" (three land beds side by side, 2026-09-27). The drain
-// now reads no clock: it ends on two empty censuses however long each takes,
-// its only waits are the injected pause, and an unreadable census still
-// fails closed at once.
-func TestResourceCustodyFixtureDrainCountsCensusesNotTime(t *testing.T) {
+// A loaded host spends about a second on each fixture census; the injected
+// clock advances that much per census. The drain is decided by complete
+// censuses, so three (kill, empty, empty) finish custody after three seconds;
+// the former 2s wall-clock budget refused this with nothing left to stop.
+func TestFixtureDrainDecidesOnCensusesNotOnTheirDuration(t *testing.T) {
 	t.Parallel()
-	owner := identity.Exact{Pid: int64(os.Getpid()), StartedAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
-	passes, pauses := 0, 0
-	observed, err := drainCustodyFixtureScansWith(ResourceCustodyOptions{Launcher: owner.Ref()}, identity.KernelProber{},
+	owner := identity.Exact{Pid: 4100, StartedAt: time.Unix(1700000000, 0)}
+	fixture := identity.Exact{Pid: 4101, StartedAt: time.Unix(1700000001, 0)}
+	killed := false
+	prober := functionIdentityProber(func(pid int64) (identity.Exact, identity.Liveness, error) {
+		if pid == fixture.Pid && !killed {
+			return fixture, identity.Alive, nil
+		}
+		return identity.Exact{}, identity.Dead, nil
+	})
+	survivor := identity.FixtureSurvivor{Class: identity.FixtureSurvivorCertain, Ref: fixture.Ref(),
+		Key: identity.FixtureKey{Owner: owner.Ref()}}
+	clock := time.Unix(1800000000, 0)
+	censuses := 0
+	observed, err := drainCustodyFixtureScansWith(ResourceCustodyOptions{Launcher: owner.Ref()}, prober,
 		func() ([]identity.FixtureSurvivor, error) {
-			passes++
+			censuses++
+			clock = clock.Add(time.Second) // one loaded host census
+			if censuses == 1 {
+				return []identity.FixtureSurvivor{survivor}, nil
+			}
 			return nil, nil
-		}, func() { pauses++ })
-	if err != nil || observed || passes != 2 || pauses != 1 {
-		t.Fatalf("empty census drain observed=%t passes=%d pauses=%d err=%v", observed, passes, pauses, err)
+		}, func(pid int, signal syscall.Signal) error {
+			if int64(pid) == fixture.Pid && signal == syscall.SIGKILL {
+				killed = true
+			}
+			return nil
+		}, func() time.Time { return clock }, func() { clock = clock.Add(50 * time.Millisecond) })
+	if err != nil || !observed || !killed || censuses != 3 {
+		t.Fatalf("slow census drain observed=%t killed=%t censuses=%d err=%v", observed, killed, censuses, err)
 	}
+}
 
-	passes, pauses = 0, 0
-	_, err = drainCustodyFixtureScansWith(ResourceCustodyOptions{Launcher: owner.Ref()}, identity.KernelProber{},
+// A fixture that stays live through every census after its exact SIGKILL
+// still refuses custody, after the bounded number of censuses.
+func TestFixtureDrainRefusesASurvivorThatWillNotDie(t *testing.T) {
+	t.Parallel()
+	owner := identity.Exact{Pid: 4200, StartedAt: time.Unix(1700000000, 0)}
+	fixture := identity.Exact{Pid: 4201, StartedAt: time.Unix(1700000001, 0)}
+	prober := functionIdentityProber(func(pid int64) (identity.Exact, identity.Liveness, error) {
+		if pid == fixture.Pid {
+			return fixture, identity.Alive, nil
+		}
+		return identity.Exact{}, identity.Dead, nil
+	})
+	survivor := identity.FixtureSurvivor{Class: identity.FixtureSurvivorCertain, Ref: fixture.Ref(),
+		Key: identity.FixtureKey{Owner: owner.Ref()}}
+	censuses, signals, pauses := 0, 0, 0
+	observed, err := drainCustodyFixtureScansWith(ResourceCustodyOptions{Launcher: owner.Ref()}, prober,
 		func() ([]identity.FixtureSurvivor, error) {
-			passes++
-			return nil, errors.New("census unreadable")
-		}, func() { pauses++ })
-	if err == nil || passes != 1 || pauses != 0 {
-		t.Fatalf("unreadable census passes=%d pauses=%d err=%v", passes, pauses, err)
+			censuses++
+			return []identity.FixtureSurvivor{survivor}, nil
+		}, func(pid int, signal syscall.Signal) error {
+			if int64(pid) == fixture.Pid && signal == syscall.SIGKILL {
+				signals++
+			}
+			return nil
+		}, func() time.Time { return time.Unix(1800000000, 0) }, func() { pauses++ })
+	if err == nil || !strings.Contains(err.Error(), "did not drain") || !observed ||
+		censuses != fixtureDrainCensuses || signals != fixtureDrainCensuses || pauses != fixtureDrainCensuses {
+		t.Fatalf("undying survivor observed=%t censuses=%d signals=%d pauses=%d err=%v", observed, censuses, signals, pauses, err)
 	}
 }

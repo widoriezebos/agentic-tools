@@ -320,7 +320,7 @@ func TestPriorityUnranked(t *testing.T) {
 		}
 		request := priorityVerbReqForEndpoint(endpoint, "01J5X000000000000000000R01", "mac-a")
 		result, err := SetPriority(request, "a", 1, sequencePointer(1), testHumanAuthority(t, root, request.Now))
-		if err == nil || !strings.Contains(err.Error(), "captured tip does not validate") || !strings.Contains(err.Error(), "priority 1") || !strings.Contains(err.Error(), "goal repair --accept-remote") {
+		if err == nil || !strings.Contains(err.Error(), "captured tip does not validate") || !strings.Contains(err.Error(), "priority 1") || !strings.Contains(err.Error(), "goal sync --accept-remote-history") {
 			t.Fatalf("set-priority did not refuse a malformed accepted order: %+v %v", result, err)
 		}
 		if after := acceptedTipForEndpoint(t, endpoint); after != malformed {

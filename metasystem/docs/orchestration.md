@@ -66,7 +66,7 @@ critique have separate round rules. For code critique and the warden, Part One
 stores a review-round member on the goal: the `metasystem.budget.tier-1`,
 `metasystem.budget.tier-2`, and `metasystem.budget.tier-3` keys in
 `metasystem.conf` provide zero, two, and three rounds, while
-`metasystem.budget.review-round-max` keeps three as the ceiling. Design critique has two rounds at tier 3 and does not exist below tier 3. A design-critic chain's `reviewRoundLimit` is 2 whatever the goal's stored member says. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free non-design root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored code-critique or warden member, never above the ceiling, and `job critique-budget-rebind` copies that raised member onto an open root.
+`metasystem.budget.review-round-max` keeps three as the ceiling. Design critique has two rounds at tier 3 and does not exist below tier 3. A design-critic chain's `reviewRoundLimit` is 2 whatever the goal's stored member says. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free non-design root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored code-critique or warden member, never above the ceiling, and the chain's next follow-up or close (`metasystem work revise`, `metasystem design review --dispositions`, `metasystem work review --dispositions`, `metasystem work finish`) copies that raised member onto every open critic root it continues.
 
 Before reserving a job, the dispatcher judges the exact claimed revision and
 the proposed cap. If that seam refuses on attempts, on reserved minutes, or on both and
@@ -130,7 +130,7 @@ for those groups rather than a literal full-battery command. Every over-box budg
 exception: defect signal`.
 
 For a measured test run, `test run --result <path>` writes the retained result
-and `test report --result <path> --expensive-ms <threshold>` projects its
+and `test status --result <path> --expensive-ms <threshold>` projects its
 observed native and reused group costs as JSON without launching work. The
 threshold is chosen for the compared cohort. A reused group's duration is
 the original producer's observed duration, not measured time saved. Group
@@ -181,8 +181,8 @@ work or is not safe without it; everything else is deferred, never folded
 with new mechanism. A material finding must change what gets built and name that
 artifact; a finding that fails the artifact test is demoted at registration.
 For design critique, one round is the norm since 2026-09-17 (step 2 of the loop); the round-2 rules below apply only when a fold changed a rule. For design critique, Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `metasystem goal accept-risk` and a re-scope by `metasystem goal edit`. There is no third design round and none can be bought.
-When code-critique or warden rounds are spent, the register close (the internal owner
-`metasystem internal job critique-register-close`) defers each bounded open finding into a review obligation on the goal (discharged later by `metasystem work review <goal> --review R --finding F --test NAME` against the chain, artifact and test that carry
+When code-critique or warden rounds are spent, closing the review (`metasystem work review j2:<job> --dispositions`
+or `metasystem work finish`, whose close owner closes the register) defers each bounded open finding into a review obligation on the goal (discharged later by `metasystem work review <goal> --review R --finding F --test NAME` against the chain, artifact and test that carry
 it) and closes the register; a severe or unproven finding closes only after a
 human records `metasystem goal accept-risk <goal> --finding F [--review R] --reason <text>` for it. The reviewer never dispatches a
 silent fourth round.
@@ -262,7 +262,7 @@ Everything exchanged between orchestrator and delegate is a file; the launch tra
 | `artifacts/agents/worktrees/<job-id>/` | Disposable delegate worktree created by `--worktree`; writable roles never edit the shared checkout |
 | `artifacts/agents/capabilities/` | Immutable probe snapshots that gate dispatch |
 
-For implementation, `metasystem work review j2:J` runs `metasystem work check --stage review --job <job-id>`, which computes and persists the actual base-to-working-tree `diff.patch` and its exact `reviewedTree`; the delegate's reported file boundary is only a claim. After critique, `--stage merge` binds the closed code-critic chain to the final committed tree; `land` runs it where the route needs it. `metasystem work check` owns the mechanical findings-to-dispositions join that `fold review` and `close` apply; running it alone is a diagnostic, not an extra step. `plans/README.md` owns evidence retention and the durable-mirror boundary.
+For implementation, `metasystem work review j2:J` runs the review-stage boundary check (alone: `metasystem work review j2:J --check-only --stage review`), which computes and persists the actual base-to-working-tree `diff.patch` and its exact `reviewedTree`; the delegate's reported file boundary is only a claim. After critique, `--stage merge` binds the closed code-critic chain to the final committed tree; `land` runs it where the route needs it. The mechanical findings-to-dispositions join is applied by `metasystem work revise j2:<review> --dispositions` and by the close (`metasystem work review j2:<job> --dispositions`); `metasystem work review --check-only --findings <return.json> --dispositions <file>` runs it alone as a diagnostic, not an extra step. `plans/README.md` owns evidence retention and the durable-mirror boundary.
 
 ## Mission Contracts
 

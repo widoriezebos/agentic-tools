@@ -231,60 +231,56 @@ func drainCustodyFixtures(options ResourceCustodyOptions, prober identity.Prober
 	})
 }
 
-// custodyFixtureDrainScans bounds the fixture drain by complete censuses, not
-// by wall time. Each census walks the whole process table; on a crowded host
-// one walk can take longer than a second, so a two-second bound failed a
-// drain that had nothing left to stop (three land beds side by side,
-// 2026-09-27). Forty passes with a 50 ms pause is the old bound on an idle
-// host and stays a failsafe against a survivor that keeps coming back.
-const custodyFixtureDrainScans = 40
-
-// custodyFixtureStopProbes bounds the wait for one killed survivor to leave
-// the table, again by probes rather than by the clock.
-const custodyFixtureStopProbes = 40
+// fixtureDrainCensuses bounds a declared-fixture drain by complete censuses,
+// never by elapsed time. One host census costs about a second when the host
+// is loaded, so a wall-clock budget was spent by the census itself and failed
+// custody with nothing left to stop. A survivor that stays live and owned
+// through this many censuses, each followed by an exact SIGKILL, will not
+// die: custody refuses and the marker stays dirty.
+const fixtureDrainCensuses = 40
 
 func drainCustodyFixtureScans(options ResourceCustodyOptions, prober identity.Prober, scan func() ([]identity.FixtureSurvivor, error)) (bool, error) {
-	return drainCustodyFixtureScansWith(options, prober, scan, func() { time.Sleep(50 * time.Millisecond) })
+	return drainCustodyFixtureScansWith(options, prober, scan, syscall.Kill, time.Now, func() { time.Sleep(50 * time.Millisecond) })
 }
 
-func drainCustodyFixtureScansWith(options ResourceCustodyOptions, prober identity.Prober, scan func() ([]identity.FixtureSurvivor, error), pause func()) (bool, error) {
+// drainCustodyFixtureScansWith ends when two consecutive complete censuses
+// find no live owned fixture. A killed survivor is judged by the next census
+// and its exact probe (dead, zombie or a reused pid all count as stopped),
+// not by how long it took to die. The clock only reports how long a refused
+// drain took; it never decides.
+func drainCustodyFixtureScansWith(options ResourceCustodyOptions, prober identity.Prober, scan func() ([]identity.FixtureSurvivor, error),
+	signal identity.SignalFunc, now func() time.Time, pause func(),
+) (bool, error) {
+	started := now()
 	observed := false
 	empty := 0
-	for pass := 0; pass < custodyFixtureDrainScans; pass++ {
+	for census := 0; census < fixtureDrainCensuses; census++ {
 		survivors, err := scan()
 		if err != nil {
 			return observed, err
 		}
-		owned := 0
+		live := 0
 		for _, survivor := range survivors {
 			if !fixtureSurvivorOwnedByAttempt(prober, survivor, fixtureAttemptOwnership{owner: options.Launcher, attemptID: options.Watchdog.AttemptID}) {
 				continue
 			}
-			owned++
 			if survivor.Class != identity.FixtureSurvivorCertain {
 				return observed, fmt.Errorf("owned fixture survivor %d has uncertain identity", survivor.Ref.Pid)
 			}
 			observed = true
-			if err := identity.SignalExact(prober, survivor.Ref, syscall.SIGKILL, syscall.Kill); err != nil && !errors.Is(err, identity.ErrGone) {
+			exact, state, err := prober.Probe(survivor.Ref.Pid)
+			if err != nil || state == identity.Unknown {
+				return observed, fmt.Errorf("fixture survivor %d cleanup is uninspectable: %v", survivor.Ref.Pid, err)
+			}
+			if state == identity.Dead || !identity.SameIdentity(exact, survivor.Ref) || exact.Zombie {
+				continue
+			}
+			live++
+			if err := identity.SignalExact(prober, survivor.Ref, syscall.SIGKILL, signal); err != nil && !errors.Is(err, identity.ErrGone) {
 				return observed, fmt.Errorf("stop owned fixture survivor %d: %w", survivor.Ref.Pid, err)
 			}
-			stopped := false
-			for probe := 0; probe < custodyFixtureStopProbes; probe++ {
-				exact, state, err := prober.Probe(survivor.Ref.Pid)
-				if err != nil || state == identity.Unknown {
-					return observed, fmt.Errorf("fixture survivor %d cleanup is uninspectable: %v", survivor.Ref.Pid, err)
-				}
-				if state == identity.Dead || !identity.SameIdentity(exact, survivor.Ref) || exact.Zombie {
-					stopped = true
-					break
-				}
-				pause()
-			}
-			if !stopped {
-				return observed, fmt.Errorf("fixture survivor %d did not stop", survivor.Ref.Pid)
-			}
 		}
-		if owned == 0 {
+		if live == 0 {
 			empty++
 			if empty >= 2 {
 				return observed, nil
@@ -294,7 +290,8 @@ func drainCustodyFixtureScansWith(options ResourceCustodyOptions, prober identit
 		}
 		pause()
 	}
-	return observed, fmt.Errorf("declared fixture custody did not drain within %d censuses", custodyFixtureDrainScans)
+	return observed, fmt.Errorf("declared fixture custody did not drain: owned fixtures stayed live through %d censuses after SIGKILL (%s)",
+		fixtureDrainCensuses, now().Sub(started).Round(time.Millisecond))
 }
 
 // drainResourceGroup signals only identities actually observed in the live
@@ -411,7 +408,34 @@ func (spools *custodySpools) finish() error {
 	return spools.finishErr
 }
 
-func startResourceCustody(options LaunchOptions, parent identity.Ref, donePath string, files []*os.File, spools *custodySpools) (*resourceCustody, error) {
+// awaitReadyLine decides a start handshake on facts, never on elapsed time.
+// The child writes its ready line before anything else and starts no process
+// first, and the parent closed its own write end after Start, so the child
+// holds the only lasting copy: its exit, before or after an invalid report,
+// reaches the reader as EOF. A copy a concurrent fork in this process holds
+// lasts only until that child execs. A loaded host can delay the report by
+// any amount; stop is the caller's cancellation (nil when it has none).
+func awaitReadyLine(ready io.Reader, stop <-chan struct{}, who string) error {
+	result := make(chan error, 1)
+	go func() {
+		line, err := bufio.NewReader(ready).ReadString('\n')
+		switch {
+		case err != nil:
+			err = fmt.Errorf("%s exited before reporting ready: %w", who, err)
+		case line != "ready\n":
+			err = fmt.Errorf("%s readiness is invalid", who)
+		}
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		return err
+	case <-stop:
+		return fmt.Errorf("%s start was cancelled before it reported ready", who)
+	}
+}
+
+func startResourceCustody(options LaunchOptions, parent identity.Ref, donePath string, files []*os.File, spools *custodySpools, stop <-chan struct{}) (*resourceCustody, error) {
 	controlRead, controlWrite, err := os.Pipe()
 	if err != nil {
 		return nil, err
@@ -477,29 +501,12 @@ func startResourceCustody(options LaunchOptions, parent identity.Ref, donePath s
 	spools.close()
 	controlRead.Close()
 	readyWrite.Close()
-	readyResult := make(chan error, 1)
-	go func() {
-		line, err := bufio.NewReader(readyRead).ReadString('\n')
-		if err == nil && line != "ready\n" {
-			err = fmt.Errorf("resource custodian readiness is invalid")
-		}
-		readyResult <- err
-	}()
-	select {
-	case err := <-readyResult:
-		if err != nil {
-			controlWrite.Close()
-			readyRead.Close()
-			_ = command.Process.Kill()
-			_ = command.Wait()
-			return nil, err
-		}
-	case <-time.After(5 * time.Second):
+	if err := awaitReadyLine(readyRead, stop, "resource custodian"); err != nil {
 		controlWrite.Close()
 		readyRead.Close()
 		_ = command.Process.Kill()
 		_ = command.Wait()
-		return nil, fmt.Errorf("resource custodian did not become ready")
+		return nil, err
 	}
 	readyRead.Close()
 	leader, state, probeErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
@@ -661,21 +668,8 @@ func prepareCustodyExec(command *exec.Cmd, engine string) (*custodyBarrier, erro
 	return &custodyBarrier{ready: readyRead, release: releaseWrite}, nil
 }
 
-func (barrier *custodyBarrier) await() error {
-	result := make(chan error, 1)
-	go func() {
-		line, err := bufio.NewReader(barrier.ready).ReadString('\n')
-		if err == nil && line != "ready\n" {
-			err = fmt.Errorf("resource worker readiness is invalid")
-		}
-		result <- err
-	}()
-	select {
-	case err := <-result:
-		return err
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("resource worker did not reach its start barrier")
-	}
+func (barrier *custodyBarrier) await(stop <-chan struct{}) error {
+	return awaitReadyLine(barrier.ready, stop, "resource worker")
 }
 
 func (barrier *custodyBarrier) releaseWork() error {
@@ -780,7 +774,7 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 	if scratch != nil && scratch.Writer() != nil {
 		custodyFiles = append(append([]*os.File{}, files...), scratch.Writer())
 	}
-	custody, err := startResourceCustody(LaunchOptions{WatchdogExecutable: engine}, parent.Ref(), "", custodyFiles, nil)
+	custody, err := startResourceCustody(LaunchOptions{WatchdogExecutable: engine}, parent.Ref(), "", custodyFiles, nil, ctx.Done())
 	if err != nil {
 		if len(files) != 0 {
 			_ = MarkHostResourcesClean(files)
@@ -833,7 +827,7 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 		custodyErr := finish()
 		return nil, nil, identity.Ref{}, errors.Join(err, command.Wait(), custodyErr)
 	}
-	if err := barrier.await(); err != nil {
+	if err := barrier.await(ctx.Done()); err != nil {
 		return abort(err)
 	}
 	exact, state, err := (identity.KernelProber{}).Probe(int64(command.Process.Pid))

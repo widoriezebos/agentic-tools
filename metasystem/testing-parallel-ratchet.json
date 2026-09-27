@@ -103,6 +103,26 @@
   },
   "exempt": [
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestReserveCensusReadsOnlyItsOwnAdmissionNamespace",
+      "reason": "changes the process-wide host admission directory seam"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchInheritedWriterLockOutlivesTheLaunchersCopy",
+      "reason": "starts its own writer child while the scratch writer is open and then proves the lock free, so forks cannot be excluded; a parallel test's fork would hold a copy of the writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchCustodianHoldsTheWriterAfterTheWorkloadClosesIt",
+      "reason": "starts its own writer child while the scratch writer is open and then proves the lock free, so forks cannot be excluded; a parallel test's fork would hold a copy of the writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestScratchWorkerProcessAppendsThroughTheInheritedWriter",
+      "reason": "starts its own writer child while the scratch writer is open and then proves the lock free, so forks cannot be excluded; a parallel test's fork would hold a copy of the writer description until it execs"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestBatchLandingRehearsalOnRealOrigin",
       "reason": "drives the production batch command through its process environment clock and helper controls and owns SIGUSR1 handling"

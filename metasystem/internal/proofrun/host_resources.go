@@ -290,9 +290,7 @@ func validateHostLockFile(path string, file *os.File) error {
 
 func proveInheritedHostLock(file *os.File) error {
 	probe, acquired, err := tryHostFile(file.Name())
-	if probe != nil {
-		_ = probe.Close()
-	}
+	_ = releaseHostProbe(probe)
 	if err != nil || acquired {
 		return fmt.Errorf("proof resource lease is not live: %v", err)
 	}
@@ -302,6 +300,20 @@ func proveInheritedHostLock(file *os.File) error {
 		return fmt.Errorf("proof resource descriptor does not hold its lock: %w", err)
 	}
 	return nil
+}
+
+// releaseHostProbe releases a lock this process took only for itself: the
+// admission guard or a census probe. Close alone is not a release. A child
+// forked by any goroutine between this open and that child's exec holds a
+// duplicate of the description, and the flock stays held until the child
+// execs, so the next acquisition here or in another process reads busy.
+// LOCK_UN releases the description itself, duplicates included. Never use it
+// for a lease file a worker inherits on purpose (HostResourceLease.Close).
+func releaseHostProbe(file *os.File) error {
+	if file == nil {
+		return nil
+	}
+	return errors.Join(syscall.Flock(int(file.Fd()), syscall.LOCK_UN), file.Close())
 }
 
 func closeHostFiles(files []*os.File) {
@@ -350,7 +362,7 @@ func activeHostResourceSlots(directory string) (int, error) {
 			return 0, err
 		}
 		if acquired {
-			_ = file.Close()
+			_ = releaseHostProbe(file)
 		} else {
 			count++
 		}
@@ -395,15 +407,15 @@ func hostLeaseStateWithReclaim(directory string, reclaim bool) (int, map[string]
 		// and this flock. Decide reclamation from the now-locked inode.
 		record, _, err = readHostLeaseRecord(file)
 		if err != nil {
-			file.Close()
+			_ = releaseHostProbe(file)
 			return 0, nil, err
 		}
 		if record.Cleared && reclaim {
 			if err := os.Remove(path); err != nil {
-				file.Close()
+				_ = releaseHostProbe(file)
 				return 0, nil, err
 			}
-			file.Close()
+			_ = releaseHostProbe(file)
 			continue
 		}
 		if !record.Cleared {
@@ -414,7 +426,7 @@ func hostLeaseStateWithReclaim(directory string, reclaim bool) (int, map[string]
 				named[resource] = true
 			}
 		}
-		file.Close()
+		_ = releaseHostProbe(file)
 	}
 	return dirty, named, nil
 }
@@ -641,14 +653,20 @@ func resourceLegacyLauncherCount(controlRoot string) (int, bool, error) {
 // its own admission authority changes. The check runs before each retry;
 // callers still revalidate authority after acquiring capacity.
 func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPath, class string, exclusive []string, check func() error) (*HostResourceLease, error) {
+	directory, err := hostAdmissionDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return acquireHostResourcesIn(ctx, directory, controlRoot, confPath, class, exclusive, check)
+}
+
+// acquireHostResourcesIn acquires in one explicit admission namespace, so a
+// parallel test owns its namespace without replacing the package default.
+func acquireHostResourcesIn(ctx context.Context, directory, controlRoot, confPath, class string, exclusive []string, check func() error) (*HostResourceLease, error) {
 	if class != "cheap" && class != "heavy" {
 		return nil, fmt.Errorf("unknown proof resource class %q", class)
 	}
 	resources, err := hostResourceNames(exclusive)
-	if err != nil {
-		return nil, err
-	}
-	directory, err := hostAdmissionDirectory()
 	if err != nil {
 		return nil, err
 	}
@@ -687,7 +705,7 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 		}
 		_, dirtyNamed, err := hostLeaseStateWithReclaim(directory, true)
 		if err != nil {
-			guard.Close()
+			_ = releaseHostProbe(guard)
 			return nil, err
 		}
 		files := make([]*os.File, 0, len(resources)+1)
@@ -704,7 +722,7 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 			file, acquired, lockErr := tryHostFile(hostResourcePath(directory, resource))
 			if lockErr != nil {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, lockErr
 			}
 			if !acquired {
@@ -718,7 +736,7 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 			active, countErr := activeHostResourceSlots(directory)
 			if countErr != nil || censusErr != nil || !known {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				if !known && censusErr == nil {
 					censusErr = errors.New("process rows are unknown")
 				}
@@ -733,7 +751,7 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 					slot, acquired, lockErr := tryHostFile(filepath.Join(directory, fmt.Sprintf("slot-%02d", index)))
 					if lockErr != nil {
 						closeHostFiles(files)
-						guard.Close()
+						_ = releaseHostProbe(guard)
 						return nil, lockErr
 					}
 					if acquired {
@@ -750,13 +768,13 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 			var nonce [16]byte
 			if _, err := rand.Read(nonce[:]); err != nil {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, err
 			}
 			marker, acquired, markerErr := tryHostFile(filepath.Join(directory, "lease-"+class+"-"+hex.EncodeToString(nonce[:])))
 			if markerErr != nil || !acquired {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, fmt.Errorf("create proof resource lease marker: %v", markerErr)
 			}
 			files = append(files, marker)
@@ -767,7 +785,7 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 			owner, ownerErr := CurrentProcessIdentity(nil)
 			if ownerErr != nil {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, ownerErr
 			}
 			slot := ""
@@ -781,32 +799,32 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 			encoded, encodeErr := json.Marshal(record)
 			if encodeErr != nil {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, encodeErr
 			}
 			if len(encoded) > hostLeaseRecordMaxBytes || validHostLeaseRecord(marker.Name(), record) != nil {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, fmt.Errorf("proof resource lease claim is invalid or too large")
 			}
 			info, statErr := marker.Stat()
 			if statErr != nil || info.Size() != 0 {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, fmt.Errorf("proof resource lease marker already contains a claim: %v", statErr)
 			}
 			if _, writeErr := marker.Write(encoded); writeErr != nil {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, writeErr
 			}
 			if syncErr := setHostLeaseCleared(marker, encoded, true); syncErr != nil {
 				closeHostFiles(files)
-				guard.Close()
+				_ = releaseHostProbe(guard)
 				return nil, syncErr
 			}
 		}
-		guard.Close()
+		_ = releaseHostProbe(guard)
 		if available {
 			return &HostResourceLease{files: files, waited: time.Since(started)}, nil
 		}

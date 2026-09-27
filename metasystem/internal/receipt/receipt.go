@@ -295,7 +295,7 @@ func Add(opts Options) Result {
 			home = abs
 		}
 		result.Err = append(result.Err, fmt.Sprintf(
-			"note: a metasystem retro is due in %s — run skills/retro (metasystem receipt check for details)", home))
+			"note: a metasystem retro is due in %s — run skills/retro (metasystem receipt status for details)", home))
 	}
 	return result
 }

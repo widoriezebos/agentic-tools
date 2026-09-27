@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -26,6 +27,11 @@ const proofAdmissionFixtureMax = 4
 
 type proofBinaryFixture struct {
 	t *testing.T
+	// admission is this fixture's own host admission namespace, set when its
+	// root authorizes fixture mode. Without it the child reserves in the
+	// account's real ~/.metasystem/proof-admission (user.Current, not HOME),
+	// shared with every parallel fixture and every real proof run on the host.
+	admission, root string
 }
 
 // pinProofBinaryFixture is the one writer of proof admission isolation for
@@ -65,7 +71,11 @@ func pinProofBinaryFixture(t *testing.T, root string) proofBinaryFixture {
 			t.Fatalf("write proof fixture admission pin: %v", err)
 		}
 	}
-	return proofBinaryFixture{t: t}
+	fixture := proofBinaryFixture{t: t, root: root}
+	if fixtureauth.FixtureModeRoot(root) {
+		fixture.admission = filepath.Join(t.TempDir(), "proof-admission")
+	}
+	return fixture
 }
 
 func (fixture proofBinaryFixture) command(environment []string, executable string, args ...string) *exec.Cmd {
@@ -78,11 +88,17 @@ func (fixture proofBinaryFixture) commandWithHostLoad(hostLaunchers string, envi
 		environment = os.Environ()
 	}
 	prefix := proofrun.TestHostLoadEnvironment + "="
-	isolated := make([]string, 0, len(environment))
+	isolated := make([]string, 0, len(environment)+2)
+	selected := false
 	for _, entry := range environment {
 		if !strings.HasPrefix(entry, prefix) {
 			isolated = append(isolated, entry)
 		}
+		selected = selected || strings.HasPrefix(entry, "METASYSTEM_PROOF_ADMISSION_TEST_DIR=")
+	}
+	if fixture.admission != "" && !selected {
+		isolated = append(isolated, "METASYSTEM_PROOF_ADMISSION_TEST_DIR="+fixture.admission,
+			"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+fixture.root)
 	}
 	command := exec.Command(executable, args...)
 	command.Args[0] = proofrun.TestHostLoadCommandName(hostLaunchers)

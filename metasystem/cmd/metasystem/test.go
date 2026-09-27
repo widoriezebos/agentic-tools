@@ -173,19 +173,35 @@ func runTestCheck(args []string) int {
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test check --root INSTALLATION [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem settings check [--repo INSTALLATION]")
 		return 2
 	}
-	installation, contract, path, err := loadPhysicalTestingContract(*root)
+	path, groups, err := testingContractReady(*root, true)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test check:", err)
+		fmt.Fprintln(os.Stderr, "testing contract:", err)
 		return 1
+	}
+	if *jsonOutput {
+		printJSON(map[string]any{"schemaVersion": 1, "status": "ready", "contract": path, "groupCount": groups})
+	} else {
+		fmt.Printf("TEST-CONTRACT READY groups=%d contract=%s\n", groups, path)
+	}
+	return 0
+}
+
+// testingContractReady validates the committed testing contract and its
+// declared tools without running a test; with discovery it also resolves
+// every group's native tests under the host's heavy resource lease.
+func testingContractReady(root string, discovery bool) (string, int, error) {
+	installation, contract, path, err := loadPhysicalTestingContract(root)
+	if err != nil {
+		return "", 0, err
 	}
 	projectRoot, err := (gittree.Workspace{Dir: installation}).TopLevel()
 	if err == nil {
 		err = checkTestingTools(projectRoot, contract)
 	}
-	if err == nil {
+	if err == nil && discovery {
 		ctx := context.Background()
 		lease, leaseErr := proofrun.AcquireHostResources(ctx, installation,
 			filepath.Join(installation, "metasystem.conf"), "heavy", nil)
@@ -198,15 +214,9 @@ func runTestCheck(args []string) int {
 		}
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test check:", err)
-		return 1
+		return "", 0, err
 	}
-	if *jsonOutput {
-		printJSON(map[string]any{"schemaVersion": 1, "status": "ready", "contract": path, "groupCount": len(contract.Groups)})
-	} else {
-		fmt.Printf("TEST-CONTRACT READY groups=%d contract=%s\n", len(contract.Groups), path)
-	}
-	return 0
+	return path, len(contract.Groups), nil
 }
 
 func runTestPlan(args []string) int {
@@ -2421,13 +2431,13 @@ func runTestVerify(args []string) int {
 		return status
 	}
 	if request.Tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test verify --root INSTALLATION [--goal ID] --tree TREE [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem test status --tree TREE [--goal ID] [--root INSTALLATION] [--json]")
 		return 2
 	}
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
 		printMovedProofInputsWithoutCandidateEngine(request)
-		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
+		fmt.Fprintln(os.Stderr, "metasystem test status:", err)
 		return 1
 	}
 	if jsonOutput {

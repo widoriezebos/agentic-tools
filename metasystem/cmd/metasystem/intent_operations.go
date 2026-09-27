@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
@@ -132,23 +133,26 @@ var (
 	intentTreePattern   = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 )
 
-var repairGoalsOptions = []string{"accept-edits", "refresh", "upgrade", "accept-remote-history", "source-digest", "amendments", "identity", "sync-mode", "by"}
+var goalSyncOptions = []string{"recover", "refresh", "publish", "goal", "upgrade", "accept-remote-history", "source-digest", "amendments", "identity", "sync-mode", "by"}
 
-// runIntentRepairGoals is repair goals and its explicit human choices.
-func runIntentRepairGoals(inv *intentInvocation) int {
-	choice, problem := inv.exclusiveChoice("accept-edits", "refresh", "upgrade", "accept-remote-history")
+// runIntentGoalSync previews the goal files against their published base,
+// or carries out the one explicit mode it is given.
+func runIntentGoalSync(inv *intentInvocation) int {
+	choice, problem := inv.exclusiveChoice("recover", "refresh", "publish", "upgrade", "accept-remote-history")
 	if problem == nil {
 		switch choice {
-		case "":
-			problem = inv.refuseOthers(nil, repairGoalsOptions...)
-		case "accept-edits", "accept-remote-history":
-			if problem = inv.refuseOthers([]string{choice, "by"}, repairGoalsOptions...); problem == nil {
+		case "", "recover", "refresh":
+			problem = inv.refuseOthers([]string{choice}, goalSyncOptions...)
+		case "publish":
+			if problem = inv.refuseOthers([]string{"publish", "goal", "by"}, goalSyncOptions...); problem == nil {
+				problem = inv.requireInputs("goal", "by")
+			}
+		case "accept-remote-history":
+			if problem = inv.refuseOthers([]string{choice, "by"}, goalSyncOptions...); problem == nil {
 				problem = inv.requireInputs("by")
 			}
-		case "refresh":
-			problem = inv.refuseOthers([]string{"refresh"}, repairGoalsOptions...)
 		case "upgrade":
-			if problem = inv.refuseOthers([]string{"upgrade", "source-digest", "amendments", "identity", "sync-mode", "by"}, repairGoalsOptions...); problem == nil {
+			if problem = inv.refuseOthers([]string{"upgrade", "source-digest", "amendments", "identity", "sync-mode", "by"}, goalSyncOptions...); problem == nil {
 				problem = inv.requireInputs("by")
 			}
 			if mode := inv.input.text("sync-mode"); problem == nil && mode != "" && mode != "remote" && mode != "local" {
@@ -161,6 +165,9 @@ func runIntentRepairGoals(inv *intentInvocation) int {
 	}
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	if choice == "" {
+		return runIntentGoalSyncPreview(inv)
 	}
 	if choice == "upgrade" {
 		// Upgrading reads the legacy ledger, which a synced installation no
@@ -175,7 +182,7 @@ func runIntentRepairGoals(inv *intentInvocation) int {
 	targets := []intentTarget{{Kind: "installation", ID: inv.layout.InstallationRoot}}
 	scope := map[string]any{"scope": "installation", "stateRoot": inv.stateRoot}
 	switch choice {
-	case "":
+	case "recover":
 		reports, err := recoverGoalJournal(inv.stateRoot, inv.owners.commandNow, inv.owners.dependencies)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: scope,
@@ -193,12 +200,18 @@ func runIntentRepairGoals(inv *intentInvocation) int {
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: scope, text: lines,
 			Summary: fmt.Sprintf("recovered %d stranded journal entr(ies) across this whole installation; live owners were left alone", len(reports))})
-	case "accept-edits":
-		ran, problem := inv.engineVerb("goal", "reconcile", "--root", inv.stateRoot, "--by", inv.input.text("by"))
+	case "publish":
+		goals := inv.input.values["goal"]
+		args := []string{"goal", "reconcile", "--root", inv.stateRoot, "--by", inv.input.text("by")}
+		for _, id := range goals {
+			args = append(args, "--id", id)
+		}
+		ran, problem := inv.engineVerb(args...)
 		if problem != nil {
 			return inv.render(*problem)
 		}
-		return inv.render(ownerVerbResult(ran, targets, "the reviewed local goal edits were reconciled against their base and republished", scope))
+		scope["goals"] = goals
+		return inv.render(ownerVerbResult(ran, targets, fmt.Sprintf("the reviewed edits of %s were reconciled against their base and republished", strings.Join(goals, ", ")), scope))
 	case "refresh":
 		ran, problem := inv.engineVerb("goal", "reconcile", "--root", inv.stateRoot, "--refresh-only")
 		if problem != nil {
@@ -230,7 +243,7 @@ func runIntentRepairUpgrade(inv *intentInvocation, targets []intentTarget, scope
 	if !inv.input.has("source-digest") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Data: scope,
 			Summary:  fmt.Sprintf("the upgrade runs only on reviewed bytes; %s now has SHA-256 %s; nothing was done", source, current),
-			Decision: "review that file, then repeat with --source-digest " + current + " (and --amendments FILE when goals must be added or amended; see metasystem help repair)"})
+			Decision: "review that file, then repeat with --source-digest " + current + " (and --amendments FILE when goals must be added or amended; see metasystem help goal sync)"})
 	}
 	if digest := inv.input.text("source-digest"); digest != current {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: scope,
@@ -252,16 +265,6 @@ func runIntentRepairUpgrade(inv *intentInvocation, targets []intentTarget, scope
 	return inv.render(ownerVerbResult(ran, targets, "the legacy goals file was upgraded to the synced ledger", scope))
 }
 
-// runIntentRepairWaits reports this checkout's durable wait continuations,
-// checked against the checkout holder's session when one is named.
-func runIntentRepairWaits(inv *intentInvocation) int {
-	if problem := inv.selectRoot(); problem != nil {
-		return inv.render(*problem)
-	}
-	result := inv.recoverWaits()
-	return inv.render(result)
-}
-
 // runIntentRepairMission applies a person's typed resolution of one recorded
 // workspace problem through the mission runner.
 func runIntentRepairMission(inv *intentInvocation, mission string) int {
@@ -269,7 +272,7 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	if problem == nil && choice == "" {
 		problem = &intentResult{Outcome: intentRefused, code: 2,
 			Summary:  "repair mission needs the person's decision: --confirm-restored TREE or --accept-workspace --waive CLAIM...; nothing was done",
-			Decision: "see metasystem help repair"}
+			Decision: "see metasystem help mission repair"}
 	}
 	if problem == nil {
 		problem = inv.requireInputs("problem", "by", "reason")
@@ -367,10 +370,9 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 		Summary: "the coordinator declaration is unreadable: " + state.Reason, next: inv.publicArgv("system", "check"), nextReason: "diagnose the declaration"})
 }
 
-func runIntentCheckGoals(inv *intentInvocation) int {
-	if inv.input.has("installation") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "check goals reads the selected repository; --installation belongs to the machinery check; nothing was done"})
-	}
+// runIntentGoalSyncPreview lists the goal files that differ from their
+// published base, changing nothing.
+func runIntentGoalSyncPreview(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
@@ -387,16 +389,32 @@ func runIntentCheckGoals(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the goal files cannot be compared with their published base: " + err.Error()})
 	}
 	lines := make([]string, 0, len(deltas))
+	var edited []string
 	for _, delta := range deltas {
 		lines = append(lines, fmt.Sprintf("  %s %s", delta.Kind, delta.Path))
+		if id := goalFileID(delta.Path); id != "" && !slices.Contains(edited, id) {
+			edited = append(edited, id)
+		}
 	}
-	data := map[string]any{"base": base, "edits": deltas}
+	data := map[string]any{"base": base, "edits": deltas, "goals": edited}
 	if len(deltas) == 0 {
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: "the goal files match their published base; there are no hand edits"})
 	}
+	publish := []string{"goal", "sync", "--publish"}
+	for _, id := range edited {
+		publish = append(publish, "--goal", id)
+	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: lines,
 		Summary: fmt.Sprintf("%d goal file(s) differ from their published base %s; nothing was changed", len(deltas), shortSHA(base)),
-		next:    inv.publicArgv("goal", "repair", "--accept-edits", "--by", "NAME"), nextReason: "a person publishes these reviewed edits"})
+		next:    inv.publicArgv(append(publish, "--by", "NAME")...), nextReason: "a person publishes these reviewed edits, naming each goal"})
+}
+
+// goalFileID is the goal a ledger file path belongs to, or empty.
+func goalFileID(path string) string {
+	if !strings.HasSuffix(path, ".md") || strings.HasSuffix(path, "/backlog.md") {
+		return ""
+	}
+	return strings.TrimSuffix(filepath.Base(path), ".md")
 }
 
 // runIntentShowRecords shows the project's own records through the project

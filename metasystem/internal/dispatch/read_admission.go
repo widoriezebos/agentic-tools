@@ -248,9 +248,9 @@ func CritiqueReadAdmissionForGoal(repoRoot, role, rootJob, goalID string, round 
 }
 
 func redundantReadError(result ReadAdmissionResult, prior cleanReadCandidate, detail string) error {
-	next := fmt.Sprintf("next: metasystem work close j2:%s", prior.root)
+	next := fmt.Sprintf("next: metasystem work finish j2:%s", prior.root)
 	if prior.closedLive {
-		next = fmt.Sprintf("next: metasystem work close j2:%s --evidence %s; completion still checks terminal coverage and required evidence", prior.read.Subject.ImplementerRoot, prior.root)
+		next = fmt.Sprintf("next: metasystem work finish j2:%s --evidence %s; completion still checks terminal coverage and required evidence", prior.read.Subject.ImplementerRoot, prior.root)
 	} else if prior.latestRound > prior.read.Round {
 		next = fmt.Sprintf("critic root %s now has later round %d, so clean read round %d cannot close that newer state; resolve and revise the later work before dispatching another equal read", prior.root, prior.latestRound, prior.read.Round)
 	} else if !prior.closeable {

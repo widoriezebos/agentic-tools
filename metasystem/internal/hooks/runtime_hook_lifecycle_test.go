@@ -207,8 +207,8 @@ func TestReceiptEventSurfacesTheRetroCadence(t *testing.T) {
 		want   string
 	}{
 		{0, ""},
-		{1, `{"systemMessage":"Metasystem retro due: run metasystem receipt check for details, then skills/retro."}` + "\n"},
-		{2, `{"systemMessage":"Metasystem receipt check errored; run metasystem receipt check to see why."}` + "\n"},
+		{1, `{"systemMessage":"Metasystem retro due: run metasystem receipt status for details, then skills/retro."}` + "\n"},
+		{2, `{"systemMessage":"Metasystem receipt check errored; run metasystem receipt status to see why."}` + "\n"},
 	} {
 		installation := newHookInstallation(t)
 		ops := newFakeOps(t, installation)
