@@ -430,7 +430,12 @@ func TestTheSkillTellsThePartnerToPropose(t *testing.T) {
 	t.Parallel()
 	skill := partner.Skill()
 	for _, said := range []string{
-		"Call `propose` once per action with the act, the goal, its fields and why",
+		"Call `propose` once per action, beside the answer you give in words",
+		// The grammar it speaks: the public action and its own flags, with the
+		// command's own help as the place to read them (g1-s62 D4).
+		"the goal action's public name, the goal, the action's own flags as " +
+			"`metasystem goal ACTION --help` shows them",
+		"the interface has nine of those actions today and the tool names them",
 		"Words alone propose nothing.",
 		"do not do it and do not say it is done",
 		"the card under your answer is the only place one is applied",
