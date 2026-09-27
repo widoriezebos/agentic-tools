@@ -1,7 +1,6 @@
 package supervisor
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -15,9 +14,9 @@ import (
 	"time"
 )
 
-// The Devin ACP wire plumbing shared by the delegate supervisor and the
-// mission host turn: the per-attempt fifo pair and the server child. The
-// shell adapters launched the server as a subshell that opened its stdout
+// The protocol transport's wire plumbing (ACP), shared by every runtime that
+// declares a protocol launch, in the delegate round and the mission host
+// turn: the per-attempt fifo pair and the server child. The shell adapters launched the server as a subshell that opened its stdout
 // fifo FIRST and its stdin fifo SECOND, blocking in each open until the
 // `acp turn` client opened the matching side; that pairing was the deadlock
 // contract. The client is now in process (acp.RunFileTurn in a goroutine),
@@ -80,12 +79,12 @@ func (p *ACPPipes) Make() error {
 	return nil
 }
 
-// ServerCommand builds the ACP server child: DEVIN acp, run in dir with
-// argv0 set to argv0 (the census signature reads it; the binary ignores
-// it), stdout into the server-out fifo, stdin from the server-in fifo,
-// stderr to the given log. The fifo ends are opened here, without blocking,
-// with their keepers; call Started after the command starts.
-func (p *ACPPipes) ServerCommand(devinPath, argv0, dir string, env []string, stderr io.Writer) (*exec.Cmd, error) {
+// ServerCommand builds the protocol server child: program with args, run in
+// dir with argv[0] set to argv0 (the census signature reads it; the binary
+// ignores it), stdout into the server-out fifo, stdin from the server-in
+// fifo, stderr to the given log. The fifo ends are opened here, without
+// blocking, with their keepers; call Started after the command starts.
+func (p *ACPPipes) ServerCommand(program, argv0 string, args []string, dir string, env []string, stderr io.Writer) (*exec.Cmd, error) {
 	outKeeper, err := os.OpenFile(p.ServerOut, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
@@ -118,7 +117,7 @@ func (p *ACPPipes) ServerCommand(devinPath, argv0, dir string, env []string, std
 		return nil, err
 	}
 	p.childEnds = append(p.childEnds, serverStdin)
-	command := exec.Command(devinPath, "acp")
+	command := exec.Command(program, args...)
 	command.Args[0] = argv0
 	command.Dir = dir
 	command.Env = env
@@ -191,26 +190,4 @@ func (p *ACPPipes) Remove() {
 	p.Release()
 	os.Remove(p.ServerOut)
 	os.Remove(p.ServerIn)
-}
-
-// startInProcessChild runs fn as a supervised child of this process: the
-// in-process ACP client. It answers alive/wait/terminate like a process
-// child; terminating it cancels its context (the courtesy session/cancel
-// and the typed cancelled outcome still happen) and waits for it to return.
-// Its pid is the supervisor's own: no separate process exists.
-// A client blocked opening a fifo cannot see its cancellation, so stopping
-// it also unblocks the pipes until it returns.
-func startInProcessChild(pid int, pipes *ACPPipes, fn func(ctx context.Context) int) *child {
-	ctx, cancel := context.WithCancel(context.Background())
-	c := &child{pid: pid, done: make(chan struct{})}
-	c.stop = func() {
-		cancel()
-		go pipes.Unblock(c.done)
-	}
-	go func() {
-		c.status = fn(ctx)
-		cancel()
-		close(c.done)
-	}()
-	return c
 }

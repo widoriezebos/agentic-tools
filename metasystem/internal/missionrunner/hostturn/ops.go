@@ -36,7 +36,15 @@ func runHostOps(t *Turn, ops supervisor.Operations) int {
 			return 3
 		}
 	}
-	status := supervisor.RunHostCLI(d, turn, launch, t.Path("host.log"))
+	var status int
+	if launch.Protocol != nil {
+		var exit *int
+		if status, exit = supervisor.RunHostProtocol(d, turn, launch); exit != nil {
+			return *exit
+		}
+	} else {
+		status = supervisor.RunHostCLI(d, turn, launch, t.Path("host.log"))
+	}
 	final, err := ops.Finalize(turn, supervisor.FinalInput{Launch: launch, Status: status, Usage: t.Path("usage.json")})
 	if err != nil {
 		fmt.Fprintln(d.Stderr, err)
