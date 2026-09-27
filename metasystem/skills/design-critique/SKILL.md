@@ -68,8 +68,9 @@ Round 2 folded with no material finding closes the loop. Round 2 folded with onl
 
 For code critique and the warden, only an approved token raising the goal's
 five-member tuple can raise its stored review-round member, and the three-round
-ceiling still applies; the next `metasystem work review` or `metasystem design review` of an open chain carries the
-raised member onto its root. When their rounds are spent, closing the review (inside `metasystem work review`)
+ceiling still applies; the chain's next follow-up (`metasystem design review FILE --dispositions`, `metasystem work revise
+j2:<review>`) or close (`metasystem work review j2:<job> --dispositions`, `metasystem work finish`) first carries the raised
+member onto its root. When their rounds are spent, closing the review (inside `metasystem work review`)
 defers exhausted bounded findings into review obligations on the goal (`metasystem work review <goal> --review R --finding F --test NAME` discharges them later against the chain,
 artifact and test that carry them) or closes after a human records `metasystem goal accept-risk <goal> --finding F --review R --reason <text>`; whenever a severe or unproven finding remains, stop with the
 design waiting on the human. Never dispatch a silent fourth round.

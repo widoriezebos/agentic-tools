@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -87,5 +88,42 @@ func TestIntentDoneJobRefusesALaunch(t *testing.T) {
 	// refused by the goal's own owner, with nothing closed.
 	if code, result := b.runJSON(owners, "work", "finish", "solo-1"); code == 0 || result.Outcome != intentRefused || len(b.calls) != 0 || b.publications() != before {
 		t.Fatalf("work finish solo-1 = code %d %+v", code, result)
+	}
+}
+
+// TestIntentCloseRebindsTheChainBudgetFirst (U1d read F-1): the close of a
+// chain carries the goal's review-round limit onto its critic registers
+// before the close owner runs, and a rebind that fails is refused with the
+// owner never started.
+func TestIntentCloseRebindsTheChainBudgetFirst(t *testing.T) {
+	t.Parallel()
+	b := newDeliveryBed(t)
+	b.writeJob(map[string]any{"jobId": "inv1", "role": "investigator", "status": "completed", "round": 1, "parentJob": nil})
+	var rebound []string
+	failing := false
+	b.owners.rebind = func(root, job string) (map[string]string, error) {
+		rebound = append(rebound, job)
+		if failing {
+			return nil, errors.New("fixture rebind failure")
+		}
+		return map[string]string{}, nil
+	}
+	b.handler = func(process intentProcess) intentProcessResult {
+		if !slices.Equal(rebound, []string{"inv1"}) {
+			t.Fatalf("the close owner ran before the rebind: %v", rebound)
+		}
+		record := b.job("inv1")
+		record["chainClosed"] = true
+		b.writeJob(record)
+		return intentProcessResult{}
+	}
+	failing = true
+	if code, result := b.do("work", "finish", "j2:inv1"); code != 1 || result.Outcome != intentRefused || len(b.calls) != 0 ||
+		!strings.Contains(result.Summary, "fixture rebind failure") {
+		t.Fatalf("a failed rebind = code %d %+v calls %v", code, result, b.calls)
+	}
+	failing, rebound = false, nil
+	if code, result := b.do("work", "finish", "j2:inv1"); code != 0 || result.Outcome != intentConfirmed || len(b.calls) != 1 {
+		t.Fatalf("the close after the rebind = code %d %+v calls %v", code, result, b.calls)
 	}
 }

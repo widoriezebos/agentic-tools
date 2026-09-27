@@ -232,6 +232,10 @@ type intentDeliveryOwners struct {
 	// calls are the owner functions public commands call in this process
 	// (intent_owner_calls.go); nil selects the production owners.
 	calls *intentOwnerCalls
+	// rebind carries the goal's review-round limit onto the critic
+	// registers a review of a chain continues; nil selects the dispatch
+	// owner.
+	rebind func(root, job string) (map[string]string, error)
 }
 
 // intentBranchState is the goal branch as the landing owners read it.
@@ -1000,7 +1004,9 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 		return delegateOutcome{}, &intentResult{Targets: targets, Outcome: intentFailed, Summary: err.Error()}
 	}
 	if len(args) > 1 && args[0] == "--follow-up" {
-		inv.rebindCritiqueBudget(args[1])
+		if problem := inv.rebindCritiqueBudget(targets, args[1]); problem != nil {
+			return delegateOutcome{}, problem
+		}
 	}
 	request := delegateRequest{rootOverride: os.Getenv("METASYSTEM_DELEGATE_ROOT"), engine: binary, args: args, dir: inv.layout.InstallationRoot}
 	ran := ownerCall(func(stdout, stderr io.Writer) int { return inv.ownerCalls().delegate(request, stdout, stderr) })
@@ -1028,20 +1034,22 @@ func (inv *intentInvocation) delegate(targets []intentTarget, args []string) (de
 		Summary: strings.TrimSpace(outcome.Outcome + ": " + outcome.Detail), Data: map[string]any{"delegate": outcome}}
 }
 
-// rebindCritiqueBudget carries the goal's current review-round limit onto a
-// critic chain before the review continues it, so a limit a person raised
-// takes effect without a separate step. It changes nothing when the chain is
-// not a critic's or the limit is already bound; a limit that cannot be
-// resolved is left to the follow-up owner, which refuses in its own words.
-func (inv *intentInvocation) rebindCritiqueBudget(root string) {
-	record, err := inv.jobRecord(root)
-	if err != nil {
-		return
+// rebindCritiqueBudget carries the goal's current review-round limit onto
+// the critic registers a review of root continues, before the follow-up or
+// the close reads it: root itself when it is a critic's, else every code
+// critic or warden reviewing its implementation chain. A limit a person
+// raised then takes effect without a separate step; a rebind that fails is
+// refused in its own words, and nothing is continued or closed.
+func (inv *intentInvocation) rebindCritiqueBudget(targets []intentTarget, root string) *intentResult {
+	rebind := inv.delivery().rebind
+	if rebind == nil {
+		rebind = dispatchcore.CritiqueChainBudgetRebind
 	}
-	switch recordText(record, "role") {
-	case "design-critic", "code-critic", "warden":
-		_, _ = dispatchcore.CritiqueBudgetRebind(inv.layout.InstallationRoot, root)
+	if _, err := rebind(inv.layout.InstallationRoot, root); err != nil {
+		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
+			Summary: fmt.Sprintf("the review-round limit of chain %s could not be carried onto its critic registers: %v; nothing was continued or closed", root, err)}
 	}
+	return nil
 }
 
 func (inv *intentInvocation) collectReview(targets []intentTarget, outcome delegateOutcome) intentResult {
@@ -1358,6 +1366,9 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 	} else if newest, err := inv.newestRound(job); err == nil && !dispatchcore.TerminalStatus(recordText(newest, "status")) {
 		return intentResult{Targets: targets, Outcome: intentInProgress,
 			Summary: fmt.Sprintf("chain %s still has round %s %s", job, recordText(newest, "jobId"), recordText(newest, "status"))}
+	}
+	if problem := inv.rebindCritiqueBudget(targets, job); problem != nil {
+		return *problem
 	}
 	argv := []string{filepath.Join(inv.layout.InstallationRoot, "scripts", "agents", "dispatch.sh"), "close", "--job", job}
 	if evidence := inv.input.text("evidence"); evidence != "" {
