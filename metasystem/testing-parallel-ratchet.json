@@ -723,6 +723,11 @@
       "reason": "clears METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the claim surface reads to recognize a fixture process table"
     },
     {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth",
+      "test": "TestGoalClockFreezesOnlyAFixtureRoot",
+      "reason": "sets the fixture-authorization and frozen goal-clock variables with t.Setenv, the process environment GoalClock reads"
+    },
+    {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/mission",
       "test": "TestU6bPortAssemblePromptNamesTheMissingTurnRecord",
       "reason": "uses promptSandbox, which sets the mission prompt limits with t.Setenv"
