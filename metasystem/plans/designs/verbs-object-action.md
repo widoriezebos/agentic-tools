@@ -487,6 +487,24 @@ an external runtime. Later (U6c read), one line each:
 - F4: adapter trust checks the file only: not the `adapters/` directory's
   owner and mode, not a symlink's target (os.Stat follows it), and the check
   and the exec are separate (a swap between them is not refused).
+- F6: an override may declare its own positive vector and stop claiming the
+  built-in's real CLI while its prepare falls back to the built-in, which then
+  launches that CLI unrecognized; require an override to claim the built-in's
+  positive vector unless it also answers prepare.
+- F7: the cross-check tests declared vectors only; a signature matching a flag
+  real claude or codex processes carry is admitted and, sorting first by name,
+  labels them (both are DELEGATE, so only the runtime label is wrong).
+- F8: the host path skips LookPath for an argv[0] containing '/', so a missing
+  absolute program fails at start instead of with 127.
+- F9 (fixed at U6c): a relative --root no longer hides the installation's
+  external adapters; the entry answers with its usage.
+- F10: every named adapter's describe runs in every recognizing process (hook,
+  census, janitor, settings show, system check), memoized per process only;
+  a cost and exposure to weigh when adapters multiply.
+- F11: still on the compiled runtime set: `internal runtime` list and lookup,
+  the hook's start context, steward context sampling, config tailor, the seat
+  manifest, LocalConfigManifest and runtimes.Lookup itself; route them through
+  the registry when a real external agent is adopted.
 **External runtimes** implement it as an executable at
 `<installation>/adapters/<name>` (any language; an extension point under rule
 S1): `<executable> OPERATION`, JSON request on stdin, JSON response on stdout

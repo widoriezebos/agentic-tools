@@ -521,3 +521,24 @@ func TestDevinPartialOverrideFallsBackToTheBuiltIn(t *testing.T) {
 		t.Fatalf("the override's signature lost the reserved devin acp exclusion: %q", f.stdout.String())
 	}
 }
+
+// TestRelativeRootKeepsExternalsVisible: a relative --root is refused with
+// the usage (2), not as an uninstalled external runtime (read F9).
+func TestRelativeRootKeepsExternalsVisible(t *testing.T) {
+	t.Parallel()
+	f, _ := externalInstall(t, installOptions{})
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(wd, f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := f.run("newagent", "signature", "--root", relative); code != 2 {
+		t.Fatalf("exit %d, want the usage's 2", code)
+	}
+	if got := f.stderr.String(); strings.Contains(got, "not installed") || !strings.Contains(got, "Usage:") {
+		t.Fatalf("stderr = %q, want the usage", got)
+	}
+}

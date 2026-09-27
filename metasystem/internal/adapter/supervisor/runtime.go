@@ -136,7 +136,11 @@ func resolveRuntime(d Deps, name string) (Runtime, error) {
 func registryEntry(d Deps, name string) (external.Entry, error) {
 	root := d.Root
 	if root != "" && !filepath.IsAbs(root) {
-		root = ""
+		absolute, err := filepath.Abs(root)
+		if err != nil {
+			return external.Entry{}, err
+		}
+		root = absolute
 	}
 	reg, err := external.Load(root)
 	if err != nil {

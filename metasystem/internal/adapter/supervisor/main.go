@@ -82,10 +82,17 @@ func Main(args []string, newDeps func(root string) Deps) int {
 		root, rest = rest[1], rest[2:]
 	}
 	d := newDeps(root)
+	lookup := d
 	if root != "" && !filepath.IsAbs(root) {
 		d.Root = ""
+		// The registry still sees the installation's external adapters (a
+		// relative root is refused with the usage below, never as "not
+		// installed").
+		if absolute, err := filepath.Abs(root); err == nil {
+			lookup.Root = absolute
+		}
 	}
-	r, err := resolveRuntime(d, name)
+	r, err := resolveRuntime(lookup, name)
 	if err != nil {
 		fmt.Fprintln(d.Stderr, err)
 		return 2
