@@ -517,3 +517,129 @@ Material findings: 0
 
 Codex session ID: 01a0e17f-960e-7d21-abfe-defd86e14046
 Resume in Codex: codex resume 01a0e17f-960e-7d21-abfe-defd86e14046
+
+---
+
+Revision 8 read: Codex gpt-6-astra, read-only, against 26708ddce.
+
+Static review of `design-r8` at `26708ddce`. No files changed or tests executed; the tests below are proposed fixtures. All cited paths are under the requested checkout.
+
+**VOA-25 — WORK: The external contract cannot supply mission-host turns**
+
+- **Evidence:** [verbs-object-action.md:426](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:426) defines `command` for “one turn of a job” and names only `delegate-supervisor` as its consumer at line 442. [missionrunner/host.go:337](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/missionrunner/host.go:337) independently resolves `hosts/<runtime>.sh`, refuses its absence, and passes `start-turn`, mission, turn, result and resume arguments. [hosts/claude.sh:31](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/hosts/claude.sh:31) constructs a record-less host command; lines 50–55 produce the host result envelope.
+- **Scenario:** Install an external adapter implementing every listed operation and select it as a mission host. Discovery and delegate execution can succeed, but the mission launch still needs a host implementation that the external contract cannot provide. Porting only the four built-in hosts leaves each additional host requiring Go changes.
+- **Change:** Include mission-host turns in the same external interface, with explicit host/delegate context, resume identity, permissions and result semantics. Route `missionrunner` through that interface while retaining its existing lineage and supervision ownership.
+- **Test 1:** Install an executable under a previously unknown runtime name and complete a mission’s first host turn without adding Go registration or a host script.
+- **Test 2:** Resume that mission through the external adapter; verify session continuity, host result and usage records, and cancellation of its owned processes.
+
+**VOA-26 — WORK: The supposedly universal shared layer embeds a runtime permission assumption**
+
+- **Evidence:** [verbs-object-action.md:413](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:413) moves everything in `runtime-common.sh` into an identical shared layer. [runtime-common.sh:144](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/runtime-common.sh:144) calls `effective-workspace`, then checks for widening. [adapter/permissions.go:20](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/permissions.go:20) explicitly assumes the baseline CLIs use their working directory as the write boundary; lines 34–35 replace every nonempty write-root set with the workspace root. The enforcement map contains only `mapped`/`notEnforced` labels, enforced by [adapter/snapshot.go:100](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/snapshot.go:100).
+- **Scenario:** A conforming external runtime supports an exact write root `/repo/package` while working in `/repo`. Its launch can enforce the request, but the shared transformation records `/repo` instead. The subsequent comparison refuses the valid launch. Changing that runtime’s executable cannot correct a mandatory shared transformation.
+- **Change:** Have runtime preparation report the effective permission envelope produced by its settings and command. Keep comparison and refusal shared; keep runtime-specific permission mapping outside the shared layer. The existing workspace rewrite becomes a built-in runtime choice.
+- **Test 1:** An external runtime enforcing a requested subdirectory passes admission without its effective roots being widened to its working directory.
+- **Test 2:** The same adapter reports an actually wider grant; the shared owner refuses before starting the CLI.
+
+**VOA-27 — WORK: Command construction and stdout decoding do not cover the existing runtime lifecycle**
+
+- **Evidence:** [verbs-object-action.md:426](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:426) supplies argv/environment/stdin and an output decoder; line 437 gives that decoder CLI output on stdin, without defining its invocation context or other observation channels. Existing behavior includes settings and a callback command at [adapter/claude.go:122](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/claude.go:122), a prelaunch session baseline at [adapters/devin.sh:535](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:535), live session polling at line 597, and transcript-based usage and identity settlement at lines 641–646. [runtime-common.sh:391](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/runtime-common.sh:391) detects runtime repair/settlement callbacks; lines 427–443 invoke repair, recompute usage and certify the repaired session.
+- **Scenario:** Implement the interface literally for the existing legacy Devin behavior: stdout remains empty while the turn runs, identity comes from session-list comparison, and delivery and usage arrive in files. A stdout-only decoder cannot reproduce those observations from its specified input. Separately, the shared adjudicator has no defined external equivalent of the repair callbacks it currently invokes. Runtime-specific Go branches or an undocumented second lifecycle become necessary.
+- **Change:** Define preparation, observation and finalization inputs explicitly: turn context, generated settings and callback channels, artifact paths, previous usage state, CLI exit status, and repair eligibility. Invoke repair through the same runtime interface, preserving shared adjudication and custody. Merely naming `usage` and handshake events does not define how these facts reach the adapter.
+- **Test 1:** An external fixture emits no stdout before completion, establishes its session through a separate channel, and delivers through a named file; handshake and completion must succeed.
+- **Test 2:** A malformed return triggers one permitted same-session repair; final usage includes repair spend and conflicting transcript identity refuses completion. A transport declaring repair unavailable must make no repair call.
+
+**VOA-28 — WORK: Name non-shadowing does not prevent signature interference; execution trust is unspecified**
+
+- **Evidence:** [verbs-object-action.md:435](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:435) discovers executable files and prohibits only built-in **name** shadowing. It specifies no installer or directory-writer authority, so who may populate that future directory cannot be verified from this proposal. Today [census/fingerprint.go:48](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/census/fingerprint.go:48) directly executes signature providers without setting a reduced execution identity or environment. [census/signature.go:46](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/census/signature.go:46) applies exclusions only within each signature, then chooses the first matching runtime at line 68. [adapters/devin.sh:798](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:798) deliberately excludes `devin acp`; [lease/classify.go:430](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify.go:430) returns `DELEGATE` immediately upon a signature match.
+- **Scenario:** An executable named `devin-compatible` declares the ordinary Devin match but omits its ACP exclusion. It shadows no built-in name. Nevertheless, it claims the host’s `devin acp` intermediary, stopping ancestry classification before the announced main. Built-in-first ordering does not fix this: the built-in deliberately excludes that process.
+- **Change:** Define external installation as a trusted-code authority boundary, including authorized writers and execution authority. Protect runtime recognizer ownership, including reserved helper exclusions; reject conflicting declarations instead of treating unique filenames as sufficient isolation. This finding establishes classification interference, **not** a demonstrated privilege escalation.
+- **Test 1:** Register the conflicting adapter above; admission must reject it, and the existing host’s descendants must still classify through their announced main.
+- **Test 2:** A file supplied outside the authorized installation path must not execute during discovery or lease classification; an authorized, nonconflicting extension must remain discoverable.
+
+**VOA-29 — WORK/SAFE: Runtime signatures are insufficient janitor ownership proofs**
+
+- **Evidence:** [verbs-object-action.md:440](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:440) says janitor recognizers take signatures from the registry. [census/signature.go:17](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/census/signature.go:17) contains only runtime match/exclude patterns. In contrast, [janitor/killproof.go:19](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/janitor/killproof.go:19) requires invocation words and a positioned claim tag, including prefix and path-basename variants. Lines 54–56 declare different tag carriers for Codex, Claude and Devin. [killproof.go:206](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/janitor/killproof.go:206) requires claim-consistent argv in addition to recorded process identity.
+- **Scenario:** An external CLI survives its supervisor. Census recognizes its runtime, but the registry’s classification regex does not say where its claim tag appears. Retaining the current proof refuses cleanup; substituting runtime recognition for that proof would authorize signalling without establishing ownership.
+- **Change:** Distinguish classification signatures from claim-bound invocation shapes in the contract. Supply the latter declaratively—or through a universally recognizable owned wrapper—while keeping kernel identity and signalling decisions in Go. An adapter’s assertion that a process belongs to it must not itself authorize a kill.
+- **Test 1:** Kill the external fixture’s supervisor and verify that janitor identifies and terminates the correctly tagged surviving CLI without runtime-specific Go additions.
+- **Test 2:** Processes with a different claim tag, a tag merely mentioned in another argument, or a reused PID must remain unsignalled.
+
+**VOA-30 — WORK: R13 can pass without proving that a new runtime is usable**
+
+- **Evidence:** [verbs-object-action.md:470](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:470) requires fake equivalence, external listing and recognition. Yet [config/validate.go:170](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/config/validate.go:170) rejects runtimes absent from `runtimes.Supported`; [runtimes/runtimes.go:298](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/runtimes/runtimes.go:298) resolves only compiled declarations. Fake already has a declaration at line 267 and does not source the shared lifecycle, as [adapters/fake.sh:158](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/fake.sh:158) records. The operation list also omits the existing `selftest` entry at [adapters/claude.sh:246](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/claude.sh:246); custom probes currently require Go registration and otherwise refuse at [adapter/probe.go:47](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/probe.go:47).
+- **Scenario:** Fake produces identical records through both interface implementations, and a separate executable appears in discovery. Every specified assertion passes while production configuration still rejects a fifth runtime name. Runtime selftest integration can likewise remain tied to compiled probes.
+- **Change:** Retain differential fake testing, but require a previously unknown runtime identity through production configuration, dispatch and mission paths using an unchanged engine binary. Define the external selftest entry or shared selftest parameters and probe callbacks. Make all relevant consumers use the extensible registry.
+- **Test 1:** Install a uniquely named external helper after building the engine; validate its configuration, dispatch, resume and cancel it, and run a mission-host turn without test-only registry overrides.
+- **Test 2:** Run its selftest with an external custom probe and runtime-specific denial behavior; verify the evidence and permission-denial checks without adding a Go probe registration.
+
+Material findings: 6
+
+Codex session ID: 01a0e1c8-b52d-7172-914c-8506199ca403
+Resume in Codex: codex resume 01a0e1c8-b52d-7172-914c-8506199ca403
+
+---
+
+Revision 8 confirmation: Codex gpt-6-astra, read-only, against 233caaa2b.
+
+The six folds resolve their original failure scenarios. One new **WORK** defect remains in the built-in override rule.
+
+Reviewed `design-r8` at `233caaa2bc260eec97cd0ed24e7bf4eb2967a50f`, exclusively under `/Users/wido/LocalStorage/GitHub/verbs-b3`. Evidence is from source inspection; no builds, tests, file edits, commits, or Git writes were performed.
+
+**VOA-31 — A signature override can discard exclusions required by its built-in fallback**
+
+**Evidence:** The [override rule](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:447) permits replacing `describe` while falling back to built-in operations. The [cross-check](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:451) protects **another runtime’s** positive vectors and reserved exclusions. It does not preserve the displaced implementation’s reservations when both implementations share one runtime name.
+
+This matters for an existing first-use path. Devin’s [reserved lookalike](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/runtimes/runtimes.go:206) is `devin acp`. Its [adapter exclusion](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:798) keeps that host intermediary transparent to ancestry classification. Otherwise, [the classifier](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify.go:433) returns `DELEGATE` before reaching the announced main. The existing [ancestry test](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify_test.go:220) requires the opposite result.
+
+**Scenario:** An authorized `adapters.devin.use=external` override implements `describe`, retains the broad Devin match, supplies `metasystem-devin-lookalike` as its negative vector, and omits the ACP exclusion. It returns 64 for launch operations, retaining the built-in host behavior. Its signature matches none of the other runtimes’ positive or lookalike vectors, so the specified cross-check admits it. The first host tool invocation through `devin acp` is then classified as a delegate and loses its main/holder identity.
+
+Keeping the displaced built-in as a separate competing declaration is insufficient: checking its positive `devin` vector as “another runtime” would reject a legitimate same-name override.
+
+**Required change:** Specify one effective declaration per runtime name, while preserving the built-in helper exclusions required by any retained fallback paths. Check overridden signatures against those reservations without treating legitimate matches of that runtime’s own positive vectors as cross-runtime conflicts. Add an R13 fixture that overrides Devin’s `describe`, falls back for host preparation, and verifies both admission rejection when the ACP exclusion is lost and successful host ancestry classification when it is preserved.
+
+**Materiality:** Changes registry admission and R13 assertions. **WORK fails** without it: a permitted partial override can break the existing mission host’s first tool invocation. This is a classification defect; no privilege escalation is claimed.
+
+**VOA-25 — verified.** The [preparation contract](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:423) now carries host/delegate role, mission and turn context, resume identity, workspace and permissions. The [mission-runner requirement](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:433) explicitly replaces the separate [host-script dependency](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/missionrunner/host.go:337). R13 requires an unknown external runtime to serve a mission host turn. The original missing-consumer failure is resolved.
+
+**VOA-26 — verified.** The [fold](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:429) assigns effective-envelope construction to the runtime and retains comparison and prelaunch refusal in the shared layer. This removes the universal application of [RewriteWriteScope](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/permissions.go:20), which would widen an exact subdirectory grant to the workspace. The existing [comparison owner](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/permissions.go:40) remains applicable to the returned envelope. A partial override of preparation does not, under this contract, bypass that comparison.
+
+**VOA-27 — verified.** The [operation table](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:423) now covers settings, callback channels, artifact observation, finalization, prior usage, observed identity and same-session repair. These cover the previously missing [Devin baseline and live correlation](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:535), [transcript settlement](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:640), and [repair accounting and settlement](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/runtime-common.sh:427). The interface no longer requires runtime observation to come solely from stdout, and shared adjudication remains explicitly owned by Go.
+
+**VOA-28 — verified for the original new-name scenario.** The [trust boundary](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:443) requires explicit configuration, installation-user ownership and safe file modes before execution. The cross-check now rejects the original `devin-compatible` declaration because it matches Devin’s reserved `devin acp` vector. That addresses the original combination of executable discovery and [per-signature-only exclusions](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/census/signature.go:46). VOA-31 concerns the subsequently added same-name override path.
+
+**VOA-29 — verified.** The [recognizer contract](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:457) separates classification signatures from claim-bound invocation shapes and retains the kill decision in Go. The declared tag position, prefix and basename variants cover the existing [Shape contract](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/janitor/killproof.go:19). Kernel identity and claim-consistent argv remain required by [Killable](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/janitor/killproof.go:206). R13 now exercises orphan cleanup and rejection of incorrect tags and reused PIDs.
+
+**VOA-30 — verified.** The [consumer rule](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:463) explicitly includes configuration validation, runtime resolution, probes, selftest, dispatch and missions. This reaches the existing [compiled-runtime admission check](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/config/validate.go:170) and [compiled custom-probe lookup](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/probe.go:47). [R13](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:487) now requires a previously unknown helper installed after the engine was built, including dispatch, resume, cancellation, host execution and custom-probe selftest. Fake equivalence alone can no longer satisfy it.
+
+**Exit 64 — no separate material finding.** The stated rule reserves 64 for operations the override does not implement. Falling back at that interface boundary does not authorize skipping the [shared permission, custody or adjudication owners](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:411). A trusted executable performing an operation and then falsely reporting it unimplemented would violate that contract; it is not an additional demonstrated design failure within the declared trust boundary.
+
+Proposed receipt, not written: `Read-only revision-8 confirmation at 233caaa2b; six original folds verified by source inspection; one new WORK finding, VOA-31, concerning signature reservations under partial built-in overrides.`
+
+Folds verified: 6 of 6  
+Material findings: 1
+
+Codex session ID: 01a0e1d0-7f8b-7751-93f3-b5b738469c46
+Resume in Codex: codex resume 01a0e1d0-7f8b-7751-93f3-b5b738469c46
+
+---
+
+VOA-31 confirmation: Codex gpt-6-astra, against 36bffdd8f.
+
+**VOA-31 is resolved at the design level. No new material WORK or SAFE finding was identified.**
+
+Reviewed `design-r8` at `36bffdd8f654cfb2ea1d439942f7cc26dd18bbea`, exclusively in `verbs-b3`, by source inspection.
+
+- The [original finding:588](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action-astra.md:588) is grounded: [runtimes.go:206](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/runtimes/runtimes.go:206) reserves `devin acp`, and [devin.sh:798](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:798) explicitly excludes that host intermediary.
+- [signature.go:46](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/census/signature.go:46) makes exclusions win over matches. Without that exclusion, [classify.go:433](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify.go:433) returns `DELEGATE` before reaching the announced main.
+- The [fold:457](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:457) preserves those reservations within one effective declaration, rejects overrides matching reserved lookalikes, and permits legitimate same-runtime positive matches. [R13:496](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:496) explicitly requires rejection when the ACP exclusion is dropped and successful host ancestry classification when retained.
+- Preserving the exclusion does not exclude `devin-delegate-acp`; the existing [classification tests:220](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify_test.go:220) separately require host `MAIN` and delegate `DELEGATE` outcomes.
+
+This verifies the design contract, not an implemented fix. No tests, edits, or Git writes were performed.
+
+Proposed receipt, not written: `VOA-31 fold verified by source inspection at 36bffdd8f; no material findings.`
+
+Folds verified: 1 of 1
+Material findings: 0
+
+Codex session ID: 01a0e1d5-9009-7520-bb57-0e45090e30a3
+Resume in Codex: codex resume 01a0e1d5-9009-7520-bb57-0e45090e30a3
