@@ -291,3 +291,103 @@ The left items are adjudicated individually:
 
 VERDICT: 3 not closed: A-01, A-03, C-04; 3 new material: D-01, D-02, D-03; 0 new non-material: none
 
+
+---
+
+# The second confirmation read (the second fix pass)
+
+Produced 2026-09-28 by Codex on `gpt-6-astra`, read-only, against ui-development at `4e7433f14` (both second-pass branches merged; the three rulings excluded as the third pass's). Verbatim.
+
+| Finding | Confirmation | Holding test and evidence |
+|---|---|---|
+| A-01 | **Closed** | `TestASecondPressOnAnActAlreadyRunningIsRefusedBeforeItReadsAnything`, `TestTheHoldIsOneGoalsOneActAndEndsWhenItAnswers`, `TestAnIdenticalSignedInSessionEditIsANoOp`, and the four repeated-act tests hold exclusion and no duplicate edit publication. The page’s new concurrency failures are E-01 and E-02 below. |
+| A-03 | **Not closed** | `TestTheSeatsSittingMovesWithItsMessages` and `TestASignInDuringAnAnswerLandsItInTheHumansConversation` cover an established turn. **Read:** [submit](metasystem/internal/ui/partner/service.go:526) captures the seat conversation, then waits in `host.Ready` before installing `s.current` at line 572. Sign-in during that startup lets [Adopt](metasystem/internal/ui/partner/service.go:297) finish without rebinding the pending question. Startup then binds the turn to the emptied seat; its question, answer and proposals remain there. The header permits this first-use sequence. **WORK fails.** Reserve an adoptable turn before startup, releasing it on startup failure; hold the regression with a channel-gated startup test. |
+| C-04 | **Closed** | `says nothing of an answer older than the entry the record now holds` covers the real inbox hook; the shared-clearing guards cover both callbacks. The in-memory probe displayed `applied`, with no retry, over the obsolete refusal. Premature expiration is separately recorded as E-03. |
+| D-01 | **Closed** | `TestARecoveryCannotTakeTheEntryOfAPublicationStillRunning` and `TestARecoveryClassifiesUnderTheLockAPublicationTakes` cover both sides of the shared lock and preservation of the authority proof. Publication and recovery use the same root owner. Ordinary snapshot reads do not acquire this lock. |
+| D-02 | **Closed** | `settles nothing from a read that failed, and sends nothing` and its already-unresolved counterpart hold the correction. The production-runner probe wrote only `unresolved` and sent nothing when the cached row was parked but fetching failed. |
+| D-03 | **Closed** | `sends the approval where the one the goal carries has expired` and the expired case in `reads an approval as carried only with the tuple the card displayed` hold the correction. The production-runner probe sent the replacement approval. |
+
+Reviewed clean HEAD `4e7433f14bd2db7c9910749c66fadfa5446ee7c4` and the specified diff, with the brief’s exclusions. No files were edited. Named Go and Vitest tests were **read**; both focused runners stopped before executing tests because the sandbox denied temporary directories. TypeScript probes **ran in memory against production functions with substituted I/O**; the concurrency probe used the transition table extracted from the Go source. They did not exercise HTTP or a mounted browser.
+
+1. **E-01 — High — An in-flight edit lets the following approval use an obsolete reading.**
+
+   **File:** [proposing.ts:717](metasystem/internal/ui/web/_app/src/partner/proposing.ts:717), with invalidation at [line 1393](metasystem/internal/ui/web/_app/src/partner/proposing.ts:1393).
+
+   **Evidence, ran:** The inbox retries an applying edit alongside a waiting approval of the same goal. Its canonical read completes before the first tab begins publishing. The edit request receives `in-flight`; the runner records `unresolved` and continues without invalidating its reading. The first tab’s edit then lands.
+
+   The probe observed **one read**, followed by an approval carrying reviewed intent `"old intent"` while the goal’s actual intent was `"new intent"`. The publication lock serializes the acts but does not rerun the page’s comparison.
+
+   **Smallest fix:** Stop the batch on `in-flight`, preserving the remaining lines for Continue. Alternatively, require reconciliation and a fresh comparison before proceeding.
+
+   **Material: yes — SAFE fails.**
+
+2. **E-02 — High — A delayed refusal can defeat a newer successful attempt.**
+
+   **File:** [proposing.ts:1366](metasystem/internal/ui/web/_app/src/partner/proposing.ts:1366).
+
+   **Evidence, ran:** Tab A’s act finishes refused, releasing its server hold, but its outcome write is delayed. Tab B retries the applying entry and starts an act that will succeed. A rebases its older refusal onto B’s newer applying version:
+
+   `A:applying@1 → B:applying@2 → A:refused@2(conflict) → A:refused@3 → B:applied@3(conflict)`
+
+   The probe ended with **the act applied but the entry `refused@4`**. B reconciles to that settled refusal and discards its successful answer. A newer unsettled version does not establish that its writer holds no independent act.
+
+   **Smallest fix:** Do not rebase an older refusal over a newer attempt merely because its entry is unsettled. Preserve the newer attempt’s ownership; retry settlement only when the newer entry belongs to the same executing attempt.
+
+   **Material: yes — WORK fails.**
+
+3. **E-03 — Low — An unsettled version expires a known result too early.**
+
+   **File:** [proposing.ts:528](metasystem/internal/ui/web/_app/src/partner/proposing.ts:528).
+
+   **Evidence, ran:** An unrecorded `applied` result at version 2 was hidden by `unresolved@4` carrying another tab’s in-flight sentence. The probe displayed unresolved and offered Try again, including when the held result explained that publication succeeded but authority-proof recording failed.
+
+   **Concrete failure:** Another tab’s bookkeeping replaces the only known outcome and hides its explanation.
+
+   **Smallest fix:** Retire a held result when a later definitive outcome supersedes it, rather than on every version increment.
+
+   **Material: no — record.** The demonstrated result can still be reconciled by read; duplicate publication was not demonstrated under the new engine protections.
+
+4. **E-04 — Low — A panic during request assembly strands the publication lock.**
+
+   **File:** [act.go:688](metasystem/internal/ui/act/act.go:688).
+
+   **Evidence, read:** `request` registers the act and acquires `publications`, then calls `assemble` without deferred cleanup. The caller installs `defer done()` only after `request` returns. A panic inside an assembly reader therefore leaves both the registration and lock held.
+
+   **Concrete failure:** If that panic occurs, HTTP recovery cannot release the owner; subsequent acts and explicit reconciliation remain blocked until restart.
+
+   **Smallest fix:** Defer cleanup within `request` until ownership has successfully transferred to its caller.
+
+   **Material: no — record.** No production panic trigger was established; ordinary error returns release correctly.
+
+5. **E-05 — Low — Equivalent goal spellings bypass immediate in-flight refusal.**
+
+   **Files:** [owner.go:77](metasystem/internal/ui/act/owner.go:77), [verbs.go:2903](metasystem/internal/goal/verbs.go:2903).
+
+   **Evidence, read:** The registry keys the raw ID, while Block and Unblock trim it before publication. Requests naming `g` and ` g ` obtain different registrations but address the same ledger goal.
+
+   **Concrete failure:** The second equivalent request queues and executes instead of immediately answering `in-flight`.
+
+   **Smallest fix:** Normalize IDs consistently before registration and dispatch.
+
+   **Material: no — record.** Normal browser proposals use canonical IDs; serialization and engine no-ops still protect the demonstrated repeat.
+
+The builders’ left items are adjudicated individually:
+
+- **Sign-in `trouble` field and rendering — record:** completed at HEAD; the header renders the server’s words, with a rendering test.
+- **`s.spokeLast` retaining the seat — record:** causes a fresh runtime session with retained history; no demonstrated loss.
+- **ACP session ID not moving — record:** currently advisory state, rewritten on the next turn.
+- **No route test for sign-in during an answer — record:** existing service evidence covers established turns; **fix now** for A-03’s uncovered startup interval.
+- **Unpruned owner map — record:** one root in the production server; no demonstrated operational growth.
+- **Repeated park, unpark and abandon — record:** reserved for the separate R-129-ui review, excluded here.
+- **Unbounded proposal count — record:** reserved for R-130-ui, excluded here.
+- **Previously unreadable transcripts — record:** reserved for R-131-ui, excluded here.
+- **Walkthrough transitive cycle — record:** production validation remains intact.
+- **Tool prose about the card — record:** descriptive wording does not exclude Decisions.
+- **Frontend halves delegated elsewhere — fix now:** E-01 and E-02 remain; C-04’s reported failure is closed.
+- **Go transition-table half of result retry — record:** both new pairs are present and covered by the allowed-pair and racing-writer tests.
+- **Approval authority absent from `carriesAlready` — record:** the unexpired approval remains usable; replacing its authority is beyond the demonstrated expiry failure.
+- **Shared-clearing tests using source guards — record:** weaker than mounted interaction tests, but the callbacks were inspected.
+- **Duplicated TypeScript transition table — record:** it is already stale; Go tests cover the added pairs, and this review’s probe used the actual Go table.
+
+VERDICT: 1 not closed: A-03; 2 new material: E-01, E-02; 3 new non-material: E-03, E-04, E-05
+
