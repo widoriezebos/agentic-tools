@@ -891,8 +891,15 @@ export type RunPorts = {
   record: (line: Line, state: ProposalState, words: string) => Promise<Written>;
   send: (line: Line) => Promise<Answered>;
   mark: (line: Line, change: Partial<Mark>) => void;
-  /** Show one line as somebody else left it. */
-  reconcile: (proposal: Proposal) => void;
+  /**
+   * Show one line as somebody else left it.
+   *
+   * The line comes with it because a caller can be showing lines from more than
+   * one answer: a card is one answer and closes over its turn, and the inbox
+   * lists every proposal that still waits, from every answer that has one. The
+   * entry alone says its index and not which answer it is the nth of.
+   */
+  reconcile: (proposal: Proposal, line: Line) => void;
   /** Ask the page in view to read again, now or when a sheet over it closes. */
   reread: () => void;
   /**
@@ -979,7 +986,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       standing.set(line.id, started.proposal);
     }
     if (started.kind === "conflict") {
-      ports.reconcile(started.proposal);
+      ports.reconcile(started.proposal, line);
       if (settledState(started.proposal.state)) {
         continue;
       }
@@ -1001,7 +1008,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       standing.set(line.id, finished.proposal);
     }
     if (finished.kind === "conflict") {
-      ports.reconcile(finished.proposal);
+      ports.reconcile(finished.proposal, sending);
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act
       // answered is kept on the line for the page's life, because that is the
