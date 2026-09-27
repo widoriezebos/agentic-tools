@@ -538,6 +538,20 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	// A turn from somebody other than whoever spoke last ends the live
 	// session: the process carries one conversation, and it is not this one.
 	changed := s.spokeLast != "" && s.spokeLast != human
+	// The turn is bound to its conversation HERE, before the startup wait
+	// below, because a sign-in that lands inside that wait has to be able to
+	// find it. Starting a runtime is a process spawn, an initialize and a
+	// session/new; for all of that, the question exists and is written nowhere,
+	// so a turn bound afterwards left Adopt looking at an empty seat with
+	// nothing running, deciding there was nothing to adopt, and startup then
+	// bound the turn to the seat the human had just left — the question, the
+	// answer and every action the answer proposed stayed there (Astra A-03,
+	// second confirmation read). A startup that refuses releases it again,
+	// below, so a runtime that is not installed leaves no turn behind.
+	id := mintTurn()
+	running := &turn{id: id, human: human, key: key, page: page,
+		conversation: conversation, done: make(chan struct{})}
+	s.current = running
 	s.mu.Unlock()
 	if changed {
 		s.host.Close()
@@ -548,28 +562,31 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	// send rather than accept a turn it cannot take.
 	fresh, err := s.host.Ready(ctx)
 	if err != nil {
+		s.mu.Lock()
+		s.current = nil
+		s.mu.Unlock()
 		return "", err
 	}
+
+	// Which conversation this turn is in is the TURN's answer from here on: a
+	// sign-in during the wait above moved it, and the one captured before the
+	// wait is the emptied seat. The session id, the history and the proposals
+	// block all belong to the conversation the turn is in now.
+	s.mu.Lock()
+	conversation = running.conversation
+	s.mu.Unlock()
 
 	// The live session's id is recorded beside the transcript, so a build that
 	// learns to load sessions natively has it without guessing.
 	conversation.RecordSession(s.host.Session(), s.now())
 
 	s.mu.Lock()
-	if s.current != nil {
-		s.mu.Unlock()
-		return "", ErrBusy
-	}
 	// A session opened outside a turn has been given no prompt, so this turn is
 	// its first however Ready answered just now.
 	if s.opened {
 		fresh = true
 		s.opened = false
 	}
-	id := mintTurn()
-	running := &turn{id: id, human: human, key: key, page: page,
-		conversation: conversation, done: make(chan struct{})}
-	s.current = running
 	s.spokeLast = human
 	s.mu.Unlock()
 
