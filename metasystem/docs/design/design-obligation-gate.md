@@ -45,7 +45,7 @@ It prints the id, status and path of every design record whose `Goals` names tha
 
 ## Milestone Check (declared milestones only)
 
-At a declared milestone (merging to the integration branch, closing a plan, ending a multi-session stream), recompute the shared testing contract from the actual goal, destination policy and whole-project candidate. Run its required selection once in your own environment and consume the sufficient retained result with `test verify`, in addition to the focused checks above. A low-risk milestone may finish with standard evidence; deep and cadence groups run only when the contract requires them, while the standing validator remains the broader backstop. A delegate's green run proves its environment, not yours. This named question justifies the selected expense; there is no blanket full-suite prerequisite between milestones.
+At a declared milestone (merging to the integration branch, closing a plan, ending a multi-session stream), recompute the shared testing contract from the actual goal, destination policy and whole-project candidate. Run its required selection once in your own environment and read the sufficient retained result with `metasystem test status --tree <tree>`, in addition to the focused checks above. A low-risk milestone may finish with standard evidence; deep and cadence groups run only when the contract requires them, while the standing validator remains the broader backstop. A delegate's green run proves its environment, not yours. This named question justifies the selected expense; there is no blanket full-suite prerequisite between milestones.
 
 ## Full Matrix (risky changes only)
 
