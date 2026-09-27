@@ -2,13 +2,17 @@
 
 - Kind: design
 - Id: 01M3FS4JWK13Z7W87G1SAEJZ06
-- Status: accepted for build (revision 6; design critique closed at round 6 with zero material findings)
+- Status: accepted
 - Goals: verbs-match-intent
-- Supersedes: `verb-cleanup.md` rule "Do not migrate thousands of private
-  process-protocol calls" and its retention of the family dispatcher;
-  `agent-help.md` output-preservation rules wherever the grammar below changes
-  them; `records/kill-shell/kill-shell.md` ruling of 2026-08-12 ("core in Go,
-  plumbing in scripts", Phases B-F held) is resumed and extended.
+
+Accepted for build at revision 6; the design critique closed at round 6 with
+zero material findings.
+
+Supersedes: `verb-cleanup.md` rule "Do not migrate thousands of private
+process-protocol calls" and its retention of the family dispatcher;
+`agent-help.md` output-preservation rules wherever the grammar below changes
+them; `records/kill-shell/kill-shell.md` ruling of 2026-08-12 ("core in Go,
+plumbing in scripts", Phases B-F held) is resumed and extended.
 
 Author: m1e root (Opus 5.5), under Wido's instruction of 26 September 2026, about
 22:30 CEST. Design critic: Codex on `gpt-6-astra`, read-only, looping until no
