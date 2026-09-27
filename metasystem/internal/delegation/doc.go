@@ -1,20 +1,19 @@
-// Package delegation is the dispatch composition package of the
-// object-action verb redesign (plans/designs/verbs-object-action.md, section
-// 6.3, finding VOA-07, unit U6-seam).
+// Package delegation is the delegate lifecycle: the dispatch composition
+// package of the object-action verb redesign (plans/designs/verbs-object-action.md,
+// section 6.3, finding VOA-07; units U6-seam and U6b).
 //
 // internal/lease and internal/steward import internal/dispatch, so the
-// delegate lifecycle that scripts/agents/dispatch.sh orchestrates today cannot
-// be ported into internal/dispatch. It lives here, above its owners: this
-// package imports dispatch, lease, steward, adapter and goal, and none of
-// those (nor any other package under internal/) imports it. Rule R9 holds that
+// lifecycle cannot live in internal/dispatch. It lives here, above its
+// owners: this package imports dispatch, lease, steward, adapter and goal,
+// and nothing under internal/ imports it; only cmd/ does. Rule R9 holds that
 // line; its witness is internal/layering.
 //
-// The lifecycle reaches its owners only through the injected operation
-// interfaces of ports.go. NewOwnerPorts wires them to the real owners; the
-// fake subpackage supplies recording doubles for tests. The lifecycle itself
-// is a skeleton whose phases mirror dispatch.sh's commands (dispatch,
-// follow-up, watch, status, cancel, close, reap). Every phase refuses with
-// ErrNotPorted until U6b fills it; U6b ports dispatch.sh, its
-// checkout-execution-guard.sh and emit-event.sh into this package and turns
-// dispatch.sh's "__" callbacks into calls.
+// Lifecycle.Run takes the retired scripts/agents/dispatch.sh argv grammar
+// (dispatch, follow-up, watch, status, cancel, close, reap, and the "__"
+// callbacks the runtime adapters still call) and runs it in process: the
+// callbacks are function calls, the checkout execution guard and the event
+// emitter are owner calls, and every refusal keeps the script's exit code,
+// message and typed outcome. The lifecycle reaches its owners only through
+// the injected operation interfaces of ports.go. NewOwnerPorts wires them to
+// the real owners; the fake subpackage supplies recording doubles for tests.
 package delegation

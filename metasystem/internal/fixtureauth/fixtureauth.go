@@ -334,3 +334,19 @@ func fixtureModeRoot(root string) (bool, error) {
 	})
 	return err == nil && value == "fake", err
 }
+
+// GoalClock resolves a command's goal clock once for root: a fixture root's
+// one stable semantic instant, else wall sampled on every call. The engine's
+// goal commands and the delegation lifecycle share it.
+func GoalClock(root string, wall func() time.Time) (func() time.Time, bool, error) {
+	authorization, err := New(root)
+	if err != nil {
+		return nil, false, err
+	}
+	if fixtureNow, ok, err := authorization.Clock().GoalNow(); err != nil {
+		return nil, false, err
+	} else if ok {
+		return func() time.Time { return fixtureNow }, true, nil
+	}
+	return wall, false, nil
+}

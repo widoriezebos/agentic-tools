@@ -4,8 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -64,8 +70,8 @@ type StewardOps interface {
 }
 
 // ExecutionGuard names the checkout execution guard a launched adapter joins
-// (checkout-execution-guard.sh run-member, supervise launch-detached
-// --execution-guard-root/--execution-guard-owner).
+// (the retired checkout-execution-guard.sh run-member wrapper plus supervise
+// launch-detached --execution-guard-root/--execution-guard-owner).
 type ExecutionGuard struct {
 	Root  string
 	Owner string
@@ -84,8 +90,11 @@ type AdapterLaunch struct {
 
 // AdapterOps is the runtime adapter owner as the dispatcher drives it. Until
 // U6a ports the adapters into Go, the real owner is the runtime's adapter
-// script; the operations are the verbs dispatch.sh invokes on it.
+// script; the operations are the verbs dispatch.sh invoked on it.
 type AdapterOps interface {
+	// Installed reports whether the runtime has an adapter at all
+	// (dispatch.sh's `[[ -x adapters/RUNTIME.sh ]]`).
+	Installed(runtime string) bool
 	ConfigIdentity(ctx context.Context, runtime string) (string, error)
 	Probe(ctx context.Context, runtime string) error
 	OutputStream(ctx context.Context, runtime, roundDir string) (string, error)
@@ -115,6 +124,9 @@ type GoalBinding struct {
 // an accepted, claimed goal revision.
 type GoalOps interface {
 	Binding(goalID string) (GoalBinding, error)
+	// LedgerIdentity is the accepted goal ledger's identity, empty when the
+	// checkout has none; the brain fence judges a declaration against it.
+	LedgerIdentity() string
 }
 
 // RecordOps is the job-record owner: reservation, setup, and the one
@@ -132,6 +144,114 @@ type EventOps interface {
 	Emit(event, summary string, fields map[string]string)
 }
 
+// ProcessOps is the kernel as the lifecycle observes and signals it: the
+// liveness ladder of `proc classify`, existence probes, custody groups and
+// signals. Tests supply a scripted process table.
+type ProcessOps interface {
+	// TagState answers live, stale, dead, or unknown for a recorded pid and
+	// instance tag (proc classify).
+	TagState(pid int64, tag string) string
+	// Exists reports a pid exists (proc exists; permission denial counts).
+	Exists(pid int64) bool
+	// GroupExists reports a process group exists (proc group-exists).
+	GroupExists(pgid int64) bool
+	// GroupOwned reports a group member carries the tag, or the record
+	// carries an exact trusted-launcher proof (proc group-owned).
+	GroupOwned(recordPath string, pgid int64, tag string) bool
+	// SignalGroup sends sig to the process group.
+	SignalGroup(pgid int64, sig Signal) error
+	// CustodyGroups lists a record's custody process-group kill targets.
+	CustodyGroups(record map[string]any) ([]int64, error)
+	// StartedAt is a live pid's kernel start second (proc started-at).
+	StartedAt(pid int64) (int64, error)
+	// ClaimProcesses is the process-table reading the claim state machine
+	// and the reservation reconciliation judge by.
+	ClaimProcesses() (ClaimProcesses, error)
+}
+
+// ClaimProcesses reads process identity for the claim owner: kernel start
+// identities, the tagged-process census, and the tagged-argv proof.
+type ClaimProcesses struct {
+	Reader   identity.StartReader
+	Scanner  census.TaggedProcessScanner
+	Verifier dispatch.ClaimProcessVerifier
+}
+
+// Signal is a signal the lifecycle sends to a custody group.
+type Signal int
+
+const (
+	SignalTerm Signal = 15
+	SignalKill Signal = 9
+)
+
+// GitOps runs Git for the lifecycle: worktree creation, the quarantine
+// object store, commit subjects of code-critic reviews, the follow-up
+// rebase, and the engine skew preflight. Behavior tests stub it per test.
+type GitOps interface {
+	// Run runs git with args in dir and returns its standard output and
+	// standard error. A non-zero exit is an error carrying the exit code.
+	Run(ctx context.Context, dir string, args ...string) (stdout, stderr []byte, err error)
+}
+
+// GitExitError is a Git run that exited non-zero.
+type GitExitError struct {
+	Code   int
+	Stderr string
+}
+
+func (e *GitExitError) Error() string {
+	return fmt.Sprintf("git exited %d: %s", e.Code, e.Stderr)
+}
+
+// Clock is the lifecycle's time: every deadline, poll and stamp reads it.
+type Clock interface {
+	Now() time.Time
+	Sleep(d time.Duration)
+}
+
+// WaitOutcome is the job waiter's answer (metasystem internal wait): its
+// exit code and its combined output.
+type WaitOutcome struct {
+	Code   int
+	Output string
+}
+
+// HostOps are the operations whose owners still live in the engine's command
+// layer: the job waiter and watcher, the consumption-earned budget
+// extension, and the snapshot selection that probes the runtime.
+type HostOps interface {
+	// WaitJob blocks on a job to terminal as `internal wait --job` does.
+	WaitJob(ctx context.Context, root, job string, callerPid int64) WaitOutcome
+	// WatchJob is `job watch`: block to terminal, tailing the watched
+	// workspace's suite journal onto stderr; returns the pinned exit code.
+	WatchJob(ctx context.Context, root, job string, callerPid int64, progressRoot string) int
+	// ExtendBudget is `goal extend-budget` for the supplied caller; it
+	// returns the verb's combined output and exit code.
+	ExtendBudget(ctx context.Context, request ExtendBudgetRequest) (string, int)
+}
+
+// ExtendBudgetRequest is goal extend-budget's selection.
+type ExtendBudgetRequest struct {
+	Root             string
+	GoalID           string
+	Revision         uint64
+	ProposedCap      uint64
+	Role             string
+	DispatchMode     string
+	DestructiveReach string
+	CallerPid        int64
+	OwnerLineage     string
+}
+
+// GuardOps is the checkout execution guard owner (internal/gaterun): the
+// dispatcher waits for exclusive checkout execution, or joins the chain that
+// owns it, before any launch; its launched adapter joins as a member.
+type GuardOps interface {
+	Acquire(root string, pid int64, owner string, wait, progress time.Duration, notes io.Writer) (gaterun.GuardResult, error)
+	Release(root string, pid int64) error
+}
+
 // Ports is every owner operation the lifecycle reaches. Each field is
 // required; New refuses a partial set so a missing wire is a construction
 // error, never a nil dereference in the middle of a launch.
@@ -142,6 +262,11 @@ type Ports struct {
 	Goal    GoalOps
 	Records RecordOps
 	Events  EventOps
+	Process ProcessOps
+	Git     GitOps
+	Clock   Clock
+	Host    HostOps
+	Guard   GuardOps
 }
 
 // Validate names every missing port.
@@ -164,6 +289,21 @@ func (p Ports) Validate() error {
 	}
 	if p.Events == nil {
 		missing = append(missing, fmt.Errorf("event operations are not wired"))
+	}
+	if p.Process == nil {
+		missing = append(missing, fmt.Errorf("process operations are not wired"))
+	}
+	if p.Git == nil {
+		missing = append(missing, fmt.Errorf("git operations are not wired"))
+	}
+	if p.Clock == nil {
+		missing = append(missing, fmt.Errorf("clock operations are not wired"))
+	}
+	if p.Host == nil {
+		missing = append(missing, fmt.Errorf("host operations are not wired"))
+	}
+	if p.Guard == nil {
+		missing = append(missing, fmt.Errorf("guard operations are not wired"))
 	}
 	return errors.Join(missing...)
 }

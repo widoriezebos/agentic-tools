@@ -731,6 +731,11 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestIntentCarriedChannelWordAdoptionStopsWhenBindingFails",
       "reason": "newCarriedDeliveryBed sets METASYSTEM_OWNER_LINEAGE, METASYSTEM_BIN to the per-bed engine and the fixture process identity and census environment with t.Setenv for the real carry and land subprocesses"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
+      "test": "TestClaimAuthorizationSpendsTheDelegateCapabilityNotTheMarker",
+      "reason": "clears METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the claim surface reads to recognize a fixture process table"
     }
   ]
 }

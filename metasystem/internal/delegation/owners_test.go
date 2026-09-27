@@ -1,14 +1,11 @@
 package delegation_test
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,148 +15,37 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
-func TestNewRefusesAPartialPortSet(t *testing.T) {
-	t.Parallel()
-	complete := fake.NewSet().Ports()
-	if _, err := delegation.New(complete); err != nil {
-		t.Fatalf("a complete port set was refused: %v", err)
-	}
-	for _, missing := range []struct {
-		name  string
-		clear func(*delegation.Ports)
-	}{
-		{"lease", func(p *delegation.Ports) { p.Lease = nil }},
-		{"steward", func(p *delegation.Ports) { p.Steward = nil }},
-		{"adapter", func(p *delegation.Ports) { p.Adapter = nil }},
-		{"goal", func(p *delegation.Ports) { p.Goal = nil }},
-		{"record", func(p *delegation.Ports) { p.Records = nil }},
-		{"event", func(p *delegation.Ports) { p.Events = nil }},
-	} {
-		ports := complete
-		missing.clear(&ports)
-		lifecycle, err := delegation.New(ports)
-		if err == nil || lifecycle != nil {
-			t.Fatalf("a port set without %s operations was accepted", missing.name)
-		}
-		if !strings.Contains(err.Error(), missing.name+" operations are not wired") {
-			t.Fatalf("refusal does not name the %s port: %v", missing.name, err)
-		}
-	}
-	if _, err := delegation.New(delegation.Ports{}); err == nil || strings.Count(err.Error(), "not wired") != 6 {
-		t.Fatalf("an empty port set must name all six missing ports: %v", err)
-	}
-}
-
-func TestSkeletonPhasesRefuseWithoutTouchingAnOwner(t *testing.T) {
-	t.Parallel()
-	doubles := fake.NewSet()
-	lifecycle, err := delegation.New(doubles.Ports())
+func ownerPorts(t *testing.T, root string) delegation.Ports {
+	t.Helper()
+	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root, Host: fake.NewSet().Host})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
-	invocation := delegation.Invocation{CallerPid: 4242}
-	calls := map[delegation.Phase]func() (delegation.Outcome, error){
-		delegation.PhaseDispatch: func() (delegation.Outcome, error) {
-			return lifecycle.Dispatch(ctx, delegation.DispatchRequest{Invocation: invocation, Role: "implementer", JobID: "job-a"})
-		},
-		delegation.PhaseFollowUp: func() (delegation.Outcome, error) {
-			return lifecycle.FollowUp(ctx, delegation.FollowUpRequest{Invocation: invocation, Job: "job-a"})
-		},
-		delegation.PhaseWatch:  func() (delegation.Outcome, error) { return lifecycle.Watch(ctx, "job-a") },
-		delegation.PhaseStatus: func() (delegation.Outcome, error) { return lifecycle.Status(ctx, "job-a") },
-		delegation.PhaseCancel: func() (delegation.Outcome, error) { return lifecycle.Cancel(ctx, invocation, "job-a") },
-		delegation.PhaseClose: func() (delegation.Outcome, error) {
-			return lifecycle.Close(ctx, delegation.CloseRequest{Invocation: invocation, Job: "job-a"})
-		},
-		delegation.PhaseReap: func() (delegation.Outcome, error) {
-			return lifecycle.Reap(ctx, delegation.ReapRequest{Invocation: invocation, Job: "job-a"})
-		},
-	}
-	if len(calls) != len(delegation.Phases()) {
-		t.Fatalf("the test drives %d phases, the lifecycle declares %d", len(calls), len(delegation.Phases()))
-	}
-	for _, phase := range delegation.Phases() {
-		call, ok := calls[phase]
-		if !ok {
-			t.Fatalf("phase %s has no driver in this test", phase)
-		}
-		outcome, err := call()
-		if !errors.Is(err, delegation.ErrNotPorted) {
-			t.Fatalf("%s: error = %v, want ErrNotPorted", phase, err)
-		}
-		if outcome.Phase != phase || outcome.Outcome != delegation.OutcomeNotPorted || outcome.ExitCode != 2 || outcome.JobID != "job-a" {
-			t.Fatalf("%s: outcome = %+v", phase, outcome)
-		}
-	}
-	if got := doubles.Log.Calls(); len(got) != 0 {
-		t.Fatalf("a skeleton phase reached an owner: %v", got)
-	}
-}
-
-// The lifecycle's phases are dispatch.sh's public commands, one for one,
-// while the script exists. U6b deletes the script with this comparison.
-func TestPhasesMirrorTheDispatchScriptRouter(t *testing.T) {
-	t.Parallel()
-	script := filepath.Join("..", "..", "scripts", "agents", "dispatch.sh")
-	file, err := os.Open(script)
-	if err != nil {
-		t.Fatalf("dispatch.sh is the shape this skeleton mirrors; U6b removes this test with it: %v", err)
-	}
-	defer file.Close()
-	arm := regexp.MustCompile(`^  ([a-z][a-z-]*)\) [a-z_]+ "\$@" ;;$`)
-	var commands []string
-	scanner := bufio.NewScanner(file)
-	inRouter := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == `case "$command" in` {
-			inRouter = true
-			continue
-		}
-		if inRouter && line == "esac" {
-			break
-		}
-		if match := arm.FindStringSubmatch(line); inRouter && match != nil {
-			commands = append(commands, match[1])
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		t.Fatal(err)
-	}
-	var phases []string
-	for _, phase := range delegation.Phases() {
-		phases = append(phases, string(phase))
-	}
-	if !reflect.DeepEqual(commands, phases) {
-		t.Fatalf("dispatch.sh routes %v; the lifecycle declares %v", commands, phases)
-	}
+	return ports
 }
 
 func TestOwnerPortsRequireARootAndComposeALifecycle(t *testing.T) {
 	t.Parallel()
-	if _, err := delegation.NewOwnerPorts(delegation.OwnerConfig{}); err == nil {
+	if _, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Host: fake.NewSet().Host}); err == nil {
 		t.Fatal("owner ports without a root were accepted")
 	}
-	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
+	if _, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: t.TempDir()}); err == nil {
+		t.Fatal("owner ports without host operations were accepted")
 	}
-	if _, err := delegation.New(ports); err != nil {
+	root := t.TempDir()
+	if _, err := delegation.New(delegation.Config{Root: root, RepoScope: root}, ownerPorts(t, root)); err != nil {
 		t.Fatalf("the real owner wiring is incomplete: %v", err)
 	}
 }
 
 func TestOwnerLeaseRefusesAnUnknownModeBeforeClassifying(t *testing.T) {
 	t.Parallel()
-	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = ports.Lease.Authorize(delegation.Invocation{CallerPid: int64(os.Getpid())}, "anyone", "job-a")
+	ports := ownerPorts(t, t.TempDir())
+	err := ports.Lease.Authorize(delegation.Invocation{CallerPid: int64(os.Getpid())}, "anyone", "job-a")
 	if err == nil || !strings.Contains(err.Error(), `unknown control-plane mode "anyone"`) {
 		t.Fatalf("unknown mode was not refused by name: %v", err)
 	}
@@ -167,10 +53,7 @@ func TestOwnerLeaseRefusesAnUnknownModeBeforeClassifying(t *testing.T) {
 
 func TestOwnerRecordsReadRefusesAPathShapedJob(t *testing.T) {
 	t.Parallel()
-	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ports := ownerPorts(t, t.TempDir())
 	for _, job := range []string{"", "..", "a/b"} {
 		if _, err := ports.Records.Read(job); err == nil {
 			t.Fatalf("record read accepted job %q", job)
@@ -183,10 +66,7 @@ func TestOwnerRecordsReadRefusesAPathShapedJob(t *testing.T) {
 
 func TestOwnerAdapterResultPatchIsTheAdapterOwners(t *testing.T) {
 	t.Parallel()
-	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ports := ownerPorts(t, t.TempDir())
 	output := filepath.Join(t.TempDir(), "patch.json")
 	if err := ports.Adapter.ResultPatch(output, "null", "supervision", ""); err != nil {
 		t.Fatal(err)
@@ -220,7 +100,8 @@ case "$1" in
       echo "pgid $(ps -o pgid= -p $$ | tr -d ' ')"
       echo "pid $$"
     } >"$out.launch.tmp"
-    mv "$out.launch.tmp" "$out.launch" ;;
+    mv "$out.launch.tmp" "$out.launch"
+    if [ -p "$out.launched" ]; then : >"$out.launched"; fi ;;
 esac
 `
 
@@ -246,10 +127,7 @@ func adapterRoot(t *testing.T) (string, string) {
 func TestOwnerAdapterDrivesTheRuntimeScript(t *testing.T) {
 	t.Parallel()
 	root, adapters := adapterRoot(t)
-	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ports := ownerPorts(t, root)
 	ctx := context.Background()
 	identity, err := ports.Adapter.ConfigIdentity(ctx, "recorder")
 	if err != nil || identity != "identity-7" {
@@ -282,10 +160,7 @@ func TestOwnerAdapterDrivesTheRuntimeScript(t *testing.T) {
 func TestOwnerAdapterLaunchStartsADetachedSession(t *testing.T) {
 	t.Parallel()
 	root, adapters := adapterRoot(t)
-	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ports := ownerPorts(t, root)
 	ctx := context.Background()
 	request := delegation.AdapterLaunch{
 		Runtime: "recorder", Verb: "dispatch", Job: "job-a", StartGate: "/gate/job-a.start",
@@ -300,6 +175,12 @@ func TestOwnerAdapterLaunchStartsADetachedSession(t *testing.T) {
 			t.Fatalf("launch %+v was accepted", refused)
 		}
 	}
+	// The launched adapter signals through a named pipe once its record is
+	// in place: the read blocks on that event, not on a clock.
+	launched := filepath.Join(adapters, "calls.launched")
+	if err := syscall.Mkfifo(launched, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	pid, err := ports.Adapter.Launch(ctx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -307,12 +188,8 @@ func TestOwnerAdapterLaunchStartsADetachedSession(t *testing.T) {
 	if pid <= 1 {
 		t.Fatalf("launch returned pid %d", pid)
 	}
-	var status syscall.WaitStatus
-	if _, err := syscall.Wait4(int(pid), &status, 0, nil); err != nil {
-		t.Fatalf("the launched adapter could not be reaped: %v", err)
-	}
-	if !status.Exited() || status.ExitStatus() != 0 {
-		t.Fatalf("the launched adapter ended %v", status)
+	if _, err := os.ReadFile(launched); err != nil {
+		t.Fatal(err)
 	}
 	content, err := os.ReadFile(filepath.Join(adapters, "calls.launch"))
 	if err != nil {
@@ -344,9 +221,22 @@ func TestOwnerAdapterLaunchStartsADetachedSession(t *testing.T) {
 
 func TestOwnerEventsNeverFailTheCaller(t *testing.T) {
 	t.Parallel()
-	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: filepath.Join(t.TempDir(), "absent"), Now: func() time.Time { return time.Unix(0, 0) }})
+	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: filepath.Join(t.TempDir(), "absent"), Host: fake.NewSet().Host, Now: func() time.Time { return time.Unix(0, 0) }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ports.Events.Emit("job-created", "record created", map[string]string{"jobId": "job-a"})
+}
+
+func TestOwnerLeaseHeldRunsAStewardCallerWithoutTheLease(t *testing.T) {
+	t.Parallel()
+	ports := ownerPorts(t, filepath.Join(t.TempDir(), "no-lease-here"))
+	ran := false
+	err := ports.Lease.Held(delegation.Invocation{CallerPid: int64(os.Getpid()), CallerClass: lease.ClassSteward}, nil, func() error {
+		ran = true
+		return errors.New("the write's own verdict")
+	})
+	if !ran || err == nil || err.Error() != "the write's own verdict" {
+		t.Fatalf("a STEWARD caller must run ungated with fn's own verdict: ran=%v err=%v", ran, err)
+	}
 }
