@@ -332,6 +332,18 @@ export type Proposal = {
    * and must show it, which is what keeps two tabs from applying one act twice.
    */
   version: number;
+  /**
+   * The attempt that OWNS this line: the token of the press that last moved it
+   * to `applying`, as the server stored it beside the version, and absent on a
+   * line no press has moved.
+   *
+   * The page holds it and never compares it. What compares it is the route: a
+   * settle write carries the attempt its own run minted, and a write whose
+   * attempt is not the one the entry holds is refused with the entry as it
+   * stands, because another press owns the line now (refusal code `attempt`).
+   * The page's part is to carry one token per press and to show what comes back.
+   */
+  attempt?: string;
 };
 
 /** What the conversation can point at, for the links in an answer. */
@@ -528,9 +540,22 @@ async function request<T>(resource: string, body?: unknown, signal?: AbortSignal
   if (!response.ok) {
     const refusal = await reasonOf(response);
     throw new PartnerError(response.status, refusal.error ?? "", refusal.install ?? "", refusal.draft ?? "",
-      refusal.code === "state" ? (refusal.proposal ?? null) : null);
+      heldIn(refusal));
   }
   return (await response.json()) as T;
+}
+
+/**
+ * The entry a refusal carries, and null where it carries none.
+ *
+ * Two codes carry one, and both mean the same thing to the caller: show the entry
+ * that came back and send no act of your own. `state` is the version
+ * compare-and-set, or a transition the line may not make. `attempt` is the write
+ * of a press that no longer owns the line — another press moved it to `applying`
+ * and owns it now — and the entry it carries is what that press left.
+ */
+function heldIn(refusal: Refusal): Proposal | null {
+  return refusal.code === "state" || refusal.code === "attempt" ? (refusal.proposal ?? null) : null;
 }
 
 async function reasonOf(response: Response): Promise<Refusal> {
@@ -630,6 +655,12 @@ export class ProposalConflict extends Error {
  * caller must show that rather than send an act of its own. That is what makes two
  * tabs unable to apply one act twice.
  *
+ * The attempt is the PRESS's own, one token for a whole run. A write that moves the
+ * line to `applying` takes ownership of it under that token; a settle write must
+ * carry the attempt the entry holds, and one that does not is refused with the
+ * entry, because the press that owns the line is the only one that may settle it.
+ * A dismissal carries none.
+ *
  * It carries no authority and makes no act: the act itself goes to the ledger's
  * own route, under the human's session. This writes down what that answered, where
  * the proposal is.
@@ -640,10 +671,19 @@ export async function recordProposal(
   version: number,
   state: ProposalState,
   words: string,
+  attempt: string,
 ): Promise<{ proposal: Proposal } & Snapshot> {
   const resource = `${TURNS}/${encodeURIComponent(turn)}${PROPOSALS}${String(index)}`;
+  const body: { version: number; state: ProposalState; words: string; attempt?: string } =
+    { version, state, words };
+  // A dismissal carries none, and that is the difference the route reads: nothing
+  // was applied, so no press owns the line, and the version alone decides who
+  // writes it — exactly as it did before there were attempts at all.
+  if (attempt !== "") {
+    body.attempt = attempt;
+  }
   try {
-    return await request<{ proposal: Proposal } & Snapshot>(resource, { version, state, words });
+    return await request<{ proposal: Proposal } & Snapshot>(resource, body);
   } catch (error: unknown) {
     throw conflictOf(error);
   }
