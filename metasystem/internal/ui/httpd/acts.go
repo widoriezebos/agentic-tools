@@ -27,7 +27,7 @@ import (
 // in the browser without ever reaching here.
 //
 // Two more arrive with the Decisions queue under R-125-m1u: goal park, which
-// is that page's "Not now", and goal unpark, which returns a paused goal to
+// is that page's "Pause", and goal unpark, which returns a paused goal to
 // the queue. They are not board moves and the board grows no button for them;
 // the engine admits this hand's session proof at the three rows the ruling
 // names and at no others, so every other refusal stands exactly as it did.
@@ -328,7 +328,7 @@ func (h *handler) withdrawGoal(w http.ResponseWriter, r *http.Request, id string
 	h.answerAct(w, h.info.Withdraw(signed, id, body.Reason))
 }
 
-// parkGoal and unparkGoal are the Decisions queue's "Not now" and its undo.
+// parkGoal and unparkGoal are the Decisions queue's "Pause" and its undo.
 // The engine owns every refusal they can draw — a goal already parked, a
 // claim another pair holds, a branch that is not on origin — and the route
 // answers each one in the engine's own words.

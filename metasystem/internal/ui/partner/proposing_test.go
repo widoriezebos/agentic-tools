@@ -486,3 +486,106 @@ func TestAnAbandonOfAGoalNothingWaitsForCarriesNoDependents(t *testing.T) {
 	testutil.Expect(t, "and no successor was named",
 		kept[0].Fields[uitools.FieldSuccessor], "")
 }
+
+// An edit's labels are the whole list its route takes, composed here from the
+// delta the Partner proposed and the labels this admission read.
+//
+// It is here and nowhere else, and that is the point. The tool server has no
+// ledger reading: `--label` adds and `--unlabel` removes, and what they add to
+// and remove from is the goal as the tip holds it. So the delta travels under the
+// public flags' own spellings and the command's own owner composes it here —
+// `goal.ApplyLabelDelta`, the same function `metasystem goal edit --label` uses,
+// so an edit proposed in the browser and an edit typed at a terminal compose one
+// list.
+func TestAnEditsLabelsAreComposedFromTheLabelsRead(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeEdit, "fleet-presence", []string{
+			uitools.ProposalLabel + "payments",
+			uitools.ProposalUnlabel + "fleet",
+		}, "one moves"),
+		// Every label removed IS how they are cleared: the composed list is
+		// empty, which the route takes as an empty list rather than as silence.
+		proposed(uitools.ProposeEdit, "refunds", []string{
+			uitools.ProposalIntent + "Refunds land within a day, always.",
+		}, "tighter"),
+	)
+	_, kept := askProposing(t, service, "move that label and tidy the other intent")
+	testutil.Require(t, "two actions", len(kept), 2)
+
+	testutil.Expect(t, "the delta is composed onto the labels read",
+		kept[0].Fields[uitools.FieldLabels], "browser-interface, payments")
+	_, adding := kept[0].Fields[uitools.FieldLabel]
+	_, removing := kept[0].Fields[uitools.FieldUnlabel]
+	testutil.Expect(t, "and the delta itself does not travel on", adding || removing, false)
+	// The whole list is what the route takes, so the reading the card shows is
+	// still the labels as they stood.
+	testutil.Require(t, "the edit carries the reading", kept[0].Read != nil, true)
+	testutil.Expect(t, "with the labels as read", kept[0].Read.Labels,
+		[]string{"fleet", "browser-interface"})
+
+	// An edit that says nothing about labels leaves them alone: no field at all.
+	_, touched := kept[1].Fields[uitools.FieldLabels]
+	testutil.Expect(t, "an edit that says nothing about labels carries none", touched, false)
+}
+
+// Clearing a goal's labels is naming every one of them to remove: the composed
+// list is empty, and an empty list is what the route takes as "none".
+func TestAnEditThatRemovesEveryLabelClearsThem(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeEdit, "fleet-presence", []string{
+			uitools.ProposalUnlabel + "fleet, browser-interface",
+		}, "the labels moved to the arc"),
+	)
+	_, kept := askProposing(t, service, "clear its labels")
+	testutil.Require(t, "one action", len(kept), 1)
+	testutil.Expect(t, "it is offered", kept[0].Offered, true)
+	said, given := kept[0].Fields[uitools.FieldLabels]
+	testutil.Expect(t, "the whole list is there", given, true)
+	testutil.Expect(t, "and says nothing, which is how they are cleared", said, "")
+}
+
+// A label named in both lists is refused in the composing owner's own words,
+// recorded on the card rather than dropped.
+func TestALabelInBothListsIsRefusedInTheOwnersWords(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeEdit, "fleet-presence", []string{
+			uitools.ProposalLabel + "fleet",
+			uitools.ProposalUnlabel + "fleet",
+		}, "both at once"),
+	)
+	_, kept := askProposing(t, service, "add and remove that label")
+	testutil.Require(t, "one action", len(kept), 1)
+	testutil.Expect(t, "it is not offered", kept[0].Offered, false)
+	testutil.Expect(t, "and the owner's own words say why", kept[0].Reason,
+		`label "fleet" cannot be both --label and --unlabel in one edit`)
+}
+
+// An edit of a goal an earlier open of the same answer named composes against
+// that open's own labels: there is nothing at the tip to read them from.
+func TestAnEditOfAGoalOpenedInTheSameAnswerComposesOnItsLabels(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeOpen, "refund-worker", []string{
+			uitools.ProposalIntent + "Every refund lands within a day.",
+			uitools.ProposalNextStep + "Read the retry loop.",
+			uitools.ProposalID + "refund-worker",
+			uitools.ProposalSeverity + "2", uitools.ProposalNovelty + "1",
+			uitools.ProposalExposure + "2", uitools.ProposalAccumulation + "1",
+			uitools.ProposalBasis + "payments, one team",
+			uitools.ProposalLabels + "payments, robustness",
+		}, "as discussed"),
+		proposed(uitools.ProposeEdit, "refund-worker", []string{
+			uitools.ProposalLabel + "queue",
+			uitools.ProposalUnlabel + "robustness",
+		}, "one more label, one fewer"),
+	)
+	_, kept := askProposing(t, service, "Create it, then fix its labels")
+	testutil.Require(t, "two actions", len(kept), 2)
+	testutil.Expect(t, "the open is offered", kept[0].Offered, true)
+	testutil.Expect(t, "the edit is offered too", kept[1].Offered, true)
+	testutil.Expect(t, "and composes on the labels the open carried",
+		kept[1].Fields[uitools.FieldLabels], "payments, queue")
+}

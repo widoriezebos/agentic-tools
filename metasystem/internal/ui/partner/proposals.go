@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
@@ -211,15 +212,20 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 	observed := running.observed
 	index := len(running.proposals)
 	opened := map[string]bool{}
+	// And the labels each of those opens carried, because an edit of a goal
+	// opened earlier in the same answer composes its label delta onto them:
+	// there is nothing at the tip to read them from.
+	openedLabels := map[string][]string{}
 	for _, earlier := range running.proposals {
 		if earlier.Offered && earlier.Verb == uitools.ProposeOpen {
 			opened[earlier.Goal] = true
+			openedLabels[earlier.Goal] = namesIn(earlier.Fields[uitools.FieldLabels])
 		}
 	}
 	s.mu.Unlock()
 
 	admitted := Proposal{
-		Index: index, Verb: prepared.Verb, Goal: prepared.Goal, Fields: prepared.Fields,
+		Index: index, Verb: prepared.Verb, Goal: prepared.Goal, Fields: copiedFields(prepared.Fields),
 		Why: prepared.Why, State: ProposalWaiting, Version: 1,
 		At: s.now().UTC().Format(time.RFC3339),
 	}
@@ -265,6 +271,17 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 			return
 		}
 	}
+	// An edit's labels are composed here, and only here.
+	if prepared.Verb == uitools.ProposeEdit {
+		carried := openedLabels[prepared.Goal]
+		if atTheTip {
+			carried = subject.Labels
+		}
+		if refusal := composeLabels(admitted.Fields, carried); refusal != "" {
+			s.refuseProposal(running, admitted, refusal)
+			return
+		}
+	}
 	admitted.Offered = true
 	s.record(running, Event{Kind: EventProposal, Proposal: &admitted})
 }
@@ -288,13 +305,64 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 func edgesNamedBy(fields map[string]string) []string {
 	named := []string{}
 	for _, field := range []string{uitools.FieldBlocker, uitools.FieldBlockedBy, uitools.FieldBlocks} {
-		for _, id := range strings.Split(fields[field], ",") {
-			if trimmed := strings.TrimSpace(id); trimmed != "" {
-				named = append(named, trimmed)
-			}
+		named = append(named, namesIn(fields[field])...)
+	}
+	return named
+}
+
+// composeLabels turns an edit's label delta into the whole list its route takes,
+// or answers the refusal the composing owner gives.
+//
+// It is here and not in the tool server because the tool has no ledger reading.
+// `--label` adds and `--unlabel` removes, and what they add to and remove from
+// is the goal as the reading this turn was composed against holds it. The
+// command's own owner does the composing — `goal.ApplyLabelDelta`, which also
+// refuses a label named in both lists — so an edit proposed in the browser and
+// an edit typed at a terminal compose one list.
+//
+// An edit that says nothing about labels is left alone: the two delta fields are
+// absent, nothing is written, and the route leaves the goal's labels as it found
+// them.
+func composeLabels(fields map[string]string, carried []string) string {
+	added, adding := fields[uitools.FieldLabel]
+	removed, removing := fields[uitools.FieldUnlabel]
+	if !adding && !removing {
+		return ""
+	}
+	composed, err := goal.ApplyLabelDelta(carried, namesIn(added), namesIn(removed))
+	if err != nil {
+		return err.Error()
+	}
+	delete(fields, uitools.FieldLabel)
+	delete(fields, uitools.FieldUnlabel)
+	fields[uitools.FieldLabels] = strings.Join(composed, ", ")
+	return ""
+}
+
+// namesIn is one frame line's comma-separated list as names. An empty line is no
+// names, which is what an emptied list and a trailing comma both mean.
+func namesIn(said string) []string {
+	named := []string{}
+	for _, one := range strings.Split(said, ",") {
+		if trimmed := strings.TrimSpace(one); trimmed != "" {
+			named = append(named, trimmed)
 		}
 	}
 	return named
+}
+
+// copiedFields is the action's fields as this record's own map. The host's map
+// belongs to the completed call it read, and the composing above writes into
+// this one.
+func copiedFields(fields map[string]string) map[string]string {
+	if fields == nil {
+		return nil
+	}
+	held := make(map[string]string, len(fields))
+	for key, value := range fields {
+		held[key] = value
+	}
+	return held
 }
 
 // refuseProposal records one action the human is not offered, with its reason.

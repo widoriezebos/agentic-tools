@@ -53,7 +53,7 @@ func TestAProposalIsARowCarryingTheWholeAction(t *testing.T) {
 	testutil.Expect(t, "the title is the subject as the pages say it",
 		need.Title, "What g1-s44 is for")
 	testutil.Expect(t, "what is asked is the verb's word, the subject and every argument",
-		need.Asked, "Not now · What g1-s44 is for · Because: superseded by the seat inventory (g1-s42)")
+		need.Asked, "Pause · What g1-s44 is for · Because: superseded by the seat inventory (g1-s42)")
 	testutil.Expect(t, "who asks", need.By, "the Partner")
 	testutil.Expect(t, "since when", need.Since, ago(2*time.Hour))
 	testutil.Expect(t, "what silence does", need.Silence, "it stays proposed; nothing is applied")
@@ -106,7 +106,7 @@ func TestAProposalJoinsTheGoalsRowWhereTheLedgerHasIt(t *testing.T) {
 	testutil.Expect(t, "the row of a goal nobody has yet is nil", unjoined.Row == nil, true)
 	testutil.Expect(t, "and what is asked still says what would happen",
 		unjoined.Asked,
-		"Open goal · Every refund lands within a day · Intent: Every refund lands within a day. · Severity: 2")
+		"Open · Every refund lands within a day · Intent: Every refund lands within a day. · Severity: 2")
 }
 
 // A line's own state travels, so a refused or unresolved row keeps its words
@@ -218,23 +218,24 @@ func everyProposalMemberIsNil(page Page) bool {
 	return true
 }
 
-// The word on the row is the button word of the page that offers that act, for
-// every one of the ten: the row, the card and the button say one thing. Abandon
-// has no button on any page — the Partner's line is the whole of the ask — so
-// its word is the word the card says.
-func TestTheWordOnAProposalRowIsThePagesOwnButtonWord(t *testing.T) {
+// The word on the row is the act's own public name, for every one of the ten:
+// the row, the card and the page's button say one thing, and it is the word a
+// human types at a terminal (g1-s62 D3). Abandon has no button on any page —
+// the Partner's line is the whole of the ask — so its word is the word the card
+// says.
+func TestTheWordOnAProposalRowIsTheActsOwnPublicName(t *testing.T) {
 	t.Parallel()
 	for verb, word := range map[string]string{
 		"abandon-goal":      "Abandon",
-		"park-goal":         "Not now",
-		"unpark-goal":       "Return to queue",
+		"park-goal":         "Pause",
+		"unpark-goal":       "Resume",
 		"approve-goal":      "Approve",
-		"withdraw-goal":     "Withdraw approval",
-		"set-goal-priority": "Set priority",
-		"open-goal":         "Open goal",
+		"withdraw-goal":     "Unapprove",
+		"set-goal-priority": "Prioritize",
+		"open-goal":         "Open",
 		"edit-goal":         "Edit",
-		"block-goal":        "Waits for",
-		"unblock-goal":      "No longer waits for",
+		"block-goal":        "Block",
+		"unblock-goal":      "Unblock",
 	} {
 		testutil.Expect(t, "the word for "+verb, proposalWord(verb), word)
 	}

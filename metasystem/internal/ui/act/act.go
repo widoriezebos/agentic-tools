@@ -293,7 +293,7 @@ func (a Authority) Withdraw(id, because string) error {
 }
 
 // Park pauses one goal with the reason a human gave, and Unpark lifts a
-// park. They are the interface's "Not now" and its undo, admitted under
+// park. They are the interface's "Pause" and its undo, admitted under
 // R-125-m1u: the engine takes this hand's session proof at the three rows the
 // ruling names and at no others, so a goal another pair claimed between the
 // page's read and this act is refused rather than displaced.

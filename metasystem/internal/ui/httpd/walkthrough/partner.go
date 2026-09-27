@@ -151,18 +151,26 @@ const (
 )
 
 // proposed is one canned propose call, in the tool's own fixed form.
-func proposed(when, verb, subject string, lines []string, explanation string) fakeacp.Read {
-	frame := uitools.ProposalHeader + verb + "\n"
-	if verb != uitools.ProposeOpen {
+//
+// The route is what the frame carries and what the message persists; the title
+// is the CALL, so it names the act the way the Partner asked for it, by the
+// goal action's public name (g1-s62 D1).
+func proposed(when, route, subject string, lines []string, explanation string) fakeacp.Read {
+	frame := uitools.ProposalHeader + route + "\n"
+	if route != uitools.ProposeOpen {
 		frame += uitools.ProposalGoal + subject + "\n"
 	}
 	for _, line := range lines {
 		frame += line + "\n"
 	}
+	asked := route
+	if named, there := uitools.ProposedActOf(route); there {
+		asked = named.Action
+	}
 	return fakeacp.Read{
 		When:  when,
 		Name:  "mcp__" + uitools.ServerName + "__" + uitools.OpPropose,
-		Title: "propose(" + verb + " " + subject + ")",
+		Title: "propose(" + asked + " " + subject + ")",
 		Result: uitools.PreparedProposalLine + "\n" + frame +
 			uitools.ProposalSeparator + "\n" + explanation + "\n",
 	}

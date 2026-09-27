@@ -130,37 +130,58 @@ func TestALabelTheFramingDoesNotNameIsIgnored(t *testing.T) {
 // the runner composes a route body from.
 //
 // It is one test across the two halves because the defect it holds was between
-// them. An edit that CLEARS a goal's labels sends an empty list; the frame used
-// to drop an empty value, so the host saw no labels field at all, the runner
-// composed a body that said nothing about them, and the act layer refused the
-// whole edit as one that changes nothing — leaving the labels exactly where they
-// were. The two halves each looked right on their own.
-func TestAnEmptiedLabelListSurvivesTheFrame(t *testing.T) {
+// them. A field the caller gave EMPTY says something, and the frame used to drop
+// an empty value: the host then saw no field at all, the runner composed a body
+// that said nothing about it, and the act layer refused the whole edit as one
+// that changes nothing. The two halves each looked right on their own.
+//
+// The labels are the case that shows it, and under the public grammar they are a
+// DELTA: `--label` adds and `--unlabel` removes, and the whole list the route
+// takes is composed at admission, where the goal's own labels are read
+// (g1-s62 D1, and TestAnEditsLabelsAreComposedFromTheLabelsRead for that half).
+func TestAnEmptiedListSurvivesTheFrame(t *testing.T) {
 	t.Parallel()
 	prepared := uitools.Readers{}.Answer(uitools.OpPropose, uitools.Args{
-		"verb": uitools.ProposeEdit, "goal": "fleet-presence",
-		"labels": []any{}, "explanation": "the labels moved to the arc",
+		"verb": uitools.ActionEdit, "goal": "fleet-presence",
+		"unlabel": []any{}, "explanation": "the labels moved to the arc",
 	})
 	testutil.Require(t, "the call is prepared", prepared.Failed(), false)
 
 	read := proposedIn(prepared.Text())
 	testutil.Require(t, "one action", read != nil, true)
-	testutil.Expect(t, "the route", read.Verb, uitools.ProposeEdit)
-	// Present and empty, which is what says "clear them". A field the caller did
-	// not send is absent from this map, and the runner leaves such a field alone.
-	said, given := read.Fields[uitools.FieldLabels]
-	testutil.Expect(t, "the labels field is there", given, true)
-	testutil.Expect(t, "and says nothing, which is how they are cleared", said, "")
+	testutil.Expect(t, "the route the message persists", read.Verb, uitools.ProposeEdit)
+	// Present and empty, which is a statement. A field the caller did not send is
+	// absent from this map, and admission leaves such a field alone.
+	said, given := read.Fields[uitools.FieldUnlabel]
+	testutil.Expect(t, "the field is there", given, true)
+	testutil.Expect(t, "and says nothing", said, "")
+
+	// The delta travels under the public flags' own spellings, both of them.
+	both := uitools.Readers{}.Answer(uitools.OpPropose, uitools.Args{
+		"verb": uitools.ActionEdit, "goal": "fleet-presence",
+		"label": []any{"payments"}, "unlabel": []any{"fleet"}, "explanation": "one moves",
+	})
+	testutil.Require(t, "that call is prepared too", both.Failed(), false)
+	delta := proposedIn(both.Text())
+	testutil.Require(t, "that one is an action too", delta != nil, true)
+	testutil.Expect(t, "the labels to add", delta.Fields[uitools.FieldLabel], "payments")
+	testutil.Expect(t, "the labels to remove", delta.Fields[uitools.FieldUnlabel], "fleet")
+	_, whole := delta.Fields[uitools.FieldLabels]
+	testutil.Expect(t, "and no whole list is invented before the goal is read", whole, false)
 
 	// And a field nobody sent is still absent, so an edit of the intent alone
 	// still leaves the labels as the ledger has them.
 	intentOnly := uitools.Readers{}.Answer(uitools.OpPropose, uitools.Args{
-		"verb": uitools.ProposeEdit, "goal": "fleet-presence",
+		"verb": uitools.ActionEdit, "goal": "fleet-presence",
 		"intent": "Tighter.", "explanation": "one line",
 	})
-	testutil.Require(t, "that call is prepared too", intentOnly.Failed(), false)
+	testutil.Require(t, "the third call is prepared", intentOnly.Failed(), false)
 	alone := proposedIn(intentOnly.Text())
-	testutil.Require(t, "that one is an action too", alone != nil, true)
-	_, touched := alone.Fields[uitools.FieldLabels]
-	testutil.Expect(t, "an edit that says nothing about labels carries none", touched, false)
+	testutil.Require(t, "the third one is an action too", alone != nil, true)
+	testutil.Expect(t, "the intent is under the route body's own name",
+		alone.Fields[uitools.FieldIntent], "Tighter.")
+	_, touched := alone.Fields[uitools.FieldLabel]
+	testutil.Expect(t, "an edit that says nothing about labels carries no delta", touched, false)
+	_, listed := alone.Fields[uitools.FieldLabels]
+	testutil.Expect(t, "and no list either", listed, false)
 }
