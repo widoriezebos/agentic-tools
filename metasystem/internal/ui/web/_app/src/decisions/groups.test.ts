@@ -297,9 +297,9 @@ describe("proposed by the Partner", () => {
   });
 
   it("says the act and the subject on the row, with the state where there is one", () => {
-    expect(rowLine(proposalNeed())).toBe("Not now · The seat census answers which machines are alive");
+    expect(rowLine(proposalNeed())).toBe("Pause · The seat census answers which machines are alive");
     expect(rowLine(proposalNeed({}, { state: "unresolved", words: "the answer was lost" }))).toBe(
-      "Not now · The seat census answers which machines are alive · unresolved: the answer was lost; " +
+      "Pause · The seat census answers which machines are alive · unresolved: the answer was lost; " +
         "check the goal before trying again",
     );
   });

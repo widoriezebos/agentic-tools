@@ -17,7 +17,7 @@ import { failureMessage } from "../shell/workspace";
  * drop on claimed work opens this, because a human dragging a card in In
  * Progress is reasonably expecting to change what that seat is doing, and the
  * act does not do that — the sentence here says so before the act rather than
- * after it. "Set priority…" opens it too, because a rank typed rather than
+ * after it. "Prioritize…" opens it too, because a rank typed rather than
  * dragged has nothing to read the band from.
  *
  * Both fields are editable either way. The placement a drag computed is a
@@ -73,7 +73,7 @@ export function RankSheet({
   return (
     <Panel
       eyebrow={`${rankOf(goal)} → ${rankOf({ priority: Number(priority) || 0, sequence: Number(sequence) || 0 })}`}
-      title="Set priority"
+      title="Prioritize"
       // What the head's Ask hands over: the goal, and the rank being asked for.
       fields={[
         { name: "Goal", value: goal.ref.id },
@@ -92,7 +92,7 @@ export function RankSheet({
       onClose={onClose}
       act={
         <Button primary disabled={blocked !== "" || sending} onClick={send}>
-          Set priority
+          Prioritize
         </Button>
       }
     >

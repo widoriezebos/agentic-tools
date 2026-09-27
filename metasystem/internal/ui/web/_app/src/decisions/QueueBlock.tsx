@@ -170,7 +170,7 @@ function SelectionBar({
           onBulk("park", selected);
         }}
       >
-        Not now
+        Pause
       </Button>
       <Button onClick={onClear}>Clear</Button>
     </div>

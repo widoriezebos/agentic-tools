@@ -188,8 +188,8 @@ describe("the chip on a board card", () => {
   it("stands last in the card's chips, named for the goal and the count", () => {
     const board = markup([proposal()]);
 
-    expect(board).toContain('aria-label="Not now proposed on ui-1, 1 action"');
-    expect(board).toContain("Not now proposed");
+    expect(board).toContain('aria-label="Pause proposed on ui-1, 1 action"');
+    expect(board).toContain("Pause proposed");
     expect(board.indexOf("ms-chip-proposed")).toBeGreaterThan(board.indexOf(">tier 1<"));
   });
 
@@ -205,7 +205,7 @@ describe("the chip on a board card", () => {
     const board = markup([proposal({ state: "refused", words: "goal ui-1 is claimed by m2a" })]);
 
     expect(board).toContain("ms-chip-proposed--wrong");
-    expect(board).toContain("Not now refused");
+    expect(board).toContain("Pause refused");
   });
 
   it("is on no card where nothing was proposed, which is the ordinary board", () => {

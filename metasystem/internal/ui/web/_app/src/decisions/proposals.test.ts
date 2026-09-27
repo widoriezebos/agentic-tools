@@ -47,7 +47,7 @@ function need(over: Partial<Need> = {}, action: Partial<Proposed> = {}): Need {
     kind: "proposal",
     id: "t7/2",
     title: "The seat census answers which machines are alive",
-    asked: "Not now · The seat census answers which machines are alive",
+    asked: "Pause · The seat census answers which machines are alive",
     by: "the Partner",
     since: "2026-09-26T09:00:00Z",
     deadline: "",
@@ -184,18 +184,18 @@ describe("the entry a run or a conflict left", () => {
 
 describe("what a row's line says", () => {
   it("is the verb's word and the subject while nobody has answered it", () => {
-    expect(proposalLine(need())).toBe("Not now · The seat census answers which machines are alive");
+    expect(proposalLine(need())).toBe("Pause · The seat census answers which machines are alive");
   });
 
   it("says a refusal on the line, in the engine's own words", () => {
     expect(proposalLine(need({}, { state: "refused", words: "goal g1-s44 is claimed by m2a" }))).toBe(
-      "Not now · The seat census answers which machines are alive · refused: goal g1-s44 is claimed by m2a",
+      "Pause · The seat census answers which machines are alive · refused: goal g1-s44 is claimed by m2a",
     );
   });
 
   it("says a line a page left in flight was being applied", () => {
     expect(proposalLine(need({}, { state: "applying" }))).toBe(
-      `Not now · The seat census answers which machines are alive · ${WAS_IN_FLIGHT}`,
+      `Pause · The seat census answers which machines are alive · ${WAS_IN_FLIGHT}`,
     );
   });
 
@@ -502,7 +502,7 @@ describe("what a stopped run leaves, and Continue with the rest", () => {
     expect(notRunIn(lines).map((one) => one.id)).toEqual(["t7#4"]);
     // And the row says so, in the card's own words.
     expect(proposalLine(need({ id: "t7/4" }, { index: 4 }), lines[1])).toBe(
-      "Not now · The seat census answers which machines are alive · not run",
+      "Pause · The seat census answers which machines are alive · not run",
     );
   });
 

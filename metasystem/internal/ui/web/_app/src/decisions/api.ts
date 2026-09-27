@@ -29,7 +29,7 @@ export type Where = { kind: string; id: string };
  * What a row asks this human to do, where this interface has the act.
  *
  * Two are the board's. The other two are this page's own, admitted from a
- * signed-in browser under R-125-m1u: park is "Not now", and unpark returns a
+ * signed-in browser under R-125-m1u: park is "Pause", and unpark returns a
  * paused goal to the queue.
  */
 export type Act = "approve" | "withdraw" | "park" | "unpark" | "apply" | "";

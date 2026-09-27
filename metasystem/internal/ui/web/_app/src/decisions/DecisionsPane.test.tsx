@@ -439,7 +439,7 @@ describe("an open row", () => {
     expect(markup).toContain("no budget recorded");
     expect(markup).toContain("priority 2, position 1");
     expect(markup).toContain(">Approve</button>");
-    expect(markup).toContain(">Not now</button>");
+    expect(markup).toContain(">Pause</button>");
     expect(markup).toContain(">Edit</button>");
     expect(markup).toContain("Open the goal");
   });
@@ -449,7 +449,7 @@ describe("an open row", () => {
     const stopped = rendered(page(), { chosen: "stopped", openRow: "g1-s48" });
 
     expect(parked).toContain("the implementer paused it to finish g1-s48 first");
-    expect(parked).toContain(">Return to queue</button>");
+    expect(parked).toContain(">Resume</button>");
     expect(stopped).toContain("metasystem goal resume --id g1-s48");
     expect(stopped).not.toContain("metasystem goal unpark");
   });
@@ -527,7 +527,7 @@ describe("the queue", () => {
 
     expect(markup).toContain("1 selected");
     expect(markup).toContain(">Approve</button>");
-    expect(markup).toContain(">Not now</button>");
+    expect(markup).toContain(">Pause</button>");
     expect(markup).toContain(">Clear</button>");
   });
 
@@ -566,7 +566,7 @@ describe("what you decided", () => {
     expect(markup).toContain("Decisions 1");
     expect(markup).toContain("Answered 1");
     expect(markup).toContain("Approved 2");
-    expect(markup).toContain("Not now 2");
+    expect(markup).toContain("Paused 2");
   });
 
   it("renders a ruling whole, with its owner, its review chip and its mentions", () => {
@@ -600,7 +600,7 @@ describe("what you decided", () => {
   it("carries Withdraw only where the board's own eligibility allows", () => {
     const markup = decided("approved");
 
-    expect(markup.match(/>Withdraw approval</g)).toHaveLength(1);
+    expect(markup.match(/>Unapprove</g)).toHaveLength(1);
     expect(markup).toContain("The shell, the rail and the header");
   });
 
@@ -663,7 +663,7 @@ describe("proposed by the Partner", () => {
       kind: "proposal",
       id: "t7/0",
       title: "The seat census answers which machines are alive",
-      asked: `Not now · The seat census answers which machines are alive · Because: ${because}`,
+      asked: `Pause · The seat census answers which machines are alive · Because: ${because}`,
       by: "the Partner",
       since: "2026-09-25T09:00:00Z",
       silence: "it stays proposed; nothing is applied",
@@ -746,9 +746,9 @@ describe("proposed by the Partner", () => {
   it("says the act and the subject on every row, and where a line stands", () => {
     const markup = rendered(proposing(), { chosen: "proposed" });
 
-    expect(markup).toContain("Not now · The seat census answers which machines are alive</span>");
+    expect(markup).toContain("Pause · The seat census answers which machines are alive</span>");
     expect(markup).toContain(
-      "Not now · A machine publishes its phase with every tick · refused: goal g1-s45 is claimed by m2a</span>",
+      "Pause · A machine publishes its phase with every tick · refused: goal g1-s45 is claimed by m2a</span>",
     );
     // The apostrophe in the title is escaped in the markup, so the assertion
     // reads from the state's own words back.
@@ -759,7 +759,7 @@ describe("proposed by the Partner", () => {
   it("holds the card's own line whole when a row opens, with the explanation under it", () => {
     const markup = rendered(proposing(), { chosen: "proposed", openRow: "t7/0" });
 
-    expect(markup).toContain('<span class="ms-proposal-word">Not now</span>');
+    expect(markup).toContain('<span class="ms-proposal-word">Pause</span>');
     expect(markup).toContain('<span class="ms-proposal-title">The seat census answers which machines are alive</span>');
     expect(markup).toContain(">g1-s44</a>");
     expect(markup).toContain('<span class="ms-proposal-label">Reason</span>');
@@ -907,7 +907,7 @@ describe("the chip on a queue row", () => {
   it("stands on the line, outside the toggle the line opens with", () => {
     const markup = queue([proposal()]);
 
-    expect(markup).toContain('aria-label="Not now proposed on g1-s40, 1 action"');
+    expect(markup).toContain('aria-label="Pause proposed on g1-s40, 1 action"');
     // Outside: the toggle closes before the chip opens, so one button is not
     // inside the other — which no browser would render and no keyboard reach.
     const chip = markup.indexOf("ms-chip-proposed");
@@ -922,7 +922,7 @@ describe("the chip on a queue row", () => {
     );
     const refused = queue([proposal({ state: "refused", words: "g1-s40 is claimed by m2a" })]);
     expect(refused).toContain("ms-chip-proposed--wrong");
-    expect(refused).toContain("Not now refused");
+    expect(refused).toContain("Pause refused");
   });
 
   it("is absent where nothing about the goal waits", () => {

@@ -177,10 +177,11 @@ export function tabs(page: Page): TabName[] {
     { id: "decisions", title: `Decisions ${String(decided.decisions.length)}` },
     { id: "answered", title: `Answered ${String(decided.answered.length)}` },
     { id: "approved", title: `Approved ${String(decided.approved.length)}` },
-    // Not now is a decided thing and belongs here: a human who wrote down a
+    // A pause is a decided thing and belongs here: a human who wrote down a
     // reason and a date has decided, and counting it as undecided was the
-    // one place this page told them otherwise.
-    { id: "not-now", title: `Not now ${String(decided.notNow.length)}` },
+    // one place this page told them otherwise. The id stays what it was: it is
+    // never shown, and changing it would move a persisted tab choice.
+    { id: "not-now", title: `Paused ${String(decided.notNow.length)}` },
   ];
 }
 

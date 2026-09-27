@@ -22,7 +22,7 @@ import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
 
 /**
- * Approving and withdrawing, before the act is made.
+ * Approving and unapproving, before the act is made.
  *
  * The panel's chrome — the dialog role, the focus held inside it, Escape, the
  * scrim — is Panel's, shared with the two acts that arrived after this one.
@@ -59,7 +59,7 @@ export function ActSheet({
   const prefill = prefillFor(request.goal, backlog.budgetDefaults, backlog.rows);
   const [draft, setDraft] = useState<BudgetDraft>(() => draftOf(prefill.budget));
   const [reason, setReason] = useState("");
-  // This opening of this sheet, minted once. Withdrawing has one field the
+  // This opening of this sheet, minted once. Unapproving has one field the
   // Partner may write; approving has none, and both are this one opening.
   const opening = useOpening();
   // Which field the caret is in, reported by the field's own row.
@@ -112,7 +112,7 @@ export function ActSheet({
   return (
     <Panel
       eyebrow={approving ? "To Do → Ready for Work" : "Ready for Work → To Do"}
-      title={approving ? "Approve" : "Withdraw approval"}
+      title={approving ? "Approve" : "Unapprove"}
       // What the head's Ask hands over: the goal this is about, and the budget
       // or the reason that is the whole of what a human fills in here.
       fields={
@@ -133,7 +133,7 @@ export function ActSheet({
       goal={request.goal}
       opening={opening}
       // Approving is a confirmation: every one of the five limits is shown and
-      // confirmed, and none of them is text the Partner writes. Withdrawing
+      // confirmed, and none of them is text the Partner writes. Unapproving
       // asks for one sentence, which is.
       writable={approving ? [] : ["Reason"]}
       set={putWords}
@@ -143,7 +143,7 @@ export function ActSheet({
       onClose={onClose}
       act={
         <Button primary disabled={blocked !== "" || sending} onClick={send}>
-          {approving ? "Approve" : "Withdraw approval"}
+          {approving ? "Approve" : "Unapprove"}
         </Button>
       }
     >
