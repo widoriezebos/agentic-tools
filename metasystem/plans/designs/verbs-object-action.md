@@ -259,12 +259,11 @@ result strictly, as `test.go:932` does. No other pair may be both.
 | `up` | cron line (`internal/up/up.go:936`), rearm (`rearm_on_landed.go:410`), seat step | also the `system start` owner; kept as argv for these launchers |
 | `hook RUNTIME EVENT` (new) | the plumbing stub `supervision-hook.sh` (3.3) | runtime hook body, replaces the script |
 | `pre-commit` (new) | the plumbing stub `pre-commit-guard.sh` (3.3) | git hook body |
-| `delegate-supervisor` (new, U6a) | the dispatch driver (U6b) | persistent owner of one delegate launch through completion and result publication, replacing the detached adapter supervisor (`dispatch.sh:1001`, `adapters/claude.sh:165`) (VOA-04) |
+| `delegate-supervisor` (new, U6a) | the dispatch driver (U6b); the mission runner for host turns (`delegate-supervisor RUNTIME start-turn`, `internal/missionrunner/host.go:403`) | persistent owner of one delegate launch through completion and result publication, replacing the detached adapter supervisor (`dispatch.sh:1001`, `adapters/claude.sh:165`) (VOA-04) |
 
 Entries that become function calls, because nothing outside the engine needs a
 process for them: `steward revive`, `delegate --revive`, `up --recover-only`
-called from landing (`landing_batch_owner.go:137`), `util hold` (becomes a test
-helper binary built by the test). `proc setsid` goes when `launch/process.go`
+called from landing (`landing_batch_owner.go:137`), `util hold` stays an engine verb as the fake runtime's stand-in CLI child (U6a: the fake is compiled into the engine and driven by shell beds, so a test-built helper cannot serve them; its janitor shape is `tagged-hold`). `proc setsid` goes when `launch/process.go`
 sets `Setsid` directly and its argv recognizers (6.6) move with it. The list may
 shrink during the build; adding an entry needs a revision of this page.
 
@@ -896,3 +895,8 @@ into 3.5 ("One effective declaration per runtime name") and R13.
 
 VOA-31 confirmation against 36bffdd8f: verified, zero material findings.
 Revision 8 is closed.
+
+U6a read (Fable, 2026-09-27): R5 rose to 124 with genuine process boundaries
+now recorded in 3.2 (host turns via `delegate-supervisor ... start-turn`; the
+fake runtime's `util hold` child); the fake self-test's `internal delegate`
+children are transitional until U6b removes dispatch.sh.
