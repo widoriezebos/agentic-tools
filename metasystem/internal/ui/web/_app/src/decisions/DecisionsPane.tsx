@@ -36,6 +36,7 @@ import {
 import { decidedCount, groupOnScreen, groupsOf, viewTitle, type ViewId } from "./groups";
 import { Inbox } from "./Inbox";
 import type { Acts } from "./InboxRow";
+import { ProposalSheet } from "./ProposalBlock";
 import { useProposals } from "./proposals";
 import { useNarrowing } from "./QueueBlock";
 import { ActSheet, type Request } from "../backlog/ActSheet";
@@ -46,7 +47,7 @@ import { Help } from "../help/Help";
 import type { HelpId } from "../help/terms";
 import { Pane } from "../panes/Pane";
 import { Tabs } from "../panes/Tabs";
-import { askLine, type Line as ProposalLine } from "../partner/proposing";
+import { askLine, type Displayeds, type Line as ProposalLine } from "../partner/proposing";
 import { usePartner } from "../partner/store";
 import { setRecordStatus } from "../project/api";
 import { goalPath } from "../routes";
@@ -96,6 +97,12 @@ type Bulking =
   | { state: "failed"; bulk: Bulk; message: string }
   | { state: "ready"; bulk: Bulk; backlog: Backlog };
 
+/** And the same, for the sheet the proposals' own bar opens over ticked rows. */
+type Proposing =
+  | { state: "loading"; needs: readonly Need[] }
+  | { state: "failed"; needs: readonly Need[]; message: string }
+  | { state: "ready"; needs: readonly Need[]; backlog: Backlog };
+
 /** And the same, for the editor over one queued goal. */
 type Editing =
   | { state: "loading"; goal: Row }
@@ -113,6 +120,7 @@ export function DecisionsPane() {
   const [acting, setActing] = useState<Acting | null>(null);
   const [bulk, setBulk] = useState<Bulking | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [proposing, setProposing] = useState<Proposing | null>(null);
   const [view, setView] = useState<ViewId>("inbox");
   const [tab, setTab] = useState<TabId>("rulings");
   // Which group this viewer left open. null is "nothing stored"; "" is a
@@ -247,6 +255,21 @@ export function DecisionsPane() {
       });
   }, []);
 
+  // The sheet over several proposed actions needs the same payload for the same
+  // reason the queue's does: it shows the budget each approve would carry, from
+  // the project's law and the rows it is opened over. ONE read, when the sheet
+  // opens, and the sheet keeps what it showed (Astra S60-02, S58-08).
+  const openProposals = useCallback((needs: readonly Need[]) => {
+    setProposing({ state: "loading", needs });
+    loadBacklog()
+      .then((backlog) => {
+        setProposing({ state: "ready", needs, backlog });
+      })
+      .catch((error: unknown) => {
+        setProposing({ state: "failed", needs, message: failureMessage(error) });
+      });
+  }, []);
+
   // And so does the editor: it suggests labels from what the board already
   // carries, and it says who is acting.
   const openEdit = useCallback((goal: Row) => {
@@ -337,7 +360,7 @@ export function DecisionsPane() {
         onDismiss: (need: Need) => {
           const line = proposals.lineOf(need);
           if (line !== null) {
-            proposals.dismiss(line);
+            proposals.dismiss([line]);
           }
         },
         onAsk: (need: Need) => {
@@ -346,11 +369,18 @@ export function DecisionsPane() {
             fillComposer(askLine(line));
           }
         },
+        // The bar's Apply is the sheet, because a collapsed row does not show
+        // what the act would carry; its Dismiss needs none, because dismissing
+        // publishes nothing (Astra S60-02).
+        onBulkApply: openProposals,
+        onBulkDismiss: (needs: readonly Need[]) => {
+          proposals.dismiss(proposals.linesOf(needs));
+        },
         running: proposals.running,
       },
     }),
     [signedIn, askToSignIn, open, openBulk, openEdit, returnToQueue, writeStatus, busy, refused,
-      proposals, fillComposer],
+      proposals, fillComposer, openProposals],
   );
 
   const hint = read.state === "read" ? `Read at ${minuteTime(read.page.readAt)} · Refresh` : "Refresh";
@@ -437,6 +467,29 @@ export function DecisionsPane() {
           onStopped={() => {
             setSelected([]);
             reload();
+          }}
+        />
+      )}
+      {proposing !== null && proposing.state === "failed" && (
+        <p className="ms-decisions-refusal" role="alert">
+          The backlog could not be read, so the sheet could not open: {proposing.message}
+        </p>
+      )}
+      {proposing !== null && proposing.state === "ready" && (
+        <ProposalSheet
+          needs={proposing.needs}
+          backlog={proposing.backlog}
+          holding={proposals}
+          onClose={() => {
+            setProposing(null);
+          }}
+          onApply={(lines) => {
+            // The sheet closes on the press and the rows report the run: the
+            // lines are the page's own, and the page is what the run moves.
+            setProposing(null);
+            setSelected([]);
+            proposals.noteBudgets(budgetsOf(lines));
+            proposals.run(lines);
           }}
         />
       )}
@@ -599,6 +652,23 @@ export function Views({
       />
     </div>
   );
+}
+
+/**
+ * The tuples a set of lines carries, so the rows say what the sheet said.
+ *
+ * The sheet read them once when it opened and sends them as displayed; keeping
+ * them here means an open row shows the same tuple afterwards rather than
+ * reading the backlog a second time for the same answer.
+ */
+function budgetsOf(lines: readonly ProposalLine[]): Displayeds {
+  const held: Record<string, NonNullable<ProposalLine["displayed"]>> = {};
+  for (const line of lines) {
+    if (line.displayed !== null) {
+      held[line.id] = line.displayed;
+    }
+  }
+  return held;
 }
 
 /** Whether the live session is one a human has signed into. */

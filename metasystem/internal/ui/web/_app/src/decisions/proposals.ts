@@ -257,8 +257,16 @@ export type ProposalActs = {
   onDismiss: (need: Need) => void;
   /** Ask the Partner: the drawer opens with the line's words in the composer. */
   onAsk: (need: Need) => void;
+  /** The bar's Apply: the sheet opens over every ticked row on screen. */
+  onBulkApply: (needs: readonly Need[]) => void;
+  /** The bar's Dismiss, which needs no sheet: it publishes nothing. */
+  onBulkDismiss: (needs: readonly Need[]) => void;
   running: boolean;
 };
+
+/** What the sheet says where nothing it lists can be sent at all. */
+export const NOTHING_SENDABLE =
+  "Nothing here can be sent: every action selected needs its budget first, and an approve with no tuple is approved alone.";
 
 /** What the pane holds about the proposals on it, and how it applies one. */
 export type Applying = {
@@ -283,8 +291,14 @@ export type Applying = {
   budgets: Displayeds;
   /** Keep the tuples a sheet read when it opened, so the rows say the same. */
   noteBudgets: (read: Displayeds) => void;
-  /** Put one line away, and read the page again when the write has answered. */
-  dismiss: (line: Line) => void;
+  /**
+   * Put these lines away, and read the page again when the writes have answered.
+   *
+   * One press, one guard and one re-read, however many lines: the bar's Dismiss
+   * over four rows is one act of the human's — I am not going to answer these —
+   * and four re-reads would be four blinks of the page.
+   */
+  dismiss: (lines: readonly Line[]) => void;
 };
 
 /**
@@ -371,19 +385,23 @@ export function useProposals(ask: {
   }, []);
 
   const dismiss = useCallback(
-    (line: Line) => {
-      if (!takeRun(guard.current, line.id)) {
+    (lines: readonly Line[]) => {
+      if (lines.length === 0 || !takeRun(guard.current, lines[0].id)) {
         return;
       }
-      setRunning(line.id);
+      setRunning(lines[0].id);
       void (async () => {
-        const answered = await dismissLine(line);
-        if (answered.kind === "failed") {
-          // The conversation could not write it down, so the row says so and
-          // stays: what a human pressed did not happen.
-          mark(line.id, { refusedUnsent: answered.words });
-        } else {
-          setStanding((held) => ({ ...held, [line.id]: answered.proposal }));
+        for (const line of lines) {
+          const answered = await dismissLine(line);
+          if (answered.kind === "failed") {
+            // The conversation could not write it down, so the row says so and
+            // stays: what a human pressed did not happen.
+            mark(line.id, { refusedUnsent: answered.words });
+          } else {
+            // A line somebody else moved first comes back as a conflict carrying
+            // the entry, and the row then shows what they did.
+            setStanding((held) => ({ ...held, [line.id]: answered.proposal }));
+          }
         }
         releaseRun(guard.current);
         setRunning("");

@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { Need, Proposed } from "./api";
-import { applyLabel, lineOf, linesOf, portsFor, proposalLine, rowID, turnOf, type Through } from "./proposals";
+import {
+  applyLabel,
+  dismissLine,
+  lineOf,
+  linesOf,
+  portsFor,
+  proposalLine,
+  rowID,
+  turnOf,
+  type Through,
+} from "./proposals";
 import type { Proposal } from "../partner/api";
 import type { Answered, Line, Looked, Mark, Written } from "../partner/proposing";
 import { runProposals, WAS_IN_FLIGHT } from "../partner/proposing";
@@ -325,5 +335,38 @@ describe("the run the inbox makes", () => {
     // asked for it rather than writing a version the server has moved past.
     expect(driven.signedInFrom()[0].version).toBe(3);
     expect(driven.signedInFrom()[0].state).toBe("refused");
+  });
+});
+
+/**
+ * Dismiss: the one press of this group that publishes nothing.
+ *
+ * It says this human is not going to answer this proposal, and it goes at the
+ * version the row rendered, so a line somebody else moved first answers with a
+ * conflict and stays as they left it.
+ */
+describe("putting a line away", () => {
+  it("writes dismissed under the line's own answer and version", async () => {
+    const wrote: string[] = [];
+    const through: Through = {
+      look: () => Promise.resolve({ rows: [], defaults: {}, outcome: "current", message: "" }),
+      record: (turn, line, state, words) => {
+        wrote.push(`${turn}:${String(line.index)}:${String(line.version)}:${state}:${words}`);
+        return Promise.resolve({
+          kind: "written",
+          proposal: {
+            index: line.index, verb: line.verb, goal: line.goal, title: line.title, offered: true,
+            state, words, at: "2026-09-26T10:00:00Z", version: line.version + 1,
+          },
+        });
+      },
+      send: () => Promise.resolve({ kind: "applied", words: "" }),
+    };
+
+    const answered = await dismissLine(lineOf(need({}, { state: "refused", version: 3 })) as Line, through);
+
+    expect(wrote).toEqual(["t7:2:3:dismissed:"]);
+    expect(answered.kind).toBe("written");
+    expect(answered.kind === "written" ? answered.proposal.state : "").toBe("dismissed");
   });
 });

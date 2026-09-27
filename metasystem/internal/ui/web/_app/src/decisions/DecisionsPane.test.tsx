@@ -243,6 +243,8 @@ const acts: Acts = {
     onApply: () => undefined,
     onDismiss: () => undefined,
     onAsk: () => undefined,
+    onBulkApply: () => undefined,
+    onBulkDismiss: () => undefined,
     running: false,
   },
 };
