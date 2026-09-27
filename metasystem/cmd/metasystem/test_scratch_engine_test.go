@@ -18,6 +18,15 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// lockedScratchRun runs body with forks excluded; body must not fork or
+// write through testexec (both take ForkLock).
+func lockedScratchRun(t *testing.T, body func()) {
+	t.Helper()
+	if err := testexec.Locked(func() error { body(); return nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedCandidateEngineEntry(t *testing.T, entry, identity string, at time.Time) {
 	t.Helper()
 	if err := os.MkdirAll(entry, 0o700); err != nil {
@@ -64,51 +73,56 @@ func TestScratchCandidateEngineV2KeepsEightAndCopiesOut(t *testing.T) {
 	if err := unix.Flock(int(held.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		t.Fatal(err)
 	}
-	scratch, err := proofrun.CreateScratchRun(controlRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := proofrun.WithScratchRun(context.Background(), scratch)
-	warm := identities[9]
-	built, err := prepareScratchCandidateEngine(ctx, scratch, controlRoot, gittree.Workspace{}, "metasystem", "", nil,
-		func() error { t.Fatal("warm identity took the cold path"); return nil }, candidateEngineIO{}, warm)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if built.Path != filepath.Join(scratch.Root(), "engine", "metasystem") {
-		t.Fatalf("consumer engine %s is not the run's private copy", built.Path)
-	}
-	for _, evicted := range identities[1:3] {
-		if _, err := os.Lstat(filepath.Join(v2, evicted)); !os.IsNotExist(err) {
-			t.Fatalf("oldest unlocked v2 entry %s survived: %v", evicted, err)
+	// Cleanup proves the writer free through a fresh description; a parallel
+	// test's fork would copy the open writer and hold the flock until it
+	// execs, so forks are excluded from creation to Cleanup.
+	lockedScratchRun(t, func() {
+		scratch, err := proofrun.CreateScratchRun(controlRoot)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	remaining := 0
-	if entries, err := os.ReadDir(v2); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				remaining++
+		ctx := proofrun.WithScratchRun(context.Background(), scratch)
+		warm := identities[9]
+		built, err := prepareScratchCandidateEngine(ctx, scratch, controlRoot, gittree.Workspace{}, "metasystem", "", nil,
+			func() error { t.Fatal("warm identity took the cold path"); return nil }, candidateEngineIO{}, warm)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if built.Path != filepath.Join(scratch.Root(), "engine", "metasystem") {
+			t.Fatalf("consumer engine %s is not the run's private copy", built.Path)
+		}
+		for _, evicted := range identities[1:3] {
+			if _, err := os.Lstat(filepath.Join(v2, evicted)); !os.IsNotExist(err) {
+				t.Fatalf("oldest unlocked v2 entry %s survived: %v", evicted, err)
 			}
 		}
-	}
-	if remaining != candidateEngineV2Retained {
-		t.Fatalf("v2 keeps %d entries, want %d", remaining, candidateEngineV2Retained)
-	}
-	for _, kept := range []string{filepath.Join(v2, identities[0]), legacy, filepath.Join(v2, identities[1]+".lock"), filepath.Join(v2, warm)} {
-		if _, err := os.Stat(kept); err != nil {
-			t.Fatalf("%s: %v", kept, err)
+		remaining := 0
+		if entries, err := os.ReadDir(v2); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					remaining++
+				}
+			}
 		}
-	}
-	// The consumer keeps its copy when its entry is later evicted.
-	if err := os.RemoveAll(filepath.Join(v2, warm)); err != nil {
-		t.Fatal(err)
-	}
-	if digest, err := fileSHA256(built.Path); err != nil || digest != built.Digest {
-		t.Fatalf("private engine after eviction = %s, %v", digest, err)
-	}
-	if err := scratch.Cleanup(nil); err != nil {
-		t.Fatal(err)
-	}
+		if remaining != candidateEngineV2Retained {
+			t.Fatalf("v2 keeps %d entries, want %d", remaining, candidateEngineV2Retained)
+		}
+		for _, kept := range []string{filepath.Join(v2, identities[0]), legacy, filepath.Join(v2, identities[1]+".lock"), filepath.Join(v2, warm)} {
+			if _, err := os.Stat(kept); err != nil {
+				t.Fatalf("%s: %v", kept, err)
+			}
+		}
+		// The consumer keeps its copy when its entry is later evicted.
+		if err := os.RemoveAll(filepath.Join(v2, warm)); err != nil {
+			t.Fatal(err)
+		}
+		if digest, err := fileSHA256(built.Path); err != nil || digest != built.Digest {
+			t.Fatalf("private engine after eviction = %s, %v", digest, err)
+		}
+		if err := scratch.Cleanup(nil); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 // A6 EXDEV: a rename that crosses filesystems leaves the stage inside the
@@ -116,33 +130,38 @@ func TestScratchCandidateEngineV2KeepsEightAndCopiesOut(t *testing.T) {
 func TestScratchCandidateEnginePublicationSurvivesEXDEV(t *testing.T) {
 	t.Parallel()
 	controlRoot := t.TempDir()
-	scratch, err := proofrun.CreateScratchRun(controlRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
 	identity := strings.Repeat("a", 40)
 	source := filepath.Join(t.TempDir(), "built")
 	seedCandidateEngineEntry(t, source, identity, time.Now())
 	digest, _ := fileSHA256(filepath.Join(source, "metasystem"))
-	entry := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", "v2", identity)
-	used, err := publishScratchCandidateEngine(scratch.Dir("engine"), entry, identity,
-		&candidateEngineBuild{Path: filepath.Join(source, "metasystem"), Digest: digest, Commit: identity},
-		func(string, string) error { return &os.LinkError{Op: "rename", Err: unix.EXDEV} })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(used, scratch.Dir("engine")+string(os.PathSeparator)) || validatedCandidateEngine(used, identity) == nil {
-		t.Fatalf("unpublished engine source = %s", used)
-	}
-	if _, err := os.Lstat(entry); !os.IsNotExist(err) {
-		t.Fatalf("EXDEV published an entry: %v", err)
-	}
-	if err := scratch.Cleanup(nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Lstat(used); !os.IsNotExist(err) {
-		t.Fatalf("stage outlived the run: %v", err)
-	}
+	// Cleanup proves the writer free through a fresh description; a parallel
+	// test's fork would copy the open writer and hold the flock until it
+	// execs, so forks are excluded from creation to Cleanup.
+	lockedScratchRun(t, func() {
+		scratch, err := proofrun.CreateScratchRun(controlRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", "v2", identity)
+		used, err := publishScratchCandidateEngine(scratch.Dir("engine"), entry, identity,
+			&candidateEngineBuild{Path: filepath.Join(source, "metasystem"), Digest: digest, Commit: identity},
+			func(string, string) error { return &os.LinkError{Op: "rename", Err: unix.EXDEV} })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(used, scratch.Dir("engine")+string(os.PathSeparator)) || validatedCandidateEngine(used, identity) == nil {
+			t.Fatalf("unpublished engine source = %s", used)
+		}
+		if _, err := os.Lstat(entry); !os.IsNotExist(err) {
+			t.Fatalf("EXDEV published an entry: %v", err)
+		}
+		if err := scratch.Cleanup(nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Lstat(used); !os.IsNotExist(err) {
+			t.Fatalf("stage outlived the run: %v", err)
+		}
+	})
 }
 
 // One run snapshots its environment once, at the first (metadata) binding;
