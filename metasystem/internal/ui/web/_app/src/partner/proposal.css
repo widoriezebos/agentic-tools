@@ -226,3 +226,37 @@
   white-space: nowrap;
   cursor: pointer;
 }
+
+/* The chip on a goal's own row — the board's card, the Decisions queue's row,
+   the goal page's header — saying the Partner proposed something about this goal
+   and nobody has answered it.
+
+   It is the shell's chip, in the marker variant, made a button: the marker is
+   this interface's "a human has to look at this", and the press opens the
+   conversation at the card where the line is decided. The box is `.ms-chip`'s
+   own, so a chip added here cannot drift from the chips beside it; what this
+   rule adds is the button's reset and the marker's pair. The selector names the
+   element as well as the class so that it wins over `.ms-chip` wherever the two
+   stylesheets end up in the bundle's order.
+
+   A refused or an unresolved line is the danger colour on the plain surface —
+   the pair src/contrast.test.ts asserts for text, which the chip's own surface
+   is not — with a hairline of the same colour, so that it reads as something
+   wrong rather than as a second marker. The hairline is an inset shadow and not
+   a border, so the chip is the same height as its neighbours. */
+button.ms-chip-proposed {
+  border: 0;
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button.ms-chip-proposed--wrong {
+  background: var(--ms-surface);
+  color: var(--ms-danger);
+  box-shadow: inset 0 0 0 1px var(--ms-danger);
+}

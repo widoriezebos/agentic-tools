@@ -1,4 +1,4 @@
-import { type Card, type Line } from "./proposing";
+import { verbWord, type Card, type Line } from "./proposing";
 
 /**
  * What a goal's own row says about the acts the Partner proposed on it.
@@ -69,4 +69,68 @@ export function proposedFor(cards: readonly Card[], goal: string): readonly Prop
  */
 export function waitsOnTheHuman(line: Line): boolean {
   return line.offered && line.state !== "applied" && line.state !== "dismissed";
+}
+
+/* --------------------------------------------------------------- the words -- */
+
+/** What the chip says, and whether it says it in the danger colour. */
+export type ChipWords = { words: string; danger: boolean };
+
+export const PROPOSED = "proposed";
+export const REFUSED = "refused";
+export const UNRESOLVED = "unresolved";
+
+/**
+ * The chip's words for these lines, or null where there are none and the row
+ * shows no chip at all.
+ *
+ * One line is named by the act: the word the button on the page that offers that
+ * act uses, so the row, the card and the page say one thing (g1-s58 D4). Several
+ * are a count, because four verbs on one row is a row nobody reads and the card
+ * is one press away.
+ *
+ * A refused or an unresolved line is in the danger colour, because those wait on
+ * the human too and what they wait for is not a yes: one is a no with a reason,
+ * and the other is an act whose outcome nobody knows. A count over lines that
+ * include one of those carries the colour as well — the alarm belongs to the row
+ * whether or not the alarming line happens to be the newest.
+ */
+export function chipWords(lines: readonly Proposed[]): ChipWords | null {
+  if (lines.length === 0) {
+    return null;
+  }
+  const danger = lines.some(alarming);
+  if (lines.length > 1) {
+    return { words: `${String(lines.length)} ${PROPOSED}`, danger };
+  }
+  const line = lines[0];
+  if (line.state === "refused") {
+    return { words: `${verbWord(line.verb)} ${REFUSED}`, danger: true };
+  }
+  if (line.state === "unresolved") {
+    return { words: UNRESOLVED, danger: true };
+  }
+  return { words: `${verbWord(line.verb)} ${PROPOSED}`, danger };
+}
+
+/** True for a line whose state is the row's alarm rather than its offer. */
+function alarming(line: Proposed): boolean {
+  return line.state === "refused" || line.state === "unresolved";
+}
+
+/**
+ * The chip's accessible name: what it says, the goal it is about, and how many
+ * actions are behind it.
+ *
+ * The visible words are short because they stand in a row of chips; the name is
+ * the whole sentence, because a human reading the page through a screen reader
+ * hears the chip out of the row it is in and "2 proposed" alone names nothing.
+ */
+export function chipName(goal: string, lines: readonly Proposed[]): string {
+  const said = chipWords(lines);
+  if (said === null) {
+    return "";
+  }
+  const many = lines.length;
+  return `${said.words} on ${goal}, ${String(many)} action${many === 1 ? "" : "s"}`;
 }
