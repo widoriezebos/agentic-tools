@@ -34,7 +34,12 @@ const (
 	verbRatchetScriptLinesCeiling = 40970
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
-	verbRatchetSelfSubprocessCeiling = 115
+	// U6a raised it by four process boundaries that were shell before: the
+	// mission host turn's delegate-supervisor entry launch, the fake runtime's
+	// fixture holds (its CLI stand-in children and the host hold exec), and
+	// the fake self-test's delegate children; the hold exec counts twice
+	// (its argv and its exec).
+	verbRatchetSelfSubprocessCeiling = 120
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 47

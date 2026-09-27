@@ -128,12 +128,12 @@ func fakeHostHold(t *Turn, ignoreTerm bool) int {
 		// `trap '' TERM` did.
 		signal.Ignore(syscall.SIGTERM)
 	}
-	argv := []string{d.Engine, "util", "hold", "--tag", t.Tag,
+	flags := []string{"--tag", t.Tag,
 		"--ready-file", filepath.Join(t.Dir, "host-ready"), "--stopped-file", filepath.Join(t.Dir, "host-stopped")}
 	if ignoreTerm {
-		argv = append(argv, "--ignore-term", "--term-observed-file", filepath.Join(t.Dir, "host-term-observed"))
+		flags = append(flags, "--ignore-term", "--term-observed-file", filepath.Join(t.Dir, "host-term-observed"))
 	}
-	err := syscall.Exec(d.Engine, argv, d.Environ)
+	err := syscall.Exec(d.Engine, append([]string{d.Engine, "util", "hold"}, flags...), d.Environ)
 	fmt.Fprintf(d.Stderr, "fake host hold exec failed: %v\n", err)
 	return 126
 }
