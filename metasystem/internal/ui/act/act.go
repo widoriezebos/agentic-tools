@@ -652,6 +652,13 @@ func (a Authority) request() (goal.VerbRequest, error) {
 		}
 		return counselor.AppendCarriedLanding(root, line)
 	})
+	// An unclassified push wedges this clone: the engine refuses every
+	// mutation while one stands, and nothing in the browser could reach the
+	// classification. So this press makes it, through the engine's own
+	// recovery rule, before it publishes (Reconcile).
+	if err := a.reads.reconcile(a.root, endpoint); err != nil {
+		return goal.VerbRequest{}, err
+	}
 	machine, err := a.reads.resolveMachine(a.root)
 	if err != nil {
 		return goal.VerbRequest{}, refuse(KindFailed, "no-machine", err.Error())

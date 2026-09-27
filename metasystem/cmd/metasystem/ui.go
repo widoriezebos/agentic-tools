@@ -245,7 +245,7 @@ func runUIServe(args []string) int {
 	// look through here too, bounded by the same budget.
 	advance := func() {
 		ledger.Advance(func(endpoint goal.Endpoint) (goal.AdvanceResult, error) {
-			return goal.FetchAdvanceBounded(endpoint, snapshot.FetchBudget)
+			return uiAdvance(roots.StateRoot, endpoint)
 		})
 	}
 
@@ -784,6 +784,23 @@ func runUIServe(args []string) int {
 // adds to the store in a day is small against them (g1-s54 D1, D4).
 const storeSweep = 24 * time.Hour
 
+// uiAdvance is the one look at the canonical branch both human presses take:
+// the act routes' own, after a publication, and the board's Refresh.
+//
+// It classifies this clone's transaction journal first. A push that landed and
+// failed its confirmation leaves an entry at pushed, and the engine mutates
+// nothing in this clone until somebody classifies it; a Refresh that only
+// advanced the accepted ref showed a current board while every act stayed
+// refused. The classification is the engine's own recovery rule, under the
+// policy this interface can carry (act.Reconcile), and it is what the terminal's
+// `goal recover` runs. A journal nothing is pushed in costs one directory read.
+func uiAdvance(root string, endpoint goal.Endpoint) (goal.AdvanceResult, error) {
+	if err := act.Reconcile(root, endpoint); err != nil {
+		return goal.AdvanceResult{}, err
+	}
+	return goal.FetchAdvanceBounded(endpoint, snapshot.FetchBudget)
+}
+
 // startStoreHousekeeping starts one server's housekeeping and answers the stop
 // the caller owes it: cancel its context and join its goroutine.
 //
@@ -801,6 +818,7 @@ const storeSweep = 24 * time.Hour
 //
 // Calling the stop twice cancels a cancelled context and reads a closed
 // channel, which is why both callers may call it.
+
 func startStoreHousekeeping(ctx context.Context, owned *snapshot.Gate, keeper *storeKeeper, tick <-chan time.Time) func() {
 	housekeeping, stop := context.WithCancel(ctx)
 	stopped := make(chan struct{})
