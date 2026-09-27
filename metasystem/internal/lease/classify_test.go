@@ -244,12 +244,27 @@ func TestClassifyDevinAcpHelperWalksToAnnouncedMain(t *testing.T) {
 	if got.Class != ClassMain {
 		t.Fatalf("a tool shell under the host's acp helper must classify MAIN through the exclusion; got %+v", got)
 	}
+	// Under an override of Devin (VOA-31): one that keeps the reserved
+	// exclusion is the effective declaration, one that drops it is refused
+	// and the built-in's stays; either way the helper stays transparent.
+	for name, describe := range map[string]string{"kept": devinKeepsHelper, "dropped (refused)": devinDropsTheHelper} {
+		if got := classifyUnderAdapters(t, "devin acp", map[string]string{"devin": describe}); got.Class != ClassMain {
+			t.Fatalf("override %s: a host tool call under devin acp must classify MAIN through the reserved exclusion; got %+v", name, got)
+		}
+	}
 }
 
 func TestClassifyDevinDelegateServerStaysDelegate(t *testing.T) {
 	got := classifyThroughDevinShape(t, "devin-delegate-acp acp")
 	if got.Class != ClassDelegate {
 		t.Fatalf("a tool shell under the delegate acp server must stay DELEGATE even with a main announced above; got %+v", got)
+	}
+	if got := classifyUnderAdapters(t, "devin-delegate-acp acp", map[string]string{"devin": devinKeepsHelper}); got.Class != ClassDelegate {
+		t.Fatalf("the delegate ACP server must stay DELEGATE under an override; got %+v", got)
+	}
+	// An external runtime's CLI is a delegate through its describe (R13).
+	if got := classifyUnderAdapters(t, "/opt/newagent/bin/newagent -p task --tag t", map[string]string{"newagent": newagentDescribe}); got.Class != ClassDelegate {
+		t.Fatalf("a tool shell under an external runtime's CLI must classify DELEGATE; got %+v", got)
 	}
 }
 

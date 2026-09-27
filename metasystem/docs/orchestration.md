@@ -463,6 +463,13 @@ persistent owner of one delegate round from its launch through the terminal
 record; a mission host turn runs as the same entry
 (`internal/missionrunner/hostturn`).
 
+An agent the engine does not ship needs no Go change: an executable at
+`<installation>/adapters/<name>`, named by `adapters.<name>.use=external`,
+implements the same operations as JSON, and an executable with a built-in's
+name overrides that built-in operation by operation (exit 64 hands one back).
+`docs/agent-adapters.md` is the contract, including the trust rules and the
+registry's cross-check.
+
 Per-runtime profile templates live under `skills/<name>/agents/`, and `scripts/adopt.sh` invokes runtime setup for its selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
 
 All rostered delegates remain children of the dispatcher's one shared job

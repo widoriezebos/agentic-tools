@@ -234,7 +234,10 @@ not paths.
   `delegate-supervisor` process — one per registered runtime
   (`bin/metasystem internal runtime list`; today claude, codex, devin, and
   the fixture-only `fake`). The same operations with role host serve a
-  mission's host turns (`internal/missionrunner/hostturn`).
+  mission's host turns (`internal/missionrunner/hostturn`). An external
+  adapter (`<installation>/adapters/<name>`, `docs/agent-adapters.md`)
+  implements them as an executable, for a new agent or as an override of a
+  built-in.
 - **Capability snapshot** — the probed record of what a runtime CLI can
   actually do and enforce, captured by the runtime's probe. Its
   **envelopeEnforcement** declares, per boundary, `mapped` (the runtime

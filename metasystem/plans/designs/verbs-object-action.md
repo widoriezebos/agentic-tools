@@ -467,9 +467,17 @@ delegate jobs and mission host turns.
 
 **Built-ins** (claude, codex, devin, fake) implement it in Go (U6a).
 Built (U6a): process recognition (census, lease classification, human
-authority) uses the built-ins' signatures only until U6c; discovered external
-adapters are reported but never executed for `describe`, and the VOA-31
-signature merge for overrides returns with U6c's registry cross-check.
+authority) used the built-ins' signatures only until U6c. Built (U6c): the
+registry (`internal/runtimes/external`, `Load`) holds the built-ins and the
+named, trusted externals as one effective declaration per name with the
+cross-check and the VOA-31 merge; every recognizer, the janitor's shapes,
+configuration validation, wait delivery, dispatch, probes, self-test and the
+mission runner read it; the executable implementation of the operations is
+`internal/adapter/supervisor/external.go`; `docs/agent-adapters.md` is the
+contract. A refused override leaves the built-in's declaration to the
+recognizers and refuses running the runtime until fixed; a launch an
+override's own prepare made must be observed and finalized by it (a built-in
+cannot continue a launch it did not prepare).
 **External runtimes** implement it as an executable at
 `<installation>/adapters/<name>` (any language; an extension point under rule
 S1): `<executable> OPERATION`, JSON request on stdin, JSON response on stdout

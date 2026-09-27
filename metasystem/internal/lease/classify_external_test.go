@@ -12,11 +12,13 @@ import (
 )
 
 // Lease classification on the runtime registry (design verbs-object-action
-// 3.5): an external runtime's process classifies DELEGATE through its
-// describe, and an override of Devin that keeps the reserved `devin acp`
-// exclusion still lets a host tool call walk through the helper to its
-// announced main (VOA-31). The registry's universe is used as is: no
-// signature stub, only the fixture root's narrowing to the staged runtimes.
+// 3.5): the Devin ancestry tests in classify_test.go also stage their
+// ancestry under registry roots — an external runtime whose process
+// classifies DELEGATE through its describe, and overrides of Devin, where
+// keeping the reserved `devin acp` exclusion still lets a host tool call walk
+// through the helper to its announced main (VOA-31). The registry's universe
+// is used as is: no signature stub, only the fixture root's narrowing to the
+// staged runtimes.
 
 const (
 	newagentDescribe    = `{"schemaVersion":1,"name":"newagent","match":["^([^[:space:]]*/)?newagent([[:space:]]|$)"],"positive":"newagent -p task","lookalike":"newagent-helper serve"}`
@@ -56,27 +58,17 @@ func classifyUnderAdapters(t *testing.T, intermediateCommand string, adapters ma
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", tablePath)
+	// The installation's registry, not a pinned universe (an earlier stage
+	// of the same test may have pinned one).
+	pinned := delegateSignatures
+	delegateSignatures = func(root string) ([]census.Signature, error) {
+		sigs, _, _, err := census.InstalledAdapterSignatures(root)
+		return sigs, err
+	}
 	got, err := Classify(root, child)
+	delegateSignatures = pinned
 	if err != nil {
 		t.Fatal(err)
 	}
 	return got
-}
-
-func TestClassifyExternalRuntimeProcessIsDelegate(t *testing.T) {
-	got := classifyUnderAdapters(t, "/opt/newagent/bin/newagent -p task --tag t", map[string]string{"newagent": newagentDescribe})
-	if got.Class != ClassDelegate {
-		t.Fatalf("a tool shell under an external runtime's CLI must classify DELEGATE; got %+v", got)
-	}
-}
-
-func TestClassifyDevinOverrideKeepsTheHostHelperTransparent(t *testing.T) {
-	for name, describe := range map[string]string{"kept": devinKeepsHelper, "dropped (refused)": devinDropsTheHelper} {
-		if got := classifyUnderAdapters(t, "devin acp", map[string]string{"devin": describe}); got.Class != ClassMain {
-			t.Fatalf("%s: a host tool call under devin acp must classify MAIN through the reserved exclusion; got %+v", name, got)
-		}
-	}
-	if got := classifyUnderAdapters(t, "devin-delegate-acp acp", map[string]string{"devin": devinKeepsHelper}); got.Class != ClassDelegate {
-		t.Fatalf("the delegate ACP server must stay DELEGATE under the override; got %+v", got)
-	}
 }
