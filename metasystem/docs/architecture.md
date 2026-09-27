@@ -48,9 +48,11 @@ sanctioned seams as declarations the core consumes:
   seam-locally into their owner package's typed table; the registry
   only declares what is EXPECTED, and a conformance test joins the two
   both ways.
-- `scripts/agents/adapters/*.sh` (with their runtime-owned JSON
-  assets), `scripts/agents/hosts/*.sh`, per-skill runtime profiles,
-  and `scripts/enforcement/<runtime>-*.json` — the shell seams.
+- `internal/adapter/supervisor/<runtime>.go` — each built-in runtime's
+  operations (describe, probe, selftest, prepare, observe, finalize,
+  repair, cancel) behind the one runtime interface the shared delegate
+  round and host turn call; per-skill runtime profiles and
+  `scripts/enforcement/<runtime>-*.json` remain data seams.
 
 Sanctioned appearances of runtime names outside seam files: (a)
 provenance comments naming the critic or incident behind a decision,

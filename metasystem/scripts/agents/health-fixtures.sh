@@ -173,7 +173,6 @@ fixture_install=$tmp/fixture-install
 mkdir -p "$fixture_install/bin" "$fixture_install/scripts/agents"
 printf 'metasystem.runtimes=fake\n' >"$fixture_install/metasystem.conf"
 cp "$source_ms" "$fixture_install/bin/metasystem"
-cp -R "$root/scripts/agents/adapters" "$fixture_install/scripts/agents/"
 ms=$fixture_install/bin/metasystem
 printf '[]\n' >"$tmp/processes.json"
 
