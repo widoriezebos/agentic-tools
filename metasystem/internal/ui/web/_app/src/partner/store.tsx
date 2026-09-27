@@ -442,6 +442,17 @@ type Partner = {
    * store stands above the pages, so there is one answer for one line.
    */
   proposalMarks: ProposalMarks;
+  /**
+   * Forget what this page was holding about one line, because something newer
+   * has said what happened to it.
+   *
+   * The mark above is ONE mark, read by the drawer and by the inbox, so the
+   * surface that recorded or reconciled that newer outcome clears it here rather
+   * than only in its own state: an inbox that cleared its own copy went on
+   * importing the drawer's obsolete refusal over an entry the record had applied
+   * (Astra C-04).
+   */
+  clearProposalMark: (id: string) => void;
   /** The card whose run is in flight, or "". A second Apply is refused while it is. */
   runningProposals: string;
   /** How many actions are waiting for the human, across every answer. */
@@ -555,6 +566,7 @@ const nothing: Partner = {
   reopenProposals: () => {},
   askAboutProposal: () => {},
   proposalMarks: {},
+  clearProposalMark: () => {},
   runningProposals: "",
   proposalsWaiting: 0,
   proposalsLine: "",
@@ -1610,6 +1622,16 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
+   * The answer this page was holding for want of a record, dropped because
+   * something newer says what happened. It is a callback of the store because
+   * the mark is the store's: the inbox records outcomes on the same lines the
+   * drawer does (Astra C-04).
+   */
+  const clearProposalMark = useCallback((id: string) => {
+    mark(id, (held) => ({ ...held, unrecorded: null }));
+  }, [mark]);
+
+  /**
    * One state written onto one line, through the one route that writes them.
    *
    * It answers the entry as the server now holds it, so the next press sends the
@@ -1825,6 +1847,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
       dismissProposals, reopenProposals, askAboutProposal, runningProposals, proposalMarks,
+      clearProposalMark,
       proposalsWaiting: waitingAcross(proposals), proposalsLine: barLine(proposals),
       showProposals, showProposedFor, offerReread, noteCovered,
     }),
@@ -1838,6 +1861,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       deposits, editDeposit, editClause, recordDeposit, dismissDeposit, reopenDeposit, table,
       proposals, tickProposal, selectProposals, applyProposals, continueProposals, tryProposal,
       dismissProposals, reopenProposals, askAboutProposal, runningProposals, proposalMarks,
+      clearProposalMark,
       showProposals, showProposedFor, offerReread, noteCovered],
   );
 

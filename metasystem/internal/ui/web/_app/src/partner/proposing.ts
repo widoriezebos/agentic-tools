@@ -96,8 +96,15 @@ export type Mark = {
    * not record this" and offered Try again invited a second one (Sol S58-C-02).
    * So the answer is held here, the line reads as that answer, and what the line
    * offers is decided by it.
+   *
+   * `version` is the entry it was held at, and it is what makes the answer
+   * expire. This mark stands ABOVE the record, and it may only do that while it
+   * is the newest thing said about the line: a mark older than the entry, or one
+   * over an entry somebody has settled, is an account the record has moved past,
+   * and a surface reading it showed a refusal over a goal that was applied and
+   * offered a second act (Astra C-04).
    */
-  unrecorded: { state: ProposalState; words: string } | null;
+  unrecorded: { state: ProposalState; words: string; version: number } | null;
 };
 
 export type Marks = Readonly<Record<string, Mark>>;
@@ -487,8 +494,9 @@ export function lineState(line: Line, inFlight = false): string {
   // read before everything else because it is the only thing here that knows
   // what the LEDGER did; the persisted line is still at `applying`, and saying
   // so would hide the act that landed.
-  if (line.mark.unrecorded !== null) {
-    return `${said(line.mark.unrecorded.state, line.mark.unrecorded.words)}; ${COULD_NOT_RECORD}`;
+  const held = unrecordedOn(line);
+  if (held !== null) {
+    return `${said(held.state, held.words)}; ${COULD_NOT_RECORD}`;
   }
   if (line.mark.refusedUnsent !== "") {
     return line.mark.refusedUnsent;
@@ -500,6 +508,27 @@ export function lineState(line: Line, inFlight = false): string {
     return inFlight ? APPLYING : WAS_IN_FLIGHT;
   }
   return said(line.state, line.words ?? "");
+}
+
+/**
+ * What this page holds about this line's own act that the record does not, or
+ * null where the record has moved past it.
+ *
+ * The held answer stands above the record because it is the only thing that
+ * knows what the ledger did — and only while it is the newest thing said about
+ * the line. Two things end that, and both mean the record now carries an
+ * account of its own: an entry newer than the version the answer was held at,
+ * and an entry somebody has settled. Every surface asks this rather than the
+ * mark, because the mark is ONE mark shared by the drawer and the inbox, and a
+ * surface reading it raw showed the drawer's obsolete refusal over an entry the
+ * record had applied (Astra C-04).
+ */
+export function unrecordedOn(line: Line): Mark["unrecorded"] {
+  const held = line.mark.unrecorded;
+  if (held === null || held.version < line.version || settledState(line.state)) {
+    return null;
+  }
+  return held;
 }
 
 /** One settled state in the words a human reads, with what it carried. */
@@ -576,8 +605,9 @@ export function offersTryAgain(line: Line, inFlight = false): boolean {
   // An act whose answer could not be written down offers what that answer
   // offers. An applied one offers nothing: the act landed, and a second press
   // would make a second act rather than repair the record (Sol S58-C-02).
-  if (line.mark.unrecorded !== null) {
-    return line.mark.unrecorded.state !== "applied";
+  const held = unrecordedOn(line);
+  if (held !== null) {
+    return held.state !== "applied";
   }
   if (line.mark.refusedUnsent !== "") {
     return true;
@@ -1233,7 +1263,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     if (settled.kind === "conflict") {
       ports.reconcile(settled.proposal, one);
     } else if (settled.kind === "failed") {
-      ports.mark(one, { unrecorded: { state: "applied", words: ALREADY_CARRIED } });
+      ports.mark(one, { unrecorded: { state: "applied", words: ALREADY_CARRIED, version: one.version } });
     } else {
       ports.mark(one, { unrecorded: null });
     }
@@ -1323,6 +1353,9 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     }
     const answered = await ports.send(sending);
     const written = recorded(answered);
+    // The version the outcome was last written AT, which is the version the
+    // entry still stands at where that write failed.
+    let wroteAt = sending.version;
     let finished = await ports.record(sending, written.state, written.words);
     // The result WINS. A conflict here means another tab moved the entry while
     // this act was out; where what they left is unsettled — `applying`, or
@@ -1331,9 +1364,8 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // version. Where it is settled they established what happened, and the run
     // shows that instead.
     if (finished.kind === "conflict" && !settledState(finished.proposal.state)) {
-      finished = await ports.record(
-        { ...sending, version: finished.proposal.version }, written.state, written.words,
-      );
+      wroteAt = finished.proposal.version;
+      finished = await ports.record({ ...sending, version: wroteAt }, written.state, written.words);
     }
     if (finished.kind !== "failed") {
       standing.set(line.id, finished.proposal);
@@ -1346,9 +1378,11 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       }
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act
-      // answered is kept on the line for the page's life, because that is the
-      // only thing here that knows what the ledger did, and the line says both.
-      ports.mark(line, { unrecorded: written });
+      // answered is kept on the line, because that is the only thing here that
+      // knows what the ledger did, and the line says both — until the record
+      // carries an account of its own, which is what the version says
+      // (Astra C-04).
+      ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
     } else {
       // The outcome IS written down now, so an answer the page was holding
       // because an earlier one could not be written is obsolete: the record says

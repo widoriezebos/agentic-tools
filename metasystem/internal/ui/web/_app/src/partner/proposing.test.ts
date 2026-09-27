@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Proposal } from "./api";
+import type { Proposal, ProposalState } from "./api";
 import {
   ALREADY_CARRIED,
   answeredOf,
@@ -174,6 +174,13 @@ function abandonOf(over: Partial<Proposal> = {}): Proposal {
     ...over,
   });
 }
+
+/**
+ * One held answer, at the entry version the page was holding it at: what the
+ * act answered where the conversation could not write it down.
+ */
+const heldAt = (state: ProposalState, words: string, version: number): Mark["unrecorded"] =>
+  ({ state, words, version }) as Mark["unrecorded"];
 
 /** One card over the proposals given, with the marks and tuples given. */
 function card(
@@ -758,6 +765,39 @@ describe("what a line says about where it stands", () => {
     }
   });
 
+  /**
+   * And it says nothing of an answer the record has moved past (Astra C-04).
+   *
+   * The answer is held because the record could not be written, so it is the
+   * only account of the act there is — until the record carries one. A mark made
+   * at an older version, or one standing over an entry somebody has settled
+   * since, is history: the line reads the record, and offers what the record
+   * offers. The mark is the store's, so a drawer that recovered used to hand the
+   * inbox its obsolete answer.
+   */
+  it("says nothing of a held answer older than the entry, or over a settled one", () => {
+    const held = (version: number): Marks => ({
+      [lineID("t1", 0)]: {
+        ticked: true, notRun: false, refusedUnsent: "",
+        unrecorded: heldAt("refused", "goal is claimed", version),
+      },
+    });
+    const settled = card([proposal({ state: "applied", version: 4 })], held(2));
+    expect(lineState(lineOf(settled))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(settled))).toBe(false);
+
+    // Moved but unsettled: somebody else has written the line since, so what
+    // this page was holding is no longer the newest thing said about it.
+    const moved = card([proposal({ state: "applying", version: 3 })], held(2));
+    expect(lineState(lineOf(moved))).toBe(WAS_IN_FLIGHT);
+    expect(offersTryAgain(lineOf(moved))).toBe(true);
+
+    // And the answer this page is still the only account of is read as before.
+    const standing = card([proposal({ state: "applying", version: 2 })], held(2));
+    expect(lineState(lineOf(standing))).toBe(`refused: goal is claimed; ${COULD_NOT_RECORD}`);
+    expect(offersTryAgain(lineOf(standing))).toBe(true);
+  });
+
   it("offers Try again on a refused or unresolved line and on nothing else", () => {
     expect(offersTryAgain(lineOf(card([proposal({ state: "refused", words: "no" })])))).toBe(true);
     expect(offersTryAgain(lineOf(card([proposal({ state: "unresolved", words: "?" })])))).toBe(true);
@@ -1176,7 +1216,9 @@ describe("the run, in order", () => {
     });
     await runProposals(lines, driven.ports);
     expect(driven.marked).toContainEqual({
-      line: lines[0].id, change: { unrecorded: { state: "applied", words: "" } },
+      // At the version the entry stands at: the write that would have moved it
+      // is the one that failed.
+      line: lines[0].id, change: { unrecorded: { state: "applied", words: "", version: 2 } },
     });
     // Never the other mark: an unsent refusal is a different thing and would
     // take precedence over what the ledger did.
@@ -1193,7 +1235,7 @@ describe("the run, in order", () => {
     const applied = card([proposal({ state: "applying" })], {
       [lineID("t1", 0)]: {
         ticked: true, notRun: false, refusedUnsent: "",
-        unrecorded: { state: "applied", words: "" },
+        unrecorded: { state: "applied", words: "", version: 1 },
       },
     });
     expect(lineState(lineOf(applied))).toBe(`applied; ${COULD_NOT_RECORD}`);
@@ -1203,7 +1245,7 @@ describe("the run, in order", () => {
     const refusedLine = card([proposal({ state: "applying" })], {
       [lineID("t1", 0)]: {
         ticked: true, notRun: false, refusedUnsent: "",
-        unrecorded: { state: "refused", words: "goal is claimed" },
+        unrecorded: { state: "refused", words: "goal is claimed", version: 1 },
       },
     });
     expect(lineState(lineOf(refusedLine))).toBe(`refused: goal is claimed; ${COULD_NOT_RECORD}`);
@@ -1213,7 +1255,7 @@ describe("the run, in order", () => {
     const unresolved = card([proposal({ state: "applying" })], {
       [lineID("t1", 0)]: {
         ticked: true, notRun: false, refusedUnsent: "",
-        unrecorded: { state: "unresolved", words: "nobody knows" },
+        unrecorded: { state: "unresolved", words: "nobody knows", version: 1 },
       },
     });
     expect(lineState(lineOf(unresolved)))
@@ -1599,7 +1641,7 @@ describe("the run, in order", () => {
   it("clears an obsolete unrecorded answer when a later outcome is written, and ends applied", async () => {
     const stale: Mark = {
       ticked: true, notRun: false, refusedUnsent: "",
-      unrecorded: { state: "refused", words: "goal is claimed" },
+      unrecorded: { state: "refused", words: "goal is claimed", version: 1 },
     };
     const lines = card([proposal()], { [lineID("t1", 0)]: stale }).lines;
     const driven = driving(lines);
@@ -1621,7 +1663,7 @@ describe("the run, in order", () => {
   it("clears it where a conflict shows somebody else settled the line", async () => {
     const stale: Mark = {
       ticked: true, notRun: false, refusedUnsent: "",
-      unrecorded: { state: "refused", words: "goal is claimed" },
+      unrecorded: { state: "refused", words: "goal is claimed", version: 1 },
     };
     const lines = card([proposal()], { [lineID("t1", 0)]: stale }).lines;
     const held: Proposal = { ...lines[0], state: "applied", words: "", version: 4 };
@@ -1641,7 +1683,7 @@ describe("the run, in order", () => {
   it("keeps an unrecorded answer where nothing newer establishes what happened", async () => {
     const stale: Mark = {
       ticked: true, notRun: false, refusedUnsent: "",
-      unrecorded: { state: "refused", words: "goal is claimed" },
+      unrecorded: { state: "refused", words: "goal is claimed", version: 1 },
     };
     const approve = proposal({
       verb: "approve-goal", fields: {},
