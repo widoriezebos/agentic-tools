@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"golang.org/x/sys/unix"
 )
 
 // The Devin host turn driven end to end against a stub `devin` the test
@@ -371,30 +372,36 @@ func readFieldMap(t *testing.T, path string) map[string]any {
 // A tool child of the ACP server that outlives the server and holds its
 // stderr must not strand the host turn after delivery: the server writes
 // host.log through its own descriptor, never a pipe exec.Cmd.Wait drains.
+// Proven by ordering, not by seconds: the orphan holds the server's stderr
+// until the test releases it, and the turn must return while it still holds
+// it. A turn that waited on the orphan's stderr would never return; the test
+// binary's own timeout reports that hang.
 func TestDevinHostACPOrphanHoldingStderrDoesNotStrandTheTurn(t *testing.T) {
 	t.Parallel()
 	f := newHostFixture(t, "dispatch.transport.devin=acp\n")
-	pidFile := filepath.Join(f.stubDir, "orphan.pid")
-	server := strings.Replace(hostACPServer, "exec cat >/dev/null\n",
-		"sleep 30 </dev/null >/dev/null &\necho $! >'"+pidFile+"'\nexit 0\n", 1)
-	f.write(filepath.Join(f.stubDir, "acp-server.sh"), server)
-	t.Cleanup(func() {
-		if data, err := os.ReadFile(pidFile); err == nil {
-			var pid int
-			if _, err := fmt.Sscan(string(data), &pid); err == nil && pid > 0 {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
+	release := filepath.Join(f.stubDir, "orphan-release")
+	if err := unix.Mkfifo(release, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	released := filepath.Join(f.stubDir, "orphan-released")
+	orphan := "( IFS= read -r _ <'" + release + "'; : >'" + released + "' ) </dev/null >/dev/null &\nexit 0\n"
+	f.write(filepath.Join(f.stubDir, "acp-server.sh"), strings.Replace(hostACPServer, "exec cat >/dev/null\n", orphan, 1))
+	releaseOrphan := func() {
+		// Read-write open never blocks on a FIFO; the newline ends the
+		// orphan's read if it is still alive.
+		if fifo, err := os.OpenFile(release, os.O_RDWR, 0); err == nil {
+			_, _ = fifo.WriteString("\n")
+			_ = fifo.Close()
 		}
-	})
-	started := time.Now()
+	}
+	t.Cleanup(releaseOrphan)
 	code, dir := f.turn("t-orphan", "")
-	elapsed := time.Since(started)
 	if code != 0 {
 		log, _ := os.ReadFile(filepath.Join(dir, "host.log"))
 		t.Fatalf("host turn exit %d\nstderr %s\nlog %s", code, f.stderr, log)
 	}
-	if elapsed > 10*time.Second {
-		t.Fatalf("the host turn waited %s on an orphan holding the server's stderr", elapsed)
+	if _, err := os.Stat(released); err == nil {
+		t.Fatal("the orphan was released before the turn returned: the ordering proves nothing")
 	}
 	if readField(t, filepath.Join(dir, "result.json"), "outcome") != "completed" {
 		t.Fatal("the turn did not complete")
