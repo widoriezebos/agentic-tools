@@ -2,6 +2,7 @@ package partner_test
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -460,6 +461,66 @@ func TestTheNextQuestionIsToldWhatHappenedToTheProposals(t *testing.T) {
 				"(park-goal no-such-goal: the accepted tip carries no goal no-such-goal)."), true)
 	testutil.Expect(t, "and it says nothing was applied by the Partner",
 		strings.Contains(second, "every one of them was the human's own press"), true)
+}
+
+// What happened to a proposed action is still carried after a long stretch of
+// ordinary exchanges.
+//
+// The block is chosen from the answers this conversation keeps rather than from
+// a window of the last twenty messages: ten question-and-answer pairs are twenty
+// messages on their own, so an action applied from the Decisions inbox — which
+// is where an older proposal is applied from — fell out of the prompt while it
+// was still one of the last two answers that proposed anything (Astra B-03).
+func TestWhatHappenedToAProposalOutlastsTenExchangesWithoutOne(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// Only the first question proposes; the ten after it are ordinary.
+	park := proposed(uitools.ProposePark, "fleet-presence",
+		[]string{uitools.ProposalBecause + "away"}, "put it away")
+	park.When = "put it away"
+	opener, handed := fakeacp.OpenWatched(fakeacp.Script{
+		Reads:  []fakeacp.Read{park},
+		Chunks: []string{"proposed."},
+	})
+	host := partner.NewHostOn(
+		partner.Runtime{Name: "fake", ReadOnly: "a fake server reads nothing"}, root, opener)
+	t.Cleanup(host.Close)
+	service := partner.NewService(host.Runtime(), host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{Observe: proposingLedger},
+		func() time.Time { return time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC) })
+	ask := func(key, question string) string {
+		t.Helper()
+		events, stop := service.Subscribe()
+		defer stop()
+		id, err := service.Submit(context.Background(), "Wido", key, question, onDecisions())
+		testutil.Require(t, "the turn on "+key+" is admitted", err, nil)
+		drain(t, events)
+		return id
+	}
+
+	turn := ask("key-1", "this one is superseded; put it away")
+
+	// The human applies it, in the two writes the runner makes.
+	applying, err := service.Proposed("Wido", turn, 0, 1, partner.ProposalApplying, "")
+	testutil.Require(t, "the line is taken", err, nil)
+	_, err = service.Proposed("Wido", turn, 0, applying.Version, partner.ProposalApplied, "")
+	testutil.Require(t, "and settled", err, nil)
+
+	// Ten exchanges that propose nothing: twenty messages, the whole of the
+	// window the block used to be chosen from.
+	for at := 2; at <= 11; at++ {
+		ask("key-"+strconv.Itoa(at), "and what is the census format goal for?")
+	}
+	ask("key-12", "so where does that leave the fleet?")
+
+	prompts := handed.Prompts()
+	testutil.Require(t, "one prompt per turn", len(prompts), 12)
+	last := prompts[len(prompts)-1]
+	testutil.Expect(t, "the block is still there",
+		strings.Contains(last, "What happened to the actions you proposed"), true)
+	testutil.Expect(t, "carrying what the human did with it",
+		strings.Contains(last, "Of the 1 actions you proposed, 1 applied."), true)
 }
 
 // The instructions say it: an act is proposed, not made, and words alone propose

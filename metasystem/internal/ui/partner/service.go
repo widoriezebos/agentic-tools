@@ -556,7 +556,14 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	// What happened to the actions the last two answers proposed, from the
 	// states the messages record: the Partner builds on what the human actually
 	// did rather than on what it prepared.
-	prompt := ComposeOpening(seen, page, human, opening, proposalsBlock(conversation.Messages(recoveryMessages))) + "\n\n"
+	//
+	// The whole kept transcript is read for it, not a window of recent messages:
+	// the block picks the last two answers that proposed anything, and ten
+	// ordinary exchanges are twenty messages, so a window that size dropped a
+	// proposal the human was still applying from the Decisions inbox (Astra
+	// B-03). What the prompt carries is bounded by that selection of two, here
+	// as before.
+	prompt := ComposeOpening(seen, page, human, opening, proposalsBlock(conversation.Messages(0))) + "\n\n"
 	if given > 0 {
 		prompt += history + "\n\n"
 		s.record(running, Event{Kind: EventActivity, Text: freshLine(given)})
