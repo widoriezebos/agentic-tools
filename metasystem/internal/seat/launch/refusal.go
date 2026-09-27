@@ -66,7 +66,15 @@ type Refusal struct {
 	Message string
 }
 
-func (r *Refusal) Error() string { return r.Code + ": " + r.Message }
+func (r *Refusal) Error() string {
+	if r.Code == CodeEvidenceRootUnsafe {
+		// Rule H1: the one damage refusal of the launch guides. The new
+		// machine's evidence would land in this seat's root or outside
+		// the evidence tree; the person fixes the root and resumes.
+		return r.Code + ": " + r.Message + "; the new machine's evidence would mix with another root's, so set evidence.root in this seat's metasystem.conf to a directory of its own under the fleet's evidence tree, then resume with metasystem machine start NAME --resume ID"
+	}
+	return r.Code + ": " + r.Message
+}
 
 // refuse is the one constructor, so every refusal reads the same way.
 func refuse(code, format string, args ...any) *Refusal {

@@ -761,7 +761,7 @@ func TestReservedJobMinutesIsSumOfNamedComponents(t *testing.T) {
 					GoalID: "bounded", GoalRevision: 3, Breaches: budgetAdmissionBreaches(projection),
 					Reserved: reservedMinutesEvidence(projection),
 				}}})
-				want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=3 limit=2, activeJobLimit used=1 limit=1; reserved observed=10 open-caps=0 proof=20 limit=75; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes"
+				want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=3 limit=2, activeJobLimit used=1 limit=1; reserved observed=10 open-caps=0 proof=20 limit=75; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes; " + budgetRaiseRemedy("bounded")
 				if len(lines) != 1 || lines[0] != want {
 					t.Fatalf("proof reservation refusal line = %v, want %q", lines, want)
 				}

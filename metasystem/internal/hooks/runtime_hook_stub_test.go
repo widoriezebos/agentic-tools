@@ -3,7 +3,6 @@ package hooks
 import (
 	"bytes"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -226,10 +225,10 @@ exit "$status"
 		}
 		return bed, filepath.Join(t.TempDir(), "builds")
 	}
-	awaitBuild := func(done string) {
-		if file, err := os.Open(done); err == nil {
-			_, _ = io.Copy(io.Discard, file)
-			_ = file.Close()
+	awaitBuild := func(t *testing.T, done string) {
+		t.Helper()
+		if err := awaitFIFO(done); err != nil {
+			t.Fatal(err)
 		}
 	}
 	fenceHolder := func(t *testing.T, bed stubBed) int {
@@ -267,8 +266,8 @@ exit "$status"
 		if status, stdout, _ := bed.run(t, bed.script, "claude", "end", "{}", env...); status != 0 || stdout != "" {
 			t.Fatalf("end during the build = status %d stdout %q", status, stdout)
 		}
-		releaseFIFO(release)
-		awaitBuild(done)
+		releaseFIFO(t, release)
+		awaitBuild(t, done)
 		record, _ := os.ReadFile(builds)
 		if string(record) != "build "+bed.root+" pid="+strconv.Itoa(builder)+"\n" {
 			t.Fatalf("builds = %q, want one by the fence holder %d", record, builder)
@@ -302,12 +301,9 @@ read -r _ <"$STUB_LN_HOLD" || true
 		if err := command.Start(); err != nil {
 			t.Fatal(err)
 		}
-		file, err := os.Open(entered)
-		if err != nil {
+		if err := awaitFIFO(entered); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = io.Copy(io.Discard, file)
-		_ = file.Close()
 		if holder := fenceHolder(t, bed); holder != command.Process.Pid {
 			t.Fatalf("the fence names %d, not the stub %d", holder, command.Process.Pid)
 		}
@@ -315,13 +311,13 @@ read -r _ <"$STUB_LN_HOLD" || true
 			t.Fatal(err)
 		}
 		_ = command.Wait()
-		releaseFIFO(hold)
+		releaseFIFO(t, hold)
 		done := makeFIFO(t, "done")
 		status, stdout, _ := bed.run(t, bed.script, "claude", "start", "{}", "STUB_BUILD_RECORD="+builds, "STUB_NEW_ENGINE="+newEngine, "STUB_BUILD_DONE="+done)
 		if status != 0 || stdout != StartEngineMissingNotice()+"\n" {
 			t.Fatalf("start after the killed stub = status %d stdout %q", status, stdout)
 		}
-		awaitBuild(done)
+		awaitBuild(t, done)
 		if record, _ := os.ReadFile(builds); !strings.HasPrefix(string(record), "build "+bed.root+" pid=") {
 			t.Fatalf("the dead stub's fence blocked the rebuild: builds %q", record)
 		}
@@ -335,7 +331,7 @@ read -r _ <"$STUB_LN_HOLD" || true
 			if status != 0 || stdout != bootstrapForm || bed.recorded(t) != "" {
 				t.Fatalf("failed rebuild %d = status %d stdout %q record %q", attempt, status, stdout, bed.recorded(t))
 			}
-			awaitBuild(done)
+			awaitBuild(t, done)
 		}
 		record, _ := os.ReadFile(builds)
 		log, _ := os.ReadFile(filepath.Join(bed.root, filepath.FromSlash(BootstrapLogPath)))

@@ -511,6 +511,9 @@ func (r Readers) propose(args Args) Result {
 	if subject == "" {
 		return refusedCall("this tool needs the goal the action is about, by its ledger id")
 	}
+	if refusal := boundedID("goal", subject); refusal != "" {
+		return refusedCall(refusal)
+	}
 
 	for _, refused := range refusedProposalFields {
 		if args.Given(refused.field) && scoped(refused.on, action) {
@@ -686,17 +689,162 @@ func valueOf(args Args, act ProposedAct, flag string) (map[string]string, string
 		}
 		return into(strconv.Itoa(at)), ""
 	case FlagOn, FlagSuccessor:
-		return into(oneLine(args.Text(flag))), ""
+		said := oneLine(args.Text(flag))
+		if refusal := boundedID(flag, said); refusal != "" {
+			return nil, refusal
+		}
+		return into(said), ""
 	case FlagLabel, FlagUnlabel, FlagBlockedBy, FlagBlocks:
-		named := args.List(flag)
-		if len(named) > maxProposalList {
-			return nil, flag + " carries at most " + strconv.Itoa(maxProposalList) +
-				" names on one action, because the card is read before it is pressed"
+		named, refusal := args.List(flag)
+		if refusal != "" {
+			return nil, refusal
+		}
+		if refusal := boundedNames(flag, named, flag == FlagLabel || flag == FlagUnlabel); refusal != "" {
+			return nil, refusal
 		}
 		return into(strings.Join(named, ", ")), ""
 	default:
 		return into(oneLine(args.Text(flag))), ""
 	}
+}
+
+// boundedID is the refusal one goal id past the ledger's own bound is named
+// with, or "" where it is within it.
+//
+// Every id this tool frames is one of the ledger's: the subject, the goal at the
+// other end of an edge, an abandon's successor, and every name of an open's two
+// lists. None of them was bounded at all, and an id is not free to be long —
+// what this tool frames is written into the human's transcript whether the act is
+// ever admitted or not, so one goal of three hundred thousand characters made
+// that transcript unreadable by its own reader (Astra B-01).
+func boundedID(field, id string) string {
+	if len(id) <= goal.MaxIdBytes {
+		return ""
+	}
+	return field + ": a goal id is at most " + strconv.Itoa(goal.MaxIdBytes) + " bytes in the ledger"
+}
+
+// boundedNames is the refusal one list field is named with: how many names it
+// carries, and then each name as the token it is.
+//
+// The labels are judged by the ledger's own grammar through the owner that holds
+// every other command boundary to it, exactly as the risk answers are parsed by
+// the command's own reader: the number is the engine's and is never spelt twice.
+func boundedNames(field string, named []string, labels bool) string {
+	if len(named) > maxProposalList {
+		return field + " carries at most " + strconv.Itoa(maxProposalList) +
+			" names on one action, because the card is read before it is pressed"
+	}
+	if labels {
+		if err := goal.ValidateLabels(named); err != nil {
+			return field + ": " + err.Error()
+		}
+		return ""
+	}
+	for _, one := range named {
+		if refusal := boundedID(field, one); refusal != "" {
+			return refusal
+		}
+	}
+	return ""
+}
+
+// BeyondTheProposalBounds is why a prepared FRAME is past the bounds a proposal
+// is held to, naming the field and the bound, or "" where every field of it is
+// within them.
+//
+// It is the other side of the same numbers the call is refused by, and it is not
+// the same check: a frame reaches the interface as text a runtime reported, so
+// nothing about it is this server's word. The interface asks this before it keeps
+// any of a frame, because a frame is kept whether its act is admitted or refused,
+// and one field of any length in the transcript cost the whole conversation its
+// next open (Astra B-01). The bounds are here, beside the call's own, so that one
+// number is never two.
+func BeyondTheProposalBounds(subject, explanation string, fields map[string]string) string {
+	if refusal := boundedID("goal", subject); refusal != "" {
+		return refusal
+	}
+	if utf8.RuneCountInString(explanation) > maxExplanation {
+		return "the explanation on one action carries at most " +
+			strconv.Itoa(maxExplanation) + " characters"
+	}
+	for _, line := range ProposalFrame {
+		said, given := fields[line.Field]
+		if !given {
+			continue
+		}
+		if refusal := boundedFrameField(line.Field, said); refusal != "" {
+			return refusal
+		}
+	}
+	return ""
+}
+
+// MostProposalsPerAnswer is how many actions one answer of the Partner's
+// carries.
+//
+// There is a bound at all because an answer is written whole into the human's
+// own transcript, and that transcript is read back whole on the next open: an
+// answer of any length is a conversation that can no longer be reloaded, which
+// is the one failure that takes every page reading it down with it. So a long
+// list is worked in batches, and the batch is fifty (R-130-ui).
+const MostProposalsPerAnswer = 50
+
+// BeyondTheProposalCount is what one action past the batch is refused with, or
+// "" where the answer has room for it.
+//
+// The number and the word for it are kept in one place, here beside the bounds:
+// the sentence spells fifty out, because that is what the Partner reads, and a
+// bound that moved without its own sentence would tell the Partner to do
+// something other than what the interface will accept.
+//
+// The counting itself is not here. This server is one process for a whole
+// Partner session and the wire carries no signal for where one answer ends, so
+// the count is asked where an answer's own proposals are held — the interface's
+// running turn — and this says what the bound is and how the refusal reads.
+func BeyondTheProposalCount(alreadyCarried int) string {
+	if alreadyCarried < MostProposalsPerAnswer {
+		return ""
+	}
+	return "this answer already carries fifty proposals; say how many remain and " +
+		"propose them in your next answer, after the human has applied these"
+}
+
+// boundedFrameField is one framing line's own bound. The ids and the labels are
+// the ledger's tokens; an intent and a next step are the sheets' one-line
+// fields; and everything else a frame carries — a reason, a basis, the four risk
+// answers, a priority, a sequence — is a clause or a number, which the clause
+// bound covers.
+func boundedFrameField(field, said string) string {
+	switch field {
+	case FieldID, FieldBlocker, FieldSuccessor:
+		return boundedID(field, said)
+	case FieldBlockedBy, FieldBlocks:
+		return boundedNames(field, framedNames(said), false)
+	case FieldLabels, FieldLabel, FieldUnlabel:
+		return boundedNames(field, framedNames(said), true)
+	case FieldIntent, FieldNextStep:
+		if utf8.RuneCountInString(said) > maxProposalLine {
+			return "the " + field + " carries at most " + strconv.Itoa(maxProposalLine) + " characters"
+		}
+	default:
+		if utf8.RuneCountInString(said) > maxProposalClause {
+			return "the " + field + " carries at most " + strconv.Itoa(maxProposalClause) + " characters"
+		}
+	}
+	return ""
+}
+
+// framedNames is one framing line's list as the frame joined it and the route
+// body reads it: comma-separated, and an empty name is not a name.
+func framedNames(said string) []string {
+	named := []string{}
+	for _, one := range strings.Split(said, ",") {
+		if one = strings.TrimSpace(one); one != "" {
+			named = append(named, one)
+		}
+	}
+	return named
 }
 
 // needs is why a flag is required, in the words the command or the engine gives.

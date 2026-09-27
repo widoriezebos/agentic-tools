@@ -131,7 +131,10 @@ import {
 type PaneState =
   | { state: "loading" }
   | { state: "failed"; message: string }
-  | { state: "read"; pane: PanePayload };
+  // `problem` is what a later read of this page was refused with, standing
+  // beside the reading it could not replace. A read that answers replaces this
+  // state whole, so it cannot outlive the reading it was recorded against.
+  | { state: "read"; pane: PanePayload; problem?: string };
 
 /** The whole project: every record the checkout carries, by kind. */
 export function ProjectPane() {
@@ -174,7 +177,17 @@ function Briefed({ goal }: { goal: string | null }) {
       })
       .catch((error: unknown) => {
         if (!aborter.signal.aborted) {
-          setRead({ state: "failed", message: failureMessage(error) });
+          // A refused read keeps whatever this page already read, and says so
+          // beside it. Failing the whole pane instead would draw the error view
+          // over a page that is still good, and unmount the edit sheet open over
+          // these columns and the draft in it — which is the very thing the
+          // in-place read below exists to protect (Astra C-05). Only a first
+          // read's failure has nothing on screen to keep.
+          setRead((held) =>
+            held.state === "read"
+              ? { ...held, problem: failureMessage(error) }
+              : { state: "failed", message: failureMessage(error) },
+          );
         }
       });
     return () => {
@@ -234,6 +247,11 @@ function Briefed({ goal }: { goal: string | null }) {
     <Pane title={goal === null ? "Project" : "Backlog"}>
       {read.state === "loading" && <LoadingCards />}
       {read.state === "failed" && <FailureCard message={read.message} onRetry={reload} />}
+      {read.state === "read" && read.problem !== undefined && (
+        <p className="ms-project-reason" role="status">
+          Project could not be read again, so what is on screen is the last reading: {read.problem}
+        </p>
+      )}
       {read.state === "read" && (
         <Columns
           pane={read.pane}

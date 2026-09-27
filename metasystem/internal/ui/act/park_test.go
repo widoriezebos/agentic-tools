@@ -208,10 +208,11 @@ func TestEveryRequestCarriesTheParkBranchCheck(t *testing.T) {
 	t.Parallel()
 	bed := ledger(t)
 	authority := sessionFor(t, bed)
-	request, err := authority.request()
+	request, done, err := authority.request("ui-nothing", "goal park")
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
+	defer done()
 	if request.ParkBranchCheck == nil {
 		t.Fatal("the request carries no branch check, so every park would fail closed")
 	}

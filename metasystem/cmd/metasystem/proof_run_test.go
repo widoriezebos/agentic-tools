@@ -672,7 +672,7 @@ func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T)
 	request := proofLaunchAdmission{ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("c", 40), Now: now}
 	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, request)
-	for _, want := range []string{"CANDIDATE_EXTENSION_REFUSED", candidate.Id, "attemptLimit", "claim " + candidate.Id + " as authority", "goal set-budget"} {
+	for _, want := range []string{"CANDIDATE_EXTENSION_REFUSED", candidate.Id, "attemptLimit", "claim " + candidate.Id + " as authority", "metasystem goal budget " + candidate.Id + " BOX"} {
 		if err == nil || !strings.Contains(err.Error(), want) || attempt.AttemptID != "" {
 			t.Fatalf("candidate extension refusal did not name %q: attempt=%+v err=%v", want, attempt, err)
 		}
