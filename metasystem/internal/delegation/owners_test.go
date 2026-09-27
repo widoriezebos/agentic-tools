@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -181,10 +182,19 @@ func TestOwnerAdapterLaunchStartsADetachedSession(t *testing.T) {
 	if err := syscall.Mkfifo(launched, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The adapter is detached in its own session and blocks opening the pipe
+	// until the read below; a failure before that read must not leave it
+	// blocked for good.
+	var launchedPid int64
+	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{
+		Verb:    "detached recorder adapter",
+		Resolve: func() (int, bool, error) { return int(launchedPid), launchedPid > 1, nil },
+	}})
 	pid, err := ports.Adapter.Launch(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
+	launchedPid = pid
 	if pid <= 1 {
 		t.Fatalf("launch returned pid %d", pid)
 	}
