@@ -454,6 +454,15 @@ positive and lookalike vectors; the registry cross-checks all of them), so one
 runtime cannot claim another's processes (for example Devin's `devin acp`
 intermediary).
 
+**One effective declaration per runtime name (VOA-31).** An override of a
+built-in yields a single declaration under that name: its signatures are the
+override's, but the built-in's reserved exclusions and lookalike vectors (the
+helpers its retained fallback operations depend on, such as `devin acp` at
+`internal/runtimes/runtimes.go:206`) are always part of it. The registry refuses
+an override whose signature matches any of the built-in's reserved lookalike
+vectors, while matches of that runtime's own positive vectors are not
+conflicts.
+
 **Recognizers.** Census and lease classification take signatures from the
 registry. The janitor keeps its kill proof in Go (kernel identity plus
 claim-consistent argv, `janitor/killproof.go:19,206`) and takes each runtime's
@@ -484,7 +493,7 @@ later unit (a ratchet: numbers, not lists, except where a list is the rule).
 | R9 | Orchestration sits above owners (6.3). | `go list -deps` test: no package under `internal/` that is an owner imports an orchestration package. |
 | R10 | Hard cutover per slice. | R1-R9 green at every landing. |
 | R11 | No metasystem scripts outside declared extension points; nothing in `metasystem/` depends on `environment/vms` (3.3). | Static test over `git ls-files` under `metasystem/`: extension-point allowlist by directory, zero other `*.sh`/`*.bash`, zero references to `environment/vms`. |
-| R13 | A new agent needs no Go change, and a built-in can be overridden (3.5). | With an engine built before the helper exists: a uniquely named external runtime passes configuration validation, dispatches, resumes, cancels, serves a mission host turn and runs its selftest with a custom probe; the fake runtime as built-in and as external executable produce identical records; a partial override changes one operation and falls back (64) for the rest; an unnamed executable, an unsafe file and a signature overlapping another runtime's vectors are refused; the janitor kills a correctly tagged orphaned external CLI and leaves wrongly tagged or reused-pid processes alone. |
+| R13 | A new agent needs no Go change, and a built-in can be overridden (3.5). | With an engine built before the helper exists: a uniquely named external runtime passes configuration validation, dispatches, resumes, cancels, serves a mission host turn and runs its selftest with a custom probe; the fake runtime as built-in and as external executable produce identical records; a partial override changes one operation and falls back (64) for the rest; an unnamed executable, an unsafe file and a signature overlapping another runtime's vectors are refused; the janitor kills a correctly tagged orphaned external CLI and leaves wrongly tagged or reused-pid processes alone; an override of Devin's `describe` that falls back for host preparation is refused when it drops the `devin acp` exclusion, and with the exclusion kept a host turn's tool call still classifies through its announced main. |
 | R12 | Every public action states an intent (3.4, G7). | Router test pins the revision 7 table; removed U1a spellings refuse with their successor. |
 
 ## 5. Units
@@ -879,3 +888,8 @@ all accepted and folded into 3.5, R13 and unit U6c.
 | VOA-28 trust and signature interference | accepted | 3.5 trust boundary; registry cross-check |
 | VOA-29 janitor claim shapes | accepted | 3.5 recognizers |
 | VOA-30 end-to-end with an unknown runtime | accepted | 3.5 consumers; R13 |
+
+Revision 8 confirmation, Codex `gpt-6-astra`, against 233caaa2b: six of six
+folds verified; one new material finding, VOA-31 (an override could drop the
+built-in's reserved exclusions its fallback depends on), accepted and folded
+into 3.5 ("One effective declaration per runtime name") and R13.

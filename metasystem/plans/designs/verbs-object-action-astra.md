@@ -576,3 +576,47 @@ Material findings: 6
 
 Codex session ID: 01a0e1c8-b52d-7172-914c-8506199ca403
 Resume in Codex: codex resume 01a0e1c8-b52d-7172-914c-8506199ca403
+
+---
+
+Revision 8 confirmation: Codex gpt-6-astra, read-only, against 233caaa2b.
+
+The six folds resolve their original failure scenarios. One new **WORK** defect remains in the built-in override rule.
+
+Reviewed `design-r8` at `233caaa2bc260eec97cd0ed24e7bf4eb2967a50f`, exclusively under `/Users/wido/LocalStorage/GitHub/verbs-b3`. Evidence is from source inspection; no builds, tests, file edits, commits, or Git writes were performed.
+
+**VOA-31 — A signature override can discard exclusions required by its built-in fallback**
+
+**Evidence:** The [override rule](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:447) permits replacing `describe` while falling back to built-in operations. The [cross-check](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:451) protects **another runtime’s** positive vectors and reserved exclusions. It does not preserve the displaced implementation’s reservations when both implementations share one runtime name.
+
+This matters for an existing first-use path. Devin’s [reserved lookalike](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/runtimes/runtimes.go:206) is `devin acp`. Its [adapter exclusion](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:798) keeps that host intermediary transparent to ancestry classification. Otherwise, [the classifier](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify.go:433) returns `DELEGATE` before reaching the announced main. The existing [ancestry test](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify_test.go:220) requires the opposite result.
+
+**Scenario:** An authorized `adapters.devin.use=external` override implements `describe`, retains the broad Devin match, supplies `metasystem-devin-lookalike` as its negative vector, and omits the ACP exclusion. It returns 64 for launch operations, retaining the built-in host behavior. Its signature matches none of the other runtimes’ positive or lookalike vectors, so the specified cross-check admits it. The first host tool invocation through `devin acp` is then classified as a delegate and loses its main/holder identity.
+
+Keeping the displaced built-in as a separate competing declaration is insufficient: checking its positive `devin` vector as “another runtime” would reject a legitimate same-name override.
+
+**Required change:** Specify one effective declaration per runtime name, while preserving the built-in helper exclusions required by any retained fallback paths. Check overridden signatures against those reservations without treating legitimate matches of that runtime’s own positive vectors as cross-runtime conflicts. Add an R13 fixture that overrides Devin’s `describe`, falls back for host preparation, and verifies both admission rejection when the ACP exclusion is lost and successful host ancestry classification when it is preserved.
+
+**Materiality:** Changes registry admission and R13 assertions. **WORK fails** without it: a permitted partial override can break the existing mission host’s first tool invocation. This is a classification defect; no privilege escalation is claimed.
+
+**VOA-25 — verified.** The [preparation contract](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:423) now carries host/delegate role, mission and turn context, resume identity, workspace and permissions. The [mission-runner requirement](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:433) explicitly replaces the separate [host-script dependency](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/missionrunner/host.go:337). R13 requires an unknown external runtime to serve a mission host turn. The original missing-consumer failure is resolved.
+
+**VOA-26 — verified.** The [fold](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:429) assigns effective-envelope construction to the runtime and retains comparison and prelaunch refusal in the shared layer. This removes the universal application of [RewriteWriteScope](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/permissions.go:20), which would widen an exact subdirectory grant to the workspace. The existing [comparison owner](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/permissions.go:40) remains applicable to the returned envelope. A partial override of preparation does not, under this contract, bypass that comparison.
+
+**VOA-27 — verified.** The [operation table](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:423) now covers settings, callback channels, artifact observation, finalization, prior usage, observed identity and same-session repair. These cover the previously missing [Devin baseline and live correlation](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:535), [transcript settlement](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:640), and [repair accounting and settlement](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/runtime-common.sh:427). The interface no longer requires runtime observation to come solely from stdout, and shared adjudication remains explicitly owned by Go.
+
+**VOA-28 — verified for the original new-name scenario.** The [trust boundary](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:443) requires explicit configuration, installation-user ownership and safe file modes before execution. The cross-check now rejects the original `devin-compatible` declaration because it matches Devin’s reserved `devin acp` vector. That addresses the original combination of executable discovery and [per-signature-only exclusions](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/census/signature.go:46). VOA-31 concerns the subsequently added same-name override path.
+
+**VOA-29 — verified.** The [recognizer contract](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:457) separates classification signatures from claim-bound invocation shapes and retains the kill decision in Go. The declared tag position, prefix and basename variants cover the existing [Shape contract](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/janitor/killproof.go:19). Kernel identity and claim-consistent argv remain required by [Killable](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/janitor/killproof.go:206). R13 now exercises orphan cleanup and rejection of incorrect tags and reused PIDs.
+
+**VOA-30 — verified.** The [consumer rule](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:463) explicitly includes configuration validation, runtime resolution, probes, selftest, dispatch and missions. This reaches the existing [compiled-runtime admission check](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/config/validate.go:170) and [compiled custom-probe lookup](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/adapter/probe.go:47). [R13](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:487) now requires a previously unknown helper installed after the engine was built, including dispatch, resume, cancellation, host execution and custom-probe selftest. Fake equivalence alone can no longer satisfy it.
+
+**Exit 64 — no separate material finding.** The stated rule reserves 64 for operations the override does not implement. Falling back at that interface boundary does not authorize skipping the [shared permission, custody or adjudication owners](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:411). A trusted executable performing an operation and then falsely reporting it unimplemented would violate that contract; it is not an additional demonstrated design failure within the declared trust boundary.
+
+Proposed receipt, not written: `Read-only revision-8 confirmation at 233caaa2b; six original folds verified by source inspection; one new WORK finding, VOA-31, concerning signature reservations under partial built-in overrides.`
+
+Folds verified: 6 of 6  
+Material findings: 1
+
+Codex session ID: 01a0e1d0-7f8b-7751-93f3-b5b738469c46
+Resume in Codex: codex resume 01a0e1d0-7f8b-7751-93f3-b5b738469c46
