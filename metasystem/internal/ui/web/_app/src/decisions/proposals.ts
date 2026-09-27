@@ -287,8 +287,8 @@ const live: Through = { look: lookOnce, record: writeOutcome, send: sendProposal
 export function portsFor(ask: RunAsk, through: Through = live): RunPorts {
   return {
     look: through.look,
-    record: async (line, state, words) => {
-      const answered = await through.record(turnOf(line), line, state, words);
+    record: async (line, state, words, attempt) => {
+      const answered = await through.record(turnOf(line), line, state, words, attempt);
       if (answered.kind === "written") {
         ask.reconcile(line.id, answered.proposal);
       }

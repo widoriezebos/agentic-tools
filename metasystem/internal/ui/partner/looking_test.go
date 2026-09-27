@@ -105,6 +105,17 @@ func TestTheToolServerIsHandedOverAtSessionNew(t *testing.T) {
 	empty, err := json.Marshal(map[string]any{"mcpServers": none.wire()})
 	testutil.Require(t, "a runtime with no tools marshals too", err, nil)
 	testutil.Expect(t, "and hands over none", string(empty), `{"mcpServers":[]}`)
+
+	// And the file this seat marks each answer in travels the same way, because
+	// it is settled when the server is launched and never again: it is how that
+	// process learns where one answer ends, which nothing on the wire says
+	// (Astra F-06).
+	tools.Answers = "/home/wido/.metasystem/ui/partner/answer"
+	marked, err := json.Marshal(map[string]any{"mcpServers": tools.wire()})
+	testutil.Require(t, "the tool server with an answer file marshals", err, nil)
+	testutil.Expect(t, "the answer's mark is named in its environment",
+		strings.Contains(string(marked),
+			`{"name":"`+uitools.AnswerFile+`","value":"/home/wido/.metasystem/ui/partner/answer"}`), true)
 }
 
 // The standing rule carries the interface's own words, so the Partner speaks
