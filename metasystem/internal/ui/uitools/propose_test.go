@@ -39,14 +39,20 @@ func refusedPropose(t *testing.T, named string, args uitools.Args) string {
 	return result.Problem
 }
 
-// The catalogue is the nine acts and their fields, and it is what the tool's
+// The catalogue is the ten acts and their fields, and it is what the tool's
 // own description tells the model.
-func TestTheProposalCatalogueIsTheNineActsWithTheirFields(t *testing.T) {
+func TestTheProposalCatalogueIsTheTenActsWithTheirFields(t *testing.T) {
 	t.Parallel()
-	testutil.Expect(t, "nine acts", len(uitools.ProposedActs), 9)
-	testutil.Expect(t, "named by their route ids", uitools.ProposeRoutes(), []string{
+	testutil.Expect(t, "ten acts", len(uitools.ProposedActs), 10)
+	testutil.Expect(t, "dispatching to their route ids", uitools.ProposeRoutes(), []string{
 		"open-goal", "approve-goal", "withdraw-goal", "set-goal-priority",
-		"block-goal", "unblock-goal", "park-goal", "unpark-goal", "edit-goal",
+		"block-goal", "unblock-goal", "park-goal", "unpark-goal", "edit-goal", "abandon-goal",
+	})
+	// And named as the Partner names them: the route id for the nine that have
+	// no public name here yet, and the action's own name for abandon.
+	testutil.Expect(t, "named as the Partner names them", uitools.ProposeVerbs(), []string{
+		"open-goal", "approve-goal", "withdraw-goal", "set-goal-priority",
+		"block-goal", "unblock-goal", "park-goal", "unpark-goal", "edit-goal", "abandon",
 	})
 	fields := map[string][]string{}
 	for _, act := range uitools.ProposedActs {
@@ -66,6 +72,16 @@ func TestTheProposalCatalogueIsTheNineActsWithTheirFields(t *testing.T) {
 	testutil.Expect(t, "unpark takes nothing", fields["unpark-goal"], []string{})
 	testutil.Expect(t, "edit takes the three the route carries", fields["edit-goal"],
 		[]string{"intent", "nextStep", "labels"})
+	// Abandon takes the public flags of `metasystem goal abandon`, and its
+	// reason reaches the route body as the because that body already has.
+	testutil.Expect(t, "abandon takes the reason and the successor", fields["abandon-goal"],
+		[]string{"reason", "successor"})
+	abandon, known := uitools.ProposedActNamed("abandon")
+	testutil.Require(t, "abandon is found by the name the Partner calls it", known, true)
+	testutil.Expect(t, "and it dispatches to the route id", abandon.Route, "abandon-goal")
+	testutil.Expect(t, "its reason is the route body's because", abandon.BodyField("reason"), "because")
+	testutil.Expect(t, "and its successor is spelled the same on both sides",
+		abandon.BodyField("successor"), "successor")
 
 	described := map[string]uitools.Tool{}
 	for _, tool := range uitools.Catalogue() {
@@ -74,8 +90,8 @@ func TestTheProposalCatalogueIsTheNineActsWithTheirFields(t *testing.T) {
 	tool := described[uitools.OpPropose]
 	testutil.Expect(t, "the tool is offered", tool.Name, uitools.OpPropose)
 	for _, act := range uitools.ProposedActs {
-		testutil.Expect(t, "its description names "+act.Route,
-			strings.Contains(tool.Description, act.Route+" ("+act.Button+")"), true)
+		testutil.Expect(t, "its description names "+act.Name(),
+			strings.Contains(tool.Description, act.Name()+" ("+act.Button+")"), true)
 	}
 	testutil.Expect(t, "and says words alone propose nothing",
 		strings.Contains(tool.Description, uitools.WordsAloneProposeNothing), true)
@@ -164,12 +180,15 @@ func TestTheActsThatCarryNothingButTheGoal(t *testing.T) {
 func TestAnActThisInterfaceDoesNotHaveIsRefusedByName(t *testing.T) {
 	t.Parallel()
 	words := refusedPropose(t, "an unknown act", uitools.Args{"verb": "retire-goal", "goal": "g1-s42", "explanation": "x"})
-	testutil.Expect(t, "the nine are named", strings.Contains(words, "open-goal"), true)
+	testutil.Expect(t, "the ten are named", strings.Contains(words, "open-goal"), true)
+	testutil.Expect(t, "abandon among them", strings.Contains(words, "abandon"), true)
 	testutil.Expect(t, "and the unknown one is quoted", strings.Contains(words, `"retire-goal"`), true)
 
-	elsewhere := refusedPropose(t, "abandon", uitools.Args{"verb": "abandon", "goal": "g1-s42", "explanation": "x"})
-	testutil.Expect(t, "abandon is named as an act this interface has not",
-		strings.Contains(elsewhere, "abandon is not an act this interface has"), true)
+	// Abandon left this list when the ruling admitted it; the acts still not
+	// here are refused by name with where they are done.
+	elsewhere := refusedPropose(t, "done", uitools.Args{"verb": "done", "goal": "g1-s42", "explanation": "x"})
+	testutil.Expect(t, "done is named as an act this interface has not",
+		strings.Contains(elsewhere, "done is not an act this interface has"), true)
 	testutil.Expect(t, "and the human is sent to a terminal",
 		strings.Contains(elsewhere, "done at a terminal"), true)
 
@@ -256,6 +275,10 @@ func TestTheAuthorityAndPlumbingFieldsAreRefusedByName(t *testing.T) {
 		"risk":                  "travel as severity, novelty, exposure and accumulation",
 		"evidence":              "where the work landed",
 		"nextAppend":            "send the whole nextStep",
+		// The two forms of abandon this interface does not carry, each refused
+		// by name with the terminal form that does carry it.
+		"waive": "metasystem goal abandon G --reason TEXT --waive DEPENDENT=REASON",
+		"also":  "metasystem goal abandon G --reason TEXT --also DEPENDENT",
 	} {
 		words := refusedPropose(t, field, uitools.Args{
 			"verb": "approve-goal", "goal": "g1-s14", "explanation": "x", field: "anything",
@@ -279,6 +302,8 @@ func TestAMissingFieldIsRefusedByName(t *testing.T) {
 		{uitools.Args{"verb": "block-goal", "goal": "g"}, "block-goal needs blocker"},
 		{uitools.Args{"verb": "open-goal", "goal": "g"}, "open-goal needs intent"},
 		{uitools.Args{"verb": "set-goal-priority", "goal": "g"}, "set-goal-priority needs priority"},
+		{uitools.Args{"verb": "abandon", "goal": "g"},
+			"abandon needs reason: a goal that will never be worked owes the reader why"},
 	} {
 		one.args["explanation"] = "x"
 		words := refusedPropose(t, one.says, one.args)
@@ -350,4 +375,71 @@ func TestAProposalNamesItsGoal(t *testing.T) {
 	})
 	testutil.Expect(t, "an open names one new goal",
 		strings.Contains(disagree, "an open names one new goal: goal is a and id is b"), true)
+}
+
+// Abandon travels in the frame the route reads: its public flags become the
+// route body's own labels, so `reason` arrives as Because and `successor` as
+// Successor.
+//
+// It is the one row where the name the Partner uses and the spelling the body
+// decodes differ, and this is where that is held: a frame that wrote Reason
+// would hand the runner a field the abandon route has no decoder for, and the
+// card would carry no reason at all.
+func TestAnAbandonTravelsUnderTheRouteBodysOwnLabels(t *testing.T) {
+	t.Parallel()
+	text := prepared(t, uitools.Args{
+		"verb": "abandon", "goal": "old-idea",
+		"reason": "superseded by the seat inventory", "successor": "new-idea",
+		"explanation": "the inventory answers what this one was for",
+	})
+
+	testutil.Expect(t, "the header names the route the runner dispatches on",
+		strings.Contains(text, uitools.ProposalHeader+"abandon-goal\n"), true)
+	testutil.Expect(t, "the goal is named", strings.Contains(text, uitools.ProposalGoal+"old-idea\n"), true)
+	testutil.Expect(t, "the reason is under the body's own label",
+		strings.Contains(text, uitools.ProposalBecause+"superseded by the seat inventory\n"), true)
+	testutil.Expect(t, "the successor is under its own",
+		strings.Contains(text, uitools.ProposalSuccessor+"new-idea\n"), true)
+	testutil.Expect(t, "and nothing writes the public flag's spelling",
+		strings.Contains(text, uitools.ProposalReason+"superseded"), false)
+	testutil.Expect(t, "the explanation follows whole",
+		strings.HasSuffix(text, "the inventory answers what this one was for\n"), true)
+}
+
+// A successor is optional: an abandon that names none is prepared, and the
+// frame says nothing about one rather than saying it is empty.
+func TestAnAbandonWithNoSuccessorIsPrepared(t *testing.T) {
+	t.Parallel()
+	text := prepared(t, uitools.Args{
+		"verb": "abandon", "goal": "old-idea", "reason": "nobody will work it",
+		"explanation": "nothing carries this one's work",
+	})
+
+	testutil.Expect(t, "the reason is there",
+		strings.Contains(text, uitools.ProposalBecause+"nobody will work it\n"), true)
+	testutil.Expect(t, "and the successor line is absent",
+		strings.Contains(text, uitools.ProposalSuccessor), false)
+}
+
+// A field of another act sent to an abandon is refused by naming the act it
+// belongs to, and abandon's own fields are named beside it — including under the
+// name the Partner calls abandon by.
+func TestAFieldSentToAnAbandonIsRefusedByNamingItsOwnAct(t *testing.T) {
+	t.Parallel()
+	words := refusedPropose(t, "a park's because on an abandon", uitools.Args{
+		"verb": "abandon", "goal": "g", "reason": "nobody will work it",
+		"because": "nobody will work it", "explanation": "x",
+	})
+
+	testutil.Expect(t, "it names the act because belongs to",
+		strings.Contains(words, "because is park-goal's"), true)
+	testutil.Expect(t, "and says what abandon takes",
+		strings.Contains(words, "abandon takes reason and successor"), true)
+
+	elsewhere := refusedPropose(t, "an abandon's successor on a park", uitools.Args{
+		"verb": "park-goal", "goal": "g", "because": "not now",
+		"successor": "new-idea", "explanation": "x",
+	})
+	testutil.Expect(t, "the successor is named as abandon's",
+		strings.Contains(elsewhere, "successor is abandon's"), true)
 }

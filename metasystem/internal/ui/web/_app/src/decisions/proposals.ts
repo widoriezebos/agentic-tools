@@ -117,6 +117,7 @@ export function lineOf(
     state: carried === null ? proposed.state : carried.state,
     words: carried === null ? proposed.words : (carried.words ?? ""),
     at: need.since,
+    updatedAt: carried === null ? proposed.updatedAt : carried.updatedAt,
     version: carried === null ? proposed.version : carried.version,
     id,
     mark: markOf(marks, id),
@@ -246,11 +247,25 @@ const live: Through = { look: lookOnce, record: writeOutcome, send: sendProposal
  * with, because a bulk press can carry lines from several answers: the inbox
  * lists every proposal that still waits, and two of them can have been proposed
  * a day apart.
+ *
+ * And it keeps what it wrote, exactly as the card's own port does. The page held
+ * the entries a CONFLICT returned and not the ones its own writes returned, so
+ * between a run's outcome write and the re-read that follows it a line this page
+ * had just left unresolved read as in flight: the row said the act was being
+ * applied while this very run knew what had become of it, and it corrected itself
+ * on the read (g1-s60, as built). Where the write was refused the run's own rules
+ * decide what the row says, so nothing is held for it.
  */
 export function portsFor(ask: RunAsk, through: Through = live): RunPorts {
   return {
     look: through.look,
-    record: (line, state, words) => through.record(turnOf(line), line, state, words),
+    record: async (line, state, words) => {
+      const answered = await through.record(turnOf(line), line, state, words);
+      if (answered.kind === "written") {
+        ask.reconcile(line.id, answered.proposal);
+      }
+      return answered;
+    },
     send: through.send,
     mark: (line, change) => {
       ask.mark(line.id, change);

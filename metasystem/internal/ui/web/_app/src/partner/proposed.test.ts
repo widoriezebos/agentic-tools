@@ -177,6 +177,7 @@ describe("how the press gets there", () => {
   const STORE = readFileSync(path.join(SRC, "partner", "store.tsx"), "utf8");
   const CARD = readFileSync(path.join(SRC, "partner", "Proposal.tsx"), "utf8");
   const TRANSCRIPT = readFileSync(path.join(SRC, "partner", "Transcript.tsx"), "utf8");
+  const SHELL = readFileSync(path.join(SRC, "shell", "Shell.tsx"), "utf8");
 
   /**
    * The bar's own two writes and no third mechanism: the card the conversation is
@@ -226,6 +227,33 @@ describe("how the press gets there", () => {
     // follow-down's business again.
     expect(TRANSCRIPT).toContain('openAt.current = "";');
     expect(TRANSCRIPT).toContain('if (opening !== null && opening !== "") {');
+  });
+
+  /**
+   * And the target is spent when the drawer closes, so the press opens at its
+   * card exactly once.
+   *
+   * The column is mounted only while the drawer is open, and it reads the target
+   * at its first render. A target nobody cleared is therefore read by every
+   * later opening: a chip pressed this morning would take the afternoon's plain
+   * toggle back to that morning's answer, which is neither where the human
+   * asked to be nor where a conversation opens. The shell is what knows the
+   * drawer closed — one place answers the header's toggle, the panel's and
+   * Escape — so the clear is one call there and a store field here.
+   */
+  it("spends the target when the drawer closes, so the plain toggle opens at the end", () => {
+    const clear = STORE.slice(STORE.indexOf("const clearShowing = useCallback"));
+    expect(clear.slice(0, clear.indexOf("}, ["))).toContain('setShowing("")');
+
+    const setter = SHELL.slice(SHELL.indexOf("const setDrawer = (next: boolean, goes: Caret) =>"));
+    const body = setter.slice(0, setter.indexOf("\n  };"));
+    expect(body).toContain("if (!next) {\n      clearShowing();");
+    // Opening writes no target of its own: what a press asked for is what the
+    // column opens at, and a toggle that asked for nothing asks for nothing.
+    expect(body).not.toContain("setShowing");
+    // And this is the shell's only close: the three other writes to the
+    // drawer's openness all open it, which is why one call is the whole of it.
+    expect(SHELL).not.toContain("setDrawerOpen(false)");
   });
 });
 

@@ -39,7 +39,15 @@ import (
 // the tip rather than displaced — and the body carries only the fields the
 // sheet says changed, so a terminal edit of an untouched field survives it.
 //
-// All nine take the same policy every other route takes: the allowed host,
+// And one more the Partner's card is the ask for: goal abandon, which records
+// that a goal will never be worked, with the reason and the live goal carrying
+// its work where there is one. It is admitted from a browser under R-128-ui,
+// the ruling that extends R-125-m1u by that verb; no page grows a button for
+// it, and neither --waive nor --also travels from here, so a goal with live
+// dependents and no successor is refused by the engine in words that name the
+// terminal forms.
+//
+// All ten take the same policy every other route takes: the allowed host,
 // the same-site check, the single allowed origin, POST and nothing else, a
 // bounded JSON object with no unknown fields. What they add is the one thing
 // no read route needs: a human's proof. Two can supply one — the live browser
@@ -60,6 +68,7 @@ const (
 	unblockSuffix  = "/unblock"
 	parkSuffix     = "/park"
 	unparkSuffix   = "/unpark"
+	abandonSuffix  = "/abandon"
 	// editGoalSuffix is the goal's own edit. The document editor's editSuffix
 	// is the same word under another prefix, and the two are written apart so
 	// that neither can be renamed into the other by accident.
@@ -73,6 +82,7 @@ const (
 	routePark       = "park-goal"
 	routeUnpark     = "unpark-goal"
 	routeEditGoal   = "edit-goal"
+	routeAbandon    = "abandon-goal"
 	unprovenRefusal = "this interface cannot act as a human"
 	// oneLineRefusal is what an intake and an edit both say about a field the
 	// ledger keeps on one line. It is written once so the two cannot drift.
@@ -123,6 +133,20 @@ type parkBody struct {
 }
 
 type unparkBody struct{}
+
+// abandonBody is why a goal will never be worked, and the live goal carrying
+// its work where a human named one.
+//
+// The reason is required, because the engine requires it on one line: a goal
+// nobody will work owes the reader why, and this route refuses an empty one
+// rather than inventing a sentence. The successor is optional and is a plain
+// string rather than a pointer, because absent and empty say the same thing
+// here — no successor was named — and the engine then applies its own rule
+// about the goal's live dependents.
+type abandonBody struct {
+	Because   string `json:"because"`
+	Successor string `json:"successor"`
+}
 
 // priorityBody is where in the backlog a human put one goal: the band, and
 // the one-based position in it. A null sequence appends, which is what the
@@ -247,6 +271,7 @@ func actRouteOf(path string) (written, bool) {
 		unblockSuffix:  routeUnblock,
 		parkSuffix:     routePark,
 		unparkSuffix:   routeUnpark,
+		abandonSuffix:  routeAbandon,
 		editGoalSuffix: routeEditGoal,
 	}
 	for suffix, route := range suffixes {
@@ -329,6 +354,34 @@ func (h *handler) unparkGoal(w http.ResponseWriter, r *http.Request, id string) 
 		return
 	}
 	h.answerAct(w, h.info.Unpark(signed, id))
+}
+
+// abandonGoal records that one goal will never be worked.
+//
+// Every refusal is the engine's own: the reason it keeps on one line, the live
+// dependents it will not leave pointing at a goal nobody will work, the
+// successor it requires to be live. The one this route owns is the empty
+// reason, refused before the act exactly as the park route refuses one, so a
+// body with nothing in it is answered by this server rather than by a
+// transaction.
+//
+// The nil check is this route's own rather than mayAct's, for the reason the
+// editor's is: an engine built without this act should still approve and park.
+func (h *handler) abandonGoal(w http.ResponseWriter, r *http.Request, id string) {
+	if h.info.Abandon == nil {
+		writeFailure(w, "this engine was built without the backlog's abandon")
+		return
+	}
+	signed, may := h.mayAct(w, r)
+	if !may {
+		return
+	}
+	var body abandonBody
+	if !decode(w, r, &body) {
+		return
+	}
+	h.answerAct(w, h.info.Abandon(signed, id,
+		strings.TrimSpace(body.Because), strings.TrimSpace(body.Successor)))
 }
 
 func (h *handler) setGoalPriority(w http.ResponseWriter, r *http.Request, id string) {

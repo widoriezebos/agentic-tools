@@ -1,6 +1,7 @@
 import { ProposalConflict, recordProposal, type ProposalState } from "./api";
 import { answeredOf, dispatchOf, type Answered, type Line, type Looked, type Written } from "./proposing";
 import {
+  abandonGoal,
   approveGoal,
   blockGoal,
   editGoal,
@@ -22,8 +23,8 @@ import {
  * These three are what that run needs of the world, and they are HERE rather
  * than in either caller because there are two callers: the card in the
  * transcript and the row in the Decisions inbox (g1-s60 D4). Two copies of the
- * dispatch would be two lists of nine acts, and the day a tenth is added one of
- * them would be right.
+ * dispatch would be two lists of ten acts, and the day an eleventh is added one
+ * of them would be right.
  *
  * Nothing here reaches the network itself. The act goes through the clients
  * every button on every page already uses, and the outcome goes through the
@@ -102,6 +103,8 @@ async function actOf(line: Line): Promise<Backlog | null> {
       return editGoal(dispatch.id, dispatch.edit);
     case "open":
       return openGoal(dispatch.goal);
+    case "abandon":
+      return abandonGoal(dispatch.id, dispatch.because, dispatch.successor);
     default:
       return null;
   }

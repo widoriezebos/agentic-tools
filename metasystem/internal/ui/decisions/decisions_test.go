@@ -455,11 +455,12 @@ func TestTheTwoCountsAreTheInboxSplitAndSumToIt(t *testing.T) {
 		t.Errorf("the two blocks do not sum to the inbox: %d + %d != %d",
 			page.Counts.Asked, page.Counts.Waiting, page.Counts.NeedsYou)
 	}
-	// Five, since the actions the Partner proposed wait here. The number is
-	// asserted as a literal rather than against the constant, because a reader
-	// parses the number and not the constant.
-	if page.SchemaVersion != 5 {
-		t.Errorf("schema = %d, want 5", page.SchemaVersion)
+	// Six, since a proposal row carries the instant of its last write beside the
+	// instant it was proposed. The number is asserted as a literal rather than
+	// against the constant, because a reader parses the number and not the
+	// constant.
+	if page.SchemaVersion != 6 {
+		t.Errorf("schema = %d, want 6", page.SchemaVersion)
 	}
 }
 
