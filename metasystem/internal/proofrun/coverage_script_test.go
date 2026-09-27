@@ -346,15 +346,6 @@ func TestProofScriptEntrypointHelper(t *testing.T) {
 	}
 }
 
-func coverageScriptExecutable(t *testing.T) string {
-	t.Helper()
-	path, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func packageRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -374,13 +365,6 @@ func copyScriptFile(t *testing.T, source, destination string) {
 		t.Fatal(err)
 	}
 	if err := testexec.WriteFile(destination, data, 0o755); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func writeEntrypointHelperWrapper(t *testing.T, path, mode string) {
-	t.Helper()
-	if err := writeEntrypointWrapperNow(path, mode); err != nil {
 		t.Fatal(err)
 	}
 }
