@@ -74,6 +74,12 @@ func launchStarter(roots lifecycle.Roots) func(*session.Session, launch.Request)
 				Message: "the review-by date " + asked.ReviewBy + " is before " + asked.ClientToday + "; choose a date this machine's enrollment can be reviewed by",
 			}
 		}
+		// A machine already launched and supervised from here is a repeat
+		// whose effect holds (R-129-ui): its launch is the answer, and no
+		// record is written or spawned.
+		if launched, already, err := launch.Launched(roots.Checkout, asked); err == nil && already {
+			return launched, nil
+		}
 		record, path, err := launchRecordFor(roots, &asked)
 		if err != nil {
 			return launch.Record{}, err
