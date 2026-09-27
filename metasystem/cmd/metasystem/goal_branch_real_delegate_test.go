@@ -194,17 +194,11 @@ func realDelegateRosterFields(fields map[string]any) map[string]any {
 func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, string) {
 	t.Helper()
 	main, _, _ := goalBranchMainCLIFixtureBelow(t, "m1", ".")
-	guard := filepath.Join(main, "scripts", "agents", "pre-commit-guard.sh")
-	stub, err := os.ReadFile(guard)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, dir := range []string{"scripts", "docs", "skills"} {
 		if output, err := exec.Command("cp", "-R", filepath.Join(moduleRoot, dir), main).CombinedOutput(); err != nil {
 			t.Fatalf("install %s: %v: %s", dir, err, output)
 		}
 	}
-	writeTestingFixtureFile(t, guard, stub, 0o755)
 	conf := filepath.Join(main, "metasystem.conf")
 	existing, err := os.ReadFile(conf)
 	if err != nil {

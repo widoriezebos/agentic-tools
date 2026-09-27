@@ -19,7 +19,7 @@ import (
 // landing candidate is computed by the landing owner, the person's exception
 // is recorded by the carry owner (with its enrolled proof, lifetime, one
 // exception and replacement rules), and the existing carried landing
-// transaction (land.sh --carried, with its proof token, reservation and
+// transaction (landpath.Land with Carried, with its proof token, reservation and
 // consumption) delivers it. A repeated request rejoins the recorded
 // exception for the same candidate instead of recording another.
 

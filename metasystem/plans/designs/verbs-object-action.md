@@ -646,6 +646,21 @@ reconciliation owner's scoped publication (3.4, VOA-21).
   `work land G --exception PAST --replace-exception X`). Step B adds the
   `pre-commit` entry, switches the enrolled hook composer to it, and deletes
   the scripts.
+
+  U5 build notes (step B, as built): the composer
+  (`ledgerfence.composerFor`) is the shebang, one `prefix='...'` line and a
+  fixed body that runs `bin/metasystem internal pre-commit --root
+  <installation>` (a linked worktree without its own engine runs its primary
+  checkout's), then `pre-commit.local`; a retired script-guard composer is
+  recognized and upgraded in place by the next `Ensure` (any goal mutation), and
+  `adopt.sh` writes the same bytes. `work land --message FILE --staged --local`
+  is the former `commit.sh` without `--push` (benchmark provisioning uses it).
+  The internal verbs whose only callers were the deleted scripts are deleted
+  under 6.1 (`landing advance`, `drift`, `carry-status`, `held`,
+  `receipt-line`, `sync-transport`, `gate weight-add`, `output spill`,
+  `validate wrapper-token`); their owners stay and the landing path calls them.
+  `landing park` stays: the recertified-landing bed drives the park owner's
+  failure path through it.
 - U6c External runtimes (revision 8). The external-executable implementation of the runtime interface, the registry and its trust rules, every consumer on the registry, `docs/agent-adapters.md`, R13. After U6a.
 - U6a Runtimes. `adapters/runtime-common.sh`, the four adapters,
   `host-common.sh` and the four hosts into Go; the `delegate-supervisor` entry;

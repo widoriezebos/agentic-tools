@@ -30,24 +30,6 @@ func weightThreshold(root string) int64 {
 	return parsed
 }
 
-func runGateWeightAdd(args []string) int {
-	flags := flag.NewFlagSet("gate weight-add", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	commit := flags.String("commit", "", "landed commit")
-	prefix := flags.String("prefix", "", "metasystem path relative to Git toplevel")
-	goalID := flags.String("goal", "", "goal owning the landing; its highest risk answer scales the weight")
-	if flags.Parse(args) != nil || *root == "" || *commit == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate weight-add --root R --commit SHA [--prefix PREFIX] [--goal ID]  (numstat -z on stdin)")
-		return 2
-	}
-	numstat, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return gateWeightAddTo(os.Stdout, os.Stderr, *root, *commit, *prefix, *goalID, numstat)
-}
-
 // gateWeightAddTo folds one landing's numstat into the validation weight and
 // prints the accumulator on the caller's streams.
 func gateWeightAddTo(stdout, stderr io.Writer, root, commit, prefix, goalID string, numstat []byte) int {

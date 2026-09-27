@@ -621,7 +621,6 @@ func TestFixtureGoConsumersUseSharedWorkerBoundary(t *testing.T) {
 	t.Parallel()
 	scripts := map[string]int{
 		"dispatch-fixtures.sh":      1,
-		"land-fixtures.sh":          14,
 		"return-schema-fixtures.sh": 3,
 		"supervision-fixtures.sh":   10,
 	}
@@ -645,26 +644,6 @@ func TestFixtureGoConsumersUseSharedWorkerBoundary(t *testing.T) {
 		if !strings.Contains(string(budgetData), required) {
 			t.Errorf("shared fixture Go consumer lacks %q", required)
 		}
-	}
-	landData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "land-fixtures.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	land := string(landData)
-	if !strings.Contains(land, "METASYSTEM_TEST_WORKERS PATH") {
-		t.Error("scrubbed receipt environment does not preserve the scenario worker allocation")
-	}
-	for _, required := range []string{
-		`fixture_minimum_cap_min=$(harness_fixture_semantic_cap minimum-minutes)`,
-		`fixture_budget_refusal_cap_min=$(harness_fixture_semantic_cap landing-budget-refusal-minutes)`,
-		`[[ ! -e "$full_chain_budget_command_marker" ]]`,
-	} {
-		if !strings.Contains(land, required) {
-			t.Errorf("land fixture deterministic contract lacks %q", required)
-		}
-	}
-	if strings.Contains(land, "--cap-min 1") || strings.Contains(land, "--cap-min 3") {
-		t.Fatal("land fixture still hard-codes a proof cap instead of its semantic budget input")
 	}
 }
 
@@ -701,18 +680,6 @@ esac
 		}
 		if test.mode == "unknown" && !strings.Contains(string(output), "identity is indeterminate") {
 			t.Fatalf("unknown process observation did not retain its diagnostic: %s", output)
-		}
-	}
-	landData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "land-fixtures.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		`harness_fixture_exact_process_gone "$source_engine" "$runner_pid" "$runner_ref"`,
-		`tracking retained: $runner_ref`,
-	} {
-		if !strings.Contains(string(landData), required) {
-			t.Fatalf("landing teardown lacks fail-closed tracking behavior %q", required)
 		}
 	}
 }
@@ -879,174 +846,6 @@ func TestLandingReceiptPublicSemanticClockBoundariesAndDelayedCompletion(t *test
 			}
 		})
 	}
-}
-
-func TestLandingReceiptShellCallerCarriesAuthorizedClock(t *testing.T) {
-	t.Parallel()
-	if arguments, private := receiptClockPrivateChildArguments(); private {
-		if len(arguments) != 3 {
-			t.Fatalf("private receipt clock child arguments=%q", arguments)
-		}
-		clock := os.Getenv(goalNowEnvironment)
-		if clock == "" {
-			t.Fatal("private receipt child received no authorized semantic clock")
-		}
-		if err := os.WriteFile(arguments[0], []byte("private-clock="+clock+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		ready, err := os.OpenFile(arguments[1], os.O_WRONLY, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := ready.WriteString("ready\n"); err != nil || ready.Close() != nil {
-			t.Fatalf("publish private receipt readiness: %v", err)
-		}
-		release, err := os.Open(arguments[2])
-		if err != nil {
-			t.Fatal(err)
-		}
-		var event [1]byte
-		if _, err := io.ReadFull(release, event[:]); err != nil {
-			t.Fatal(err)
-		}
-		_ = release.Close()
-		return
-	}
-
-	fixtureInstant := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
-	for _, capMinutes := range []int{1, 3} {
-		capMinutes := capMinutes
-		t.Run(fmt.Sprintf("cap-%d-minute", capMinutes), func(t *testing.T) {
-			repository := newProofAdmissionRepositoryFixture(t, fixtureInstant, true)
-			root, err := filepath.EvalSymlinks(repository.root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			repository.root = root
-			repository.top, err = filepath.EvalSymlinks(repository.top)
-			if err != nil {
-				t.Fatal(err)
-			}
-			fixture := newDeadlineReceiptTreeFixture(t, repository)
-			snapshot := writeProofCommandFixtureSnapshot(t, repository)
-			proofWrapper := proofCommandFixtureWrapper(t)
-			scriptRoot := t.TempDir()
-			for _, directory := range []string{filepath.Join(scriptRoot, "scripts", "agents"), filepath.Join(scriptRoot, "bin")} {
-				if err := os.MkdirAll(directory, 0o755); err != nil {
-					t.Fatal(err)
-				}
-			}
-			for _, relative := range []string{
-				"scripts/agents/land-fixtures.sh",
-				"scripts/agents/fixture-budget.sh",
-				"scripts/agents/fixture-bed-scenarios.sh",
-			} {
-				data, err := os.ReadFile(filepath.Join("..", "..", relative))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := testexec.WriteFile(filepath.Join(scriptRoot, relative), data, 0o755); err != nil {
-					t.Fatal(err)
-				}
-			}
-			engine := filepath.Join(scriptRoot, "bin", "metasystem")
-			wrapper := fmt.Sprintf("#!/usr/bin/env bash\nif [[ \"${1:-}\" == landing && \"${2:-}\" == test-receipt ]]; then\n  exec %q \"$@\"\nfi\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec %q \"$@\"\n", proofWrapper, commandTestExecutable(t))
-			if err := testexec.WriteFile(engine, []byte(wrapper), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			capability := filepath.Join(scriptRoot, "receipt-clock.capability")
-			if err := testexec.WriteFile(capability, []byte("receipt-clock-boundary\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			readyPath, releasePath := filepath.Join(t.TempDir(), "ready"), filepath.Join(t.TempDir(), "release")
-			makeFixtureFIFO(t, readyPath)
-			makeFixtureFIFO(t, releasePath)
-			ready, err := os.OpenFile(readyPath, os.O_RDWR, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			readyEvents := startFixtureLineReader(ready, 1)
-			release, err := os.OpenFile(releasePath, os.O_RDWR, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer release.Close()
-			observed := filepath.Join(t.TempDir(), "observed-clock")
-			resultPath := filepath.Join(t.TempDir(), "launch-result.json")
-			namespace := filepath.Join(t.TempDir(), "namespace")
-			ctx, cancel := context.WithCancel(t.Context())
-			command := exec.CommandContext(ctx, "bash", filepath.Join(scriptRoot, "scripts", "agents", "land-fixtures.sh"),
-				"--fixture-bed-child", "receipt-clock-boundary", capability)
-			command.Env = append(testenv.WithoutInheritedControls(os.Environ()),
-				proofCommandFixtureMarker+"=1",
-				proofCommandFixtureSnapshotEnv+"="+snapshot,
-				proofCommandFixtureTempRootEnv+"="+namespace,
-				"METASYSTEM_FIXTURE_NAMESPACE="+namespace,
-				"METASYSTEM_TEST_WORKERS=1",
-				"METASYSTEM_RECEIPT_CLOCK_FIXTURE_ROOT="+root,
-				"METASYSTEM_RECEIPT_CLOCK_TREE="+fixture.tree,
-				"METASYSTEM_RECEIPT_CLOCK_CAP_MIN="+strconv.Itoa(capMinutes),
-				"METASYSTEM_RECEIPT_CLOCK_TEST_EXECUTABLE="+commandTestExecutable(t),
-				"METASYSTEM_RECEIPT_CLOCK_READY="+readyPath,
-				"METASYSTEM_RECEIPT_CLOCK_RELEASE="+releasePath,
-				"METASYSTEM_RECEIPT_CLOCK_OBSERVED="+observed,
-				"METASYSTEM_RECEIPT_CLOCK_RESULT="+resultPath)
-			started := time.Now()
-			process, err := launchFixtureProcess(command, cancel)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { process.stopAndWait() })
-			event, waitErr := waitFixtureLine(t.Context(), readyEvents, process)
-			if waitErr != nil || event != "ready" {
-				_ = ready.Close()
-				t.Fatalf("private receipt child did not reach the delayed event: event=%q err=%v", event, waitErr)
-			}
-			readyEvents.closeAndWait()
-			if _, err := release.WriteString("release\n"); err != nil {
-				t.Fatal(err)
-			}
-			output, processErr := process.wait()
-			if processErr != nil {
-				t.Fatalf("shell receipt boundary: %v\n%s", processErr, output)
-			}
-			var result proofrun.LaunchResult
-			encoded, err := os.ReadFile(resultPath)
-			if err != nil || json.Unmarshal(encoded, &result) != nil || result.ExitStatus != 0 ||
-				result.Disposition != proofrun.DispositionExecuted || result.AttemptID == "" {
-				t.Fatalf("shell receipt result=%+v read=%v bytes=%s", result, err, encoded)
-			}
-			attempt, err := proofrun.ReadAttempt(root, result.AttemptID)
-			wantDeadline := fixtureInstant.Add(time.Duration(capMinutes) * time.Minute).Format(time.RFC3339Nano)
-			if err != nil || attempt.StartedAt != fixtureInstant.Format(time.RFC3339Nano) || attempt.Deadline != wantDeadline ||
-				attempt.ReservedMinutes != uint64(capMinutes) ||
-				attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) == 0 {
-				t.Fatalf("public command clock attempt=%+v err=%v", attempt, err)
-			}
-			if _, err := os.Stat(landing.TestReceiptPath(root, fixture.tree)); err != nil {
-				t.Fatalf("shell receipt was not published: %v", err)
-			}
-			for _, marker := range []string{
-				"shell clock=" + fixtureInstant.Format(time.RFC3339),
-				fmt.Sprintf("public receipt completed cap-min=%d", capMinutes),
-				"private-clock=" + fixtureInstant.Format(time.RFC3339),
-			} {
-				if !strings.Contains(output, marker) {
-					t.Fatalf("shell receipt output lacks %q:\n%s", marker, output)
-				}
-			}
-			t.Logf("receipt shell/public/private clock witness cap=%dm physical=%s", capMinutes, time.Since(started))
-		})
-	}
-}
-
-func receiptClockPrivateChildArguments() ([]string, bool) {
-	for index, argument := range os.Args {
-		if argument == "--receipt-clock-private-child" {
-			return os.Args[index+1:], true
-		}
-	}
-	return nil, false
 }
 
 func runLandingReceiptPublicSemanticClockCase(t *testing.T, testCase receiptClockFixtureCase) {

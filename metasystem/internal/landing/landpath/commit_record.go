@@ -329,7 +329,7 @@ func (b *boundary) push() int {
 		}
 		// Transport receives origin's ref, never the local branch.
 		if b.owners.SyncTransport(root, branch, b.stdout, b.stderr) != 0 {
-			return b.refuse(1, "landing push failed at transport with origin already pushed; resolve and rerun metasystem internal landing sync-transport")
+			return b.refuse(1, "landing push failed at transport with origin already pushed; resolve the transport remote, then mirror origin to it: git fetch origin %s && git push transport refs/remotes/origin/%s:refs/heads/%s", branch, branch, branch)
 		}
 	}
 	return 0

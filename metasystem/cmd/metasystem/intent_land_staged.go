@@ -14,7 +14,7 @@ import (
 // stagedLandingOptions are the options of work land's staged form: a change
 // a person or agent made by hand, landed with its message and declarations.
 var stagedLandingOptions = []string{"message", "staged", "path", "chain", "recertification", "test-receipt",
-	"direct-fix", "revert-of", "root-job", "tests", "allow-new-plan", "skip-transport"}
+	"direct-fix", "revert-of", "root-job", "tests", "allow-new-plan", "skip-transport", "local"}
 
 // stagedLandingFlags are those options as work land declares them.
 var stagedLandingFlags = []intentFlag{
@@ -30,6 +30,7 @@ var stagedLandingFlags = []intentFlag{
 	{name: "tests", value: "COMMAND", advanced: true, usage: "with --direct-fix tier-1: the legacy test command a receipt is made from"},
 	{name: "allow-new-plan", advanced: true, usage: "with --message: the landing deliberately adds a new plan file"},
 	{name: "skip-transport", advanced: true, usage: "with --message: do not mirror origin to the transport remote"},
+	{name: "local", advanced: true, usage: "with --message --staged: commit the staged set through the commit boundary only; nothing is fetched or pushed"},
 }
 
 // runIntentLandStaged lands a hand-made change through the landing path:
@@ -93,7 +94,12 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	if inv.input.switched("json") {
 		stdout, stderr = &captured, &captured
 	}
-	status := landpath.Land(landingPathOwners(), request, stdout, stderr)
+	var status int
+	if inv.input.switched("local") {
+		status = landStagedLocally(request, stdout, stderr)
+	} else {
+		status = landpath.Land(landingPathOwners(), request, stdout, stderr)
+	}
 	targets := []intentTarget{}
 	if request.GoalSet {
 		targets = append(targets, intentTarget{Kind: "goal", ID: request.Goal})
@@ -110,4 +116,32 @@ func runIntentLandStaged(inv *intentInvocation) int {
 	data["commit"] = head
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
 		Summary: fmt.Sprintf("landed %s", head)})
+}
+
+// landStagedLocally commits the staged set through the commit boundary alone:
+// the former commit.sh without --push, for a caller that publishes itself.
+func landStagedLocally(request landpath.LandRequest, stdout, stderr io.Writer) int {
+	if !request.StagedOnly || len(request.Pathspecs) > 0 || request.Tests != "" || request.SkipTransport {
+		fmt.Fprintln(stderr, "land refused: --local commits exactly the staged set: use --staged, without --path, --tests or --skip-transport")
+		return 2
+	}
+	message := request.MessageFile
+	if message == "-" {
+		file, err := os.CreateTemp("", "metasystem-local-commit-message-*")
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		defer os.Remove(file.Name())
+		_, writeErr := file.Write(request.Message)
+		if closeErr := file.Close(); writeErr != nil || closeErr != nil {
+			fmt.Fprintln(stderr, "land refused: the commit message cannot be written")
+			return 1
+		}
+		message = file.Name()
+	}
+	return landpath.Commit(landingPathOwners(), landpath.CommitRequest{Root: request.Root, Chain: request.Chain,
+		DirectFix: request.DirectFix, RevertOf: request.RevertOf, Goal: request.Goal, GoalSet: request.GoalSet,
+		RootJob: request.RootJob, TestReceipt: request.TestReceipt, Recertification: request.Recertification,
+		MessageFile: message, OwnerLineage: request.OwnerLineage, AllowNewPlan: request.AllowNewPlan}, stdout, stderr)
 }

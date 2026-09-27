@@ -215,13 +215,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	if err := os.WriteFile(backlog, repository.rawFile(t, "metasystem/plans/goals/backlog.md"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	guard := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
-	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	plantFenceEngine(t, root)
 	reads := repository.reads()
 	dependencies := syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
@@ -244,7 +238,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 			if root != repository.root {
 				return fmt.Errorf("guard root %q differs from %q", root, repository.root)
 			}
-			_, err := os.Stat(guard)
+			_, err := os.Stat(filepath.Join(root, "bin", "metasystem"))
 			return err
 		},
 		ownerLineage: func() string { return "m1" },
@@ -2240,13 +2234,7 @@ func syncedClaimedGoalFixtureAt(t *testing.T, now time.Time) string {
 		t.Fatal(err)
 	}
 	pinProofBinaryFixture(t, root)
-	guard := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
-	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	plantFenceEngine(t, root)
 	rootRecord := &goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
 	}
@@ -2282,7 +2270,7 @@ func syncedClaimedGoalFixtureAt(t *testing.T, now time.Time) string {
 			t.Fatal(err)
 		}
 	}
-	goalSyncMutationGit(t, root, "add", "metasystem.conf", "plans/goals", "scripts/agents/pre-commit-guard.sh")
+	goalSyncMutationGit(t, root, "add", "metasystem.conf", "plans/goals", "scripts/agents/.gitkeep")
 	goalSyncMutationGit(t, root, "commit", "-q", "-m", "synced set-obligation fixture")
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")

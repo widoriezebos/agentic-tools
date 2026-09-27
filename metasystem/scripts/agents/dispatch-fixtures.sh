@@ -324,7 +324,7 @@ setup_brain_dispatch_bed() {
   mkdir -p "$brain_repo/bin" "$brain_repo/scripts/agents" "$brain_repo/records/misc" "$brain_repo/plans"
   cp "$engine" "$brain_repo/bin/metasystem"
   cp "$root/scripts/agents/dispatch.sh" "$root/scripts/agents/checkout-execution-guard.sh" \
-    "$root/scripts/agents/pre-commit-guard.sh" "$brain_repo/scripts/agents/"
+    "$brain_repo/scripts/agents/"
   cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$brain_repo/records/misc/"
   printf 'metasystem.runtimes=fake\n' >"$brain_repo/metasystem.conf"
   cat >"$brain_repo/plans/goals.md" <<'LEDGER'

@@ -612,7 +612,7 @@ PY
 git init -q --bare -b main "$origin"
 git -C "$target" remote add origin "$origin"
 git -C "$target" add -A
-(cd "$target" && scripts/agents/commit.sh -qm "Provision benchmark $mission_id instruments") \
+(cd "$target" && printf 'Provision benchmark %s instruments\n' "$mission_id" | bin/metasystem work land --message - --staged --local >/dev/null) \
   || die 1 "provision refused: the instruments commit was not wrapper-carried"
 git -C "$target" tag "$instrument_tag"
 
@@ -707,7 +707,7 @@ PY
 git -C "$target" add "$contract_rel"
 # The contract is a deliberately added plan file; say so through the guard's
 # front door instead of weakening the guard.
-(cd "$target" && METASYSTEM_ALLOW_NEW_PLAN=1 scripts/agents/commit.sh -qm "Add unsigned $mission_id mission contract") \
+(cd "$target" && printf 'Add unsigned %s mission contract\n' "$mission_id" | bin/metasystem work land --message - --staged --local --allow-new-plan >/dev/null) \
   || die 1 "provision refused: the contract commit was not wrapper-carried"
 git -C "$target" push -q -u origin main
 git -C "$target" push -q origin "refs/tags/$instrument_tag"

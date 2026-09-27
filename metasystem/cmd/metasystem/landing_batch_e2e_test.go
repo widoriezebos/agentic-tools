@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -473,7 +474,6 @@ func (fixture *batchE2EFixture) writeSeed(root string, goals []string) {
 	write("scripts/agents/fixture-bed-groups.tsv", "", 0o644)
 	write("scripts/agents/go-gate.sh", "#!/usr/bin/env bash\nset -euo pipefail\ngo test ./...\n", 0o755)
 	write("scripts/agents/e2e-proof.sh", "#!/usr/bin/env bash\nset -euo pipefail\ngrep -q 'func Healthy' app/app.go\nmkdir -p reports\nprintf '%s\\n' '<testsuite><testcase classname=\"batch\" name=\"healthy\"/></testsuite>' > reports/app.xml\n", 0o755)
-	write("scripts/agents/pre-commit-guard.sh", "#!/usr/bin/env bash\nexit 0\n", 0o755)
 	engine, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -528,6 +528,26 @@ func (fixture *batchE2EFixture) clone(root, machine string) {
 	conf := filepath.Join(root, "metasystem.conf.local")
 	if err := os.WriteFile(conf, []byte("landing.batch-root="+fixture.landing+"\nlanding.batch-max-wait=1m\n"), 0o644); err != nil {
 		fixture.t.Fatal(err)
+	}
+	plantBatchE2EFenceEngine(fixture.t, root)
+}
+
+// plantBatchE2EFenceEngine gives a clone the executable engine the ledger
+// fence enrolls (bin/ is ignored, so no clone inherits one): until the bed's
+// go-build.sh installs the real engine, this stub passes the pre-commit guard
+// as the bed's former planted guard did, and runs nothing else.
+func plantBatchE2EFenceEngine(t *testing.T, root string) {
+	t.Helper()
+	engine := filepath.Join(root, "bin", "metasystem")
+	if _, err := os.Stat(engine); !os.IsNotExist(err) {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(engine), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stub := "#!/bin/sh\nif [ \"${1:-}\" = internal ] && [ \"${2:-}\" = pre-commit ]; then exit 0; fi\nexit 1\n"
+	if err := testexec.WriteFile(engine, []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
 

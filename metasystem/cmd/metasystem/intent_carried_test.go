@@ -52,8 +52,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	// the batch admission bed provides it.
 	goalSyncMutationGit(t, f.mainRoot, "remote", "add", "origin", f.upstream)
 	goalSyncMutationGit(t, f.mainRoot, "config", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
-	// The landing publishes to origin, so the ledger is synced there too, as
-	// land-fixtures.sh configures its carried beds.
+	// The landing publishes to origin, so the ledger is synced there too.
 	goalSyncMutationGit(t, f.mainRoot, "config", "goal.sync-remote", "origin")
 	// landing sync-transport mirrors origin's main to the checkout's transport.
 	b.transport = filepath.Join(t.TempDir(), "transport.git")
@@ -63,7 +62,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	b.environment = carriedProofEnvironment(t, f.mainRoot)
 	// The person runs land from the same terminal: every owner the
 	// delivery starts (hooks included) classifies this process as that
-	// person, as land-fixtures.sh declares its fixture pid.
+	// person, through the bed's declared fixture pid.
 	for _, entry := range b.environment[len(b.environment)-4 : len(b.environment)-2] {
 		name, value, _ := strings.Cut(entry, "=")
 		t.Setenv(name, value)
@@ -80,7 +79,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 		return runIntentOwnerProcess(process)
 	}
 	// The carried transaction runs in this process (landpath.Land); the
-	// bed records each run as it recorded land.sh's.
+	// bed records each run's request.
 	delivery.landCarried = func(request landpath.LandRequest) intentProcessResult {
 		b.calls = append(b.calls, []string{"landpath", request.Root, "--carried", request.Carried})
 		owners := landingPathOwners()
@@ -346,26 +345,22 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	goalSyncMutationGit(t, f.mainRoot, "pull", "-q", "--ff-only", f.upstream, "main")
 	goalSyncMutationGit(t, f.mainRoot, "update-ref", goal.LocalLedgerBranch, accepted)
 	goalSyncMutationGit(t, f.mainRoot, "update-ref", goal.AcceptedRef, accepted)
-	for _, name := range []string{"land.sh", "commit.sh", "pre-commit-guard.sh", "path-classes.txt", "landing-classes.json"} {
+	// The landing path reads the installation's path classes and landing
+	// classes; the transaction itself is the engine's Go landing path.
+	for _, name := range []string{"path-classes.txt", "landing-classes.json"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
 		if err != nil {
 			t.Fatal(err)
 		}
-		mode := os.FileMode(0o755)
-		if !strings.HasSuffix(name, ".sh") {
-			mode = 0o644
-		}
 		if name == "path-classes.txt" {
-			// The goal's product file is classed as land-fixtures.sh
-			// classes its payload.
+			// The goal's product file is classed as a behavior payload.
 			data = append(data, []byte("install:owned.go behavior\n")...)
 		}
-		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", name), data, mode)
+		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", name), data, 0o644)
 	}
-	// The batteries the commit owner re-proves are land-fixtures.sh's own
-	// carried stubs, and its proof engine is the bed's built engine, as
-	// land-fixtures.sh's go-build.sh copies it: this bed proves the carried
-	// transport, not the suites.
+	// The batteries the commit owner re-proves are carried stubs, and its
+	// proof engine is the bed's built engine, copied by the bed's
+	// go-build.sh: this bed proves the carried transport, not the suites.
 	for _, battery := range []string{"agents/dispatch-fixtures.sh", "agents/goal-cli-fixtures.sh"} {
 		writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", filepath.FromSlash(battery)), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	}
@@ -374,8 +369,8 @@ func publishCarriedLandScripts(t *testing.T, f *wholeOwnerLanding) (string, proo
 	build := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == --trimpath && \"${2:-}\" == --out && -n \"${3:-}\" ]]\ncp %q \"$3\"\nchmod +x \"$3\"\n", engine)
 	writeTestingFixtureFile(t, filepath.Join(clone, filepath.FromSlash(prefix), "scripts", "agents", "go-build.sh"), []byte(build), 0o755)
 	writeFixtureDevgate(t, filepath.Join(clone, filepath.FromSlash(prefix)))
-	// The carried commit runs the contract's battery for real; this is
-	// land-fixtures.sh's carried-prefixed contract over the bed's paths.
+	// The carried commit runs the contract's battery for real: a
+	// carried-prefixed contract over the bed's paths.
 	conf := filepath.Join(clone, filepath.FromSlash(prefix), "metasystem.conf")
 	confData, err := os.ReadFile(conf)
 	if err != nil {

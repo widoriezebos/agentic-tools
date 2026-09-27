@@ -162,7 +162,6 @@ chmod +x "${out:-bin/metasystem}"
 `, strconv.Quote(portable.buildCounter), strconv.Quote(portable.engine), strconv.Quote(portable.engine))
 	portable.write("scripts/agents/go-build.sh", buildScript, 0o755)
 	portable.write("scripts/agents/commit.sh", batchE2ECommitScript, 0o755)
-	portable.write("scripts/agents/pre-commit-guard.sh", "#!/bin/sh\nexit 0\n", 0o755)
 	portable.commit("seed remote portable batch application")
 	baseCommit := portable.git("rev-parse", "HEAD")
 	origin := filepath.Join(t.TempDir(), "origin.git")
@@ -489,7 +488,6 @@ chmod +x "${out:-bin/metasystem}"
 `, strconv.Quote(portable.buildCounter), strconv.Quote(portable.engine), strconv.Quote(portable.engine))
 	portable.write("scripts/agents/go-build.sh", buildScript, 0o755)
 	portable.write("scripts/agents/commit.sh", batchE2ECommitScript, 0o755)
-	portable.write("scripts/agents/pre-commit-guard.sh", "#!/bin/sh\nexit 0\n", 0o755)
 	// The portable hook drives the same public stop-batch verbs as the
 	// installed dispatch script. A bare breach-stop only closes the fence;
 	// it does not cancel queued proofs or complete the stop batch.

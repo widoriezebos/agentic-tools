@@ -348,50 +348,20 @@ if adopt_leg nested; then
       || { echo "adopted writer placed $register under the vendored tree" >&2; exit 1; }
   done
 
-  # IL-14: a brand-new plan file in the staged set needs explicit
-  # acknowledgment; modifying a tracked plan stays free. The prose form of this
-  # rule was violated by its own author, so it is a mechanism now.
-  guard_repo="$tmp/guard-repo"
-  # This fixture proves the NEW-PLAN rule, not the agent-wrapper rule,
-  # so it must be invocation-shape independent (KI-31: the real
-  # classifier answers differently under a live agent ancestor than
-  # detached). Same pattern as pre-commit-guard-fixtures.sh: a copied
-  # guard beside a refusing engine stub takes the fail-open HUMAN
-  # path; the wrapper-token rule keeps its own coverage.
-  guard_stub_root="$tmp/guard-stub-metasystem"
-  mkdir -p "$guard_stub_root/scripts/agents" "$guard_stub_root/bin"
-  cp "$root/scripts/agents/pre-commit-guard.sh" "$guard_stub_root/scripts/agents/pre-commit-guard.sh"
-  printf '#!/usr/bin/env bash\nexit 1\n' >"$guard_stub_root/bin/metasystem"
-  chmod +x "$guard_stub_root/bin/metasystem"
-  guard_under_test="$guard_stub_root/scripts/agents/pre-commit-guard.sh"
-  mkdir -p "$guard_repo/plans"
-  git -C "$guard_repo" init -q -b main
-  git -C "$guard_repo" config metasystem.goal.machine fixture-machine
-  echo old >"$guard_repo/plans/existing.md"
-  git -C "$guard_repo" add plans/existing.md
-  git -C "$guard_repo" -c user.name=m -c user.email=m@example.invalid commit -qm seed
-  echo new >"$guard_repo/plans/surprise.md"
-  git -C "$guard_repo" add plans/surprise.md
-  if (cd "$guard_repo" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" "$guard_under_test" >/dev/null 2>&1); then
-    echo "guard allowed a new plan file without acknowledgment" >&2; exit 1
-  fi
-  (cd "$guard_repo" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" METASYSTEM_ALLOW_NEW_PLAN=1 "$guard_under_test") \
-    || { echo "guard refused an acknowledged new plan" >&2; exit 1; }
-  unborn_repo="$tmp/guard-unborn"
-  mkdir -p "$unborn_repo/plans"
-  git -C "$unborn_repo" init -q -b main
-  git -C "$unborn_repo" config metasystem.goal.machine fixture-machine
-  echo first >"$unborn_repo/plans/new.md"
-  git -C "$unborn_repo" add plans/new.md
-  (cd "$unborn_repo" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" "$guard_under_test") \
-    || { echo "guard refused the initial commit of an unborn branch" >&2; exit 1; }
-  git -C "$guard_repo" reset -q
-  echo changed >"$guard_repo/plans/existing.md"
-  git -C "$guard_repo" add plans/existing.md
-  (cd "$guard_repo" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" "$guard_under_test") \
-    || { echo "guard refused a modification to a tracked plan" >&2; exit 1; }
+  # The guard body itself (IL-14's new-plan acknowledgment, the unborn
+  # exception, the ledger fence) is the engine's `internal pre-commit`
+  # entry, covered by internal/landing/landpath TestGuard*; adoption owes
+  # the enrollment: the engine composer, byte-shaped like the engine's own.
   [[ -x "$nested_tgt/.git/hooks/pre-commit" ]] \
     || { echo "adoption did not install the pre-commit guard hook" >&2; exit 1; }
+  grep -qF 'internal pre-commit --root "$installation"' "$nested_tgt/.git/hooks/pre-commit" \
+    || { echo "adoption did not install the engine guard composer" >&2; exit 1; }
+  grep -qxF "prefix=''" "$nested_tgt/.git/hooks/pre-commit" \
+    || { echo "the adopted composer does not carry the target's empty prefix" >&2; exit 1; }
+  probe_rc=0
+  (cd "$nested_tgt" && METASYSTEM_GUARD_PROBE=adopt-probe .git/hooks/pre-commit >"$tmp/adopt-probe.out" 2>&1) || probe_rc=$?
+  [[ $probe_rc -eq 42 ]] && grep -qF 'guard-probe-ack adopt-probe' "$tmp/adopt-probe.out" \
+    || { echo "the adopted composer does not run the engine guard (rc=$probe_rc)" >&2; cat "$tmp/adopt-probe.out" >&2; exit 1; }
 
   # F15: a target with its OWN pre-commit hook gets the guard COMPOSED
   # in front of it, not declined — the old hook is preserved as
@@ -406,21 +376,25 @@ if adopt_leg nested; then
   chmod +x "$compose_tgt/.git/hooks/pre-commit"
   "$nested_src/vendored/scripts/adopt.sh" "$compose_tgt" --runtimes claude >"$tmp/adopt-compose.out" 2>&1 \
     || { echo "adoption over a hooked target failed" >&2; cat "$tmp/adopt-compose.out" >&2; exit 1; }
-  grep -q "pre-commit-guard.sh" "$compose_tgt/.git/hooks/pre-commit" \
+  grep -qF 'internal pre-commit' "$compose_tgt/.git/hooks/pre-commit" \
     || { echo "adoption did not enroll the guard over an existing hook" >&2; exit 1; }
   [[ -x "$compose_tgt/.git/hooks/pre-commit.local" ]] \
     || { echo "adoption did not preserve the existing hook as pre-commit.local" >&2; exit 1; }
   # KI-31 again: the composed hook must prove COMPOSITION, not the
-  # wrapper-token rule — the refusing engine stub takes the guard
-  # down its fail-open HUMAN path regardless of this suite's own
-  # ancestry.
-  (cd "$compose_tgt" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" .git/hooks/pre-commit) \
+  # wrapper-token rule — an admitting engine stub stands in for the
+  # target's engine for this one run, regardless of this suite's own
+  # ancestry, and the real engine goes back before re-adoption.
+  cp "$compose_tgt/bin/metasystem" "$tmp/compose-engine.keep"
+  printf '#!/usr/bin/env bash\n[[ "$1 $2" == "internal pre-commit" ]] || exit 3\nexit 0\n' >"$compose_tgt/bin/metasystem"
+  (cd "$compose_tgt" && .git/hooks/pre-commit) \
     || { echo "the composed hook refused a clean tree" >&2; exit 1; }
+  cp "$tmp/compose-engine.keep" "$compose_tgt/bin/metasystem"
+  chmod +x "$compose_tgt/bin/metasystem"
   [[ -f "$compose_tgt/.project-hook-ran" ]] \
     || { echo "the preserved project hook no longer runs" >&2; exit 1; }
   "$nested_src/vendored/scripts/adopt.sh" "$compose_tgt" --runtimes claude >"$tmp/adopt-recompose.out" 2>&1 \
     || { echo "re-adoption over the composed hook failed" >&2; cat "$tmp/adopt-recompose.out" >&2; exit 1; }
-  grep -q "pre-commit-guard.sh" "$compose_tgt/.git/hooks/pre-commit.local" \
+  grep -q "internal pre-commit" "$compose_tgt/.git/hooks/pre-commit.local" \
     && { echo "re-adoption stacked the composer into pre-commit.local" >&2; exit 1; }
   grep -q "touch" "$compose_tgt/.git/hooks/pre-commit.local" \
     || { echo "re-adoption clobbered the preserved project hook" >&2; exit 1; }

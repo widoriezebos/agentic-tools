@@ -20,7 +20,6 @@ gate-fail-open-tripwire	Go gate fail-open tripwire
 witness-gate-fixtures	witness gate fixtures
 suite-progress-fixtures	suite progress and watchdog fixtures
 fixture-bed-scenarios-fixtures	fixture bed harness fixtures
-land-fixtures	landing chain fixtures
 static-contract-audits	static contract audits
 supervision-and-census-fixtures	supervision and census fixtures
 supervisor-fingerprint-heal-harness	supervisor fingerprint heal harness
@@ -33,7 +32,6 @@ telemetry-census-fixtures	telemetry census fixtures
 return-schema-fixtures	return schema fixtures
 config-identity-fixtures	configuration identity fixtures
 authority-regression-fixtures	authority regression fixtures
-pre-commit-guard-fixtures	pre-commit guard fixtures
 static-reproof-fixtures	static reproof fixtures
 project-extra-suites	project-declared extra suites
 record-protocol-fixtures	record protocol fixtures
@@ -85,7 +83,7 @@ selected_sections() {
   while IFS=$'\t' read -r section_id section_name; do
     if [[ "$context" == adopted ]]; then
       case "$section_id" in
-        witness-gate-fixtures | suite-progress-fixtures | land-fixtures | adoption-fixtures | fixture-bed-scenarios-fixtures)
+        witness-gate-fixtures | suite-progress-fixtures | adoption-fixtures | fixture-bed-scenarios-fixtures)
           continue
           ;;
       esac

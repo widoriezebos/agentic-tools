@@ -12,43 +12,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 )
 
-func runOutputSpill(args []string) int {
-	flags := flag.NewFlagSet("output spill", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "control root")
-	verb := flags.String("verb", "", "producer verb")
-	ext := flags.String("ext", "", "output extension")
-	file := flags.String("file", "", "file to retain")
-	asJSON := flags.Bool("json", false, "print the reference as JSON")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" || *verb == "" || *ext == "" || *file == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal output spill --root ROOT --verb VERB --ext EXT --file FILE [--json]")
-		return 2
-	}
-	absoluteRoot, err := filepath.Abs(*root)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem internal output spill:", err)
-		return 1
-	}
-	data, err := os.ReadFile(*file)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem internal output spill:", err)
-		return 1
-	}
-	reference, err := output.Spill(absoluteRoot, *verb, *ext, data, time.Now().UTC())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem internal output spill:", err)
-		return 1
-	}
-	if *asJSON {
-		printJSON(reference)
-	} else {
-		fmt.Println(reference.Line())
-	}
-	return 0
-}
-
 func runOutputPrune(args []string) int {
 	flags := flag.NewFlagSet("output prune", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "control root")

@@ -401,7 +401,7 @@ func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id stri
 			return err
 		}
 		if consumption.Kind == "origin" {
-			return fmt.Errorf("goal %s has carried commit %s without its ledger row; close it with land.sh --carried %s, even if the word has expired; then retry abandon", id, consumption.ID, word.History.Opid)
+			return fmt.Errorf("goal %s has carried commit %s without its ledger row; close it with metasystem work land %s --using-exception %s, even if the word has expired; then retry abandon", id, consumption.ID, id, word.History.Opid)
 		}
 		if reservation := CarryReservationAt(tree, id, word.History.Opid, now); reservation.State == "open" {
 			seat, err := OpidMachine(reservation.History.Opid)

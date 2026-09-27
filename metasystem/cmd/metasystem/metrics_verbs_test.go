@@ -14,7 +14,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestO12GoalReportFailureWarnsWithoutChangingDoneOutcome(t *testing.T) {
@@ -209,13 +208,7 @@ func legacyGoalIsDone(ledger *goal.Ledger, id string) bool {
 
 func writeMetricsFixtureGuard(t *testing.T, root string) {
 	t.Helper()
-	path := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	plantFenceEngine(t, root)
 }
 
 type syncedDoneCommandFixture struct {
@@ -280,13 +273,13 @@ func checkMetricsFixtureGuard(root, got string) error {
 	if got != root {
 		return fmt.Errorf("guard root = %q, want %q", got, root)
 	}
-	path := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
+	path := filepath.Join(root, "bin", "metasystem")
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
 	if !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
-		return fmt.Errorf("guard is not executable: %s", path)
+		return fmt.Errorf("the guard's engine is not executable: %s", path)
 	}
 	return nil
 }

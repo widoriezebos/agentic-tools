@@ -1,5 +1,13 @@
-// Package refusal holds the refusal register defined by the human-carried-landing design at HCL-AUDIT-03; shell refusals are recorded by hand, and no test proves that list complete.
+// Package refusal holds the refusal register defined by the human-carried-landing design at HCL-AUDIT-03; refusals that carry no code are recorded by hand at their emitting site, and no test proves that list complete.
 package refusal
+
+// CarriedLanding is the human verb that carries a landing past an agent
+// refusal: the person's exceptional landing through the public work land,
+// which records the exception and lands under it in one command.
+const CarriedLanding = "work land G --exception CODE --reason R --by NAME"
+
+// UsingException lands under an exception the person already recorded.
+const UsingException = "work land G --using-exception X"
 
 type Shape string
 
@@ -28,9 +36,11 @@ type Exclusion struct {
 	Reason  string
 }
 
-type Shell struct {
-	Script, Line, Prose, Override string
-	Record                        bool // true only for a non-overridable record failure.
+// Prose is a refusal without a code: Owner and Site name its emitting line
+// (the landing path's refusals, formerly commit.sh's and land.sh's).
+type Prose struct {
+	Owner, Site, Prose, Override string
+	Record                       bool // true only for a non-overridable record failure.
 }
 
 type Defect struct{ Code, Why string }
@@ -278,18 +288,18 @@ var Rows = []Row{
 	{Code: "advance-rebase-conflict", Owner: "internal/landing", Site: "advance.go:98", Shape: Agent, Override: "carry dirty registers first, then git rebase in the real checkout and resolve; push", Commands: 4},
 	{Code: "advance-unstaged-drift", Owner: "internal/landing", Site: "advance.go:188", Shape: Agent, Override: "land or restore the named path; fetch, advance, push", Commands: 4},
 	{Code: "advance-register-removed", Owner: "internal/landing", Site: "advance.go:183", Shape: Agent, Override: "restore the register from the upstream by hand; fetch, advance, push", Commands: 4},
-	{Code: "advance-register-contended", Owner: "internal/landing", Site: "advance.go:193", Shape: Agent, Override: "land.sh --direct-fix register-carriage <registers>", Commands: 1},
+	{Code: "advance-register-contended", Owner: "internal/landing", Site: "advance.go:193", Shape: Agent, Override: "work land --direct-fix register-carriage --message FILE --path <registers>", Commands: 1},
 	{Code: "advance-head-moved", Owner: "internal/landing", Site: "advance.go:212", Shape: Agent, Override: "read git reflog <branch>; fetch, advance, push", Commands: 4},
 
 	{Code: "malformed-candidate-tree", Owner: "internal/landing", Site: "observe.go:163", Shape: Question, H1: StandingInput},
 	{Code: "candidate-tree-unreadable", Owner: "internal/landing", Site: "observe.go:167", Shape: Question, H1: StandingInput},
-	{Code: "evaluator-unavailable", Owner: "scripts/agents", Site: "commit.sh:627", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "missing-declaration", Owner: "internal/landing", Site: "observe.go:179", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "conflicting-declarations", Owner: "internal/landing", Site: "observe.go:170", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "path-unclassified", Owner: "internal/landing", Site: "observe.go:1144", Shape: Agent, Override: "land.sh --carried", Commands: 1},
+	{Code: "evaluator-unavailable", Owner: "internal/landing/landpath", Site: "commit.go:429", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "missing-declaration", Owner: "internal/landing", Site: "observe.go:179", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "conflicting-declarations", Owner: "internal/landing", Site: "observe.go:170", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "path-unclassified", Owner: "internal/landing", Site: "observe.go:1144", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "ledger-path-not-goal-verb", Owner: "internal/landing", Site: "observe.go:1128", Shape: Agent, Override: "the owning goal verb", Commands: 1},
-	{Code: "runtime-path-refused", Owner: "internal/landing", Site: "observe.go:1133", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "exact-revert-record-refused", Owner: "internal/landing", Site: "observe.go:1662", Shape: Agent, Override: "land.sh --carried", Commands: 1},
+	{Code: "runtime-path-refused", Owner: "internal/landing", Site: "observe.go:1133", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "exact-revert-record-refused", Owner: "internal/landing", Site: "observe.go:1662", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "goal-item-not-held", Owner: "internal/landing", Site: "observe.go:1157", Shape: Agent, Override: "goal steal", Commands: 1},
 	{Code: "goal-binding-missing", Owner: "internal/landing", Site: "observe.go:422", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
 	{Code: "goal-binding-mismatch", Owner: "internal/landing", Site: "observe.go:426", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
@@ -297,46 +307,46 @@ var Rows = []Row{
 	{Code: "goal-revision-unbound", Owner: "internal/landing", Site: "held.go:219", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
 	{Code: "machine-trailer-malformed", Owner: "internal/landing", Site: "held.go:132", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
 	{Code: "endpoint-mismatch", Owner: "internal/landing", Site: "held.go:166", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
-	{Code: "range-not-linear", Owner: "internal/landing", Site: "held.go:283", Shape: Agent, Override: "rebase onto the fetched tip, or land through land.sh", Commands: 1},
+	{Code: "range-not-linear", Owner: "internal/landing", Site: "held.go:283", Shape: Agent, Override: "rebase onto the fetched tip, or land through work land", Commands: 1},
 	{Code: "record-not-owned", Owner: "internal/landing", Site: "observe.go:313", Shape: Agent, Override: "goal claim of the owning goal", Commands: 1},
-	{Code: "malformed-chain-id", Owner: "internal/landing", Site: "observe.go:401", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-record-unreadable", Owner: "internal/landing", Site: "observe.go:407", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-record-malformed", Owner: "internal/landing", Site: "observe.go:411", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-not-implementation", Owner: "internal/landing", Site: "observe.go:432", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-not-design-bearing", Owner: "internal/landing", Site: "observe.go:460", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-open", Owner: "internal/landing", Site: "observe.go:463", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-output-unreadable", Owner: "internal/landing", Site: "observe.go:526", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-output-mismatch", Owner: "internal/landing", Site: "observe.go:517", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-has-uncarried-paths", Owner: "internal/landing", Site: "observe.go:585", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-base-unproven", Owner: "internal/validate", Site: "recertification.go:784", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-source-changed", Owner: "internal/validate", Site: "recertification.go:755", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-overlap", Owner: "internal/validate", Site: "recertification.go:807", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-unproven", Owner: "internal/validate", Site: "recertification.go:766", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-worktree-incomplete", Owner: "internal/validate", Site: "recertification.go:941", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-timeout", Owner: "internal/validate", Site: "recertification.go:618", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-target-moved", Owner: "internal/landing", Site: "observe.go:154", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-test-command-refused", Owner: "internal/landing", Site: "observe.go:187", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-recertification-park-failed", Owner: "internal/landing", Site: "park.go:79", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "register-carriage-policy-unreadable", Owner: "internal/landing", Site: "observe.go:218", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "register-carriage-path-refused", Owner: "internal/landing", Site: "observe.go:1149", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "register-carriage-not-append-only", Owner: "internal/landing", Site: "observe.go:292", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "malformed-revert-commit", Owner: "internal/landing", Site: "observe.go:1482", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "direct-fix-policy-unreadable", Owner: "internal/landing", Site: "observe.go:1488", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "not-exact-revert", Owner: "internal/landing", Site: "observe.go:1551", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "direct-fix-floor-refused", Owner: "internal/landing", Site: "observe.go:1119", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "unknown-direct-fix-class", Owner: "internal/landing", Site: "observe.go:1520", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-full-gate-refused", Owner: "internal/landing", Site: "observe.go:455", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "chain-test-receipt-refused", Owner: "internal/landing", Site: "observe.go:445", Shape: Agent, Override: "land.sh --carried", Commands: 1},
+	{Code: "malformed-chain-id", Owner: "internal/landing", Site: "observe.go:401", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-record-unreadable", Owner: "internal/landing", Site: "observe.go:407", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-record-malformed", Owner: "internal/landing", Site: "observe.go:411", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-not-implementation", Owner: "internal/landing", Site: "observe.go:432", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-not-design-bearing", Owner: "internal/landing", Site: "observe.go:460", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-open", Owner: "internal/landing", Site: "observe.go:463", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-output-unreadable", Owner: "internal/landing", Site: "observe.go:526", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-output-mismatch", Owner: "internal/landing", Site: "observe.go:517", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-has-uncarried-paths", Owner: "internal/landing", Site: "observe.go:585", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-base-unproven", Owner: "internal/validate", Site: "recertification.go:784", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-source-changed", Owner: "internal/validate", Site: "recertification.go:755", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-overlap", Owner: "internal/validate", Site: "recertification.go:807", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-unproven", Owner: "internal/validate", Site: "recertification.go:766", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-worktree-incomplete", Owner: "internal/validate", Site: "recertification.go:941", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-timeout", Owner: "internal/validate", Site: "recertification.go:618", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-target-moved", Owner: "internal/landing", Site: "observe.go:154", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-test-command-refused", Owner: "internal/landing", Site: "observe.go:187", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-recertification-park-failed", Owner: "internal/landing", Site: "park.go:79", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "register-carriage-policy-unreadable", Owner: "internal/landing", Site: "observe.go:218", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "register-carriage-path-refused", Owner: "internal/landing", Site: "observe.go:1149", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "register-carriage-not-append-only", Owner: "internal/landing", Site: "observe.go:292", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "malformed-revert-commit", Owner: "internal/landing", Site: "observe.go:1482", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "direct-fix-policy-unreadable", Owner: "internal/landing", Site: "observe.go:1488", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "not-exact-revert", Owner: "internal/landing", Site: "observe.go:1551", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "direct-fix-floor-refused", Owner: "internal/landing", Site: "observe.go:1119", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "unknown-direct-fix-class", Owner: "internal/landing", Site: "observe.go:1520", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-full-gate-refused", Owner: "internal/landing", Site: "observe.go:455", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "chain-test-receipt-refused", Owner: "internal/landing", Site: "observe.go:445", Shape: Agent, Override: CarriedLanding, Commands: 1},
 	{Code: "proof-input-moved-after-receipt", Owner: "cmd/metasystem", Site: "test.go:2631", Shape: Agent, Override: "reset to the pushed tip, re-stage, landing test-receipt --mode auto, land again", Commands: 4},
-	{Code: "tier1-declaration-refused", Owner: "internal/landing", Site: "tierone.go:35", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "tier1-policy-unreadable", Owner: "internal/landing", Site: "tierone.go:62", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "tier1-root-refused", Owner: "internal/landing", Site: "tierone.go:39", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "tier1-floor-refused", Owner: "internal/landing", Site: "tierone.go:95", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "tier1-diff-shape-refused", Owner: "internal/landing", Site: "tierone.go:115", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "tier1-file-bound-refused", Owner: "internal/landing", Site: "tierone.go:118", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "tier1-line-bound-refused", Owner: "internal/landing", Site: "tierone.go:121", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "tier1-receipt-refused", Owner: "internal/landing", Site: "tierone.go:125", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "tier1-full-gate-refused", Owner: "internal/landing", Site: "tierone.go:131", Shape: Agent, Override: "land.sh --carried", Commands: 1},
+	{Code: "tier1-declaration-refused", Owner: "internal/landing", Site: "tierone.go:35", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "tier1-policy-unreadable", Owner: "internal/landing", Site: "tierone.go:62", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "tier1-root-refused", Owner: "internal/landing", Site: "tierone.go:39", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "tier1-floor-refused", Owner: "internal/landing", Site: "tierone.go:95", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "tier1-diff-shape-refused", Owner: "internal/landing", Site: "tierone.go:115", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "tier1-file-bound-refused", Owner: "internal/landing", Site: "tierone.go:118", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "tier1-line-bound-refused", Owner: "internal/landing", Site: "tierone.go:121", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "tier1-receipt-refused", Owner: "internal/landing", Site: "tierone.go:125", Shape: Agent, Override: CarriedLanding, Commands: 1},
+	{Code: "tier1-full-gate-refused", Owner: "internal/landing", Site: "tierone.go:131", Shape: Agent, Override: CarriedLanding, Commands: 1},
 
 	{Code: "carry-ledger-moved", Owner: "internal/landing", Site: "carried.go:44", Shape: Question, H1: StandingInput},
 	{Code: "carry-remote-required", Owner: "internal/goal", Site: "verbs.go:5208", Shape: Question, H1: StandingInput},
@@ -454,32 +464,26 @@ var Exclusions = []Exclusion{
 	{Pattern: "tag-position-proof-unavailable", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},
 }
 
-var ShellRows = []Shell{
-	{Script: "land.sh", Line: "94", Prose: "land refused: unknown option: $1", Override: "the usage line"},
-	{Script: "land.sh", Line: "105", Prose: "Usage: scripts/agents/land.sh -m <message-file-or-heredoc> --goal <id> --carried <opid> [ordinary declarations]", Override: "the usage line"},
-	{Script: "land.sh", Line: "107", Prose: "land refused: --staged-only cannot be combined with pathspecs", Override: "the usage line"},
-	{Script: "land.sh", Line: "111", Prose: "land refused: name pathspecs or choose --staged-only", Override: "the usage line"},
-	{Script: "commit.sh", Line: "234", Prose: "agent commit refused: staged Go package coverage check failed (legacy branch, contract off)", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "271", Prose: "agent commit refused: the static re-proof failed (go-gate.sh --fast; legacy branch, contract off)", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "386", Prose: "agent commit refused: the static re-proof failed (internal audit metasystem; legacy branch, contract off)", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "450", Prose: "agent commit refused: the landing evaluator failed or returned an incomplete decision ($landing_verdict)", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "542", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back", Record: true},
-	{Script: "land.sh", Line: "340", Prose: "carry asks: the carried landing lands main; you are on $branch", Override: "checkout main and rerun"},
-	{Script: "land.sh", Line: "605", Prose: "goal fetch returned no accepted ledger tip: $output", Override: "goal fetch then rerun"},
-	{Script: "land.sh", Line: "645", Prose: "rebase conflict on <paths>; resolve by hand against origin/main, stage, rerun", Override: "resolve and rerun"},
-	{Script: "land.sh", Line: "774", Prose: "origin moved during the push; rerun land.sh --carried <opid>", Override: "land.sh --carried"},
-	{Script: "land.sh", Line: "794", Prose: "word <opid> was superseded by <new>; land under it: land.sh --carried <new>", Override: "land.sh --carried"},
-	{Script: "land.sh", Line: "840", Prose: "word <opid> expired; issue a fresh goal carry", Override: "goal carry"},
-	{Script: "land.sh", Line: "841", Prose: "carry word <opid> is missing on goal <goal>; fetch the ledger", Override: "goal fetch"},
-	{Script: "commit.sh", Line: "602", Prose: "no live or base judge decided; rebuild and arm an engine at a good commit with steward arm", Override: "steward arm"},
-	{Script: "commit.sh", Line: "222", Prose: "commit refused: Machine is stamped by the wrapper, never typed", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "56", Prose: "agent commit refused: the lease holder has a claim epoch but no owner lineage; export METASYSTEM_OWNER_LINEAGE in the seat's shell", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "728", Prose: "agent commit refused: the Goal-Item's claim revision moved since this chain was dispatched ($landing_verdict)", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "732", Prose: "agent commit refused: this landing names no goal and the ledger is not Goal-free ($landing_verdict)", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "736", Prose: "agent commit refused: the chain was dispatched under a different goal than --goal names ($landing_verdict)", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "951", Prose: "landing push refused: origin could not be fetched; the commit stands locally", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "930", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one Machine trailer, found $postcondition_count", Override: "land.sh --carried"},
-	{Script: "commit.sh", Line: "932", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one Goal-Revision trailer, found $postcondition_count", Override: "land.sh --carried"},
+var ProseRows = []Prose{
+	{Owner: "internal/landing/landpath", Site: "land.go:289", Prose: "land refused: --staged cannot be combined with paths", Override: "the usage line"},
+	{Owner: "internal/landing/landpath", Site: "land.go:292", Prose: "land refused: name paths or choose --staged", Override: "the usage line"},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:19", Prose: "agent commit refused: the landing evaluator failed or returned an incomplete decision (<verdict>)", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:287", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back", Record: true},
+	{Owner: "internal/landing/landpath", Site: "land.go:508", Prose: "carry asks: the carried landing lands main; you are on <branch>", Override: "checkout main and rerun"},
+	{Owner: "internal/landing/landpath", Site: "carried.go:35", Prose: "goal fetch returned no accepted ledger tip: <output>", Override: "goal fetch then rerun"},
+	{Owner: "internal/landing/landpath", Site: "carried.go:102", Prose: "rebase conflict on <paths>; resolve by hand against origin/main, stage, rerun", Override: "resolve and rerun"},
+	{Owner: "internal/landing/landpath", Site: "carried.go:360", Prose: "origin moved during the push; rerun <metasystem work land goal --using-exception opid>", Override: UsingException},
+	{Owner: "internal/landing/landpath", Site: "carried.go:383", Prose: "word <opid> was superseded by <new>; land under it: metasystem work land <goal> --using-exception <new>", Override: UsingException},
+	{Owner: "internal/landing/landpath", Site: "carried.go:418", Prose: "word <opid> expired; record a new exception", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "carried.go:420", Prose: "carry word <opid> is missing on goal <goal>; fetch the ledger", Override: "goal fetch"},
+	{Owner: "internal/landing/landpath", Site: "commit.go:457", Prose: "no live or base judge decided; the base judge build failed; rebuild and arm an engine at a good commit with steward arm", Override: "steward arm"},
+	{Owner: "internal/landing/landpath", Site: "commit.go:201", Prose: "commit refused: Machine is stamped by the wrapper, never typed", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit.go:141", Prose: "agent commit refused: the lease holder has a claim epoch but no owner lineage; export METASYSTEM_OWNER_LINEAGE in the seat's shell", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:40", Prose: "agent commit refused: the Goal-Item's claim revision moved since this chain was dispatched (<verdict>)", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:43", Prose: "agent commit refused: this landing names no goal and the ledger is not Goal-free (<verdict>)", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:46", Prose: "agent commit refused: the chain was dispatched under a different goal than --goal names (<verdict>)", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:314", Prose: "landing push refused: origin could not be fetched; the commit stands locally", Override: CarriedLanding},
+	{Owner: "internal/landing/landpath", Site: "commit_record.go:283", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one <trailer> trailer, found <count>", Override: CarriedLanding},
 }
 
 var Defects = []Defect{

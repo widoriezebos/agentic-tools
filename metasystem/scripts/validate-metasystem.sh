@@ -1036,8 +1036,6 @@ for link in \
   metasystem.conf \
   scripts/agents/dispatch.sh \
   scripts/agents/checkout-execution-guard.sh \
-  scripts/agents/commit.sh \
-  scripts/agents/land.sh \
   scripts/agents/fixture-budget.sh \
   scripts/agents/landing-lane-worker.sh \
   scripts/agents/templates/design-common.md \
@@ -1051,13 +1049,10 @@ for link in \
   scripts/agents/return-schema-fixtures.sh \
   scripts/agents/config-identity-fixtures.sh \
   scripts/agents/authority-regression-fixtures.sh \
-  scripts/agents/pre-commit-guard-fixtures.sh \
-  scripts/agents/static-reproof-fixtures.sh \
   scripts/agents/path-class-fixtures.sh \
   scripts/agents/witness-gate-fixtures.sh \
   scripts/agents/suite-progress-fixtures.sh \
   scripts/agents/fixture-bed-scenarios-fixtures.sh \
-  scripts/agents/land-fixtures.sh \
   scripts/agents/checkout-execution-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
@@ -1137,14 +1132,10 @@ bash -n scripts/agents/lease-succession-fixtures.sh
 bash -n scripts/agents/flight-recorder-fixtures.sh
 bash -n scripts/agents/acp-fixtures.sh
 bash -n scripts/agents/emit-event.sh
-bash -n scripts/agents/pre-commit-guard-fixtures.sh
-bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/path-class-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/suite-progress-fixtures.sh
 bash -n scripts/agents/fixture-bed-scenarios-fixtures.sh
-bash -n scripts/agents/land.sh
-bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/checkout-execution-guard.sh
 bash -n scripts/agents/checkout-execution-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
@@ -1201,12 +1192,10 @@ if section_selected authority-regression-fixtures; then
   delivery_contract_skip authority-regression-fixtures \
     || run_section authority-regression-fixtures needs-engine bash scripts/agents/authority-regression-fixtures.sh
 fi
-if section_selected pre-commit-guard-fixtures; then
-  delivery_contract_skip pre-commit-guard-fixtures \
-    || run_section pre-commit-guard-fixtures needs-engine bash scripts/agents/pre-commit-guard-fixtures.sh
-fi
+# The pre-commit guard, commit boundary and landing driver are the engine's
+# landing path (internal/landing/landpath), proved by its Go tests under the
+# go gate; this section keeps the path-class legs.
 static_reproof_fixtures_section() {
-  bash scripts/agents/static-reproof-fixtures.sh
   bash scripts/agents/path-class-fixtures.sh
 }
 if section_selected static-reproof-fixtures; then
@@ -2967,9 +2956,6 @@ fi
 if (( template_mode )) && section_selected fixture-bed-scenarios-fixtures; then
   run_section fixture-bed-scenarios-fixtures needs-engine \
     bash scripts/agents/fixture-bed-scenarios-fixtures.sh
-fi
-if (( template_mode )) && section_selected land-fixtures; then
-  run_section land-fixtures needs-engine bash scripts/agents/land-fixtures.sh
 fi
 
 watch_background_jobs_fixtures_section() {

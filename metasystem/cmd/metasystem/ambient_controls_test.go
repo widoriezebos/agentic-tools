@@ -8,7 +8,6 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -47,13 +46,10 @@ func TestMain(m *testing.M) {
 	if os.Getenv("METASYSTEM_CONTEXT_COST_PROOF") == "1" {
 		declaredContextCostCandidateEngine = os.Getenv("METASYSTEM_BIN")
 	}
-	_, privateReceiptClockChild := receiptClockPrivateChildArguments()
 	_, proofCommandChild := proofCommandFixtureArguments()
-	privateReceiptClockProcess := privateReceiptClockChild ||
-		os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") == "shell-boundary" && os.Getenv(identity.FixtureCustodianEnv) == "1"
 	waitCandidateDir := ""
 	waitCandidate := os.Getenv("METASYSTEM_WAIT_BINARY")
-	if !privateReceiptClockProcess && !proofCommandChild && (waitCandidate == "" || os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE") != waitCandidate) {
+	if !proofCommandChild && (waitCandidate == "" || os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE") != waitCandidate) {
 		waitCandidateDir, err = os.MkdirTemp("", "metasystem-wait-candidate-")
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "create wait candidate directory:", err)

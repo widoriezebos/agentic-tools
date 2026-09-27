@@ -59,7 +59,7 @@ var firstTransitionGroups = []string{
 	"fast-static-build",
 	"section/dispatcher-adapter-and-mission-runner-fixtures",
 	"section/goal-cli-fixtures",
-	"section/land-fixtures",
+	"landing-command-standard",
 	"section/adoption-fixtures",
 }
 

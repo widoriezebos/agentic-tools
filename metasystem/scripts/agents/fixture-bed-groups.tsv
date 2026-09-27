@@ -15,14 +15,11 @@ scripts/agents/flight-recorder-fixtures.sh	section/flight-recorder-fixtures
 scripts/agents/go-gate.sh	section/gate-fence-fixtures
 scripts/agents/goal-cli-fixtures.sh	section/goal-cli-fixtures
 scripts/agents/health-fixtures.sh	section/supervision-and-census-fixtures
-scripts/agents/land-fixtures.sh	section/land-fixtures
 scripts/agents/lease-succession-fixtures.sh	section/lease-succession-fixtures
 scripts/agents/mission-fixtures.sh	section/mission-fixtures
 scripts/agents/path-class-fixtures.sh	section/static-reproof-fixtures
-scripts/agents/pre-commit-guard-fixtures.sh	section/pre-commit-guard-fixtures
 scripts/agents/record-protocol-fixtures.sh	section/record-protocol-fixtures
 scripts/agents/return-schema-fixtures.sh	section/return-schema-fixtures
-scripts/agents/static-reproof-fixtures.sh	section/static-reproof-fixtures
 scripts/agents/suite-progress-fixtures.sh	section/suite-progress-fixtures
 scripts/agents/supervision-fixtures.sh	section/supervision-and-census-fixtures
 scripts/agents/supervision-go-fixtures.sh	section/supervision-go-fixtures

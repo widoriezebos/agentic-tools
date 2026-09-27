@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -39,7 +40,10 @@ import (
 
 // landingPathGit runs git with this process's environment.
 func landingPathGit(call landpath.GitCall) landpath.GitResult {
-	command := exec.Command("git", append([]string{"-C", call.Dir}, call.Args...)...)
+	// git runs in the directory rather than with -C, as the shell landing
+	// ran it, so a git on PATH sees the landing's own argument vector.
+	command := exec.Command("git", call.Args...)
+	command.Dir = call.Dir
 	if call.Env != nil {
 		command.Env = call.Env
 	}
@@ -306,7 +310,13 @@ func landingPathAdvance(root, upstream string, stdout, stderr io.Writer) int {
 }
 
 func landingPathReceiptLine(root, tree, goalID, directFix string) (landpath.ReceiptDecision, error) {
-	decision, err := landing.ObserveReceiptLine(landing.ReceiptLineParams{RepoRoot: root, CandidateTree: tree, Goal: goalID, DirectFix: directFix})
+	return landingPathReceiptLineFrom(nil, root, tree, goalID, directFix)
+}
+
+// landingPathReceiptLineFrom decides the receipt line reading Git through raw
+// (nil is the real Git).
+func landingPathReceiptLineFrom(raw func(gittree.RawRequest) gittree.RawResult, root, tree, goalID, directFix string) (landpath.ReceiptDecision, error) {
+	decision, err := landing.ObserveReceiptLine(landing.ReceiptLineParams{RepoRoot: root, CandidateTree: tree, Goal: goalID, DirectFix: directFix, RawSource: raw})
 	if err != nil {
 		return landpath.ReceiptDecision{}, err
 	}
