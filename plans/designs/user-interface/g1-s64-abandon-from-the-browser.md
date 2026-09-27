@@ -162,3 +162,56 @@ match the engine's own dependent selection; D2's conditional refusal is
 right; the ruling is in the register. The design is closed, read whole
 by the critic; it builds now, in parallel with g1-s62, and lands after
 it.
+
+## Built (2026-09-27)
+
+Landed on ui-development and main: eight commits on `ui/g1-s64`, one
+per decision, the walkthrough, the bundle, the fix and the bundle
+again, built by Claude on Opus, rebased onto the g1-s63 landing with no
+conflicts, read by Codex on Sol under R-124
+([g1-s64-sol-read.md](g1-s64-sol-read.md)): one material finding,
+reproduced and fixed in the one fix round; all nine of the builder's
+departures accepted. Go, vet, the whole `internal/goal` suite and the
+interface packages green; the fast gate and the parallel ratchet
+passed; 91 test files, 1,407 frontend tests; the bundle rebuilt twice
+to one digest. Sixteen screenshots at 1280 and 400, light and dark: an
+abandon line waiting with its intent and reason, one whose goal two
+others wait for with the "Holds up" line and what the engine will do,
+the first applied, the second refused in the engine's words naming
+`--successor`.
+
+The fix round: the Abandon line shows the goal's intent whole above
+the reason, through the approve line's own argument and label, so the
+irreversible press is informed where the title is cut at the first
+sentence; held by a two-sentence intent whose second sentence is only
+on the argument, and by a line admitted without a reading showing no
+intent and not throwing.
+
+Landing order: this slice landed before g1-s62, which was still
+building; the catalogue row therefore went in a transitional shape
+(`ProposedAct.Verb` and `.Body`, `ProposedActNamed`, `ProposeVerbs()`,
+the body map in `framed()`, the httpd join through `BodyField`) that
+keeps the nine rows under their route ids beside `abandon` under its
+public name; g1-s62 folds the ten into its one public-name shape and
+retires the transitional fields. Sol read that shape as a departure
+and accepted it.
+
+Departures the read accepted: the proof travels into the mutation as
+a parameter so the recorded hand is the admitted one; three existing
+engine assertions follow the refusal's new sentence; the session is
+recorded on the abandoned goal's own line, not on the repointed
+dependents' merged lines; the successor is not checked at admission,
+the engine's rule holds it; the skill has no numbered list, the tool's
+description names the ten; the dependents label is the interface's
+"Holds up"; the catalogue join was red for one commit between the two
+sides; the successor sentence is held by a test, not a screenshot.
+
+Later, when it hurts: a session test that tries a proof minted for
+another root (the existing authority test covers another project's);
+an already closed goal with unchanged fields passes the page's compare
+and is refused by the engine; the walkthrough's abandoned goals have
+one-sentence intents, so the screenshot's Intent equals the title and
+the test holds the distinction; `recordSessionAuthority` on the
+dependents' repointed lines; an Abandon button on the queue row and
+the goal page; waive and also from the browser; `goal done` and `goal
+reopen`.
