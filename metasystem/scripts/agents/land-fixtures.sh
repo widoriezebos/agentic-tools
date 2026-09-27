@@ -610,6 +610,7 @@ JSON
     "$leg_seed/scripts/agents/sync-transport.sh"
 	if is_workspace_receipt_scenario || is_carried_scenario; then
 	  chmod +x "$leg_seed/scripts/agents/go-build.sh"
+	  harness_fixture_plant_devgate "$leg_seed"
 	else
     chmod +x "$leg_seed/bin/metasystem"
   fi
@@ -714,6 +715,9 @@ BACKLOG
     git -C "$leg_seed" config goal.sync-branch refs/heads/main
   fi
   git -C "$leg_seed" add -- scripts payload.txt plans/existing.md .gitignore
+  if is_workspace_receipt_scenario || is_carried_scenario; then
+    git -C "$leg_seed" add -- cmd/devgate/main.go go.mod
+  fi
   if ! is_workspace_receipt_scenario; then
     git -C "$leg_seed" add -- bin
   fi

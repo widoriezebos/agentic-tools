@@ -80,6 +80,7 @@ func TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody(t *testing.T) {
 	if err := testexec.WriteFile(script, []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'built\\n' > build-ran\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	writeFixtureDevgate(t, installation)
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command("go", "build", "-o", engine, ".")
 	if output, err := build.CombinedOutput(); err != nil {

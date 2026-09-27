@@ -71,7 +71,7 @@ type landedRearmDecision struct {
 }
 
 func landedRearmCommand(checkout string) string {
-	return "scripts/agents/go-build.sh && bin/metasystem session start --repo " + shellQuote(checkout)
+	return "go run ./cmd/devgate build && bin/metasystem session start --repo " + shellQuote(checkout)
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
@@ -214,7 +214,7 @@ func fetchLandingRef(ctx context.Context, clock steward.RearmClock, seconds int,
 // dirtyEnginePaths lists the paths changed against HEAD (index or working
 // tree) or untracked that the behavior-surface policy classifies as ENGINE,
 // top-relative under the installation prefix: the same classification
-// go-build.sh applies before it stamps a build dirty.
+// bootstrap build (cmd/devgate) applies before it stamps a build dirty.
 type checkoutDirtyPath struct {
 	path      string
 	untracked bool
@@ -396,14 +396,14 @@ var (
 		}
 		defer lease.Close()
 		fmt.Fprintf(os.Stderr, "metasystem test run: landed engine rebuild host queue=%dms\n", lease.Waited().Milliseconds())
-		command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh")
+		command := exec.CommandContext(ctx, "go", "run", "./cmd/devgate", "build")
 		command.Dir = installation
 		command.Env = os.Environ()
 		var output bytes.Buffer
 		command.Stdout, command.Stderr = &output, &output
 		err = proofrun.RunResourceCommand(ctx, command, lease)
 		if err != nil {
-			return fmt.Errorf("scripts/agents/go-build.sh: %w: %s", err, strings.TrimSpace(output.String()))
+			return fmt.Errorf("go run ./cmd/devgate build: %w: %s", err, strings.TrimSpace(output.String()))
 		}
 		return nil
 	}

@@ -1401,19 +1401,20 @@ func TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution(t *testing.
 }
 
 func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t *testing.T) {
-	script, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-build.sh"))
-	if err != nil {
-		t.Fatal(err)
+	// The real bootstrap build, compiled from this module and run in each
+	// materialization as `go run ./cmd/devgate` would run it there.
+	devgate := filepath.Join(t.TempDir(), "devgate")
+	if output, err := exec.Command("go", "build", "-o", devgate, "../devgate").CombinedOutput(); err != nil {
+		t.Fatalf("build devgate: %v\n%s", err, output)
 	}
 	cacheRoot := t.TempDir()
 	stamp := strings.Repeat("a", 40)
 	build := func(name string) string {
 		root := filepath.Join(t.TempDir(), name)
-		writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "go-build.sh"), script, 0o755)
 		writeTestingFixtureFile(t, filepath.Join(root, "go.mod"), []byte("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.26\n"), 0o644)
 		writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644)
 		output := filepath.Join(t.TempDir(), "metasystem")
-		command := exec.Command("bash", "scripts/agents/go-build.sh", "--trimpath", "--out", output)
+		command := exec.Command(devgate, "build", "--trimpath", "--out", output)
 		command.Dir = root
 		command.Env = append(candidateEngineBuildEnvironment(testingEnvironment(os.Environ()), stamp),
 			"GOCACHE="+filepath.Join(cacheRoot, "build"), "GOMODCACHE="+filepath.Join(cacheRoot, "modules"))
@@ -1878,6 +1879,7 @@ ENGINE
 chmod +x "$3"
 `
 	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "go-build.sh"), []byte(buildScript), 0o755)
+	writeFixtureDevgate(t, installationRoot)
 	for _, relative := range []string{"dispatch.sh", "checkout-execution-guard.sh"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", relative))
 		if err != nil {
