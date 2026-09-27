@@ -132,7 +132,7 @@ func TestWatchReadSurfaceAllTrackedClassesAndZeroWrite(t *testing.T) {
 	root := watchFixture(t)
 	before := watchTreeHash(t, root)
 	out, code := captureStdout(t, func() int {
-		return dispatch([]string{"watch", "--root", root, "--json"})
+		return dispatch([]string{"internal", "watch", "--root", root, "--json"})
 	})
 	after := watchTreeHash(t, root)
 	if before != after {
@@ -194,7 +194,7 @@ func TestWatchAbsentHealthIsDeadAndZeroWrite(t *testing.T) {
 	root := t.TempDir()
 	before := watchTreeHash(t, root)
 	out, code := captureStdout(t, func() int {
-		return dispatch([]string{"watch", "--root", root, "--json"})
+		return dispatch([]string{"internal", "watch", "--root", root, "--json"})
 	})
 	after := watchTreeHash(t, root)
 	if before != after {
@@ -244,7 +244,7 @@ func TestWatchStaleHealthAndGoalFailurePrintsDeadRecordAge(t *testing.T) {
 		},
 	})
 	out, code := captureStdout(t, func() int {
-		return dispatch([]string{"watch", "--root", root})
+		return dispatch([]string{"internal", "watch", "--root", root})
 	})
 	if code != 1 || !strings.Contains(out, "WATCH ATTENTION") ||
 		!strings.Contains(out, "health-freshness health-record dead") ||

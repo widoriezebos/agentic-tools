@@ -101,7 +101,7 @@ func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
 		}
 		for _, sourceLine := range strings.Split(string(data), "\n") {
 			line := strings.TrimSpace(sourceLine)
-			if !strings.Contains(line, "stop-status --id") {
+			if !strings.Contains(line, "session report --id") && !strings.Contains(line, "stop-status --id") {
 				continue
 			}
 			key := filepath.ToSlash(filepath.Join("scripts", "agents", filepath.Base(path))) + "\x00" + line

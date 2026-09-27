@@ -101,8 +101,9 @@ func TestProcessVerbsShareTheNamedSeparateInstallation(t *testing.T) {
 			stdout, stderr, code := captureRelay(t, func() int {
 				return verb.run([]string{"--repo", repo, "--installation", installation})
 			})
-			want := "metasystem " + verb.name + ": " + verb.name + " is a human act at a terminal; this caller is DELEGATE.\n" +
-				"at an agent-free terminal, run: metasystem " + verb.name + " --repo " + repo + " --installation " + installation + "\n"
+			public := publicProcessVerb(verb.name)
+			want := "metasystem " + public + ": " + public + " is a human act at a terminal; this caller is DELEGATE.\n" +
+				"at an agent-free terminal, run: metasystem " + public + " --repo " + repo + " --installation " + installation + "\n"
 			if code != 1 || stdout != "" || stderr != want || strings.Contains(stderr, "--metasystem-root") {
 				t.Fatalf("separate-installation %s = code %d stdout %q stderr %q, want stderr %q", verb.name, code, stdout, stderr, want)
 			}
@@ -172,7 +173,7 @@ func TestArmTemporaryWordStillRequiresHumanCallerAndLeavesFenceUnchanged(t *test
 			"--temporary-human-word", "Wido authorizes this temporary arm", "--review-by", "2026-09-09",
 		}, repositoryTop, classify)
 	})
-	want := "metasystem system start: arm is a human act at a terminal; this caller is DELEGATE.\n" +
+	want := "metasystem system start: system start is a human act at a terminal; this caller is DELEGATE.\n" +
 		"at an agent-free terminal, run: metasystem system start --repo " + repo + " --installation " + installation + "\n"
 	if code != 1 || stdout != "" || stderr != want {
 		t.Fatalf("temporary arm refusal = code %d stdout %q stderr %q, want code 1 stderr %q", code, stdout, stderr, want)
@@ -221,8 +222,8 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 				}
 				return 1
 			})
-			want := "metasystem " + test.verb + ": caller classification is blocked by job record " + jobPath + ": invalid JSON: unexpected end of JSON input.\n" +
-				"repair " + jobPath + ", then at an agent-free terminal, run: metasystem " + test.verb + " --repo " + repo + " --installation " + installation + "\n"
+			want := "metasystem " + publicProcessVerb(test.verb) + ": caller classification is blocked by job record " + jobPath + ": invalid JSON: unexpected end of JSON input.\n" +
+				"repair " + jobPath + ", then at an agent-free terminal, run: metasystem " + publicProcessVerb(test.verb) + " --repo " + repo + " --installation " + installation + "\n"
 			if code != 1 || stderr != want {
 				t.Fatalf("%s classification refusal = code %d stderr %q, want code 1 stderr %q", test.verb, code, stderr, want)
 			}

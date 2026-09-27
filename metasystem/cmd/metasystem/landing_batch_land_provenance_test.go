@@ -781,11 +781,11 @@ func TestBatchRecoveryLostFinalizeReplyDoesNotRepeatGoalEdit(t *testing.T) {
 	batchRecoveryRearm = func(string, string) error { return nil }
 	edits := 0
 	batchChildRunner = func(_ string, _ string, args ...string) error {
-		if len(args) < 2 || args[0] != "goal" || args[1] != "edit" {
+		if len(args) < 3 || args[0] != "internal" || args[1] != "goal" || args[2] != "edit" {
 			return nil
 		}
 		edits++
-		code, _, stderr := captureCommandOutput(t, true, true, func() int { return runGoalEdit(args[2:]) })
+		code, _, stderr := captureCommandOutput(t, true, true, func() int { return runGoalEdit(args[3:]) })
 		if code != 0 {
 			return errors.New(stderr)
 		}

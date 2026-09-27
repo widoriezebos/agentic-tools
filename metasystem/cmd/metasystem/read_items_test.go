@@ -154,7 +154,7 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	printed = strings.SplitN(printed, " | ", 2)[0]
 	command := strings.Replace(printed, "<commit>", fixture.codeCommit, 1)
 	fields := strings.Fields(command)
-	closeArgs := append(append([]string{}, fields[3:]...), "--root", fixture.repository.root, "--lineage", "m1")
+	closeArgs := append(append([]string{}, fields[4:]...), "--root", fixture.repository.root, "--lineage", "m1")
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
 		return runGoalReadItemsWithInputs(closeArgs, fixture.repository.commandNow(fixture.now), fixture.dependencies, fixture.resolveCodeCommit)
 	})

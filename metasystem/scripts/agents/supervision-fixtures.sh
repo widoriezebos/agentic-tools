@@ -1078,7 +1078,7 @@ if [[ "$fixture_scenario" == wait-stop-claude ]]; then
   claude_prompt=$tmp/wait-stop-claude.prompt
   printf '%s\n' \
     'Use the Bash tool first with run_in_background=true and this exact command:' \
-    'mkdir -p artifacts/agents/jobs && printf '\''%s\\n'\'' '\''{"jobId":"wait-stop-job","operationId":"dddddddddddddddddddddddddddddddd","status":"pending-setup","goalId":"wait-stop-goal"}'\'' > artifacts/agents/jobs/wait-stop-job.json && exec ./bin/metasystem wait --root "$PWD" --job wait-stop-job --timeout 2m' \
+    'mkdir -p artifacts/agents/jobs && printf '\''%s\\n'\'' '\''{"jobId":"wait-stop-job","operationId":"dddddddddddddddddddddddddddddddd","status":"pending-setup","goalId":"wait-stop-goal"}'\'' > artifacts/agents/jobs/wait-stop-job.json && exec ./bin/metasystem internal wait --root "$PWD" --job wait-stop-job --timeout 2m' \
     'Then use Bash once in the foreground with this exact command:' \
     'while :; do row=$(find artifacts/agents/waiters -maxdepth 1 -type f -name '\''job-wait-stop-job-*.json'\'' -print -quit 2>/dev/null); if [ -n "$row" ] && grep -Eq '\''"state"[[:space:]]*:[[:space:]]*"pending"'\'' "$row"; then exit 0; fi; sleep 0.05; done' \
     'After both tools succeed, answer exactly WAIT-REGISTERED and end the turn.' \

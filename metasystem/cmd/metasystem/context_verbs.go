@@ -602,8 +602,22 @@ func contextVerbError(verb string, err error) int {
 		fmt.Fprintln(os.Stderr, strings.NewReplacer("\r", " ", "\n", " ").Replace(refusal.Error()))
 		return 9
 	}
-	fmt.Fprintf(os.Stderr, "metasystem context %s: %v\n", verb, err)
+	fmt.Fprintf(os.Stderr, "metasystem %s: %v\n", contextPublicName(verb), err)
 	return 1
+}
+
+// contextPublicName is the spelling a person or agent runs for a context
+// verb: the session actions for the three that have one.
+func contextPublicName(verb string) string {
+	switch verb {
+	case "handoff":
+		return "session handoff"
+	case "status":
+		return "session context"
+	case "verify":
+		return "session verify"
+	}
+	return "internal context " + verb
 }
 
 func projectContextReading(reading usagepkg.Reading) contextReadingView {

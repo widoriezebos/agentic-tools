@@ -210,7 +210,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(resultPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	wantArgs := []string{"test", "run", "--root", root, "--goal", "goal-k", "--tree", "base-tree", "--mode", "canary",
+	wantArgs := []string{"internal", "test", "run", "--root", root, "--goal", "goal-k", "--tree", "base-tree", "--mode", "canary",
 		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
 		"--expected-goal-revision", "7", "--expected-accounting-revision", "5"}
 	var recorded []string
@@ -253,7 +253,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 			t.Fatalf("diagnostic argv %q does not contain %q", joined, want)
 		}
 	}
-	wantArgs = []string{"test", "run", "--root", root, "--goal", "goal-k", "--tree", "new-base", "--mode", "canary",
+	wantArgs = []string{"internal", "test", "run", "--root", root, "--goal", "goal-k", "--tree", "new-base", "--mode", "canary",
 		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
 		"--expected-goal-revision", "11", "--expected-accounting-revision", "13"}
 	var forwarded batch.DiagnosticRequest

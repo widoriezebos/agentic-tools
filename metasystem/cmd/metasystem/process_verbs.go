@@ -95,8 +95,22 @@ func processTransition(scope processScope, scale int) *stoptransition.Transition
 	}
 }
 
+// publicProcessVerb is the public object-action form of a process verb, the
+// spelling every label and retry line names.
+func publicProcessVerb(verb string) string {
+	switch verb {
+	case "stop":
+		return "system stop"
+	case "arm":
+		return "system start"
+	case "status":
+		return "system status"
+	}
+	return verb
+}
+
 func processVerbRetryCommand(scope processScope, verb string) string {
-	command := "metasystem " + verb + " --repo " + scope.Checkout
+	command := "metasystem " + publicProcessVerb(verb) + " --repo " + scope.Checkout
 	if scope.InstallationExplicit {
 		command += " --installation " + scope.Installation
 	}
@@ -416,7 +430,7 @@ func processScopeRefusal(verb, repo, installation string, err error) int {
 
 func refuseProcessVerb(verb, checkout, sentence, second string) int {
 	sentence = strings.TrimSuffix(strings.TrimSpace(sentence), ".")
-	fmt.Fprintf(os.Stderr, "metasystem %s: %s.\n", verb, sentence)
+	fmt.Fprintf(os.Stderr, "metasystem %s: %s.\n", publicProcessVerb(verb), sentence)
 	fmt.Fprintln(os.Stderr, second)
 	return 1
 }

@@ -1240,7 +1240,7 @@ func TestContextVerbUsage(t *testing.T) {
 	} {
 		code, _, problem := captureContextVerb(t, test.run, test.args...)
 		byCase := strings.Contains(strings.Join(test.args, "\x00"), "--by")
-		if code != 2 || (byCase && problem != handoffUsage) || (!byCase && !(strings.HasPrefix(problem, "usage: metasystem context ") || strings.Contains(problem, "--scratch must be") || strings.Contains(problem, "--delegate"))) {
+		if code != 2 || (byCase && problem != handoffUsage) || (!byCase && !((strings.HasPrefix(problem, "usage: metasystem session ") || strings.HasPrefix(problem, "usage: metasystem internal context ")) || strings.Contains(problem, "--scratch must be") || strings.Contains(problem, "--delegate"))) {
 			t.Fatalf("args %q = code %d stderr %q", test.args, code, problem)
 		}
 	}

@@ -380,7 +380,7 @@ func (fixture *portableProofFixture) runMatchedSupplementaryCohort(args []string
 		args[5] = tree
 		started := time.Now()
 		fixture.requireCommand(append([]string{"test", "plan"}, args...)...)
-		status, output := fixture.command(append([]string{"test", "run"}, args...)...)
+		status, output := fixture.command(append([]string{"internal", "test", "run"}, args...)...)
 		if status != 0 && status != proofrun.ExitReusableSuccess {
 			fixture.t.Fatalf("%s command proof exited %d: %s", scenario, status, output)
 		}
@@ -479,7 +479,7 @@ func runPortablePublicProofReuse(fixture *portableProofFixture) {
 	args := []string{"--root", fixture.root, "--goal", "portable", "--tree", base, "--mode", "auto", "--purpose", "delivery"}
 	started := time.Now()
 	fixture.requireCommand(append([]string{"test", "plan"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
+	fixture.requireCommand(append([]string{"internal", "test", "run"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
 	fixture.observe(fixture.portableScenario("fixed-a-cold"), base, started)
 	builds, native := fixture.counts()
@@ -487,7 +487,7 @@ func runPortablePublicProofReuse(fixture *portableProofFixture) {
 		t.Fatalf("cold proof counts: builds=%d native=%v", builds, native)
 	}
 	started = time.Now()
-	fixture.requireReusableRun(append([]string{"test", "run"}, args...)...)
+	fixture.requireReusableRun(append([]string{"internal", "test", "run"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
 	fixture.observe(fixture.portableScenario("fixed-a-warm"), base, started)
 	warmBuilds, warmNative := fixture.counts()
@@ -505,7 +505,7 @@ func runPortablePublicProofReuse(fixture *portableProofFixture) {
 	args[5] = addedTree
 	started = time.Now()
 	fixture.requireCommand(append([]string{"test", "plan"}, args...)...)
-	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
+	fixture.requireCommand(append([]string{"internal", "test", "run"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
 	fixture.observe(fixture.portableScenario("a-plus-b"), addedTree, started)
 	_, afterAddition := fixture.counts()
@@ -517,7 +517,7 @@ func runPortablePublicProofReuse(fixture *portableProofFixture) {
 	mutatedTree := fixture.commit("change A input")
 	args[5] = mutatedTree
 	started = time.Now()
-	fixture.requireCommand(append([]string{"test", "run"}, args...)...)
+	fixture.requireCommand(append([]string{"internal", "test", "run"}, args...)...)
 	fixture.requireCommand(append([]string{"test", "verify"}, args...)...)
 	fixture.observe(fixture.portableScenario("a-input-changed"), mutatedTree, started)
 	_, afterMutation := fixture.counts()
@@ -689,7 +689,7 @@ func TestCommandApplicationThreePrefixReceiptConsumer(t *testing.T) {
 		seal[id] = claim
 	}
 	tipResultPath := filepath.Join(t.TempDir(), "tip-result.json")
-	tipArgs := []string{"test", "run", "--root", fixture.root, "--goal", "goal-c", "--tree", thirdTree,
+	tipArgs := []string{"internal", "test", "run", "--root", fixture.root, "--goal", "goal-c", "--tree", thirdTree,
 		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a", "app-b", "app-c"}), "--result", tipResultPath}
 	started := time.Now()
 	fixture.requireCommand(tipArgs...)
@@ -921,7 +921,7 @@ func TestCommandApplicationRedEarlierPrefixBlocksReceipt(t *testing.T) {
 	}
 	tipResultPath := filepath.Join(t.TempDir(), "tip-result.json")
 	started := time.Now()
-	fixture.requireCommand("test", "run", "--root", fixture.root, "--goal", "goal-c", "--tree", tipTree,
+	fixture.requireCommand("internal", "test", "run", "--root", fixture.root, "--goal", "goal-c", "--tree", tipTree,
 		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a", "app-b", "app-c"}), "--result", tipResultPath)
 	data, err := os.ReadFile(tipResultPath)
 	if err != nil {

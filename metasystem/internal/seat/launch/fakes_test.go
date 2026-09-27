@@ -56,8 +56,8 @@ type fakeRunner struct {
 func newRunner() *fakeRunner {
 	return &fakeRunner{
 		said: map[string]string{
-			"git -C " + destRoot + " rev-parse HEAD":           headCommit + "\n",
-			"git -C " + fromRoot + " config --local --list -z": "goal.sync-remote\norigin\x00goal.human.wido\nWido <wido@example.invalid>\x00user.name\nfixture\x00",
+			"git -C " + destRoot + " rev-parse HEAD":                                                                  headCommit + "\n",
+			"git -C " + fromRoot + " config --local --list -z":                                                        "goal.sync-remote\norigin\x00goal.human.wido\nWido <wido@example.invalid>\x00user.name\nfixture\x00",
 			"metasystem config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"): "/w/evidence/m1u\n",
 			"metasystem goal next --root " + destRoot:                                                                 "g1-s44 is claimable here\n",
 		},

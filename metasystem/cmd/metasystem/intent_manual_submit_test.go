@@ -824,7 +824,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 		!strings.Contains(refused.Decision, accept) || !strings.Contains(refused.Decision, "then run metasystem work review "+c.id+" --work alpha --dispositions "+j.dispositions) {
 		t.Fatalf("an unproven finding after the retry: code=%d %+v", code, refused)
 	}
-	for _, internal := range []string{"goal accept-risk", "--chain", "critique-budget-rebind", "metasystem close", "dispatch.sh"} {
+	for _, internal := range []string{"internal goal accept-risk", "--chain", "critique-budget-rebind", "metasystem close", "dispatch.sh"} {
 		if strings.Contains(refused.Decision, internal) || strings.Contains(refused.Summary, internal) || slices.ContainsFunc(refused.text, func(line string) bool { return strings.Contains(line, internal) }) {
 			t.Fatalf("the remedy prescribes internal %q: %+v", internal, refused)
 		}

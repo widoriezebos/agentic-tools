@@ -744,7 +744,7 @@ func TestIntentLandedActsReportPartialFollowUp(t *testing.T) {
 		code, result := bed.runJSON(owners, "goal", "done", bedGoal, "--reason", "shipped", "--lineage", "m1")
 		data, _ := result.Data.(map[string]any)
 		if code != 1 || result.Outcome != intentPartial || !strings.Contains(fmt.Sprint(data["incomplete"]), "disk full") ||
-			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "metrics", "report", "--goal", bedGoal}) ||
+			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "internal", "metrics", "report", "--goal", bedGoal}) ||
 			bed.goalFile(bedGoal).State != goal.StateDone {
 			t.Fatalf("done with a failed metrics report = %d %+v", code, result)
 		}

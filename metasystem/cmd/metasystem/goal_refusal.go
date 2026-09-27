@@ -88,15 +88,13 @@ func (values *humanVerbValues) budgetCommandWithoutApprovedRef(box string) strin
 }
 
 func (values *humanVerbValues) renderBudgetCommand(box string, includeApprovedRef bool) string {
+	// The public goal budget G [options] BOX; --root is its alias of --repo.
 	args := []string{"metasystem", "goal", "budget"}
 	if values.id != "" {
 		args = append(args, values.id)
 	}
-	if box != "" {
-		args = append(args, box)
-	}
 	if values.root != "" && values.root != "." {
-		args = append(args, "--repo", values.root)
+		args = append(args, "--root", values.root)
 	}
 	if values.lineage != "" {
 		args = append(args, "--lineage", values.lineage)
@@ -115,6 +113,9 @@ func (values *humanVerbValues) renderBudgetCommand(box string, includeApprovedRe
 	}
 	if includeApprovedRef && values.approvedRef != "" {
 		args = append(args, "--approved-ref", values.approvedRef)
+	}
+	if box != "" {
+		args = append(args, box)
 	}
 	return shellCommand(args)
 }
