@@ -1,5 +1,6 @@
 import type { GoalState, Need } from "./api";
 import { ageLine } from "./decisions";
+import { proposalLine } from "./proposals";
 
 /**
  * The inbox as groups, which is what turns a wall into an inbox.
@@ -18,6 +19,7 @@ import { ageLine } from "./decisions";
 
 /** The groups, by the name this module knows each one under. */
 export type GroupId =
+  | "proposed"
   | "questions"
   | "drafts"
   | "landed"
@@ -37,8 +39,14 @@ export type GroupId =
  * steward addressed to them, then the goals and rulings that wait without
  * costing anything, and last the approval queue, which is a hundred rows and
  * is worked rather than read.
+ *
+ * What the Partner proposed is first of all. It is the cheapest kind there is —
+ * one press each, and the whole of what would happen is on the row — it is the
+ * freshest, because it was proposed in a conversation this human was in, and it
+ * is what they asked the Partner for (g1-s60 D3).
  */
 const GROUPS: readonly { id: GroupId; kind: string; title: string; standing: string }[] = [
+  { id: "proposed", kind: "proposal", title: "Proposed by the Partner", standing: "" },
   { id: "questions", kind: "question", title: "Questions", standing: "" },
   { id: "drafts", kind: "draft", title: "Drafts to accept", standing: "" },
   { id: "landed", kind: "landed", title: "Designs landed", standing: "" },
@@ -187,6 +195,11 @@ function substanceOf(need: Need): string {
   switch (need.kind) {
     case "question":
       return need.asked;
+    case "proposal":
+      // The act, the subject, and where the line stands where anybody has
+      // answered it once: a refused or in-flight proposal is a different choice
+      // from one nobody has touched, and the line says which (g1-s60 D3).
+      return proposalLine(need);
     case "ruling-review":
       // The first sentence, because a ruling is a paragraph and a row is a
       // line; the whole of it is in the open row.

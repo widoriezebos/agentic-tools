@@ -22,6 +22,7 @@ import {
   type Mark,
   type Marks,
   type RunPorts,
+  type Written,
 } from "../partner/proposing";
 
 /**
@@ -227,7 +228,37 @@ export function portsFor(ask: RunAsk, through: Through = live): RunPorts {
   };
 }
 
+/** Put one line away: the human's own press, and the row leaves the group.
+ *
+ * It is a write and no act: nothing is published, and what it says is that this
+ * human is not going to answer this proposal. Every state a row of this group can
+ * be in is one `dismissed` is admitted from — the group carries nothing settled —
+ * and it goes at the version the row rendered, so a line somebody else moved
+ * first answers with a conflict and stays as they left it (g1-s58 D6).
+ */
+export async function dismissLine(line: Line, through: Through = live): Promise<Written> {
+  return through.record(turnOf(line), line, "dismissed", "");
+}
+
 /* ------------------------------------------------- what the page holds -- */
+
+/**
+ * What an open proposal row can do, handed down rather than reached for.
+ *
+ * It is the row's own half of the page's state: the line as everything the page
+ * holds about it composes it, the three presses, and whether a run is in flight —
+ * because nothing else may be pressed while one is.
+ */
+export type ProposalActs = {
+  lineOf: (need: Need) => Line | null;
+  /** Apply, or Try again where the line has been answered once. */
+  onApply: (need: Need) => void;
+  /** Dismiss, which needs no sheet: it publishes nothing. */
+  onDismiss: (need: Need) => void;
+  /** Ask the Partner: the drawer opens with the line's words in the composer. */
+  onAsk: (need: Need) => void;
+  running: boolean;
+};
 
 /** What the pane holds about the proposals on it, and how it applies one. */
 export type Applying = {
@@ -252,6 +283,8 @@ export type Applying = {
   budgets: Displayeds;
   /** Keep the tuples a sheet read when it opened, so the rows say the same. */
   noteBudgets: (read: Displayeds) => void;
+  /** Put one line away, and read the page again when the write has answered. */
+  dismiss: (line: Line) => void;
 };
 
 /**
@@ -337,6 +370,29 @@ export function useProposals(ask: {
     setBudgets((held) => ({ ...held, ...read }));
   }, []);
 
+  const dismiss = useCallback(
+    (line: Line) => {
+      if (!takeRun(guard.current, line.id)) {
+        return;
+      }
+      setRunning(line.id);
+      void (async () => {
+        const answered = await dismissLine(line);
+        if (answered.kind === "failed") {
+          // The conversation could not write it down, so the row says so and
+          // stays: what a human pressed did not happen.
+          mark(line.id, { refusedUnsent: answered.words });
+        } else {
+          setStanding((held) => ({ ...held, [line.id]: answered.proposal }));
+        }
+        releaseRun(guard.current);
+        setRunning("");
+        reread();
+      })();
+    },
+    [mark, reread],
+  );
+
   return {
     lineOf: lineFor,
     linesOf: linesFor,
@@ -345,6 +401,7 @@ export function useProposals(ask: {
     captureBudgets,
     budgets,
     noteBudgets,
+    dismiss,
   };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Need } from "./api";
+import type { Need, Proposed } from "./api";
 import {
   confirmLine,
   decidedCount,
@@ -250,5 +250,57 @@ describe("the two views", () => {
         rulings: [1, 2, 3], decisions: [1], answered: [1, 2], approved: [], notNow: [1],
       }),
     ).toBe(7);
+  });
+});
+
+/**
+ * The group the Partner's proposals wait in: first of all, because it is the
+ * cheapest and freshest kind there is and it is what this human asked the
+ * Partner for (g1-s60 D3).
+ */
+describe("proposed by the Partner", () => {
+  function proposalNeed(over: Partial<Need> = {}, action: Partial<Proposed> = {}): Need {
+    return need({
+      kind: "proposal", id: "t7/0", title: "The seat census answers which machines are alive",
+      since: "2026-09-25T09:00:00Z", where: { kind: "goal", id: "g1-s44" }, act: "apply",
+      ...over,
+      proposal: {
+        turn: "t7", index: 0, verb: "park-goal", fields: { because: "superseded by the inventory" },
+        read: null, explanation: "the inventory covers it", state: "waiting", words: "", version: 1,
+        ...action,
+      },
+    });
+  }
+
+  it("stands at the head of the order", () => {
+    const groups = groupsOf(
+      [need({ kind: "question", id: "Q-1" }), proposalNeed(), need({ kind: "approval", id: "g1-s40" })],
+      now,
+    );
+
+    expect(groups.map((group) => group.id)).toEqual(["proposed", "questions", "queue"]);
+    expect(groups[0].title).toBe("Proposed by the Partner");
+    expect(groups[0].count).toBe(1);
+    expect(groups[0].standing).toBe("");
+  });
+
+  it("is not there at all where nothing is proposed", () => {
+    const groups = groupsOf([need({ kind: "question", id: "Q-1" })], now);
+
+    expect(groups.map((group) => group.id)).toEqual(["questions"]);
+  });
+
+  it("opens by itself where it is the only group with something new", () => {
+    expect(
+      groupOnScreen([proposalNeed({ new: true }), need({ kind: "question", id: "Q-1", new: false })], null),
+    ).toBe("proposed");
+  });
+
+  it("says the act and the subject on the row, with the state where there is one", () => {
+    expect(rowLine(proposalNeed())).toBe("Not now · The seat census answers which machines are alive");
+    expect(rowLine(proposalNeed({}, { state: "unresolved", words: "the answer was lost" }))).toBe(
+      "Not now · The seat census answers which machines are alive · unresolved: the answer was lost; " +
+        "check the goal before trying again",
+    );
   });
 });

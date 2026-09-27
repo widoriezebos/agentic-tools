@@ -36,6 +36,7 @@ import {
 import { decidedCount, groupOnScreen, groupsOf, viewTitle, type ViewId } from "./groups";
 import { Inbox } from "./Inbox";
 import type { Acts } from "./InboxRow";
+import { useProposals } from "./proposals";
 import { useNarrowing } from "./QueueBlock";
 import { ActSheet, type Request } from "../backlog/ActSheet";
 import { loadBacklog, unparkGoal, type Backlog, type Row } from "../backlog/api";
@@ -45,6 +46,8 @@ import { Help } from "../help/Help";
 import type { HelpId } from "../help/terms";
 import { Pane } from "../panes/Pane";
 import { Tabs } from "../panes/Tabs";
+import { askLine, type Line as ProposalLine } from "../partner/proposing";
+import { usePartner } from "../partner/store";
 import { setRecordStatus } from "../project/api";
 import { goalPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
@@ -130,6 +133,10 @@ export function DecisionsPane() {
   // they thought to press Refresh.
   const { session, askToSignIn } = useSession();
   const signedIn = signedInNow(session);
+  // The conversation, for the one act a proposal row has that is not a write:
+  // Ask the Partner puts the line's own words in the composer, exactly as the
+  // card's does, and the drawer opens on it.
+  const { fillComposer } = usePartner();
 
   useEffect(() => {
     const aborter = new AbortController();
@@ -161,6 +168,39 @@ export function DecisionsPane() {
     setRefused(nothingRefused);
     setAttempt((previous) => previous + 1);
   }, []);
+
+  // What this page holds about the actions the Partner proposed, and the one way
+  // it applies one: the card's own runner, with this page's own in-place read as
+  // what happens after a confirmed act (g1-s60 D4). The read is `again` and never
+  // `reload`: a run reports on the rows, and a read that blanked the page would
+  // take them out from under it.
+  //
+  // The run is also reached from the sign-in sheet's own success, through a ref:
+  // the sheet's callback outlives the render that opened it, and the run it hands
+  // over is the run being defined.
+  const runProposalsAgain = useRef<((lines: readonly ProposalLine[]) => void) | null>(null);
+  const proposals = useProposals({
+    reread: again,
+    signIn: (rest) => {
+      askToSignIn(() => {
+        runProposalsAgain.current?.(rest);
+      });
+    },
+  });
+  runProposalsAgain.current = proposals.run;
+
+  // The budget an approve row would carry, read when the row opens and kept with
+  // the row: the card reads its own at the answer's terminal beat, because that
+  // is when its buttons wake, and a row reads it when a human can see it.
+  useEffect(() => {
+    if (read.state !== "read" || openRow === "") {
+      return;
+    }
+    const opened = read.page.needsYou.filter((need) => need.kind === "proposal" && need.id === openRow);
+    if (opened.length > 0) {
+      proposals.captureBudgets(opened);
+    }
+  }, [openRow, read, proposals]);
 
   // And the payload itself is read again when the session settles into
   // signed-in, because signIn is one of the things it carries: the sign-in
@@ -283,8 +323,34 @@ export function DecisionsPane() {
       writing: busy,
       refusedAt: refused.at,
       refusal: refused.message,
+      proposals: {
+        lineOf: proposals.lineOf,
+        // One line, applied through the card's own runner. A line that has been
+        // answered once is the same press: Try again sends that one line again,
+        // as the human's own press, at the version the row rendered.
+        onApply: (need: Need) => {
+          const line = proposals.lineOf(need);
+          if (line !== null) {
+            proposals.run([line]);
+          }
+        },
+        onDismiss: (need: Need) => {
+          const line = proposals.lineOf(need);
+          if (line !== null) {
+            proposals.dismiss(line);
+          }
+        },
+        onAsk: (need: Need) => {
+          const line = proposals.lineOf(need);
+          if (line !== null) {
+            fillComposer(askLine(line));
+          }
+        },
+        running: proposals.running,
+      },
     }),
-    [signedIn, askToSignIn, open, openBulk, openEdit, returnToQueue, writeStatus, busy, refused],
+    [signedIn, askToSignIn, open, openBulk, openEdit, returnToQueue, writeStatus, busy, refused,
+      proposals, fillComposer],
   );
 
   const hint = read.state === "read" ? `Read at ${minuteTime(read.page.readAt)} · Refresh` : "Refresh";
