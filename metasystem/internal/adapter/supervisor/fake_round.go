@@ -106,14 +106,22 @@ func (r *fakeRound) path(names ...string) string {
 	return filepath.Join(append([]string{r.t.Dir}, names...)...)
 }
 
-// behaviorSources are the files markers are read from: the round's prompt
-// and, when a body over the directive limit was staged, its staged task
-// direction (the prompt then carries only the reference stanza).
+// FakeBehaviorFile is the installation-relative file a fixture writes FAKE
+// markers to when it drives rounds whose prompts it does not author (a
+// public verb composing the brief): every fake round of the installation
+// reads it beside its prompt while it exists.
+const FakeBehaviorFile = "artifacts/agents/fake-behavior.md"
+
+// behaviorSources are the files markers are read from: the round's prompt,
+// the installation's fixture behavior file when present, and, when a body
+// over the directive limit was staged, its staged task direction (the
+// prompt then carries only the reference stanza).
 func (r *fakeRound) behaviorSources() []string {
 	sources := []string{r.t.Prompt}
-	staged := r.path("staged", "task-direction.md")
-	if info, err := os.Stat(staged); err == nil && info.Mode().IsRegular() {
-		sources = append(sources, staged)
+	for _, extra := range []string{filepath.Join(r.t.Root, FakeBehaviorFile), r.path("staged", "task-direction.md")} {
+		if info, err := os.Stat(extra); err == nil && info.Mode().IsRegular() {
+			sources = append(sources, extra)
+		}
 	}
 	return sources
 }
