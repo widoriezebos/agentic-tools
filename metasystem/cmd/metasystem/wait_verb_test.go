@@ -1328,6 +1328,10 @@ type pendingWaitHookOwners struct {
 // installation's engine is the one under test, never behind its sources.
 func (pendingWaitHookOwners) EngineBehind(string, string) (bool, error) { return false, nil }
 
+// EvidenceGC keeps the fixture installation's evidence collection inert, as
+// its stub evidence-gc.sh did: the test process is not an authenticated main.
+func (pendingWaitHookOwners) EvidenceGC(string, io.Writer) int { return 0 }
+
 func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 	o.upRequests = append(o.upRequests, request)
 	if o.fakeUp {
