@@ -1488,6 +1488,31 @@ func malformedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, value s
 	return completedBudgetRemedy(values, file, completed, box, horizon)
 }
 
+// bindGoalTierViewFromLedger binds the goal's tier view before the owner has
+// read the ledger, for a remedy or hint printed first. It is best effort: a
+// goal it cannot read keeps the remedy's own words, and the owner that runs
+// next reports the read failure itself.
+func bindGoalTierViewFromLedger(values *humanVerbValues, root, id string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) {
+	if !converted(root) || id == "" || dependencies.endpoint == nil || commandNow == nil {
+		return
+	}
+	endpoint, err := dependencies.endpoint(root)
+	if err != nil {
+		return
+	}
+	now, err := commandNow(root)
+	if err != nil {
+		return
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return
+	}
+	if file := projection.Tree.Live[id]; file != nil {
+		_ = bindGoalTierView(values, root, file)
+	}
+}
+
 func bindGoalTierView(values *humanVerbValues, root string, file *goal.GoalFile) error {
 	tier := file.Tier
 	if tier == 0 {
@@ -2734,6 +2759,8 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 		values.id = f.id
 		routeBox := ""
 		hintBox := ""
+		// The goal's tier decides what a norm remedy or hint names.
+		bindGoalTierViewFromLedger(values, f.root, f.id, commandNow, dependencies)
 		if f.budgetBox != "" {
 			if f.budgetBox != "box" {
 				return refuseHumanVerb(values, 2, "--budget is box", humanVerbRemedy{command: values.budgetCommand("norm")})
@@ -3261,6 +3288,9 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	projection, projectErr := goal.Project(req.Endpoint, false, req.Now)
 	if projectErr == nil {
 		if file := projection.Tree.Live[f.id]; file != nil && file.State == goal.StateClaimed && file.StopFence == nil && file.Budget == nil {
+			// The goal's tier decides what the norm remedy names; an unreadable
+			// tier box leaves the remedy as norm, which the owner then refuses.
+			_ = bindGoalTierView(values, f.root, file)
 			return refuseHumanVerb(values, 1, "the claimed goal is not breach-stopped and has no standing budget", humanVerbRemedy{command: values.budgetCommand("norm")})
 		}
 	}
@@ -3276,6 +3306,7 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 		if projectErr == nil {
 			if file := projection.Tree.Live[f.id]; file != nil {
 				if file.Budget == nil {
+					_ = bindGoalTierView(values, f.root, file)
 					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", resolvedBinding.Revision), humanVerbRemedy{command: values.budgetCommand("norm")})
 				}
 				if viewErr := bindGoalTierView(values, f.root, file); viewErr != nil {

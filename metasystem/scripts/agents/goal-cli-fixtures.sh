@@ -1897,8 +1897,8 @@ set +e
 resume_without_fence_rc=$?
 set -e
 [[ $resume_without_fence_rc -ne 0 && $(wc -l <"$tmp/resume-without-fence.err" | tr -d ' ') -eq 2 ]] \
-	&& grep -q '^run: metasystem goal budget ship-widget .*norm$' "$tmp/resume-without-fence.err" \
-	|| { echo "resume without a fence did not print the norm budget command" >&2; cat "$tmp/resume-without-fence.err" >&2; exit 1; }
+	&& grep -q '^run: metasystem goal budget ship-widget .*1d/10/1200m/1/3$' "$tmp/resume-without-fence.err" \
+	|| { echo "resume without a fence did not print the tierless goal's tier-three box" >&2; cat "$tmp/resume-without-fence.err" >&2; exit 1; }
 resume_without_fence_remedy=$(sed -n 's/^run: //p' "$tmp/resume-without-fence.err")
 eval "$resume_without_fence_remedy" >/dev/null
 read_forgiving_goal ship-widget "$tmp/ship-widget-after-resume-remedy.md"
@@ -1976,7 +1976,7 @@ set +e
 accept_risk_pair_rc=$?
 set -e
 [[ $accept_risk_pair_rc -ne 0 && $(wc -l <"$tmp/accept-risk-pair.err" | tr -d ' ') -eq 2 ]] \
-	&& grep -q '^run: metasystem goal accept-risk ' "$tmp/accept-risk-pair.err" \
+	&& grep -q '^run: metasystem internal goal accept-risk ' "$tmp/accept-risk-pair.err" \
 	|| { echo "accept-risk's temporary pair did not produce a two-line command refusal" >&2; cat "$tmp/accept-risk-pair.err" >&2; exit 1; }
 accept_risk_pair_remedy=$(sed -n 's/^run: //p' "$tmp/accept-risk-pair.err")
 eval "$accept_risk_pair_remedy" >/dev/null

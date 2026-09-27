@@ -17,7 +17,11 @@ type humanVerbValues struct {
 	tierBox                                                           *goal.Budget
 	state                                                             string
 	fixtureHumanAuthority, stopFence, byTyped                         bool
-	rawArgs                                                           []string
+	// tierless is a goal without a tier. The goal family reads its norm as
+	// the tier-three box; the public goal budget refuses norm for it until a
+	// person classifies the goal, so a remedy names the box itself.
+	tierless bool
+	rawArgs  []string
 	// report, when set, receives the refusal for the public intent commands
 	// to render; the legacy calls print it below exactly as before.
 	report *ownerReport
@@ -56,7 +60,7 @@ func (values *humanVerbValues) bindGoalView(file *goal.GoalFile, tierBox goal.Bu
 	if file == nil {
 		return
 	}
-	values.state, values.stopFence = file.State, file.StopFence != nil
+	values.state, values.stopFence, values.tierless = file.State, file.StopFence != nil, file.Tier == 0
 	if file.Budget != nil {
 		standing := *file.Budget
 		values.standingBox = &standing
@@ -113,6 +117,12 @@ func (values *humanVerbValues) renderBudgetCommand(box string, includeApprovedRe
 	}
 	if includeApprovedRef && values.approvedRef != "" {
 		args = append(args, "--approved-ref", values.approvedRef)
+	}
+	if box == "norm" && values.tierless && values.tierBox != nil {
+		// The public goal budget refuses norm for a tierless goal, where the
+		// family recorded the tier-three box; the remedy names that box, so
+		// running it records exactly what the family's norm recorded.
+		box = goalbudget.FormatBox(*values.tierBox)
 	}
 	if box != "" {
 		args = append(args, box)
