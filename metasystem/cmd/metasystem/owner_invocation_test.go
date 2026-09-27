@@ -11,7 +11,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -196,7 +195,7 @@ func TestBatchProofCancellationSparesTheResidentOwner(t *testing.T) {
 	proof := filepath.Join(state, "proof")
 	script := "#!/usr/bin/env bash\nset -euo pipefail\ngoal=; result=\n" +
 		"while (( $# )); do case $1 in --goal) goal=$2; shift 2;; --result) result=$2; shift 2;; *) shift;; esac; done\n" +
-		"printf '%s\\n' $$ >\"$PROOF_STATE/$goal.pid.tmp\"; mv \"$PROOF_STATE/$goal.pid.tmp\" \"$PROOF_STATE/$goal.pid\"\n" +
+		"printf '%s\\n' $$ >\"$PROOF_STATE/$goal.pid\"\n" +
 		"if [[ $goal == cancelled ]]; then exec sleep 600; fi\n" +
 		"while [[ ! -e \"$PROOF_STATE/release\" ]]; do sleep 0.05; done\n" +
 		"printf '{}\\n' >\"$result\"\n"
@@ -217,6 +216,13 @@ func TestBatchProofCancellationSparesTheResidentOwner(t *testing.T) {
 		err  error
 	}
 	done := make(chan outcome, 2)
+	// Each proof child reports its pid through a FIFO: the read blocks until
+	// the child writes, so the witness waits on the event, not on a clock.
+	for _, goalID := range []string{"cancelled", "completed"} {
+		if err := syscall.Mkfifo(filepath.Join(state, goalID+".pid"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, goalID := range []string{"cancelled", "completed"} {
 		goalID := goalID
 		go func() {
@@ -227,21 +233,29 @@ func TestBatchProofCancellationSparesTheResidentOwner(t *testing.T) {
 	}
 	pidOf := func(goalID string) int {
 		t.Helper()
-		for {
-			if data, err := os.ReadFile(filepath.Join(state, goalID+".pid")); err == nil {
-				var pid int
-				if _, err := fmt.Sscan(string(data), &pid); err != nil {
-					t.Fatal(err)
-				}
-				return pid
-			}
-			select {
-			case <-t.Context().Done():
-				t.Fatalf("proof %s never started", goalID)
-			default:
-			}
-			waitForProofStart()
+		type report struct {
+			data []byte
+			err  error
 		}
+		reported := make(chan report, 1)
+		go func() {
+			data, err := os.ReadFile(filepath.Join(state, goalID+".pid"))
+			reported <- report{data, err}
+		}()
+		select {
+		case <-t.Context().Done():
+			t.Fatalf("proof %s never started", goalID)
+		case got := <-reported:
+			if got.err != nil {
+				t.Fatal(got.err)
+			}
+			var pid int
+			if _, err := fmt.Sscan(string(got.data), &pid); err != nil {
+				t.Fatal(err)
+			}
+			return pid
+		}
+		return 0
 	}
 	cancelled, completed := pidOf("cancelled"), pidOf("completed")
 	if cancelled == os.Getpid() || completed == os.Getpid() || cancelled == completed {
@@ -268,7 +282,3 @@ func TestBatchProofCancellationSparesTheResidentOwner(t *testing.T) {
 }
 
 var syscallTERM = syscall.SIGTERM
-
-// waitForProofStart yields while a fake proof child writes its pid; the
-// test's own deadline bounds the wait.
-func waitForProofStart() { time.Sleep(10 * time.Millisecond) }
