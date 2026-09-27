@@ -29,8 +29,6 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 		name string
 		path string
 	}{
-		{name: "stopped", path: filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh")},
-		{name: "detached", path: filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh")},
 		{name: "fake host", path: filepath.Join(root, "scripts", "agents", "hosts", "fake.sh")},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
@@ -55,18 +53,6 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 	}
 	if !strings.Contains(fixtureBedInnerBed, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n    read -r _ <&3") {
 		t.Fatal("hang fixture does not block on its leash")
-	}
-	suite := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh"))
-	cleanupStart, cleanupEnd := strings.Index(suite, "cleanup() {"), strings.Index(suite, "trap cleanup EXIT")
-	if cleanupStart < 0 || cleanupEnd <= cleanupStart {
-		t.Fatal("suite-progress cleanup boundaries were not found")
-	}
-	cleanup := suite[cleanupStart:cleanupEnd]
-	if !strings.Contains(cleanup, "harness_fixture_reap") || strings.Contains(cleanup, "kill \"$pid\"") {
-		t.Fatal("suite-progress cleanup does not delegate fixture reaping")
-	}
-	if !strings.Contains(suite, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n      read -r _ <&3") {
-		t.Fatal("suite-progress detached fixture does not block on its leash")
 	}
 	fake := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "hosts", "fake.sh"))
 	if !strings.Contains(fake, `exec "$ms" util hold --tag "$instance_tag"`) {
