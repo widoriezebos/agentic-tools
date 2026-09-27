@@ -78,8 +78,7 @@ cp "$bin" "$fixture_root/bin/metasystem"
 for dependency in \
   scripts/agents/dispatch.sh \
   scripts/agents/adapters/runtime-common.sh \
-  scripts/agents/adapters/fake.sh \
-  scripts/watch-background-jobs.sh; do
+  scripts/agents/adapters/fake.sh; do
   mkdir -p "$fixture_root/${dependency%/*}"
   cp "$root/$dependency" "$fixture_root/$dependency"
 done

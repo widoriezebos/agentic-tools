@@ -1410,6 +1410,9 @@ if [[ "$fixture_scenario" == stop-failure-paths || "$fixture_scenario" == rearm-
 failure_engine=$tmp/failure-engine
 cat >"$failure_engine" <<'SH'
 #!/usr/bin/env bash
+# The bed's evidence collection is inert, as its stub evidence-gc.sh was: the
+# fixture shell is not an authenticated main of this checkout.
+if [[ ${1:-} == evidence && ${2:-} == gc ]]; then exit 0; fi
 step=${METASYSTEM_STOP_FAILURE_STEP:-}
 if [[ $step == runtime-list && ${1:-} == runtime && ${2:-} == list ]]; then
   echo "fixture runtime registry failure" >&2
@@ -2977,6 +2980,8 @@ printf \
 template_engine=$tmp/template-engine
 cat >"$template_engine" <<'SH'
 #!/usr/bin/env bash
+# The bed's evidence collection is inert, as its stub evidence-gc.sh was.
+if [[ ${1:-} == evidence && ${2:-} == gc ]]; then exit 0; fi
 if [[ ${1:-} == up ]]; then
   exit 0
 fi

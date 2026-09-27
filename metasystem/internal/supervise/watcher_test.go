@@ -42,7 +42,6 @@ func stageCheckout(t *testing.T) string {
 		"scripts/agents/dispatch.sh",
 		"bin/metasystem",
 		"scripts/agents/adapters/runtime-common.sh",
-		"scripts/watch-background-jobs.sh",
 	} {
 		write(rel, "# fingerprint input placeholder\n", 0o644)
 	}

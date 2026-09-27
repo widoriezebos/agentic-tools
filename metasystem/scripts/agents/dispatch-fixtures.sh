@@ -516,7 +516,6 @@ cp -R scripts/agents "$agent_repo/scripts/"
 # the reviewed design blob at that path too.
 mkdir -p "$agent_repo/metasystem/scripts/agents/roles"
 cp scripts/agents/roles/design-critic.md "$agent_repo/metasystem/scripts/agents/roles/design-critic.md"
-cp scripts/watch-background-jobs.sh "$agent_repo/scripts/"
 cp docs/project-rules.md docs/orchestration.md "$agent_repo/docs/"
 cp -R skills/code-critique skills/design-critique skills/take-a-step-back skills/verify "$agent_repo/skills/"
 cp metasystem.conf "$agent_repo/"
@@ -4921,13 +4920,12 @@ run_fixture_arm "mission runner baseline arm" "$agent_fixture/runner-baseline-ar
   || { echo "mission runner fixture could not establish its baseline census" >&2; exit 1; }
 # The runner arms through its checkout engine's `up` entry. The fixture
 # engine below stands in for that engine during runner missions: arming runs
-# the real `up`, then stages the fixture process identities and waits for the
-# post-arm census; every other verb is the real engine.
+# the enrolled engine's `up`, then stages the fixture process identities and
+# waits for the post-arm census; every other verb is the enrolled engine.
 runner_arm_wrapper=$agent_fixture/runner-arm-wrapper
 {
-  printf '#!/usr/bin/env bash\nset -euo pipefail\nfixture_root=%q\n' "$runner_repo"
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nfixture_root=%q\nreal_engine=%q\n' "$runner_repo" "$enrolled_engine"
   cat <<'ARM'
-real_engine=$fixture_root/bin/metasystem
 [[ ${1:-} == up ]] || exec "$real_engine" "$@"
 wait_for_post_arm_census=1
 for argument in "$@"; do [[ "$argument" == --shutdown ]] && wait_for_post_arm_census=0; done

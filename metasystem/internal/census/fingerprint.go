@@ -28,7 +28,6 @@ var fingerprintFiles = []string{
 	"scripts/agents/dispatch.sh",
 	"bin/metasystem",
 	"scripts/agents/adapters/runtime-common.sh",
-	"scripts/watch-background-jobs.sh",
 }
 
 // FingerprintFiles returns the fixed supervision inputs the fingerprint

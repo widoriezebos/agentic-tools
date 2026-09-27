@@ -30,5 +30,3 @@ scripts/agents/supervision-go-fixtures.sh	section/supervision-go-fixtures
 scripts/agents/supervision-hook-fixtures.sh	section/supervision-and-census-fixtures
 scripts/agents/telemetry-census-fixtures.sh	section/telemetry-census-fixtures
 scripts/agents/witness-gate-fixtures.sh	section/witness-gate-fixtures
-scripts/watch-background-jobs.sh	section/watch-background-jobs-fixtures
-scripts/watch-background-jobs.sh	section/workflow-tooling-fixtures

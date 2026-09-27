@@ -84,7 +84,7 @@ not paths.
   a second session is armed as a read-only `advisor` without displacing the
   lease holder.
 - **Census** — the periodic scan (the engine's census, run by
-  `scripts/watch-background-jobs.sh --census`; `internal/census`) that classifies every process
+  the supervision watcher and `metasystem internal report watch-jobs --census`; `internal/census`) that classifies every process
   touching the checkout: **ANNOUNCED** (a registered main), **CUSTODY**
   (owned by a tracked job), or **UNTRACKED** (nobody can account for it —
   surfaced, never killed). Each scan ends in a **verdict**: SUCCESS or

@@ -94,6 +94,14 @@ cp_engine() { # source destination
   chmod 0755 "$2"
 }
 
+# The background-job watcher of one installation: its engine's
+# `report watch-jobs`, configured from that installation.
+watch_jobs() { # installation, then the watcher's arguments
+  local installation=$1
+  shift
+  "$installation/bin/metasystem" report watch-jobs --root "$installation" "$@"
+}
+
 # Every hook-side `metasystem up` crosses this fixture-only auditor before the
 # checkout-local engine receives it. This gives the final isolation check the
 # same registry-home and main-identity evidence for direct up calls that the
@@ -1024,7 +1032,6 @@ make_repo() { # destination
   fixture_harness_roots+=("$repo")
   mkdir -p "$repo/scripts"
   cp -R "$source_root/scripts/agents" "$repo/scripts/"
-  cp "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
   mkdir -p "$repo/skills/design-critique"
   cp "$source_root/skills/design-critique/SKILL.md" "$repo/skills/design-critique/"
   cp "$source_root/metasystem.conf" "$repo/metasystem.conf"
@@ -1419,7 +1426,6 @@ nested_installation=$nested_scope/metasystem
 nested_sibling=$nested_scope/development/sub
 mkdir -p "$nested_installation/scripts" "$nested_installation/plans" "$nested_sibling"
 cp -R "$source_root/scripts/agents" "$nested_installation/scripts/"
-cp "$source_root/scripts/watch-background-jobs.sh" "$nested_installation/scripts/"
 mkdir -p "$nested_scope/development"
 : >"$nested_scope/development/metasystem-design.md"
 cp "$source_root/metasystem.conf" "$nested_installation/metasystem.conf"
@@ -2125,7 +2131,7 @@ become_main() { # repository state root, session, optional engine
     --session "$session" --pid $$ --start "$(process_started_at $$)" \
     --tag "fixture-$session" --runtime fake >/dev/null
 }
-watcher="$repo/scripts/watch-background-jobs.sh"
+watcher_repo=$repo
 census_engine="$repo/bin/metasystem"
 process_fixture=$repo/process-fixture.json
 identity_fixture=$repo/process-identities.json
@@ -3297,7 +3303,7 @@ for s45_component in watcher reaper landing-owner; do
       || { echo "S4-5: component $s45_component is missing $s45_key" >&2; exit 1; }
   done
 done
-if "$watcher" --dir "$repo/artifacts/agents/jobs" --scope "$repo" \
+if watch_jobs "$watcher_repo" --dir "$repo/artifacts/agents/jobs" --scope "$repo" \
     --state "$tmp/second-writer.state" --interval 1 --once --census \
     --supervision-dir "$repo/artifacts/agents/supervision" \
     --heartbeat "$tmp/second-writer.heartbeat" --instance-tag second-writer \
@@ -3333,7 +3339,7 @@ cat >"$warning_supervision/state.json" <<'JSON'
 JSON
 METASYSTEM_CENSUS_PROCESS_FILE="$warning_process_fixture" \
 METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$warning_identity_fixture" \
-  "$warning_repo/scripts/watch-background-jobs.sh" \
+  watch_jobs "$warning_repo" \
     --dir "$warning_repo/artifacts/agents/jobs" --scope "$warning_repo" \
     --state "$warning_supervision/jobs.state" --interval 1 --once --census \
     --supervision-dir "$warning_supervision" \
@@ -3355,7 +3361,7 @@ grep -Fq '"pidStartedAt"' "$source_root/internal/dispatch/ownership.go" \
 grep -Fq 'pidStartedAt' "$source_root/docs/orchestration.md" \
   || { echo "S4-1/S4-10: host-turn contract does not document pidStartedAt" >&2; exit 1; }
 for owner_asset in \
-  scripts/agents/dispatch.sh scripts/watch-background-jobs.sh \
+  scripts/agents/dispatch.sh \
   scripts/agents/adapters/runtime-common.sh scripts/agents/supervision-hook.sh \
   scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json \
   scripts/enforcement/devin-hooks.json; do
@@ -3612,11 +3618,6 @@ edit_state_owner "$gate_repo/artifacts/agents/supervision/state.json" \
 [[ "$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")" == "$gate_fingerprint" ]] \
   || { echo "S4-3: supervisor instance identity altered the static fingerprint" >&2; exit 1; }
 cp "$tmp/gate-state.json" "$gate_repo/artifacts/agents/supervision/state.json"
-printf '\n# watcher fingerprint fixture\n' >>"$gate_repo/scripts/watch-background-jobs.sh"
-[[ "$(fixture_arm "$gate_repo" fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
-  || { echo "S4-3: watcher code did not alter the fingerprint" >&2; exit 1; }
-git -C "$gate_repo" show HEAD:scripts/watch-background-jobs.sh >"$gate_repo/scripts/watch-background-jobs.sh"
-chmod +x "$gate_repo/scripts/watch-background-jobs.sh"
 
 # Freshness is one capped window. Inside proceeds; the exact boundary and one
 # second past refuse with age, window, and both remedies. A configured interval
@@ -3821,8 +3822,8 @@ fi
 
 if [[ "$fixture_scenario" == rotation-log ]]; then
 # The armed engine watcher publishes verdicts, not a census.log; the
-# transcript log and its byte-capped rotation belong to the shell job
-# watcher's --census mode, so rotation is proven there, in its own sandbox
+# transcript log and its byte-capped rotation belong to the job watcher's
+# --census mode (report watch-jobs), so rotation is proven there, in its own sandbox
 # (the armed repository's census-writer lock is held by the live watcher).
 rotation_repo=$tmp/rotation-repo
 make_repo "$rotation_repo"
@@ -3839,7 +3840,7 @@ until [[ -f "$rotation_supervision/census.log.1" ]]; do
     || { echo "census log rotation never happened after $rotation_passes passes" >&2; exit 1; }
   METASYSTEM_CENSUS_PROCESS_FILE="$rotation_repo/processes.json" \
   METASYSTEM_CENSUS_INTERVAL_MS=1 \
-    "$rotation_repo/scripts/watch-background-jobs.sh" \
+    watch_jobs "$rotation_repo" \
       --dir "$rotation_repo/artifacts/agents/jobs" --scope "$rotation_repo" \
       --state "$rotation_supervision/jobs.state" --interval 1 --once --census \
       --supervision-dir "$rotation_supervision" \

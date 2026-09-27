@@ -1165,7 +1165,6 @@ bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/devin.sh
 bash -n scripts/agents/hosts/fake.sh
-bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
 bash -n scripts/agents/oldest-bash-gate.sh
@@ -2781,8 +2780,7 @@ receipt_at() { # root, then the verb's action and arguments
 }
 
 knob_fixture="$tmp/conf-consuming-scripts"
-mkdir -p "$knob_fixture/receipt" "$knob_fixture/watch/scripts" "$knob_fixture/watch/jobs" \
-  "$knob_fixture/watch/bin"
+mkdir -p "$knob_fixture/receipt" "$knob_fixture/watch/jobs"
 printf 'retro.max-receipts=0\nretro.max-age-days=30\n' >"$knob_fixture/receipt/metasystem.conf"
 receipt_at "$knob_fixture/receipt" add --type implement --outcome shipped --file "$knob_fixture/receipt/receipts.log" >/dev/null
 if receipt_at "$knob_fixture/receipt" check --file "$knob_fixture/receipt/receipts.log" >/dev/null 2>&1; then
@@ -2794,11 +2792,9 @@ METASYSTEM_RETRO_MAX_RECEIPTS=2 receipt_at "$knob_fixture/receipt" check --file 
 METASYSTEM_RETRO_MAX_RECEIPTS=0 receipt_at "$knob_fixture/receipt" check --max-receipts 2 --file "$knob_fixture/receipt/receipts.log" >/dev/null \
   || { echo "receipt did not prefer the flag over the environment" >&2; exit 1; }
 
-cp scripts/watch-background-jobs.sh "$knob_fixture/watch/scripts/"
-cp bin/metasystem "$knob_fixture/watch/bin/metasystem"
 printf 'watch.stale-min=7\nwatch.cap-min=%s\n' "$fixture_watcher_config_cap_min" >"$knob_fixture/watch/metasystem.conf"
 touch "$knob_fixture/watch/state"
-"$knob_fixture/watch/scripts/watch-background-jobs.sh" --dir "$knob_fixture/watch/jobs" --state "$knob_fixture/watch/state" --once >"$knob_fixture/watch.out"
+"$engine" report watch-jobs --root "$knob_fixture/watch" --dir "$knob_fixture/watch/jobs" --state "$knob_fixture/watch/state" --once >"$knob_fixture/watch.out"
 grep -q "stale=7m cap=${fixture_watcher_config_cap_min}m" "$knob_fixture/watch.out" \
   || { echo "watcher ignored metasystem.conf ceilings" >&2; exit 1; }
 
@@ -2983,7 +2979,9 @@ if (( template_mode )) && section_selected land-fixtures; then
 fi
 
 watch_background_jobs_fixtures_section() {
-# watch-background-jobs: all four reportable states plus baseline suppression.
+# The background-job watcher (report watch-jobs): all four reportable states
+# plus baseline suppression, driven through the engine from this checkout.
+watch_jobs() { "$engine" report watch-jobs --root "$PWD" "$@"; }
 # The state file is pre-created because a MISSING state file auto-baselines on
 # first run (the 2026-08-03 hardening); an existing empty state means armed.
 # Backdate a file's timestamps so stale and cap windows are separable;
@@ -2999,22 +2997,22 @@ wbj="$tmp/wbj"; mkdir -p "$wbj/jobs"
 printf '{"status":"completed"}' >"$wbj/jobs/done.json"
 printf '{"status":"running"}'   >"$wbj/jobs/live.json"
 touch "$wbj/s1" "$wbj/s2" "$wbj/s3" "$wbj/s3b" "$wbj/s3c" "$wbj/s6" "$wbj/s7" "$wbj/s8"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o1" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o1" 2>&1
 grep -q "^DONE done status=completed" "$wbj/o1" || {
   echo "watch-background-jobs: terminal job not reported" >&2; exit 1; }
 grep -q "live" "$wbj/o1" && {
   echo "watch-background-jobs: running job reported as terminal" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o2" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o2" 2>&1
 grep -v "^ARMED " "$wbj/o2" | grep -q . && {
   echo "watch-background-jobs: re-reported an already-reported job" >&2; exit 1; }
 # age the record by a controlled 10 minutes so stale and cap are separable
 age_file "$wbj/jobs/live.json" 600
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s2" --stale-min 5 --cap-min "$fixture_watcher_nonfiring_cap_min" --once >"$wbj/o3" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s2" --stale-min 5 --cap-min "$fixture_watcher_nonfiring_cap_min" --once >"$wbj/o3" 2>&1
 grep -q "^STALE live" "$wbj/o3" || {
   echo "watch-background-jobs: stale job not reported" >&2; exit 1; }
 grep -q "^CAPPED live" "$wbj/o3" && {
   echo "watch-background-jobs: hard cap fired inside its own window" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min "$fixture_watcher_firing_cap_min" --once >"$wbj/o4" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min "$fixture_watcher_firing_cap_min" --once >"$wbj/o4" 2>&1
 grep -q "^CAPPED live" "$wbj/o4" || {
   echo "watch-background-jobs: hard cap not reported" >&2; exit 1; }
 # A non-JSON record keeps the header's mtime-only contract (script-misc-4):
@@ -3025,11 +3023,11 @@ mkdir -p "$wbj/plain/jobs"
 printf 'plain text progress notes\n' >"$wbj/plain/jobs/notes.json"
 age_file "$wbj/plain/jobs/notes.json" 360
 touch "$wbj/s9" "$wbj/s10"
-scripts/watch-background-jobs.sh --dir "$wbj/plain/jobs" --state "$wbj/s9" --start-verify-min 5 --stale-min 20 --once >"$wbj/o9" 2>&1
+watch_jobs --dir "$wbj/plain/jobs" --state "$wbj/s9" --start-verify-min 5 --stale-min 20 --once >"$wbj/o9" 2>&1
 grep -q "NEVER-STARTED" "$wbj/o9" && {
   echo "watch-background-jobs: non-JSON record got a status-based NEVER-STARTED" >&2; exit 1; }
 age_file "$wbj/plain/jobs/notes.json" 1500
-scripts/watch-background-jobs.sh --dir "$wbj/plain/jobs" --state "$wbj/s10" --start-verify-min 5 --stale-min 20 --once >"$wbj/o10" 2>&1
+watch_jobs --dir "$wbj/plain/jobs" --state "$wbj/s10" --start-verify-min 5 --stale-min 20 --once >"$wbj/o10" 2>&1
 grep -q "^STALE notes" "$wbj/o10" || {
   echo "watch-background-jobs: quiet non-JSON record did not report STALE" >&2; exit 1; }
 
@@ -3040,35 +3038,35 @@ mkdir -p "$wbj/live-log/jobs"
 printf '{"status":"running"}' >"$wbj/live-log/jobs/busy.json"
 printf 'building\n' >"$wbj/live-log/jobs/busy.log"
 age_file "$wbj/live-log/jobs/busy.json" 3600
-scripts/watch-background-jobs.sh --dir "$wbj/live-log/jobs" --state "$wbj/s3b" --stale-min 5 --once >"$wbj/o4b" 2>&1
+watch_jobs --dir "$wbj/live-log/jobs" --state "$wbj/s3b" --stale-min 5 --once >"$wbj/o4b" 2>&1
 grep -q "^STALE busy" "$wbj/o4b" && {
   echo "watch-background-jobs: reported STALE for a job whose log is advancing" >&2; exit 1; }
 # ...but when BOTH files go quiet it is genuinely stale and must still report.
 age_file "$wbj/live-log/jobs/busy.log" 3600
-scripts/watch-background-jobs.sh --dir "$wbj/live-log/jobs" --state "$wbj/s3c" --stale-min 5 --once >"$wbj/o4c" 2>&1
+watch_jobs --dir "$wbj/live-log/jobs" --state "$wbj/s3c" --stale-min 5 --once >"$wbj/o4c" 2>&1
 grep -q "^STALE busy" "$wbj/o4c" || {
   echo "watch-background-jobs: missed a genuinely stale job (all files quiet)" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s4" --baseline >/dev/null 2>&1
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s4" --once >"$wbj/o5" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s4" --baseline >/dev/null 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s4" --once >"$wbj/o5" 2>&1
 grep -q "^DONE done" "$wbj/o5" && {
   echo "watch-background-jobs: baseline did not suppress pre-existing jobs" >&2; exit 1; }
-if scripts/watch-background-jobs.sh --state "$wbj/s5" --once >/dev/null 2>&1; then
+if watch_jobs --state "$wbj/s5" --once >/dev/null 2>&1; then
   echo "watch-background-jobs: accepted a call with no --dir" >&2; exit 1
 fi
 # sidecar records must not double-report or bypass scope
 printf '{"status":"completed","workspaceRoot":"/r/other"}' >"$wbj/jobs/side.json"
 printf 'log text, not json\n'                             >"$wbj/jobs/side.log"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s7" --once >"$wbj/o7" 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s7" --once >"$wbj/o7" 2>&1
 grep -q "side" "$wbj/o7" && {
   echo "watch-background-jobs: sidecar record bypassed the scope filter" >&2; exit 1; }
 printf '{"status":"completed","workspaceRoot":"/r/mine"}' >"$wbj/jobs/dual.json"
 printf 'log text, not json\n'                            >"$wbj/jobs/dual.log"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8" --once >"$wbj/o8" 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8" --once >"$wbj/o8" 2>&1
 [ "$(grep -c '^DONE dual' "$wbj/o8")" -eq 1 ] || {
   echo "watch-background-jobs: job with a sidecar did not report exactly once" >&2; exit 1; }
 printf '{"jobId":"chain-r2","parentJob":"chain","round":2,"status":"completed","workspaceRoot":"/r/mine"}' >"$wbj/jobs/chain-r2.json"
 touch "$wbj/s8b"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8b" --once >"$wbj/o8b" 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8b" --once >"$wbj/o8b" 2>&1
 grep -q '^DONE chain-r2 status=completed' "$wbj/o8b" || {
   echo "watch-background-jobs: follow-up child was not tracked under its own id" >&2; exit 1; }
 # scope: own repo and its worktrees in, peer repo and prefix-collision out
@@ -3076,7 +3074,7 @@ printf '{"status":"completed","workspaceRoot":"/r/mine"}'                >"$wbj/
 printf '{"status":"completed","workspaceRoot":"/r/mine/.worktrees/w"}'   >"$wbj/jobs/sc-wt.json"
 printf '{"status":"completed","workspaceRoot":"/r/other"}'               >"$wbj/jobs/sc-peer.json"
 printf '{"status":"completed","workspaceRoot":"/r/mine-other"}'          >"$wbj/jobs/sc-prefix.json"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s6" --once >"$wbj/o6" 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s6" --once >"$wbj/o6" 2>&1
 grep -q "^DONE sc-mine" "$wbj/o6" || {
   echo "watch-background-jobs: in-scope job not reported" >&2; exit 1; }
 grep -q "^DONE sc-wt" "$wbj/o6" || {
@@ -3088,13 +3086,13 @@ grep -q "sc-prefix" "$wbj/o6" && {
 # distinct scopes must not share default state. Auto-baseline swallows the
 # first pass per fresh default state, so warm each scope, then prove each
 # reports a job that arrives after its own arming.
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once >/dev/null 2>&1
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once >/dev/null 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine  --once >/dev/null 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/other --once >/dev/null 2>&1
 printf '{"status":"completed","workspaceRoot":"/r/mine"}'  >"$wbj/jobs/nu-mine.json"
 printf '{"status":"completed","workspaceRoot":"/r/other"}' >"$wbj/jobs/nu-other.json"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once 2>/dev/null | grep -q "^DONE nu-mine" || {
+watch_jobs --dir "$wbj/jobs" --scope /r/mine  --once 2>/dev/null | grep -q "^DONE nu-mine" || {
   echo "watch-background-jobs: post-arming job not reported under its scope's default state" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
+watch_jobs --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
   echo "watch-background-jobs: distinct scopes shared a default state file" >&2; exit 1; }
 }
 if section_selected watch-background-jobs-fixtures; then

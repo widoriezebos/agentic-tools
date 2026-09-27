@@ -792,7 +792,6 @@ func runCensusFreshCommandClockBody(t *testing.T) {
 			"scripts/agents/dispatch.sh",
 			"bin/metasystem",
 			"scripts/agents/adapters/runtime-common.sh",
-			"scripts/watch-background-jobs.sh",
 		} {
 			path := filepath.Join(root, rel)
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

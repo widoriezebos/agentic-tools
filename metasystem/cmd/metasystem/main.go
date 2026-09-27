@@ -389,7 +389,7 @@ func families() []family {
 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
 				{"running-work", "print the turn-end active clause: live jobs, missions, gate runs", runReportRunningWork},
-				{"scan-jobs", "one watcher classification pass over job files", runReportScanJobs},
+				{"watch-jobs", "watch background job records and report every reportable job", runReportWatchJobs},
 				{"frontier", "record, challenge, or show the measured-improvement frontier", runReportFrontier},
 			},
 		},
@@ -756,7 +756,6 @@ func families() []family {
 				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
 				{"watchdog-report", "report a stale census, untracked processes, and dead components", runSuperviseWatchdogReport},
 				{"heartbeat", "atomically write a component heartbeat with its kernel identity", runSuperviseHeartbeat},
-				{"watcher-pass", "run one census pass as a standalone writer under the census lock", runSuperviseWatcherPass},
 			},
 		},
 	}

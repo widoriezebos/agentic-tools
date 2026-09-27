@@ -1181,7 +1181,6 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 		"scripts/agents/dispatch.sh",
 		"scripts/agents/adapters/fake.sh",
 		"scripts/agents/adapters/runtime-common.sh",
-		"scripts/watch-background-jobs.sh",
 	} {
 		copyExecutableFixture(t, filepath.Join(sourceRoot, relative), filepath.Join(root, relative))
 	}

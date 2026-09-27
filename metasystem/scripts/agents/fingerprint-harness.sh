@@ -162,7 +162,6 @@ backdate_census_generation() { # census, generation
 
 mkdir -p "$repo/scripts" "$repo/docs" "$repo/skills/design-critique"
 cp -R "$source_root/scripts/agents" "$repo/scripts/"
-cp "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
 cp "$source_root/docs/project-rules.md" "$repo/docs/"
 cp "$source_root/skills/design-critique/SKILL.md" "$repo/skills/design-critique/"
 cp "$source_root/metasystem.conf" "$repo/"
