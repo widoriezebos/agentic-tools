@@ -117,6 +117,9 @@ func TestIntentPublicCoverage(t *testing.T) {
 		if !slices.Equal(hidden, hiddenPairs) {
 			t.Errorf("hidden entries = %v, want %v", hidden, hiddenPairs)
 		}
+		if !slices.Equal(intentObjects(), revisionSevenObjects) {
+			t.Errorf("objects = %v, want revision 7's %v", intentObjects(), revisionSevenObjects)
+		}
 		for _, object := range intentObjects() {
 			if len(objectActions(object)) == 0 {
 				t.Errorf("object %s has no public action", object)
