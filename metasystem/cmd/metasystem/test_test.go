@@ -1579,8 +1579,7 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	// materialized checkout; with no stamp it judges the stamp the installed
 	// candidate engine reports, as the dispatch that engine runs would.
 	reportedStamp := func(engine, root string) string {
-		command := exec.Command(engine, "supervise", "status", "--repo", root)
-		command.Env = testingEnvironment(os.Environ())
+		command := (proofBinaryFixture{t: t}).command(testingEnvironment(os.Environ()), engine, "supervise", "status", "--repo", root)
 		output, err := command.Output()
 		if err != nil {
 			t.Fatalf("installed candidate engine did not report its build: %v", err)
