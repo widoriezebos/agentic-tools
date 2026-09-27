@@ -141,6 +141,7 @@ type fakeOps struct {
 	engineBehind   func() (bool, error)
 	unmigratable   func() ([]string, error)
 	rebuild        func() error
+	tokenHex       func() (string, error)
 
 	identityRuntime string
 	identityPid     int
@@ -515,7 +516,12 @@ func (f *fakeOps) EvidenceGC(installation string, output io.Writer) int {
 
 func (f *fakeOps) Slug(value string) string { return strings.ToLower(value) }
 
-func (f *fakeOps) TokenHex(int) (string, error) { return strings.Repeat("ab", 16), nil }
+func (f *fakeOps) TokenHex(int) (string, error) {
+	if f.tokenHex != nil {
+		return f.tokenHex()
+	}
+	return strings.Repeat("ab", 16), nil
+}
 
 func (f *fakeOps) Git(args ...string) (string, error) {
 	f.record("git %s", strings.Join(args, " "))
