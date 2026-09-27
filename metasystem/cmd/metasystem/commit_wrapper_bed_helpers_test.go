@@ -125,14 +125,21 @@ func wrapperBedShellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
-// wrapperBedEngine runs one verb on the real engine.
+// wrapperBedEngine runs one verb on the real engine and returns its standard
+// output alone: a coverage-instrumented test binary acting as the engine
+// writes a GOCOVERDIR warning to standard error, which is not the verb's answer.
 func wrapperBedEngine(t *testing.T, env []string, args ...string) string {
 	t.Helper()
-	output, err := wrapperBedRun(env, wrapperBedDir(t), []string{"GO_WANT_BATCH_E2E_COMMAND=1"}, commandTestExecutable(t), args...)
+	command := exec.Command(commandTestExecutable(t), args...)
+	command.Dir = wrapperBedDir(t)
+	command.Env = append(append([]string{}, env...), "GO_WANT_BATCH_E2E_COMMAND=1")
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		t.Fatalf("engine %s: %v\n%s", strings.Join(args, " "), err, output)
+		t.Fatalf("engine %s: %v\n%s%s", strings.Join(args, " "), err, output, stderr.String())
 	}
-	return strings.TrimSpace(output)
+	return strings.TrimSpace(string(output))
 }
 
 // wrapperBedGoGateCopying is a stub static gate (the fixture devgate's
