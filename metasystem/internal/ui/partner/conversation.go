@@ -685,6 +685,17 @@ const maxLineBytes = 8 * maxMessageBytes
 
 // Append writes one message and keeps it.
 func (c *Conversation) Append(message Message) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.appendHeld(message)
+}
+
+// appendHeld is Append with this conversation's own lock already held.
+//
+// It is apart for the one caller that has to decide WHICH conversation it is
+// writing into while holding that lock: a turn's answer, whose conversation a
+// first sign-in can move out from under it (Service.appendAnswer).
+func (c *Conversation) appendHeld(message Message) error {
 	if len(message.Text) > maxMessageBytes {
 		message.Text = message.Text[:maxMessageBytes] + "\n\n[the rest of this answer was longer than the transcript keeps]"
 	}
@@ -692,8 +703,6 @@ func (c *Conversation) Append(message Message) error {
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	file, err := os.OpenFile(c.transcript, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("the Partner's transcript could not be written: %w", err)
@@ -1042,11 +1051,24 @@ func (c *Conversation) writeState(now time.Time) error {
 	c.mu.Lock()
 	held := stateFile{Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)}
 	c.mu.Unlock()
+	return publishState(c.state, held)
+}
+
+// writeStateHeld is writeState with this conversation's own lock already held,
+// for the sitting's move to a name at the first sign-in (Service.Adopt), which
+// holds both conversations while it moves them.
+func (c *Conversation) writeStateHeld(now time.Time) error {
+	return publishState(c.state, stateFile{
+		Session: c.session, Sitting: c.sitting, UpdatedAt: now.UTC().Format(time.RFC3339)})
+}
+
+// publishState writes one state file, whole.
+func publishState(path string, held stateFile) error {
 	body, err := json.Marshal(held)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(c.state, append(body, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(path, append(body, '\n'), 0o600); err != nil {
 		return fmt.Errorf("the Partner's conversation state could not be written: %w", err)
 	}
 	return nil
