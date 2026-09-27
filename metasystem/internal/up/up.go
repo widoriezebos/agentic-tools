@@ -48,6 +48,12 @@ type Options struct {
 	// runtime-signature ancestry when no --pid/--start-time pair is given;
 	// nil means the census's production ancestry walk.
 	FindSessionAncestor func(metasystemRoot string, pid int64, runtime string) (census.AgentAncestor, error)
+	// ReArmRebuiltEngine, EnsureArmed and EnsureStewardRunner replace the
+	// steward re-arm, supervision arming and steward-runner owners for one
+	// call. Production leaves them nil and uses the owners directly.
+	ReArmRebuiltEngine  func(repoRoot, installationRoot, invokingBinary string) (steward.ReArmOutcome, error)
+	EnsureArmed         func(supervise.EnsureOptions) (supervise.EnsureResult, error)
+	EnsureStewardRunner func(repoRoot string, enrolled *steward.EnrolledBinary, scaleMilli int) (steward.EnsureRunnerResult, error)
 }
 
 // StopCapabilityRestampResult reports the accepted claim inspected during
@@ -461,7 +467,11 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 	defer claim.Close()
 	armingOptions.FenceGeneration = fence.Generation
 	armingOptions.Command = enrolledCommand(enrolled)
-	result, err := supervise.EnsureArmed(armingOptions)
+	ensureArmed := supervise.EnsureArmed
+	if options.EnsureArmed != nil {
+		ensureArmed = options.EnsureArmed
+	}
+	result, err := ensureArmed(armingOptions)
 	if err != nil {
 		if errors.Is(err, steward.ErrEnrollmentDrift) {
 			drift := enrollmentDrift(components, fmt.Errorf("supervision-owner launch: %w", err), installationRoot(options), options.Root)
@@ -525,7 +535,11 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 }
 
 func ensureStewardRunner(options Options, enrolled *steward.EnrolledBinary, components []ComponentOutcome) ([]ComponentOutcome, *Result) {
-	result, err := stewardEnsureRunner(options.Root, enrolled, options.WaitScaleMilli)
+	ensureRunner := stewardEnsureRunner
+	if options.EnsureStewardRunner != nil {
+		ensureRunner = options.EnsureStewardRunner
+	}
+	result, err := ensureRunner(options.Root, enrolled, options.WaitScaleMilli)
 	if err != nil {
 		if errors.Is(err, steward.ErrEnrollmentDrift) {
 			drift := enrollmentDrift(components, fmt.Errorf("steward-runner launch: %w", err), installationRoot(options), options.Root)
@@ -600,7 +614,11 @@ func openInvokingEnrollment(options Options, allowReArm bool) (*steward.Enrolled
 	var rearmed steward.ReArmOutcome
 	enrolled, err := steward.OpenEnrolledBinary(options.Root)
 	if allowReArm && errors.Is(err, steward.ErrEngineRebuilt) {
-		rearmed, err = steward.ReArmRebuiltEngine(options.Root, installationRoot(options), options.Binary)
+		reArm := steward.ReArmRebuiltEngine
+		if options.ReArmRebuiltEngine != nil {
+			reArm = options.ReArmRebuiltEngine
+		}
+		rearmed, err = reArm(options.Root, installationRoot(options), options.Binary)
 		if err == nil {
 			enrolled, err = steward.OpenEnrolledBinary(options.Root)
 		}
@@ -878,34 +896,45 @@ func clearInheritedExecutionID() {
 	_ = os.Unsetenv("METASYSTEM_EXECUTION_ID")
 }
 
+// closedFenceResult is the standing answer of a checkout whose process
+// creation fence is closed, or false when arming may proceed.
+func closedFenceResult(options Options) (Result, bool) {
+	closed, record, err := stopfence.Closed(options.Root)
+	if err != nil {
+		return failure(nil, "stopped", err, "repair the stop fence before starting the metasystem"), true
+	}
+	if !closed {
+		return Result{}, false
+	}
+	detail := "since " + record.ChangedAt
+	if !stopfence.Completed(record) {
+		detail, err = stopfence.ClosedDescription(record, options.Scope)
+		if err != nil {
+			return failure(nil, "stopped", err, "repair the stop fence before starting the metasystem"), true
+		}
+	}
+	remedy, renderErr := stopfence.ClosedCommand(record, options.Scope)
+	if renderErr != nil {
+		return failure(nil, "stopped", renderErr, "repair the stop fence before starting the metasystem"), true
+	}
+	return Result{
+		Components: []ComponentOutcome{{
+			Component: "stopped", Outcome: "standing",
+			Detail: detail,
+		}},
+		Outcome: "stopped",
+		Remedy:  remedy,
+	}, true
+}
+
 // Run performs ordinary session arming or the restricted recovery-only path.
 func Run(options Options) Result {
 	clearInheritedExecutionID()
 	if err := preflightCommands(); err != nil {
 		return failure(nil, "host-preflight", err, "install the named commands and rerun metasystem session start")
 	}
-	if closed, record, err := stopfence.Closed(options.Root); err != nil {
-		return failure(nil, "stopped", err, "repair the stop fence before starting the metasystem")
-	} else if closed {
-		detail := "since " + record.ChangedAt
-		if !stopfence.Completed(record) {
-			detail, err = stopfence.ClosedDescription(record, options.Scope)
-			if err != nil {
-				return failure(nil, "stopped", err, "repair the stop fence before starting the metasystem")
-			}
-		}
-		remedy, renderErr := stopfence.ClosedCommand(record, options.Scope)
-		if renderErr != nil {
-			return failure(nil, "stopped", renderErr, "repair the stop fence before starting the metasystem")
-		}
-		return Result{
-			Components: []ComponentOutcome{{
-				Component: "stopped", Outcome: "standing",
-				Detail: detail,
-			}},
-			Outcome: "stopped",
-			Remedy:  remedy,
-		}
+	if result, closed := closedFenceResult(options); closed {
+		return result
 	}
 	if options.RecoverOnly {
 		return recovery(options)
