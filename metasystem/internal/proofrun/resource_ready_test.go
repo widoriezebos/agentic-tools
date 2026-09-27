@@ -116,3 +116,35 @@ func TestCustodyBarrierWaitFailsWhenTheCommandEnds(t *testing.T) {
 		t.Fatalf("barrier wait after the command ended = %q", tb.fatal)
 	}
 }
+
+// A pid barrier is complete only when its line is: the writer creates the
+// file before it writes the pid, so an existing empty file is still waited
+// for. The command has ended here, so an incomplete record fails.
+func TestCustodyPidBarrierWaitsForTheCompleteLine(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "worker.pid")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stopped, cancel := context.WithCancel(context.Background())
+	cancel()
+	tb := &recordingTB{TB: t, live: 3, stopped: stopped}
+	ended := make(chan struct{})
+	close(ended)
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		waitCustodyBarrier(tb, path, 0, ended, func() error { return errors.New("worker exited") },
+			func() bool { return completeCustodyRecord(path) })
+	}()
+	<-finished
+	if !strings.Contains(tb.fatal, "command ended before custody barrier worker.pid appeared") {
+		t.Fatalf("empty pid record = %q", tb.fatal)
+	}
+	if err := os.WriteFile(path, []byte("4242\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !completeCustodyRecord(path) {
+		t.Fatal("a complete pid line was not accepted")
+	}
+}

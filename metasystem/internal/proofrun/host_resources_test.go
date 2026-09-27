@@ -695,9 +695,7 @@ func TestHostResourceSubprocess(t *testing.T) {
 			t.Fatal(err)
 		}
 		closeInherited()
-		if err := os.WriteFile(middlePID, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		publishCustodyFile(t, middlePID, strconv.Itoa(os.Getpid()))
 		for {
 			time.Sleep(time.Second)
 		}

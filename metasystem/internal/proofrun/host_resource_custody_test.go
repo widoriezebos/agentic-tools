@@ -218,6 +218,35 @@ func waitCustodyFile(t *testing.T, path string, bound time.Duration) {
 // hangs the test instead of reporting endedErr.
 func waitCustodyFileWhile(t testing.TB, path string, bound time.Duration, ended <-chan struct{}, endedErr func() error) {
 	t.Helper()
+	waitCustodyBarrier(t, path, bound, ended, endedErr, func() bool {
+		_, err := os.Stat(path)
+		return err == nil
+	})
+}
+
+// publishCustodyFile makes a Go helper's barrier file appear complete: a
+// reader that waits for the path never sees it created but not yet written.
+func publishCustodyFile(t testing.TB, path, data string) {
+	t.Helper()
+	temporary := path + ".writing"
+	if err := os.WriteFile(temporary, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// completeCustodyRecord is a pid barrier's completion fact. Its writers (a
+// shell echo, or the Go helpers) create the file and then write one
+// newline-terminated line, so existence alone can expose an empty file.
+func completeCustodyRecord(path string) bool {
+	data, err := os.ReadFile(path)
+	return err == nil && strings.HasSuffix(string(data), "\n")
+}
+
+func waitCustodyBarrier(t testing.TB, path string, bound time.Duration, ended <-chan struct{}, endedErr func() error, exists func() bool) {
+	t.Helper()
 	poll := time.NewTicker(20 * time.Millisecond)
 	defer poll.Stop()
 	var deadline <-chan time.Time
@@ -226,10 +255,6 @@ func waitCustodyFileWhile(t testing.TB, path string, bound time.Duration, ended 
 		timer = time.NewTimer(bound)
 		deadline = timer.C
 		defer timer.Stop()
-	}
-	exists := func() bool {
-		_, err := os.Stat(path)
-		return err == nil
 	}
 	for {
 		if exists() {
@@ -258,7 +283,7 @@ func waitCustodyFileWhile(t testing.TB, path string, bound time.Duration, ended 
 
 func waitCustodyRef(t *testing.T, prober identity.Prober, path string, bound time.Duration) identity.Ref {
 	t.Helper()
-	waitCustodyFile(t, path, bound)
+	waitCustodyBarrier(t, path, bound, nil, nil, func() bool { return completeCustodyRecord(path) })
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
