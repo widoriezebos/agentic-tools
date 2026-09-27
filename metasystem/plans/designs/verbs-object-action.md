@@ -400,6 +400,55 @@ each); otherwise the nearest current object or action by spelling. U1d deletes
 U1a's removed-spelling table and its tests and adds tests for these two
 suggestion rules.
 
+### 3.5 Agent adapters: built-ins in Go, an external contract for new agents (revision 8)
+
+Wido, 2026-09-27: moving the adapters to Go is fine, "but we do not want to lose
+extensibility": supporting an agent the metasystem does not ship must stay
+possible without changing Go. Today that works by adding
+`scripts/agents/adapters/<name>.sh` (discovery enumerates the directory,
+`internal/lease/classify.go:257`). U6a keeps that possibility as a contract.
+
+Two layers, split along what the scripts already do:
+
+- **Shared runtime layer, Go (metasystem behavior).** Everything
+  `adapters/runtime-common.sh` does today: supervision preparation, launch
+  capability and custody registration, workspace-scope and reference checks,
+  handshake recording, deadlines and kill domains, waiting on the CLI child,
+  return normalization and turn adjudication, result settling, record patches
+  and protocol errors. It lives with the `delegate-supervisor` entry (3.2) and
+  is identical for every runtime.
+- **Runtime layer, per agent.** The operations the per-runtime scripts provide
+  today (`claude.sh:204-246`): `probe` (is the runtime installed, its version),
+  `identity` and `signature` (how to recognize its processes; census, lease
+  classification and janitor shapes read these), `config-identity`,
+  `local-config-paths` and `enforcement-map` (sandbox and settings the launch
+  must write), `contract` (capabilities: resume, follow-up, usage reporting,
+  wait delivery), `command` (the argv, environment and stdin that start one
+  turn of a job), `output-stream` (turn the CLI's output into the events the
+  shared layer consumes: session and turn handshake, effective model, result
+  candidate, usage, protocol violation), `cancel` (a runtime-specific
+  cancellation beyond killing the process group, if any) and `wait-delivery`
+  (optional, where the contract declares it).
+
+Built-in runtimes (claude, codex, devin, fake) implement the runtime layer in
+Go. **External runtimes** implement the same operations as an executable at
+`<installation>/adapters/<name>` (any language; a script is an extension point
+under rule S1): invoked as `<executable> OPERATION`, request as JSON on stdin,
+response as JSON on stdout, exit 0 on success; `output-stream` reads the CLI's
+output on stdin and writes one JSON event per line. The runtime registry is the
+built-ins plus the executables found in that directory (a built-in name cannot
+be shadowed); census, lease classification and janitor recognizers take
+signatures from the registry, so an external runtime's processes are
+recognized like a built-in's. `delegate-supervisor` runs built-in and external
+runtimes through one Go interface, so supervision, deadlines, custody and
+records are the same for both.
+
+The operation schemas are versioned (`schemaVersion`), documented in
+`docs/agent-adapters.md`, and pinned by a conformance test that drives the
+fake runtime twice, once as a built-in and once as an external executable
+(a Go test helper that speaks the contract), and requires identical records and
+outcomes. U6a builds the contract; a real third-party runtime is not in scope.
+
 ## 4. Rules and their witnesses
 
 Witness tests land in U0 with today's counts as ceilings and tighten in every
@@ -418,6 +467,7 @@ later unit (a ratchet: numbers, not lists, except where a list is the rule).
 | R9 | Orchestration sits above owners (6.3). | `go list -deps` test: no package under `internal/` that is an owner imports an orchestration package. |
 | R10 | Hard cutover per slice. | R1-R9 green at every landing. |
 | R11 | No metasystem scripts outside declared extension points; nothing in `metasystem/` depends on `environment/vms` (3.3). | Static test over `git ls-files` under `metasystem/`: extension-point allowlist by directory, zero other `*.sh`/`*.bash`, zero references to `environment/vms`. |
+| R13 | A new agent needs no Go change (3.5). | Conformance test: the fake runtime as a built-in and as an external executable produce identical records and outcomes; the registry lists an external executable and recognizers classify its processes. |
 | R12 | Every public action states an intent (3.4, G7). | Router test pins the revision 7 table; removed U1a spellings refuse with their successor. |
 
 ## 5. Units
