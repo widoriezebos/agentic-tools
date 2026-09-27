@@ -8,9 +8,10 @@
 // answer an operation with exit 64 to hand it back to the built-in.
 //
 // The package is a leaf over the runtime declarations so the process
-// recognizers (census, lease classification, human authority) discover
-// external runtimes and read their signatures without importing the
-// supervisor.
+// recognizers can discover external runtimes without importing the
+// supervisor. Until unit U6c adds the registry cross-check they only
+// discover and report them: describe is never executed for a recognizer,
+// and a refused executable is absent, never an error.
 package external
 
 import (

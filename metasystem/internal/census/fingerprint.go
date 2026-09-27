@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -69,53 +68,41 @@ func compileText(runtime, text string) (Signature, string, error) {
 	return sig, text, nil
 }
 
-// RuntimeSignatureAt compiles one runtime's signature for an installation:
-// an external adapter's (design 3.5) from its signature operation, an
-// overriding executable's unless it delegates the operation (exit 64), and
-// otherwise the built-in's.
+// RuntimeSignatureAt is a runtime's recognizer signature for an
+// installation root. Until the registry cross-check of unit U6c exists, the
+// recognizers are built-ins only: an external adapter is discovered and
+// reported (ExternalAdapters), never executed for its describe, and never
+// classifies a process; an override leaves its built-in's signature in
+// force. The root parameter keeps the U6c shape.
 func RuntimeSignatureAt(root, runtime string) (Signature, string, error) {
-	if root != "" {
-		adapter, found, err := external.Lookup(root, runtime)
-		if err != nil {
-			return Signature{}, "", err
-		}
-		if found {
-			text, err := adapter.SignatureText()
-			switch {
-			case err == nil:
-				if adapter.Overrides {
-					text = withReservedExclusions(runtime, text)
-				}
-				return compileText(runtime, text)
-			case !errors.Is(err, external.ErrDelegated) || !adapter.Overrides:
-				return Signature{}, "", err
-			}
-		}
-	}
 	return RuntimeSignature(runtime)
 }
 
-// withReservedExclusions is VOA-31's one effective declaration per runtime
-// name: an override's signature is its own, but the built-in's exclusions
-// (the helpers its retained fallback operations depend on, such as Devin's
-// `devin acp` intermediary) always remain part of it.
-func withReservedExclusions(runtime, text string) string {
-	builtin, err := runtimes.SignatureText(runtime)
+// externalName reports whether a runtime name is an external adapter the
+// root declares or refused: absent to the recognizers until U6c.
+func externalName(root, runtime string) bool {
+	adapters, refusals, err := external.Discover(root)
 	if err != nil {
-		return text
+		return false
 	}
-	present := map[string]bool{}
-	for _, line := range strings.Split(text, "\n") {
-		present[strings.TrimSpace(line)] = true
-	}
-	for _, line := range strings.Split(builtin, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "exclude ") && !present[line] {
-			text = strings.TrimRight(text, "\n") + "\n" + line + "\n"
-			present[line] = true
+	for _, adapter := range adapters {
+		if adapter.Name == runtime {
+			return true
 		}
 	}
-	return text
+	for _, refusal := range refusals {
+		if refusal.Name == runtime {
+			return true
+		}
+	}
+	return false
+}
+
+// ExternalAdapters reports the external adapters an installation declares
+// and the executables it refused, without executing any of them. A refused
+// executable is absent to the recognizers, never an error for them.
+func ExternalAdapters(root string) ([]external.Adapter, []external.Refusal, error) {
+	return external.Discover(root)
 }
 
 // FixtureSignatureRuntimesEnv narrows the adapter signature universe in a
@@ -137,25 +124,17 @@ func AllAdapterSignatures() ([]Signature, error) {
 }
 
 // InstalledAdapterSignatures is AllAdapterSignatures for an installation
-// root: the built-ins (an override's signature where one answers) plus every
-// external adapter discovered in the root's adapters directory, honoring
-// FixtureSignatureRuntimesEnv in a fixture-mode root. It also returns the
+// root: the built-ins (external adapters join at U6c), narrowed in a
+// fixture-mode root to its configured runtimes and FixtureSignatureRuntimesEnv. It also returns the
 // runtime names and each signature text in the same order.
 func InstalledAdapterSignatures(root string) ([]Signature, []string, []string, error) {
 	return installedAdapterSignatures(root, os.Getenv)
 }
 
 func installedAdapterSignatures(root string, getenv func(string) string) ([]Signature, []string, []string, error) {
+	// Built-ins only until U6c (see RuntimeSignatureAt): discovered external
+	// adapters are not part of the recognizer universe.
 	names := runtimes.WithAdapter()
-	adapters, _, err := external.Discover(root)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	for _, adapter := range adapters {
-		if !adapter.Overrides {
-			names = append(names, adapter.Name)
-		}
-	}
 	if fixtureauth.FixtureModeRoot(root) {
 		// A fixture-mode root (metasystem.runtimes=fake) classifies against
 		// its configured runtimes only: a test or bed runs under whatever
@@ -166,6 +145,7 @@ func installedAdapterSignatures(root string, getenv func(string) string) ([]Sign
 		if narrowed := getenv(FixtureSignatureRuntimesEnv); narrowed != "" {
 			names = strings.Fields(strings.ReplaceAll(narrowed, ",", " "))
 		}
+		names = builtinsOnly(names)
 	}
 	sort.Strings(names)
 	var sigs []Signature
@@ -179,6 +159,17 @@ func installedAdapterSignatures(root string, getenv func(string) string) ([]Sign
 		texts = append(texts, text)
 	}
 	return sigs, names, texts, nil
+}
+
+// builtinsOnly keeps the names of built-in runtimes with an adapter.
+func builtinsOnly(names []string) []string {
+	var kept []string
+	for _, name := range names {
+		if declaration, ok := runtimes.Lookup(name); ok && declaration.HasAdapter {
+			kept = append(kept, name)
+		}
+	}
+	return kept
 }
 
 func adapterSignatures(names []string) ([]Signature, []string, error) {

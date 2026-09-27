@@ -46,59 +46,80 @@ func TestInstalledAdapterSignaturesNarrowOnlyInFixtureMode(t *testing.T) {
 	}
 }
 
-// TestInstalledSignaturesIncludeANamedExternalRuntime: the census and lease
-// classification recognize an external runtime's processes through its
-// describe (design 3.5), without a Go change.
-func TestInstalledSignaturesIncludeANamedExternalRuntime(t *testing.T) {
+// TestExternalAdaptersNeverClassifyBeforeU6c: until the registry
+// cross-check of U6c exists, the recognizers are built-ins only. A named
+// external runtime is discovered and reported but its describe is never
+// executed and it classifies nothing; an override leaves the built-in's
+// signature (with devin acp excluded) in force.
+func TestExternalAdaptersNeverClassifyBeforeU6c(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	adapter := filepath.Join(root, "adapters", "newagent")
-	if err := os.MkdirAll(filepath.Dir(adapter), 0o755); err != nil {
+	marker := filepath.Join(root, "describe-ran")
+	script := "#!/bin/sh\n: >'" + marker + "'\nprintf '{\"schemaVersion\":1,\"match\":[\".*\"]}\\n'\n"
+	for _, name := range []string{"newagent", "devin"} {
+		path := filepath.Join(root, "adapters", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.newagent.use=external\nadapters.devin.use=external\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '{\"schemaVersion\":1,\"match\":[\"^([^[:space:]]*/)?newagent([[:space:]]|$)\"]}\\n'\n"
-	if err := testexec.WriteFile(adapter, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.newagent.use=external\n"), 0o644); err != nil {
-		t.Fatal(err)
+	adapters, _, err := ExternalAdapters(root)
+	if err != nil || len(adapters) != 2 {
+		t.Fatalf("discovery = %v, %v", adapters, err)
 	}
 	sigs, names, _, err := InstalledAdapterSignatures(root)
-	if err != nil || len(names) != 5 {
+	if err != nil || len(names) != 4 {
 		t.Fatalf("names = %v, %v", names, err)
 	}
-	if Runtime("/usr/local/bin/newagent --task x", sigs) != "newagent" {
-		t.Fatal("the external runtime's process was not recognized")
+	if got := Runtime("/usr/local/bin/newagent --task x", sigs); got != "" {
+		t.Fatalf("an external runtime classified a process as %q", got)
+	}
+	if got := Runtime("/usr/local/bin/devin acp", sigs); got != "" {
+		t.Fatalf("the devin override replaced the built-in's signature (classified %q)", got)
+	}
+	if Runtime("/usr/local/bin/devin -p task", sigs) != "devin" {
+		t.Fatal("the built-in devin signature is not in force")
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a recognizer executed an external adapter's describe")
 	}
 }
 
-// TestOverrideKeepsTheBuiltInsReservedExclusions: VOA-31, one effective
-// declaration per runtime name. An override of Devin whose describe drops the
-// `devin acp` exclusion still does not classify that host helper as a
-// delegate, while its own match still classifies the CLI.
-func TestOverrideKeepsTheBuiltInsReservedExclusions(t *testing.T) {
+// TestRefusedExternalIsAbsentToRecognizers: an executable the registry
+// refuses (unnamed in the configuration, or group-writable) and a configured
+// external runtime name never error the recognizers.
+func TestRefusedExternalIsAbsentToRecognizers(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	adapter := filepath.Join(root, "adapters", "devin")
-	if err := os.MkdirAll(filepath.Dir(adapter), 0o755); err != nil {
+	for name, mode := range map[string]os.FileMode{"unnamed": 0o755, "loose": 0o775} {
+		path := filepath.Join(root, "adapters", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := testexec.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,loose\nadapters.loose.use=external\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '{\"schemaVersion\":1,\"match\":[\"^([^[:space:]]*/)?devin([[:space:]]|$)\"]}\\n'\n"
-	if err := testexec.WriteFile(adapter, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
+	_, refusals, err := ExternalAdapters(root)
+	if err != nil || len(refusals) != 2 {
+		t.Fatalf("refusals = %v, %v", refusals, err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.devin.use=external\n"), 0o644); err != nil {
-		t.Fatal(err)
+	if _, names, _, err := InstalledAdapterSignatures(root); err != nil || len(names) != 4 {
+		t.Fatalf("installed = %v, %v", names, err)
 	}
-	sig, text, err := RuntimeSignatureAt(root, "devin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	sigs := []Signature{sig}
-	if Runtime("/usr/local/bin/devin -p task", sigs) != "devin" {
-		t.Fatalf("the override's match does not classify the CLI:\n%s", text)
-	}
-	if got := Runtime("/usr/local/bin/devin acp", sigs); got != "" {
-		t.Fatalf("the override dropped the built-in's devin acp exclusion (classified %q):\n%s", got, text)
+	sigs, err := configuredSignatures(root)
+	if err != nil || len(sigs) != 1 {
+		t.Fatalf("configured = %d signatures, %v", len(sigs), err)
 	}
 }

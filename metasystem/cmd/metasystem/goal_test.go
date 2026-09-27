@@ -6,14 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
@@ -77,33 +75,40 @@ func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
 // adoption-shaped, and is refused every holder-only verb; the human
 // passes both.
 
-// delegateRoot builds a root whose adapter signatures match this test
-// process's own command, so classifying a child of ours there reads
-// DELEGATE (the lease package's own fixture pattern).
+// delegateRoot builds a fixture-mode root (metasystem.runtimes=fake), whose
+// recognizers classify against the built-in fake runtime's signature only;
+// agentChildPid is a process that signature matches.
 func delegateRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	command, ok := lease.ProcessCommand(int64(os.Getpid()), nil)
-	if !ok {
-		t.Skip("cannot read our own command to build a matching signature")
-	}
-	// An external adapter named in the configuration (design 3.5) whose
-	// describe matches our own command: the registry the lease reads
-	// includes it.
-	adapterDir := filepath.Join(root, "adapters")
-	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	pattern, _ := json.Marshal(regexp.QuoteMeta(command))
-	describe := `{"schemaVersion":1,"match":[` + string(pattern) + `]}`
-	script := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '%s\\n' '" + strings.ReplaceAll(describe, "'", `'\''`) + "'\n"
-	if err := testexec.WriteFile(filepath.Join(adapterDir, "testagent"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.testagent.use=external\n"), 0o644); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return root
+}
+
+// agentChildPid spawns a grandchild of ours whose parent's command the fake
+// runtime's built-in signature matches (argv0 metasystem-fake-agent), so
+// classifying it in a delegateRoot reads DELEGATE: the ancestry walk starts
+// at the caller's parent.
+func agentChildPid(t *testing.T) int64 {
+	t.Helper()
+	pidFile := filepath.Join(t.TempDir(), "agent-child.pid")
+	// The inner shell is a child, not an exec: the trailing `:` keeps the
+	// outer one alive as its parent.
+	inner := "printf '%s' \\$\\$ >'" + pidFile + "'; printf x >&3; IFS= read -r _ || :"
+	command := exec.Command("/bin/sh", "-c", "/bin/sh -c \""+inner+"\"; :")
+	command.Args[0] = "metasystem-fake-agent"
+	testutil.StartHeldProcess(t, command)
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pid
 }
 
 // childPid spawns a child whose parent is this process, so its ancestry
@@ -146,7 +151,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 	t.Run("delegate reconcile on an adoption-shaped root is genesis-admitted", func(t *testing.T) {
 		root := delegateRoot(t)
 		writeLedger(t, root, goalFree)
-		caller, err := goalCaller(root, childPid(t), "reconcile")
+		caller, err := goalCaller(root, agentChildPid(t), "reconcile")
 		if err != nil {
 			t.Fatalf("adoption-shaped genesis must admit a delegate: %v", err)
 		}
@@ -158,7 +163,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 	t.Run("delegate reconcile on a goal-bearing root is refused", func(t *testing.T) {
 		root := delegateRoot(t)
 		writeLedger(t, root, withGoals)
-		if _, err := goalCaller(root, childPid(t), "reconcile"); err == nil ||
+		if _, err := goalCaller(root, agentChildPid(t), "reconcile"); err == nil ||
 			!strings.Contains(err.Error(), "genesis admits a non-holder") {
 			t.Fatalf("a goal-bearing ledger must refuse a delegate genesis: %v", err)
 		}
@@ -166,7 +171,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 
 	t.Run("delegate open is holder-only refused", func(t *testing.T) {
 		root := delegateRoot(t)
-		if _, err := goalCaller(root, childPid(t), "open"); err == nil ||
+		if _, err := goalCaller(root, agentChildPid(t), "open"); err == nil ||
 			!strings.Contains(err.Error(), "lease holder") {
 			t.Fatalf("open must stay holder-only for a delegate: %v", err)
 		}
@@ -208,7 +213,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 		root := delegateRoot(t)
 		writeLedger(t, root, goalFree)
 		t.Setenv("PATH", t.TempDir())
-		_, err := goalCaller(root, childPid(t), "reconcile")
+		_, err := goalCaller(root, agentChildPid(t), "reconcile")
 		if err == nil || !strings.Contains(err.Error(), "adoption-shape probe failed") {
 			t.Fatalf("a delegate refused on a broken probe must see the probe error: %v", err)
 		}
@@ -220,7 +225,7 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "plans", "goals-accepted.json"), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := goalCaller(root, childPid(t), "reconcile"); err == nil ||
+		if _, err := goalCaller(root, agentChildPid(t), "reconcile"); err == nil ||
 			!strings.Contains(err.Error(), "lease holder") {
 			t.Fatalf("an initialized root must be holder-only even for reconcile: %v", err)
 		}
