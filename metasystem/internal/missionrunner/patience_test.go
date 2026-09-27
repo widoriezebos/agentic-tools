@@ -119,6 +119,8 @@ func TestPatienceStartedPredicate(t *testing.T) {
 			"error": "handshake_missing_session_id"}, false},
 		{"failed permissions mismatch", map[string]any{"status": "failed",
 			"error": "permissions_mismatch:network"}, false},
+		{"failed unreadable envelope", map[string]any{"status": "failed",
+			"error": "permissions_check_unreadable"}, false},
 		{"post-run mismatch with spend", map[string]any{"status": "failed",
 			"error": "handshake_missing_session_id",
 			"usage": map[string]any{"outputTokens": float64(12)}}, true},

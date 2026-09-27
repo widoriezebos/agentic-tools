@@ -222,7 +222,8 @@ func probeFakeEnvelopeMechanism(d Deps) error {
 // seconds scaled by the fixture cap scale like every other fixture ceiling
 // (a fixed two-second default is a red gate on a busy machine): the suite's
 // exported METASYSTEM_FIXTURE_CAP_SCALE_MILLI, else the calibration floor
-// 8000 (main's fake.sh after U3 cut it loose from fixture-budget.sh).
+// 8000 (main's fake.sh after U3 cut it loose from fixture-budget.sh), capped
+// at 60 seconds.
 func fakeHandshakeSeconds(d Deps) (int, error) {
 	milli := int64(8000)
 	if raw := d.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
@@ -232,7 +233,13 @@ func fakeHandshakeSeconds(d Deps) (int, error) {
 		}
 		milli = value
 	}
-	return int((2*milli + 999) / 1000), nil
+	handshake := (2*milli + 999) / 1000
+	// Capped at 60, as both fake.sh parents were: the capability selector
+	// refuses a session-established window above it.
+	if handshake > 60 {
+		handshake = 60
+	}
+	return int(handshake), nil
 }
 
 var digitsRE = regexp.MustCompile(`^[0-9]+$`)

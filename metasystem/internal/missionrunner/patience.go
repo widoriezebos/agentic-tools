@@ -46,6 +46,9 @@ var patienceNeverStarted = map[string]bool{
 	"handshake_timeout":            true,
 	"launch_failed":                true,
 	"handshake_missing_session_id": true,
+	// The effective envelope could not be compared: the launch was refused
+	// before any child started.
+	"permissions_check_unreadable": true,
 }
 
 // patienceNeverStartedPrefix matches the parameterized member of the
