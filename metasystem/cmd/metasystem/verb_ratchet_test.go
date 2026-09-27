@@ -38,8 +38,11 @@ const (
 	// mission host turn's delegate-supervisor entry launch, the fake runtime's
 	// fixture holds (its CLI stand-in children and the host hold exec), and
 	// the fake self-test's delegate children; the hold exec counts twice
-	// (its argv and its exec).
-	verbRatchetSelfSubprocessCeiling = 120
+	// (its argv and its exec). It is 124, not 120, because the fake self-test
+	// launches its delegate children through engineDelegate, which resolves
+	// the running binary itself: the witness now follows that launcher's four
+	// calls, where it earlier counted only its one exec. No new boundary.
+	verbRatchetSelfSubprocessCeiling = 124
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 47
