@@ -267,10 +267,10 @@ if [[ "$fixture_scenario" == brain-declare-quiescence ]]; then
   release_current
   mkdir -p "$bed_clone/artifacts/agents/jobs"
   printf '%s\n' '{"jobId":"pending-job","status":"pending","role":"implementer","runtime":"fake"}' >"$bed_clone/artifacts/agents/jobs/pending-job.json"
-  assert_refused "delegate --cancel pending-job" "$ms" brain declare --root "$bed_clone" --by Wido --fixture-human-authority
+  assert_refused "metasystem work stop j2:pending-job" "$ms" brain declare --root "$bed_clone" --by Wido --fixture-human-authority
   rm "$bed_clone/artifacts/agents/jobs/pending-job.json"
   printf '%s\n' '{"jobId":"pending-setup-job","status":"pending-setup","role":"implementer","runtime":"fake"}' >"$bed_clone/artifacts/agents/jobs/pending-setup-job.json"
-  assert_refused "delegate --cancel pending-setup-job" "$ms" brain declare --root "$bed_clone" --by Wido --fixture-human-authority
+  assert_refused "metasystem work stop j2:pending-setup-job" "$ms" brain declare --root "$bed_clone" --by Wido --fixture-human-authority
   rm "$bed_clone/artifacts/agents/jobs/pending-setup-job.json"
   mkdir -p "$bed_clone/artifacts/agents/runs"
   printf '%s\n' '{"schemaVersion":1,"runId":"live-run","kind":"custom","display":"fixture","custody":"wrapped","generation":1,"launchNonce":"0123456789abcdef0123456789abcdef","log":"","startedAt":"2026-09-07T00:00:00Z","sessionId":"fixture","goalId":"","staleAfterMin":10,"windDownMin":1,"evidence":{"mode":"none"},"expect":{"green":"","red":"","hung":"","unknown":""},"status":"launching","acked":false}' >"$bed_clone/artifacts/agents/runs/live-run.json"
@@ -379,7 +379,7 @@ if [[ "$fixture_scenario" == brain-actor-seam-coverage ]]; then
 
 	actor_sites=$(scan_actor_sites "$root")
 	expected_actor_sites=$(cat <<'ACTOR_SITES'
-cmd/metasystem/brain.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
+cmd/metasystem/brain.go:	classification, err := classifyVerbCaller(root, callerPid)
 cmd/metasystem/census.go:	view, err := classifyVerbCaller(*root, parent)
 cmd/metasystem/dispatch_verbs.go:	caller, err := classifyVerbCaller(*root, int64(os.Getppid()))
 cmd/metasystem/gate_cadence.go:	actor := goal.Actor{Machine: machine, Lineage: landingOwnerLineage}
@@ -390,8 +390,8 @@ cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the seat machine c
 cmd/metasystem/goal.go:		return goal.Actor{Machine: machine, Lineage: holder.OwnerLineage}, holder.ClaimEpoch, nil
 cmd/metasystem/goal.go:	view, err := classifyVerbCallerWith(root, callerPid, repositoryTop)
 cmd/metasystem/goalsync_mutations.go:		classification, classErr := classifyVerbCaller(f.root, int64(os.Getppid()))
+cmd/metasystem/goalsync_mutations.go:		classification, classifyErr = classifyVerbCallerWith(root, callerPid, facts.repositoryTop)
 cmd/metasystem/goalsync_mutations.go:		req.Actor.Human = f.by
-cmd/metasystem/goalsync_mutations.go:	classification, classifyErr := classifyVerbCallerWith(root, int64(os.Getppid()), facts.repositoryTop)
 cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
 cmd/metasystem/intent_delivery.go:	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
