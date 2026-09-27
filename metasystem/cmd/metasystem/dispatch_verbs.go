@@ -1269,29 +1269,44 @@ func runDispatchBreachStop(args []string) int {
 }
 
 // breachStopOrderingHuman names the person a human-ordered breach stop
-// records as its actor (rule H1): --by, else the enrolled terminal's
-// recorded name. It returns "" for the machinery custodians, which record
-// the custodian lineage as before, and refuses a --by from any caller that
-// is not a person, since the name would then be forged attribution.
+// records as its actor (rule H1): the enrolled terminal's recorded name,
+// proven exactly as the other human verbs prove it (intentInvocation.actingAs
+// through resolveGoalHuman). A --by must match that name. It returns "" for
+// the machinery custodians, which record the custodian lineage as before,
+// and refuses a --by from any caller that is not a person, since the name
+// would then be forged attribution.
 func breachStopOrderingHuman(root string, caller lease.ClassifyResult, by string, now time.Time,
 	prove func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)) (string, error) {
+	return breachStopOrderingHumanWith(root, caller, by, now, func(root string, now time.Time) (string, error) {
+		proof, err := prove(root, int64(os.Getppid()), nil, now)
+		if err != nil {
+			return "", err
+		}
+		flags := &syncFlags{root: root}
+		if err := resolveGoalHuman(flags, proof); err != nil {
+			return "", err
+		}
+		return flags.by, nil
+	})
+}
+
+func breachStopOrderingHumanWith(root string, caller lease.ClassifyResult, by string, now time.Time,
+	enrolledName func(string, time.Time) (string, error)) (string, error) {
+	typed := strings.TrimPrefix(by, "human:")
 	if caller.Class != lease.ClassHuman {
-		if by != "" {
+		if typed != "" {
 			return "", fmt.Errorf("job breach-stop: --by names the person ordering the stop; a %s caller records the custodian and takes no --by", caller.Class)
 		}
 		return "", nil
 	}
-	if by != "" {
-		return by, nil
+	name, err := enrolledName(root, now)
+	if err != nil {
+		return "", fmt.Errorf("job breach-stop: the stop is admitted for a person and records who ordered it, and no enrolled person was proven here (%v); run it at the enrolled terminal, or enroll this one with metasystem system enroll --name NAME", err)
 	}
-	proof, err := prove(root, int64(os.Getppid()), nil, now)
-	if err == nil {
-		flags := &syncFlags{root: root}
-		if err = resolveGoalHuman(flags, proof); err == nil {
-			return flags.by, nil
-		}
+	if typed != "" && typed != name {
+		return "", fmt.Errorf("job breach-stop: --by %s is not the person enrolled at this terminal (%s); nothing was done", typed, name)
 	}
-	return "", fmt.Errorf("job breach-stop: the stop is admitted for a person but records who ordered it, and this terminal has no enrolled name (%v); rerun with --by NAME, or enroll this terminal with metasystem system enroll --name NAME", err)
+	return name, nil
 }
 
 func runDispatchBreachStopRoutes(args []string) int {

@@ -492,7 +492,7 @@ func FormatGoalRevisionAdmission(verdict GoalRevisionAdmission) []string {
 	if offer := verdict.Extension; offer != nil {
 		lines[0] += fmt.Sprintf("; extension available: %s %s at %s", offer.EvidenceKind, offer.EvidenceID, offer.EvidenceAt)
 	} else if verdict.ExtendedAt != "" {
-		lines[0] += fmt.Sprintf("; extended once at %s; a further raise is a person's set-budget", verdict.ExtendedAt)
+		lines[0] += fmt.Sprintf("; extended once at %s", verdict.ExtendedAt)
 	}
 	return lines
 }
@@ -577,11 +577,20 @@ func FormatGoalAdmission(verdict GoalAdmissionVerdict) []string {
 				break
 			}
 		}
-		line := fmt.Sprintf("BUDGET_REFUSED: goal %s revision=%d admission closed: %s",
-			refusal.GoalID, refusal.GoalRevision, detail)
+		// Rule H1: a person meets this through metasystem test run --goal G
+		// and every launch; spending past the approved box is the damage,
+		// and raising the box is the person's public act.
+		line := fmt.Sprintf("BUDGET_REFUSED: goal %s revision=%d admission closed: %s; %s",
+			refusal.GoalID, refusal.GoalRevision, detail, budgetRaiseRemedy(refusal.GoalID))
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+// budgetRaiseRemedy is the public command a person runs to raise a goal's
+// box past a budget refusal.
+func budgetRaiseRemedy(goalID string) string {
+	return fmt.Sprintf("a launch past the box would spend unapproved budget; a person raises it with metasystem goal budget %s BOX (BOX is the compact elapsed/attempts/job-minutes/active-jobs/review-rounds box, for example 1d/10/720m/1/3)", goalID)
 }
 
 func formatRefusalDetail(breaches []BudgetBreach, reserved *ReservedMinutesEvidence) string {

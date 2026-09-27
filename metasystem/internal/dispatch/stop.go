@@ -120,13 +120,59 @@ func liveStopReason(projection BudgetProjection) string {
 
 func stopIdentity(id string, revision, epoch uint64) (string, string) {
 	stopID := fmt.Sprintf("stop-%s-r%d-f%d", id, revision, epoch)
-	sum := sha256.Sum256([]byte(stopID))
+	return stopID, stopAttemptUlid(stopID, 0)
+}
+
+// stopAttemptLimit bounds how many ended-without-effect attempts one fence
+// closure may leave behind before a new attempt refuses.
+const stopAttemptLimit = 64
+
+// stopAttemptUlid is the deterministic ulid of one attempt at closing a
+// fence. Attempt 0 is the historical identity every custodian shares, so
+// concurrent stops of one revision still meet on one opid; a later attempt
+// exists only because an earlier one ended without effect.
+func stopAttemptUlid(stopID string, attempt int) string {
+	seed := stopID
+	if attempt > 0 {
+		seed = fmt.Sprintf("%s#%d", stopID, attempt)
+	}
+	sum := sha256.Sum256([]byte(seed))
 	const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 	ulid := make([]byte, 26)
 	for i := range ulid {
 		ulid[i] = alphabet[int(sum[i])%len(alphabet)]
 	}
-	return stopID, string(ulid)
+	return string(ulid)
+}
+
+// stopAttempt returns the ulid a stop of stopID publishes under: the first
+// attempt whose journal entry is absent, live, or confirmed. An attempt that
+// ended rejected, abandoned, lost or expired (for example a stranded
+// human-ordered stop that recovery refused to replay) changed nothing, so
+// it must not own the revision's fence: a repeat of the stop is a new
+// attempt, and one whose fence already holds succeeds with no second record.
+func stopAttempt(root, stopID, machine string) (string, error) {
+	for attempt := 0; attempt < stopAttemptLimit; attempt++ {
+		ulid := stopAttemptUlid(stopID, attempt)
+		entry, err := goal.ReadEntry(root, goal.Opid(ulid, machine, stopCustodianLineage))
+		if err != nil || entry.Phase != goal.PhaseTerminal ||
+			entry.Outcome == goal.OutcomeConfirmed || entry.Outcome == goal.OutcomeConfirmedLate {
+			return ulid, nil
+		}
+	}
+	return "", fmt.Errorf("stop %s has %d attempts that ended without effect; read them under artifacts/agents/goal-transactions before stopping again", stopID, stopAttemptLimit)
+}
+
+// stopAttemptOpid returns the ulid of the attempt at closing stopID that
+// opid names, and whether it names one.
+func stopAttemptOpid(opid, stopID, machine string) (string, bool) {
+	for attempt := 0; attempt < stopAttemptLimit; attempt++ {
+		ulid := stopAttemptUlid(stopID, attempt)
+		if opid == goal.Opid(ulid, machine, stopCustodianLineage) {
+			return ulid, true
+		}
+	}
+	return "", false
 }
 
 // EnsureBreachStop closes or rediscovers the exact fence and creates its
@@ -183,10 +229,14 @@ func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, 
 				BreachBoundary: budget.ElapsedBreachLimit.String(), GracePercent: budget.ElapsedGracePercent,
 			}
 		}
-		stopID, ulid := stopIdentity(id, binding.Revision, binding.Capability.FenceEpoch+1)
+		stopID, _ := stopIdentity(id, binding.Revision, binding.Capability.FenceEpoch+1)
 		endpoint, endpointErr := reads.ResolveEndpoint(root)
 		if endpointErr != nil {
 			return goal.StopBatch{}, endpointErr
+		}
+		ulid, attemptErr := stopAttempt(endpoint.Root, stopID, binding.Machine)
+		if attemptErr != nil {
+			return goal.StopBatch{}, attemptErr
 		}
 		request := goal.CloseStopRequest{
 			VerbRequest: goal.VerbRequest{
@@ -294,10 +344,10 @@ func (policy GoalRecoveryPolicy) breachStopWithReads(endpoint goal.Endpoint, ent
 		release()
 		return goal.PublishRequest{}, nil, fmt.Errorf("goal %s revision %d is not over its live budget", id, binding.Revision)
 	}
-	stopID, ulid := stopIdentity(id, binding.Revision, binding.Capability.FenceEpoch+1)
+	stopID, _ := stopIdentity(id, binding.Revision, binding.Capability.FenceEpoch+1)
 	actor := goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage}
-	if entry.Machine != actor.Machine || entry.Lineage != actor.Lineage ||
-		entry.Opid != goal.Opid(ulid, actor.Machine, actor.Lineage) {
+	ulid, attempt := stopAttemptOpid(entry.Opid, stopID, actor.Machine)
+	if entry.Machine != actor.Machine || entry.Lineage != actor.Lineage || !attempt {
 		release()
 		return goal.PublishRequest{}, nil, fmt.Errorf("the breach-stop journal identity does not match the live custodian operation")
 	}

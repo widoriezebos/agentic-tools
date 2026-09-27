@@ -237,7 +237,7 @@ var Rows = []Row{
 	{Code: "CORRUPT_OVER_LIMIT", Owner: "internal/dispatch", Site: "stop.go:116", Shape: Agent, Override: "goal resume", Commands: 1},
 
 	{Code: "BUDGET_UNKNOWN", Owner: "internal/dispatch", Site: "admission.go:107", Shape: Agent, Override: "goal set-budget", Commands: 1},
-	{Code: "BUDGET_REFUSED", Owner: "internal/dispatch", Site: "admission.go:580", Shape: Agent, Override: "goal set-budget", Commands: 1},
+	{Code: "BUDGET_REFUSED", Owner: "internal/dispatch", Site: "admission.go:583", Shape: Agent, Override: "goal budget", Commands: 1, H1: StandingGuide, Forward: "goal budget", ForwardSite: "internal/dispatch/admission.go:593"},
 	{Code: "CANDIDATE_EXTENSION_REFUSED", Owner: "internal/dispatch", Site: "admission.go:428", Shape: Question, H1: StandingGuide, Forward: "goal budget"},
 	{Code: "HAZARD_REFUSED", Owner: "internal/dispatch", Site: "admission.go:307", Shape: Agent, Override: "goal edit --tier 2 --why", Commands: 3},
 	{Code: "RISK_UNANSWERED", Owner: "internal/dispatch", Site: "admission.go:303", Shape: Agent, Override: "goal classify-sweep or goal unapprove, goal edit --risk, goal approve", Commands: 3},

@@ -36,7 +36,7 @@ func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 			t.Fatalf("attempt refusal reserved evidence = %+v, want %+v", verdict.Refusal.Reserved, wantReserved)
 		}
 		lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
-		want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=1 limit=1; reserved observed=1 open-caps=0 limit=10000; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes"
+		want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=1 limit=1; reserved observed=1 open-caps=0 limit=10000; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes; " + budgetRaiseRemedy("bounded")
 		if len(lines) != 1 || lines[0] != want {
 			t.Fatalf("attempt refusal line = %q, want %q", lines, want)
 		}
@@ -59,7 +59,7 @@ func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 			t.Fatalf("reserved-minute refusal evidence = %+v, want %+v", verdict.Refusal.Reserved, wantReserved)
 		}
 		lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
-		want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: reservedJobMinutesLimit used=170+120 proposed limit=240; reserved observed=50 open-caps=120 limit=240; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes"
+		want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: reservedJobMinutesLimit used=170+120 proposed limit=240; reserved observed=50 open-caps=120 limit=240; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes; " + budgetRaiseRemedy("bounded")
 		if len(lines) != 1 || lines[0] != want {
 			t.Fatalf("reserved-minute refusal line = %q, want %q", lines, want)
 		}
@@ -74,7 +74,7 @@ func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 			},
 			Reserved: &ReservedMinutesEvidence{Observed: 1, OpenCaps: 30, Limit: 10000},
 		}}})
-		want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=2 limit=2, activeJobLimit used=1 limit=1; reserved observed=1 open-caps=30 limit=10000; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes"
+		want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=2 limit=2, activeJobLimit used=1 limit=1; reserved observed=1 open-caps=30 limit=10000; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes; " + budgetRaiseRemedy("bounded")
 		if len(lines) != 1 || lines[0] != want {
 			t.Fatalf("multi-limit refusal line = %q, want %q", lines, want)
 		}
@@ -179,7 +179,7 @@ func TestGoalRevisionAdmissionRefusesThirdCodeCritiqueChain(t *testing.T) {
 		t.Fatalf("third code critique was not refused: verdict=%+v err=%v", verdict, err)
 	}
 	lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
-	want := "BUDGET_REFUSED: goal bounded revision=2 admission closed: codeCritiques=2/2; reserved observed=0 open-caps=0 limit=1000"
+	want := "BUDGET_REFUSED: goal bounded revision=2 admission closed: codeCritiques=2/2; reserved observed=0 open-caps=0 limit=1000; " + budgetRaiseRemedy("bounded")
 	if len(lines) != 1 || lines[0] != want {
 		t.Fatalf("third code critique refusal = %v, want %q", lines, want)
 	}
@@ -211,7 +211,7 @@ func TestGoalRevisionAdmissionKeepsCritiqueClassesSeparate(t *testing.T) {
 		if role == "design-critic" {
 			field = "designCritiques"
 		}
-		want := field + "=2/2; reserved observed=0 open-caps=0 limit=1000"
+		want := field + "=2/2; reserved observed=0 open-caps=0 limit=1000; " + budgetRaiseRemedy("bounded")
 		if len(lines) != 1 || !strings.HasSuffix(lines[0], want) {
 			t.Fatalf("%s refusal lost its separate class count: %v", role, lines)
 		}

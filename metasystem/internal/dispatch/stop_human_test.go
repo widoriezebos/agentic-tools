@@ -105,4 +105,49 @@ func TestStrandedHumanOrderedBreachStopIsNotReplayed(t *testing.T) {
 	if binding, err := bed.binding("bounded", now); err != nil || binding.Fence != nil {
 		t.Fatalf("journal text replayed a human-ordered stop: %+v %v", binding, err)
 	}
+	// The rejected attempt changed nothing, so it must not own the
+	// revision's fence: the custodian's next stop closes it, and a
+	// repeat by the person succeeds on the fence that holds (R-129).
+	batch, err := bed.stop("bounded", 2, now)
+	if err != nil || batch.StopID != stopID {
+		t.Fatalf("a stranded human stop blocked the custodian's stop of the same revision: %+v %v", batch, err)
+	}
+	if binding, err := bed.binding("bounded", now); err != nil || binding.Fence == nil || binding.Fence.StopID != stopID {
+		t.Fatalf("the custodian's stop did not close the fence: %+v %v", binding, err)
+	}
+	accepted := bed.parsedAcceptedGoal(t, "bounded")
+	history := len(accepted.History)
+	repeat, err := bed.stopOrderedBy("bounded", 2, now.Add(time.Second), "Wido")
+	if err != nil || repeat.StopID != stopID {
+		t.Fatalf("the person's repeat of a stop whose fence holds was not idempotent: %+v %v", repeat, err)
+	}
+	if after := bed.parsedAcceptedGoal(t, "bounded"); len(after.History) != history {
+		t.Fatalf("the idempotent repeat wrote a second record: %d -> %d history lines", history, len(after.History))
+	}
+}
+
+// A person's stranded stop leaves the person free to order it again: the
+// fresh attempt publishes under the next opid and names them.
+func TestStrandedHumanOrderedBreachStopCanBeOrderedAgain(t *testing.T) {
+	t.Parallel()
+	bed := newGoalMutationBed(t)
+	root := bed.root
+	stopID, ulid := stopIdentity("bounded", 2, 1)
+	opid := goal.Opid(ulid, "bed-m1", stopCustodianLineage)
+	intent := goal.Intent{Verb: "breach-stop", Targets: []string{"bounded"}, Args: map[string]string{"stopId": stopID, "by": "Wido"}}
+	if _, err := goal.CreateEntry(root, opid, "bed-m1", stopCustodianLineage, intent); err != nil {
+		t.Fatal(err)
+	}
+	if err := goal.MarkTerminal(root, opid, goal.OutcomeRejected, "stranded"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 30, 10, 0, 0, 0, time.UTC)
+	batch, err := bed.stopOrderedBy("bounded", 2, now, "Wido")
+	if err != nil || batch.StopID != stopID {
+		t.Fatalf("a rejected attempt blocked the person's new stop: %+v %v", batch, err)
+	}
+	last := bed.parsedAcceptedGoal(t, "bounded").History
+	if line := last[len(last)-1]; line.Verb != "breach-stop" || line.Actor != "human:Wido" || line.Opid == opid {
+		t.Fatalf("the new attempt's history line = %+v, want a fresh opid by human:Wido", line)
+	}
 }
