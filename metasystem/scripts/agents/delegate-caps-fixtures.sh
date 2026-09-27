@@ -16,13 +16,13 @@ cleanup() {
   local cleanup_engine
   [[ -z "$rearm_race_pid" ]] || { kill "$rearm_race_pid" 2>/dev/null || true; wait "$rearm_race_pid" 2>/dev/null || true; }
   [[ -z "$identity_updater" ]] || { kill "$identity_updater" 2>/dev/null || true; wait "$identity_updater" 2>/dev/null || true; }
-  if [[ -n "$armed_repo" && -x "$armed_repo/scripts/agents/arm-supervision.sh" ]]; then
+  if [[ -n "$armed_repo" && -x "$armed_repo/bin/metasystem" ]]; then
     cleanup_engine=${enrolled_engine:-$ms}
     # The config-refusal leg broadens the runtime list, where fake process
     # tables are no longer authorized. Cleanup uses the real process table.
     METASYSTEM_CENSUS_PROCESS_FILE= METASYSTEM_FAKE_PROCESS_IDENTITY_FILE= \
       METASYSTEM_BIN="$cleanup_engine" \
-      "$armed_repo/scripts/agents/arm-supervision.sh" --repo "$armed_repo" --shutdown >&2 \
+      fixture_arm "$armed_repo" --repo "$armed_repo" --shutdown >&2 \
       || echo "delegate caps fixture cleanup shutdown failed" >&2
   fi
   # Backstop: kill any process still rooted under this run's unique temp
@@ -189,7 +189,7 @@ register_supervision_identities() {
 "$harness/bin/metasystem" lease announce --root "$harness" \
   --session caps-fixture --pid $$ --start "$process_start" --tag caps-fixture --runtime fake >/dev/null
 
-arm=$harness/scripts/agents/arm-supervision.sh
+arm=$(fixture_arm_path "$harness")
 run_arm() { # description, arm arguments...
   local description=$1 arm_rc
   shift
@@ -363,7 +363,7 @@ grep -Fq 'ordinary-blocking-job' "$tmp/ordinary-establish.out" \
 # AUTH-R2-008 attacks the local override layer with the exact noncanonical key.
 conf_edit "$harness/metasystem.conf" replace-line-first '^metasystem[.]runtimes=fake$' 'metasystem.runtimes=fake,devin'
 printf 'cap.min.devin.swe-1.7=250\n' >"$harness/metasystem.conf.local"
-if "$harness/scripts/metasystem-config.sh" validate >"$tmp/noncanonical.out" 2>&1; then
+if "$harness/bin/metasystem" internal config validate --conf "$harness/metasystem.conf" >"$tmp/noncanonical.out" 2>&1; then
   echo "AUTH-R2-008: noncanonical local cap key was accepted" >&2
   exit 1
 fi

@@ -14,8 +14,9 @@ import (
 // reprValue is the dialect core every renderer shares. Strings are
 // single-quoted when quote is set, bare otherwise. Values outside the core
 // go to rest, where the gates deliberately differ: the conformance gate
-// renders True/False bools and 'g' floats (conformanceRest), the
-// return-completeness gate renders raw JSON bytes.
+// renders True/False bools and 'g' floats (conformanceRest); the
+// return-completeness gate (internal/returnschema/complete.go) keeps its own
+// copy of the core and renders raw JSON bytes outside it.
 func reprValue(value any, quote bool, rest func(any) string) string {
 	switch v := value.(type) {
 	case nil:
@@ -63,4 +64,13 @@ func quotedList(items []string) string {
 		quoted[i] = "'" + item + "'"
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+// jsonInteger reads a decoded JSON number that is integral.
+func jsonInteger(v any) (int64, bool) {
+	f, ok := v.(float64)
+	if !ok || f != float64(int64(f)) {
+		return 0, false
+	}
+	return int64(f), true
 }

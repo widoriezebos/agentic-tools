@@ -3,31 +3,32 @@ package mission
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
-// landedRepo lays out a repo with a jobs tree and a stub return checker: a
-// job listed in the repo's invalid-jobs file fails validation, everything
-// else passes. The stub stands in for scripts/assert-return-complete.sh so
-// derivation exercises the real subprocess seam.
+// landedRepo lays out a repo for the jobs tree. landedValid stands in for
+// the return checker: a job listed in the repo's invalid-jobs file fails
+// validation, everything else passes.
 func landedRepo(t *testing.T) string {
 	t.Helper()
-	repo := t.TempDir()
-	script := filepath.Join(repo, "scripts", "assert-return-complete.sh")
-	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
-		t.Fatal(err)
+	return t.TempDir()
+}
+
+func landedValid(repo, jobID string) bool {
+	data, err := os.ReadFile(filepath.Join(repo, "invalid-jobs"))
+	if err != nil {
+		return true
 	}
-	stub := "#!/bin/sh\n" +
-		"if [ -f invalid-jobs ] && grep -qx -- \"$2\" invalid-jobs; then exit 1; fi\n" +
-		"exit 0\n"
-	if err := testexec.WriteFile(script, []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == jobID {
+			return false
+		}
 	}
-	return repo
+	return true
 }
 
 func landedWriteJob(t *testing.T, repo, id string, doc map[string]any) {
@@ -119,7 +120,7 @@ func TestLandedReturnsQualificationMatrix(t *testing.T) {
 			},
 		},
 	}
-	rows := LandedReturns(repo, "m1", turnLog)
+	rows := landedReturns(repo, "m1", turnLog, landedValid)
 	want := [][]string{
 		{"a1", "1", "artifacts/agents/a1/rounds/1/return.json"},
 		{"d1", "invalid", "artifacts/agents/d1/rounds/1/return.json"},
@@ -139,7 +140,7 @@ func TestLandedReturnsOverflowBoundaryAtTwentyOneChains(t *testing.T) {
 		landedWriteJob(t, repo, id, map[string]any{"mission": "m1", "status": "completed", "round": 1})
 		landedWriteReturn(t, repo, id, 1)
 	}
-	rows := LandedReturns(repo, "m1", nil)
+	rows := landedReturns(repo, "m1", nil, landedValid)
 	if len(rows) != 20 {
 		t.Fatalf("21 qualifying chains must emit exactly 20 rows, got %d", len(rows))
 	}
@@ -158,7 +159,7 @@ func TestLandedReturnsOverflowBoundaryAtTwentyOneChains(t *testing.T) {
 	if err := os.Remove(filepath.Join(repo, "artifacts", "agents", "jobs", "ch-21.json")); err != nil {
 		t.Fatal(err)
 	}
-	rows = LandedReturns(repo, "m1", nil)
+	rows = landedReturns(repo, "m1", nil, landedValid)
 	if len(rows) != 20 || rows[19][0] != "ch-20" {
 		t.Fatalf("20 qualifying chains must all list without overflow: %v", rows)
 	}
@@ -171,7 +172,7 @@ func TestLandedReturnsIsAPureFunctionAcrossParks(t *testing.T) {
 		landedWriteJob(t, repo, id, map[string]any{"mission": "m1", "status": "completed", "round": 1})
 		landedWriteReturn(t, repo, id, 1)
 	}
-	first := LandedReturns(repo, "m1", nil)
+	first := landedReturns(repo, "m1", nil, landedValid)
 	if len(first) != 2 || first[0][0] != "a-chain" || first[1][0] != "z-chain" {
 		t.Fatalf("rows must sort by chain root: %v", first)
 	}
@@ -182,8 +183,21 @@ func TestLandedReturnsIsAPureFunctionAcrossParks(t *testing.T) {
 		map[string]any{"outcome": "drain-stalled", "detail": "deadline passed"},
 		map[string]any{"outcome": "failed", "detail": "host crashed"},
 	}
-	second := LandedReturns(repo, "m1", parkedLog)
+	second := landedReturns(repo, "m1", parkedLog, landedValid)
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("the list must be a pure function of tree and host action:\n%v\nvs\n%v", first, second)
+	}
+}
+
+// The production checker is the shipped job-mode return checker, called in
+// process: a round whose record names no dispatchable role lists as invalid.
+func TestLandedReturnsJudgesRoundsWithTheShippedChecker(t *testing.T) {
+	t.Parallel()
+	repo := landedRepo(t)
+	landedWriteJob(t, repo, "bare", map[string]any{"mission": "m1", "status": "completed", "round": 1})
+	landedWriteReturn(t, repo, "bare", 1)
+	rows := LandedReturns(repo, "m1", nil)
+	if len(rows) != 1 || rows[0][0] != "bare" || rows[0][1] != "invalid" {
+		t.Fatalf("a round the shipped checker refuses must list as invalid: %v", rows)
 	}
 }

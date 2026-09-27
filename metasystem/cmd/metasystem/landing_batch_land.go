@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	receiptpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
 
 func executeBatchLanding(root, id, actor string, at time.Time) error {
@@ -107,6 +108,20 @@ var batchLandOriginTree = func(root, commit string) (string, error) {
 }
 var batchLandRecoverPush = recoverMovedBatchPush
 
+// batchLandReceipt appends a landed unit's implement receipt to the control
+// checkout's receipt ledger.
+func batchLandReceipt(controlRoot, goalID, note string) error {
+	result, err := receiptpkg.AddToInstallation(controlRoot, receiptpkg.Options{
+		Type: "implement", Outcome: "shipped", Goal: goalID, BuiltBy: "coordinator", Note: note,
+	})
+	for _, line := range result.Err {
+		if err == nil {
+			fmt.Fprintln(os.Stderr, line)
+		}
+	}
+	return err
+}
+
 func batchLandSeams(root, id string, record batch.Record, baseCommit, actor string) batch.LandSeams {
 	return batchLandSeamsWithRead(root, id, record, baseCommit, actor, gitOutput)
 }
@@ -117,7 +132,7 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 		Prepare: func(_ string) error { return batch.PrepareLandingBranch(root, id, baseCommit) },
 		Apply:   func(unit batch.Unit) error { return batch.ApplyCertifiedPatch(root, root, unit.Chain) },
 		AppendReceipt: func(unit batch.Unit, receipt batch.PrefixReceipt) error {
-			return batch.RunCommand(batch.CommandSpec{Dir: controlRoot, Name: filepath.Join(controlRoot, "scripts", "receipt.sh"), Args: []string{"add", "--type", "implement", "--outcome", "shipped", "--goal", unit.GoalID, "--built-by", "coordinator", "--note", "batch " + id + " prefix " + receipt.Tree}})
+			return batchLandReceipt(controlRoot, unit.GoalID, "batch "+id+" prefix "+receipt.Tree)
 		},
 		Commit: func(unit batch.Unit, receipt batch.PrefixReceipt) (string, error) {
 			path := receipt.ResultPath
@@ -134,7 +149,7 @@ func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, ac
 			return batch.ApplyBranchBuild(root, root, build)
 		},
 		AppendBuildReceipt: func(unit batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) error {
-			return batch.RunCommand(batch.CommandSpec{Dir: controlRoot, Name: filepath.Join(controlRoot, "scripts", "receipt.sh"), Args: []string{"add", "--type", "implement", "--outcome", "shipped", "--goal", unit.GoalID, "--built-by", "coordinator", "--note", "batch " + id + " unit " + strings.Join(build.Units, "+") + " prefix " + receipt.Tree}})
+			return batchLandReceipt(controlRoot, unit.GoalID, "batch "+id+" unit "+strings.Join(build.Units, "+")+" prefix "+receipt.Tree)
 		},
 		CommitBuild: func(unit batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) (string, error) {
 			path := receipt.ResultPath

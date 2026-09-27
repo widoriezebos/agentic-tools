@@ -138,7 +138,7 @@ fi
 # fail halfway through with the payload already installed.
 command -v go >/dev/null 2>&1 \
   || die 1 "adoption requires the Go toolchain: the engine is always rebuilt from the template source; install Go and re-run"
-bash "$root/scripts/agents/preflight-commands.sh" \
+"$ms" internal audit production-commands \
   || die 1 "adoption refused: install the named commands first"
 
 mkdir -p "$target"
@@ -163,7 +163,7 @@ if [[ -f "$target/wow.md" && -f "$rules" ]] && grep -q '^- Adopted from template
   recorded_line=$(grep '^- Adopted from template SHA:' "$rules" | head -1)
   if [[ "$recorded_line" == *"<template sha>"* || "$recorded_line" == *"$sha"* ]]; then
     if [[ -f "$target/.github/workflows/metasystem.yml" ]] \
-      && (cd "$target" && METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS=1 bash scripts/audit-metasystem.sh . >/dev/null 2>&1); then
+      && "$target/bin/metasystem" internal audit metasystem --root "$target" --allow-placeholders >/dev/null 2>&1; then
       echo "target is already this template's installation; nothing to do"
       exit 0
     fi
@@ -454,7 +454,7 @@ mkdir -p "$target/.github/workflows"
 cp "$target/scripts/enforcement/github-actions-metasystem.yml" "$target/.github/workflows/metasystem.yml"
 
 # Structural check now; the placeholder check waits for the facts.
-(cd "$target" && METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS=1 bash scripts/audit-metasystem.sh . >/dev/null) \
+"$target/bin/metasystem" internal audit metasystem --root "$target" --allow-placeholders >/dev/null \
   || die 1 "structural audit failed in the adopted target"
 
 echo "adopted at template SHA $sha"

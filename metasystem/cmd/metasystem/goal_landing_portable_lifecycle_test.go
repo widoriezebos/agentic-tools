@@ -147,7 +147,6 @@ func runGLEBatchPortableOwnerMovedOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	portable.write("metasystem.conf", string(config)+"goal.human.portable=Portable Fixture <portable@example.invalid>\n", 0o644)
-	portable.write("scripts/receipt.sh", "#!/bin/sh\nset -eu\nmkdir -p memory\nprintf '%s\\n' \"$*\" >> memory/receipts.log\ngit add memory/receipts.log\n", 0o755)
 	buildScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 if [ "${1:-}" = "--trimpath" ]; then
@@ -387,7 +386,7 @@ chmod +x "${out:-bin/metasystem}"
 	}
 	receipts := batchE2EGit(t, origin, "show", "refs/heads/main:memory/receipts.log")
 	for _, id := range []string{"goal-a", "goal-b", "goal-c"} {
-		if !strings.Contains(receipts, "--goal "+id+" ") {
+		if !strings.Contains(receipts, "|goal="+id+"|") {
 			t.Fatalf("origin receipt log lacks %s: %s", id, receipts)
 		}
 	}
@@ -475,7 +474,6 @@ func TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember(t *testing.
 		t.Fatal(err)
 	}
 	portable.write("metasystem.conf", string(config)+"goal.human.portable=Portable Fixture <portable@example.invalid>\n", 0o644)
-	portable.write("scripts/receipt.sh", "#!/bin/sh\nset -eu\nmkdir -p memory\nprintf '%s\\n' \"$*\" >> memory/receipts.log\ngit add memory/receipts.log\n", 0o755)
 	buildScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 if [ "${1:-}" = "--trimpath" ]; then
@@ -886,7 +884,7 @@ exit 7
 		t.Fatalf("fenced B was published to origin: %q", got)
 	}
 	receipts := batchE2EGit(t, origin, "show", "refs/heads/main:memory/receipts.log")
-	if !strings.Contains(receipts, "--goal goal-a ") || strings.Contains(receipts, "--goal goal-b ") {
+	if !strings.Contains(receipts, "|goal=goal-a|") || strings.Contains(receipts, "|goal=goal-b|") {
 		t.Fatalf("survivor-only receipts were not published: %s", receipts)
 	}
 	_, nativeAfter := portable.counts()

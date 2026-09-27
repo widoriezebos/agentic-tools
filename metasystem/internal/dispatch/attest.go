@@ -7,6 +7,8 @@ import (
 	"os"
 	"regexp"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 )
 
 // Dispatch refuses to launch under dead or stale supervision. These are the
@@ -44,7 +46,7 @@ func CensusFresh(verdictPath, statePath, armHint, repoHint, expectedFingerprint 
 			return fmt.Errorf("dispatch refused: census verdict schema or writer is invalid")
 		}
 	}
-	if schema, ok := numFloat(value["schemaVersion"]); !ok || schema != 2 || asString(value["writer"]) != "watch-background-jobs.sh" {
+	if schema, ok := numFloat(value["schemaVersion"]); !ok || schema != 2 || asString(value["writer"]) != census.VerdictWriter {
 		return fmt.Errorf("dispatch refused: census verdict schema or writer is invalid")
 	}
 	switch asString(value["verdict"]) {

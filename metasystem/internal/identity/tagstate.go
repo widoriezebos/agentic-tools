@@ -13,7 +13,7 @@ import (
 // but cannot be inspected). The old shell ladder was two-way on the
 // kill-capable path — an unreadable process table turned live supervisors
 // into process-lost verdicts; unknown exists so callers can DEFER, the same
-// indeterminacy-never-acts rule the Go reaper and arm-supervision already
+// indeterminacy-never-acts rule the Go reaper and `up` arming already
 // follow. Kernel-only by design: the ladder judges real spawned processes,
 // and the fixture-table override belongs to Custodian verdicts.
 func TagState(prober Prober, pid int64, tag string) string {

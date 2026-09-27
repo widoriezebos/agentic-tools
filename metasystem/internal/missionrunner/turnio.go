@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // File-backed entry points over the pure adjudication and conclusion logic.
@@ -20,11 +22,9 @@ import (
 // runner's own words.
 func returnCompletenessCheck(root string) func(returnPath string) error {
 	return func(returnPath string) error {
-		stdout, stderr, code := runCaptured(root, nil,
-			filepath.Join(root, "scripts", "assert-return-complete.sh"),
-			"--role", "orchestrator", "--file", returnPath)
-		if code != 0 {
-			return fmt.Errorf("orchestrator return is invalid: %s", firstDetail(stderr, stdout))
+		violations := returnschema.ReturnCompleteRole(root, "orchestrator", returnPath)
+		if len(violations) > 0 {
+			return fmt.Errorf("orchestrator return is invalid: violation: %s", strings.Join(violations, "\nviolation: "))
 		}
 		return nil
 	}

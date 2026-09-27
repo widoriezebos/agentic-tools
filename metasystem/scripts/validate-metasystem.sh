@@ -982,7 +982,7 @@ static_contract_audits_section() {
 
 # Validate every skill present, including project-added and moved optional
 # skills, so this script holds in adopted repositories as well as the template.
-scripts/agents/validate-skill-inventory.sh "$root"
+"$root/bin/metasystem" internal validate skills --root "$root"
 
 # Core assets are required everywhere. The full seven-skill set with every
 # per-runtime profile is required only in the template repository, detected by
@@ -994,7 +994,7 @@ scripts/agents/validate-skill-inventory.sh "$root"
 # any profile a remaining skill does provide must be registered without drift;
 # project-added skills are not required to invent profiles they never shipped.
 if (( ! template_mode )); then
-  scripts/metasystem-config.sh validate
+  "$root/bin/metasystem" internal config validate --conf "$root/metasystem.conf"
 fi
 
 for link in \
@@ -1007,8 +1007,6 @@ for link in \
   docs/examples/step-back-ledger.md \
   .gitattributes \
   memory/instruction-ledger.md \
-  scripts/refactor-baseline.sh \
-  scripts/receipt.sh \
   scripts/adopt.sh \
   scripts/enforcement/github-actions-metasystem.yml \
   scripts/enforcement/claude-code-hooks.json \
@@ -1036,18 +1034,13 @@ for link in \
   scripts/agents/permissions/none.json \
   scripts/agents/permissions/workspace.json \
   metasystem.conf \
-  scripts/metasystem-config.sh \
   scripts/agents/dispatch.sh \
   scripts/agents/checkout-execution-guard.sh \
   scripts/agents/commit.sh \
   scripts/agents/land.sh \
-  scripts/agents/coverage-delta.sh \
-  scripts/agents/second-session.sh \
-  scripts/agents/arm-supervision.sh \
   scripts/agents/fixture-budget.sh \
   scripts/agents/landing-lane-worker.sh \
   scripts/agents/templates/design-common.md \
-  scripts/agents/validate-skill-inventory.sh \
   scripts/agents/enumerate-suite.sh \
   scripts/agents/validate-section-selector.sh \
   scripts/agents/enumerate-suite-fixtures.sh \
@@ -1070,7 +1063,6 @@ for link in \
   scripts/agents/checkout-execution-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
-  scripts/agents/second-session-fixtures.sh \
   scripts/agents/lease-succession-fixtures.sh \
   scripts/agents/flight-recorder-fixtures.sh \
   scripts/agents/acp-fixtures.sh \
@@ -1089,8 +1081,7 @@ for link in \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
   scripts/agents/conformance-fixtures.sh \
-  scripts/agents/path-classes.txt \
-  scripts/assert-return-complete.sh; do
+  scripts/agents/path-classes.txt; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
 }
@@ -1129,16 +1120,11 @@ fi
 
 # Real runtime selftests spend model calls and remain manual acceptance steps.
 # Validation covers only their static adapter contract.
-# The external-dependency ratchet (os-dependency-reduction): an
-# undeclared interpreter in metasystem scripts refuses here.
+# The external-dependency ratchet (os-dependency-reduction) runs in the go
+# gate (audit dependency-ratchet); this section keeps the syntax checks.
 shell_and_dependency_audits_section() {
-bash scripts/agents/dependency-ratchet.sh --self-test >/dev/null
-bash scripts/agents/dependency-ratchet.sh >/dev/null
-bash -n scripts/agents/dependency-ratchet.sh
-bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/fixture-budget.sh
 bash -n scripts/agents/landing-lane-worker.sh
-bash -n scripts/agents/validate-skill-inventory.sh
 bash -n scripts/agents/enumerate-suite.sh
 bash -n scripts/agents/validate-section-selector.sh
 bash -n scripts/agents/enumerate-suite-fixtures.sh
@@ -1153,7 +1139,6 @@ bash -n scripts/agents/return-schema-fixtures.sh
 bash -n scripts/agents/config-identity-fixtures.sh
 bash -n scripts/agents/record-protocol-fixtures.sh
 bash -n scripts/agents/evidence-segment-fixtures.sh
-bash -n scripts/agents/second-session-fixtures.sh
 bash -n scripts/agents/lease-succession-fixtures.sh
 bash -n scripts/agents/flight-recorder-fixtures.sh
 bash -n scripts/agents/acp-fixtures.sh
@@ -1165,7 +1150,6 @@ bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/suite-progress-fixtures.sh
 bash -n scripts/agents/fixture-bed-scenarios-fixtures.sh
 bash -n scripts/agents/land.sh
-bash -n scripts/agents/coverage-delta.sh
 bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/checkout-execution-guard.sh
 bash -n scripts/agents/checkout-execution-guard-fixtures.sh
@@ -1181,8 +1165,6 @@ bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/devin.sh
 bash -n scripts/agents/hosts/fake.sh
-bash -n scripts/assert-return-complete.sh
-bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
 bash -n scripts/agents/oldest-bash-gate.sh
@@ -1243,7 +1225,7 @@ fi
 # itself — the audit's outside-reference fence stands — but a project may
 # DECLARE companion suites in its own configuration, and a declaration is
 # a promise: a declared suite that is missing or red refuses the run.
-extra_suites=$(scripts/metasystem-config.sh get --key validate.extra-suites --default "" 2>/dev/null || true)
+extra_suites=$("$root/bin/metasystem" internal config get --conf "$root/metasystem.conf" --key validate.extra-suites --default "" 2>/dev/null || true)
 project_extra_suites_section() {
   for extra in $extra_suites; do
     if [[ ! -x "$extra" ]]; then
@@ -1264,9 +1246,6 @@ fi
 if section_selected evidence-segment-fixtures; then
   delivery_contract_skip evidence-segment-fixtures \
     || run_section evidence-segment-fixtures needs-engine bash scripts/agents/evidence-segment-fixtures.sh
-fi
-if section_selected second-session-fixtures; then
-  run_section second-session-fixtures needs-engine bash scripts/agents/second-session-fixtures.sh
 fi
 if section_selected lease-succession-fixtures; then
   delivery_contract_skip lease-succession-fixtures \
@@ -1486,7 +1465,7 @@ done
 if (( ! template_mode )); then
   # Through the config engine, honoring the same flag/env/local/conf
   # precedence the suite itself enforces (script-validate-8/D34).
-  configured_runtimes=$(scripts/metasystem-config.sh get --key metasystem.runtimes)
+  configured_runtimes=$("$root/bin/metasystem" internal config get --conf "$root/metasystem.conf" --key metasystem.runtimes)
   runtime_selected() { [[ ",$configured_runtimes," == *",$1,"* ]]; }
   for skill_dir in skills/*/; do
     [[ -d "$skill_dir" ]] || continue
@@ -1568,7 +1547,6 @@ runtime_contract_audits_probe_section() {
 fake_probe_root="$tmp/fake-envelope-probe"
 mkdir -p "$fake_probe_root/scripts/agents/adapters"
 cp scripts/agents/adapters/fake.sh "$fake_probe_root/scripts/agents/adapters/"
-cp scripts/agents/fixture-budget.sh "$fake_probe_root/scripts/agents/"
 fake_probe_result="$tmp/fake-envelope-probe-result.json"
 # The bare probe root carries no engine; point the adapter at this checkout's.
 fake_snapshot=$(METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="$fake_probe_result" \
@@ -1616,12 +1594,12 @@ validation_cleanup() {
   [[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"
   local repo
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
-    [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
+    [[ -x "$repo/bin/metasystem" ]] || continue
     if [[ "$repo" == "${runner_repo:-}" ]] && declare -p runner_process_env >/dev/null 2>&1; then
-      "${runner_process_env[@]}" "$repo/scripts/agents/arm-supervision.sh" \
+      "${runner_process_env[@]}" "$(fixture_arm_path "$repo")" \
         --repo "$repo" --shutdown >/dev/null 2>&1 || true
     else
-      "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >/dev/null 2>&1 || true
+      fixture_arm "$repo" --repo "$repo" --shutdown >/dev/null 2>&1 || true
     fi
   done
   # Shutdown returns before the owner and its children have fully exited, and
@@ -2059,15 +2037,23 @@ cp "$return_fixtures/design-critic-positive.json" "$return_fixtures/critic-misco
 cp "$return_fixtures/design-critic-positive.json" "$return_fixtures/critic-missing-verdict.json"
 json_remove_field "$return_fixtures/critic-missing-verdict.json" verdictMaterialCount
 
+# The return checker is the engine's validate return-complete verb; root is
+# the checkout whose schemas and job records it reads.
+return_complete() { # root, then the verb's arguments
+  local checkout=$1
+  shift
+  "$engine" internal validate return-complete --root "$checkout" "$@"
+}
+
 for role in orchestrator design-critic implementer code-critic verifier investigator behavior-judge; do
-  scripts/assert-return-complete.sh --role "$role" --file "$return_fixtures/$role-positive.json"
+  return_complete "$PWD" --role "$role" --file "$return_fixtures/$role-positive.json"
 done
 
 check_bad_return() { # role, file, required diagnostic text
   local role=$1 file=$2 expected=$3 output status
   output="$tmp/${role}-negative.out"
   set +e
-  scripts/assert-return-complete.sh --role "$role" --file "$file" >"$output" 2>&1
+  return_complete "$PWD" --role "$role" --file "$file" >"$output" 2>&1
   status=$?
   set -e
   if [[ $status -eq 0 ]]; then
@@ -2112,7 +2098,7 @@ if (( template_mode )); then
 fi
 
 set +e
-scripts/assert-return-complete.sh >"$tmp/return-usage.out" 2>&1
+return_complete "$PWD" >"$tmp/return-usage.out" 2>&1
 return_usage_status=$?
 set -e
 [[ $return_usage_status -eq 2 ]] \
@@ -2445,12 +2431,6 @@ job_fixture="$tmp/job-metasystem"
 mkdir -p "$job_fixture/scripts/agents" \
   "$job_fixture/artifacts/agents/jobs" \
   "$job_fixture/artifacts/agents/fixture-job/rounds/1"
-cp scripts/assert-return-complete.sh "$job_fixture/scripts/"
-# The copied assert script resolves its engine as <fixture>/bin/metasystem;
-# give the fixture checkout the real one (the python schema helper it used
-# to copy is gone — the binary materializes schemas itself).
-mkdir -p "$job_fixture/bin"
-cp bin/metasystem "$job_fixture/bin/metasystem"
 cp -R scripts/agents/schemas "$job_fixture/scripts/agents/"
 cat >"$job_fixture/artifacts/agents/jobs/fixture-job.json" <<'EOF'
 {
@@ -2464,7 +2444,7 @@ cat >"$job_fixture/artifacts/agents/jobs/fixture-job.json" <<'EOF'
 EOF
 cp "$return_fixtures/implementer-positive.json" \
   "$job_fixture/artifacts/agents/fixture-job/rounds/1/return.json"
-(cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job)
+return_complete "$job_fixture" --job fixture-job
 
 mkdir -p "$job_fixture/artifacts/agents/fixture-job/rounds/2"
 cat >"$job_fixture/artifacts/agents/jobs/fixture-job-r2.json" <<'EOF'
@@ -2481,7 +2461,7 @@ cp "$return_fixtures/implementer-positive.json" \
   "$job_fixture/artifacts/agents/fixture-job/rounds/2/return.json"
 "$engine" json set --file "$job_fixture/artifacts/agents/fixture-job/rounds/2/return.json" \
   --field jobId=fixture-job-r2 --int round=2 --field sessionId=session-2
-(cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job-r2)
+return_complete "$job_fixture" --job fixture-job-r2
 
 # One mismatched identity field per fixture, each derived from the same
 # schema-valid positive return.
@@ -2497,7 +2477,7 @@ for field in jobId round runtime sessionId; do
   cp "$return_fixtures/identity-$field.json" \
     "$job_fixture/artifacts/agents/fixture-job/rounds/1/return.json"
   set +e
-  (cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job) >"$tmp/identity-$field.out" 2>&1
+  return_complete "$job_fixture" --job fixture-job >"$tmp/identity-$field.out" 2>&1
   identity_status=$?
   set -e
   if [[ $identity_status -eq 0 ]]; then
@@ -2619,58 +2599,66 @@ sed 's/| HIGH |/| MEDIUM |/; s/| DONE |/| PARTIAL |/' "$tmp/good.md" >"$tmp/medi
 }
 "$engine" validate design-obligations --file docs/examples/design-obligation-matrix.md >/dev/null
 
+# The refactor baseline gate, run for the installation at root (whose
+# metasystem.conf supplies the cadence) from the current directory.
+refactor_baseline_at() { # root, then the verb's action and arguments
+  local at=$1
+  shift
+  "$engine" internal validate refactor-baseline "$@" --root "$at"
+}
+
 repo="$tmp/baseline-repo"
 git init -q -b main "$repo"
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit --allow-empty -qm base
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" >/dev/null)
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" check >/dev/null) || {
+(cd "$repo" && refactor_baseline_at "$root" record --gate "declared acceptance gate" >/dev/null)
+(cd "$repo" && refactor_baseline_at "$root" check >/dev/null) || {
   echo "refactor baseline check blocked on the baseline file's own dirt right after record" >&2
   exit 1
 }
 git -C "$repo" add plans/refactor-baseline
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm baseline
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" check >/dev/null)
+(cd "$repo" && refactor_baseline_at "$root" check >/dev/null)
 echo dirty >"$repo/dirty.txt"
-if (cd "$repo" && "$root/scripts/refactor-baseline.sh" check >/dev/null 2>&1); then
+if (cd "$repo" && refactor_baseline_at "$root" check >/dev/null 2>&1); then
   echo "refactor baseline check accepted a dirty worktree" >&2
   exit 1
 fi
 rm "$repo/dirty.txt"
-if (cd "$repo" && "$root/scripts/refactor-baseline.sh" check --max-commits 0 >/dev/null 2>&1); then
+if (cd "$repo" && refactor_baseline_at "$root" check --max-commits 0 >/dev/null 2>&1); then
   echo "refactor baseline check ignored the commit-count backstop" >&2
   exit 1
 fi
 # Custom and absolute --file paths normalize to the repository root; paths
 # outside the repository are rejected because git cannot see their dirt.
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file plans/custom-baseline >/dev/null)
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" check --file plans/custom-baseline >/dev/null) || {
+(cd "$repo" && refactor_baseline_at "$root" record --gate "declared acceptance gate" --file plans/custom-baseline >/dev/null)
+(cd "$repo" && refactor_baseline_at "$root" check --file plans/custom-baseline >/dev/null) || {
   echo "refactor baseline check blocked a custom relative --file right after record" >&2
   exit 1
 }
 git -C "$repo" add plans/custom-baseline
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm custom-baseline
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "$repo/plans/abs-baseline" >/dev/null)
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" check --file "$repo/plans/abs-baseline" >/dev/null) || {
+(cd "$repo" && refactor_baseline_at "$root" record --gate "declared acceptance gate" --file "$repo/plans/abs-baseline" >/dev/null)
+(cd "$repo" && refactor_baseline_at "$root" check --file "$repo/plans/abs-baseline" >/dev/null) || {
   echo "refactor baseline check blocked an in-repository absolute --file right after record" >&2
   exit 1
 }
 git -C "$repo" add plans/abs-baseline
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm abs-baseline
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "plans/bäseline" >/dev/null)
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" check --file "plans/bäseline" >/dev/null) || {
+(cd "$repo" && refactor_baseline_at "$root" record --gate "declared acceptance gate" --file "plans/bäseline" >/dev/null)
+(cd "$repo" && refactor_baseline_at "$root" check --file "plans/bäseline" >/dev/null) || {
   echo "refactor baseline check blocked a non-ASCII --file right after record (quotePath)" >&2
   exit 1
 }
 git -C "$repo" add "plans/bäseline"
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm nonascii-baseline
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "plans/my baseline" >/dev/null)
-(cd "$repo" && "$root/scripts/refactor-baseline.sh" check --file "plans/my baseline" >/dev/null) || {
+(cd "$repo" && refactor_baseline_at "$root" record --gate "declared acceptance gate" --file "plans/my baseline" >/dev/null)
+(cd "$repo" && refactor_baseline_at "$root" check --file "plans/my baseline" >/dev/null) || {
   echo "refactor baseline check blocked a space-containing --file right after record (C-quoting)" >&2
   exit 1
 }
 git -C "$repo" add "plans/my baseline"
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm space-baseline
-if (cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "$tmp/outside-baseline" >/dev/null 2>&1); then
+if (cd "$repo" && refactor_baseline_at "$root" record --gate "declared acceptance gate" --file "$tmp/outside-baseline" >/dev/null 2>&1); then
   echo "refactor baseline accepted a --file outside the repository" >&2
   exit 1
 fi
@@ -2783,76 +2771,74 @@ if "$engine" validate stop-loss --file "$tmp/nogain-fakegain.md" >/dev/null 2>&1
   exit 1
 fi
 
+# The receipt ledger verb, run for the installation at root (whose
+# metasystem.conf supplies the cadence).
+receipt_at() { # root, then the verb's action and arguments
+  local at=$1
+  shift
+  "$engine" receipt "$@" --root "$at"
+}
+
 knob_fixture="$tmp/conf-consuming-scripts"
-mkdir -p "$knob_fixture/receipt/scripts" "$knob_fixture/watch/scripts" "$knob_fixture/watch/jobs" \
-  "$knob_fixture/receipt/bin" "$knob_fixture/watch/bin"
-cp scripts/receipt.sh scripts/metasystem-config.sh "$knob_fixture/receipt/scripts/"
-cp bin/metasystem "$knob_fixture/receipt/bin/metasystem"
+mkdir -p "$knob_fixture/receipt" "$knob_fixture/watch/jobs"
 printf 'retro.max-receipts=0\nretro.max-age-days=30\n' >"$knob_fixture/receipt/metasystem.conf"
-"$knob_fixture/receipt/scripts/receipt.sh" add --type implement --outcome shipped --file "$knob_fixture/receipt/receipts.log" >/dev/null
-if "$knob_fixture/receipt/scripts/receipt.sh" check --file "$knob_fixture/receipt/receipts.log" >/dev/null 2>&1; then
+receipt_at "$knob_fixture/receipt" add --type implement --outcome shipped --file "$knob_fixture/receipt/receipts.log" >/dev/null
+if receipt_at "$knob_fixture/receipt" check --file "$knob_fixture/receipt/receipts.log" >/dev/null 2>&1; then
   echo "receipt ignored the metasystem.conf receipt limit" >&2
   exit 1
 fi
-METASYSTEM_RETRO_MAX_RECEIPTS=2 "$knob_fixture/receipt/scripts/receipt.sh" check --file "$knob_fixture/receipt/receipts.log" >/dev/null \
+METASYSTEM_RETRO_MAX_RECEIPTS=2 receipt_at "$knob_fixture/receipt" check --file "$knob_fixture/receipt/receipts.log" >/dev/null \
   || { echo "receipt did not prefer the environment over metasystem.conf" >&2; exit 1; }
-METASYSTEM_RETRO_MAX_RECEIPTS=0 "$knob_fixture/receipt/scripts/receipt.sh" check --max-receipts 2 --file "$knob_fixture/receipt/receipts.log" >/dev/null \
+METASYSTEM_RETRO_MAX_RECEIPTS=0 receipt_at "$knob_fixture/receipt" check --max-receipts 2 --file "$knob_fixture/receipt/receipts.log" >/dev/null \
   || { echo "receipt did not prefer the flag over the environment" >&2; exit 1; }
 
-cp scripts/watch-background-jobs.sh scripts/metasystem-config.sh "$knob_fixture/watch/scripts/"
-cp bin/metasystem "$knob_fixture/watch/bin/metasystem"
 printf 'watch.stale-min=7\nwatch.cap-min=%s\n' "$fixture_watcher_config_cap_min" >"$knob_fixture/watch/metasystem.conf"
 touch "$knob_fixture/watch/state"
-"$knob_fixture/watch/scripts/watch-background-jobs.sh" --dir "$knob_fixture/watch/jobs" --state "$knob_fixture/watch/state" --once >"$knob_fixture/watch.out"
+"$engine" internal report watch-jobs --root "$knob_fixture/watch" --dir "$knob_fixture/watch/jobs" --state "$knob_fixture/watch/state" --once >"$knob_fixture/watch.out"
 grep -q "stale=7m cap=${fixture_watcher_config_cap_min}m" "$knob_fixture/watch.out" \
   || { echo "watcher ignored metasystem.conf ceilings" >&2; exit 1; }
 
 refactor_knob="$knob_fixture/refactor"
-mkdir -p "$refactor_knob/scripts" "$refactor_knob/bin"
-cp scripts/refactor-baseline.sh scripts/metasystem-config.sh "$refactor_knob/scripts/"
-cp bin/metasystem "$refactor_knob/bin/metasystem"
-# The baseline recorder demands a clean worktree; the engine is a build
-# artifact there exactly as in production.
-printf 'bin/\n' >"$refactor_knob/.gitignore"
+mkdir -p "$refactor_knob"
 printf 'refactor.max-age-minutes=1440\nrefactor.max-commits=0\n' >"$refactor_knob/metasystem.conf"
 git init -q -b main "$refactor_knob"
 printf 'fixture\n' >"$refactor_knob/source.txt"
-git -C "$refactor_knob" add source.txt metasystem.conf scripts .gitignore
+git -C "$refactor_knob" add source.txt metasystem.conf
 git -C "$refactor_knob" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm initial
-(cd "$refactor_knob" && scripts/refactor-baseline.sh record --gate fixture >/dev/null)
+(cd "$refactor_knob" && refactor_baseline_at "$refactor_knob" record --gate fixture >/dev/null)
 git -C "$refactor_knob" add plans/refactor-baseline
 git -C "$refactor_knob" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm baseline
-if (cd "$refactor_knob" && scripts/refactor-baseline.sh check >/dev/null 2>&1); then
+if (cd "$refactor_knob" && refactor_baseline_at "$refactor_knob" check >/dev/null 2>&1); then
   echo "refactor baseline ignored metasystem.conf commit cadence" >&2
   exit 1
 fi
-(cd "$refactor_knob" && scripts/refactor-baseline.sh check --max-commits 2 >/dev/null) \
+(cd "$refactor_knob" && refactor_baseline_at "$refactor_knob" check --max-commits 2 >/dev/null) \
   || { echo "refactor baseline did not prefer the cadence flag" >&2; exit 1; }
 
 rfile="$tmp/receipts.log"
-scripts/receipt.sh add --type implement --outcome shipped \
+receipt_at "$PWD" add --type implement --outcome shipped \
   --delegate codex:fixture-code:implementer-job \
   --delegate claude:fixture-review:code-critic-job --file "$rfile" >/dev/null
 grep -q '|delegate=codex:fixture-code:implementer-job,claude:fixture-review:code-critic-job|' "$rfile" \
   || { echo "receipt did not join repeated delegate triples" >&2; exit 1; }
-scripts/receipt.sh check --file "$rfile" >/dev/null
-scripts/receipt.sh add --type review --outcome reworked --corrections 1 --file "$rfile" >/dev/null
-if scripts/receipt.sh check --max-receipts 1 --file "$rfile" >/dev/null 2>&1; then
+receipt_at "$PWD" check --file "$rfile" >/dev/null
+receipt_at "$PWD" add --type review --outcome reworked --corrections 1 --file "$rfile" >/dev/null
+if receipt_at "$PWD" check --max-receipts 1 --file "$rfile" >/dev/null 2>&1; then
   echo "receipt check ignored the receipt-count backstop" >&2
   exit 1
 fi
-scripts/receipt.sh retro "fixture retro" --file "$rfile" >/dev/null
-scripts/receipt.sh check --max-receipts 1 --file "$rfile" >/dev/null
-if scripts/receipt.sh add --type bogus --outcome shipped --file "$rfile" >/dev/null 2>&1; then
+receipt_at "$PWD" retro "fixture retro" --file "$rfile" >/dev/null
+receipt_at "$PWD" check --max-receipts 1 --file "$rfile" >/dev/null
+if receipt_at "$PWD" add --type bogus --outcome shipped --file "$rfile" >/dev/null 2>&1; then
   echo "receipt add accepted an invalid type" >&2
   exit 1
 fi
 printf '1|1970-01-01T00:00:01Z|RETRO|note=aged\n' >"$tmp/receipts-aged.log"
-scripts/receipt.sh check --max-age-days 0 --file "$tmp/receipts-aged.log" >/dev/null || {
+receipt_at "$PWD" check --max-age-days 0 --file "$tmp/receipts-aged.log" >/dev/null || {
   echo "receipt check demanded a retro over an empty period" >&2
   exit 1
 }
-scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "$rfile" >/dev/null
+receipt_at "$PWD" add --type improve --outcome shipped --verify caught --file "$rfile" >/dev/null
 # The receipt-stats intermittent (records/misc/known-issue-receipt-stats-flake.md):
 # the ledger is byte-perfect in every preserved failure yet a grep misses
 # roughly every other Mac suite run. This probe captures the failing
@@ -2863,9 +2849,9 @@ scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "
 receipt_probe_dir="${TMPDIR:-/tmp}/receipt-evidence"; mkdir -p "$receipt_probe_dir"
 receipt_stats_probe() { # label, expected pattern, ledger file, extra stats args...
   local label=$1 expected=$2 file=$3 out rc=0
-  local stats_sh="${receipt_stats_sh:-scripts/receipt.sh}"
+  local stats_root="${receipt_stats_root:-$PWD}"
   shift 3
-  if out=$("$stats_sh" stats "$@" --file "$file"); then rc=0; else rc=$?; fi
+  if out=$(receipt_at "$stats_root" stats "$@" --file "$file"); then rc=0; else rc=$?; fi
   if printf '%s\n' "$out" | grep -q "$expected"; then return 0; fi
   {
     echo "FAILURE $label rc=$rc at $(date -u +%Y%m%dT%H%M%SZ)"
@@ -2883,9 +2869,7 @@ receipt_stats_probe type-improve '^type_improve=1$' "$rfile" || { echo "receipt 
 receipt_stats_probe all-receipts-3 '^receipts=3$' "$rfile" --all || { echo "receipt stats --all miscounted" >&2; exit 1; }
 
 receipt_relation="$tmp/receipt-relation"
-mkdir -p "$receipt_relation/scripts" "$receipt_relation/artifacts/agents/jobs" "$receipt_relation/bin"
-cp scripts/receipt.sh scripts/metasystem-config.sh "$receipt_relation/scripts/"
-cp bin/metasystem "$receipt_relation/bin/metasystem"
+mkdir -p "$receipt_relation/artifacts/agents/jobs"
 printf 'retro.max-receipts=25\nretro.max-age-days=30\n' >"$receipt_relation/metasystem.conf"
 printf '{"jobId":"fixture-implementer","role":"implementer","parentJob":null}\n' \
   >"$receipt_relation/artifacts/agents/jobs/fixture-implementer.json"
@@ -2896,7 +2880,7 @@ printf '{"jobId":"unrelated-critic","role":"code-critic","parentJob":null,"revie
 printf '{"jobId":"waived-implementer","role":"implementer","parentJob":null,"critiqueWaived":{"class":"prose-under-30"}}\n' \
   >"$receipt_relation/artifacts/agents/jobs/waived-implementer.json"
 relation_log="$receipt_relation/receipts.log"
-if "$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
+if receipt_at "$receipt_relation" add --type implement --outcome shipped \
     --skills code-critique --delegate fake:model:fixture-implementer \
     --file "$relation_log" >"$receipt_relation/missing-chain.out" 2>&1; then
   echo "receipt accepted code-critique without a related critic chain" >&2
@@ -2904,36 +2888,36 @@ if "$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped
 fi
 grep -Fq 'code-critic chain id and the implementer job id' "$receipt_relation/missing-chain.out" \
   || { echo "receipt refusal did not name the missing relation" >&2; exit 1; }
-if "$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
+if receipt_at "$receipt_relation" add --type implement --outcome shipped \
     --skills code-critique --delegate fake:model:fixture-implementer \
     --delegate fake:model:unrelated-critic --file "$relation_log" >/dev/null 2>&1; then
   echo "receipt accepted an unrelated critic chain" >&2
   exit 1
 fi
-"$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
+receipt_at "$receipt_relation" add --type implement --outcome shipped \
   --skills code-critique --delegate fake:model:fixture-implementer \
   --delegate fake:model:fixture-critic --file "$relation_log" >/dev/null
 mkdir -p "$receipt_relation/artifacts/agents/waived-implementer"
 printf 'Working Mode: implement\nMission Stream: waiver-stream\n' \
   >"$receipt_relation/artifacts/agents/waived-implementer/brief.md"
-"$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
+receipt_at "$receipt_relation" add --type implement --outcome shipped \
   --delegate fake:model:waived-implementer --file "$relation_log" >/dev/null
 grep -Fq '|critique_waived=prose-under-30|waiver_stream=waiver-stream|' "$relation_log" \
   || { echo "receipt did not surface the accepted waiver and its stream" >&2; exit 1; }
 # Probed like the three stats greps above: the 2026-08-14 flake landed on
 # this previously unprobed grep inside a nested adopted-copy validation.
-receipt_stats_sh="$receipt_relation/scripts/receipt.sh"
+receipt_stats_root="$receipt_relation"
 receipt_stats_probe critique-waivers '^critique_waivers=1$' "$relation_log" \
   || { echo "receipt stats did not count the stream waiver for retro" >&2; exit 1; }
-receipt_stats_sh=""
+receipt_stats_root=""
 
 correction_log="$tmp/receipt-correction.log"
-scripts/receipt.sh add --type implement --outcome shipped --skills none \
+receipt_at "$PWD" add --type implement --outcome shipped --skills none \
   --file "$correction_log" >/dev/null
 original_line=$(sed -n '1p' "$correction_log")
 original_epoch=${original_line%%|*}
 original_sha1=$(printf '%s' "$original_line" | shasum -a 1 | awk '{print $1}')
-scripts/receipt.sh correct --ref-epoch "$original_epoch" --ref-sha1 "$original_sha1" \
+receipt_at "$PWD" correct --ref-epoch "$original_epoch" --ref-sha1 "$original_sha1" \
   --field skills --was none --now review --reason 'fixture correction' \
   --file "$correction_log" >/dev/null
 [[ "$(sed -n '1p' "$correction_log")" == "$original_line" ]] \
@@ -2945,7 +2929,7 @@ grep -Fq "|CORRECTION|ref_epoch=$original_epoch|ref_sha1=$original_sha1|field=sk
 correction_line=$(sed -n '2p' "$correction_log")
 correction_epoch=${correction_line%%|*}
 correction_sha1=$(printf '%s' "$correction_line" | shasum -a 1 | awk '{print $1}')
-if scripts/receipt.sh correct --ref-epoch "$correction_epoch" --ref-sha1 "$correction_sha1" \
+if receipt_at "$PWD" correct --ref-epoch "$correction_epoch" --ref-sha1 "$correction_sha1" \
     --field reason --was 'fixture correction' --now invalid --reason 'must not correct a correction' \
     --file "$correction_log" >"$tmp/correct-correction.out" 2>&1; then
   echo "receipt correction accepted an earlier CORRECTION line as its original" >&2
@@ -2958,13 +2942,13 @@ grep -Fq 'must identify an original RECEIPT line' "$tmp/correct-correction.out" 
 # note, the skills list, delegates, and the retro summary must each stay one log line.
 crlf_fixture=$(printf 'a\r\nb')
 rfile_crlf="$tmp/receipts-crlf.log"
-scripts/receipt.sh add --type implement --outcome shipped --note "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
+receipt_at "$PWD" add --type implement --outcome shipped --note "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
 [[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 1 ]] || { echo "a CRLF note corrupted the receipt log" >&2; exit 1; }
-scripts/receipt.sh add --type implement --outcome shipped --skills "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
+receipt_at "$PWD" add --type implement --outcome shipped --skills "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
 [[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 2 ]] || { echo "a CRLF skills list corrupted the receipt log" >&2; exit 1; }
-scripts/receipt.sh add --type implement --outcome shipped --delegate "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
+receipt_at "$PWD" add --type implement --outcome shipped --delegate "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
 [[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 3 ]] || { echo "a CRLF delegate corrupted the receipt log" >&2; exit 1; }
-scripts/receipt.sh retro "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
+receipt_at "$PWD" retro "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
 [[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 4 ]] || { echo "a CRLF retro summary corrupted the receipt log" >&2; exit 1; }
 if LC_ALL=C grep -q $'\r' "$rfile_crlf"; then
   echo "receipt sanitizer left a carriage return in the log" >&2
@@ -2995,7 +2979,9 @@ if (( template_mode )) && section_selected land-fixtures; then
 fi
 
 watch_background_jobs_fixtures_section() {
-# watch-background-jobs: all four reportable states plus baseline suppression.
+# The background-job watcher (report watch-jobs): all four reportable states
+# plus baseline suppression, driven through the engine from this checkout.
+watch_jobs() { "$engine" internal report watch-jobs --root "$PWD" "$@"; }
 # The state file is pre-created because a MISSING state file auto-baselines on
 # first run (the 2026-08-03 hardening); an existing empty state means armed.
 # Backdate a file's timestamps so stale and cap windows are separable;
@@ -3011,22 +2997,22 @@ wbj="$tmp/wbj"; mkdir -p "$wbj/jobs"
 printf '{"status":"completed"}' >"$wbj/jobs/done.json"
 printf '{"status":"running"}'   >"$wbj/jobs/live.json"
 touch "$wbj/s1" "$wbj/s2" "$wbj/s3" "$wbj/s3b" "$wbj/s3c" "$wbj/s6" "$wbj/s7" "$wbj/s8"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o1" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o1" 2>&1
 grep -q "^DONE done status=completed" "$wbj/o1" || {
   echo "watch-background-jobs: terminal job not reported" >&2; exit 1; }
 grep -q "live" "$wbj/o1" && {
   echo "watch-background-jobs: running job reported as terminal" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o2" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o2" 2>&1
 grep -v "^ARMED " "$wbj/o2" | grep -q . && {
   echo "watch-background-jobs: re-reported an already-reported job" >&2; exit 1; }
 # age the record by a controlled 10 minutes so stale and cap are separable
 age_file "$wbj/jobs/live.json" 600
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s2" --stale-min 5 --cap-min "$fixture_watcher_nonfiring_cap_min" --once >"$wbj/o3" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s2" --stale-min 5 --cap-min "$fixture_watcher_nonfiring_cap_min" --once >"$wbj/o3" 2>&1
 grep -q "^STALE live" "$wbj/o3" || {
   echo "watch-background-jobs: stale job not reported" >&2; exit 1; }
 grep -q "^CAPPED live" "$wbj/o3" && {
   echo "watch-background-jobs: hard cap fired inside its own window" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min "$fixture_watcher_firing_cap_min" --once >"$wbj/o4" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min "$fixture_watcher_firing_cap_min" --once >"$wbj/o4" 2>&1
 grep -q "^CAPPED live" "$wbj/o4" || {
   echo "watch-background-jobs: hard cap not reported" >&2; exit 1; }
 # A non-JSON record keeps the header's mtime-only contract (script-misc-4):
@@ -3037,11 +3023,11 @@ mkdir -p "$wbj/plain/jobs"
 printf 'plain text progress notes\n' >"$wbj/plain/jobs/notes.json"
 age_file "$wbj/plain/jobs/notes.json" 360
 touch "$wbj/s9" "$wbj/s10"
-scripts/watch-background-jobs.sh --dir "$wbj/plain/jobs" --state "$wbj/s9" --start-verify-min 5 --stale-min 20 --once >"$wbj/o9" 2>&1
+watch_jobs --dir "$wbj/plain/jobs" --state "$wbj/s9" --start-verify-min 5 --stale-min 20 --once >"$wbj/o9" 2>&1
 grep -q "NEVER-STARTED" "$wbj/o9" && {
   echo "watch-background-jobs: non-JSON record got a status-based NEVER-STARTED" >&2; exit 1; }
 age_file "$wbj/plain/jobs/notes.json" 1500
-scripts/watch-background-jobs.sh --dir "$wbj/plain/jobs" --state "$wbj/s10" --start-verify-min 5 --stale-min 20 --once >"$wbj/o10" 2>&1
+watch_jobs --dir "$wbj/plain/jobs" --state "$wbj/s10" --start-verify-min 5 --stale-min 20 --once >"$wbj/o10" 2>&1
 grep -q "^STALE notes" "$wbj/o10" || {
   echo "watch-background-jobs: quiet non-JSON record did not report STALE" >&2; exit 1; }
 
@@ -3052,35 +3038,35 @@ mkdir -p "$wbj/live-log/jobs"
 printf '{"status":"running"}' >"$wbj/live-log/jobs/busy.json"
 printf 'building\n' >"$wbj/live-log/jobs/busy.log"
 age_file "$wbj/live-log/jobs/busy.json" 3600
-scripts/watch-background-jobs.sh --dir "$wbj/live-log/jobs" --state "$wbj/s3b" --stale-min 5 --once >"$wbj/o4b" 2>&1
+watch_jobs --dir "$wbj/live-log/jobs" --state "$wbj/s3b" --stale-min 5 --once >"$wbj/o4b" 2>&1
 grep -q "^STALE busy" "$wbj/o4b" && {
   echo "watch-background-jobs: reported STALE for a job whose log is advancing" >&2; exit 1; }
 # ...but when BOTH files go quiet it is genuinely stale and must still report.
 age_file "$wbj/live-log/jobs/busy.log" 3600
-scripts/watch-background-jobs.sh --dir "$wbj/live-log/jobs" --state "$wbj/s3c" --stale-min 5 --once >"$wbj/o4c" 2>&1
+watch_jobs --dir "$wbj/live-log/jobs" --state "$wbj/s3c" --stale-min 5 --once >"$wbj/o4c" 2>&1
 grep -q "^STALE busy" "$wbj/o4c" || {
   echo "watch-background-jobs: missed a genuinely stale job (all files quiet)" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s4" --baseline >/dev/null 2>&1
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s4" --once >"$wbj/o5" 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s4" --baseline >/dev/null 2>&1
+watch_jobs --dir "$wbj/jobs" --state "$wbj/s4" --once >"$wbj/o5" 2>&1
 grep -q "^DONE done" "$wbj/o5" && {
   echo "watch-background-jobs: baseline did not suppress pre-existing jobs" >&2; exit 1; }
-if scripts/watch-background-jobs.sh --state "$wbj/s5" --once >/dev/null 2>&1; then
+if watch_jobs --state "$wbj/s5" --once >/dev/null 2>&1; then
   echo "watch-background-jobs: accepted a call with no --dir" >&2; exit 1
 fi
 # sidecar records must not double-report or bypass scope
 printf '{"status":"completed","workspaceRoot":"/r/other"}' >"$wbj/jobs/side.json"
 printf 'log text, not json\n'                             >"$wbj/jobs/side.log"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s7" --once >"$wbj/o7" 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s7" --once >"$wbj/o7" 2>&1
 grep -q "side" "$wbj/o7" && {
   echo "watch-background-jobs: sidecar record bypassed the scope filter" >&2; exit 1; }
 printf '{"status":"completed","workspaceRoot":"/r/mine"}' >"$wbj/jobs/dual.json"
 printf 'log text, not json\n'                            >"$wbj/jobs/dual.log"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8" --once >"$wbj/o8" 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8" --once >"$wbj/o8" 2>&1
 [ "$(grep -c '^DONE dual' "$wbj/o8")" -eq 1 ] || {
   echo "watch-background-jobs: job with a sidecar did not report exactly once" >&2; exit 1; }
 printf '{"jobId":"chain-r2","parentJob":"chain","round":2,"status":"completed","workspaceRoot":"/r/mine"}' >"$wbj/jobs/chain-r2.json"
 touch "$wbj/s8b"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8b" --once >"$wbj/o8b" 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8b" --once >"$wbj/o8b" 2>&1
 grep -q '^DONE chain-r2 status=completed' "$wbj/o8b" || {
   echo "watch-background-jobs: follow-up child was not tracked under its own id" >&2; exit 1; }
 # scope: own repo and its worktrees in, peer repo and prefix-collision out
@@ -3088,7 +3074,7 @@ printf '{"status":"completed","workspaceRoot":"/r/mine"}'                >"$wbj/
 printf '{"status":"completed","workspaceRoot":"/r/mine/.worktrees/w"}'   >"$wbj/jobs/sc-wt.json"
 printf '{"status":"completed","workspaceRoot":"/r/other"}'               >"$wbj/jobs/sc-peer.json"
 printf '{"status":"completed","workspaceRoot":"/r/mine-other"}'          >"$wbj/jobs/sc-prefix.json"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s6" --once >"$wbj/o6" 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s6" --once >"$wbj/o6" 2>&1
 grep -q "^DONE sc-mine" "$wbj/o6" || {
   echo "watch-background-jobs: in-scope job not reported" >&2; exit 1; }
 grep -q "^DONE sc-wt" "$wbj/o6" || {
@@ -3100,13 +3086,13 @@ grep -q "sc-prefix" "$wbj/o6" && {
 # distinct scopes must not share default state. Auto-baseline swallows the
 # first pass per fresh default state, so warm each scope, then prove each
 # reports a job that arrives after its own arming.
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once >/dev/null 2>&1
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once >/dev/null 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/mine  --once >/dev/null 2>&1
+watch_jobs --dir "$wbj/jobs" --scope /r/other --once >/dev/null 2>&1
 printf '{"status":"completed","workspaceRoot":"/r/mine"}'  >"$wbj/jobs/nu-mine.json"
 printf '{"status":"completed","workspaceRoot":"/r/other"}' >"$wbj/jobs/nu-other.json"
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once 2>/dev/null | grep -q "^DONE nu-mine" || {
+watch_jobs --dir "$wbj/jobs" --scope /r/mine  --once 2>/dev/null | grep -q "^DONE nu-mine" || {
   echo "watch-background-jobs: post-arming job not reported under its scope's default state" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
+watch_jobs --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
   echo "watch-background-jobs: distinct scopes shared a default state file" >&2; exit 1; }
 }
 if section_selected watch-background-jobs-fixtures; then

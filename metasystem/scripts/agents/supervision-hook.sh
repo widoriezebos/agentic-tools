@@ -2166,11 +2166,11 @@ external_stop_json() { # system message, reason, cause, remedy
 
 if [[ "$event" == receipt ]]; then
   receipt_rc=0
-  bash "$script_dir/../receipt.sh" check >/dev/null 2>&1 || receipt_rc=$?
+  "$ms" receipt check --root "$script_dir/.." >/dev/null 2>&1 || receipt_rc=$?
   if (( receipt_rc == 1 )); then
-    surface_json "Metasystem retro due: run scripts/receipt.sh check for details, then skills/retro."
+    surface_json "Metasystem retro due: run metasystem receipt check for details, then skills/retro."
   elif (( receipt_rc != 0 )); then
-    surface_json "Metasystem receipt check errored; run scripts/receipt.sh check to see why."
+    surface_json "Metasystem receipt check errored; run metasystem receipt check to see why."
   fi
   exit 0
 fi
@@ -2250,7 +2250,7 @@ $digest_message"
   receipt_capture=$stop_work_dir/receipt.txt
   receipt_stderr=$stop_work_dir/receipt.stderr
   receipt_rc=0
-  bash "$script_dir/../receipt.sh" check >"$receipt_capture" 2>"$receipt_stderr" || receipt_rc=$?
+  "$ms" receipt check --root "$script_dir/.." >"$receipt_capture" 2>"$receipt_stderr" || receipt_rc=$?
 fi
 
 complete_stop_attempt() { # completion arguments
@@ -2541,7 +2541,7 @@ if [[ "$event" == stop ]]; then
   # with OWNED-ELSEWHERE replaces the entire turn-end report, including the
   # refusal to walk away from open work, with a sentence about ownership.
   if [[ "$main_class" == MAIN && "$main_holder" != true ]]; then
-    advisor_message="OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run scripts/agents/second-session.sh."
+    advisor_message="OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run metasystem session isolate."
     [[ -z "$up_failure" ]] || advisor_message="$advisor_message
 $up_failure"
     [[ -z "$hook_evidence_failure" ]] || advisor_message="$advisor_message
@@ -2588,7 +2588,7 @@ $hook_log_failure"
   # fired and found nothing from one that never fired, which is the confusion
   # that let this repository run for days with its hooks uninstalled.
   evidence_gc_rc=0
-  "$world_installation/scripts/agents/evidence-gc.sh" \
+  "${METASYSTEM_BIN:-$world_installation/bin/metasystem}" internal evidence gc --root "$world_installation" \
     >>"$supervision_dir/hooks.log" 2>&1 || evidence_gc_rc=$?
   (( evidence_gc_rc == 0 )) || record_stop_failure "the hook evidence state could not be maintained" hook-evidence
 
