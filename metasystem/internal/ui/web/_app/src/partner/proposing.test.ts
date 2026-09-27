@@ -267,17 +267,37 @@ describe("what a line says it will carry", () => {
   });
 
   /**
-   * An abandon shows the reason, the successor where one was named, and what
-   * becomes of the goals that wait for the goal — which is the engine's rule and
-   * not the page's, so the human reads it before the press rather than learning it
-   * from a refusal (g1-s64 D2).
+   * An abandon shows the goal's intent WHOLE, then the reason, the successor
+   * where one was named, and what becomes of the goals that wait for the goal.
+   *
+   * The intent is first and it is the whole of it, because the heading above the
+   * arguments shows the TITLE — the intent cut at its first sentence — and this
+   * press ends the goal for good. The multi-sentence intent below is the case
+   * that tells the two apart: the title stops at the comma-free first sentence,
+   * and the second sentence exists nowhere on the card but here (g1-s64 D4, Sol
+   * S64-C-01). What becomes of the dependents is the engine's rule and not the
+   * page's, so the human reads it before the press rather than learning it from
+   * a refusal (g1-s64 D2).
    */
-  it("shows an abandon's reason, successor and what waits for the goal", () => {
-    expect(argumentsOf(lineOf(card([abandonOf()])))).toEqual([
+  it("shows an abandon's intent whole, its reason, its successor and what waits for the goal", () => {
+    const whole = "Fleet presence is read from the census, not polled. It has been for a week.";
+    const line = lineOf(
+      card([
+        abandonOf({
+          read: { intent: whole, nextStep: READ.nextStep, tier: 2, labels: ["fleet"], dependents: ["g1-s44", "g1-s45"] },
+        }),
+      ]),
+    );
+
+    expect(argumentsOf(line)).toEqual([
+      { label: "Intent", value: whole },
       { label: "Reason", value: "the seat inventory carries this now" },
       { label: "Successor", value: "g1-s70" },
       { label: "Holds up", value: "2 goals wait for it: g1-s44, g1-s45 — they will wait for g1-s70 instead" },
     ]);
+    // And the heading the card shows beside the word is only the first sentence,
+    // which is the whole reason the argument above has to carry the rest.
+    expect(line.title).toBe("Fleet presence is read from the census");
   });
 
   /** A goal nothing waits for says nothing about dependents, and names no line. */
@@ -287,7 +307,23 @@ describe("what a line says it will carry", () => {
       read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] },
     });
     expect(argumentsOf(lineOf(card([alone])))).toEqual([
+      { label: "Intent", value: READ.intent },
       { label: "Reason", value: "the seat inventory carries this now" },
+    ]);
+  });
+
+  /**
+   * A line the service admitted without a reading says nothing about an intent,
+   * rather than throwing.
+   *
+   * Admission carries the reading on every abandon it offers, so this is not a
+   * card a human meets; it is the shape the function must survive, because a
+   * renderer that threw on one line would take the whole card with it.
+   */
+  it("says nothing of an intent on an abandon admitted without a reading", () => {
+    expect(argumentsOf(lineOf(card([abandonOf({ read: null })])))).toEqual([
+      { label: "Reason", value: "the seat inventory carries this now" },
+      { label: "Successor", value: "g1-s70" },
     ]);
   });
 

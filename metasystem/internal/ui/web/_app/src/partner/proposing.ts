@@ -257,9 +257,10 @@ export type Argument = { label: string; value: string };
  * Partner's prose: the Partner's own words are its "why", shown separately as
  * its words. An approve shows the intent and the next step whole from what was
  * read, as the Decisions open row does before its Approve, and the budget it
- * would carry with where that budget came from. An abandon shows the reason, the
- * successor where one was named, and what becomes of the goals that wait for the
- * one being abandoned, which is the sentence below.
+ * would carry with where that budget came from. An abandon shows the intent
+ * whole from what was read too, then the reason, the successor where one was
+ * named, and what becomes of the goals that wait for the one being abandoned,
+ * which is the sentence below.
  */
 export function argumentsOf(line: Line): readonly Argument[] {
   const said: Argument[] = [];
@@ -296,6 +297,13 @@ export function argumentsOf(line: Line): readonly Argument[] {
       add("Reason", fields.because);
       break;
     case "abandon-goal":
+      // The intent whole, first, from what the Partner read — as an approve's
+      // line shows it, and for a stronger reason: the heading above shows the
+      // TITLE, which is the intent cut at its first sentence, and this press
+      // ends the goal for good. A human deciding that reads the goal's own
+      // account of itself and not an abbreviation of it (g1-s64 D4, Sol
+      // S64-C-01).
+      add("Intent", line.read?.intent);
       add("Reason", fields.because);
       add("Successor", fields.successor);
       add("Holds up", dependentsWords(line));
