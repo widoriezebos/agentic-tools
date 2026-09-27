@@ -88,6 +88,9 @@ func runIsolatedBatchLandingLifecycle(t *testing.T, scenario string) {
 	t.Helper()
 	const selector = "METASYSTEM_BATCH_LIFECYCLE_SCENARIO"
 	if os.Getenv(selector) == scenario {
+		// This dedicated child process lands through the bed's planted
+		// commit script, as the shell commit boundary did.
+		batchCommitBoundary = plantedOrLandingCommit
 		runBatchLandingLifecycleScenario(t, scenario)
 		return
 	}

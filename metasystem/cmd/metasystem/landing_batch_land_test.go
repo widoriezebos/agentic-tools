@@ -141,8 +141,8 @@ func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
 	}
 	messageFile := strings.TrimPrefix(lines[8], "arg=")
 	wantLines := []string{want, "arg=--chain", "arg=chain-a", "arg=--goal", "arg=goal-a", "arg=--test-receipt", "arg=" + filepath.Join(module, "artifacts", "agents", "proof-runs", "batch", "batch.json"), "arg=-F", "arg=" + messageFile, "author-name=Owner", "author-email=owner@example.invalid", "committer-name=Owner", "committer-email=owner@example.invalid", "landed-by=actor"}
-	if !reflect.DeepEqual(lines, wantLines) || filepath.Dir(messageFile) != module || !strings.HasPrefix(filepath.Base(messageFile), ".batch-commit-message-") {
-		t.Fatalf("wrapper invocation=%q, want %q and a temporary message under %s", lines, wantLines, module)
+	if !reflect.DeepEqual(lines, wantLines) || strings.HasPrefix(messageFile, module+string(filepath.Separator)) || !strings.HasPrefix(filepath.Base(messageFile), "metasystem-batch-commit-message-") {
+		t.Fatalf("wrapper invocation=%q, want %q and a temporary message outside the work tree %s", lines, wantLines, module)
 	}
 	if _, err := os.Stat(messageFile); !os.IsNotExist(err) {
 		t.Fatalf("temporary commit message remains: %v", err)

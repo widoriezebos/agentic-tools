@@ -35,3 +35,13 @@ func plantedBatchCommit(request landpath.CommitRequest) (string, int) {
 	}
 	return output.String(), 0
 }
+
+// plantedOrLandingCommit commits through a planted scripts/agents/commit.sh
+// when the checkout has one, otherwise through the landing path.
+func plantedOrLandingCommit(request landpath.CommitRequest) (string, int) {
+	script := filepath.Join(request.Root, "scripts", "agents", "commit.sh")
+	if info, err := os.Stat(script); err == nil && info.Mode()&0o111 != 0 {
+		return plantedBatchCommit(request)
+	}
+	return landingPathCommit(request)
+}

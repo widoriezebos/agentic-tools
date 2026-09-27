@@ -481,7 +481,7 @@ func TestBatchLandingVerdictPolicyWithoutGit(t *testing.T) {
 				declaration = []string{"--attested", "source-commit", "--attested-snapshot", "source-tip", "--attested-base", "base"}
 			}
 			wantPrefix := append(declaration, "--goal", "goal-a", "--test-receipt", filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", batchProvenanceTestID+".json"), "-F")
-			if len(lines) != len(wantPrefix)+1 || !reflect.DeepEqual(lines[:len(wantPrefix)], wantPrefix) || !strings.HasPrefix(lines[len(wantPrefix)], filepath.Join(root, ".batch-commit-message-")) {
+			if len(lines) != len(wantPrefix)+1 || !reflect.DeepEqual(lines[:len(wantPrefix)], wantPrefix) || strings.HasPrefix(lines[len(wantPrefix)], root+string(filepath.Separator)) || !strings.HasPrefix(filepath.Base(lines[len(wantPrefix)]), "metasystem-batch-commit-message-") {
 				t.Fatalf("wrapper argv=%q want prefix=%q and message path", lines, wantPrefix)
 			}
 		})

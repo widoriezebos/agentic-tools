@@ -888,7 +888,10 @@ func TestApplyCertifiedPatchStagesTheTransportedBytes(t *testing.T) {
 	}
 }
 
-func TestCommitWithWrapperPassesDeclarationAndExplicitIdentity(t *testing.T) {
+// TestCommitWithWrapperUsesTempRepoTokenAndExplicitIdentity keeps its name
+// on the legacy mandatory floor; it proves the declaration, message and
+// approver identity the batch transport hands the commit boundary.
+func TestCommitWithWrapperUsesTempRepoTokenAndExplicitIdentity(t *testing.T) {
 	root := t.TempDir()
 	commitWrapperGitAdapterRepo(t, root, "Fixture", "fixture@example.invalid")
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("one\n"), 0o644))
