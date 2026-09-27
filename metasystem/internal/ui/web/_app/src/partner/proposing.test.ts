@@ -770,16 +770,19 @@ describe("what a line says about where it stands", () => {
   });
 
   /**
-   * And it says nothing of an answer the record has moved past (Astra C-04).
+   * And it says nothing of an answer a SETTLED entry has accounted for
+   * (Astra C-04, narrowed by E-03).
    *
-   * The answer is held because the record could not be written, so it is the
-   * only account of the act there is — until the record carries one. A mark made
-   * at an older version, or one standing over an entry somebody has settled
-   * since, is history: the line reads the record, and offers what the record
-   * offers. The mark is the store's, so a drawer that recovered used to hand the
-   * inbox its obsolete answer.
+   * The answer is held because the record could not be written, so it is the only
+   * account of the act there is — until the record carries one. What carries one
+   * is a settled entry: `applied`, `refused` or `dismissed`. A version increment
+   * is not one. Another tab's bookkeeping moves the version without saying what
+   * happened, and retiring the held answer on it hid the only explanation there
+   * was and offered a retry over an act that had landed (Astra E-03). The mark is
+   * the store's, so a drawer that recovered used to hand the inbox its obsolete
+   * answer.
    */
-  it("says nothing of a held answer older than the entry, or over a settled one", () => {
+  it("says nothing of a held answer once a settled entry accounts for it", () => {
     const held = (version: number): Marks => ({
       [lineID("t1", 0)]: {
         ticked: true, notRun: false, refusedUnsent: "",
@@ -790,16 +793,45 @@ describe("what a line says about where it stands", () => {
     expect(lineState(lineOf(settled))).toBe(APPLIED);
     expect(offersTryAgain(lineOf(settled))).toBe(false);
 
-    // Moved but unsettled: somebody else has written the line since, so what
-    // this page was holding is no longer the newest thing said about it.
+    // Moved but unsettled: somebody has written the line since and said nothing
+    // about what became of the act, so what this page holds is still the only
+    // account of it.
     const moved = card([proposal({ state: "applying", version: 3 })], held(2));
-    expect(lineState(lineOf(moved))).toBe(WAS_IN_FLIGHT);
+    expect(lineState(lineOf(moved))).toBe(`refused: goal is claimed; ${COULD_NOT_RECORD}`);
     expect(offersTryAgain(lineOf(moved))).toBe(true);
 
-    // And the answer this page is still the only account of is read as before.
+    // And at its own version, as before.
     const standing = card([proposal({ state: "applying", version: 2 })], held(2));
     expect(lineState(lineOf(standing))).toBe(`refused: goal is claimed; ${COULD_NOT_RECORD}`);
     expect(offersTryAgain(lineOf(standing))).toBe(true);
+  });
+
+  /**
+   * The end state of the two tabs below, read on the tab that holds the result
+   * (Astra E-03).
+   *
+   * This tab's approve applied, its outcome write met the other tab's attempt, and
+   * that tab then wrote `unresolved` at version 4 in the refusal's own sentence —
+   * bookkeeping about a request that published nothing. The act LANDED, and this
+   * held answer is the only thing anywhere that knows it: a line that read the
+   * unresolved entry instead would say the opposite and offer the press that
+   * approves the goal twice.
+   */
+  it("keeps a held result over another tab's unresolved bookkeeping", () => {
+    const landed = (version: number): Marks => ({
+      [lineID("t1", 0)]: {
+        ticked: true, notRun: false, refusedUnsent: "",
+        unrecorded: heldAt("applied", "", version),
+      },
+    });
+    const bookkept = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID, version: 4 })], landed(2));
+    expect(lineState(lineOf(bookkept))).toBe(`applied; ${COULD_NOT_RECORD}`);
+    expect(offersTryAgain(lineOf(bookkept))).toBe(false);
+
+    // And the settled entry retires it: the record carries the account now.
+    const recorded = card([proposal({ state: "applied", version: 4 })], landed(2));
+    expect(lineState(lineOf(recorded))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(recorded))).toBe(false);
   });
 
   it("offers Try again on a refused or unresolved line and on nothing else", () => {

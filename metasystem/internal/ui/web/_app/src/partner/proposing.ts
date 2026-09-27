@@ -100,12 +100,12 @@ export type Mark = {
    * So the answer is held here, the line reads as that answer, and what the line
    * offers is decided by it.
    *
-   * `version` is the entry it was held at, and it is what makes the answer
-   * expire. This mark stands ABOVE the record, and it may only do that while it
-   * is the newest thing said about the line: a mark older than the entry, or one
-   * over an entry somebody has settled, is an account the record has moved past,
-   * and a surface reading it showed a refusal over a goal that was applied and
-   * offered a second act (Astra C-04).
+   * `version` is the entry it was held at. What retires the answer is the
+   * record carrying an account of its own — an entry somebody has SETTLED — and
+   * not that number: a surface reading the mark raw showed a refusal over a goal
+   * that was applied and offered a second act (Astra C-04), while one that
+   * expired it on any newer version hid an approval that had landed behind
+   * another tab's bookkeeping (Astra E-03).
    */
   unrecorded: { state: ProposalState; words: string; version: number } | null;
 };
@@ -518,17 +518,23 @@ export function lineState(line: Line, inFlight = false): string {
  * null where the record has moved past it.
  *
  * The held answer stands above the record because it is the only thing that
- * knows what the ledger did — and only while it is the newest thing said about
- * the line. Two things end that, and both mean the record now carries an
- * account of its own: an entry newer than the version the answer was held at,
- * and an entry somebody has settled. Every surface asks this rather than the
- * mark, because the mark is ONE mark shared by the drawer and the inbox, and a
- * surface reading it raw showed the drawer's obsolete refusal over an entry the
- * record had applied (Astra C-04).
+ * knows what the ledger did — and it stands until the RECORD carries an account
+ * of its own, which is an entry somebody has settled: `applied`, `refused` or
+ * `dismissed`. A newer version is not such an account. Another tab's bookkeeping
+ * about a request that published nothing moves the version and says nothing about
+ * what became of this act, and retiring the answer on it hid the only
+ * explanation there was — an approval that landed and could not be written down —
+ * and offered the press that approves the goal twice (Astra E-03).
+ *
+ * The version the answer was held at is kept beside it as the account of where it
+ * was held; what retires the answer is the settlement and not the number. Every
+ * surface asks this rather than the mark, because the mark is ONE mark shared by
+ * the drawer and the inbox, and a surface reading it raw showed the drawer's
+ * obsolete refusal over an entry the record had applied (Astra C-04).
  */
 export function unrecordedOn(line: Line): Mark["unrecorded"] {
   const held = line.mark.unrecorded;
-  if (held === null || held.version < line.version || settledState(line.state)) {
+  if (held === null || settledState(line.state)) {
     return null;
   }
   return held;
