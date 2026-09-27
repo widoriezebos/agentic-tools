@@ -44,6 +44,10 @@ type Options struct {
 	WaitScaleMilli        int
 	CallerPid             int64
 	RestampStopCapability func(root, lineage string, claimEpoch int64) (StopCapabilityRestampResult, error)
+	// FindSessionAncestor infers the session's main from the caller's
+	// runtime-signature ancestry when no --pid/--start-time pair is given;
+	// nil means the census's production ancestry walk.
+	FindSessionAncestor func(metasystemRoot string, pid int64, runtime string) (census.AgentAncestor, error)
 }
 
 // StopCapabilityRestampResult reports the accepted claim inspected during
@@ -227,7 +231,11 @@ func resolveSessionIdentity(options Options) (sessionIdentity, error) {
 		// This is the named L7 seam for the runtime-signature registry that
 		// L8 will own. Up consumes the census proof without defining a second
 		// registry or signature grammar.
-		ancestor, err := census.FindAncestorProduction(installationRoot(options), int64(os.Getppid()), runtimeName)
+		findAncestor := options.FindSessionAncestor
+		if findAncestor == nil {
+			findAncestor = census.FindAncestorProduction
+		}
+		ancestor, err := findAncestor(installationRoot(options), int64(os.Getppid()), runtimeName)
 		if err != nil {
 			return sessionIdentity{}, fmt.Errorf("runtime-signature ancestry proof failed: %w", err)
 		}

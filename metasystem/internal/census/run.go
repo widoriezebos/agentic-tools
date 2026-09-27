@@ -139,6 +139,20 @@ func RunFixtureCensusAt(metasystemRoot, stateRoot, repo, processFile, fingerprin
 // live process table is careful about.
 func runCensus(metasystemRoot, stateRoot, repo, fingerprint string, interval int, now time.Time,
 	enumerate func(root string) ([]Process, error), resolveCwds func([]int64) map[int64]cwdResult) (Verdict, error) {
+	return runCensusVerifying(metasystemRoot, stateRoot, repo, fingerprint, interval, now, enumerate, resolveCwds, verifySupervisionSnapshot)
+}
+
+// supervisionVerifier checks the recorded supervision identities against the
+// live process table, appending one error per identity that fails. Production
+// always passes verifySupervisionSnapshot; the seam exists so an in-package
+// test can drive the classification core over a synthetic process table
+// without the recorded supervisors being real, kernel-visible processes.
+type supervisionVerifier func(ids map[string]identityRecord, probe identity.FixtureProbe, errors *[]string)
+
+// runCensusVerifying is runCensus with the supervision identity check injected.
+func runCensusVerifying(metasystemRoot, stateRoot, repo, fingerprint string, interval int, now time.Time,
+	enumerate func(root string) ([]Process, error), resolveCwds func([]int64) map[int64]cwdResult,
+	verify supervisionVerifier) (Verdict, error) {
 	metasystemRoot = realpath(metasystemRoot)
 	stateRoot = realpath(stateRoot)
 	repoReal := realpath(repo)
@@ -162,7 +176,7 @@ func runCensus(metasystemRoot, stateRoot, repo, fingerprint string, interval int
 		errors = append(errors, "supervision-state:"+err.Error())
 	} else {
 		generation, stateDigest = &gen, &digest
-		verifySupervisionSnapshot(ids, fixtureProbe, &errors)
+		verify(ids, fixtureProbe, &errors)
 	}
 
 	processes, enumErr := enumerate(metasystemRoot)
