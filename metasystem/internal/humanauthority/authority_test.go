@@ -85,18 +85,11 @@ func systemRootSnapshot() Snapshot {
 	return withheldSystemSnapshot(1, 0, "", platformLauncherExecutable())
 }
 
+// authorityRoot is a checkout root. The agent signatures come from the
+// runtime registry (codex among them), not from files under the root.
 func authorityRoot(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	directory := filepath.Join(root, "scripts", "agents", "adapters")
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match codex-agent'\n"
-	if err := testexec.WriteFile(filepath.Join(directory, "codex.sh"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return root
+	return t.TempDir()
 }
 
 func enrolledReader() *treeReader {
@@ -150,7 +143,7 @@ func TestProofRequiresExactAgentFreeEnrolledAncestry(t *testing.T) {
 	}
 
 	reader.reads = map[int64]int{}
-	reader.snapshots[40] = []Snapshot{authoritySnapshot(40, 20, []string{"codex-agent", "run"}, "tty-1")}
+	reader.snapshots[40] = []Snapshot{authoritySnapshot(40, 20, []string{"codex", "exec"}, "tty-1")}
 	agentProof, err := Prove(root, 40, reader, time.Unix(1200, 0))
 	if err == nil || agentProof.Outcome != OutcomeAgent || agentProof.Valid() {
 		t.Fatalf("an agent process passed human authority: proof=%+v err=%v", agentProof, err)
@@ -204,7 +197,7 @@ func TestTerminalWalkChecksAgentsAboveTheSessionLeader(t *testing.T) {
 	reader := enrolledReader()
 	reader.snapshots[5] = []Snapshot{withheldSystemSnapshot(5, 4, "", "/bin/sh")}
 	reader.snapshots[10] = []Snapshot{authoritySnapshot(10, 5, []string{"terminal-session"}, "tty-1")}
-	reader.snapshots[4] = []Snapshot{authoritySnapshot(4, 1, []string{"codex-agent", "run"}, "")}
+	reader.snapshots[4] = []Snapshot{authoritySnapshot(4, 1, []string{"codex", "exec"}, "")}
 
 	proof, err := ProveTerminal(root, 30, reader, time.Unix(1150, 0))
 	if err == nil || proof.Outcome != OutcomeAgent || proof.Grade != "" || len(proof.Nodes) != 6 {
@@ -268,7 +261,7 @@ func TestTerminalWalkKeepsAgentOutcomeAcrossLaterAncestryFailures(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			root := authorityRoot(t)
 			reader := enrolledReader()
-			reader.snapshots[30] = []Snapshot{authoritySnapshot(30, 20, []string{"codex-agent", "run"}, "tty-1")}
+			reader.snapshots[30] = []Snapshot{authoritySnapshot(30, 20, []string{"codex", "exec"}, "tty-1")}
 			test.prepare(reader)
 
 			proof, err := ProveTerminal(root, 30, reader, time.Unix(1160, 0))
@@ -427,7 +420,7 @@ func TestTerminalWalkRefusesAReusedParentBetweenNodes(t *testing.T) {
 func TestAgentShellRefusedForBothGrades(t *testing.T) {
 	root := authorityRoot(t)
 	reader := enrolledReader()
-	reader.snapshots[40] = []Snapshot{authoritySnapshot(40, 20, []string{"codex-agent", "run"}, "tty-1")}
+	reader.snapshots[40] = []Snapshot{authoritySnapshot(40, 20, []string{"codex", "exec"}, "tty-1")}
 	reader.snapshots[50] = []Snapshot{authoritySnapshot(50, 40, []string{"shell-wrapper"}, "tty-1")}
 
 	terminalProof, terminalErr := ProveTerminal(root, 50, reader, time.Unix(1200, 0))
@@ -441,7 +434,7 @@ func TestAgentShellRefusedForBothGrades(t *testing.T) {
 	}
 
 	reader.reads = map[int64]int{}
-	reader.snapshots[40] = []Snapshot{authoritySnapshot(40, 20, []string{"codex-agent", "run"}, "tty-agent")}
+	reader.snapshots[40] = []Snapshot{authoritySnapshot(40, 20, []string{"codex", "exec"}, "tty-agent")}
 	terminalProof, terminalErr = ProveTerminal(root, 50, reader, time.Unix(1200, 0))
 	if terminalErr == nil || terminalProof.Outcome != OutcomeAgent {
 		t.Fatalf("an agent on another terminal lost the agent refusal: proof=%+v err=%v", terminalProof, terminalErr)

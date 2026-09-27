@@ -250,12 +250,18 @@ func authenticatedAnnouncement(pid int64, records []announcementFile, probe iden
 	return nil
 }
 
+// delegateSignatures is the delegate signature universe: the registry's
+// signature of every adapter-bearing runtime. It no longer varies with the
+// checkout root, so a test whose real process ancestry runs inside an agent
+// CLI replaces it to judge only the ancestry it staged.
+var delegateSignatures = census.AllAdapterSignatures
+
 // allAdapterSignatures compiles the delegate signatures of every runtime
 // that declares an adapter (all of them, not only the configured runtimes: a
 // delegate of any installed runtime must be recognised as a delegate), from
 // the runtime registry's one process definition.
 func allAdapterSignatures(root string) ([]census.Signature, error) {
-	sigs, err := census.AllAdapterSignatures()
+	sigs, err := delegateSignatures()
 	if err != nil {
 		return nil, classificationDataFailure("adapter signature", root, err)
 	}
