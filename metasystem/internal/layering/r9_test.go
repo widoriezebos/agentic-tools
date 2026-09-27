@@ -17,8 +17,8 @@ import (
 const modulePath = "github.com/widoriezebos/agentic-tools/metasystem"
 
 // compositionPackages are the orchestration packages that sit above owners
-// (design 6.3). Only cmd/ may import them; a package beneath one (its fakes)
-// may import it.
+// (design 6.3). Only cmd/ may import them, in code or in tests; a package
+// beneath one (its fakes) may import it.
 var compositionPackages = []string{"internal/delegation"}
 
 // ownerPackages are the owners rule R9 names. None may reach a composition
@@ -36,16 +36,56 @@ var composedOwners = map[string][]string{
 }
 
 type listedPackage struct {
-	ImportPath string
-	Imports    []string
-	Deps       []string
-	Error      *struct{ Err string }
+	ImportPath   string
+	Imports      []string
+	TestImports  []string
+	XTestImports []string
+	Deps         []string
+	Error        *struct{ Err string }
 }
 
-// listModule runs go list -e -deps over the whole module and keeps the
-// module's own packages, keyed by module-relative path. -e keeps a package
-// that fails to load (an import cycle) in the listing with its imports, so
-// the witness can name the offending edge.
+// allImports is a package's code and test imports: a test that imports a
+// composition package reaches it as surely as the code does.
+func (listed listedPackage) allImports() []string {
+	return append(append(append([]string{}, listed.Imports...), listed.TestImports...), listed.XTestImports...)
+}
+
+// declaredBuildTags is every build tag the testing contract compiles a group
+// under: a file behind a tag the listing omits could import a composition
+// package unseen.
+func declaredBuildTags(t *testing.T, module string) []string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(module, "testing.json"))
+	if err != nil {
+		t.Fatalf("read the testing contract: %v", err)
+	}
+	var contract struct {
+		Groups []struct {
+			BuildTags []string `json:"buildTags"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatalf("decode the testing contract: %v", err)
+	}
+	seen := map[string]bool{}
+	var tags []string
+	for _, group := range contract.Groups {
+		for _, tag := range group.BuildTags {
+			if !seen[tag] {
+				seen[tag] = true
+				tags = append(tags, tag)
+			}
+		}
+	}
+	sort.Strings(tags)
+	return tags
+}
+
+// listModule runs go list -e -deps over the whole module, under every build
+// tag the testing contract declares, and keeps the module's own packages
+// with their code and test imports, keyed by module-relative path. -e keeps
+// a package that fails to load (an import cycle) in the listing with its
+// imports, so the witness can name the offending edge.
 func listModule(t *testing.T) map[string]listedPackage {
 	t.Helper()
 	module, err := filepath.Abs(filepath.Join("..", ".."))
@@ -55,7 +95,11 @@ func listModule(t *testing.T) map[string]listedPackage {
 	if _, err := os.Stat(filepath.Join(module, "go.mod")); err != nil {
 		t.Fatalf("module root %s has no go.mod: %v", module, err)
 	}
-	command := exec.Command("go", "list", "-e", "-deps", "-json=ImportPath,Imports,Deps,Error", "./...")
+	args := []string{"list", "-e", "-deps", "-json=ImportPath,Imports,TestImports,XTestImports,Deps,Error"}
+	if tags := declaredBuildTags(t, module); len(tags) > 0 {
+		args = append(args, "-tags", strings.Join(tags, ","))
+	}
+	command := exec.Command("go", append(args, "./...")...)
 	command.Dir = module
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
@@ -76,6 +120,8 @@ func listModule(t *testing.T) map[string]listedPackage {
 		}
 		if relative, ok := moduleRelative(listed.ImportPath); ok {
 			listed.Imports = moduleRelativeAll(listed.Imports)
+			listed.TestImports = moduleRelativeAll(listed.TestImports)
+			listed.XTestImports = moduleRelativeAll(listed.XTestImports)
 			listed.Deps = moduleRelativeAll(listed.Deps)
 			packages[relative] = listed
 		}
@@ -108,9 +154,10 @@ func compositionOf(path string, compositions []string) (string, bool) {
 }
 
 // judgeLayering returns every R9 violation in a module listing: an owner
-// that reaches a composition package, any other package under internal/
-// that imports one, a missing owner or composition package, and a
-// composition package that no longer composes its owners.
+// that reaches a composition package in code or tests, any package outside
+// cmd/ (and outside the composition package itself) whose code or tests
+// import one, a missing owner or composition package, and a composition
+// package that no longer composes its owners.
 func judgeLayering(packages map[string]listedPackage, compositions, owners []string, composed map[string][]string) []string {
 	var violations []string
 	for _, required := range append(append([]string{}, owners...), compositions...) {
@@ -138,7 +185,7 @@ func judgeLayering(packages map[string]listedPackage, compositions, owners []str
 		if !ok {
 			continue
 		}
-		for _, dependency := range append(append([]string{}, listed.Imports...), listed.Deps...) {
+		for _, dependency := range append(listed.allImports(), listed.Deps...) {
 			if composition, above := compositionOf(dependency, compositions); above {
 				violations = append(violations, fmt.Sprintf("owner %s reaches composition package %s through %s", owner, composition, dependency))
 			}
@@ -150,13 +197,13 @@ func judgeLayering(packages map[string]listedPackage, compositions, owners []str
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
-		if !strings.HasPrefix(path, "internal/") {
+		if path == "cmd" || strings.HasPrefix(path, "cmd/") {
 			continue
 		}
 		if _, inside := compositionOf(path, compositions); inside {
 			continue
 		}
-		for _, imported := range packages[path].Imports {
+		for _, imported := range uniqueSorted(packages[path].allImports()) {
 			if composition, above := compositionOf(imported, compositions); above {
 				violations = append(violations, fmt.Sprintf("%s imports %s; only cmd/ may import composition package %s", path, imported, composition))
 			}
@@ -203,12 +250,14 @@ func TestR9JudgeNamesEveryViolationClass(t *testing.T) {
 	composed := map[string][]string{"internal/delegation": {"internal/dispatch", "internal/lease"}}
 	clean := func() map[string]listedPackage {
 		return map[string]listedPackage{
-			"internal/dispatch":        {},
-			"internal/lease":           {Imports: []string{"internal/dispatch"}, Deps: []string{"internal/dispatch"}},
-			"internal/delegation":      {Imports: []string{"internal/dispatch", "internal/lease"}},
-			"internal/delegation/fake": {Imports: []string{"internal/delegation"}},
-			"cmd/metasystem":           {Imports: []string{"internal/delegation"}},
-			"internal/ui":              {Imports: []string{"internal/lease"}},
+			"internal/dispatch":                {},
+			"internal/lease":                   {Imports: []string{"internal/dispatch"}, Deps: []string{"internal/dispatch"}},
+			"internal/delegation":              {Imports: []string{"internal/dispatch", "internal/lease"}},
+			"internal/delegation/fake":         {Imports: []string{"internal/delegation"}},
+			"cmd/metasystem":                   {Imports: []string{"internal/delegation"}},
+			"internal/ui":                      {Imports: []string{"internal/lease"}},
+			"internal/delegation/fake/fixture": {TestImports: []string{"internal/delegation"}},
+			"cmd/devgate":                      {TestImports: []string{"internal/delegation/fake"}},
 		}
 	}
 	if got := judgeLayering(clean(), compositions, owners, composed); len(got) != 0 {
@@ -231,6 +280,18 @@ func TestR9JudgeNamesEveryViolationClass(t *testing.T) {
 		{"non-owner imports a composition subpackage", func(p map[string]listedPackage) {
 			p["internal/ui"] = listedPackage{Imports: []string{"internal/delegation/fake"}}
 		}, "internal/ui imports internal/delegation/fake"},
+		{"owner test imports composition", func(p map[string]listedPackage) {
+			p["internal/dispatch"] = listedPackage{TestImports: []string{"internal/delegation"}}
+		}, "owner internal/dispatch reaches composition package internal/delegation through internal/delegation"},
+		{"owner external test imports composition", func(p map[string]listedPackage) {
+			p["internal/lease"] = listedPackage{Imports: []string{"internal/dispatch"}, XTestImports: []string{"internal/delegation/fake"}}
+		}, "owner internal/lease reaches composition package internal/delegation through internal/delegation/fake"},
+		{"non-owner test imports composition", func(p map[string]listedPackage) {
+			p["internal/ui"] = listedPackage{XTestImports: []string{"internal/delegation"}}
+		}, "internal/ui imports internal/delegation; only cmd/ may import"},
+		{"package outside internal/ and cmd/ imports composition", func(p map[string]listedPackage) {
+			p["tools/witness"] = listedPackage{Imports: []string{"internal/delegation"}}
+		}, "tools/witness imports internal/delegation; only cmd/ may import"},
 		{"owner missing from the listing", func(p map[string]listedPackage) {
 			delete(p, "internal/lease")
 		}, "internal/lease is absent from the module listing"},

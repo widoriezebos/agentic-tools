@@ -33,11 +33,11 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 		if group.Phase == "" || group.EnvironmentMode != "inherit" {
 			t.Fatalf("group %s lost phase or inherited environment", group.ID)
 		}
-		if group.ID != "refusal-register-standard" && group.ID != "fast-static-build" && group.ID != "policy-canary" && group.ID != "adapter-canary" && group.ID != "command-interface-smoke" && group.ID != "verb-ratchet" && group.Phase != "acceptance" {
+		if group.ID != "refusal-register-standard" && group.ID != "fast-static-build" && group.ID != "policy-canary" && group.ID != "adapter-canary" && group.ID != "command-interface-smoke" && group.ID != "verb-ratchet" && group.ID != "delegation-layering" && group.Phase != "acceptance" {
 			t.Fatalf("group %s entered admission outside the reviewed static reproof and canary floor", group.ID)
 		}
 	}
-	for _, id := range []string{"refusal-register-standard", "fast-static-build", "policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet"} {
+	for _, id := range []string{"refusal-register-standard", "fast-static-build", "policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet", "delegation-layering"} {
 		if ids[id].Phase != "admission" {
 			t.Fatalf("%s must be admission", id)
 		}
