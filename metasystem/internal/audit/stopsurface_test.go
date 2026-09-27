@@ -1001,9 +1001,7 @@ func TestStopSurfaceListOfThisRepositoryIsSound(t *testing.T) {
 	for _, file := range files {
 		discovered[file.Path] = true
 	}
-	for _, oldBed := range []string{
-		"scripts/agents/supervision-fixtures.sh",
-	} {
+	for _, oldBed := range []string{} {
 		if !discovered[oldBed] {
 			t.Errorf("discovery omitted fixture bed %s", oldBed)
 		}

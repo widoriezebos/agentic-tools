@@ -268,6 +268,13 @@ func (f *hostCycleSource) done() {
 // supervision facts without pinning them to a mission.
 func newGitFreePreflightBed(t *testing.T, behavior string) (*Engine, *hostCycleSource) {
 	t.Helper()
+	return newGitFreePreflightBedWithGate(t, behavior, nil)
+}
+
+// newGitFreePreflightBedWithGate is newGitFreePreflightBed with the frozen
+// gate script's bytes supplied by the caller; nil keeps the passing gate.
+func newGitFreePreflightBedWithGate(t *testing.T, behavior string, gate []byte) (*Engine, *hostCycleSource) {
+	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -275,6 +282,9 @@ func newGitFreePreflightBed(t *testing.T, behavior string) (*Engine, *hostCycleS
 	e := &Engine{Root: root, Mission: "alpha"}
 	f := &hostCycleSource{t: t, root: root, contractPath: e.contractPath(), files: map[string][]byte{}}
 	f.files["scripts/gate.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n")
+	if gate != nil {
+		f.files["scripts/gate.sh"] = gate
+	}
 	f.files["truth/reference.txt"] = []byte("certified truth\n")
 	rules, err := os.ReadFile(filepath.Join("..", "..", "docs", "project-rules.md"))
 	if err != nil {

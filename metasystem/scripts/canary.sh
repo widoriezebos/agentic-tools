@@ -20,9 +20,9 @@
 # Usage: scripts/canary.sh <change-class> [more classes...]
 # Classes:
 #   go            the Go gate alone (unit+race tests, ratchet, cross-builds)
-#   supervision   gate + supervision fixtures
-#   dispatch      gate + conformance and delegate-caps fixtures
-#   mission       gate + mission fixtures
+#   supervision   gate + the supervision and health bed tests
+#   dispatch      gate + conformance tests and delegate-caps fixtures
+#   mission       gate + the mission bed tests
 #   lease         gate + lease-succession fixtures
 #   records       gate + record-protocol and flight-recorder fixtures
 #   shell         syntax sweep of every tracked script + repository audit
@@ -52,13 +52,13 @@ for class in "$@"; do
     go) gate ;;
     supervision)
       gate
-      run supervision bash scripts/agents/supervision-fixtures.sh
+      run supervision go test -count=1 -run '^(TestSup[ABC]|TestSupervisionBedA|TestHealthBed)' ./cmd/metasystem/ ./internal/census/ ./internal/dispatch/ ./internal/goal/ ./internal/hooks/ ./internal/lease/ ./internal/missionrunner/ ./internal/report/ ./internal/run/ ./internal/steward/ ./internal/stoptransition/ ./internal/supervise/ ./internal/up/
       run adapter-deadline bash scripts/agents/adapter-deadline-fixtures.sh ;;
     dispatch)
       gate
-      run conformance bash scripts/agents/conformance-fixtures.sh
+      run conformance go test -count=1 -run '^TestConformance' ./internal/validate/ ./cmd/metasystem/
       run delegate-caps bash scripts/agents/delegate-caps-fixtures.sh ;;
-    mission) gate; run mission bash scripts/agents/mission-fixtures.sh ;;
+    mission) gate; run mission go test -count=1 -run '^TestMissionBed' ./cmd/metasystem/ ./internal/contract/ ./internal/mission/ ./internal/missionrunner/ ./internal/stoptransition/ ;;
     lease) gate; run lease bash scripts/agents/lease-succession-fixtures.sh ;;
     records)
       gate

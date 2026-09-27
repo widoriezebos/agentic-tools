@@ -148,7 +148,7 @@ func TestDeletedGoPackagesSelectNearestExistingDirectory(t *testing.T) {
 
 func isSharedFixtureHarness(path string) bool {
 	switch path {
-	case "scripts/agents/fixture-bed-scenarios.sh", "scripts/agents/fixture-budget.sh", "scripts/agents/fixture-assert.sh":
+	case "scripts/agents/fixture-bed-scenarios.sh", "scripts/agents/fixture-budget.sh":
 		return true
 	}
 	return false

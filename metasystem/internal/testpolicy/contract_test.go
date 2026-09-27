@@ -742,7 +742,7 @@ func TestMetaSystemContractSelectsStaticProofForGoalRecords(t *testing.T) {
 	if !contains(plan.AffectedSurfaces, "goal-records") {
 		t.Fatalf("goal record did not select its owning surface: %+v", plan)
 	}
-	for _, id := range []string{"section/static-contract-audits", "section/return-schema-fixtures"} {
+	for _, id := range []string{"section/static-contract-audits", "return-schema-bed-standard"} {
 		if !contains(plan.SelectedGroups, id) || !contains(plan.RequiredGroups, id) {
 			t.Fatalf("goal record delivery omitted static group %s: %+v", id, plan)
 		}
@@ -847,7 +847,7 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 	}
 	for _, surface := range contract.Surfaces {
 		for _, id := range surface.Deep {
-			if id == "section/adoption-fixtures" || id == "section/supervision-and-census-fixtures" || id == "section/dispatcher-adapter-and-mission-runner-fixtures" {
+			if id == "section/adoption-fixtures" || id == "supervision-bed-standard" || id == "section/dispatcher-adapter-and-mission-runner-fixtures" {
 				t.Fatalf("surface %s still lists the cadence-only section %s as deep", surface.ID, id)
 			}
 		}
@@ -857,7 +857,7 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 		t.Fatal(err)
 	}
 	for _, id := range []string{"section/go-engine-gate", "section/dispatcher-adapter-and-mission-runner-fixtures",
-		"section/adoption-fixtures", "section/supervision-and-census-fixtures"} {
+		"section/adoption-fixtures", "supervision-bed-standard"} {
 		if !contains(cadence.SelectedGroups, id) {
 			t.Fatalf("cadence lost %s: %+v", id, cadence)
 		}

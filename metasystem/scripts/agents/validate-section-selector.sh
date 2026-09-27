@@ -17,23 +17,15 @@ covenant-evidence-post-rebuild	covenant evidence after rebuild
 suite-host-prerequisites	suite host prerequisites
 metasystem-audit	metasystem audit
 gate-fail-open-tripwire	Go gate fail-open tripwire
-suite-progress-fixtures	suite progress and watchdog fixtures
-fixture-bed-scenarios-fixtures	fixture bed harness fixtures
 land-fixtures	landing chain fixtures
 static-contract-audits	static contract audits
-supervision-and-census-fixtures	supervision and census fixtures
 supervisor-fingerprint-heal-harness	supervisor fingerprint heal harness
-mission-fixtures	mission fixtures
 shell-and-dependency-audits	shell syntax and dependency audits
-conformance-fixtures	conformance fixtures
 goal-cli-fixtures	goal command fixtures
-brain-fixtures	brain fixtures
 telemetry-census-fixtures	telemetry census fixtures
-return-schema-fixtures	return schema fixtures
 config-identity-fixtures	configuration identity fixtures
 authority-regression-fixtures	authority regression fixtures
 pre-commit-guard-fixtures	pre-commit guard fixtures
-static-reproof-fixtures	static reproof fixtures
 project-extra-suites	project-declared extra suites
 record-protocol-fixtures	record protocol fixtures
 evidence-segment-fixtures	evidence segment fixtures
@@ -84,7 +76,7 @@ selected_sections() {
   while IFS=$'\t' read -r section_id section_name; do
     if [[ "$context" == adopted ]]; then
       case "$section_id" in
-        suite-progress-fixtures | land-fixtures | adoption-fixtures | fixture-bed-scenarios-fixtures)
+        land-fixtures | adoption-fixtures)
           continue
           ;;
       esac

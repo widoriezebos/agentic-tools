@@ -29,9 +29,6 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 		name string
 		path string
 	}{
-		{name: "hang", path: filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios-fixtures.sh")},
-		{name: "stopped", path: filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh")},
-		{name: "detached", path: filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh")},
 		{name: "fake host", path: filepath.Join(root, "scripts", "agents", "hosts", "fake.sh")},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
@@ -49,21 +46,13 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 		})
 	}
 
-	hang := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios-fixtures.sh"))
-	if !strings.Contains(hang, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n    read -r _ <&3") {
+	// The hang scenario's bed is the Go-held Bash source the fixture bed
+	// tests run; it re-executes through the Bash form of the prologue.
+	if !strings.Contains(fixtureBedInnerBed, strings.ReplaceAll(ShellPrologue, "exec /bin/sh", "exec /bin/bash")) {
+		t.Fatal("fixture bed inner bed prologue differs from ShellPrologue")
+	}
+	if !strings.Contains(fixtureBedInnerBed, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n    read -r _ <&3") {
 		t.Fatal("hang fixture does not block on its leash")
-	}
-	suite := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "suite-progress-fixtures.sh"))
-	cleanupStart, cleanupEnd := strings.Index(suite, "cleanup() {"), strings.Index(suite, "trap cleanup EXIT")
-	if cleanupStart < 0 || cleanupEnd <= cleanupStart {
-		t.Fatal("suite-progress cleanup boundaries were not found")
-	}
-	cleanup := suite[cleanupStart:cleanupEnd]
-	if !strings.Contains(cleanup, "harness_fixture_reap") || strings.Contains(cleanup, "kill \"$pid\"") {
-		t.Fatal("suite-progress cleanup does not delegate fixture reaping")
-	}
-	if !strings.Contains(suite, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n      read -r _ <&3") {
-		t.Fatal("suite-progress detached fixture does not block on its leash")
 	}
 	fake := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "hosts", "fake.sh"))
 	if !strings.Contains(fake, `exec "$ms" util hold --tag "$instance_tag"`) {

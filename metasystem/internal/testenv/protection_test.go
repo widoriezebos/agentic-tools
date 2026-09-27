@@ -297,29 +297,6 @@ func child() {
 			}
 		}
 	})
-	t.Run("supervision operator trap reaps its steward group", func(t *testing.T) {
-		data, err := os.ReadFile(filepath.Join(root, "scripts", "agents", "supervision-fixtures.sh"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		source := string(data)
-		start := strings.Index(source, "reap_operator_steward_group()")
-		end := strings.Index(source, "\ncleanup_started=0")
-		if start < 0 || end <= start {
-			t.Fatal("supervision fixture has no operator steward process-group reaper before its EXIT trap")
-		}
-		reaper := source[start:end]
-		for _, required := range []string{`kill -KILL -- "-$pid"`, `wait_for_process_group_exit`, `operator steward runner pid=$pid`} {
-			if !strings.Contains(reaper, required) {
-				t.Errorf("operator steward reaper lacks %q", required)
-			}
-		}
-		cleanupStart := strings.Index(source, "cleanup() {")
-		trap := strings.Index(source, "trap cleanup EXIT")
-		if cleanupStart < 0 || trap <= cleanupStart || !strings.Contains(source[cleanupStart:trap], "reap_operator_steward_group") {
-			t.Error("the supervision fixture EXIT cleanup does not invoke the operator steward process-group reaper")
-		}
-	})
 }
 
 type fixtureProcessGroupRecorder struct {

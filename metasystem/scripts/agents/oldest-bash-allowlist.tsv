@@ -94,20 +94,6 @@ bare-test	scripts/agents/land-fixtures.sh	f6cea47b774bf9aa91044df44893ef434881fb
 bare-test	scripts/agents/land-fixtures.sh	f9774b6b92fc7858a8530740e13c4a3c948510a039ef374a3f808ddc337f78ca	[[ "$ledger_moved_candidate" != "$ledger_receipt_tree" ]]
 bare-test	scripts/agents/land-fixtures.sh	fd9ad3d4874c9fae9883df5eaf6d844c5b940a8cbfeb34ffd022cf278ff7c651	[[ "$records_head" == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
 bare-test	scripts/agents/land-fixtures.sh	fe83d530023b9fcf4ef03aea9cccad0013dfeb8f19079d0a59634147bd5dde27	[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --value "$cutover_control" --field verdictTrailer) == 'pass bar=a' ]]
-bare-test	scripts/agents/path-class-fixtures.sh	1b6b2f987a066511d10c3709de688ec30142359dd3f5bc0d7000bf4eb048b83f	[[ \$# -gt 0 ]]
-bare-test	scripts/agents/path-class-fixtures.sh	beca019e194f4e1f137464a52dfcccd6afb548d7013c386c403f3deb727fcec1	[[ -n "\$proof_out" ]]
-bare-test	scripts/agents/static-reproof-fixtures.sh	beca019e194f4e1f137464a52dfcccd6afb548d7013c386c403f3deb727fcec1	[[ -n "\$proof_out" ]]
-bare-test	scripts/agents/static-reproof-fixtures.sh	f3cb0757061d0e10bc4bc91ba1b7033f755f0605da664dca4e6beb2c126d6d4b	[[ -n "$proof_out" ]]
-bare-test	scripts/agents/suite-progress-fixtures.sh	9cfaaa6c7fca0d93c1061d2789c70cb26334b1b0db736f202659f59541c4c58c	[[ -n "$evidence_dir" && -f "$evidence_dir/copy-note.txt" ]]
-bare-test	scripts/agents/supervision-fixtures.sh	158b0a6c52bc9da0ea5cccb61a98c5be36d9f5d96c3ed6ccfded66f1815364f5	[[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
-bare-test	scripts/agents/supervision-fixtures.sh	57473eecd6bc76eb86dd2a8119c94832dea0b4a18546b20d92a6f753cdad1217	[[ -f "$file" ]] && [[ "$("$engine" json get --file "$file" --field "$field" 2>/dev/null)" == "$expected" ]]
-bare-test	scripts/agents/supervision-fixtures.sh	5f0f5a4614271736bdd51b853da109f4f03f040002a4dcb92e2b902854d72233	[[ "$(json_field "$state" "components.$1.pid")" != "$2" ]]
-bare-test	scripts/agents/supervision-fixtures.sh	76c91f8502846bd19b7f62136e9fac46354f91d627f34813755712c1878be1dc	[[ ! -e "$2" ]]
-bare-test	scripts/agents/supervision-fixtures.sh	80a6bd2ec3de53cae8927173198c0918f71dd3d54faea54520feff5d03afa5bf	[[ $2 -eq 0 ]]
-bare-test	scripts/agents/supervision-fixtures.sh	e5e1a54d9e06cf8639b17b7c4676089e96ec7da223f7ab7d23737910f8e5b7dd	[[ -z "$operator_runtimes" ]]
-bare-test	scripts/agents/supervision-fixtures.sh	e941b91ee51ab99eacaf90a103894977a5921f222eb8f068b6ecf0aaf9311afa	[[ "$observed" =~ ^[0-9]+$ && "$observed" -gt "$first" ]]
-bare-test	scripts/agents/supervision-fixtures.sh	e9eaca1d448f58a21a87c03344f6790060224f926e8030d0a7912c5420448b9a	[[ "$decision_surface_stop_hook_assertions" =~ $decision_pattern_regex ]]
-bare-test	scripts/agents/supervision-fixtures.sh	ef5a98ae989018787859aae126ec6eef3f0e455eb3845d554863888d2298b451	[[ "$(census_field "$1" verdict)" == "$2" ]]
 empty-array	scripts/agents/delegate-caps-fixtures.sh	20d6667c677bfec7eda9de817feb50768df4a63144dbbf7d2e499e3b5f1c7cdb	|| { echo "AUTH-R2-009: executed registry is not exact:" "${passed[@]}" >&2; exit 1; }
 empty-array	scripts/agents/delegate-caps-fixtures.sh	73759035861360e5c34fb36f4a6f22c0b6a76b851d7de209844185b8b2ad126f	registry_is_complete "${passed[@]}" \
 empty-array	scripts/agents/dispatch-fixtures.sh	18fbf1891ed083970425aee571082c1e2810c333e00426afff55b3c2b1ccc327	if argv_contains -C "${codex_args_two[@]}"; then
@@ -126,5 +112,3 @@ empty-array	scripts/agents/evidence-segment-fixtures.sh	816e538664bc95d46519701c
 empty-array	scripts/agents/fixture-bed-scenarios.sh	b68485456c5d31c3f709e57c6545028680d0867ed4005064c6196f29040c3699	fixture_bed_parent_child_pids="${live_pids[*]}"
 empty-array	scripts/agents/land-fixtures.sh	2888abdbb6415c3f5ff34bb6ebcbea738508282c4056dda7c402035f1cb16c03	for entry in "${receipt_environment[@]}"; do
 empty-array	scripts/agents/land-fixtures.sh	9f70565e827d0c012851c57b84718891985a62a35886934531ff30608485f147	git commit "${commit_args[@]}"
-empty-array	scripts/agents/path-class-fixtures.sh	4b40e70698acad0cfb3f09000fcfd5798dc60e4b550c3e5a99d227b3a4775c57	grep -rnE -I "$pattern" -- "${repo_paths[@]}"
-empty-array	scripts/agents/path-class-fixtures.sh	871d0c30123f274a605695b3b4d48af813198de618d315d9aef25ba8c2372437	grep -rnE -I --exclude-dir=reviews --exclude=journey.md "$pattern" -- "${install_paths[@]}"

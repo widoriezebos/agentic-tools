@@ -43,8 +43,8 @@ func TestFixturePruningRetainsEveryDistinctFaultWitness(t *testing.T) {
 		{"copied Claude drift", "mutate copied Claude skill", "registration path named", "adopt", `range []string{".claude/skills/verify", ".agents/skills/verify"}`, 1},
 		{"copied Codex drift", "mutate copied Codex skill", "registration path named", "adopt", `"registered skill copy has drifted from its source: "+registration+" vs skills/verify"`, 1},
 		{"copied orphan", "remove copied skill source", "orphaned registration refusal", "adopt", `"an orphaned copy of a pruned skill", "orphaned"`, 1},
-		{"generation replacement", "arm an older live engine generation", "component=supervision-owner outcome=replaced", "supervision", "ordinary up did not replace the live older engine generation", 1},
-		{"unlanded rearm", "install an engine not on the landing ref", "not landed on refs/remotes/origin/trunk", "supervision", "unlanded refusal did not name the remote-tracking ref", 1},
+		{"generation replacement", "arm an older live engine generation", "component=supervision-owner outcome=replaced", "supervision", "func TestLiveGenerationReplacementStopsAndReplacesTheRecordedOwner(", 1},
+		{"unlanded rearm", "install an engine not on the landing ref", "not landed on refs/remotes/origin/trunk", "supervision", "func TestNotLandedRebuildNamesFetchAndTerminalRepairs(", 1},
 	}
 	sources := map[string]string{
 		"cap-contract": fixtureSource(t, "cmd", "metasystem", "cap_contract_test.go") +
@@ -54,7 +54,7 @@ func TestFixturePruningRetainsEveryDistinctFaultWitness(t *testing.T) {
 			fixtureSource(t, "internal", "dispatch", "critique_chain_test.go") +
 			fixtureSource(t, "internal", "dispatch", "severity_tiered_rigor_test.go"),
 		"adopt":       fixtureSource(t, "cmd", "metasystem", "adoption_comparison_test.go"),
-		"supervision": fixtureSource(t, "scripts", "agents", "supervision-fixtures.sh"),
+		"supervision": fixtureSource(t, "internal", "supervise", "arming_test.go") + fixtureSource(t, "internal", "up", "up_test.go"),
 	}
 	for _, witness := range witnesses {
 		t.Run(witness.assertion, func(t *testing.T) {

@@ -96,7 +96,6 @@ section_selected() { # stable section identifier
 }
 
 delegate_owed_sections=(
-  "supervision and census fixtures"
   "supervisor fingerprint heal harness"
   "dispatcher, adapter selftest, and mission-runner process fixtures"
 )
@@ -1049,16 +1048,10 @@ for link in \
   scripts/agents/enumerate-suite-fixtures.sh \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
-  scripts/agents/supervision-fixtures.sh \
   scripts/agents/telemetry-census-fixtures.sh \
-  scripts/agents/return-schema-fixtures.sh \
   scripts/agents/config-identity-fixtures.sh \
   scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
-  scripts/agents/static-reproof-fixtures.sh \
-  scripts/agents/path-class-fixtures.sh \
-  scripts/agents/suite-progress-fixtures.sh \
-  scripts/agents/fixture-bed-scenarios-fixtures.sh \
   scripts/agents/land-fixtures.sh \
   scripts/agents/checkout-execution-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
@@ -1066,7 +1059,6 @@ for link in \
   scripts/agents/lease-succession-fixtures.sh \
   scripts/agents/flight-recorder-fixtures.sh \
   scripts/agents/acp-fixtures.sh \
-  scripts/agents/mission-fixtures.sh \
   scripts/agents/delegate-caps-fixtures.sh \
   scripts/agents/adapter-deadline-fixtures.sh \
   scripts/agents/dispatch-fixtures.sh \
@@ -1079,7 +1071,6 @@ for link in \
   scripts/agents/schemas/wall-evidence.schema.json \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
-  scripts/agents/conformance-fixtures.sh \
   scripts/agents/path-classes.txt; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
@@ -1088,31 +1079,11 @@ if section_selected static-contract-audits; then
   run_section static-contract-audits needs-engine static_contract_audits_section
 fi
 
-# Section 3.11 and retained watch-list round S4 have one bounded fixture suite.
-# Process-owning groups run serially and use separate temporary repositories,
-# so their supervisors and dispatch jobs cannot share lifecycle state. They
-# name S4-1 through S4-10 at their owning checks and contain no uncapped
-# process wait (IL-1).
-# Each process fixture section owns the supervision it arms and shuts down.
-# No later section consumes that armed state, so an arming failure is recorded
-# as the owning section's red and does not gate an unrelated section.
-supervision_and_census_section() {
-  scripts/agents/supervision-fixtures.sh
-  scripts/agents/health-fixtures.sh
-}
-if section_selected supervision-and-census-fixtures \
-  && delegate_process_section "supervision and census fixtures" \
-  && ! delivery_contract_skip supervision-and-census-fixtures "supervision and census fixtures"; then
-  run_section supervision-and-census-fixtures needs-engine supervision_and_census_section
-fi
 if section_selected supervisor-fingerprint-heal-harness \
   && delegate_process_section "supervisor fingerprint heal harness" \
   && ! delivery_contract_skip supervisor-fingerprint-heal-harness "supervisor fingerprint heal harness"; then
   run_section supervisor-fingerprint-heal-harness needs-engine \
     scripts/agents/fingerprint-harness.sh --iterations 2
-fi
-if section_selected mission-fixtures && ! delivery_contract_skip mission-fixtures; then
-  run_section mission-fixtures needs-engine scripts/agents/mission-fixtures.sh
 fi
 
 # Real runtime selftests spend model calls and remain manual acceptance steps.
@@ -1127,9 +1098,7 @@ bash -n scripts/agents/validate-section-selector.sh
 bash -n scripts/agents/enumerate-suite-fixtures.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
-bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/telemetry-census-fixtures.sh
-bash -n scripts/agents/return-schema-fixtures.sh
 bash -n scripts/agents/config-identity-fixtures.sh
 bash -n scripts/agents/record-protocol-fixtures.sh
 bash -n scripts/agents/evidence-segment-fixtures.sh
@@ -1138,21 +1107,14 @@ bash -n scripts/agents/flight-recorder-fixtures.sh
 bash -n scripts/agents/acp-fixtures.sh
 bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
-bash -n scripts/agents/static-reproof-fixtures.sh
-bash -n scripts/agents/path-class-fixtures.sh
-bash -n scripts/agents/suite-progress-fixtures.sh
-bash -n scripts/agents/fixture-bed-scenarios-fixtures.sh
 bash -n scripts/agents/land.sh
 bash -n scripts/agents/land-fixtures.sh
 bash -n scripts/agents/checkout-execution-guard.sh
 bash -n scripts/agents/checkout-execution-guard-fixtures.sh
-bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
 bash -n scripts/agents/dispatch-fixtures.sh
-bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/goal-cli-fixtures.sh
-bash -n scripts/agents/brain-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/devin.sh
@@ -1166,25 +1128,13 @@ bash scripts/agents/oldest-bash-gate.sh >/dev/null
 if section_selected shell-and-dependency-audits; then
   run_section shell-and-dependency-audits needs-nothing shell_and_dependency_audits_section
 fi
-if section_selected conformance-fixtures; then
-  delivery_contract_skip conformance-fixtures \
-    || run_section conformance-fixtures needs-engine bash scripts/agents/conformance-fixtures.sh
-fi
 if section_selected goal-cli-fixtures; then
   delivery_contract_skip goal-cli-fixtures \
     || run_section goal-cli-fixtures needs-engine bash scripts/agents/goal-cli-fixtures.sh
 fi
-if section_selected brain-fixtures; then
-  delivery_contract_skip brain-fixtures \
-    || run_section brain-fixtures needs-engine bash scripts/agents/brain-fixtures.sh
-fi
 if section_selected telemetry-census-fixtures; then
   delivery_contract_skip telemetry-census-fixtures \
     || run_section telemetry-census-fixtures needs-engine bash scripts/agents/telemetry-census-fixtures.sh
-fi
-if section_selected return-schema-fixtures; then
-  delivery_contract_skip return-schema-fixtures \
-    || run_section return-schema-fixtures needs-engine bash scripts/agents/return-schema-fixtures.sh
 fi
 if section_selected config-identity-fixtures; then
   run_section config-identity-fixtures needs-engine bash scripts/agents/config-identity-fixtures.sh
@@ -1202,14 +1152,6 @@ fi
 if section_selected pre-commit-guard-fixtures; then
   delivery_contract_skip pre-commit-guard-fixtures \
     || run_section pre-commit-guard-fixtures needs-engine bash scripts/agents/pre-commit-guard-fixtures.sh
-fi
-static_reproof_fixtures_section() {
-  bash scripts/agents/static-reproof-fixtures.sh
-  bash scripts/agents/path-class-fixtures.sh
-}
-if section_selected static-reproof-fixtures; then
-  delivery_contract_skip static-reproof-fixtures \
-    || run_section static-reproof-fixtures needs-engine static_reproof_fixtures_section
 fi
 # PROJECT-DECLARED extra suites (born from the bm-2d rep-1 lesson: a
 # sibling artifact's checks lived in no battery, and engine drift landed
@@ -2959,14 +2901,6 @@ adoption_fixtures_section() {
 }
 if (( template_mode )) && section_selected adoption-fixtures; then
   run_section adoption-fixtures needs-engine adoption_fixtures_section
-fi
-if (( template_mode )) && section_selected suite-progress-fixtures; then
-  # Watchdog fixtures emit heartbeat evidence while the sequencer records their outcome.
-  run_section suite-progress-fixtures needs-engine bash scripts/agents/suite-progress-fixtures.sh
-fi
-if (( template_mode )) && section_selected fixture-bed-scenarios-fixtures; then
-  run_section fixture-bed-scenarios-fixtures needs-engine \
-    bash scripts/agents/fixture-bed-scenarios-fixtures.sh
 fi
 if (( template_mode )) && section_selected land-fixtures; then
   run_section land-fixtures needs-engine bash scripts/agents/land-fixtures.sh

@@ -78,12 +78,8 @@ func runBrainBootCommand(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *bound < minimumBrainContextBytes {
-		fmt.Fprintf(os.Stderr, "refused: the context bound %d is below the minimum 2048\n", *bound)
-		return 2
-	}
-	if *deadlineMS < 1 {
-		fmt.Fprintln(os.Stderr, "brain boot: --deadline-ms must be positive")
+	if err := brainBootRequestError(*bound, *deadlineMS); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
 	output, err := composeBrainBootMode(*root, *repo, *bound, *deadlineMS, *readOnly)
@@ -99,13 +95,40 @@ func runBrainBootCommand(args []string) int {
 	return 0
 }
 
+// brainBootRequestError is the boot command's argument refusal.
+func brainBootRequestError(bound, deadlineMS int) error {
+	if bound < minimumBrainContextBytes {
+		return fmt.Errorf("refused: the context bound %d is below the minimum %d", bound, minimumBrainContextBytes)
+	}
+	if deadlineMS < 1 {
+		return errors.New("brain boot: --deadline-ms must be positive")
+	}
+	return nil
+}
+
+// brainBootDependencies are the boot composer's seams: the ledger identity,
+// the optional-input child, and the deadline clock and timer.
+type brainBootDependencies struct {
+	ledgerIdentity func(string) string
+	inputsCommand  func(executable string, args ...string) *exec.Cmd
+	now            func() time.Time
+	timer          func(time.Duration) brainBootTimer
+}
+
 func composeBrainBootMode(root, repo string, bound, deadlineMS int, readOnly bool) (brainBootOutput, error) {
 	return composeBrainBootModeWithIdentity(root, repo, bound, deadlineMS, readOnly, goal.ExistingLedgerIdentity)
 }
 
 func composeBrainBootModeWithIdentity(root, repo string, bound, deadlineMS int, readOnly bool, ledgerIdentity func(string) string) (brainBootOutput, error) {
-	started := brainBootNow()
-	state, phaseOne := brain.PhaseOne(root, repo, ledgerIdentity(root), bound)
+	return composeBrainBootWith(root, repo, bound, deadlineMS, readOnly, brainBootDependencies{
+		ledgerIdentity: ledgerIdentity, inputsCommand: newBrainBootInputsCommand,
+		now: brainBootNow, timer: newBrainBootTimer,
+	})
+}
+
+func composeBrainBootWith(root, repo string, bound, deadlineMS int, readOnly bool, deps brainBootDependencies) (brainBootOutput, error) {
+	started := deps.now()
+	state, phaseOne := brain.PhaseOne(root, repo, deps.ledgerIdentity(root), bound)
 	if state.State == brain.Undeclared {
 		return brainBootOutput{Declared: false}, nil
 	}
@@ -122,7 +145,7 @@ func composeBrainBootModeWithIdentity(root, repo string, bound, deadlineMS int, 
 	if err != nil {
 		return brainBootOutput{}, err
 	}
-	cmd := newBrainBootInputsCommand(executable, "brain", "boot-inputs", "--root", root, "--repo", repo, "--dir", dir)
+	cmd := deps.inputsCommand(executable, "brain", "boot-inputs", "--root", root, "--repo", repo, "--dir", dir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var childErr bytes.Buffer
 	cmd.Stderr = &childErr
@@ -131,12 +154,12 @@ func composeBrainBootModeWithIdentity(root, repo string, bound, deadlineMS int, 
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	remaining := time.Duration(deadlineMS)*time.Millisecond - brainBootNow().Sub(started)
+	remaining := time.Duration(deadlineMS)*time.Millisecond - deps.now().Sub(started)
 	timedOut := false
 	if remaining <= 0 {
 		timedOut = true
 	} else {
-		timer := newBrainBootTimer(remaining)
+		timer := deps.timer(remaining)
 		select {
 		case <-waited:
 			timer.Stop()
@@ -146,7 +169,7 @@ func composeBrainBootModeWithIdentity(root, repo string, bound, deadlineMS int, 
 	}
 	if timedOut {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-		killTimer := newBrainBootTimer(200 * time.Millisecond)
+		killTimer := deps.timer(200 * time.Millisecond)
 		select {
 		case <-waited:
 			killTimer.Stop()
@@ -347,26 +370,46 @@ func runBrainBootInputs(args []string) int {
 		fmt.Fprintln(os.Stderr, "brain boot-inputs needs --root, --repo, and --dir")
 		return 2
 	}
-	asks := readBrainAsks(*root)
-	if err := writeBrainBootSection(*dir, "asks", asks); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	held, fleet := readBrainFleet(*root)
-	if err := writeBrainBootSection(*dir, "held", held); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := writeBrainBootSection(*dir, "fleet", fleet); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	digest := readBrainDigest(*repo)
-	if err := writeBrainBootSection(*dir, "digest", digest); err != nil {
+	if err := writeBrainBootInputs(*root, *repo, *dir, defaultBrainBootInputReaders()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
+}
+
+// brainBootInputReaders are the optional-input child's reads of the ledger
+// and the digest layout.
+type brainBootInputReaders struct {
+	machine         func(string) (string, error)
+	resolveEndpoint func(string) (goal.Endpoint, error)
+	project         func(goal.Endpoint) (goal.Projection, error)
+	resolveLayout   func(string) (stateroot.Layout, error)
+}
+
+func defaultBrainBootInputReaders() brainBootInputReaders {
+	return brainBootInputReaders{
+		machine: goal.ResolveMachine, resolveEndpoint: goal.ResolveEndpoint,
+		project: func(endpoint goal.Endpoint) (goal.Projection, error) {
+			return goal.Project(endpoint, false, time.Now().UTC())
+		},
+		resolveLayout: stateroot.ResolveLayout,
+	}
+}
+
+// writeBrainBootInputs publishes the four optional sections in order, so a
+// deadline keeps every section completed before it.
+func writeBrainBootInputs(root, repo, dir string, readers brainBootInputReaders) error {
+	if err := writeBrainBootSection(dir, "asks", readBrainAsks(root)); err != nil {
+		return err
+	}
+	held, fleet := readBrainFleetWith(root, readers)
+	if err := writeBrainBootSection(dir, "held", held); err != nil {
+		return err
+	}
+	if err := writeBrainBootSection(dir, "fleet", fleet); err != nil {
+		return err
+	}
+	return writeBrainBootSection(dir, "digest", readBrainDigestWithLayoutReader(repo, readers.resolveLayout))
 }
 
 func writeBrainBootSection(dir, name string, section brainBootSection) error {
@@ -392,18 +435,18 @@ func readBrainAsks(root string) brainBootSection {
 	return section
 }
 
-func readBrainFleet(root string) (brainBootSection, brainBootSection) {
+func readBrainFleetWith(root string, readers brainBootInputReaders) (brainBootSection, brainBootSection) {
 	held := brainBootSection{Status: "complete"}
 	fleet := brainBootSection{Status: "complete"}
-	machine, machineErr := goal.ResolveMachine(root)
-	endpoint, endpointErr := goal.ResolveEndpoint(root)
+	machine, machineErr := readers.machine(root)
+	endpoint, endpointErr := readers.resolveEndpoint(root)
 	if machineErr != nil || endpointErr != nil {
 		reason := errors.Join(machineErr, endpointErr)
 		line := fmt.Sprintf("LEDGER unreadable (%v); run metasystem goal list --root %s", reason, root)
 		held.Status, fleet.Status = "error", "error"
 		held.Lines = append(held.Lines, brainBootLine{Text: line})
 		fleet.Lines = append(fleet.Lines, brainBootLine{Text: line})
-	} else if projection, projectErr := goal.Project(endpoint, false, time.Now().UTC()); projectErr != nil {
+	} else if projection, projectErr := readers.project(endpoint); projectErr != nil {
 		line := fmt.Sprintf("LEDGER unreadable (%v); run metasystem goal list --root %s", projectErr, root)
 		held.Status, fleet.Status = "error", "error"
 		held.Lines = append(held.Lines, brainBootLine{Text: line})
@@ -493,10 +536,6 @@ func readBrainFleet(root string) (brainBootSection, brainBootSection) {
 		fleet.Lines = append(fleet.Lines, brainBootLine{Text: fmt.Sprintf("census %s custody %d announced %d untracked %d, %s", census.Verdict, census.Counts["CUSTODY"], census.Counts["ANNOUNCED"], census.Counts["UNTRACKED"], age)})
 	}
 	return held, fleet
-}
-
-func readBrainDigest(repo string) brainBootSection {
-	return readBrainDigestWithLayoutReader(repo, stateroot.ResolveLayout)
 }
 
 func readBrainDigestWithLayoutReader(repo string, resolveLayout func(string) (stateroot.Layout, error)) brainBootSection {

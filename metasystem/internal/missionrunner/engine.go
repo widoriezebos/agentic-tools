@@ -67,8 +67,8 @@ type Engine struct {
 	// Now supplies this engine's artifact clock. Nil keeps wall-clock
 	// behavior; fixtures set it without changing time for another engine.
 	Now func() time.Time
-	// Output and Errors receive Answer's report; nil keeps the process
-	// streams. A public command gives each engine its own.
+	// Output and Errors receive Answer's report and Status's line; nil keeps
+	// the process streams. A public command gives each engine its own.
 	Output io.Writer
 	Errors io.Writer
 	// AnchorEffect replaces the anchor commit for this engine only; nil

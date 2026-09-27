@@ -113,9 +113,18 @@ func (f *missionFamily) Stop(item Item) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	complete := outcome.Result != "not-stopped"
 	if current.Kind == missionrunner.ItemRunner {
 		f.runnerConcluded[current.MissionID] = outcome.Signal == missionrunner.TerminationTerm && outcome.Reason == "runner-concluded"
+	}
+	line, complete := missionOutcomeLine(current, outcome)
+	return Outcome{Line: line, Complete: complete, Survivor: item.Survivor}, nil
+}
+
+// missionOutcomeLine words one mission item's stop outcome and reports
+// whether the item is stopped.
+func missionOutcomeLine(current missionrunner.Item, outcome missionrunner.StopOutcome) (string, bool) {
+	complete := outcome.Result != "not-stopped"
+	if current.Kind == missionrunner.ItemRunner {
 		line := fmt.Sprintf("mission %s runner pid %d pgid %d tag %s: ", current.MissionID, current.Pid, current.Pgid, current.Tag)
 		switch {
 		case !complete:
@@ -127,7 +136,7 @@ func (f *missionFamily) Stop(item Item) (Outcome, error) {
 		default:
 			line += "stopped (TERM, runner concluded)"
 		}
-		return Outcome{Line: line, Complete: complete, Survivor: item.Survivor}, nil
+		return line, complete
 	}
 	line := fmt.Sprintf("mission %s turn %s host pid %d pgid %d: ", current.MissionID, current.TurnID, current.Pid, current.Pgid)
 	if !complete {
@@ -143,12 +152,15 @@ func (f *missionFamily) Stop(item Item) (Outcome, error) {
 	} else {
 		line += "stopped (TERM)"
 	}
-	return Outcome{Line: line, Complete: complete, Survivor: item.Survivor}, nil
+	return line, complete
 }
 
 type jobFamily struct {
 	config LocalConfig
 	items  map[string]jobItem
+	// cancel runs the job's cancel path and returns its combined output.
+	// Production leaves it nil and runs the engine's delegate cancel.
+	cancel func(id string) ([]byte, error)
 }
 
 type jobItem struct {
@@ -238,9 +250,7 @@ func (f *jobFamily) Stop(item Item) (Outcome, error) {
 		survivor.Reason = fmt.Sprintf("owned by another machine; cancel it from %s with metasystem work stop j2:%s, then restore its terminal record", current.machine, id)
 		return Outcome{Line: line, Complete: false, Survivor: survivor}, nil
 	}
-	command := exec.Command(f.config.Binary, "internal", "delegate", "--cancel", id)
-	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+f.config.Installation)
-	output, commandErr := command.CombinedOutput()
+	output, commandErr := f.runCancel(id)
 	record, readErr := dispatch.ReadRecordObject(current.path)
 	if readErr != nil {
 		return Outcome{}, readErr
@@ -259,6 +269,15 @@ func (f *jobFamily) Stop(item Item) (Outcome, error) {
 		mechanism = "cancel path, KILL after TERM was ignored"
 	}
 	return Outcome{Line: jobIdentityLine(id, current.lens.Status(), current.pid, current.pgid, current.lens.Role()) + ": cancelled (" + mechanism + ")", Complete: true}, nil
+}
+
+func (f *jobFamily) runCancel(id string) ([]byte, error) {
+	if f.cancel != nil {
+		return f.cancel(id)
+	}
+	command := exec.Command(f.config.Binary, "internal", "delegate", "--cancel", id)
+	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+f.config.Installation)
+	return command.CombinedOutput()
 }
 
 func jobIdentityLine(id, status string, pid, pgid int64, role string) string {
@@ -659,6 +678,9 @@ func runStopReason(outcome runpkg.StopOutcome) (string, error) {
 type stewardFamily struct {
 	root  string
 	items map[string]steward.RunnerRecord
+	// disarm stops the runner. Production leaves it nil and uses
+	// steward.Disarm.
+	disarm func(root string) (steward.RunnerStopOutcome, error)
 }
 
 func newStewardFamily(root string) *stewardFamily {
@@ -684,7 +706,11 @@ func (f *stewardFamily) Stop(item Item) (Outcome, error) {
 	if !ok {
 		return Outcome{}, fmt.Errorf("steward item %s disappeared from the typed inventory", item.Key)
 	}
-	outcome, err := steward.Disarm(f.root)
+	disarm := steward.Disarm
+	if f.disarm != nil {
+		disarm = f.disarm
+	}
+	outcome, err := disarm(f.root)
 	if err != nil && outcome.Result == "" {
 		return Outcome{}, err
 	}

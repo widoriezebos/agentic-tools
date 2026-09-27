@@ -340,8 +340,8 @@ func (e *Engine) fenceReachedInner(values map[string]string) (bool, []string, er
 	return fenceReachedAt(fences, values, missionJobStatuses(e.Root, e.Mission), e.now())
 }
 
-// answerOutput and answerErrors are where Answer reports: the process streams
-// unless this engine's caller gave it its own.
+// answerOutput and answerErrors are where Answer and Status report: the
+// process streams unless this engine's caller gave it its own.
 func (e *Engine) answerOutput() io.Writer {
 	if e.Output != nil {
 		return e.Output
