@@ -199,14 +199,34 @@ func (h *devinHostTurn) runACP() int {
 	// server child from both the raw CLI helper and the delegate-side
 	// server.
 	server := h.startACPServer(pipes, log)
+	serverDone := make(chan struct{})
+	if server != nil {
+		go func() {
+			_ = server.Wait()
+			close(serverDone)
+		}()
+	} else {
+		close(serverDone)
+	}
 	stopServer := func() {
 		if server != nil {
 			_ = server.Process.Signal(syscall.SIGTERM)
-			_ = server.Wait()
+			<-serverDone
 			server = nil
 		}
 	}
 	defer stopServer()
+	// A server that is gone before the client opened its ends (dead, or
+	// never started) would leave the client blocked in the open forever:
+	// its absence unblocks them until the client returns.
+	clientDone := make(chan struct{})
+	go func() {
+		select {
+		case <-serverDone:
+			pipes.Unblock(clientDone)
+		case <-clientDone:
+		}
+	}()
 
 	turn := acp.FileTurnConfig{
 		ServerOut: pipes.ServerOut, ServerIn: pipes.ServerIn,
@@ -236,6 +256,7 @@ func (h *devinHostTurn) runACP() int {
 			}
 			signalled.Store(code)
 			cancel()
+			go pipes.Unblock(clientDone)
 			select {
 			case <-finished:
 				return
@@ -247,6 +268,7 @@ func (h *devinHostTurn) runACP() int {
 		}
 	}()
 	cliStatus := runHostACPClient(ctx, turn, outcomeFile, log)
+	close(clientDone)
 	if code := signalled.Load(); code != 0 {
 		return int(code)
 	}

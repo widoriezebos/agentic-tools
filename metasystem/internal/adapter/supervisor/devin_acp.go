@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // The Devin ACP wire plumbing shared by the delegate supervisor and the
@@ -153,6 +154,32 @@ func (p *ACPPipes) Release() {
 	p.keepers = nil
 }
 
+// Unblock frees a client stuck opening its ends after the server is gone
+// (a server that died, or never started, before the client's open). A FIFO
+// open blocks until its counterpart opens, and a blocked open cannot be
+// cancelled, so until done closes this repeatedly opens and closes a
+// momentary counterpart without blocking: a writer on the server-out fifo
+// (the client's read open completes and reads EOF) and a reader on the
+// server-in fifo (the client's write open completes and its writes fail).
+// Neither carries data.
+func (p *ACPPipes) Unblock(done <-chan struct{}) {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if writer, err := os.OpenFile(p.ServerOut, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			writer.Close()
+		}
+		if reader, err := os.OpenFile(p.ServerIn, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
+			reader.Close()
+		}
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 // Remove is the transport hygiene (KI-42): the fifo pair is wire plumbing,
 // not evidence, and a named pipe left in a round or turn directory breaks
 // any later evidence-tree copy. It releases the held ends and removes both
@@ -171,9 +198,15 @@ func (p *ACPPipes) Remove() {
 // child; terminating it cancels its context (the courtesy session/cancel
 // and the typed cancelled outcome still happen) and waits for it to return.
 // Its pid is the supervisor's own: no separate process exists.
-func startInProcessChild(pid int, fn func(ctx context.Context) int) *child {
+// A client blocked opening a fifo cannot see its cancellation, so stopping
+// it also unblocks the pipes until it returns.
+func startInProcessChild(pid int, pipes *ACPPipes, fn func(ctx context.Context) int) *child {
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &child{pid: pid, done: make(chan struct{}), stop: cancel}
+	c := &child{pid: pid, done: make(chan struct{})}
+	c.stop = func() {
+		cancel()
+		go pipes.Unblock(c.done)
+	}
 	go func() {
 		c.status = fn(ctx)
 		cancel()
