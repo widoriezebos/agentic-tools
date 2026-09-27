@@ -721,6 +721,21 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc",
       "test": "TestClaimAuthorizationSpendsTheDelegateCapabilityNotTheMarker",
       "reason": "clears METASYSTEM_CENSUS_PROCESS_FILE and METASYSTEM_FAKE_PROCESS_IDENTITY_FILE with t.Setenv, the process environment the claim surface reads to recognize a fixture process table"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/mission",
+      "test": "TestU6bPortAssemblePromptNamesTheMissingTurnRecord",
+      "reason": "uses promptSandbox, which sets the mission prompt limits with t.Setenv"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestDownwardRearmRefusesWhileARunningJobReservesAboveTheNewCeiling",
+      "reason": "swaps the package arming clock seam (armingNow, armingSleep) to write the racing reservation inside the cap-authority lock wait"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise",
+      "test": "TestOrdinaryEstablishmentRefusesACeilingBelowAReservationThatRacedItsLockWait",
+      "reason": "swaps the package arming clock seam (armingNow, armingSleep) to write the racing reservation inside the cap-authority lock wait"
     }
   ]
 }
