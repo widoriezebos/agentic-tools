@@ -3,7 +3,9 @@ package delegation
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +40,9 @@ type stubHost struct{ wait WaitOutcome }
 
 func (h stubHost) WaitJob(context.Context, string, string, int64) WaitOutcome { return h.wait }
 func (stubHost) WatchJob(context.Context, string, string, int64, string) int  { return 0 }
+func (stubHost) BreachStopOrderingHuman(context.Context, string, int64, time.Time) (string, error) {
+	return "", errors.New("no enrolled person")
+}
 func (stubHost) ExtendBudget(context.Context, ExtendBudgetRequest) (string, int) {
 	return "", 1
 }
@@ -47,6 +52,9 @@ type stubGoal struct{}
 
 func (stubGoal) Binding(string) (GoalBinding, error) { return GoalBinding{}, nil }
 func (stubGoal) LedgerIdentity() string              { return "" }
+func (stubGoal) BreachStop(string, uint64, time.Time, string) (goal.StopBatch, error) {
+	return goal.StopBatch{}, errors.New("no accepted goal ledger")
+}
 
 type stubClock struct{ now time.Time }
 

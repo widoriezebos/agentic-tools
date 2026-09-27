@@ -284,7 +284,7 @@ func checkLiveSubjectWorkspace(facts readSubjectFacts, repoRoot, workspaceRoot s
 		Code:   11,
 		Reason: readSubjectMismatchRefusal,
 		Message: fmt.Sprintf(
-			"reviewed job %s recorded tree %s but its workspace at %s has tree %s; next: metasystem work revise j2:<implementer> --brief FILE, validate conformance --stage review --job <next implementer round>, dispatch the critic again",
+			"reviewed job %s recorded tree %s but its workspace at %s has tree %s, so a read now would review a tree nobody recorded; next: metasystem work revise REF for a fresh implementer round, then metasystem work review REF to dispatch the critic again",
 			subject.ReviewedMember, subject.ReviewedProjectTree, workspaceRoot, observed),
 	}
 }

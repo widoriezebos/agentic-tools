@@ -146,7 +146,7 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	if fixture.projection().Tip != before || fixture.reports != 0 {
 		t.Fatalf("refused done changed accepted tip or ran metrics: reports=%d", fixture.reports)
 	}
-	template := "metasystem internal goal read-items close --id standing-validation --item critic-1 --fixed <commit>"
+	template := "metasystem goal notes standing-validation --close critic-1 --fixed <commit>"
 	if !strings.Contains(refusal.Detail, template) {
 		t.Fatalf("done refusal lacks executable fixed remedy %q: %s", template, refusal.Detail)
 	}
@@ -154,7 +154,12 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	printed = strings.SplitN(printed, " | ", 2)[0]
 	command := strings.Replace(printed, "<commit>", fixture.codeCommit, 1)
 	fields := strings.Fields(command)
-	closeArgs := append(append([]string{}, fields[4:]...), "--root", fixture.repository.root, "--lineage", "m1")
+	// The printed public form (goal notes G --close ITEM --fixed COMMIT) runs
+	// the read-items close owner with the same goal, item and closure.
+	if len(fields) != 8 || fields[1] != "goal" || fields[2] != "notes" || fields[4] != "--close" {
+		t.Fatalf("printed remedy is not the public goal notes form: %q", command)
+	}
+	closeArgs := []string{"close", "--id", fields[3], "--item", fields[5], fields[6], fields[7], "--root", fixture.repository.root, "--lineage", "m1"}
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
 		return runGoalReadItemsWithInputs(closeArgs, fixture.repository.commandNow(fixture.now), fixture.dependencies, fixture.resolveCodeCommit)
 	})

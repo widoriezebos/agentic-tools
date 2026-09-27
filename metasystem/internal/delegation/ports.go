@@ -127,6 +127,11 @@ type GoalOps interface {
 	// LedgerIdentity is the accepted goal ledger's identity, empty when the
 	// checkout has none; the brain fence judges a declaration against it.
 	LedgerIdentity() string
+	// BreachStop closes the exact breached revision's fence and creates its
+	// resumable batch (dispatch.EnsureBreachStop). orderedBy names the person
+	// a human-ordered stop records as its actor (rule H1); empty records the
+	// stop custodian.
+	BreachStop(goalID string, revision uint64, now time.Time, orderedBy string) (goal.StopBatch, error)
 }
 
 // RecordOps is the job-record owner: reservation, setup, and the one
@@ -229,6 +234,11 @@ type HostOps interface {
 	// ExtendBudget is `goal extend-budget` for the supplied caller; it
 	// returns the verb's combined output and exit code.
 	ExtendBudget(ctx context.Context, request ExtendBudgetRequest) (string, int)
+	// BreachStopOrderingHuman is the enrolled person a HUMAN caller's breach
+	// stop records as its actor (rule H1), proven from the supplied caller as
+	// the human verbs prove it; an unproven terminal is an error that guides
+	// to enrollment.
+	BreachStopOrderingHuman(ctx context.Context, root string, callerPid int64, now time.Time) (string, error)
 }
 
 // ExtendBudgetRequest is goal extend-budget's selection.

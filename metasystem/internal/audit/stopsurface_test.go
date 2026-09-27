@@ -217,6 +217,10 @@ func TestStopSurfaceReportsAdditions(t *testing.T) {
 	if !slices.Equal(result.Added, want) {
 		t.Fatalf("added = %#v, want %#v", result.Added, want)
 	}
+	// The fast gate prints this one line; its counts are the result's own.
+	if got, want := result.Summary(), "stop decision surface: base "+result.Base+"; added 2, moved 0, removed 0"; got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
+	}
 }
 
 func TestStopSurfaceDiscoversOnlyFixtureBeds(t *testing.T) {

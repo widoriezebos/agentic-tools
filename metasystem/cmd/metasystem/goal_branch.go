@@ -783,7 +783,7 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 		}
 		file := projection.Tree.Live[goalID]
 		if file == nil || file.Claimed == nil || file.Claimed.Machine != machine || file.Claimed.Lineage != current.OwnerLineage {
-			return fmt.Errorf("goal %s is not claimed by %s+%s", goalID, machine, current.OwnerLineage)
+			return fmt.Errorf("goal %s is not claimed by %s+%s, and writing its branch from here would race the session that holds it; the holding session writes it, or a person takes the goal over with metasystem goal claim %s --take-over --reason TEXT", goalID, machine, current.OwnerLineage, goalID)
 		}
 		return nil
 	}

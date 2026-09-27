@@ -263,6 +263,13 @@ type ownerGoal struct {
 
 func (o ownerGoal) LedgerIdentity() string { return goal.ExistingLedgerIdentity(o.root) }
 
+func (o ownerGoal) BreachStop(goalID string, revision uint64, now time.Time, orderedBy string) (goal.StopBatch, error) {
+	if orderedBy != "" {
+		return dispatch.EnsureBreachStopOrderedBy(o.root, goalID, revision, now, orderedBy)
+	}
+	return dispatch.EnsureBreachStop(o.root, goalID, revision, now)
+}
+
 func (o ownerGoal) Binding(goalID string) (GoalBinding, error) {
 	clock, _, err := fixtureauth.GoalClock(o.root, func() time.Time { return o.now().UTC() })
 	if err != nil {

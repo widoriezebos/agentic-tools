@@ -9,6 +9,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -34,6 +36,23 @@ func (engineHost) WatchJob(_ context.Context, root, job string, callerPid int64,
 	stopProgress := startSuiteProgressPrinter(progressRoot, 2*time.Second, os.Stderr)
 	defer stopProgress()
 	return compatibilityWaitCommand([]string{"--root", root, "--job", job}, nil, callerPid, func(metarun.WaitResult, bool) {})
+}
+
+// BreachStopOrderingHuman is job breach-stop's person (rule H1) for the
+// lifecycle's supplied caller: the enrolled terminal's name, proven from
+// that caller exactly as the verb proves it from its own parent.
+func (engineHost) BreachStopOrderingHuman(_ context.Context, root string, callerPid int64, now time.Time) (string, error) {
+	return breachStopOrderingHumanWith(root, lease.ClassifyResult{Class: lease.ClassHuman}, "", now, func(root string, now time.Time) (string, error) {
+		proof, err := humanauthority.Prove(root, callerPid, nil, now)
+		if err != nil {
+			return "", err
+		}
+		flags := &syncFlags{root: root}
+		if err := resolveGoalHuman(flags, proof); err != nil {
+			return "", err
+		}
+		return flags.by, nil
+	})
 }
 
 // ExtendBudget is `goal extend-budget` for the supplied caller: its lineage

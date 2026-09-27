@@ -1,6 +1,7 @@
 package delegation
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -182,7 +184,17 @@ func (s *session) breachStop(goalID string, revision uint64) (goal.StopBatch, er
 	if err != nil {
 		return goal.StopBatch{}, s.verbFailure(err)
 	}
-	batch, err := dispatch.EnsureBreachStop(s.root, goalID, revision, now)
+	// Rule H1: a person may order the stop the custodian would take, and
+	// the fence closure names that person as its actor.
+	orderedBy := ""
+	if caller.Class == lease.ClassHuman {
+		orderedBy, err = s.l.ports.Host.BreachStopOrderingHuman(context.Background(), s.root, s.inv.CallerPid, now)
+		if err != nil {
+			s.eprintln("job breach-stop: " + err.Error())
+			return goal.StopBatch{}, exitWith(1)
+		}
+	}
+	batch, err := s.l.ports.Goal.BreachStop(goalID, revision, now, orderedBy)
 	if err != nil {
 		return goal.StopBatch{}, s.verbFailure(err)
 	}

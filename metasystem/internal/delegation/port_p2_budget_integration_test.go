@@ -267,7 +267,7 @@ func TestPortP2DispatchIntegrationEarnedExtensionProceedsOnceThenNamesItsMarker(
 	}
 
 	result := dispatchVerifier("structured-budget-refused", false)
-	requireBudgetRefusal(t, b, result, "extended once at "+extendedAt+"; a further raise is a person's set-budget")
+	requireBudgetRefusal(t, b, result, "extended once at "+extendedAt)
 	if len(b.doubles.Host.ExtendCalled) != 1 {
 		t.Fatal("a standing extension marker asked the owner for a second extension")
 	}

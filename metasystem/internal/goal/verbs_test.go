@@ -1949,7 +1949,7 @@ func TestMachinePinning(t *testing.T) {
 	stealReq := verbReqFor(aEndpoint, "01J5X0000000000000000000P7", "mac-a")
 	stealReq.Actor.Human = "wido"
 	if res, err := Steal(stealReq, "gpu-work"); err != nil || res.Outcome != OutcomeRejected ||
-		!strings.Contains(res.Detail, "honors the pin") {
+		!strings.Contains(res.Detail, "metasystem goal pin gpu-work --clear") {
 		t.Fatalf("a steal onto a foreign machine rejects: %+v %v", res, err)
 	}
 

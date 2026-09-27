@@ -1220,11 +1220,19 @@ func TestCancelHandoffHumanActIsHolderBound(t *testing.T) {
 		})
 	}
 
+	// Rule H1: a handoff an earlier holder recorded is the person's to
+	// cancel; the outcome names the current holder and the recorder.
 	t.Run("nonce of another holder", func(t *testing.T) {
 		root, result, canceller := humanCancelFixture(t)
 		writeStewardRecord(t, leasePath(root), map[string]any{"holderMainId": "main-2", "pid": 4242, "pidStartedAt": 100, "claimEpoch": 3})
 		canceller.Human.HolderMainId = "main-2"
-		failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: it was recorded by main-1 and the current holder is main-2")
+		if err := CancelHandoff(root, result.Nonce, canceller); err != nil {
+			t.Fatalf("a person was refused cancelling an earlier holder's handoff: %v", err)
+		}
+		got := cancelledHandoff(t, root, result.Nonce).Outcome
+		if !strings.HasPrefix(got, "cancelled: cancelled by human by=Wido holder=main-2 epoch=3 ") || !strings.HasSuffix(got, " recorded-by=main-1") {
+			t.Fatalf("cancellation outcome = %q, want the person, the current holder and the recorder", got)
+		}
 	})
 }
 

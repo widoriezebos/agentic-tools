@@ -46,10 +46,11 @@ func runHookTestWorker() int {
 		fmt.Println(output)
 		output = ""
 	}
-	// Both handshakes are FIFOs, so neither side polls a clock: opening the
-	// entered FIFO blocks until the test reads it, and reading the release
-	// FIFO blocks until the test opens and closes it (or the worker is
-	// signalled, which is what a never-released worker waits for).
+	// Both handshakes are FIFOs carrying one message, so neither side polls
+	// a clock (see releaseFIFO): the entered FIFO carries the worker's pid to
+	// the test, and the release FIFO blocks until the test's release line
+	// arrives (or the worker is signalled, which is what a never-released
+	// worker waits for).
 	if entered != "" {
 		if file, err := os.OpenFile(entered, os.O_WRONLY, 0); err == nil {
 			_, _ = fmt.Fprint(file, os.Getpid())
@@ -58,7 +59,7 @@ func runHookTestWorker() int {
 	}
 	if release != "" {
 		if file, err := os.Open(release); err == nil {
-			_, _ = io.Copy(io.Discard, file)
+			_, _ = file.Read(make([]byte, 1))
 			_ = file.Close()
 		}
 	}
@@ -141,6 +142,7 @@ type fakeOps struct {
 	engineBehind   func() (bool, error)
 	unmigratable   func() ([]string, error)
 	rebuild        func() error
+	tokenHex       func() (string, error)
 
 	identityRuntime string
 	identityPid     int
@@ -515,7 +517,12 @@ func (f *fakeOps) EvidenceGC(installation string, output io.Writer) int {
 
 func (f *fakeOps) Slug(value string) string { return strings.ToLower(value) }
 
-func (f *fakeOps) TokenHex(int) (string, error) { return strings.Repeat("ab", 16), nil }
+func (f *fakeOps) TokenHex(int) (string, error) {
+	if f.tokenHex != nil {
+		return f.tokenHex()
+	}
+	return strings.Repeat("ab", 16), nil
+}
 
 func (f *fakeOps) Git(args ...string) (string, error) {
 	f.record("git %s", strings.Join(args, " "))
@@ -581,6 +588,7 @@ type hookCall struct {
 	after                   func(time.Duration) <-chan time.Time
 	stdout                  io.Writer
 	tempDir                 string
+	resolverAnswered        func()
 }
 
 func runHook(t *testing.T, installation hookInstallation, ops Ops, call hookCall) hookRun {
@@ -621,7 +629,7 @@ func runHook(t *testing.T, installation hookInstallation, ops Ops, call hookCall
 		StartWorker: call.startWorker, TempDir: call.tempDir,
 		Deadline: DeadlineDeps{
 			BootClock: identity.BootClock, Prober: identity.KernelProber{}, ParentPid: identity.ParentPid,
-			EventInterval: 10 * time.Millisecond,
+			EventInterval: 10 * time.Millisecond, ResolverAnswered: call.resolverAnswered,
 		},
 	}
 	if call.fixtureDeadline != nil {
@@ -707,19 +715,46 @@ func makeFIFO(t *testing.T, name string) string {
 	return path
 }
 
-// releaseFIFO lets a worker blocked on the release FIFO continue: opening
-// the write end waits for the worker's read end, and closing it ends the
-// worker's read.
-func releaseFIFO(path string) {
-	if file, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
-		_ = file.Close()
+// The FIFO handshakes never rely on the open(2) rendezvous alone. On the BSD
+// kernel a reader blocked in open(2) can miss a writer that opens and closes
+// before the reader is scheduled, and then waits for a writer for ever; a
+// writer that closes without writing leaves a late reader nothing to return
+// on. Under host load both happen. So each handshake carries one byte, and
+// the test's end holds the FIFO open for reading and writing: its own open
+// never waits, and a byte written on either side stays readable until it is
+// read.
+
+// releaseFIFO lets a child blocked on the release FIFO continue: the release
+// line is written at once and the test keeps the FIFO open until it ends, so
+// the child reads it whenever it gets there.
+func releaseFIFO(t *testing.T, path string) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = file.Close() })
+	if _, err := file.WriteString("\n"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// awaitFIFO waits for a child's one handshake message on the FIFO.
+func awaitFIFO(path string) error {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.Read(make([]byte, 1))
+	return err
 }
 
 // unblockFIFO releases a reader still blocked on a FIFO at cleanup without
 // blocking when no reader is left.
 func unblockFIFO(path string) {
 	if file, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+		_, _ = file.WriteString("\n")
 		_ = file.Close()
 	}
 }

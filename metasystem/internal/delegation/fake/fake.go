@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -191,6 +192,16 @@ type Goal struct {
 	BindingFunc func(goalID string) (delegation.GoalBinding, error)
 	// Identity is the accepted ledger identity the brain fence reads.
 	Identity func() string
+	// BreachStopFunc scripts the fence closure; nil refuses it.
+	BreachStopFunc func(goalID string, revision uint64, now time.Time, orderedBy string) (goal.StopBatch, error)
+}
+
+func (f *Goal) BreachStop(goalID string, revision uint64, now time.Time, orderedBy string) (goal.StopBatch, error) {
+	f.Log.add("goal.BreachStop goal=%s revision=%d orderedBy=%s", goalID, revision, orderedBy)
+	if f.BreachStopFunc == nil {
+		return goal.StopBatch{}, fmt.Errorf("goal %s revision %d has no scripted breach stop", goalID, revision)
+	}
+	return f.BreachStopFunc(goalID, revision, now, orderedBy)
 }
 
 func (f *Goal) LedgerIdentity() string {
@@ -453,6 +464,16 @@ type Host struct {
 	WatchFunc    func(root, job string, callerPid int64, progressRoot string) int
 	ExtendFunc   func(delegation.ExtendBudgetRequest) (string, int)
 	ExtendCalled []delegation.ExtendBudgetRequest
+	// OrderingHumanFunc scripts the enrolled person's proof; nil proves none.
+	OrderingHumanFunc func(root string, callerPid int64, now time.Time) (string, error)
+}
+
+func (f *Host) BreachStopOrderingHuman(_ context.Context, root string, callerPid int64, now time.Time) (string, error) {
+	f.Log.add("host.BreachStopOrderingHuman caller=%d", callerPid)
+	if f.OrderingHumanFunc == nil {
+		return "", fmt.Errorf("no enrolled person was proven")
+	}
+	return f.OrderingHumanFunc(root, callerPid, now)
 }
 
 func (f *Host) WaitJob(_ context.Context, root, job string, callerPid int64) delegation.WaitOutcome {
