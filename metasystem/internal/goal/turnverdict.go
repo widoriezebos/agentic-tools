@@ -1274,12 +1274,24 @@ func idleBacklogContinuation(work ClaimableBudgetedWork) (string, bool, string) 
 		}
 		return id, false, ""
 	}
-	for _, id := range work.Claimable {
-		if !NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
-			return id, true, ""
-		}
+	if id, ok := preferredClaimable(work); ok {
+		return id, true, ""
 	}
 	return "", false, "every ready goal waits on a human word"
+}
+
+// preferredClaimable names the ready goal a seat without a working claim
+// should take next: the first in the human's priority order whose next step
+// does not wait on a person. Pins filter the frontier (Next admits a pinned
+// goal only on its own machine) and never change rank, by the accepted
+// backlog-ordered-by-priority design.
+func preferredClaimable(work ClaimableBudgetedWork) (string, bool) {
+	for _, id := range work.Claimable {
+		if !NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 func idleBacklogNames(work ClaimableBudgetedWork) string {

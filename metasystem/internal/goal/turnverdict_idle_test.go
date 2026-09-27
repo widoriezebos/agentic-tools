@@ -1793,3 +1793,45 @@ func TestIdleBacklogCountSurvivesAnotherSeatsBacklogChange(t *testing.T) {
 		t.Fatalf("the third idle refusal of the interval did not end the turn: %+v %v", third, err)
 	}
 }
+
+// Witness for the named next task, shaped like seat m1e on 2026-09-27: the
+// seat's own claim is breach-stopped (only a person resumes it, so by design
+// the queue is open), and the queue head waits on a person. The frozen
+// judgment that the Stop line renders as "next:" must name the same goal the
+// steward continuation takes, the first ready goal that does not wait on a
+// person. Before the fix the judgment named the queue head regardless.
+func TestIdleNextTaskSkipsAQueueHeadThatWaitsOnAPerson(t *testing.T) {
+	t.Parallel()
+	fenced := breachStoppedGoalForTest("own-fenced", "bed-m1")
+	human := budgetedQueuedGoal("head-waits-on-a-person", "2026-08-20T00:00:00Z")
+	human.Priority, human.Sequence = 1, 1
+	human.NextStep = "RULING NEEDED: choose the release boundary"
+	ready := budgetedQueuedGoal("ready-second", "2026-08-22T00:00:00Z")
+	ready.Priority, ready.Sequence = 1, 2
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
+		fenced.Id: fenced, human.Id: human, ready.Id: ready,
+	})
+	var prepared IdleEscalationEvent
+	store.PrepareIdleContinuation = func(event IdleEscalationEvent) (string, error) {
+		prepared = event
+		return "intent-ready", nil
+	}
+	store.RecordIdleIncident = func(IdleEscalationEvent) (string, error) { return "alert-ready", nil }
+	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7}
+	for stop := 1; stop <= 3; stop++ {
+		verdict, err := store.TurnVerdict(ScanResult{}, "next-skips-person", "", "main-1", options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if verdict.Facts == nil || verdict.Facts.Work.Selected == nil || verdict.Facts.Work.Selection != "claimable" ||
+			verdict.Facts.Work.Selected.Id != ready.Id {
+			t.Fatalf("stop %d named a next task that waits on a person: %+v", stop, verdict.Facts)
+		}
+		if !strings.Contains(verdict.Display, "FENCED own-fenced") {
+			t.Fatalf("stop %d hid the seat's own breach-stopped claim: %s", stop, verdict.Display)
+		}
+	}
+	if prepared.GoalID != ready.Id || !prepared.ClaimNeeded {
+		t.Fatalf("the steward continuation and the named next task disagree: %+v", prepared)
+	}
+}
