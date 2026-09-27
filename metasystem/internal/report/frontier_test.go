@@ -371,3 +371,35 @@ func TestFrontierRecordRefusesWithoutHead(t *testing.T) {
 		t.Fatalf("record without HEAD wrote a frontier: %v", err)
 	}
 }
+
+// A lower-is-better frontier keeps its persisted direction: challenge ignores
+// an environment direction, and a record that regresses against it refuses
+// without --force (ported from the retired validate-metasystem.sh
+// workflow-tooling section).
+func TestFrontierMinDirectionIgnoresEnvironmentAndGuardsRegression(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	file := filepath.Join(repo, "plans", "frontier-min")
+	sha := strings.Repeat("d", 40)
+	if _, ferr := frontierRecordWithGit(FrontierOptions{File: file, Repo: repo, Env: noEnv,
+		Score: "80", MinDelta: "1", Direction: "min", Eval: "e"}, frontierGitScript(t, frontierCleanReads(repo, sha))); ferr != nil {
+		t.Fatalf("min record refused: %v", ferr)
+	}
+	maxEnv := func(key string) string {
+		return map[string]string{"METASYSTEM_FRONTIER_DIRECTION": "max"}[key]
+	}
+	if _, ferr := FrontierChallenge(FrontierOptions{File: file, Env: maxEnv, Score: "78"}); ferr != nil {
+		t.Fatalf("challenge honored an environment direction instead of the persisted one: %v", ferr)
+	}
+	stored, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ferr := frontierRecordWithGit(FrontierOptions{File: file, Repo: repo, Env: noEnv, Score: "85", Eval: "e"},
+		frontierGitScript(t, frontierCheckReads(repo))); ferr == nil || ferr.Code != 1 {
+		t.Fatalf("min-direction record accepted a regression without --force: %v", ferr)
+	}
+	if after, err := os.ReadFile(file); err != nil || string(after) != string(stored) {
+		t.Fatalf("a refused record changed the frontier: %q %v", after, err)
+	}
+}

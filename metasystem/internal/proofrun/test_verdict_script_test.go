@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -93,4 +94,57 @@ func verdictFixtureTree(t *testing.T, specimen string) string {
 	t.Helper()
 	digest := sha256.Sum256([]byte(t.Name() + "/" + specimen))
 	return fmt.Sprintf("%x", digest[:20])
+}
+
+// A section group that names its own script bed runs that argv with the
+// candidate engine installed at cwd/bin/metasystem, never consults the
+// section selector (the snapshot has none), receives the proof custody
+// environment without the selector's stage-results channel, and is judged by
+// its exit status alone.
+func TestSectionArgvBedRunsWithCandidateEngineAndJudgesExit(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		exit       int
+		wantStatus string
+	}{
+		{name: "green bed", exit: 0, wantStatus: "passed"},
+		{name: "red bed", exit: 3, wantStatus: "failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			engineBytes := "#!/bin/sh\necho candidate-engine\n"
+			engine := filepath.Join(t.TempDir(), "metasystem")
+			if err := testexec.WriteFile(engine, []byte(engineBytes), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			script := fmt.Sprintf(`#!/usr/bin/env bash
+set -eu
+[[ "$(bin/metasystem)" == candidate-engine ]] || { echo "candidate engine missing" >&2; exit 90; }
+[[ -z "${METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT:-}" ]] || { echo "selector stage-results channel leaked" >&2; exit 91; }
+[[ -z "${METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY:-}" ]] || { echo "selector engine dependency leaked" >&2; exit 92; }
+[[ -n "${METASYSTEM_PROOF_AUTH_BIN:-}" && "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-}" == 1 ]] || { echo "proof custody missing" >&2; exit 93; }
+echo "bed ran"
+exit %d
+`, test.exit)
+			tree := verdictFixtureTree(t, "argv-bed")
+			snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+				"scripts/bed.sh": testSnapshotFile(script, 0o755),
+			}, 1)
+			group := testpolicy.Group{ID: "section/bed", Kind: "integration", Adapter: "section", CWD: ".",
+				Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "bed",
+				Argv: []string{"bash", "scripts/bed.sh"}}
+			result := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open,
+				LogRoot: filepath.Join(root, "logs"), CandidateEngine: engine, CandidateEngineDigest: digestBytes([]byte(engineBytes))}, group)
+			logBytes, _ := os.ReadFile(result.LogPath)
+			if result.Status != test.wantStatus || result.NativeExitStatus == nil || *result.NativeExitStatus != test.exit {
+				t.Fatalf("argv bed status=%q exit=%v reason=%q, want %s with exit %d\n%s", result.Status, result.NativeExitStatus, result.NotRunReason, test.wantStatus, test.exit, logBytes)
+			}
+			if !strings.Contains(string(logBytes), "bed ran") {
+				t.Fatalf("argv bed did not run its own script:\n%s", logBytes)
+			}
+			if got := strings.Join(result.Argv, " "); got != "bash scripts/bed.sh" {
+				t.Fatalf("argv bed recorded argv %q", got)
+			}
+		})
+	}
 }

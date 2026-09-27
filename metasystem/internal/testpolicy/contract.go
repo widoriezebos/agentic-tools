@@ -538,6 +538,17 @@ func validateGroup(group Group) error {
 		if !identifier.MatchString(group.Section) {
 			return fmt.Errorf("section adapter requires one stable section id")
 		}
+		if len(group.Argv) != 0 {
+			if group.Argv[0] == "" {
+				return fmt.Errorf("section argv requires an executable")
+			}
+			if group.Argv[0] == "true" || (len(group.Argv) >= 3 && strings.HasSuffix(group.Argv[0], "sh") && group.Argv[1] == "-c" && strings.TrimSpace(group.Argv[2]) == "true") {
+				return fmt.Errorf("blanket success commands are not testing evidence")
+			}
+		}
+		if group.Format != "" || len(group.Reports) != 0 || len(group.ExpectedTests) != 0 {
+			return fmt.Errorf("section adapter judges its script bed by exit status; format, reports and expectedTests belong to the command adapter")
+		}
 	case "command":
 		if group.PackageSelection != "" {
 			return fmt.Errorf("packageSelection requires go adapter")
@@ -614,6 +625,14 @@ func pathDeclarationsOverlap(left, right string) bool {
 	a, errA := pathpattern.Parse(left)
 	b, errB := pathpattern.Parse(right)
 	return errA == nil && errB == nil && a.Overlaps(b)
+}
+
+// SectionRunsArgv reports whether a section group names its own script bed.
+// Such a group runs its argv with the candidate engine installed beside it and
+// is judged by exit status; a section group without argv is resolved through
+// the retiring section selector (verbs-object-action U7b, step A).
+func SectionRunsArgv(group Group) bool {
+	return group.Adapter == "section" && len(group.Argv) != 0
 }
 
 func GoTests(group Group) (all bool, names []string, err error) {

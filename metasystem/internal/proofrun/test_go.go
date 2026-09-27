@@ -690,7 +690,7 @@ func CheckNativeDiscovery(ctx context.Context, projectRoot, installation string,
 		if group.PackageSelection != "" {
 			continue
 		}
-		if group.Adapter == "section" {
+		if group.Adapter == "section" && !testpolicy.SectionRunsArgv(group) {
 			needsSections = true
 		}
 	}
@@ -731,6 +731,9 @@ func CheckNativeDiscovery(ctx context.Context, projectRoot, installation string,
 				}
 			}
 		case "section":
+			if testpolicy.SectionRunsArgv(group) {
+				continue
+			}
 			if !sectionIDs[group.Section] {
 				return fmt.Errorf("testing group %s references unknown section %s", group.ID, group.Section)
 			}

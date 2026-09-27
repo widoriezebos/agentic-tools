@@ -742,7 +742,7 @@ func TestMetaSystemContractSelectsStaticProofForGoalRecords(t *testing.T) {
 	if !contains(plan.AffectedSurfaces, "goal-records") {
 		t.Fatalf("goal record did not select its owning surface: %+v", plan)
 	}
-	for _, id := range []string{"section/static-contract-audits", "return-schema-bed-standard"} {
+	for _, id := range []string{"shipped-installation-standard", "return-schema-bed-standard"} {
 		if !contains(plan.SelectedGroups, id) || !contains(plan.RequiredGroups, id) {
 			t.Fatalf("goal record delivery omitted static group %s: %+v", id, plan)
 		}
@@ -937,5 +937,40 @@ func TestMetaSystemDesignChangeSelectsTheDispatcherSection(t *testing.T) {
 		if contains(surface.Deep, section) {
 			t.Errorf("surface %s lists the full dispatcher section as deep", surface.ID)
 		}
+	}
+}
+
+func TestSectionArgvDeclarationsValidate(t *testing.T) {
+	t.Parallel()
+	base := Group{ID: "section/bed", Kind: "integration", Phase: "acceptance", EnvironmentMode: "inherit", Adapter: "section", CWD: ".",
+		Inputs: []string{"scripts/**"}, Outputs: []string{}, Obligations: []string{}, Platforms: []string{"any"}, TargetMS: 1000, Section: "bed"}
+	for _, test := range []struct {
+		name string
+		edit func(*Group)
+		want string
+	}{
+		{name: "selector section", edit: func(*Group) {}},
+		{name: "script bed", edit: func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"} }},
+		{name: "empty executable", edit: func(g *Group) { g.Argv = []string{"", "scripts/bed.sh"} }, want: "section argv requires an executable"},
+		{name: "blanket success", edit: func(g *Group) { g.Argv = []string{"bash", "-c", " true "} }, want: "blanket success commands are not testing evidence"},
+		{name: "junit format", edit: func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"}; g.Format = "junit-xml" }, want: "judges its script bed by exit status"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			group := base
+			test.edit(&group)
+			err := validateGroup(group)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("valid section declaration refused: %v", err)
+				}
+				if SectionRunsArgv(group) != (len(group.Argv) != 0) {
+					t.Fatalf("SectionRunsArgv(%v) disagrees with its argv", group.Argv)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("section declaration error=%v, want %q", err, test.want)
+			}
+		})
 	}
 }

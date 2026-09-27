@@ -1851,8 +1851,10 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			})
 		}
 	case "section":
-		sectionReport = filepath.Join(request.LogRoot, group.ID+".stage-results.tsv")
-		environment = overlayTestEnvironment(environment, map[string]string{"METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT": sectionReport})
+		if !testpolicy.SectionRunsArgv(group) {
+			sectionReport = filepath.Join(request.LogRoot, group.ID+".stage-results.tsv")
+			environment = overlayTestEnvironment(environment, map[string]string{"METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT": sectionReport})
+		}
 		if request.CandidateEngine != "" || request.CandidateEngineDigest != "" {
 			engine, err := prepareSectionEngine(cwd, request.CandidateEngine, request.CandidateEngineDigest)
 			if err != nil {
@@ -1862,16 +1864,19 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			}
 			// Readiness follows the verified immutable input-bound artifact.
 			// The shell still authenticates this worker's actual parent custody.
-			environment = overlayTestEnvironment(environment, map[string]string{
-				"METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY": "ready",
-				"METASYSTEM_PROOF_AUTH_BIN":                engine,
-				"METASYSTEM_SUITE_PROGRESS_ACTIVE":         "1",
-				"METASYSTEM_SUITE_PROGRESS_LOG":            filepath.Join(request.LogRoot, group.ID+".log"),
-				"METASYSTEM_SUITE_PROGRESS_ROOT":           cwd,
-			})
+			custody := map[string]string{
+				"METASYSTEM_PROOF_AUTH_BIN":        engine,
+				"METASYSTEM_SUITE_PROGRESS_ACTIVE": "1",
+				"METASYSTEM_SUITE_PROGRESS_LOG":    filepath.Join(request.LogRoot, group.ID+".log"),
+				"METASYSTEM_SUITE_PROGRESS_ROOT":   cwd,
+			}
+			if !testpolicy.SectionRunsArgv(group) {
+				custody["METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY"] = "ready"
+			}
+			environment = overlayTestEnvironment(environment, custody)
 		}
 	}
-	if group.Adapter == "section" {
+	if sectionReport != "" {
 		if err := os.MkdirAll(filepath.Dir(sectionReport), 0o700); err != nil {
 			result.Status = "invalid"
 			result.NotRunReason = fmt.Sprintf("create section result parent: %v", err)
@@ -2003,6 +2008,12 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 				result.CollectionComplete = exit == 0
 			}
 		case "section":
+			if testpolicy.SectionRunsArgv(group) {
+				// A script bed declares its own argv: its exit status is the
+				// whole verdict, exactly as an exit-status command group.
+				result.CollectionComplete = exit == 0
+				break
+			}
 			sectionStatus, reportedExit, sectionBlocked, sectionComplete := parseSectionResult(sectionReport, group.Section)
 			result.Blocked, result.CollectionComplete = sectionBlocked, sectionComplete
 			if reportedExit != exit {
@@ -2025,7 +2036,9 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 				if exit == 0 && !result.CollectionComplete {
 					result.Status = "invalid"
 				}
-				if result.NotRunReason == "" {
+				// A script bed's reason comes from its failed-scenarios block,
+				// written by the deferred verdict line above.
+				if result.NotRunReason == "" && group.Adapter != "section" {
 					collection := "complete"
 					if !result.CollectionComplete {
 						collection = "incomplete"
@@ -2398,6 +2411,9 @@ func groupArgumentsForSchema(ctx context.Context, group testpolicy.Group, root, 
 		}
 		return argv, expected, discovery, started, err
 	case "section":
+		if testpolicy.SectionRunsArgv(group) {
+			return append([]string(nil), group.Argv...), nil, goDiscovery{}, false, nil
+		}
 		// Prepared argv survives the metadata worktree. Resolve the selector
 		// under the actual group's cwd, never a removed preparation pathname.
 		script := filepath.Join("scripts", "agents", "validate-section-selector.sh")
