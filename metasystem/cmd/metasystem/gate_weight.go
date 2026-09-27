@@ -58,26 +58,6 @@ func runGateWeightAdd(args []string) int {
 	return 0
 }
 
-func runGateWeightCheck(args []string) int {
-	flags := flag.NewFlagSet("gate weight-check", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate weight-check --root R")
-		return 2
-	}
-	threshold := weightThreshold(*root)
-	state, due, err := gaterun.WeightCheck(*root, threshold)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Printf("validation weight %d of %d over %d landing(s) since %s\n", state.Accumulated, threshold, state.Landings, state.SinceUTC)
-	if due {
-		return 1
-	}
-	return 0
-}
-
 func runGateWeightDischarge(args []string) int {
 	flags := flag.NewFlagSet("gate weight-discharge", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")

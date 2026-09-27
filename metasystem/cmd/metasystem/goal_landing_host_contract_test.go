@@ -70,6 +70,17 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 
 // The frozen schema-1 fixture is independent of the detached candidate HEAD.
 // It captures every old native group and mandatory selection reference.
+// retiredWithDeletedVerb names legacy mandatory tests (group/test) whose only
+// subject was an internal verb deleted for having no caller
+// (plans/designs/verbs-object-action.md 6.1). Each maps to that verb; nothing
+// else may leave the legacy floor this way.
+var retiredWithDeletedVerb = map[string]string{
+	"context-standard/TestRuntimeContextSampleVerb":  "runtime context-sample",
+	"launch-standard/TestPackCheckVerbPrintsOneLine": "launch pack-check",
+	"launch-standard/TestUnitRunPrintsOneLine":       "unit run",
+	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
+}
+
 func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract) {
 	t.Helper()
 	installation, err := filepath.Abs(filepath.Join("..", ".."))
@@ -143,6 +154,10 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		}
 		var automaticallyCovered []string
 		for _, name := range oldTests {
+			if verb, retired := retiredWithDeletedVerb[old.ID+"/"+name]; retired {
+				t.Logf("%s %s retired with the deleted verb %s", old.ID, name, verb)
+				continue
+			}
 			requiredNames := []string{name}
 			if old.ID == "authority-standard" && name == "TestTemporaryGoalProofUsesTheRealWallClock" {
 				// Temporary goal authority keeps both guarantees from the retired

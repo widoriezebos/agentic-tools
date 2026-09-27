@@ -433,21 +433,7 @@ func runChannelPoll(args []string) int {
 	printJSON(r)
 	return 0
 }
-func runChannelClose(args []string) int {
-	f := flag.NewFlagSet("channel close", flag.ContinueOnError)
-	root := pathFlag(f, "root", ".", "repository root")
-	id := f.String("question", "", "question id")
-	because := f.String("because", "", "withdrawal reason")
-	if f.Parse(args) != nil || *id == "" || *because == "" {
-		return 2
-	}
-	l, _ := phase.Load(*root, false)
-	if err := channel.Close(*root, *id, *because, l.Provider, l.Destination); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
+
 func runChannelFakeServe(args []string) int {
 	return runChannelFakeServeWithDependencies(args, defaultFixtureLifetimeDependencies(), channelFake.ServeReady)
 }

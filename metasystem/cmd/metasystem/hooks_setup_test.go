@@ -7,9 +7,30 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-func TestHooksCheckSupportsEveryHostAndHistoricalClaudePositionals(t *testing.T) {
+// checkLiveHooks runs the owner check that runtime setup's output must pass:
+// the live settings at live against the shipped hooks, under live's layout.
+func checkLiveHooks(runtime, live, shipped string, resolve func(string) (stateroot.Layout, error)) error {
+	layout, err := resolve(live)
+	if err != nil {
+		return err
+	}
+	liveData, err := os.ReadFile(live)
+	if err != nil {
+		return err
+	}
+	shippedData, err := os.ReadFile(shipped)
+	if err != nil {
+		return err
+	}
+	return hooks.CheckSettings(liveData, shippedData, runtime, layout.InstallationRel, layout.RepositoryRoot == layout.InstallationRoot)
+}
+
+func TestHooksCheckSupportsEveryHost(t *testing.T) {
 	repo, installation := setupCLIFixture(t)
 	recorder := newRuntimeLayoutRecorder(t, repo)
 	recorder.expect(repo)
@@ -23,14 +44,9 @@ func TestHooksCheckSupportsEveryHostAndHistoricalClaudePositionals(t *testing.T)
 	}
 	for runtime, pair := range paths {
 		recorder.expect(pair[0])
-		if code := runHooksCheckWithResolver([]string{"--runtime", runtime, pair[0], pair[1]}, recorder.resolve); code != 0 {
-			t.Fatalf("%s hook check exit = %d", runtime, code)
+		if err := checkLiveHooks(runtime, pair[0], pair[1], recorder.resolve); err != nil {
+			t.Fatalf("%s hook check: %v", runtime, err)
 		}
-	}
-	claude := paths["claude"]
-	recorder.expect(claude[0])
-	if code := runHooksCheckWithResolver([]string{claude[0], claude[1]}, recorder.resolve); code != 0 {
-		t.Fatalf("historical Claude positional check exit = %d", code)
 	}
 
 	codex := paths["codex"]
@@ -43,8 +59,8 @@ func TestHooksCheckSupportsEveryHostAndHistoricalClaudePositionals(t *testing.T)
 		t.Fatal(err)
 	}
 	recorder.expect(codex[0])
-	if code := runHooksCheckWithResolver([]string{"--runtime", "codex", codex[0], codex[1]}, recorder.resolve); code != 1 {
-		t.Fatalf("wrong Codex matcher exit = %d, want 1", code)
+	if err := checkLiveHooks("codex", codex[0], codex[1], recorder.resolve); err == nil {
+		t.Fatal("wrong Codex matcher passed the hook check")
 	}
 }
 
@@ -109,8 +125,8 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 	}
 	shipped := filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json")
 	recorder.expect(claudePath)
-	if code := runHooksCheckWithResolver([]string{"--runtime", "claude", claudePath, shipped}, recorder.resolve); code != 1 {
-		t.Fatalf("async Claude Stop check exit = %d, want 1", code)
+	if err := checkLiveHooks("claude", claudePath, shipped, recorder.resolve); err == nil {
+		t.Fatal("async Claude Stop passed the hook check")
 	}
 	ownedStop["async"] = false
 	data, err = json.MarshalIndent(claude, "", "  ")
@@ -121,7 +137,7 @@ func TestHooksCheckRequiresSynchronousLifecycleAndAllCodexStartSources(t *testin
 		t.Fatal(err)
 	}
 	recorder.expect(claudePath)
-	if code := runHooksCheckWithResolver([]string{"--runtime", "claude", claudePath, shipped}, recorder.resolve); code != 0 {
-		t.Fatalf("explicit synchronous Claude Stop check exit = %d", code)
+	if err := checkLiveHooks("claude", claudePath, shipped, recorder.resolve); err != nil {
+		t.Fatalf("explicit synchronous Claude Stop check: %v", err)
 	}
 }

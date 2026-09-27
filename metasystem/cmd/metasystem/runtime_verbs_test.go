@@ -37,13 +37,7 @@ func TestRuntimeVerbContract(t *testing.T) {
 		{"dirs", runRuntimeDirs, []string{"devin"}, 0, ".agents/skills\n.devin/skills\n.devin/agents\n"},
 		{"dirs unknown", runRuntimeDirs, []string{"ghostrt"}, 1, ""},
 		{"dirs usage", runRuntimeDirs, nil, 2, ""},
-		{"enforcement-config", runRuntimeEnforcementConfig, []string{"codex"}, 0, "codex-hooks.json\n"},
-		{"enforcement-config absent", runRuntimeEnforcementConfig, []string{"fake"}, 1, ""},
-		{"self-check", runRuntimeSelfCheck, []string{"claude"}, 0, "$CLAUDE_PROJECT_DIR/metasystem\n"},
-		{"self-check absent", runRuntimeSelfCheck, []string{"codex"}, 1, ""},
 		{"instruction-file", runRuntimeInstructionFile, []string{"claude"}, 0, "CLAUDE.md\n"},
-		{"session-env", runRuntimeSessionEnv, []string{"devin"}, 0, "DEVIN_PROJECT_DIR\n"},
-		{"session-env absent", runRuntimeSessionEnv, []string{"codex"}, 1, ""},
 		{"start-context", runRuntimeStartContext, []string{"claude"}, 0, "field=hookSpecificOutput.additionalContext event=SessionStart bytes=10000 sources=startup,resume,clear,compact\n"},
 		{"start-context absent", runRuntimeStartContext, []string{"codex"}, 1, ""},
 	}
@@ -55,29 +49,6 @@ func TestRuntimeVerbContract(t *testing.T) {
 			}
 			if out != row.stdout {
 				t.Fatalf("stdout %q, want %q", out, row.stdout)
-			}
-		})
-	}
-}
-
-func TestRuntimeContextSampleVerb(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		args   []string
-		code   int
-		stdout string
-	}{
-		{"claude", []string{"claude"}, 0, "sample=per-call main-observable=true\n"},
-		{"codex", []string{"codex"}, 0, "sample=per-call main-observable=true\n"},
-		{"devin", []string{"devin"}, 0, "sample=per-invocation main-observable=false\n"},
-		{"fake", []string{"fake"}, 0, "sample=none main-observable=true\n"},
-		{"unknown", []string{"unknown"}, 1, ""},
-		{"usage", nil, 2, ""},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			stdout, code := captureStdout(t, func() int { return runRuntimeContextSample(test.args) })
-			if code != test.code || stdout != test.stdout {
-				t.Fatalf("exit=%d stdout=%q, want exit=%d stdout=%q", code, stdout, test.code, test.stdout)
 			}
 		})
 	}

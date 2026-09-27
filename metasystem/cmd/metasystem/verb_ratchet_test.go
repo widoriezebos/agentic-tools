@@ -27,7 +27,7 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 473
+	verbRatchetInternalVerbCeiling = 432
 	// R4: shell lines that reference the engine.
 	verbRatchetShellEngineCeiling = 3119
 	// R4 second ceiling: all lines of shell files under metasystem/scripts.
@@ -37,7 +37,7 @@ const (
 	verbRatchetSelfSubprocessCeiling = 95
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
-	verbRatchetInstructionCeiling = 428
+	verbRatchetInstructionCeiling = 392
 )
 
 type ratchetSite struct {

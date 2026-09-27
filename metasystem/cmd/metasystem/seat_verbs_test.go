@@ -100,22 +100,6 @@ func TestSeatFleetReadsTheLocalRefsAndPrintsThisMachineFirst(t *testing.T) {
 	}
 }
 
-func TestSeatFleetVerbExitsZeroWithoutANickname(t *testing.T) {
-	t.Parallel()
-	root := seatVerbCheckout(t, "")
-	if code := runSeatFleet([]string{"--root", root}); code != 0 {
-		t.Fatalf("seat fleet = %d; want 0", code)
-	}
-	// No --root is not a refusal: the checkout the caller is standing in is
-	// the answer, and this test process stands in the engine's own checkout.
-	if code := runSeatFleet(nil); code != 0 {
-		t.Fatalf("seat fleet with no root = %d; want it to read the current checkout", code)
-	}
-	if code := runSeatFleet([]string{"--nonsense"}); code != 2 {
-		t.Fatalf("seat fleet with an unknown flag = %d; want the usage refusal", code)
-	}
-}
-
 func TestAFailedFetchDoesNotDateTheCopyNow(t *testing.T) {
 	t.Parallel()
 	root := seatVerbCheckout(t, "m1e")
@@ -153,8 +137,8 @@ func TestSeatFamilyIsRegistered(t *testing.T) {
 			continue
 		}
 		found = true
-		// Reading the fleet, and adding one machine to it.
-		if len(family.verbs) != 2 || family.verbs[0].name != "fleet" || family.verbs[1].name != "launch" {
+		// Adding one machine to the fleet; status --machines reads it.
+		if len(family.verbs) != 1 || family.verbs[0].name != "launch" {
 			t.Fatalf("seat family = %+v", family.verbs)
 		}
 	}

@@ -600,7 +600,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 		"TestCodexReaderDecodesEachLineOnce", "TestUnchangedEmptyTranscriptDoesNotRepublishCursor",
 		"TestLatestCallReturnsThePreviousReadTime", "TestLatestCallNonBlockingReturnsBusy",
 		"TestRegisterSessionNonBlockingReturnsBusy", "TestEveryDeclarationDeclaresContextSample",
-		"TestRuntimeContextSampleVerb", "TestRoleContextRendersBoundCeilingAndUnknowns",
+		"TestRoleContextRendersBoundCeilingAndUnknowns",
 		"TestHealthLineCarriesContextBudget", "TestRoleContextNamesTheNewestSpill",
 		"TestContextBudgetDoesNotAttributeUsageToAStaleHolder", "TestContextHolderResolutionSkipsForeignMalformedAnnouncements",
 		"TestContextBudgetReturnsBusyUnknownWithoutWaiting", "TestContextBudgetReturnsRegistryBusyUnknownWithoutWaiting",

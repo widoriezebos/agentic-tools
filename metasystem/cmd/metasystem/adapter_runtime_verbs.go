@@ -325,29 +325,6 @@ func runAdapterClaudeResultField(args []string) int {
 	return 0
 }
 
-// runAdapterClaudeReadRoots prints the requested read roots other than the
-// workspace root, one per line.
-func runAdapterClaudeReadRoots(args []string) int {
-	flags := flag.NewFlagSet("adapter claude-read-roots", flag.ContinueOnError)
-	record := flags.String("record", "", "job record file")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *record == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-read-roots --record FILE")
-		return 2
-	}
-	roots, err := adapter.ClaudeReadRoots(*record)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	for _, root := range roots {
-		fmt.Println(root)
-	}
-	return 0
-}
-
 // runAdapterClaudeAppendResult appends a Claude result document to the flight
 // recorder as one compact event line.
 func runAdapterClaudeAppendResult(args []string) int {

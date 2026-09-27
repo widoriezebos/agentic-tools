@@ -23,63 +23,6 @@ func writeBehaviorSurfaceJSON(value any) error {
 	return json.NewEncoder(os.Stdout).Encode(value)
 }
 
-func runBehaviorSurfacePolicy(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem behavior-surface policy")
-		return 2
-	}
-	if _, err := behaviorsurface.Load(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := os.Stdout.Write(behaviorsurface.Bytes()); err != nil {
-		fmt.Fprintln(os.Stderr, "behavior-surface output:", err)
-		return 1
-	}
-	return 0
-}
-
-func runBehaviorSurfaceClassify(args []string) int {
-	flags := flag.NewFlagSet("behavior-surface classify", flag.ContinueOnError)
-	path := flags.String("path", "", "Git-toplevel-relative path")
-	prefix := flags.String("prefix", "", "metasystem prefix relative to the Git toplevel")
-	projectionName := flags.String("projection", "", "optional projection membership to report")
-	if flags.Parse(args) != nil || *path == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem behavior-surface classify --path PATH [--prefix PREFIX] [--projection ENGINE|LANDING|PAYLOAD]")
-		return 2
-	}
-	policy, err := behaviorsurface.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	class, err := policy.Classify(*path, *prefix)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	response := map[string]any{"path": *path, "class": class, "policyVersion": policy.Version}
-	if *projectionName != "" {
-		projection, err := behaviorsurface.ParseProjection(*projectionName)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 2
-		}
-		included, err := policy.Includes(projection, *path, *prefix)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		response["projection"] = projection
-		response["included"] = included
-	}
-	if err := writeBehaviorSurfaceJSON(response); err != nil {
-		fmt.Fprintln(os.Stderr, "behavior-surface output:", err)
-		return 1
-	}
-	return 0
-}
-
 func runBehaviorSurfaceSelect(args []string) int {
 	flags := flag.NewFlagSet("behavior-surface select", flag.ContinueOnError)
 	projectionName := flags.String("projection", "", "ENGINE, LANDING, or PAYLOAD")

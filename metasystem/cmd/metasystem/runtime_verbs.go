@@ -144,28 +144,6 @@ func singleValue(value, absentNote string) int {
 	return 0
 }
 
-func runRuntimeEnforcementConfig(args []string) int {
-	declaration, code := runtimeArg(args, "enforcement-config")
-	if code != 0 {
-		return code
-	}
-	return singleValue(declaration.ShippedEnforcementConfig,
-		"no shipped enforcement config declared for "+declaration.Name)
-}
-
-func runRuntimeSelfCheck(args []string) int {
-	declaration, code := runtimeArg(args, "self-check")
-	if code != 0 {
-		return code
-	}
-	if declaration.SelfCheck == nil {
-		fmt.Fprintln(os.Stderr, "no live self-check declared for "+declaration.Name)
-		return 1
-	}
-	fmt.Println(declaration.SelfCheck.VendoredMarker)
-	return 0
-}
-
 func runRuntimeInstructionFile(args []string) int {
 	declaration, code := runtimeArg(args, "instruction-file")
 	if code != 0 {
@@ -173,15 +151,6 @@ func runRuntimeInstructionFile(args []string) int {
 	}
 	return singleValue(declaration.InstructionFile,
 		"no instruction file declared for "+declaration.Name)
-}
-
-func runRuntimeSessionEnv(args []string) int {
-	declaration, code := runtimeArg(args, "session-env")
-	if code != 0 {
-		return code
-	}
-	return singleValue(declaration.SessionEnv,
-		"no session environment declared for "+declaration.Name)
 }
 
 func runRuntimeStartContext(args []string) int {
@@ -196,15 +165,6 @@ func runRuntimeStartContext(args []string) int {
 	fmt.Printf("field=%s event=%s bytes=%d sources=%s\n", declaration.StartContextField,
 		declaration.StartContextEventName, declaration.StartContextBytes,
 		strings.Join(declaration.StartContextSources, ","))
-	return 0
-}
-
-func runRuntimeContextSample(args []string) int {
-	declaration, code := runtimeArg(args, "context-sample")
-	if code != 0 {
-		return code
-	}
-	fmt.Printf("sample=%s main-observable=%t\n", declaration.ContextSample, declaration.MainObservable)
 	return 0
 }
 

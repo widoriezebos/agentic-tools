@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 var launchExecutable = os.Executable
@@ -174,21 +175,7 @@ func launchWaitWith(manager *launch.Manager, args []string, stdout, stderr io.Wr
 func runLaunchStatus(args []string) int {
 	return launchRecordVerb(args, "status", (*launch.Manager).Status)
 }
-func runLaunchList(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch list")
-		return 2
-	}
-	records, err := launchManager().List()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch list:", err)
-		return 1
-	}
-	for _, record := range records {
-		fmt.Println(launchReport(record))
-	}
-	return 0
-}
+
 func runLaunchCancel(args []string) int {
 	return launchRecordVerb(args, "cancel", (*launch.Manager).Cancel)
 }

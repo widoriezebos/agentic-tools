@@ -175,24 +175,6 @@ func witnessManifestDigest(witness string) (string, error) {
 	return record.ManifestDigest, nil
 }
 
-func runGateCheck(args []string) int {
-	flags := flag.NewFlagSet("gate check", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate check --root R")
-		return 2
-	}
-	if gaterun.Running(*root) {
-		fmt.Println("1")
-	} else {
-		fmt.Println("0")
-	}
-	return 0
-}
-
 func runGateGuardAcquire(args []string) int {
 	flags := flag.NewFlagSet("gate guard-acquire", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")
