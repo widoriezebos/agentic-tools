@@ -449,7 +449,25 @@ func (s *Service) Proposed(human, turn string, index, version int, state, words 
 	if err != nil {
 		return Proposal{}, err
 	}
-	return conversation.RecordProposal(turn, index, version, state, words, s.now())
+	held, err := conversation.RecordProposal(turn, index, version, state, words, s.now())
+	if err != nil {
+		return Proposal{}, err
+	}
+	// Every admitted write is a beat, on the same stream the answer's own
+	// proposals arrived on, so a transcript open in another tab — or the drawer
+	// beside the inbox this press came from — folds the change into its card
+	// without reading the conversation again (g1-s60 D5). It is the first time a
+	// human's act, rather than the Partner's turn, publishes here; it is the same
+	// event the page already folds, and nothing on the stream carries authority.
+	//
+	// It is published after the write and never before: the beat says what the
+	// record now holds, and a beat for a write that was refused would tell every
+	// other page something that did not happen.
+	s.publish(Event{
+		Turn: turn, Kind: EventProposal, Proposal: &held,
+		At: s.now().UTC().Format(time.RFC3339),
+	})
+	return held, nil
 }
 
 /* ------------------------------------------- what is still waiting on you -- */

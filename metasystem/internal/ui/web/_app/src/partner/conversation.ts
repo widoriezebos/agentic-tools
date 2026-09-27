@@ -190,6 +190,14 @@ export function unavailable(store: Store, reason: string): Store {
  * reconnect, and dropping it is what makes the reconnect safe.
  */
 export function received(store: Store, event: PartnerEvent): Store {
+  // A proposal beat for an answer the transcript already holds is not a beat of
+  // a running turn at all: it is what a human's press did to one line, published
+  // by the outcome route so that every open page folds it into the card it
+  // belongs to (g1-s60 D5). It is read before the sequence below because it
+  // carries none — the answer ended, and the turn's own numbering ended with it.
+  if (event.kind === "proposal" && event.proposal !== undefined && answeredIn(store, event.turn)) {
+    return proposalMoved(store, event.turn, event.proposal);
+  }
   const running = store.live.turn === event.turn ? store.live : { ...nothingRunning, turn: event.turn };
   if (event.seq <= running.seq) {
     return store;
@@ -227,6 +235,11 @@ export function received(store: Store, event: PartnerEvent): Store {
     default:
       return store;
   }
+}
+
+/** Whether the transcript already holds this turn's answer. */
+function answeredIn(store: Store, turn: string): boolean {
+  return store.messages.some((message) => message.turn === turn && message.role === "partner");
 }
 
 /**

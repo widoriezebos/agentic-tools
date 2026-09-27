@@ -368,3 +368,98 @@ func messageOf(t *testing.T, response *httptest.ResponseRecorder) string {
 	_ = json.Unmarshal(response.Body.Bytes(), &refusal)
 	return refusal.Error
 }
+
+// Every admitted write is a beat on the Partner's own stream (g1-s60 D5).
+//
+// It is what keeps two views of one action in step without either of them
+// reading the conversation again: a transcript open in another tab, and the
+// drawer beside the inbox the press came from, both fold the entry the beat
+// carries into the card it belongs to. It is the first time a human's act, and
+// not the Partner's turn, publishes here.
+
+// proposingWatched is a served Partner that has answered one turn with one
+// proposed action, with a watcher open on the stream from before the first press.
+func proposingWatched(t *testing.T) (http.Handler, string, <-chan partner.Event) {
+	t.Helper()
+	served, service := servedProposing(t, fakeacp.Script{
+		Reads:  []fakeacp.Read{proposedPark("waiting")},
+		Chunks: []string{"I have proposed it."},
+	})
+	turning, stopTurning := service.Subscribe()
+	accepted := post(t, served, partnerTurnsPath,
+		`{"key":"k1","text":"put it away","about":{"section":"Decisions"}}`, nil)
+	testutil.Require(t, "the turn is admitted", accepted.Code, http.StatusAccepted)
+	drain(t, turning)
+	stopTurning()
+
+	snapshot := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	answered := snapshot.Messages[len(snapshot.Messages)-1]
+	testutil.Require(t, "the answer carries one action", len(answered.Proposals), 1)
+	// Opened after the answer ended, so nothing on it is the turn's own.
+	events, stop := service.Subscribe()
+	t.Cleanup(stop)
+	return served, answered.Turn, events
+}
+
+// nextProposalBeat is the next proposal beat on the stream, or nothing where the
+// stream is quiet. It never waits: every beat these tests watch for is published
+// inside the request that has already answered.
+func nextProposalBeat(t *testing.T, events <-chan partner.Event) (partner.Event, bool) {
+	t.Helper()
+	for {
+		select {
+		case event := <-events:
+			if event.Kind == partner.EventProposal {
+				return event, true
+			}
+		default:
+			return partner.Event{}, false
+		}
+	}
+}
+
+// An admitted write publishes the entry as it now stands, under the turn it
+// belongs to.
+func TestAnAdmittedWritePublishesTheEntryToEveryOpenPage(t *testing.T) {
+	t.Parallel()
+	served, turn, events := proposingWatched(t)
+
+	response, held := wrote(t, served, turn, 0, 1, partner.ProposalApplying, "")
+	testutil.Require(t, "the write is admitted", response.Code, http.StatusOK)
+
+	beat, arrived := nextProposalBeat(t, events)
+	testutil.Require(t, "a proposal beat arrived", arrived, true)
+	testutil.Expect(t, "under the answer the action belongs to", beat.Turn, turn)
+	testutil.Require(t, "carrying the action", beat.Proposal != nil, true)
+	testutil.Expect(t, "in the state the write left it", beat.Proposal.State, partner.ProposalApplying)
+	testutil.Expect(t, "at the version the write moved it to", beat.Proposal.Version, held.Version)
+	testutil.Expect(t, "which is the entry the route answered with", *beat.Proposal, held)
+	testutil.Expect(t, "and the beat is stamped", beat.At != "", true)
+
+	// The outcome after it is a beat of its own: two writes per line, two beats.
+	outcome, settled := wrote(t, served, turn, 0, held.Version, partner.ProposalRefused, "goal waiting is claimed by m2a")
+	testutil.Require(t, "the outcome write is admitted", outcome.Code, http.StatusOK)
+	second, again := nextProposalBeat(t, events)
+	testutil.Require(t, "a second beat arrived", again, true)
+	testutil.Expect(t, "carrying the refusal's own words", second.Proposal.Words, "goal waiting is claimed by m2a")
+	testutil.Expect(t, "and the entry the route answered with", *second.Proposal, settled)
+}
+
+// A write the conversation would not admit publishes nothing: a beat for a write
+// that did not happen would tell every other page something untrue.
+func TestARefusedWritePublishesNothing(t *testing.T) {
+	t.Parallel()
+	served, turn, events := proposingWatched(t)
+	admitted, held := wrote(t, served, turn, 0, 1, partner.ProposalApplying, "")
+	testutil.Require(t, "the first write is admitted", admitted.Code, http.StatusOK)
+	first, arrived := nextProposalBeat(t, events)
+	testutil.Require(t, "and published its own beat", arrived, true)
+	testutil.Require(t, "at the version it moved to", first.Proposal.Version, held.Version)
+
+	// A second tab still showing the line as waiting at version 1.
+	stale, _ := wrote(t, served, turn, 0, 1, partner.ProposalApplying, "")
+	testutil.Require(t, "the stale write is refused", stale.Code, http.StatusConflict)
+
+	_, published := nextProposalBeat(t, events)
+	testutil.Expect(t, "nothing was published for it", published, false)
+}
