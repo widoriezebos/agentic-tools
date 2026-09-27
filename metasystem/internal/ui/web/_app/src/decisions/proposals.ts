@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { Need, Proposed } from "./api";
 import type { Proposal } from "../partner/api";
@@ -321,6 +321,11 @@ export function useProposals(ask: {
   // The run in flight, held synchronously so a second press in the same frame
   // does nothing: a state flag is a render away and a press is not (g1-s58 D5).
   const guard = useRef(noRun());
+  // Which lines a budget has already been asked for, held synchronously for the
+  // guard's own reason: the answer is a render away, and a row that asked twice
+  // before the first read landed would be reading the backlog twice for one
+  // opening.
+  const asked = useRef(new Set<string>());
   const { reread, signIn } = ask;
 
   const mark = useCallback((id: string, change: Partial<Mark>) => {
@@ -361,11 +366,14 @@ export function useProposals(ask: {
 
   const captureBudgets = useCallback(
     (needs: readonly Need[]) => {
-      const lines = linesOf(needs, marks, budgets, standing).filter(
-        (line) => line.verb === APPROVE && budgets[line.id] === undefined,
+      const lines = linesOf(needs).filter(
+        (line) => line.verb === APPROVE && !asked.current.has(line.id),
       );
       if (lines.length === 0) {
         return;
+      }
+      for (const line of lines) {
+        asked.current.add(line.id);
       }
       loadBacklog()
         .then((read) => {
@@ -377,7 +385,7 @@ export function useProposals(ask: {
           setBudgets((held) => ({ ...held, ...nothingRead(lines) }));
         });
     },
-    [marks, budgets, standing],
+    [],
   );
 
   const noteBudgets = useCallback((read: Displayeds) => {
@@ -411,16 +419,22 @@ export function useProposals(ask: {
     [mark, reread],
   );
 
-  return {
-    lineOf: lineFor,
-    linesOf: linesFor,
-    run,
-    running: running !== "",
-    captureBudgets,
-    budgets,
-    noteBudgets,
-    dismiss,
-  };
+  // One object, kept while nothing it answers from has moved: the pane hands it
+  // to an effect and to the row's own handles, and a fresh one every render
+  // would re-run that effect every render.
+  return useMemo(
+    () => ({
+      lineOf: lineFor,
+      linesOf: linesFor,
+      run,
+      running: running !== "",
+      captureBudgets,
+      budgets,
+      noteBudgets,
+      dismiss,
+    }),
+    [lineFor, linesFor, run, running, captureBudgets, budgets, noteBudgets, dismiss],
+  );
 }
 
 /** The tuples these lines would carry, from one read of the backlog. */
