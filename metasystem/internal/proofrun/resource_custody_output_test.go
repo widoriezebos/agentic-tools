@@ -240,7 +240,9 @@ func TestCustodiedSuiteWithoutResourceFilesDrainsGrandchildWithoutSlot(t *testin
 		}
 		<-ended
 	})
-	waitCustodyFileWhile(t, pidPath, 0, ended, func() error { return errors.New("the borrowed custody launcher returned") })
+	// The shell creates the pid file before it writes the line; wait for the line.
+	waitCustodyBarrier(t, pidPath, 0, ended, func() error { return errors.New("the borrowed custody launcher returned") },
+		func() bool { return completeCustodyRecord(pidPath) })
 	pidText, err := os.ReadFile(pidPath)
 	if err != nil {
 		t.Fatal(err)
