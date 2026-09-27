@@ -397,6 +397,20 @@ type stopRun struct {
 	phases []string
 }
 
+// evidenceGCInterval bounds how often a Stop runs evidence collection.
+const evidenceGCInterval = 15 * time.Minute
+
+// readEvidenceGCStamp reads when a Stop last completed evidence collection.
+// An absent or unreadable stamp means collection is due.
+func readEvidenceGCStamp(path string) (time.Time, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	last, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	return last, err == nil
+}
+
 // timed runs one owner call and records its elapsed milliseconds.
 func (s *stopRun) timed(name string, call func()) {
 	if s.inv.Monotonic == nil {
@@ -688,13 +702,25 @@ func (s *stopRun) decide() {
 
 	// Leave evidence that this ran: without it a hook that fired and found
 	// nothing cannot be told from one that never fired.
-	gcRC := 1
-	if log, err := os.OpenFile(filepath.Join(s.supervisionDir, "hooks.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
-		s.timed("evidence-gc", func() { gcRC = ops.EvidenceGC(s.world, log) })
-		_ = log.Close()
-	}
-	if gcRC != 0 {
-		s.recordFailure("the hook evidence state could not be maintained", "hook-evidence")
+	// Evidence collection keeps a 90-minute grace, so it runs at most once
+	// per evidenceGCInterval rather than on every turn end: on seat m1e it
+	// walked 132,000 files for 4-5 s of every Stop. A skipped turn still
+	// leaves its line.
+	stamp := filepath.Join(s.supervisionDir, "evidence-gc.last")
+	now := inv.Now().UTC()
+	if last, ok := readEvidenceGCStamp(stamp); ok && !now.Before(last) && now.Sub(last) < evidenceGCInterval {
+		_ = s.appendHookLog(nowStamp(now) + " evidence-gc skipped: last ran " + last.Format(time.RFC3339) + "; next after " + last.Add(evidenceGCInterval).Format(time.RFC3339) + "\n")
+	} else {
+		gcRC := 1
+		if log, err := os.OpenFile(filepath.Join(s.supervisionDir, "hooks.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			s.timed("evidence-gc", func() { gcRC = ops.EvidenceGC(s.world, log) })
+			_ = log.Close()
+		}
+		if gcRC != 0 {
+			s.recordFailure("the hook evidence state could not be maintained", "hook-evidence")
+		} else {
+			_ = os.WriteFile(stamp, []byte(now.Format(time.RFC3339)+"\n"), 0o644)
+		}
 	}
 
 	// One structured decision: the verdict owns open work, the goal clause,

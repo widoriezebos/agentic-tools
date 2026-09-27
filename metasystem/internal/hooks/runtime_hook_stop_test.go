@@ -650,3 +650,41 @@ func TestStopTracesEachOwnerCallsCost(t *testing.T) {
 		}
 	}
 }
+
+// Witness for the Stop's biggest avoidable cost: evidence collection (4-5 s
+// of every Stop on seat m1e, grace 90 minutes) runs at most once per
+// interval on an artificial wall clock, and a skipped Stop still logs.
+func TestStopRunsEvidenceCollectionAtMostOncePerInterval(t *testing.T) {
+	t.Parallel()
+	started := time.Now().Add(-3 * time.Second).Unix()
+	installation := newHookInstallation(t)
+	ops := newFakeOps(t, installation)
+	var collections atomic.Int32
+	ops.evidenceGC = func(io.Writer) int {
+		collections.Add(1)
+		return 0
+	}
+	wall := time.Date(2026, 9, 27, 19, 0, 0, 0, time.UTC)
+	stop := func(at time.Time) {
+		t.Helper()
+		run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"gc-cadence","transcript_path":"/transcripts/t.jsonl"}`,
+			env: map[string]string{stopDeadlineParentEnv: "777", stopDeadlineStartedEnv: fmt.Sprint(started)},
+			now: func() time.Time { return at }})
+		if run.status != 0 {
+			t.Fatalf("stop at %s = status %d stderr %q", at, run.status, run.stderr)
+		}
+	}
+	stop(wall)
+	stop(wall.Add(time.Minute))
+	stop(wall.Add(14 * time.Minute))
+	if got := collections.Load(); got != 1 {
+		t.Fatalf("evidence collection ran %d times within one interval", got)
+	}
+	if !strings.Contains(readHookLog(t, installation), " evidence-gc skipped: last ran 2026-09-27T19:00:00Z; next after 2026-09-27T19:15:00Z\n") {
+		t.Fatalf("a skipped collection left no line: %q", readHookLog(t, installation))
+	}
+	stop(wall.Add(15 * time.Minute))
+	if got := collections.Load(); got != 2 {
+		t.Fatalf("evidence collection did not run once the interval passed: %d", got)
+	}
+}
