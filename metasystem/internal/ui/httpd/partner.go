@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +51,12 @@ const (
 	// recorded the outcome or has said they are leaving without it.
 	partnerSittingClosePath = "/api/partner/sitting/close"
 	routePartnerClose       = "partner-sitting-close"
+	// And the outcome of one proposed action, beneath the turn that proposed it:
+	// what the human's press did, written where the proposal is. It carries no
+	// authority at all — the act itself went to the ledger's own route, under the
+	// human's session — and changes nothing but the transcript.
+	proposalsInfix       = "/proposals/"
+	routePartnerProposal = "partner-proposal"
 )
 
 // partnerMessages is how much of the transcript the read route carries. A
@@ -87,10 +94,31 @@ func partnerRouteOf(path string) (written, bool) {
 	if path == partnerSittingPath {
 		return written{route: routePartnerSitting}, true
 	}
+	// The outcome of one proposed action, before the stop below: both lie under
+	// the turns prefix, and this one carries a second name after it.
+	if turn, at, ok := proposalAt(path); ok {
+		return written{route: routePartnerProposal, id: turn, at: at}, true
+	}
 	if id, ok := idBetween(path, partnerTurnsPre, stopSuffix); ok {
 		return written{route: routePartnerStop, id: id}, true
 	}
 	return written{}, false
+}
+
+// proposalAt reads the turn and the action a path names. Both halves must be
+// there and neither may be empty: a path naming a turn and no action is no
+// route, and falls through to the 404 every unserved path under a reserved
+// prefix gets.
+func proposalAt(path string) (string, string, bool) {
+	rest, beneath := strings.CutPrefix(path, partnerTurnsPre)
+	if !beneath {
+		return "", "", false
+	}
+	turn, at, split := strings.Cut(rest, proposalsInfix)
+	if !split || turn == "" || at == "" || strings.Contains(turn, "/") || strings.Contains(at, "/") {
+		return "", "", false
+	}
+	return turn, at, true
 }
 
 // partnerOverview is the landing page as this server composes it, for the
@@ -450,6 +478,82 @@ func writeDraftRefusal(w http.ResponseWriter, code, reason, install, draft strin
 		Install string `json:"install,omitempty"`
 		Draft   string `json:"draft,omitempty"`
 	}{Error: reason, Code: code, Install: install, Draft: draft})
+}
+
+// proposalBody is what one press says about one proposed action: the version of
+// the entry the page last rendered, the state it is writing, and the words that
+// state carries.
+//
+// The version is what makes the write exclusive. Two tabs showing one line in
+// flight would otherwise both be entitled to write its outcome, and a state
+// comparison cannot tell a fresh attempt from an abandoned one; with the version
+// the loser is handed the entry as it stands and must show it.
+type proposalBody struct {
+	Version int    `json:"version"`
+	State   string `json:"state"`
+	Words   string `json:"words"`
+}
+
+// partnerProposal records what the human's press did to one proposed action.
+//
+// It carries no authority and it makes no act: the act went to the ledger's own
+// route, under the human's own session, and this writes down what that answered
+// where the proposal is. So it takes the conversation's hand, like the two
+// routes that admit and stop a turn.
+//
+// A write the conversation would not admit — the version has moved, or the pair
+// of states is not one the line may pass through — is 409 with the entry as it
+// stands, so the page can show the line as it really is. Everything else the
+// conversation refuses is a request this server could read and would not act on.
+func (h *handler) partnerProposal(w http.ResponseWriter, r *http.Request, turn, at string) {
+	if h.info.Partner == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeActRefusal(w, "partner", h.partnerRefusal())
+		return
+	}
+	index, err := strconv.Atoi(at)
+	if err != nil || index < 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		writeActRefusal(w, "request", "an action is named by its place in the answer, counting from zero")
+		return
+	}
+	var body proposalBody
+	if !decode(w, r, &body) {
+		return
+	}
+	held, err := h.info.Partner.Proposed(h.partnerHuman(r), turn, index, body.Version, body.State, body.Words)
+	if err != nil {
+		var conflict *partner.ProposalConflict
+		if errors.As(err, &conflict) {
+			w.WriteHeader(http.StatusConflict)
+			writeProposalRefusal(w, conflict.Error(), conflict.Held)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		writeActRefusal(w, "request", err.Error())
+		return
+	}
+	// The entry as it now stands goes back with the conversation, so one press
+	// is one request: the page has the new version without reading again.
+	snapshot, err := h.info.Partner.Snapshot(h.partnerHuman(r), partnerMessages)
+	if err != nil {
+		writeFailure(w, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(struct {
+		Proposal partner.Proposal `json:"proposal"`
+		partner.Snapshot
+	}{Proposal: held, Snapshot: snapshot})
+}
+
+// writeProposalRefusal is the one refusal that carries a record rather than only
+// a sentence: the entry the caller must show instead of what it had.
+func writeProposalRefusal(w http.ResponseWriter, reason string, held partner.Proposal) {
+	_ = json.NewEncoder(w).Encode(struct {
+		Error    string           `json:"error"`
+		Code     string           `json:"code"`
+		Proposal partner.Proposal `json:"proposal"`
+	}{Error: reason, Code: "state", Proposal: held})
 }
 
 // partnerStop stops the running turn. It answers the snapshot, so the page

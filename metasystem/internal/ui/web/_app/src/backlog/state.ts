@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { loadBacklog, type Backlog } from "./api";
 import { loadPane, type Pane } from "../project/api";
@@ -25,21 +25,38 @@ export type BacklogState =
 
 export function useBacklog(): {
   backlog: BacklogState;
+  /**
+   * Refresh, as the toolbar presses it: the board blanks and the server is
+   * asked to fetch the canonical branch before it answers.
+   */
   refresh: () => void;
+  /**
+   * The same read in place: what is on screen stays until the answer arrives,
+   * and the server is not asked to fetch.
+   *
+   * It is what the board OFFERS to the shell, and the difference matters because
+   * an offered re-read is made on somebody else's behalf — after a proposal
+   * applied in the Partner's drawer, say — over a page that may have a sheet open
+   * on it. A read that blanked the board would unmount that sheet's own columns
+   * and whatever was typed into them (Astra S58-03).
+   */
+  again: () => void;
   moved: (after: Backlog) => void;
   /** Which read this is, so what is read beside the ledger refreshes with it. */
   attempt: number;
 } {
   const [backlog, setBacklog] = useState<BacklogState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
+  // Whether the read this attempt makes asks the server to fetch the canonical
+  // branch first. The mount observes; Refresh looks, which is what makes "is
+  // this current" a question about now rather than about whenever the server's
+  // own loop last looked; an offered re-read observes, because nobody pressed
+  // anything and the loop's own cadence is the honest answer for it.
+  const looking = useRef(false);
 
   useEffect(() => {
     const aborter = new AbortController();
-    // The mount observes; every read after it is a Refresh, and a Refresh
-    // asks the server to look at the canonical branch before it answers. That
-    // is what makes "is this current" a question about now rather than about
-    // whenever the server's own loop last looked.
-    loadBacklog(aborter.signal, attempt > 0)
+    loadBacklog(aborter.signal, looking.current)
       .then((read) => {
         setBacklog({ state: "known", backlog: read });
       })
@@ -54,7 +71,13 @@ export function useBacklog(): {
   }, [attempt]);
 
   const refresh = useCallback(() => {
+    looking.current = true;
     setBacklog({ state: "loading" });
+    setAttempt((previous) => previous + 1);
+  }, []);
+
+  const again = useCallback(() => {
+    looking.current = false;
     setAttempt((previous) => previous + 1);
   }, []);
 
@@ -62,7 +85,7 @@ export function useBacklog(): {
     setBacklog({ state: "known", backlog: after });
   }, []);
 
-  return { backlog, refresh, moved, attempt };
+  return { backlog, refresh, again, moved, attempt };
 }
 
 /**

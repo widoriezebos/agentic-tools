@@ -9,9 +9,9 @@ import { Header } from "./Header";
 import { useWorkspaceState, type WorkspaceState } from "./identity";
 import { PHONE_QUERY, RAIL_QUERY, useMediaQuery } from "./media";
 import { Rail } from "./Rail";
-import { RefreshProvider } from "./refresh";
+import { RefreshProvider, useSectionRefresh } from "./refresh";
 import { Sheet } from "./Sheet";
-import { WorkAreaProvider } from "./workmodal";
+import { WorkAreaProvider, useWorkAreaCovered } from "./workmodal";
 import { ApplicationPane } from "../application/ApplicationPane";
 import { BacklogPane } from "../backlog/BacklogPane";
 import { DecisionsPane } from "../decisions/DecisionsPane";
@@ -90,6 +90,35 @@ export function Shell() {
       </PartnerProvider>
     </AboutProvider>
   );
+}
+
+/**
+ * What the conversation is told about the page beneath it: how to ask it to read
+ * again, and whether a sheet is covering it.
+ *
+ * It renders nothing. It exists because the two facts live in providers the
+ * conversation's own store stands above: the store is read on load, before there
+ * is a layout at all, and the refresh and the work area belong to the layout. So
+ * something inside them says both, for as long as it is there — the idiom the
+ * composer already uses to say how it inserts at its cursor.
+ *
+ * The re-read is what a confirmed act asks for; the cover is what defers it, so a
+ * read never unmounts a sheet's own columns and whatever the human typed in them.
+ */
+function Rereading() {
+  const { offerReread, noteCovered } = usePartner();
+  const offered = useSectionRefresh();
+  const covered = useWorkAreaCovered();
+  useEffect(() => {
+    offerReread(offered === null ? null : offered.reread);
+    return () => {
+      offerReread(null);
+    };
+  }, [offered, offerReread]);
+  useEffect(() => {
+    noteCovered(covered);
+  }, [covered, noteCovered]);
+  return null;
 }
 
 function Frame() {
@@ -370,6 +399,12 @@ function Frame() {
 
   return (
     <WorkAreaProvider layer={focused ? null : layer} under={focused ? null : under}>
+        {/* The two facts the conversation needs about the page it is over, told
+            from inside the providers that own them. The store stands above both —
+            it has to, because the conversation is read before the layout exists —
+            so this is the same registration the composer's cursor and an open
+            editor's fields use. */}
+        <Rereading />
         <div className="ms-shell">
           <a className="ms-skip-link" href="#content">
             Skip to content

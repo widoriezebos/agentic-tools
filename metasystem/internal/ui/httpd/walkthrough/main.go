@@ -998,6 +998,11 @@ var walkthroughTitles = map[string]string{
 	"g1-s24": "The census format",
 	"g1-s25": "The seat roster",
 	"g1-s26": "The fleet page's census",
+	// Two of the goals the canned proposals name, so that the goal page's own
+	// header can be stood in front of with a proposal waiting on it and with one
+	// the engine refused (g1-s61).
+	"g1-s44": "The seat census",
+	"g1-s45": "The phase tick",
 }
 
 // paneGoals are the goals the Project pane carries, in the order the ledger
@@ -1005,7 +1010,7 @@ var walkthroughTitles = map[string]string{
 // ones are here because a design's work is read out of them — a payload that
 // carried only live goals would show a shipped design as a design naming a
 // goal nobody has heard of.
-var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s9", "g1-s10", "g1-s23", "g1-s24", "g1-s25", "g1-s26"}
+var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s9", "g1-s10", "g1-s23", "g1-s24", "g1-s25", "g1-s26", "g1-s44", "g1-s45"}
 
 // goalFile is one goal of the fixture tree, live or concluded.
 func (l *ledger) goalFile(id string) *goal.GoalFile {
@@ -1467,10 +1472,33 @@ func refused(format string, args ...any) error {
 	return &act.Refusal{Kind: act.KindEngine, Code: "refused", Message: fmt.Sprintf(format, args...)}
 }
 
+// refusesPause is the one goal whose pause this fixture always refuses, and
+// unresolvedWithdraw the one whose withdrawal it cannot answer for.
+//
+// They are here for the reason refusesEdit is: a run of several acts has three
+// answers a human has to be able to read, and a fixture where everything lands
+// shows one of them. With these two, one press on the Partner's card shows a line
+// landing, a refusal passed in the engine's own sentence with the run going on to
+// the next line, and an answer that does not say what happened stopping the run
+// with Try again and Ask the Partner beside it.
+//
+// Both are the fixture's own rules and no engine's, which is why they say so. The
+// unresolved one is shaped exactly as the act layer shapes a landed push whose
+// confirmation failed, because that is the answer a human most needs to have
+// stood in front of: the act may have happened, and nothing may be sent again.
+const (
+	refusesPause       = "g1-s45"
+	unresolvedWithdraw = "g1-s14"
+)
+
 func (l *ledger) park(id, because string) error {
 	if strings.TrimSpace(because) == "" {
 		return &act.Refusal{Kind: act.KindRequest, Code: "no-reason",
 			Message: "park needs its reason — a pause without a why is a stall in disguise"}
+	}
+	if id == refusesPause {
+		return refused("goal %s is claimed by m2a+implementer; pausing another pair's claim is a human act "+
+			"at that terminal (this fixture refuses this goal's pause, so a refused line can be read)", id)
 	}
 	file := l.tree.Live[id]
 	if file == nil {
@@ -1589,6 +1617,15 @@ func (l *ledger) edit(id string, edited act.Edited) error {
 }
 
 func (l *ledger) withdraw(id, reason string) error {
+	if id == unresolvedWithdraw {
+		// The act layer's own shape for a push that landed and could not be
+		// confirmed: a failure under 500, which the page reads as unresolved and
+		// never sends again by itself.
+		return &act.Refusal{Kind: act.KindFailed, Code: "pushed-unknown",
+			Message: "pushed; whether it landed is unresolved: confirming refetch failed: the remote closed the " +
+				"connection; the page's next read says what the ledger did (this fixture answers this goal's " +
+				"withdrawal so, to show an unresolved line)"}
+	}
 	file := l.tree.Live[id]
 	if file == nil || file.Approved == nil {
 		return fmt.Errorf("goal %s carries no approval to withdraw", id)

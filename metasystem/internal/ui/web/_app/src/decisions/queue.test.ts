@@ -57,7 +57,7 @@ function need(id: string, over: Partial<Row> = {}, since = "2026-09-01T00:00:00Z
     since, deadline: "", silence: "", recommend: "",
     where: { kind: "goal", id }, act: "approve", command: "",
     row: row({ ref: { kind: "goal", id, revision: 3 }, openedAt: since, ...over }),
-    new: false, words: "", context: "", owner: "", class: "", due: "", path: "", goals: [],
+    new: false, words: "", context: "", owner: "", class: "", due: "", path: "", goals: [], proposal: null,
   };
 }
 

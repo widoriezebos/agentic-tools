@@ -3,6 +3,7 @@ import { CircleCheck } from "lucide-react";
 import type { Need } from "./api";
 import { freshLine, type Group, type GroupId } from "./groups";
 import { InboxRow, type Acts } from "./InboxRow";
+import { ProposalBlock } from "./ProposalBlock";
 import { QueueBlock } from "./QueueBlock";
 import type { Narrowing } from "./decisions";
 
@@ -71,7 +72,17 @@ export function Inbox({
             }}
           />
           {open === group.id &&
-            (group.id === "queue" ? (
+            (group.id === "proposed" ? (
+              <ProposalBlock
+                needs={group.needs}
+                selected={selected}
+                onSelect={onSelect}
+                opened={openRow}
+                onOpen={onOpenRow}
+                acts={acts}
+                now={now}
+              />
+            ) : group.id === "queue" ? (
               <QueueBlock
                 waiting={group.needs}
                 narrowing={narrowing}

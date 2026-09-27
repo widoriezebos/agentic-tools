@@ -1,4 +1,16 @@
-import type { Deposit, Index, Look, Message, Outcome, PartnerEvent, Page, Sitting, Snapshot, Suggestion } from "./api";
+import type {
+  Deposit,
+  Index,
+  Look,
+  Message,
+  Outcome,
+  PartnerEvent,
+  Page,
+  Proposal,
+  Sitting,
+  Snapshot,
+  Suggestion,
+} from "./api";
 
 /**
  * The conversation, as one value the drawer and the focused page both read.
@@ -41,10 +53,18 @@ export type Live = {
    * the transcript and on the table before the words have finished.
    */
   deposits: Deposit[];
+  /**
+   * The acts this answer has proposed so far. They arrive while the answer is
+   * still arriving, which is what fills the card line by line; its buttons stay
+   * asleep until the answer's terminal beat, because until then there is no
+   * message for an outcome to be recorded on.
+   */
+  proposals: Proposal[];
 };
 
 export const nothingRunning: Live = {
   turn: "", seq: 0, text: "", activity: [], doing: "", looked: [], suggestions: [], deposits: [],
+  proposals: [],
 };
 
 export type State = "loading" | "ready" | "unavailable";
@@ -119,9 +139,16 @@ export function nameOf(human: string): string {
  * The conversation as the server reads it. It replaces the transcript whole:
  * the server owns it, and a page that merged its own idea of it into the
  * server's would be a second account of the same conversation.
+ *
+ * One exception, and it is not a second account: a proposed action already
+ * folded at a HIGHER version stays. A snapshot is a reading of an instant, and
+ * a reading taken before a write can arrive after the beat that carried it —
+ * then a card that says applied would go back to saying waiting and stay there
+ * until somebody read again (Sol S60-C-03). The version is the record's own
+ * order, so the newer of the two is the one the record holds.
  */
 export function loaded(store: Store, snapshot: Snapshot): Store {
-  const messages = snapshot.messages ?? [];
+  const messages = keptProposals(store, snapshot.messages ?? []);
   // A turn whose answer is already written down has ended, whatever the
   // snapshot says about it: the server writes the answer before it stops
   // calling the turn current, so this is the one instant in which the two
@@ -149,9 +176,45 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
           looked: snapshot.looked ?? [],
           suggestions: snapshot.suggestions ?? [],
           deposits: snapshot.deposits ?? [],
+          proposals: snapshot.proposals ?? [],
         }
       : nothingRunning,
   };
+}
+
+/**
+ * The arriving transcript, with every proposed action this page already holds at
+ * a higher version kept as it holds it.
+ *
+ * It compares versions and nothing else, because the version is what the record
+ * itself orders writes by: every admitted write moves it, and the entry with the
+ * higher one is the later of the two whichever arrived first. A first load has
+ * nothing to keep and is handed the server's own answer untouched.
+ */
+function keptProposals(store: Store, arriving: Message[]): Message[] {
+  if (store.messages.length === 0) {
+    return arriving;
+  }
+  return arriving.map((message) => {
+    const carried = message.proposals ?? [];
+    if (carried.length === 0) {
+      return message;
+    }
+    const held = store.messages.find((one) => one.turn === message.turn && one.role === message.role)?.proposals ?? [];
+    if (held.length === 0) {
+      return message;
+    }
+    let older = false;
+    const proposals = carried.map((proposal) => {
+      const mine = held.find((one) => one.index === proposal.index);
+      if (mine === undefined || mine.version <= proposal.version) {
+        return proposal;
+      }
+      older = true;
+      return mine;
+    });
+    return older ? { ...message, proposals } : message;
+  });
 }
 
 /** A Partner this seat does not have, or one that could not be admitted. */
@@ -169,6 +232,14 @@ export function unavailable(store: Store, reason: string): Store {
  * reconnect, and dropping it is what makes the reconnect safe.
  */
 export function received(store: Store, event: PartnerEvent): Store {
+  // A proposal beat for an answer the transcript already holds is not a beat of
+  // a running turn at all: it is what a human's press did to one line, published
+  // by the outcome route so that every open page folds it into the card it
+  // belongs to (g1-s60 D5). It is read before the sequence below because it
+  // carries none — the answer ended, and the turn's own numbering ended with it.
+  if (event.kind === "proposal" && event.proposal !== undefined && answeredIn(store, event.turn)) {
+    return proposalMoved(store, event.turn, event.proposal);
+  }
   const running = store.live.turn === event.turn ? store.live : { ...nothingRunning, turn: event.turn };
   if (event.seq <= running.seq) {
     return store;
@@ -193,6 +264,10 @@ export function received(store: Store, event: PartnerEvent): Store {
       return event.deposit === undefined
         ? { ...store, live }
         : { ...store, live: { ...live, deposits: [...live.deposits, event.deposit] } };
+    case "proposal":
+      return event.proposal === undefined
+        ? { ...store, live }
+        : { ...store, live: { ...live, proposals: [...live.proposals, event.proposal] } };
     case "done":
       return settled(store, live, "complete", event);
     case "stopped":
@@ -202,6 +277,11 @@ export function received(store: Store, event: PartnerEvent): Store {
     default:
       return store;
   }
+}
+
+/** Whether the transcript already holds this turn's answer. */
+function answeredIn(store: Store, turn: string): boolean {
+  return store.messages.some((message) => message.turn === turn && message.role === "partner");
 }
 
 /**
@@ -223,6 +303,7 @@ function settled(store: Store, live: Live, outcome: Outcome, event: PartnerEvent
     looked: live.looked,
     suggestions: live.suggestions,
     deposits: live.deposits,
+    proposals: live.proposals,
   };
   return { ...store, messages: [...store.messages, answered], live: nothingRunning };
 }
@@ -268,4 +349,38 @@ export function refused(store: Store, reason: string, install: string): Store {
 /** A send the human is retrying: the refusal goes and the draft stays. */
 export function retrying(store: Store): Store {
   return { ...store, refusal: "", install: "" };
+}
+
+/**
+ * One proposed action as the server now holds it, folded into the message that
+ * carries it.
+ *
+ * It is how a press becomes what the card shows without a second read of the
+ * whole conversation: the outcome route answers with the entry, and this puts it
+ * where the card reads its lines from. A message the transcript no longer carries
+ * — a trim took it — leaves the store exactly as it was.
+ */
+export function proposalMoved(store: Store, turn: string, held: Proposal): Store {
+  let changed = false;
+  const messages = store.messages.map((message) => {
+    if (message.turn !== turn || message.role !== "partner" || (message.proposals ?? []).length === 0) {
+      return message;
+    }
+    const proposals = (message.proposals ?? []).map((proposal) => {
+      if (proposal.index !== held.index) {
+        return proposal;
+      }
+      // An older beat leaves the newer entry where it is. Outcome beats carry no
+      // sequence — the answer they belong to has ended — so the entry's own
+      // version is the only order there is, and a beat that arrives after a
+      // newer one would otherwise move the card back (Sol S60-C-03).
+      if (held.version < proposal.version) {
+        return proposal;
+      }
+      changed = true;
+      return held;
+    });
+    return { ...message, proposals };
+  });
+  return changed ? { ...store, messages } : store;
 }

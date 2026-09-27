@@ -108,6 +108,43 @@ shell, and only for the last hundred messages; on a page opened before
 the store's first snapshot the chip appears a moment late, as the
 drawer's own content does.
 
+## Built (2026-09-27)
+
+Landed on ui-development and main: eight commits on `ui/g1-s61`,
+built by Claude on Opus on top of g1-s60, read by Codex on Sol under
+R-124 ([g1-s61-sol-read.md](g1-s61-sol-read.md)): one material finding,
+reproduced and fixed in the one fix round; all eight of the builder's
+departures accepted. Typecheck and the fast gate green; 91 test files,
+1,394 frontend tests; the bundle rebuilt twice to one digest. One Go
+change, in the walkthrough fixture only: its Project pane learned two
+canned goals so a goal page existed to photograph. Twenty-four
+screenshots at 1280 and 400, light and dark: the board with a marker
+chip and a danger chip side by side, the queue rows, the goal header,
+the drawer opened by a chip with the card's lines above Apply, and a
+press on an older answer's chip landing on that answer's folded card
+with the newer exchange below it.
+
+The fix round: when a chip's press opens a closed drawer, the column's
+opening is decided at its first render from the target the store
+carries, so the transcript's own scroll to the end yields to the card;
+held by a pure function over where the column opens and a
+source-reading guard that the target is read before the end-scroll.
+
+Departures the read accepted: the queue row's chip is gated on the
+approval kind, so parked and stopped rows carry none; a pure chip view
+beside a store-backed wrapper; a single in-flight line reads
+"proposed"; a count carries the danger colour when any line is refused
+or unresolved; the goal block is exported for its markup test; the
+chip drops the board card's drag handle on mouse-down; the danger chip
+uses the asserted danger-on-surface pair.
+
+Later, when it hurts: the store's `showing` target is never cleared,
+so reopening the drawer with its plain toggle after an earlier chip
+press lands at that card rather than at the end (clearing it on close
+is a store field and one call site in the shell); the chip reads only
+the snapshot's last hundred messages; parked and stopped rows carry no
+chip.
+
 ## Dispositions (Astra read, 2026-09-26, under R-124)
 
 Zero material findings, "build as written"; two low, non-material

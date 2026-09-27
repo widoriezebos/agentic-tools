@@ -27,6 +27,8 @@ const SITTING_END = "/api/partner/sitting/end";
 const SITTING_CLOSE = "/api/partner/sitting/close";
 /** Stopping the running turn: the turn's id, with this after it. */
 const STOP = "/stop";
+/** One proposed action of one turn, for the state a press writes onto it. */
+const PROPOSALS = "/proposals/";
 
 /** One column of the board as the page is showing it. */
 export type Lane = { id: string; title: string; total: number; goals: string[] };
@@ -250,6 +252,59 @@ export type Deposit = {
   notOffered?: string;
 };
 
+/**
+ * The six states one proposed action passes through.
+ *
+ * Waiting is the offer. Applying is written BEFORE the act is sent, so a reload
+ * during a run shows the line that was in flight as having been in flight rather
+ * than as fresh. Applied, refused and unresolved are what the act answered, in
+ * the act layer's own three distinctions. Dismissed is the human putting it away.
+ */
+export type ProposalState = "waiting" | "applying" | "applied" | "refused" | "unresolved" | "dismissed";
+
+/** The goal as the Partner read it, on the two acts whose meaning depends on it. */
+export type ProposalRead = { intent: string; nextStep: string; tier: number; labels: string[] };
+
+/**
+ * One act the Partner proposed on one goal, before the human has applied it.
+ *
+ * It is an offer and nothing else: nothing was published, and the press on the
+ * card is the act, under the human's own sign-in. The verb is the route id the
+ * runner dispatches on — never a word on a button, so a page renamed leaves
+ * every persisted proposal alone — and the fields are that route's own body
+ * fields under the body's own names.
+ */
+export type Proposal = {
+  /** This action's place in its answer, which is how the outcome route names it. */
+  index: number;
+  verb: string;
+  goal: string;
+  /** The subject as the pages say it, stamped by the server from the tip. */
+  title: string;
+  fields?: Record<string, string> | null;
+  /** The goal as it was read, on an approve and an edit, and null otherwise. */
+  read?: ProposalRead | null;
+  /** The Partner's own words for this action, shown as its words. */
+  why?: string;
+  /** Whether the human was shown it as something to apply. */
+  offered: boolean;
+  /** Why it was not offered, in the words a human reads, or "" for one that was. */
+  reason?: string;
+  state: ProposalState;
+  /** What the last state change said: the engine's own sentence on a refusal. */
+  words?: string;
+  at: string;
+  /**
+   * How many times this entry has been written, the server's own admission
+   * counting as the first.
+   *
+   * Every press sends the version it last rendered, and the server admits the
+   * write only against it. A press that loses is handed the entry as it stands
+   * and must show it, which is what keeps two tabs from applying one act twice.
+   */
+  version: number;
+};
+
 /** What the conversation can point at, for the links in an answer. */
 export type Index = {
   goals: string[] | null;
@@ -294,6 +349,14 @@ export type Message = {
    * record is what holds anything they pressed.
    */
   deposits?: Deposit[] | null;
+  /**
+   * The acts this answer proposed on goals, each with the state it now stands in.
+   *
+   * This is the record of what happened, which is why it is here and not in a
+   * store of the page's own: an approve applied twice is two approval records, so
+   * the one thing the page must never do is forget that a line was applied.
+   */
+  proposals?: Proposal[] | null;
   key?: string;
   page?: Page;
   /**
@@ -322,6 +385,11 @@ export type Snapshot = {
   suggestions: Suggestion[] | null;
   /** What the running turn has offered the sitting's record so far. */
   deposits: Deposit[] | null;
+  /**
+   * The acts the running turn has proposed so far, so a reload mid-answer shows
+   * the card that is filling rather than losing the lines that have arrived.
+   */
+  proposals: Proposal[] | null;
   /** The sitting this conversation is, read from the server and not remembered. */
   sitting: Sitting | null;
   /** The goals and records an answer's names can be resolved against. */
@@ -337,6 +405,7 @@ export type EventKind =
   | "look"
   | "suggestion"
   | "deposit"
+  | "proposal"
   | "done"
   | "error"
   | "stopped";
@@ -358,6 +427,12 @@ export type PartnerEvent = {
   suggestion?: Suggestion;
   /** One admitted deposit, on a deposit beat and nowhere else. */
   deposit?: Deposit;
+  /**
+   * One admitted or refused action, on a proposal beat and nowhere else. It
+   * arrives as the server admits it, so the card fills line by line while the
+   * answer is still arriving.
+   */
+  proposal?: Proposal;
 };
 
 /**
@@ -378,13 +453,20 @@ export class PartnerError extends Error {
    * for one wish is a second attempt, not a second record.
    */
   readonly draft: string;
+  /**
+   * The proposed action as the server holds it, where a write lost a race for
+   * one, and null otherwise. It is the whole remedy: the caller shows this
+   * rather than what it had, and sends no act.
+   */
+  readonly held: Proposal | null;
 
-  constructor(status: number, reason: string, install = "", draft = "") {
+  constructor(status: number, reason: string, install = "", draft = "", held: Proposal | null = null) {
     super(reason === "" ? `the Partner answered ${String(status)}` : reason);
     this.name = "PartnerError";
     this.status = status;
     this.install = install;
     this.draft = draft;
+    this.held = held;
   }
 }
 
@@ -398,7 +480,7 @@ export function draftOf(error: unknown): string {
   return error instanceof PartnerError ? error.draft : "";
 }
 
-type Refusal = { error?: string; install?: string; draft?: string };
+type Refusal = { error?: string; install?: string; draft?: string; code?: string; proposal?: Proposal };
 
 /**
  * The one request. A body makes it a write, and a write is a POST of JSON;
@@ -416,7 +498,8 @@ async function request<T>(resource: string, body?: unknown, signal?: AbortSignal
   });
   if (!response.ok) {
     const refusal = await reasonOf(response);
-    throw new PartnerError(response.status, refusal.error ?? "", refusal.install ?? "", refusal.draft ?? "");
+    throw new PartnerError(response.status, refusal.error ?? "", refusal.install ?? "", refusal.draft ?? "",
+      refusal.code === "state" ? (refusal.proposal ?? null) : null);
   }
   return (await response.json()) as T;
 }
@@ -492,4 +575,58 @@ export async function endSitting(): Promise<Snapshot> {
 /** Stop the running turn, and read back what it settled as. */
 export async function stopTurn(turn: string): Promise<Snapshot> {
   return request<Snapshot>(`${TURNS}/${encodeURIComponent(turn)}${STOP}`, {});
+}
+
+/**
+ * What one entry looks like when a write loses: the entry as it stands, which the
+ * caller must show instead of what it had.
+ */
+export class ProposalConflict extends Error {
+  readonly proposal: Proposal;
+
+  constructor(reason: string, proposal: Proposal) {
+    super(reason);
+    this.name = "ProposalConflict";
+    this.proposal = proposal;
+  }
+}
+
+/**
+ * Write one state onto one action the Partner proposed, and read back the entry
+ * as it now stands with the conversation beside it.
+ *
+ * The version is the entry's own as this page last rendered it. The server admits
+ * the write only against that version and only as a transition the line may make;
+ * a write it refuses comes back as a ProposalConflict carrying the entry, and the
+ * caller must show that rather than send an act of its own. That is what makes two
+ * tabs unable to apply one act twice.
+ *
+ * It carries no authority and makes no act: the act itself goes to the ledger's
+ * own route, under the human's session. This writes down what that answered, where
+ * the proposal is.
+ */
+export async function recordProposal(
+  turn: string,
+  index: number,
+  version: number,
+  state: ProposalState,
+  words: string,
+): Promise<{ proposal: Proposal } & Snapshot> {
+  const resource = `${TURNS}/${encodeURIComponent(turn)}${PROPOSALS}${String(index)}`;
+  try {
+    return await request<{ proposal: Proposal } & Snapshot>(resource, { version, state, words });
+  } catch (error: unknown) {
+    throw conflictOf(error);
+  }
+}
+
+/**
+ * The refusal that carries an entry, told from every other by its code. A
+ * refusal without one is what it was: a PartnerError the caller shows.
+ */
+function conflictOf(error: unknown): unknown {
+  if (!(error instanceof PartnerError) || error.status !== 409 || error.held === null) {
+    return error;
+  }
+  return new ProposalConflict(error.message, error.held);
 }

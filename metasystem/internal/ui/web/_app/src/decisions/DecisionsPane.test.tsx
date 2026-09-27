@@ -6,10 +6,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
-import type { Need, Page, Ruling } from "./api";
+import type { Need, Page, Proposed, Ruling } from "./api";
 import { Views } from "./DecisionsPane";
 import { noNarrowing, type Narrowing, type TabId } from "./decisions";
 import type { Acts } from "./InboxRow";
+import { lineOf } from "./proposals";
+import type { Proposal } from "../partner/api";
+import { cardsIn, NEEDS_ITS_BUDGET, WAS_IN_FLIGHT } from "../partner/proposing";
+import { PartnerAs } from "../partner/store";
 import type { Row } from "../backlog/api";
 
 /**
@@ -84,6 +88,7 @@ function need(over: Partial<Need> = {}): Need {
     due: "",
     path: "",
     goals: [],
+    proposal: null,
     ...over,
   };
 }
@@ -233,6 +238,18 @@ const acts: Acts = {
   writing: "",
   refusedAt: "",
   refusal: "",
+  // A proposal row's line is composed from what the page holds about it, so the
+  // static render composes one the way the page does, over nothing held.
+  proposals: {
+    lineOf: (need) => lineOf(need),
+    onApply: () => undefined,
+    onDismiss: () => undefined,
+    onAsk: () => undefined,
+    onBulkApply: () => undefined,
+    onBulkDismiss: () => undefined,
+    onContinue: () => undefined,
+    running: false,
+  },
 };
 
 type Shown = {
@@ -245,13 +262,13 @@ type Shown = {
   signedIn?: boolean;
 };
 
-function rendered(payload: Page, shown: Shown = {}): string {
+function rendered(payload: Page, shown: Shown = {}, handles: Acts = acts): string {
   return renderToStaticMarkup(
     <MemoryRouter>
       <TooltipPrimitive.Provider>
         <Views
           page={payload}
-          acts={acts}
+          acts={handles}
           view={shown.view ?? "inbox"}
           tab={shown.tab ?? "rulings"}
           chosen={shown.chosen === undefined ? "" : shown.chosen}
@@ -626,5 +643,314 @@ describe("where the two record writes go", () => {
 
     expect(pane).toContain('import { setRecordStatus } from "../project/api";');
     expect(pane).toContain("setRecordStatus(need.id, status)");
+  });
+});
+
+/**
+ * The group the Partner's proposals wait in.
+ *
+ * It is first of all the groups: one press each, the whole of what would happen
+ * is on the row, and it is what this human asked the Partner for. What an open
+ * row holds is the card's own line — the verb's word, the subject, every argument
+ * and the explanation in the Partner's voice — with where the line stands under
+ * it and the four acts beside it (g1-s60 D3).
+ */
+describe("proposed by the Partner", () => {
+  const because = "superseded by the seat inventory (g1-s42)";
+
+  function proposed(over: Partial<Need> = {}, action: Partial<Proposed> = {}): Need {
+    return need({
+      kind: "proposal",
+      id: "t7/0",
+      title: "The seat census answers which machines are alive",
+      asked: `Not now · The seat census answers which machines are alive · Because: ${because}`,
+      by: "the Partner",
+      since: "2026-09-25T09:00:00Z",
+      silence: "it stays proposed; nothing is applied",
+      act: "apply",
+      row: null,
+      new: true,
+      where: { kind: "goal", id: "g1-s44" },
+      ...over,
+      proposal: {
+        turn: "t7", index: 0, verb: "park-goal", fields: { because },
+        read: null, explanation: "the inventory covers what these were for",
+        state: "waiting", words: "", version: 1,
+        ...action,
+      },
+    });
+  }
+
+  const waitingRow = proposed();
+  const refusedRow = proposed(
+    { id: "t7/1", title: "A machine publishes its phase with every tick", where: { kind: "goal", id: "g1-s45" } },
+    { index: 1, state: "refused", words: "goal g1-s45 is claimed by m2a", version: 3 },
+  );
+  const inFlightRow = proposed(
+    { id: "t7/2", title: "The fleet page reads a seat's whole chain", where: { kind: "goal", id: "g1-s46" } },
+    { index: 2, state: "applying", version: 2 },
+  );
+  const approveRow = proposed(
+    {
+      id: "t8/0",
+      title: "A stopped seat says why it stopped",
+      asked: "Approve · A stopped seat says why it stopped",
+      where: { kind: "goal", id: "g1-s47" },
+    },
+    {
+      turn: "t8", verb: "approve-goal", fields: {},
+      read: { intent: "A stopped seat says why it stopped.", nextStep: "Read the fence.", tier: 3, labels: [] },
+      explanation: "the fence work it names has landed",
+    },
+  );
+
+  const budget = {
+    elapsedLimit: "8h", attemptLimit: 10, reservedJobMinutesLimit: 1200,
+    activeJobLimit: 1, reviewRoundLimit: 3,
+  };
+
+  /** The page with the four proposal rows first, and every other kind behind. */
+  function proposing(): Page {
+    const rows = [waitingRow, refusedRow, inFlightRow, approveRow];
+    return page({
+      needsYou: [...rows, ...everyKind],
+      counts: {
+        needsYou: rows.length + everyKind.length,
+        asked: rows.length + everyKind.filter((one) => one.kind !== "approval").length,
+        waiting: everyKind.filter((one) => one.kind === "approval").length,
+        rulings: 148,
+      },
+    });
+  }
+
+  /** The handles with the tuple an approve row read when it opened. */
+  function withBudget(): Acts {
+    return {
+      ...acts,
+      proposals: {
+        ...acts.proposals,
+        lineOf: (one: Need) => lineOf(one, {}, { "t8#0": { budget, source: "project" } }),
+      },
+    };
+  }
+
+  it("is the first group, with its count and how many are new", () => {
+    const markup = rendered(proposing());
+
+    expect(markup).toContain(">Proposed by the Partner</span>");
+    expect(markup.indexOf(">Proposed by the Partner</span>")).toBeLessThan(markup.indexOf(">Questions</span>"));
+    expect(markup).toContain('<span class="ms-decisions-group-count">4</span>');
+    expect(markup).toContain('<span class="ms-decisions-group-new">4 new</span>');
+  });
+
+  it("says the act and the subject on every row, and where a line stands", () => {
+    const markup = rendered(proposing(), { chosen: "proposed" });
+
+    expect(markup).toContain("Not now · The seat census answers which machines are alive</span>");
+    expect(markup).toContain(
+      "Not now · A machine publishes its phase with every tick · refused: goal g1-s45 is claimed by m2a</span>",
+    );
+    // The apostrophe in the title is escaped in the markup, so the assertion
+    // reads from the state's own words back.
+    expect(markup).toContain(`whole chain · ${WAS_IN_FLIGHT}</span>`);
+    expect(markup).toContain("Approve · A stopped seat says why it stopped</span>");
+  });
+
+  it("holds the card's own line whole when a row opens, with the explanation under it", () => {
+    const markup = rendered(proposing(), { chosen: "proposed", openRow: "t7/0" });
+
+    expect(markup).toContain('<span class="ms-proposal-word">Not now</span>');
+    expect(markup).toContain('<span class="ms-proposal-title">The seat census answers which machines are alive</span>');
+    expect(markup).toContain(">g1-s44</a>");
+    expect(markup).toContain('<span class="ms-proposal-label">Reason</span>');
+    expect(markup).toContain(because);
+    expect(markup).toContain("The Partner: the inventory covers what these were for");
+    // What silence does, in the row's own muted line.
+    expect(markup).toContain("asked by the Partner, today; if you do nothing: it stays proposed; nothing is applied");
+  });
+
+  it("shows an approve row the budget it read when the row opened, with its source", () => {
+    const markup = rendered(proposing(), { chosen: "proposed", openRow: "t8/0" }, withBudget());
+
+    expect(markup).toContain('<span class="ms-proposal-label">Budget</span>');
+    expect(markup).toContain("8h elapsed · 10 attempts · 1200 reserved job-minutes · 1 active jobs · 3 review rounds");
+    expect(markup).toContain("budget law for this goal");
+    // And the approval's own reviewed substance, as the card shows it.
+    expect(markup).toContain("A stopped seat says why it stopped.");
+    expect(markup).toContain("Read the fence.");
+  });
+
+  it("says needs its budget first where no budget could be read at all", () => {
+    const markup = rendered(proposing(), { chosen: "proposed", openRow: "t8/0" });
+
+    expect(markup).toContain(NEEDS_ITS_BUDGET);
+  });
+
+  it("offers Apply, Dismiss, Ask the Partner and the way to the goal", () => {
+    const markup = rendered(proposing(), { chosen: "proposed", openRow: "t7/0" });
+
+    expect(markup).toContain(">Apply</button>");
+    expect(markup).toContain(">Dismiss</button>");
+    expect(markup).toContain(">Ask the Partner</button>");
+    expect(markup).toContain(">Open the goal</a>");
+  });
+
+  it("says Try again on a refused row and on one a page left in flight", () => {
+    const refused = rendered(proposing(), { chosen: "proposed", openRow: "t7/1" });
+    const inFlight = rendered(proposing(), { chosen: "proposed", openRow: "t7/2" });
+
+    for (const markup of [refused, inFlight]) {
+      expect(markup).toContain(">Try again</button>");
+      expect(markup).not.toContain(">Apply</button>");
+      expect(markup).toContain(">Dismiss</button>");
+      expect(markup).toContain(">Open the goal</a>");
+    }
+    expect(refused).toContain("refused: goal g1-s45 is claimed by m2a");
+    expect(inFlight).toContain(WAS_IN_FLIGHT);
+  });
+
+  it("offers no press at all on a line whose act landed and could not be recorded", () => {
+    // The record still says `applying`, because the write that would have said
+    // otherwise failed; the ACT happened. A row that offered Try again on it
+    // would be offering to approve the same goal twice (Sol S60-C-01).
+    const landed = proposed(
+      { id: "t7/3" },
+      { index: 3, state: "applying", version: 2 },
+    );
+    const handles: Acts = {
+      ...acts,
+      proposals: {
+        ...acts.proposals,
+        lineOf: (one: Need) =>
+          lineOf(one, {
+            "t7#3": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "" } },
+          }),
+      },
+    };
+
+    const markup = rendered(
+      page({ needsYou: [landed, ...everyKind] }),
+      { chosen: "proposed", openRow: "t7/3" },
+      handles,
+    );
+
+    expect(markup).toContain("applied; the conversation could not record this");
+    expect(markup).not.toContain(">Try again</button>");
+    expect(markup).not.toContain(">Apply</button>");
+    // Putting it away publishes nothing, so that press stays.
+    expect(markup).toContain(">Dismiss</button>");
+    expect(markup).toContain(">Ask the Partner</button>");
+  });
+
+  it("offers signing in instead, where nothing proves a human", () => {
+    const markup = rendered(proposing(), { chosen: "proposed", openRow: "t7/0", signedIn: false });
+
+    expect(markup).toContain(">Sign in to act</button>");
+    expect(markup).not.toContain(">Apply</button>");
+    expect(markup).not.toContain(">Dismiss</button>");
+    // The way through is not an act and stays: reading the goal needs no proof.
+    expect(markup).toContain(">Open the goal</a>");
+  });
+});
+
+/**
+ * What the Partner proposed about a goal, on that goal's queue row.
+ *
+ * The queue is where a goal is triaged before it is opened, so a proposal
+ * waiting on one belongs on its line — beside the row's own toggle and not
+ * inside it, because it is a second control doing a second thing: the toggle
+ * opens the row and the chip opens the conversation at the line (g1-s61 D2, D3).
+ */
+describe("the chip on a queue row", () => {
+  function proposal(over: Partial<Proposal> = {}): Proposal {
+    return {
+      index: 0,
+      verb: "park-goal",
+      goal: "g1-s40",
+      title: "The pane reads a document as a chapter",
+      fields: { because: "superseded by the seat inventory (g1-s42)" },
+      read: null,
+      why: "the inventory covers what this was for",
+      offered: true,
+      reason: "",
+      state: "waiting",
+      words: "",
+      at: "2026-09-26T09:00:00Z",
+      version: 1,
+      ...over,
+    };
+  }
+
+  /** The inbox as this human's conversation would have it beside them. */
+  function queue(proposals: readonly Proposal[], shown: Shown = { chosen: "queue" }): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <PartnerAs held={{ proposals: cardsIn([{ turn: "t1", proposals }], {}, {}, []) }}>
+            <Views
+              page={page()}
+              acts={acts}
+              view="inbox"
+              tab="rulings"
+              chosen={shown.chosen ?? ""}
+              openRow={shown.openRow ?? ""}
+              narrowing={noNarrowing}
+              selected={[]}
+              now={now}
+            />
+          </PartnerAs>
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("stands on the line, outside the toggle the line opens with", () => {
+    const markup = queue([proposal()]);
+
+    expect(markup).toContain('aria-label="Not now proposed on g1-s40, 1 action"');
+    // Outside: the toggle closes before the chip opens, so one button is not
+    // inside the other — which no browser would render and no keyboard reach.
+    const chip = markup.indexOf("ms-chip-proposed");
+    const line = markup.lastIndexOf("</button>", chip);
+    expect(line).toBeGreaterThan(markup.indexOf("ms-decisions-row-open"));
+    expect(markup.indexOf("ms-decisions-row-open")).toBeLessThan(chip);
+  });
+
+  it("counts every waiting line about that goal, and wears the danger colour for a refusal", () => {
+    expect(queue([proposal(), proposal({ index: 1, verb: "edit-goal" })])).toContain(
+      'aria-label="2 proposed on g1-s40, 2 actions"',
+    );
+    const refused = queue([proposal({ state: "refused", words: "g1-s40 is claimed by m2a" })]);
+    expect(refused).toContain("ms-chip-proposed--wrong");
+    expect(refused).toContain("Not now refused");
+  });
+
+  it("is absent where nothing about the goal waits", () => {
+    expect(queue([])).not.toContain("ms-chip-proposed");
+    expect(queue([proposal({ state: "applied" })])).not.toContain("ms-chip-proposed");
+  });
+
+  /**
+   * And on the queue's rows only, which is the group the design names: the one
+   * where a goal is triaged before it is opened. The other groups that carry a
+   * goal — parked, stopped — are a one-line change the day somebody wants it, and
+   * the proposal group's own rows never carry it, because a proposal row IS the
+   * proposal and a chip saying so would be the row telling a human what they are
+   * reading. Both fall out of the one condition: the row's kind.
+   */
+  it("is on the queue's rows and no other group's, goal or not", () => {
+    for (const [group, goal, said] of [
+      ["questions", "Q-1", "Which census format?"],
+      ["parked", "g1-s45", "The Fleet section reads the census"],
+      ["stopped", "g1-s48", "Work a breach fence stopped"],
+    ] as const) {
+      const markup = queue([proposal({ goal })], { chosen: group });
+      // The row is on the screen, so the absence below is the chip's and not the
+      // group's.
+      expect({ group, shown: markup.includes(said) }).toEqual({ group, shown: true });
+      expect({ group, chip: markup.includes("ms-chip-proposed") }).toEqual({ group, chip: false });
+    }
+    // And one chip on the page where it does stand, not one per group it names.
+    expect(queue([proposal()]).match(/ms-chip-proposed/g)).toHaveLength(1);
   });
 });

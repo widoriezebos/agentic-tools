@@ -93,6 +93,28 @@ func (h *handler) decisions(w http.ResponseWriter, r *http.Request) {
 		}
 		in.Register = read
 	}
+	// The actions the Partner proposed to this human and nobody has answered.
+	//
+	// Under the same human the Partner's own routes resolve — the one signed in
+	// at this browser, else the one this server's boot proof names, else the one
+	// the seat configured, else the seat itself — because the card in the
+	// transcript and the row in this inbox have to be two readings of ONE
+	// transcript. The standing's own name is the same handle everywhere a human
+	// is named at all, and differs in exactly one case, the unnamed seat, where
+	// this page would otherwise read a transcript nobody writes to.
+	//
+	// A seat with no Partner supplies none, which costs the page one group and
+	// nothing else. A transcript this seat cannot read is a 500 carrying its
+	// reason, like every other reader here: a page that swallowed it would say
+	// nothing is proposed because it could not look.
+	if h.info.Partner != nil {
+		unsettled, proposalsErr := h.info.Partner.Unsettled(h.partnerHuman(r))
+		if proposalsErr != nil {
+			writeFailure(w, proposalsErr.Error())
+			return
+		}
+		in.Proposals = unsettled
+	}
 
 	// The visit is recorded as part of answering, because reading the page IS
 	// the visit — and it is recorded after every reader that can fail, because

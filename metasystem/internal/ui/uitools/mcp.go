@@ -71,6 +71,52 @@ func (a Args) Number(name string, fallback int) int {
 // Cursor is the continuation a previous result handed back.
 func (a Args) Cursor() string { return a.Text("cursor") }
 
+// Given reports whether the caller sent this argument at all.
+//
+// An argument that was not sent and one sent empty are two different
+// statements, and one operation depends on the difference: an edit whose label
+// list arrives empty clears the labels, while an edit that says nothing about
+// them leaves them alone. A JSON null is nothing sent — a client filling every
+// property of a schema with null is saying nothing about any of them.
+func (a Args) Given(name string) bool {
+	value, present := a[name]
+	return present && value != nil
+}
+
+// List is one argument as a list of names: a JSON array, or the one string a
+// client sends instead, where a comma or a space separates them.
+//
+// Blanks and a name given twice are dropped, and the order the caller chose is
+// kept, exactly as the act routes' own list field does it: a body that named a
+// goal twice is one name, and the first named is the one an open's park takes
+// its marker from.
+func (a Args) List(name string) []string {
+	named := []string{}
+	switch value := a[name].(type) {
+	case []any:
+		for _, one := range value {
+			if said, ok := one.(string); ok {
+				named = append(named, said)
+			}
+		}
+	case []string:
+		named = append(named, value...)
+	case string:
+		named = strings.FieldsFunc(value, func(letter rune) bool { return letter == ',' })
+	}
+	cleaned := []string{}
+	seen := map[string]bool{}
+	for _, one := range named {
+		one = strings.Join(strings.Fields(one), " ")
+		if one == "" || seen[one] {
+			continue
+		}
+		seen[one] = true
+		cleaned = append(cleaned, one)
+	}
+	return cleaned
+}
+
 // Tool is one published operation: what it is called, what it is for, and what
 // it takes.
 type Tool struct {
@@ -255,6 +301,11 @@ func Catalogue() []Tool {
 				},
 			}, []string{"kind", "text"}),
 		},
+		{
+			Name:        OpPropose,
+			Description: proposeDescription(),
+			InputSchema: proposeSchema(),
+		},
 	}
 }
 
@@ -275,9 +326,10 @@ const Instructions = "These tools read this MetaSystem workspace exactly as its 
 	"and the kit's own meanings from the glossary, command catalogue, rulings register and routes that own them. " +
 	"Every result names the source it read from and says how much of the whole it supplied; " +
 	"when a result carries a cursor, call the same tool again with it to read the rest. " +
-	"Nothing here writes. The two tools that read nothing offer the human something to decide about: " +
-	"suggest offers words for a field of an editor they handed over, and deposit offers one entry for the " +
-	"record of a sitting they are in. Neither applies anything, and the human decides."
+	"Nothing here writes. The three tools that read nothing offer the human something to decide about: " +
+	"suggest offers words for a field of an editor they handed over, deposit offers one entry for the " +
+	"record of a sitting they are in, and propose offers one act on one goal for them to apply. " +
+	"None of them applies anything, and the human decides."
 
 /* ------------------------------------------------------------- the frames -- */
 

@@ -79,6 +79,15 @@ type Update struct {
 	// conversation, so it reads what the call prepared and the turn's owner
 	// decides whether there is a sitting to offer it to.
 	Deposit *Deposit
+	// Action is one act the Partner proposed on one goal, on the look of the
+	// call that prepared it and nowhere else. It rides with that look for the
+	// suggestion's reason: an action cannot reach a turn without the call it
+	// came from being accounted for.
+	//
+	// It is whole here and it is admitted nowhere here: this host has no
+	// ledger reading, so it reads what the call prepared and the turn's owner
+	// decides whether the goals it names are at the accepted tip.
+	Action *Action
 }
 
 // The four update kinds.
@@ -199,6 +208,32 @@ type Deposit struct {
 	// for one that was. It is not called a reason, because a decision's reason
 	// is one of the fields above and one word cannot be both.
 	NotOffered string `json:"notOffered,omitempty"`
+}
+
+// Action is one act the Partner proposed on one goal, before anything has been
+// applied.
+//
+// It is not an act and it is not made. The Partner has no session and cannot
+// obtain one; what it can do is say which of this interface's nine acts it would
+// make and with which arguments, and the human's press on the card is the act.
+// So the fields here are the route body's own fields, under the body's own
+// names, and the verb is the route id the runner dispatches on.
+type Action struct {
+	// Verb is the route id: open-goal, approve-goal, withdraw-goal,
+	// set-goal-priority, block-goal, unblock-goal, park-goal, unpark-goal or
+	// edit-goal. It is the route and not a word a human reads, so a button
+	// renamed on a page leaves every persisted proposal alone.
+	Verb string `json:"verb"`
+	// Goal is the goal the act is about, by its ledger id: the goal in the
+	// route's path, and for an open the new goal's own id.
+	Goal string `json:"goal"`
+	// Fields are the route body's fields as the frame carried them, each a
+	// string because the frame is text and the runner composes the body.
+	Fields map[string]string `json:"fields,omitempty"`
+	// Why is the Partner's own words for the human, shown under the action as
+	// its words. It is called why here and `explanation` at the tool boundary,
+	// where a field called `why` would have collided with a goal's own why.
+	Why string `json:"why,omitempty"`
 }
 
 // The three outcomes a look can have.
@@ -948,8 +983,9 @@ func (l *live) tool(started bool, body toolCall) {
 		delete(l.calls, id)
 		l.callsMu.Unlock()
 	}
-	// The two calls whose result is more than a look.
-	prepared := operation == uitools.OpSuggest || operation == uitools.OpDeposit
+	// The three calls whose result is more than a look.
+	prepared := operation == uitools.OpSuggest || operation == uitools.OpDeposit ||
+		operation == uitools.OpPropose
 	update := Update{Kind: UpdateLook, Look: lookAt(what, body, prepared)}
 	if prepared && body.Status == "completed" {
 		switch operation {
@@ -957,6 +993,8 @@ func (l *live) tool(started bool, body toolCall) {
 			update.Suggestion = suggestedIn(resultText(body))
 		case uitools.OpDeposit:
 			update.Deposit = depositedIn(resultText(body))
+		case uitools.OpPropose:
+			update.Action = proposedIn(resultText(body))
 		}
 	}
 	l.emit(update)
@@ -1064,6 +1102,79 @@ func clause(held *Deposit, line string) {
 			*one.into = strings.TrimSpace(rest)
 			return
 		}
+	}
+}
+
+// proposedIn reads one completed propose call's result into a whole action, and
+// answers nothing where the framing is not there: a refused call, a result from
+// a build that does not write this form, or anything else this host should not
+// read an act out of.
+//
+// The framing is read once, exactly as the suggestion's and the deposit's are.
+// The first header line names the route; the labelled lines after it, up to the
+// first separator, carry the route body's own fields; and everything from the
+// separator to the end is the Partner's explanation — so an explanation that
+// itself begins "Reason: …" carries that as its own words rather than having it
+// read as framing.
+//
+// A result whose framing names no route and one that names no goal both answer
+// nothing. Those are the two things a card cannot be rendered without: an act
+// with no route is an act nothing can dispatch, and an act with no subject is
+// an act about nothing.
+func proposedIn(text string) *Action {
+	lines := strings.Split(text, "\n")
+	for at, line := range lines {
+		if !strings.HasPrefix(line, uitools.ProposalHeader) {
+			continue
+		}
+		held := Action{
+			Verb:   strings.TrimSpace(strings.TrimPrefix(line, uitools.ProposalHeader)),
+			Fields: map[string]string{},
+		}
+		if held.Verb == "" {
+			return nil
+		}
+		for after := at + 1; after < len(lines); after++ {
+			if strings.TrimSpace(lines[after]) == uitools.ProposalSeparator {
+				held.Why = strings.Trim(strings.Join(lines[after+1:], "\n"), "\n")
+				if held.Goal == "" {
+					return nil
+				}
+				return &held
+			}
+			proposalLine(&held, lines[after])
+		}
+		return nil
+	}
+	return nil
+}
+
+// proposalLine reads one labelled framing line onto an action. A line the
+// framing does not name is ignored rather than guessed at, for the reason a
+// deposit's clause is: the framing is fixed, and a build that met an unknown
+// label would be reading a form it does not know.
+//
+// The two subject labels are the same fact under two names: the eight acts that
+// take the goal in the route's path write Goal, and the open, whose route body
+// carries the id itself, writes Id. Both land on the action's own subject, and
+// the open's field list keeps the id as well, because that is what its body
+// sends.
+func proposalLine(held *Action, line string) {
+	if rest, named := strings.CutPrefix(line, uitools.ProposalGoal); named {
+		held.Goal = strings.TrimSpace(rest)
+		return
+	}
+	for _, one := range uitools.ProposalFrame {
+		rest, named := strings.CutPrefix(line, one.Label)
+		if !named {
+			continue
+		}
+		said := strings.TrimSpace(rest)
+		if one.Field == uitools.FieldID {
+			held.Goal = said
+		}
+		held.Fields[one.Field] = said
+		return
 	}
 }
 

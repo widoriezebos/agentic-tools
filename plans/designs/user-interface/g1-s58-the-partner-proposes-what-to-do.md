@@ -1016,6 +1016,53 @@ then `unresolved → applying`, so the second tab's first write is
 refused; every allowed pair now changes the state. The builder was told
 in the same words; one more scoped read on this point alone follows.
 
+## Built (2026-09-27), step 1
+
+Landed on ui-development and main as `4acaa5e7c`: nineteen commits on
+`ui/g1-s58`, built by Claude on Opus from revision 7 with revisions 8
+to 12 handed to it as they were made (the route ids and button words
+in place of the public grammar; the outcome route's version
+compare-and-set), read by Codex on Sol under R-124
+([g1-s58-sol-read.md](g1-s58-sol-read.md)): six material findings and
+one nit, every one reproduced and fixed in the one fix round, each
+with a named test; all nine of the builder's departures accepted by
+the read. Go, the fast gate and the parallel ratchet green; 86 test
+files, 1,297 frontend tests; the bundle rebuilt twice to one digest.
+Twenty-two screenshots at 1280 and 400, light and dark, of the card of
+three, the run's outcomes with the page's counts moving behind it, the
+single open, the bar's count, a line left in flight, the single card's
+foot and a stranded line's Dismiss.
+
+The fix round: an emptied label list now reaches the route as `[]`; a
+key no act takes is refused by name and the tool's schema is closed; a
+later line compares against a fresh read after any confirmed act; the
+act's own answer wins over an outcome write that failed, so a landed
+act never offers Try again; signing in resumes with the entries as the
+route last returned them, so the act that asked for sign-in is sent;
+a stranded in-flight line can be dismissed with its version; a card of
+one action counts nothing in its foot.
+
+Not run: the whole `cmd/metasystem` suite, which timed out under eight
+concurrent runs from other seats and carries one failure the builder
+reproduced at the base commit, unrelated to this slice (no file under
+`cmd/` changed). Not shown in a screenshot: "not run" and Continue with
+the rest (the canned proposal has no line after its unresolved one; the
+tests hold them) and an approve line's budget in the browser (no canned
+approve; the g1-s60 walkthrough adds one).
+
+Later, when it hurts, from Sol's read: admission does not check an
+open's `blockedBy` and `blocks` ids (the act refuses the relation); an
+approve or edit of a goal opened in the same answer has no pre-run row
+to guard against and excludes itself as "needs its budget first"; the
+version-race test covers one representative pair; `settle`'s three
+answers are proven by a fabricated publish result rather than a
+fixture publish; S58-10 and S58-11 are held by a source-reading guard
+over every offered re-read rather than a mounted form. And from the
+build: the proposals block is not in the Seeing sheet; block and
+unblock read "Waits for" and "No longer waits for" on the card. The
+bypasses: `--no-verify` commits, the concurrent-gate flag, a detached
+worktree at the base for one test.
+
 ## Revision 12: a version on the entry
 
 From Astra's one-point read: two writes that return a line to
