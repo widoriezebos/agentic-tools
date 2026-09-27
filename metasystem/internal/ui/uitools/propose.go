@@ -858,7 +858,13 @@ func proposeDescription() string {
 		built.WriteString("\n- goal " + act.Action)
 		if fields := act.Fields(); len(fields) > 0 {
 			built.WriteString(": " + listed(fields))
-			if len(act.OneOf) > 0 {
+			// Said once. Where an act's whole field list IS the set it must
+			// change one of, "at least one of" the same list again would be a
+			// sentence the model reads twice and learns nothing from.
+			switch {
+			case len(act.OneOf) == len(fields):
+				built.WriteString(" — at least one of them")
+			case len(act.OneOf) > 0:
 				built.WriteString(" — at least one of " + listed(act.OneOf))
 			}
 		} else {
