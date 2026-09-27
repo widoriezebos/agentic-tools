@@ -45,6 +45,7 @@ func TestAuthorize(t *testing.T) {
 // Rule H1 (verbs-object-action 3.6): the authenticated human is authorized
 // for every control-plane mode, holder or not, with or without a job.
 func TestAuthorizeAdmitsTheHumanInEveryMode(t *testing.T) {
+	t.Parallel()
 	if len(Modes()) == 0 {
 		t.Fatal("the mode set is empty")
 	}
@@ -60,6 +61,7 @@ func TestAuthorizeAdmitsTheHumanInEveryMode(t *testing.T) {
 }
 
 func TestModesIsTheValidModeSet(t *testing.T) {
+	t.Parallel()
 	modes := Modes()
 	modes[0] = "tampered"
 	if !ValidMode("holder-only") || ValidMode("tampered") {

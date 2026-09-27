@@ -15,6 +15,7 @@ import (
 // ordered by that person's name; the machinery custodians keep recording the
 // custodian lineage and cannot put a person's name on their act.
 func TestBreachStopAdmitsThePersonAndNamesThem(t *testing.T) {
+	t.Parallel()
 	human := lease.ClassifyResult{Class: lease.ClassHuman}
 	if err := authority.Authorize("stop-custodian", map[string]any{"class": human.Class, "holder": human.Holder}, ""); err != nil {
 		t.Fatalf("the stop custodian mode refused a person: %v", err)

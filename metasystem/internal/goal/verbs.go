@@ -1261,7 +1261,7 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
+		return PublishResult{}, fmt.Errorf("claim is an agent session's act: a claim binds the session that works the goal, and a person's claim would hold goal %s with no session to work it; steer which machine takes it with metasystem goal pin %s MACHINE or metasystem goal prioritize %s 1, or move a standing claim with metasystem goal claim %s --take-over --reason TEXT", id, id, id, id)
 	}
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
@@ -1292,7 +1292,7 @@ func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) string {
 // live target without starting a new claim or budget episode.
 func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClaimEpoch int64, batch string, targetLiveness func() (identity.Liveness, error)) (PublishResult, error) {
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("handover is agent-only; moving another holder's claim remains a human steal")
+		return PublishResult{}, fmt.Errorf("handover moves a claim between agent sessions, and a person's handover would leave goal %s with no session bound to its hand-back; a person moves another holder's claim with metasystem goal claim %s --take-over --reason TEXT", id, id)
 	}
 	if err := ValidateMachineNickname(targetMachine); err != nil || strings.TrimSpace(targetLineage) == "" || targetClaimEpoch < 1 || strings.TrimSpace(batch) == "" || targetLiveness == nil {
 		return PublishResult{}, fmt.Errorf("handover requires a target machine, lineage, positive claim epoch, batch, and liveness verifier")
@@ -1641,7 +1641,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			resumedStopID := ""
 			if f.StopFence != nil {
 				if f.Budget != nil && *f.Budget == budget {
-					return nil, fmt.Errorf("SET_BUDGET_FENCED_SAME_TUPLE: goal %s is breach-stopped by %s and the supplied budget is unchanged; only goal resume may reopen admission", id, f.StopFence.StopID)
+					return nil, fmt.Errorf("SET_BUDGET_FENCED_SAME_TUPLE: goal %s is breach-stopped by %s and the supplied budget is unchanged; resume it under its standing box with metasystem goal resume %s", id, f.StopFence.StopID, id)
 				}
 				if _, approvalErr := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "set-budget resume"); approvalErr != nil {
 					return nil, approvalErr
@@ -3702,7 +3702,7 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 					return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume may replace its claim authority", member.Id, member.StopFence.StopID)
 				}
 				if member.Pinned != "" && member.Pinned != r.Actor.Machine {
-					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; even a steal honors the pin — clear the pin, steal, then re-pin", member.Id, member.Pinned, r.Actor.Machine)
+					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; a take-over here would contradict the pin — clear it with metasystem goal pin %s --clear, take over with metasystem goal claim %s --take-over --reason TEXT, then re-pin with metasystem goal pin %s MACHINE", member.Id, member.Pinned, r.Actor.Machine, member.Id, member.Id, member.Id)
 				}
 				if r.ApprovedRef != "" {
 					return nil, fmt.Errorf("steal uses the standing approval and does not take --approved-ref")
@@ -3948,7 +3948,7 @@ func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
+		return PublishResult{}, fmt.Errorf("claim is an agent session's act: a claim binds the session that works the goal, and a person's claim would hold goal %s with no session to work it; steer which machine takes it with metasystem goal pin %s MACHINE or metasystem goal prioritize %s 1, or move a standing claim with metasystem goal claim %s --take-over --reason TEXT", id, id, id, id)
 	}
 	if len(budgets) != 0 || r.ApprovedRef != "" {
 		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
@@ -4402,7 +4402,7 @@ func setPinRequest(r VerbRequest, id, pin string) PublishRequest {
 			// only by explicit direction: refuse so the human decides
 			// between waiting, releasing, and stealing.
 			if next != "" && f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine != next {
-				return nil, fmt.Errorf("goal %s is claimed by machine %s; release it first (or clear the pin, steal, and re-pin) before pinning it to %s", id, f.Claimed.Machine, next)
+				return nil, fmt.Errorf("goal %s is claimed by machine %s, and pinning it to %s would strand that claim; release it first (metasystem goal release %s --reason TEXT from the holding session), or take it over with metasystem goal claim %s --take-over --reason TEXT, then pin it with metasystem goal pin %s %s", id, f.Claimed.Machine, next, id, id, id, next)
 			}
 			f.Pinned = next
 			touch(f, r, "set-pin", []string{id})
@@ -5345,7 +5345,7 @@ func validateCarryReservation(r VerbRequest, tree *TreeGoals, tip string, args C
 		return CarryWord{}, carryAsk("carry-goal-not-live", fmt.Sprintf("goal %s is not live", args.Goal))
 	}
 	if file.State != StateClaimed || !ownPair(file.Claimed, r.Actor) {
-		return CarryWord{}, carryAsk("goal-item-not-held", fmt.Sprintf("goal %s is not held by %s+%s; use goal steal", args.Goal, r.Actor.Machine, r.Actor.Lineage))
+		return CarryWord{}, carryAsk("goal-item-not-held", fmt.Sprintf("goal %s is not held by %s+%s; take it over with metasystem goal claim %s --take-over --reason TEXT", args.Goal, r.Actor.Machine, r.Actor.Lineage, args.Goal))
 	}
 	word, err := CarryWordAt(tree, args.Goal, args.ApprovedRef)
 	if err != nil {
@@ -5356,16 +5356,16 @@ func validateCarryReservation(r VerbRequest, tree *TreeGoals, tip string, args C
 	}
 	seat, _ := OpidMachine(word.History.Opid)
 	if seat != r.Actor.Machine {
-		return CarryWord{}, carryAsk("carry-seat-mismatch", fmt.Sprintf("word %s belongs to seat %s; run goal carry --supersede %s --transfer on %s", word.History.Opid, seat, word.History.Opid, r.Actor.Machine))
+		return CarryWord{}, carryAsk("carry-seat-mismatch", fmt.Sprintf("word %s belongs to seat %s; move it on %s with metasystem work land G --exception CODE --reason TEXT --by NAME --replace-exception %s --transfer", word.History.Opid, seat, r.Actor.Machine, word.History.Opid))
 	}
 	if word.Workspace != args.Workspace {
-		return CarryWord{}, carryAsk("carry-tree-mismatch", fmt.Sprintf("word workspace=%s candidate workspace=%s; issue goal carry --supersede %s", word.Workspace, args.Workspace, word.History.Opid))
+		return CarryWord{}, carryAsk("carry-tree-mismatch", fmt.Sprintf("word workspace=%s candidate workspace=%s; record it for this candidate with metasystem work land G --exception CODE --reason TEXT --by NAME --replace-exception %s", word.Workspace, args.Workspace, word.History.Opid))
 	}
 	if !CarryableName(r.Endpoint.Root, word.Past) {
 		return CarryWord{}, carryAsk("carry-not-carryable", fmt.Sprintf("%s is not carryable", word.Past))
 	}
 	if !r.Now.Before(word.Expires) {
-		return CarryWord{}, carryAsk("carry-word-expired", fmt.Sprintf("word %s expired at %s; issue a fresh goal carry", word.History.Opid, word.Expires.UTC().Format(time.RFC3339)))
+		return CarryWord{}, carryAsk("carry-word-expired", fmt.Sprintf("word %s expired at %s; record a fresh one with metasystem work land G --exception CODE --reason TEXT --by NAME", word.History.Opid, word.Expires.UTC().Format(time.RFC3339)))
 	}
 	consumption, err := carryConsumptionAtFor(r.Endpoint, tree, carryCodeTip(r.Endpoint, tip), word)
 	if err != nil {

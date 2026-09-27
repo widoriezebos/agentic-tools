@@ -12,6 +12,7 @@ import (
 // custodian would take, and the published fence closure names that person
 // as its actor instead of the custodian lineage.
 func TestHumanOrderedBreachStopNamesThePersonAsActor(t *testing.T) {
+	t.Parallel()
 	bed := newGoalMutationBed(t)
 	now := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
 	batch, err := bed.stopOrderedBy("bounded", 2, now, "Wido")
@@ -37,6 +38,7 @@ func TestHumanOrderedBreachStopNamesThePersonAsActor(t *testing.T) {
 
 // A custodian-ordered stop keeps the custodian lineage as its actor.
 func TestCustodianBreachStopKeepsTheCustodianActor(t *testing.T) {
+	t.Parallel()
 	bed := newGoalMutationBed(t)
 	now := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
 	if _, err := bed.stop("bounded", 2, now); err != nil {
@@ -53,6 +55,7 @@ func TestCustodianBreachStopKeepsTheCustodianActor(t *testing.T) {
 // its budget is not fenced, and the message names the public commands that
 // stop the work or park the goal instead.
 func TestBreachStopInsideTheBudgetGuidesThePerson(t *testing.T) {
+	t.Parallel()
 	bed := newGoalMutationBed(t)
 	inside := time.Date(2026, 8, 28, 17, 0, 0, 0, time.UTC)
 	_, err := bed.stopOrderedBy("bounded", 2, inside, "Wido")
@@ -63,6 +66,7 @@ func TestBreachStopInsideTheBudgetGuidesThePerson(t *testing.T) {
 }
 
 func TestEnsureBreachStopOrderedByNeedsAName(t *testing.T) {
+	t.Parallel()
 	if _, err := EnsureBreachStopOrderedBy(t.TempDir(), "bounded", 2, time.Now(), ""); err == nil {
 		t.Fatal("a human-ordered stop without a name was accepted")
 	}
@@ -72,6 +76,7 @@ func TestEnsureBreachStopOrderedByNeedsAName(t *testing.T) {
 // stored name records who intended it and is never the credential that acts
 // as that person, so recovery closes it for the person to order again.
 func TestStrandedHumanOrderedBreachStopIsNotReplayed(t *testing.T) {
+	t.Parallel()
 	bed := newGoalMutationBed(t)
 	root := bed.root
 	stopID, ulid := stopIdentity("bounded", 2, 1)

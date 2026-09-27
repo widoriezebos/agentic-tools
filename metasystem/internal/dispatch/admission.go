@@ -425,7 +425,7 @@ func evaluateCandidateConsumptionAdmissionWithReads(repoRoot string, candidate *
 	for _, breach := range breaches {
 		limits = append(limits, fmt.Sprintf("%s used=%s limit=%s", breach.Field, breach.Used, breach.Limit))
 	}
-	verdict.PolicyRefusal = fmt.Sprintf("CANDIDATE_EXTENSION_REFUSED: candidate goal %s reached %s; remedies: claim %s as authority, or have Wido run goal set-budget for %s",
+	verdict.PolicyRefusal = fmt.Sprintf("CANDIDATE_EXTENSION_REFUSED: candidate goal %s reached %s; remedies: claim %s as authority, or a person raises its box with metasystem goal budget %s BOX",
 		candidate.Id, strings.Join(limits, ", "), candidate.Id, candidate.Id)
 	return verdict, nil
 }

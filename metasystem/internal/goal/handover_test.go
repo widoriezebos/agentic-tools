@@ -216,7 +216,7 @@ func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 	holder.Ulid, holder.ClaimEpoch = "01J5X00000000000000000HB10", 13
 	reject("stale source epoch", holder, "field-complete", "other", "other-lineage", 4, func() (identity.Liveness, error) { return identity.Alive, nil }, "does not match")
 	holder.Actor.Human = "Wido"
-	reject("human caller", holder, "field-complete", "other", "other-lineage", 4, func() (identity.Liveness, error) { return identity.Alive, nil }, "agent-only")
+	reject("human caller", holder, "field-complete", "other", "other-lineage", 4, func() (identity.Liveness, error) { return identity.Alive, nil }, "metasystem goal claim field-complete --take-over --reason TEXT")
 	holder.Actor.Human = ""
 	reject("incomplete input", holder, "field-complete", "", "", 0, nil, "requires a target")
 	holder.Actor.Human, holder.ClaimEpoch, holder.Ulid = "", 12, "01J5X00000000000000000HB11"

@@ -160,7 +160,7 @@ func evaluateGovernedRunAdmissionWithReads(repoRoot string, request run.Governed
 	}
 	o := binding.File.Obligation
 	if o == nil || o.Revision != request.ObligationRevision {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: goal %s has no accepted obligation revision %d", request.GoalID, request.ObligationRevision)
+		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: goal %s has no accepted obligation revision %d, and a governed run without its obligation would spend unauthorized; a person binds one with metasystem goal edit %s --obligation STATE --owner NAME", request.GoalID, request.ObligationRevision, request.GoalID)
 	}
 	if request.StandingShared && o.Assumptions.Recurrence != goal.StandingSharedProcess {
 		return run.GovernedAdmissionResult{}, fmt.Errorf("OBLIGATION_REFUSED: revision %d is not authorized as a standing shared process", o.Revision)

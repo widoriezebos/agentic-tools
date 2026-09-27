@@ -1275,8 +1275,12 @@ func handoffCancelReason(stateRoot, root, nonce string, intent Intent, canceller
 	if lease.HolderMainId != act.HolderMainId || lease.ClaimEpoch != act.ClaimEpoch {
 		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: the supplied holder coordinates do not match the current checkout lease", nonce)
 	}
+	// Rule H1: a person may cancel a handoff an earlier holder recorded.
+	// Which session recorded it is bookkeeping, not damage; the act is
+	// bound to the current holder above and names the recorder below.
+	recordedBy := ""
 	if intent.Handoff.MainId != lease.HolderMainId {
-		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: it was recorded by %s and the current holder is %s", nonce, intent.Handoff.MainId, lease.HolderMainId)
+		recordedBy = " recorded-by=" + intent.Handoff.MainId
 	}
 	by, err := goal.ValidateHumanName(act.By)
 	if err != nil {
@@ -1295,8 +1299,8 @@ func handoffCancelReason(stateRoot, root, nonce string, intent Intent, canceller
 	if boot == "" {
 		boot = "none"
 	}
-	return fmt.Sprintf("cancelled by human by=%s holder=%s epoch=%d session=%s human-pid=%d human-started=%d human-ticks=%d human-boot=%s",
-		by, lease.HolderMainId, lease.ClaimEpoch, session, p.PID, p.PIDStartedAt, p.StartTicks, boot), nil
+	return fmt.Sprintf("cancelled by human by=%s holder=%s epoch=%d session=%s human-pid=%d human-started=%d human-ticks=%d human-boot=%s%s",
+		by, lease.HolderMainId, lease.ClaimEpoch, session, p.PID, p.PIDStartedAt, p.StartTicks, boot, recordedBy), nil
 }
 
 // CancelHandoff cancels only a live, bound handoff. Consumption is a terminal
