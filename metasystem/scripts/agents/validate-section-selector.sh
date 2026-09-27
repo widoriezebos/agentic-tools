@@ -30,7 +30,6 @@ telemetry-census-fixtures	telemetry census fixtures
 config-identity-fixtures	configuration identity fixtures
 authority-regression-fixtures	authority regression fixtures
 pre-commit-guard-fixtures	pre-commit guard fixtures
-static-reproof-fixtures	static reproof fixtures
 project-extra-suites	project-declared extra suites
 record-protocol-fixtures	record protocol fixtures
 evidence-segment-fixtures	evidence segment fixtures

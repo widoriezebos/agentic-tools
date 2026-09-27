@@ -1051,8 +1051,6 @@ for link in \
   scripts/agents/config-identity-fixtures.sh \
   scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
-  scripts/agents/static-reproof-fixtures.sh \
-  scripts/agents/path-class-fixtures.sh \
   scripts/agents/witness-gate-fixtures.sh \
   scripts/agents/fixture-bed-scenarios-fixtures.sh \
   scripts/agents/land-fixtures.sh \
@@ -1131,8 +1129,6 @@ bash -n scripts/agents/flight-recorder-fixtures.sh
 bash -n scripts/agents/acp-fixtures.sh
 bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
-bash -n scripts/agents/static-reproof-fixtures.sh
-bash -n scripts/agents/path-class-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/fixture-bed-scenarios-fixtures.sh
 bash -n scripts/agents/land.sh
@@ -1186,14 +1182,6 @@ fi
 if section_selected pre-commit-guard-fixtures; then
   delivery_contract_skip pre-commit-guard-fixtures \
     || run_section pre-commit-guard-fixtures needs-engine bash scripts/agents/pre-commit-guard-fixtures.sh
-fi
-static_reproof_fixtures_section() {
-  bash scripts/agents/static-reproof-fixtures.sh
-  bash scripts/agents/path-class-fixtures.sh
-}
-if section_selected static-reproof-fixtures; then
-  delivery_contract_skip static-reproof-fixtures \
-    || run_section static-reproof-fixtures needs-engine static_reproof_fixtures_section
 fi
 # PROJECT-DECLARED extra suites (born from the bm-2d rep-1 lesson: a
 # sibling artifact's checks lived in no battery, and engine drift landed

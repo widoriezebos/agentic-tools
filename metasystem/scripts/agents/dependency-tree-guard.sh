@@ -191,7 +191,7 @@ POISON_TEST
   space_name=$(printf 'sp\303\244ce d_test.go')
   cp "$poison/serial_test.go" "$poison/$space_name"
 
-  # The three tokens path-class-fixtures.sh searches for, written by
+  # The three tokens TestDeletedListsHaveNoReader searches for, written by
   # concatenation exactly as that script assembles them, so this script stays
   # clean under its own scan.
   printf '%s %s %s\n' 'register-carriage-'paths 'instruction-bearing-'paths 'neverDirect'Fix >"$poison/notes.txt"
