@@ -3601,6 +3601,11 @@ func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnr
 	if err != nil || (res.Outcome != goal.OutcomeConfirmed && res.Outcome != goal.OutcomeConfirmedLate && res.Outcome != goal.OutcomeAbandoned) {
 		return refuseHumanVerb(values, 1, fmt.Sprint("the terminal enrolled locally but its fleet cutoff did not publish: ", err, " ", res.Detail), humanVerbRemedy{words: "the local enrollment stands; repair fleet synchronization without re-enrolling"})
 	}
+	// A fresh local enrollment is a change even when the fleet cutoff it
+	// would publish already stands; only a repeated enrollment is unchanged.
+	if !enrollment.Repeat {
+		res.Unchanged = false
+	}
 	if dependencies.report != nil {
 		dependencies.report.result = &res
 		return 0
