@@ -111,6 +111,7 @@ export function BacklogPane() {
     <Pane title="Backlog">
       <Read
         backlog={backlog.backlog}
+        problem={backlog.problem}
         plans={plans}
         onRefresh={refresh}
         onMoved={moved}
@@ -138,6 +139,7 @@ function boardHint(backlog: BacklogState): string {
 
 function Read({
   backlog,
+  problem,
   plans,
   onRefresh,
   onMoved,
@@ -146,6 +148,8 @@ function Read({
   onLanded,
 }: {
   backlog: Backlog;
+  /** What a later read of the board was refused with, where one was. */
+  problem?: string;
   /** The project's records, or null where they could not be read. */
   plans: ProjectPayload | null;
   onRefresh: () => void;
@@ -324,6 +328,11 @@ function Read({
       {sync.state === "wrong" && ledger.state === "read" && (
         <p className="ms-board-problem" role="status">
           {sync.wrong}
+        </p>
+      )}
+      {problem !== undefined && (
+        <p className="ms-board-problem" role="status">
+          The backlog could not be read again, so what is on screen is the last reading: {problem}
         </p>
       )}
       {/* What the landing had to change to show the goal it was sent for, or

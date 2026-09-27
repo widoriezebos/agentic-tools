@@ -69,7 +69,7 @@ func authorizeBatchMemberInProjection(controlRoot string, now time.Time, record 
 		return &batch.PrefixAdmissionRefusal{Code: "BATCH_MEMBER_BUDGET_UNKNOWN", Reason: "BATCH_PREFIX_AUTHORITY_REFUSED: member " + unit.GoalID + " budget projection is unknown"}
 	}
 	if !file.IsLandingClaim() && (budget.ElapsedState == dispatchcore.AdmissionClosedElapsed || budget.ElapsedState == dispatchcore.ElapsedBreach) {
-		return &batch.PrefixBudgetRefusal{Reason: "BATCH_MEMBER_BUDGET_REFUSED: member " + unit.GoalID + " elapsed admission budget closed"}
+		return &batch.PrefixBudgetRefusal{Reason: "BATCH_MEMBER_BUDGET_REFUSED: member " + unit.GoalID + " elapsed admission budget closed; a person raises it with metasystem goal budget " + unit.GoalID + " BOX"}
 	}
 	return nil
 }

@@ -31,6 +31,13 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
  * over a page whose inline form is half filled in — and a re-read that unmounted
  * the page would throw those keystrokes away (Astra S58-03, S58-10).
  *
+ * That holds when the read FAILS as well, which was the half the contract left
+ * unsaid: a refusal keeps the last reading and its mounted children and shows the
+ * refusal's words beside them, and only a first read's failure — where there is
+ * nothing on screen to keep — draws the page's error view (Astra C-05). Both
+ * halves are asserted over the source of every pane that offers a read, in
+ * `refresh.test.ts`, because neither can be mounted here.
+ *
  * `inStrip` says the page already carries a refresh of its own, in its own
  * toolbar or crumbs. Such a page offers its read all the same, so that a
  * confirmed act elsewhere moves it; what it does not want is a second icon

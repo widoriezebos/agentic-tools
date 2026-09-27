@@ -1583,7 +1583,7 @@ grep -Fq -- '- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=24
     "$budget_dispatch_repo/bin/metasystem" internal delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-refused --goal structured-budget --destructive-reach MECHANICAL
 )
-grep -Fq "extended once at 2000-01-01T00:07:00Z; a further raise is a person's set-budget" \
+grep -Fq "extended once at 2000-01-01T00:07:00Z" \
   "$agent_fixture/structured-budget-refused.out" \
   || { echo "the second exhaustion did not name the standing extension marker" >&2; cat "$agent_fixture/structured-budget-refused.out" >&2; exit 1; }
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-refused.json" ]] \

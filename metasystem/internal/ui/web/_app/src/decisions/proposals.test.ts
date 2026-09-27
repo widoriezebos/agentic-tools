@@ -1,3 +1,8 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { Need, Proposed } from "./api";
@@ -12,11 +17,13 @@ import {
   rowID,
   toSend,
   turnOf,
+  useProposals,
   type Through,
 } from "./proposals";
-import type { Proposal } from "../partner/api";
+import type { Proposal, ProposalState } from "../partner/api";
+import { PartnerAs } from "../partner/store";
 import type { Answered, Line, Looked, Mark, Marks, Written } from "../partner/proposing";
-import { lineState, runProposals, WAS_IN_FLIGHT } from "../partner/proposing";
+import { lineState, runProposals, TRY_AGAIN, WAS_IN_FLIGHT } from "../partner/proposing";
 
 /**
  * A proposal as a row of the inbox, and the run one press makes.
@@ -218,7 +225,7 @@ describe("what a row's line says", () => {
  */
 describe("a line whose act landed and could not be written down", () => {
   const landed: Marks = {
-    "t7#2": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "" } },
+    "t7#2": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "", version: 2 } },
   };
 
   function line(): Line {
@@ -551,5 +558,124 @@ describe("putting a line away", () => {
     expect(wrote).toEqual(["t7:2:3:dismissed:"]);
     expect(answered.kind).toBe("written");
     expect(answered.kind === "written" ? answered.proposal.state : "").toBe("dismissed");
+  });
+});
+
+/**
+ * What the drawer already knows about a line, read from the inbox (Astra C-02).
+ *
+ * The row and the card are two readings of ONE record, and there is one thing the
+ * drawer knows that the record does not: an act whose answer the conversation
+ * could not write down. The entry still says `applying`, because the write that
+ * would have said otherwise failed, and a row that offered Try again on it would
+ * be offering to approve the same goal twice. The Partner's store stands above the
+ * pages, so the inbox reads that mark there rather than keeping a second copy of
+ * it.
+ *
+ * It is driven through the hook itself, under the store's own provider, because
+ * the wiring is the finding: the rules are proposing.ts's and are proved there.
+ */
+describe("what the drawer already knows about a line", () => {
+  /** One held answer, at the entry version the page was holding it at. */
+  const heldAt = (state: ProposalState, words: string, version: number): Mark["unrecorded"] =>
+    ({ state, words, version }) as Mark["unrecorded"];
+
+  const landed: Marks = {
+    "t7#2": { ticked: true, notRun: false, refusedUnsent: "", unrecorded: { state: "applied", words: "", version: 2 } },
+  };
+
+  /** One row of the inbox, as everything the page holds about it composes it. */
+  function Probe({ shown }: { shown: Need }) {
+    const applying = useProposals({ reread: () => undefined, signIn: () => undefined });
+    const line = applying.lineOf(shown);
+    return createElement(
+      "p",
+      null,
+      line === null
+        ? "no line"
+        : `${lineState(line)} · press: ${pressFor(line) === "" ? "none" : pressFor(line)} · sends: ${String(toSend([line]).length)}`,
+    );
+  }
+
+  function shownWith(held: Marks): string {
+    return renderToStaticMarkup(
+      createElement(PartnerAs, {
+        held: { proposalMarks: held },
+        children: createElement(Probe, { shown: need({}, { state: "applying", version: 2 }) }),
+      }),
+    );
+  }
+
+  it("is what the inbox says and what it admits a retry on", () => {
+    const markup = shownWith(landed);
+
+    expect(markup).toContain("applied; the conversation could not record this");
+    expect(markup).toContain("press: none");
+    expect(markup).toContain("sends: 0");
+  });
+
+  it("leaves a line the drawer knows nothing about offering Try again", () => {
+    const markup = shownWith({});
+
+    expect(markup).toContain(WAS_IN_FLIGHT);
+    expect(markup).toContain(`press: ${TRY_AGAIN}`);
+    expect(markup).toContain("sends: 1");
+  });
+
+  /**
+   * And it says nothing of an answer the record has moved past (Astra C-04).
+   *
+   * The mark crosses from the drawer because the drawer knows what the record
+   * does not — until something newer says what happened. Astra's sequence: the
+   * drawer holds a refusal it could not write down at version 2, the retry that
+   * followed it was written down, and the entry stands `applied` at version 4.
+   * The inbox used to import that old mark whenever its own was null and offer
+   * Try again over a settled entry, which is a second act to make.
+   */
+  it("says nothing of an answer older than the entry the record now holds", () => {
+    const markup = renderToStaticMarkup(
+      createElement(PartnerAs, {
+        held: {
+          proposalMarks: {
+            "t7#2": {
+              ticked: true, notRun: false, refusedUnsent: "",
+              unrecorded: heldAt("refused", "goal g1-s44 is claimed by m2a", 2),
+            },
+          },
+        },
+        children: createElement(Probe, { shown: need({}, { state: "applied", version: 4 }) }),
+      }),
+    );
+
+    expect(markup).toContain("applied");
+    expect(markup).not.toContain("could not record");
+    expect(markup).toContain("press: none");
+    expect(markup).toContain("sends: 0");
+  });
+});
+
+/**
+ * And the clearing reaches the shared mark, not only this page's own
+ * (Astra C-04).
+ *
+ * The version above stops an obsolete answer being READ; this is the other half
+ * of the same finding — the answer is dropped where both surfaces read it, by
+ * whichever of them recorded or reconciled the newer outcome. It is read out of
+ * the source, as `partner/store.test.ts` reads the drawer's own callbacks,
+ * because a press is the only thing that reaches this one: the hook's `mark` is
+ * handed to the runner and this suite drives no run through a mounted hook.
+ */
+describe("what the inbox does when it records a newer outcome", () => {
+  const SOURCE = readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", "proposals.ts"), "utf8");
+
+  it("drops the answer the store was holding, and not only its own copy", () => {
+    const at = SOURCE.indexOf("const mark = useCallback(");
+    expect(at).toBeGreaterThan(0);
+    const body = SOURCE.slice(at, SOURCE.indexOf("const reconcile = useCallback(", at));
+    // Its own marks first, as before.
+    expect(body).toContain("setMarks(");
+    // And the shared one, on the change that says something newer has spoken.
+    expect(body).toContain("change.unrecorded === null");
+    expect(body).toContain("clearProposalMark(id)");
   });
 });

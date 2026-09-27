@@ -204,6 +204,12 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 				if opidLanded(archived, r) {
 					return nil, AlreadyApplied{}
 				}
+				// The goal is already abandoned, which is the effect this act
+				// asks for. From a browser session that is the act having its
+				// effect (R-129-ui), whatever reason the repeat carries.
+				if fromSignedInSession(proof) {
+					return nil, NothingToDo{Reason: "goal " + id + " is already abandoned: the same abandon from this signed-in session"}
+				}
 				return nil, LostToCompetitor{Winner: lastOpid(archived)}
 			}
 			if tree.Live[id] == nil {
@@ -406,7 +412,7 @@ func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id stri
 		}
 		delete(refs, word.History.Opid)
 		if now.Before(word.Expires) && (consumption.Kind == "none" || consumption.Kind == "missing-anchor") {
-			return fmt.Errorf("goal %s has open carry word %s; finish its landing, supersede it on a live goal with goal carry --supersede %s, or let it expire at %s; then retry abandon", id, word.History.Opid, word.History.Opid, word.Expires.UTC().Format(time.RFC3339))
+			return fmt.Errorf("goal %s has open carry word %s; finish its landing, supersede it on a live goal with metasystem work land G2 --exception CODE --reason TEXT --by NAME --replace-exception %s, or let it expire at %s; then retry abandon", id, word.History.Opid, word.History.Opid, word.Expires.UTC().Format(time.RFC3339))
 		}
 	}
 	for _, ref := range sortedSet(refs) {

@@ -277,6 +277,28 @@ func TestAnEngineRefusalComesBackWithItsOwnWordsAndCode(t *testing.T) {
 		refused{Error: "goal waiting has no standing approval to withdraw", Code: "CONFLICT"})
 }
 
+// The act this server is already applying. A second tab that presses Apply on
+// the same proposal is told so before anything is read or published, and the
+// page reads that answer exactly as it reads an engine refusal: 409, the code
+// the runner keys off, and the sentence that says where the answer will come
+// from. It holds no result of its own, which is what the code is for.
+func TestAnActAlreadyInFlightComesBackAsOneTheNextReadSettles(t *testing.T) {
+	t.Parallel()
+
+	rec := &acted{
+		authorized: proven(),
+		refusal:    &act.Refusal{Kind: act.KindEngine, Code: "in-flight", Message: act.InFlight},
+	}
+	served := New(rec.acting(), loopback(), testBundle())
+
+	response := post(t, served, "/api/backlog/goals/waiting/approve", wholeBudget, nil)
+
+	testutil.Require(t, "status", response.Code, http.StatusConflict)
+	testutil.Expect(t, "the refusal", actRefusal(t, response),
+		refused{Code: "in-flight",
+			Error: "this act on this goal is being applied by another press; the next read says what happened"})
+}
+
 // The budget is the human's, in full. A tuple that is not a budget is the
 // request's own fault and never reaches the engine.
 func TestAnIncompleteBudgetIsRefusedBeforeTheEngine(t *testing.T) {

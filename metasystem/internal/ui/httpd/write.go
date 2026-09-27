@@ -390,14 +390,34 @@ func (h *handler) previewSource(w http.ResponseWriter, r *http.Request) {
 // decode reads one JSON object from a bounded body, and reports whether the
 // route may go on. A body that is not one object, or that carries a second
 // value after it, is a bad request and is answered here.
+//
+// The bytes are taken first and counted, exactly as decodeDocument counts
+// them: a reader merely limited to one byte past the bound decoded a complete
+// object of that size, so the declared bound was a byte wider than it said and
+// a body two bytes over was refused for its shape rather than its size.
+//
+// And what is asked at the end is the END OF THE DOCUMENT rather than the
+// absence of a sibling: json.Decoder.More reports whether another element of
+// the array or object being parsed follows, so a body ending in a stray `]` or
+// `}` said there was nothing more and the write went through.
 func decode(w http.ResponseWriter, r *http.Request, into any) bool {
-	reader := json.NewDecoder(io.LimitReader(r.Body, maxWriteBody+1))
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxWriteBody+1))
+	if err != nil {
+		writeRefusal(w, http.StatusBadRequest, "the request body could not be read: "+err.Error(), nil)
+		return false
+	}
+	if len(body) > maxWriteBody {
+		writeRefusal(w, http.StatusRequestEntityTooLarge, "the request body is larger than this route carries", nil)
+		return false
+	}
+	reader := json.NewDecoder(bytes.NewReader(body))
 	reader.DisallowUnknownFields()
 	if err := reader.Decode(into); err != nil {
 		writeRefusal(w, http.StatusBadRequest, "the request body is not the JSON object this route takes: "+err.Error(), nil)
 		return false
 	}
-	if reader.More() {
+	var after json.RawMessage
+	if err := reader.Decode(&after); !errors.Is(err, io.EOF) {
 		writeRefusal(w, http.StatusBadRequest, "the request body carries more than one JSON value", nil)
 		return false
 	}
@@ -425,7 +445,8 @@ func decodeDocument(w http.ResponseWriter, r *http.Request, into any) bool {
 		writeRefusal(w, http.StatusBadRequest, "the request body is not the JSON object this route takes: "+err.Error(), nil)
 		return false
 	}
-	if reader.More() {
+	var after json.RawMessage
+	if err := reader.Decode(&after); !errors.Is(err, io.EOF) {
 		writeRefusal(w, http.StatusBadRequest, "the request body carries more than one JSON value", nil)
 		return false
 	}

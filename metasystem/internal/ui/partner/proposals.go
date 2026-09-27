@@ -73,15 +73,28 @@ func ProposalState(state string) bool {
 // moves under it.
 //
 // Reading the table: to the state named by the key, from any of the states
-// listed. `applied`, `refused` and `unresolved` come only from `applying`,
-// because they are what an act answered and nothing sends an act without
-// recording `applying` first. `dismissed` comes from anything unsettled,
-// including a line left in flight: a human putting a card away is allowed to
-// put away a line nobody can settle any more.
+// listed. `unresolved` comes only from `applying`, because it is what an act
+// answered and nothing sends an act without recording `applying` first.
+//
+// `applied` and `refused` come from `applying` for that same reason, and also
+// from `unresolved`, because the press that received an act's answer settles
+// the entry whichever tab last touched it. Two tabs hold one card: the one
+// that sent the act holds the truth about that line, and the other, told the
+// act was already in flight here, writes `unresolved` and holds no result at
+// all. Admitting the answer only from `applying` left the tab that HAD the
+// answer unable to write it — the route refused it as a state it may not
+// reach — and the line converged only on a later Try again. `unresolved` to
+// `unresolved` stays out: two tabs that both know nothing settle nothing, and
+// the pair would leave the state where it was, which is the one thing every
+// pair here changes.
+//
+// `dismissed` comes from anything unsettled, including a line left in flight:
+// a human putting a card away is allowed to put away a line nobody can settle
+// any more.
 var proposalTransitions = map[string][]string{
 	ProposalApplying:   {ProposalWaiting, ProposalRefused, ProposalUnresolved, ProposalApplying},
-	ProposalApplied:    {ProposalApplying},
-	ProposalRefused:    {ProposalApplying},
+	ProposalApplied:    {ProposalApplying, ProposalUnresolved},
+	ProposalRefused:    {ProposalApplying, ProposalUnresolved},
 	ProposalUnresolved: {ProposalApplying},
 	ProposalDismissed:  {ProposalWaiting, ProposalRefused, ProposalUnresolved, ProposalApplying},
 }
@@ -224,6 +237,53 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 	}
 	s.mu.Unlock()
 
+	// How many proposals this answer has room for, asked before the frame is
+	// read at all.
+	//
+	// The bound exists so that a conversation can always be reloaded: the answer
+	// is written whole into the human's transcript and read back whole on the
+	// next open, so a Partner that proposed a hundred and forty actions in one
+	// answer would leave a message nothing can open again (R-130-ui). It is
+	// counted HERE and not in the tool because the tool server is one stdio
+	// process for a whole Partner session and the wire carries no signal for
+	// where one answer ends; this is the one place that holds an answer's own
+	// proposals. The number and the words are the tool's, beside every other
+	// bound a proposal is held to, so that one number is never two.
+	//
+	// Every line of the answer is counted, the refused ones with the offered: a
+	// refusal is still a line the message carries, and it is the message's own
+	// size the bound protects. Which is also why the refusal past the count
+	// travels to the card rather than being dropped — the human asked for these
+	// actions and has to be told what became of each of them.
+	if refusal := uitools.BeyondTheProposalCount(index); refusal != "" {
+		s.refuseProposal(running, Proposal{
+			Index: index, Verb: prepared.Verb, Goal: boundedGoal(prepared.Goal),
+			State: ProposalWaiting, Version: 1,
+			At: s.now().UTC().Format(time.RFC3339),
+		}, refusal)
+		return
+	}
+
+	// The frame's own bounds, asked before anything of the frame is kept.
+	//
+	// The tool refuses a CALL past them and this refuses a FRAME past them,
+	// which is not the same check: a frame arrives as text a runtime reported,
+	// so a runtime that composed one itself could write a field of any length
+	// into the human's own transcript. It could, and the cost was the whole
+	// conversation: a propose naming a goal of three hundred thousand characters
+	// was refused for a goal nothing carries, the refusal kept the id, and the
+	// next open of that transcript failed on the line — taking the Decisions
+	// page, which reads the same transcript, down with it (Astra B-01). So this
+	// is the one refusal that does not carry what it refused.
+	if refusal := uitools.BeyondTheProposalBounds(prepared.Goal, prepared.Why, prepared.Fields); refusal != "" {
+		s.refuseProposal(running, Proposal{
+			Index: index, Verb: prepared.Verb, Goal: boundedGoal(prepared.Goal),
+			State: ProposalWaiting, Version: 1,
+			At: s.now().UTC().Format(time.RFC3339),
+		}, refusal)
+		return
+	}
+
 	admitted := Proposal{
 		Index: index, Verb: prepared.Verb, Goal: prepared.Goal, Fields: copiedFields(prepared.Fields),
 		Why: prepared.Why, State: ProposalWaiting, Version: 1,
@@ -365,6 +425,17 @@ func copiedFields(fields map[string]string) map[string]string {
 	return held
 }
 
+// boundedGoal is an id as a refusal past the bounds may carry it: the ledger's
+// own bound worth of it and no more. A card still has to name something a human
+// can place, and the whole of an id that long is the one thing that must not
+// reach the transcript.
+func boundedGoal(id string) string {
+	if len(id) <= goal.MaxIdBytes {
+		return id
+	}
+	return strings.ToValidUTF8(id[:goal.MaxIdBytes], "") + "\u2026"
+}
+
 // refuseProposal records one action the human is not offered, with its reason.
 func (s *Service) refuseProposal(running *turn, refused Proposal, reason string) {
 	refused.Offered = false
@@ -494,14 +565,23 @@ func proposalsBlock(messages []Message) string {
 // proposalsLine is one answer's proposals, counted by state, with the refused
 // ones named: a count alone would tell the Partner that something was refused
 // and not what to do about it.
+//
+// The answer the human has finished with says so too, because a list longer than
+// one answer is proposed in batches (R-130-ui) and a Partner that had to be asked
+// twice for the next one would be spending the human's turn on bookkeeping.
 func proposalsLine(proposals []Proposal) string {
 	counted := map[string]int{}
 	named := []string{}
+	offered, unsettled := 0, 0
 	for _, proposal := range proposals {
 		if !proposal.Offered {
 			counted["not offered"]++
 			named = append(named, proposal.Verb+" "+proposal.Goal+": "+proposal.Reason)
 			continue
+		}
+		offered++
+		if !proposal.Settled() {
+			unsettled++
 		}
 		counted[proposal.State]++
 		if proposal.State == ProposalRefused || proposal.State == ProposalUnresolved {
@@ -518,7 +598,14 @@ func proposalsLine(proposals []Proposal) string {
 	if len(named) > 0 {
 		line += " (" + strings.Join(named, "; ") + ")"
 	}
-	return line + "."
+	line += "."
+	// A line that was never offered waits for nobody, so it cannot hold this
+	// back; a line the human has not pressed yet can.
+	if offered > 0 && unsettled == 0 {
+		line += " Every line of that answer is settled: if a longer list remains, " +
+			"the human may ask for the next batch."
+	}
+	return line
 }
 
 /* --------------------------------------------- where an outcome is written -- */

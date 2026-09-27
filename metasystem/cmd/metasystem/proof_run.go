@@ -1243,7 +1243,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		minuteHeadroom := uint64(capValue) <= ^uint64(0)/2 && projection.Limits.ReservedJobMinutesLimit >= projection.ReservedJobMinutes &&
 			projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes >= 2*uint64(capValue)
 		if !attemptHeadroom || !minuteHeadroom {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("BATCH_MEMBER_BUDGET_REFUSED: goal %s needs two attempts and %d reserved minutes of P2 headroom", authorityGoalID, 2*uint64(capValue))
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("BATCH_MEMBER_BUDGET_REFUSED: goal %s needs two attempts and %d reserved minutes of P2 headroom; the proof would spend past its approved box, so a person raises it with metasystem goal budget %s BOX", authorityGoalID, 2*uint64(capValue), authorityGoalID)
 		}
 	}
 	checkoutFence, fenceErr := stopfence.Read(request.ControlRoot)
