@@ -400,3 +400,46 @@ func TestDevinHostACPOrphanHoldingStderrDoesNotStrandTheTurn(t *testing.T) {
 		t.Fatal("the turn did not complete")
 	}
 }
+
+// TestDevinHostRunsInTheCheckout: the Devin host CLI runs in the
+// installation's checkout on both transports, as hosts/devin.sh did
+// (`cd "$root"` for `devin -p`, and the ACP server started from the root).
+func TestDevinHostRunsInTheCheckout(t *testing.T) {
+	t.Parallel()
+	want := func(f *hostFixture) string {
+		root, err := filepath.EvalSymlinks(f.root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	recordCwd := func(f *hostFixture) {
+		stub := filepath.Join(f.stubDir, "devin")
+		f.write(stub, strings.Replace(hostDevinStub, "#!/bin/bash\n", "#!/bin/bash\npwd -P >\"$STUB_DIR/cwd\"\n", 1))
+		if err := os.Chmod(stub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	legacy := newHostFixture(t, "# legacy by absence\n")
+	recordCwd(legacy)
+	legacy.legacyTurn("sess-cwd", 10, 1)
+	if code, dir := legacy.turn("t1", ""); code != 0 {
+		log, _ := os.ReadFile(filepath.Join(dir, "host.log"))
+		t.Fatalf("legacy exit %d stderr %s log %s", code, legacy.stderr, log)
+	}
+	if got, _ := os.ReadFile(filepath.Join(legacy.stubDir, "cwd")); strings.TrimSpace(string(got)) != want(legacy) {
+		t.Fatalf("the legacy devin host ran in %q, want the checkout %q", got, want(legacy))
+	}
+
+	acp := newHostFixture(t, "dispatch.transport.devin=acp\n")
+	recordCwd(acp)
+	acp.write(filepath.Join(acp.stubDir, "acp-server.sh"), hostACPServer)
+	if code, dir := acp.turn("t1", ""); code != 0 {
+		log, _ := os.ReadFile(filepath.Join(dir, "host.log"))
+		t.Fatalf("acp exit %d stderr %s log %s", code, acp.stderr, log)
+	}
+	if got, _ := os.ReadFile(filepath.Join(acp.stubDir, "cwd")); strings.TrimSpace(string(got)) != want(acp) {
+		t.Fatalf("the devin ACP host server ran in %q, want the checkout %q", got, want(acp))
+	}
+}
