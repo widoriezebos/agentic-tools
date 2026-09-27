@@ -18,6 +18,7 @@ import { SHOWN } from "./showing";
 import { arcOn, isParent, membersOf, parentOf } from "./split";
 import { goalSubject, laneSubject } from "./subjects";
 import { GOAL_ATTRIBUTE } from "../partner/ringing";
+import { ProposedChip } from "../partner/ProposedChip";
 import { usePartner } from "../partner/store";
 import { returnAddress } from "./returning";
 import { Help } from "../help/Help";
@@ -760,6 +761,19 @@ function Card({
         )}
         {row.tier > 0 && <Chip>tier {row.tier}</Chip>}
         {row.claim !== undefined && <Chip marker>{row.claim.machine}</Chip>}
+        {/* And last, after the facts the ledger holds: what the Partner
+            proposed about this goal and nobody has answered. It is the one
+            chip here that is a control, and it opens the conversation at the
+            line (g1-s61 D2). The card stops being a drag handle while the
+            pointer is down on it, the way it does for the slice disclosure: a
+            human reaching for the chip is not reaching for the card, and a
+            drop is a re-rank. */}
+        <ProposedChip
+          goal={row.ref.id}
+          onMouseDown={() => {
+            setGrabbable(false);
+          }}
+        />
       </div>
       {parent !== null && (
         <p className="ms-card-lineage">

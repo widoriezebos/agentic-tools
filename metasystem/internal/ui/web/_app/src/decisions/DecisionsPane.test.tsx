@@ -11,7 +11,9 @@ import { Views } from "./DecisionsPane";
 import { noNarrowing, type Narrowing, type TabId } from "./decisions";
 import type { Acts } from "./InboxRow";
 import { lineOf } from "./proposals";
-import { NEEDS_ITS_BUDGET, WAS_IN_FLIGHT } from "../partner/proposing";
+import type { Proposal } from "../partner/api";
+import { cardsIn, NEEDS_ITS_BUDGET, WAS_IN_FLIGHT } from "../partner/proposing";
+import { PartnerAs } from "../partner/store";
 import type { Row } from "../backlog/api";
 
 /**
@@ -848,5 +850,107 @@ describe("proposed by the Partner", () => {
     expect(markup).not.toContain(">Dismiss</button>");
     // The way through is not an act and stays: reading the goal needs no proof.
     expect(markup).toContain(">Open the goal</a>");
+  });
+});
+
+/**
+ * What the Partner proposed about a goal, on that goal's queue row.
+ *
+ * The queue is where a goal is triaged before it is opened, so a proposal
+ * waiting on one belongs on its line — beside the row's own toggle and not
+ * inside it, because it is a second control doing a second thing: the toggle
+ * opens the row and the chip opens the conversation at the line (g1-s61 D2, D3).
+ */
+describe("the chip on a queue row", () => {
+  function proposal(over: Partial<Proposal> = {}): Proposal {
+    return {
+      index: 0,
+      verb: "park-goal",
+      goal: "g1-s40",
+      title: "The pane reads a document as a chapter",
+      fields: { because: "superseded by the seat inventory (g1-s42)" },
+      read: null,
+      why: "the inventory covers what this was for",
+      offered: true,
+      reason: "",
+      state: "waiting",
+      words: "",
+      at: "2026-09-26T09:00:00Z",
+      version: 1,
+      ...over,
+    };
+  }
+
+  /** The inbox as this human's conversation would have it beside them. */
+  function queue(proposals: readonly Proposal[], shown: Shown = { chosen: "queue" }): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <TooltipPrimitive.Provider>
+          <PartnerAs held={{ proposals: cardsIn([{ turn: "t1", proposals }], {}, {}, []) }}>
+            <Views
+              page={page()}
+              acts={acts}
+              view="inbox"
+              tab="rulings"
+              chosen={shown.chosen ?? ""}
+              openRow={shown.openRow ?? ""}
+              narrowing={noNarrowing}
+              selected={[]}
+              now={now}
+            />
+          </PartnerAs>
+        </TooltipPrimitive.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("stands on the line, outside the toggle the line opens with", () => {
+    const markup = queue([proposal()]);
+
+    expect(markup).toContain('aria-label="Not now proposed on g1-s40, 1 action"');
+    // Outside: the toggle closes before the chip opens, so one button is not
+    // inside the other — which no browser would render and no keyboard reach.
+    const chip = markup.indexOf("ms-chip-proposed");
+    const line = markup.lastIndexOf("</button>", chip);
+    expect(line).toBeGreaterThan(markup.indexOf("ms-decisions-row-open"));
+    expect(markup.indexOf("ms-decisions-row-open")).toBeLessThan(chip);
+  });
+
+  it("counts every waiting line about that goal, and wears the danger colour for a refusal", () => {
+    expect(queue([proposal(), proposal({ index: 1, verb: "edit-goal" })])).toContain(
+      'aria-label="2 proposed on g1-s40, 2 actions"',
+    );
+    const refused = queue([proposal({ state: "refused", words: "g1-s40 is claimed by m2a" })]);
+    expect(refused).toContain("ms-chip-proposed--wrong");
+    expect(refused).toContain("Not now refused");
+  });
+
+  it("is absent where nothing about the goal waits", () => {
+    expect(queue([])).not.toContain("ms-chip-proposed");
+    expect(queue([proposal({ state: "applied" })])).not.toContain("ms-chip-proposed");
+  });
+
+  /**
+   * And on the queue's rows only, which is the group the design names: the one
+   * where a goal is triaged before it is opened. The other groups that carry a
+   * goal — parked, stopped — are a one-line change the day somebody wants it, and
+   * the proposal group's own rows never carry it, because a proposal row IS the
+   * proposal and a chip saying so would be the row telling a human what they are
+   * reading. Both fall out of the one condition: the row's kind.
+   */
+  it("is on the queue's rows and no other group's, goal or not", () => {
+    for (const [group, goal, said] of [
+      ["questions", "Q-1", "Which census format?"],
+      ["parked", "g1-s45", "The Fleet section reads the census"],
+      ["stopped", "g1-s48", "Work a breach fence stopped"],
+    ] as const) {
+      const markup = queue([proposal({ goal })], { chosen: group });
+      // The row is on the screen, so the absence below is the chip's and not the
+      // group's.
+      expect({ group, shown: markup.includes(said) }).toEqual({ group, shown: true });
+      expect({ group, chip: markup.includes("ms-chip-proposed") }).toEqual({ group, chip: false });
+    }
+    // And one chip on the page where it does stand, not one per group it names.
+    expect(queue([proposal()]).match(/ms-chip-proposed/g)).toHaveLength(1);
   });
 });
