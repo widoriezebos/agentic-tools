@@ -359,8 +359,15 @@ these actions; owners are unchanged):
 
 After U1d the objects are goal, design, decision, grant, work, test, question,
 incident, session, mission, system, machine, ui, settings, receipt, experiment,
-and the top-level `status`. Every former spelling is refused with a suggestion,
-as in U1a. `help agent` and skills name only these.
+and the top-level `status`. `help agent` and skills name only these.
+
+**Rule C1 (clean code, Wido 2026-09-27: "There's nothing in the wild out
+there. There's only us. So we can have clean code.").** There are no external
+installations, so the build carries no compatibility code for old spellings: no
+table from removed spellings to successors, no old-spelling refusal messages,
+no tests pinning old spellings. An unknown word refuses like any unknown word,
+with the nearest current action as the only hint. U1d deletes U1a's
+removed-spelling table and its tests.
 
 ## 4. Rules and their witnesses
 
@@ -657,41 +664,12 @@ new entries (`hook`, `pre-commit`) with their stubs.
   its human restarts it.
 - A unit that removes a verb a live delegate might call lands only when the
   checkout's job registry shows no running delegate launched before it.
-- Retained executable plans (VOA-16). A unit run stores its proof command
-  verbatim (`intent_work.go:624`) and resume replays it
-  (`launch/unit_run.go:155,369`); its reservation digest forbids editing it
-  (`launch/unit_named.go:295`). U1 adds a check that scans resumable unit runs
-  for a stored argv that invokes the engine with a spelling the landing removes.
-  There is no unit-run abandonment owner (`internal/launch` has none), so the
-  recovery is an owner-controlled migration (VOA-16-R4):
-  - U1 carries the mapping from every removed spelling that has a public
-    successor to that successor (3.1's table and 6.5's pairs), as data in the
-    command table.
-  - A unit-run owner operation migrates a stored argv through that mapping. It
-    records a history entry on the run with the original argv, the new argv, the
-    original and new reservation digests and the mapping revision, then stores
-    the new digest; the digest check (`launch/unit_named.go:295`) accepts a plan
-    whose digest equals the one the migration recorded. Rounds and run lineage
-    are unchanged.
-  - The migration also covers argv already materialized for a proof step that
-    has not launched: the runner writes `round-N/proof-NAME.json` once and
-    `PlainExec` executes it (`launch/unit_run.go:369`, `launch/plain.go:19`), so
-    for every such unlaunched step the owner rewrites that file through the same
-    mapping and records it in the same history entry (VOA-16-R5). A step that
-    already launched keeps its file and evidence untouched.
-  - Resume applies the migration automatically before launching when every
-    removed spelling in the stored argv has a successor. A stored argv with a
-    removed spelling that has no successor is refused before launching, naming
-    the run.
-  - The hook bootstrap (above) and the landing precondition run the same scan on
-    the checkout's machine: a run with an unmigratable spelling keeps the old
-    engine enrolled (no rearm) and blocks the landing, so it can finish on the
-    engine that understands it; once it finishes, the next session start rearms.
-  - Witness: a suspended run whose proof command is `metasystem test --goal G`
-    resumes after U1 as `metasystem test run --goal G` with the migration in its
-    history; a run interrupted after its proof file was written but before launch
-    executes the migrated argv (asserted on the command actually executed); a run with a removed dead-verb spelling is refused at resume, holds
-    the rearm, and rearm proceeds after it completes.
+- Retained executable plans (VOA-16; revised by C1). Measured 2026-09-27: 151
+  retained unit runs on m1e (148 awaiting judgement, 3 running), none storing an
+  engine command in its proof argv, and no other installation exists. So there
+  is no migration code: the landing precondition is only that no retained run
+  stores a removed spelling, checked once by hand before the grammar lands on
+  main. Unit U1c is withdrawn.
 - The browser UI: acts call Go functions; displayed command strings change in U1
   (`ui/decisions/decisions.go:817`, `ui/act/act.go:20,45,220,665`,
   `lifecycle/*`, `httpd/walkthrough/fleet.go:231-288`,
