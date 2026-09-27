@@ -556,6 +556,34 @@ func (a Authority) Unblock(dependent, blocker string) error {
 	return a.settle(request, result, publishErr, "goal unblock")
 }
 
+// alreadyCarried names the acts whose repeat the engine answers with an
+// explicit no-op — the one outcome that is abandoned with no error, which is
+// NothingToDo (internal/goal/txn.go terminalFromMutate).
+//
+// Every one of them was read in the engine before it was named here:
+//
+//   - approve: the goal already carries this exact budget under this exact
+//     authority, unexpired (approval.go);
+//   - edit: the intent, the next step and the labels already read exactly this
+//     way, under this signed-in session (verbs.go);
+//   - set-priority: the requested priority and sequence already hold
+//     (order.go);
+//   - block and unblock: the edge is already there, or already gone
+//     (verbs.go).
+//
+// The other browser acts are NOT here, because their repeat is not this
+// outcome: park and abandon answer LostToCompetitor, naming the operation
+// that got there first, and unpark refuses a goal that is not parked in its
+// own words. Those reach the page as the engine's refusals, exactly as they
+// did.
+var alreadyCarried = map[string]bool{
+	"goal approve":      true,
+	"goal edit":         true,
+	"goal set-priority": true,
+	"goal block":        true,
+	"goal unblock":      true,
+}
+
 // settle turns one publication into the answer a route gives, and records the
 // authority proof beside the act exactly as the command edge does. A proof
 // that cannot be written after the act landed is reported as such: the act is
@@ -566,14 +594,12 @@ func (a Authority) settle(request goal.VerbRequest, result goal.PublishResult, p
 		return a.unsettled(operation, publishErr)
 	}
 	if result.Outcome != goal.OutcomeConfirmed {
-		// An approve the engine found nothing to do for is an approve whose
-		// effect already stands: the one no-op it has is the goal already
-		// carrying this exact budget under this exact authority, unexpired
-		// (internal/goal/approval.go). That is the act having its effect, so the
-		// page is told applied rather than refused — the second press of one
-		// proposal's Apply asked for a state the ledger is already in. Nothing
-		// new landed, so no second proof is recorded beside it.
-		if action == "goal approve" && result.Outcome == goal.OutcomeAbandoned {
+		// An act the engine found nothing to do for is an act whose effect
+		// already stands, and that is the act HAVING its effect: the second
+		// press of one proposal's Apply asked for a state the ledger is
+		// already in, so the page is told applied rather than refused.
+		// Nothing new landed, so no second proof is recorded beside it.
+		if alreadyCarried[action] && result.Outcome == goal.OutcomeAbandoned {
 			return nil
 		}
 		detail := result.Detail

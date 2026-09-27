@@ -3492,6 +3492,16 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 					}
 				}
 			}
+			// An identical edit under this hand's own signed-in session is an
+			// explicit no-op, as an identical approval above it is: every
+			// field the request carries already reads exactly this way, so a
+			// second press of one proposal's Apply writes nothing. The
+			// browser is the one hand with two tabs on one card, and its
+			// second press used to land a second edit with a second History
+			// line.
+			if editChangesNothing(f, fields, r.Authority) {
+				return nil, NothingToDo{Reason: "goal " + id + " already reads exactly this way: the same edit from this signed-in session"}
+			}
 			displaced := ""
 			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
 				displaced = pairMarker(f.Claimed)
@@ -3551,6 +3561,42 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
+}
+
+// editChangesNothing says whether every field this edit carries already holds.
+//
+// It answers for a signed-in browser session and for nobody else: that is the
+// one hand that can press Apply twice on one proposal, and a terminal's second
+// word is still its own word. It answers for the three fields that hand sends
+// — the intent, the next step and the labels — and an edit carrying anything
+// else is not the repeat this rule is about, so it lands as it always did.
+func editChangesNothing(f *GoalFile, fields EditFields, proof *humanauthority.Proof) bool {
+	if proof == nil || proof.Outcome != humanauthority.OutcomeSession {
+		return false
+	}
+	if fields.Tier != nil || fields.Risk != nil || fields.Blocked != nil || fields.NextStepAppend != nil {
+		return false
+	}
+	if fields.Intent == nil && fields.NextStep == nil && fields.Labels == nil {
+		return false
+	}
+	if fields.Intent != nil && *fields.Intent != f.Intent {
+		return false
+	}
+	if fields.NextStep != nil && *fields.NextStep != f.NextStep {
+		return false
+	}
+	if fields.Labels != nil {
+		if len(*fields.Labels) != len(f.Labels) {
+			return false
+		}
+		for at, label := range *fields.Labels {
+			if label != f.Labels[at] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // claimedPair names the pair holding a claim, for a refusal that tells a
