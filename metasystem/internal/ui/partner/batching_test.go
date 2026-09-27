@@ -36,18 +36,23 @@ func batchUnparks(count int, when string) []fakeacp.Read {
 	return reads
 }
 
-// Fifty proposals are admitted and the fifty-first is refused, in the words that
-// tell the Partner to propose the rest in its next answer.
+// Fifty proposals are admitted, and everything past them is ONE line saying how
+// many there were.
 //
-// The refused line still travels to the card: a refusal holds its place and says
-// why, here as everywhere else, because an action that vanished would leave the
-// human's card two lines short of what they asked for with nothing to say about
-// it.
-func TestAnAnswerCarriesAtMostFiftyProposals(t *testing.T) {
+// The bound is on what the transcript keeps, so the overflow cannot be kept line
+// by line: an answer of a hundred and forty frames would leave a hundred and
+// forty lines in the message the bound exists to keep readable (Astra F-06). One
+// account of them travels to the card instead — a refusal holds its place and
+// says why, here as everywhere else, because actions that vanished would leave
+// the human's card short of what they asked for with nothing to say about it.
+//
+// Admission is the backstop now: the tool refuses the fifty-first CALL of an
+// answer, so these frames are the ones a runtime composed itself.
+func TestAnAnswerCarriesAtMostFiftyProposalsAndOneAccountOfTheRest(t *testing.T) {
 	t.Parallel()
 	service := serviceProposing(t, batchUnparks(52, "")...)
 	_, kept := askProposing(t, service, "unpark every one of them")
-	testutil.Require(t, "every prepared action is recorded", len(kept), 52)
+	testutil.Require(t, "fifty lines and one account of the rest", len(kept), 51)
 
 	offered := 0
 	for _, one := range kept {
@@ -58,13 +63,15 @@ func TestAnAnswerCarriesAtMostFiftyProposals(t *testing.T) {
 	testutil.Expect(t, "fifty of them are offered", offered, 50)
 	testutil.Expect(t, "the fiftieth among them", kept[49].Offered, true)
 
-	past := "this answer already carries fifty proposals; say how many remain and " +
-		"propose them in your next answer, after the human has applied these"
-	testutil.Expect(t, "the fifty-first is not offered", kept[50].Offered, false)
-	testutil.Expect(t, "with the count as the reason", kept[50].Reason, past)
+	testutil.Expect(t, "the fifty-first line is not offered", kept[50].Offered, false)
+	testutil.Expect(t, "it is the one account of what was cut", kept[50].Reason,
+		uitools.ProposalsCut(2))
+	testutil.Expect(t, "in the words the bound is refused in",
+		strings.HasPrefix(kept[50].Reason,
+			uitools.BeyondTheProposalCount(uitools.MostProposalsPerAnswer)), true)
+	testutil.Expect(t, "saying how many it stands for",
+		strings.Contains(kept[50].Reason, "2 more actions were cut"), true)
 	testutil.Expect(t, "and it keeps its place on the card", kept[50].Index, 50)
-	testutil.Expect(t, "the fifty-second is refused the same way", kept[51].Offered, false)
-	testutil.Expect(t, "in the same words", kept[51].Reason, past)
 }
 
 // The answer whose proposals are every one of them settled is told that the
@@ -104,9 +111,9 @@ func TestAnAnswerWhoseLinesAreSettledIsToldToOfferTheNextBatch(t *testing.T) {
 	}
 	batchSettle := func(turn string, index int) {
 		t.Helper()
-		applying, err := service.Proposed("Wido", turn, index, 1, partner.ProposalApplying, "")
+		applying, err := service.Proposed("Wido", turn, index, 1, partner.ProposalApplying, "", "")
 		testutil.Require(t, "line "+strconv.Itoa(index)+" is taken", err, nil)
-		_, err = service.Proposed("Wido", turn, index, applying.Version, partner.ProposalApplied, "")
+		_, err = service.Proposed("Wido", turn, index, applying.Version, partner.ProposalApplied, "", "")
 		testutil.Require(t, "line "+strconv.Itoa(index)+" is settled", err, nil)
 	}
 

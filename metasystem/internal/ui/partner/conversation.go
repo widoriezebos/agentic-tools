@@ -796,6 +796,16 @@ func readLineWithin(reader *bufio.Reader) (string, bool, error) {
 		// a piece of the line this call is reading.
 		piece, more, err := reader.ReadLine()
 		if err != nil {
+			// A final line with no newline after it — the last thing a writer
+			// that went away had written. ReadLine hands its pieces back and
+			// reports the end of the file on the NEXT call, so what has been
+			// accumulated is a whole line and is returned once before the EOF is
+			// passed on; the call after this one reports it (Astra F-07). A line
+			// past the bound accumulates nothing, so this is the fitting line
+			// alone.
+			if errors.Is(err, io.EOF) && built.Len() > 0 {
+				return built.String(), false, nil
+			}
 			return "", false, err
 		}
 		if !over && built.Len()+len(piece) >= maxLineBytes {

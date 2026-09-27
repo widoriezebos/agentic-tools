@@ -133,7 +133,7 @@ func TestAWriteStampsUpdatedAtAndLeavesTheProposalsOwnInstantAlone(t *testing.T)
 	proposed := unsettledLine(0, "park-goal", "g1-s44", partner.ProposalWaiting, "", 1)
 	service := transcriptOf(t, answered("t1", proposed))
 
-	inFlight, err := service.Proposed("wido", "t1", 0, 1, partner.ProposalApplying, "")
+	inFlight, err := service.Proposed("wido", "t1", 0, 1, partner.ProposalApplying, "", "")
 
 	testutil.Require(t, "the write is admitted", err, nil)
 	testutil.Expect(t, "the asking's own instant is untouched", inFlight.At, proposed.At)
@@ -143,7 +143,7 @@ func TestAWriteStampsUpdatedAtAndLeavesTheProposalsOwnInstantAlone(t *testing.T)
 	// And again on the second write, which is the one that used to make a
 	// week-old refusal read as today's asking.
 	refused, err := service.Proposed("wido", "t1", 0, inFlight.Version, partner.ProposalRefused,
-		"goal g1-s44 is claimed by m2a")
+		"goal g1-s44 is claimed by m2a", "")
 	testutil.Require(t, "the outcome is admitted", err, nil)
 	testutil.Expect(t, "the asking is still the asking", refused.At, proposed.At)
 	testutil.Expect(t, "the last write is the last write", refused.UpdatedAt, "2026-09-26T12:00:00Z")

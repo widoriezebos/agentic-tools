@@ -29,6 +29,16 @@ import (
 // outcome. So each entry carries a version, the caller sends the version it
 // last rendered, and the writer admits the write only against that version. The
 // loser is handed the entry as it stands and must show it.
+//
+// The version says that one write at a time moves a line; it cannot say WHOSE
+// act an outcome belongs to. A line returns to `applying` on every Try again and
+// on every takeover of a line whose press died, so a tab whose act is still out
+// can read the version another press has just moved the line to and write its
+// own answer over the act that press sent — the entry would then say applied for
+// an act nobody made. So the entry also carries the attempt that owns it: every
+// run of the runner makes one attempt id, the write that moves a line to
+// `applying` stamps it, and the settle that follows must carry the attempt the
+// entry holds (Astra F-01, F-03).
 
 // The six states one proposed action passes through.
 //
@@ -187,6 +197,17 @@ type Proposal struct {
 	// the entry it last rendered, and the writer admits the write only against
 	// it, so two tabs cannot both move one line.
 	Version int `json:"version"`
+	// Attempt is the run of the runner that owns this line, and "" on a line no
+	// press has put in flight.
+	//
+	// Every run — a press on the card, a press in the inbox, a bulk press,
+	// Continue, Try again — makes one attempt id for its lifetime. The write
+	// that moves the line to `applying` stamps it here, and that is the only
+	// thing that changes it; the settle that follows must carry it, or the
+	// route refuses the write and hands back this entry. It is what tells a
+	// fresh attempt from the one it displaced, which the version cannot: both
+	// are `applying`, and both read the version they were written at.
+	Attempt string `json:"attempt,omitempty"`
 }
 
 // Settled reports whether nothing more will happen to this line by itself. It
@@ -243,24 +264,20 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 	// The bound exists so that a conversation can always be reloaded: the answer
 	// is written whole into the human's transcript and read back whole on the
 	// next open, so a Partner that proposed a hundred and forty actions in one
-	// answer would leave a message nothing can open again (R-130-ui). It is
-	// counted HERE and not in the tool because the tool server is one stdio
-	// process for a whole Partner session and the wire carries no signal for
-	// where one answer ends; this is the one place that holds an answer's own
-	// proposals. The number and the words are the tool's, beside every other
-	// bound a proposal is held to, so that one number is never two.
+	// answer would leave a message nothing can open again (R-130-ui). The number
+	// and the words are the tool's, beside every other bound a proposal is held
+	// to, so that one number is never two.
+	//
+	// It is asked here as the BACKSTOP. The tool refuses the fifty-first call of
+	// an answer, which is where a Partner can learn the bound inside the answer
+	// it is composing; a frame that never passed through the tool — a runtime
+	// that composed one itself — is stopped here (Astra F-06).
 	//
 	// Every line of the answer is counted, the refused ones with the offered: a
 	// refusal is still a line the message carries, and it is the message's own
-	// size the bound protects. Which is also why the refusal past the count
-	// travels to the card rather than being dropped — the human asked for these
-	// actions and has to be told what became of each of them.
-	if refusal := uitools.BeyondTheProposalCount(index); refusal != "" {
-		s.refuseProposal(running, Proposal{
-			Index: index, Verb: prepared.Verb, Goal: boundedGoal(prepared.Goal),
-			State: ProposalWaiting, Version: 1,
-			At: s.now().UTC().Format(time.RFC3339),
-		}, refusal)
+	// size the bound protects.
+	if uitools.BeyondTheProposalCount(index) != "" {
+		s.cutProposal(running, prepared)
 		return
 	}
 
@@ -434,6 +451,41 @@ func boundedGoal(id string) string {
 		return id
 	}
 	return strings.ToValidUTF8(id[:goal.MaxIdBytes], "") + "\u2026"
+}
+
+// cutProposal accounts for one action an answer had no room for.
+//
+// The overflow is not stored line by line, because the count is a bound on what
+// the transcript keeps: an answer that ran over keeps ONE line for everything
+// past the fiftieth, saying how many there were in the words the bound is
+// refused in (Astra F-06). The line was not offered, so the card shows it as a
+// refusal with its reason, beside the answer that explains it; it names the
+// first action it stands for, which is the one a reader of the card would look
+// for after the fiftieth.
+//
+// The first overflow arrives when the answer holds exactly fifty lines, so the
+// account is at that index and every later one is counted onto it. A second beat
+// for the same line is not published: the line the page already shows says what
+// it said, and the count on it reaches every reader with the answer the turn
+// writes down.
+func (s *Service) cutProposal(running *turn, prepared Action) {
+	s.mu.Lock()
+	running.cut++
+	cut := running.cut
+	at := uitools.MostProposalsPerAnswer
+	told := len(running.proposals) > at
+	if told {
+		running.proposals[at].Reason = uitools.ProposalsCut(cut)
+	}
+	s.mu.Unlock()
+	if told {
+		return
+	}
+	s.refuseProposal(running, Proposal{
+		Index: at, Verb: prepared.Verb, Goal: boundedGoal(prepared.Goal),
+		State: ProposalWaiting, Version: 1,
+		At: s.now().UTC().Format(time.RFC3339),
+	}, uitools.ProposalsCut(cut))
 }
 
 // refuseProposal records one action the human is not offered, with its reason.
@@ -626,6 +678,28 @@ func (c *ProposalConflict) Error() string {
 		"; read it again before pressing"
 }
 
+// ProposalOwner is what an outcome write loses to when the line has another
+// owner: the attempt this write carries is not the attempt the entry holds.
+//
+// It is apart from the version's own conflict because it answers a different
+// question. The version says whether this write follows the entry the page
+// rendered; the attempt says whether the act whose answer this is was the act
+// the line is waiting for. A press that took the line over is at a version the
+// displaced press can read from the beat, and its own act is out — so the
+// displaced press's answer must not settle the line, at that version or at any
+// other.
+//
+// It carries the entry for the same reason the version's conflict does: the tab
+// has to show the line as it really is, and it keeps its own result on the line
+// as an unrecorded mark rather than writing it anywhere.
+type ProposalOwner struct {
+	Held Proposal
+}
+
+func (o *ProposalOwner) Error() string {
+	return "another press owns this line now; the next read says what happened"
+}
+
 // RecordProposal writes one state onto one proposed action of one answer, and
 // answers the entry as it now stands.
 //
@@ -640,7 +714,11 @@ func (c *ProposalConflict) Error() string {
 // publication of the whole file, so a reader halfway through it reads the old
 // file whole rather than a torn mixture, and nothing else in the transcript
 // moves.
-func (c *Conversation) RecordProposal(turn string, index, version int, state, words string, now time.Time) (Proposal, error) {
+// The attempt is the second half of that compare-and-set, and it is compared on
+// the settle writes alone: `applying` SETS the owner, whichever press wrote it,
+// because a takeover of a line whose press died is how a human recovers one; and
+// `dismissed` compares nothing, because putting a card away is not an outcome.
+func (c *Conversation) RecordProposal(turn string, index, version int, state, words, attempt string, now time.Time) (Proposal, error) {
 	if !ProposalState(state) {
 		return Proposal{}, errors.New("an action's state is " + strings.Join(ProposalStates, ", ") + ", not " + state)
 	}
@@ -663,6 +741,21 @@ func (c *Conversation) RecordProposal(turn string, index, version int, state, wo
 	held := proposals[index]
 	if held.Version != version || !ProposalMayBecome(held.State, state) {
 		return Proposal{}, &ProposalConflict{Held: held}
+	}
+	switch state {
+	case ProposalApplying:
+		// The new owner. This is the only write that changes it, so the press
+		// that takes over a line — from waiting, from its own answer, from
+		// unresolved, or from another press's `applying` — is the press whose
+		// answer the line will then take.
+		held.Attempt = attempt
+	case ProposalApplied, ProposalRefused, ProposalUnresolved:
+		// An outcome belongs to the act the line is waiting for. A settle from
+		// any other press is refused with the entry, and that press holds its
+		// own result unrecorded rather than settling a line it does not own.
+		if held.Attempt != attempt {
+			return Proposal{}, &ProposalOwner{Held: held}
+		}
 	}
 	// The slice is copied before it is written into: the messages the snapshot
 	// handed a reader a moment ago share this backing array, and a state written
@@ -692,7 +785,7 @@ func (c *Conversation) RecordProposal(turn string, index, version int, state, wo
 // beat there is no message to record an outcome on, and the card's own buttons
 // are asleep for exactly that reason. It is refused here rather than in the
 // route because whether a turn is running is this service's own fact.
-func (s *Service) Proposed(human, turn string, index, version int, state, words string) (Proposal, error) {
+func (s *Service) Proposed(human, turn string, index, version int, state, words, attempt string) (Proposal, error) {
 	s.mu.Lock()
 	running := s.current
 	s.mu.Unlock()
@@ -704,7 +797,7 @@ func (s *Service) Proposed(human, turn string, index, version int, state, words 
 	if err != nil {
 		return Proposal{}, err
 	}
-	held, err := conversation.RecordProposal(turn, index, version, state, words, s.now())
+	held, err := conversation.RecordProposal(turn, index, version, state, words, attempt, s.now())
 	if err != nil {
 		return Proposal{}, err
 	}
