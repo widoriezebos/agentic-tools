@@ -33,24 +33,33 @@ func TestBatchLandReceiptsRunFromNestedModuleRoot(t *testing.T) {
 	t.Parallel()
 	repository := t.TempDir()
 	module := filepath.Join(repository, "metasystem")
-	if err := os.MkdirAll(filepath.Join(module, "scripts"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, dir := range []string{filepath.Join(module, "scripts", "agents"), filepath.Join(repository, "development")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	script := filepath.Join(module, "scripts", "receipt.sh")
-	if err := testexec.WriteFile(script, []byte("#!/bin/sh\npwd > receipt-root.txt\n"), 0o755); err != nil {
-		t.Fatal(err)
+	for path, content := range map[string]string{
+		filepath.Join(module, "go.mod"):                                  "module fixture\n",
+		filepath.Join(module, "metasystem.conf"):                         "",
+		filepath.Join(repository, "development", "metasystem-design.md"): "template\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	seams := batchLandSeams(repository, "batch", batch.Record{}, "base", "actor")
 	if err := seams.AppendReceipt(batch.Unit{GoalID: "goal-a"}, batch.PrefixReceipt{Tree: "tree"}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(module, "receipt-root.txt"))
-	want, canonicalErr := canonicalPath(module)
-	if err != nil || canonicalErr != nil || strings.TrimSpace(string(data)) != want {
-		t.Fatalf("receipt root=%q error=%v canonical-error=%v, want %s", data, err, canonicalErr, want)
+	data, err := os.ReadFile(filepath.Join(module, "memory", "receipts.log"))
+	if err != nil {
+		t.Fatalf("the receipt must land in the module's own ledger: %v", err)
+	}
+	line := string(data)
+	for _, want := range []string{"|RECEIPT|type=implement|outcome=shipped|", "|goal=goal-a|", "|built_by=coordinator|", "|note=batch batch prefix tree"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("receipt line %q lacks %q", line, want)
+		}
 	}
 }
 

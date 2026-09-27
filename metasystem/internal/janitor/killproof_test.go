@@ -22,7 +22,9 @@ func observed(pid int64, startSec int64, argv ...string) identity.Exact {
 // Exercise the kill-authority and three-part process proof row by row.
 func TestKillable(t *testing.T) {
 	recorded := &registry.ProcessRef{Pid: 41, PidStartedAt: 100}
-	watcherArgv := []string{"bash", "/repo/scripts/watch-background-jobs.sh", "--census", "--instance-tag", tag}
+	// The watcher is the supervise owner's Go component (the shell watcher
+	// script is retired and matches no shape).
+	watcherArgv := []string{"/repo/bin/metasystem", "supervise", "component", "--component", "watcher", "--tag", tag}
 	cases := []struct {
 		name     string
 		observed identity.Exact
@@ -75,9 +77,16 @@ func TestKillable(t *testing.T) {
 		{
 			name: "flag=value spelling matches",
 			observed: observed(41, 100,
-				"/repo/scripts/watch-background-jobs.sh", "--instance-tag="+tag),
+				"/repo/bin/metasystem", "supervise", "component", "--tag="+tag),
 			recorded: recorded,
 			want:     true,
+		},
+		{
+			name: "the retired shell watcher matches no shape",
+			observed: observed(41, 100,
+				"bash", "/repo/scripts/watch-background-jobs.sh", "--census", "--instance-tag", tag),
+			recorded: recorded,
+			want:     false,
 		},
 		{
 			name: "the go owner verb is a known shape",
@@ -89,7 +98,7 @@ func TestKillable(t *testing.T) {
 		{
 			name: "wrong tag in the tag position",
 			observed: observed(41, 100,
-				"/repo/scripts/watch-background-jobs.sh", "--instance-tag", "some-other-tag"),
+				"/repo/bin/metasystem", "supervise", "component", "--tag", "some-other-tag"),
 			recorded: recorded,
 			want:     false,
 		},

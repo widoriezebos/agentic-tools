@@ -1,7 +1,6 @@
 package missionrunner
 
 import (
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,17 +8,13 @@ import (
 )
 
 // The launch spine's guard ladder and armAndPreflight's refusal branches,
-// driven with a stub arming neighbor (Phase 6). The stub stands in for
-// arm-supervision.sh only — arming itself has its own fixtures; the unit
-// here is the ORCHESTRATION: sequence, refusal wording, and the handoff
+// driven with a stub arming neighbor (Phase 6). The stub stands in for the
+// checkout engine's `up` entry only — arming itself has its own fixtures; the
+// unit here is the ORCHESTRATION: sequence, refusal wording, and the handoff
 // into contract preflight.
 
-func stubArming(t *testing.T, root, body string) {
-	t.Helper()
-	dir := filepath.Join(root, "scripts", "agents")
-	os.MkdirAll(dir, 0o755)
-	testexec.WriteFile(filepath.Join(dir, "arm-supervision.sh"),
-		[]byte("#!/bin/sh\n"+body+"\n"), 0o755)
+func stubArming(engine *Engine, stdout, stderr string, code int) {
+	engine.ArmSupervision = func([]string) (string, string, int) { return stdout, stderr, code }
 }
 
 func TestLaunchGuardLadder(t *testing.T) {
@@ -46,16 +41,16 @@ func TestLaunchGuardLadder(t *testing.T) {
 }
 
 func TestArmAndPreflightRefusals(t *testing.T) {
-	// No arming script at all: the arm step refuses by name.
+	// No checkout engine at all: the arm step refuses by name.
 	bare := &Engine{Root: t.TempDir(), Mission: "mr-arm-a"}
 	if err := bare.armAndPreflight("start"); err == nil ||
 		!strings.Contains(err.Error(), "supervision did not arm") {
 		t.Fatalf("armless root: %v", err)
 	}
 
-	// An arming script that fails: same named refusal, its stderr carried.
+	// An arming that fails: same named refusal, its stderr carried.
 	failing := &Engine{Root: t.TempDir(), Mission: "mr-arm-b"}
-	stubArming(t, failing.Root, `echo "deliberate refusal" >&2; exit 1`)
+	stubArming(failing, "", "deliberate refusal\n", 1)
 	if err := failing.armAndPreflight("start"); err == nil ||
 		!strings.Contains(err.Error(), "supervision did not arm") ||
 		!strings.Contains(err.Error(), "deliberate refusal") {
@@ -65,7 +60,7 @@ func TestArmAndPreflightRefusals(t *testing.T) {
 	// An armer that reports the typed armed outcome hands off to contract preflight, which
 	// refuses the absent contract by name.
 	armed := &Engine{Root: t.TempDir(), Mission: "mr-arm-c"}
-	stubArming(t, armed.Root, `echo 'up outcome=armed authority=writer'`)
+	stubArming(armed, "up outcome=armed authority=writer\n", "", 0)
 	if err := armed.armAndPreflight("start"); err == nil ||
 		!strings.Contains(err.Error(), "refused by preflight") {
 		t.Fatalf("preflight handoff: %v", err)

@@ -242,7 +242,7 @@ watch_heartbeat=$("$bin" proof-run heartbeat --root "$watch_workspace")
   || { echo "suite-progress fixture: deepest live heartbeat was not selected" >&2; exit 1; }
 printf '{"status":"completed","workspaceRoot":"%s"}\n' "$watch_workspace" >"$watch_jobs/prefix-job.json"
 : >"$watch_state"
-METASYSTEM_BIN="$bin" "$root/scripts/watch-background-jobs.sh" \
+"$bin" internal report watch-jobs --root "$root" \
   --dir "$watch_jobs" --scope "$watch_workspace" --state "$watch_state" --once >"$watch_out" 2>&1
 watch_note_prefix="$watch_heartbeat DONE prefix-job status=completed age="
 watch_note_suffix="m record=$watch_jobs/prefix-job.json"

@@ -135,7 +135,16 @@ exit 97
 		"green", []byte(`{"receipt":true}`), now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"--root", root, "--control-root", root, "--baseline", baseline, "--package", "internal/proofrun"}
+	reuseStatus := func() int {
+		_, found, err := coverageReuseLines(root, root, baseline, []string{"internal/proofrun"}, os.Environ())
+		switch {
+		case err != nil:
+			return 1
+		case !found:
+			return 3
+		}
+		return 0
+	}
 	freezeRoot := filepath.Join(t.TempDir(), "freeze")
 	writeTestingFixtureFile(t, filepath.Join(freezeRoot, "internal", "source.go"), []byte("package internal\n"), 0o644)
 	overlapOutput := newFreezeOverlapWriter()
@@ -153,7 +162,7 @@ exit 97
 	case result := <-freezeDone:
 		t.Fatalf("freeze CLI exited before controlled output overlap: code=%d stderr=%q", result.code, result.stderr)
 	}
-	coverageCode := runProofRunCoverageReuse(args)
+	coverageCode := reuseStatus()
 	close(overlapOutput.release)
 	result := <-freezeDone
 	fields := strings.Split(strings.TrimSpace(overlapOutput.String()), "\t")
@@ -171,7 +180,7 @@ exit 97
 		t.Fatalf("coverage-reuse before parent mutation exited %d", coverageCode)
 	}
 	writeTestingFixtureFile(t, filepath.Join(project, ".gitattributes"), []byte("changed parent input\n"), 0o644)
-	if code := runProofRunCoverageReuse(args); code != 3 {
+	if code := reuseStatus(); code != 3 {
 		t.Fatalf("coverage-reuse after parent mutation exited %d, want stale-proof status 3", code)
 	}
 	gitCalls, err := os.ReadFile(gitLog)

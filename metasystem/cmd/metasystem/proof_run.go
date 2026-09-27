@@ -2205,49 +2205,18 @@ func runProofRunCoverageComplete(args []string) int {
 	return 0
 }
 
-func runProofRunCoverageReuse(args []string) int {
-	flags := flag.NewFlagSet("proof-run coverage-reuse", flag.ContinueOnError)
-	executionRoot := pathFlag(flags, "root", "", "source root whose coverage inputs are checked")
-	controlRoot := flags.String("control-root", "", "canonical root retaining proof evidence")
-	baseline := flags.String("baseline", "", "selected coverage ratchet")
-	var packages repeatedFlag
-	flags.Var(&packages, "package", "selected relative package (repeatable)")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" || *baseline == "" || len(packages) == 0 {
-		return 2
+// coverageReuseLines projects matching retained full coverage for packages,
+// one "coverage reuse" line per package.
+func coverageReuseLines(controlRoot, executionRoot, baseline string, packages, environment []string) ([]string, bool, error) {
+	evidence, found, err := proofrun.ReusableCoverageInEnvironment(controlRoot, executionRoot, baseline, packages, environment)
+	if err != nil || !found {
+		return nil, found, err
 	}
-	canonicalExecution, err := canonicalProofRoot(*executionRoot)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-reuse:", err)
-		return 1
-	}
-	if *controlRoot == "" {
-		for _, candidate := range []string{os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_RUN_ROOT"), os.Getenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT")} {
-			if candidate != "" {
-				*controlRoot = candidate
-				break
-			}
-		}
-		if *controlRoot == "" {
-			*controlRoot = canonicalExecution
-		}
-	}
-	canonicalControl, err := canonicalProofRoot(*controlRoot)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-reuse:", err)
-		return 1
-	}
-	evidence, found, err := proofrun.ReusableCoverage(canonicalControl, canonicalExecution, *baseline, packages)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-reuse:", err)
-		return 1
-	}
-	if !found {
-		return 3
-	}
+	lines := make([]string, 0, len(packages))
 	for _, pkg := range packages {
-		fmt.Printf("coverage reuse: ./%s: %.1f%%\n", pkg, evidence.Measurements[pkg])
+		lines = append(lines, fmt.Sprintf("coverage reuse: ./%s: %.1f%%", pkg, evidence.Measurements[pkg]))
 	}
-	return 0
+	return lines, true, nil
 }
 
 func runProofRunBanner(args []string) int {
@@ -2263,14 +2232,19 @@ func runProofRunBanner(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run banner --suite S --root R --progress P --log L")
 		return 2
 	}
-	state := proofRunWitnessState(*root)
+	fmt.Println(proofRunBannerText(*suite, *root, *progress, *logPath))
+	return 0
+}
+
+// proofRunBannerText is the one-line suite cost banner a proof launch carries.
+func proofRunBannerText(suite, root, progress, logPath string) string {
+	state := proofRunWitnessState(root)
 	duration := "minutes"
 	if state == "unarmed" {
 		duration = "full-gate"
 	}
-	fmt.Printf("suite-cost suite=%s witness=%s duration=%s heartbeat=%s logs=%s\n",
-		*suite, state, duration, proofRunDisplayPath(*root, *progress), proofRunDisplayPath(*root, *logPath))
-	return 0
+	return fmt.Sprintf("suite-cost suite=%s witness=%s duration=%s heartbeat=%s logs=%s",
+		suite, state, duration, proofRunDisplayPath(root, progress), proofRunDisplayPath(root, logPath))
 }
 
 func runProofRunHeartbeat(args []string) int {

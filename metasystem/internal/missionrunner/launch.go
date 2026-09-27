@@ -180,6 +180,20 @@ func gitCaptured(dir string, args ...string) (stdout, stderr string, code int) {
 	return runCaptured(dir, gittree.ScrubbedEnviron(), "git", full...)
 }
 
+// armSupervision arms supervision for the mission's checkout through the
+// checkout engine's `up` entry (METASYSTEM_BIN, else <root>/bin/metasystem),
+// with the checkout's own metasystem root.
+func (e *Engine) armSupervision(args []string) (stdout, stderr string, code int) {
+	if e.ArmSupervision != nil {
+		return e.ArmSupervision(args)
+	}
+	engine := os.Getenv("METASYSTEM_BIN")
+	if engine == "" {
+		engine = filepath.Join(e.Root, "bin", "metasystem")
+	}
+	return runCaptured(e.Root, nil, engine, append([]string{"up", "--metasystem-root", e.Root}, args...)...)
+}
+
 // runCaptured runs a command from a working directory, capturing both
 // streams. A command that could not start reports exit -1 with the launch
 // error as its stderr.
@@ -491,8 +505,7 @@ func (e *Engine) armAndPreflight(mode string) error {
 		// the predecessor's in-flight delegates.
 		args = append(args, "--owner-lineage", identity.lineage)
 	}
-	stdout, stderr, code := runCaptured(e.Root, nil,
-		filepath.Join(e.Root, "scripts", "agents", "arm-supervision.sh"), args...)
+	stdout, stderr, code := e.armSupervision(args)
 	if code != 0 || !strings.Contains(stdout, "up outcome=armed") {
 		return failf(3, "mission start refused: supervision did not arm: %s", firstDetail(stderr, stdout))
 	}
@@ -513,9 +526,9 @@ func (e *Engine) armAndPreflight(mode string) error {
 	}
 	var rawSHA string
 	if e.contractSource != nil {
-		_, rawSHA, err = contract.PreflightWithSource(e.contractPath(), verifiedPath, e.contractSource)
+		_, rawSHA, err = contract.PreflightWithSourceAndFingerprint(e.contractPath(), verifiedPath, e.contractSource, e.SupervisionFingerprint)
 	} else {
-		_, rawSHA, err = contract.Preflight(e.contractPath(), verifiedPath)
+		_, rawSHA, err = contract.PreflightWithFingerprint(e.contractPath(), verifiedPath, e.SupervisionFingerprint)
 	}
 	if err != nil {
 		return failf(3, "mission start refused by preflight: %v", err)

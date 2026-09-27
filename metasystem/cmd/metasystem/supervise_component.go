@@ -18,10 +18,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // runSuperviseComponent runs one supervised component — the watcher or the
@@ -498,7 +498,7 @@ func setupReaper(repo, metasystemRoot string) func() {
 		Now:       func() time.Time { return time.Now().UTC() },
 		Custodian: kernelCustodian(metasystemRoot),
 		ReturnComplete: func(role, file string) bool {
-			return len(validate.ReturnCompleteRole(repo, role, file)) == 0
+			return len(returnschema.ReturnCompleteRole(repo, role, file)) == 0
 		},
 		Apply: recordCASApplier(repo),
 		Emit:  func(line string) { fmt.Fprintln(os.Stderr, line) },

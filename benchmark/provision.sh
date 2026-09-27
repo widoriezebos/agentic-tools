@@ -554,7 +554,7 @@ temporary = path.with_name(path.name + ".provision.tmp")
 temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
 os.replace(temporary, path)
 PY
-"$target/scripts/metasystem-config.sh" validate
+"$target/bin/metasystem" internal config validate --conf "$target/metasystem.conf"
 
 # The adopted target must survive its own landing boundary: the
 # instruments commit below rides the target's commit.sh, whose IL-28
@@ -727,16 +727,16 @@ rm -f "$target/artifacts/agents/mains/worktree-lease.json"
 
 provision_started=$("$ms" proc started-at --pid "$$")
 if ! METASYSTEM_AGENT_RUNTIME="$host_runtime" \
-  "$target/scripts/agents/arm-supervision.sh" --repo "$target" \
+  "$target/bin/metasystem" up --metasystem-root "$target" --repo "$target" \
     --session "benchmark-provision-$mission_id-$$" --pid "$$" \
     --start-time "$provision_started" --tag "benchmark/provision.sh" \
     >"$scratch/arm.log" 2>&1; then
   cat "$scratch/arm.log" >&2
-  "$target/scripts/agents/arm-supervision.sh" --repo "$target" --shutdown >/dev/null 2>&1 || true
+  "$target/bin/metasystem" up --metasystem-root "$target" --repo "$target" --shutdown >/dev/null 2>&1 || true
   die 1 "provision failed while arming supervision"
 fi
 if ! grep -q ' ARMED ' "$scratch/arm.log"; then
-  "$target/scripts/agents/arm-supervision.sh" --repo "$target" --shutdown >/dev/null 2>&1 || true
+  "$target/bin/metasystem" up --metasystem-root "$target" --repo "$target" --shutdown >/dev/null 2>&1 || true
   die 1 "provision failed: supervision returned without an ARMED verdict"
 fi
 

@@ -311,9 +311,9 @@ func (l *lifecycle) surface(message string) string {
 func (l *lifecycle) receipt() {
 	_, _, status := l.ops.ReceiptCheck(l.harnessRoot)
 	if status == 1 {
-		_ = writeLine(l.inv.Stdout, l.surface("Metasystem retro due: run scripts/receipt.sh check for details, then skills/retro."))
+		_ = writeLine(l.inv.Stdout, l.surface("Metasystem retro due: run metasystem receipt check for details, then skills/retro."))
 	} else if status != 0 {
-		_ = writeLine(l.inv.Stdout, l.surface("Metasystem receipt check errored; run scripts/receipt.sh check to see why."))
+		_ = writeLine(l.inv.Stdout, l.surface("Metasystem receipt check errored; run metasystem receipt check to see why."))
 	}
 	exitHook(0)
 }
@@ -612,7 +612,7 @@ func (s *stopRun) decide() {
 	// that is not the one holding it. An unidentified caller is not an
 	// advisor.
 	if s.mainClass == "MAIN" && s.mainHolder != "true" {
-		message := "OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run scripts/agents/second-session.sh."
+		message := "OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run metasystem session isolate."
 		if s.upFailure != "" {
 			message += "\n" + s.upFailure
 		}

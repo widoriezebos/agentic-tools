@@ -1,4 +1,4 @@
-package validate
+package returnschema
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
 // ReturnComplete validates a canonical agent return against the shipped
@@ -177,31 +177,31 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 		if version, present := resultObj["schemaVersion"]; present {
 			v, vOK := jsonInteger(version)
 			resultVersion = v
-			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3 && v != 4 && v != 5) || (v == 3 && !returnschema.VersionThreeRoles[role]) || (v == 4 && !returnschema.VersionFourRoles[role]) || (v == 5 && !returnschema.VersionFiveRoles[role]) {
+			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3 && v != 4 && v != 5) || (v == 3 && !VersionThreeRoles[role]) || (v == 4 && !VersionFourRoles[role]) || (v == 5 && !VersionFiveRoles[role]) {
 				c.violation("unknown return schema version for role %q: %v", role, version)
 			} else if schema != nil && v == 2 {
-				upgraded, err := returnschema.VersionTwo(schema)
+				upgraded, err := VersionTwo(schema)
 				if err != nil {
 					c.violation("role schema cannot version: %v", err)
 				} else {
 					schema = upgraded
 				}
 			} else if schema != nil && v == 3 {
-				upgraded, err := returnschema.VersionThree(schema)
+				upgraded, err := VersionThree(schema)
 				if err != nil {
 					c.violation("role schema cannot version: %v", err)
 				} else {
 					schema = upgraded
 				}
 			} else if schema != nil && v == 4 {
-				upgraded, err := returnschema.VersionFour(schema)
+				upgraded, err := VersionFour(schema)
 				if err != nil {
 					c.violation("role schema cannot version: %v", err)
 				} else {
 					schema = upgraded
 				}
 			} else if schema != nil && v == 5 {
-				upgraded, err := returnschema.VersionFive(schema)
+				upgraded, err := VersionFive(schema)
 				if err != nil {
 					c.violation("role schema cannot version: %v", err)
 				} else {
@@ -252,7 +252,7 @@ func (c *returnChecker) checkDiffBoundary(result map[string]any, returnPath stri
 	normalizationPrefix := "metasystem"
 	if workspace, isString := record["workspaceRoot"].(string); isString && workspace != "" {
 		metasystemRoot = filepath.Join(workspace, normalizationPrefix)
-		if installPrefix, err := projectInstallPrefix(c.root); err == nil {
+		if installPrefix, err := gittree.InstallPrefix(c.root); err == nil {
 			metasystemRoot = filepath.Join(workspace, installPrefix)
 			normalizationPrefix = installPrefix
 		}
@@ -715,12 +715,22 @@ func jsonSame(a, b any) bool {
 	return string(aj) == string(bj)
 }
 
-// jsonRepr renders the shared dialect core with quoted strings; everything
-// outside the core (bools, non-integral floats, composites) renders as raw
-// JSON bytes — this gate's deliberate difference from the conformance one.
+// jsonRepr renders the message dialect the validate package's conformance
+// gate shares (internal/validate/repr.go): 'single-quoted' strings, None for
+// null, integral floats without a decimal point. Everything outside that core
+// (bools, non-integral floats, composites) renders as raw JSON bytes, this
+// gate's deliberate difference from the conformance one.
 func jsonRepr(v any) string {
-	return reprValue(v, true, func(rest any) string {
-		data, _ := json.Marshal(rest)
-		return string(data)
-	})
+	switch value := v.(type) {
+	case nil:
+		return "None"
+	case string:
+		return "'" + value + "'"
+	case float64:
+		if value == float64(int64(value)) {
+			return strconv.FormatInt(int64(value), 10)
+		}
+	}
+	data, _ := json.Marshal(v)
+	return string(data)
 }

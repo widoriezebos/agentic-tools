@@ -1179,15 +1179,10 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 		t.Fatal(err)
 	}
 	for _, relative := range []string{
-		"scripts/receipt.sh",
 		"scripts/agents/supervision-hook.sh",
-		"scripts/agents/evidence-gc.sh",
-		"scripts/agents/arm-supervision.sh",
 		"scripts/agents/dispatch.sh",
 		"scripts/agents/adapters/fake.sh",
 		"scripts/agents/adapters/runtime-common.sh",
-		"scripts/watch-background-jobs.sh",
-		"scripts/metasystem-config.sh",
 	} {
 		copyExecutableFixture(t, filepath.Join(sourceRoot, relative), filepath.Join(root, relative))
 	}
@@ -1332,6 +1327,10 @@ type pendingWaitHookOwners struct {
 // EngineBehind keeps the generation cutover out of these runs: the fixture
 // installation's engine is the one under test, never behind its sources.
 func (pendingWaitHookOwners) EngineBehind(string, string) (bool, error) { return false, nil }
+
+// EvidenceGC keeps the fixture installation's evidence collection inert, as
+// its stub evidence-gc.sh did: the test process is not an authenticated main.
+func (pendingWaitHookOwners) EvidenceGC(string, io.Writer) int { return 0 }
 
 func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 	o.upRequests = append(o.upRequests, request)
@@ -1618,16 +1617,14 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	hook := filepath.Join(hookRoot, "scripts", "agents", "supervision-hook.sh")
-	evidenceGC := filepath.Join(hookRoot, "scripts", "agents", "evidence-gc.sh")
 	canonical := filepath.Join(hookRoot, "bin", "metasystem")
-	for _, target := range []string{hook, evidenceGC, canonical} {
+	for _, target := range []string{hook, canonical} {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for source, target := range map[string]string{
 		filepath.Join(sourceRoot, "scripts", "agents", "supervision-hook.sh"): hook,
-		filepath.Join(sourceRoot, "scripts", "receipt.sh"):                    filepath.Join(hookRoot, "scripts", "receipt.sh"),
 		binary: canonical,
 	} {
 		data, readErr := os.ReadFile(source)
@@ -1637,9 +1634,6 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 		if writeErr := testexec.WriteFile(target, data, 0o755); writeErr != nil {
 			t.Fatal(writeErr)
 		}
-	}
-	if err := testexec.WriteFile(evidenceGC, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
 	}
 	owners := &pendingWaitHookOwners{hookOwners: hookOwners{diagnostics: io.Discard}, fakeUp: true}
 	stopRun := runPendingWaitHook(t, nil, hook, owners, "stop",

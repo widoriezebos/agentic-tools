@@ -7,31 +7,41 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 const orphanTestSHA = "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
 
 // seedLandedChain plants one completed delegate chain with a landed round-1
-// return and a stub return checker that accepts it, so landed-return
-// derivation has something real to list.
+// implementer return the shipped checker accepts, and the implementer role
+// schema it is judged against, so landed-return derivation has something
+// real to list.
 func seedLandedChain(t *testing.T, root, missionID, jobID string) {
 	t.Helper()
 	writeJSONFile(t, filepath.Join(jobsDirPath(root), jobID+".json"), map[string]any{
 		"jobId": jobID, "mission": missionID, "status": "completed", "round": 1, "parentJob": nil,
+		"role": "implementer", "runtime": "fake", "sessionId": "fixture-session",
 	})
 	returnPath := filepath.Join(root, "artifacts", "agents", jobID, "rounds", "1", "return.json")
 	if err := os.MkdirAll(filepath.Dir(returnPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(returnPath, []byte(`{"jobId":"`+jobID+`"}`), 0o644); err != nil {
+	lawful := `{"schemaVersion": 2, "claimed": {"sessionId": null, "model": null},
+  "jobId": "` + jobID + `", "round": 1, "runtime": "fake", "sessionId": "fixture-session",
+  "model": {"requested": "fixture-model", "effective": "fixture-model"},
+  "evidence": [], "gaps": [], "mode": "build", "riskiestPart": "none",
+  "diffBoundary": [], "whatWasDone": "Landed a fixture round."}`
+	if err := os.WriteFile(returnPath, []byte(lawful), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	checker := filepath.Join(root, "scripts", "assert-return-complete.sh")
-	if err := os.MkdirAll(filepath.Dir(checker), 0o755); err != nil {
+	schema, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "schemas", "implementer.schema.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testexec.WriteFile(checker, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	schemaPath := filepath.Join(root, "scripts", "agents", "schemas", "implementer.schema.json")
+	if err := os.MkdirAll(filepath.Dir(schemaPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(schemaPath, schema, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -124,8 +124,8 @@ kit_cleanup() {
   [[ -z "${gate_run_marker:-}" ]] || rm -f "$gate_run_marker"
   local repo
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
-    [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
-    "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >/dev/null 2>&1 || true
+    [[ -x "$repo/bin/metasystem" ]] || continue
+    "$repo/bin/metasystem" up --metasystem-root "$repo" --repo "$repo" --shutdown >/dev/null 2>&1 || true
   done
   rm -rf -- "$tmp"
 }
@@ -564,7 +564,7 @@ for stream, goal in manifest["missionContract"]["streams"].items():
     if contract.get(f"stream.{stream}") != goal:
         raise SystemExit(f"benchmark provision: stream {stream} differs from manifest")
 PY
-  "$provision_target/scripts/metasystem-config.sh" validate \
+  "$provision_target/bin/metasystem" internal config validate --conf "$provision_target/metasystem.conf" \
     || { echo "benchmark provision: filled metasystem.conf is invalid" >&2; exit 1; }
 
   provision_ref=$(sed -n 's/^gate\.ref=//p' "$provision_contract")

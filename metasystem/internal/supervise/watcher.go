@@ -138,7 +138,7 @@ func censusFailedVerdict(fingerprint string, interval int, reason string, now ti
 	completed := now.UTC()
 	return census.Verdict{
 		SchemaVersion:    2,
-		Writer:           "watch-background-jobs.sh",
+		Writer:           census.VerdictWriter,
 		Verdict:          "CENSUS-FAILED",
 		CompletedAt:      completed.Format(isoSecond),
 		CompletedAtEpoch: completed.Unix(),
