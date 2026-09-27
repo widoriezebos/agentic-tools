@@ -1000,6 +1000,7 @@ func TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity(t *testing.
 		},
 		CallerPID: 1, Getpid: func() int64 { return 1 },
 		LiveEngine:    func() (string, error) { return "", nil },
+		Environ:       os.Environ,
 		Now:           func() time.Time { return time.Unix(1, 0) },
 		RequireHolder: func(string, int64, *int64) (*int64, error) { return &epoch, nil },
 		WithHeld:      func(_ string, _ int64, _ *int64, fn func() error) error { return fn() },
