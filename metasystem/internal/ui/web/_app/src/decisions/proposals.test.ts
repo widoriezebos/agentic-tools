@@ -257,6 +257,7 @@ function driving(
   const sent: string[] = [];
   const marks: { id: string; change: Partial<Mark> }[] = [];
   const shown: { id: string; state: string; version: number }[] = [];
+  const held: Record<string, Proposal> = {};
   let reread = 0;
   let signedInFrom: readonly Line[] = [];
 
@@ -288,6 +289,7 @@ function driving(
     {
       reconcile: (id, proposal) => {
         shown.push({ id, state: proposal.state, version: proposal.version });
+        held[id] = proposal;
       },
       mark: (id, change) => {
         marks.push({ id, change });
@@ -308,6 +310,7 @@ function driving(
     sent,
     marks,
     shown,
+    held,
     rereads: () => reread,
     signedInFrom: () => signedInFrom,
   };
@@ -350,7 +353,13 @@ describe("the run the inbox makes", () => {
     });
     await driven.ran;
 
-    expect(driven.shown).toEqual([{ id: "t7#2", state: "applied", version: 4 }]);
+    // The entry the conflict returned, and then the run's own two writes on the
+    // line it did send: everything the route returned is held.
+    expect(driven.shown).toEqual([
+      { id: "t7#2", state: "applied", version: 4 },
+      { id: "t8#0", state: "applying", version: 6 },
+      { id: "t8#0", state: "applied", version: 7 },
+    ]);
     // Nothing was sent for the line somebody else settled, and the run went on.
     expect(driven.sent).toEqual(["t8#0"]);
   });
@@ -369,6 +378,61 @@ describe("the run the inbox makes", () => {
     expect(driven.shown).toEqual([{ id: "t7#2", state: "applying", version: 4 }]);
     expect(driven.sent).toEqual([]);
     expect(driven.marks.filter((one) => one.change.notRun === true).map((one) => one.id)).toEqual(["t8#0"]);
+  });
+
+  /**
+   * The run's own writes are held, so a row never reads as in flight about a line
+   * this page has just heard the answer for.
+   *
+   * The page held the entries a CONFLICT returned and not the ones its own writes
+   * returned. A payload read in the middle of a run carries the `applying` that
+   * run wrote a moment ago, so between the outcome write and the re-read that
+   * follows it the row said the act was being applied while this very run knew it
+   * had come back unresolved — and it corrected itself on that read (g1-s60, as
+   * built). The card had no such window, because the store folds every write it
+   * makes; this is the same fold, on the same runner.
+   */
+  it("holds the entry its own outcome write returned, not only a conflict's", async () => {
+    const lines = [twoAnswers()[0]];
+    const driven = driving(lines, {
+      sent: { [lines[0].id]: { kind: "unresolved", words: "the answer was lost" } },
+    });
+    await driven.ran;
+
+    expect(driven.shown).toEqual([
+      { id: "t7#2", state: "applying", version: 2 },
+      { id: "t7#2", state: "unresolved", version: 3 },
+    ]);
+
+    // The payload as a read taken mid-run holds it: the applying this run wrote,
+    // at the version it wrote. What the page kept is newer, so the row reads the
+    // answer and offers the recovery.
+    const midRun = need({}, { state: "applying", version: 2 });
+    const row = lineOf(midRun, {}, {}, driven.held) as Line;
+    expect(row.state).toBe("unresolved");
+    expect(row.version).toBe(3);
+    expect(lineState(row)).toBe("unresolved: the answer was lost; check the goal before trying again");
+    expect(pressFor(row)).toBe("Try again");
+    // Holding nothing, the same row read that payload and said the act was in
+    // flight, which is the ten milliseconds this closes.
+    expect(lineState(lineOf(midRun) as Line)).toBe(WAS_IN_FLIGHT);
+  });
+
+  /**
+   * A write the conversation refused holds nothing: the run's own rules decide
+   * what the row says then — the act's known answer where it landed, and the
+   * failure where nothing was sent — and an entry the route never returned is not
+   * one to hold.
+   */
+  it("holds nothing for a write the conversation refused", async () => {
+    const lines = [twoAnswers()[0]];
+    const driven = driving(lines, {
+      writes: { [`${lines[0].id}:applying`]: { kind: "failed", words: "the conversation could not be written" } },
+    });
+    await driven.ran;
+
+    expect(driven.shown).toEqual([]);
+    expect(driven.sent).toEqual([]);
   });
 
   it("asks the page to read again after a confirmed act and when the run ends", async () => {
