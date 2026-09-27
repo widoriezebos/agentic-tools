@@ -127,7 +127,7 @@ func TestConformanceBedContextTestingContract(t *testing.T) {
 			budget = surface.Standard
 		}
 	}
-	for _, group := range []string{"context-standard", "context-foundations-standard", "section/supervision-and-census-fixtures", conformanceBedGroup} {
+	for _, group := range []string{"context-standard", "context-foundations-standard", "supervision-bed-standard", conformanceBedGroup} {
 		if !slices.Contains(budget, group) {
 			t.Errorf("context-budget standard selection omits %s", group)
 		}

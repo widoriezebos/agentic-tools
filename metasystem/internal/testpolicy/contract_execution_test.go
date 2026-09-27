@@ -22,7 +22,7 @@ func TestHostStaticReproofFixturePrerequisites(t *testing.T) {
 			groups["refusal-register-standard"], groups["fast-static-build"])
 	}
 	for _, id := range []string{
-		"section/supervision-and-census-fixtures",
+		"supervision-bed-standard",
 		"section/land-fixtures",
 		"section/adoption-fixtures",
 	} {

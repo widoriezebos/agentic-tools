@@ -5,7 +5,7 @@ import "sort"
 var cadenceCatchGroupIDs = []string{
 	"section/go-engine-gate",
 	"section/static-contract-audits",
-	"section/supervision-and-census-fixtures",
+	"supervision-bed-standard",
 	"section/dispatcher-adapter-and-mission-runner-fixtures",
 	"section/adoption-fixtures",
 	"section/witness-gate-fixtures",

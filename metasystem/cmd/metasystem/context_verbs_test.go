@@ -645,7 +645,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 		}
 		if !containsString(standardPlan.SelectedGroups, "context-standard") ||
 			!containsString(standardPlan.SelectedGroups, "context-foundations-standard") ||
-			!containsString(standardPlan.SelectedGroups, "section/supervision-and-census-fixtures") ||
+			!containsString(standardPlan.SelectedGroups, "supervision-bed-standard") ||
 			containsString(standardPlan.SelectedGroups, "context-stop-cost") {
 			t.Fatalf("standard context selection for %s = %+v", changed, standardPlan)
 		}
@@ -655,7 +655,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 		if err != nil {
 			t.Fatalf("deep selection for %s: %v", changed, err)
 		}
-		for _, group := range []string{"context-standard", "context-foundations-standard", "section/supervision-and-census-fixtures", "context-stop-cost"} {
+		for _, group := range []string{"context-standard", "context-foundations-standard", "supervision-bed-standard", "context-stop-cost"} {
 			if !containsString(deepPlan.SelectedGroups, group) {
 				t.Errorf("deep context selection for %s omitted %s: %+v", changed, group, deepPlan)
 			}
