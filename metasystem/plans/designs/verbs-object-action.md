@@ -5,7 +5,7 @@
 - Status: accepted
 - Goals: verbs-match-intent
 
-Revision 6; design critique closed at round 6 with zero material findings.
+Revision 7 (Wido's rulings of 2026-09-27: no metasystem scripts, scripts only at extension points, VM outside, every public action an intent). Revision 6 closed design critique at round 6 with zero material findings.
 Supersedes `verb-cleanup.md`'s rule "Do not migrate thousands of private
 process-protocol calls" and its retention of the family dispatcher;
 `agent-help.md`'s output-preservation rules wherever the grammar below changes
@@ -271,53 +271,96 @@ shrink during the build; adding an entry needs a revision of this page.
 `metasystem internal` prints the entries and their launchers. `internal ENTRY`
 is accepted as today for launchers that already prefix.
 
-### 3.3 Plumbing Bash that remains, and the Go bootstrap
+### 3.3 No metasystem scripts; scripts only where users extend (revision 7)
 
-A script may remain only if it (a) makes no metasystem decision, (b) calls the
-installed binary at most by `exec`-ing one entrypoint, and (c) exists because
-something outside Go must start it by path.
+Wido, 2026-09-27: "things that somebody using the meta system would like to
+change or extend, that is easier in a script. And things that are truly meta
+system behavior that nobody ever should want to change, that should become go";
+the VM "should be just another test script or benchmark script that chooses to
+launch inside the VM", never part of the standard metasystem.
 
-- `scripts/agents/supervision-hook.sh`: kept at its path because installed
-  runtime settings in every checkout name it. Body: locate the binary; `exec`
-  `internal hook "$@"`. If the binary is absent, not executable, or refuses the
-  entry (an engine older than the stub, VOA-11), it runs the bootstrap build
-  (below) once under its fence and retries; if that fails it prints the degraded
-  Stop JSON that `stop-degraded-forms.sh` holds today (moved inline) and exits 0.
-- `scripts/agents/pre-commit-guard.sh`: same shape, `internal pre-commit`;
-  `internal/ledgerfence/fence.go` checks the new stub shape.
-- The Go bootstrap (VOA-08, VOA-09): a small program `metasystem/cmd/devgate`,
-  run with `go run ./cmd/devgate ACTION` from the tree it builds, so it needs no
-  installed engine and cannot recurse into the test scheduler. It imports the
-  owners directly: `internal/gaterun` for the fence (live-owner exclusion,
-  self-exemption, live/dead/unreadable markers, `gaterun/fence.go:16`,
-  `gaterun/gaterun.go:100`), `internal/behaviorsurface` for the stamp selection
-  (today `behavior-surface select` at `go-build.sh:65`), `internal/enginebuild`
-  for the stamp. Actions: `build` (replaces `go-build.sh`, including `--out` and
-  `--trimpath`), `static` (the fast static/build leaf that `fast-static-build`
-  runs; replaces `go-gate.sh --fast`), `gate` (the full Go gate; replaces
-  `go-gate.sh`). `go-build.sh` becomes a stub for as long as anything outside Go names
-  it, then is deleted. The stub resolves its own installation directory as the
-  script does today (`go-build.sh:10`) and runs `go -C "$installation" run
-  ./cmd/devgate build "$@"`, so a caller in another directory (`adopt.sh:216`,
-  which resolves the source root in a subshell, `adopt.sh:94`) still works
-  (VOA-08-R2). Proof cases: clean, dirty, engine absent, stale marker, own gate,
-  foreign live gate, and the stub invoked from the repository top and from an
-  unrelated directory.
-- Scripts that do not call the binary stay: `benchmark/attest.sh`, `grade.sh`,
-  `compare.sh`, `extract.sh`, case gates, `environment/vms/*`,
-  `plans/first-headless-run/*.sh`, `optional-skills/debug-java/scripts/preflight.sh`.
+**Rule S1.** No committed file under `metasystem/` is a script, except files a
+user of the metasystem is expected to change or extend. Metasystem behavior
+lives in Go. **Rule S2.** Nothing under `metasystem/` names, starts or depends on
+`environment/vms`; a VM run is a test or benchmark script that chooses to
+launch inside a VM. Witness (R11): a static test over `git ls-files` fails on any
+`*.sh`/`*.bash` under `metasystem/` outside the declared extension points below,
+and on any reference to `environment/vms` from `metasystem/`.
 
-Everything else under `metasystem/scripts/` is deleted after its port, including
-`adopt.sh` (becomes the public `system adopt`, run from a binary the adopter
-builds with `go run ./cmd/devgate build`). The three benchmark scripts that call
-internal verbs (`provision.sh`, `validate-kit.sh`, `run-cohort.sh`) switch to
-public commands where one fits and otherwise move to a Go program under
-`benchmark/`.
+The end state for what earlier revisions kept as plumbing:
+
+- **Runtime hook wiring.** The runtime settings command is generated data, not
+  a script: `internal/hooks/setup.go` writes `bin/metasystem internal hook
+  RUNTIME EVENT` followed by the inline degraded fallback the settings already
+  carry (`|| printf '{...}'`), and `runtime setup` regenerates it in every
+  checkout. During the cutover the U4 stub `supervision-hook.sh` bridges an
+  engine older than the `hook` entry (it rebuilds detached); U9 regenerates the
+  settings to the direct command, confirms every checkout's engine accepts the
+  entry, and deletes the stub.
+- **Git pre-commit wiring.** The install verb writes `.git/hooks/pre-commit`
+  (generated, never committed) that execs `bin/metasystem internal pre-commit`
+  and refuses with a fixed message when the binary is missing;
+  `internal/ledgerfence/fence.go` checks that shape. The committed
+  `pre-commit-guard.sh` is deleted in U5.
+- **Engine build.** `go run ./cmd/devgate build` is the bootstrap; every caller
+  (Go, docs, remedies, adopt) names it, and the `go-build.sh` stub is deleted in
+  U9 once no caller names the path.
+
+Declared extension points, where scripts are fine because users change them:
+benchmark cases, their gates and graders (`benchmark/cases/**`, `benchmark/*.sh`
+graders and comparers), skill helper tools (`optional-skills/*/scripts/**`),
+and a project's own testing-contract commands. Extension-point scripts may call
+the engine only through public actions (R4 still applies). The benchmark kit's
+engine-driving scripts (`provision.sh`, `validate-kit.sh`, `run-cohort.sh`) call
+public actions only (U8). `environment/vms/*` stays outside `metasystem/` and
+untouched. `plans/first-headless-run/*.sh` are a historical mission's contract
+instruments: history, left as they are.
+
+`cmd/devgate` is the Go bootstrap (VOA-08, VOA-09): run with `go run
+./cmd/devgate ACTION` from the tree it builds, so it needs no installed engine
+and cannot recurse into the test scheduler; actions `build`, `static`, `gate`
+(U0b, U7a). It is a development tool for this repository, not a second public
+surface.
 
 `validate-metasystem.sh` is not ported as a script: its sections become Go tests
-or `testing.json` groups; the section selector, `enumerate-suite.sh`,
-`witness-gate.sh` and `oldest-bash-gate.sh` go with it under the provider
-transition protocol (6.4).
+or `testing.json` groups; the section selector, `enumerate-suite.sh` and
+`oldest-bash-gate.sh` go with it under the provider transition protocol (6.4).
+`adopt.sh` becomes the public `system adopt`.
+
+### 3.4 Every public action states an intent (revision 7, U1d)
+
+Wido, 2026-09-27: size is not the problem; an action is wrong when it is a
+technical verb that is not clearly, easily and intuitively an intent a person or
+agent has. Rule G7: an action names what its caller wants done or wants to know,
+in the caller's words; it never names a mechanism (register, record store,
+published base, continuation, retained proof, job record, conformance stage).
+Mechanics a public action needs run inside it. Unit U1d applies this table to
+the U1a surface (it changes the public table, routing and the texts that name
+these actions; owners are unchanged):
+
+| U1a action | Problem | Revision 7 |
+|---|---|---|
+| `critique rebind-budget`, `critique close-register` | critic-register plumbing | no public action: the review flows (`work review`, `design review`) perform them; the `critique` object goes |
+| `work check` | conformance and disposition plumbing | `work review SUBJECT --check-only` checks a subject's boundary and a round's dispositions without launching a critic |
+| `work watch` | duplicates `work wait` with a pinned exit code | `work wait ... --exit-code` |
+| `work close` | "complete a job's records" | performed by `work review` (closing a finished review) and `work land`; an interrupted close is finished by rerunning `work review G` |
+| `work report` | "launch outcomes and refusals" | `work status --history [--since T]` |
+| `design find` | duplicates `design list` | `design list --goal G` |
+| `design check-moves` | critic tooling | performed by `design review`; a critic reading outside the command uses `design review FILE --check-only` |
+| `goal check`, `goal repair` | ledger internals | `goal sync` (preview by default; `--publish --by NAME` publishes reviewed goal edits; `--refresh` completes an interrupted refresh). It refuses to publish when more goal files differ than the named `--goal` set, naming them (the 175-file stale-base case of 2026-09-27) |
+| `system repair` | lists wait continuations | `work wait --list` |
+| `session context`, `session verify` | context-budget internals | inside `session handoff` (`--status`, `--verify`) |
+| `session report` | named after the Stop mechanism | `session status [--id ID]`: why this session may or may not stop |
+| `session stop` | wording | kept; summary "stop this session's work quietly" |
+| `receipt check`, `receipt correct` | retro plumbing | `receipt status` (is a retro due, and the period's numbers; replaces `check` and `stats`); `receipt add --corrects LINE` |
+| `test check`, `test verify`, `test report` | proof internals | `test status [--tree T]` (is this tree already proven, with cost); contract validation joins `settings check` |
+| `terminal enroll` | a one-action object | `system enroll` |
+| `covenant check` | a one-action object, shape validation | part of `system check` |
+
+After U1d the objects are goal, design, decision, grant, work, test, question,
+incident, session, mission, system, machine, ui, settings, receipt, experiment,
+and the top-level `status`. Every former spelling is refused with a suggestion,
+as in U1a. `help agent` and skills name only these.
 
 ## 4. Rules and their witnesses
 
@@ -336,6 +379,8 @@ later unit (a ratchet: numbers, not lists, except where a list is the rule).
 | R8 | Process recognizers follow their process (6.6). | For each entry and each ported long-lived process: classification and authorized versus refused signalling against the process's actual argv. |
 | R9 | Orchestration sits above owners (6.3). | `go list -deps` test: no package under `internal/` that is an owner imports an orchestration package. |
 | R10 | Hard cutover per slice. | R1-R9 green at every landing. |
+| R11 | No metasystem scripts outside declared extension points; nothing in `metasystem/` depends on `environment/vms` (3.3). | Static test over `git ls-files` under `metasystem/`: extension-point allowlist by directory, zero other `*.sh`/`*.bash`, zero references to `environment/vms`. |
+| R12 | Every public action states an intent (3.4, G7). | Router test pins the revision 7 table; removed U1a spellings refuse with their successor. |
 
 ## 5. Units
 
@@ -377,6 +422,9 @@ references, public forms, deleted spellings and every caller and text (colliding
 Go callers may use the explicit `internal` form until U1b); U1b the subprocess
 replacements under 6.2; U1c the hook-side bootstrap and the retained-plan scan,
 migration and resume refusal of section 7.
+
+U1d (revision 7) applies 3.4's table after U1a: public table, routing, removed
+spellings with suggestions, and every text naming them; owners unchanged.
 
 **Wave 1 (parallel)**
 
@@ -430,7 +478,7 @@ migration and resume refusal of section 7.
 
 - U8 Adopt and benchmark: `system adopt`; benchmark scripts per 3.3; their
   fixtures port.
-- U9 Close. Transitional family fallthrough and the family registry deleted; R1,
+- U9 Close. Runtime settings regenerated to the direct `internal hook` command and the `supervision-hook.sh` stub deleted; the `go-build.sh` stub deleted; R11 at zero scripts outside extension points. Transitional family fallthrough and the family registry deleted; R1,
   R3, R4 at their final values; `help agent` and docs final pass; a fresh-eyes
   usability run by an agent that has never seen the CLI (discover, plan, build,
   review, land, recover from a refused land) recorded in the goal's verification
