@@ -104,9 +104,9 @@ func TestAnAnswerWhoseLinesAreSettledIsToldToOfferTheNextBatch(t *testing.T) {
 	}
 	batchSettle := func(turn string, index int) {
 		t.Helper()
-		applying, err := service.Proposed("Wido", turn, index, 1, partner.ProposalApplying, "")
+		applying, err := service.Proposed("Wido", turn, index, 1, partner.ProposalApplying, "", "")
 		testutil.Require(t, "line "+strconv.Itoa(index)+" is taken", err, nil)
-		_, err = service.Proposed("Wido", turn, index, applying.Version, partner.ProposalApplied, "")
+		_, err = service.Proposed("Wido", turn, index, applying.Version, partner.ProposalApplied, "", "")
 		testutil.Require(t, "line "+strconv.Itoa(index)+" is settled", err, nil)
 	}
 

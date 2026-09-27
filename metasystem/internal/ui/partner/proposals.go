@@ -29,6 +29,16 @@ import (
 // outcome. So each entry carries a version, the caller sends the version it
 // last rendered, and the writer admits the write only against that version. The
 // loser is handed the entry as it stands and must show it.
+//
+// The version says that one write at a time moves a line; it cannot say WHOSE
+// act an outcome belongs to. A line returns to `applying` on every Try again and
+// on every takeover of a line whose press died, so a tab whose act is still out
+// can read the version another press has just moved the line to and write its
+// own answer over the act that press sent — the entry would then say applied for
+// an act nobody made. So the entry also carries the attempt that owns it: every
+// run of the runner makes one attempt id, the write that moves a line to
+// `applying` stamps it, and the settle that follows must carry the attempt the
+// entry holds (Astra F-01, F-03).
 
 // The six states one proposed action passes through.
 //
@@ -187,6 +197,17 @@ type Proposal struct {
 	// the entry it last rendered, and the writer admits the write only against
 	// it, so two tabs cannot both move one line.
 	Version int `json:"version"`
+	// Attempt is the run of the runner that owns this line, and "" on a line no
+	// press has put in flight.
+	//
+	// Every run — a press on the card, a press in the inbox, a bulk press,
+	// Continue, Try again — makes one attempt id for its lifetime. The write
+	// that moves the line to `applying` stamps it here, and that is the only
+	// thing that changes it; the settle that follows must carry it, or the
+	// route refuses the write and hands back this entry. It is what tells a
+	// fresh attempt from the one it displaced, which the version cannot: both
+	// are `applying`, and both read the version they were written at.
+	Attempt string `json:"attempt,omitempty"`
 }
 
 // Settled reports whether nothing more will happen to this line by itself. It
@@ -626,6 +647,28 @@ func (c *ProposalConflict) Error() string {
 		"; read it again before pressing"
 }
 
+// ProposalOwner is what an outcome write loses to when the line has another
+// owner: the attempt this write carries is not the attempt the entry holds.
+//
+// It is apart from the version's own conflict because it answers a different
+// question. The version says whether this write follows the entry the page
+// rendered; the attempt says whether the act whose answer this is was the act
+// the line is waiting for. A press that took the line over is at a version the
+// displaced press can read from the beat, and its own act is out — so the
+// displaced press's answer must not settle the line, at that version or at any
+// other.
+//
+// It carries the entry for the same reason the version's conflict does: the tab
+// has to show the line as it really is, and it keeps its own result on the line
+// as an unrecorded mark rather than writing it anywhere.
+type ProposalOwner struct {
+	Held Proposal
+}
+
+func (o *ProposalOwner) Error() string {
+	return "another press owns this line now; the next read says what happened"
+}
+
 // RecordProposal writes one state onto one proposed action of one answer, and
 // answers the entry as it now stands.
 //
@@ -640,7 +683,11 @@ func (c *ProposalConflict) Error() string {
 // publication of the whole file, so a reader halfway through it reads the old
 // file whole rather than a torn mixture, and nothing else in the transcript
 // moves.
-func (c *Conversation) RecordProposal(turn string, index, version int, state, words string, now time.Time) (Proposal, error) {
+// The attempt is the second half of that compare-and-set, and it is compared on
+// the settle writes alone: `applying` SETS the owner, whichever press wrote it,
+// because a takeover of a line whose press died is how a human recovers one; and
+// `dismissed` compares nothing, because putting a card away is not an outcome.
+func (c *Conversation) RecordProposal(turn string, index, version int, state, words, attempt string, now time.Time) (Proposal, error) {
 	if !ProposalState(state) {
 		return Proposal{}, errors.New("an action's state is " + strings.Join(ProposalStates, ", ") + ", not " + state)
 	}
@@ -663,6 +710,21 @@ func (c *Conversation) RecordProposal(turn string, index, version int, state, wo
 	held := proposals[index]
 	if held.Version != version || !ProposalMayBecome(held.State, state) {
 		return Proposal{}, &ProposalConflict{Held: held}
+	}
+	switch state {
+	case ProposalApplying:
+		// The new owner. This is the only write that changes it, so the press
+		// that takes over a line — from waiting, from its own answer, from
+		// unresolved, or from another press's `applying` — is the press whose
+		// answer the line will then take.
+		held.Attempt = attempt
+	case ProposalApplied, ProposalRefused, ProposalUnresolved:
+		// An outcome belongs to the act the line is waiting for. A settle from
+		// any other press is refused with the entry, and that press holds its
+		// own result unrecorded rather than settling a line it does not own.
+		if held.Attempt != attempt {
+			return Proposal{}, &ProposalOwner{Held: held}
+		}
 	}
 	// The slice is copied before it is written into: the messages the snapshot
 	// handed a reader a moment ago share this backing array, and a state written
@@ -692,7 +754,7 @@ func (c *Conversation) RecordProposal(turn string, index, version int, state, wo
 // beat there is no message to record an outcome on, and the card's own buttons
 // are asleep for exactly that reason. It is refused here rather than in the
 // route because whether a turn is running is this service's own fact.
-func (s *Service) Proposed(human, turn string, index, version int, state, words string) (Proposal, error) {
+func (s *Service) Proposed(human, turn string, index, version int, state, words, attempt string) (Proposal, error) {
 	s.mu.Lock()
 	running := s.current
 	s.mu.Unlock()
@@ -704,7 +766,7 @@ func (s *Service) Proposed(human, turn string, index, version int, state, words 
 	if err != nil {
 		return Proposal{}, err
 	}
-	held, err := conversation.RecordProposal(turn, index, version, state, words, s.now())
+	held, err := conversation.RecordProposal(turn, index, version, state, words, attempt, s.now())
 	if err != nil {
 		return Proposal{}, err
 	}
