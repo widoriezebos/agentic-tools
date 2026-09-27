@@ -210,6 +210,11 @@ type turn struct {
 	// in the order they arrived. The order is the index the outcome route names
 	// a line by, so a refused action holds its place.
 	proposals []Proposal
+	// cut is how many actions this answer carried past the count it is bounded
+	// at. They are not stored line by line — the bound is on what the
+	// transcript keeps — so the answer holds one account of them, and this is
+	// what it counts (Astra F-06).
+	cut int
 	// observed is the ledger reading this turn was composed against, held so
 	// that an action is admitted against what the Partner was told rather than
 	// against a later reading of a moving ledger.

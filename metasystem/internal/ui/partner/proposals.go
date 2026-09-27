@@ -264,24 +264,20 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 	// The bound exists so that a conversation can always be reloaded: the answer
 	// is written whole into the human's transcript and read back whole on the
 	// next open, so a Partner that proposed a hundred and forty actions in one
-	// answer would leave a message nothing can open again (R-130-ui). It is
-	// counted HERE and not in the tool because the tool server is one stdio
-	// process for a whole Partner session and the wire carries no signal for
-	// where one answer ends; this is the one place that holds an answer's own
-	// proposals. The number and the words are the tool's, beside every other
-	// bound a proposal is held to, so that one number is never two.
+	// answer would leave a message nothing can open again (R-130-ui). The number
+	// and the words are the tool's, beside every other bound a proposal is held
+	// to, so that one number is never two.
+	//
+	// It is asked here as the BACKSTOP. The tool refuses the fifty-first call of
+	// an answer, which is where a Partner can learn the bound inside the answer
+	// it is composing; a frame that never passed through the tool — a runtime
+	// that composed one itself — is stopped here (Astra F-06).
 	//
 	// Every line of the answer is counted, the refused ones with the offered: a
 	// refusal is still a line the message carries, and it is the message's own
-	// size the bound protects. Which is also why the refusal past the count
-	// travels to the card rather than being dropped — the human asked for these
-	// actions and has to be told what became of each of them.
-	if refusal := uitools.BeyondTheProposalCount(index); refusal != "" {
-		s.refuseProposal(running, Proposal{
-			Index: index, Verb: prepared.Verb, Goal: boundedGoal(prepared.Goal),
-			State: ProposalWaiting, Version: 1,
-			At: s.now().UTC().Format(time.RFC3339),
-		}, refusal)
+	// size the bound protects.
+	if uitools.BeyondTheProposalCount(index) != "" {
+		s.cutProposal(running, prepared)
 		return
 	}
 
@@ -455,6 +451,41 @@ func boundedGoal(id string) string {
 		return id
 	}
 	return strings.ToValidUTF8(id[:goal.MaxIdBytes], "") + "\u2026"
+}
+
+// cutProposal accounts for one action an answer had no room for.
+//
+// The overflow is not stored line by line, because the count is a bound on what
+// the transcript keeps: an answer that ran over keeps ONE line for everything
+// past the fiftieth, saying how many there were in the words the bound is
+// refused in (Astra F-06). The line was not offered, so the card shows it as a
+// refusal with its reason, beside the answer that explains it; it names the
+// first action it stands for, which is the one a reader of the card would look
+// for after the fiftieth.
+//
+// The first overflow arrives when the answer holds exactly fifty lines, so the
+// account is at that index and every later one is counted onto it. A second beat
+// for the same line is not published: the line the page already shows says what
+// it said, and the count on it reaches every reader with the answer the turn
+// writes down.
+func (s *Service) cutProposal(running *turn, prepared Action) {
+	s.mu.Lock()
+	running.cut++
+	cut := running.cut
+	at := uitools.MostProposalsPerAnswer
+	told := len(running.proposals) > at
+	if told {
+		running.proposals[at].Reason = uitools.ProposalsCut(cut)
+	}
+	s.mu.Unlock()
+	if told {
+		return
+	}
+	s.refuseProposal(running, Proposal{
+		Index: at, Verb: prepared.Verb, Goal: boundedGoal(prepared.Goal),
+		State: ProposalWaiting, Version: 1,
+		At: s.now().UTC().Format(time.RFC3339),
+	}, uitools.ProposalsCut(cut))
 }
 
 // refuseProposal records one action the human is not offered, with its reason.
