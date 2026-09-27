@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 func TestGateArgumentRefusals(t *testing.T) {
@@ -40,6 +42,8 @@ func TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner(t *testing.T) {
 	w := newGateWorld(t)
 	w.statuses["worker"] = 1
 	w.statuses["launch"] = 23
+	// Ambient progress locators are not authority: the run still relaunches.
+	w.setenv("METASYSTEM_SUITE_PROGRESS_ACTIVE=1", "METASYSTEM_SUITE_PROGRESS_ROOT="+w.root, "GOFLAGS=-mod=mod")
 	if code := w.gate("--goal", "fx", "--cap-min", "30"); code != 23 {
 		t.Fatalf("exit %d, want the launcher's 23:\n%s", code, w.output())
 	}
@@ -354,5 +358,178 @@ func TestMoveEvidenceCopiesAcrossFilesystemsAndRemovesTheSource(t *testing.T) {
 	}
 	if _, err := os.Stat(to); !os.IsNotExist(err) {
 		t.Fatalf("moved source survived: %v", err)
+	}
+}
+
+func TestGateEveryGoPhaseCarriesTheInheritedAllowance(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ name, workers string }{{"explicit", "3"}, {"direct caller default", "1"}} {
+		w := newGateWorld(t)
+		if test.workers == "1" {
+			w.env = slices.DeleteFunc(w.env, func(entry string) bool { return strings.HasPrefix(entry, "METASYSTEM_TEST_WORKERS=") })
+		}
+		if code := w.gate(); code != 0 {
+			t.Fatalf("%s: exit %d\n%s", test.name, code, w.output())
+		}
+		for _, fragment := range []string{"go vet -p=" + test.workers + " ./...", "go run -p=" + test.workers + " " + staticcheckModule,
+			"go run -p=" + test.workers + " " + govulncheckModule, "go list -p=" + test.workers + " ./internal/...",
+			"go build -p=" + test.workers + " -buildvcs=false"} {
+			if len(w.called(fragment)) == 0 {
+				t.Fatalf("%s: no %q in %v", test.name, fragment, w.calls)
+			}
+		}
+		if cross := w.called("go build -p=" + test.workers + " ./..."); len(cross) != 2 {
+			t.Fatalf("%s: cross-builds = %v", test.name, cross)
+		}
+		for _, call := range w.calls {
+			if call.name == "go" && envValue(call.env, "GOMAXPROCS") != test.workers {
+				t.Fatalf("%s: %s ran with GOMAXPROCS=%q", test.name, call, envValue(call.env, "GOMAXPROCS"))
+			}
+		}
+		native := w.nativeCalls[0]
+		if strconv.Itoa(native.Workers) != test.workers || envValue(native.Environment, "METASYSTEM_TEST_WORKERS") != test.workers {
+			t.Fatalf("%s: native request workers=%d env=%q", test.name, native.Workers, envValue(native.Environment, "METASYSTEM_TEST_WORKERS"))
+		}
+	}
+	invalid := newGateWorld(t)
+	invalid.setenv("METASYSTEM_TEST_WORKERS=0")
+	if code := invalid.gate(); code != 1 || !strings.Contains(invalid.stderr.String(), "METASYSTEM_TEST_WORKERS must be a positive integer") || len(invalid.calls) != 0 {
+		t.Fatalf("invalid allowance: exit %d calls %v", code, invalid.calls)
+	}
+}
+
+func TestGateInvalidCustodyRelaunchesOnceAndReturnsTheAdmissionRefusal(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t)
+	w.statuses["worker"], w.statuses["launch"] = 3, 78
+	w.setenv("METASYSTEM_PROOF_CONTROL_ROOT="+w.root, "METASYSTEM_PROOF_ATTEMPT=proof-forged", "METASYSTEM_SUITE_PROGRESS_ACTIVE=1")
+	if code := w.gate(); code != 78 {
+		t.Fatalf("exit %d, want the launcher's admission refusal 78\n%s", code, w.output())
+	}
+	if len(w.called("proof-run launch")) != 1 || len(w.called("gofmt")) != 0 || len(w.coverage) != 0 {
+		t.Fatalf("launches %v gofmt %v coverage %v", w.called("proof-run launch"), w.called("gofmt"), w.coverage)
+	}
+}
+
+func TestGateCoverageSlotIsNotClaimedBeforeTheMeasurement(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"legacy worker", "eligible attempt"} {
+		w := newGateWorld(t)
+		w.statuses["gofmt"] = 79
+		w.setenv("METASYSTEM_PROOF_CONTROL_ROOT=" + w.root)
+		if name == "eligible attempt" {
+			w.setenv("METASYSTEM_PROOF_ATTEMPT=proof-parent")
+		}
+		if code := w.gate(); !w.reachedFullProof(code) {
+			t.Fatalf("%s: exit %d\n%s", name, code, w.output())
+		}
+		if len(w.coverage) != 0 || len(w.nativeCalls) != 0 {
+			t.Fatalf("%s: a static refusal consumed the coverage slot %v or measured %d", name, w.coverage, len(w.nativeCalls))
+		}
+	}
+}
+
+func TestGateNativeSelectionInheritsTheAdmittedHostLease(t *testing.T) {
+	t.Parallel()
+	attempt := newGateWorld(t)
+	attempt.setenv("METASYSTEM_PROOF_CONTROL_ROOT="+attempt.root, "METASYSTEM_PROOF_ATTEMPT=attempt-9", "METASYSTEM_GATE_FORCE=1")
+	if code := attempt.gate(); code != 0 {
+		t.Fatalf("exit %d\n%s", code, attempt.output())
+	}
+	if len(attempt.hostLeases) != 1 || attempt.hostLeases[0] != attempt.root || attempt.hostReleases != 1 {
+		t.Fatalf("host lease: acquired %v released %d", attempt.hostLeases, attempt.hostReleases)
+	}
+	legacy := newGateWorld(t)
+	if code := legacy.gate(); code != 0 || len(legacy.hostLeases) != 0 {
+		t.Fatalf("a legacy worker took a nested admission: exit %d leases %v", code, legacy.hostLeases)
+	}
+}
+
+// TestGateRetainsCoverageEvidenceOutsideTheFrozenWitness ports the retained
+// evidence table: a consumer whose witness is refused runs the full gate in
+// its frozen export, and every post-native failure keeps its bundle under the
+// durable proof owner while the export is released.
+func TestGateRetainsCoverageEvidenceOutsideTheFrozenWitness(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name          string
+		setup         func(w *gateWorld)
+		wantFailure   string
+		wantSuccess   bool
+		wantBundle    bool
+		wantInventory bool
+	}{
+		{name: "post-native build failure", setup: func(w *gateWorld) { w.failBuildAfterNative = true }, wantFailure: "go gate: build failed (evidence kept: ", wantBundle: true},
+		{name: "post-native implicit exit", setup: func(w *gateWorld) { w.nativeNoLog = true }, wantFailure: "go gate: post-native exit before coverage consumers completed (evidence kept: ", wantBundle: true},
+		{name: "inventory failure", setup: func(w *gateWorld) { w.statuses["list"] = 1 }, wantFailure: "go gate: go list failed; cannot join the coverage inventory (evidence kept: ", wantBundle: true, wantInventory: true},
+		{name: "missing baseline", setup: func(w *gateWorld) {
+			_ = os.Remove(filepath.Join(w.root, "scripts", "agents", "coverage-ratchet.json"))
+			_ = os.Remove(filepath.Join(w.root, "scripts", "agents", "coverage-ratchet-linux.json"))
+		}, wantFailure: "run the two-pass seed bootstrap first (evidence kept: ", wantBundle: true, wantInventory: true},
+		{name: "ratchet failure with stderr-only diagnostics", setup: func(w *gateWorld) {
+			w.nativeOutput = ""
+			w.nativeReruns = []proofrun.RerunFinding{{Package: "example.invalid/internal/stderr-only", Test: "TestFlaky", First: "fail", Second: "pass", LogPath: "rerun.log"}}
+		}, wantFailure: "go gate: coverage ratchet refused (evidence kept: ", wantBundle: true, wantInventory: true},
+		{name: "publication failure", setup: func(w *gateWorld) {
+			w.setenv("METASYSTEM_PROOF_ATTEMPT=retention-attempt")
+			w.statuses["coverage-complete"] = 1
+		}, wantFailure: "go gate: authenticated coverage publication refused (evidence kept: ", wantBundle: true, wantInventory: true},
+		{name: "seed success", setup: func(w *gateWorld) { w.setenv("METASYSTEM_COVERAGE_RATCHET_SEED=1") }, wantFailure: "floors were not enforced (evidence kept: ",
+			wantSuccess: true, wantBundle: true, wantInventory: true},
+		{name: "enforcing success cleanup", wantSuccess: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			w := newGateWorld(t)
+			durable := filepath.Join(filepath.Dir(w.root), "durable-proof")
+			if err := os.MkdirAll(durable, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// A refused witness (its controller is foreign) sends the consumer
+			// to the full gate inside its own frozen export.
+			wit := w.writeWitness("retention", w.root, foreignController(t))
+			w.setenv(append(wit.env("ENGINE"), "METASYSTEM_PROOF_CONTROL_ROOT="+durable)...)
+			if test.setup != nil {
+				test.setup(w)
+			}
+			code := w.gate()
+			switch {
+			case test.wantSuccess && code != 0:
+				t.Fatalf("exit %d\n%s", code, w.output())
+			case !test.wantSuccess && code == 0:
+				t.Fatalf("a post-native failure passed\n%s", w.output())
+			}
+			if test.wantFailure != "" && !strings.Contains(w.stderr.String(), test.wantFailure) {
+				t.Fatalf("stderr lacks %q:\n%s", test.wantFailure, w.stderr.String())
+			}
+			for _, dir := range w.gofmtDir {
+				if _, err := os.Stat(filepath.Dir(dir)); !os.IsNotExist(err) {
+					t.Fatalf("the frozen export %s survived: %v", dir, err)
+				}
+			}
+			bundles, _ := filepath.Glob(filepath.Join(durable, "gate-failures", "*-coverage"))
+			if (len(bundles) == 1) != test.wantBundle || len(bundles) > 1 {
+				t.Fatalf("durable bundles = %v\n%s", bundles, w.output())
+			}
+			if !test.wantBundle {
+				return
+			}
+			for _, rel := range []string{"coverage.jsonl", "native/go-gate-tests.stderr.log"} {
+				if _, err := os.Stat(filepath.Join(bundles[0], rel)); err != nil {
+					t.Fatalf("bundle lacks %s: %v", rel, err)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(bundles[0], "package-inventory.txt")); (err == nil) != test.wantInventory {
+				t.Fatalf("inventory presence = %v, want %v", err == nil, test.wantInventory)
+			}
+			if len(test.name) > 0 && strings.Contains(test.name, "stderr-only") {
+				coverage, _ := os.ReadFile(filepath.Join(bundles[0], "coverage.jsonl"))
+				diagnostic, _ := os.ReadFile(filepath.Join(bundles[0], "native", "go-gate-tests.stderr.log"))
+				if strings.Contains(string(coverage), "stderr-only") || !strings.Contains(string(diagnostic), "go gate diagnostic rerun: example.invalid/internal/stderr-only.TestFlaky") ||
+					!strings.Contains(w.stderr.String(), "stderr-only") {
+					t.Fatalf("diagnostics entered the coverage input or were lost: coverage=%q diagnostic=%q", coverage, diagnostic)
+				}
+			}
+		})
 	}
 }

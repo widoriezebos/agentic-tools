@@ -81,6 +81,15 @@ var retiredWithDeletedVerb = map[string]string{
 	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
 }
 
+// retiredWithDeletedScript names legacy mandatory tests (group/test) whose only
+// subject was a script deleted by its provider transition (6.4) and maps each to
+// the test that now carries the behavior, which must be in the contract.
+var retiredWithDeletedScript = map[string]string{
+	"proof-standard/TestGoGateCopiedRootStopsAfterOneUnauthorizedRelaunch":                "TestGateRefusesAnUnauthorizedRelaunchedChild",
+	"proof-standard/TestGoGateRelaunchUsesBuiltEngineForWorkerAuthorization":              "TestGateRelaunchesAStandaloneRunUnderItsRetainedProofOwner",
+	"batch-buildcd-standard/TestGoGateFastModeRunsParallelRatchetBesideDependencyRatchet": "TestStaticRatchetsRefuseBeforeAnyToolRuns",
+}
+
 // providerTransitions names legacy groups whose command moved to a new
 // provider under the two-step transition (plans/designs/verbs-object-action.md
 // 6.4): the group keeps its id so a candidate's proof runs the base's command,
@@ -237,6 +246,19 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		for _, name := range oldTests {
 			if verb, retired := retiredWithDeletedVerb[old.ID+"/"+name]; retired {
 				t.Logf("%s %s retired with the deleted verb %s", old.ID, name, verb)
+				continue
+			}
+			if replacement, retired := retiredWithDeletedScript[old.ID+"/"+name]; retired {
+				carried := false
+				for _, group := range current.Groups {
+					var names []string
+					if json.Unmarshal(group.Tests, &names) == nil && slices.Contains(names, replacement) {
+						carried = true
+					}
+				}
+				if !carried {
+					t.Errorf("%s %s retired with its deleted script, but %s is not in the contract", old.ID, name, replacement)
+				}
 				continue
 			}
 			requiredNames := []string{name}

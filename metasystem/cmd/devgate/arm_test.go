@@ -80,11 +80,14 @@ func TestArmProducesAWitnessFromACompleteFrozenExport(t *testing.T) {
 	if _, err := proofrun.Verify(w.root, digest); err != nil {
 		t.Fatalf("the armed witness does not verify against its producer: %v", err)
 	}
-	// The full proof ran inside the private export, and its stamped engine
-	// was published into the live tree.
+	// The full proof ran inside the private export, which is released once
+	// the proven engine is published into the live tree.
 	for _, dir := range w.gofmtDir {
 		if !regexp.MustCompile(`/metasystem-witness-freeze-[^/]+/tree$`).MatchString(dir) {
 			t.Fatalf("the producing gate ran in %s", dir)
+		}
+		if _, err := os.Stat(filepath.Dir(dir)); !os.IsNotExist(err) {
+			t.Fatalf("the arming snapshot survived: %v", err)
 		}
 	}
 	installed, err := os.ReadFile(filepath.Join(w.root, "bin", "metasystem"))
@@ -186,8 +189,12 @@ func TestArmFallbackChoices(t *testing.T) {
 	for _, env := range []string{"METASYSTEM_GATE_FORCE=1", "METASYSTEM_COVERAGE_RATCHET_SEED=1"} {
 		ineligible := brokenProofWorld(t)
 		ineligible.setenv(env)
-		if code, _ := ineligible.arm("plain"); !ineligible.reachedFullProof(code) || len(ineligible.gofmtDir) != 1 || ineligible.gofmtDir[0] != ineligible.root {
+		code, state := ineligible.arm("plain")
+		if !ineligible.reachedFullProof(code) || len(ineligible.gofmtDir) != 1 || ineligible.gofmtDir[0] != ineligible.root {
 			t.Fatalf("%s: exit %d gates %v", env, code, ineligible.gofmtDir)
+		}
+		if values, unsets := readArmState(t, state); values["witness_state"] != "" || len(unsets) != 0 || len(values) != 2 {
+			t.Fatalf("%s retained witness state: %v %v", env, values, unsets)
 		}
 	}
 	delivery := brokenProofWorld(t)
@@ -208,6 +215,18 @@ func TestArmSnapshotFailureIsTerminalAndARefusalFallsBack(t *testing.T) {
 	}
 	if len(failed.gofmtDir) != 1 {
 		t.Fatalf("an executed gate was retried: %v", failed.gofmtDir)
+	}
+	failedNone := brokenProofWorld(t)
+	if code, _ := failedNone.arm("none"); code != 1 || len(failedNone.gofmtDir) != 1 {
+		t.Fatalf("no-fallback executed failure: exit %d gates %v\n%s", code, failedNone.gofmtDir, failedNone.output())
+	}
+	// A native failure inside the snapshot reaches the caller's output before
+	// the snapshot is deleted.
+	native := newGateWorld(t)
+	native.statuses["native"] = 1
+	if code, _ := native.arm("none"); code != 1 || !strings.Contains(native.stderr.String(), "native red output") ||
+		!strings.Contains(native.stderr.String(), "proof-run go-gate-tests: native selection failed") {
+		t.Fatalf("native diagnostic lost: exit %d\n%s", code, native.output())
 	}
 	if values, _ := readArmState(t, state); values["witness_state"] != "" {
 		t.Fatalf("a failed arming left witness state %v", values)
@@ -254,5 +273,23 @@ func TestArmControllerMustBeThisRunsAncestor(t *testing.T) {
 		if code == 0 && !strings.Contains(w.stderr.String(), "witness gate preparation did not complete") {
 			t.Fatalf("controller %s armed: exit %d\n%s", pid, code, w.output())
 		}
+	}
+}
+
+func TestArmStagingFailureDoesNotPublishTheWitness(t *testing.T) {
+	t.Parallel()
+	w := newGateWorld(t)
+	bin := filepath.Join(w.root, "bin")
+	if err := os.Chmod(bin, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(bin, 0o755) })
+	code, state := w.arm("plain")
+	if code != 1 || !strings.Contains(w.stderr.String(), "witness gate completed but the proven binary could not be published") {
+		t.Fatalf("exit %d\n%s", code, w.output())
+	}
+	values, _ := readArmState(t, state)
+	if values["witness_state"] != "" || values["METASYSTEM_GATE_WITNESS"] != "" {
+		t.Fatalf("an unpublished engine armed a witness: %v", values)
 	}
 }

@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -317,60 +316,6 @@ func acquireManagedProofLaunchWithWaitCheck(ctx context.Context, controlRoot, co
 }
 
 const proofCapacityWaitLine = "proof-run launch: waiting for host proof capacity"
-
-func runProofRunGoGateTests(args []string) int {
-	flags := flag.NewFlagSet("proof-run go-gate-tests", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "metasystem source root")
-	logRoot := pathFlag(flags, "log-root", "", "private native partition log directory")
-	workers := flags.Int("workers", 0, "inherited positive test-worker allowance")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *logRoot == "" || *workers < 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run go-gate-tests --root DIR --log-root DIR --workers N")
-		return 2
-	}
-	if code, err := authorizeProofWorker(*root); err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests:", err)
-		return code
-	}
-	inheritedWorkers, err := strconv.Atoi(os.Getenv(proofrun.TestWorkersEnvironment))
-	if err != nil || inheritedWorkers < 1 {
-		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: authenticated parent supplied no positive test-worker allowance")
-		return 3
-	}
-	if *workers > inheritedWorkers {
-		fmt.Fprintf(os.Stderr, "proof-run go-gate-tests: requested workers %d exceed inherited allowance %d\n", *workers, inheritedWorkers)
-		return 3
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	controlRoot, err := canonicalProofRoot(os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests:", err)
-		return 3
-	}
-	if os.Getenv("METASYSTEM_PROOF_ATTEMPT") != "" {
-		lease, err := proofrun.AcquireHostResources(ctx, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", nil)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: inherit admitted host resources:", err)
-			return 3
-		}
-		defer lease.Close()
-		ctx = proofrun.WithHostResourceLease(ctx, lease)
-	}
-	result, status, err := proofrun.RunGoGateTests(ctx, proofrun.GoGateTestRequest{
-		Root: *root, LogRoot: *logRoot, Environment: os.Environ(), Workers: *workers,
-	})
-	if len(result.Output) != 0 {
-		_, _ = os.Stdout.Write(result.Output)
-	}
-	for _, rerun := range result.Reruns {
-		fmt.Fprintf(os.Stderr, "go gate diagnostic rerun: %s.%s first=%s second=%s log=%s\n",
-			rerun.Package, rerun.Test, rerun.First, rerun.Second, rerun.LogPath)
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "proof-run go-gate-tests: %v (native log: %s)\n", err, result.LogPath)
-	}
-	return status
-}
 
 func runProofRunWorkerAuthorized(args []string) int {
 	flags := flag.NewFlagSet("proof-run worker-authorized", flag.ContinueOnError)
@@ -2128,83 +2073,6 @@ func runProofRunAssert(args []string) int {
 	return 0
 }
 
-func runProofRunCoverageBegin(args []string) int {
-	flags := flag.NewFlagSet("proof-run coverage-begin", flag.ContinueOnError)
-	executionRoot := pathFlag(flags, "root", "", "executing full-gate root")
-	baseline := flags.String("baseline", "", "selected coverage ratchet")
-	producerPID := flags.Int64("producer-pid", 0, "full-gate producer process")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" || *baseline == "" || *producerPID < 1 {
-		return 2
-	}
-	controlRoot, attemptID := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
-	if controlRoot == "" || attemptID == "" {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-begin: no admitted parent proof context")
-		return 3
-	}
-	err := proofrun.BeginCoverage(proofrun.CoverageBeginOptions{ControlRoot: controlRoot, ExecutionRoot: *executionRoot,
-		AttemptID: attemptID, BaselinePath: *baseline, ProducerClass: "full", ProducerPID: *producerPID, CallerPID: int64(os.Getppid())})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-begin:", err)
-		return 1
-	}
-	return 0
-}
-
-func runProofRunCoverageEligible(args []string) int {
-	flags := flag.NewFlagSet("proof-run coverage-eligible", flag.ContinueOnError)
-	executionRoot := pathFlag(flags, "root", "", "executing full-gate root")
-	baseline := flags.String("baseline", "", "selected coverage ratchet")
-	producerPID := flags.Int64("producer-pid", 0, "full-gate producer process")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" || *baseline == "" || *producerPID < 1 {
-		return 2
-	}
-	controlRoot, attemptID := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
-	if controlRoot == "" || attemptID == "" {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-eligible: no admitted parent proof context")
-		return 1
-	}
-	eligible, err := proofrun.CoverageProducerEligible(proofrun.CoverageBeginOptions{ControlRoot: controlRoot,
-		ExecutionRoot: *executionRoot, AttemptID: attemptID, BaselinePath: *baseline,
-		ProducerClass: "full", ProducerPID: *producerPID, CallerPID: int64(os.Getppid())})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-eligible:", err)
-		return 1
-	}
-	if !eligible {
-		return 3
-	}
-	return 0
-}
-
-func runProofRunCoverageComplete(args []string) int {
-	flags := flag.NewFlagSet("proof-run coverage-complete", flag.ContinueOnError)
-	executionRoot := pathFlag(flags, "root", "", "executing full-gate root")
-	baseline := flags.String("baseline", "", "selected coverage ratchet")
-	coverageLog := flags.String("input", "", "actual go test coverage log")
-	packages := flags.String("packages", "", "independent package inventory")
-	module := flags.String("module", "github.com/widoriezebos/agentic-tools/metasystem/", "module prefix")
-	producerPID := flags.Int64("producer-pid", 0, "full-gate producer process")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" || *baseline == "" || *coverageLog == "" || *packages == "" || *producerPID < 1 {
-		return 2
-	}
-	controlRoot, attemptID := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
-	if controlRoot == "" || attemptID == "" {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-complete: no admitted parent proof context")
-		return 3
-	}
-	evidence, err := proofrun.CompleteCoverage(proofrun.CoverageCompleteOptions{CoverageBeginOptions: proofrun.CoverageBeginOptions{
-		ControlRoot: controlRoot, ExecutionRoot: *executionRoot, AttemptID: attemptID, BaselinePath: *baseline,
-		ProducerClass: "full", ProducerPID: *producerPID, CallerPID: int64(os.Getppid())}, CoverageLog: *coverageLog,
-		PackageInventory: *packages, ModulePrefix: *module})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run coverage-complete:", err)
-		return 1
-	}
-	encoded, _ := json.Marshal(evidence)
-	fmt.Println(string(encoded))
-	return 0
-}
-
 // coverageReuseLines projects matching retained full coverage for packages,
 // one "coverage reuse" line per package.
 func coverageReuseLines(controlRoot, executionRoot, baseline string, packages, environment []string) ([]string, bool, error) {
@@ -2362,13 +2230,9 @@ func proofRunWitnessUsable(root string) bool {
 	return proofRunWitnessProbe(root).Run() == nil
 }
 
-// proofRunWitnessProbe asks the root's gate: the shell gate while the root
-// still carries it (a tree the base's fixture legs build), else the Go gate.
+// proofRunWitnessProbe asks the root's Go gate.
 func proofRunWitnessProbe(root string) *exec.Cmd {
 	command := exec.Command("go", "run", "./cmd/devgate", "gate", "--witness-check-only")
-	if script := filepath.Join(root, "scripts", "agents", "go-gate.sh"); proofRunRegularFile(script) {
-		command = exec.Command("bash", script, "--witness-check-only")
-	}
 	command.Dir = root
 	command.Env = proofRunEnvironment("METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE", "ENGINE")
 	command.Stdout = io.Discard
@@ -2451,9 +2315,4 @@ func proofRunEngineDirtyWithRead(root string, read func(string, ...string) ([]by
 		}
 	}
 	return false, true
-}
-
-func proofRunRegularFile(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
 }

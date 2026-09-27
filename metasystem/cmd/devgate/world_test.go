@@ -55,6 +55,14 @@ type gateWorld struct {
 	nativeOutput string
 	nativeCalls  []proofrun.GoGateTestRequest
 	coverage     []string
+	// nativeNoLog leaves the native log unwritten; nativeReruns are the
+	// diagnostic reruns the selection reports; failBuildAfterNative fails
+	// every -o build once the native selection has run.
+	nativeNoLog          bool
+	nativeReruns         []proofrun.RerunFinding
+	failBuildAfterNative bool
+	hostLeases           []string
+	hostReleases         int
 
 	stdout bytes.Buffer
 	stderr bytes.Buffer
@@ -113,7 +121,16 @@ func newGateWorld(t *testing.T) *gateWorld {
 		return "stop decision surface: fixture; added 0, moved 0, removed 0\n", true
 	}
 	w.owners.projectCheck = pass
-	w.owners.hostResources = func(ctx context.Context, _ string) (func(), context.Context, error) { return func() {}, ctx, nil }
+	w.owners.hostResources = func(ctx context.Context, controlRoot string) (func(), context.Context, error) {
+		w.mu.Lock()
+		w.hostLeases = append(w.hostLeases, controlRoot)
+		w.mu.Unlock()
+		return func() {
+			w.mu.Lock()
+			w.hostReleases++
+			w.mu.Unlock()
+		}, ctx, nil
+	}
 	w.owners.goGateTests = func(_ context.Context, request proofrun.GoGateTestRequest) (proofrun.GoGateTestResult, int, error) {
 		w.mu.Lock()
 		w.nativeCalls = append(w.nativeCalls, request)
@@ -127,13 +144,15 @@ func newGateWorld(t *testing.T) *gateWorld {
 			return proofrun.GoGateTestResult{}, 1, err
 		}
 		logPath := filepath.Join(request.LogRoot, "go-gate-native.log")
-		if err := os.WriteFile(logPath, []byte("native census and diagnostic\n"), 0o600); err != nil {
-			return proofrun.GoGateTestResult{}, 1, err
+		if !w.nativeNoLog {
+			if err := os.WriteFile(logPath, []byte("native census and diagnostic\n"), 0o600); err != nil {
+				return proofrun.GoGateTestResult{}, 1, err
+			}
 		}
 		if status := w.statuses["native"]; status != 0 {
-			return proofrun.GoGateTestResult{LogPath: logPath, Output: []byte("native red output\n")}, status, errors.New("native selection failed")
+			return proofrun.GoGateTestResult{LogPath: logPath, Output: []byte("native red output\n"), Reruns: w.nativeReruns}, status, errors.New("native selection failed")
 		}
-		return proofrun.GoGateTestResult{LogPath: logPath, Output: []byte(w.nativeOutput)}, 0, nil
+		return proofrun.GoGateTestResult{LogPath: logPath, Output: []byte(w.nativeOutput), Reruns: w.nativeReruns}, 0, nil
 	}
 	w.owners.coverageEligible = func(options proofrun.CoverageBeginOptions) (bool, error) {
 		w.record("coverage-eligible", options)
@@ -316,6 +335,12 @@ func (w *gateWorld) deps() deps {
 				}
 				if status := w.statuses["build"]; status != 0 {
 					return exitCode(status)
+				}
+				w.mu.Lock()
+				nativeRan := len(w.nativeCalls) > 0
+				w.mu.Unlock()
+				if w.failBuildAfterNative && nativeRan {
+					return exitCode(1)
 				}
 				out := args[index+1]
 				if !filepath.IsAbs(out) {

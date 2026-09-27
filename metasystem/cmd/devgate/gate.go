@@ -561,9 +561,14 @@ func (g *gateRun) nativeTests() int {
 	g.retentionPending = true
 	g.dropScratch()
 	_, _ = d.stderr.Write(stderr.Bytes())
-	if native, err := os.ReadFile(filepath.Join(root, "go-gate-native.log")); err == nil {
-		_, _ = d.stdout.Write(native)
+	// An unreadable native log is an exit before the coverage consumers
+	// completed: the gate's exit retains the evidence (finish).
+	native, err := os.ReadFile(filepath.Join(root, "go-gate-native.log"))
+	if err != nil {
+		fmt.Fprintf(d.stderr, "go gate: native log unreadable: %v\n", err)
+		return 1
 	}
+	_, _ = d.stdout.Write(native)
 	return 0
 }
 

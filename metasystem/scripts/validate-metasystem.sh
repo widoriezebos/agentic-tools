@@ -1058,7 +1058,6 @@ for link in \
   scripts/agents/pre-commit-guard-fixtures.sh \
   scripts/agents/static-reproof-fixtures.sh \
   scripts/agents/path-class-fixtures.sh \
-  scripts/agents/witness-gate-fixtures.sh \
   scripts/agents/suite-progress-fixtures.sh \
   scripts/agents/fixture-bed-scenarios-fixtures.sh \
   scripts/agents/land-fixtures.sh \
@@ -1128,7 +1127,6 @@ bash -n scripts/agents/landing-lane-worker.sh
 bash -n scripts/agents/enumerate-suite.sh
 bash -n scripts/agents/validate-section-selector.sh
 bash -n scripts/agents/enumerate-suite-fixtures.sh
-bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
@@ -1144,7 +1142,6 @@ bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/path-class-fixtures.sh
-bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/suite-progress-fixtures.sh
 bash -n scripts/agents/fixture-bed-scenarios-fixtures.sh
 bash -n scripts/agents/land.sh
@@ -2960,9 +2957,6 @@ fi
 # adopt.sh self-test: extracted to its own sub-suite (script-validate-4/D35).
 if (( template_mode )) && section_selected adoption-fixtures; then
   run_section adoption-fixtures needs-engine bash scripts/adopt-fixtures.sh
-fi
-if (( template_mode )) && section_selected witness-gate-fixtures; then
-  run_section witness-gate-fixtures needs-engine bash scripts/agents/witness-gate-fixtures.sh
 fi
 if (( template_mode )) && section_selected suite-progress-fixtures; then
   # Watchdog fixtures emit heartbeat evidence while the sequencer records their outcome.

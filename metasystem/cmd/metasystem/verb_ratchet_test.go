@@ -27,17 +27,14 @@ import (
 
 const (
 	// R1/R3 residue: (family, verb) pairs plus dispatchInternal's top-level forms.
-	verbRatchetInternalVerbCeiling = 416
-	// R4: shell lines that reference the engine. U7a step A holds both gate
-	// providers (6.4) and raises it by commit.sh's pre-engine branch; step B,
-	// deleting go-gate.sh, lowers it below the prior value.
-	verbRatchetShellEngineCeiling = 2602
-	// R4 second ceiling: all lines of shell files under metasystem/scripts
-	// (raised by U7a step A for the same transition, lowered by step B).
-	verbRatchetScriptLinesCeiling = 43483
+	verbRatchetInternalVerbCeiling = 407
+	// R4: shell lines that reference the engine.
+	verbRatchetShellEngineCeiling = 2505
+	// R4 second ceiling: all lines of shell files under metasystem/scripts.
+	verbRatchetScriptLinesCeiling = 41580
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
-	verbRatchetSelfSubprocessCeiling = 93
+	verbRatchetSelfSubprocessCeiling = 92
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 47

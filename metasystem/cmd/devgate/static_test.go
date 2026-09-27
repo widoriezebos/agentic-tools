@@ -49,6 +49,11 @@ func TestStaticPublishesTheCollectedBuildWithoutRecompiling(t *testing.T) {
 			t.Fatalf("missing %q in %v", fragment, w.calls)
 		}
 	}
+	defaulted := newGateWorld(t)
+	defaulted.env = slices.DeleteFunc(defaulted.env, func(entry string) bool { return strings.HasPrefix(entry, "METASYSTEM_TEST_WORKERS=") })
+	if code := defaulted.static(); code != 0 || len(defaulted.called("go vet -p=1 ./...")) != 1 || len(defaulted.called("go test -p=1 -count=1 ./internal/refusal")) != 1 {
+		t.Fatalf("a direct caller without an allowance did not get one worker: exit %d %v", code, defaulted.calls)
+	}
 	refusal := w.called("go test")[0]
 	if envValue(refusal.env, "METASYSTEM_RUN_OWNER") == "" || envValue(refusal.env, "GOMAXPROCS") != "3" {
 		t.Fatalf("refusal register env lacks the run owner or GOMAXPROCS: %q", refusal.env)
@@ -130,6 +135,10 @@ func TestStaticRatchetsRefuseBeforeAnyToolRuns(t *testing.T) {
 			if name == "dependency" {
 				refusal = "dependency ratchet: scripts/x.sh: python3 undeclared\n"
 				w.owners.dependencyRatchet = func(string) (string, bool) { return refusal, false }
+				w.owners.parallelRatchet = func(string) (string, bool) {
+					t.Error("the parallel ratchet ran after a dependency refusal")
+					return "", true
+				}
 			} else {
 				w.owners.parallelRatchet = func(string) (string, bool) { return refusal, false }
 			}
@@ -205,6 +214,16 @@ func TestStaticScriptFixtureScopeSkipsTheInstallationAudits(t *testing.T) {
 			t.Fatalf("stdout lacks %q:\n%s", line, w.stdout.String())
 		}
 	}
+	// Any wow.md entry, even a dangling one, makes the tree an installation.
+	dangling := newGateWorld(t)
+	_ = os.Remove(filepath.Join(dangling.root, "wow.md"))
+	if err := os.Symlink("missing-wow-target", filepath.Join(dangling.root, "wow.md")); err != nil {
+		t.Fatal(err)
+	}
+	dangling.owners.hookStartExits = func(string) (string, bool) { return "hook start exit audit: unreadable hook\n", false }
+	if code := dangling.static(); code != 1 || !strings.Contains(dangling.stderr.String(), "SessionStart exit audit failed") {
+		t.Fatalf("a dangling wow.md was downgraded to a fixture: exit %d\n%s", code, dangling.output())
+	}
 	// The audit source is a second positive signal: a dangling one still
 	// makes the tree an installation.
 	w2 := newGateWorld(t)
@@ -227,6 +246,9 @@ func TestStaticGofmtListComesFromGitOrAPrunedWalk(t *testing.T) {
 	w.gitFiles = []string{"internal/fixture/fixture.go", "internal/deleted.go", "cmd/metasystem/main.go"}
 	if code := w.static(); code != 0 {
 		t.Fatalf("exit %d:\n%s", code, w.output())
+	}
+	if !strings.Contains(w.stdout.String(), "stop decision surface: fixture; added 0, moved 0, removed 0\n") {
+		t.Fatalf("the Stop decision surface report was not printed:\n%s", w.stdout.String())
 	}
 	gofmt := w.called("gofmt")[0]
 	if want := []string{"-l", "--", "internal/fixture/fixture.go", "cmd/metasystem/main.go"}; !slices.Equal(gofmt.args, want) {

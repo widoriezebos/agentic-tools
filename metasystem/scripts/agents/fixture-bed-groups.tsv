@@ -26,4 +26,3 @@ scripts/agents/suite-progress-fixtures.sh	section/suite-progress-fixtures
 scripts/agents/supervision-fixtures.sh	section/supervision-and-census-fixtures
 scripts/agents/supervision-go-fixtures.sh	section/supervision-go-fixtures
 scripts/agents/telemetry-census-fixtures.sh	section/telemetry-census-fixtures
-scripts/agents/witness-gate-fixtures.sh	section/witness-gate-fixtures
