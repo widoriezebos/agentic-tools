@@ -23,6 +23,7 @@ import {
   GOAL_CHANGED,
   goesOn,
   guardFor,
+  IN_FLIGHT,
   lineID,
   lineState,
   liveDependentsIn,
@@ -130,6 +131,14 @@ function row(over: Partial<Row> = {}): Row {
     ...over,
   };
 }
+
+/**
+ * The sentence the act layer answers a second press with, while this process is
+ * executing the same act on the same goal (internal/ui/act). The page never
+ * composes it: it echoes the one the refusal carried, which is what these tests
+ * hand it. The code beside it is the page's own constant.
+ */
+const IN_FLIGHT_SAID = "this act on this goal is being applied by another press; the next read says what happened";
 
 /** One approval as the ledger records one, for a goal read as already approved. */
 const APPROVAL = {
@@ -517,6 +526,21 @@ describe("what the run does with each answer", () => {
     const answered = answeredOf(new BacklogError("/act", 403, "your session expired", "expired", true));
     expect(answered).toEqual({ kind: "sign-in", words: NOT_APPLIED_SIGN_IN });
     expect(recorded(answered)).toEqual({ state: "refused", words: NOT_APPLIED_SIGN_IN });
+  });
+
+  /**
+   * An act another press owns is answered 409 `in-flight`, before any read or
+   * publish (Astra A-01). The tab that meets it holds NO result: the act is
+   * somebody else's and may yet land, so the line is written `unresolved` in the
+   * refusal's own sentence and never `refused` — a refusal would say nothing
+   * landed, which this tab cannot know — and the run goes on, because nothing of
+   * this press's was published.
+   */
+  it("holds no result for an act another press is applying", () => {
+    const answered = answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT));
+    expect(answered).toEqual({ kind: "in-flight", words: IN_FLIGHT_SAID });
+    expect(recorded(answered)).toEqual({ state: "unresolved", words: IN_FLIGHT_SAID });
+    expect(goesOn(answered)).toBe(true);
   });
 
   it("writes each answer's own state onto the line", () => {
@@ -922,7 +946,12 @@ describe("the run, in order", () => {
        * than once — the human signing in after a refusal that asked them to.
        */
       answers: Record<string, Answered | readonly Answered[]>;
-      writes: Record<string, Written>;
+      /**
+       * What each write answers, by `line:state`. A list answers a write made
+       * more than once at that state — the outcome write retried at the version
+       * another tab left (Astra A-01, the result wins).
+       */
+      writes: Record<string, Written | readonly Written[]>;
     }> = {},
   ) {
     const sent: string[] = [];
@@ -943,10 +972,14 @@ describe("the run, in order", () => {
         return Promise.resolve(read);
       },
       record: (line, state, words) => {
+        const key = `${line.id}:${state}`;
+        const before = written.filter((one) => `${one.line}:${one.state}` === key).length;
         written.push({ line: line.id, state, words, version: line.version });
-        const forced = over.writes?.[`${line.id}:${state}`];
+        const forced = over.writes?.[key];
         if (forced !== undefined) {
-          return Promise.resolve(forced);
+          return Promise.resolve(
+            Array.isArray(forced) ? forced[Math.min(before, forced.length - 1)] : (forced as Written),
+          );
         }
         // The server's own compare-and-set, here: a write against a version the
         // entry has moved past is refused with the entry as it stands. Without
@@ -1365,6 +1398,102 @@ describe("the run, in order", () => {
   });
 
   /**
+   * An act another press owns is written `unresolved`, in the refusal's own
+   * sentence, and the run goes on (Astra A-01).
+   *
+   * The act layer refuses the second request for one goal and one act at once,
+   * before any read or publish, so nothing of this press's was published: the
+   * next line does not depend on it, and the line itself holds no result — the
+   * other press's act may yet land, which is what `unresolved` says and what
+   * `refused` would deny.
+   */
+  it("writes an act another press owns as unresolved, and sends it no second time", async () => {
+    const lines = three();
+    const driven = driving(lines, {
+      answers: { [lines[0].id]: answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT)) },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.written.filter((one) => one.line === lines[0].id)).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "unresolved", words: IN_FLIGHT_SAID, version: 2 },
+    ]);
+    // Never `refused`: this tab holds no result at all for that act.
+    expect(driven.written.some((one) => one.line === lines[0].id && one.state === "refused")).toBe(false);
+    // Once, and the run goes on to the lines behind it.
+    expect(driven.sent).toEqual([lines[0].id, lines[1].id, lines[2].id]);
+    // And the line offers Try again, as an unresolved line does.
+    const after = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID })]);
+    expect(offersTryAgain(lineOf(after))).toBe(true);
+  });
+
+  /**
+   * And that press reconciles by read first, as a press on a line found at
+   * `applying` does: the act it was told another press owns may have landed
+   * since, and sending a second one is the harm A-01 is about.
+   *
+   * The entry is taken before it is settled because the record admits `applied`
+   * only from `applying` (internal/ui/partner/proposals.go) — two writes, and no
+   * act.
+   */
+  it("reconciles a line another press owns before a retry sends anything", async () => {
+    const lines = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID, version: 3 })]).lines;
+    const driven = driving(lines, {
+      look: { rows: [row({ state: "parked" })], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 3 },
+      { line: lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 4 },
+    ]);
+  });
+
+  /**
+   * The result wins (Astra A-01).
+   *
+   * The tab that received an act's answer is the only thing that knows what the
+   * ledger did. An outcome write refused because another tab moved the entry
+   * while the act was out is not a reason to drop that answer: where what they
+   * left is UNSETTLED they hold no result either, so the outcome is written once
+   * more at their version.
+   */
+  it("writes the act's answer again at the version another tab left, once", async () => {
+    const lines = card([proposal()]).lines;
+    const held: Proposal = { ...lines[0], state: "unresolved", words: IN_FLIGHT_SAID, version: 4 };
+    const settled: Proposal = { ...lines[0], state: "applied", words: "", version: 5 };
+    const driven = driving(lines, {
+      writes: {
+        [`${lines[0].id}:applied`]: [{ kind: "conflict", proposal: held }, { kind: "written", proposal: settled }],
+      },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([lines[0].id]);
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: "", version: 2 },
+      { line: lines[0].id, state: "applied", words: "", version: 4 },
+    ]);
+    // The answer is written down, so nothing is held for want of a record.
+    expect(driven.marked).toContainEqual({ line: lines[0].id, change: { unrecorded: null } });
+  });
+
+  /** And a conflict with a SETTLED entry is reconciled to, never written over. */
+  it("reconciles to a settled entry rather than writing its answer again", async () => {
+    const lines = card([proposal()]).lines;
+    const held: Proposal = { ...lines[0], state: "refused", words: "another tab refused it", version: 4 };
+    const driven = driving(lines, {
+      writes: { [`${lines[0].id}:applied`]: { kind: "conflict", proposal: held } },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.reconciled).toEqual([held]);
+    expect(driven.written.filter((one) => one.state === "applied").length).toBe(1);
+  });
+
+  /**
    * A line that has recovered stops saying what went wrong before it (Astra C-04).
    *
    * An answer the conversation could not write down is held on the line for the
@@ -1447,6 +1576,134 @@ describe("the run, in order", () => {
     });
     await runProposals([lines[0]], driven.ports);
     expect(driven.rereads.length).toBe(1);
+  });
+});
+
+/**
+ * Astra's two tabs on one line, whole (A-01).
+ *
+ * Tab A presses Apply on an approve; tab B learns the `applying` entry that
+ * press wrote and presses the Try again it is offered while A's act is still
+ * executing. Both runs are the production runner, over one entry and one goal,
+ * with the outcome route's own compare-and-set and its own transition table —
+ * so a write this test admits is a write the server admits.
+ *
+ * Three rules of the contract meet here. The act layer owns the act, so B's
+ * request is refused at once with `in-flight`; B holds no result and writes
+ * `unresolved`, never `refused`; and A's own answer, refused because B moved the
+ * entry while the act was out, is written once more at B's version — the result
+ * wins. One approval is published, and both tabs end on it.
+ */
+describe("two tabs pressing one line", () => {
+  /** A promise this test opens by hand, so the two runs interleave with no timer. */
+  function gate() {
+    let open: () => void = () => undefined;
+    const waited = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return { waited, open: () => { open(); } };
+  }
+
+  /**
+   * What a line may become, from what it is: the outcome route's own table
+   * (internal/ui/partner/proposals.go). `applied`, `refused` and `unresolved`
+   * come only from `applying`, and a write of any other pair is refused with the
+   * entry exactly as a stale version is.
+   */
+  const MAY: Readonly<Record<string, readonly string[]>> = {
+    applying: ["waiting", "refused", "unresolved", "applying"],
+    applied: ["applying"],
+    refused: ["applying"],
+    unresolved: ["applying"],
+    dismissed: ["waiting", "refused", "unresolved", "applying"],
+  };
+
+  it("publishes the act once, and both tabs end on the applied entry", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const displayed: Displayeds = { [lineID("t1", 0)]: { budget: BOX, source: "goal" } };
+    // The one entry, as the outcome route holds it, and the one goal.
+    let entry: Proposal = proposal({ verb: "approve-goal", fields: {}, read });
+    let approved = false;
+    // What the act layer executed, and what it refused because this process was
+    // already executing the same act on the same goal.
+    const executed: string[] = [];
+    const refused: string[] = [];
+    const inFlight = new Set<string>();
+    const asked: string[] = [];
+    const wrote: string[] = [];
+    const reconciled: Record<string, Proposal> = {};
+    const executing = gate();
+    const answered = gate();
+    const ended = gate();
+
+    const portsOf = (tab: string): RunPorts => ({
+      look: () => Promise.resolve({
+        rows: [approved ? row({ budget: BOX, state: "approved", approved: APPROVAL }) : row({ budget: BOX })],
+        defaults: {}, outcome: "current", message: "",
+      }),
+      record: async (line, state, words) => {
+        // B's outcome write is made after A's run has ended, which is the
+        // ordering the rule is about: A's result meets an entry B moved while
+        // the act was out.
+        if (tab === "B" && state !== "applying") {
+          await ended.waited;
+        }
+        wrote.push(`${tab}:${state}@${String(line.version)}`);
+        if (line.version !== entry.version || !(MAY[state] ?? []).includes(entry.state)) {
+          return { kind: "conflict", proposal: entry };
+        }
+        entry = { ...entry, state, words, version: entry.version + 1 };
+        return { kind: "written", proposal: entry };
+      },
+      send: async (line) => {
+        asked.push(tab);
+        const key = `${line.goal}:${line.verb}`;
+        // The act layer, keyed by the goal and the act: a second request while
+        // one is executing in this process is refused before any read or publish.
+        if (inFlight.has(key)) {
+          refused.push(tab);
+          answered.open();
+          return answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT));
+        }
+        inFlight.add(key);
+        executed.push(tab);
+        executing.open();
+        await answered.waited;
+        approved = true;
+        inFlight.delete(key);
+        return { kind: "applied", words: "" };
+      },
+      mark: () => undefined,
+      reconcile: (proposal) => {
+        reconciled[tab] = proposal;
+      },
+      reread: () => undefined,
+      signIn: () => undefined,
+    });
+
+    const first = runProposals(card([entry], {}, displayed).lines, portsOf("A"));
+    await executing.waited;
+    // The other tab renders the `applying` entry that press wrote, and presses
+    // the Try again it is offered.
+    const second = runProposals(card([entry], {}, displayed).lines, portsOf("B"));
+    await first;
+    ended.open();
+    await second;
+
+    // One act published, and the second request refused before it read anything.
+    expect(asked).toEqual(["A", "B"]);
+    expect(executed).toEqual(["A"]);
+    expect(refused).toEqual(["B"]);
+    // A's own answer, written again at the version B left: the result wins.
+    expect(wrote).toEqual([
+      "A:applying@1", "B:applying@2", "A:applied@2", "A:applied@3", "B:unresolved@3",
+    ]);
+    // Never `refused` from the tab that holds no result.
+    expect(wrote.some((one) => one.startsWith("B:refused"))).toBe(false);
+    expect({ state: entry.state, version: entry.version }).toEqual({ state: "applied", version: 4 });
+    // And the tab that was refused ends on the entry the result left.
+    expect(reconciled.B?.state).toBe("applied");
+    expect(lineState(lineOf(card([reconciled.B], {}, displayed)))).toBe(APPLIED);
   });
 });
 
