@@ -893,3 +893,6 @@ Revision 8 confirmation, Codex `gpt-6-astra`, against 233caaa2b: six of six
 folds verified; one new material finding, VOA-31 (an override could drop the
 built-in's reserved exclusions its fallback depends on), accepted and folded
 into 3.5 ("One effective declaration per runtime name") and R13.
+
+VOA-31 confirmation against 36bffdd8f: verified, zero material findings.
+Revision 8 is closed.

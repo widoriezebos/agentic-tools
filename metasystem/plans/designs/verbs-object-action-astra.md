@@ -620,3 +620,26 @@ Material findings: 1
 
 Codex session ID: 01a0e1d0-7f8b-7751-93f3-b5b738469c46
 Resume in Codex: codex resume 01a0e1d0-7f8b-7751-93f3-b5b738469c46
+
+---
+
+VOA-31 confirmation: Codex gpt-6-astra, against 36bffdd8f.
+
+**VOA-31 is resolved at the design level. No new material WORK or SAFE finding was identified.**
+
+Reviewed `design-r8` at `36bffdd8f654cfb2ea1d439942f7cc26dd18bbea`, exclusively in `verbs-b3`, by source inspection.
+
+- The [original finding:588](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action-astra.md:588) is grounded: [runtimes.go:206](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/runtimes/runtimes.go:206) reserves `devin acp`, and [devin.sh:798](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/adapters/devin.sh:798) explicitly excludes that host intermediary.
+- [signature.go:46](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/census/signature.go:46) makes exclusions win over matches. Without that exclusion, [classify.go:433](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify.go:433) returns `DELEGATE` before reaching the announced main.
+- The [fold:457](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:457) preserves those reservations within one effective declaration, rejects overrides matching reserved lookalikes, and permits legitimate same-runtime positive matches. [R13:496](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:496) explicitly requires rejection when the ACP exclusion is dropped and successful host ancestry classification when retained.
+- Preserving the exclusion does not exclude `devin-delegate-acp`; the existing [classification tests:220](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/lease/classify_test.go:220) separately require host `MAIN` and delegate `DELEGATE` outcomes.
+
+This verifies the design contract, not an implemented fix. No tests, edits, or Git writes were performed.
+
+Proposed receipt, not written: `VOA-31 fold verified by source inspection at 36bffdd8f; no material findings.`
+
+Folds verified: 1 of 1
+Material findings: 0
+
+Codex session ID: 01a0e1d5-9009-7520-bb57-0e45090e30a3
+Resume in Codex: codex resume 01a0e1d5-9009-7520-bb57-0e45090e30a3
