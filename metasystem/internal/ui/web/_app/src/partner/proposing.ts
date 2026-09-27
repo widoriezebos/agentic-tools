@@ -907,11 +907,17 @@ function sameTuple(one: Budget | null, other: Budget | null): boolean {
  * act's own effect settles the line without a send.
  *
  * Every effect below is the one that act's route writes, so a goal that shows it
- * is a goal the act reached. Two acts are absent and fall through to the send: an
- * open, whose effect is a goal that exists, and an unapprove, whose effect is an
- * approval that is gone. Both are refused by the engine the second time — the
- * goal already exists, the goal is not approved — so a second press answers with
- * a refusal rather than with a second act, which is the harm this is about.
+ * is a goal the act reached. All ten are here, because the engine answers the
+ * repeat of all ten applied under a browser session, and a page that read one of
+ * them as a fresh act would be offering a press the engine would refuse.
+ *
+ * What a line is NOT carried by is an effect this reading cannot establish. An
+ * open is carried by the goal it asked for whole — a goal of that id that differs
+ * is not this act's effect — and an abandon that asked for a successor is carried
+ * by nothing at all, because the row's abandoned clause says who, when and why and
+ * never which goal carried the work (Astra F-04). Such a line is sent, and the
+ * engine answers it: applied where the effect it asked for holds, and refused in
+ * its own words where another one does.
  */
 export function carriesAlready(line: Line, rows: readonly Row[]): boolean {
   const row = rows.find((one) => one.ref.id === line.goal);
@@ -954,8 +960,35 @@ export function carriesAlready(line: Line, rows: readonly Row[]): boolean {
       return row.blockedBy.includes(fields.blocker ?? "");
     case "unblock-goal":
       return !row.blockedBy.includes(fields.blocker ?? "");
+    // No approval on the goal: what the unapprove takes off is not there. An
+    // EXPIRED approval is not nothing — it is an approval this act would take off
+    // — so a goal carrying one is not carried (Astra F-05).
+    case "withdraw-goal":
+      return row.approved === undefined;
+    // The goal this open asked for, as the goal that exists: its intent, its next
+    // step, the tier the line DERIVED and sends, its labels, and both directions
+    // of the blocked relation — `holds` is the other direction of `blocks`, which
+    // no record stores and the reading computes. A goal of that id that differs is
+    // somebody else's, or an earlier one, and this act never reached it: the line
+    // is sent and the engine refuses it as it does today (Astra F-05). The edges
+    // are compared as relations rather than in the order either side lists them.
+    case "open-goal": {
+      const asked = openOf(line.goal, fields);
+      return (
+        asked.intent === row.intent &&
+        asked.nextStep === row.nextStep &&
+        asked.tier === row.tier &&
+        named(asked.labels) === named(row.labels) &&
+        named([...asked.blockedBy].sort()) === named([...row.blockedBy].sort()) &&
+        named([...asked.blocks].sort()) === named([...row.holds].sort())
+      );
+    }
+    // Abandoned, and only where this line asked for no successor. The reading does
+    // not say WHICH successor an abandon recorded, so an abandon that asks for one
+    // is carried by nothing here and is sent to the engine, which compares the
+    // successor it recorded with the one asked for (Astra F-04).
     case "abandon-goal":
-      return row.state === "abandoned";
+      return row.state === "abandoned" && (fields.successor ?? "") === "";
     default:
       return false;
   }

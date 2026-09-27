@@ -1013,12 +1013,78 @@ describe("what the goal already carries", () => {
     expect(carriesAlready(applying({ verb: "abandon-goal", fields: {} }), [row()])).toBe(false);
   });
 
-  it("says nothing of a goal the reading has not got, or of an act it cannot read the effect of", () => {
+  /**
+   * An unapprove's effect is an approval that is GONE (Astra F-05).
+   *
+   * The engine answers the repeat of it applied under a browser session, so the
+   * page reads the same effect the same way: a goal carrying no approval carries
+   * this act. An EXPIRED approval is not nothing — it is an approval this act
+   * would take off — so a goal carrying one is not carried and the line is sent.
+   */
+  it("reads an unapprove as carried where the goal carries no approval", () => {
+    const line = applying({ verb: "withdraw-goal", fields: { reason: "the budget was wrong" } });
+    expect(carriesAlready(line, [row()])).toBe(true);
+    expect(carriesAlready(line, [row({ approved: APPROVAL })])).toBe(false);
+    expect(carriesAlready(line, [row({ approved: EXPIRED })])).toBe(false);
+  });
+
+  /**
+   * And an open's effect is the goal it asked for, whole (Astra F-05).
+   *
+   * Not an id that is taken: the whole requested effect — the intent, the next
+   * step, the derived tier, the labels and both directions of the blocked
+   * relation. A goal of that id that differs is somebody else's goal, or an
+   * earlier one, and this act never reached it: the line is sent, and the engine
+   * refuses it in its own words as it does today.
+   */
+  it("reads an open as carried where the goal that exists is the goal it asked for", () => {
+    const fields = {
+      intent: "Fleet presence is read from the census, not polled.",
+      nextStep: "Read the census.",
+      basis: "the census is the source", severity: "2", novelty: "3", exposure: "1", accumulation: "1",
+      labels: "fleet", blockedBy: "refunds", blocks: "bank-sandbox",
+    };
+    const line = applying({ verb: "open-goal", fields });
+    // The tier the line would SEND, derived from the answers it carries.
+    const asked = dispatchOf(line);
+    expect(asked?.act === "open" ? asked.goal.tier : 0).toBe(3);
+    const opened = row({ tier: 3, blockedBy: ["refunds"], holds: ["bank-sandbox"] });
+    expect(carriesAlready(line, [opened])).toBe(true);
+    // The other direction of the relation is read as a relation, not as an order.
+    expect(carriesAlready(line, [row({ tier: 3, blockedBy: ["refunds"], holds: ["bank-sandbox", "refunds"] })]))
+      .toBe(false);
+    // And every field of the effect is compared.
+    expect(carriesAlready(line, [{ ...opened, intent: "Something else entirely." }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, nextStep: "Ask the fleet." }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, tier: 2 }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, labels: ["fleet", "presence"] }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, blockedBy: [] }])).toBe(false);
+    expect(carriesAlready(line, [{ ...opened, holds: [] }])).toBe(false);
+  });
+
+  /**
+   * An abandon is carried only where the successor is the one it asked for
+   * (Astra F-04).
+   *
+   * The reading does not say which successor an abandon recorded — the row's
+   * abandoned clause is who, when and why — so an abandon that asks for one is
+   * never read off a row at all: it is sent, and the engine compares the successor
+   * it recorded with the one asked for, answering applied where they are the same
+   * and refusing in words where they are not.
+   */
+  it("reads an abandon as carried only where it asked for no successor", () => {
+    const plain = applying({ verb: "abandon-goal", fields: { because: "overtaken" } });
+    expect(carriesAlready(plain, [row({ state: "abandoned" })])).toBe(true);
+    expect(carriesAlready(plain, [row()])).toBe(false);
+    const carrying = applying({ verb: "abandon-goal", fields: { because: "overtaken", successor: "g1-s70" } });
+    expect(carriesAlready(carrying, [row({ state: "abandoned" })])).toBe(false);
+  });
+
+  it("says nothing of a goal the reading has not got", () => {
     expect(carriesAlready(applying({}), [])).toBe(false);
-    // An open and an unapprove are the two the engine itself refuses a second
-    // time, so their lines are sent and answered rather than read off a row.
-    expect(carriesAlready(applying({ verb: "open-goal", fields: {} }), [row()])).toBe(false);
-    expect(carriesAlready(applying({ verb: "withdraw-goal", fields: {} }), [row()])).toBe(false);
+    // An open of an id nothing carries is the act that MAKES the goal, so there
+    // is nothing to read it off: the line is sent.
+    expect(carriesAlready(applying({ verb: "open-goal", fields: {} }), [])).toBe(false);
   });
 });
 
