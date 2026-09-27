@@ -1045,6 +1045,19 @@ func (s *Service) record(running *turn, event Event) {
 			running.proposals = append(running.proposals, *event.Proposal)
 		}
 	}
+	s.mu.Unlock()
+	s.publish(event)
+}
+
+// publish hands one event to every open watcher.
+//
+// It is apart from record because not every beat belongs to a running turn. The
+// outcome of a proposed action is written long after the answer ended — it is a
+// human pressing Apply on a card, or on a row of the inbox — and the pages that
+// have that card open have to be told, or the second tab would go on offering an
+// act the first one has already made (g1-s60 D5).
+func (s *Service) publish(event Event) {
+	s.mu.Lock()
 	watchers := make([]chan Event, 0, len(s.watchers))
 	for _, watcher := range s.watchers {
 		watchers = append(watchers, watcher)

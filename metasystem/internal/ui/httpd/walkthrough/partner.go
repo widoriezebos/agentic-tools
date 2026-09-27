@@ -107,12 +107,18 @@ On the table: 1 fact, 1 decision, 1 open question.`
 // its Apply; asked anything else, nothing is proposed, which is also what the
 // design says about words.
 //
-// The three of "put them away" are what the whole of the run can be stood in
+// The four of "put them away" are what the whole of the run can be stood in
 // front of: the first pause applies, the second is refused by name in the
 // engine's own sentence and the run goes ON to the third, and the withdrawal
 // comes back with an answer that does not say what happened and stops the run
 // there. So one press shows a line landing, a refusal passed, and an unresolved
 // answer with Try again and Ask the Partner beside it.
+//
+// The fourth is an approve, and it is here for the Decisions inbox (g1-s60): an
+// approve is the one line that carries a budget, so it is what the open row's
+// read on opening and the bulk sheet's one read are stood in front of. Its goal
+// is tier 3, which this fixture declares a budget law for, so the tuple the row
+// and the sheet show is the project's own law rather than nothing at all.
 //
 // The one of "Create it" is the other shape the design draws: a goal talked
 // through for ten minutes and then opened whole, with its intent, its first next
@@ -122,6 +128,7 @@ const (
 	proposedPauseApplies = "g1-s44"
 	proposedPauseRefused = refusesPause
 	proposedWithdraw     = unresolvedWithdraw
+	proposedApprove      = "g1-s47"
 	proposedOpen         = "refund-worker"
 )
 
@@ -211,6 +218,10 @@ var fakeReads = []fakeacp.Read{
 	proposed(pausePhrase, uitools.ProposeWithdraw, proposedWithdraw,
 		[]string{uitools.ProposalReason + "the budget assumed a July start"},
 		"this one was approved against a date that has passed"),
+	// An approve takes no arguments of its own: the tuple is the card's, and the
+	// inbox row's, from the backlog read each makes when it can show it.
+	proposed(pausePhrase, uitools.ProposeApprove, proposedApprove, nil,
+		"the fence work this one names has landed, so it can be admitted now"),
 	proposed(openPhrase, uitools.ProposeOpen, proposedOpen, []string{
 		uitools.ProposalIntent + "Every refund lands within a day, with nobody touching the queue.",
 		uitools.ProposalNextStep + "Read the refund worker's retry loop and write the case where the bank answers late.",

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { NavLink } from "react-router";
 
 import { bringUp } from "./scrolling";
@@ -138,37 +138,28 @@ function ProposalLine({ card, line }: { card: Card; line: Line }) {
 
   return (
     <div className="ms-proposal-line" data-line={line.id} data-state={line.state}>
-      <p className="ms-proposal-verb">
-        {many && (
-          <>
-            <label className="ms-visually-hidden" htmlFor={tick}>
-              {`Apply ${verbWord(line.verb)} on ${line.title}`}
-            </label>
-            <input
-              id={tick}
-              className="ms-proposal-tick"
-              type="checkbox"
-              checked={line.mark.ticked}
-              disabled={!waiting(line) || running}
-              onChange={(event) => {
-                tickProposal(line.id, event.target.checked);
-              }}
-            />
-          </>
-        )}
-        <span className="ms-proposal-word">{verbWord(line.verb)}</span>
-        <span className="ms-proposal-title">{line.title}</span>
-        <NavLink className="ms-proposal-id ms-mono" to={goalPath(line.goal)} title={OPEN_THE_GOAL}>
-          {line.goal}
-        </NavLink>
-      </p>
-      {argumentsOf(line).map((argument) => (
-        <p className="ms-proposal-argument" key={argument.label}>
-          <span className="ms-proposal-label">{argument.label}</span>
-          {argument.value}
-        </p>
-      ))}
-      {(line.why ?? "") !== "" && <p className="ms-proposal-why">{`The Partner: ${line.why ?? ""}`}</p>}
+      <ProposalSubstance
+        line={line}
+        tick={
+          many && (
+            <>
+              <label className="ms-visually-hidden" htmlFor={tick}>
+                {`Apply ${verbWord(line.verb)} on ${line.title}`}
+              </label>
+              <input
+                id={tick}
+                className="ms-proposal-tick"
+                type="checkbox"
+                checked={line.mark.ticked}
+                disabled={!waiting(line) || running}
+                onChange={(event) => {
+                  tickProposal(line.id, event.target.checked);
+                }}
+              />
+            </>
+          )
+        }
+      />
       {said !== "" && (
         <p className="ms-proposal-said" data-said={line.state} role="status">
           {said}
@@ -200,6 +191,43 @@ function ProposalLine({ card, line }: { card: Card; line: Line }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What one proposed action IS, whichever surface is showing it: the word the
+ * page's own button uses, the subject with its id, every argument the act will
+ * carry, and the Partner's own words about it.
+ *
+ * It is one component because there are two surfaces. The card in the transcript
+ * is the answer to what the human just asked; the row in the Decisions inbox is
+ * where the same action waits when they did not answer it (g1-s60 D3). A second
+ * rendering would be a second vocabulary, and the two would drift on the day a
+ * verb takes another argument.
+ *
+ * It is pure and takes no store: what is passed in is the line, and the checkbox
+ * where the surface showing it has one. Where the line stands, and what may be
+ * pressed on it, belong to the surface — a card counts a run and a row does not.
+ */
+export function ProposalSubstance({ line, tick }: { line: Line; tick?: ReactNode }) {
+  return (
+    <>
+      <p className="ms-proposal-verb">
+        {tick}
+        <span className="ms-proposal-word">{verbWord(line.verb)}</span>
+        <span className="ms-proposal-title">{line.title}</span>
+        <NavLink className="ms-proposal-id ms-mono" to={goalPath(line.goal)} title={OPEN_THE_GOAL}>
+          {line.goal}
+        </NavLink>
+      </p>
+      {argumentsOf(line).map((argument) => (
+        <p className="ms-proposal-argument" key={argument.label}>
+          <span className="ms-proposal-label">{argument.label}</span>
+          {argument.value}
+        </p>
+      ))}
+      {(line.why ?? "") !== "" && <p className="ms-proposal-why">{`The Partner: ${line.why ?? ""}`}</p>}
+    </>
   );
 }
 

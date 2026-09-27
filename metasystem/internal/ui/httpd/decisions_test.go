@@ -15,6 +15,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner/fakeacp"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -227,4 +229,111 @@ func TestDecisionsMatchesExactly(t *testing.T) {
 	served := New(decisionsInfo(), loopback(), testBundle())
 	response := request(t, served, http.MethodGet, "/api/decisions/R-1", "127.0.0.1:7878", nil)
 	testutil.Expect(t, "status", response.Code, http.StatusNotFound)
+}
+
+// The actions the Partner proposed reach this page under the human its own
+// routes resolve, so the card in the transcript and the row in the inbox are two
+// readings of one transcript (g1-s60 D2).
+
+// decisionsProposing is a server that can answer the page AND runs a Partner
+// whose answer proposed one act on the one goal this fixture's ledger carries.
+// It answers the handler and the turn that answer belongs to.
+func decisionsProposing(t *testing.T) (http.Handler, string) {
+	t.Helper()
+	root := t.TempDir()
+	runtime := partner.Runtime{Name: "fake", Model: "fake-1", ReadOnly: "a fake server reads nothing"}
+	host := partner.NewHostOn(runtime, root, fakeacp.Open(fakeacp.Script{
+		Models: []string{"fake-1"},
+		Reads:  []fakeacp.Read{proposedPark("g1-s22")},
+		Chunks: []string{"I have proposed it."},
+	}))
+	t.Cleanup(host.Close)
+	service := partner.NewService(runtime, host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{Observe: func() snapshot.Observation { return overviewObservation() }},
+		func() time.Time { return overviewNow })
+	info := decisionsInfo()
+	info.Partner, info.PartnerConfigured = service, true
+	served := New(info, loopback(), testBundle())
+
+	events, stop := service.Subscribe()
+	defer stop()
+	accepted := post(t, served, partnerTurnsPath,
+		`{"key":"k1","text":"put it away","about":{"section":"Decisions"}}`, nil)
+	testutil.Require(t, "the turn is admitted", accepted.Code, http.StatusAccepted)
+	drain(t, events)
+	read := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	answered := read.Messages[len(read.Messages)-1]
+	testutil.Require(t, "the answer carries one action", len(answered.Proposals), 1)
+	testutil.Require(t, "which is offered", answered.Proposals[0].Offered, true)
+	return served, answered.Turn
+}
+
+// The proposal the Partner made and nobody has answered is a row of the inbox,
+// with the action on it.
+func TestDecisionsCarriesTheProposalsWaitingOnThisHuman(t *testing.T) {
+	t.Parallel()
+
+	served, turn := decisionsProposing(t)
+	page := decisionsPage(t, served, "the read")
+
+	rows := []decisions.Need{}
+	for _, need := range page.NeedsYou {
+		if need.Kind == decisions.KindProposal {
+			rows = append(rows, need)
+		}
+	}
+	// Nothing proves a human on this seat, so this is the one case where the
+	// standing names nobody and the Partner's own resolution names the seat: the
+	// row is here because both ends resolved the SAME transcript.
+	testutil.Require(t, "nothing proves a human here", page.SignIn, true)
+	testutil.Require(t, "how many proposals wait", len(rows), 1)
+	testutil.Expect(t, "the id is the answer and the place in it", rows[0].ID, turn+"/0")
+	testutil.Expect(t, "the act the press makes", rows[0].Act, decisions.ActApply)
+	testutil.Require(t, "the action travels", rows[0].Proposal != nil, true)
+	testutil.Expect(t, "the verb", rows[0].Proposal.Verb, "park-goal")
+	testutil.Expect(t, "the state it stands in", rows[0].Proposal.State, partner.ProposalWaiting)
+	testutil.Expect(t, "the version a press must present", rows[0].Proposal.Version, 1)
+	testutil.Expect(t, "the goal's own row is joined", rows[0].Row != nil, true)
+	testutil.Expect(t, "and the inbox counts it", page.Counts.NeedsYou, len(page.NeedsYou))
+}
+
+// A line the human has already applied leaves the inbox and settles on the card:
+// the row is a reading of the one record the outcome route writes.
+func TestDecisionsDropsAProposalOnceItIsSettled(t *testing.T) {
+	t.Parallel()
+
+	served, turn := decisionsProposing(t)
+	// Applying is written before the act and the outcome after it, exactly as a
+	// run writes them; the version moves under each.
+	started := post(t, served, proposalPath(turn, 0), `{"version":1,"state":"applying","words":""}`, nil)
+	testutil.Require(t, "the applying write is admitted", started.Code, http.StatusOK)
+	applied := post(t, served, proposalPath(turn, 0), `{"version":2,"state":"applied","words":""}`, nil)
+	testutil.Require(t, "the outcome write is admitted", applied.Code, http.StatusOK)
+
+	page := decisionsPage(t, served, "the read after the run")
+
+	for _, need := range page.NeedsYou {
+		if need.Kind == decisions.KindProposal {
+			t.Fatalf("an applied proposal is still in the inbox: %+v", need)
+		}
+	}
+}
+
+// A seat with no Partner supplies none: the group costs the page nothing and
+// every other kind is composed as it was.
+func TestDecisionsWithoutAPartnerCarriesNoProposals(t *testing.T) {
+	t.Parallel()
+
+	page := decisionsPage(t, New(decisionsInfo(), loopback(), testBundle()), "the read")
+
+	for _, need := range page.NeedsYou {
+		if need.Kind == decisions.KindProposal {
+			t.Fatalf("a seat with no Partner invented a proposal row: %+v", need)
+		}
+		if need.Proposal != nil {
+			t.Fatalf("a row of another kind carries an action: %+v", need)
+		}
+	}
+	testutil.Expect(t, "the approval still waits", page.Counts.NeedsYou, 3)
 }

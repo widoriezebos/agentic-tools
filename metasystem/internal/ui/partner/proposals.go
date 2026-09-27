@@ -449,5 +449,84 @@ func (s *Service) Proposed(human, turn string, index, version int, state, words 
 	if err != nil {
 		return Proposal{}, err
 	}
-	return conversation.RecordProposal(turn, index, version, state, words, s.now())
+	held, err := conversation.RecordProposal(turn, index, version, state, words, s.now())
+	if err != nil {
+		return Proposal{}, err
+	}
+	// Every admitted write is a beat, on the same stream the answer's own
+	// proposals arrived on, so a transcript open in another tab — or the drawer
+	// beside the inbox this press came from — folds the change into its card
+	// without reading the conversation again (g1-s60 D5). It is the first time a
+	// human's act, rather than the Partner's turn, publishes here; it is the same
+	// event the page already folds, and nothing on the stream carries authority.
+	//
+	// It is published after the write and never before: the beat says what the
+	// record now holds, and a beat for a write that was refused would tell every
+	// other page something that did not happen.
+	s.publish(Event{
+		Turn: turn, Kind: EventProposal, Proposal: &held,
+		At: s.now().UTC().Format(time.RFC3339),
+	})
+	return held, nil
+}
+
+/* ------------------------------------------- what is still waiting on you -- */
+
+// Unsettled is one proposed action still waiting on the human, with the answer
+// it was proposed in.
+//
+// It is what the Decisions inbox composes its "Proposed by the Partner" group
+// from (g1-s60 D1), and it is a reading of the transcript rather than a second
+// store: the proposals live on the Partner's messages, where the outcome route
+// writes them, so the card in the conversation and the row in the inbox cannot
+// disagree about one action.
+//
+// The turn travels because the index alone names nothing: an action is one
+// answer's nth, which is how the outcome route addresses it and how the inbox's
+// own row is identified.
+type Unsettled struct {
+	Turn string `json:"turn"`
+	Proposal
+}
+
+// Unsettled is every action across this human's transcript that is still
+// waiting on them, newest answer first.
+//
+// Four states are, and every one of them is a choice a human has to make.
+// Waiting is the offer. Refused and unresolved are answers to act on — Try
+// again, or Dismiss — and they carry the words the engine said, which is the
+// whole of what a recovery rests on: a reader that returned waiting lines alone
+// would take the row away at exactly the moment it started to carry an
+// explanation (Astra S60-03). Applying is a line that was in flight when a page
+// went away, and nothing will settle it by itself. Applied and dismissed are
+// settled, and the card keeps them as the record of what was done.
+//
+// An action the human was never offered is not here either. A refusal at
+// admission is something to read on the card, beside the answer that explains
+// it, and not an act anybody can apply.
+//
+// It reads the transcript as the snapshot does and holds nothing. Newest answer
+// first, because the answers are the order the transcript has and the inbox
+// composes its own from the dates; within one answer the lines keep the order
+// they were proposed in, which is the order a human is meant to apply them.
+func (s *Service) Unsettled(human string) ([]Unsettled, error) {
+	conversation, err := s.conversation(human)
+	if err != nil {
+		return nil, err
+	}
+	messages := conversation.Messages(0)
+	held := []Unsettled{}
+	for at := len(messages) - 1; at >= 0; at-- {
+		message := messages[at]
+		if message.Role != RolePartner {
+			continue
+		}
+		for _, proposal := range message.Proposals {
+			if !proposal.Offered || proposal.State == ProposalApplied || proposal.State == ProposalDismissed {
+				continue
+			}
+			held = append(held, Unsettled{Turn: message.Turn, Proposal: proposal})
+		}
+	}
+	return held, nil
 }

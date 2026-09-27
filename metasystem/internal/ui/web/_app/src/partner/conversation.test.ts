@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { PartnerEvent, Snapshot } from "./api";
+import type { PartnerEvent, Proposal, Snapshot } from "./api";
 import {
   ANYONE,
   asked,
@@ -261,5 +261,142 @@ describe("who a question is signed by", () => {
     expect(nameOf("   ")).toBe(ANYONE);
     expect(nameOf(emptyStore.human)).toBe(ANYONE);
     expect(ANYONE).toBe("You");
+  });
+});
+
+/**
+ * A proposal beat for an answer the transcript already holds.
+ *
+ * It is not a beat of a running turn: it is what a human's press did to one
+ * line, published by the outcome route so that a transcript open in another tab
+ * — or the drawer beside the inbox the press came from — shows what happened
+ * without reading the conversation again (g1-s60 D5). The answer has ended, so
+ * the beat carries no sequence, and the rule that drops a duplicate beat of a
+ * running turn must not drop this one.
+ */
+describe("what a press did to one proposed action, on the stream", () => {
+  const waiting: Proposal = {
+    index: 1,
+    verb: "park-goal",
+    goal: "g1-s44",
+    title: "The seat census answers which machines are alive",
+    fields: { because: "superseded by the seat inventory" },
+    read: null,
+    why: "the inventory covers what these were for",
+    offered: true,
+    state: "waiting",
+    at: "2026-09-26T09:00:00Z",
+    version: 1,
+  };
+
+  /** A transcript with one answered turn carrying two proposed actions. */
+  function answered(): Store {
+    return loaded(emptyStore, {
+      ...snapshot,
+      messages: [
+        {
+          id: "t1-partner",
+          turn: "t1",
+          role: "partner",
+          text: "I have proposed them.",
+          at: "2026-09-26T09:00:00Z",
+          outcome: "complete",
+          proposals: [{ ...waiting, index: 0, goal: "g1-s43" }, waiting],
+        },
+      ],
+    });
+  }
+
+  function moved(store: Store, proposal: Proposal): Store {
+    return received(store, {
+      turn: "t1", seq: 0, kind: "proposal", text: "", at: "2026-09-26T10:00:00Z", proposal,
+    });
+  }
+
+  it("folds the entry into the line it belongs to", () => {
+    const store = moved(answered(), { ...waiting, state: "applied", version: 3 });
+
+    const folded = store.messages[0].proposals ?? [];
+    expect(folded.map((one) => [one.index, one.state, one.version])).toEqual([
+      [0, "waiting", 1],
+      [1, "applied", 3],
+    ]);
+    expect(store.live.turn).toBe("");
+  });
+
+  it("carries a refusal's own words onto the line", () => {
+    const store = moved(answered(), {
+      ...waiting, state: "refused", words: "goal g1-s44 is claimed by m2a", version: 3,
+    });
+
+    expect((store.messages[0].proposals ?? [])[1].words).toBe("goal g1-s44 is claimed by m2a");
+  });
+
+  it("is not dropped as a duplicate, however many arrive", () => {
+    // Two presses on one card are two beats, both with no sequence of their own:
+    // the running turn's numbering ended when the answer did.
+    const once = moved(answered(), { ...waiting, state: "applying", version: 2 });
+    const twice = moved(once, { ...waiting, state: "applied", version: 3 });
+
+    expect((twice.messages[0].proposals ?? [])[1]).toEqual({ ...waiting, state: "applied", version: 3 });
+  });
+
+  it("keeps the newer entry when an older beat arrives after it", () => {
+    // Outcome beats carry no sequence of their own — the answer they belong to
+    // has ended — so the entry's version is the only order there is. A beat that
+    // overtook a newer one would move the card back to a state the record has
+    // left (Sol S60-C-03).
+    const applied = moved(answered(), { ...waiting, state: "applied", version: 3 });
+    const late = moved(applied, { ...waiting, state: "applying", version: 2 });
+
+    expect((late.messages[0].proposals ?? [])[1]).toEqual({ ...waiting, state: "applied", version: 3 });
+  });
+
+  it("keeps the newer entry when a snapshot read before the write arrives after it", () => {
+    // A snapshot is a reading of an instant, and the read can have been taken
+    // before the write whose beat this page has already folded.
+    const applied = moved(answered(), { ...waiting, state: "applied", version: 3 });
+
+    const stale = loaded(applied, {
+      ...snapshot,
+      messages: [
+        {
+          id: "t1-partner",
+          turn: "t1",
+          role: "partner",
+          text: "I have proposed them.",
+          at: "2026-09-26T09:00:00Z",
+          outcome: "complete",
+          proposals: [{ ...waiting, index: 0, goal: "g1-s43" }, waiting],
+        },
+      ],
+    });
+
+    expect((stale.messages[0].proposals ?? [])[1]).toEqual({ ...waiting, state: "applied", version: 3 });
+    // And the line nobody has moved is the server's own, untouched.
+    expect((stale.messages[0].proposals ?? [])[0].state).toBe("waiting");
+  });
+
+  it("takes the server's answer whole on a first load, with nothing held to keep", () => {
+    const first = loaded(emptyStore, {
+      ...snapshot,
+      messages: [
+        {
+          id: "t1-partner", turn: "t1", role: "partner", text: "I have proposed them.",
+          at: "2026-09-26T09:00:00Z", outcome: "complete", proposals: [waiting],
+        },
+      ],
+    });
+
+    expect((first.messages[0].proposals ?? [])[0]).toEqual(waiting);
+  });
+
+  it("leaves a beat of a running turn to the running turn", () => {
+    const store = received(running(), {
+      turn: "t1", seq: 1, kind: "proposal", text: "", at: "2026-09-23T12:00:01Z", proposal: waiting,
+    });
+
+    expect(store.live.proposals).toEqual([waiting]);
+    expect(store.messages.some((message) => message.role === "partner")).toBe(false);
   });
 });

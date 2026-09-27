@@ -34,10 +34,18 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
 // SchemaVersion is the shape of the decisions resource a reader parses.
+//
+// Five, since the actions the Project Partner proposed wait here: one more kind
+// of row, carrying the action it would make on the kind's own member and null
+// on every other kind. It is an addition — an older reader skips a kind it has
+// no group for — and it is a version all the same, because a reader has to be
+// able to say which shape it read.
 //
 // Four, since a ruling's mentions say where they open: a mention was a bare
 // id a reader could only read as a goal, and it is now the id with its
@@ -51,7 +59,7 @@ import (
 // need — a ruling review the register row's own words, a draft and a landed
 // design the record's path, and a landed design the goals it named with where
 // each stands.
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 // The kinds of thing that wait on a human. Each one is a row of the design's
 // own table, and each one carries its own silence line.
@@ -66,6 +74,11 @@ const (
 	KindLanded       = "landed"
 	KindRulingReview = "ruling-review"
 	KindAlert        = "alert"
+	// KindProposal is one act the Project Partner proposed on a goal and nobody
+	// has answered. The conversation is where a proposal is made and answered;
+	// where it WAITS is here, beside every other choice that waits on a human
+	// (g1-s60 D2).
+	KindProposal = "proposal"
 )
 
 // The acts this page offers. Two are the board's own; two are this page's,
@@ -77,6 +90,11 @@ const (
 	ActPark = "park"
 	// ActUnpark returns a paused goal to the queue.
 	ActUnpark = "unpark"
+	// ActApply is the press that applies one action the Partner proposed. The
+	// act it makes is the verb's own, through the route that verb names, under
+	// the human's own sign-in; this page names the press and not the act,
+	// because one row can carry any of the nine.
+	ActApply = "apply"
 )
 
 // The kinds a Where can name. A destination is said as what kind of thing it
@@ -223,6 +241,42 @@ type Need struct {
 	// stands, which is the evidence for marking it done. Written as an empty
 	// list on every other kind rather than as nothing.
 	Goals []GoalState `json:"goals"`
+	// Proposal is the act the Partner proposed, on a proposal row and null on
+	// every other kind.
+	//
+	// It is a member of its own rather than eleven more fields on this shape,
+	// because it is one record: the action the human's press would make, as the
+	// conversation persists it, carried here so that the row and the card in the
+	// transcript read one state (g1-s60 D2).
+	Proposal *Proposed `json:"proposal"`
+}
+
+// Proposed is one act the Partner proposed, as a row of this page carries it.
+//
+// The turn and the index are the conversation coordinate the outcome route
+// names the action by, and the version is what makes a press exclusive: every
+// admitted write moves it, and a press that presents an older one is refused
+// with the entry as it stands (g1-s58 D6). The verb is the route id the runner
+// dispatches on and never a word on a button, so a page renamed leaves every
+// persisted proposal alone.
+type Proposed struct {
+	Turn  string `json:"turn"`
+	Index int    `json:"index"`
+	Verb  string `json:"verb"`
+	// Fields are the act's own body fields, under the route body's names.
+	Fields map[string]string `json:"fields"`
+	// Read is the goal as the Partner read it, on an approve and an edit, and
+	// null everywhere else: those are the two acts whose meaning depends on what
+	// the goal says, and the runner refuses a line whose goal has moved since.
+	Read *partner.ProposalRead `json:"read"`
+	// Explanation is the Partner's own words for this action, shown as its words
+	// and never as the interface's.
+	Explanation string `json:"explanation"`
+	State       string `json:"state"`
+	// Words are what the last state change said: the engine's own sentence on a
+	// refusal, what was said on an unresolved answer, "" on a plain one.
+	Words   string `json:"words"`
+	Version int    `json:"version"`
 }
 
 // GoalState is one goal a record names and where the ledger says it stands.
@@ -404,6 +458,11 @@ type Inputs struct {
 	Asks []channel.Question
 	// Register is one read of the rulings register, whole rows and all.
 	Register rulings.Register
+	// Proposals are the actions the Project Partner proposed to THIS human and
+	// nobody has answered, newest answer first, as the conversation's own reader
+	// hands them over. A seat with no Partner supplies none, which costs this
+	// page one group and nothing else.
+	Proposals []partner.Unsettled
 	// RegisterPath is where that register is RELATIVE TO THE CHECKOUT, which
 	// is not where it was read from: the reader takes the installation root,
 	// because that is where the kit keeps its memory, and the document reader
@@ -510,6 +569,7 @@ func registerOf(in Inputs) string {
 // needs all of it, and "and 4 more" is what a summary says.
 func needsYou(in Inputs, now time.Time) []Need {
 	needs := []Need{}
+	needs = append(needs, proposals(in)...)
 	needs = append(needs, approvals(in.Rows)...)
 	needs = append(needs, renewals(in.Rows, now)...)
 	needs = append(needs, asks(in.Asks)...)
@@ -522,6 +582,125 @@ func needsYou(in Inputs, now time.Time) []Need {
 	needs = append(needs, alerts(in.Journal, now)...)
 	order(needs)
 	return needs
+}
+
+// proposals is every act the Project Partner proposed that is still waiting on
+// this human, one row per action.
+//
+// The conversation is where a proposal is made and answered, and the wrong
+// place to keep one that waits: it scrolls, and "ignored" becomes "lost". So a
+// waiting proposal gets the home every other waiting choice has, and the record
+// stays where it was — these rows are a reading of the Partner's own messages,
+// which is why applying one from here and applying it from the card are the
+// same act on the same entry (g1-s60 D2).
+//
+// The row carries the whole action, because the human has to read what would
+// happen before it happens: the verb's own word as the page that offers that
+// act says it, the subject as the pages call it, and every argument the act
+// would carry. Nothing here is rendered from the Partner's prose — its words
+// are the explanation, carried separately as its words.
+//
+// Silence: nothing expires into an act, ever. A proposal nobody answers stays
+// proposed, which is what the line says.
+func proposals(in Inputs) []Need {
+	needs := []Need{}
+	if len(in.Proposals) == 0 {
+		return needs
+	}
+	rows := goalRows(in)
+	for _, held := range in.Proposals {
+		need := Need{
+			Kind: KindProposal, ID: proposalID(held), Title: proposalTitle(held),
+			Asked: proposalAsked(held), By: proposedBy, Since: held.At,
+			Silence: "it stays proposed; nothing is applied",
+			Where:   Where{Kind: WhereGoal, ID: held.Goal},
+			Act:     ActApply,
+			Proposal: &Proposed{
+				Turn: held.Turn, Index: held.Index, Verb: held.Verb,
+				Fields: fieldsOf(held), Read: held.Read, Explanation: held.Why,
+				State: held.State, Words: held.Words, Version: held.Version,
+			},
+		}
+		// The goal's own row, where the ledger carries it. An `open` proposes a
+		// goal that is not there yet and joins nothing, which is honest: there is
+		// no row to read until the act has landed.
+		if row, there := rows[held.Goal]; there {
+			joined := row
+			need.Row = &joined
+		}
+		needs = append(needs, need)
+	}
+	return needs
+}
+
+// proposedBy is who asks, on every proposal row. It is the Partner and never a
+// human: the Partner cannot act, and the press is the human's own.
+const proposedBy = "the Partner"
+
+// proposalID is the conversation coordinate that names one action: the answer it
+// was proposed in and its place in that answer.
+//
+// It is what the outcome route addresses, and it is stable for the proposal's
+// life, which is what a row of an inbox needs of an id.
+func proposalID(held partner.Unsettled) string {
+	return held.Turn + "/" + strconv.Itoa(held.Index)
+}
+
+// proposalTitle is the subject as the pages say it, or the goal's id where the
+// action carried no title at all.
+func proposalTitle(held partner.Unsettled) string {
+	if title := strings.TrimSpace(held.Title); title != "" {
+		return title
+	}
+	return held.Goal
+}
+
+// proposalAsked is the line whole: the verb's own word, the subject, and every
+// argument the act would carry, in the labels the frame writes them under.
+//
+// The word is the one on the button of the page that offers that act, from the
+// catalogue's own table (uitools.ProposedActs), so the row, the card and the
+// button say one thing and a rename touches one place. The arguments are walked
+// in the frame's own order for the same reason.
+func proposalAsked(held partner.Unsettled) string {
+	said := []string{proposalWord(held.Verb), proposalTitle(held)}
+	for _, line := range uitools.ProposalFrame {
+		if value := strings.TrimSpace(held.Fields[line.Field]); value != "" {
+			said = append(said, strings.TrimSpace(line.Label)+" "+value)
+		}
+	}
+	return strings.Join(said, " · ")
+}
+
+// proposalWord is the button word for one act, or the route id where this build
+// has no word for it — which is a catalogue and an act table that disagree, and
+// is said rather than hidden.
+func proposalWord(verb string) string {
+	if named, there := uitools.ProposedActOf(verb); there {
+		return named.Button
+	}
+	return verb
+}
+
+// fieldsOf is the action's arguments, written as an empty object where it has
+// none: a reader never has to tell an absent field from an empty one.
+func fieldsOf(held partner.Unsettled) map[string]string {
+	if held.Fields == nil {
+		return map[string]string{}
+	}
+	return held.Fields
+}
+
+// goalRows is every goal the projection carries, live and concluded, by id.
+func goalRows(in Inputs) map[string]backlog.Row {
+	held := map[string]backlog.Row{}
+	for _, row := range in.Rows {
+		held[row.ID] = row
+	}
+	for _, row := range in.Closed {
+		held[row.ID] = row
+	}
+	return held
 }
 
 // approvals is the goals in To Do that carry no approval at all, in backlog

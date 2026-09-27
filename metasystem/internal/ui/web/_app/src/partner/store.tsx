@@ -7,19 +7,17 @@ import {
   isBusy,
   loadPartner,
   PartnerError,
-  ProposalConflict,
-  recordProposal,
   sendTurn,
   startSitting,
   stopTurn,
   type CapturedSticky,
   type Message,
   type Page,
-  type Proposal,
   type ProposalState,
   type Sitting,
   type Subject,
 } from "./api";
+import { lookOnce, sendProposal, writeOutcome } from "./applying";
 import {
   attach,
   attachedDraft,
@@ -91,13 +89,11 @@ import {
   type Store,
 } from "./conversation";
 import {
-  answeredOf,
   askLine as askAboutLine,
   askReread,
   barLine,
   cardIn as proposalCardIn,
   cardsIn as proposalCardsIn,
-  dispatchOf,
   coverChanged,
   dismissable as dismissableLine,
   displayedFor,
@@ -117,19 +113,7 @@ import {
   type Line as ProposalLine,
   type Marks as ProposalMarks,
 } from "./proposing";
-import {
-  approveGoal,
-  blockGoal,
-  editGoal,
-  loadBacklog,
-  openGoal,
-  parkGoal,
-  rankGoal,
-  unblockGoal,
-  unparkGoal,
-  withdrawGoal,
-  type Backlog,
-} from "../backlog/api";
+import { loadBacklog } from "../backlog/api";
 import type { Chosen } from "./subject";
 import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
 import { useAboutLine, useSubject } from "../shell/about";
@@ -1554,43 +1538,14 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
    * act of its own.
    */
   const writeState = useCallback(
-    async (line: ProposalLine, turn: string, state: ProposalState, words: string): Promise<Proposal> => {
-      const answered = await recordProposal(turn, line.index, line.version, state, words);
-      setStore((held) => proposalMoved(held, turn, answered.proposal));
-      return answered.proposal;
+    async (line: ProposalLine, turn: string, state: ProposalState, words: string): Promise<void> => {
+      const answered = await writeOutcome(turn, line, state, words);
+      if (answered.kind === "written") {
+        setStore((held) => proposalMoved(held, turn, answered.proposal));
+      }
     },
     [],
   );
-
-  /** One line's act, sent through the clients every button on every page uses. */
-  const sendAct = useCallback(async (line: ProposalLine): Promise<Backlog | null> => {
-    const dispatch = dispatchOf(line);
-    if (dispatch === null) {
-      return null;
-    }
-    switch (dispatch.act) {
-      case "approve":
-        return approveGoal(dispatch.id, dispatch.budget);
-      case "withdraw":
-        return withdrawGoal(dispatch.id, dispatch.reason);
-      case "priority":
-        return rankGoal(dispatch.id, dispatch.priority, dispatch.sequence);
-      case "block":
-        return blockGoal(dispatch.dependent, dispatch.blocker);
-      case "unblock":
-        return unblockGoal(dispatch.dependent, dispatch.blocker);
-      case "park":
-        return parkGoal(dispatch.id, dispatch.because);
-      case "unpark":
-        return unparkGoal(dispatch.id);
-      case "edit":
-        return editGoal(dispatch.id, dispatch.edit);
-      case "open":
-        return openGoal(dispatch.goal);
-      default:
-        return null;
-    }
-  }, []);
 
   const mark = useCallback((id: string, change: (held: ProposalMarks[string]) => ProposalMarks[string]) => {
     setProposalMarks((held) => ({ ...held, [id]: change(proposalMarkOf(held, id)) }));
@@ -1624,43 +1579,20 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       setRunningProposals(card);
       try {
         await runProposals(lines, {
-          // The canonical branch, once, before anything is sent. The payload says
-          // what its own fetch did, and a 200 from the accepted ledger is not the
-          // same thing as a fetch that landed (Astra S58-07).
-          look: async () => {
-            try {
-              const read = await loadBacklog(undefined, true);
-              return {
-                rows: [...read.rows, ...read.closed],
-                defaults: read.budgetDefaults,
-                outcome: read.ledger.fetch.outcome,
-                message: read.ledger.fetch.message === "" ? read.ledger.fetch.detail : read.ledger.fetch.message,
-              };
-            } catch (error: unknown) {
-              return { rows: [], defaults: {}, outcome: "failed", message: reasonOf(error) };
-            }
-          },
+          // The canonical branch, once, before anything is sent; the act through
+          // the clients every button uses; and the outcome through the
+          // conversation's own route. All three are the module two callers share,
+          // because the inbox applies the same lines through the same runner
+          // (g1-s60 D4).
+          look: lookOnce,
           record: async (line, state, words) => {
-            try {
-              const answered = await recordProposal(card, line.index, line.version, state, words);
+            const answered = await writeOutcome(card, line, state, words);
+            if (answered.kind === "written") {
               setStore((held) => proposalMoved(held, card, answered.proposal));
-              return { kind: "written", proposal: answered.proposal };
-            } catch (error: unknown) {
-              return error instanceof ProposalConflict
-                ? { kind: "conflict", proposal: error.proposal }
-                : { kind: "failed", words: reasonOf(error) };
             }
+            return answered;
           },
-          send: async (line) => {
-            try {
-              const after = await sendAct(line);
-              return after === null
-                ? { kind: "refused", words: `this build cannot dispatch ${line.verb}` }
-                : { kind: "applied", words: "" };
-            } catch (error: unknown) {
-              return answeredOf(error);
-            }
-          },
+          send: sendProposal,
           mark: (line, change) => {
             mark(line.id, (held) => ({ ...held, ...change }));
           },
@@ -1682,7 +1614,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         setRunningProposals("");
       }
     },
-    [mark, sendAct, askTheReread, askToSignIn],
+    [mark, askTheReread, askToSignIn],
   );
 
   // The run, reached from the sign-in sheet's own success. It is a ref because
@@ -1743,10 +1675,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       if (!dismissableLine(line)) {
         continue;
       }
-      void writeState(line, card, "dismissed", "").catch(() => {
-        // A line somebody else moved first stays as they left it; the card is
-        // folded either way, because folding it was this human's own act.
-      });
+      // A line somebody else moved first stays as they left it; the card is
+      // folded either way, because folding it was this human's own act.
+      void writeState(line, card, "dismissed", "");
     }
   }, [proposals, writeState]);
 

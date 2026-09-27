@@ -4,6 +4,9 @@ import { NavLink } from "react-router";
 import type { Need, Where as Reference } from "./api";
 import { askedLine, bandLine, blockedLine, budgetLine, destinationFor, wayThrough } from "./decisions";
 import { confirmLine, goalLine, rowFacts, rowLine, writeLabel, writeStatus } from "./groups";
+import { pressFor, proposalLine, type ProposalActs } from "./proposals";
+import { ProposalSubstance } from "../partner/Proposal";
+import { ASK_THE_PARTNER, DISMISS, lineState } from "../partner/proposing";
 import { Help } from "../help/Help";
 import { useNotifications } from "../notifications/store";
 import { Button, Chip } from "../shell/controls";
@@ -29,6 +32,13 @@ import { Button, Chip } from "../shell/controls";
 
 /** What an open row can do, handed down rather than reached for. */
 export type Acts = {
+  /**
+   * The proposal rows' own half: the line as the page composes it, the three
+   * presses, and whether a run is in flight. It is a member of its own because a
+   * proposal row is the only kind whose act is not a route of this page's —
+   * applying one is the card's runner, from here (g1-s60 D4).
+   */
+  proposals: ProposalActs;
   /** Whether a human is signed in NOW, rather than when the payload was composed. */
   signedIn: boolean;
   onSignIn: () => void;
@@ -78,7 +88,7 @@ export function InboxRow({
           </label>
         )}
         <button type="button" className="ms-decisions-row-open" aria-expanded={open} onClick={onOpen}>
-          <span className="ms-decisions-row-said">{rowLine(need)}</span>
+          <span className="ms-decisions-row-said">{saidOn(need, acts)}</span>
           <span className="ms-decisions-row-facts">
             {facts.yours && <Chip>yours</Chip>}
             {facts.tier > 0 && <Chip>tier {facts.tier}</Chip>}
@@ -101,6 +111,19 @@ export function InboxRow({
 }
 
 /**
+ * The one line of substance a row is.
+ *
+ * For a proposal it is composed over everything the page holds about the line
+ * and not over the payload alone, because some of what a human has to read
+ * there is the page's own: a line a stopped run never reached says "not run"
+ * on its line, which is how the row a Continue would send is told from one
+ * nobody has touched (Sol S60-C-02).
+ */
+function saidOn(need: Need, acts: Acts): string {
+  return need.kind === "proposal" ? proposalLine(need, acts.proposals.lineOf(need)) : rowLine(need);
+}
+
+/**
  * What one open row holds: the whole substance of that kind of thing, the
  * sentence saying what happens if nobody answers, and the acts.
  */
@@ -108,7 +131,7 @@ function OpenRow({ need, now, acts }: { need: Need; now: Date; acts: Acts }) {
   return (
     <div className="ms-decisions-open">
       <p className="ms-mono ms-decisions-open-id">{need.id}</p>
-      <Substance need={need} />
+      <Substance need={need} acts={acts} />
       <p className="ms-decisions-open-muted">{askedLine(need, now)}</p>
       {need.recommend !== "" && <p className="ms-decisions-open-recommend">Recommended: {need.recommend}</p>}
       {acts.refusedAt === need.id && acts.refusal !== "" && (
@@ -122,7 +145,7 @@ function OpenRow({ need, now, acts }: { need: Need; now: Date; acts: Acts }) {
 }
 
 /** The whole of what this kind of thing is, in the record's own words. */
-function Substance({ need }: { need: Need }) {
+function Substance({ need, acts }: { need: Need; acts: Acts }) {
   switch (need.kind) {
     case "question":
       return <p className="ms-decisions-open-words">{need.asked}</p>;
@@ -163,12 +186,48 @@ function Substance({ need }: { need: Need }) {
     case "approval":
     case "renewal":
       return <GoalSubstance need={need} />;
+    case "proposal":
+      return <ProposalSaid need={need} acts={acts} />;
     default:
       // A seat's park, a stopped goal, an alert and a seat's ask carry no
       // backlog row, so what they are is the sentence the server composed out
       // of the record: the explanation, exactly as today.
       return <p className="ms-decisions-open-words">{need.asked}</p>;
   }
+}
+
+/**
+ * One act the Partner proposed: the card's own line, whole, and where that line
+ * stands.
+ *
+ * The substance is the component the card renders — the verb's own word, the
+ * subject with its id, every argument the act will carry, and the Partner's
+ * explanation under it in its own voice — because the row and the card are two
+ * surfaces over one action and a second rendering would be a second vocabulary
+ * (g1-s60 D3). An approve's budget is one of those arguments, from the read this
+ * page made when the row opened and kept with the row: what is sent is what was
+ * read (Astra S58-08).
+ *
+ * Where the line stands is under it, in the card's own words: a refusal in the
+ * engine's own sentence, an unresolved answer with what was said, and a line a
+ * page went away in the middle of saying so rather than saying fresh.
+ */
+function ProposalSaid({ need, acts }: { need: Need; acts: Acts }) {
+  const line = acts.proposals.lineOf(need);
+  if (line === null) {
+    return <p className="ms-decisions-open-words">{need.asked}</p>;
+  }
+  const said = lineState(line, acts.proposals.running);
+  return (
+    <>
+      <ProposalSubstance line={line} />
+      {said !== "" && (
+        <p className="ms-proposal-said" data-said={line.state} role="status">
+          {said}
+        </p>
+      )}
+    </>
+  );
 }
 
 /**
@@ -294,12 +353,73 @@ function Offered({ need, acts }: { need: Need; acts: Acts }): ReactNode {
           <Help id="return-to-queue" />
         </>
       );
+    case "proposal":
+      return <ProposalPresses need={need} acts={acts} />;
     default:
       // A question, a ruling review, an alert, a seat's ask and a stopped
       // goal are all decided somewhere this interface does not publish to.
       // The way through beside this is the whole of the act.
       return null;
   }
+}
+
+/**
+ * The three presses one proposed action offers, beside the way through to the
+ * goal that every row of this kind carries.
+ *
+ * Apply is the act, under this human's own sign-in; on a line that has already
+ * been answered once — refused, unresolved, or left in flight by a page that went
+ * away — it says Try again, because that is what pressing it would be. Dismiss
+ * publishes nothing and says this human is not going to answer it. Ask the
+ * Partner puts the line's words in the composer, so the next thing proposed can
+ * be different.
+ *
+ * Nothing is pressable while a run of this page's own is in flight: one press is
+ * one run, and the acts a run is walking are the acts on these rows.
+ */
+function ProposalPresses({ need, acts }: { need: Need; acts: Acts }) {
+  const line = acts.proposals.lineOf(need);
+  if (line === null) {
+    return null;
+  }
+  const running = acts.proposals.running;
+  // What this line's own press says, or nothing where it offers none: a line
+  // whose act landed and whose outcome the conversation could not write down is
+  // read and never sent again (Sol S60-C-01). Dismiss stays, because putting a
+  // line away publishes nothing.
+  const press = pressFor(line, running);
+  return (
+    <>
+      {press !== "" && (
+        <Button
+          primary
+          disabled={running}
+          onClick={() => {
+            acts.proposals.onApply(need);
+          }}
+        >
+          {press}
+        </Button>
+      )}
+      <Button
+        disabled={running}
+        onClick={() => {
+          acts.proposals.onDismiss(need);
+        }}
+      >
+        {DISMISS}
+      </Button>
+      <Button
+        disabled={running}
+        onClick={() => {
+          acts.proposals.onAsk(need);
+        }}
+      >
+        {ASK_THE_PARTNER}
+      </Button>
+      <Help id="proposed-action" />
+    </>
+  );
 }
 
 /**
