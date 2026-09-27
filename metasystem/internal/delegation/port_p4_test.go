@@ -30,8 +30,7 @@ func newCensusBed(t *testing.T) *bed {
 	t.Helper()
 	b := newBed(t)
 	b.writeFile("metasystem.conf", "metasystem.runtimes=fake\nevidence.root="+t.TempDir()+"\n")
-	for _, asset := range []string{"scripts/agents/adapters/fake.sh", "scripts/agents/adapters/runtime-common.sh",
-		"scripts/agents/arm-supervision.sh", "scripts/watch-background-jobs.sh"} {
+	for _, asset := range []string{"scripts/agents/adapters/fake.sh", "scripts/agents/adapters/runtime-common.sh"} {
 		b.installAsset(asset)
 	}
 	b.writeFile("bin/metasystem", "engine bytes\n")

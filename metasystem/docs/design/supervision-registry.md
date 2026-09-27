@@ -317,7 +317,7 @@ start times to WHOLE SECONDS, so pid + start alone is satisfiable by
 a stranger after same-second pid reuse; argv consistency is the third
 factor that makes that practically impossible. The known shapes are
 the component invocations AND the owner invocation
-(`arm-supervision.sh __owner ... --tag <tag>` — SLC-R6-004: without
+(`supervise owner ... --tag <tag>` — SLC-R6-004: without
 the owner shape, an establishment orphan's live owner is unkillable
 and respawns its components exactly as the incident did). The triple
 is captured in ONE observation immediately before signalling.

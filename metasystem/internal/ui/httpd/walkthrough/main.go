@@ -250,6 +250,15 @@ func main() {
 		// to prove, and this ledger has no endpoint to publish to.
 		Park:   func(_ *session.Session, id, because string) error { return state.park(id, because) },
 		Unpark: func(_ *session.Session, id string) error { return state.unpark(id) },
+		// And the act a card is the only ask for: a goal that will never be
+		// worked. The fixture abandons its own canned rows, holding the two
+		// rules a human reads on the card — a reason on one line, and the live
+		// goals that wait for it either carried by a successor or refused in
+		// the engine's own words. The verb's own authority row and its session
+		// line are the engine's tests' to prove.
+		Abandon: func(_ *session.Session, id, because, successor string) error {
+			return state.abandon(id, because, successor)
+		},
 		// The goal editor's first gate. The fixture edits its own canned
 		// rows: what it proves in a browser is the sheet prefilled from the
 		// row, the fields it sends, the three states that refuse it and the
@@ -1547,6 +1556,78 @@ func (l *ledger) unpark(id string) error {
 	if file.Approved != nil {
 		file.State = goal.StateApproved
 	}
+	return nil
+}
+
+// abandon is the fixture's own goal abandon, holding the rules the card is
+// written around: a reason on one line, a goal that is live, a successor that is
+// live, and the live dependents either repointed to that successor or refused in
+// the engine's own sentence — which is the sentence that names the terminal
+// forms, and the one a human most needs to read on a card they cannot undo.
+//
+// The refusal's words are the engine's own (internal/goal/abandon.go), copied
+// here rather than paraphrased, because what a walkthrough is for is standing in
+// front of the sentence a human will actually be shown.
+func (l *ledger) abandon(id, because, successor string) error {
+	if strings.TrimSpace(because) == "" {
+		return &act.Refusal{Kind: act.KindRequest, Code: "no-reason",
+			Message: "abandon needs its reason — a goal that will never be worked owes the reader why"}
+	}
+	file := l.tree.Live[id]
+	if file == nil {
+		return refused("goal %s is not live; nothing to abandon", id)
+	}
+	if successor != "" && (l.tree.Live[successor] == nil || successor == id) {
+		return refused("carried must name a live successor")
+	}
+	waiting := []string{}
+	for _, other := range l.tree.Live {
+		if other.Id == id {
+			continue
+		}
+		for _, blocker := range other.Blocked {
+			if blocker == id {
+				waiting = append(waiting, other.Id)
+				break
+			}
+		}
+	}
+	sort.Strings(waiting)
+	if successor == "" && len(waiting) != 0 {
+		lines := make([]string, 0, len(waiting))
+		for _, dependent := range waiting {
+			lines = append(lines, fmt.Sprintf("goal %s is blocked by %s; re-point it with --successor, "+
+				"waive it with --waive %s=<reason>, or abandon it with --also %s",
+				dependent, id, dependent, dependent))
+		}
+		return refused("%s", strings.Join(lines, "\n"))
+	}
+	// With a successor the engine repoints every live dependent in the same act
+	// rather than refusing, which is what the card said it would do.
+	for _, dependent := range waiting {
+		other := l.tree.Live[dependent]
+		repointed := []string{}
+		for _, blocker := range other.Blocked {
+			if blocker == id {
+				blocker = successor
+			}
+			repointed = append(repointed, blocker)
+		}
+		sort.Strings(repointed)
+		other.Blocked = repointed
+		if other.Parked != nil && other.Parked.Blocker == id {
+			other.Parked.Blocker = successor
+			other.Parked.Because = "blocked by " + strings.Join(repointed, ", ") + "; returns when they are done"
+		}
+	}
+	file.State = goal.StateAbandoned
+	file.Claimed, file.Parked, file.Landing = nil, nil, nil
+	file.Abandoned = &goal.AbandonRecord{
+		By: "human:Wido", At: time.Now().UTC().Format(time.RFC3339),
+		Because: because, Carried: successor,
+	}
+	delete(l.tree.Live, id)
+	l.tree.Abandoned[id] = file
 	return nil
 }
 

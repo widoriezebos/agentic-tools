@@ -35,7 +35,7 @@ func TestAuthorityCheckRefusesADelegateEvenWithTheRetiredMarker(t *testing.T) {
 // of the shell control-plane sources that survive the dispatcher's port.
 func TestRetiredLeaseFenceMarkerStaysOutOfTheShellControlPlane(t *testing.T) {
 	t.Parallel()
-	for _, source := range []string{"scripts/agents/commit.sh", "scripts/agents/evidence-gc.sh"} {
+	for _, source := range []string{"scripts/agents/commit.sh"} {
 		content, err := os.ReadFile(filepath.Join("..", "..", source))
 		if err != nil {
 			t.Fatal(err)

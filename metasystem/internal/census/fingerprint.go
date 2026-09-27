@@ -24,11 +24,13 @@ import (
 // metasystem root (order does not affect the hash — the map is sorted — but
 // it documents the contract).
 var fingerprintFiles = []string{
-	"scripts/agents/arm-supervision.sh",
 	"bin/metasystem",
 	"scripts/agents/adapters/runtime-common.sh",
-	"scripts/watch-background-jobs.sh",
 }
+
+// FingerprintFiles returns the fixed supervision inputs the fingerprint
+// hashes, relative to the metasystem root.
+func FingerprintFiles() []string { return append([]string(nil), fingerprintFiles...) }
 
 // fingerprintConfig maps each relevant config key to its default.
 var fingerprintConfig = map[string]string{

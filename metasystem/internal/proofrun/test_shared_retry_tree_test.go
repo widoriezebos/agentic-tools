@@ -109,7 +109,7 @@ func TestSharedCandidatePassSupersedesItsEarlierFailure(t *testing.T) {
 
 func TestSharedNewerRedVetoesReuseButDifferentTreeOwnsFreshExecution(t *testing.T) {
 	t.Parallel()
-	root, base := proofAttemptFixture(t, "testing")
+	root, base, admission := privateAdmissionFixture(t, "testing")
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -120,9 +120,7 @@ func TestSharedNewerRedVetoesReuseButDifferentTreeOwnsFreshExecution(t *testing.
 	groups := map[string]string{"group": groupIdentity}
 	reserve := func(request AdmissionRequest) (Attempt, LaunchResult) {
 		t.Helper()
-		fixtureHostAdmissionMu.Lock()
-		defer fixtureHostAdmissionMu.Unlock()
-		attempt, decision, err := ReserveLocked(candidateAdmission(request))
+		attempt, decision, err := ReserveLocked(WithTestHostAdmissionDirectory(candidateAdmission(request), admission))
 		if err != nil {
 			t.Fatal(err)
 		}

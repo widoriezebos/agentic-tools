@@ -23,9 +23,12 @@ func TestReaperTickReconcilesAnAttemptWhoseLauncherIsGone(t *testing.T) {
 		}
 	}
 	conf := filepath.Join(root, "metasystem.conf")
-	if err := os.WriteFile(conf, []byte("dispatch.cap-max=120\n"), 0o600); err != nil {
+	if err := os.WriteFile(conf, []byte("dispatch.cap-max=120\nmetasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// A fake-runtime root reserves in its own admission namespace
+	// (candidateProofAdmission); any other root reserves in the account's real
+	// host admission, which live proof runs on the host hold ("busy").
 	pinProofBinaryFixture(t, root)
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {

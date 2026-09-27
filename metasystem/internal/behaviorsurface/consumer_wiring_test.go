@@ -47,13 +47,7 @@ func TestLandingConsumerUsesProspectivePolicyForStaleBinaryAndRename(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverageDeltaBody, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "coverage-delta.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "commit.sh"), string(commitBody), true)
-	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "coverage-delta.sh"), string(coverageDeltaBody), true)
-	writeConsumerFixture(t, filepath.Join(root, "scripts", "audit-metasystem.sh"), "#!/usr/bin/env bash\nexit 0\n", true)
 	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "go-gate.sh"), `#!/usr/bin/env bash
 set -euo pipefail
 proof=
@@ -73,6 +67,9 @@ case "$1 $2" in
   "proc started-at") echo 1 ;;
   "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
   "lease commit-token"|"gate weight-add") : ;;
+  "internal proof-run")
+    mkdir -p "$(dirname "$0")/../artifacts"
+    printf '%s\n' "$*" >>"$(dirname "$0")/../artifacts/coverage-delta-calls" ;;
   *) : ;;
 esac
 `, true)
@@ -129,8 +126,12 @@ esac
 	if err != nil {
 		t.Fatalf("stale live binary blocked prospective policy: %v\n%s", err, output)
 	}
-	if !strings.Contains(output, "coverage delta: no ratchet registry at this root; skipped") {
-		t.Fatalf("registry-free root did not state the coverage skip:\n%s", output)
+	// The landing runs the live engine's staged coverage delta for its root
+	// (whose registry-free skip is proofrun.CoverageDelta's own test).
+	calls, err := os.ReadFile(filepath.Join(root, "artifacts", "coverage-delta-calls"))
+	canonicalRoot, _ := filepath.EvalSymlinks(root)
+	if err != nil || !strings.Contains(string(calls), "internal proof-run coverage-delta --root "+canonicalRoot+" --staged") {
+		t.Fatalf("the landing did not run the staged coverage delta for its root: %q %v\n%s", calls, err, output)
 	}
 
 	// Intent-to-add makes both sides of this unstaged cross-class rename

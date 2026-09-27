@@ -40,7 +40,7 @@ func (engineHost) WatchJob(_ context.Context, root, job string, callerPid int64,
 // is the request's, never this process's environment.
 func (engineHost) ExtendBudget(_ context.Context, request delegation.ExtendBudgetRequest) (string, int) {
 	dependencies := defaultSyncRequestDependencies()
-	dependencies.caller = request.CallerPid
+	dependencies.authorityFacts.caller = processIdentity{pid: request.CallerPid}
 	lineage := request.OwnerLineage
 	dependencies.ownerLineage = func() string { return lineage }
 	var output strings.Builder

@@ -16,7 +16,7 @@ done
 receipt_instruction='Leave `metasystem/memory/receipts.log` unchanged; the seat writes the receipt at landing.'
 grep -Fqx "$receipt_instruction" "$source_root/scripts/agents/templates/brief.md" \
   || { echo "builder brief template does not reserve receipts for the seat" >&2; exit 1; }
-grep -Fq 'metasystem session verify --root' "$source_root/scripts/agents/roles/steward-continuation.md" \
+grep -Fq 'metasystem session handoff --root <installation> --verify' "$source_root/scripts/agents/roles/steward-continuation.md" \
   || { echo "steward-continuation role does not verify a named context handoff" >&2; exit 1; }
 grep -Fq 'metasystem session handoff --root' "$source_root/docs/orchestration.md" \
   || { echo "orchestration instructions do not hand off a context over the bound" >&2; exit 1; }
@@ -90,8 +90,6 @@ new_case() { # name
   worktree="$case_root/worktree"
   mkdir -p "$controller/scripts/agents" "$controller/docs" "$controller/memory"
   cp "$source_root/scripts/agents/path-classes.txt" "$controller/scripts/agents/"
-  cp "$source_root/scripts/metasystem-config.sh" "$controller/scripts/"
-  cp "$source_root/scripts/receipt.sh" "$controller/scripts/"
   # The copied config reader resolves its engine as <controller>/bin/metasystem.
   mkdir -p "$controller/bin"
   cp "$source_root/bin/metasystem" "$controller/bin/metasystem"
@@ -331,8 +329,8 @@ expect_failure delegate-receipt \
 [[ ! -e "$controller/artifacts/agents/impl/rounds/1/diff.patch" \
    && ! -e "$controller/artifacts/agents/impl/rounds/1/review.json" ]] \
   || { echo "delegate receipt refusal published review artifacts" >&2; exit 1; }
-"$controller/scripts/receipt.sh" add --type implement --outcome shipped --verify clean \
-  --goal seat-owned --built-by coordinator --note 'fixture seat landing' \
+"$controller/bin/metasystem" receipt add --type implement --outcome shipped --verify clean \
+  --goal seat-owned --built-by coordinator --note 'fixture seat landing' --root "$controller" \
   >"$fixture_root/seat-receipt.out"
 grep -Fq '|goal=seat-owned|built_by=coordinator|' "$controller/memory/receipts.log" \
   || { echo "seat receipt entrypoint did not append its own landing receipt" >&2; exit 1; }
@@ -426,7 +424,7 @@ expect_failure waiver-control-plane 'agent control plane contains delegate-creat
 # recorded-implementer-successor budget reopen, record-round-beats-
 # lying-return). The one refusal string covers both the second-budget
 # and human-only-remedy assertions the shell greps split across. The
-# The `metasystem work check` stage-level E2E above remains this
+# The `metasystem work review --check-only` stage-level E2E above remains this
 # file's job.
 
 echo "conformance fixtures passed"

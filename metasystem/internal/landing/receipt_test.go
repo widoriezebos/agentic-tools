@@ -84,10 +84,12 @@ func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+	// A private admission namespace: the default is the host's durable one,
+	// which concurrent processes on this machine hold.
+	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostAdmissionDirectory(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: f.root, ExecutionRoot: f.root, GoalID: "goal", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now,
-	}, tree))
+	}, tree), filepath.Join(t.TempDir(), "host-admission")))
 	if err != nil {
 		t.Fatal(err)
 	}

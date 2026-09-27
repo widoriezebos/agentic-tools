@@ -383,7 +383,8 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-ceiling", "--transcript", overCeiling})
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(ceilingText, "context-budget=dead (diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") ||
-		!strings.Contains(ceilingText, "; remedy: metasystem session context --root "+root+")") || strings.Contains(ceilingText, "handoff") {
+		!strings.Contains(ceilingText, "; remedy: metasystem session handoff --status --root "+root+")") ||
+		strings.Contains(strings.ReplaceAll(ceilingText, "session handoff --status", ""), "handoff") {
 		t.Fatalf("over-ceiling diagnostic = code %d stdout %q stderr %q", code, ceilingText, problem)
 	}
 
@@ -417,7 +418,7 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	code, _, problem = captureChannelOutput(t, func() int {
 		return runContextStatus([]string{"--root", root, "--transcript", ""})
 	})
-	if code != 2 || !strings.Contains(problem, "usage: metasystem session context") {
+	if code != 2 || !strings.Contains(problem, "usage: metasystem session handoff --status") {
 		t.Fatalf("empty transcript flag = code %d stderr %q", code, problem)
 	}
 }

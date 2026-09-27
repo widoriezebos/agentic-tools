@@ -87,8 +87,7 @@ func newDispatchBed(t *testing.T) *bed {
 	}
 	for _, asset := range []string{
 		"scripts/agents/role-packets.json", "scripts/agents/adapters/fake.sh",
-		"scripts/agents/adapters/runtime-common.sh", "scripts/agents/arm-supervision.sh",
-		"scripts/watch-background-jobs.sh",
+		"scripts/agents/adapters/runtime-common.sh",
 	} {
 		b.installAsset(asset)
 	}

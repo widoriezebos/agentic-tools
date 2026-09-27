@@ -85,7 +85,7 @@ func TestToolGateFallsBackToEntryWhenBirthUnreadable(t *testing.T) {
 func TestToolGateClassifiesBeforeReading(t *testing.T) {
 	for _, call := range []Call{
 		{Tool: "Agent", Input: json.RawMessage(`{}`)},
-		bashToolGateCall("metasystem session context --root /repo"),
+		bashToolGateCall("metasystem session handoff --status --root /repo"),
 	} {
 		root := t.TempDir()
 		birth := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)

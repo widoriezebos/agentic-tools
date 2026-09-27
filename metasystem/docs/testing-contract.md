@@ -115,11 +115,11 @@ Save this as `testing.json` (the generated `reports/` directories are outputs):
 }
 ```
 
-Run `bin/metasystem test check --root .` to validate the contract and native
+Run `bin/metasystem settings check` to validate the settings, the contract and native
 tool readiness. `test plan --root . --goal <id> --mode auto` shows the selected
 groups; `metasystem test run --goal <id> --mode auto` executes them (the `test run`
-owner), and `test verify --root . --goal <id> --tree
-<tree>` checks sufficient retained evidence without launching tests or builds.
+owner), and `metasystem test status --tree <tree> --goal <id>` says whether
+sufficient retained evidence already proves that tree, without launching tests or builds.
 Use the exact candidate tree and the same goal when running and verifying.
 Diagnostic plans and results cannot authorize delivery.
 
@@ -196,11 +196,11 @@ matching retained result; `episode` requires new evidence for a new decision
 while allowing exact resume within its retained episode. Optional positive
 `freshnessMaxAgeMs` limits an episode's lifetime. A caller resuming an episode
 passes the same `--fresh-episode` token and `--fresh-expires-at` timestamp to
-`test run` and `test verify`.
+`test run` and `test status`.
 
 Upgrade and enroll the engine while the application still uses a valid schema
 1 contract; it retains its conservative behavior. Then add reviewed schema 2
-fields, run `test check` and `test plan`, and complete the selected delivery
+fields, run `settings check` and `test plan`, and complete the selected delivery
 proof against the trusted destination policy. Keep existing acceptance groups
 and prerequisite edges during the transition; candidate policy cannot remove
 protected checks. Do not use a diagnostic admission result as the delivery

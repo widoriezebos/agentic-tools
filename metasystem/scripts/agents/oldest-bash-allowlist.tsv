@@ -99,7 +99,6 @@ bare-test	scripts/agents/supervision-fixtures.sh	57473eecd6bc76eb86dd2a8119c9483
 bare-test	scripts/agents/supervision-fixtures.sh	5f0f5a4614271736bdd51b853da109f4f03f040002a4dcb92e2b902854d72233	[[ "$(json_field "$state" "components.$1.pid")" != "$2" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	76c91f8502846bd19b7f62136e9fac46354f91d627f34813755712c1878be1dc	[[ ! -e "$2" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	80a6bd2ec3de53cae8927173198c0918f71dd3d54faea54520feff5d03afa5bf	[[ $2 -eq 0 ]]
-bare-test	scripts/agents/supervision-fixtures.sh	c9aa09c4bc7039c6a0d43e81d982e16da87ab0cc65844ed7c1797f1f1252a4c1	[[ "$(env -u METASYSTEM_METASYSTEM_RUNTIMES \\n"$operator_harness/scripts/metasystem-config.sh" get --key metasystem.runtimes --default '')" == codex ]]
 bare-test	scripts/agents/supervision-fixtures.sh	e5e1a54d9e06cf8639b17b7c4676089e96ec7da223f7ab7d23737910f8e5b7dd	[[ -z "$operator_runtimes" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	e941b91ee51ab99eacaf90a103894977a5921f222eb8f068b6ecf0aaf9311afa	[[ "$observed" =~ ^[0-9]+$ && "$observed" -gt "$first" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	e9eaca1d448f58a21a87c03344f6790060224f926e8030d0a7912c5420448b9a	[[ "$decision_surface_stop_hook_assertions" =~ $decision_pattern_regex ]]

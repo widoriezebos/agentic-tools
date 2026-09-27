@@ -30,6 +30,7 @@ type deadlineCase struct {
 	now      func() time.Time
 	mono     func() time.Duration
 	deadline bool // fire the fixture deadline once the worker entered
+	after    func(time.Duration) <-chan time.Time
 	hang     bool // the worker waits for a release that never comes
 	tempDir  string
 	// afterWorker observes the launched worker.
@@ -77,7 +78,7 @@ func runDeadline(t *testing.T, installation hookInstallation, ops *fakeOps, test
 	}
 	call := hookCall{
 		runtime: "claude", event: "stop", payload: payload, env: env, now: test.now, monotonic: test.mono,
-		startWorker: startTestWorker(t, worker, launched), tempDir: test.tempDir,
+		startWorker: startTestWorker(t, worker, launched), tempDir: test.tempDir, after: test.after,
 	}
 	if test.afterWorker != nil {
 		start := call.startWorker
@@ -330,13 +331,32 @@ func TestDeadlineSetupConsumesTheWorkerWindow(t *testing.T) {
 		}
 		return 0
 	}
-	started := time.Now()
-	run, _ := runDeadline(t, installation, ops, deadlineCase{mono: mono, hang: true, env: map[string]string{stopDeadlineBudgetEnv: "4"}})
+	// The coordinate resolver runs beside the worker. With the window
+	// already spent the deadline is due at once, and the parent adopts the
+	// coordinates only if the resolver has answered by then; the deadline
+	// fires once it has, so a loaded scheduler cannot drop the checkout.
+	resolved := make(chan time.Time)
+	ops.stateRoot = func(root string) (string, int) {
+		defer close(resolved)
+		return root + "\n", 0
+	}
+	var windows []time.Duration
+	after := func(wait time.Duration) <-chan time.Time {
+		windows = append(windows, wait)
+		if len(windows) == 1 {
+			return resolved
+		}
+		return nil // the worker's cleanup grace; it ends on SIGTERM
+	}
+	run, _ := runDeadline(t, installation, ops, deadlineCase{mono: mono, hang: true, after: after,
+		env: map[string]string{stopDeadlineBudgetEnv: "4"}})
 	if run.stdout != mustForm(t, "allowed", "deadline-expired")+"\n" {
 		t.Fatalf("setup-consumed window = stdout %q stderr %q", run.stdout, run.stderr)
 	}
-	if elapsed := time.Since(started); elapsed > 20*time.Second {
-		t.Fatalf("a consumed window still waited %s", elapsed)
+	// Setup consumed the whole worker window: the deadline wait asks for
+	// nothing more.
+	if len(windows) == 0 || windows[0] != 0 {
+		t.Fatalf("a consumed window still waited: deadline waits %v", windows)
 	}
 }
 

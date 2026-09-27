@@ -337,18 +337,43 @@ func ownerLineage(value string) string {
 	return lineage
 }
 
-var requiredCommands = []string{
-	"git", "ps", "pgrep", "awk", "sed", "grep", "tar", "date", "mktemp", "stat", "cksum",
-	"find", "install", "ln", "tr", "sort", "wc", "head", "tail", "cut", "tee", "uname",
-	"basename", "dirname", "touch", "chmod", "mkdir", "rmdir", "cat", "cp", "mv", "rm",
+// ProductionCommand is one command the production scripts exec, with the
+// Debian-family package that provides it. The inventory is a contract (the
+// supported-platforms rule in docs/project-rules.md): arming and adoption
+// name anything missing up front instead of failing mid-operation.
+type ProductionCommand struct {
+	Name, Package string
+}
+
+// ProductionCommands is the command inventory. shasum is deliberately absent:
+// production hashing is `util sha256`.
+var ProductionCommands = []ProductionCommand{
+	{"git", "git"}, {"ps", "procps"}, {"pgrep", "procps"}, {"awk", "mawk or gawk"},
+	{"sed", "sed"}, {"grep", "grep"}, {"tar", "tar"}, {"date", "coreutils"},
+	{"mktemp", "coreutils"}, {"stat", "coreutils"}, {"cksum", "coreutils"}, {"find", "findutils"},
+	{"install", "coreutils"}, {"ln", "coreutils"}, {"tr", "coreutils"}, {"sort", "coreutils"},
+	{"wc", "coreutils"}, {"head", "coreutils"}, {"tail", "coreutils"}, {"cut", "coreutils"},
+	{"tee", "coreutils"}, {"uname", "coreutils"}, {"basename", "coreutils"}, {"dirname", "coreutils"},
+	{"touch", "coreutils"}, {"chmod", "coreutils"}, {"mkdir", "coreutils"}, {"rmdir", "coreutils"},
+	{"cat", "coreutils"}, {"cp", "coreutils"}, {"mv", "coreutils"}, {"rm", "coreutils"},
+}
+
+// MissingProductionCommands returns the inventory commands lookPath cannot
+// find, in inventory order.
+func MissingProductionCommands(lookPath func(string) (string, error)) []ProductionCommand {
+	var missing []ProductionCommand
+	for _, command := range ProductionCommands {
+		if _, err := lookPath(command.Name); err != nil {
+			missing = append(missing, command)
+		}
+	}
+	return missing
 }
 
 func preflightCommands() error {
 	var missing []string
-	for _, command := range requiredCommands {
-		if _, err := exec.LookPath(command); err != nil {
-			missing = append(missing, command)
-		}
+	for _, command := range MissingProductionCommands(exec.LookPath) {
+		missing = append(missing, command.Name)
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("required production commands are missing: %s", strings.Join(missing, ", "))
@@ -737,7 +762,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 		components = append(components, ComponentOutcome{
 			Component: "checkout-lease", Outcome: "advisor",
 			Detail: "holder=" + holderName + "; this session has reading authority only",
-			Remedy: "run scripts/agents/second-session.sh to create an isolated writer worktree",
+			Remedy: "run metasystem session isolate to create an isolated writer worktree",
 		})
 	} else {
 		components = append(components, ComponentOutcome{
@@ -769,7 +794,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	if authority == "read-only" {
 		return finish(Result{
 			Components: components, Outcome: "advisor", Authority: authority, Holder: holderName,
-			Worktree: "scripts/agents/second-session.sh",
+			Worktree: "metasystem session isolate",
 		})
 	}
 	return finish(Result{Components: components, Outcome: "armed", Authority: authority})

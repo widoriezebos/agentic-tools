@@ -157,7 +157,7 @@ Working Mode: build
 The seat handed off under handoff %s.
 
 Read %s first in bounded views. Before using it, run
-`+"`metasystem session verify --root %s --nonce %s`"+` and stop on anything
+`+"`metasystem session handoff --root %s --verify %s`"+` and stop on anything
 but ok (its sha256 is %s). Hold the goal %q under the
 steward-continuation role contract. The goal ledger and the job records are
 the authority wherever the state snapshot disagrees.

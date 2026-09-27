@@ -11,7 +11,7 @@ Use the three completion tiers. On every change, establish that the requested ou
 <!-- quote source="AGENTS.md" -->
 ## Completion
 
-Before completing a change, run the default completion check in `docs/design/design-obligation-gate.md`. For a runnable surface, verify it end to end per `skills/verify/SKILL.md`. Work is complete only after the requested outcome exists, focused verification passes, and all critical or high design obligations are done. Report changes, proof, checks not run, and remaining risk for human review per `docs/collaboration.md`. Before ending unfinished multi-session work, update the stream's handoff note in `plans/`. For repository changes, append a receipt with `scripts/receipt.sh add`; for review-only work, report the proposed receipt line without writing it.
+Before completing a change, run the default completion check in `docs/design/design-obligation-gate.md`. For a runnable surface, verify it end to end per `skills/verify/SKILL.md`. Work is complete only after the requested outcome exists, focused verification passes, and all critical or high design obligations are done. Report changes, proof, checks not run, and remaining risk for human review per `docs/collaboration.md`. Before ending unfinished multi-session work, update the stream's handoff note in `plans/`. For repository changes, append a receipt with `metasystem receipt add`; for review-only work, report the proposed receipt line unwritten.
 <!-- /quote -->
 
 ## Delegation and review

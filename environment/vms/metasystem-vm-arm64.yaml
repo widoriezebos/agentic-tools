@@ -27,7 +27,7 @@
 # KNOWN GUEST FLAKE (metasystem KI-37 / GitHub issue #13): this guest's clock
 # is stepped continuously (the Lima guest agent SyncTime plus systemd-timesyncd
 # both correct it, ~every 20s), which moves /proc/stat btime. The metasystem's
-# shell identity path (arm-supervision.sh: proc started-at then proc alive)
+# identity path (`up` arming: proc started-at then proc alive)
 # compares btime-derived start seconds, so `scripts/validate-metasystem.sh`
 # occasionally dies "announcement pid identity is not live" at the supervision
 # fixtures — a transient false-death, not a real defect. Re-run the suite (a

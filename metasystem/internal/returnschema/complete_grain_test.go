@@ -1,4 +1,4 @@
-package validate
+package returnschema
 
 import (
 	"fmt"
@@ -16,6 +16,7 @@ func requireReturnGrain(t *testing.T, ok bool, format string, args ...any) {
 }
 
 func TestMechanicalRigorRequiresBehaviourAndFixture(t *testing.T) {
+	t.Parallel()
 	result := map[string]any{
 		"findings": []any{map[string]any{"id": "F-1", "material": true}},
 		"rigor":    []any{map[string]any{"findingId": "F-1", "grain": "mechanical", "behaviour": "observed behavior", "reopeningTrigger": "change"}},
@@ -33,6 +34,7 @@ func TestMechanicalRigorRequiresBehaviourAndFixture(t *testing.T) {
 }
 
 func TestReturnVersionFiveRoleGateAndNoValidatorClosePolicy(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	dir := filepath.Join(root, "scripts", "agents", "schemas")
 	requireReturnGrain(t, os.MkdirAll(dir, 0o755) == nil, "create schema directory")
@@ -56,6 +58,7 @@ func TestReturnVersionFiveRoleGateAndNoValidatorClosePolicy(t *testing.T) {
 }
 
 func TestMaterialByRoundPublishedWithFoldedRound(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile(filepath.Join("..", "dispatch", "finding_register.go"))
 	requireReturnGrain(t, err == nil, "read finding_register.go: %v", err)
 	source := string(data)

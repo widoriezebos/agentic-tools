@@ -356,12 +356,12 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		owners := b.owners()
 		owners.commandNow = func(string) (time.Time, error) { return time.Time{}, errors.New("the goal clock is unreadable") }
-		code, result := b.runJSON(owners, "terminal", "enroll", "--name", "Wido")
+		code, result := b.runJSON(owners, "system", "enroll", "--name", "Wido")
 		data, _ := result.Data.(map[string]any)
 		if code == 0 || result.Outcome != intentPartial || b.enrolls != 1 || data["fleetPublished"] != false || data["enrollment"] == nil {
 			t.Fatalf("partial enrollment = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(b.owners(), "terminal", "enroll"); code != 2 || result.Next == nil || b.enrolls != 1 {
+		if code, result := b.runJSON(b.owners(), "system", "enroll"); code != 2 || result.Next == nil || b.enrolls != 1 {
 			t.Fatalf("nameless enrollment = %d %+v", code, result)
 		}
 	})

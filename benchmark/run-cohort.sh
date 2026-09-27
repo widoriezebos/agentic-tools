@@ -81,22 +81,17 @@ fi
 
 # Flight-recorder witness: the driver exports the cohort id as the execution
 # id (it IS the cohort id -- nothing is minted; plans/flight-recorder.md
-# D-1a) and emits a driver-phase event on every transition.
-# The emitter never fails its caller (docs/design/flight-recorder.md D-3):
-# the writer is this process, with its own start time and sequence.
+# D-1a) and emits a driver-phase event on every transition. The driver is the
+# writer (D-1c): the engine's event verb records this process and its start
+# time, and the driver owns the per-process sequence. An emission never fails
+# the driver, whatever is broken.
 cohort_event_seq=0
-cohort_event_started=
 emit_event() { # component, event, key=value...
-  local component=${1:-unknown} event=${2:-unknown} engine=${METASYSTEM_BIN:-$top/metasystem/bin/metasystem}
-  shift 2 2>/dev/null || true
-  [[ -x "$engine" ]] || return 0
-  if [[ -z "$cohort_event_started" ]]; then
-    cohort_event_started=$("$engine" internal proc started-at --pid $$ 2>/dev/null) || true
-    [[ "$cohort_event_started" =~ ^[0-9]+$ ]] || cohort_event_started=0
-  fi
+  local event_engine=${METASYSTEM_BIN:-$top/metasystem/bin/metasystem}
   cohort_event_seq=$((cohort_event_seq + 1))
-  "$engine" internal event emit "root=${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" "component=$component" \
-    "event=$event" "pid=$$" "pidStartedAt=$cohort_event_started" "seq=$cohort_event_seq" "$@" >/dev/null 2>&1 || true
+  "$event_engine" internal event emit "root=${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" \
+    "component=${1:-unknown}" "event=${2:-unknown}" "pid=$$" "seq=$cohort_event_seq" "${@:3}" \
+    >/dev/null 2>&1 || true
 }
 
 atomic_state() { # state path, phase, repetition index

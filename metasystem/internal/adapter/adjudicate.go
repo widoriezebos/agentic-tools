@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
 // The adapter turn's terminal-outcome state machine. PURE DECISION by
@@ -49,7 +49,7 @@ func adjudicateValidate(p AdjudicateParams, candidate, transcript string) (strin
 	if err := NormalizeReturn(candidate, transcript, p.RecordPath, p.ReturnPath, p.MarkdownPath, p.SessionID); err != nil {
 		return "return normalization failed: " + err.Error() + "\n", nil
 	}
-	violations := validate.ReturnCompleteJob(p.Root, p.Job)
+	violations := returnschema.ReturnCompleteJob(p.Root, p.Job)
 	if len(violations) == 0 {
 		return "", nil
 	}

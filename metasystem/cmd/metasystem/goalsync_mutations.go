@@ -132,35 +132,68 @@ func runGoalHandoverMutation(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *id == "" || *targetMachine == "" || *targetLineage == "" || *targetEpoch < 1 || *batch == "" {
-		fmt.Fprintln(os.Stderr, "goal handover needs --id, --target-machine, --target-lineage, --target-claim-epoch, and --batch")
+	request := goalHandoverRequest{Root: *root, GoalID: *id, TargetMachine: *targetMachine, TargetLineage: *targetLineage,
+		TargetEpoch: *targetEpoch, Batch: *batch, TargetRoot: *targetRoot}
+	if problem := request.usage(); problem != "" {
+		fmt.Fprintln(os.Stderr, problem)
 		return 2
 	}
-	if !converted(*root) {
+	// The process entry supplies its own caller and the lineage it was
+	// given or inherited, read once here at the boundary.
+	entry := ownerInvocation{caller: entryCallerIdentity(), lineage: *lineage}
+	if entry.lineage == "" {
+		entry.lineage = os.Getenv("METASYSTEM_OWNER_LINEAGE")
+	}
+	res, err := goalHandoverEffect(entry, request)
+	if errors.Is(err, errLegacyLedger) {
 		fmt.Fprintln(os.Stderr, "goal handover works the synced backlog; this checkout still carries the legacy ledger")
 		return 1
 	}
-	req, err := syncReq("handover", *root, "", *lineage)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	return printSyncResult(res, err)
+}
+
+// goalHandoverRequest is one claim transfer to a named target pair.
+type goalHandoverRequest struct {
+	Root, GoalID, TargetMachine, TargetLineage string
+	TargetEpoch                                int64
+	Batch, TargetRoot                          string
+}
+
+func (r goalHandoverRequest) usage() string {
+	if r.GoalID == "" || r.TargetMachine == "" || r.TargetLineage == "" || r.TargetEpoch < 1 || r.Batch == "" {
+		return "goal handover needs --id, --target-machine, --target-lineage, --target-claim-epoch, and --batch"
 	}
-	bindHandoverTargetRoot(&req, *targetRoot)
+	return ""
+}
+
+var errLegacyLedger = errors.New("this checkout still carries the legacy ledger")
+
+// goalHandoverEffect is the handover owner under an explicit invocation
+// context: classification starts at the supplied identity and the request
+// carries the supplied lineage.
+func goalHandoverEffect(invocation ownerInvocation, request goalHandoverRequest) (goal.PublishResult, error) {
+	if !converted(request.Root) {
+		return goal.PublishResult{}, errLegacyLedger
+	}
+	req, err := invocation.syncRequest("handover", request.Root, false)
+	if err != nil {
+		return goal.PublishResult{}, err
+	}
+	bindHandoverTargetRoot(&req, request.TargetRoot)
 	liveness := func() (identity.Liveness, error) {
-		if req.Actor.Machine == *targetMachine && req.Actor.Lineage == *targetLineage {
-			if req.ClaimEpoch != *targetEpoch || req.ClaimEpoch < 1 {
-				return identity.Unknown, fmt.Errorf("the current target pair is not authenticated at epoch %d", *targetEpoch)
+		if req.Actor.Machine == request.TargetMachine && req.Actor.Lineage == request.TargetLineage {
+			if req.ClaimEpoch != request.TargetEpoch || req.ClaimEpoch < 1 {
+				return identity.Unknown, fmt.Errorf("the current target pair is not authenticated at epoch %d", request.TargetEpoch)
 			}
 			return identity.Alive, nil
 		}
-		authRoot, err := goalHandoverAuthenticationRoot(*root, *targetRoot)
+		authRoot, err := goalHandoverAuthenticationRoot(request.Root, request.TargetRoot)
 		if err != nil {
 			return identity.Unknown, err
 		}
-		return goalHandoverTargetLiveness(authRoot, *targetMachine, *targetLineage, *targetEpoch)
+		return goalHandoverTargetLiveness(authRoot, request.TargetMachine, request.TargetLineage, request.TargetEpoch)
 	}
-	res, err := goal.Handover(req, *id, *targetMachine, *targetLineage, *targetEpoch, *batch, liveness)
-	return printSyncResult(res, err)
+	return goal.Handover(req, request.GoalID, request.TargetMachine, request.TargetLineage, request.TargetEpoch, request.Batch, liveness)
 }
 
 func printCarryMutation(res goal.PublishResult, detail string, err error) int {
@@ -551,17 +584,24 @@ type syncRequestDependencies struct {
 	// report, when set, receives the owner's typed outcome instead of the
 	// printed one; the public intent commands render it themselves.
 	report *ownerReport
-	// caller is the supplied process identity classification and human
-	// proof start from; zero is this process's parent, the caller of a verb
-	// run as a child (design 6.2).
-	caller int64
+	// stdout and stderr are the streams a printing owner writes to; nil is
+	// the process's own. A caller that owns its streams (a parallel test)
+	// sets both, so no other goroutine's output can reach them.
+	stdout, stderr io.Writer
 }
 
-func (d syncRequestDependencies) callerPID() int64 {
-	if d.caller != 0 {
-		return d.caller
+func (d syncRequestDependencies) outStream() io.Writer {
+	if d.stdout != nil {
+		return d.stdout
 	}
-	return int64(os.Getppid())
+	return os.Stdout
+}
+
+func (d syncRequestDependencies) errStream() io.Writer {
+	if d.stderr != nil {
+		return d.stderr
+	}
+	return os.Stderr
 }
 
 func defaultSyncRequestDependencies() syncRequestDependencies {
@@ -601,9 +641,7 @@ func syncReqWithProofAt(verb, root, by, lineageFlag string, observedProof *human
 }
 
 func syncReqWithProofAtWithDependencies(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, error) {
-	facts := dependencies.authorityFacts
-	facts.caller = dependencies.caller
-	classification, classifyErr := brainHumanWordClassificationWithFacts(verb, root, by, observedProof, facts)
+	classification, classifyErr := brainHumanWordClassificationWithFacts(verb, root, by, observedProof, dependencies.authorityFacts)
 	if classifyErr != nil {
 		return goal.VerbRequest{}, classifyErr
 	}
@@ -641,7 +679,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		if nowErr != nil {
 			return goal.VerbRequest{}, nowErr
 		}
-		fullProof, fullErr := dependencies.proveHuman(root, dependencies.callerPID(), nil, now)
+		fullProof, fullErr := dependencies.proveHuman(root, dependencies.authorityFacts.caller.pid, nil, now)
 		if fullErr == nil && fullProof.ValidFor(root) {
 			authority = &fullProof
 		} else {
@@ -651,7 +689,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 				}
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove enrolled human ancestry: %w", fullErr)
 			}
-			terminalProof, terminalErr := dependencies.proveTerminal(root, dependencies.callerPID(), nil, now)
+			terminalProof, terminalErr := dependencies.proveTerminal(root, dependencies.authorityFacts.caller.pid, nil, now)
 			if terminalErr != nil {
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove terminal human ancestry: %w", terminalErr)
 			}
@@ -691,7 +729,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		if authority != nil {
 			proof = *authority
 		} else {
-			proof, proofErr = dependencies.proveHuman(root, dependencies.callerPID(), nil, now)
+			proof, proofErr = dependencies.proveHuman(root, dependencies.authorityFacts.caller.pid, nil, now)
 		}
 		if proofErr != nil || proof.Outcome != humanauthority.OutcomeProven || !proof.ValidFor(root) {
 			outcome := proof.Outcome
@@ -734,14 +772,17 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 type goalAuthorityReadFacts struct {
 	repositoryTop  func(string) (string, error)
 	ledgerIdentity func(string) string
-	// caller is the supplied process identity; zero is this process's parent.
-	caller int64
+	// caller is the supplied process identity classification and human
+	// proof start from (owner_invocation.go): a process entry's own caller,
+	// or the current process on an edge that replaced a child.
+	caller processIdentity
 }
 
 func defaultGoalAuthorityReadFacts() goalAuthorityReadFacts {
 	return goalAuthorityReadFacts{
 		repositoryTop:  stateroot.RepositoryTop,
 		ledgerIdentity: goal.ExistingLedgerIdentity,
+		caller:         entryCallerIdentity(),
 	}
 }
 
@@ -750,11 +791,12 @@ func brainHumanWordClassification(verb, root, by string, observedProof *humanaut
 }
 
 func brainHumanWordClassificationWithFacts(verb, root, by string, observedProof *humanauthority.Proof, facts goalAuthorityReadFacts) (lease.ClassifyResult, error) {
-	caller := facts.caller
-	if caller == 0 {
-		caller = int64(os.Getppid())
+	classification, classifyErr := lease.ClassifyResult{}, error(nil)
+	if callerPid, err := facts.caller.classifiablePid(identity.KernelProber{}); err != nil {
+		classifyErr = err
+	} else {
+		classification, classifyErr = classifyVerbCallerWith(root, callerPid, facts.repositoryTop)
 	}
-	classification, classifyErr := classifyVerbCallerWith(root, caller, facts.repositoryTop)
 	brainState := brain.Read(root, facts.ledgerIdentity(root))
 	if brainState.State != brain.Undeclared {
 		command := fmt.Sprintf("metasystem goal %s --root <checkout> --id <id> --by <name> <the verb's own flags>", verb)
@@ -798,11 +840,15 @@ func classifyGoalAuthorityFirstWithFacts(verb string, f *syncFlags, facts goalAu
 }
 
 func printSyncResult(res goal.PublishResult, err error) int {
+	return writeSyncResult(os.Stdout, os.Stderr, res, err)
+}
+
+func writeSyncResult(stdout, stderr io.Writer, res goal.PublishResult, err error) int {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+	writeJSONLine(stdout, stderr, map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
 	if res.Outcome != goal.OutcomeConfirmed {
 		return 1
 	}
@@ -1124,9 +1170,12 @@ func parseSyncFlagValuesWithOutput(name string, args []string, output io.Writer)
 	f := &syncFlags{}
 	pathFlagVar(fs, &f.root, "root", ".", "checkout root")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
-	if name == "approve" {
+	switch name {
+	case "approve":
 		fs.Var(&f.ids, "id", "goal id (repeatable)")
-	} else {
+	case "reconcile":
+		fs.Var(&f.ids, "id", "a goal whose reviewed edits may publish (repeatable); any other edited goal refuses the whole session")
+	default:
 		fs.StringVar(&f.id, "id", "", "goal id")
 	}
 	fs.StringVar(&f.intent, "intent", "", "one-line intent")
@@ -2086,6 +2135,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 		if proven, _, proofErr := provenGoalRequest("reconcile", f, humanauthority.ProveOrTemporaryGoalAuthority); proofErr == nil {
 			req = proven
 		}
+		req.ReconcileScope = f.ids
 		res, err := goal.Reconcile(req)
 		if err != nil {
 			dependencies.complain(err)
@@ -3798,23 +3848,26 @@ func goalEditEffectAppending(req goal.VerbRequest, f *syncFlags, commandNow func
 	return res, err
 }
 
-var (
-	runGoalClaim = runSyncOnly("claim", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		budget, err := f.budgetTuple(false)
-		if err != nil {
-			return goal.PublishResult{}, err
-		}
-		if f.arc != "" {
-			if budget != nil {
-				return goal.ClaimArc(req, f.id, *budget)
-			}
-			return goal.ClaimArc(req, f.id)
-		}
+// claimGoalOwner claims a goal, or its whole arc with --arc, for this machine.
+func claimGoalOwner(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	budget, err := f.budgetTuple(false)
+	if err != nil {
+		return goal.PublishResult{}, err
+	}
+	if f.arc != "" {
 		if budget != nil {
-			return goal.Claim(req, f.id, *budget)
+			return goal.ClaimArc(req, f.id, *budget)
 		}
-		return goal.Claim(req, f.id)
-	}, "id")
+		return goal.ClaimArc(req, f.id)
+	}
+	if budget != nil {
+		return goal.Claim(req, f.id, *budget)
+	}
+	return goal.Claim(req, f.id)
+}
+
+var (
+	runGoalClaim   = runSyncOnly("claim", claimGoalOwner, "id")
 	runGoalRestamp = runSyncOnly("restamp", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.Restamp(req, f.id)
 	}, "id")

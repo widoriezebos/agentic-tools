@@ -438,3 +438,34 @@ func TestProtocolGrowthAndAdvance(t *testing.T) {
 		t.Fatalf("after advancing, there should be no new growth: %q", growth.Message)
 	}
 }
+
+// WithHeld gates an in-process write exactly as RunHeld gates a command: the
+// holder runs it under the lease lock, a MAIN that is not the holder is
+// refused before it runs, and a stale expected epoch refuses.
+func TestWithHeldGatesAnInProcessWriteLikeRunHeld(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	announceSelf(t, root)
+	self := int64(os.Getpid())
+	ran := false
+	if err := WithHeld(root, self, nil, func() error { ran = true; return nil }); err != nil || !ran {
+		t.Fatalf("holder: ran=%v err=%v", ran, err)
+	}
+	stale := int64(99)
+	ran = false
+	if err := WithHeld(root, self, &stale, func() error { ran = true; return nil }); err == nil || ran ||
+		!strings.Contains(err.Error(), "claim epoch changed") {
+		t.Fatalf("stale epoch: ran=%v err=%v", ran, err)
+	}
+
+	other := t.TempDir()
+	announceLiveChild(t, other)
+	if _, err := Announce(other, "my sess", self, selfStart(t), "tag", "fake", ""); err != nil {
+		t.Fatal(err)
+	}
+	ran = false
+	if err := WithHeld(other, self, nil, func() error { ran = true; return nil }); err == nil || ran ||
+		!strings.Contains(err.Error(), "OWNED-ELSEWHERE") {
+		t.Fatalf("non-holder: ran=%v err=%v", ran, err)
+	}
+}

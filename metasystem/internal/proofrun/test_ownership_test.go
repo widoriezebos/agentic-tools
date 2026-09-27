@@ -724,9 +724,7 @@ func TestForceGroupsRecoversTiedTerminalLegacyProducers(t *testing.T) {
 				t.Fatalf("ordinary admission accepted tied legacy history: decided=%t err=%v", decided, err)
 			}
 			request.ForceGroups = true
-			fixtureHostAdmissionMu.Lock()
-			fresh, decision, err := ReserveLocked(request)
-			fixtureHostAdmissionMu.Unlock()
+			fresh, decision, err := ReserveLocked(WithTestHostAdmissionDirectory(request, f.admissionDir))
 			if err != nil || decision.Disposition != DispositionExecuted || fresh.TestOwned["check"] != identity ||
 				fresh.TestAdmission == 0 || fresh.TestSources["check"] != "" || fresh.TestWaits["check"] != "" {
 				t.Fatalf("forced fresh ownership: attempt=%+v decision=%+v err=%v", fresh, decision, err)

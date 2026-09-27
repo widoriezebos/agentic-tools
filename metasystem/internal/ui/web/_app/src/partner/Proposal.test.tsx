@@ -80,7 +80,7 @@ describe("the card the Partner's proposed acts stand on", () => {
    */
   it("says the act in the page's own word, with the subject and every argument", () => {
     const markup = rendered([proposal()]);
-    expect(markup).toContain("Not now");
+    expect(markup).toContain("Pause");
     expect(markup).toContain("Fleet presence is read from the census");
     expect(markup).toContain("fleet-presence");
     expect(markup).toContain("Reason");
@@ -160,7 +160,7 @@ describe("the card the Partner's proposed acts stand on", () => {
         },
       }),
     ]);
-    expect(markup).toContain("Open goal");
+    expect(markup).toContain("Open");
     expect(markup).toContain("2, from severity 2 · novelty 1 · exposure 2 · accumulation 1");
     expect(markup).toContain("payments, one team, one month of history");
     expect(markup).toContain("bank-sandbox");

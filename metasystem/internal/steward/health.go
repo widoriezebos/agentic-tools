@@ -570,7 +570,7 @@ func checkSpendFenceWithMeasureAndMachine(repoRoot string, now time.Time, measur
 
 func checkRetroDebt(repoRoot string) RoleVerdict {
 	open, err := retrodebt.Open(repoRoot)
-	remedy := "record the retro receipt with scripts/receipt.sh add --type retro --outcome shipped --verify clean --note \"<what changed>\""
+	remedy := "record the retro receipt with metasystem receipt add --type retro --outcome shipped --verify clean --note \"<what changed>\""
 	if err != nil {
 		return roleUnknown(RoleRetroDebt, "the durable retro debt record is unreadable: "+err.Error(), remedy)
 	}

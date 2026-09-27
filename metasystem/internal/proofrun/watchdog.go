@@ -272,14 +272,17 @@ func preserveWithBound(options WatchdogOptions, destination string, sources []st
 	return note
 }
 
+// shutdownSupervision stops the suite root's supervision through its
+// engine's `up --shutdown` entry; a root without an engine has no
+// supervision to stop.
 func shutdownSupervision(options WatchdogOptions) error {
-	script := filepath.Join(options.Root, "scripts", "agents", "arm-supervision.sh")
-	if _, err := os.Stat(script); err != nil {
+	engine := filepath.Join(options.Root, "bin", "metasystem")
+	if _, err := os.Stat(engine); err != nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, script, "--repo", options.Root, "--shutdown")
+	command := exec.CommandContext(ctx, engine, "up", "--metasystem-root", options.Root, "--repo", options.Root, "--shutdown")
 	command.Stdout = options.Output
 	command.Stderr = options.ErrorOutput
 	if err := command.Run(); err != nil {

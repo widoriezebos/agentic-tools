@@ -708,12 +708,11 @@ func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
 }
 
 func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
-	t.Setenv(preparationRestartedEnv, "")
-	calls := 0
+	calls, state := 0, &testingPreparationState{}
 	var prepared testingPreparation
 	var prepareErr error
 	status, _, stderr := captureCommandOutput(t, true, true, func() int {
-		prepared, prepareErr = prepareTestingWith(testingSelectionRequest{LandedRearm: true}, func(request testingSelectionRequest) (testingPreparation, error) {
+		prepared, prepareErr = prepareTestingWith(testingSelectionRequest{LandedRearm: true, Preparation: state}, func(request testingSelectionRequest) (testingPreparation, error) {
 			calls++
 			if !request.LandedRearm {
 				return testingPreparation{}, errors.New("restart skipped landed re-arm entry")
@@ -729,9 +728,9 @@ func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
 		return 0
 	})
 	if status != 0 || prepareErr != nil || calls != 2 || prepared.PolicyBaseCommit != "new-base" ||
-		os.Getenv(preparationRestartedEnv) != "1" || !strings.Contains(stderr, "restarting preparation once") {
-		t.Fatalf("authenticated move did not restart once from the landed re-arm entry: status=%d calls=%d prepared=%+v err=%v guard=%q stderr=%q",
-			status, calls, prepared, prepareErr, os.Getenv(preparationRestartedEnv), stderr)
+		!state.restarted || os.Getenv("METASYSTEM_PREPARATION_RESTARTED") != "" || !strings.Contains(stderr, "restarting preparation once") {
+		t.Fatalf("authenticated move did not restart once from the landed re-arm entry: status=%d calls=%d prepared=%+v err=%v restarted=%t stderr=%q",
+			status, calls, prepared, prepareErr, state.restarted, stderr)
 	}
 }
 
@@ -827,7 +826,6 @@ func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
 		{name: "engine path and testing contract", contractChange: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(preparationRestartedEnv, "")
 			old, moved := strings.Repeat("a", 40), strings.Repeat("b", 40)
 			fixture := newPolicyBaseMoveFixture(t, map[string]string{old: "", moved: old}, moved,
 				[]string{"ancestry", old, moved}, []string{"landing-ref"}, []string{"commit-at-ref", "refs/remotes/origin/main"})
@@ -835,8 +833,8 @@ func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
 			if test.contractChange {
 				decision.BaseContractDigest = "new-digest"
 			}
-			calls, rearms := 0, 0
-			prepared, err := prepareTestingWith(testingSelectionRequest{LandedRearm: true}, func(request testingSelectionRequest) (testingPreparation, error) {
+			calls, rearms, state := 0, 0, &testingPreparationState{}
+			prepared, err := prepareTestingWith(testingSelectionRequest{LandedRearm: true, Preparation: state}, func(request testingSelectionRequest) (testingPreparation, error) {
 				calls++
 				if calls == 1 {
 					return testingPreparation{}, compareTrustedPolicyDecisionWithReaders("candidate", old, "old-digest", decision, fixture.root, fixture.readers())
@@ -846,15 +844,14 @@ func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
 				}
 				return testingPreparation{PolicyBaseCommit: moved}, nil
 			})
-			if err != nil || calls != 2 || rearms != 1 || prepared.PolicyBaseCommit != moved || os.Getenv(preparationRestartedEnv) != "1" {
-				t.Fatalf("descendant move did not succeed after exactly one restart and re-arm: calls=%d rearms=%d prepared=%+v guard=%q err=%v", calls, rearms, prepared, os.Getenv(preparationRestartedEnv), err)
+			if err != nil || calls != 2 || rearms != 1 || prepared.PolicyBaseCommit != moved || !state.restarted {
+				t.Fatalf("descendant move did not succeed after exactly one restart and re-arm: calls=%d rearms=%d prepared=%+v restarted=%t err=%v", calls, rearms, prepared, state.restarted, err)
 			}
 		})
 	}
 }
 
 func TestSecondBaseMoveRefusesBaseMoved(t *testing.T) {
-	t.Setenv(preparationRestartedEnv, "")
 	calls := 0
 	_, err := prepareTestingWith(testingSelectionRequest{}, func(testingSelectionRequest) (testingPreparation, error) {
 		calls++
@@ -865,6 +862,52 @@ func TestSecondBaseMoveRefusesBaseMoved(t *testing.T) {
 	})
 	if err == nil || calls != 2 || !strings.Contains(err.Error(), "cause=base-moved ours=base-b engine=base-c restarts=1") {
 		t.Fatalf("second move did not refuse with the guarded base-moved cause: calls=%d err=%v", calls, err)
+	}
+}
+
+// TestPreparationRestartAllowanceIsInvocationLocal is the VOA-14 witness:
+// two consecutive preparations in one resident process, each with one base
+// movement, are both admitted; two movements within one invocation, across
+// its preparations, are still refused; and nothing reaches the process
+// environment.
+func TestPreparationRestartAllowanceIsInvocationLocal(t *testing.T) {
+	onceMoved := func(calls *int) testingPreparationAttempt {
+		return func(testingSelectionRequest) (testingPreparation, error) {
+			*calls++
+			if *calls == 1 {
+				return testingPreparation{}, &preparationBaseMove{ours: "base-a", engine: "base-b"}
+			}
+			return testingPreparation{PolicyBaseCommit: "base-b"}, nil
+		}
+	}
+	captureCommandOutput(t, false, true, func() int {
+		for invocation := 1; invocation <= 2; invocation++ {
+			calls := 0
+			request := testingSelectionRequest{Preparation: &testingPreparationState{}}
+			if prepared, err := prepareTestingWith(request, onceMoved(&calls)); err != nil || calls != 2 || prepared.PolicyBaseCommit != "base-b" {
+				t.Fatalf("invocation %d in the same process: calls=%d prepared=%+v err=%v", invocation, calls, prepared, err)
+			}
+		}
+		return 0
+	})
+	if value, set := os.LookupEnv("METASYSTEM_PREPARATION_RESTARTED"); set {
+		t.Fatalf("preparation state leaked into the process environment: %q", value)
+	}
+	shared := &testingPreparationState{}
+	first, second := 0, 0
+	captureCommandOutput(t, false, true, func() int {
+		if _, err := prepareTestingWith(testingSelectionRequest{Preparation: shared}, onceMoved(&first)); err != nil {
+			t.Fatalf("first preparation of the invocation: %v", err)
+		}
+		_, err := prepareTestingWith(testingSelectionRequest{Preparation: shared}, onceMoved(&second))
+		if err == nil || second != 1 || !strings.Contains(err.Error(), "cause=base-moved") {
+			t.Fatalf("a second movement within one invocation was admitted: calls=%d err=%v", second, err)
+		}
+		return 0
+	})
+	parsed, _, code := parseTestingSelection("test run", []string{"--root", t.TempDir()}, true)
+	if code != 0 || parsed.Preparation == nil || parsed.Preparation.restarted {
+		t.Fatalf("a command invocation does not start with its own fresh preparation state: code=%d state=%+v", code, parsed.Preparation)
 	}
 }
 

@@ -317,18 +317,17 @@ func TestU6bPortUnverifiedStartParksThenResumesWithReconciliation(t *testing.T) 
 	t.Setenv("METASYSTEM_FAKE_HOST_START_UNVERIFIED", "0")
 	// Resume re-arms supervision before its run: the launcher's arming
 	// step runs the armer again and requires its armed outcome.
-	armed := filepath.Join(t.TempDir(), "armed")
-	if err := writeHostCycleFile(filepath.Join(engine.Root, "scripts", "agents", "arm-supervision.sh"), []byte(
-		"#!/usr/bin/env bash\nset -euo pipefail\n"+
-			"if [[ ${1:-} == fingerprint ]]; then printf 'fixture-fingerprint\\n'; exit 0; fi\n"+
-			"printf 'armed\\n' >>"+armed+"\nprintf 'up outcome=armed authority=writer\\n'\n"), 0o755); err != nil {
-		t.Fatal(err)
+	armed := 0
+	engine.ArmSupervision = func([]string) (string, string, int) {
+		armed++
+		return "up outcome=armed authority=writer\n", "", 0
 	}
+	engine.SupervisionFingerprint = func(string) (string, error) { return "fixture-fingerprint", nil }
 	if err := engine.armAndPreflight("resume"); err != nil {
 		t.Fatalf("resume preflight: %v", err)
 	}
-	if data, err := os.ReadFile(armed); err != nil || string(data) != "armed\n" {
-		t.Fatalf("resume did not re-arm supervision: %q %v", data, err)
+	if armed != 1 {
+		t.Fatalf("resume armed supervision %d times, want 1", armed)
 	}
 	if code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-2", signal); code != 0 {
 		t.Fatalf("the resumed mission exited %d", code)

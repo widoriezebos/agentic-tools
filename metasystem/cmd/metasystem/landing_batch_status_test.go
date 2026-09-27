@@ -574,24 +574,23 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 			if err := store.Create(record); err != nil {
 				t.Fatal(err)
 			}
-			originalChild := batchChildRunner
 			originalPush := batchMovedEndpointPush
 			originalVerify := batchVerifyRebasedSeries
 			originalAuthorize := batchAuthorizeRebasedSeries
 			t.Cleanup(func() {
-				batchChildRunner, batchMovedEndpointPush, batchVerifyRebasedSeries, batchAuthorizeRebasedSeries = originalChild, originalPush, originalVerify, originalAuthorize
+				batchMovedEndpointPush, batchVerifyRebasedSeries, batchAuthorizeRebasedSeries = originalPush, originalVerify, originalAuthorize
 			})
 			batchAuthorizeRebasedSeries = func(string, batch.Store, batch.Record, string, time.Time) error { return nil } // Transport-only fixture has no accepted goal ledger.
 			var children [][]string
 			verifications := 0
 			pushes, refusedPushes := 0, 0
-			batchChildRunner = func(_ string, _ string, args ...string) error {
+			stubBatchOwnerCalls(t, func(_ ownerInvocation, args ...string) error {
 				children = append(children, append([]string(nil), args...))
 				if test.childFailure == "held" && len(args) > 1 && args[0] == "landing" && args[1] == "held" {
 					return errors.New("held refusal")
 				}
 				return nil
-			}
+			})
 			batchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {
 				verifications++
 				if len(trees) != 1 {

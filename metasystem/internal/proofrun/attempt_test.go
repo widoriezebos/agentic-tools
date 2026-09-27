@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -32,10 +31,6 @@ func candidateAdmission(request AdmissionRequest) AdmissionRequest {
 	}
 	return request
 }
-
-// Fixture reservations share one process-local host guard even when their
-// proof roots differ. Parallel tests serialize only this test fixture seam.
-var fixtureHostAdmissionMu sync.Mutex
 
 func TestWaitAttemptRequiresCommittedTerminal(t *testing.T) {
 	root, proofIdentity := proofAttemptFixture(t, "wait-terminal")
@@ -779,14 +774,7 @@ func TestRedAttemptFencesOnlyFailedOrNonterminalComponents(t *testing.T) {
 
 func TestGLEBlockedReservationDoesNotBecomeFailedProducer(t *testing.T) {
 	t.Parallel()
-	fixtureHostAdmissionMu.Lock()
-	previousAdmissionDirectory := hostAdmissionDirectoryForTest
-	hostAdmissionDirectoryForTest = filepath.Join(t.TempDir(), "host-admission")
-	defer func() {
-		hostAdmissionDirectoryForTest = previousAdmissionDirectory
-		fixtureHostAdmissionMu.Unlock()
-	}()
-	root, baseIdentity := proofAttemptFixture(t, "testing")
+	root, baseIdentity, admission := privateAdmissionFixture(t, "testing")
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -798,6 +786,7 @@ func TestGLEBlockedReservationDoesNotBecomeFailedProducer(t *testing.T) {
 	first := componentAdmissionRequest(root, baseIdentity, launcher, now, firstTree, "blocked-dependent",
 		map[string]string{"harness": harnessIdentity, "dependent": dependentIdentity, "sibling": siblingIdentity})
 	first.SharedComponents = true
+	first = WithTestHostAdmissionDirectory(first, admission)
 	failed := retainComponentAttempt(t, first, firstTree, []componentStatus{
 		{"harness", "failed"}, {"dependent", "blocked"}, {"sibling", "passed"}}, now.Add(time.Second))
 	repaired := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), repairedTree, "repaired-harness",
@@ -1155,6 +1144,25 @@ func componentAttemptResult(attemptID, groupID, executionIdentity, status string
 		LaunchCounts: LaunchCounts{Test: 1, CountsComplete: true}, Cost: TestCost{DeclaredTargetMS: 1}}
 	result.RecomputeDelivery()
 	return result
+}
+
+// privateAdmissionFixture is proofAttemptFixture on the fake runtime, with a
+// host admission namespace of its own. A parallel test reserves through it
+// with WithTestHostAdmissionDirectory: the package default namespace is shared
+// by every test in the binary, and one test's held guard would read as busy
+// admission in another.
+func privateAdmissionFixture(t *testing.T, commandClass string) (string, ProofIdentity, string) {
+	t.Helper()
+	root, _ := proofAttemptFixture(t, commandClass)
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("dispatch.cap-max=120\nmetasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := BuildProofIdentity(root, conf, "full", commandClass, []string{"gate"}, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, identity, filepath.Join(root, "artifacts", "agents", "host-admission-fixture")
 }
 
 func proofAttemptFixture(t *testing.T, commandClass string) (string, ProofIdentity) {

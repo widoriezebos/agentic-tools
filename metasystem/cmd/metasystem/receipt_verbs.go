@@ -17,7 +17,7 @@ import (
 
 var receiptLaunchStore = func() launch.Store { return launch.Store{} }
 
-// runReceipt relays scripts/receipt.sh's calling convention: the action
+// runReceipt is the receipt ledger verb (metasystem receipt ACTION): the action
 // word, then one flag vocabulary shared by every action (a flag.FlagSet —
 // a hand-rolled switch would re-implement flag semantics loosely). A
 // retro summary may ride as the first positional argument after the
@@ -25,7 +25,7 @@ var receiptLaunchStore = func() launch.Store { return launch.Store{} }
 // exactly the one-line usage its callers know.
 func runReceipt(args []string) int {
 	usage := func() {
-		fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|correct|check|stats|retro [flags] (see scripts/receipt.sh --help)")
+		fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|correct|check|stats|retro [flags]")
 	}
 	if len(args) == 0 {
 		usage()

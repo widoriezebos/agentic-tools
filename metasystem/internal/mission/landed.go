@@ -2,14 +2,13 @@ package mission
 
 import (
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
 // The Landed Returns derivation (records/patience/patience-orphan-usage.md): the
@@ -40,6 +39,12 @@ const landedRowMax = 20
 // what cannot be read is skipped or marked, never a hard failure — because
 // silence is the failure mode this list exists to close.
 func LandedReturns(repo, missionID string, turnLog []any) [][]string {
+	return landedReturns(repo, missionID, turnLog, landedRoundValid)
+}
+
+// landedReturns is LandedReturns with the round checker supplied, so tests
+// can judge validity without authoring schema-complete returns.
+func landedReturns(repo, missionID string, turnLog []any, roundValid func(repo, jobID string) bool) [][]string {
 	records := readLandedJobRecords(filepath.Join(repo, "artifacts", "agents", "jobs"))
 	reserved := landedReservedJobIDs(repo, missionID)
 	certified, dispatched := hostActedRecords(turnLog)
@@ -133,7 +138,7 @@ func LandedReturns(repo, missionID string, turnLog []any) [][]string {
 	// order, or the bound.
 	rows := make([][]string, 0, len(candidates))
 	for _, item := range candidates {
-		if item.jobID != "" && !landedRoundValid(repo, item.jobID) {
+		if item.jobID != "" && !roundValid(repo, item.jobID) {
 			item.row[1] = "invalid"
 		}
 		rows = append(rows, item.row)
@@ -141,18 +146,12 @@ func LandedReturns(repo, missionID string, turnLog []any) [][]string {
 	return rows
 }
 
-// landedRoundValid runs the shipped job-mode return checker through the
-// repository's own script, so return-schema authority stays in one place. A
-// checker that cannot run proves nothing, and an unproven return lists as
-// invalid rather than as ready.
+// landedRoundValid runs the shipped job-mode return checker
+// (returnschema.ReturnCompleteJob), so return-schema authority stays in one
+// place. A return that fails the checker lists as invalid rather than as
+// ready.
 func landedRoundValid(repo, jobID string) bool {
-	cmd := exec.Command(filepath.Join(repo, "scripts", "assert-return-complete.sh"), "--job", jobID)
-	cmd.Dir = repo
-	// Bounded: a wedged checker must not freeze prompt assembly; a
-	// checker that ran out of its bound proved nothing, so the return
-	// lists as invalid.
-	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
-	return boundedexec.Run(cmd, limit, "return checker for job "+jobID) == nil
+	return len(returnschema.ReturnCompleteJob(repo, jobID)) == 0
 }
 
 // readLandedJobRecords reads every readable job record by its id. Unreadable

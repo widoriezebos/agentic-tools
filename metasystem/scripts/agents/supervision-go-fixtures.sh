@@ -76,10 +76,8 @@ mkdir -p "$fixture_root/bin"
 printf '%s\n' 'metasystem.runtimes=fake' 'watch.interval-sec=1' >"$fixture_root/metasystem.conf"
 cp "$bin" "$fixture_root/bin/metasystem"
 for dependency in \
-  scripts/agents/arm-supervision.sh \
   scripts/agents/adapters/runtime-common.sh \
-  scripts/agents/adapters/fake.sh \
-  scripts/watch-background-jobs.sh; do
+  scripts/agents/adapters/fake.sh; do
   mkdir -p "$fixture_root/${dependency%/*}"
   cp "$root/$dependency" "$fixture_root/$dependency"
 done
@@ -88,7 +86,7 @@ printf '[]\n' >"$process_fixture"
 export METASYSTEM_CENSUS_PROCESS_FILE="$process_fixture"
 watcher_cap=$("$bin" supervise derive-ceiling --conf "$fixture_root/metasystem.conf")
 
-# arm launches the owner the way arm-supervision.sh will: create the lock
+# arm launches the owner the way `up` does: create the lock
 # dir, launch the owner with a start gate, publish owner.json naming its
 # pid, signal the gate. Echoes the owner pid.
 arm() { # repo, tag, registry, interval

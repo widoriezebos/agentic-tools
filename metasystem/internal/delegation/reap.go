@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // handshakeBackstopGraceSec is how long the reaper waits past a record's
@@ -366,7 +366,7 @@ func (s *session) recollectLostReturn(job, record, status string) bool {
 	if roundDir == "" || !fileNonEmpty(returnFile) {
 		return false
 	}
-	if len(validate.ReturnCompleteRole(s.root, role, returnFile)) > 0 {
+	if len(returnschema.ReturnCompleteRole(s.root, role, returnFile)) > 0 {
 		return false
 	}
 	usagePath := ""

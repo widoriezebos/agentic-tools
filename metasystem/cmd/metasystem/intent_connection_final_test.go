@@ -68,7 +68,7 @@ func TestIntentCriticDelegateSelectedRoster(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("DELEGATE_RECORD", record)
-	if job, err := readDelegate(binary, worktree, brief, "goal-a", strings.Repeat("a", 40), "", "", environment...); err != nil || job != "critic-fixture" {
+	if job, err := readDelegate(scriptDelegator(binary), worktree, brief, "goal-a", strings.Repeat("a", 40), "", "", environment...); err != nil || job != "critic-fixture" {
 		t.Fatalf("delegate: job=%q err=%v", job, err)
 	}
 	args, _ := os.ReadFile(record + ".args")

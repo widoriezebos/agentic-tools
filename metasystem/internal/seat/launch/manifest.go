@@ -1,19 +1,15 @@
 package launch
 
-// The adapter-declared local configuration a new machine gets.
+// The adapter-declared local configuration a new machine or a second session
+// gets.
 //
-// `validate session-isolation` takes the paths in a file, and second-session.sh
-// builds that file by asking every adapter for its own `local-config-paths`.
-// This verb cannot: it runs one shell script and one only, the kit's designated
-// build owner, so the list is written here instead of collected by running four
-// adapters.
-//
-// That leaves one copy of a contract in two places, which is exactly what drifts
-// unnoticed — so it does not go unnoticed: scripts/agents/second-session-fixtures.sh
-// declares the same list as a literal it diffs the adapters against, and
-// manifest_test.go reads that literal out of the script and compares it with
-// this one. A new adapter that declares a local file fails here, by name,
-// rather than launching machines that quietly lack it.
+// Each adapter declares its own local configuration (`adapter.sh
+// local-config-paths`); `validate session-isolation` takes the paths in a
+// file. Neither a seat launch nor a second session runs the adapters for it:
+// the list is written here, once, and manifest_test.go runs every shipped
+// adapter and compares their declarations with it, so a new adapter that
+// declares a local file fails there, by name, rather than launching machines
+// or sessions that quietly lack it.
 
 import "strings"
 

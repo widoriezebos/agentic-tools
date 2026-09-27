@@ -159,7 +159,7 @@ describe("the tabs of what was decided", () => {
     expect(tabs(page).map((tab) => tab.id)).toEqual([...tabOrder]);
     // The register's count is the whole register, not the page of it shown.
     expect(tabs(page).map((tab) => tab.title)).toEqual([
-      "Rulings 148", "Decisions 1", "Answered 0", "Approved 0", "Not now 0",
+      "Rulings 148", "Decisions 1", "Answered 0", "Approved 0", "Paused 0",
     ]);
   });
 });

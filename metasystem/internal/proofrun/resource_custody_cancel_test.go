@@ -42,8 +42,8 @@ func TestResourceCommandExitedRootOutputHolderDrainsWithAndWithoutLease(t *testi
 				var lease *HostResourceLease
 				var err error
 				if withLease {
-					directory, conf = isolatedHostResources(t)
-					lease, err = AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
+					directory, conf = privateHostResources(t)
+					lease, err = acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -82,10 +82,17 @@ exit 0`
 						}
 					},
 				}
-				go func() { done <- runResourceCommand(runCtx, command, lease, events) }()
+				runEnded := make(chan struct{})
+				var runErr error
+				go func() {
+					err := runResourceCommand(runCtx, command, lease, events)
+					runErr = err
+					close(runEnded)
+					done <- err
+				}()
 
 				prober := identity.KernelProber{}
-				waitCustodyFile(t, readyPath, 0)
+				waitCustodyFileWhile(t, readyPath, 0, runEnded, func() error { return runErr })
 				root := waitCustodyRef(t, prober, rootPIDPath, 0)
 				child := waitCustodyRef(t, prober, childPIDPath, 0)
 				group, err := syscall.Getpgid(int(root.Pid))
@@ -147,7 +154,7 @@ exit 0`
 						t.Fatal(err)
 					}
 					lease = nil
-					next, err := AcquireHostResources(t.Context(), directory, conf, "heavy", []string{"fixture-db"})
+					next, err := acquireHostResourcesIn(t.Context(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 					if err != nil {
 						t.Fatalf("clean lease was not reacquirable: %v", err)
 					}
@@ -271,9 +278,9 @@ func TestResourceCommandAlreadyCancelledStartsNothing(t *testing.T) {
 			var lease *HostResourceLease
 			if withLease {
 				var conf string
-				directory, conf = isolatedHostResources(t)
+				directory, conf = privateHostResources(t)
 				var err error
-				lease, err = AcquireHostResources(context.Background(), directory, conf, "heavy", nil)
+				lease, err = acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", nil, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -337,7 +344,7 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 	})
 
 	prober := identity.KernelProber{}
-	waitCustodyFile(t, readyPath, 0)
+	waitCustodyFileWhile(t, readyPath, 0, runDone, func() error { return runErr })
 	child := waitCustodyRef(t, prober, pidPath, 0)
 	childGroup, err := syscall.Getpgid(int(child.Pid))
 	if err != nil || childGroup == int(child.Pid) {
@@ -350,7 +357,7 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 	if err := identity.SignalExact(prober, child, syscall.SIGTERM); err != nil {
 		t.Fatalf("send TERM to exact descendant: %v", err)
 	}
-	waitCustodyFile(t, termAckPath, 0)
+	waitCustodyFileWhile(t, termAckPath, 0, runDone, func() error { return runErr })
 	termAck, err := os.ReadFile(termAckPath)
 	if err != nil || string(termAck) != "TERM\n" {
 		t.Fatalf("exact descendant did not acknowledge TERM: ack=%q err=%v", termAck, err)

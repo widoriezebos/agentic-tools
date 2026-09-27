@@ -36,16 +36,16 @@ The home is `plans/designs/` **under the resolved state root**, subdirectories a
 Before calling a design done, run the boundary rather than trusting the file just written:
 
 ```bash
-metasystem design find --root . --goal <goal id>
+metasystem design list --goal <goal id>
 ```
 
-It prints the id, status and path of every design record whose `Goals` names that goal, and refuses when there is none. The design-critique skill runs it first and stops on its refusal (`skills/design-critique/SKILL.md`): a critique of a design the resolver cannot find is a critique of a document that will not be found again.
+It prints the id, status and path of every design record whose `Goals` names that goal, and says when there is none. The design-critique skill runs it first and stops on its refusal (`skills/design-critique/SKILL.md`): a critique of a design the resolver cannot find is a critique of a document that will not be found again.
 
 `metasystem internal project check` reads every home and refuses a duplicate id, a head missing a required key, an unknown kind or status, and a `Goals` line naming a goal the ledger does not have. The fast gate runs it (`scripts/agents/go-gate.sh`), in an adopted installation from the installed executable, so a failing check blocks every delivery that consumes that gate's retained proof, an unrelated code change included. The design homes, the decision home, the intent and doctrine books and the question register are declared inputs of that group in `testing.json`, so a change to any of them invalidates the retained proof instead of inheriting it.
 
 ## Milestone Check (declared milestones only)
 
-At a declared milestone (merging to the integration branch, closing a plan, ending a multi-session stream), recompute the shared testing contract from the actual goal, destination policy and whole-project candidate. Run its required selection once in your own environment and consume the sufficient retained result with `test verify`, in addition to the focused checks above. A low-risk milestone may finish with standard evidence; deep and cadence groups run only when the contract requires them, while the standing validator remains the broader backstop. A delegate's green run proves its environment, not yours. This named question justifies the selected expense; there is no blanket full-suite prerequisite between milestones.
+At a declared milestone (merging to the integration branch, closing a plan, ending a multi-session stream), recompute the shared testing contract from the actual goal, destination policy and whole-project candidate. Run its required selection once in your own environment and read the sufficient retained result with `metasystem test status --tree <tree>`, in addition to the focused checks above. A low-risk milestone may finish with standard evidence; deep and cadence groups run only when the contract requires them, while the standing validator remains the broader backstop. A delegate's green run proves its environment, not yours. This named question justifies the selected expense; there is no blanket full-suite prerequisite between milestones.
 
 ## Full Matrix (risky changes only)
 

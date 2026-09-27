@@ -483,7 +483,7 @@ func RequireHolderAt(root, metasystemRoot string, callerPid int64, expectedEpoch
 
 func ownedElsewhere(lease *Lease, identity Classification) error {
 	return fmt.Errorf("OWNED-ELSEWHERE: this checkout is held by %s (caller is %s %s); "+
-		"use scripts/agents/second-session.sh for an isolated writer",
+		"use metasystem session isolate for an isolated writer",
 		lease.HolderMainId, identity.Class, identity.MainId)
 }
 
@@ -570,6 +570,29 @@ func Held(root string, callerPid int64, expectedEpoch *int64, fn func() error) e
 	return fn()
 }
 
+// WithHeld runs fn while holding the lease lock, gated exactly as RunHeld
+// gates a command: a HUMAN caller runs it ungated; any other caller must pass
+// the holder gate at the expected epoch while the lock is held.
+func WithHeld(root string, callerPid int64, expectedEpoch *int64, fn func() error) error {
+	root = resolveRoot(root)
+	identity, err := Classify(root, callerPid)
+	if err != nil {
+		return err
+	}
+	if identity.Class == ClassHuman {
+		return fn()
+	}
+	lock, err := acquireBounded(leasePaths(root).Lock, "run-held")
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+	if err := gateHolder(root, identity, expectedEpoch); err != nil {
+		return err
+	}
+	return fn()
+}
+
 // gateHolder is the run-held authority check: HUMAN and internal helpers pass,
 // a MAIN must be the holder at the expected epoch, anyone else is refused.
 func gateHolder(root string, identity Classification, expectedEpoch *int64) error {
@@ -582,7 +605,7 @@ func gateHolder(root string, identity Classification, expectedEpoch *int64) erro
 		return err
 	}
 	if identity.Class != ClassMain || identity.MainId != lease.HolderMainId {
-		return fmt.Errorf("OWNED-ELSEWHERE: this checkout is held by %s; use scripts/agents/second-session.sh for an isolated writer", lease.HolderMainId)
+		return fmt.Errorf("OWNED-ELSEWHERE: this checkout is held by %s; use metasystem session isolate for an isolated writer", lease.HolderMainId)
 	}
 	if expectedEpoch != nil && lease.ClaimEpoch != *expectedEpoch {
 		return fmt.Errorf("checkout lease claim epoch changed before the final mutation")

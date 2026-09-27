@@ -41,7 +41,6 @@ type Shape struct {
 // DefaultShapes covers the committed supervision processes.
 func DefaultShapes() []Shape {
 	return []Shape{
-		{Name: "shell-watcher", Includes: []string{"watch-background-jobs.sh"}, TagFlag: "--instance-tag"},
 		{Name: "go-owner", Includes: []string{"metasystem", "supervise"}, TagFlag: "--tag"},
 		{Name: "adapter-supervisor-codex-dispatch", Includes: []string{"codex.sh", "dispatch"}, TagFlag: "--instance-tag"},
 		{Name: "adapter-supervisor-codex-follow-up", Includes: []string{"codex.sh", "follow-up"}, TagFlag: "--instance-tag"},

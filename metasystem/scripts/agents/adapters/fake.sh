@@ -140,6 +140,9 @@ cas_terminal() { # target, error, phase
   }
 }
 
+# The shipped return checker, run on this job's round return.
+return_complete() { "$ms" internal validate return-complete --root "$root" --job "$job"; }
+
 write_valid_return() {
   "$ms" adapter fake-return --record "$record" --prompt "$prompt" \
     --output "$round_dir/return.json"
@@ -149,7 +152,7 @@ write_valid_return() {
 complete_valid() {
   local violation="$round_dir/protocol-violation.txt"
   write_valid_return
-  if "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1; then
+  if return_complete >"$violation" 2>&1; then
     rm -f "$violation"
     cas_terminal completed null completed
   else
@@ -331,7 +334,7 @@ supervise() { # verb and remaining args
     printf '{malformed\n' >"$round_dir/return.json"
     printf 'malformed return\n' >>"$log"
     violation="$round_dir/protocol-violation.txt"
-    if "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1; then
+    if return_complete >"$violation" 2>&1; then
       cas_terminal completed null completed
     else
       cat "$violation" >>"$log"
@@ -369,13 +372,13 @@ probe() {
   case "$profile" in current|old|unverified-network) ;; *) usage; exit 2 ;; esac
   [[ "$age_days" =~ ^[0-9]+$ ]] || { usage; exit 2; }
   probe_fake_envelope_mechanism
-  # The simulator's handshake window scales with measured load like every other
-  # fixture ceiling; a fixed two-second default is a red gate on a busy machine.
-  local handshake
-  # shellcheck source=../fixture-budget.sh
-  . "$root/scripts/agents/fixture-budget.sh"
-  harness_fixture_budget_init "$root" || return 1
-  handshake=$(harness_fixture_cap adapter-handshake) || return 1
+  # The simulator's handshake window scales with the fixture cap scale like
+  # every other fixture ceiling (a fixed two-second default is a red gate on
+  # a busy machine): the suite's exported scale, else the calibration floor.
+  local handshake scale=${METASYSTEM_FIXTURE_CAP_SCALE_MILLI:-8000}
+  [[ "$scale" =~ ^[1-9][0-9]*$ ]] \
+    || { echo "METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer" >&2; return 1; }
+  handshake=$(( (2 * scale + 999) / 1000 ))
   (( handshake <= 60 )) || handshake=60
   "$ms" adapter fake-capability-snapshot --dir "$agents/capabilities" \
     --profile "$profile" --age-days "$age_days" --handshake-sec "$handshake"

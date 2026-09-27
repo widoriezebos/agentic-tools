@@ -36,24 +36,63 @@ func runDelegate(args []string) int { return runDelegateIn(args, "", os.Stdout, 
 
 // runDelegateIn is runDelegate with its typed outcome written to stdout. dir
 // is the working directory relative file arguments resolve against (empty is
-// the current directory).
+// the current directory). It is the process entry: the installation comes
+// from METASYSTEM_DELEGATE_ROOT or this engine, and the lifecycle reads this
+// process's stdin.
 func runDelegateIn(args []string, dir string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == delegation.RunMemberCallback {
 		return runDelegateGuardMember(args[1:], stdout, stderr)
 	}
-	return runDelegateFrom(os.Getenv("METASYSTEM_DELEGATE_ROOT"), args, dir, stdout, stderr)
+	return runDelegateWith(delegateRequest{rootOverride: os.Getenv("METASYSTEM_DELEGATE_ROOT"), args: args, dir: dir, stdin: os.Stdin}, stdout, stderr)
 }
 
 // runDelegateAt is the delegate boundary for an explicit installation root.
 func runDelegateAt(installation string, args []string, stdout, stderr io.Writer) int {
-	return runDelegateFrom(installation, args, "", stdout, stderr)
+	return runDelegateWith(delegateRequest{rootOverride: installation, args: args, stdin: os.Stdin}, stdout, stderr)
 }
 
-func runDelegateFrom(requestedRoot string, args []string, dir string, stdout, stderr io.Writer) int {
-	root, err := upMetasystemRoot(requestedRoot)
+// delegateRequest is one call of the delegate boundary made in the caller's
+// process (design 6.2): everything the former `internal delegate` child took
+// from its argv, inherited environment and stdin is a field here.
+type delegateRequest struct {
+	// rootOverride names the installation, as METASYSTEM_DELEGATE_ROOT did;
+	// empty derives it from engine.
+	rootOverride string
+	// engine is the installation's engine executable the installation is
+	// derived from; empty is this process's own.
+	engine string
+	args   []string
+	// dir is the working directory relative file arguments resolve against.
+	dir string
+	// environment is configuration the request carries beside this
+	// process's own (KEY=VALUE, config.EnvName keys): a critic read's
+	// selected-installation roster. The lifecycle resolves configuration
+	// from its process environment, so a request carrying one runs in a
+	// child engine that inherits it (runDelegateChild).
+	environment []string
+	// stdin is the lifecycle's input (the escalation approval prompt); nil
+	// is none.
+	stdin io.Reader
+}
+
+// delegateRoot is the installation a delegate request dispatches from.
+func (request delegateRequest) delegateRoot() (string, error) {
+	if request.rootOverride != "" || request.engine == "" {
+		return upMetasystemRoot(request.rootOverride)
+	}
+	return upMetasystemRootOf(request.engine)
+}
+
+// runDelegateWith is the delegate boundary on the caller's streams.
+func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
+	args, dir := request.args, request.dir
+	root, err := request.delegateRoot()
 	if err != nil {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
+	}
+	if len(request.environment) > 0 {
+		return runDelegateChild(root, request, stdout, stderr)
 	}
 	if len(args) > 0 && (strings.HasPrefix(args[0], "__") || delegateRawCommand(args[0])) {
 		return runDelegateRaw(root, args, stdout, stderr)
@@ -97,7 +136,7 @@ func runDelegateFrom(requestedRoot string, args []string, dir string, stdout, st
 	}
 	var diagnostics bytes.Buffer
 	result := lifecycle.Run(context.Background(),
-		delegateRequest(delegateOperatorEnv(os.LookupEnv, claimCapability), io.MultiWriter(stderr, &diagnostics)), internalArgs)
+		delegateLifecycleRequest(delegateOperatorEnv(os.LookupEnv, claimCapability), request.stdin, io.MultiWriter(stderr, &diagnostics)), internalArgs)
 	return writeDelegateResult(result, mode, args, diagnostics.String(), stdout, stderr)
 }
 
@@ -161,7 +200,7 @@ func runDelegateRaw(root string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	result := lifecycle.Run(context.Background(), delegateRequest(delegation.EnvFromEnviron(os.LookupEnv), stderr), args)
+	result := lifecycle.Run(context.Background(), delegateLifecycleRequest(delegation.EnvFromEnviron(os.LookupEnv), os.Stdin, stderr), args)
 	_, _ = stdout.Write(result.Stdout)
 	if path := os.Getenv("METASYSTEM_DELEGATE_OUTCOME_FILE"); path != "" && len(result.Outcome) > 0 {
 		_ = os.WriteFile(path, result.Outcome, 0o600)
@@ -179,16 +218,40 @@ func runDelegateGuardMember(args []string, stdout, stderr io.Writer) int {
 	return gaterun.RunGuardMember(args[1], args[3:], stdout, stderr)
 }
 
-// delegateRequest is this process's invocation: the current process is the
-// supplied identity (design 6.2), and its whole command line is the owner
-// lock tag a contender re-reads.
-func delegateRequest(env delegation.Env, stderr io.Writer) delegation.Request {
+// delegateLifecycleRequest is this process's invocation: the current process
+// is the supplied identity (design 6.2), and its whole command line is the
+// owner lock tag a contender re-reads. stdin is the approval prompt's input,
+// a terminal only when it is this process's own terminal standard input.
+func delegateLifecycleRequest(env delegation.Env, stdin io.Reader, stderr io.Writer) delegation.Request {
+	stdinTTY := false
+	if file, ok := stdin.(*os.File); ok && file != nil {
+		stdinTTY = isTerminal(file.Fd())
+	}
 	return delegation.Request{
 		Invocation: delegation.Invocation{CallerPid: int64(os.Getpid())},
 		Env:        env, LockTag: delegation.LockTagOf(os.Args),
-		Stdin: os.Stdin, StdinTTY: isTerminal(os.Stdin.Fd()), StderrTTY: isTerminal(os.Stderr.Fd()),
+		Stdin: stdin, StdinTTY: stdinTTY, StderrTTY: isTerminal(os.Stderr.Fd()),
 		Stderr: stderr,
 	}
+}
+
+// runDelegateChild runs a delegate request that carries configuration in a
+// child of this engine (`internal delegate`) whose environment holds it: the
+// lifecycle's roster, cap and hazard resolution and the adapters it launches
+// read configuration from their process environment, which this process
+// must not change for one request. The child answers the boundary's own
+// typed line on stdout.
+func runDelegateChild(root string, request delegateRequest, stdout, stderr io.Writer) int {
+	engine := request.engine
+	if engine == "" {
+		engine = delegationEngine(root)
+	}
+	command := exec.Command(engine, append([]string{"internal", "delegate"}, request.args...)...)
+	command.Env = append(append(os.Environ(), request.environment...), "METASYSTEM_DELEGATE_ROOT="+root)
+	command.Dir = request.dir
+	command.Stdin = request.stdin
+	command.Stdout, command.Stderr = stdout, stderr
+	return commandExitCode(command.Run())
 }
 
 // delegateInProcess runs one delegate lifecycle command in this process for
@@ -201,7 +264,7 @@ func delegateInProcess(root string) func(args ...string) (string, string, int) {
 			return "", err.Error(), 1
 		}
 		var diagnostics bytes.Buffer
-		result := lifecycle.Run(context.Background(), delegateRequest(delegation.EnvFromEnviron(os.LookupEnv), &diagnostics), args)
+		result := lifecycle.Run(context.Background(), delegateLifecycleRequest(delegation.EnvFromEnviron(os.LookupEnv), os.Stdin, &diagnostics), args)
 		return string(result.Stdout), diagnostics.String(), result.ExitCode
 	}
 }
@@ -236,15 +299,21 @@ func delegateCancel(installation string) func(string) (string, error) {
 
 // newDelegationLifecycle composes the lifecycle over the real owners.
 func newDelegationLifecycle(root string) (*delegation.Lifecycle, error) {
-	engine := os.Getenv("METASYSTEM_BIN")
-	if engine == "" {
-		engine = filepath.Join(root, "bin", "metasystem")
-	}
+	engine := delegationEngine(root)
 	ports, err := delegation.NewOwnerPorts(delegation.OwnerConfig{Root: root, Engine: engine, Host: engineHost{}})
 	if err != nil {
 		return nil, err
 	}
 	return delegation.New(delegation.Config{Root: root, Engine: engine}, ports)
+}
+
+// delegationEngine is the installation's engine the lifecycle launches and
+// records: METASYSTEM_BIN when set, else the installation's own.
+func delegationEngine(root string) string {
+	if engine := os.Getenv("METASYSTEM_BIN"); engine != "" {
+		return engine
+	}
+	return filepath.Join(root, "bin", "metasystem")
 }
 
 // absoluteDelegatePaths resolves the file arguments of a normalized request

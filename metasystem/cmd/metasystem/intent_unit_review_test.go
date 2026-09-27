@@ -509,7 +509,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
 		t.Fatalf("unclosed critic: %+v", result)
 	}
-	code, result = c.do("work", "close", "j2:crit1", "--dispositions", c.dispositions(), "--repo", install)
+	code, result = c.do("work", "finish", "j2:crit1", "--dispositions", c.dispositions(), "--repo", install)
 	if code != 0 || result.Outcome != intentConfirmed || len(c.closes) != 1 {
 		t.Fatalf("public close (fake whole owner): code=%d %+v", code, result)
 	}
@@ -574,7 +574,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("the amended branch is the replacement then the replayed later unit, without the dropped read: %v", commits)
 	}
 	c.writeCritic(install, "crit3", second, "completed", false)
-	if code, result = c.do("work", "close", "j2:crit3", "--dispositions", c.dispositions(), "--repo", install); code != 0 {
+	if code, result = c.do("work", "finish", "j2:crit3", "--dispositions", c.dispositions(), "--repo", install); code != 0 {
 		t.Fatalf("close crit3: %+v", result)
 	}
 	code, result = c.do("work", "review", "run:"+run)

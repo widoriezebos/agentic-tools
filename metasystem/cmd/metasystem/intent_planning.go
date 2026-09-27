@@ -338,19 +338,19 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentNotes,
 		},
 		{
-			object: "goal", action: "repair", audience: "both", summary: "complete interrupted goal changes, or publish reviewed hand edits",
-			usage: []string{"metasystem goal repair"},
+			object: "goal", action: "sync", audience: "both", summary: "bring the goal files and the published ledger into agreement",
+			usage: []string{"metasystem goal sync", "metasystem goal sync --recover", "metasystem goal sync --refresh"},
 			administrationUsage: []string{
-				"metasystem goal repair --accept-edits --by NAME",
-				"metasystem goal repair --refresh",
-				"metasystem goal repair --accept-remote-history --by NAME",
-				"metasystem goal repair --upgrade --source-digest SHA256 --by NAME [--amendments FILE] [--identity ULID] [--sync-mode remote|local]",
+				"metasystem goal sync --publish --goal G... --by NAME",
+				"metasystem goal sync --accept-remote-history --by NAME",
+				"metasystem goal sync --upgrade --source-digest SHA256 --by NAME [--amendments FILE] [--identity ULID] [--sync-mode remote|local]",
 			},
 			details: []string{
-				"Completes interrupted goal changes across this installation; work that is still running is left alone.",
-				"--accept-edits reconciles the exact current hand edits of the goal files against their base and republishes them; edits",
-				"that need a person's proof ask for it. goal check previews the edits first. --refresh completes an interrupted refresh",
-				"of the published view without reading any edit as new authority.",
+				"Without an option it previews and changes nothing: the goal files that differ from their published base.",
+				"--recover completes goal changes that were interrupted across this installation; work that is still running is left alone.",
+				"--refresh completes an interrupted refresh of the published view without reading any edit as new authority.",
+				"--publish publishes the reviewed hand edits of exactly the goals named with --goal; when the edits it captures also",
+				"touch another goal the whole publication is refused, naming it. Edits that need a person's proof ask for it.",
 				"--accept-remote-history accepts the fetched current history of the same ledger locally after a rewind; nothing is pushed.",
 				"--upgrade converts the legacy plans/goals.md under its reviewed SHA-256: without --source-digest it only shows the",
 				"digest to review. --amendments FILE starts with 'MIGRATION_EPOCH: <RFC3339>' and 'REVIEWED_SOURCE_SHA256: <sha256>', then",
@@ -358,8 +358,10 @@ func intentPlanningCommands() []intentCommand {
 				"blockedby, arc, state); a parked amendment also gives parked-by, parked-at (timestamp or EPOCH) and parked-because.",
 			},
 			flags: []intentFlag{
-				{name: "accept-edits", usage: "reconcile the reviewed hand edits"},
+				{name: "recover", usage: "complete interrupted goal changes"},
 				{name: "refresh", usage: "complete an interrupted refresh"},
+				{name: "publish", usage: "publish the reviewed hand edits of the goals --goal names"},
+				{name: "goal", value: "G", repeat: true, usage: "with --publish: a goal whose edits publish (repeatable)"},
 				{name: "accept-remote-history", usage: "accept the fetched history of the same ledger"},
 				{name: "upgrade", usage: "convert the legacy goals file"},
 				{name: "source-digest", value: "SHA256", usage: "--upgrade: the reviewed file's SHA-256"},
@@ -369,16 +371,8 @@ func intentPlanningCommands() []intentCommand {
 				{name: "by", value: "NAME", usage: "the person deciding"},
 			},
 			maxArgs:  0,
-			examples: []string{"metasystem goal repair", "metasystem goal repair --accept-edits --by Wido"},
-			run:      runIntentRepairGoals,
-		},
-		{
-			object: "goal", action: "check", audience: "both", summary: "the goal files that differ from their published base, changing nothing",
-			usage:    []string{"metasystem goal check"},
-			details:  []string{"Lists the goal files that differ from their published base: the edits goal repair --accept-edits would publish."},
-			maxArgs:  0,
-			examples: []string{"metasystem goal check"},
-			run:      runIntentCheckGoals,
+			examples: []string{"metasystem goal sync", "metasystem goal sync --recover", "metasystem goal sync --publish --goal verbs-match-intent --by Wido"},
+			run:      runIntentGoalSync,
 		},
 		{
 			object: "grant", action: "list", audience: "both", summary: "the recorded powers of attorney, live and closed",
@@ -1809,7 +1803,7 @@ func (inv *intentInvocation) waitContinuations() (map[string]any, []string, bool
 	return waits, lines, waitsFailed
 }
 
-// recoverWaits is repair waits: the continuations and who may resume them.
+// recoverWaits is work wait --list: the continuations and who may resume them.
 func (inv *intentInvocation) recoverWaits() intentResult {
 	waits, lines, failed := inv.waitContinuations()
 	result := intentResult{Outcome: intentConfirmed, text: lines, Data: map[string]any{"waits": waits}, Summary: "this checkout's recorded wait continuations"}

@@ -204,7 +204,7 @@ func newGoalBed(t *testing.T) *bed {
 	b.writeFile("metasystem.conf", conf)
 	b.writeFile("scripts/agents/roles/implementer.md", "implementer\n")
 	b.writeFile("scripts/agents/roles/implementer.requirements.json", "{}\n")
-	for _, input := range []string{"scripts/agents/arm-supervision.sh", "bin/metasystem", "scripts/watch-background-jobs.sh"} {
+	for _, input := range []string{"bin/metasystem"} {
 		b.writeFile(input, "fixture\n")
 	}
 	// The census fingerprint reads the rostered adapter's signature.

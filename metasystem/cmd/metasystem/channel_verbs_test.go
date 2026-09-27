@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -82,6 +83,8 @@ func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 func TestChannelFakeServeRequiresBoundedLifetime(t *testing.T) {
 	t.Parallel()
 	deps := fixtureLifetimeTestDependencies(nil, nil, nil)
+	var stderr bytes.Buffer
+	deps.stderr = &stderr
 	called := false
 	code := runChannelFakeServeWithDependencies([]string{"--dir", t.TempDir()}, deps, func(context.Context, string, chan<- string) error {
 		called = true
@@ -89,6 +92,9 @@ func TestChannelFakeServeRequiresBoundedLifetime(t *testing.T) {
 	})
 	if code != 2 || called {
 		t.Fatalf("unbounded fake server exit=%d called=%t, want refusal before serve", code, called)
+	}
+	if got, want := stderr.String(), "channel fake serve: an exact fixture leash or --max-seconds is required\n"; got != want {
+		t.Fatalf("unbounded fake server refusal = %q, want %q", got, want)
 	}
 }
 

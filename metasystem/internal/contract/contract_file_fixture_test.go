@@ -18,8 +18,8 @@ func newContractFiles(t *testing.T, expectedRepositoryCalls int) (string, func(s
 		"#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\n'\n", 0o755)
 	writeFileMode(t, filepath.Join(repo, "truth", "reference.txt"), "certified truth\n", 0o644)
 	writeFileMode(t, filepath.Join(repo, "docs", "project-rules.md"), projectRules, 0o644)
-	writeFileMode(t, filepath.Join(repo, "scripts", "agents", "arm-supervision.sh"),
-		"#!/usr/bin/env bash\nprintf 'fixture-fingerprint\\n'\n", 0o755)
+	writeFileMode(t, filepath.Join(repo, "scripts", "agents", "fixture-helper.sh"),
+		"#!/usr/bin/env bash\nexit 0\n", 0o755)
 	contractPath := filepath.Join(repo, "plans", "mission-alpha.contract.md")
 	writeFileMode(t, contractPath, sealableContract(), 0o644)
 	resolvedPath := resolvePath(contractPath)

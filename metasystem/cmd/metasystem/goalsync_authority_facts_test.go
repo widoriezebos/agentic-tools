@@ -27,6 +27,7 @@ func goalAuthorityRefusalRoot(t *testing.T) (string, goalAuthorityReadFacts) {
 	}
 	ledgerReads := 0
 	facts := goalAuthorityReadFacts{
+		caller: entryCallerIdentity(),
 		repositoryTop: func(got string) (string, error) {
 			if got != root {
 				t.Fatalf("repository top requested for %q, want %q", got, root)

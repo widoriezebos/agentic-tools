@@ -534,7 +534,7 @@ func TestPortP5DispatchIntegrationTerminalExhaustionRefusesBeforeTheFourthRound(
 			}
 			result = b.run("close", "--job", root)
 			if result.ExitCode != 1 || !strings.Contains(b.stderr.String(),
-				"next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind") {
+				"next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget: the chain's next follow-up or close (work revise, design review, work review --dispositions, work finish) carries the raised limit onto it first") {
 				t.Fatalf("close did not refuse with the human next steps: exit %d stderr %q", result.ExitCode, b.stderr.String())
 			}
 			if b.record(root)["chainClosed"] == true {

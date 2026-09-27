@@ -76,6 +76,10 @@ func newDeliveryBed(t *testing.T) *deliveryBed {
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
 		batchRoot:  func(string, time.Time) (string, bool, error) { return "", false, nil },
 	}
+	// The bed's fakes answer by argv: owner calls reach them as the argv the
+	// former owner children carried.
+	bed.owners.calls = processBackedOwnerCalls(func() (string, error) { return bed.owners.executable() },
+		func(process intentProcess) intentProcessResult { return bed.owners.process(process) })
 	return bed
 }
 
@@ -348,7 +352,7 @@ func realCloseOwner(t *testing.T, b *deliveryBed) {
 			t.Fatal(err)
 		}
 		var diagnostics bytes.Buffer
-		result := life.Run(context.Background(), delegateRequest(delegation.Env{RecordOutcome: true}, &diagnostics), args)
+		result := life.Run(context.Background(), delegateLifecycleRequest(delegation.Env{RecordOutcome: true}, os.Stdin, &diagnostics), args)
 		return intentProcessResult{stdout: result.Stdout, stderr: diagnostics.Bytes(), code: result.ExitCode}
 	}
 }
@@ -359,7 +363,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	b.writeReturn("crit1", 1, "crit1", map[string]any{"id": "F1", "material": true}, map[string]any{"id": "F2", "material": false})
 	partial := filepath.Join(b.root(), "partial.md")
 	b.writeFile(partial, deliveryDispositionsHeader+"| F1 | accepted | fixed in round 2 | none |\n")
-	code, result := b.do("work", "close", "j2:crit1", "--dispositions", partial)
+	code, result := b.do("work", "finish", "j2:crit1", "--dispositions", partial)
 	expectOutcome(t, "unjoined dispositions", code, result, intentRefused)
 	if len(b.calls) != 0 || !strings.Contains(fmt.Sprint(result.Data), "F2") {
 		t.Fatalf("an incomplete join refuses before the close owner: %+v", result)
@@ -381,14 +385,14 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 
 	// Without an evidence root the owner cannot mirror, so its close check
 	// refuses and nothing is stamped.
-	code, result = b.do("work", "close", "j2:inv1")
+	code, result = b.do("work", "finish", "j2:inv1")
 	expectOutcome(t, "owner refusal", code, result, intentRefused)
 	if closed, _ := b.job("inv1")["chainClosed"].(bool); closed || result.Decision == "" {
 		t.Fatalf("an owner refusal leaves the chain open: %+v", result)
 	}
 	evidence := t.TempDir()
 	b.writeFile(conf, string(existing)+"\nevidence.root="+evidence+"\n")
-	code, result = b.do("work", "close", "j2:inv1")
+	code, result = b.do("work", "finish", "j2:inv1")
 	if result.Outcome != intentConfirmed {
 		t.Fatalf("whole close: exit %d %+v", code, result)
 	}
@@ -400,7 +404,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 		t.Fatalf("the chain lock outlived the owner: %v", err)
 	}
 	calls := len(b.calls)
-	code, result = b.do("work", "close", "j2:inv1")
+	code, result = b.do("work", "finish", "j2:inv1")
 	expectOutcome(t, "repeat close", code, result, intentUnchanged)
 	if len(b.calls) != calls {
 		t.Fatal("a closed chain is not closed again")
@@ -432,7 +436,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	b.writeReturn("crit2", 1, "crit2", map[string]any{"id": "C1", "material": false})
 	criticDispositions := filepath.Join(b.root(), "crit2.md")
 	b.writeFile(criticDispositions, deliveryDispositionsHeader+"| C1 | noted | wording only | none |\n")
-	code, result = b.do("work", "close", "j2:crit2", "--dispositions", criticDispositions)
+	code, result = b.do("work", "finish", "j2:crit2", "--dispositions", criticDispositions)
 	expectOutcome(t, "unfolded critic round", code, result, intentRefused)
 	if !strings.Contains(fmt.Sprint(result.Data), "folded through round 0 while terminal round 1 exists") {
 		t.Fatalf("the real close check refuses an unfolded round: %+v", result)
@@ -472,7 +476,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	if closed, _ := critic["chainClosed"].(bool); !closed || critic["findingRegisterRound"] != float64(1) || critic["mirror"] == nil || critic["runnerClosed"] != nil {
 		t.Fatalf("the real owner closes the folded critic chain: %v", critic)
 	}
-	_, result = b.do("work", "close", "j2:inv1", "--dispositions", partial)
+	_, result = b.do("work", "finish", "j2:inv1", "--dispositions", partial)
 	if result.Outcome != intentUnchanged {
 		t.Fatalf("closed first: %+v", result)
 	}

@@ -93,7 +93,9 @@ func (s *session) reportPlanDrift() {
 func (s *session) requireFreshCensus() error {
 	verdict := filepath.Join(s.agents, "supervision", "last-census.json")
 	state := filepath.Join(s.agents, "supervision", "state.json")
-	arm := filepath.Join(s.root, "scripts", "agents", "arm-supervision.sh")
+	// The re-arm remedy named in census refusals: the public form that arms
+	// a checkout (the `up` owner).
+	arm := "metasystem system start"
 	if !exists(verdict) {
 		return s.die(1, fmt.Sprintf("dispatch refused: census verdict is absent; run %s --repo %s", arm, s.repoScope))
 	}

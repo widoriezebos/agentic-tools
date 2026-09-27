@@ -153,7 +153,7 @@ func TestIntentAdministrationHelp(t *testing.T) {
 	}
 	for _, row := range []struct{ name, work, admin string }{
 		{"work land", "metasystem work land G --queue-only", "metasystem work land G --exception CODE --reason TEXT --by NAME --upgrade-goals"},
-		{"goal repair", "metasystem goal repair", "metasystem goal repair --upgrade"},
+		{"goal sync", "metasystem goal sync --recover", "metasystem goal sync --upgrade"},
 	} {
 		_, doc := readHelpJSON(t, append(strings.Fields(row.name), "--json")...)
 		if doc.Command.Scope != "mixed" || !strings.Contains(strings.Join(doc.Command.Usage, "\n"), row.work) ||
@@ -290,8 +290,9 @@ func TestIntentReviewHelpForms(t *testing.T) {
 		"work review": {
 			"goal": {reviewGoalUsage}, "submit": {reviewSubmitUsage}, "finding": {reviewFindingUsage},
 			"job": {reviewJobUsage}, "commit": {reviewCommitUsage}, "run": {reviewRunUsage}, "changes": {reviewChangesUsage}, "diff": {reviewDiffUsage},
+			"check": {reviewCheckUsage},
 		},
-		"design review": {"design": {reviewDesignUsage}},
+		"design review": {"design": {reviewDesignUsage}, "check": {reviewDesignCheck}},
 	}
 	for name, forms := range expected {
 		_, review := readHelpJSON(t, append(strings.Fields(name), "--json")...)

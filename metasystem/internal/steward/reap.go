@@ -17,8 +17,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // ReapReport is one closed continuation, for the tick's output.
@@ -104,7 +104,7 @@ func reconcileContinuationCustody(repoRoot string, active []Intent) error {
 			return identity.Custodian(pid, start, tag, authorization.Identity())
 		},
 		ReturnComplete: func(role, file string) bool {
-			return len(validate.ReturnCompleteRole(repoRoot, role, file)) == 0
+			return len(returnschema.ReturnCompleteRole(repoRoot, role, file)) == 0
 		},
 		Apply: func(job, expect, target string, patch map[string]any) (bool, error) {
 			return applyContinuationReap(repoRoot, job, expect, target, patch)
@@ -228,7 +228,7 @@ func continuationOutcome(repoRoot string, it Intent) (string, bool) {
 	if _, err := os.Stat(returnPath); err != nil {
 		return fmt.Sprintf("ended %s without a return record", record.Status), true
 	}
-	if violations := validate.ReturnCompleteJob(repoRoot, it.JobId); len(violations) > 0 {
+	if violations := returnschema.ReturnCompleteJob(repoRoot, it.JobId); len(violations) > 0 {
 		return fmt.Sprintf("ended %s with a PROTOCOL-ERROR return: %s", record.Status, violations[0]), true
 	}
 	return fmt.Sprintf("ended %s with a valid return", record.Status), true

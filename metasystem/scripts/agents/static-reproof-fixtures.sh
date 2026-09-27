@@ -24,7 +24,6 @@ TestRealCommitWrapperStampsParseableObservation() {
 
   (cd "$root" && go build -o "$real_engine" ./cmd/metasystem)
   cp "$wrapper" "$fixture/scripts/agents/commit.sh"
-  cp "$root/scripts/agents/coverage-delta.sh" "$fixture/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/landing-classes.json" "$fixture/scripts/agents/landing-classes.json"
   cp "$root/scripts/agents/path-classes.txt" "$fixture/scripts/agents/path-classes.txt"
   cp "$root/memory/rulings.md" "$fixture/memory/rulings.md"
@@ -38,10 +37,14 @@ case "\$1 \${2:-}" in
   *) exec "$real_engine" "\$@" ;;
 esac
 SH
-  cat >"$fixture/scripts/audit-metasystem.sh" <<'SH'
+  # The proof engine is the real one except for the static audit, whose
+  # legs belong to the real suite; this bed proves the observation.
+  cat >"$tmp/real-observer-proof-engine" <<SH
 #!/usr/bin/env bash
-exit 0
+[[ "\${1:-} \${2:-} \${3:-}" != "internal audit metasystem" ]] || exit 0
+exec "$real_engine" "\$@"
 SH
+  chmod +x "$tmp/real-observer-proof-engine"
   cat >"$fixture/scripts/agents/go-gate.sh" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
@@ -53,9 +56,9 @@ while ((\$#)); do
   esac
 done
 [[ -n "\$proof_out" ]]
-cp "$real_engine" "\$proof_out"
+cp "$tmp/real-observer-proof-engine" "\$proof_out"
 SH
-  chmod +x "$fixture/scripts/audit-metasystem.sh" "$fixture/scripts/agents/go-gate.sh" "$fixture/bin/metasystem"
+  chmod +x "$fixture/scripts/agents/go-gate.sh" "$fixture/bin/metasystem"
 
   fixture_git() {
     harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$fixture" "$@"
@@ -121,13 +124,11 @@ SH
     "$vendored_install/bin" "$vendored_install/artifacts/agents/mains" "$vendored_install/memory" \
     "$vendored_install/plans/goals"
   cp "$wrapper" "$vendored_install/scripts/agents/commit.sh"
-  cp "$root/scripts/agents/coverage-delta.sh" "$vendored_install/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/landing-classes.json" "$vendored_install/scripts/agents/landing-classes.json"
   cp "$root/scripts/agents/path-classes.txt" "$vendored_install/scripts/agents/path-classes.txt"
   cp "$root/memory/rulings.md" "$vendored_install/memory/rulings.md"
   cp "$fixture/plans/goals/fx.md" "$vendored_install/plans/goals/fx.md"
   cp "$fixture/bin/metasystem" "$vendored_install/bin/metasystem"
-  cp "$fixture/scripts/audit-metasystem.sh" "$vendored_install/scripts/audit-metasystem.sh"
   cp "$fixture/scripts/agents/go-gate.sh" "$vendored_install/scripts/agents/go-gate.sh"
   vendored_git() {
     harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$vendored_fixture" "$@"
@@ -277,18 +278,9 @@ trap 'rm -rf "$tmp"' EXIT
 fixture_root="$tmp/metasystem"
 mkdir -p "$fixture_root/scripts/agents" "$fixture_root/bin" "$fixture_root/artifacts/agents/mains"
 cp "$wrapper" "$fixture_root/scripts/agents/commit.sh"
-cp "$root/scripts/agents/coverage-delta.sh" "$fixture_root/scripts/agents/coverage-delta.sh"
-# The push leg mirrors transport through the sync script, so the bed
-# carries it — a wrapper dependency absent from the bed reads as a
-# wrapper defect and turns this fixture red for the wrong reason.
-cp "$root/scripts/agents/sync-transport.sh" "$fixture_root/scripts/agents/sync-transport.sh"
-# A permissive audit stub: the audit legs belong to the real suite; these
-# legs prove the gate coupling.
-cat >"$fixture_root/scripts/audit-metasystem.sh" <<'SH'
-#!/usr/bin/env bash
-exit 0
-SH
-chmod +x "$fixture_root/scripts/audit-metasystem.sh"
+# The push leg mirrors transport through the engine's sync-transport verb;
+# the bed's stub engines hand that one verb to the real engine.
+export STATIC_REPROOF_SYNC_ENGINE="$root/bin/metasystem"
 cat >"$fixture_root/bin/metasystem" <<'SH'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -326,6 +318,9 @@ case "$1 $2" in
       esac
     done ;;
   "gate weight-add") echo "proof-engine weight refusal" >&2; exit 1 ;;
+  # The audit legs belong to the real suite; these legs prove the gate
+  # coupling, so the proof engine's audit passes unless leg 8 turns it red.
+  "internal audit") [[ -z "${STATIC_REPROOF_AUDIT_RED:-}" ]] || exit 1 ;;
   "landing observe")
     if [[ -n "${STATIC_REPROOF_EVALUATOR_FAIL:-}" ]]; then
       exit 72
@@ -457,6 +452,7 @@ case "$1 $2" in
       esac
     done ;;
   "gate weight-add") echo "stub weight refusal" >&2; exit 1 ;;
+  "internal landing") exec "${STATIC_REPROOF_SYNC_ENGINE:?}" "$@" ;;
   *) : ;;
 esac
 exit 0
@@ -573,10 +569,9 @@ pushed_head=$(git -C "$fixture_root" rev-parse HEAD)
 # The mirror's own refusals: an explicitly EMPTY branch and a
 # newline-bearing name both die with the named refusal before git
 # runs — an empty argument must never silently become the default.
-sync="$fixture_root/scripts/agents/sync-transport.sh"
 for bad in "" $'main\nevil'; do
   sync_rc=0
-  sync_out=$(cd "$fixture_root" && bash "$sync" "$bad" 2>&1) || sync_rc=$?
+  sync_out=$("$STATIC_REPROOF_SYNC_ENGINE" internal landing sync-transport --root "$fixture_root" "$bad" 2>&1) || sync_rc=$?
   [[ $sync_rc == 2 && "$sync_out" == *"is not a plain branch"* ]] \
     || { echo "static re-proof fixture: the mirror accepted an unlawful branch name (rc=$sync_rc)" >&2; exit 1; }
 done
@@ -600,7 +595,7 @@ git -C "$fixture_root" update-ref refs/remotes/origin/main "$stale"
   || { echo "static re-proof fixture: the tag-plus-stale-ref bed is not discriminating" >&2; exit 1; }
 # No argument exercises the mirror's sole lawful default while the
 # discriminating bed proves which main ref it transports.
-( cd "$fixture_root" && bash "$sync" >/dev/null ) \
+"$STATIC_REPROOF_SYNC_ENGINE" internal landing sync-transport --root "$fixture_root" >/dev/null \
   || { echo "static re-proof fixture: the mirror refused a lawful sync" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" rev-parse refs/remotes/origin/main)" == "$true_head" ]] \
   || { echo "static re-proof fixture: the mirror did not fetch origin's true branch head" >&2; exit 1; }
@@ -611,29 +606,18 @@ git -C "$fixture_root" remote remove transport
 
 
 # Leg 8 (IL28-R3-1/R4-2): a red audit refuses the commit by its OWN
-# exact message. The red shim is STAGED so the closure passes and the
-# audit actually executes — an unstaged red shim would trip the
-# divergence refusal instead and falsely certify this leg (IL28-R6-5).
+# exact message. The change is STAGED so the closure passes and the
+# audit actually executes on the proof engine (IL28-R6-5).
 printf 'gamma\n' >"$fixture_root/internal/red/alpha.txt"
 git -C "$fixture_root" add internal/red/alpha.txt
-cat >"$fixture_root/scripts/audit-metasystem.sh" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-git -C "$fixture_root" add scripts/audit-metasystem.sh
 set +e
-audited=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse audit" 2>&1)
+audited=$(STATIC_REPROOF_AUDIT_RED=1 harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse audit" 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] \
   || { echo "static re-proof fixture: a red audit did not refuse the commit" >&2; exit 1; }
-grep -Fq "the static re-proof failed (audit-metasystem.sh)" <<<"$audited" \
+grep -Fq "the static re-proof failed (internal audit metasystem)" <<<"$audited" \
   || { echo "static re-proof fixture: the audit refusal did not carry the audit's own message: $audited" >&2; exit 1; }
-cat >"$fixture_root/scripts/audit-metasystem.sh" <<'SH'
-#!/usr/bin/env bash
-exit 0
-SH
-git -C "$fixture_root" add scripts/audit-metasystem.sh
 
 # Leg 9 (IL28-R3-3): an IGNORED gate input refuses — the toolchain would
 # consume it while the commit omits it forever.
