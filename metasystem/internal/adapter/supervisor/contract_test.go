@@ -27,7 +27,7 @@ func TestRuntimeAdapterContracts(t *testing.T) {
 		a := registry[name]
 		for verb, present := range map[string]bool{
 			"configIdentity": a.configIdentity != nil, "probe": a.probe != nil, "contract": a.contract != nil,
-			"outputStream": a.outputStream != nil, "supervise": a.supervise != nil, "selftest": a.selftest != nil,
+			"outputStream": a.outputStream != nil, "supervise": a.supervise != nil || a.ops != nil, "selftest": a.selftest != nil,
 		} {
 			if !present {
 				t.Errorf("%s supervisor does not offer %s", name, verb)

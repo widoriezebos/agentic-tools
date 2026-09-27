@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
@@ -17,8 +18,10 @@ func init() {
 		outputStream: func(_ Deps, roundDir string) (string, error) {
 			return roundDir + "/events.jsonl", nil
 		},
-		supervise: superviseCodex,
-		selftest:  codexSelftest,
+		selftest: codexSelftest,
+		ops: codexOps{builtinOps{name: "codex", usage: "native", host: true,
+			configIdentity: codexConfigIdentity, probe: codexProbe, contract: commonContract("codex"), selftest: codexSelftest,
+			invocations: []InvocationShape{{Includes: []string{"codex", "exec"}, TagFlag: "-c", TagPrefix: "metasystem_instance_tag="}}}},
 	})
 }
 
@@ -91,94 +94,98 @@ func CodexCommand(verb, model, workspace, schema, output, instanceTag, reasoning
 	return command, nil
 }
 
-func superviseCodex(s *Supervision, args []string) int {
-	if !s.prepareOrUsage(args) {
-		return 2
+// codexOps is the Codex runtime's operations.
+type codexOps struct{ builtinOps }
+
+type codexLaunch struct{ events, raw string }
+
+func (codexOps) Prepare(t *Turn) (Launch, error) {
+	d := t.Deps()
+	if t.Role == RoleHost {
+		model, ok := field(t.Record, "model")
+		if !ok {
+			return Launch{}, fmt.Errorf("codex host turn record has no model")
+		}
+		verb := "dispatch"
+		if t.ResumeSession != "" {
+			verb = "follow-up"
+		}
+		raw := filepath.Join(t.Dir, "raw.out")
+		command, err := CodexCommand(verb, model, t.Workspace, t.Schema, raw, t.Tag, "", t.Requested, "", t.ResumeSession)
+		if err != nil {
+			return Launch{}, err
+		}
+		// `codex exec resume` takes no -C: the CLI runs in the checkout.
+		return Launch{Argv: command, StdinPath: t.Prompt, StdoutPath: filepath.Join(t.Dir, "events.jsonl"),
+			Private: codexLaunch{events: filepath.Join(t.Dir, "events.jsonl"), raw: raw}}, nil
 	}
-	recordBuildCachePath(s.d.git(), s.d.agents(), s.workspace, s.roundDir)
-	usageFile := filepath.Join(s.roundDir, "usage.json")
-	if err := s.recordWorkspaceWriteScope(); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
+	recordBuildCachePath(d.git(), d.agents(), t.Workspace, t.Dir)
+	raw := filepath.Join(t.Dir, "raw.out")
+	// The working directory is the write boundary: `codex exec resume` has
+	// no -C, so entering the workspace makes the recorded boundary true on
+	// both paths.
+	if err := adapter.RewriteWriteScope(t.Effective, t.Workspace); err != nil {
+		return Launch{}, err
 	}
-	if !s.failIfEffectiveWider() {
-		return 1
+	if err := truncate(t.Events); err != nil {
+		return Launch{}, err
 	}
-	if err := truncate(s.events); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
+	if err := truncate(raw); err != nil {
+		return Launch{}, err
 	}
-	if err := truncate(s.raw); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
-	}
-	effort, ok := field(s.record, "reasoningEffort")
+	effort, ok := field(t.Record, "reasoningEffort")
 	if !ok || effort == "null" {
 		effort = ""
 	}
 	// The envelope decides sandbox and network — in the engine, from the
-	// record itself (KI-12: a hard-coded value made the recorded field
-	// decorative).
-	command, err := CodexCommand(s.verb, s.requestedModel, s.workspace, s.schema, s.raw, s.tag, effort, "", s.record, s.requestedSession)
+	// record itself (KI-12).
+	command, err := CodexCommand(t.Verb, t.Model, t.Workspace, t.Schema, raw, t.Tag, effort, "", t.Record, t.ResumeSession)
 	if err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 2
+		return Launch{}, err
 	}
-	if !s.verifyReferences() {
-		return 1
+	// The chain's build cache: the sandbox cannot write the user's Go
+	// cache.
+	env := withEnv(jobGitQuarantineEnv(d.git(), t.Workspace), jobBuildCacheEnv(d.git(), d.agents(), t.Workspace)...)
+	return Launch{Argv: command, Env: env, StdinPath: t.Prompt, StdoutPath: t.Events,
+		Private: codexLaunch{events: t.Events, raw: raw}}, nil
+}
+
+// Observe reads the thread and turn ids from the event stream.
+func (codexOps) Observe(t *Turn, o Observation) (Events, error) {
+	private := o.Launch.Private.(codexLaunch)
+	session, found := adapter.CodexEventField(private.events, "session")
+	if !found || session == "" {
+		return Events{}, nil
 	}
-	if err := s.markPrefork(); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		s.failPending("prefork_marker", "handshake", "")
-		return 1
-	}
-	// The write boundary is the CLI's cwd: `codex exec resume` has no -C,
-	// so entering the workspace makes the recorded boundary true on both
-	// paths. The chain's build cache: the sandbox cannot write the user's
-	// Go cache.
-	env := withEnv(s.childEnv, jobGitQuarantineEnv(s.d.git(), s.workspace)...)
-	env = withEnv(env, jobBuildCacheEnv(s.d.git(), s.d.agents(), s.workspace)...)
-	cli, err := s.launch(command, env, s.prompt, s.events, nil)
-	if err != nil {
-		s.failPending("custody_registration", "handshake", "")
-		return 1
-	}
-	if err := s.registerCustody(cli); err != nil {
-		cli.terminate()
-		s.failPending("custody_registration", "handshake", "")
-		return 1
-	}
-	for cli.alive() {
-		if session, found := adapter.CodexEventField(s.events, "session"); found && session != "" {
-			turn, _ := adapter.CodexEventField(s.events, "turn")
-			if !s.recordHandshake(session, turn, s.requestedModel) {
-				cli.terminate()
-				return 1
-			}
-			break
-		}
-		touch(s.heartbeat)
-		s.d.Clock.Sleep(pollTick)
-	}
-	status, err := s.waitForCLI(cli)
-	if err != nil {
-		return exitCodeOf(err, 1)
-	}
+	turn, _ := adapter.CodexEventField(private.events, "turn")
+	return Events{Session: session, Turn: turn, Model: t.Model}, nil
+}
+
+func (codexOps) Finalize(t *Turn, in FinalInput) (Final, error) {
+	private := in.Launch.Private.(codexLaunch)
 	ports, err := delegate.PortsFor("codex")
 	if err != nil || ports.Usage == nil {
-		fmt.Fprintln(s.d.Stderr, "codex delegate ports are not registered")
-		return 1
+		return Final{}, fmt.Errorf("codex delegate ports are not registered")
 	}
-	if err := ports.Usage(s.events, usageFile); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
+	session, _ := adapter.CodexEventField(private.events, "session")
+	if t.Role == RoleHost {
+		usagePath, returnPath := filepath.Join(t.Dir, "usage.json"), filepath.Join(t.Dir, "return.json")
+		if _, err := os.Stat(private.raw); err != nil {
+			_ = os.WriteFile(private.raw, nil, 0o644)
+		}
+		if err := ports.Usage(private.events, usagePath); err != nil {
+			return Final{}, err
+		}
+		if info, err := os.Stat(private.raw); err == nil && info.Size() > 0 {
+			copyOrEmptyFile(private.raw, returnPath)
+		}
+		return Final{HostSession: session, HostRaw: private.raw, HostReturn: returnPath, Usage: usagePath}, nil
 	}
-	session, _ := adapter.CodexEventField(s.events, "session")
-	turn, _ := adapter.CodexEventField(s.events, "turn")
-	if !s.settleResultIdentity(session, turn, s.requestedModel, "", usageFile) {
-		return 1
+	if err := ports.Usage(private.events, in.Usage); err != nil {
+		return Final{}, err
 	}
-	return terminal(s.completeFromCLI(status, usageFile, s.raw, "", repairHooks{}))
+	turn, _ := adapter.CodexEventField(private.events, "turn")
+	return Final{Candidate: private.raw, Session: session, Turn: turn, HandshakeModel: t.Model}, nil
 }
 
 func codexSelftest(d Deps) int {

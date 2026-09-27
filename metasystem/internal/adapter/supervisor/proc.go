@@ -100,6 +100,15 @@ const pollTick = 20 * time.Millisecond
 // subshell (a scratch directory that could not be made); it fails the launch
 // the same way.
 func (s *Supervision) launch(argv, env []string, stdinPath, stdoutPath string, setupErr error) (*child, error) {
+	return s.launchWith(argv, "", env, stdinPath, stdoutPath, setupErr)
+}
+
+// launchAs is launch with argv[0] renamed (a census-distinct process name).
+func (s *Supervision) launchAs(argv []string, argv0 string, env []string, stdinPath, stdoutPath string) (*child, error) {
+	return s.launchWith(argv, argv0, env, stdinPath, stdoutPath, nil)
+}
+
+func (s *Supervision) launchWith(argv []string, argv0 string, env []string, stdinPath, stdoutPath string, setupErr error) (*child, error) {
 	if setupErr != nil {
 		s.logf("%v\n", setupErr)
 		fmt.Fprintf(s.d.Stderr, "%s child exited before custody identity was recorded\n", s.runtime)
@@ -117,6 +126,9 @@ func (s *Supervision) launch(argv, env []string, stdinPath, stdoutPath string, s
 	}
 	command := exec.Command(program, argv[1:]...)
 	command.Args[0] = argv[0]
+	if argv0 != "" {
+		command.Args[0] = argv0
+	}
 	command.Dir = s.workspace
 	command.Env = env
 	if stdinPath != "" {

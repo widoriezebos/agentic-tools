@@ -29,6 +29,9 @@ type runtimeAdapter struct {
 	// usage is the verbs the runtime's usage text lists after the shared
 	// ones.
 	probeUsage string
+	// ops is the runtime's operation interface; a runtime with ops runs its
+	// rounds through the shared round (round.go).
+	ops Operations
 }
 
 var registry = map[string]runtimeAdapter{}

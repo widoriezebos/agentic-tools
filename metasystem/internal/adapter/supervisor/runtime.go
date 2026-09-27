@@ -93,11 +93,16 @@ func (b builtin) EnforcementMap(Deps) (string, bool, error) {
 	enforcement, ok := runtimes.EnforcementMapJSON(b.a.name)
 	return enforcement, ok, nil
 }
-func (b builtin) Contract(d Deps) ([]byte, error)          { return b.a.contract(d) }
-func (b builtin) Probe(d Deps, args []string) int          { return b.a.probe(d, args) }
-func (b builtin) Supervise(s *Supervision, a []string) int { return b.a.supervise(s, a) }
-func (b builtin) Selftest(d Deps) int                      { return b.a.selftest(d) }
-func (b builtin) Usage(d Deps)                             { b.a.usage(d) }
+func (b builtin) Contract(d Deps) ([]byte, error) { return b.a.contract(d) }
+func (b builtin) Probe(d Deps, args []string) int { return b.a.probe(d, args) }
+func (b builtin) Supervise(s *Supervision, a []string) int {
+	if b.a.ops != nil {
+		return superviseRound(s, a, b.a.ops)
+	}
+	return b.a.supervise(s, a)
+}
+func (b builtin) Selftest(d Deps) int { return b.a.selftest(d) }
+func (b builtin) Usage(d Deps)        { b.a.usage(d) }
 func (b builtin) OutputStream(d Deps, roundDir string) (string, error) {
 	return b.a.outputStream(d, roundDir)
 }

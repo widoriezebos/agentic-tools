@@ -12,10 +12,15 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 func init() {
+	ops := claudeOps{builtinOps{name: "claude", usage: "native", host: true,
+		configIdentity: claudeConfigIdentity, probe: claudeProbe, contract: commonContract("claude"),
+		selftest:    commonSelftest("claude", "native", "", nil),
+		invocations: []InvocationShape{{Includes: []string{"claude", "-p"}, TagFlag: "--name"}}}}
 	register(runtimeAdapter{
 		name:           "claude",
 		configIdentity: claudeConfigIdentity,
@@ -24,8 +29,8 @@ func init() {
 		outputStream: func(_ Deps, roundDir string) (string, error) {
 			return roundDir + "/claude-stream.jsonl", nil
 		},
-		supervise: superviseClaude,
-		selftest:  commonSelftest("claude", "native", "", nil),
+		selftest: commonSelftest("claude", "native", "", nil),
+		ops:      ops,
 	})
 }
 
@@ -159,135 +164,151 @@ func ClaudeCommand(d Deps, record, model, schemaPath, settings, session, outputM
 	return command, ""
 }
 
-func superviseClaude(s *Supervision, args []string) int {
-	if !s.prepareOrUsage(args) {
-		return 2
+// claudeOps is the Claude runtime's operations.
+type claudeOps struct{ builtinOps }
+
+// claudeLaunch is Claude's per-turn state.
+type claudeLaunch struct {
+	signalFile, streamFile, resultFile string
+}
+
+func (claudeOps) Prepare(t *Turn) (Launch, error) {
+	d := t.Deps()
+	if t.Role == RoleHost {
+		model, ok := field(t.Record, "model")
+		if !ok {
+			return Launch{}, fmt.Errorf("claude host turn record has no model")
+		}
+		// Host mode is the record-less claude-command call: acceptEdits
+		// with the full tools, blocking json.
+		log, err := os.OpenFile(filepath.Join(t.Dir, "host.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+		if err != nil {
+			return Launch{}, err
+		}
+		command, failure := ClaudeCommand(d, "", model, t.Schema, "", t.ResumeSession, "json", log)
+		log.Close()
+		if failure != "" {
+			return Launch{Refusal: &Refusal{Error: "claude host native budget configuration is invalid"}}, nil
+		}
+		return Launch{Argv: command, StdinPath: t.Prompt, StdoutPath: filepath.Join(t.Dir, "claude-result.json"),
+			TruncateLog: true, Private: claudeLaunch{resultFile: filepath.Join(t.Dir, "claude-result.json")}}, nil
 	}
-	recordBuildCachePath(s.d.git(), s.d.agents(), s.workspace, s.roundDir)
-	settingsFile := filepath.Join(s.roundDir, "claude-settings.json")
-	signalFile := filepath.Join(s.roundDir, "claude-session-signal.json")
-	resultFile := filepath.Join(s.roundDir, "claude-result.json")
-	usageFile := filepath.Join(s.roundDir, "usage.json")
-	tmp := s.d.Getenv("TMPDIR")
+	recordBuildCachePath(d.git(), d.agents(), t.Workspace, t.Dir)
+	private := claudeLaunch{
+		signalFile: filepath.Join(t.Dir, "claude-session-signal.json"),
+		streamFile: filepath.Join(t.Dir, "claude-stream.jsonl"),
+		resultFile: filepath.Join(t.Dir, "claude-result.json"),
+	}
+	settingsFile := filepath.Join(t.Dir, "claude-settings.json")
+	tmp := d.Getenv("TMPDIR")
 	if tmp == "" {
 		tmp = "/tmp"
 	}
-	scratch := filepath.Join(tmp, "metasystem-claude", s.job+"-"+s.round)
-
-	if err := s.recordWorkspaceWriteScope(); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
+	scratch := filepath.Join(tmp, "metasystem-claude", t.Job+"-"+t.Round)
+	// The working directory is the write boundary: this runtime's choice of
+	// effective envelope.
+	if err := adapter.RewriteWriteScope(t.Effective, t.Workspace); err != nil {
+		return Launch{}, err
 	}
-	if !s.failIfEffectiveWider() {
-		return 1
-	}
-	if err := truncate(s.events); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
+	if err := truncate(t.Events); err != nil {
+		return Launch{}, err
 	}
 	// The emitted SessionStart hook runs the engine's session-signal
 	// entry, which signals session establishment back to this supervisor.
-	if err := adapter.BuildClaudeSettings(s.record, settingsFile, s.d.Engine, scratch); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
+	if err := adapter.BuildClaudeSettings(t.Record, settingsFile, d.Engine, scratch); err != nil {
+		return Launch{}, err
 	}
 	// The dispatch turn streams: the probe's nativeEvents declaration
-	// matches the argv. The host turn keeps blocking json.
+	// matches the argv.
 	session := ""
-	if s.verb != runtimes.SupervisorDispatch {
-		session = s.requestedSession
+	if t.Verb != runtimes.SupervisorDispatch {
+		session = t.ResumeSession
 	}
-	command, failure := ClaudeCommand(s.d, s.record, s.requestedModel, s.schema, settingsFile, session, "stream-json", s.logWriter())
+	command, failure := ClaudeCommand(d, t.Record, t.Model, t.Schema, settingsFile, session, "stream-json", t.Log)
 	if failure != "" {
-		s.failPending(failure, "handshake", "")
-		return 1
-	}
-	if !s.verifyReferences() {
-		return 1
-	}
-	if err := s.markPrefork(); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		s.failPending("prefork_marker", "handshake", "")
-		return 1
+		return Launch{Refusal: &Refusal{Error: failure, Phase: "handshake"}}, nil
 	}
 	// Claude's sandbox cannot write the user's caches or the system
 	// temporary directory itself; the settings allow only this private
-	// scratch directory. The chain's cache overrides the per-round one
-	// when the job runs in a worktree, so follow-up rounds start warm.
-	env := withEnv(s.childEnv,
-		"TMPDIR="+scratch,
-		"GOCACHE="+filepath.Join(scratch, "go-cache"),
-		"GOTMPDIR="+filepath.Join(scratch, "go-tmp"))
-	env = withEnv(env, jobBuildCacheEnv(s.d.git(), s.d.agents(), s.workspace)...)
+	// scratch directory. The chain's cache overrides the per-round one when
+	// the job runs in a worktree, so follow-up rounds start warm.
+	env := []string{
+		"TMPDIR=" + scratch,
+		"GOCACHE=" + filepath.Join(scratch, "go-cache"),
+		"GOTMPDIR=" + filepath.Join(scratch, "go-tmp"),
+	}
+	env = withEnv(env, jobBuildCacheEnv(d.git(), d.agents(), t.Workspace)...)
 	env = withEnv(env,
-		"METASYSTEM_CLAUDE_SESSION_SIGNAL="+signalFile,
-		"METASYSTEM_CLAUDE_EVENTS="+s.events)
-	env = withEnv(env, jobGitQuarantineEnv(s.d.git(), s.workspace)...)
-	launchErr := os.MkdirAll(filepath.Join(scratch, "go-tmp"), 0o755)
-	if launchErr == nil {
-		launchErr = os.MkdirAll(envValue(env, "GOCACHE"), 0o755)
+		"METASYSTEM_CLAUDE_SESSION_SIGNAL="+private.signalFile,
+		"METASYSTEM_CLAUDE_EVENTS="+t.Events)
+	env = withEnv(env, jobGitQuarantineEnv(d.git(), t.Workspace)...)
+	setup := os.MkdirAll(filepath.Join(scratch, "go-tmp"), 0o755)
+	if setup == nil {
+		setup = os.MkdirAll(envValue(env, "GOCACHE"), 0o755)
 	}
-	cli, err := s.launch(command, env, s.prompt, filepath.Join(s.roundDir, "claude-stream.jsonl"), launchErr)
-	if err != nil {
-		s.failPending("custody_registration", "handshake", "")
-		return 1
+	return Launch{Argv: command, Env: env, StdinPath: t.Prompt, StdoutPath: private.streamFile,
+		SetupError: setup, Private: private}, nil
+}
+
+// Observe reads the SessionStart hook's session signal.
+func (claudeOps) Observe(t *Turn, o Observation) (Events, error) {
+	private := o.Launch.Private.(claudeLaunch)
+	if info, err := os.Stat(private.signalFile); err != nil || info.Size() == 0 {
+		return Events{}, nil
 	}
-	if err := s.registerCustody(cli); err != nil {
-		cli.terminate()
-		s.failPending("custody_registration", "handshake", "")
-		return 1
+	session, _ := field(private.signalFile, "session_id")
+	model, ok := field(private.signalFile, "model")
+	if !ok || model == "" || model == "null" {
+		model = t.Model
 	}
-	for cli.alive() {
-		if info, statErr := os.Stat(signalFile); statErr == nil && info.Size() > 0 {
-			signalled, _ := field(signalFile, "session_id")
-			model, ok := field(signalFile, "model")
-			if !ok || model == "" || model == "null" {
-				model = s.requestedModel
-			}
-			if !s.recordHandshake(signalled, "", model) {
-				cli.terminate()
-				return 1
-			}
-			break
+	return Events{Session: session, Model: model}, nil
+}
+
+func (claudeOps) Finalize(t *Turn, in FinalInput) (Final, error) {
+	private := in.Launch.Private.(claudeLaunch)
+	ports, err := delegate.PortsFor("claude")
+	if err != nil || ports.Usage == nil || ports.ResultField == nil || ports.HostResult == nil {
+		return Final{}, fmt.Errorf("claude ports are not registered")
+	}
+	if t.Role == RoleHost {
+		raw, returnPath, usagePath := filepath.Join(t.Dir, "raw.out"), filepath.Join(t.Dir, "return.json"), filepath.Join(t.Dir, "usage.json")
+		copyOrEmptyFile(private.resultFile, raw)
+		if err := ports.HostResult(private.resultFile, returnPath, usagePath); err != nil {
+			return Final{}, err
 		}
-		touch(s.heartbeat)
-		s.d.Clock.Sleep(pollTick)
-	}
-	status, err := s.waitForCLI(cli)
-	if err != nil {
-		return exitCodeOf(err, 1)
+		session := ""
+		if data, err := os.ReadFile(private.resultFile); err == nil {
+			fallback := ""
+			session, _ = jsonedit.Get(data, "session_id", &fallback)
+		}
+		return Final{HostSession: session, HostRaw: raw, HostReturn: returnPath, Usage: usagePath}, nil
 	}
 	// Derive the blocking-shaped result document from the stream; a stream
-	// with no result-typed line takes the missing-result path (an empty
-	// result file downstream, exactly the old empty-stdout shape).
-	if err := adapter.ClaudeDeriveResult(filepath.Join(s.roundDir, "claude-stream.jsonl"), resultFile); err != nil {
-		s.logf("%v\n", err)
-		_ = truncate(resultFile)
+	// with no result-typed line takes the missing-result path.
+	if err := adapter.ClaudeDeriveResult(private.streamFile, private.resultFile); err != nil {
+		fmt.Fprintln(t.Log, err)
+		_ = truncate(private.resultFile)
 	}
-	if data, err := os.ReadFile(resultFile); err == nil {
-		_ = os.WriteFile(s.raw, data, 0o644)
-	} else {
-		_ = truncate(s.raw)
+	copyOrEmptyFile(private.resultFile, filepath.Join(t.Dir, "raw.out"))
+	if err := adapter.ClaudeAppendResult(private.resultFile, t.Events); err != nil {
+		return Final{}, err
 	}
-	if err := adapter.ClaudeAppendResult(resultFile, s.events); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
+	if err := ports.Usage(private.resultFile, in.Usage); err != nil {
+		return Final{}, err
 	}
-	ports, err := delegate.PortsFor("claude")
-	if err != nil || ports.Usage == nil || ports.ResultField == nil {
-		fmt.Fprintln(s.d.Stderr, "claude delegate ports are not registered")
-		return 1
+	resultSession := claudeResultValue(ports, private.resultFile, "session_id")
+	resultModel := claudeResultValue(ports, private.resultFile, "model")
+	return Final{Candidate: private.resultFile, Session: resultSession, HandshakeModel: resultModel, ResultModel: resultModel}, nil
+}
+
+// copyOrEmptyFile copies src over dst, leaving dst empty when src is
+// unreadable.
+func copyOrEmptyFile(src, dst string) {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		data = nil
 	}
-	if err := ports.Usage(resultFile, usageFile); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		return 1
-	}
-	resultSession := claudeResultValue(ports, resultFile, "session_id")
-	resultModel := claudeResultValue(ports, resultFile, "model")
-	if !s.settleResultIdentity(resultSession, "", resultModel, resultModel, usageFile) {
-		return 1
-	}
-	return terminal(s.completeFromCLI(status, usageFile, resultFile, "", repairHooks{}))
+	_ = os.WriteFile(dst, data, 0o644)
 }
 
 func claudeResultValue(ports delegate.Ports, resultFile, name string) string {
