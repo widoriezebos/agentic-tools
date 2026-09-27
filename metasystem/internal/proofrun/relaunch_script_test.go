@@ -21,7 +21,6 @@ type relaunchScriptSite struct {
 
 var relaunchScriptSites = []relaunchScriptSite{
 	{name: "go gate", relative: "scripts/agents/go-gate.sh", marker: "METASYSTEM_GO_GATE_RELAUNCHED", diagnostic: "go gate: relaunched child is not an authorized proof worker"},
-	{name: "validator", relative: "scripts/validate-metasystem.sh", marker: "METASYSTEM_VALIDATE_RELAUNCHED", diagnostic: "validate metasystem: relaunched child is not an authorized proof worker"},
 	{name: "adoption fixtures", relative: "scripts/adopt-fixtures.sh", marker: "METASYSTEM_ADOPT_FIXTURES_RELAUNCHED", diagnostic: "adopt fixtures: relaunched child is not an authorized proof worker"},
 }
 
@@ -112,45 +111,6 @@ func TestGoGateRelaunchUsesBuiltEngineForWorkerAuthorization(t *testing.T) {
 	}
 }
 
-func TestValidatorGuardFixtureRequiresAndSelectsExplicitBoundedInvocation(t *testing.T) {
-	t.Parallel()
-	site := relaunchScriptSites[1]
-	control := filepath.Join(t.TempDir(), "guard-control.json")
-
-	ambientFixture := newRelaunchScriptFixture(t, site)
-	ambientEnvironment := append(ambientFixture.environment(site, 3, false),
-		"METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="+control)
-	output, status := runRelaunchScript(t, ambientFixture.root, site, ambientEnvironment)
-	if status != 2 || !strings.Contains(output, "requires the explicit bounded fixture argument") {
-		t.Fatalf("ambient fixture status=%d output=%q", status, output)
-	}
-	assertRelaunchCount(t, ambientFixture.launches, 0)
-
-	site.arguments = []string{"--checkout-execution-guard-fixture", control}
-	explicitFixture := newRelaunchScriptFixture(t, site)
-	output, status = runRelaunchScript(t, explicitFixture.root, site, explicitFixture.environment(site, 3, false))
-	if status != 23 {
-		t.Fatalf("explicit fixture status=%d want=23 output=%q", status, output)
-	}
-	assertRelaunchCount(t, explicitFixture.launches, 1)
-	record, err := os.ReadFile(explicitFixture.launchArguments)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(record)), "\n")
-	for _, want := range []string{
-		"arg=--selected",
-		"arg=checkout-execution-guard-fixture",
-		"arg=METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE=" + control,
-		"arg=--checkout-execution-guard-fixture",
-		"arg=" + control,
-	} {
-		if !stringLinesContain(lines, want) {
-			t.Errorf("launch record lacks %q:\n%s", want, record)
-		}
-	}
-}
-
 func newRelaunchScriptFixture(t *testing.T, site relaunchScriptSite) relaunchScriptFixture {
 	t.Helper()
 	root := t.TempDir()
@@ -171,10 +131,6 @@ func newRelaunchScriptFixture(t *testing.T, site relaunchScriptSite) relaunchScr
 		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), ratchet, 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
-	selector := "#!/usr/bin/env bash\n[[ ${1:-} == context ]] || exit 97\nprintf 'template\\n'\n"
-	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"), []byte(selector), 0o700); err != nil {
-		t.Fatal(err)
 	}
 	fixtureBudget := "#!/usr/bin/env bash\nharness_fixture_bed_child_scenario() { return 1; }\n"
 	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "fixture-budget.sh"), []byte(fixtureBudget), 0o700); err != nil {

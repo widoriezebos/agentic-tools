@@ -254,7 +254,7 @@ not paths.
 ## Verification
 
 - **Gates** — the checks that must pass, chained with the push in one
-  command: the metasystem **suite** (`scripts/validate-metasystem.sh`) and
+  command: the metasystem **suite** (the testing contract, run by `metasystem test run`) and
   the benchmark **kit gate** (`benchmark/validate-kit.sh`). A verdict is
   read from the verifying command's own exit code, captured — never
   from a log tail, and never from the exit of a composite or

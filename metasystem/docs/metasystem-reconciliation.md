@@ -93,8 +93,8 @@ checklist; no step is optional and none may be reordered:
    changed profile, malformed JSON document, or uncertain handler is a conflict
    for the reconciliation ledger, never permission to overwrite it. Rerun with
    `--check` after resolving every conflict.
-5. Run `scripts/validate-metasystem.sh` in the target: it must pass with zero
-   placeholders. A red suite means the upgrade is not done; do not commit
+5. Run `metasystem system check` and `metasystem test run` in the target: both
+   must pass. A red suite means the upgrade is not done; do not commit
    around it.
 6. Update the recorded SHA in `docs/project-rules.md` to the new template
    commit, and record the upgrade in a retro entry (what moved, what merged,
@@ -113,7 +113,7 @@ Clean cutover, per the design principles: the same change that installs a metasy
 
 ## Phase 4: prove and hand over
 
-1. `bin/metasystem internal runtime setup --repo <target> --runtimes <selected> --check` and `scripts/validate-metasystem.sh` pass in the repository. The first result is configuration readiness, not provider trust, restart completion, supervision arming, or observed lifecycle execution. Outside the template checkout (which the audit detects by its folder name plus the development docs beside it) the audit also fails on unreplaced `docs/project-rules.md` placeholders, along with the always-loaded cap.
+1. `bin/metasystem internal runtime setup --repo <target> --runtimes <selected> --check` and `metasystem test run` pass in the repository. The first result is configuration readiness, not provider trust, restart completion, supervision arming, or observed lifecycle execution. Outside the template checkout (which the audit detects by its folder name plus the development docs beside it) the audit also fails on unreplaced `docs/project-rules.md` placeholders, along with the always-loaded cap.
 2. The commands recorded in `docs/project-rules.md` each actually ran, at minimum the focused test and the build.
 3. A final sweep finds no orphaned instruction files and no dangling references to deleted ones.
 4. Report with the ledger first: dispositions by bucket, deletions with reasons, conflicts escalated, deltas kept, and upstream proposals for the template. Append a receipt (`metasystem receipt add`) and recommend the first retro after a handful of tasks rather than at the default cadence.

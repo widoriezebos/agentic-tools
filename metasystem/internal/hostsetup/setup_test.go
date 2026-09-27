@@ -899,3 +899,28 @@ func TestSetupResolverRouting(t *testing.T) {
 		t.Fatalf("injected resolver result: calls %d, error %v", called, err)
 	}
 }
+
+// Setup's check refuses a registration link left behind for a skill the
+// installation pruned, naming it; a project's own registered directory is
+// not a link and stays its business (ported from the retired
+// validate-metasystem.sh runtime-contract section).
+func TestSetupCheckRefusesADanglingSkillLink(t *testing.T) {
+	t.Parallel()
+	repo, resolver := hostGitFreeNestedFixture(t)
+	installation := filepath.Join(repo, "metasystem")
+	writeHostFile(t, filepath.Join(installation, "skills", "gone", "SKILL.md"), "pruned skill\n", 0o644)
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err != nil {
+		t.Fatal(err)
+	}
+	writeHostFile(t, filepath.Join(repo, ".claude", "skills", "foreign", "SKILL.md"), "project skill\n", 0o644)
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}, Check: true}, resolver.ResolveLayout); err != nil {
+		t.Fatalf("check refused a ready installation with a project-owned skill: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(installation, "skills", "gone")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}, Check: true}, resolver.ResolveLayout)
+	if err == nil || !strings.Contains(err.Error(), "registered skill link is dangling: .claude/skills/gone") {
+		t.Fatalf("check did not refuse the dangling registration: %v", err)
+	}
+}

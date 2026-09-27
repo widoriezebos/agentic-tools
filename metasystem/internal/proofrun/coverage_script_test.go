@@ -13,124 +13,6 @@ import (
 	"testing"
 )
 
-func TestValidationRunSectionDoesNotInheritParentExitCleanup(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	functions := filepath.Join(root, "functions.sh")
-	engine := filepath.Join(root, "engine")
-	wrapper := filepath.Join(root, "wrapper.sh")
-	validationSource := filepath.Join(packageRoot(t), "scripts", "validate-metasystem.sh")
-	budgetSource := filepath.Join(packageRoot(t), "scripts", "agents", "fixture-budget.sh")
-
-	engineBody := `#!/usr/bin/env bash
-set -euo pipefail
-if [[ "$1" == util && "$2" == now-ns ]]; then
-  if [[ -e "$NOW_MARKER" ]]; then printf '1251000000\n'; else : >"$NOW_MARKER"; printf '1000000000\n'; fi
-elif [[ "$1" == proc && "$2" == census ]]; then
-  output=
-  while (( $# )); do
-    if [[ "$1" == --output ]]; then output=$2; break; fi
-    shift
-  done
-  [[ -n "$output" ]]
-  printf '{}\n' >"$output"
-  printf '%s\n' "$output" >"$CALIBRATION_PATH"
-else
-  exit 97
-fi
-`
-	if err := testexec.WriteFile(engine, []byte(engineBody), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	wrapperBody := `#!/usr/bin/env bash
-set -eo pipefail
-sed -n -e '/^stage_tail_for_record()/,/^}$/p' -e '/^record_stage_result()/,/^}$/p' \
-  -e '/^section_dependency_ready()/,/^}$/p' -e '/^section_dependency_reason()/,/^}$/p' \
-  -e '/^run_section()/,/^}$/p' "$VALIDATION_SOURCE" >"$FUNCTIONS"
-sed -n -e '/^harness_fixture_warn_if_engine_stale()/,/^}$/p' \
-  -e '/^harness_fixture_base_cap()/,/^}$/p' \
-  -e '/^harness_fixture_milliseconds_to_seconds()/,/^}$/p' \
-  -e '/^harness_fixture_budget_init()/,/^}$/p' "$BUDGET_SOURCE" >>"$FUNCTIONS"
-source "$FUNCTIONS"
-unset METASYSTEM_FIXTURE_CAP_SCALE METASYSTEM_FIXTURE_CAP_SCALE_MILLI
-root=$TEST_ROOT
-stage_work=$TEST_ROOT/stage
-stage_results_file=$TEST_ROOT/results.tsv
-fixture_budget_state_file=$stage_work/fixture-budget-state.sh
-engine_dependency=ready
-fixture_budget_dependency=uninitialized
-validation_red_sections=()
-validation_red_rcs=()
-mkdir -p "$stage_work"
-: >"$GUARD_SENTINEL"
-suite_progress_finish() { printf 'finished\n' >>"$PROGRESS_FINISH"; }
-checkout_execution_guard_release() { printf 'released\n' >>"$GUARD_RELEASE"; rm -f "$GUARD_SENTINEL"; }
-parent_cleanup() {
-  printf 'cleanup\n' >>"$PARENT_CLEANUP"
-  suite_progress_finish
-  rm -rf "$stage_work"
-  checkout_execution_guard_release
-}
-arm_child_cleanup() {
-  if (( BASH_SUBSHELL > 0 )); then trap parent_cleanup EXIT; trap - DEBUG; fi
-}
-trap arm_child_cleanup DEBUG
-set -T
-trap parent_cleanup EXIT
-fixture_budget_section() {
-  harness_fixture_budget_init "$root"
-  printf 'ready\n' >"$fixture_budget_state_file"
-}
-run_section fixture-budget-initialization needs-engine fixture_budget_section
-[[ "$last_section_status" == pass ]]
-[[ -f "$fixture_budget_state_file" && -d "$stage_work" ]]
-[[ -e "$GUARD_SENTINEL" && ! -e "$GUARD_RELEASE" ]]
-[[ ! -e "$PROGRESS_FINISH" && ! -e "$PARENT_CLEANUP" ]]
-: >"$BEFORE_EXIT_OK"
-`
-	if err := testexec.WriteFile(wrapper, []byte(wrapperBody), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	paths := map[string]string{
-		"CALIBRATION_PATH": filepath.Join(root, "calibration-path"), "NOW_MARKER": filepath.Join(root, "now-marker"),
-		"GUARD_SENTINEL": filepath.Join(root, "guard-sentinel"), "GUARD_RELEASE": filepath.Join(root, "guard-release"),
-		"PROGRESS_FINISH": filepath.Join(root, "progress-finish"), "PARENT_CLEANUP": filepath.Join(root, "parent-cleanup"),
-		"BEFORE_EXIT_OK": filepath.Join(root, "before-exit-ok"),
-	}
-	command := exec.Command("bash", wrapper)
-	command.Env = []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + root, "TEST_ROOT=" + root,
-		"FUNCTIONS=" + functions, "VALIDATION_SOURCE=" + validationSource, "BUDGET_SOURCE=" + budgetSource,
-		"METASYSTEM_BIN=" + engine}
-	for name, path := range paths {
-		command.Env = append(command.Env, name+"="+path)
-	}
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("section wrapper failed: %v\n%s", err, output)
-	}
-	for name, want := range map[string]string{"PARENT_CLEANUP": "cleanup\n", "PROGRESS_FINISH": "finished\n", "GUARD_RELEASE": "released\n"} {
-		got, readErr := os.ReadFile(paths[name])
-		if readErr != nil || string(got) != want {
-			t.Fatalf("%s after wrapper exit = %q, want exactly %q; err=%v", name, got, want, readErr)
-		}
-	}
-	for _, path := range []string{filepath.Join(root, "stage"), paths["GUARD_SENTINEL"]} {
-		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-			t.Fatalf("parent cleanup left %s: %v", path, statErr)
-		}
-	}
-	calibrationPath, err := os.ReadFile(paths["CALIBRATION_PATH"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(strings.TrimSpace(string(calibrationPath))); !os.IsNotExist(err) {
-		t.Fatalf("calibration probe cleanup did not remove its directory: %v", err)
-	}
-}
-
 func TestFullScriptWrappersPreserveOwnerStatusAndIgnoreAmbientProgress(t *testing.T) {
 	for _, test := range []struct {
 		name, relative string
@@ -138,7 +20,6 @@ func TestFullScriptWrappersPreserveOwnerStatusAndIgnoreAmbientProgress(t *testin
 		fixtureBudget  bool
 	}{
 		{name: "go gate child failure", relative: "scripts/agents/go-gate.sh", status: 23},
-		{name: "validator reusable success", relative: "scripts/validate-metasystem.sh", status: ExitReusableSuccess},
 		{name: "adoption reusable success", relative: "scripts/adopt-fixtures.sh", status: ExitReusableSuccess, fixtureBudget: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -148,10 +29,6 @@ func TestFullScriptWrappersPreserveOwnerStatusAndIgnoreAmbientProgress(t *testin
 			}
 			source := filepath.Clean(filepath.Join(packageRoot(t), test.relative))
 			copyScriptFile(t, source, filepath.Join(root, test.relative))
-			if test.relative == "scripts/validate-metasystem.sh" {
-				// The validator resolves its run context through the selector before it relaunches.
-				copyScriptFile(t, filepath.Join(packageRoot(t), "scripts", "agents", "validate-section-selector.sh"), filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"))
-			}
 			if test.fixtureBudget {
 				copyScriptFile(t, filepath.Join(packageRoot(t), "scripts", "agents", "fixture-budget.sh"), filepath.Join(root, "scripts", "agents", "fixture-budget.sh"))
 			}

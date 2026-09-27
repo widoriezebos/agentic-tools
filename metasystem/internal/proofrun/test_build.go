@@ -1835,7 +1835,6 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
-	sectionReport := ""
 	switch group.Adapter {
 	case "go":
 		if metaSystemStewardConsumesCandidateEngine(request, group, cwd) {
@@ -1851,10 +1850,6 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			})
 		}
 	case "section":
-		if !testpolicy.SectionRunsArgv(group) {
-			sectionReport = filepath.Join(request.LogRoot, group.ID+".stage-results.tsv")
-			environment = overlayTestEnvironment(environment, map[string]string{"METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT": sectionReport})
-		}
 		if request.CandidateEngine != "" || request.CandidateEngineDigest != "" {
 			engine, err := prepareSectionEngine(cwd, request.CandidateEngine, request.CandidateEngineDigest)
 			if err != nil {
@@ -1863,25 +1858,13 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 				return result
 			}
 			// Readiness follows the verified immutable input-bound artifact.
-			// The shell still authenticates this worker's actual parent custody.
-			custody := map[string]string{
+			// The script bed still authenticates this worker's parent custody.
+			environment = overlayTestEnvironment(environment, map[string]string{
 				"METASYSTEM_PROOF_AUTH_BIN":        engine,
 				"METASYSTEM_SUITE_PROGRESS_ACTIVE": "1",
 				"METASYSTEM_SUITE_PROGRESS_LOG":    filepath.Join(request.LogRoot, group.ID+".log"),
 				"METASYSTEM_SUITE_PROGRESS_ROOT":   cwd,
-			}
-			if !testpolicy.SectionRunsArgv(group) {
-				custody["METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY"] = "ready"
-			}
-			environment = overlayTestEnvironment(environment, custody)
-		}
-	}
-	if sectionReport != "" {
-		if err := os.MkdirAll(filepath.Dir(sectionReport), 0o700); err != nil {
-			result.Status = "invalid"
-			result.NotRunReason = fmt.Sprintf("create section result parent: %v", err)
-			result.EndedAt, result.DurationMS = resultDuration(request, started)
-			return result
+			})
 		}
 	}
 	if err := os.MkdirAll(request.LogRoot, 0o700); err != nil {
@@ -1941,7 +1924,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			return result
 		}
 		supervised = superviseCommand(command, supervisorOptions{Context: ctx, Limits: limits, SampleInterval: sampleInterval,
-			Activity: activity, StageResultPath: sectionReport})
+			Activity: activity})
 		closeInherited()
 		closeErr = logFile.Close()
 	}
@@ -2008,21 +1991,9 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 				result.CollectionComplete = exit == 0
 			}
 		case "section":
-			if testpolicy.SectionRunsArgv(group) {
-				// A script bed declares its own argv: its exit status is the
-				// whole verdict, exactly as an exit-status command group.
-				result.CollectionComplete = exit == 0
-				break
-			}
-			sectionStatus, reportedExit, sectionBlocked, sectionComplete := parseSectionResult(sectionReport, group.Section)
-			result.Blocked, result.CollectionComplete = sectionBlocked, sectionComplete
-			if reportedExit != exit {
-				result.Status = "invalid"
-				result.CollectionComplete = false
-				result.NotRunReason = fmt.Sprintf("section result exit %d disagrees with native process exit %d", reportedExit, exit)
-			} else {
-				result.Status = sectionStatus
-			}
+			// A script bed's exit status is its whole verdict, exactly as an
+			// exit-status command group.
+			result.CollectionComplete = exit == 0
 		}
 		if err != nil {
 			result.Status = "invalid"
@@ -2411,13 +2382,7 @@ func groupArgumentsForSchema(ctx context.Context, group testpolicy.Group, root, 
 		}
 		return argv, expected, discovery, started, err
 	case "section":
-		if testpolicy.SectionRunsArgv(group) {
-			return append([]string(nil), group.Argv...), nil, goDiscovery{}, false, nil
-		}
-		// Prepared argv survives the metadata worktree. Resolve the selector
-		// under the actual group's cwd, never a removed preparation pathname.
-		script := filepath.Join("scripts", "agents", "validate-section-selector.sh")
-		return []string{"bash", script, "run", group.Section}, nil, goDiscovery{}, false, nil
+		return append([]string(nil), group.Argv...), nil, goDiscovery{}, false, nil
 	case "command":
 		return append([]string(nil), group.Argv...), nil, goDiscovery{}, false, nil
 	default:

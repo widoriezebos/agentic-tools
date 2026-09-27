@@ -58,5 +58,5 @@ each with the deciding rule.
   [`metasystem/docs/working-with-agents.md`](metasystem/docs/working-with-agents.md).
 - **Run a benchmark** → [`benchmark/README.md`](benchmark/README.md).
 - **Change the metasystem itself** → work in this repository under its own
-  rules; the gates of record are `metasystem/scripts/validate-metasystem.sh`
+  rules; the gates of record are the testing contract (`metasystem test run`)
   and `benchmark/validate-kit.sh`, and nothing is pushed on red.

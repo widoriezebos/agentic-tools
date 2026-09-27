@@ -518,7 +518,7 @@ func TestGLEPathContractRejectsWildcardErrorsAndOverlap(t *testing.T) {
 
 func TestSectionGroupNamespaceIsAccepted(t *testing.T) {
 	contract := fixtureContract()
-	contract.Groups = append(contract.Groups, Group{ID: "section/example", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "example"})
+	contract.Groups = append(contract.Groups, Group{ID: "section/example", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "example", Argv: []string{"bash", "scripts/example.sh"}})
 	contract.Cadence = append(contract.Cadence, "section/example")
 	if err := contract.Validate(); err != nil {
 		t.Fatalf("canonical section group id refused: %v", err)
@@ -813,7 +813,7 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 		"metasystem/scripts/agents/dispatch-fixtures.sh", "metasystem/scripts/agents/dispatch.sh",
 		"metasystem/scripts/agents/fixture-budget.sh", "metasystem/scripts/agents/go-gate.sh",
 		"metasystem/scripts/agents/land.sh", "metasystem/scripts/agents/landing-classes.json",
-		"metasystem/scripts/agents/witness-gate.sh", "metasystem/scripts/validate-metasystem.sh",
+		"metasystem/scripts/agents/witness-gate.sh",
 		"metasystem/testing.json",
 		"development/project-rules-local.md", "metasystem/memory/instruction-ledger.md",
 		"metasystem/memory/receipts.log", "metasystem/plans/application-testing-contract-design.md",
@@ -949,9 +949,9 @@ func TestSectionArgvDeclarationsValidate(t *testing.T) {
 		edit func(*Group)
 		want string
 	}{
-		{name: "selector section", edit: func(*Group) {}},
 		{name: "script bed", edit: func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"} }},
-		{name: "empty executable", edit: func(g *Group) { g.Argv = []string{"", "scripts/bed.sh"} }, want: "section argv requires an executable"},
+		{name: "retired selector section", edit: func(*Group) {}, want: "section adapter requires the argv of its script bed"},
+		{name: "empty executable", edit: func(g *Group) { g.Argv = []string{"", "scripts/bed.sh"} }, want: "section adapter requires the argv of its script bed"},
 		{name: "blanket success", edit: func(g *Group) { g.Argv = []string{"bash", "-c", " true "} }, want: "blanket success commands are not testing evidence"},
 		{name: "junit format", edit: func(g *Group) { g.Argv = []string{"bash", "scripts/bed.sh"}; g.Format = "junit-xml" }, want: "judges its script bed by exit status"},
 	} {
@@ -962,9 +962,6 @@ func TestSectionArgvDeclarationsValidate(t *testing.T) {
 			if test.want == "" {
 				if err != nil {
 					t.Fatalf("valid section declaration refused: %v", err)
-				}
-				if SectionRunsArgv(group) != (len(group.Argv) != 0) {
-					t.Fatalf("SectionRunsArgv(%v) disagrees with its argv", group.Argv)
 				}
 				return
 			}

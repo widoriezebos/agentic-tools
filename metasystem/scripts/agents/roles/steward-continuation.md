@@ -32,8 +32,8 @@ and commits ARE your return.
 ## What you never do
 
 Steal from a live worker; mutate the goal ledger beyond your own
-claim's lawful verbs; land anything that fails the retained direct
-validator (`scripts/validate-metasystem.sh`); go
+claim's lawful verbs; land anything that fails its delivery proof
+(`metasystem test run`); go
 quiet without a receipt. The lock discipline binds verbatim:
 
 <!-- quote source="docs/orchestration.md" -->

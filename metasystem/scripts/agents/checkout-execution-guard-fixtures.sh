@@ -156,118 +156,10 @@ cp metasystem.conf "$tmp/bootstrap/metasystem.conf"
 ) 2>"$tmp/bootstrap.err"
 grep -Fq 'existing engine does not know gate guard-acquire; proceeding until this run rebuilds it' "$tmp/bootstrap.err"
 
-# The queueing legs drive scripts/agents/dispatch.sh as a real process, and
-# dispatch refuses any root outside a git repository. Adoption supports such
-# targets (the hook installs when git init happens), and no dispatch can run
-# there — so there is no suite-vs-dispatch contention to certify. Skip those
-# legs loudly; the holder races and token refusals still run everywhere.
-borrowed_validation_progress_env=(
-  env
-  METASYSTEM_SUITE_PROGRESS_ACTIVE=1
-  METASYSTEM_SUITE_PROGRESS_ROOT="$root"
-  METASYSTEM_SUITE_PROGRESS_TMP="$tmp"
-  METASYSTEM_SUITE_PROGRESS_TMP_OWNER=
-)
-suite_first_guard_root="$tmp/guard-state/suite-first"
-dispatch_first_guard_root="$tmp/guard-state/dispatch-first"
-nested_guard_root="$tmp/guard-state/nested-own-ancestry"
-if git -C "$root" rev-parse --show-toplevel >/dev/null 2>&1; then
-# Suite first: launch the actual validation entrypoint, then the actual
-# dispatch verb. Dispatch must stay queued until validation releases; both
-# entrypoints then finish their explicit guard fixture with status zero.
-suite_control="$tmp/suite-first-suite.json"
-dispatch_control="$tmp/suite-first-dispatch.json"
-write_control "$suite_control" "$tmp/suite-first-suite.ready" "$tmp/suite-first-suite.release"
-write_control "$dispatch_control" "$tmp/suite-first-dispatch.ready" "$tmp/suite-first-dispatch.release"
-"${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
-  METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$suite_first_guard_root" \
-  "$root/scripts/validate-metasystem.sh" --checkout-execution-guard-fixture "$suite_control" \
-  >"$tmp/suite-first-suite.out" 2>"$tmp/suite-first-suite.err" &
-suite_pid=$!; owned_pids+=("$suite_pid")
-wait_for_file "$tmp/suite-first-suite.ready" "suite-first validation" "$suite_pid"
-METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$suite_first_guard_root" \
-  METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$dispatch_control" \
-  METASYSTEM_DELEGATE_ROOT="$root" "$engine" internal delegate --role implementer --brief "$brief" \
-    --goal none-explicit --destructive-reach DESIGN-BEARING \
-    --op "checkout-guard-suite-first-$$" \
-  >"$tmp/suite-first-dispatch.out" 2>"$tmp/suite-first-dispatch.err" &
-dispatch_pid=$!; owned_pids+=("$dispatch_pid")
-wait_for_file "$tmp/suite-first-dispatch.attempted" "suite-first dispatch acquisition" "$dispatch_pid"
-[[ ! -e "$tmp/suite-first-dispatch.ready" ]] \
-  || { echo "suite-first dispatch entered before validation released" >&2; exit 1; }
-touch "$tmp/suite-first-suite.release"
-wait_for_file "$tmp/suite-first-dispatch.ready" "suite-first dispatch" "$dispatch_pid"
-touch "$tmp/suite-first-dispatch.release"
-wait_with_evidence "$suite_pid" "suite-first validation"
-wait "$dispatch_pid"
-
-# Dispatch first: the same production entrypoints in reverse order prove the
-# validation suite queues behind an active dispatch.
-dispatch_control="$tmp/dispatch-first-dispatch.json"
-suite_control="$tmp/dispatch-first-suite.json"
-write_control "$dispatch_control" "$tmp/dispatch-first-dispatch.ready" "$tmp/dispatch-first-dispatch.release"
-write_control "$suite_control" "$tmp/dispatch-first-suite.ready" "$tmp/dispatch-first-suite.release"
-METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_first_guard_root" \
-  METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$dispatch_control" \
-  METASYSTEM_DELEGATE_ROOT="$root" "$engine" internal delegate --role implementer --brief "$brief" \
-    --goal none-explicit --destructive-reach DESIGN-BEARING \
-    --op "checkout-guard-dispatch-first-$$" \
-  >"$tmp/dispatch-first-dispatch.out" 2>"$tmp/dispatch-first-dispatch.err" &
-dispatch_pid=$!; owned_pids+=("$dispatch_pid")
-wait_for_file "$tmp/dispatch-first-dispatch.ready" "dispatch-first dispatch" "$dispatch_pid"
-"${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
-  METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_first_guard_root" \
-  "$root/scripts/validate-metasystem.sh" --checkout-execution-guard-fixture "$suite_control" \
-  >"$tmp/dispatch-first-suite.out" 2>"$tmp/dispatch-first-suite.err" &
-suite_pid=$!; owned_pids+=("$suite_pid")
-wait_for_file "$tmp/dispatch-first-suite.attempted" "dispatch-first validation acquisition" "$suite_pid"
-[[ ! -e "$tmp/dispatch-first-suite.ready" ]] \
-  || { echo "dispatch-first validation entered before dispatch released" >&2; exit 1; }
-touch "$tmp/dispatch-first-dispatch.release"
-wait_for_file "$tmp/dispatch-first-suite.ready" "dispatch-first validation" "$suite_pid"
-touch "$tmp/dispatch-first-suite.release"
-wait "$dispatch_pid"
-wait_with_evidence "$suite_pid" "dispatch-first validation"
-
-# A validation fixture spawns the actual dispatch verb from inside its own
-# process chain against a guard the fixture itself holds. Exact ancestry lets
-# the nested dispatch register immediately, explicitly preserving the join
-# exemption while the foreign queueing legs use separate private roots.
-nested_dispatch_control="$tmp/nested-dispatch.json"
-nested_suite_control="$tmp/nested-suite.json"
-printf '{"attempted":"%s","ready":"%s","release":"%s","capSec":%s,"detachReady":"%s","detachRelease":"%s"}\n' \
-  "$tmp/nested-dispatch.attempted" "$tmp/nested-dispatch.ready" "$tmp/nested-dispatch.release" "$fixture_cap" \
-  "$tmp/nested-detached.ready" "$tmp/nested-detached.release" >"$nested_dispatch_control"
-write_control "$nested_suite_control" "$tmp/nested-suite.ready" "$tmp/nested-suite.release" \
-  "$nested_dispatch_control" "$brief"
-"${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
-  METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$nested_guard_root" \
-  "$root/scripts/validate-metasystem.sh" --checkout-execution-guard-fixture "$nested_suite_control" \
-  >"$tmp/nested-suite.out" 2>"$tmp/nested-suite.err" &
-suite_pid=$!; owned_pids+=("$suite_pid")
-wait_for_file "$tmp/nested-suite.ready" "nested validation"
-wait_for_file "$tmp/nested-dispatch.ready" "nested dispatch ancestry join"
-wait_for_file "$tmp/nested-detached.ready" "nested detached dispatch member"
-touch "$tmp/nested-suite.release"
-wait_with_evidence "$suite_pid" "nested validation"
-
-# The suite and dispatch entry processes are now gone, but the registered
-# detached wrapper still owns execution. The public flow releases that member
-# before requiring the foreign contender to enter; the exact blocked-acquire
-# event is asserted by TestExecutionGuardRegistersSpawnedMemberUntilLastRelease.
-"$script" __contender "$engine" "$nested_guard_root" "post-suite contender" \
-  "$tmp/nested-contender.ready" "$tmp/nested-contender.release" "$fixture_cap" \
-  >"$tmp/nested-contender.out" 2>"$tmp/nested-contender.err" &
-nested_contender_pid=$!; owned_pids+=("$nested_contender_pid")
-touch "$tmp/nested-detached.release"
-wait_for_file "$tmp/nested-contender.ready" "post-suite contender"
-touch "$tmp/nested-contender.release"
-wait "$nested_contender_pid"
-
-fi
-if ! git -C "$root" rev-parse --show-toplevel >/dev/null 2>&1; then
-  echo "checkout execution guard fixtures: root is not a git repository; dispatch-entrypoint legs skipped"
-fi
+# The validation-suite queueing legs (suite first, dispatch first, and a
+# dispatch nested inside the suite's own guard) retired with
+# validate-metasystem.sh (verbs-object-action U7b): the suite entrypoint that
+# contended for the checkout guard no longer exists.
 
 # Two contenders wait on one holder. The native guard test observes both
 # blocked acquisitions and proves the second remains blocked by the first.
@@ -322,8 +214,7 @@ grep -Fq 'expired after 1s waiting for forged-token holder' "$tmp/forged.err"
 touch "$tmp/forged-holder.release"
 wait "$holder_pid"
 
-for private_guard_root in "$suite_first_guard_root" "$dispatch_first_guard_root" \
-    "$nested_guard_root" "$race_root" "$forged_root"; do
+for private_guard_root in "$race_root" "$forged_root"; do
   [[ ! -e "$private_guard_root/artifacts/agents/supervision/gate-runs/checkout-execution.lock.d" ]] \
     || { echo "checkout execution guard fixture left a private guard owned: $private_guard_root" >&2; exit 1; }
 done

@@ -982,9 +982,6 @@ func testingRelevantInputs(prefix, contractRel string, contract testpolicy.Contr
 		for _, input := range group.Inputs {
 			values[input] = true
 		}
-		if group.Adapter == "section" && !testpolicy.SectionRunsArgv(group) {
-			values[joinPrefix("scripts/agents/validate-section-selector.sh")] = true
-		}
 		if group.Adapter == "command" && len(group.Argv) > 0 && strings.Contains(group.Argv[0], "/") && !filepath.IsAbs(group.Argv[0]) {
 			commandPath := filepath.ToSlash(filepath.Clean(filepath.Join(group.CWD, group.Argv[0])))
 			if commandPath == ".." || strings.HasPrefix(commandPath, "../") {

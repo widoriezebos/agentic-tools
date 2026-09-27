@@ -74,7 +74,7 @@ explicitly requested and re-verifies after transport changes. Legacy
 installations retain their migration-only coverage delta. `go-gate.sh` owns
 the legacy repository-wide coverage ratchet. Wido owns the review,
 after the next declared milestone, of whether that sweep still catches debt
-the landing delta cannot. `validate-metasystem.sh` owns VM delivery and
+the landing delta cannot. The testing contract (`testing.json`) owns VM delivery and
 guest-runtime invariants; `adopt-fixtures.sh` owns installed-tree and update
 invariants. Wido reviews those distinct owners after the same two-run
 retirement window. The steward puts a due review in its single ceilinged

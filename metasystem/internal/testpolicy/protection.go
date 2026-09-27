@@ -41,7 +41,7 @@ func ProtectedPolicyChange(paths []string) bool {
 			strings.Contains(path, "/internal/testpolicy/") || strings.HasPrefix(path, "internal/testpolicy/") ||
 			strings.Contains(path, "/internal/proofrun/test_") || strings.HasPrefix(path, "internal/proofrun/test_") ||
 			strings.HasSuffix(path, "coverage-ratchet.json") || strings.HasSuffix(path, "coverage-ratchet-linux.json") ||
-			strings.HasSuffix(path, "validate-section-selector.sh") || strings.HasSuffix(path, "commit.sh") || strings.HasSuffix(path, "land.sh") {
+			strings.HasSuffix(path, "commit.sh") || strings.HasSuffix(path, "land.sh") {
 			return true
 		}
 	}
