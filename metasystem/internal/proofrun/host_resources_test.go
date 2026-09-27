@@ -17,6 +17,22 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
+// privateHostResources is an admission namespace and cap file of the test's
+// own, for acquireHostResourcesIn; unlike isolatedHostResources it replaces no
+// package default, so a parallel test may use it.
+func privateHostResources(t *testing.T) (string, string) {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(directory, "admission.conf")
+	if err := os.WriteFile(conf, []byte(AdmissionCapKey+"=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return directory, conf
+}
+
 func isolatedHostResources(t *testing.T) (string, string) {
 	t.Helper()
 	directory := t.TempDir()

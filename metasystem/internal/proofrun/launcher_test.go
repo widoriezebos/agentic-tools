@@ -759,14 +759,7 @@ func TestJoinedSharedLaunchUsesEngineIdentityForShellCommand(t *testing.T) {
 
 func TestNonJoinedTestingLaunchUsesEngineIdentityForDifferentWorker(t *testing.T) {
 	t.Parallel()
-	fixtureHostAdmissionMu.Lock()
-	previousAdmissionDirectory := hostAdmissionDirectoryForTest
-	hostAdmissionDirectoryForTest = filepath.Join(t.TempDir(), "host-admission")
-	defer func() {
-		hostAdmissionDirectoryForTest = previousAdmissionDirectory
-		fixtureHostAdmissionMu.Unlock()
-	}()
-	root, fixtureIdentity := proofAttemptFixture(t, "testing")
+	root, fixtureIdentity, admission := privateAdmissionFixture(t, "testing")
 	conf := filepath.Join(root, "metasystem.conf")
 	engine, err := os.Executable()
 	if err != nil {
@@ -786,8 +779,8 @@ func TestNonJoinedTestingLaunchUsesEngineIdentityForDifferentWorker(t *testing.T
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, decision, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
-		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
+	attempt, decision, err := ReserveLocked(WithTestHostAdmissionDirectory(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}), admission))
 	if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" || decision.AttemptID != attempt.AttemptID {
 		t.Fatalf("nonjoined fixture reservation = attempt %q, decision %+v, err %v", attempt.AttemptID, decision, err)
 	}

@@ -58,6 +58,19 @@ type loadSampleSettings struct {
 	scripted          *hostload.Sample
 	scriptedLaunchers int
 	scriptedKnown     bool
+	// admissionDirectory is the namespace whose admission guard the caller
+	// holds; the slot census reads only that namespace.
+	admissionDirectory string
+}
+
+// withAdmissionDirectory makes the slot census read the namespace whose
+// admission guard the caller holds. A census of another namespace can read a
+// lease marker between its creation and its claim, which a concurrent
+// acquirer writes under that namespace's guard.
+func withAdmissionDirectory(directory string) loadSampleOption {
+	return func(settings *loadSampleSettings) {
+		settings.admissionDirectory = directory
+	}
 }
 
 type loadSampleOption func(*loadSampleSettings)
@@ -147,7 +160,10 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options
 			sample.OverlappingHost, sample.OverlapKnown = count, true
 		}
 		if sample.OverlapKnown {
-			directory, dirErr := hostAdmissionDirectory()
+			directory, dirErr := settings.admissionDirectory, error(nil)
+			if directory == "" {
+				directory, dirErr = hostAdmissionDirectory()
+			}
 			if dirErr != nil {
 				sample.OverlapKnown = false
 			} else if active, activeErr := activeHostResourceSlots(directory); activeErr != nil {

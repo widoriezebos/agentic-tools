@@ -42,8 +42,8 @@ func TestResourceCommandExitedRootOutputHolderDrainsWithAndWithoutLease(t *testi
 				var lease *HostResourceLease
 				var err error
 				if withLease {
-					directory, conf = isolatedHostResources(t)
-					lease, err = AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
+					directory, conf = privateHostResources(t)
+					lease, err = acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -147,7 +147,7 @@ exit 0`
 						t.Fatal(err)
 					}
 					lease = nil
-					next, err := AcquireHostResources(t.Context(), directory, conf, "heavy", []string{"fixture-db"})
+					next, err := acquireHostResourcesIn(t.Context(), directory, directory, conf, "heavy", []string{"fixture-db"}, nil)
 					if err != nil {
 						t.Fatalf("clean lease was not reacquirable: %v", err)
 					}
@@ -271,9 +271,9 @@ func TestResourceCommandAlreadyCancelledStartsNothing(t *testing.T) {
 			var lease *HostResourceLease
 			if withLease {
 				var conf string
-				directory, conf = isolatedHostResources(t)
+				directory, conf = privateHostResources(t)
 				var err error
-				lease, err = AcquireHostResources(context.Background(), directory, conf, "heavy", nil)
+				lease, err = acquireHostResourcesIn(context.Background(), directory, directory, conf, "heavy", nil, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

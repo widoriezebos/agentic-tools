@@ -274,6 +274,18 @@ func scratchRecordLockPath(recordPath string) string {
 	return strings.TrimSuffix(recordPath, ".json") + ".record-lock"
 }
 
+// releaseScratchLock releases a lock taken through a description of this
+// process's own: the record lock, or the fresh description that proves the
+// writer lock free. Close alone is not a release: a child forked by any
+// goroutine before that Close keeps a duplicate of the description until it
+// execs, and with it the flock. LOCK_UN releases the description itself. The
+// launcher's inherited writer description is never released this way (see
+// Cleanup).
+func releaseScratchLock(lock *os.File) {
+	_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	_ = lock.Close()
+}
+
 // lockScratchRecord takes the cross-process record mutation lock.
 func lockScratchRecord(recordPath string) (*os.File, error) {
 	lock, err := os.OpenFile(scratchRecordLockPath(recordPath), os.O_CREATE|os.O_RDWR, 0o600)
@@ -296,7 +308,7 @@ func (r *ScratchRun) mutate(change func(*ScratchRecord) error) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	defer releaseScratchLock(lock)
 	current, err := r.reloadLocked()
 	if err != nil {
 		return err
@@ -521,7 +533,7 @@ func (r *ScratchRun) Cleanup(remove func(gittree.WorktreeTuple, gittree.Workspac
 	if err != nil {
 		return fmt.Errorf("%s: scratch %s retained: %w", ScratchIncomplete, r.record.Root, err)
 	}
-	defer lock.Close()
+	defer releaseScratchLock(lock)
 	reason, err := removeScratchRoot(r.record, func() (string, error) {
 		current, err := r.reloadLocked()
 		if err != nil {
@@ -588,7 +600,7 @@ func removeScratchRoot(record ScratchRecord, whileLocked func() (string, error))
 	if err != nil {
 		return "writer lock unreadable", errors.Join(errScratchPending, err)
 	}
-	defer lock.Close()
+	defer releaseScratchLock(lock)
 	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return "writer-lock-held", errScratchPending
@@ -669,7 +681,7 @@ func reconcileScratchSidecars(store, run string, options ScratchOptions) Reconci
 	recordPath := filepath.Join(store, run+".json")
 	lock, err := lockScratchRecord(recordPath)
 	if err == nil {
-		defer lock.Close()
+		defer releaseScratchLock(lock)
 		if _, statErr := os.Lstat(recordPath); !errors.Is(statErr, os.ErrNotExist) {
 			return ReconcileOutcome{AttemptID: outcome.AttemptID, Action: ReconcileScratchPending, Reason: "record reappeared"}
 		}
@@ -687,7 +699,7 @@ func reconcileScratchOne(control, store, run string, options ScratchOptions) (st
 	if err != nil {
 		return ReconcileScratchPending, err.Error()
 	}
-	defer lock.Close()
+	defer releaseScratchLock(lock)
 	encoded, err := os.ReadFile(recordPath)
 	if errors.Is(err, os.ErrNotExist) {
 		// Another cleanup removed the record first; its sidecars are ours
