@@ -52,6 +52,7 @@ function need(over: Partial<Need> = {}): Need {
     due: "",
     path: "",
     goals: [],
+    proposal: null,
     ...over,
   };
 }

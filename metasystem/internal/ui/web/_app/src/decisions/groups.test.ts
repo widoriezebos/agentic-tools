@@ -46,7 +46,7 @@ function need(over: Partial<Need> = {}): Need {
     asked: "", by: "the backlog", since: "2026-09-20T09:00:00Z",
     deadline: "", silence: "", recommend: "",
     where: { kind: "goal", id: "g1-s40" }, act: "approve", command: "", row: null,
-    new: false, words: "", context: "", owner: "", class: "", due: "", path: "", goals: [],
+    new: false, words: "", context: "", owner: "", class: "", due: "", path: "", goals: [], proposal: null,
     ...over,
   };
 }

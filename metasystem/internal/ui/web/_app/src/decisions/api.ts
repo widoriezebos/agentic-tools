@@ -17,6 +17,7 @@
  * nothing here has to tell an absent field from an empty one.
  */
 
+import type { ProposalRead, ProposalState } from "../partner/api";
 import type { Row } from "../backlog/api";
 
 const DECISIONS = "/api/decisions";
@@ -31,7 +32,32 @@ export type Where = { kind: string; id: string };
  * signed-in browser under R-125-m1u: park is "Not now", and unpark returns a
  * paused goal to the queue.
  */
-export type Act = "approve" | "withdraw" | "park" | "unpark" | "";
+export type Act = "approve" | "withdraw" | "park" | "unpark" | "apply" | "";
+
+/**
+ * One act the Project Partner proposed, as a row of this page carries it.
+ *
+ * The turn and the index are the conversation coordinate the outcome route names
+ * the action by, and the version is what makes a press exclusive: every admitted
+ * write moves it, and a press that presents an older one is refused with the
+ * entry as it stands. The verb is the route id the runner dispatches on and never
+ * a word on a button.
+ */
+export type Proposed = {
+  turn: string;
+  index: number;
+  verb: string;
+  /** The act's own body fields, under the route body's names. */
+  fields: Record<string, string> | null;
+  /** The goal as the Partner read it, on an approve and an edit, else null. */
+  read: ProposalRead | null;
+  /** The Partner's own words for this action, shown as its words. */
+  explanation: string;
+  state: ProposalState;
+  /** What the last state change said: the engine's own sentence on a refusal. */
+  words: string;
+  version: number;
+};
 
 /** One thing that is waiting on a human. */
 export type Need = {
@@ -77,6 +103,13 @@ export type Need = {
   path: string;
   /** The goals a landed design named, with where each one stands. */
   goals: GoalState[];
+  /**
+   * The act the Partner proposed, on a proposal row and null on every other
+   * kind. It is one record rather than eleven more fields: the action the
+   * human's press would make, as the conversation persists it, so the row and
+   * the card in the transcript read one state.
+   */
+  proposal: Proposed | null;
 };
 
 /** One goal a record names, and where the ledger says it stands. */

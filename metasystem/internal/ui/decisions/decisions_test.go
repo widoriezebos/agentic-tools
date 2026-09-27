@@ -455,11 +455,11 @@ func TestTheTwoCountsAreTheInboxSplitAndSumToIt(t *testing.T) {
 		t.Errorf("the two blocks do not sum to the inbox: %d + %d != %d",
 			page.Counts.Asked, page.Counts.Waiting, page.Counts.NeedsYou)
 	}
-	// Four, since a mention says where it opens. The number is asserted as a
-	// literal rather than against the constant, because a reader parses the
-	// number and not the constant.
-	if page.SchemaVersion != 4 {
-		t.Errorf("schema = %d, want 4", page.SchemaVersion)
+	// Five, since the actions the Partner proposed wait here. The number is
+	// asserted as a literal rather than against the constant, because a reader
+	// parses the number and not the constant.
+	if page.SchemaVersion != 5 {
+		t.Errorf("schema = %d, want 5", page.SchemaVersion)
 	}
 }
 
