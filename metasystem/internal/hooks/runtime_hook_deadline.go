@@ -46,10 +46,9 @@ type deadlineParent struct {
 	fromEngine           bool
 	logFailure           string
 
-	resolverDone     chan struct{}
-	resolvedSession  string
-	resolvedRoot     string
-	resolverFinished bool
+	resolverDone    chan struct{}
+	resolvedSession string
+	resolvedRoot    string
 }
 
 // deadlineBudget validates the configured Stop budget; anything outside

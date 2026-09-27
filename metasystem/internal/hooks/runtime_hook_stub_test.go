@@ -35,8 +35,8 @@ exit "${STUB_ENGINE_STATUS:-0}"
 `
 
 type stubBed struct {
-	root, script, record, gitMode string
-	toolDir                       string
+	root, script, record string
+	toolDir              string
 }
 
 func newStubBed(t *testing.T, engine string) stubBed {
