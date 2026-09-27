@@ -254,6 +254,59 @@ func TestAnActionTheTipCannotCarryIsRecordedWithItsReason(t *testing.T) {
 	testutil.Expect(t, "and is offered", kept[3].Offered, true)
 }
 
+// openingLines is one open's framing: the seven fields its route body cannot do
+// without, its own id, and whatever edges the case is about.
+func openingLines(id string, edges ...string) []string {
+	return append([]string{
+		uitools.ProposalIntent + "Every refund of " + id + " lands within a day.",
+		uitools.ProposalNextStep + "Read the retry loop.",
+		uitools.ProposalID + id,
+		uitools.ProposalSeverity + "2", uitools.ProposalNovelty + "1",
+		uitools.ProposalExposure + "2", uitools.ProposalAccumulation + "1",
+		uitools.ProposalBasis + "payments, one team",
+	}, edges...)
+}
+
+// An open's own two lists are checked exactly as a blocker is.
+//
+// They were not, and a blocker was: an open naming a goal nobody has in Blocked
+// by or Blocks was offered whole, and the edge the human pressed for was refused
+// by the act afterwards, which is the refusal this whole design moves to before
+// the card exists (Sol's read of g1-s58, deferred). Each id has to be at the
+// accepted tip or be the id of an open admitted earlier in the same answer — the
+// same two ways the subject of every other act is there.
+func TestAnOpensBlockedByAndBlocksAreCheckedAsABlockerIs(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeOpen, "refund-worker", openingLines("refund-worker"), "create it"),
+		proposed(uitools.ProposeOpen, "refund-audit", openingLines("refund-audit",
+			uitools.ProposalBlockedBy+"refund-worker, bank-sandbox",
+			uitools.ProposalBlocks+"refunds"), "create it, between the two"),
+		proposed(uitools.ProposeOpen, "refund-ledger", openingLines("refund-ledger",
+			uitools.ProposalBlockedBy+"nobody"), "create it"),
+		proposed(uitools.ProposeOpen, "refund-report", openingLines("refund-report",
+			uitools.ProposalBlocks+"bank-sandbox, ghost"), "create it"),
+	)
+	_, kept := askProposing(t, service, "open these four")
+	testutil.Require(t, "all four are recorded", len(kept), 4)
+
+	testutil.Expect(t, "the plain open is offered", kept[0].Offered, true)
+
+	// One list naming a goal at the tip and a goal this very answer opened, the
+	// other naming a goal at the tip: every end is there, so the card stands.
+	testutil.Expect(t, "an open whose edges are all there is offered", kept[1].Offered, true)
+	testutil.Expect(t, "with nothing to explain", kept[1].Reason, "")
+
+	testutil.Expect(t, "an open waiting for a goal nobody has is not offered", kept[2].Offered, false)
+	testutil.Expect(t, "naming the end that is missing", kept[2].Reason,
+		"the accepted tip carries no goal nobody")
+
+	// And the second name of a list is read as well as the first, which is the
+	// whole point of reading a list rather than a field.
+	testutil.Expect(t, "an open blocking a goal nobody has is not offered", kept[3].Offered, false)
+	testutil.Expect(t, "naming that end", kept[3].Reason, "the accepted tip carries no goal ghost")
+}
+
 // Admission checks existence and nothing else: whether the act is allowed in the
 // goal's state is the engine's answer at the act.
 func TestAdmissionJudgesExistenceAndNotTheGoalsState(t *testing.T) {

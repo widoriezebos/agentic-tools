@@ -220,17 +220,45 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 			}
 		}
 	}
-	// A blocker is a goal too, and an edge naming one nobody has is an edge the
-	// act would refuse. It is checked after the subject so the refusal names
-	// whichever end is missing.
-	if blocker := strings.TrimSpace(prepared.Fields[uitools.FieldBlocker]); blocker != "" {
-		if _, there := rows[blocker]; !there && !opened[blocker] {
-			s.refuseProposal(running, admitted, "the accepted tip carries no goal "+blocker)
+	// The goal at the other end of an edge is a goal too, and an edge naming one
+	// nobody has is an edge the act would refuse. It is checked after the subject
+	// so the refusal names whichever end is missing.
+	for _, named := range edgesNamedBy(prepared.Fields) {
+		if _, there := rows[named]; !there && !opened[named] {
+			s.refuseProposal(running, admitted, "the accepted tip carries no goal "+named)
 			return
 		}
 	}
 	admitted.Offered = true
 	s.record(running, Event{Kind: EventProposal, Proposal: &admitted})
+}
+
+// edgesNamedBy is every OTHER goal one prepared action's fields name.
+//
+// Three fields carry one: the blocker a block or an unblock waits on, and the two
+// lists an open takes — the goals it will wait for, and the goals that will wait
+// for it. All three are the same claim, that a goal at the other end of an edge
+// exists, and all three were not checked: the blocker was, and an open's lists
+// went through unread, so a card could offer to open a goal waiting for a goal
+// nobody has and the refusal arrived after the human pressed (Sol's read of
+// g1-s58, deferred).
+//
+// The lists arrive as the tool joined them, comma-separated, because that is how
+// the frame carries a list of names and how the route body reads one. An empty
+// name is not a name: a trailing comma says nothing about a goal.
+//
+// In the frame's own order, so a refusal names the first missing end a reader of
+// the card would look for rather than whichever the map happened to yield.
+func edgesNamedBy(fields map[string]string) []string {
+	named := []string{}
+	for _, field := range []string{uitools.FieldBlocker, uitools.FieldBlockedBy, uitools.FieldBlocks} {
+		for _, id := range strings.Split(fields[field], ",") {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				named = append(named, trimmed)
+			}
+		}
+	}
+	return named
 }
 
 // refuseProposal records one action the human is not offered, with its reason.
