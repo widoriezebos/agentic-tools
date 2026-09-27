@@ -1206,6 +1206,10 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       // on is stale and the next guarded line takes a fresh one (Astra C-01).
       stale = stale || appliedEntry(started.proposal);
       if (settledState(started.proposal.state)) {
+        // Their settled entry establishes what happened to this line, so an
+        // answer this page was holding for want of a record is history now
+        // (Astra C-04).
+        ports.mark(line, { unrecorded: null });
         continue;
       }
       stoppedAt = at;
@@ -1228,11 +1232,20 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     if (finished.kind === "conflict") {
       ports.reconcile(finished.proposal, sending);
       stale = stale || appliedEntry(finished.proposal);
+      if (settledState(finished.proposal.state)) {
+        ports.mark(line, { unrecorded: null });
+      }
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act
       // answered is kept on the line for the page's life, because that is the
       // only thing here that knows what the ledger did, and the line says both.
       ports.mark(line, { unrecorded: written });
+    } else {
+      // The outcome IS written down now, so an answer the page was holding
+      // because an earlier one could not be written is obsolete: the record says
+      // what happened, and a line still reading "the conversation could not
+      // record this" over it would offer a recovery nobody needs (Astra C-04).
+      ports.mark(line, { unrecorded: null });
     }
     if (answered.kind === "applied") {
       // The ledger moved, so the reading every later compare rests on has.

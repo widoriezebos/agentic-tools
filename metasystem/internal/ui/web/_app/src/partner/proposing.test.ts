@@ -4,6 +4,7 @@ import type { Proposal } from "./api";
 import {
   ALREADY_CARRIED,
   answeredOf,
+  APPLIED,
   applyLabel,
   askReread,
   argumentsOf,
@@ -990,6 +991,17 @@ describe("the run, in order", () => {
   const three = () => card([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" }),
     proposal({ index: 2, goal: "bank-sandbox" })]).lines;
 
+  /** The mark a page would hold after a run: every change it made, folded in. */
+  function markAfter(
+    from: Mark,
+    changes: readonly { line: string; change: Partial<Mark> }[],
+    id: string,
+  ): Mark {
+    return changes
+      .filter((one) => one.line === id)
+      .reduce((held, one) => ({ ...held, ...one.change }), from);
+  }
+
   /** Two writes per line and no more: applying before the act, the outcome after. */
   it("writes applying before the act and the outcome after, for every line", async () => {
     const lines = three();
@@ -1350,6 +1362,81 @@ describe("the run, in order", () => {
     expect(driven.written).toEqual([
       { line: one.lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 1 },
     ]);
+  });
+
+  /**
+   * A line that has recovered stops saying what went wrong before it (Astra C-04).
+   *
+   * An answer the conversation could not write down is held on the line for the
+   * page's life, because it is the only thing that knows what the ledger did. Once
+   * something NEWER establishes what happened — this run's own outcome written
+   * down, or a settled entry somebody else left — that answer is history: the line
+   * used to go on reading "refused: claimed; the conversation could not record
+   * this" and offering Try again over a record that said applied.
+   */
+  it("clears an obsolete unrecorded answer when a later outcome is written, and ends applied", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed" },
+    };
+    const lines = card([proposal()], { [lineID("t1", 0)]: stale }).lines;
+    const driven = driving(lines);
+    await runProposals(lines, driven.ports);
+
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: "", version: 2 },
+    ]);
+    // And the line a page holding those marks would show: the record's own
+    // answer, with no recovery offered over it.
+    const after = markAfter(stale, driven.marked, lines[0].id);
+    expect(after.unrecorded).toBeNull();
+    const settled = card([proposal({ state: "applied" })], { [lineID("t1", 0)]: after });
+    expect(lineState(lineOf(settled))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(settled))).toBe(false);
+  });
+
+  it("clears it where a conflict shows somebody else settled the line", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed" },
+    };
+    const lines = card([proposal()], { [lineID("t1", 0)]: stale }).lines;
+    const held: Proposal = { ...lines[0], state: "applied", words: "", version: 4 };
+    const driven = driving(lines, {
+      writes: { [`${lines[0].id}:applying`]: { kind: "conflict", proposal: held } },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(markAfter(stale, driven.marked, lines[0].id).unrecorded).toBeNull();
+  });
+
+  /**
+   * And it is KEPT where nothing newer establishes what happened. A line the
+   * freshness guard refuses is not sent at all, so what the page knows about the
+   * act that did go out is still the only account of it there is.
+   */
+  it("keeps an unrecorded answer where nothing newer establishes what happened", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed" },
+    };
+    const approve = proposal({
+      verb: "approve-goal", fields: {},
+      read: { intent: "not what the ledger says", nextStep: "n", tier: 2, labels: [] },
+    });
+    const one = card(
+      [approve],
+      { [lineID("t1", 0)]: stale },
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    const driven = driving(one.lines, {
+      look: { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(one.lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(markAfter(stale, driven.marked, one.lines[0].id).unrecorded).toEqual(stale.unrecorded);
   });
 
   /** And the run asks for the page's re-read once when it ends, however it ended. */
