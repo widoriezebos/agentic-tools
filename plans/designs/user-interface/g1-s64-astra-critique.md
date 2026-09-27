@@ -35,3 +35,25 @@ D1 otherwise holds: `SignedIn` supplies the human name, `request()` carries it a
 Reviewed design commit `657621cd4`. Evidence is source inspection; no tests ran and no files changed.
 
 VERDICT: 2 material findings (fail test 2): S64-01, S64-02
+
+---
+
+# Astra's round 2, the failsafe round, on revision 2
+
+Produced 2026-09-27 by Codex on `gpt-6-astra`, read-only, on a fresh chain with round 1's record in the brief, against revision 2 at `13d9dffaa`. Verbatim.
+
+---
+
+No new material findings.
+
+- **S64-01 resolved.** D4 extends the existing guard to abandon, including live dependents. The observation already supplies the necessary rows through `rowsAt` (metasystem/internal/ui/partner/proposals.go:261); filtering live rows by `BlockedBy` matches the engine's dependent selection (metasystem/internal/goal/abandon.go:458). No new reader is needed.
+- **S64-02 resolved.** D2 identifies the affected dependents, explains their redirection to the successor, and correctly conditions the dependent refusal on no successor.
+- **Ruling confirmed.** R-128-ui (metasystem/memory/rulings.md:187) was captured in the same commit as revision 2.
+
+**Deferred and non-material**
+
+No new findings. The folds introduce no demonstrated requirement failure or shape-level defect under the brief's threat model.
+
+Reviewed design commit `13d9dffaa` on `ui-development`. Evidence is source inspection; no tests ran and no files changed.
+
+VERDICT: 0 material findings; build as written

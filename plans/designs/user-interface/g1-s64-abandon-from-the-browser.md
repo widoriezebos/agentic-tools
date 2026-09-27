@@ -153,3 +153,12 @@ Astra confirmed D1 otherwise: the act layer's `SignedIn` supplies the
 human's name, `request()` carries it with the proof, and abandon's
 appended history event can take `recordSessionAuthority`; D3's route
 and the `successor` mapping fit the existing owners.
+
+## Dispositions (Astra round 2, the failsafe round, 2026-09-27)
+
+Zero material findings, "build as written": the guard's fold needs no
+new reader, since the observation's rows filtered by their blockers
+match the engine's own dependent selection; D2's conditional refusal is
+right; the ruling is in the register. The design is closed, read whole
+by the critic; it builds now, in parallel with g1-s62, and lands after
+it.
