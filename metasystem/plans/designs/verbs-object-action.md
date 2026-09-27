@@ -403,7 +403,10 @@ SHA-1 the receipt owner already keys it by. `test status` takes `--tree T` for
 retained proof and `--result FILE --expensive-ms N` for a recorded result's
 cost (the old `test report`). The review flows' follow-up of a critic chain
 rebinds its round budget first (`CritiqueBudgetRebind`, idempotent); register
-close already ran inside the close owner. `system check` reports the
+close already ran inside the close owner. `settings check` validates the
+testing contract and its declared tools in process; it does not run native
+discovery, which waits for the host's heavy proof lease (a test run resolves
+native tests when it runs). `system check` reports the
 covenant's shape when a `covenant.json` exists at the installation or
 repository root.
 
