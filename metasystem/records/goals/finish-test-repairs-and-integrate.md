@@ -1,19 +1,18 @@
 # finish-test-repairs-and-integrate
 
-- State: claimed
+- State: done
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="Finish the existing test-runner repair and validation work; runtime correctness protects application landings. No new capability or broader redesign."
 - Tier: 3
 - Intent: Finish these repairs, verify them with targeted tests, complete final validation, then push/integrate.
 - Origin: human
 - Next step: Wido redirected this same goal on 23 September: stop the Git-maintenance workaround and replace real Git in behavior tests with per-test mocks/stubs, retaining only explained narrow Git adapter integration tests. Implement the bounded design in plans/test-suite-redesign.md through Sol units: shared strict stub, goal repository fake, then remaining consumers; prove migrated tests with Git denied, preserve parallel/race/coverage behavior, complete required validation, commit/push/install and verify. No new goal. Earlier final-validation ETA is superseded.
+- Concluded: Wido 2026-09-27: no longer active and finished; concluded at his word from the enrolled terminal
 - OpenedAt: 2026-09-22T16:37:11Z
-- Revision: 16
+- Revision: 17
 - Budget: elapsedLimit=15d attemptLimit=40 reservedJobMinutesLimit=1800 activeJobLimit=8 reviewRoundLimit=3
 - BudgetExceptions: 8
 - NormApproval: approvedRef=V0NV9K6S0NDYTSJ6AJQJV86ZTQ-m1e-f4b31582 minutes=1800 reviewRounds=3 goalRevision=14
 - Approved: by=human:Wido at=2026-09-24T10:58:02Z revision=15 opid=V0NV9K6S0NDYTSJ6AJQJV86ZTQ-m1e-f4b31582 authority=proven digest=ec80016bf8e416b09176ea489cfa806d9a27693a9db8cfc655a072f44262fe8a episode=15
-- Claimed: machine=m1e lineage=main-1790272787-5030-13dde3 at=2026-09-25T00:00:32Z revision=16 accountingRevision=16 episodeAt=2026-09-25T00:00:32Z episodeRevision=16
-- StopCapability: generation=16 revision=16 machine=m1e claimEpoch=7 fenceEpoch=0
 
 History:
 - 2026-09-22T16:37:11Z BPWZD876FT92J8N278RKRXMM1S-m1e-32fbf0db open actor=human:Wido targets=finish-test-repairs-and-integrate
@@ -32,4 +31,5 @@ History:
 - 2026-09-23T18:52:44Z B0D5ZR88KY3GQYCNHD68SRZ1QJ-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
 - 2026-09-24T10:58:02Z V0NV9K6S0NDYTSJ6AJQJV86ZTQ-m1e-f4b31582 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-23T18:52:44Z
 - 2026-09-25T00:00:32Z F1WY1FCRJPS2X6NP37194CWK63-m1e-a2ccc4e1 steal actor=human:Wido targets=finish-test-repairs-and-integrate displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-24T10:58:02Z
-Integrity: sha256=176676afbf2e40d7400eadd8593632b3970ea8c55f0364cbb27559ec2fa41dc9
+- 2026-09-27T05:53:50Z CHK7DE3D5BKZWD80PY9YM6FHJ8-m1e-c6925449 done actor=human:Wido targets=finish-test-repairs-and-integrate displaced=m1e+main-1790272787-5030-13dde3@2026-09-25T00:00:32Z
+Integrity: sha256=100fe7d019bb2369766d75715637c53e15e72ec34f14d47b043e3bd842dcd32b
