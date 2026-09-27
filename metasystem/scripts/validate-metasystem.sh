@@ -1184,13 +1184,10 @@ fi
 # (verbs-object-action U6a): their scenarios are Go tests the go groups
 # select and run. The sections stay registered until the base's section
 # groups are retired in the follow-up landing (design 6.4, step B).
-retired_fixture_section() { # section id, where its scenarios went
-  printf '%s: retired to Go tests; its scenarios run in %s\n' "$1" "$2"
-}
 if section_selected telemetry-census-fixtures; then
   delivery_contract_skip telemetry-census-fixtures \
-    || run_section telemetry-census-fixtures needs-engine retired_fixture_section telemetry-census-fixtures \
-      "internal/census and internal/adapter/supervisor"
+    || run_section telemetry-census-fixtures needs-engine printf '%s\\n' \
+      "telemetry-census-fixtures: retired to Go tests; its scenarios run in internal/census and internal/adapter/supervisor"
 fi
 if section_selected return-schema-fixtures; then
   delivery_contract_skip return-schema-fixtures \
@@ -1262,8 +1259,8 @@ if section_selected flight-recorder-fixtures; then
 fi
 if section_selected acp-fixtures; then
   delivery_contract_skip acp-fixtures \
-    || run_section acp-fixtures needs-engine retired_fixture_section acp-fixtures \
-      "internal/adapter/supervisor, internal/missionrunner/hostturn and internal/acp"
+    || run_section acp-fixtures needs-engine printf '%s\\n' \
+      "acp-fixtures: retired to Go tests; its scenarios run in internal/adapter/supervisor, internal/missionrunner/hostturn and internal/acp"
 fi
 if section_selected delegate-caps-fixtures; then
   delivery_contract_skip delegate-caps-fixtures \
@@ -1271,8 +1268,8 @@ if section_selected delegate-caps-fixtures; then
 fi
 if section_selected adapter-deadline-fixtures; then
   delivery_contract_skip adapter-deadline-fixtures \
-    || run_section adapter-deadline-fixtures needs-engine retired_fixture_section adapter-deadline-fixtures \
-      "internal/adapter/supervisor"
+    || run_section adapter-deadline-fixtures needs-engine printf '%s\\n' \
+      "adapter-deadline-fixtures: retired to Go tests; its scenarios run in internal/adapter/supervisor"
 fi
 enumeration_mode_fixtures_section() {
   enumeration_fixture_output=$(bash scripts/agents/enumerate-suite-fixtures.sh 2>&1) \
