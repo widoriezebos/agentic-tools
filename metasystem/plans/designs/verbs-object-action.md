@@ -795,3 +795,7 @@ findings, all accepted.
 | VOA-22 journal recovery mode | accepted | 3.4 goal sync --recover |
 | VOA-23 completion of non-review jobs | accepted | 3.4 work finish |
 | VOA-24 exact R11 predicates | accepted | 3.3 S2 |
+
+Revision 7 confirmation, Codex `gpt-6-astra`, against 464fd20d0: seven of seven folds
+verified; C1 and the section 7 withdrawal checked; zero material findings. The
+loop for revision 7 is closed.
