@@ -1164,7 +1164,13 @@ export type Written =
  */
 export type RunPorts = {
   look: () => Promise<Looked>;
-  record: (line: Line, state: ProposalState, words: string) => Promise<Written>;
+  /**
+   * Write one state onto one line, under this run's own attempt.
+   *
+   * The attempt is the same on every write of one run, and the server is what
+   * compares it: this side carries it and holds what comes back.
+   */
+  record: (line: Line, state: ProposalState, words: string, attempt: string) => Promise<Written>;
   send: (line: Line) => Promise<Answered>;
   mark: (line: Line, change: Partial<Mark>) => void;
   /**
@@ -1224,6 +1230,34 @@ function begun(line: Line): boolean {
 }
 
 /**
+ * One attempt: the token the press that makes this run owns its lines by.
+ *
+ * A press is an attempt, and the attempt owns the line. Every run of the runner —
+ * a press on the card, an inbox press, a bulk press, Continue, Try again — makes
+ * one of these for its lifetime and carries it on every write it makes. The server
+ * stores it on the entry when the line moves to `applying`, and refuses a settle
+ * write carrying any other, because the press that owns the line is the only one
+ * that may say what became of it. The page never compares it: that compare is the
+ * server's, and this side's whole part is one token per press.
+ *
+ * Sixteen hex characters from the browser's own generator. A clone without one
+ * falls back to the weaker source rather than sending nothing, because an empty
+ * attempt is the write of a press that claims no ownership at all.
+ */
+export function newAttempt(): string {
+  const bytes = new Uint8Array(8);
+  const random = globalThis.crypto as { getRandomValues?: (into: Uint8Array) => void } | undefined;
+  if (random?.getRandomValues === undefined) {
+    for (let at = 0; at < bytes.length; at += 1) {
+      bytes[at] = Math.floor(Math.random() * 256);
+    }
+  } else {
+    random.getRandomValues(bytes);
+  }
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * The run: these lines, in this order, one act each, never retried.
  *
  * Read down it, the rules are:
@@ -1251,6 +1285,9 @@ function begun(line: Line): boolean {
  *   - the page in view reads again after each confirmed act and when the run ends.
  */
 export async function runProposals(lines: readonly Line[], ports: RunPorts): Promise<void> {
+  // This press's own attempt, carried on every write below. Continue and Try
+  // again come back through here, so each of them owns the lines it moves.
+  const attempt = newAttempt();
   for (const line of lines) {
     ports.mark(line, { notRun: false, refusedUnsent: "" });
   }
@@ -1275,7 +1312,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
    * outcome write's is.
    */
   const settleCarried = async (one: Line): Promise<void> => {
-    const settled = await ports.record(one, "applied", ALREADY_CARRIED);
+    const settled = await ports.record(one, "applied", ALREADY_CARRIED, attempt);
     if (settled.kind === "conflict") {
       ports.reconcile(settled.proposal, one);
     } else if (settled.kind === "failed") {
@@ -1318,7 +1355,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       if (!canCompare(looked.outcome)) {
         const unread = fetchFailedLine(looked.message);
         if (line.state === "applying") {
-          const said = await ports.record(line, "unresolved", unread);
+          const said = await ports.record(line, "unresolved", unread, attempt);
           if (said.kind === "conflict") {
             ports.reconcile(said.proposal, line);
           }
@@ -1332,7 +1369,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       await settleCarried(line);
       continue;
     }
-    const started = await ports.record(line, "applying", "");
+    const started = await ports.record(line, "applying", "", attempt);
     if (started.kind !== "failed") {
       standing.set(line.id, started.proposal);
     }
@@ -1372,7 +1409,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // The version the outcome was last written AT, which is the version the
     // entry still stands at where that write failed.
     let wroteAt = sending.version;
-    let finished = await ports.record(sending, written.state, written.words);
+    let finished = await ports.record(sending, written.state, written.words, attempt);
     // The result WINS, over an entry NOBODY is executing. A conflict here means
     // another tab moved the entry while this act was out. Where they left it
     // `unresolved` no act of theirs is running and they hold no result for the
@@ -1385,7 +1422,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // that instead.
     if (finished.kind === "conflict" && finished.proposal.state === "unresolved") {
       wroteAt = finished.proposal.version;
-      finished = await ports.record({ ...sending, version: wroteAt }, written.state, written.words);
+      finished = await ports.record({ ...sending, version: wroteAt }, written.state, written.words, attempt);
     }
     if (finished.kind !== "failed") {
       standing.set(line.id, finished.proposal);

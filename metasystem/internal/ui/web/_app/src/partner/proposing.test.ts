@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import type { Proposal, ProposalState } from "./api";
@@ -1045,6 +1048,8 @@ describe("the run, in order", () => {
     // The entry each line stands at, as the route would hold it.
     const entries = new Map<string, Proposal>();
     const written: { line: string; state: string; words: string; version: number }[] = [];
+    // The attempt each write carried, in the order the writes were made.
+    const attempts: string[] = [];
     const marked: { line: string; change: Partial<Mark> }[] = [];
     const reconciled: Proposal[] = [];
     const rereads: number[] = [];
@@ -1057,7 +1062,8 @@ describe("the run, in order", () => {
         looks.push(read);
         return Promise.resolve(read);
       },
-      record: (line, state, words) => {
+      record: (line, state, words, attempt) => {
+        attempts.push(attempt);
         const key = `${line.id}:${state}`;
         const before = written.filter((one) => `${one.line}:${one.state}` === key).length;
         written.push({ line: line.id, state, words, version: line.version });
@@ -1104,7 +1110,7 @@ describe("the run, in order", () => {
         signIns.push(rest);
       },
     };
-    return { ports, sent, written, marked, reconciled, rereads, signIns, looks };
+    return { ports, sent, written, attempts, marked, reconciled, rereads, signIns, looks };
   }
 
   const three = () => card([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" }),
@@ -1137,6 +1143,40 @@ describe("the run, in order", () => {
     ]);
     // The page in view reads again after each confirmed act and when the run ends.
     expect(driven.rereads.length).toBe(4);
+  });
+
+  /**
+   * A press is an attempt, and the attempt owns the line.
+   *
+   * Every run of this runner makes ONE attempt id and carries it on every write
+   * it makes. It is what lets the server tell the press that owns a line from a
+   * press that has lost it: the attempt is stored on the entry when the line
+   * moves to `applying`, and a settle write carrying another one is refused with
+   * the entry as it stands. The page never compares it — that compare is the
+   * server's — and its whole part is one token per run.
+   *
+   * Continue and Try again are fresh presses, each with its own read, so each
+   * mints its own: a continuation writing under the attempt of the run before it
+   * would be claiming a line it never took.
+   */
+  it("carries one attempt on every write of a run, and a fresh one on the next press", async () => {
+    const lines = three();
+    const driven = driving(lines);
+    await runProposals(lines, driven.ports);
+
+    // Six writes — applying and the outcome, for each of three lines — under one
+    // attempt.
+    expect(driven.attempts.length).toBe(6);
+    expect([...new Set(driven.attempts)]).toEqual([driven.attempts[0]]);
+    // A random token of sixteen hex characters, as the entry carries it.
+    expect(driven.attempts[0]).toMatch(/^[0-9a-f]{16}$/);
+
+    // Try again on the last line, or Continue from it: another press, another
+    // attempt.
+    const again = driving(lines);
+    await runProposals([lines[2]], again.ports);
+    expect(again.attempts[0]).toMatch(/^[0-9a-f]{16}$/);
+    expect(again.attempts[0]).not.toBe(driven.attempts[0]);
   });
 
   it("passes a refusal and sends the next line", async () => {
@@ -2068,5 +2108,51 @@ describe("a re-read asked while a sheet covers the work area", () => {
       reads += 1;
     });
     expect(reads).toBe(0);
+  });
+});
+
+/**
+ * What the write that records an outcome carries, and what it reads back from a
+ * refusal — out of the source.
+ *
+ * The body and the refusal are the one edge this suite cannot drive: nothing here
+ * reaches the network, and a test that stubbed `fetch` would name it in a file the
+ * cut guard scans. So the two halves of the attempt's protocol are read where they
+ * are written, as the inbox's own shared-mark clearing is read (Astra C-04): the
+ * attempt travels in the write's own body, and the refusal that says another press
+ * owns the line carries the entry exactly as a stale version does.
+ */
+describe("the attempt on the outcome write", () => {
+  const source = (file: string) =>
+    readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", file), "utf8");
+  const API = source("api.ts");
+  const IMPURE = source("applying.ts");
+
+  it("carries the run's attempt in the write's own body", () => {
+    const at = API.indexOf("export async function recordProposal(");
+    expect(at).toBeGreaterThan(0);
+    const body = API.slice(at, API.indexOf("function conflictOf", at));
+    expect(body).toContain("attempt: string");
+    expect(body).toContain("body.attempt = attempt");
+  });
+
+  it("holds the attempt the entry carries, as a field and nothing more", () => {
+    expect(API).toContain("attempt?: string");
+  });
+
+  it("reads the entry out of the refusal that says another press owns the line", () => {
+    const at = API.indexOf("function heldIn(");
+    expect(at).toBeGreaterThan(0);
+    const body = API.slice(at, API.indexOf("\n}", at));
+    expect(body).toContain('"state"');
+    expect(body).toContain('"attempt"');
+  });
+
+  it("passes it through the one write of the impure half", () => {
+    const at = IMPURE.indexOf("export async function writeOutcome(");
+    expect(at).toBeGreaterThan(0);
+    const body = IMPURE.slice(at, IMPURE.indexOf("function reasonOf", at));
+    expect(body).toContain("attempt");
+    expect(body).toContain("state, words, attempt)");
   });
 });
