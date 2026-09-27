@@ -21,7 +21,11 @@ import { failureMessage } from "../shell/workspace";
 export type BacklogState =
   | { state: "loading" }
   | { state: "failed"; message: string }
-  | { state: "known"; backlog: Backlog };
+  // `problem` is what a later read of the board was refused with, standing
+  // beside the reading it could not replace. A read that answers — and an act
+  // that answers with the ledger it left — replaces this state whole, so it
+  // cannot outlive the reading it was recorded against.
+  | { state: "known"; backlog: Backlog; problem?: string };
 
 export function useBacklog(): {
   backlog: BacklogState;
@@ -62,7 +66,17 @@ export function useBacklog(): {
       })
       .catch((error: unknown) => {
         if (!aborter.signal.aborted) {
-          setBacklog({ state: "failed", message: failureMessage(error) });
+          // A refused read keeps whatever the board already read, and says so
+          // beside it. Failing the whole board instead would draw the error view
+          // over a page that is still good, and unmount a sheet open over the
+          // lanes and whatever was typed into it — which is the very thing
+          // `again` exists to protect (Astra C-05). Only a first read's failure
+          // has nothing on screen to keep.
+          setBacklog((held) =>
+            held.state === "known"
+              ? { ...held, problem: failureMessage(error) }
+              : { state: "failed", message: failureMessage(error) },
+          );
         }
       });
     return () => {

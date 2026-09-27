@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { Need, Proposed } from "./api";
 import type { Proposal } from "../partner/api";
 import { lookOnce, sendProposal, writeOutcome } from "../partner/applying";
+import { usePartner } from "../partner/store";
 import { loadBacklog, type Backlog } from "../backlog/api";
 import {
   APPLY,
@@ -123,6 +124,33 @@ export function lineOf(
     mark: markOf(marks, id),
     displayed: proposed.verb === APPROVE ? (displayed[id] ?? null) : null,
   };
+}
+
+/**
+ * The marks one row is read through: this page's own, with what the Partner's
+ * store already knows about the same line folded in.
+ *
+ * There is one thing the drawer knows that the record does not, and it is the
+ * whole of this: an act whose answer the conversation could not write down. The
+ * entry stays at `applying`, because the write that would have said otherwise
+ * failed, so a surface reading the record alone offers Try again on a line that
+ * LANDED — and pressing it would make a second approval record (Astra C-02). The
+ * store stands above the pages, which is why the inbox reads the mark there
+ * rather than keeping a second copy of it.
+ *
+ * Only that mark crosses. Everything else a mark carries — the tick, the not-run,
+ * the refusal a run left unsent — is about a press made on one surface, and the
+ * page that made it is the page that says so.
+ */
+export function knownWith(own: Marks, held: Marks): Marks {
+  let merged = own;
+  for (const [id, mark] of Object.entries(held)) {
+    if (mark.unrecorded === null || markOf(own, id).unrecorded !== null) {
+      continue;
+    }
+    merged = { ...merged, [id]: { ...markOf(own, id), unrecorded: mark.unrecorded } };
+  }
+  return merged;
 }
 
 /** Every proposal row's line, in the order the rows stand. */
@@ -403,6 +431,10 @@ export function useProposals(ask: {
   signIn: (rest: readonly Line[]) => void;
 }): Applying {
   const [marks, setMarks] = useState<Marks>({});
+  // What the Partner's own store holds about these very lines. The drawer and the
+  // inbox are two readings of one record, and an act whose answer could not be
+  // written down is known in the store alone (Astra C-02).
+  const { proposalMarks } = usePartner();
   const [standing, setStanding] = useState<Standing>({});
   const [budgets, setBudgets] = useState<Displayeds>({});
   const [running, setRunning] = useState("");
@@ -424,14 +456,19 @@ export function useProposals(ask: {
     setStanding((held) => ({ ...held, [id]: proposal }));
   }, []);
 
+  // The marks every line on this page is read through, and the marks every press
+  // is admitted against: one object, so a row cannot say one thing and the press
+  // on it another.
+  const known = useMemo(() => knownWith(marks, proposalMarks), [marks, proposalMarks]);
+
   const lineFor = useCallback(
-    (need: Need) => lineOf(need, marks, budgets, standing),
-    [marks, budgets, standing],
+    (need: Need) => lineOf(need, known, budgets, standing),
+    [known, budgets, standing],
   );
 
   const linesFor = useCallback(
-    (needs: readonly Need[]) => linesOf(needs, marks, budgets, standing),
-    [marks, budgets, standing],
+    (needs: readonly Need[]) => linesOf(needs, known, budgets, standing),
+    [known, budgets, standing],
   );
 
   const run = useCallback(

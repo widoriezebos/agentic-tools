@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import type { Proposal } from "./api";
 import {
+  ALREADY_CARRIED,
   answeredOf,
+  APPLIED,
   applyLabel,
   askReread,
   argumentsOf,
   askLine,
   barLine,
   cardsIn,
+  carriesAlready,
   dependentsWords,
   dispatchOf,
   dismissable,
@@ -127,6 +130,16 @@ function row(over: Partial<Row> = {}): Row {
     ...over,
   };
 }
+
+/** One approval as the ledger records one, for a goal read as already approved. */
+const APPROVAL = {
+  by: "wido",
+  at: "2026-09-27T09:00:00Z",
+  authority: "session",
+  reviewBy: "",
+  expired: false,
+  expiredWhy: "",
+};
 
 /** The goal as the Partner read it, which every guarded line carries. */
 const READ = {
@@ -786,6 +799,28 @@ describe("where a card that waits stands", () => {
     expect(cards[0].folded).toBe(true);
   });
 
+  /**
+   * And the folded line's own press opens it (Astra C-03).
+   *
+   * The automatic fold is a presentation rule about what is in view, not a fact
+   * about the card, so the human's press outranks it: a card nobody dismissed used
+   * to have its id removed from a list it was never in, and the condition folded it
+   * straight back — leaving its arguments and its controls unreachable. A press
+   * records the expansion, and a dismissal folds it again, because putting the card
+   * away is a later act of the human's own.
+   */
+  it("unfolds an older card the human expanded, and folds it again when it is dismissed", () => {
+    const two = [
+      { turn: "t1", proposals: [proposal({ index: 0 })] },
+      { turn: "t2", proposals: [proposal({ index: 0, goal: "refunds" })] },
+    ];
+    expect(cardsIn(two, {}, {}, []).map((one) => one.folded)).toEqual([true, false]);
+    expect(cardsIn(two, {}, {}, [], ["t1"]).map((one) => one.folded)).toEqual([false, false]);
+    expect(cardsIn(two, {}, {}, ["t1"], ["t1"]).map((one) => one.folded)).toEqual([true, false]);
+    // An expansion names one card and says nothing about any other.
+    expect(cardsIn(two, {}, {}, [], ["t9"]).map((one) => one.folded)).toEqual([true, false]);
+  });
+
   /** The bar counts across answers, and its press opens the newest with one. */
   it("counts every waiting action across answers", () => {
     const cards = cardsIn(
@@ -813,6 +848,64 @@ describe("where a card that waits stands", () => {
   it("says one action in the singular", () => {
     const cards = cardsIn([{ turn: "t1", proposals: [proposal()] }], {}, {}, []);
     expect(barLine(cards)).toBe("1 action proposed");
+  });
+});
+
+/**
+ * What the goal already carries: each act's own effect, read off the reading a
+ * run takes.
+ *
+ * It is asked of a line found at `applying` and of nothing else, and what it
+ * decides is whether that line is settled without a send (Astra A-01). Every
+ * effect below is the one the act's own route writes, so a goal that shows it is
+ * a goal the act reached.
+ */
+describe("what the goal already carries", () => {
+  const applying = (over: Partial<Proposal>, displayed: Displayeds = {}) =>
+    lineOf(card([proposal({ state: "applying", ...over })], {}, displayed));
+
+  it("reads an approval as carried only with the tuple the card displayed", () => {
+    const line = applying(
+      { verb: "approve-goal", fields: {} },
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    expect(carriesAlready(line, [row({ approved: APPROVAL, budget: BOX })])).toBe(true);
+    // Another tuple is another act, which the freshness guard refuses on its own.
+    expect(carriesAlready(line, [row({ approved: APPROVAL, budget: { ...BOX, attemptLimit: 9 } })])).toBe(false);
+    expect(carriesAlready(line, [row({ budget: BOX })])).toBe(false);
+  });
+
+  it("reads an edit as carried where every field it names is what the goal says", () => {
+    const line = applying({ verb: "edit-goal", fields: { intent: "A new intent.", labels: "fleet, presence" } });
+    expect(carriesAlready(line, [row({ intent: "A new intent.", labels: ["fleet", "presence"] })])).toBe(true);
+    expect(carriesAlready(line, [row({ intent: "A new intent.", labels: ["fleet"] })])).toBe(false);
+    expect(carriesAlready(line, [row()])).toBe(false);
+  });
+
+  it("reads a pause, a resume, a priority, a block, an unblock and an abandon", () => {
+    expect(carriesAlready(applying({}), [row({ state: "parked" })])).toBe(true);
+    expect(carriesAlready(applying({}), [row()])).toBe(false);
+    expect(carriesAlready(applying({ verb: "unpark-goal", fields: {} }), [row()])).toBe(true);
+    expect(carriesAlready(applying({ verb: "unpark-goal", fields: {} }), [row({ state: "parked" })])).toBe(false);
+    const priority = applying({ verb: "set-goal-priority", fields: { priority: "1", sequence: "3" } });
+    expect(carriesAlready(priority, [row({ priority: 1, sequence: 3 })])).toBe(true);
+    expect(carriesAlready(priority, [row({ priority: 1, sequence: 4 })])).toBe(false);
+    const block = applying({ verb: "block-goal", fields: { blocker: "refunds" } });
+    expect(carriesAlready(block, [row({ blockedBy: ["refunds"] })])).toBe(true);
+    expect(carriesAlready(block, [row()])).toBe(false);
+    const unblock = applying({ verb: "unblock-goal", fields: { blocker: "refunds" } });
+    expect(carriesAlready(unblock, [row()])).toBe(true);
+    expect(carriesAlready(unblock, [row({ blockedBy: ["refunds"] })])).toBe(false);
+    expect(carriesAlready(applying({ verb: "abandon-goal", fields: {} }), [row({ state: "abandoned" })])).toBe(true);
+    expect(carriesAlready(applying({ verb: "abandon-goal", fields: {} }), [row()])).toBe(false);
+  });
+
+  it("says nothing of a goal the reading has not got, or of an act it cannot read the effect of", () => {
+    expect(carriesAlready(applying({}), [])).toBe(false);
+    // An open and an unapprove are the two the engine itself refuses a second
+    // time, so their lines are sent and answered rather than read off a row.
+    expect(carriesAlready(applying({ verb: "open-goal", fields: {} }), [row()])).toBe(false);
+    expect(carriesAlready(applying({ verb: "withdraw-goal", fields: {} }), [row()])).toBe(false);
   });
 });
 
@@ -897,6 +990,17 @@ describe("the run, in order", () => {
 
   const three = () => card([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" }),
     proposal({ index: 2, goal: "bank-sandbox" })]).lines;
+
+  /** The mark a page would hold after a run: every change it made, folded in. */
+  function markAfter(
+    from: Mark,
+    changes: readonly { line: string; change: Partial<Mark> }[],
+    id: string,
+  ): Mark {
+    return changes
+      .filter((one) => one.line === id)
+      .reduce((held, one) => ({ ...held, ...one.change }), from);
+  }
 
   /** Two writes per line and no more: applying before the act, the outcome after. */
   it("writes applying before the act and the outcome after, for every line", async () => {
@@ -1147,6 +1251,47 @@ describe("the run, in order", () => {
     expect(driven.looks.length).toBe(2);
   });
 
+  /**
+   * And an act somebody ELSE applied invalidates the reading just as one of this
+   * run's own does (Astra C-01).
+   *
+   * `[edit G, approve G]` again, and this time the edit comes back as a conflict
+   * carrying an applied entry: another tab made that very edit. The ledger has
+   * moved, so the approval behind it must not compare against the reading taken
+   * before the run — that reading is the intent the card displayed, and passing on
+   * it would approve work the human never read.
+   */
+  it("reads again after an applied conflict and refuses the next line against the fresh reading", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, verb: "edit-goal", fields: { intent: "Something else entirely." }, read }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    const before: Looked = { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" };
+    const after: Looked = {
+      rows: [row({ intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    const applied: Proposal = { ...one.lines[0], state: "applied", words: "", version: 4 };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      writes: { [`${one.lines[0].id}:applying`]: { kind: "conflict", proposal: applied } },
+    });
+    await runProposals(one.lines, driven.ports);
+
+    // The entry they left is shown, nothing is sent for it, and the approval is
+    // refused against the reading taken after it rather than passed on the stale
+    // one.
+    expect(driven.reconciled).toEqual([applied]);
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+  });
+
   /** And it reads again only where a later line actually depends on a goal. */
   it("reads again once per confirmed act, and not at all where no later line is guarded", async () => {
     const lines = three();
@@ -1154,6 +1299,144 @@ describe("the run, in order", () => {
     await runProposals(lines, driven.ports);
     // Three parks land and none of the lines after them compares anything.
     expect(driven.looks.length).toBe(1);
+  });
+
+  /**
+   * A line found at `applying` was begun by somebody, and learning that must not
+   * authorise a second act (Astra A-01).
+   *
+   * Tab A records `applying` and sends; tab B receives that version and offers
+   * Try again, whose press used to write `applying` again and send a second act.
+   * An approve applied twice is two approval records — the engine suppresses a
+   * duplicate proven approval and not a session one — so the press reconciles
+   * first: the fetch-first reading this run already took is looked at, and a goal
+   * that already carries the act settles the line without a send.
+   */
+  it("records an applying line whose goal already carries the act, and sends nothing", async () => {
+    const lines = card([proposal({ state: "applying" })]).lines;
+    const driven = driving(lines, {
+      look: { rows: [row({ state: "parked" })], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(lines, driven.ports);
+    expect(driven.sent).toEqual([]);
+    // One write and no act: the outcome, at the version the press read.
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 1 },
+    ]);
+    expect(driven.marked).toContainEqual({ line: lines[0].id, change: { unrecorded: null } });
+  });
+
+  it("sends an applying line once where the goal does not carry the act", async () => {
+    const lines = card([proposal({ state: "applying" })]).lines;
+    const driven = driving(lines, {
+      look: { rows: [row()], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(lines, driven.ports);
+    expect(driven.sent).toEqual([lines[0].id]);
+    expect(driven.written.map((one) => one.state)).toEqual(["applying", "applied"]);
+  });
+
+  /** Astra's own sequence: the approve of a goal another tab has just approved. */
+  it("sends no second approval for a goal already approved with the tuple on the card", async () => {
+    const one = card(
+      [
+        proposal({
+          verb: "approve-goal", fields: {}, state: "applying",
+          read: { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] },
+        }),
+      ],
+      {},
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    const driven = driving(one.lines, {
+      look: {
+        rows: [row({ state: "approved", budget: BOX, approved: APPROVAL })],
+        defaults: {}, outcome: "current", message: "",
+      },
+    });
+    await runProposals(one.lines, driven.ports);
+    // The freshness guard passes — the goal has not moved and its tuple is the
+    // one the card displayed — and the act is still not sent.
+    expect(driven.marked.some((one) => one.change.refusedUnsent === GOAL_CHANGED)).toBe(false);
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([
+      { line: one.lines[0].id, state: "applied", words: ALREADY_CARRIED, version: 1 },
+    ]);
+  });
+
+  /**
+   * A line that has recovered stops saying what went wrong before it (Astra C-04).
+   *
+   * An answer the conversation could not write down is held on the line for the
+   * page's life, because it is the only thing that knows what the ledger did. Once
+   * something NEWER establishes what happened — this run's own outcome written
+   * down, or a settled entry somebody else left — that answer is history: the line
+   * used to go on reading "refused: claimed; the conversation could not record
+   * this" and offering Try again over a record that said applied.
+   */
+  it("clears an obsolete unrecorded answer when a later outcome is written, and ends applied", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed" },
+    };
+    const lines = card([proposal()], { [lineID("t1", 0)]: stale }).lines;
+    const driven = driving(lines);
+    await runProposals(lines, driven.ports);
+
+    expect(driven.written).toEqual([
+      { line: lines[0].id, state: "applying", words: "", version: 1 },
+      { line: lines[0].id, state: "applied", words: "", version: 2 },
+    ]);
+    // And the line a page holding those marks would show: the record's own
+    // answer, with no recovery offered over it.
+    const after = markAfter(stale, driven.marked, lines[0].id);
+    expect(after.unrecorded).toBeNull();
+    const settled = card([proposal({ state: "applied" })], { [lineID("t1", 0)]: after });
+    expect(lineState(lineOf(settled))).toBe(APPLIED);
+    expect(offersTryAgain(lineOf(settled))).toBe(false);
+  });
+
+  it("clears it where a conflict shows somebody else settled the line", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed" },
+    };
+    const lines = card([proposal()], { [lineID("t1", 0)]: stale }).lines;
+    const held: Proposal = { ...lines[0], state: "applied", words: "", version: 4 };
+    const driven = driving(lines, {
+      writes: { [`${lines[0].id}:applying`]: { kind: "conflict", proposal: held } },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(markAfter(stale, driven.marked, lines[0].id).unrecorded).toBeNull();
+  });
+
+  /**
+   * And it is KEPT where nothing newer establishes what happened. A line the
+   * freshness guard refuses is not sent at all, so what the page knows about the
+   * act that did go out is still the only account of it there is.
+   */
+  it("keeps an unrecorded answer where nothing newer establishes what happened", async () => {
+    const stale: Mark = {
+      ticked: true, notRun: false, refusedUnsent: "",
+      unrecorded: { state: "refused", words: "goal is claimed" },
+    };
+    const approve = proposal({
+      verb: "approve-goal", fields: {},
+      read: { intent: "not what the ledger says", nextStep: "n", tier: 2, labels: [] },
+    });
+    const one = card(
+      [approve],
+      { [lineID("t1", 0)]: stale },
+      { [lineID("t1", 0)]: { budget: BOX, source: "goal" } },
+    );
+    const driven = driving(one.lines, {
+      look: { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" },
+    });
+    await runProposals(one.lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(markAfter(stale, driven.marked, one.lines[0].id).unrecorded).toEqual(stale.unrecorded);
   });
 
   /** And the run asks for the page's re-read once when it ends, however it ended. */
