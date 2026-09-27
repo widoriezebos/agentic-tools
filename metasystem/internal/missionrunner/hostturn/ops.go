@@ -7,6 +7,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"
 )
 
+// hostPreflight is the optional operation a runtime answers before the
+// host turn's start gate; done ends the turn with code.
+type hostPreflight interface {
+	HostPreflight(t *supervisor.Turn) (code int, done bool)
+}
+
 // runHostOps is one host turn of a runtime through its operations (role
 // host): the runtime prepares the command, the turn runs its CLI in the
 // checkout, and the runtime's finalize names what host.FinishTurn judges.
@@ -17,14 +23,21 @@ func runHostOps(t *Turn, ops supervisor.Operations) int {
 		fmt.Fprintln(d.Stderr, err)
 		return 1
 	}
-	if !t.requireCLI(description.CLI) {
-		return 3
-	}
 	turn := supervisor.NewHostTurn(d, supervisor.HostTurnFacts{
 		Runtime: t.runtime, TurnDir: t.TurnDir, Mission: t.Mission, TurnID: t.TurnID,
 		Prompt: t.Prompt, Schema: t.schema(), ResumeSession: t.ResumeSession, Tag: t.InstanceTag,
-		Requested: t.permissions(),
+		Requested: t.permissions(), Result: t.Result,
 	})
+	// A runtime may end the turn before the start gate (the fake host's
+	// turn-record check and unverified start).
+	if preflight, ok := ops.(hostPreflight); ok {
+		if code, done := preflight.HostPreflight(turn); done {
+			return code
+		}
+	}
+	if !t.requireCLI(description.CLI) {
+		return 3
+	}
 	launch, err := ops.Prepare(turn)
 	if err != nil {
 		fmt.Fprintln(d.Stderr, err)
@@ -36,7 +49,13 @@ func runHostOps(t *Turn, ops supervisor.Operations) int {
 			return 3
 		}
 	}
-	status := supervisor.RunHostCLI(d, turn, launch, t.Path("host.log"))
+	var status int
+	if launch.Simulated != nil {
+		// An in-process CLI stand-in (the fake host) runs to its exit.
+		status = launch.Simulated(make(chan struct{}))
+	} else {
+		status = supervisor.RunHostCLI(d, turn, launch, t.Path("host.log"))
+	}
 	final, err := ops.Finalize(turn, supervisor.FinalInput{Launch: launch, Status: status, Usage: t.Path("usage.json")})
 	if err != nil {
 		fmt.Fprintln(d.Stderr, err)

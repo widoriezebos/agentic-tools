@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -167,6 +166,7 @@ func (h *hostInstall) run(extra ...string) int {
 // TestFakeHostBehaviors is the FAKEHOST behavior table: each behavior's
 // exit status, return, and result envelope.
 func TestFakeHostBehaviors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		behavior   string
 		exit       int
@@ -278,6 +278,7 @@ func TestFakeHostBehaviors(t *testing.T) {
 // last marker, duplicates collapsing, multiple behaviors and unknown ones
 // refused, and a marker that is not lowercase ignored.
 func TestFakeHostMarkerGrammar(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, prompt, want, refusal string
 	}{
@@ -311,6 +312,7 @@ func TestFakeHostMarkerGrammar(t *testing.T) {
 // record, the unverified start, the start gate, the resume session, and the
 // fixture-mode guard on the hold controls.
 func TestFakeHostSetup(t *testing.T) {
+	t.Parallel()
 	t.Run("missing turn record", func(t *testing.T) {
 		h := newHostInstall(t, "x\n", false)
 		os.Remove(h.path("turn.json"))
@@ -376,6 +378,7 @@ func TestFakeHostSetup(t *testing.T) {
 // TestFakeHostHelperProcess is the subprocess body for the hold, which
 // replaces the process. It is not a test.
 func TestFakeHostHelperProcess(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("FAKE_HOST_HELPER") != "1" {
 		t.Skip("subprocess helper")
 	}
@@ -392,6 +395,7 @@ func TestFakeHostHelperProcess(t *testing.T) {
 // runner verified) with the engine's util hold and its turn files; with
 // IGNORE_TERM the ignored SIGTERM disposition survives the exec.
 func TestFakeHostHold(t *testing.T) {
+	t.Parallel()
 	for _, ignore := range []bool{false, true} {
 		t.Run("ignore-term="+strconv.FormatBool(ignore), func(t *testing.T) {
 			h := newHostInstall(t, "x\n", true)
@@ -451,12 +455,5 @@ func TestFakeHostHold(t *testing.T) {
 				t.Fatal("a holding host ran its behavior")
 			}
 		})
-	}
-}
-
-func TestFakeHostMarkerParser(t *testing.T) {
-	got := fakeHostBehaviorsIn([]byte("a FAKEHOST:x-y b\nFAKEHOST:\nFAKEHOST:b FAKEHOST:\nFAKEHOST:a\n"))
-	if want := []string{"a", "b", "x-y"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("behaviors = %q, want %q", got, want)
 	}
 }

@@ -94,7 +94,9 @@ type Turn struct {
 	// host turn.
 	Job, Tag, Round, RootJob string
 	Mission, TurnID          string
-	Prompt, Schema, Model    string
+	// Result is a host turn's result envelope path.
+	Result                string
+	Prompt, Schema, Model string
 	// ResumeSession is the session being resumed ("" for a fresh turn).
 	ResumeSession string
 	// Effective is the effective permission envelope file the runtime's
@@ -149,6 +151,9 @@ type Launch struct {
 	// Simulated, when set, is an in-process CLI stand-in (the fake runtime)
 	// run instead of Argv; its return is the CLI's exit status.
 	Simulated func(stop <-chan struct{}) int
+	// OnHandshake, when set, is called once the shared layer recorded the
+	// handshake observe reported (a simulated CLI continues past it).
+	OnHandshake func()
 	// Private is the runtime's own per-turn state, handed back to observe,
 	// finalize and repair.
 	Private any

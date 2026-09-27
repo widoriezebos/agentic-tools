@@ -423,6 +423,22 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// waitPidFile waits for a round pid file to be written whole (the writer
+// creates it before its content lands) and returns the pid.
+func (f *fakeInstall) waitPidFile(name string) int {
+	f.t.Helper()
+	var pid int
+	waitFor(f.t, name, func() bool {
+		data, err := os.ReadFile(f.roundFile(name))
+		if err != nil || !strings.HasSuffix(string(data), "\n") {
+			return false
+		}
+		pid, err = strconv.Atoi(strings.TrimSpace(string(data)))
+		return err == nil
+	})
+	return pid
+}
+
 func processAlive(pid int) bool {
 	return syscall.Kill(pid, 0) == nil
 }
@@ -439,6 +455,7 @@ type helperConfig struct {
 // that end or hold the supervisor process itself (kill -KILL $$, the
 // forever heartbeat loops, the SIGTERM trap). It is not a test.
 func TestFakeSupervisorHelperProcess(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("FAKE_SUPERVISOR_HELPER") != "1" {
 		t.Skip("subprocess helper")
 	}

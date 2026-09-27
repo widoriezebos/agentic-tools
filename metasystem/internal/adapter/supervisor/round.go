@@ -138,10 +138,14 @@ func superviseRound(s *Supervision, args []string, ops Operations) int {
 	if !s.verifyReferences() {
 		return 1
 	}
-	if err := s.markPrefork(); err != nil {
-		fmt.Fprintln(s.d.Stderr, err)
-		s.failPending("prefork_marker", "handshake", "")
-		return 1
+	// A simulated CLI forks nothing and never enters custody, so it leaves
+	// no pre-fork marker behind.
+	if launch.Simulated == nil {
+		if err := s.markPrefork(); err != nil {
+			fmt.Fprintln(s.d.Stderr, err)
+			s.failPending("prefork_marker", "handshake", "")
+			return 1
+		}
 	}
 	cli, _, err := s.start(launch)
 	if err != nil {
@@ -173,6 +177,9 @@ func superviseRound(s *Supervision, args []string, ops Operations) int {
 			}
 			for _, line := range events.Lines {
 				s.appendEventLine(line)
+			}
+			if launch.OnHandshake != nil {
+				launch.OnHandshake()
 			}
 			break
 		}
@@ -369,6 +376,8 @@ type HostTurnFacts struct {
 	Runtime, TurnDir, Mission, TurnID string
 	Prompt, Schema, ResumeSession     string
 	Tag, Requested                    string
+	// Result is the turn's result envelope path.
+	Result string
 }
 
 // NewHostTurn is a runtime's view of one mission host turn (role host): the
@@ -376,7 +385,7 @@ type HostTurnFacts struct {
 func NewHostTurn(d Deps, f HostTurnFacts) *Turn {
 	return &Turn{d: d, Role: RoleHost, Verb: "start-turn", Runtime: f.Runtime, Root: d.Root,
 		Workspace: d.Root, Dir: f.TurnDir, Record: filepath.Join(f.TurnDir, "turn.json"),
-		Mission: f.Mission, TurnID: f.TurnID, Tag: f.Tag, Prompt: f.Prompt, Schema: f.Schema,
+		Mission: f.Mission, TurnID: f.TurnID, Tag: f.Tag, Result: f.Result, Prompt: f.Prompt, Schema: f.Schema,
 		ResumeSession: f.ResumeSession, Requested: f.Requested, Env: d.Environ,
 		Log: appendLog(filepath.Join(f.TurnDir, "host.log"))}
 }
