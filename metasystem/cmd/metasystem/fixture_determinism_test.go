@@ -1408,19 +1408,6 @@ func TestOrdinaryFakeHostStopsOnTermAfterReadiness(t *testing.T) {
 func runFakeHostLifetimeWitness(t *testing.T, resistTerm bool) {
 	t.Helper()
 	fixtureRoot := t.TempDir()
-	hostDir := filepath.Join(fixtureRoot, "scripts", "agents", "hosts")
-	if err := os.MkdirAll(hostDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"fake.sh", "host-common.sh"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "hosts", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(filepath.Join(hostDir, name), data, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
 	if err := testexec.WriteFile(filepath.Join(fixtureRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1466,9 +1453,9 @@ func runFakeHostLifetimeWitness(t *testing.T, resistTerm bool) {
 	}
 	owner := syntheticFixtureOwnerKey(t, witnessName)
 	ctx, cancel := context.WithCancel(t.Context())
-	command := exec.CommandContext(ctx, "/bin/bash", filepath.Join(hostDir, "fake.sh"),
+	command := exec.CommandContext(ctx, commandTestExecutable(t), "delegate-supervisor",
 		identity.FixtureOwnerEnv+"="+owner,
-		"start-turn", "--mission", "fixture-host", "--turn-id", "fixture-turn",
+		"fake", "start-turn", "--root", fixtureRoot, "--mission", "fixture-host", "--turn-id", "fixture-turn",
 		"--prompt", filepath.Join(turn, "prompt.md"), "--result", filepath.Join(turn, "result.json"),
 		"--instance-tag", "fixture-host",
 	)
@@ -1477,6 +1464,7 @@ func runFakeHostLifetimeWitness(t *testing.T, resistTerm bool) {
 		identity.FixtureOwnerEnv + "=" + owner,
 		fixtureLeashEnvironment + "=" + leashPath,
 		"METASYSTEM_FAKE_HOST_HOLD=1",
+		"GO_WANT_BATCH_E2E_COMMAND=1",
 	}
 	if resistTerm {
 		environment = append(environment, "METASYSTEM_FAKE_HOST_IGNORE_TERM=1")
