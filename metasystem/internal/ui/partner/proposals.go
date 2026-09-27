@@ -140,7 +140,21 @@ type Proposal struct {
 	// Words are what the last state change said: the engine's own sentence on a
 	// refusal, what was said on an unresolved answer, "" on a plain one.
 	Words string `json:"words,omitempty"`
-	At    string `json:"at"`
+	// At is when this action was PROPOSED: the instant the service admitted it,
+	// stamped once and never again.
+	//
+	// It used to be the instant of the last write, and that was the wrong fact
+	// for the one place it is read. An answered row sorted to the end of its
+	// group and read "today", so the inbox's ages were the ages of the human's
+	// own presses rather than of the asking, and "n new" counted a proposal from
+	// last week as new because somebody had just refused it (Sol's read of
+	// g1-s60, deferred). Every list that dates a proposal dates the asking.
+	At string `json:"at"`
+	// UpdatedAt is when this entry was last written, and "" on one nothing has
+	// written since it was admitted. It is what At used to carry, kept beside it
+	// rather than in place of it, because both facts are true of a line that was
+	// proposed on Monday and refused on Friday.
+	UpdatedAt string `json:"updatedAt,omitempty"`
 	// Version is how many times this entry has been written, counting the
 	// service's own admission as the first. Every press sends the version of
 	// the entry it last rendered, and the writer admits the write only against
@@ -446,7 +460,10 @@ func (c *Conversation) RecordProposal(turn string, index, version int, state, wo
 	rewritten := append([]Proposal{}, proposals...)
 	held.State = state
 	held.Words = words
-	held.At = now.UTC().Format(time.RFC3339)
+	// The write's own instant, beside the asking's rather than over it: the
+	// entry's At is when the action was proposed, which is what every list that
+	// dates a proposal reads.
+	held.UpdatedAt = now.UTC().Format(time.RFC3339)
 	held.Version = version + 1
 	rewritten[index] = held
 	messages := append([]Message{}, c.messages...)

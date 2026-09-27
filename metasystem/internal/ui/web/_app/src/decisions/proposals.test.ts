@@ -99,6 +99,25 @@ describe("a proposal as a row", () => {
     expect(line?.fields).toEqual({ because: "superseded by the seat inventory (g1-s42)" });
   });
 
+  /**
+   * The line is dated by the asking and carries the last write beside it.
+   *
+   * The row's `since` is when the action was proposed, and it stays that however
+   * often the entry is written: a line dated by its last write sorted to the end
+   * of its group and read "today" at the moment it started to carry a recovery
+   * (Sol's read of g1-s60, deferred).
+   */
+  it("is dated by when it was proposed, with the last write beside it", () => {
+    const answered = lineOf(need({ since: "2026-09-23T09:00:00Z" },
+      { state: "refused", words: "goal g1-s44 is claimed by m2a", version: 3,
+        updatedAt: "2026-09-26T11:59:00Z" }));
+
+    expect(answered?.at).toBe("2026-09-23T09:00:00Z");
+    expect(answered?.updatedAt).toBe("2026-09-26T11:59:00Z");
+    // And a line nobody has written says so by carrying no write at all.
+    expect(lineOf(need())?.updatedAt).toBeUndefined();
+  });
+
   it("has no line at all on a row of another kind", () => {
     expect(lineOf(need({ kind: "approval", proposal: null }))).toBeNull();
     expect(linesOf([need({ kind: "approval", proposal: null }), need()])).toHaveLength(1);

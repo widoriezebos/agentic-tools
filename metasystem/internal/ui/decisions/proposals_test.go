@@ -72,7 +72,7 @@ func TestAProposalIsARowCarryingTheWholeAction(t *testing.T) {
 	testutil.Expect(t, "the Partner's own words are the explanation",
 		need.Proposal.Explanation, "the inventory covers what these were for")
 	testutil.Expect(t, "the state it stands in", need.Proposal.State, partner.ProposalWaiting)
-	testutil.Expect(t, "and the schema says which shape this is", page.SchemaVersion, 5)
+	testutil.Expect(t, "and the schema says which shape this is", page.SchemaVersion, 6)
 }
 
 // The goal's own row is joined where the ledger carries it, and nothing is
@@ -152,6 +152,46 @@ func TestAProposalIsNewByWhenItWasProposed(t *testing.T) {
 	}
 	testutil.Expect(t, "the one proposed inside the window is new", fresh["t7/0"], true)
 	testutil.Expect(t, "the one from three days ago is not", fresh["t6/0"], false)
+}
+
+// The row dates the asking and not the last press, and the last press travels
+// beside it.
+//
+// It is the same claim the "new" test makes, from the other end: a line that has
+// been answered once — refused, unresolved, left in flight — has been written
+// since it was proposed, and a row dated by that write would sort to the end of
+// its group and read "today" at exactly the moment it started to carry a
+// recovery (Sol's read of g1-s60, deferred). The group is read oldest asking
+// first, so the row that has waited longest leads whatever has been pressed on
+// it since.
+func TestAProposalsRowIsDatedByWhenItWasProposedAndNotByTheLastWrite(t *testing.T) {
+	t.Parallel()
+	answered := proposedPark("t6", 0, "g1-s44", partner.ProposalRefused, "goal g1-s44 is claimed by m2a", 3)
+	answered.At = ago(3 * 24 * time.Hour)
+	answered.UpdatedAt = ago(time.Minute)
+	untouched := proposedPark("t7", 0, "g1-s44", partner.ProposalWaiting, "", 1)
+
+	page := Compose(proposingInputs(untouched, answered), observed)
+
+	rows := map[string]Need{}
+	order := []string{}
+	for _, need := range page.NeedsYou {
+		if need.Kind == KindProposal {
+			rows[need.ID] = need
+			order = append(order, need.ID)
+		}
+	}
+	testutil.Require(t, "both rows are listed", len(rows), 2)
+	testutil.Expect(t, "the answered row is dated by its asking three days ago",
+		rows["t6/0"].Since, ago(3*24*time.Hour))
+	testutil.Expect(t, "and carries the instant of the write that answered it",
+		rows["t6/0"].Proposal.UpdatedAt, ago(time.Minute))
+	testutil.Expect(t, "a row nothing has written carries no write instant",
+		rows["t7/0"].Proposal.UpdatedAt, "")
+	// A row dated by the write would have gone to the end of the group; dated by
+	// the asking, the three-day-old refusal is still the one that has waited
+	// longest.
+	testutil.Expect(t, "oldest asking first", order, []string{"t6/0", "t7/0"})
 }
 
 // A seat with no Partner has no proposals and no group, and every other kind is

@@ -117,6 +117,7 @@ export function lineOf(
     state: carried === null ? proposed.state : carried.state,
     words: carried === null ? proposed.words : (carried.words ?? ""),
     at: need.since,
+    updatedAt: carried === null ? proposed.updatedAt : carried.updatedAt,
     version: carried === null ? proposed.version : carried.version,
     id,
     mark: markOf(marks, id),
