@@ -35,7 +35,7 @@ func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
 	}
 	endpoint, err := goal.ResolveEndpoint(repoRoot)
 	if err != nil {
-		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "repair the goal sync configuration, then run metasystem health")
+		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "repair the goal sync configuration, then run metasystem system check")
 	}
 	projection, err := goal.Project(endpoint, false, now)
 	return checkTrunkRedFromProjection(repoRoot, now, projection, err, config.ResolveBatchLanding)
@@ -43,13 +43,13 @@ func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
 
 func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error)) RoleVerdict {
 	if projectionErr != nil {
-		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "repair or fetch the goal ledger, then run metasystem health")
+		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "repair or fetch the goal ledger, then run metasystem system check")
 	}
 	cadenceRoot := repoRoot
 	if configured, _, configErr := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Default: "", DefaultSet: true}); configErr == nil && strings.TrimSpace(configured) != "" {
 		cadenceRoot = configured
 	}
-	remedy := fmt.Sprintf("metasystem gate cadence-tick --root %q", cadenceRoot)
+	remedy := fmt.Sprintf("metasystem internal gate cadence-tick --root %q", cadenceRoot)
 	if projection.Tree.Cadence == nil {
 		return roleDead(RoleTrunkRed, "no deep validation cadence status is recorded", remedy)
 	}
@@ -67,7 +67,7 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 
 	staleBatches, batchErr := staleUnrecordedTrunkRedBatchesWith(repoRoot, now, resolveBatchLanding)
 	if batchErr != nil {
-		return roleUnknown(RoleTrunkRed, batchErr.Error(), "repair the configured landing batch root, then run metasystem health")
+		return roleUnknown(RoleTrunkRed, batchErr.Error(), "repair the configured landing batch root, then run metasystem system check")
 	}
 
 	var open []goal.TrunkRedEntry
@@ -83,12 +83,12 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	}
 	if len(unowned) > 0 {
 		return roleDead(RoleTrunkRed, "open trunk red without an owner: "+strings.Join(unowned, ", "),
-			"metasystem goal trunk-red own --id "+unowned[0]+" --goal <goal>")
+			"metasystem internal goal trunk-red own --id "+unowned[0]+" --goal <goal>")
 	}
 	if len(staleBatches) > 0 {
 		first := staleBatches[0]
 		return roleDead(RoleTrunkRed, "held trunk red was not recorded: "+strings.Join(staleBatches, ", "),
-			"metasystem landing batch tick; then metasystem goal trunk-red own --id <id> --goal <goal> (first held batch "+first+")")
+			"metasystem internal landing batch tick; then metasystem internal goal trunk-red own --id <id> --goal <goal> (first held batch "+first+")")
 	}
 	if len(open) == 0 {
 		return roleAlive(RoleTrunkRed, "no open trunk red")

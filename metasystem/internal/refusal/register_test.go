@@ -335,7 +335,7 @@ func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 func TestHCL03HandoffCancelRows(t *testing.T) {
 	wants := map[string]Row{
 		"HANDOFF_HUMAN_UNPROVEN": {Owner: "internal/steward", Shape: Identity},
-		"HANDOFF_OTHER_SESSION":  {Owner: "internal/steward", Shape: Agent, Override: "metasystem context handoff --root <installation> --cancel <nonce> --by <human>, typed at an enrolled or agent-free terminal", Commands: 1},
+		"HANDOFF_OTHER_SESSION":  {Owner: "internal/steward", Shape: Agent, Override: "metasystem session handoff --root <installation> --cancel <nonce> --by <human>, typed at an enrolled or agent-free terminal", Commands: 1},
 	}
 	for code, want := range wants {
 		var got Row

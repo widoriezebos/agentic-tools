@@ -68,7 +68,7 @@ func TestIntentCriticDelegateSelectedRoster(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("DELEGATE_RECORD", record)
-	if job, err := readDelegate(binary, worktree, brief, "goal-a", strings.Repeat("a", 40), "", "", environment...); err != nil || job != "critic-fixture" {
+	if job, err := readDelegate(scriptDelegator(binary), worktree, brief, "goal-a", strings.Repeat("a", 40), "", "", environment...); err != nil || job != "critic-fixture" {
 		t.Fatalf("delegate: job=%q err=%v", job, err)
 	}
 	args, _ := os.ReadFile(record + ".args")
@@ -331,7 +331,7 @@ with open(os.environ["VMI_PROBE_RELEASE"]) as gate:
 	}
 	base := c.endpointTip()
 	brief := c.brief("runtime-child-brief.md", "Build through a real adapter child.\n")
-	args := append([]string{"build", c.id, "runtime-child", "--brief", brief, "--lines", "10"}, workCheck...)
+	args := append([]string{"work", "build", c.id, "runtime-child", "--brief", brief, "--lines", "10"}, workCheck...)
 	if code, result := c.do(args...); result.Outcome != intentRefused || starter.built != 0 {
 		t.Fatalf("a failed settings copy must launch nothing: code=%d %+v", code, result)
 	}

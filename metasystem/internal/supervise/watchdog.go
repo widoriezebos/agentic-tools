@@ -130,10 +130,10 @@ func WatchdogReport(repo string, now time.Time) []string {
 
 	var lines []string
 	if len(problems) > 0 {
-		lines = append(lines, "SUPERVISION DOWN ("+strings.Join(problems, "; ")+") — recover: metasystem up --repo .")
+		lines = append(lines, "SUPERVISION DOWN ("+strings.Join(problems, "; ")+") — recover: metasystem session start --repo .")
 	}
 	if len(untracked) > 0 {
-		lines = append(lines, "UNTRACKED agents (not this checkout's work; detail: bin/metasystem proc census): "+strings.Join(untracked, "; "))
+		lines = append(lines, "UNTRACKED agents (not this checkout's work; detail: bin/metasystem internal proc census): "+strings.Join(untracked, "; "))
 	}
 	return lines
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -469,15 +470,26 @@ func printWaitResult(result metarun.WaitResult, jsonOutput bool) {
 }
 
 func runSessionStart(args []string) int {
+	return runSessionStartTo(args, os.Stdout, os.Stderr)
+}
+
+func runSessionStartTo(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("session start", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	session := flags.String("session", "", "runtime session identifier")
 	if flags.Parse(args) != nil || *session == "" || flags.NArg() != 0 {
 		return metarun.ExitInvalidWait
 	}
+	return sessionStartRecovery(*root, *session, stdout, stderr)
+}
+
+// sessionStartRecovery prints the durable wait rows the checkout holder's
+// current session recovers; a session that is not the holder's owns none.
+func sessionStartRecovery(checkout, sessionID string, stdout, stderr io.Writer) int {
+	root, session := &checkout, &sessionID
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.ExitWaiterIO
 	}
 	holder, err := lease.CurrentHolder(stateRoot)
@@ -485,20 +497,20 @@ func runSessionStart(args []string) int {
 		if errors.Is(err, lease.ErrLeaseAbsent) {
 			return metarun.ExitWaiterBusy
 		}
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.ExitWaiterIO
 	}
 	if holder.SessionId != *session {
-		fmt.Fprintln(os.Stderr, "session start does not name the checkout holder's current session")
+		fmt.Fprintln(stderr, "session start does not name the checkout holder's current session")
 		return metarun.ExitWaiterBusy
 	}
 	lines, err := report.CurrentWaitingLines(stateRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return metarun.ExitWaiterIO
 	}
 	for _, line := range lines {
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	return 0
 }

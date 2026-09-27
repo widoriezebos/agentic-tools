@@ -65,7 +65,7 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 	}
 	const batchID = "01j5x00000000000000000ba01"
 	tipPath := filepath.Join(t.TempDir(), "tip.json")
-	status, output := fixture.command("test", "run", "--root", fixture.root, "--goal", "goal-b", "--tree", tipTree,
+	status, output := fixture.command("internal", "test", "run", "--root", fixture.root, "--goal", "goal-b", "--tree", tipTree,
 		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a", "app-b"}), "--result", tipPath)
 	if status == 0 {
 		t.Fatalf("native red tip passed: %s", output)
@@ -98,7 +98,7 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 			if request.Tree != baseTree || !request.NeverReuse {
 				t.Fatalf("base diagnostic was not fresh: %+v", request)
 			}
-			status, output := fixture.command("test", "run", "--root", fixture.root, "--goal", request.GoalID, "--tree", request.Tree,
+			status, output := fixture.command("internal", "test", "run", "--root", fixture.root, "--goal", request.GoalID, "--tree", request.Tree,
 				"--mode", "canary", "--purpose", "diagnostic", "--groups", "app-a", "--no-reuse", "--result", diagnosticPath)
 			if status != 0 {
 				return batch.DiagnosticResult{}, errors.New(output)
@@ -117,7 +117,7 @@ func TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor(t *testin
 	fixture.git("switch", "-q", "-C", "split-candidate", baseCommit)
 	fixture.git("apply", "--index", "--binary", patchPath)
 	survivorPath := filepath.Join(t.TempDir(), "survivor.json")
-	fixture.requireCommand("test", "run", "--root", fixture.root, "--goal", "goal-b", "--tree", reassembled.TipTree,
+	fixture.requireCommand("internal", "test", "run", "--root", fixture.root, "--goal", "goal-b", "--tree", reassembled.TipTree,
 		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-b"}), "--result", survivorPath)
 	fixture.requireCommand("test", "verify", "--root", fixture.root, "--goal", "goal-b", "--tree", reassembled.TipTree,
 		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-b"}))

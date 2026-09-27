@@ -97,16 +97,16 @@ func TestIntentProcessCorrections(t *testing.T) {
 		owners.processes.process.repositoryTop = fakeTop(app)
 		run := func(args ...string) (int, intentResult) {
 			t.Helper()
-			command, _ := findIntentCommand(args[0])
+			command, rest, _ := resolveIntentArgv(args)
 			var stdout, stderr bytes.Buffer
-			code := runIntentIn(command, append(args[1:], "--json"), &stdout, &stderr, installation, owners)
+			code := runIntentIn(command, append(rest, "--json"), &stdout, &stderr, installation, owners)
 			var result intentResult
 			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 				t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 			}
 			return code, result
 		}
-		if code, result := run("stop", "--installation", foreign); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not belong to the checkout") {
+		if code, result := run("system", "stop", "--installation", foreign); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not belong to the checkout") {
 			t.Fatalf("foreign installation = %d %+v", code, result)
 		}
 		for _, root := range []string{app, installation, foreign} {
@@ -114,7 +114,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 				t.Fatalf("a refused foreign stop changed %s: %+v", root, record)
 			}
 		}
-		if code, result := run("stop", "--installation", installation); code != 0 || result.Outcome != intentConfirmed {
+		if code, result := run("system", "stop", "--installation", installation); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("adopted stop = %d %+v", code, result)
 		}
 		if record, _ := stopfence.Read(app); record.State != stopfence.StateClosed {
@@ -123,7 +123,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 		if record, _ := stopfence.Read(installation); record.Generation != 0 {
 			t.Fatalf("stop wrote a second fence inside the installation: %+v", record)
 		}
-		code, doctor := run("check")
+		code, doctor := run("system", "check")
 		encoded, _ := json.Marshal(doctor.Data)
 		var preview steward.HookHealthPreview
 		if err := json.Unmarshal(encoded, &preview); err != nil || !preview.Verdict.Stopped || code != preview.ExitCode {
@@ -138,9 +138,9 @@ func TestIntentProcessCorrections(t *testing.T) {
 		t.Parallel()
 		b := newProcessBed(t)
 		b.families = []stoptransition.Family{survivingFamily{}}
-		code, result := b.runJSON(b.owners(), "stop", "checkout")
+		code, result := b.runJSON(b.owners(), "system", "stop")
 		if code == 0 || result.Outcome != intentPartial || strings.HasPrefix(result.Summary, "stopped") ||
-			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "stop"}) {
+			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "system", "stop"}) {
 			t.Fatalf("stop with a survivor = %d %+v", code, result)
 		}
 		lines, _ := result.Data.(map[string]any)["lines"].([]any)
@@ -155,24 +155,24 @@ func TestIntentProcessCorrections(t *testing.T) {
 	t.Run("a start that fails after the fence opened is partial", func(t *testing.T) {
 		t.Parallel()
 		b := newProcessBed(t)
-		if code, _ := b.runJSON(b.owners(), "stop"); code != 0 {
+		if code, _ := b.runJSON(b.owners(), "system", "stop"); code != 0 {
 			t.Fatal("bed stop")
 		}
 		b.class = lease.ClassDelegate
-		code, result := b.runJSON(b.owners(), "start")
+		code, result := b.runJSON(b.owners(), "system", "start")
 		if code == 0 || result.Outcome != intentRefused || b.armCalls != 0 || b.fence().State != stopfence.StateClosed {
 			t.Fatalf("agent start = %d %+v", code, result)
 		}
 		b.class, b.armErr = lease.ClassHuman, errors.New("the steward refused to arm")
-		code, result = b.runJSON(b.owners(), "start")
+		code, result = b.runJSON(b.owners(), "system", "start")
 		record := b.fence()
 		data, _ := result.Data.(map[string]any)
 		if code == 0 || result.Outcome != intentPartial || b.armCalls != 1 || data["fence"] != record.State+"/"+record.Phase || data["running"] == nil ||
-			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "start"}) {
+			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "system", "start"}) {
 			t.Fatalf("failed start = %d %+v; fence %+v", code, result, record)
 		}
 		b.armErr = nil
-		if code, result := b.runJSON(b.owners(), "start"); code != 0 || result.Outcome != intentConfirmed {
+		if code, result := b.runJSON(b.owners(), "system", "start"); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("repeated start = %d %+v", code, result)
 		}
 	})
@@ -189,7 +189,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 				cursor:   func(string) (string, bool, error) { return "", false, nil },
 			})
 		}
-		example := []string{"ask", "goal-a", "--question", "Land slice 2 now?", "--option", "yes: land it", "--option", "no: wait for review", "--recommend", "yes"}
+		example := []string{"question", "ask", "goal-a", "--question", "Land slice 2 now?", "--option", "yes: land it", "--option", "no: wait for review", "--recommend", "yes"}
 		code, result := b.runJSON(owners, example...)
 		if code != 0 || result.Outcome != intentConfirmed || transport.posts != 1 || len(result.Targets) != 2 {
 			t.Fatalf("ordinary ask = %d %+v", code, result)
@@ -200,8 +200,8 @@ func TestIntentProcessCorrections(t *testing.T) {
 		}
 
 		transport.fail = true
-		code, result = b.runJSON(owners, "ask", "goal-a", "--question", "Another?", "--option", "yes: go")
-		if code == 0 || result.Outcome != intentInProgress || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "ask", "--retry", result.Targets[1].ID}) {
+		code, result = b.runJSON(owners, "question", "ask", "goal-a", "--question", "Another?", "--option", "yes: go")
+		if code == 0 || result.Outcome != intentInProgress || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "question", "retry", result.Targets[1].ID}) {
 			t.Fatalf("undelivered ask = %d %+v", code, result)
 		}
 		if pending, _ := channel.ReadQuestion(b.root(), result.Targets[1].ID); pending.Thread != nil || pending.Undelivered != 1 {
@@ -215,7 +215,7 @@ func TestIntentProcessCorrections(t *testing.T) {
 		owners.processes.question = channel.ReadQuestion
 		transport.onPost = func() { _ = os.Chmod(questions, 0o555) }
 		t.Cleanup(func() { _ = os.Chmod(questions, 0o755) })
-		code, result = b.runJSON(owners, "ask", "goal-a", "--question", "A third?", "--option", "yes: go")
+		code, result = b.runJSON(owners, "question", "ask", "goal-a", "--question", "A third?", "--option", "yes: go")
 		_ = os.Chmod(questions, 0o755)
 		if code == 0 || result.Outcome != intentPartial || len(result.Targets) != 2 || result.Targets[1].ID == "" {
 			t.Fatalf("ask whose delivery record failed = %d %+v", code, result)
@@ -250,11 +250,11 @@ func TestIntentProcessCorrections(t *testing.T) {
 			return engine, nil
 		}
 		answer := "reset: the tail work is worth more cycles"
-		code, result := b.runJSON(owners, "answer", "mission", "demo", "stop-loss", answer)
+		code, result := b.runJSON(owners, "question", "answer", "demo/stop-loss", answer)
 		ledgerPath := filepath.Join(filepath.Dir(asks), "ledger.md")
 		ledger, _ := os.ReadFile(ledgerPath)
 		if code != 3 || result.Outcome != intentPartial || missionAskAnswered(askPath) || !strings.Contains(string(ledger), "Stop-loss reset: ask=stop-loss") ||
-			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "answer", "mission", "demo", "stop-loss", answer}) {
+			result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "question", "answer", "demo/stop-loss", answer}) {
 			t.Fatalf("reset without ask write = %d %+v", code, result)
 		}
 		if err := os.Chmod(asks, 0o755); err != nil {
@@ -288,22 +288,22 @@ func TestIntentProcessCorrections(t *testing.T) {
 			})
 			return uiLifecycleResult{Result: report.Result, Restart: &report}, nil
 		}
-		code, result := b.runJSON(owners, "status", "ui")
+		code, result := b.runJSON(owners, "ui", "status")
 		if code != 1 || result.Outcome != intentConfirmed || result.Data.(map[string]any)["state"] != string(lifecycle.Stopped) {
 			t.Fatalf("ui status = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(owners, "restart", "ui"); code != 0 || result.Outcome != intentConfirmed || starts != 1 {
+		if code, result := b.runJSON(owners, "ui", "restart"); code != 0 || result.Outcome != intentConfirmed || starts != 1 {
 			t.Fatalf("restart ui = %d %+v", code, result)
 		}
 		startCode = 1
-		code, result = b.runJSON(owners, "restart", "ui")
-		if code == 0 || result.Outcome != intentPartial || starts != 2 || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "start", "ui"}) {
+		code, result = b.runJSON(owners, "ui", "restart")
+		if code == 0 || result.Outcome != intentPartial || starts != 2 || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "ui", "start"}) {
 			t.Fatalf("restart ui that cannot start = %d %+v", code, result)
 		}
 		owners.processes.ui = func(string, lifecycle.Roots, uiIntentOptions) (uiLifecycleResult, error) {
 			return uiLifecycleResult{}, errors.New("no interface installation")
 		}
-		if code, result := b.runJSON(owners, "restart", "ui"); code != 1 || result.Outcome != intentRefused {
+		if code, result := b.runJSON(owners, "ui", "restart"); code != 1 || result.Outcome != intentRefused {
 			t.Fatalf("refused restart ui = %d %+v", code, result)
 		}
 	})
@@ -341,9 +341,9 @@ func newAdoptedBed(t *testing.T) *adoptedBed {
 
 func (b *adoptedBed) run(cwd string, args ...string) (int, intentResult) {
 	b.t.Helper()
-	command, _ := findIntentCommand(args[0])
+	command, rest, _ := resolveIntentArgv(args)
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, append(args[1:], "--json"), &stdout, &stderr, cwd, b.owners)
+	code := runIntentIn(command, append(rest, "--json"), &stdout, &stderr, cwd, b.owners)
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		b.t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
@@ -376,7 +376,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 			transitions = append(transitions, scope.Root)
 			return transition(scope, scale)
 		}
-		for index, args := range [][]string{{"stop"}, {"start"}, {"status"}, {"stop"}} {
+		for index, args := range [][]string{{"system", "stop"}, {"system", "start"}, {"status"}, {"system", "stop"}} {
 			args = append(args, "--installation", b.installation)
 			code, result := b.run(b.app, args...)
 			if code != 0 || result.Outcome != intentConfirmed || !samePath(result.Targets[0].ID, b.app) {
@@ -415,14 +415,14 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 		if code, result := b.run(b.app, "status"); code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "--installation DIR") {
 			t.Fatalf("repository top without an installation = %d %+v", code, result)
 		}
-		if code, result := b.run(b.app, "stop", "--installation", b.foreign); code != 2 || !strings.Contains(result.Summary, "does not belong to the checkout") {
+		if code, result := b.run(b.app, "system", "stop", "--installation", b.foreign); code != 2 || !strings.Contains(result.Summary, "does not belong to the checkout") {
 			t.Fatalf("foreign installation = %d %+v", code, result)
 		}
 		other := t.TempDir()
-		if code, result := b.run(b.app, "stop", "--repo", other, "--installation", b.installation); code != 2 || result.Outcome != intentRefused {
+		if code, result := b.run(b.app, "system", "stop", "--repo", other, "--installation", b.installation); code != 2 || result.Outcome != intentRefused {
 			t.Fatalf("installation of another checkout = %d %+v", code, result)
 		}
-		if code, result := b.run(b.app, "stop", "--installation", filepath.Join(b.app, "tools")); code != 2 || !strings.Contains(result.Summary, "is not a metasystem installation") {
+		if code, result := b.run(b.app, "system", "stop", "--installation", filepath.Join(b.app, "tools")); code != 2 || !strings.Contains(result.Summary, "is not a metasystem installation") {
 			t.Fatalf("not an installation = %d %+v", code, result)
 		}
 		for _, root := range []string{b.app, b.installation, b.foreign} {
@@ -430,7 +430,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 				t.Fatalf("a refused call changed %s: %+v", root, record)
 			}
 		}
-		if code, result := b.run(b.app, "stop", "--installation", b.installation); code != 0 || result.Outcome != intentConfirmed {
+		if code, result := b.run(b.app, "system", "stop", "--installation", b.installation); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("repository top with its installation = %d %+v", code, result)
 		}
 	})
@@ -447,7 +447,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 		for _, call := range []struct {
 			cwd  string
 			args []string
-		}{{b.app, []string{"status", "ui", "--installation", b.installation}}, {b.installation, []string{"status", "ui"}}, {t.TempDir(), []string{"status", "ui", "--repo", b.app, "--installation", b.installation}}} {
+		}{{b.app, []string{"ui", "status", "--installation", b.installation}}, {b.installation, []string{"ui", "status"}}, {t.TempDir(), []string{"ui", "status", "--repo", b.app, "--installation", b.installation}}} {
 			code, result := b.run(call.cwd, call.args...)
 			if code != 1 || result.Outcome != intentConfirmed || result.Data.(map[string]any)["state"] != string(lifecycle.Stopped) {
 				t.Fatalf("%v from %s = %d %+v", call.args, call.cwd, code, result)
@@ -458,7 +458,7 @@ func TestIntentProcessAdoptedRoots(t *testing.T) {
 				t.Fatalf("interface roots = %+v", roots)
 			}
 		}
-		code, result := b.run(t.TempDir(), "restart", "ui")
+		code, result := b.run(t.TempDir(), "ui", "restart")
 		if code != 2 || result.Outcome != intentRefused || strings.Contains(result.Summary+result.Decision, "--metasystem-root") || !strings.Contains(result.Decision, "--installation DIR") {
 			t.Fatalf("interface outside a repository = %d %+v", code, result)
 		}

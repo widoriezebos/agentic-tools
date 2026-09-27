@@ -42,6 +42,8 @@ type processBed struct {
 	families  []stoptransition.Family
 	asked     []channelAskInput
 	question  channel.Question
+	// engineCalls are the engine verbs a public command ran.
+	engineCalls [][]string
 }
 
 func newProcessBed(t *testing.T) *processBed {
@@ -120,6 +122,14 @@ func (b *processBed) owners() intentOwners {
 		},
 		executable: os.Executable,
 	}
+	// Engine verbs (the mission runner's resume after an answer) run against
+	// a stand-in engine that records them; the test binary is never run as
+	// the engine.
+	owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+		process: func(process intentProcess) intentProcessResult {
+			b.engineCalls = append(b.engineCalls, process.argv)
+			return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
+		}}
 	return owners
 }
 
@@ -138,7 +148,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		t.Parallel()
 		b := newProcessBed(t)
 		b.class = lease.ClassDelegate
-		code, result := b.runJSON(b.owners(), "stop")
+		code, result := b.runJSON(b.owners(), "system", "stop")
 		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "agent-free terminal") ||
 			!strings.Contains(result.Summary, "human act at a terminal") {
 			t.Fatalf("agent stop = %d %+v", code, result)
@@ -146,7 +156,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if record := b.fence(); record.State != stopfence.StateOpen || record.Generation != 0 {
 			t.Fatalf("a refused stop changed the fence: %+v", record)
 		}
-		code, result = b.runJSON(b.owners(), "restart", "checkout")
+		code, result = b.runJSON(b.owners(), "system", "restart")
 		if code != 1 || result.Outcome != intentRefused || b.armCalls != 0 || b.fence().State != stopfence.StateOpen {
 			t.Fatalf("agent restart = %d %+v, arm calls %d", code, result, b.armCalls)
 		}
@@ -155,7 +165,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 	t.Run("stop, status and doctor read the same installation", func(t *testing.T) {
 		t.Parallel()
 		b := newProcessBed(t)
-		code, result := b.runJSON(b.owners(), "stop", "checkout")
+		code, result := b.runJSON(b.owners(), "system", "stop")
 		if code != 0 || result.Outcome != intentConfirmed || result.Targets[0].Kind != "checkout" {
 			t.Fatalf("human stop = %d %+v", code, result)
 		}
@@ -166,7 +176,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if status.Outcome != intentConfirmed || status.Targets[0].ID != result.Targets[0].ID {
 			t.Fatalf("status = %+v", status)
 		}
-		code, doctor := b.runJSON(b.owners(), "check")
+		code, doctor := b.runJSON(b.owners(), "system", "check")
 		encoded, _ := json.Marshal(doctor.Data)
 		var preview steward.HookHealthPreview
 		if err := json.Unmarshal(encoded, &preview); err != nil {
@@ -185,12 +195,12 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		t.Parallel()
 		b := newProcessBed(t)
 		b.armErr = errors.New("the steward refused to arm")
-		code, result := b.runJSON(b.owners(), "restart", "checkout")
+		code, result := b.runJSON(b.owners(), "system", "restart")
 		record := b.fence()
 		if code == 0 || result.Outcome != intentPartial || b.armCalls != 1 || !strings.Contains(result.Summary, "the stop fence is now "+record.State+"/"+record.Phase) {
 			t.Fatalf("restart = %d %+v", code, result)
 		}
-		if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "start"}) {
+		if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "system", "start"}) {
 			t.Fatalf("restart next = %+v", result.Next)
 		}
 		if data := result.Data.(map[string]any); data["reached"] != "stopped" || data["fence"] != record.State+"/"+record.Phase {
@@ -200,7 +210,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			t.Fatalf("the restart did not stop before it armed: %+v", record)
 		}
 		b.armErr = nil
-		code, result = b.runJSON(b.owners(), "restart", "checkout")
+		code, result = b.runJSON(b.owners(), "system", "restart")
 		if code != 0 || result.Outcome != intentConfirmed || b.armCalls != 2 || b.fence().State != stopfence.StateOpen {
 			t.Fatalf("repeated restart = %d %+v; fence %+v", code, result, b.fence())
 		}
@@ -209,14 +219,14 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 	t.Run("a rebuilt engine keeps the live enrolled terminal", func(t *testing.T) {
 		t.Parallel()
 		b := newProcessBed(t)
-		if code, result := b.runJSON(b.owners(), "start"); code != 0 || result.Outcome != intentConfirmed || b.armCalls != 1 {
+		if code, result := b.runJSON(b.owners(), "system", "start"); code != 0 || result.Outcome != intentConfirmed || b.armCalls != 1 {
 			t.Fatalf("start = %d %+v", code, result)
 		}
 		b.writeEngine("engine build 2")
-		if code, result := b.runJSON(b.owners(), "stop"); code != 0 || result.Outcome != intentConfirmed {
+		if code, result := b.runJSON(b.owners(), "system", "stop"); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("stop after rebuild = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(b.owners(), "start", "checkout"); code != 0 || result.Outcome != intentConfirmed || b.armCalls != 2 {
+		if code, result := b.runJSON(b.owners(), "system", "start"); code != 0 || result.Outcome != intentConfirmed || b.armCalls != 2 {
 			t.Fatalf("start after rebuild = %d %+v", code, result)
 		}
 		if b.enrolls != 0 || b.fence().State != stopfence.StateOpen {
@@ -233,17 +243,16 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			sessionUp = &options
 			return up.Result{Outcome: "READY"}
 		}
-		code, result := b.runJSON(owners, "start", "session")
+		code, result := b.runJSON(owners, "session", "start")
 		if code != 0 || result.Outcome != intentConfirmed || sessionUp == nil || !samePath(sessionUp.Scope, b.root()) || b.armCalls != 0 {
 			t.Fatalf("start session = %d %+v, up %+v, arm %d", code, result, sessionUp, b.armCalls)
 		}
 		for _, args := range [][]string{
-			{"start", "session", "--temporary-human-word", "yes", "--review-by", "2026-10-01"},
-			{"stop", "--by", "Wido"},
-			{"stop", "job"},
-			{"stop", "session"},
-			{"status", "fleet"},
-			{"restart"},
+			{"session", "start", "--temporary-human-word", "yes", "--review-by", "2026-10-01"},
+			{"system", "stop", "--by", "Wido"},
+			{"work", "stop"},
+			{"session", "stop"},
+			{"status", "fleet", "extra"},
 		} {
 			code, result := b.runJSON(owners, args...)
 			if code == 0 || result.Outcome != intentRefused {
@@ -252,7 +261,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		}
 		// The quiet session stop is the real owner: this test process is not
 		// an attended human terminal, so it refuses and writes no marker.
-		code, result = b.runJSON(owners, "stop", "session", "--by", "Wido")
+		code, result = b.runJSON(owners, "session", "stop", "--by", "Wido")
 		if code != 3 || result.Outcome != intentRefused || !strings.HasPrefix(result.Summary, "session stop refused") {
 			t.Fatalf("agent session stop = %d %+v", code, result)
 		}
@@ -283,22 +292,22 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			}
 		}
 		owners := b.owners()
-		code, ambiguous := b.runJSON(owners, "stop", "job", "job-a")
-		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "both a launch of this user and a dispatch job") ||
+		code, ambiguous := b.runJSON(owners, "work", "stop", "job-a")
+		if code != 1 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "names 2 records (j1:job-a, j2:job-a)") ||
 			strings.Contains(ambiguous.Decision, "internal") || !slices.Equal(ambiguous.Data.(map[string]any)["candidates"].([]any), []any{"j1:job-a", "j2:job-a"}) ||
-			!strings.Contains(fmt.Sprint(ambiguous.Data.(map[string]any)["choices"]), "[metasystem stop job j1:job-a]") {
+			!strings.Contains(fmt.Sprint(ambiguous.Data.(map[string]any)["choices"]), "[metasystem work stop j1:job-a]") {
 			t.Fatalf("ambiguous job = %d %+v", code, ambiguous)
 		}
 		// Each offered reference reaches exactly its own store.
-		if code, result := b.runJSON(owners, "stop", "job", "j1:job-a"); code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "launch job-a already ended") {
+		if code, result := b.runJSON(owners, "work", "stop", "j1:job-a"); code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "launch job-a already ended") {
 			t.Fatalf("stop job j1:job-a = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(owners, "status", "job", "j2:job-a"); code != 0 || result.Summary != "dispatch job job-a: running" || result.Targets[0].ID != "j2:job-a" {
+		if code, result := b.runJSON(owners, "work", "status", "j2:job-a"); code != 0 || result.Summary != "dispatch job j2:job-a: running" || result.Targets[0].ID != "j2:job-a" {
 			t.Fatalf("status job j2:job-a = %d %+v", code, result)
 		}
-		code, unknown := b.runJSON(owners, "stop", "job", "job")
-		if code != 1 || unknown.Outcome != intentRefused || !strings.HasPrefix(unknown.Summary, "no job job:") || unknown.Next == nil ||
-			!slices.Equal(unknown.Next.Argv, []string{"metasystem", "status", "work", "--all"}) {
+		code, unknown := b.runJSON(owners, "work", "stop", "job")
+		if code != 1 || unknown.Outcome != intentRefused || !strings.HasPrefix(unknown.Summary, "no launch or dispatch job or diagnostic read names job;") || unknown.Next == nil ||
+			!slices.Equal(unknown.Next.Argv, []string{"metasystem", "work", "status", "--all"}) {
 			t.Fatalf("unknown job = %d %+v", code, unknown)
 		}
 		code, listed := b.runJSON(owners, unknown.Next.Argv[1:]...)
@@ -310,7 +319,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code != 0 || !slices.Equal(references, []string{"j1:job-a", "j1:job-b", "j2:job-a", "j2:job-c"}) {
 			t.Fatalf("status work --all = %d %v %+v", code, references, listed)
 		}
-		code, running := b.runJSON(owners, "status", "work")
+		code, running := b.runJSON(owners, "work", "status")
 		runningRefs := []string{}
 		for _, job := range running.Data.(map[string]any)["jobs"].([]any) {
 			view := job.(map[string]any)
@@ -323,10 +332,10 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code != 0 || !slices.Equal(runningRefs, []string{"j2:job-a", "j2:job-c"}) || running.Next == nil {
 			t.Fatalf("status work = %d %v %+v", code, runningRefs, running)
 		}
-		if code, result := b.runJSON(owners, "stop", "job", "job-b"); code != 0 || result.Outcome != intentUnchanged {
+		if code, result := b.runJSON(owners, "work", "stop", "job-b"); code != 0 || result.Outcome != intentUnchanged {
 			t.Fatalf("ended launch = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(owners, "status", "job", "job-c"); code != 0 || result.Summary != "dispatch job job-c: running" {
+		if code, result := b.runJSON(owners, "work", "status", "job-c"); code != 0 || result.Summary != "dispatch job j2:job-c: running" {
 			t.Fatalf("dispatch status = %d %+v", code, result)
 		}
 		var cancelled []string
@@ -334,10 +343,10 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			cancelled = append(cancelled, checkout+" "+job)
 			return map[string]any{"outcome": "CANCELLED", "headline": "cancelled", "jobId": job}, 0, nil
 		}
-		if code, result := b.runJSON(owners, "stop", "job", "j2:job-c"); code != 0 || result.Outcome != intentConfirmed || len(cancelled) != 1 || !strings.HasSuffix(cancelled[0], " job-c") || !samePath(strings.TrimSuffix(cancelled[0], " job-c"), b.root()) {
+		if code, result := b.runJSON(owners, "work", "stop", "j2:job-c"); code != 0 || result.Outcome != intentConfirmed || len(cancelled) != 1 || !strings.HasSuffix(cancelled[0], " job-c") || !samePath(strings.TrimSuffix(cancelled[0], " job-c"), b.root()) {
 			t.Fatalf("dispatch cancel = %d %+v %v", code, result, cancelled)
 		}
-		if code, result := b.runJSON(owners, "status", "run", "unit-z"); code != 1 || result.Outcome != intentRefused {
+		if code, result := b.runJSON(owners, "work", "status", "run:unit-z"); code != 1 || result.Outcome != intentRefused {
 			t.Fatalf("unknown unit = %d %+v", code, result)
 		}
 	})
@@ -347,12 +356,12 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		owners := b.owners()
 		owners.commandNow = func(string) (time.Time, error) { return time.Time{}, errors.New("the goal clock is unreadable") }
-		code, result := b.runJSON(owners, "enroll", "--name", "Wido")
+		code, result := b.runJSON(owners, "terminal", "enroll", "--name", "Wido")
 		data, _ := result.Data.(map[string]any)
 		if code == 0 || result.Outcome != intentPartial || b.enrolls != 1 || data["fleetPublished"] != false || data["enrollment"] == nil {
 			t.Fatalf("partial enrollment = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(b.owners(), "enroll"); code != 2 || result.Next == nil || b.enrolls != 1 {
+		if code, result := b.runJSON(b.owners(), "terminal", "enroll"); code != 2 || result.Next == nil || b.enrolls != 1 {
 			t.Fatalf("nameless enrollment = %d %+v", code, result)
 		}
 	})
@@ -362,12 +371,20 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		askPath := parkedHostFailureMission(t, b.root())
 		owners := b.owners()
+		// An answered question resumes the mission through the runner; the
+		// bed's runner confirms without starting a process.
+		var resumed [][]string
+		owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "/fake/metasystem", nil },
+			process: func(process intentProcess) intentProcessResult {
+				resumed = append(resumed, process.argv)
+				return intentProcessResult{stdout: []byte(`{"outcome":"resumed"}`)}
+			}}
 		owners.processes.mission = func(root, id string) (*missionrunner.Engine, error) {
 			engine := missionrunner.NewEngine(root, id)
 			engine.AnchorEffect = func(string, string, string) error { return errors.New("anchor refused in the bed") }
 			return engine, nil
 		}
-		code, result := b.runJSON(owners, "answer", "mission", "demo", "host-down", "retry: the host is back")
+		code, result := b.runJSON(owners, "question", "answer", "demo/host-down", "retry: the host is back")
 		if code != 3 || result.Outcome != intentRefused || missionAskAnswered(askPath) {
 			t.Fatalf("rolled-back answer = %d %+v", code, result)
 		}
@@ -376,11 +393,12 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			engine.AnchorEffect = func(string, string, string) error { return nil }
 			return engine, nil
 		}
-		code, result = b.runJSON(owners, "answer", "mission", "demo", "host-down", "retry: the host is back")
-		if code != 0 || result.Outcome != intentConfirmed || !missionAskAnswered(askPath) {
-			t.Fatalf("answer = %d %+v", code, result)
+		code, result = b.runJSON(owners, "question", "answer", "demo/host-down", "retry: the host is back")
+		if code != 0 || result.Outcome != intentConfirmed || !missionAskAnswered(askPath) || len(resumed) != 1 ||
+			!slices.Equal(resumed[0][1:4], []string{"internal", "mission", "resume"}) {
+			t.Fatalf("answer = %d %+v resumed %v", code, result, resumed)
 		}
-		if code, result := b.runJSON(owners, "answer", "mission", "demo", "host-down", "again"); code != 3 || result.Outcome != intentRefused {
+		if code, result := b.runJSON(owners, "question", "answer", "demo/host-down", "again"); code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "already answered with a different answer") {
 			t.Fatalf("second answer = %d %+v", code, result)
 		}
 	})
@@ -389,16 +407,16 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		t.Parallel()
 		b := newProcessBed(t)
 		b.question = channel.Question{ID: "q-7", Goal: "g", State: "open", Wants: "resume g 1d/10/720m/1/3"}
-		code, result := b.runJSON(b.owners(), "answer", "question", "q-7")
+		code, result := b.runJSON(b.owners(), "question", "answer", "q-7")
 		if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Decision, "Reply in this thread with this token verbatim") ||
 			!strings.Contains(result.Decision, b.question.Wants) {
 			t.Fatalf("channel answer = %d %+v", code, result)
 		}
 		b.question.Answer = &channel.Answer{}
-		if code, result := b.runJSON(b.owners(), "answer", "question", "q-7"); code != 0 || result.Outcome != intentUnchanged {
+		if code, result := b.runJSON(b.owners(), "question", "answer", "q-7"); code != 0 || result.Outcome != intentUnchanged {
 			t.Fatalf("answered channel question = %d %+v", code, result)
 		}
-		code, result = b.runJSON(b.owners(), "ask", "goal-a", "--question", "Resume it?", "--option", "yes: resume", "--kind", "stop", "--budget", "1d/10/720m/1/3")
+		code, result = b.runJSON(b.owners(), "question", "ask", "goal-a", "--question", "Resume it?", "--option", "yes: resume", "--kind", "stop", "--budget", "1d/10/720m/1/3")
 		if code != 0 || result.Outcome != intentConfirmed || len(b.asked) != 1 || result.Next == nil {
 			t.Fatalf("ask = %d %+v", code, result)
 		}
@@ -406,7 +424,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if asked := b.asked[0]; asked.Wants != goal.ResumeApprovalToken("goal-a", box) || asked.Facts[0] != "Resume it?" || asked.Budget != nil {
 			t.Fatalf("stop question = %+v", asked)
 		}
-		if code, result := b.runJSON(b.owners(), "ask", "goal-a", "--question", "Why?", "--option", "a: b", "--budget", "1d/10/720m/1/3"); code != 2 || result.Outcome != intentRefused || len(b.asked) != 1 {
+		if code, result := b.runJSON(b.owners(), "question", "ask", "goal-a", "--question", "Why?", "--option", "a: b", "--budget", "1d/10/720m/1/3"); code != 2 || result.Outcome != intentRefused || len(b.asked) != 1 {
 			t.Fatalf("budget without kind = %d %+v", code, result)
 		}
 	})
@@ -416,14 +434,14 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		b := newProcessBed(t)
 		owners := b.owners()
 		owners.processes.health = func(string, string, time.Time) steward.HealthVerdict {
-			return steward.HealthVerdict{Aggregate: "unknown", Roles: []steward.RoleVerdict{{Role: steward.RoleStewardRunner, Status: steward.HealthUnknown, Reason: "no tick yet", Remedy: "metasystem start"}}}
+			return steward.HealthVerdict{Aggregate: "unknown", Roles: []steward.RoleVerdict{{Role: steward.RoleStewardRunner, Status: steward.HealthUnknown, Reason: "no tick yet", Remedy: "metasystem system start"}}}
 		}
-		code, result := b.runJSON(owners, "check")
+		code, result := b.runJSON(owners, "system", "check")
 		if code != 2 || result.Outcome != intentConfirmed {
 			t.Fatalf("unknown doctor = %d %+v", code, result)
 		}
-		_, stdout, _ := b.run(owners, "check")
-		if !strings.Contains(stdout, "unknown: no tick yet; remedy: metasystem start") {
+		_, stdout, _ := b.run(owners, "system", "check")
+		if !strings.Contains(stdout, "unknown: no tick yet; remedy: metasystem session start") {
 			t.Fatalf("doctor text dropped the owner remedy: %q", stdout)
 		}
 		missing := filepath.Join(t.TempDir(), "a dir", "x")
@@ -431,7 +449,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, shellCommand([]string{missing})) {
 			t.Fatalf("quoted repo = %d %+v", code, result)
 		}
-		if code, result := b.runJSON(owners, "stop", "--by", "a", "--by", "b"); code != 2 || !strings.Contains(result.Summary, "given twice") {
+		if code, result := b.runJSON(owners, "system", "stop", "--installation", "a", "--installation", "b"); code != 2 || !strings.Contains(result.Summary, "given twice") {
 			t.Fatalf("conflict = %d %+v", code, result)
 		}
 		if b.fence().State != stopfence.StateOpen || b.armCalls != 0 {
@@ -439,20 +457,12 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 		}
 	})
 
-	t.Run("old calls keep their handlers", func(t *testing.T) {
+	t.Run("old flag-only calls are refused at the top", func(t *testing.T) {
 		t.Parallel()
-		for _, args := range [][]string{{}, {"--repo", "."}, {"--all"}, {"--installation", "x"}} {
-			if !legacyProcessCall(args) {
-				t.Fatalf("%v left the old handler", args)
+		for _, args := range [][]string{{"stop", "--repo", "."}, {"stop", "--all"}, {"arm", "--repo", "."}, {"health", "--repo", "."}} {
+			if code, _, stderr := routeWith(families(), args...); code != 2 || !strings.Contains(stderr, "nothing was done") {
+				t.Fatalf("%v = %d %q; the flag-only machinery calls are internal", args, code, stderr)
 			}
-		}
-		for _, args := range [][]string{{"checkout"}, {"job", "j"}, {"--json"}, {"--help"}} {
-			if legacyProcessCall(args) {
-				t.Fatalf("%v stayed on the old handler", args)
-			}
-		}
-		if command, _ := findIntentCommand("start"); command.legacy != nil {
-			t.Fatal("start has no old top-level call to keep")
 		}
 	})
 }

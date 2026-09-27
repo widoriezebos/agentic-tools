@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
@@ -41,7 +40,7 @@ func runRuntimeList(args []string) int {
 	case len(args) == 1 && args[0] == "--with-common-lifecycle":
 		names = runtimes.WithCommonLifecycle()
 	default:
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime list [--adoptable|--with-adapter|--with-host|--with-common-lifecycle]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime list [--adoptable|--with-adapter|--with-host|--with-common-lifecycle]")
 		return 2
 	}
 	for _, name := range names {
@@ -69,7 +68,7 @@ func runRuntimeSignatureVectors(args []string) int {
 
 func runRuntimeCollisionRoots(args []string) int {
 	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime collision-roots")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime collision-roots")
 		return 2
 	}
 	for _, root := range runtimes.CollisionRootsAll() {
@@ -114,7 +113,7 @@ func runRuntimeACPExpectation(args []string) int {
 
 func runRuntimeAdoptionDefault(args []string) int {
 	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime adoption-default")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime adoption-default")
 		return 2
 	}
 	fmt.Println(runtimes.AdoptionDefault())
@@ -144,28 +143,6 @@ func singleValue(value, absentNote string) int {
 	return 0
 }
 
-func runRuntimeEnforcementConfig(args []string) int {
-	declaration, code := runtimeArg(args, "enforcement-config")
-	if code != 0 {
-		return code
-	}
-	return singleValue(declaration.ShippedEnforcementConfig,
-		"no shipped enforcement config declared for "+declaration.Name)
-}
-
-func runRuntimeSelfCheck(args []string) int {
-	declaration, code := runtimeArg(args, "self-check")
-	if code != 0 {
-		return code
-	}
-	if declaration.SelfCheck == nil {
-		fmt.Fprintln(os.Stderr, "no live self-check declared for "+declaration.Name)
-		return 1
-	}
-	fmt.Println(declaration.SelfCheck.VendoredMarker)
-	return 0
-}
-
 func runRuntimeInstructionFile(args []string) int {
 	declaration, code := runtimeArg(args, "instruction-file")
 	if code != 0 {
@@ -173,39 +150,6 @@ func runRuntimeInstructionFile(args []string) int {
 	}
 	return singleValue(declaration.InstructionFile,
 		"no instruction file declared for "+declaration.Name)
-}
-
-func runRuntimeSessionEnv(args []string) int {
-	declaration, code := runtimeArg(args, "session-env")
-	if code != 0 {
-		return code
-	}
-	return singleValue(declaration.SessionEnv,
-		"no session environment declared for "+declaration.Name)
-}
-
-func runRuntimeStartContext(args []string) int {
-	declaration, code := runtimeArg(args, "start-context")
-	if code != 0 {
-		return code
-	}
-	if declaration.StartContextField == "" {
-		fmt.Fprintln(os.Stderr, "no start context declared for "+declaration.Name)
-		return 1
-	}
-	fmt.Printf("field=%s event=%s bytes=%d sources=%s\n", declaration.StartContextField,
-		declaration.StartContextEventName, declaration.StartContextBytes,
-		strings.Join(declaration.StartContextSources, ","))
-	return 0
-}
-
-func runRuntimeContextSample(args []string) int {
-	declaration, code := runtimeArg(args, "context-sample")
-	if code != 0 {
-		return code
-	}
-	fmt.Printf("sample=%s main-observable=%t\n", declaration.ContextSample, declaration.MainObservable)
-	return 0
 }
 
 func runRuntimeRegistration(args []string) int {

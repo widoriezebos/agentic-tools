@@ -251,10 +251,10 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		if !strings.Contains(plan, "groups=adopted-app-go") || strings.Contains(plan, "go-batchtest") {
 			t.Fatalf("adopted app plan selected the wrong tests:\n%s", plan)
 		}
-		mustRun(target, engine, "test", "run", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--cap-min", "10", "--result", first)
+		mustRun(target, engine, "internal", "test", "run", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--cap-min", "10", "--result", first)
 		mustRun(target, engine, "test", "verify", "--root", target, "--goal", "adoption-goal", "--tree", tree)
 		repeat := filepath.Join(bed, name+"-repeat.json")
-		output, code := run(target, engine, "test", "run", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--cap-min", "10", "--result", repeat)
+		output, code := run(target, engine, "internal", "test", "run", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--cap-min", "10", "--result", repeat)
 		if code != proofrun.ExitReusableSuccess {
 			t.Fatalf("completed prerequisite was not reused: status=%d\n%s", code, output)
 		}

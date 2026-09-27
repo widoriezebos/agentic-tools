@@ -41,7 +41,8 @@ func intentTestEngine(t *testing.T) string {
 }
 
 // TestIntentRepairAuthority: every administrative choice reaches its real
-// owner verb (this package's engine, as its own process) with its exact
+// owner (in this process, or this package's engine as its own process for
+// the mission runner) with its exact
 // inputs, and the owner's own authority check refuses a caller that is not a
 // person at an agent-free terminal: this test process is such a caller. The
 // public adapter never turns a named person into proof. Malformed and
@@ -53,6 +54,9 @@ func TestIntentRepairAuthority(t *testing.T) {
 	engine := intentTestEngine(t)
 	b.owners.executable = func() (string, error) { return engine, nil }
 	b.handler = runIntentOwnerProcess
+	// The coordinator and goal repair owners run in this process (design
+	// 6.2); each call is recorded as the argv its former child carried.
+	b.owners.calls = recordingOwnerCalls([]string{engine, "internal"}, func(argv []string) { b.calls = append(b.calls, argv) })
 	owner := func(args ...string) (int, intentResult, []string) {
 		t.Helper()
 		before := len(b.calls)
@@ -73,35 +77,35 @@ func TestIntentRepairAuthority(t *testing.T) {
 		// the remote history of the same ledger; here it reaches its fetch,
 		// which has no remote in this bed. This row proves the exact route,
 		// not an authority refusal.
-		{[]string{"repair", "goals", "--accept-remote-history", "--by", "Wido"}, []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root"}, "git fetch"},
+		{[]string{"goal", "repair", "--accept-remote-history", "--by", "Wido"}, []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root"}, "git fetch"},
 		{[]string{"settings", "coordinator", "--declare", "--by", "Wido"}, []string{"brain", "declare", "--root"}, "is a human act; run it from an agent-free terminal"},
 		{[]string{"settings", "coordinator", "--withdraw", "--by", "Wido"}, []string{"brain", "withdraw", "--root"}, "is a human act; run it from an agent-free terminal"},
-		{[]string{"repair", "mission", "demo", "--problem", "2", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "restored"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
-		{[]string{"repair", "mission", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
+		{[]string{"mission", "repair", "demo", "--problem", "2", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "restored"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
+		{[]string{"mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"}, []string{"mission", "resolve-taint", "--root"}, "human-reserved act"},
 	} {
 		code, result, ran := owner(row.args...)
-		if result.Outcome != intentRefused || code == 0 || len(ran) < len(row.verb)+1 || !slicesHasPrefix(ran[1:], row.verb) || !strings.Contains(result.Summary, row.reason) {
+		if result.Outcome != intentRefused || code == 0 || len(ran) < len(row.verb)+1 || !slicesHasPrefix(ran[2:], row.verb) || !strings.Contains(result.Summary, row.reason) {
 			t.Errorf("%v without a person's proof = %d %+v (owner argv %v)", row.args, code, result, ran)
 		}
 	}
-	if _, result, ran := owner("repair", "mission", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"); !strings.Contains(strings.Join(ran, " "), "--adopt --waives claim-a --by Wido --reason accepted") {
+	if _, result, ran := owner("mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--waive", "claim-a", "--by", "Wido", "--reason", "accepted"); !strings.Contains(strings.Join(ran, " "), "--adopt --waives claim-a --by Wido --reason accepted") {
 		t.Errorf("accept-workspace inputs: %v %+v", ran, result)
 	}
 	// Refused before any owner runs.
 	for _, args := range [][]string{
-		{"repair", "goals", "--accept-edits", "--refresh", "--by", "Wido"},
-		{"repair", "goals", "--accept-edits"},
-		{"repair", "goals", "--refresh", "--by", "Wido"},
-		{"repair", "goals", "--upgrade", "--by", "Wido", "--sync-mode", "sideways"},
-		{"repair", "mission", "demo", "--problem", "0", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "r"},
-		{"repair", "mission", "demo", "--problem", "2", "--confirm-restored", "not-a-tree", "--by", "Wido", "--reason", "r"},
-		{"repair", "mission", "demo", "--problem", "2", "--accept-workspace", "--by", "Wido", "--reason", "r"},
-		{"repair", "mission", "demo", "--problem", "2", "--accept-workspace", "--confirm-restored", strings.Repeat("b", 40), "--waive", "c", "--by", "Wido", "--reason", "r"},
+		{"goal", "repair", "--accept-edits", "--refresh", "--by", "Wido"},
+		{"goal", "repair", "--accept-edits"},
+		{"goal", "repair", "--refresh", "--by", "Wido"},
+		{"goal", "repair", "--upgrade", "--by", "Wido", "--sync-mode", "sideways"},
+		{"mission", "repair", "demo", "--problem", "0", "--confirm-restored", strings.Repeat("b", 40), "--by", "Wido", "--reason", "r"},
+		{"mission", "repair", "demo", "--problem", "2", "--confirm-restored", "not-a-tree", "--by", "Wido", "--reason", "r"},
+		{"mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--by", "Wido", "--reason", "r"},
+		{"mission", "repair", "demo", "--problem", "2", "--accept-workspace", "--confirm-restored", strings.Repeat("b", 40), "--waive", "c", "--by", "Wido", "--reason", "r"},
 		{"settings", "coordinator", "--declare", "--withdraw", "--by", "Wido"},
 		{"settings", "coordinator", "--declare"},
 		// The retired engine floor has no public spelling left to record.
-		{"settings", "compatibility", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
-		{"settings", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
+		{"settings", "show", "compatibility", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
+		{"settings", "show", "--minimum-engine", strings.Repeat("a", 40), "--by", "Wido"},
 	} {
 		if code, result, ran := owner(args...); result.Outcome != intentRefused || code == 0 || ran != nil {
 			t.Errorf("%v = %d %+v, owner ran %v", args, code, result, ran)
@@ -112,29 +116,29 @@ func TestIntentRepairAuthority(t *testing.T) {
 	if code, result, ran := owner("settings", "coordinator"); code != 0 || !strings.Contains(result.Summary, "no coordinator is declared") || ran != nil {
 		t.Errorf("coordinator read: %d %+v", code, result)
 	}
-	if code, result, _ := owner("settings", "compatibility"); code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "there is no setting compatibility") {
+	if code, result, _ := owner("settings", "show", "compatibility"); code == 0 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "there is no setting compatibility") {
 		t.Errorf("retired compatibility read: %d %+v", code, result)
 	}
-	if code, result, _ := owner("repair", "goals"); code != 0 || !strings.Contains(result.Summary, "whole installation") {
+	if code, result, _ := owner("goal", "repair"); code != 0 || !strings.Contains(result.Summary, "whole installation") {
 		t.Errorf("journal recovery names its scope: %d %+v", code, result)
 	}
 	// The upgrade shows the digest to review, and runs only on it.
 	legacy := []byte("# Goals\n")
 	b.writeFile(filepath.Join(state, "plans", "goals.md"), string(legacy))
 	digest := goal.SourceDigestOf(legacy)
-	if _, result, ran := owner("repair", "goals", "--upgrade", "--by", "Wido"); result.Outcome != intentRefused || ran != nil || !strings.Contains(result.Decision, digest) {
+	if _, result, ran := owner("goal", "repair", "--upgrade", "--by", "Wido"); result.Outcome != intentRefused || ran != nil || !strings.Contains(result.Decision, digest) {
 		t.Errorf("bare upgrade: %+v %v", result, ran)
 	}
-	if _, result, ran := owner("repair", "goals", "--upgrade", "--by", "Wido", "--source-digest", strings.Repeat("c", 64)); result.Outcome != intentRefused || ran != nil {
+	if _, result, ran := owner("goal", "repair", "--upgrade", "--by", "Wido", "--source-digest", strings.Repeat("c", 64)); result.Outcome != intentRefused || ran != nil {
 		t.Errorf("stale digest: %+v %v", result, ran)
 	}
-	if _, result, ran := owner("repair", "goals", "--upgrade", "--by", "Wido", "--source-digest", digest, "--amendments", "amend.md", "--sync-mode", "local"); result.Outcome != intentRefused ||
+	if _, result, ran := owner("goal", "repair", "--upgrade", "--by", "Wido", "--source-digest", digest, "--amendments", "amend.md", "--sync-mode", "local"); result.Outcome != intentRefused ||
 		!strings.Contains(strings.Join(ran, " "), "goal migrate --root") || !strings.Contains(strings.Join(ran, " "), "--source-digest "+digest+" --by Wido --manifest") {
 		t.Errorf("reviewed upgrade reaches the owner, whose authority refuses this caller: %+v %v", result, ran)
 	}
 	// A legacy installation is sent to the public upgrade, never to an
 	// internal command.
-	if _, result, _ := owner("goals"); result.Outcome != intentRefused || !strings.Contains(result.Decision, "metasystem repair goals --upgrade") || strings.Contains(result.Decision, "internal") {
+	if _, result, _ := owner("goal", "list"); result.Outcome != intentRefused || !strings.Contains(result.Decision, "metasystem goal repair --upgrade") || strings.Contains(result.Decision, "internal") {
 		t.Errorf("legacy ledger remedy: %+v", result)
 	}
 }
@@ -155,7 +159,7 @@ func slicesHasPrefix(values, prefix []string) bool {
 // accepted, as printed, by the split owner's own closed-grammar parser.
 func TestIntentSplitHelpExampleParses(t *testing.T) {
 	t.Parallel()
-	command, _ := findIntentCommand("split")
+	command, _ := findIntentCommand("goal split")
 	var plan []string
 	for _, line := range command.details {
 		if strings.HasPrefix(line, "  #") || strings.HasPrefix(line, "  -") {
@@ -201,14 +205,15 @@ func TestIntentLandException(t *testing.T) {
 		return nil, os.ErrNotExist
 	}
 	run := func(args ...string) (int, intentResult) { return b.runJSON(owners, args...) }
+	b.writeJob(map[string]any{"jobId": "j1", "role": "implementer", "status": "completed", "round": 1, "goalId": bedGoal})
 	for _, args := range [][]string{
-		{"land", bedGoal, "--exception", "group:unit", "--reason", "flaky host"},
-		{"land", bedGoal, "--exception", "group:unit", "--reason", "r", "--by", "Wido", "--transfer"},
-		{"land", bedGoal, "--exception", "group:unit", "--reason", "r", "--by", "Wido", "--expires", "5h"},
-		{"land", bedGoal, "--using-exception", "op-1", "--reason", "r"},
-		{"land", bedGoal, "--queue-only", "--exception", "group:unit"},
-		{"land", bedGoal, "--by", "Wido"},
-		{"land", "job", "j1", "--exception", "group:unit"},
+		{"work", "land", bedGoal, "--exception", "group:unit", "--reason", "flaky host"},
+		{"work", "land", bedGoal, "--exception", "group:unit", "--reason", "r", "--by", "Wido", "--transfer"},
+		{"work", "land", bedGoal, "--exception", "group:unit", "--reason", "r", "--by", "Wido", "--expires", "5h"},
+		{"work", "land", bedGoal, "--using-exception", "op-1", "--reason", "r"},
+		{"work", "land", bedGoal, "--queue-only", "--exception", "group:unit"},
+		{"work", "land", bedGoal, "--by", "Wido"},
+		{"work", "land", "j2:j1", "--exception", "group:unit"},
 	} {
 		if code, result := run(args...); result.Outcome != intentRefused || code != 2 || len(b.calls) != 0 {
 			t.Fatalf("%v = %d %+v calls=%v", args, code, result, b.calls)
@@ -223,8 +228,8 @@ func TestIntentLandException(t *testing.T) {
 	// --staged-only) is proved on real Git by TestIntentCarriedCarryOwnerDecidesThePerson,
 	// TestIntentCarriedGoalDeliveryGitAdapter and TestIntentCarriedReplay.
 	for _, args := range [][]string{
-		{"land", bedGoal, "--exception", "group:unit", "--reason", "flaky host", "--by", "Wido"},
-		{"land", bedGoal, "--using-exception", "op-1"},
+		{"work", "land", bedGoal, "--exception", "group:unit", "--reason", "flaky host", "--by", "Wido"},
+		{"work", "land", bedGoal, "--using-exception", "op-1"},
 	} {
 		if code, result := run(args...); result.Outcome != intentRefused || code == 0 || len(b.calls) != 0 || !strings.Contains(result.Summary, "nothing was recorded") {
 			t.Fatalf("%v before the refresh = %d %+v calls=%v", args, code, result, b.calls)

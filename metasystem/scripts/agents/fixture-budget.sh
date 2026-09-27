@@ -31,6 +31,45 @@ harness_fixture_go_test() { # module directory, go test arguments...
   )
 }
 
+# A synthetic fixture installation has no real engine source, yet the engine
+# builds a tree through `go run ./cmd/devgate build ARGS`. Plant the same
+# stand-in the Go fixtures use (cmd/metasystem/devgate_fixture_test.go): a
+# cmd/devgate that runs the tree's own scripts/agents/go-build.sh with the
+# arguments after `build`, plus a minimal go.mod when the tree has none.
+# The caller commits cmd/devgate (and go.mod) with the tree's seed.
+harness_fixture_plant_devgate() { # installation root
+  local installation=$1
+  mkdir -p "$installation/cmd/devgate"
+  cat >"$installation/cmd/devgate/main.go" <<'FIXTURE_DEVGATE'
+package main
+
+import (
+	"errors"
+	"os"
+	"os/exec"
+)
+
+func main() {
+	args := []string{"scripts/agents/go-build.sh"}
+	if len(os.Args) > 2 {
+		args = append(args, os.Args[2:]...)
+	}
+	command := exec.Command("bash", args...)
+	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := command.Run(); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			os.Exit(exit.ExitCode())
+		}
+		os.Stderr.WriteString("fixture devgate: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+}
+FIXTURE_DEVGATE
+  [[ -e "$installation/go.mod" ]] \
+    || printf 'module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.27\n' >"$installation/go.mod"
+}
+
 harness_fixture_prologue() {
   cat <<'FIXTURE_PROLOGUE'
 if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
@@ -555,11 +594,10 @@ harness_fixture_base_cap() { # named harness cap
     go-owner-crashloop) base=30 ;;
     health-state) base=3 ;;
     health-process-wait) base=2 ;;
-    # These evidence-driven waits return as soon as their condition appears or
-    # their producer exits. Under the governed scale range, the 120-second base
-    # is a deliberate 16-to-96-minute absolute failsafe for a genuine hang, not
-    # a machine-speed assertion against a loaded validation or delegate process.
-    supervision-hook-evidence) base=120 ;;
+    # This evidence-driven wait returns as soon as its condition appears or its
+    # producer exits. Under the governed scale range, the 120-second base is a
+    # deliberate 16-to-96-minute absolute failsafe for a genuine hang, not a
+    # machine-speed assertion against a loaded validation or delegate process.
     checkout-execution-guard) base=120 ;;
     suite-watchdog-wait) base=8 ;;
     suite-watchdog-reap) base=5 ;;

@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -73,8 +73,6 @@ func families() []family {
 				{"fence", "report whether a guarded act is refused", runBrainFence},
 				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
 				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
-				{"start-delivered", "record a read-only brain packet after SessionStart publication (internal)", runBrainStartDelivered},
-				{"digest-advance", "advance the brain's narrator digest cursor after context emission (internal)", runBrainDigestAdvance},
 			},
 		},
 		{
@@ -188,7 +186,6 @@ func families() []family {
 				{"record-cas", "compare-and-swap a record's status and fields", runDispatchRecordCAS},
 				{"record-protocol-error", "stamp a job failed with a protocol violation", runDispatchRecordProtocolError},
 				{"repair-claim", "atomically claim the round's one paid repair (0 won, 3 lost, 1 mechanical)", runDispatchRepairClaim},
-				{"build-setup", "assemble a pending-setup reservation record", runDispatchBuildSetup},
 				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
 				{"resolve-model-alias", "resolve a model-family pointer", runDispatchResolveModelAlias},
 				{"serving-goal", "print the brief section projecting the current goal (exit 3 when none is usable)", runDispatchServingGoal},
@@ -258,7 +255,6 @@ func families() []family {
 			name:    "adapter",
 			summary: "shared runtime-adapter plumbing: permissions, patches, snapshots",
 			verbs: []verb{
-				{"stop-output", "map one Stop presentation to a runtime envelope", runAdapterStopOutput},
 				{"root-job", "print a job's root ancestor by walking parentJob", runAdapterRootJob},
 				{"effective-init", "materialize the effective permissions from a job record", runAdapterEffectiveInit},
 				{"effective-workspace", "pin the effective writeRoots to the resolved workspace", runAdapterEffectiveWorkspace},
@@ -278,7 +274,6 @@ func families() []family {
 				{"claude-usage", "extract Claude usage from its result", runAdapterClaudeUsage},
 				{"claude-tool-gate", "decide one Claude tool call against the context budget", runAdapterClaudeToolGate},
 				{"claude-result-field", "read a Claude result field with modelUsage collapse", runAdapterClaudeResultField},
-				{"claude-read-roots", "list a record's readRoots minus the workspace", runAdapterClaudeReadRoots},
 				{"claude-append-result", "append a Claude result to the event stream", runAdapterClaudeAppendResult},
 				{"claude-session-signal", "record the Claude session-established signal", runAdapterClaudeSessionSignal},
 				{"devin-config", "build the Devin job config from the user config", runAdapterDevinConfig},
@@ -298,10 +293,6 @@ func families() []family {
 				{"fake-capability-snapshot", "write a fake capability-snapshot profile", runAdapterFakeCapabilitySnapshot},
 				{"fake-selftest-record", "write the fake selftest pass record", runAdapterFakeSelftestRecord},
 				{"normalize-return", "normalize the runtime reply into return.json/return.md", runAdapterNormalizeReturn},
-				{"selftest-usage", "assert a selftest job's typed usage", runAdapterSelftestUsage},
-				{"selftest-envelope", "print the newest snapshot's envelope declaration for a field", runAdapterSelftestEnvelope},
-				{"selftest-record", "write the selftest pass record", runAdapterSelftestRecord},
-				{"selftest-listener", "one-shot loopback listener for the denied-fetch probe", runAdapterSelftestListener},
 				{"selftest-run", "run the full-contract adapter self-test", runAdapterSelftestRun},
 				{"devin-prompt", "write the schema-augmented prompt copy the Devin CLI reads", runAdapterDevinPrompt},
 			},
@@ -313,7 +304,6 @@ func families() []family {
 				{"result-write", "write a host turn's result envelope", runHostResultWrite},
 				{"finish", "adjudicate a host turn outcome and write its envelope", runHostFinish},
 				{"devin-collect", "walk a devin host turn's delivery channels (0 delivered, 3 empty, 5 oversize)", runHostDevinCollect},
-				{"json-compact", "print a JSON file as one line", runHostJSONCompact},
 				{"claude-result", "extract the Claude return and usage", runHostClaudeResult},
 				{"devin-config", "assemble the Devin job config", runHostDevinConfig},
 				{"devin-return", "extract the Devin return", runHostDevinReturn},
@@ -338,8 +328,6 @@ func families() []family {
 			name:    "behavior-surface",
 			summary: "versioned byte projections shared by witness, landing, adoption, and weight laws",
 			verbs: []verb{
-				{"policy", "print the embedded versioned policy", runBehaviorSurfacePolicy},
-				{"classify", "classify one path and optionally report projection membership", runBehaviorSurfaceClassify},
 				{"select", "filter newline- or NUL-delimited paths through one projection", runBehaviorSurfaceSelect},
 				{"list", "list existing members of one projection", runBehaviorSurfaceList},
 				{"digest", "print a projection-scoped digest report naming its endpoint", runBehaviorSurfaceDigest},
@@ -350,7 +338,6 @@ func families() []family {
 			name:    "path",
 			summary: "path oracles: which law owns and governs a repository path",
 			verbs: []verb{
-				{"owner", "print <ownership> <mode>: metasystem-generic, app-owned, runtime, or outside", runPathOwner},
 				{"class", "print the manifest class governing one path", runPathClass},
 				{"state-root", "validate and print one metasystem installation", runPathStateRoot},
 			},
@@ -361,7 +348,6 @@ func families() []family {
 			verbs: []verb{
 				{"unit", "gate changed Go packages and every transitive reverse dependent", runGateUnit},
 				{"register", "record that this process is a running gate", runGateRegister},
-				{"check", "print 1 when a gate is running in this checkout, else 0", runGateCheck},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
 				{"controller-descendant", "exit 0 only when a consumer descends from one exact live controller identity", runGateControllerDescendant},
 				{"witness-freeze", "export a stable private tree and print its manifest digest and path", runGateWitnessFreeze},
@@ -369,7 +355,6 @@ func families() []family {
 				{"guard-acquire", "wait for exclusive checkout execution or join the caller's owning chain", runGateGuardAcquire},
 				{"guard-release", "release the invoking process's checkout execution membership", runGateGuardRelease},
 				{"weight-add", "fold a landing's measured weight into the validation accumulator (numstat on stdin)", runGateWeightAdd},
-				{"weight-check", "exit 1 when accumulated feature weight makes governed direct validation due", runGateWeightCheck},
 				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
 				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
 			},
@@ -378,11 +363,8 @@ func families() []family {
 			name:    "report",
 			summary: "turn-end report decisions",
 			verbs: []verb{
-				{"stop-input", "compose one Stop presentation input from captured files", runReportStopInput},
-				{"stop-present", "publish one immutable Stop report and its compact presentation", runReportStopPresent},
 				{"stop-response", "resolve one runtime Stop payload to its immutable report", runReportStopResponse},
 				{"stop-status", "read one exact immutable Stop report", runReportStopStatus},
-				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
 				{"running-work", "print the turn-end active clause: live jobs, missions, gate runs", runReportRunningWork},
@@ -409,13 +391,6 @@ func families() []family {
 			},
 		},
 		{
-			name:    "counselor",
-			summary: "read-only drift counsel from durable records",
-			verbs: []verb{
-				{"brief", "print the current narrative drift brief in dry-run mode", runCounselorBrief},
-			},
-		},
-		{
 			name:    "schema",
 			summary: "role-return schema materialization",
 			verbs: []verb{
@@ -434,12 +409,7 @@ func families() []family {
 				{"registration", "a runtime's declared registration rows (registration/v1 wire)", runRuntimeRegistration},
 				{"adoption-default", "the one default adoption runtime", runRuntimeAdoptionDefault},
 				{"dirs", "a runtime's adopted registration directories", runRuntimeDirs},
-				{"enforcement-config", "a runtime's shipped enforcement config filename", runRuntimeEnforcementConfig},
-				{"self-check", "a runtime's live self-check vendored marker", runRuntimeSelfCheck},
 				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
-				{"session-env", "a runtime's project-dir environment variable", runRuntimeSessionEnv},
-				{"start-context", "a runtime's session-start context field, byte bound, and lifecycle sources", runRuntimeStartContext},
-				{"context-sample", "a runtime's context sample granularity and main-process observability", runRuntimeContextSample},
 				{"acp-expectation", "a runtime's expected ACP transport declaration as JSON", runRuntimeACPExpectation},
 			},
 		},
@@ -456,13 +426,8 @@ func families() []family {
 			name:    "launch",
 			summary: "owned external agent processes with durable state and exact cancellation",
 			verbs: []verb{
-				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"pack-check", "validate a design or read brief context pack", runLaunchPackCheck}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"wait", "wait up to a bounded timeout for a terminal launch", runLaunchWait}, {"status", "show and reconcile one launch", runLaunchStatus}, {"list", "show and reconcile every launch", runLaunchList}, {"cancel", "end a launch group and prove every recorded process dead", runLaunchCancel}, {"census", "name orphan records, live terminal processes, and idle plugin brokers", runLaunchCensus}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask}, {"settings", "show launch and context settings with their sources", runLaunchSettings}, {"report", "summarize launch outcomes and refusals", runLaunchReport},
+				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"wait", "wait up to a bounded timeout for a terminal launch", runLaunchWait}, {"status", "show and reconcile one launch", runLaunchStatus}, {"cancel", "end a launch group and prove every recorded process dead", runLaunchCancel}, {"census", "name orphan records, live terminal processes, and idle plugin brokers", runLaunchCensus}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask}, {"settings", "show launch and context settings with their sources", runLaunchSettings}, {"report", "summarize launch outcomes and refusals", runLaunchReport},
 			},
-		},
-		{
-			name:    "unit",
-			summary: "one build, fresh read, and owned proof sequence",
-			verbs:   []verb{{"run", "advance one unit run through its launch sequence", runUnitRun}},
 		},
 		{
 			name:    "janitor",
@@ -492,12 +457,8 @@ func families() []family {
 		},
 		{
 			name:    "hooks",
-			summary: "self-check that the repo runs under its own metasystem",
-			verbs: []verb{
-				{"check", "verify live settings carry the shipped lifecycle hooks", runHooksCheck},
-				{"stop-deadline-wait", "wait for one Stop worker or its deadline", runHooksStopDeadlineWait},
-				{"stop-deadline-cleanup", "stop one exact worker after its Stop deadline", runHooksStopDeadlineCleanup},
-			},
+			summary: "the Stop hook's deadline worker: wait for it, or stop it past its deadline",
+			verbs:   []verb{},
 		},
 		{
 			name:    "util",
@@ -542,12 +503,8 @@ func families() []family {
 			summary: "the project's memory: intent, doctrine, decisions, designs and open questions, declared in their records",
 			verbs: []verb{
 				{"id", "print a fresh ULID for a new record", runProjectID},
-				{"list", "list the records of one kind, narrowed by area or status", runProjectList},
-				{"show", "show one record by id, its references, and what references it", runProjectShow},
-				{"tree", "the declared areas, each with counts by kind and status", runProjectTree},
 				{"check", "refuse every fault in the homes, anchored at its file and line", runProjectCheck},
 				{"design-of", "the design records that name one ledger goal, or the refusal that there are none", runProjectDesignOf},
-				{"type-designs", "propose, and with --apply write, the head the kit's historical designs never carried", runProjectTypeDesigns},
 			},
 		},
 		{
@@ -559,7 +516,6 @@ func families() []family {
 				{"show", "show one question record", runChannelShow},
 				{"wait", "wait for one recorded answer", runChannelWait},
 				{"poll", "receive and durably disposition replies", runChannelPoll},
-				{"close", "withdraw one question", runChannelClose},
 				{"fake", "fixture-only fake serve and code verbs", runChannelFake},
 				{"telegram", "inspect pending Telegram bot updates", runChannelTelegram},
 			},
@@ -629,14 +585,12 @@ func families() []family {
 			verbs: []verb{
 				{"start", "print durable wait recovery commands for this holder session", runSessionStart},
 				{"stop", "human-only: authorize one quiet stop for the current announced main session", runSessionStop},
-				{"end", "retire any unused quiet-stop authorization for one ended session (internal)", runSessionEnd},
 			},
 		},
 		{
 			name:    "seat",
 			summary: "the fleet's seats: who is present, what each is running",
 			verbs: []verb{
-				{"fleet", "print every machine's presence standing, this machine first", runSeatFleet},
 				{"launch", "clone, build, configure, enroll and supervise one new machine of this fleet on this host", runSeatLaunch},
 			},
 		},
@@ -644,21 +598,16 @@ func families() []family {
 			name:    "steward",
 			summary: "the idle watchdog: open delegated work is never silently idle (D121)",
 			verbs: []verb{
-				{"health", "print the typed roles-alive verdict", runStewardHealth},
 				{"tick", "one scheduled observation: decide, age the evidence, report the action", runStewardTick},
 				{"status", "the operator's view: evidence age, live intents, pending notifications", runStewardStatus},
 				{"authorize-dispatch", "gate the unattended continuation: steward caller, consumed unstamped intent, staged tuple out", runStewardAuthorizeDispatch},
 				{"revive", "one revival end to end: stage, mint, arbitrate, dispatch once", runStewardRevive},
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
-				{"arm", "explicit human enrollment and runner start (long form of metasystem arm)", runStewardArm},
-				{"restart", "replace and re-arm the runner (long form of metasystem arm)", runStewardRestart},
+				{"arm", "explicit human enrollment and runner start (long form of metasystem system start)", runStewardArm},
+				{"restart", "replace and re-arm the runner (long form of metasystem system start)", runStewardRestart},
 				{"disarm", "end the runner", runStewardDisarm},
-				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
 				{"hook-attempt", "record a supervision-hook attempt before turn work (internal)", runStewardHookAttempt},
 				{"hook-complete", "record a supervision-hook completion after payload emission (internal)", runStewardHookComplete},
-				{"hook-expire", "record a supervision-hook deadline expiry (internal)", runStewardHookExpire},
-				{"digest-pending", "print narrator highlights and lowlights since the last check-in (internal)", runStewardDigestPending},
-				{"digest-advance", "advance the narrator digest after payload emission (internal)", runStewardDigestAdvance},
 			},
 		},
 		{
@@ -672,8 +621,6 @@ func families() []family {
 				{"adopt", "rebind a running record to a successor process", runRunAdopt},
 				{"ack", "acknowledge a terminal run", runRunAck},
 				{"conclude", "one assessment pass over a run (the watcher's verb)", runRunConclude},
-				{"status", "print one run record", runRunStatus},
-				{"list", "print every run record plus unreadable paths", runRunList},
 				{"prune", "drop acked terminal runs older than 14 days, reporting drops", runRunPrune},
 			},
 		},
@@ -682,15 +629,10 @@ func families() []family {
 			summary: "checkout write-authority: announce/classify/hold/renew",
 			verbs: []verb{
 				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
-				{"associate-session", "bind a runtime session to a main announcement", runLeaseAssociateSession},
 				{"retire", "remove this process's announcement", runLeaseRetire},
 				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
-				{"hook-delegate", "verify that a hook caller descends from exact delegate-job custody", runLeaseHookDelegate},
 				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
-				{"renew", "bump the holder's lease revision", runLeaseRenew},
 				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},
-				{"protocol-growth", "report new protocol errors since a main last advanced its cursor", runLeaseProtocolGrowth},
-				{"protocol-advance", "merge a main's protocol-error counts into its cursor", runLeaseProtocolAdvance},
 				{"commit-token", "atomically write the live commit wrapper token", runLeaseCommitToken},
 			},
 		},
@@ -703,9 +645,7 @@ func families() []family {
 				{"state-verify", "validate the state's shape, aggregation, hash chain, and anchor", runMissionStateVerify},
 				{"state-anchor", "write the local anchor commit binding the state hash and ledger", runMissionStateAnchor},
 				{"state-reconcile", "reconcile the state against its ledger and anchor, parking on disagreement", runMissionStateReconcile},
-				{"fence-check-job", "check the job fences without reserving", runMissionFenceReserve("fence-check-job", false)},
 				{"fence-reserve-job", "check the job fences and reserve the job", runMissionFenceReserve("fence-reserve-job", true)},
-				{"fence-reserve-cycle", "check the cycle fences and record a cycle", runMissionFenceReserveCycle},
 				{"fence-authorize-cap", "authorize a per-job cap for a runtime/model pair", runMissionFenceAuthorizeCap},
 				{"fence-aggregate-usage", "aggregate typed usage across the mission's finished jobs", runMissionFenceAggregateUsage},
 				{"fence-refuse", "raise a batched fence ask for a reason", runMissionFenceRefuse},
@@ -714,7 +654,6 @@ func families() []family {
 				{"contract-seal", "seal a validated contract and print its digest", runMissionContractSeal},
 				{"contract-hash", "print a contract's canonical signed-bytes digest", runMissionContractHash},
 				{"contract-preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},
-				{"contract-measure", "run the gate and guards and classify metrics against a prior measurement", runMissionContractMeasure},
 				{"contract-envelope-allows", "exit 0 when the signed contract's dispatch-allow carries a pair", runMissionContractEnvelopeAllows},
 				{"prompt-assemble", "assemble the byte-stable host-turn prompt", runMissionPromptAssemble},
 				{"start", "start a mission's detached run loop", runMissionRunnerStart},
@@ -723,12 +662,7 @@ func families() []family {
 				{"answer", "record a human answer to an open ask", runMissionRunnerAnswer},
 				{"resolve-taint", "apply a typed human resolution (--restore <treeId> | --adopt --waives <claim>) to a workspace taint", runMissionRunnerResolveTaint},
 				{"run-loop", "the detached mission loop (internal; spawned by start/resume)", runMissionRunnerRunLoop},
-				{"turn-adjudicate", "validate and adjudicate an orchestrator return into a turn verdict", runMissionTurnAdjudicate},
-				{"turn-conclude", "conclude a turn into the proposed next mission state", runMissionTurnConclude},
-				{"turn-record-failure", "propose the state after a failed turn", runMissionTurnRecordFailure},
-				{"turn-park", "propose the parked state and its asks for a reason", runMissionTurnPark},
 				{"ledger-init", "create a ledger with cycle and no-gain budgets", runMissionLedgerInit},
-				{"ledger-append", "append the next cycle's verdict", runMissionLedgerAppend},
 			},
 		},
 		{
@@ -748,10 +682,7 @@ func families() []family {
 				{"owner", "run the owner loop for a checkout (internal; launched by up)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
 				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},
-				{"blocking-reserved-cap", "print the highest live reservation at or above a ceiling", runSuperviseBlockingReservedCap},
 				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
-				{"watchdog-report", "report a stale census, untracked processes, and dead components", runSuperviseWatchdogReport},
-				{"heartbeat", "atomically write a component heartbeat with its kernel identity", runSuperviseHeartbeat},
 				{"watcher-pass", "run one census pass as a standalone writer under the census lock", runSuperviseWatcherPass},
 			},
 		},
@@ -774,6 +705,12 @@ func dispatchWithRepositoryTop(args []string, repositoryTop func(string) (string
 	return dispatchWithFamiliesAndRepositoryTop(args, os.Stdout, os.Stderr, families(), repositoryTop)
 }
 
+// dispatchWithFamiliesAndRepositoryTop routes one invocation: the public
+// (object, action) pairs first, then the hidden entries, then the explicit
+// internal form. A (word, verb) pair that is neither a public action nor an
+// entry falls through to its family, transitionally, so machinery callers
+// keep working until their port; nothing else is routed, and an unknown word
+// is refused before any effect.
 func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 0 {
 		writeIntentRootHelp(stdout)
@@ -784,7 +721,7 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 	}
 	if args[0] == "--help" || args[0] == "-h" {
 		if len(args) != 1 {
-			fmt.Fprintln(stderr, "usage: metasystem help [TOPIC|COMMAND]")
+			fmt.Fprintln(stderr, "usage: metasystem help [OBJECT [ACTION]]")
 			return 2
 		}
 		writeIntentRootHelp(stdout)
@@ -797,23 +734,79 @@ func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Write
 		}
 		return dispatchInternal(args[1:], stdout, stderr, registered, repositoryTop)
 	}
-	if command, ok := findIntentCommand(args[0]); ok && len(args) == 2 && slices.Contains([]string{"--help", "-h"}, args[1]) {
-		writeIntentHelp(stdout, command)
-		return 0
-	}
-	if command, ok := findIntentCommand(args[0]); ok && (command.legacy == nil || !command.legacy(args[1:])) && !intentYieldsToLegacy(args, registered) {
+	if args[0] == "status" {
+		command, _ := findIntentCommand("status")
+		if len(args) == 2 && isHelpWord(args[1]) {
+			writeIntentHelp(stdout, command)
+			return 0
+		}
 		return runIntent(command, args[1:], stdout, stderr, defaultIntentOwners())
 	}
-	// Machinery callers use complete protocol invocations. Its discovery is
-	// confined to the explicit internal entry so public help stays task-based.
-	if _, public := findIntentCommand(args[0]); !public && (isFamilyName(registered, args[0]) && !intentYieldsToLegacy(args, registered) || slices.Contains(args[1:], "--help") || slices.Contains(args[1:], "-h")) {
-		writeUnknownIntentCommand(stderr, args[0])
-		return 2
+	if isIntentObject(args[0]) {
+		return dispatchObject(args, stdout, stderr, registered, repositoryTop)
 	}
-	return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	// Process entrypoints whose first word is not an object (supervise,
+	// steward, up, ...) and the transitional families keep their argv.
+	if len(args) >= 2 && !isHelpWord(args[1]) && (args[0] == "up" || familyHasVerb(registered, args[0], args[1])) {
+		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	}
+	if args[0] == "up" {
+		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	}
+	writeUnknownIntentCommand(stderr, args[0])
+	return 2
 }
 
-// dispatchInternal routes the engine families and the existing top-level
+func isHelpWord(word string) bool { return word == "--help" || word == "-h" || word == "-help" }
+
+// dispatchObject routes a first word that is an object: its action list, a
+// public action, a hidden entry, or a family verb of the same name that no
+// public action or entry takes.
+func dispatchObject(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
+	object := args[0]
+	if len(args) == 1 || isHelpWord(args[1]) {
+		if len(args) > 2 {
+			fmt.Fprintf(stderr, "usage: metasystem %s ACTION [TARGET...] [OPTIONS]\n", object)
+			return 2
+		}
+		writeIntentObjectHelp(stdout, object)
+		return 0
+	}
+	if command, ok := findIntentAction(object, args[1]); ok {
+		if command.hidden {
+			return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+		}
+		if len(args) == 3 && isHelpWord(args[2]) {
+			writeIntentHelp(stdout, command)
+			return 0
+		}
+		if command.passthrough != nil {
+			return command.passthrough(args[2:])
+		}
+		return runIntent(command, args[2:], stdout, stderr, defaultIntentOwners())
+	}
+	if familyHasVerb(registered, object, args[1]) {
+		return dispatchInternal(args, stdout, stderr, registered, repositoryTop)
+	}
+	writeUnknownIntentAction(stderr, object, args[1])
+	return 2
+}
+
+func familyHasVerb(registered []family, name, verb string) bool {
+	for _, fam := range registered {
+		if fam.name != name {
+			continue
+		}
+		for _, v := range fam.verbs {
+			if v.name == verb {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// dispatchInternal routes the engine families and the internal top-level
 // calls with their own parsers, output and exit codes.
 func dispatchInternal(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
@@ -826,6 +819,9 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	}
 	if args[0] == "up" {
 		return runUpWith(args[1:], repositoryTop)
+	}
+	if args[0] == "hook" {
+		return runHookEntry(args[1:])
 	}
 	if args[0] == "stop" {
 		return runProcessStop(args[1:])
@@ -873,14 +869,23 @@ func dispatchInternal(args []string, stdout, stderr io.Writer, registered []fami
 	return 2
 }
 
-// writeUnknownIntentCommand refuses a word no command or family answers to,
-// offering only a public command.
+// writeUnknownIntentCommand refuses a first word no object answers to,
+// offering only public spellings.
 func writeUnknownIntentCommand(w io.Writer, name string) {
-	fmt.Fprintf(w, "metasystem: unknown command %q; nothing was done\n", name)
-	if near := suggestIntentCommand(name); near != "" {
-		fmt.Fprintf(w, "did you mean: metasystem %s\n", near)
+	fmt.Fprintf(w, "metasystem: unknown object %q; nothing was done\n", name)
+	if near := suggestIntent(name); len(near) > 0 {
+		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
 	}
-	fmt.Fprintln(w, "metasystem help lists the common commands; metasystem help all lists every command")
+	fmt.Fprintln(w, "metasystem lists the objects; metasystem OBJECT lists its actions")
+}
+
+// writeUnknownIntentAction refuses an action the object does not have.
+func writeUnknownIntentAction(w io.Writer, object, action string) {
+	fmt.Fprintf(w, "metasystem %s: unknown action %q; nothing was done\n", object, action)
+	if near := suggestIntentAction(object, action); len(near) > 0 {
+		fmt.Fprintf(w, "did you mean: %s\n", strings.Join(near, " | "))
+	}
+	fmt.Fprintf(w, "metasystem %s lists its actions\n", object)
 }
 
 func writeFamilyHelp(w io.Writer, fam family) {
@@ -912,6 +917,7 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "usage: metasystem internal <family> <verb> [flags]")
 	fmt.Fprintln(w, "       metasystem internal up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
 	fmt.Fprintln(w, "       metasystem internal up --print-scheduler-entry [--repo <checkout>]")
+	fmt.Fprintln(w, "       metasystem internal hook <runtime> <start|stop|end|receipt|tool>  (run by scripts/agents/supervision-hook.sh)")
 	fmt.Fprintln(w, "       metasystem internal stop [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal status [--repo <path>] [--installation <dir>] [--all]")
 	fmt.Fprintln(w, "       metasystem internal arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")
@@ -926,6 +932,12 @@ func writeUsage(w io.Writer, registered []family) {
 	fmt.Fprintln(w, "       metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
 	fmt.Fprintln(w, "       metasystem internal delegate --follow-up <job> --brief <file>")
 	fmt.Fprintln(w, "       metasystem internal delegate --cancel <job>")
+	fmt.Fprintln(w, "Process entrypoints (started by the named launcher; never typed by a person or agent):")
+	for _, command := range intentCommands() {
+		if command.hidden {
+			fmt.Fprintf(w, "  %-28s %s\n", command.name, command.launcher)
+		}
+	}
 	for _, fam := range registered {
 		fmt.Fprintf(w, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {
@@ -935,13 +947,4 @@ func writeUsage(w io.Writer, registered []family) {
 			fmt.Fprintf(w, "    %-14s %s\n", v.name, v.summary)
 		}
 	}
-}
-
-func isFamilyName(registered []family, name string) bool {
-	for _, fam := range registered {
-		if fam.name == name {
-			return true
-		}
-	}
-	return false
 }

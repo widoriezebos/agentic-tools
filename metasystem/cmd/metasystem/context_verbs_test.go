@@ -383,7 +383,7 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-ceiling", "--transcript", overCeiling})
 	})
 	if code != 0 || problem != "" || !strings.HasPrefix(ceilingText, "context-budget=dead (diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") ||
-		!strings.Contains(ceilingText, "; remedy: metasystem context status --root "+root+")") || strings.Contains(ceilingText, "handoff") {
+		!strings.Contains(ceilingText, "; remedy: metasystem session context --root "+root+")") || strings.Contains(ceilingText, "handoff") {
 		t.Fatalf("over-ceiling diagnostic = code %d stdout %q stderr %q", code, ceilingText, problem)
 	}
 
@@ -417,7 +417,7 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	code, _, problem = captureChannelOutput(t, func() int {
 		return runContextStatus([]string{"--root", root, "--transcript", ""})
 	})
-	if code != 2 || !strings.Contains(problem, "usage: metasystem context status") {
+	if code != 2 || !strings.Contains(problem, "usage: metasystem session context") {
 		t.Fatalf("empty transcript flag = code %d stderr %q", code, problem)
 	}
 }
@@ -600,7 +600,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 		"TestCodexReaderDecodesEachLineOnce", "TestUnchangedEmptyTranscriptDoesNotRepublishCursor",
 		"TestLatestCallReturnsThePreviousReadTime", "TestLatestCallNonBlockingReturnsBusy",
 		"TestRegisterSessionNonBlockingReturnsBusy", "TestEveryDeclarationDeclaresContextSample",
-		"TestRuntimeContextSampleVerb", "TestRoleContextRendersBoundCeilingAndUnknowns",
+		"TestRoleContextRendersBoundCeilingAndUnknowns",
 		"TestHealthLineCarriesContextBudget", "TestRoleContextNamesTheNewestSpill",
 		"TestContextBudgetDoesNotAttributeUsageToAStaleHolder", "TestContextHolderResolutionSkipsForeignMalformedAnnouncements",
 		"TestContextBudgetReturnsBusyUnknownWithoutWaiting", "TestContextBudgetReturnsRegistryBusyUnknownWithoutWaiting",
@@ -634,7 +634,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 		"metasystem/internal/usage/cursor.go",
 		"metasystem/internal/steward/context.go",
 		"metasystem/scripts/agents/health-fixtures.sh",
-		"metasystem/scripts/agents/supervision-hook-fixtures.sh",
+		"metasystem/internal/hooks/runtime_hook_stop.go",
 	} {
 		standardPlan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{
 			ChangedPaths: []string{changed}, RequestedMode: testpolicy.ModeStandard, Purpose: testpolicy.PurposeDiagnostic,
@@ -694,7 +694,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 	sectionBlock := string(validateSource[start : start+endOffset])
 	fixtureRoot := t.TempDir()
 	logPath := filepath.Join(fixtureRoot, "order.log")
-	for _, name := range []string{"runtime-hook-fixtures.sh", "supervision-hook-fixtures.sh", "health-fixtures.sh", "supervision-fixtures.sh"} {
+	for _, name := range []string{"health-fixtures.sh", "supervision-fixtures.sh"} {
 		path := filepath.Join(fixtureRoot, "scripts", "agents", name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
@@ -720,7 +720,7 @@ run_section() { shift 2; "$@"; }
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantOrder := "runtime-hook-fixtures.sh\nsupervision-hook-fixtures.sh\nsupervision-fixtures.sh\nhealth-fixtures.sh\n"
+	wantOrder := "supervision-fixtures.sh\nhealth-fixtures.sh\n"
 	if string(order) != wantOrder {
 		t.Fatalf("supervision and census fixture order = %q, want %q", order, wantOrder)
 	}
@@ -1054,7 +1054,7 @@ func TestContextVerifyAndCancel(t *testing.T) {
 		return lease.Classification{}, errors.New("injected classification failure")
 	}
 	code, _, problem = captureContextVerb(t, contextHandoffTestRun(t, root), "--root", container, "--cancel", foreign.nonce)
-	if code != 1 || !strings.HasPrefix(problem, "metasystem context handoff: classify caller:") {
+	if code != 1 || !strings.HasPrefix(problem, "metasystem session handoff: classify caller:") {
 		t.Fatalf("unclassified cancel = code %d stderr %q", code, problem)
 	}
 	classifyContextHandoffCaller = identityClassifier
@@ -1132,7 +1132,7 @@ func TestContextHandoffCancelByHuman(t *testing.T) {
 			return lease.CurrentHolderView{}, errors.New("holder read failed")
 		}
 		code, _, problem := captureContextVerb(t, contextHandoffTestRun(t, root), "--root", container, "--cancel", "0000000000000000", "--by", "Wido")
-		if code != 1 || problem != "metasystem context handoff: holder read failed\n" {
+		if code != 1 || problem != "metasystem session handoff: holder read failed\n" {
 			t.Fatalf("holder failure = code %d stderr %q", code, problem)
 		}
 	})
@@ -1240,7 +1240,7 @@ func TestContextVerbUsage(t *testing.T) {
 	} {
 		code, _, problem := captureContextVerb(t, test.run, test.args...)
 		byCase := strings.Contains(strings.Join(test.args, "\x00"), "--by")
-		if code != 2 || (byCase && problem != handoffUsage) || (!byCase && !(strings.HasPrefix(problem, "usage: metasystem context ") || strings.Contains(problem, "--scratch must be") || strings.Contains(problem, "--delegate"))) {
+		if code != 2 || (byCase && problem != handoffUsage) || (!byCase && !((strings.HasPrefix(problem, "usage: metasystem session ") || strings.HasPrefix(problem, "usage: metasystem internal context ")) || strings.Contains(problem, "--scratch must be") || strings.Contains(problem, "--delegate"))) {
 			t.Fatalf("args %q = code %d stderr %q", test.args, code, problem)
 		}
 	}

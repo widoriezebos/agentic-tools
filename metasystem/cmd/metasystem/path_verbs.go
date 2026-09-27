@@ -17,7 +17,7 @@ func runPathStateRoot(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem path state-root <installation>")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal path state-root <installation>")
 		return 2
 	}
 	root, err := stateroot.RootForCandidate(flags.Arg(0))
@@ -29,27 +29,6 @@ func runPathStateRoot(args []string) int {
 	return 0
 }
 
-func runPathOwner(args []string) int {
-	flags := flag.NewFlagSet("path owner", flag.ContinueOnError)
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if flags.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem path owner <path>")
-		return 2
-	}
-	ownership, mode, err := stateroot.Owner(flags.Arg(0))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		if ownership == stateroot.OwnerOutside && mode != "" {
-			fmt.Printf("%s %s\n", ownership, mode)
-		}
-		return 1
-	}
-	fmt.Printf("%s %s\n", ownership, mode)
-	return 0
-}
-
 func runPathClass(args []string) int {
 	flags := flag.NewFlagSet("path class", flag.ContinueOnError)
 	explain := flags.Bool("explain", false, "print the matching row and resolution namespace")
@@ -57,7 +36,7 @@ func runPathClass(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem path class [--explain] <path>")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal path class [--explain] <path>")
 		return 2
 	}
 	answer, err := resolvePathClass(flags.Arg(0))

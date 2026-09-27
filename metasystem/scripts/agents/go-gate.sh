@@ -887,11 +887,11 @@ elif [[ ! -f "$ratchet_baseline" ]]; then
     || { echo "go gate: missing baseline and evidence retention failed" >&2; exit 1; }
   exit 1
 else
-  bin/metasystem audit coverage-ratchet --baseline "$ratchet_baseline" --input "$coverage_log" --packages "$pkg_list" \
+  bin/metasystem internal audit coverage-ratchet --baseline "$ratchet_baseline" --input "$coverage_log" --packages "$pkg_list" \
     || { retain_coverage_evidence "coverage ratchet refused" || echo "go gate: coverage ratchet refused and evidence retention failed" >&2; exit 1; }
 fi
 if (( coverage_proof_handoff )); then
-  bin/metasystem proof-run coverage-complete --root "$root" --baseline "$ratchet_baseline" \
+  bin/metasystem internal proof-run coverage-complete --root "$root" --baseline "$ratchet_baseline" \
     --input "$coverage_log" --packages "$pkg_list" --producer-pid $$ \
     || { retain_coverage_evidence "authenticated coverage publication refused" || echo "go gate: authenticated coverage publication and evidence retention both failed" >&2; exit 1; }
 fi

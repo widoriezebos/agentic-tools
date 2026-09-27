@@ -446,13 +446,13 @@ case "$command" in
     selftest_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fake-selftest.XXXXXX")
     selftest_id="fake-selftest-$(date -u +%Y%m%dt%H%M%Sz)-$$"
     sed 's/^Working Mode:.*/Working Mode: design/' "$root/scripts/agents/templates/brief.md" >"$selftest_dir/brief.md"
-    env METASYSTEM_DELEGATE_ROOT="$root" METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1 "$ms" delegate --adapter-selftest fake --brief "$selftest_dir/brief.md" --workspace "$root" --op "$selftest_id" --wait
+    env METASYSTEM_DELEGATE_ROOT="$root" METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1 "$ms" internal delegate --adapter-selftest fake --brief "$selftest_dir/brief.md" --workspace "$root" --op "$selftest_id" --wait
     cp "$root/scripts/agents/templates/follow-up.md" "$selftest_dir/follow.md"
-    env METASYSTEM_DELEGATE_ROOT="$root" "$ms" delegate --follow-up "$selftest_id" --brief "$selftest_dir/follow.md" --wait
+    env METASYSTEM_DELEGATE_ROOT="$root" "$ms" internal delegate --follow-up "$selftest_id" --brief "$selftest_dir/follow.md" --wait
     sed 's/^Working Mode:.*/Working Mode: design/' "$root/scripts/agents/templates/brief.md" >"$selftest_dir/cancel.md"
     printf '\nFAKE:timeout\n' >>"$selftest_dir/cancel.md"
-    env METASYSTEM_DELEGATE_ROOT="$root" METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1 "$ms" delegate --adapter-selftest fake --brief "$selftest_dir/cancel.md" --workspace "$root" --op "$selftest_id-cancel" >/dev/null
-    env METASYSTEM_DELEGATE_ROOT="$root" "$ms" delegate --cancel "$selftest_id-cancel"
+    env METASYSTEM_DELEGATE_ROOT="$root" METASYSTEM_DELEGATE_SELFTEST_INTERNAL=1 "$ms" internal delegate --adapter-selftest fake --brief "$selftest_dir/cancel.md" --workspace "$root" --op "$selftest_id-cancel" >/dev/null
+    env METASYSTEM_DELEGATE_ROOT="$root" "$ms" internal delegate --cancel "$selftest_id-cancel"
     mkdir -p "$agents/selftests"
     "$ms" adapter fake-selftest-record \
       --output "$agents/selftests/$selftest_id.json" --job "$selftest_id"

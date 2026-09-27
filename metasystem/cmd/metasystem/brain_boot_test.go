@@ -404,10 +404,8 @@ func TestBrainReadOnlyBootDefersStatusUntilStartDelivered(t *testing.T) {
 	if _, err := os.Stat(statusPath); !os.IsNotExist(err) {
 		t.Fatalf("read-only boot wrote status before publication: %v", err)
 	}
-	if status := runBrainStartDeliveredWithReaders([]string{
-		"--root", root, "--repo", root, "--declaration-sha256", output.DeclarationSHA256,
-	}, identity, brainBootTestLayoutReader(root)); status != 0 {
-		t.Fatalf("start-delivered status = %d", status)
+	if err := brainStartDelivered(root, root, output.DeclarationSHA256, -1, "", identity, brainBootTestLayoutReader(root)); err != nil {
+		t.Fatalf("start delivery: %v", err)
 	}
 	if _, err := brain.ReadStatus(root); err != nil {
 		t.Fatalf("delivery acknowledgment did not write status: %v", err)
@@ -438,10 +436,8 @@ func TestBrainStartDeliveredRefusesChangedDeclaration(t *testing.T) {
 	if err := os.WriteFile(brain.Path(root), append(changed, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if status := runBrainStartDeliveredWithReaders([]string{
-		"--root", root, "--repo", root, "--declaration-sha256", output.DeclarationSHA256,
-	}, identity, brainBootTestLayoutReader(root)); status != 1 {
-		t.Fatalf("changed declaration status = %d, want 1", status)
+	if err := brainStartDelivered(root, root, output.DeclarationSHA256, -1, "", identity, brainBootTestLayoutReader(root)); err == nil || !strings.Contains(err.Error(), "declaration changed") {
+		t.Fatalf("changed declaration delivery = %v, want the changed-declaration refusal", err)
 	}
 	if _, err := os.Stat(brain.StatusPath(root)); !os.IsNotExist(err) {
 		t.Fatalf("changed declaration wrote status: %v", err)
@@ -471,13 +467,8 @@ func TestBrainStartDeliveredAdvancesOnlyTheEmittedBrainDigest(t *testing.T) {
 		output.DigestCursor != pending.Cursor || output.DigestPrefixSHA256 != pending.PrefixSHA256 {
 		t.Fatalf("composed output did not emit the pending digest: output=%+v pending=%+v", output, pending)
 	}
-	if status := runBrainStartDeliveredWithReaders([]string{
-		"--root", root, "--repo", root,
-		"--declaration-sha256", output.DeclarationSHA256,
-		"--digest-cursor", fmt.Sprint(output.DigestCursor),
-		"--digest-prefix-sha256", output.DigestPrefixSHA256,
-	}, identity, resolveLayout); status != 0 {
-		t.Fatalf("start-delivered status = %d", status)
+	if err := brainStartDelivered(root, root, output.DeclarationSHA256, output.DigestCursor, output.DigestPrefixSHA256, identity, resolveLayout); err != nil {
+		t.Fatalf("start delivery: %v", err)
 	}
 	brainCursorPath := narratordigest.CursorPathWithLayoutReader(root, resolveLayout, "brain")
 	brainCursor, err := os.ReadFile(brainCursorPath)

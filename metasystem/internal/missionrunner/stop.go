@@ -298,7 +298,7 @@ func stopTurn(item Item, byRunner bool) (StopOutcome, error) {
 	outcome.Result = "stopped"
 	if _, err := patchTurn(item.RecordPath, map[string]any{
 		"status": "failed", "outcome": "failed", "error": "turn-lost",
-		"detail": "stopped by metasystem stop", "hostTermination": termination,
+		"detail": "stopped by metasystem system stop", "hostTermination": termination,
 		"endedAt": nowISO(), "hostEndedAt": nowISO(),
 	}); err != nil {
 		return outcome, err
@@ -377,7 +377,7 @@ func refFields(ref identity.Ref) map[string]any {
 
 type runnerStoppedError struct{}
 
-func (e *runnerStoppedError) Error() string { return "stopped by metasystem stop" }
+func (e *runnerStoppedError) Error() string { return "stopped by metasystem system stop" }
 
 func (e *Engine) checkStopNotification(turnID any) error {
 	if e.stopNotifications == nil {
@@ -423,7 +423,7 @@ func (e *Engine) checkStopNotification(turnID any) error {
 		if pathExists(path) {
 			if _, err := patchTurn(path, map[string]any{
 				"status": "failed", "outcome": "failed", "error": "turn-lost",
-				"detail": "stopped by metasystem stop", "hostTermination": termination,
+				"detail": "stopped by metasystem system stop", "hostTermination": termination,
 				"endedAt": nowISO(), "hostEndedAt": nowISO(),
 			}); err != nil {
 				return err

@@ -71,7 +71,7 @@ type landedRearmDecision struct {
 }
 
 func landedRearmCommand(checkout string) string {
-	return "scripts/agents/go-build.sh && bin/metasystem up --repo " + shellQuote(checkout)
+	return "go run ./cmd/devgate build && bin/metasystem session start --repo " + shellQuote(checkout)
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
@@ -214,7 +214,7 @@ func fetchLandingRef(ctx context.Context, clock steward.RearmClock, seconds int,
 // dirtyEnginePaths lists the paths changed against HEAD (index or working
 // tree) or untracked that the behavior-surface policy classifies as ENGINE,
 // top-relative under the installation prefix: the same classification
-// go-build.sh applies before it stamps a build dirty.
+// bootstrap build (cmd/devgate) applies before it stamps a build dirty.
 type checkoutDirtyPath struct {
 	path      string
 	untracked bool
@@ -395,15 +395,15 @@ var (
 			return fmt.Errorf("admit landed engine rebuild: %w", err)
 		}
 		defer lease.Close()
-		fmt.Fprintf(os.Stderr, "metasystem test: landed engine rebuild host queue=%dms\n", lease.Waited().Milliseconds())
-		command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh")
+		fmt.Fprintf(os.Stderr, "metasystem test run: landed engine rebuild host queue=%dms\n", lease.Waited().Milliseconds())
+		command := exec.CommandContext(ctx, "go", "run", "./cmd/devgate", "build")
 		command.Dir = installation
 		command.Env = os.Environ()
 		var output bytes.Buffer
 		command.Stdout, command.Stderr = &output, &output
 		err = proofrun.RunResourceCommand(ctx, command, lease)
 		if err != nil {
-			return fmt.Errorf("scripts/agents/go-build.sh: %w: %s", err, strings.TrimSpace(output.String()))
+			return fmt.Errorf("go run ./cmd/devgate build: %w: %s", err, strings.TrimSpace(output.String()))
 		}
 		return nil
 	}
@@ -568,7 +568,7 @@ func landedRearm(installation, projectRoot, prefix string, namedDeliveryTree boo
 			_ = pinned.Close()
 			return &record, nil
 		}
-		fmt.Fprintf(os.Stderr, "metasystem test: %s does not match the enrollment (generation %d, landed %s); judging the engine afresh\n", engineRearmEnv, pinned.Install.Generation, pinned.Install.LandedCommit)
+		fmt.Fprintf(os.Stderr, "metasystem test run: %s does not match the enrollment (generation %d, landed %s); judging the engine afresh\n", engineRearmEnv, pinned.Install.Generation, pinned.Install.LandedCommit)
 	}
 	defer pinned.Close()
 	seconds := steward.RearmResolveSeconds(installation)
@@ -589,7 +589,7 @@ func landedRearm(installation, projectRoot, prefix string, namedDeliveryTree boo
 	}
 	facts.NamedDeliveryTree = namedDeliveryTree
 	if decision := decideLandedRearm(facts, projectRoot); decision.Rearm {
-		fmt.Fprintf(os.Stderr, "metasystem test: the enrolled engine (%s) is behind the landed tip %s of %s by landed commits only; fast-forwarding, rebuilding and re-arming\n", facts.Source, facts.Tip, facts.LandingRef)
+		fmt.Fprintf(os.Stderr, "metasystem test run: the enrolled engine (%s) is behind the landed tip %s of %s by landed commits only; fast-forwarding, rebuilding and re-arming\n", facts.Source, facts.Tip, facts.LandingRef)
 	}
 	// The rebuild and the re-arm are not bounded by the resolver's seconds:
 	// a build takes what it takes, and up has its own bounds.
@@ -597,12 +597,12 @@ func landedRearm(installation, projectRoot, prefix string, namedDeliveryTree boo
 	if err != nil || record == nil {
 		return nil, err
 	}
-	fmt.Fprintf(os.Stderr, "metasystem test: re-armed %s; restarting this run on the landed engine\n", record.ReArmed)
+	fmt.Fprintf(os.Stderr, "metasystem test run: re-armed %s; restarting this run on the landed engine\n", record.ReArmed)
 	if reexecErr := landedRearmReexec(record); reexecErr != nil {
 		// The re-exec could not happen; this run continues on its own bytes
 		// with the new enrollment as its policy engine, as any run whose
 		// invoking binary is not the pin.
-		fmt.Fprintf(os.Stderr, "metasystem test: could not restart on the landed engine (%v); continuing with the re-armed enrollment as the policy engine\n", reexecErr)
+		fmt.Fprintf(os.Stderr, "metasystem test run: could not restart on the landed engine (%v); continuing with the re-armed enrollment as the policy engine\n", reexecErr)
 	}
 	return record, nil
 }

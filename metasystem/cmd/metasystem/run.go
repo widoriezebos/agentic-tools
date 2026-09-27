@@ -79,7 +79,7 @@ func holdGovernedGoalRevision(root, goalID string, obligationRevision uint64, st
 
 // watchLine is THE printed waiter command — one grammar, everywhere.
 func watchLine(root, id string) string {
-	return fmt.Sprintf("bin/metasystem run watch --id %s --root %s", id, root)
+	return fmt.Sprintf("bin/metasystem work watch --run %s --root %s", id, root)
 }
 
 func runRunLaunch(args []string) int {
@@ -397,6 +397,8 @@ func runRunConclude(args []string) int {
 	return 0
 }
 
+// runJobWatchVerb is the delegate-job waiter: the same waiter discipline
+// as run watch, over job records.
 func runRunPrune(args []string) int {
 	flags := flag.NewFlagSet("run prune", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
@@ -422,41 +424,6 @@ func runRunPrune(args []string) int {
 	return 0
 }
 
-func runRunList(args []string) int {
-	flags := flag.NewFlagSet("run list", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	store := runStore(*root)
-	records, unreadable := store.List()
-	printJSON(map[string]any{"schemaVersion": 1, "runs": records, "unreadable": unreadable})
-	return 0
-}
-
-func runRunStatus(args []string) int {
-	flags := flag.NewFlagSet("run status", flag.ContinueOnError)
-	root := pathFlag(flags, "root", ".", "checkout root")
-	id := flags.String("id", "", "run id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	store := runStore(*root)
-	record, err := store.Read(*id)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if record == nil {
-		fmt.Fprintf(os.Stderr, "no run record %s\n", *id)
-		return 4
-	}
-	printJSON(record)
-	return 0
-}
-
-// runJobWatchVerb is the delegate-job waiter: the same waiter discipline
-// as run watch, over job records.
 func runJobWatchVerb(args []string) int {
 	flags := flag.NewFlagSet("job watch", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")

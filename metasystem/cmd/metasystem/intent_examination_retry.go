@@ -18,7 +18,7 @@ func runJobExaminationRetry(args []string) int {
 	root := pathFlag(flags, "root", "", "repository root")
 	record := pathFlag(flags, "record", "", "the chain's newest job record")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *record == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem job examination-retry --root ROOT --record FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal job examination-retry --root ROOT --record FILE")
 		return 2
 	}
 	latest, err := dispatchcore.ReadRecordObject(*record)

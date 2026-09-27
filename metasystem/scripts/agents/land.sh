@@ -75,7 +75,7 @@ hint_landing_waiters() {
   local publication_id=$1
   local stamp_args=()
   [[ -z "$landing_hint_boot_id" ]] || stamp_args=(--began-boot-nanos "$landing_hint_boot_nanos" --boot-id "$landing_hint_boot_id")
-  [[ -z "$landing_goal" ]] || "$ms" wait notify --root "$root" --goal "$landing_goal" \
+  [[ -z "$landing_goal" ]] || "$ms" internal wait notify --root "$root" --goal "$landing_goal" \
     ${stamp_args[@]+"${stamp_args[@]}"} --publication-id "$publication_id" >/dev/null 2>&1 || true
 }
 
@@ -232,7 +232,7 @@ if [[ -n "$landing_chain" && "$landing_chain" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
     --field gateWidth --default area 2>/dev/null || true)
   if [[ "$chain_gate_width" == full && -z "$landing_test_receipt" ]]; then
     if [[ -n "$testing_contract" ]]; then
-      echo "land refused: chain $landing_chain requires sufficient schema-2 testing evidence; run metasystem landing test-receipt --root . --tree <whole-project-tree> --mode auto and pass it with --test-receipt" >&2
+      echo "land refused: chain $landing_chain requires sufficient schema-2 testing evidence; run metasystem internal landing test-receipt --root . --tree <whole-project-tree> --mode auto and pass it with --test-receipt" >&2
     else
       echo "land refused: legacy full-width chain $landing_chain requires its full-battery receipt" >&2
     fi

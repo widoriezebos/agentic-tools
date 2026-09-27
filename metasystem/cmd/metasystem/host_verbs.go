@@ -94,7 +94,7 @@ func runHostDevinCollect(args []string) int {
 		return 2
 	}
 	if params.Root == "" || params.TurnRecordPath == "" || params.TurnDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem host devin-collect --root D --turn-record F --turn-dir D [--workspace D --stdout F --named F --transcript F --reject SHA ...]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal host devin-collect --root D --turn-record F --turn-dir D [--workspace D --stdout F --named F --transcript F --reject SHA ...]")
 		return 2
 	}
 	params.RejectDigests = rejects
@@ -123,27 +123,6 @@ func (r *rejectList) String() string { return strings.Join(*r, ",") }
 func (r *rejectList) Set(value string) error {
 	*r = append(*r, value)
 	return nil
-}
-
-// runHostJSONCompact prints the JSON in a file on a single line, preserving key
-// order and number tokens.
-func runHostJSONCompact(args []string) int {
-	flags := flag.NewFlagSet("host json-compact", flag.ContinueOnError)
-	file := flags.String("file", "", "JSON file to compact")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *file == "" {
-		fmt.Fprintln(os.Stderr, "host json-compact: --file is required")
-		return 2
-	}
-	compact, err := host.Compact(*file)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Println(compact)
-	return 0
 }
 
 // runHostClaudeResult extracts the return object and typed usage from a Claude

@@ -8,7 +8,7 @@ package missionrunner
 // `Stop-loss reset:` ledger line. Missions sealed before the replay semantics
 // (no ledgerSemantics state field) verdict under the legacy rules the shipped
 // shell check enforced, so a sealed budget's meaning never changes
-// mid-mission. Non-mission callers use `metasystem validate stop-loss`.
+// mid-mission. Non-mission callers use `metasystem experiment check`.
 //
 // Replay invariant: the replay reads ONLY classification, best, and reset
 // lines. Cycle-block annotations (`- Return: rejected:<reason>`,

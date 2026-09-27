@@ -29,7 +29,7 @@ func (inv *intentInvocation) goalWork(id string) ([]launch.NamedWork, *intentRes
 	if file, _ := goalRecord(projection, id); file == nil {
 		return nil, &intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 			Summary: fmt.Sprintf("no goal %s on the accepted ledger; nothing was done", shellCommand([]string{id})),
-			next:    inv.publicArgv("goals", "--all"), nextReason: "list the goals by id"}
+			next:    inv.publicArgv("goal", "list", "--all"), nextReason: "list the goals by id"}
 	}
 	worktree, problem := inv.goalWorktree(id)
 	if problem != nil {
@@ -41,7 +41,7 @@ func (inv *intentInvocation) goalWork(id string) ([]launch.NamedWork, *intentRes
 	work, err := inv.unitRunner().NamedWork(worktree, id)
 	if err != nil {
 		return nil, &intentResult{Outcome: intentFailed, code: 1, Targets: inv.targets(id),
-			Summary: fmt.Sprintf("goal %s's work cannot be read: %v; nothing was done", id, err), next: inv.publicArgv("check"),
+			Summary: fmt.Sprintf("goal %s's work cannot be read: %v; nothing was done", id, err), next: inv.publicArgv("system", "check"),
 			nextReason: "diagnose the saved work"}
 	}
 	return work, nil
@@ -101,7 +101,7 @@ func (inv *intentInvocation) namedWorkOnly(id string, work []launch.NamedWork) (
 	if len(names) > 0 {
 		result.Summary += "; its work is " + strings.Join(names, ", ")
 	} else {
-		result.next, result.nextReason = inv.publicArgv("build", id, "--work", name, "--brief", "FILE", "--check", "COMMAND..."), "start that work"
+		result.next, result.nextReason = inv.publicArgv("work", "build", id, "--work", name, "--brief", "FILE", "--check", "COMMAND..."), "start that work"
 	}
 	return nil, result
 }
@@ -170,11 +170,11 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 			lines = append(lines, fmt.Sprintf("  design %s: %s, attempt %d", view.Document, designStage(view), view.Attempt.Attempt))
 			switch {
 			case view.SupervisorLost:
-				designNext, designReason = inv.publicArgv("stop", "design", id, "--out", view.Document), "the author's supervisor is gone; stop the attempt"
+				designNext, designReason = inv.publicArgv("design", "stop", id, "--out", view.Document), "the author's supervisor is gone; stop the attempt"
 			case !view.Record.State.Terminal() && view.Record.State != "":
-				designNext, designReason = inv.publicArgv("wait", "goal", id), "the design author is writing"
+				designNext, designReason = inv.publicArgv("work", "wait", id), "the design author is writing"
 			case view.Attempt.Outcome == "published":
-				designNext, designReason = inv.publicArgv("review", "design", view.Document, "--goal", id), "an independent critique examines the draft"
+				designNext, designReason = inv.publicArgv("design", "review", view.Document, "--goal", id), "an independent critique examines the draft"
 			}
 		}
 	}
@@ -185,7 +185,7 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 		result.next, result.nextReason = designNext, designReason
 	case len(work) == 0:
 		result.Summary = fmt.Sprintf("goal %s has no work yet", id)
-		result.next, result.nextReason = inv.publicArgv("build", id, "--brief", "FILE", "--check", "COMMAND..."), "start the goal's first work"
+		result.next, result.nextReason = inv.publicArgv("work", "build", id, "--brief", "FILE", "--check", "COMMAND..."), "start the goal's first work"
 	case len(work) == 1 && len(manual) == 0:
 		result.Summary = fmt.Sprintf("goal %s: work %s is %s", id, work[0].Unit, workStage(work[0]))
 		result.next, result.nextReason = inv.workContinuation(id, work[0], inv.input.has("work"))
@@ -222,7 +222,7 @@ func (item manualWorkItem) stage() string {
 func (inv *intentInvocation) manualContinuation(id string, item manualWorkItem) ([]string, string) {
 	read, err := item.read()
 	if err == nil && read.State == "collected" && read.Published {
-		return inv.publicArgv("land", id), "the work's read is collected and published; landing admits it by its own rules"
+		return inv.publicArgv("work", "land", id), "the work's read is collected and published; landing admits it by its own rules"
 	}
 	return inv.publicArgv(append(reviewGoalWords(id), "--work", item.Unit)...), "an independent review examines this version, or continues its examination"
 }
@@ -282,15 +282,15 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 	}
 	switch {
 	case work.Running():
-		return inv.publicArgv(append([]string{"wait", "goal", id}, suffix...)...), "the work is running; this waits for it"
+		return inv.publicArgv(append([]string{"work", "wait", id}, suffix...)...), "the work is running; this waits for it"
 	case builtWork(work) && !unreviewedWork(work) && unpublishedRead(work):
 		return inv.publicArgv(append(reviewGoalWords(id), suffix...)...), "the work's read is collected but not published; the same review publishes it"
 	case builtWork(work) && !unreviewedWork(work):
-		return inv.publicArgv("land", id), "the work's read is collected and published; landing admits it by its own rules"
+		return inv.publicArgv("work", "land", id), "the work's read is collected and published; landing admits it by its own rules"
 	case launch.UnitReviewReadyOutcomes[lastOutcome(work)]:
 		return inv.publicArgv(append(reviewGoalWords(id), suffix...)...), "the result is built; an independent review examines it"
 	}
-	return inv.publicArgv(append(append([]string{"revise", id}, suffix...), "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE")...), "the attempt stopped; a correction brief starts one new attempt"
+	return inv.publicArgv(append(append([]string{"work", "revise", id}, suffix...), "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE")...), "the attempt stopped; a correction brief starts one new attempt"
 }
 
 func lastOutcome(work launch.NamedWork) string {
@@ -332,7 +332,7 @@ func runIntentWaitWork(inv *intentInvocation, id string) int {
 				Summary: fmt.Sprintf("work %s of goal %s is still being reserved by its build", one.Unit, id),
 				next:    inv.sameCommand(), nextReason: "the same wait continues once the build recorded its run"})
 		}
-		again := inv.publicArgv("wait", "goal", id)
+		again := inv.publicArgv("work", "wait", id)
 		if named || len(work) > 1 {
 			again = append(again, "--work", one.Unit)
 		}
@@ -344,9 +344,9 @@ func runIntentWaitWork(inv *intentInvocation, id string) int {
 		result := intentResult{Outcome: intentUnchanged, Targets: inv.targets(id), Data: map[string]any{"goal": id},
 			Summary: fmt.Sprintf("goal %s has no running work; nothing to wait for", id)}
 		if inv.goalQueuedToLand(id) {
-			result.next, result.nextReason = inv.publicArgv("wait", "goal", id, "--for", "landing"), "the goal is queued to land; this waits for its landing"
+			result.next, result.nextReason = inv.publicArgv("work", "wait", id, "--for", "landing"), "the goal is queued to land; this waits for its landing"
 		} else {
-			result.next, result.nextReason = inv.publicArgv("status", "goal", id), "the goal's work and what each needs next"
+			result.next, result.nextReason = inv.publicArgv("status", id), "the goal's work and what each needs next"
 		}
 		return inv.render(result)
 	}
@@ -356,7 +356,7 @@ func runIntentWaitWork(inv *intentInvocation, id string) int {
 	}
 	return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Data: map[string]any{"candidates": names},
 		Summary:  fmt.Sprintf("goal %s has %d running work items (%s); nothing was done", id, len(running), strings.Join(names, ", ")),
-		Decision: "name one: " + shellCommand(inv.publicArgv("wait", "goal", id, "--work", names[0]))})
+		Decision: "name one: " + shellCommand(inv.publicArgv("work", "wait", id, "--work", names[0]))})
 }
 
 // goalQueuedToLand reports whether the goal waits in a landing slot.
@@ -396,7 +396,7 @@ func (inv *intentInvocation) selectWork(id, verb string, work []launch.NamedWork
 		names, lines := []string{}, []string{}
 		for _, one := range matched {
 			names = append(names, one.Unit)
-			lines = append(lines, fmt.Sprintf("  %s (%s): %s", one.Unit, workStage(one), shellCommand(inv.publicArgv(verb, id, "--work", one.Unit))))
+			lines = append(lines, fmt.Sprintf("  %s (%s): %s", one.Unit, workStage(one), shellCommand(inv.publicArgv(append(workVerbWords(verb), id, "--work", one.Unit)...))))
 		}
 		return nil, &intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), text: lines, Data: map[string]any{"candidates": names},
 			Summary:  fmt.Sprintf("goal %s has %d work items this could mean (%s); nothing was done", id, len(matched), strings.Join(names, ", ")),
@@ -548,7 +548,7 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		targets := []intentTarget{{Kind: "goal", ID: id}, {Kind: "work", ID: item.Unit}, {Kind: "commit", ID: item.Commit}}
 		result := inv.commitReview(targets, install, id, item.Commit, args)
 		if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
-			result.next, result.nextReason = inv.publicArgv("land", id), "the work's read is published on the goal branch; landing admits it by its own rules"
+			result.next, result.nextReason = inv.publicArgv("work", "land", id), "the work's read is published on the goal branch; landing admits it by its own rules"
 		}
 		return inv.render(result)
 	}
@@ -559,18 +559,18 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 	if selected == nil {
 		result := intentResult{Outcome: intentUnchanged, Targets: inv.targets(id), Data: map[string]any{"goal": id},
 			Summary: fmt.Sprintf("goal %s has no work waiting for review; nothing was started", id)}
-		result.next, result.nextReason = inv.publicArgv("status", "goal", id), "the goal's work and what each needs next"
+		result.next, result.nextReason = inv.publicArgv("status", id), "the goal's work and what each needs next"
 		return inv.render(result)
 	}
 	if selected.Running() || selected.Run == "" {
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: workTargets(id, *selected),
 			Summary: fmt.Sprintf("work %s of goal %s is still running; it is reviewed once built", selected.Unit, id),
-			next:    inv.publicArgv("wait", "goal", id, "--work", selected.Unit), nextReason: "wait for the build to finish"})
+			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to finish"})
 	}
 	if !builtWork(*selected) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: workTargets(id, *selected),
 			Summary: fmt.Sprintf("work %s of goal %s did not pass its proof (%s), so it has no result to review; nothing was started", selected.Unit, id, lastOutcome(*selected)),
-			next:    inv.publicArgv("revise", id, "--work", selected.Unit, "--after", fmt.Sprint(workAttempt(*selected)), "--brief", "FILE"), nextReason: "a correction brief starts one new attempt"})
+			next:    inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(workAttempt(*selected)), "--brief", "FILE"), nextReason: "a correction brief starts one new attempt"})
 	}
 	inv.reviewWork = &reviewWorkContext{goal: id, work: selected.Unit, repair: inv.command.name == "repair"}
 	inv.reviewWork.retry = retry
@@ -608,35 +608,43 @@ func runIntentReviewDischarge(inv *intentInvocation, id string) int {
 // runIntentRevise corrects one work item through the unit runner's retained
 // revision request.
 func runIntentRevise(inv *intentInvocation) int {
-	if args := inv.input.args; len(args) == 2 && args[0] == "run" {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary: "work revise needs the goal and --brief FILE; nothing was done", Decision: "metasystem work revise G [--work NAME] [--after N] --brief FILE"})
+	}
+	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	switch ref.kind {
+	case refRun:
 		for _, other := range []string{"work", "after", "dispositions"} {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "unit", ID: args[1]}},
-					Summary: fmt.Sprintf("revise run RUN takes only --brief: the run keeps its own plan, proof and round limit; --%s is not one; nothing was done", other)})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: []intentTarget{{Kind: "run", ID: ref.qualified()}},
+					Summary: fmt.Sprintf("work revise %s takes only --brief: the run keeps its own plan, proof and round limit; --%s is not one; nothing was done", ref.qualified(), other)})
 			}
 		}
 		hook := inv.delivery().foldUnitHook
 		if hook == nil {
 			hook = runIntentReviseRun
 		}
-		return hook(inv, args[1])
-	}
-	if args := inv.input.args; len(args) == 2 && args[0] == "job" {
+		return hook(inv, ref.id)
+	case refJ2:
 		for _, other := range []string{"work", "after"} {
 			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("revise job R takes no --%s; nothing was done", other)})
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work revise %s takes no --%s; nothing was done", ref.qualified(), other)})
 			}
 		}
 		if result := inv.selectRoot(); result != nil {
 			return inv.render(*result)
 		}
-		return inv.render(inv.foldReview(args[1]))
+		return inv.render(inv.foldReview(ref.id))
 	}
-	if len(inv.input.args) != 1 || !inv.input.has("brief") {
+	if !inv.input.has("brief") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "revise needs the goal and --brief FILE; nothing was done", Decision: "metasystem revise G [--work NAME] [--after N] --brief FILE"})
+			Summary: "work revise needs the goal and --brief FILE; nothing was done", Decision: "metasystem work revise G [--work NAME] [--after N] --brief FILE"})
 	}
-	id := inv.input.args[0]
+	id := ref.id
 	after := 0
 	if inv.input.has("after") {
 		value, err := strconv.Atoi(inv.input.text("after"))
@@ -668,13 +676,13 @@ func runIntentRevise(inv *intentInvocation) int {
 	if selected == nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
 			Summary: fmt.Sprintf("goal %s has no finished work to correct; nothing was done", id),
-			next:    inv.publicArgv("status", "goal", id), nextReason: "the goal's work and what each needs next"})
+			next:    inv.publicArgv("status", id), nextReason: "the goal's work and what each needs next"})
 	}
 	targets := workTargets(id, *selected)
 	if selected.Run == "" {
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: targets,
 			Summary: fmt.Sprintf("work %s of goal %s is still being reserved by its build; nothing was done", selected.Unit, id),
-			next:    inv.publicArgv("wait", "goal", id, "--work", selected.Unit), nextReason: "wait for the build to record its run"})
+			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to record its run"})
 	}
 	var decisions []byte
 	if inv.input.has("dispositions") {
@@ -685,7 +693,7 @@ func runIntentRevise(inv *intentInvocation) int {
 	}
 	runner := inv.unitRunner()
 	revised, err := runner.Revise(launch.UnitRevisionRequest{Run: selected.Run, After: after, Brief: brief, Decisions: decisions})
-	again := inv.publicArgv("revise", id, "--work", selected.Unit, "--after", fmt.Sprint(max(after, revised.Revision.After)), "--brief", inv.callerPath(inv.input.text("brief")))
+	again := inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(max(after, revised.Revision.After)), "--brief", inv.callerPath(inv.input.text("brief")))
 	if inv.input.has("dispositions") {
 		again = append(again, "--dispositions", inv.flagPath("dispositions"))
 	}
@@ -695,17 +703,17 @@ func runIntentRevise(inv *intentInvocation) int {
 		case errors.Is(err, launch.ErrUnitRevisionStale):
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
 				Data:       map[string]any{"current": revised.Current},
-				next:       inv.publicArgv("revise", id, "--work", selected.Unit, "--after", fmt.Sprint(revised.Current), "--brief", inv.callerPath(inv.input.text("brief"))),
+				next:       inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(revised.Current), "--brief", inv.callerPath(inv.input.text("brief"))),
 				nextReason: "correct the newest attempt instead; this deliberately starts one new attempt"})
 		case strings.HasPrefix(message, "UNIT_REVISION_CONFLICT"):
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
-				next: inv.publicArgv("status", "goal", id, "--work", selected.Unit), nextReason: "the attempt that request created, and what it needs next"})
+				next: inv.publicArgv("status", id, "--work", selected.Unit), nextReason: "the attempt that request created, and what it needs next"})
 		case strings.HasPrefix(message, "UNIT_RUN_NOT_AWAITING"):
 			return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: message + "; nothing was launched",
-				next: inv.publicArgv("wait", "goal", id, "--work", selected.Unit), nextReason: "wait for the running attempt to finish"})
+				next: inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the running attempt to finish"})
 		case strings.HasPrefix(message, "UNIT_ROUND_LIMIT"):
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: message + "; nothing was launched",
-				Decision: "a person gives the goal a larger box: metasystem budget " + id + " BOX"})
+				Decision: "a person gives the goal a larger box: metasystem goal budget " + id + " BOX"})
 		}
 	}
 	outcome := inv.unitOutcome(runner, revised.UnitResult, err, targets, again)
@@ -716,23 +724,6 @@ func runIntentRevise(inv *intentInvocation) int {
 		outcome.text = append(outcome.text, fmt.Sprintf("This request already created attempt %d; the work has since reached attempt %d. Nothing was launched.", revised.Revision.Attempt, revised.Current))
 	}
 	return inv.render(outcome)
-}
-
-// runIntentRepair performs one explicitly named recovery through its owner.
-func runIntentRepair(inv *intentInvocation) int {
-	args := inv.input.args
-	switch {
-	case len(args) == 1 && args[0] == "goals":
-		return runIntentRepairGoals(inv)
-	case len(args) == 1 && args[0] == "waits":
-		return runIntentRepairWaits(inv)
-	case len(args) == 2 && args[0] == "mission":
-		return runIntentRepairMission(inv, args[1])
-	case len(args) == 2 && args[0] == "review":
-		return runIntentReviewGoal(inv, args[1])
-	}
-	return inv.render(intentResult{Outcome: intentRefused, code: 2,
-		Summary: "repair names what to repair: goals, waits, mission M or review G; nothing was done", Decision: "see metasystem help repair"})
 }
 
 // uniqueExamination is the one examination root the goal's work records.

@@ -550,9 +550,9 @@ func waitResult(row Waiter, code int, state, reason, outcome, evidence, ledgerTi
 // provider work recorded in the selector.
 func WaitResumeCommand(row Waiter) string {
 	if row.Selector.Poll == "channel" {
-		return "metasystem channel wait --resume " + row.WaitID
+		return "metasystem internal channel wait --resume " + row.WaitID
 	}
-	return "metasystem wait --resume " + row.WaitID
+	return "metasystem work wait wait:" + row.WaitID
 }
 
 func withWaiterLockBounded(ctx context.Context, root string, deadline time.Time, now func() time.Time, sleep func(context.Context, time.Duration) error, fn func() error) error {

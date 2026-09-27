@@ -99,7 +99,7 @@ func currentTestingWorkerCapabilities() testingWorkerCapabilities {
 
 func runTestWorkerCapabilities(args []string) int {
 	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem test worker-capabilities")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal test worker-capabilities")
 		return 2
 	}
 	if err := writeTestingWorkerCapabilities(os.Stdout); err != nil {
@@ -253,6 +253,18 @@ type testingSelectionRequest struct {
 	// and the verify verb judge the engine as they find it.
 	LandedRearm bool
 	PolicyChild bool
+	// Preparation is this invocation's preparation state, shared by every
+	// preparation the invocation makes; nil gives one preparation its own.
+	Preparation *testingPreparationState
+}
+
+// testingPreparationState is invocation-local execution state (design 6.2,
+// VOA-14): whether this invocation already restarted its preparation once
+// after the landing ref moved. It lives in the request, never in the process
+// environment, so a resident owner's earlier invocation cannot spend a later
+// one's allowance.
+type testingPreparationState struct {
+	restarted bool
 }
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
@@ -289,7 +301,8 @@ func (admission testingCommandAdmission) forced(launch proofLaunchAdmission) (pr
 
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	request := testingSelectionRequest{}
+	// One command is one invocation: its preparations share one state.
+	request := testingSelectionRequest{Preparation: &testingPreparationState{}}
 	pathFlagVar(flags, &request.Root, "root", "", "MetaSystem installation root")
 	flags.StringVar(&request.GoalID, "goal", "", "accepted goal owning delivery")
 	flags.StringVar(&request.AuthorityGoalID, "authority", "", "claimed goal authorizing the proof reservation")
@@ -465,8 +478,6 @@ func batchRequirementsArgument(groups []string) string {
 	return string(encoded)
 }
 
-const preparationRestartedEnv = "METASYSTEM_PREPARATION_RESTARTED"
-
 type preparationBaseMove struct {
 	ours, engine string
 }
@@ -482,23 +493,23 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 }
 
 func prepareTestingWith(request testingSelectionRequest, attempt testingPreparationAttempt) (testingPreparation, error) {
-	restarted := os.Getenv(preparationRestartedEnv) == "1"
+	state := request.Preparation
+	if state == nil {
+		state = &testingPreparationState{}
+	}
 	for {
 		prepared, err := attempt(request)
 		var move *preparationBaseMove
 		if !errors.As(err, &move) {
 			return prepared, err
 		}
-		if restarted {
+		if state.restarted {
 			return testingPreparation{}, engineRefusal("base-moved", []enginecause.Fact{
 				enginecause.Value("ours", move.ours), enginecause.Value("engine", move.engine), enginecause.Value("restarts", "1"),
 			}, "the landing ref moved a second time during one test invocation")
 		}
-		fmt.Fprintf(os.Stderr, "metasystem test: the landing ref moved under the run (ours=%s engine=%s); restarting preparation once\n", move.ours, move.engine)
-		if err := os.Setenv(preparationRestartedEnv, "1"); err != nil {
-			return testingPreparation{}, fmt.Errorf("record the one policy-base restart: %w", err)
-		}
-		restarted = true
+		fmt.Fprintf(os.Stderr, "metasystem test run: the landing ref moved under the run (ours=%s engine=%s); restarting preparation once\n", move.ours, move.engine)
+		state.restarted = true
 	}
 }
 
@@ -1098,7 +1109,17 @@ type candidateEngineIO struct {
 	open   func(gittree.Workspace, string) (candidateDetachedWorkspace, error)
 	// rename publishes a stage into the v2 namespace; nil is os.Rename.
 	rename func(string, string) error
-	native bool
+	// buildArgv is the build owner's command, run in the candidate's
+	// installation root; nil is candidateEngineBuildArgv.
+	buildArgv func(output string) []string
+	native    bool
+}
+
+// candidateEngineBuildArgv runs the candidate tree's own fenced, stamped
+// bootstrap build (cmd/devgate), so the build rules that compile a candidate
+// are the candidate's, not this engine's.
+func candidateEngineBuildArgv(output string) []string {
+	return []string{"go", "run", "./cmd/devgate", "build", "--trimpath", "--out", output}
 }
 
 func nativeCandidateEngineIO() candidateEngineIO {
@@ -1490,6 +1511,11 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 		return nil, fmt.Errorf("candidate engine build failed while allocating its private output: %v (cleanup: %v)", err, closeErr)
 	}
 	build := &candidateEngineBuild{Path: filepath.Join(directory, "metasystem"), Commit: candidateCommit, directory: directory}
+	buildArgv := io.buildArgv
+	if buildArgv == nil {
+		buildArgv = candidateEngineBuildArgv
+	}
+	argv := buildArgv(build.Path)
 	fail := func(cause error, output []byte) (*candidateEngineBuild, error) {
 		closeErr := removeDetached()
 		removeErr := build.Close()
@@ -1500,10 +1526,10 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 		if closeErr != nil || removeErr != nil {
 			cause = fmt.Errorf("%w (cleanup: worktree=%v output=%v)", cause, closeErr, removeErr)
 		}
-		return nil, fmt.Errorf("candidate engine build failed at commit %s through scripts/agents/go-build.sh --trimpath --out: %w", candidateCommit, cause)
+		return nil, fmt.Errorf("candidate engine build failed at commit %s through %s: %w", candidateCommit, strings.Join(argv, " "), cause)
 	}
 	installationRoot := filepath.Join(detached.Workspace().Dir, filepath.FromSlash(installationPrefix))
-	command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh", "--trimpath", "--out", build.Path)
+	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	command.Dir = installationRoot
 	command.Env = candidateEngineBuildEnvironment(environment, candidateCommit)
 	if scratch != nil {
@@ -1528,7 +1554,7 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 	info, err := os.Stat(build.Path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
 		_ = build.Close()
-		return nil, fmt.Errorf("candidate engine build failed: scripts/agents/go-build.sh did not produce a regular executable: %v", err)
+		return nil, fmt.Errorf("candidate engine build failed: %s did not produce a regular executable: %v", strings.Join(argv, " "), err)
 	}
 	build.Digest, err = fileSHA256(build.Path)
 	if err != nil {
@@ -2234,53 +2260,53 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	}
 	actualPacketDigest, err := fileSHA256(*packet)
 	if err != nil || actualPacketDigest != *packetDigest {
-		fmt.Fprintln(os.Stderr, "metasystem test worker: immutable request identity mismatch")
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker: immutable request identity mismatch")
 		return 3
 	}
 	var request proofrun.TestRunRequest
 	if err := readStrictJSON(*packet, &request); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker:", err)
 		return 2
 	}
 	legacyPolicyProbe := os.Getenv(policyProbeWorkerEnvironment) == "1"
 	if legacyPolicyProbe {
 		refusal := frozenPolicyProbeRefusal(request, *resultPath)
 		if refusal != "" {
-			fmt.Fprintln(os.Stderr, "metasystem test worker: unrecognized frozen policy probe:", refusal)
+			fmt.Fprintln(os.Stderr, "metasystem internal test worker: unrecognized frozen policy probe:", refusal)
 			return 3
 		}
 		request.SyntheticProbe = true
 	}
 	if request.CandidateEngine == "" || request.CandidateEngineDigest == "" ||
 		(request.CandidateEngineBuildIdentity == "" && !legacyPolicyProbe) {
-		fmt.Fprintln(os.Stderr, "metasystem test worker: input-bound candidate engine is absent")
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker: input-bound candidate engine is absent")
 		return 3
 	}
 	policyDigest, policyDigestErr := fileSHA256(request.PolicyEngine)
 	if request.PolicyEngine == "" || policyDigestErr != nil || policyDigest != request.PolicyEngineDigest {
-		fmt.Fprintln(os.Stderr, "metasystem test worker: input-bound policy engine changed")
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker: input-bound policy engine changed")
 		return 3
 	}
 	engineInfo, statErr := os.Stat(request.CandidateEngine)
 	engineDigest, digestErr := fileSHA256(request.CandidateEngine)
 	if statErr != nil || !engineInfo.Mode().IsRegular() || engineInfo.Mode()&0o111 == 0 || digestErr != nil || engineDigest != request.CandidateEngineDigest {
-		fmt.Fprintln(os.Stderr, "metasystem test worker: input-bound candidate engine changed")
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker: input-bound candidate engine changed")
 		return 3
 	}
 	controlRoot, attemptID := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
 	canonicalControl, err := canonicalProofRoot(controlRoot)
 	if err != nil || canonicalControl == "" || attemptID == "" || attemptID != request.AttemptID {
-		fmt.Fprintln(os.Stderr, "metasystem test worker: attempt-bound proof locator mismatch")
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker: attempt-bound proof locator mismatch")
 		return 3
 	}
 	if err := proofrun.AuthenticateWorker(canonicalControl, attemptID, os.Getenv("METASYSTEM_PROOF_RECORD_KEY"),
 		os.Getenv("METASYSTEM_PROOF_CREATION_CLAIM"), int64(os.Getppid())); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker:", err)
 		return 3
 	}
 	attempt, err := proofrun.ReadAttempt(canonicalControl, attemptID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker:", err)
 		return 3
 	}
 	packetControl, controlErr := canonicalProofRoot(request.ControlRoot)
@@ -2290,7 +2316,7 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	if controlErr != nil || projectErr != nil || admittedControlErr != nil || admittedProjectErr != nil ||
 		packetControl != canonicalControl || admittedControl != canonicalControl ||
 		(!legacyPolicyProbe && packetProject != admittedProject) {
-		fmt.Fprintln(os.Stderr, "metasystem test worker: authenticated request roots do not match the worker packet")
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker: authenticated request roots do not match the worker packet")
 		return 3
 	}
 	request.ControlRoot = canonicalControl
@@ -2300,7 +2326,7 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 		request.ProjectRoot = admittedProject
 	}
 	if _, err := time.Parse(time.RFC3339Nano, attempt.Deadline); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test worker: admitted deadline is invalid")
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker: admitted deadline is invalid")
 		return 3
 	}
 	request.Environment = inheritedTestingEnvironment(request.Environment, os.Environ())
@@ -2314,12 +2340,12 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 		// command, custodian and Git child inherits the writer.
 		scratch, err := proofrun.OpenScratchRun(canonicalControl, attemptID, *request.Scratch)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+			fmt.Fprintln(os.Stderr, "metasystem internal test worker:", err)
 			return 3
 		}
 		request.BindScratch(scratch, request.Scratch)
 		if err := proofrun.ValidateScratchEnvironment(request, scratch); err != nil {
-			fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+			fmt.Fprintln(os.Stderr, "metasystem internal test worker:", err)
 			return 3
 		}
 		workerBase = proofrun.WithScratchRun(workerBase, scratch)
@@ -2331,7 +2357,7 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	defer cancel()
 	go cancelOnRecordedIntent(workerContext, cancel, canonicalControl, attemptID)
 	if err := runFrozenPolicyProtectionCorpus(workerContext, request); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker:", err)
 		return 1
 	}
 	if opener != nil {
@@ -2342,27 +2368,27 @@ func runTestWorkerWithCandidateOpener(args []string, opener func(string, string)
 	if runErr == nil && request.SyntheticProbe {
 		response, err = frozenNegativeProbeResponse(request, result)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+			fmt.Fprintln(os.Stderr, "metasystem internal test worker:", err)
 			return 1
 		}
 	}
 	if runErr != nil {
 		if err := proofrun.ValidateTestResult(response); err != nil {
-			fmt.Fprintln(os.Stderr, "metasystem test worker:", runErr)
-			fmt.Fprintln(os.Stderr, "metasystem test worker: operational result was not retained:", err)
+			fmt.Fprintln(os.Stderr, "metasystem internal test worker:", runErr)
+			fmt.Fprintln(os.Stderr, "metasystem internal test worker: operational result was not retained:", err)
 			return 1
 		}
 	}
 	if err := writePrivateJSON(*resultPath, response); err != nil {
 		if runErr != nil {
-			fmt.Fprintln(os.Stderr, "metasystem test worker:", runErr)
+			fmt.Fprintln(os.Stderr, "metasystem internal test worker:", runErr)
 		}
-		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker:", err)
 		return 1
 	}
 	printTestingSummary(result)
 	if runErr != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test worker:", runErr)
+		fmt.Fprintln(os.Stderr, "metasystem internal test worker:", runErr)
 		return 1
 	}
 	return status
@@ -3043,7 +3069,7 @@ func cancelOnRecordedIntent(ctx context.Context, cancel context.CancelFunc, cont
 			return
 		case <-ticker.C:
 			if attempt, err := proofrun.ReadAttempt(controlRoot, attemptID); err == nil && attempt.CancellationIntent != "" {
-				fmt.Fprintf(os.Stderr, "metasystem test worker: cancellation intent recorded: %s\n", attempt.CancellationIntent)
+				fmt.Fprintf(os.Stderr, "metasystem internal test worker: cancellation intent recorded: %s\n", attempt.CancellationIntent)
 				cancel()
 				return
 			}

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,7 +26,8 @@ func (inv *intentInvocation) engineVerb(args ...string) (intentProcessResult, *i
 	if err != nil {
 		return intentProcessResult{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the engine executable is unavailable: " + err.Error() + "; nothing was done"}
 	}
-	return inv.delivery().process(intentProcess{argv: append([]string{binary}, args...), dir: inv.layout.InstallationRoot}), nil
+	// Owner verbs are reached through the explicit internal entry.
+	return inv.delivery().process(intentProcess{argv: append([]string{binary, "internal"}, args...), dir: inv.layout.InstallationRoot}), nil
 }
 
 // ownerVerbResult is the public outcome of one owner verb run: its structured
@@ -177,7 +179,7 @@ func runIntentRepairGoals(inv *intentInvocation) int {
 		reports, err := recoverGoalJournal(inv.stateRoot, inv.owners.commandNow, inv.owners.dependencies)
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: scope,
-				Summary: "the goal journal of this installation was not recovered: " + err.Error(), next: inv.publicArgv("check"), nextReason: "diagnose what stops recovery"})
+				Summary: "the goal journal of this installation was not recovered: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose what stops recovery"})
 		}
 		entries, lines := []map[string]string{}, []string{}
 		for _, report := range reports {
@@ -204,10 +206,10 @@ func runIntentRepairGoals(inv *intentInvocation) int {
 		}
 		return inv.render(ownerVerbResult(ran, targets, "the published view's interrupted refresh was completed; no edit was read as new authority", scope))
 	case "accept-remote-history":
-		ran, problem := inv.engineVerb("goal", "repair", "--accept-remote", "--by", inv.input.text("by"), "--root", inv.stateRoot)
-		if problem != nil {
-			return inv.render(*problem)
-		}
+		caller, by := currentProcessIdentity(), inv.input.text("by")
+		ran := ownerCall(func(stdout, stderr io.Writer) int {
+			return inv.ownerCalls().goalRepair(caller, stdout, stderr, inv.stateRoot, by)
+		})
 		return inv.render(ownerVerbResult(ran, targets, "the fetched remote history of the same ledger was accepted locally; nothing was pushed", scope))
 	}
 	return runIntentRepairUpgrade(inv, targets, scope)
@@ -315,7 +317,7 @@ func runIntentRepairMission(inv *intentInvocation, mission string) int {
 	}
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "mission", ID: mission}}, done, nil)
 	if result.Outcome == intentConfirmed {
-		result.next, result.nextReason = inv.publicArgv("status", "mission", mission), "every recorded problem must be resolved before the mission resumes"
+		result.next, result.nextReason = inv.publicArgv("mission", "status", mission), "every recorded problem must be resolved before the mission resumes"
 	}
 	return inv.render(result)
 }
@@ -338,10 +340,12 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 	}
 	targets := []intentTarget{{Kind: "coordinator", ID: inv.stateRoot}}
 	if choice != "" {
-		ran, problem := inv.engineVerb("brain", choice, "--root", inv.stateRoot, "--by", inv.input.text("by"))
-		if problem != nil {
-			return inv.render(*problem)
-		}
+		// The human gate classifies this process, the parent the owner's
+		// child used to classify (design 6.2, VOA-02-R2).
+		caller, by := currentProcessIdentity(), inv.input.text("by")
+		ran := ownerCall(func(stdout, stderr io.Writer) int {
+			return inv.ownerCalls().brain(choice, caller, stdout, stderr, inv.stateRoot, by)
+		})
 		return inv.render(ownerVerbResult(ran, targets, map[string]string{"declare": "this checkout is declared its ledger's coordinator", "withdraw": "this checkout's coordinator declaration is withdrawn"}[choice], nil))
 	}
 	state := brain.Read(inv.stateRoot, goal.ExistingLedgerIdentity(inv.stateRoot))
@@ -360,29 +364,7 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 	}
 	data["reason"] = state.Reason
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data,
-		Summary: "the coordinator declaration is unreadable: " + state.Reason, next: inv.publicArgv("check"), nextReason: "diagnose the declaration"})
-}
-
-// runIntentCheck diagnoses without writing: the checkout's machinery, or
-// with goals the hand edits that repair goals --accept-edits would publish.
-func runIntentCheck(inv *intentInvocation) int {
-	switch args := inv.input.args; {
-	case len(args) == 0:
-		return runIntentDoctor(inv)
-	case len(args) == 1 && args[0] == "goals":
-		return runIntentCheckGoals(inv)
-	case len(args) == 1 && args[0] == "settings":
-		if problem := inv.selectRoot(); problem != nil {
-			return inv.render(*problem)
-		}
-		root := inv.layout.InstallationRoot
-		ran, problem := inv.engineVerb("config", "validate", "--conf", filepath.Join(root, "metasystem.conf"), "--repo", root)
-		if problem != nil {
-			return inv.render(*problem)
-		}
-		return inv.render(ownerVerbResult(ran, nil, "the settings of "+root+" are valid", map[string]any{"installation": root}))
-	}
-	return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "check takes nothing, goals or settings; nothing was done", Decision: "see metasystem help check"})
+		Summary: "the coordinator declaration is unreadable: " + state.Reason, next: inv.publicArgv("system", "check"), nextReason: "diagnose the declaration"})
 }
 
 func runIntentCheckGoals(inv *intentInvocation) int {
@@ -414,7 +396,7 @@ func runIntentCheckGoals(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: lines,
 		Summary: fmt.Sprintf("%d goal file(s) differ from their published base %s; nothing was changed", len(deltas), shortSHA(base)),
-		next:    inv.publicArgv("repair", "goals", "--accept-edits", "--by", "NAME"), nextReason: "a person publishes these reviewed edits"})
+		next:    inv.publicArgv("goal", "repair", "--accept-edits", "--by", "NAME"), nextReason: "a person publishes these reviewed edits"})
 }
 
 // runIntentShowRecords shows the project's own records through the project
@@ -423,21 +405,21 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 	if inv.input.has("history") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--history belongs to a goal's record; nothing was done"})
 	}
-	goalID := inv.input.text("id")
+	goalID := inv.input.text("goal")
 	switch {
-	case kind == "record" && (len(args) != 1 || goalID != ""):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "show record takes one record id and no --goal; nothing was done"})
+	case kind == "record" && len(args) != 1:
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "decision show takes one record id; nothing was done"})
 	case kind == "design" && (len(args) != 0 || goalID == ""):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "show design names its goal: show design --goal G; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design show names its goal: design show --goal G; nothing was done"})
 	case kind == "design" && (inv.input.has("attempt") || inv.input.has("out")):
 		if problem := inv.selectRoot(); problem != nil {
 			return inv.render(*problem)
 		}
 		return inv.render(inv.showDesignAttempts(goalID))
 	case kind != "design" && (inv.input.has("attempt") || inv.input.has("out")):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt and --out belong to show design --goal G; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--attempt and --out belong to design show --goal G; nothing was done"})
 	case (kind == "designs" || kind == "decisions") && len(args) != 0:
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "show " + kind + " takes no further words; nothing was done"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: inv.command.name + " takes no further words; nothing was done"})
 	}
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
@@ -448,13 +430,13 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 	}
 	read, err := project.Read(project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: stateRoot})
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the project's records cannot be read: " + err.Error(), next: inv.publicArgv("check"), nextReason: "diagnose the record homes"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the project's records cannot be read: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose the record homes"})
 	}
 	if kind == "record" {
 		record := read.Record(args[0])
 		if record == nil {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "record", ID: args[0]}},
-				Summary: fmt.Sprintf("the project has no record %s; nothing was read", shellCommand(args[:1])), next: inv.publicArgv("show", "designs"), nextReason: "list the design records"})
+				Summary: fmt.Sprintf("the project has no record %s; nothing was read", shellCommand(args[:1])), next: inv.publicArgv("design", "list"), nextReason: "list the design records"})
 		}
 		referencedBy := read.ReferencedBy(record.ID)
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "record", ID: record.ID}},

@@ -6,7 +6,7 @@
 # the production scripts (fixture drivers excluded; their extra tools —
 # python3 for the one TTY escalation driver — are suite-host
 # concerns). shasum is deliberately absent: production hashing moved onto
-# `metasystem util sha256`.
+# `metasystem internal util sha256`.
 set -euo pipefail
 
 missing=()

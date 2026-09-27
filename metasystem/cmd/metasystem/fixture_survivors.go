@@ -22,7 +22,7 @@ func runFixtureSurvivors(args []string) int {
 		return 2
 	}
 	if *root == "" || flags.NArg() != 0 || *ownerText != "" && *keyText != "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proc fixture-survivors [--owner REF | --key KEY] [--reap] --root R")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proc fixture-survivors [--owner REF | --key KEY] [--reap] --root R")
 		return 2
 	}
 

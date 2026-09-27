@@ -69,7 +69,7 @@ func decisionsDocument(binding reviewBinding, findings []intentFinding) string {
 	var text strings.Builder
 	text.WriteString("# Review decisions\n\n")
 	text.WriteString(binding.line() + "\n\n")
-	text.WriteString("Written by metasystem review; keep the binding line unchanged. Decide every finding: accepted (a fix is\n")
+	text.WriteString("Written by metasystem work review; keep the binding line unchanged. Decide every finding: accepted (a fix is\n")
 	text.WriteString("required, sent with revise), refuted (with evidence), out-of-scope (citing the brief's declared scope) or\n")
 	text.WriteString("noted (not material).\n\n")
 	header := validate.DispositionsHeader()
@@ -99,7 +99,7 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 	newest, err := inv.newestRoundAt(root, rootJob)
 	if err != nil {
 		return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data,
-			Summary: fmt.Sprintf("the examination %s of work %s cannot be read: %v", rootJob, work.work, err), next: inv.publicArgv("check"), nextReason: "diagnose the record store"}
+			Summary: fmt.Sprintf("the examination %s of work %s cannot be read: %v", rootJob, work.work, err), next: inv.publicArgv("system", "check"), nextReason: "diagnose the record store"}
 	}
 	round, status := recordRound(newest), recordText(newest, "status")
 	data["round"], data["status"] = round, status
@@ -216,7 +216,7 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 			data["accepted"] = accepted
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
 				Summary:    fmt.Sprintf("accepted material finding(s) %s need a fix before this review can complete; nothing was closed", strings.Join(accepted, ", ")),
-				next:       inv.publicArgv("revise", work.goal, "--work", work.work, "--after", fmt.Sprint(work.attempt), "--brief", "FILE", "--dispositions", path),
+				next:       inv.publicArgv("work", "revise", work.goal, "--work", work.work, "--after", fmt.Sprint(work.attempt), "--brief", "FILE", "--dispositions", path),
 				nextReason: "the correction carries these findings and decisions to the builder; its result is reviewed again"}
 		}
 	}
@@ -246,7 +246,7 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 		if checkErr := dispatchcore.CloseCheck(root, rootJob); checkErr != nil {
 			data["closeCheck"] = checkErr.Error()
 		}
-		repair := inv.publicArgv("repair", "review", work.goal, "--work", work.work)
+		repair := inv.publicArgv("work", "close", work.goal, "--work", work.work)
 		closed.next, closed.nextReason = repair,
 			"once the cause named above is resolved, this replays the whole close with the retained decisions; it never decides a finding"
 		if inv.riskRemedy(&closed, root, work.goal, rootJob, repair) {
@@ -352,7 +352,7 @@ func (inv *intentInvocation) riskRemedy(closed *intentResult, root, goalID, root
 			continue
 		}
 		risks = append(risks, id)
-		commands = append(commands, shellCommand([]string{"metasystem", "accept-risk", goalID, "--finding", id, "--review", rootJob, "--repo", root, "--reason", "TEXT"}))
+		commands = append(commands, shellCommand([]string{"metasystem", "goal", "accept-risk", goalID, "--finding", id, "--review", rootJob, "--repo", root, "--reason", "TEXT"}))
 	}
 	if len(risks) == 0 {
 		return false

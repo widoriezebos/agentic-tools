@@ -228,7 +228,7 @@ func (b *designBed) waitStatus(id, status string) {
 	b.t.Helper()
 	// The engine's durable wait owner returns when the job's record is
 	// terminal (or at its bounded deadline); the status is then read.
-	output, _ := b.run(b.repo, nil, b.engine, "wait", "--root", b.repo, "--job", id, "--timeout", "3m")
+	output, _ := b.run(b.repo, nil, b.engine, "work", "wait", "--root", b.repo, "--job", id, "--timeout", "3m")
 	if b.jobExists(id) && fmt.Sprint(b.job(id)["status"]) == status {
 		return
 	}
@@ -303,7 +303,7 @@ func TestIntentDesignReviewRealOwnerJourney(t *testing.T) {
 	b.fixtureGoal(goalID, "Prove the public design critique journey")
 	b.releaseOnFailure(goalID)
 	review := func(extra ...string) map[string]any {
-		return b.cli(b.repo, nil, append([]string{"review", "design", page, "--tool-calls", "30"}, extra...)...)
+		return b.cli(b.repo, nil, append([]string{"design", "review", page, "--tool-calls", "30"}, extra...)...)
 	}
 
 	first := review()
@@ -490,7 +490,7 @@ func TestIntentDesignAuthorRealOwnerJourney(t *testing.T) {
 	brief := filepath.Join(b.log, "brief.md")
 	design := func(text string, args ...string) map[string]any {
 		os.WriteFile(brief, []byte(text), 0o644)
-		return b.cli(second, extra, append([]string{"design", goalID, "--brief", brief}, args...)...)
+		return b.cli(second, extra, append([]string{"design", "write", goalID, "--brief", brief}, args...)...)
 	}
 	published := func(text string, attempt float64) map[string]any {
 		deadline := time.Now().Add(time.Minute)
@@ -505,7 +505,7 @@ func TestIntentDesignAuthorRealOwnerJourney(t *testing.T) {
 			}
 			// The public wait waits on the running author; the repeated
 			// design then judges its publication.
-			b.cli(second, extra, "wait", "goal", goalID, "--timeout", "1m")
+			b.cli(second, extra, "work", "wait", goalID, "--timeout", "1m")
 		}
 	}
 	first := "Design the fixture reader.\n"
@@ -530,7 +530,7 @@ func TestIntentDesignAuthorRealOwnerJourney(t *testing.T) {
 	if data, _ := held["data"].(map[string]any); data["attempt"] != float64(2) || held["outcome"] != "in-progress" {
 		t.Fatalf("the held attempt 2 is not running: %v", held)
 	}
-	if stopped := b.cli(second, nil, "stop", "design", goalID); stopped["outcome"] != "confirmed" || cliExit(stopped) != 0 {
+	if stopped := b.cli(second, nil, "design", "stop", goalID); stopped["outcome"] != "confirmed" || cliExit(stopped) != 0 {
 		t.Fatalf("stop design did not stop the running author: %v", stopped)
 	}
 	if now, _ := os.ReadFile(filepath.Join(second, document)); !bytes.Equal(now, written) {
@@ -576,7 +576,7 @@ func (b *designBed) fakeBehaviour() (marker string, restore func()) {
 func (b *designBed) waitFile(path string) {
 	b.t.Helper()
 	// The engine's durable file wait returns once the path exists.
-	output, _ := b.run(b.repo, nil, b.engine, "wait", "--root", b.repo, "--path", path, "--until", "present", "--timeout", "2m")
+	output, _ := b.run(b.repo, nil, b.engine, "work", "wait", "--root", b.repo, "--path", path, "--until", "present", "--timeout", "2m")
 	if _, err := os.Stat(path); err == nil {
 		return
 	}
@@ -606,7 +606,7 @@ func (b *designBed) reapDead(job, roundDir string) map[string]any {
 		}
 		// Wait on the job through the engine's durable wait owner before
 		// the next reap attempt.
-		b.run(b.repo, nil, b.engine, "wait", "--root", b.repo, "--job", job, "--timeout", "5s")
+		b.run(b.repo, nil, b.engine, "work", "wait", "--root", b.repo, "--job", job, "--timeout", "5s")
 	}
 }
 
@@ -642,7 +642,7 @@ func TestIntentDesignRetryRealOwnerJourney(t *testing.T) {
 	}()
 	os.WriteFile(marker, []byte("FAKE:cap-hold-round=1\n"), 0o644)
 	review := func(extra ...string) map[string]any {
-		return b.cli(b.repo, nil, append([]string{"review", "design", page, "--tool-calls", "30"}, extra...)...)
+		return b.cli(b.repo, nil, append([]string{"design", "review", page, "--tool-calls", "30"}, extra...)...)
 	}
 
 	first := review()

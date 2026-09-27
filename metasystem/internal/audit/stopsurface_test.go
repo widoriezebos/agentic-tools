@@ -32,7 +32,7 @@ var requiredRepositoryStopSurfaceAssertions = []struct {
 	{file: "cmd/metasystem/wait_verb_test.go", text: "if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != \"unwatched-work\" ||"},
 	{file: "cmd/metasystem/wait_verb_test.go", text: "if verdict.ShouldBlock || verdict.BlockSource != nil || verdict.IdleRefusal || verdict.CountSpent ||"},
 	{file: "internal/report/stoppresentation_test.go", text: "if result.Control.ShouldBlock != input.Control.ShouldBlock || !sameStringPointer(result.Control.BlockSource, input.Control.BlockSource) {"},
-	{file: "cmd/metasystem/wait_verb_test.go", text: "if err != nil || strings.Contains(string(hookOutput), `\"decision\":\"block\"`) || strings.Contains(string(hookOutput), \"needs supervision repair\") {"},
+	{file: "cmd/metasystem/wait_verb_test.go", text: "if strings.Contains(string(hookOutput), `\"decision\":\"block\"`) || strings.Contains(string(hookOutput), \"needs supervision repair\") {"},
 	{file: "cmd/metasystem/wait_verb_test.go", text: "if strings.Contains(liveHook.stdout, `\"decision\":\"block\"`) || artifactErr != nil || !strings.Contains(string(liveArtifact), \"WAITING: installed local build\") {"},
 	{file: "cmd/metasystem/wait_verb_test.go", text: "if !strings.Contains(deadHook.stdout, `\"decision\":\"block\"`) || artifactErr != nil || strings.Contains(string(deadArtifact), \"WAITING: installed local build\") {"},
 	{file: "cmd/metasystem/wait_verb_test.go", text: "if strings.Contains(humanHook.stdout, `\"decision\":\"block\"`) || artifactErr != nil || !strings.Contains(string(humanArtifact), \"WAITING: human answer to May the installed run stop?\") {"},
@@ -1025,9 +1025,7 @@ func TestStopSurfaceListOfThisRepositoryIsSound(t *testing.T) {
 		discovered[file.Path] = true
 	}
 	for _, oldBed := range []string{
-		"scripts/agents/runtime-hook-fixtures.sh",
 		"scripts/agents/supervision-fixtures.sh",
-		"scripts/agents/supervision-hook-fixtures.sh",
 	} {
 		if !discovered[oldBed] {
 			t.Errorf("discovery omitted fixture bed %s", oldBed)

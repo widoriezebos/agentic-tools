@@ -39,7 +39,7 @@ func TestRunGroupCustody(t *testing.T) {
 	os.WriteFile(filepath.Join(run.Dir(repo), "broken.json"), []byte("{nope"), 0o644)
 
 	processes := []Process{
-		{Pid: 900, PGID: 900, Started: 5000, Argv: "metasystem run wrap --nonce " + nonce + " -- work", Alive: true},
+		{Pid: 900, PGID: 900, Started: 5000, Argv: "metasystem internal run wrap --nonce " + nonce + " -- work", Alive: true},
 		{Pid: 910, PGID: 900, Started: 6000, Argv: "child worker", Alive: true},
 		{Pid: 920, PGID: 901, Started: 7000, Argv: "surviving descendant", Alive: true},
 		{Pid: 930, PGID: 999, Started: 8000, Argv: "unrelated", Alive: true},

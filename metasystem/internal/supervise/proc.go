@@ -30,7 +30,7 @@ type ProcComponents struct {
 	// SupervisionDir is where heartbeat files live.
 	SupervisionDir string
 	// Command builds the argv for one component; the binary supplies
-	// its own `metasystem supervise component ...` invocation, tests
+	// its own `metasystem internal supervise component ...` invocation, tests
 	// supply a heartbeat-writing stub.
 	Command func(component Component, tag, heartbeatPath string, generation int64) []string
 	// Prober proves identities three-way; the kernel one in

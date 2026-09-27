@@ -35,24 +35,6 @@ func runMissionLedgerInit(args []string) int {
 	return 0
 }
 
-func runMissionLedgerAppend(args []string) int {
-	flags := flag.NewFlagSet("mission ledger-append", flag.ContinueOnError)
-	file := flags.String("file", "", "ledger path")
-	cycle := flags.Int("cycle", 0, "cycle number (must be next)")
-	classification := flags.String("classification", "", "cycle classification")
-	sha := flags.String("candidate-sha", "", "resolved candidate git sha")
-	observed := flags.String("observed", "", "observed measurement")
-	best := flags.String("best", "", "new-best marker (yes|no; omit for a marker-less line)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if _, err := mission.AppendCycle(*file, *cycle, *classification, *sha, *observed, *best); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
 // The mission-state family owns the atomic, hash-chained mission state.
 
 func runMissionStateInit(args []string) int {
@@ -267,29 +249,6 @@ func runMissionFenceReserve(name string, reserve bool) func([]string) int {
 		}
 		return 0
 	}
-}
-
-func runMissionFenceReserveCycle(args []string) int {
-	flags := flag.NewFlagSet("mission fence-reserve-cycle", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "repository")
-	missionID := flags.String("mission", "", "mission id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if !missionIDRe.MatchString(*missionID) {
-		fmt.Fprintln(os.Stderr, "invalid mission id")
-		return 2
-	}
-	commandClock, _, err := goalCommandClock(*repo)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := mission.ReserveCycleWithClock(*repo, *missionID, commandClock); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
 }
 
 func runMissionFenceAuthorizeCap(args []string) int {

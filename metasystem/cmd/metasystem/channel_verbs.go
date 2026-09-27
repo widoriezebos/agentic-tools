@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -59,15 +60,26 @@ func runChannelStatus(args []string) int {
 }
 
 func runChannelStatusWithInputs(args []string, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), landingLog func(string, time.Time) ([]byte, error)) int {
+	return runChannelStatusTo(args, os.Stdout, os.Stderr, resolveMachine, resolveEndpoint, landingLog)
+}
+
+func runChannelStatusTo(args []string, stdout, stderr io.Writer, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), landingLog func(string, time.Time) ([]byte, error)) int {
 	f := flag.NewFlagSet("channel status", flag.ContinueOnError)
 	root := pathFlag(f, "root", ".", "repository root")
 	post := f.Bool("post", false, "post now")
 	if f.Parse(args) != nil {
 		return 2
 	}
+	return channelStatus(*root, *post, stdout, stderr, resolveMachine, resolveEndpoint, landingLog)
+}
+
+// channelStatus composes the checkout's status report, printing it and, with
+// post, publishing it to the configured channel and the brain's status.
+func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), landingLog func(string, time.Time) ([]byte, error)) int {
+	root, post := &checkout, &postNow
 	now, err := goalCommandNow(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if resolveMachine == nil {
@@ -86,20 +98,20 @@ func runChannelStatusWithInputs(args []string, resolveMachine func(string) (stri
 		var resolveErr error
 		endpoint, resolveErr = resolveEndpoint(*root)
 		if resolveErr != nil {
-			fmt.Fprintln(os.Stderr, resolveErr)
+			fmt.Fprintln(stderr, resolveErr)
 			return 1
 		}
 		text, approvalGoal, err = channel.ComposeStatusReportAtEndpoint(config, endpoint, landingLog)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	fmt.Println(text)
+	fmt.Fprintln(stdout, text)
 	if *post {
 		l, e := phase.Load(*root, false)
 		if e != nil {
-			fmt.Fprintln(os.Stderr, e)
+			fmt.Fprintln(stderr, e)
 			return 1
 		}
 		if l.Provider == nil {
@@ -107,18 +119,18 @@ func runChannelStatusWithInputs(args []string, resolveMachine func(string) (stri
 		}
 		ctx, cancel, e := channelPollContext(*root)
 		if e != nil {
-			fmt.Fprintln(os.Stderr, e)
+			fmt.Fprintln(stderr, e)
 			return 1
 		}
 		defer cancel()
 		ref, e := l.Provider.Post(ctx, l.Destination, text, nil)
 		if e != nil {
-			fmt.Fprintln(os.Stderr, e)
+			fmt.Fprintln(stderr, e)
 			return 1
 		}
 		state := channel.StatusState{LastPost: now.UTC(), ContentDigest: channel.Digest(text), Ref: ref, GoalID: approvalGoal}
 		if e = channel.SaveStatusState(*root, state); e != nil {
-			fmt.Fprintln(os.Stderr, e)
+			fmt.Fprintln(stderr, e)
 			return 1
 		}
 		ledgerIdentity := ""
@@ -131,11 +143,11 @@ func runChannelStatusWithInputs(args []string, resolveMachine func(string) (stri
 		if brainState.State == brain.Declared {
 			postedAt := now.UTC()
 			if e = brain.WriteStatus(*root, *brainState.Record, postedAt); e != nil {
-				fmt.Fprintln(os.Stderr, e)
+				fmt.Fprintln(stderr, e)
 				return 1
 			}
 			if e = brain.MarkStatusPosted(*root, postedAt); e != nil {
-				fmt.Fprintln(os.Stderr, e)
+				fmt.Fprintln(stderr, e)
 				return 1
 			}
 		}
@@ -433,21 +445,7 @@ func runChannelPoll(args []string) int {
 	printJSON(r)
 	return 0
 }
-func runChannelClose(args []string) int {
-	f := flag.NewFlagSet("channel close", flag.ContinueOnError)
-	root := pathFlag(f, "root", ".", "repository root")
-	id := f.String("question", "", "question id")
-	because := f.String("because", "", "withdrawal reason")
-	if f.Parse(args) != nil || *id == "" || *because == "" {
-		return 2
-	}
-	l, _ := phase.Load(*root, false)
-	if err := channel.Close(*root, *id, *because, l.Provider, l.Destination); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
+
 func runChannelFakeServe(args []string) int {
 	return runChannelFakeServeWithDependencies(args, defaultFixtureLifetimeDependencies(), channelFake.ServeReady)
 }

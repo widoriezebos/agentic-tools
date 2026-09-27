@@ -21,7 +21,7 @@ func TestMainSplitRatificationRefusesHolderWithoutLeaseEpoch(t *testing.T) {
 	}
 	classification := lease.ClassifyResult{Class: lease.ClassMain, Holder: true, MainId: "main-without-lease"}
 	if _, err := mainSplitRatification("parent", strings.Repeat("a", 64), classification); err == nil ||
-		!strings.Contains(err.Error(), "no checkout lease epoch") || !strings.Contains(err.Error(), "metasystem up") {
+		!strings.Contains(err.Error(), "no checkout lease epoch") || !strings.Contains(err.Error(), "metasystem session start") {
 		t.Fatalf("MAIN holder without an authenticated coordinate did not refuse toward lease establishment: %v", err)
 	}
 	epoch := int64(7)

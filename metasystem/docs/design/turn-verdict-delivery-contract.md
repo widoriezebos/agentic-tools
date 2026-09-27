@@ -34,7 +34,7 @@ immutable report reference. Delivery verification and fixture lookup resolve
 that record, verify the payload shape, report identity, digest and exact
 console-text containment, and never interpret human wording as a reference.
 
-The same rule applies while a foreground `metasystem wait` command holds the
+The same rule applies while a foreground `metasystem work wait` command holds the
 runtime. Every adapter must implement this exact operation:
 
 ```text
@@ -58,7 +58,7 @@ stale observations remain unobserved.
 ## The universal fallback (no hooks required)
 
 On a blocked Stop, the instruction entrypoint requires the seat to run the
-exact `metasystem report stop-status --id ...` command before another work
+exact `metasystem session report --id ...` command before another work
 action or Stop. A free seat then uses `goal next --machine <own-nick>
 --fetch`; a held seat continues without another claim. On an allowed
 report-bearing Stop, the task line itself says `Read, then continue lawful

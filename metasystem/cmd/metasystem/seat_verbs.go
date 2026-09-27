@@ -6,9 +6,6 @@ package main
 // a silent holder is flagged, never displaced.
 
 import (
-	"flag"
-	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -20,35 +17,6 @@ import (
 // seatFleetNow is the reader's clock; the fixture boundary injects it so the
 // verb's output is testable without the wall.
 var seatFleetNow = func() time.Time { return time.Now().UTC() }
-
-// runSeatFleet prints one line per machine, this machine first.
-func runSeatFleet(args []string) int {
-	flags := flag.NewFlagSet("seat fleet", flag.ContinueOnError)
-	// Reading the fleet is an ordinary look around, so the checkout the
-	// caller is standing in is the answer when they name none.
-	root := pathFlag(flags, "root", ".", "checkout root (default: the current directory)")
-	fetch := flags.Bool("fetch", false, "fetch presence into this read's own namespace instead of reading the tick's copy")
-	asJSON := flags.Bool("json", false, "print the standings as JSON")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	report, err := seatFleetReport(*root, *fetch, seatFleetNow())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "seat fleet: %v\n", err)
-		return 1
-	}
-	if *asJSON {
-		encoded, err := report.JSON()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "seat fleet: %v\n", err)
-			return 1
-		}
-		os.Stdout.Write(encoded)
-		return 0
-	}
-	fmt.Print(report.Text())
-	return 0
-}
 
 // seatFleetReport reads presence once and derives every standing from it.
 func seatFleetReport(root string, fetch bool, now time.Time) (seat.Report, error) {

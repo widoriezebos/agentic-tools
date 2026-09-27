@@ -114,7 +114,7 @@ func TestDesignCriticPacketCarriesMovedEffectsCheck(t *testing.T) {
 		}
 		packet.Write(content)
 	}
-	for _, required := range []string{"validate moved-effects", "Moved effects", "MOVED-EFFECTS-"} {
+	for _, required := range []string{"design check-moves", "Moved effects", "MOVED-EFFECTS-"} {
 		if !strings.Contains(packet.String(), required) {
 			t.Errorf("design-critic packet does not contain %q", required)
 		}

@@ -30,7 +30,7 @@ func TestIntentProcessTargets(t *testing.T) {
 			engine = append(engine, process.argv)
 			return intentProcessResult{stdout: []byte(`{"state":"supervised"}`)}
 		}}
-	for _, args := range [][]string{{"start", "ui"}, {"stop", "ui"}, {"status", "ui"}} {
+	for _, args := range [][]string{{"ui", "start"}, {"ui", "stop"}, {"ui", "status"}} {
 		if code, result := b.runJSON(owners, args...); code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("%v = %d %+v", args, code, result)
 		}
@@ -47,39 +47,36 @@ func TestIntentProcessTargets(t *testing.T) {
 		args []string
 		want uiIntentOptions
 	}{
-		{[]string{"start", "ui", "--listen", "127.0.0.1:9876"}, uiIntentOptions{listen: "127.0.0.1:9876", listenSet: true, waitSeconds: 15}},
-		{[]string{"stop", "ui", "--wait-seconds", "0"}, uiIntentOptions{waitSeconds: 0}},
-		{[]string{"restart", "ui", "--listen", "[::1]:9876", "--wait-seconds", "40"}, uiIntentOptions{listen: "[::1]:9876", listenSet: true, waitSeconds: 40}},
+		{[]string{"ui", "start", "--listen", "127.0.0.1:9876"}, uiIntentOptions{listen: "127.0.0.1:9876", listenSet: true, waitSeconds: 15}},
+		{[]string{"ui", "stop", "--wait-seconds", "0"}, uiIntentOptions{waitSeconds: 0}},
+		{[]string{"ui", "restart", "--listen", "[::1]:9876", "--wait-seconds", "40"}, uiIntentOptions{listen: "[::1]:9876", listenSet: true, waitSeconds: 40}},
 	} {
 		if code, result := b.runJSON(owners, test.args...); code != 0 || result.Outcome != intentConfirmed || received[len(received)-1] != test.want {
 			t.Fatalf("%v = %d %+v options %+v", test.args, code, result, received)
 		}
 	}
 	for _, args := range [][]string{
-		{"start", "session", "--listen", "127.0.0.1:9876"},
-		{"start", "machine", "m9", "--listen", "127.0.0.1:9876"},
-		{"stop", "job", "j2:some-job", "--wait-seconds", "0"},
-		{"restart", "checkout", "--wait-seconds", "1"},
-		{"stop", "ui", "--wait-seconds", "-1"},
-		{"stop", "ui", "--wait-seconds", "0.5"},
-		{"restart", "ui", "--wait-seconds", "9223372036854775807"},
+		{"session", "start", "--listen", "127.0.0.1:9876"},
+		{"machine", "start", "m9", "--listen", "127.0.0.1:9876"},
+		{"work", "stop", "j2:some-job", "--wait-seconds", "0"},
+		{"system", "restart", "--wait-seconds", "1"},
+		{"ui", "stop", "--wait-seconds", "-1"},
+		{"ui", "stop", "--wait-seconds", "0.5"},
+		{"ui", "restart", "--wait-seconds", "9223372036854775807"},
 	} {
 		if code, result := b.runJSON(owners, args...); code != 2 || result.Outcome != intentRefused || len(verbs) != 6 || len(engine) != 0 {
 			t.Fatalf("bad UI options %v reached an owner: %d %+v %v %v", args, code, result, verbs, engine)
 		}
 	}
 
-	if code, result := b.runJSON(owners, "start", "machine", "m9", "--destination", "/tmp/m9"); code != 0 || len(engine) != 1 ||
-		!slices.Equal(engine[0][1:5], []string{"seat", "launch", "--machine", "m9"}) || !strings.Contains(strings.Join(engine[0], " "), "--destination /tmp/m9") {
+	if code, result := b.runJSON(owners, "machine", "start", "m9", "--destination", "/tmp/m9"); code != 0 || len(engine) != 1 ||
+		!slices.Equal(engine[0][1:6], []string{"internal", "seat", "launch", "--machine", "m9"}) || !strings.Contains(strings.Join(engine[0], " "), "--destination /tmp/m9") {
 		t.Fatalf("start machine = %d %+v %v", code, result, engine)
 	}
-	for _, args := range [][]string{{"start", "ui", "--temporary-human-word", "yes"}, {"start", "--destination", "/tmp/x"}, {"status", "--machines", "ui"}, {"status", "--refresh"}} {
+	for _, args := range [][]string{{"ui", "start", "--temporary-human-word", "yes"}, {"system", "start", "--destination", "/tmp/x"}, {"machine", "list", "ui"}, {"status", "--refresh"}} {
 		if code, result := b.runJSON(owners, args...); code != 2 || result.Outcome != intentRefused {
 			t.Fatalf("%v = %d %+v", args, code, result)
 		}
-	}
-	if legacyProcessCall([]string{"--machines"}) || legacyProcessCall([]string{"--refresh"}) || !legacyProcessCall([]string{"--all"}) {
-		t.Fatal("status --machines must take the public route while the old flag-only status keeps its own")
 	}
 	if len(verbs) != 6 || len(engine) != 1 {
 		t.Fatalf("a refused target reached an owner: %v %v", verbs, engine)
@@ -96,12 +93,12 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 		stopped bool
 		want    []string
 	}{
-		{steward.RoleStewardRunner, false, []string{"metasystem", "start", "session"}},
-		{steward.RoleSupervisionOwner, true, []string{"metasystem", "start"}},
-		{steward.RoleTrunkRed, false, []string{"metasystem", "incidents"}},
-		{steward.RoleProofAttempts, false, []string{"metasystem", "test"}},
+		{steward.RoleStewardRunner, false, []string{"metasystem", "session", "start"}},
+		{steward.RoleSupervisionOwner, true, []string{"metasystem", "system", "start"}},
+		{steward.RoleTrunkRed, false, []string{"metasystem", "incident", "list"}},
+		{steward.RoleProofAttempts, false, []string{"metasystem", "test", "run"}},
 	} {
-		public, _ := publicHealthRemedy(steward.RoleVerdict{Role: row.role, Remedy: "metasystem up --repo /x"}, row.stopped)
+		public, _ := publicHealthRemedy(steward.RoleVerdict{Role: row.role, Remedy: "metasystem session start --repo /x"}, row.stopped)
 		if !slices.Equal(public, row.want) {
 			t.Errorf("%s stopped=%t = %v, want %v", row.role, row.stopped, public, row.want)
 		}
@@ -111,10 +108,10 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 		fact   steward.RemedyFact
 		public []string
 	}{
-		{steward.RemedyFact{Cause: steward.CauseBudgetMissing, Goal: "g1"}, []string{"metasystem", "budget", "g1", "BOX"}},
-		{steward.RemedyFact{Cause: steward.CauseBudgetBreach, Goal: "g1"}, []string{"metasystem", "budget", "g1", "BOX"}},
-		{steward.RemedyFact{Cause: steward.CauseEpochMismatch, Goal: "g1"}, []string{"metasystem", "start", "session"}},
-		{steward.RemedyFact{Cause: steward.CauseForeignLineage, Goal: "g1"}, []string{"metasystem", "release", "g1"}},
+		{steward.RemedyFact{Cause: steward.CauseBudgetMissing, Goal: "g1"}, []string{"metasystem", "goal", "budget", "g1", "BOX"}},
+		{steward.RemedyFact{Cause: steward.CauseBudgetBreach, Goal: "g1"}, []string{"metasystem", "goal", "budget", "g1", "BOX"}},
+		{steward.RemedyFact{Cause: steward.CauseEpochMismatch, Goal: "g1"}, []string{"metasystem", "session", "start"}},
+		{steward.RemedyFact{Cause: steward.CauseForeignLineage, Goal: "g1"}, []string{"metasystem", "goal", "release", "g1"}},
 		{steward.RemedyFact{Cause: steward.CauseBudgetUnknown, Record: "artifacts/agents/jobs/x.json"}, nil},
 		{steward.RemedyFact{Cause: steward.CauseBreachStopUnresolved, Goal: "g1", Stop: "s1"}, nil},
 	} {
@@ -124,7 +121,7 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 		}
 	}
 	for _, role := range []steward.HealthRole{steward.RoleCensusFreshness, steward.RoleHookFreshness, steward.RoleLedgerAttention} {
-		if public, _ := publicHealthRemedy(steward.RoleVerdict{Role: role, Remedy: "x"}, false); len(public) == 0 || slices.Equal(public, []string{"metasystem", "check"}) {
+		if public, _ := publicHealthRemedy(steward.RoleVerdict{Role: role, Remedy: "x"}, false); len(public) == 0 || slices.Equal(public, []string{"metasystem", "system", "check"}) {
 			t.Errorf("%s sends check back to itself: %v", role, public)
 		}
 	}

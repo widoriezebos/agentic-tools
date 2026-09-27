@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -40,19 +42,17 @@ func TestTopLevelUpPrintsButDoesNotInstallSchedulerEntry(t *testing.T) {
 }
 
 func TestArmingDetailSurvivesStop(t *testing.T) {
-	component := `component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run metasystem steward restart from an agent-free terminal"`
-	aggregate := `up outcome=failed component=steward-runner remedy="ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal"`
+	component := `component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run metasystem internal steward restart from an agent-free terminal"`
+	aggregate := `up outcome=failed component=steward-runner remedy="ENROLLMENT_DRIFT: run 'metasystem internal steward restart' from an agent-free terminal"`
 	armingResult := component + "\n" + aggregate
 	remedy := "restore supervision from an agent-free terminal"
-	stdout, stderr, code := captureRelay(t, func() int {
-		return runReportStopBlock([]string{
-			"--class", "infrastructure", "--refusal-record", filepath.Join(t.TempDir(), "refusals.json"),
-			"--session", "arming-detail", "--cause", "supervision arming failed", "--remedy", remedy,
-			"--arming-result", armingResult, "arming failed",
-		})
+	stdout, code := hookOwners{diagnostics: io.Discard}.StopBlock(hooks.StopBlockRequest{
+		Class: "infrastructure", RefusalRecord: filepath.Join(t.TempDir(), "refusals.json"),
+		Session: "arming-detail", Cause: "supervision arming failed", Remedy: remedy,
+		ArmingResult: armingResult, Detail: "arming failed",
 	})
-	if code != 0 || stderr != "" {
-		t.Fatalf("stop notice composition failed: code=%d stderr=%q", code, stderr)
+	if code != 0 {
+		t.Fatalf("stop notice composition failed: code=%d", code)
 	}
 	var response map[string]any
 	if err := json.Unmarshal([]byte(stdout), &response); err != nil {

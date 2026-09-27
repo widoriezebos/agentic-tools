@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
@@ -842,6 +844,10 @@ func runReportTurnVerdict(args []string) int {
 }
 
 func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
+	return runReportTurnVerdictTo(args, os.Stdout, os.Stderr, resolve, resolveMachine)
+}
+
+func runReportTurnVerdictTo(args []string, stdout, stderr io.Writer, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
 	flags := flag.NewFlagSet("report turn-verdict", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	session := flags.String("session", "", "normalized session id")
@@ -856,6 +862,24 @@ func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.En
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	return reportTurnVerdict(hooks.TurnVerdictRequest{
+		Root: *root, Session: *session, Watchdog: *watchdog, MainID: *mainId, StopHookActive: *stopHookActive,
+		SessionAbsent: *sessionAbsent, Transcript: *transcript, Runtime: *runtimeName,
+		FactsFile: *factsFile, CompletionFile: *completionFile,
+	}, stdout, stderr, resolve, resolveMachine)
+}
+
+// reportTurnVerdict is the one structured turn-end decision: it scans the
+// checkout, judges the turn, writes the frozen facts and completion
+// observation a Stop presentation reads, and prints the verdict JSON.
+func reportTurnVerdict(request hooks.TurnVerdictRequest, stdout, stderr io.Writer, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
+	root, session, watchdog, mainId := &request.Root, &request.Session, &request.Watchdog, &request.MainID
+	stopHookActive, sessionAbsent := &request.StopHookActive, &request.SessionAbsent
+	transcript, runtimeName := &request.Transcript, &request.Runtime
+	factsFile, completionFile := &request.FactsFile, &request.CompletionFile
+	if *root == "" {
+		*root = "."
+	}
 	for _, output := range []struct {
 		name string
 		path string
@@ -864,19 +888,19 @@ func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.En
 			continue
 		}
 		if !filepath.IsAbs(output.path) {
-			fmt.Fprintf(os.Stderr, "report turn-verdict: %s must be absolute\n", output.name)
+			fmt.Fprintf(stderr, "report turn-verdict: %s must be absolute\n", output.name)
 			return 2
 		}
 		if _, err := os.Lstat(output.path); err == nil {
-			fmt.Fprintf(os.Stderr, "report turn-verdict: %s must not already exist\n", output.name)
+			fmt.Fprintf(stderr, "report turn-verdict: %s must not already exist\n", output.name)
 			return 2
 		} else if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "report turn-verdict: cannot inspect %s: %v\n", output.name, err)
+			fmt.Fprintf(stderr, "report turn-verdict: cannot inspect %s: %v\n", output.name, err)
 			return 2
 		}
 	}
 	if *factsFile != "" && filepath.Clean(*factsFile) == filepath.Clean(*completionFile) {
-		fmt.Fprintln(os.Stderr, "report turn-verdict: --facts-file and --completion-file must differ")
+		fmt.Fprintln(stderr, "report turn-verdict: --facts-file and --completion-file must differ")
 		return 2
 	}
 	var endpoint goal.Endpoint
@@ -888,7 +912,7 @@ func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.En
 			machine, err = resolveMachine(*root)
 		}
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(stderr, err)
 			return 1
 		}
 	}
@@ -901,14 +925,14 @@ func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.En
 	}
 	now, err := goalCommandNow(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if len(scan.Busy) == 0 {
 		var warning string
 		scan.Open, warning, err = report.MarkOpenWorkSeen(*root, scan.Open, now)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(stderr, err)
 			return 1
 		}
 		if warning != "" {
@@ -943,7 +967,7 @@ func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.En
 		verdict, err = store.TurnVerdictAtEndpoint(endpoint, machine, scan, *session, *watchdog, *mainId, options)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if verdict.Facts != nil {
@@ -951,20 +975,20 @@ func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.En
 	}
 	data, err := json.Marshal(verdict)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if *factsFile != "" {
 		if verdict.Facts == nil {
-			fmt.Fprintln(os.Stderr, "report turn-verdict: frozen facts are unavailable for this judgment")
+			fmt.Fprintln(stderr, "report turn-verdict: frozen facts are unavailable for this judgment")
 		} else if facts, marshalErr := json.Marshal(verdict.Facts); marshalErr != nil {
-			fmt.Fprintln(os.Stderr, "report turn-verdict: frozen facts could not be rendered:", marshalErr)
+			fmt.Fprintln(stderr, "report turn-verdict: frozen facts could not be rendered:", marshalErr)
 		} else if durable, writeErr := turnVerdictFactsWriter(*factsFile, string(facts)+"\n", ""); writeErr != nil || !durable {
 			_ = os.Remove(*factsFile)
 			if writeErr != nil {
-				fmt.Fprintln(os.Stderr, "report turn-verdict: frozen facts could not be written:", writeErr)
+				fmt.Fprintln(stderr, "report turn-verdict: frozen facts could not be written:", writeErr)
 			} else {
-				fmt.Fprintln(os.Stderr, "report turn-verdict: frozen facts could not be written: crash durability is unknown")
+				fmt.Fprintln(stderr, "report turn-verdict: frozen facts could not be written: crash durability is unknown")
 			}
 		}
 	}
@@ -982,17 +1006,17 @@ func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.En
 		}
 		observation := report.BindStopCompletion(completionCapture, completionRoot, completionSession, *mainId, now)
 		if completion, marshalErr := json.Marshal(observation); marshalErr != nil {
-			fmt.Fprintln(os.Stderr, "report turn-verdict: completion observation could not be rendered:", marshalErr)
+			fmt.Fprintln(stderr, "report turn-verdict: completion observation could not be rendered:", marshalErr)
 		} else if durable, writeErr := turnVerdictCompletionWriter(*completionFile, string(completion)+"\n", ""); writeErr != nil || !durable {
 			_ = os.Remove(*completionFile)
 			if writeErr != nil {
-				fmt.Fprintln(os.Stderr, "report turn-verdict: completion observation could not be written:", writeErr)
+				fmt.Fprintln(stderr, "report turn-verdict: completion observation could not be written:", writeErr)
 			} else {
-				fmt.Fprintln(os.Stderr, "report turn-verdict: completion observation could not be written: crash durability is unknown")
+				fmt.Fprintln(stderr, "report turn-verdict: completion observation could not be written: crash durability is unknown")
 			}
 		}
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(stdout, string(data))
 	return 0
 }
 

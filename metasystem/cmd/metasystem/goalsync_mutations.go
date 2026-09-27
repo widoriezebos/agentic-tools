@@ -132,35 +132,68 @@ func runGoalHandoverMutation(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *id == "" || *targetMachine == "" || *targetLineage == "" || *targetEpoch < 1 || *batch == "" {
-		fmt.Fprintln(os.Stderr, "goal handover needs --id, --target-machine, --target-lineage, --target-claim-epoch, and --batch")
+	request := goalHandoverRequest{Root: *root, GoalID: *id, TargetMachine: *targetMachine, TargetLineage: *targetLineage,
+		TargetEpoch: *targetEpoch, Batch: *batch, TargetRoot: *targetRoot}
+	if problem := request.usage(); problem != "" {
+		fmt.Fprintln(os.Stderr, problem)
 		return 2
 	}
-	if !converted(*root) {
+	// The process entry supplies its own caller and the lineage it was
+	// given or inherited, read once here at the boundary.
+	entry := ownerInvocation{caller: entryCallerIdentity(), lineage: *lineage}
+	if entry.lineage == "" {
+		entry.lineage = os.Getenv("METASYSTEM_OWNER_LINEAGE")
+	}
+	res, err := goalHandoverEffect(entry, request)
+	if errors.Is(err, errLegacyLedger) {
 		fmt.Fprintln(os.Stderr, "goal handover works the synced backlog; this checkout still carries the legacy ledger")
 		return 1
 	}
-	req, err := syncReq("handover", *root, "", *lineage)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	return printSyncResult(res, err)
+}
+
+// goalHandoverRequest is one claim transfer to a named target pair.
+type goalHandoverRequest struct {
+	Root, GoalID, TargetMachine, TargetLineage string
+	TargetEpoch                                int64
+	Batch, TargetRoot                          string
+}
+
+func (r goalHandoverRequest) usage() string {
+	if r.GoalID == "" || r.TargetMachine == "" || r.TargetLineage == "" || r.TargetEpoch < 1 || r.Batch == "" {
+		return "goal handover needs --id, --target-machine, --target-lineage, --target-claim-epoch, and --batch"
 	}
-	bindHandoverTargetRoot(&req, *targetRoot)
+	return ""
+}
+
+var errLegacyLedger = errors.New("this checkout still carries the legacy ledger")
+
+// goalHandoverEffect is the handover owner under an explicit invocation
+// context: classification starts at the supplied identity and the request
+// carries the supplied lineage.
+func goalHandoverEffect(invocation ownerInvocation, request goalHandoverRequest) (goal.PublishResult, error) {
+	if !converted(request.Root) {
+		return goal.PublishResult{}, errLegacyLedger
+	}
+	req, err := invocation.syncRequest("handover", request.Root, false)
+	if err != nil {
+		return goal.PublishResult{}, err
+	}
+	bindHandoverTargetRoot(&req, request.TargetRoot)
 	liveness := func() (identity.Liveness, error) {
-		if req.Actor.Machine == *targetMachine && req.Actor.Lineage == *targetLineage {
-			if req.ClaimEpoch != *targetEpoch || req.ClaimEpoch < 1 {
-				return identity.Unknown, fmt.Errorf("the current target pair is not authenticated at epoch %d", *targetEpoch)
+		if req.Actor.Machine == request.TargetMachine && req.Actor.Lineage == request.TargetLineage {
+			if req.ClaimEpoch != request.TargetEpoch || req.ClaimEpoch < 1 {
+				return identity.Unknown, fmt.Errorf("the current target pair is not authenticated at epoch %d", request.TargetEpoch)
 			}
 			return identity.Alive, nil
 		}
-		authRoot, err := goalHandoverAuthenticationRoot(*root, *targetRoot)
+		authRoot, err := goalHandoverAuthenticationRoot(request.Root, request.TargetRoot)
 		if err != nil {
 			return identity.Unknown, err
 		}
-		return goalHandoverTargetLiveness(authRoot, *targetMachine, *targetLineage, *targetEpoch)
+		return goalHandoverTargetLiveness(authRoot, request.TargetMachine, request.TargetLineage, request.TargetEpoch)
 	}
-	res, err := goal.Handover(req, *id, *targetMachine, *targetLineage, *targetEpoch, *batch, liveness)
-	return printSyncResult(res, err)
+	return goal.Handover(req, request.GoalID, request.TargetMachine, request.TargetLineage, request.TargetEpoch, request.Batch, liveness)
 }
 
 func printCarryMutation(res goal.PublishResult, detail string, err error) int {
@@ -210,7 +243,7 @@ func runGoalCarryLanding(args []string) int {
 	temporary := flags.String("temporary-human-word", "", "not accepted by carry")
 	reviewBy := flags.String("review-by", "", "not accepted by carry")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *by == "" || *tree == "" || *past == "" || strings.TrimSpace(*why) == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
 		return 2
 	}
 	if *temporary != "" || *reviewBy != "" {
@@ -628,7 +661,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		if nowErr != nil {
 			return goal.VerbRequest{}, nowErr
 		}
-		fullProof, fullErr := dependencies.proveHuman(root, int64(os.Getppid()), nil, now)
+		fullProof, fullErr := dependencies.proveHuman(root, dependencies.authorityFacts.caller.pid, nil, now)
 		if fullErr == nil && fullProof.ValidFor(root) {
 			authority = &fullProof
 		} else {
@@ -638,7 +671,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 				}
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove enrolled human ancestry: %w", fullErr)
 			}
-			terminalProof, terminalErr := dependencies.proveTerminal(root, int64(os.Getppid()), nil, now)
+			terminalProof, terminalErr := dependencies.proveTerminal(root, dependencies.authorityFacts.caller.pid, nil, now)
 			if terminalErr != nil {
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove terminal human ancestry: %w", terminalErr)
 			}
@@ -667,7 +700,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	if lineage == "" {
 		enrollment, err := humanauthority.ReadEnrollment(root)
 		if err != nil {
-			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem goal enroll-terminal here once, or pass --lineage: %w", err)
+			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem internal goal enroll-terminal here once, or pass --lineage: %w", err)
 		}
 		now, nowErr := commandNow(root)
 		if nowErr != nil {
@@ -678,7 +711,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 		if authority != nil {
 			proof = *authority
 		} else {
-			proof, proofErr = dependencies.proveHuman(root, int64(os.Getppid()), nil, now)
+			proof, proofErr = dependencies.proveHuman(root, dependencies.authorityFacts.caller.pid, nil, now)
 		}
 		if proofErr != nil || proof.Outcome != humanauthority.OutcomeProven || !proof.ValidFor(root) {
 			outcome := proof.Outcome
@@ -721,12 +754,17 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 type goalAuthorityReadFacts struct {
 	repositoryTop  func(string) (string, error)
 	ledgerIdentity func(string) string
+	// caller is the supplied process identity classification and human
+	// proof start from (owner_invocation.go): a process entry's own caller,
+	// or the current process on an edge that replaced a child.
+	caller processIdentity
 }
 
 func defaultGoalAuthorityReadFacts() goalAuthorityReadFacts {
 	return goalAuthorityReadFacts{
 		repositoryTop:  stateroot.RepositoryTop,
 		ledgerIdentity: goal.ExistingLedgerIdentity,
+		caller:         entryCallerIdentity(),
 	}
 }
 
@@ -735,7 +773,12 @@ func brainHumanWordClassification(verb, root, by string, observedProof *humanaut
 }
 
 func brainHumanWordClassificationWithFacts(verb, root, by string, observedProof *humanauthority.Proof, facts goalAuthorityReadFacts) (lease.ClassifyResult, error) {
-	classification, classifyErr := classifyVerbCallerWith(root, int64(os.Getppid()), facts.repositoryTop)
+	classification, classifyErr := lease.ClassifyResult{}, error(nil)
+	if callerPid, err := facts.caller.classifiablePid(identity.KernelProber{}); err != nil {
+		classifyErr = err
+	} else {
+		classification, classifyErr = classifyVerbCallerWith(root, callerPid, facts.repositoryTop)
+	}
 	brainState := brain.Read(root, facts.ledgerIdentity(root))
 	if brainState.State != brain.Undeclared {
 		command := fmt.Sprintf("metasystem goal %s --root <checkout> --id <id> --by <name> <the verb's own flags>", verb)
@@ -796,7 +839,7 @@ func runGoalReadItems(args []string) int {
 
 func runGoalReadItemsWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items add|close|list [flags]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal goal read-items add|close|list [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -861,7 +904,7 @@ func runGoalReadItemsAddWithProof(args []string, observed *humanauthority.Proof,
 	var items repeatedStrings
 	flags.Var(&items, "item", "read item (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *read == "" || (len(items) == 0) == (*itemsFile == "") {
-		dependencies.complain("usage: metasystem goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
+		dependencies.complain("usage: metasystem internal goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
 		return 2
 	}
 	texts := []string(items)
@@ -917,7 +960,7 @@ func runGoalReadItemsCloseWithProof(args []string, observed *humanauthority.Proo
 	moved := flags.String("moved", "", "open goal receiving the item")
 	accepted := flags.String("accepted", "", "reason this is not a defect")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *item == "" {
-		dependencies.complain("usage: metasystem goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
+		dependencies.complain("usage: metasystem internal goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
 		return 2
 	}
 	closure := goal.ReadItemClosure{}
@@ -1488,6 +1531,31 @@ func malformedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, value s
 	return completedBudgetRemedy(values, file, completed, box, horizon)
 }
 
+// bindGoalTierViewFromLedger binds the goal's tier view before the owner has
+// read the ledger, for a remedy or hint printed first. It is best effort: a
+// goal it cannot read keeps the remedy's own words, and the owner that runs
+// next reports the read failure itself.
+func bindGoalTierViewFromLedger(values *humanVerbValues, root, id string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) {
+	if !converted(root) || id == "" || dependencies.endpoint == nil || commandNow == nil {
+		return
+	}
+	endpoint, err := dependencies.endpoint(root)
+	if err != nil {
+		return
+	}
+	now, err := commandNow(root)
+	if err != nil {
+		return
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return
+	}
+	if file := projection.Tree.Live[id]; file != nil {
+		_ = bindGoalTierView(values, root, file)
+	}
+}
+
 func bindGoalTierView(values *humanVerbValues, root string, file *goal.GoalFile) error {
 	tier := file.Tier
 	if tier == 0 {
@@ -1992,7 +2060,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			if code == 0 {
 				if metricsErr := concludedGoalMetrics(f.root, f.id, completion.reporter); metricsErr != nil {
 					dependencies.report.secondary = append(dependencies.report.secondary, metricsErr)
-					dependencies.report.repair = []string{"metasystem", "metrics", "report", "--goal", f.id}
+					dependencies.report.repair = []string{"metasystem", "internal", "metrics", "report", "--goal", f.id}
 					dependencies.report.repairReason = "write the goal's metrics report; run it from " + f.root
 				}
 			}
@@ -2593,7 +2661,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 		return refuseHumanVerb(values, 2, "needs --draft", humanVerbRemedy{words: "provide the classification draft path before choosing --preview or --confirm"})
 	}
 	if *preview == (*confirm != "") {
-		return refuseHumanVerb(values, 2, "needs a synced backlog, --draft, and exactly one of --preview or --confirm", humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		return refuseHumanVerb(values, 2, "needs a synced backlog, --draft, and exactly one of --preview or --confirm", humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	draft, err := os.ReadFile(*draftPath)
 	if err != nil {
@@ -2609,7 +2677,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	}
 	listing, err := goal.PreviewClassificationSweep(endpoint, draft, now)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	if *preview {
 		for _, line := range listing.Lines {
@@ -2619,7 +2687,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 		return 0
 	}
 	if listing.Digest != *confirm {
-		return refuseHumanVerb(values, 1, fmt.Sprintf("SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s", *confirm, listing.Digest), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		return refuseHumanVerb(values, 1, fmt.Sprintf("SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s", *confirm, listing.Digest), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	authorityFlags := &syncFlags{root: *root, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureHumanAuthority}
 	if _, err := classifyGoalAuthorityFirstWithFacts("classify-sweep", authorityFlags, dependencies.authorityFacts); err != nil {
@@ -2649,7 +2717,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 			if installErr != nil {
 				detail = installErr.Error()
 			}
-			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+proofErr.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
@@ -2664,11 +2732,11 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 		}
 		res, classifyErr := goal.ClassifyTier(req, proposal, index == len(listing.Proposals)-1)
 		if classifyErr != nil {
-			return refuseHumanVerb(values, 1, classifyErr.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+			return refuseHumanVerb(values, 1, classifyErr.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if res.Outcome != goal.OutcomeConfirmed {
 			printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
-			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+proofErr.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
@@ -2734,6 +2802,8 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 		values.id = f.id
 		routeBox := ""
 		hintBox := ""
+		// The goal's tier decides what a norm remedy or hint names.
+		bindGoalTierViewFromLedger(values, f.root, f.id, commandNow, dependencies)
 		if f.budgetBox != "" {
 			if f.budgetBox != "box" {
 				return refuseHumanVerb(values, 2, "--budget is box", humanVerbRemedy{command: values.budgetCommand("norm")})
@@ -3261,6 +3331,9 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 	projection, projectErr := goal.Project(req.Endpoint, false, req.Now)
 	if projectErr == nil {
 		if file := projection.Tree.Live[f.id]; file != nil && file.State == goal.StateClaimed && file.StopFence == nil && file.Budget == nil {
+			// The goal's tier decides what the norm remedy names; an unreadable
+			// tier box leaves the remedy as norm, which the owner then refuses.
+			_ = bindGoalTierView(values, f.root, file)
 			return refuseHumanVerb(values, 1, "the claimed goal is not breach-stopped and has no standing budget", humanVerbRemedy{command: values.budgetCommand("norm")})
 		}
 	}
@@ -3276,6 +3349,7 @@ func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNo
 		if projectErr == nil {
 			if file := projection.Tree.Live[f.id]; file != nil {
 				if file.Budget == nil {
+					_ = bindGoalTierView(values, f.root, file)
 					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", resolvedBinding.Revision), humanVerbRemedy{command: values.budgetCommand("norm")})
 				}
 				if viewErr := bindGoalTierView(values, f.root, file); viewErr != nil {
@@ -3431,7 +3505,7 @@ func mainSplitRatification(id, digest string, classification lease.ClassifyResul
 		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s is main-origin; its split draft is ratified by the coordinator — re-run goal split from the MAIN checkout-lease holder session (a human may also run it with --by)", id)
 	}
 	if classification.ClaimEpoch == nil {
-		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s has a MAIN holder classification but no checkout lease epoch; run metasystem up to establish the authenticated lease, then retry", id)
+		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s has a MAIN holder classification but no checkout lease epoch; run metasystem session start to establish the authenticated lease, then retry", id)
 	}
 	return goal.SplitRatification{Tier: goal.RatifierMain, MainID: classification.MainId, ClaimEpoch: *classification.ClaimEpoch, DraftSHA256: digest}, nil
 }

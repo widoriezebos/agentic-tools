@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -41,7 +42,7 @@ func runConfigTailor(args []string) int {
 		return 2
 	}
 	if *conf == "" || *runtimes == "" {
-		fmt.Fprintf(os.Stderr, "usage: metasystem config tailor --conf F --runtimes %s|none [--set key=value ...]\n",
+		fmt.Fprintf(os.Stderr, "usage: metasystem internal config tailor --conf F --runtimes %s|none [--set key=value ...]\n",
 			strings.Join(runtimereg.Names(), ","))
 		return 2
 	}
@@ -149,22 +150,28 @@ func runConfigValidate(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	tiersAbsent, problems, err := config.Validate(*conf, *repo)
+	return configValidateTo(os.Stdout, os.Stderr, *conf, *repo)
+}
+
+// configValidateTo validates the configuration domain on the caller's
+// streams.
+func configValidateTo(stdout, stderr io.Writer, conf, repo string) int {
+	tiersAbsent, problems, err := config.Validate(conf, repo)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	proofRunProblems, err := proofRunConfigProblems(*conf)
+	proofRunProblems, err := proofRunConfigProblems(conf)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	problems = append(problems, proofRunProblems...)
 	for _, problem := range problems {
-		fmt.Fprintf(os.Stderr, "invalid metasystem configuration: %s\n", problem)
+		fmt.Fprintf(stderr, "invalid metasystem configuration: %s\n", problem)
 	}
 	if tiersAbsent {
-		fmt.Println("INFO: model tiers are absent; dispatch overrides therefore always escalate")
+		fmt.Fprintln(stdout, "INFO: model tiers are absent; dispatch overrides therefore always escalate")
 	}
 	if len(problems) > 0 {
 		return 1
@@ -182,8 +189,14 @@ func runConfigKeys(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	for _, key := range config.Keys(*conf, *matching, os.Environ()) {
-		fmt.Println(key)
+	return configKeysTo(os.Stdout, *conf, *matching, os.Environ())
+}
+
+// configKeysTo enumerates configured keys onto the caller's stream; the
+// environment is the one whose numeric-suffix members count.
+func configKeysTo(stdout io.Writer, conf, matching string, environment []string) int {
+	for _, key := range config.Keys(conf, matching, environment) {
+		fmt.Fprintln(stdout, key)
 	}
 	return 0
 }
@@ -199,7 +212,7 @@ func runConfigConfValue(args []string) int {
 		return 2
 	}
 	if *file == "" || *key == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem config conf-value --file F --key K")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal config conf-value --file F --key K")
 		return 2
 	}
 	value, found, err := config.ConfLookup(*file, *key)

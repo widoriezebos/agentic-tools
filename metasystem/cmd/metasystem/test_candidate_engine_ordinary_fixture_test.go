@@ -278,7 +278,13 @@ func (f *ordinaryCandidateFixture) workspace() gittree.Workspace {
 	return gittree.Workspace{Dir: f.root, RawSource: f.raw}
 }
 func (f *ordinaryCandidateFixture) dependency() candidateEngineIO {
-	return candidateEngineIO{runGit: f.runGit, open: f.open}
+	return candidateEngineIO{runGit: f.runGit, open: f.open, buildArgv: fixtureCandidateBuildArgv}
+}
+
+// fixtureCandidateBuildArgv runs the fixture tree's own build script in place
+// of the bootstrap build: the fixture tree carries no Go module to compile.
+func fixtureCandidateBuildArgv(output string) []string {
+	return []string{"bash", "scripts/agents/go-build.sh", "--trimpath", "--out", output}
 }
 func (f *ordinaryCandidateFixture) take(kind string) ordinaryCandidateStep {
 	f.t.Helper()

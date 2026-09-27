@@ -10,11 +10,11 @@ The single routing layer. `AGENTS.md` owns always-on behavior; this table owns w
 | Working with the human team | `docs/collaboration.md` | Answering, reporting, committing, preparing review, or taking a correction |
 | The human teammate's manual | `docs/working-with-agents.md` | The user asks how to work with agents here |
 | Session handoff and task-local state | `plans/README.md` | Starting or ending a multi-session stream |
-| The goal thread (`open`/`claim`) | `plans/README.md` | Starting a program, ending a turn, or asking what this repository is FOR now; the ledger is standing, exempt from delete-when-shipped |
+| The goal thread (`goal open`/`goal claim`) | `plans/README.md` | Starting a program, ending a turn, or asking what this repository is FOR now; the ledger is standing, exempt from delete-when-shipped |
 | Code and design standards | `docs/design/design-principles.md` | Any non-trivial code, design, refactor, or consequential change |
 | Completion check and design proof | `docs/design/design-obligation-gate.md` | Finishing any change; full matrix on its listed triggers |
 | End-to-end verification | `skills/verify/SKILL.md` | A change claims to work and can be run |
-| Waiting without model polling | `metasystem wait` | Waiting for a job, run, attempt, goal, or path |
+| Waiting without model polling | `metasystem work wait` | Waiting for a job, run, attempt, goal, or path |
 | Adversarial design critique | `skills/design-critique/SKILL.md` | A design is ready to attack, or a critique loop needs a stop decision |
 | Two-layer implementation critique | `skills/code-critique/SKILL.md` | Implemented work needs conformance review against its brief and diff, then defect review |
 | Behavior-preserving refactor | `skills/refactor/SKILL.md` | Restructuring or cleanup whose contract is unchanged behavior |

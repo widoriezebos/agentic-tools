@@ -114,6 +114,13 @@ func TestBlockingReservedCapDecisions(t *testing.T) {
 			ceiling: 60, refusal: "reservation job-r is malformed",
 		},
 		{
+			name: "corrupt fence counters refuse",
+			files: map[string]string{
+				"missions/m1/fences.json": `{broken`,
+			},
+			ceiling: 60, refusal: "fence counters unreadable",
+		},
+		{
 			name: "reservation without integral capMin refuses",
 			files: map[string]string{
 				"missions/m1/fences.json": `{"reservations":{"job-r":{"capMin":80.5}}}`,
@@ -164,6 +171,10 @@ func TestBlockingReservedCapFixtureFence(t *testing.T) {
 	agents := newAgentsDir(t)
 	root := filepath.Dir(filepath.Dir(agents))
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", filepath.Join(root, "id.json"))
+
+	if _, _, err := BlockingReservedCap(agents, 60); err == nil || !strings.Contains(err.Error(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE is set") {
+		t.Fatalf("a leaked fixture on a checkout without a conf must refuse arming, got %v", err)
+	}
 
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644); err != nil {
 		t.Fatal(err)

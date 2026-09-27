@@ -110,7 +110,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			result.Summary = fmt.Sprintf("channel question %s is answered through its channel", c.ID)
 		case c.Thread == nil:
 			result.Summary = fmt.Sprintf("channel question %s is not delivered yet (%d failed deliveries)", c.ID, c.Undelivered)
-			result.next, result.nextReason = inv.publicArgv("ask", "--retry", c.ID), "retry delivering exactly this question; check the channel settings first when it keeps failing"
+			result.next, result.nextReason = inv.publicArgv("question", "retry", c.ID), "retry delivering exactly this question; check the channel settings first when it keeps failing"
 		default:
 			result.Summary = fmt.Sprintf("channel question %s waits for the person's reply in its channel thread", c.ID)
 			result.text = []string{channel.ReplyInstructions(c)}
@@ -124,7 +124,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
 		Summary: fmt.Sprintf("mission %s's question %s waits for an answer", q.mission, q.id),
-		next:    inv.publicArgv("answer", q.publicName(), "TEXT"), nextReason: "a person answers the mission's question"}
+		next:    inv.publicArgv("question", "answer", q.publicName(), "TEXT"), nextReason: "a person answers the mission's question"}
 }
 
 func runIntentShowQuestion(inv *intentInvocation, args []string) int {
@@ -175,7 +175,7 @@ func (inv *intentInvocation) waitQuestion(ref string) intentResult {
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "question", ID: q.id}}, "channel question "+q.id+" is answered", nil)
 	if result.Outcome != intentConfirmed {
 		result.Outcome = intentInProgress
-		result.next, result.nextReason = inv.publicArgv("wait", "question", "channel:"+q.id), "the same wait continues; delivery or the answer is still pending"
+		result.next, result.nextReason = inv.publicArgv("question", "wait", "channel:"+q.id), "the same wait continues; delivery or the answer is still pending"
 		if view := inv.questionView(q); view.Next != nil || len(view.next) > 0 {
 			result.Decision = view.Summary
 		}
@@ -198,7 +198,7 @@ func runIntentAskRetry(inv *intentInvocation, id string) int {
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: err.Error(), next: inv.sameCommand(), nextReason: "the same retry runs once the poll finishes"})
 	case err != nil:
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "question " + id + " was not retried: " + err.Error(),
-			next: inv.publicArgv("settings"), nextReason: "check the channel settings"})
+			next: inv.publicArgv("settings", "show"), nextReason: "check the channel settings"})
 	}
 	switch outcome {
 	case channel.RetryDelivered:
@@ -210,7 +210,7 @@ func runIntentAskRetry(inv *intentInvocation, id string) int {
 	}
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data,
 		Summary: fmt.Sprintf("question %s is still not delivered (%d failed deliveries); it stays open", id, q.Undelivered),
-		next:    inv.publicArgv("settings", "channel.provider"), nextReason: "check the channel provider settings, then retry"})
+		next:    inv.publicArgv("settings", "show", "channel.provider"), nextReason: "check the channel provider settings, then retry"})
 }
 
 func runIntentAskWithdraw(inv *intentInvocation, id string) int {

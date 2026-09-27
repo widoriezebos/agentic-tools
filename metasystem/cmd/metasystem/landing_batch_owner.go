@@ -360,20 +360,28 @@ func productionReturnTarget(landingRoot, tree string, prober identity.Prober, un
 	return batch.ReturnTarget{State: batch.ReturnTargetUnknown, Reason: "source identity is not provable"}
 }
 
-var batchChildRunner = runBatchChildAs
+// batchOwnerCallSet is the ledger and landing owners the landing path calls
+// in its own process, each under an explicit invocation context (design 6.2):
+// the process making the call is the supplied identity, and the lineage is
+// named, never inherited. Tests replace the set.
+type batchOwnerCallSet struct {
+	handover func(ownerInvocation, goalHandoverRequest) error
+	editNext func(invocation ownerInvocation, root, goalID, next string) error
+	release  func(invocation ownerInvocation, root, goalID string) error
+	held     func(root, base, commit, remote, ref string) error
+}
 
-func runBatchChildAs(root, lineage string, args ...string) error {
-	binary, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	command := exec.Command(binary, args...)
-	command.Dir = root
-	command.Env = append(os.Environ(), "METASYSTEM_OWNER_LINEAGE="+lineage)
-	if output, err := command.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
-	}
-	return nil
+var batchOwnerCalls = batchOwnerCallSet{handover: goalHandoverOwner, editNext: goalEditNextOwner, release: goalReleaseOwner, held: landingHeld}
+
+// landingOwnerInvocation is the landing owner's own context: it supplies
+// itself, as its children's parent did, and its lineage.
+func landingOwnerInvocation() ownerInvocation {
+	return ownerCallFromThisProcess(landingOwnerLineage)
+}
+
+// batchEditNext rewrites a goal's next step as the landing owner.
+func batchEditNext(root, goalID, next string) error {
+	return batchOwnerCalls.editNext(landingOwnerInvocation(), root, goalID, next)
 }
 
 func productionReturnSeams(root string, tree func() string) batch.ReturnSeams {
@@ -394,16 +402,15 @@ func productionReturnSeams(root string, tree func() string) batch.ReturnSeams {
 			if err != nil {
 				return err
 			}
-			return batchChildRunner(controlRoot, landingOwnerLineage, "goal", "handover", "--root", controlRoot, "--id", goalID,
-				"--lineage", landingOwnerLineage, "--target-machine", source.Machine,
-				"--target-lineage", source.Lineage, "--target-claim-epoch", strconv.FormatUint(epoch, 10),
-				"--batch", record.Batch, "--target-root", loaded.SeatRoot)
+			return batchOwnerCalls.handover(landingOwnerInvocation(), goalHandoverRequest{Root: controlRoot, GoalID: goalID,
+				TargetMachine: source.Machine, TargetLineage: source.Lineage, TargetEpoch: int64(epoch),
+				Batch: record.Batch, TargetRoot: loaded.SeatRoot})
 		},
 		Release: func(goalID, next string) error {
-			if err := batchChildRunner(controlRoot, landingOwnerLineage, "goal", "edit", "--root", controlRoot, "--id", goalID, "--next", next, "--lineage", landingOwnerLineage); err != nil {
+			if err := batchEditNext(controlRoot, goalID, next); err != nil {
 				return err
 			}
-			return batchChildRunner(controlRoot, landingOwnerLineage, "goal", "release", "--root", controlRoot, "--id", goalID, "--lineage", landingOwnerLineage)
+			return batchOwnerCalls.release(landingOwnerInvocation(), controlRoot, goalID)
 		},
 	}
 }
@@ -421,7 +428,7 @@ func findBatchUnit(root, batchID, goalID string) (batch.Unit, error) {
 	return batch.Unit{}, fmt.Errorf("batch unit %s is absent", goalID)
 }
 
-func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read func(string, string, string) (batch.ReturnLedgerGoal, error), run func(string, ...string) error) error {
+func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read func(string, string, string) (batch.ReturnLedgerGoal, error), handover func(goalHandoverRequest) error) error {
 	controlRoot := batch.ModuleRoot(root)
 	record, err := batch.NewStore(root, nil).Load(batchID)
 	if err != nil {
@@ -441,10 +448,8 @@ func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 		if ledger.ClaimEpoch > uint64(epoch) {
 			return fmt.Errorf("rebind joined goal %s: claim epoch %d is ahead of owner epoch %d", unit.GoalID, ledger.ClaimEpoch, epoch)
 		}
-		if err := run(controlRoot, "goal", "handover", "--root", controlRoot, "--id", unit.GoalID,
-			"--lineage", landingOwnerLineage, "--target-machine", machine,
-			"--target-lineage", landingOwnerLineage, "--target-claim-epoch", strconv.FormatInt(epoch, 10),
-			"--batch", batchID); err != nil {
+		if err := handover(goalHandoverRequest{Root: controlRoot, GoalID: unit.GoalID, TargetMachine: machine,
+			TargetLineage: landingOwnerLineage, TargetEpoch: epoch, Batch: batchID}); err != nil {
 			return fmt.Errorf("rebind joined goal %s: %w", unit.GoalID, err)
 		}
 	}
@@ -516,8 +521,8 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			return productionJoinAdmission(settings.Root, batchID, unit)
 		},
 		Rebind: func(batchID, tree string) error {
-			return rebindBatchClaims(settings.Root, batchID, tree, inputs.machine, held.epoch, batch.ReadReturnLedgerGoal, func(root string, args ...string) error {
-				return batchChildRunner(root, landingOwnerLineage, args...)
+			return rebindBatchClaims(settings.Root, batchID, tree, inputs.machine, held.epoch, batch.ReadReturnLedgerGoal, func(request goalHandoverRequest) error {
+				return batchOwnerCalls.handover(landingOwnerInvocation(), request)
 			})
 		},
 		Mint: func() (string, error) {
@@ -602,7 +607,7 @@ func parseBatchOwnerWithSource(args []string, verb string, clock func() time.Tim
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
 	interval := flags.Duration("interval", time.Minute, "owner tick interval")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *interval <= 0 {
-		return config.BatchLanding{}, 0, fmt.Errorf("usage: metasystem landing batch %s --root ROOT [--landing-root ROOT --max-wait DURATION]", verb)
+		return config.BatchLanding{}, 0, fmt.Errorf("usage: metasystem internal landing batch %s --root ROOT [--landing-root ROOT --max-wait DURATION]", verb)
 	}
 	if err := source.validate(); err != nil {
 		return config.BatchLanding{}, 0, err
@@ -702,7 +707,7 @@ func runBatchTickWithSource(args []string, source *batchOwnerSource) (code int) 
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
 	id := flags.String("batch", "", "batch id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch tick --root ROOT --batch ULID")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch tick --root ROOT --batch ULID")
 		return 2
 	}
 	if err := source.validate(); err != nil {

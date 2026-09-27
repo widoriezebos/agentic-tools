@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -239,7 +240,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 			// public test command, then continues under the same word.
 			continuation := stopped.next
 			stopped.Summary = fmt.Sprintf("the exception %s is recorded and its candidate is staged in %s, but no test run has proved that candidate yet", opid, primary)
-			stopped.next = []string{"metasystem", "test", "--goal", goalID, "--repo", primary}
+			stopped.next = []string{"metasystem", "test", "run", "--goal", goalID, "--repo", primary}
 			stopped.nextReason = "prove the staged candidate, then continue under the same exception: " + shellCommand(continuation)
 			stopped.Data.(map[string]any)["afterProof"] = continuation
 		}
@@ -252,7 +253,7 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 // the word's own recorded refusal and person: the one explicit decision
 // that authorizes the goal's composition on the current main.
 func (inv *intentInvocation) carriedReplacement(goalID, opid string, status landing.CarryStatus, reason string) ([]string, string) {
-	return inv.publicArgv("land", goalID, "--exception", status.Past, "--replace-exception", opid,
+	return inv.publicArgv("work", "land", goalID, "--exception", status.Past, "--replace-exception", opid,
 			"--reason", reason, "--by", strings.TrimPrefix(status.By, "human:")),
 		"a person replaces the exception for the candidate composed on the current main"
 }
@@ -284,7 +285,7 @@ func (inv *intentInvocation) carriedUnidentified(goalID, opid, primary string, t
 func (inv *intentInvocation) carriedStopped(goalID, opid string, targets []intentTarget, data map[string]any, why string) intentResult {
 	return intentResult{Outcome: intentPartial, code: 1, Targets: targets, Data: data,
 		Summary: fmt.Sprintf("the exception %s is recorded, but %s", opid, why),
-		next:    inv.publicArgv("land", goalID, "--using-exception", opid), nextReason: "continue the carried landing under the same exception; no new exception is recorded"}
+		next:    inv.publicArgv("work", "land", goalID, "--using-exception", opid), nextReason: "continue the carried landing under the same exception; no new exception is recorded"}
 }
 
 // carriedRefresh fetches the code origin and the goal ledger the carried
@@ -294,10 +295,7 @@ func (inv *intentInvocation) carriedRefresh(primary string, targets []intentTarg
 	if _, err := inv.work().git(primary, "fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
 		return "", &intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: "the code origin cannot be fetched: " + err.Error() + "; nothing more was done"}
 	}
-	ran, problem := inv.engineVerb("goal", "fetch", "--root", primary)
-	if problem != nil {
-		return "", problem
-	}
+	ran := ownerCall(func(stdout, stderr io.Writer) int { return inv.ownerCalls().goalFetch(stdout, stderr, primary) })
 	output := string(ran.stdout)
 	_, tip, _ := strings.Cut(output, "tip=")
 	tip, _, _ = strings.Cut(tip, " ")

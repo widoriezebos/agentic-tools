@@ -97,7 +97,7 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		}
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 2, text: lines,
 			Summary:  fmt.Sprintf("design %s has %d critique chains; none is chosen by time; nothing was done", plan.recordID, len(chains)),
-			Decision: "the author decides and closes each chain that no longer applies: metasystem review job ROOT --dispositions FILE"}
+			Decision: "the author decides and closes each chain that no longer applies: metasystem work review j2:ROOT --dispositions FILE"}
 	}
 	chain := chains[0]
 	entry := inv.readDesignReviewEntry(plan.recordID)
@@ -124,7 +124,7 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 	case status != "completed":
 		return &intentResult{Targets: append(plan.targets, jobTarget(chain.NewestJob)), Outcome: intentFailed, code: 1,
 			Summary:    fmt.Sprintf("examination %d of design %s ended %s without findings to decide", chain.NewestRound, plan.recordID, status),
-			next:       inv.publicArgv("review", "design", relativeOrSame(inv.layout.GitRoot, plan.design), "--retry", strconv.FormatInt(chain.NewestRound, 10)),
+			next:       inv.publicArgv("design", "review", relativeOrSame(inv.layout.GitRoot, plan.design), "--retry", strconv.FormatInt(chain.NewestRound, 10)),
 			nextReason: "examine the design once more in the same chain, under its round limit, once the old process is proven stopped"}
 	}
 	examined := entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)]

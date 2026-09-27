@@ -4,24 +4,24 @@ import (
 	"cmp"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
-// reviewSubjectWords are the words review reads as a subject kind rather
-// than a goal id; review goal G reaches every goal, these included.
-var reviewSubjectWords = []string{"design", "job", "run", "commit", "changes", "diff", "goal"}
-
-// reviewGoalWords is review's goal form: review G, or review goal G when the
-// goal's id is one of review's subject words.
+// reviewGoalWords are the words of a goal's review.
 func reviewGoalWords(id string) []string {
-	if slices.Contains(reviewSubjectWords, id) {
-		return []string{"review", "goal", id}
+	return []string{"work", "review", id}
+}
+
+// workVerbWords are the public words of a goal-directed act named by its
+// verb: status is the top-level form, every other act belongs to work.
+func workVerbWords(verb string) []string {
+	if verb == "status" {
+		return []string{"status"}
 	}
-	return []string{"review", id}
+	return []string{"work", verb}
 }
 
 const diagnosticReviewNote = "diagnostic feedback only: it is not a goal review, approves nothing and cannot be landed"
@@ -31,10 +31,10 @@ const diagnosticReviewNote = "diagnostic feedback only: it is not a goal review,
 // the launch owner's standalone read. The request is frozen by the owner
 // before any read starts, so repeating it rejoins the same reads.
 func runIntentReviewDiagnostic(inv *intentInvocation, patch string) int {
-	for _, other := range []string{"work", "dispositions", "after", "finding", "test", "model", "tool-calls"} {
+	for _, other := range []string{"work", "dispositions", "after", "finding", "test", "model", "tool-calls", "commit"} {
 		if inv.input.has(other) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("review changes and review diff take --brief, --goal and --retry, not --%s; nothing was done", other)})
+				Summary: fmt.Sprintf("feedback on changes (work review --changes or --patch PATCH without a goal) takes --brief, --goal and --retry, not --%s; nothing was done", other)})
 		}
 	}
 	if !inv.input.has("brief") {
@@ -58,7 +58,7 @@ func runIntentReviewDiagnostic(inv *intentInvocation, patch string) int {
 	result, err := runner.StartRead(launch.ReadRequest{Directory: inv.cwd, Patch: patch, Brief: brief, Goal: inv.input.text("goal"), Retry: retry})
 	subject := "changes"
 	if patch != "" {
-		subject = "diff"
+		subject = inv.input.text("patch")
 	}
 	return inv.render(inv.diagnosticReadResult(result, err, subject))
 }
@@ -88,7 +88,7 @@ func runIntentReviewRef(inv *intentInvocation, verb, ref string) int {
 }
 
 func (inv *intentInvocation) diagnosticReadResult(result launch.ReadResult, err error, subject string) intentResult {
-	targets := []intentTarget{{Kind: "review", ID: result.Ref}}
+	targets := []intentTarget{{Kind: "read", ID: readRefPrefix + result.Ref}}
 	if err != nil {
 		message := err.Error()
 		code, _, _ := strings.Cut(message, ":")
@@ -104,8 +104,8 @@ func (inv *intentInvocation) diagnosticReadResult(result launch.ReadResult, err 
 			}
 			out.code = 1
 			if ref != "" {
-				out.Targets = []intentTarget{{Kind: "review", ID: ref}}
-				out.next, out.nextReason = inv.publicArgv("stop", "review", ref), "a retry follows only an attempt that ended; this stops the running one"
+				out.Targets = []intentTarget{{Kind: "read", ID: readRefPrefix + ref}}
+				out.next, out.nextReason = inv.publicArgv("work", "stop", readRefPrefix+ref), "a retry follows only an attempt that ended; this stops the running one"
 			}
 		case "READ_RETRY_UNKNOWN", "READ_REQUEST_INVALID", "READ_PATCH_UNREADABLE", "READ_BRIEF_MISSING", "READ_INPUT_MISSING", "READ_CHECKOUT_UNAVAILABLE":
 		default:
@@ -147,22 +147,22 @@ func (inv *intentInvocation) diagnosticReadResult(result launch.ReadResult, err 
 	switch {
 	case len(result.Uncertain) > 0:
 		out.Outcome, out.code = intentPartial, 1
-		out.Summary = fmt.Sprintf("review %s: %d read launch(es) could not be proved stopped", result.Ref, len(result.Uncertain))
-		out.next, out.nextReason = inv.publicArgv("stop", "review", result.Ref), "repeat the stop once the launches can be proved stopped"
+		out.Summary = fmt.Sprintf("read %s: %d read launch(es) could not be proved stopped", readRefPrefix+result.Ref, len(result.Uncertain))
+		out.next, out.nextReason = inv.publicArgv("work", "stop", readRefPrefix+result.Ref), "repeat the stop once the launches can be proved stopped"
 	case result.Stopping:
 		out.Outcome, out.code = intentInProgress, 124
-		out.Summary = fmt.Sprintf("review %s: attempt %d is stopping; its launches are proved stopped and no further read starts", result.Ref, result.Attempt.Number)
-		out.next, out.nextReason = inv.publicArgv("wait", "review", result.Ref, "--timeout", "1m"), "records the stopped attempt and offers its retry"
+		out.Summary = fmt.Sprintf("read %s: attempt %d is stopping; its launches are proved stopped and no further read starts", readRefPrefix+result.Ref, result.Attempt.Number)
+		out.next, out.nextReason = inv.publicArgv("work", "wait", readRefPrefix+result.Ref, "--timeout", "1m"), "records the stopped attempt and offers its retry"
 	case result.Attempt.State == "running":
 		out.Outcome, out.code = intentInProgress, 124
-		out.Summary = fmt.Sprintf("review %s: attempt %d is reading %d file(s)", result.Ref, result.Attempt.Number, len(result.Request.Files))
-		out.next, out.nextReason = inv.publicArgv("wait", "review", result.Ref, "--timeout", "10m"), "continue the reads"
+		out.Summary = fmt.Sprintf("read %s: attempt %d is reading %d file(s)", readRefPrefix+result.Ref, result.Attempt.Number, len(result.Request.Files))
+		out.next, out.nextReason = inv.publicArgv("work", "wait", readRefPrefix+result.Ref, "--timeout", "10m"), "continue the reads"
 	case result.Complete:
 		out.Outcome = intentConfirmed
-		out.Summary = fmt.Sprintf("review %s: every read finished and counted; the feedback is in the reports", result.Ref)
+		out.Summary = fmt.Sprintf("read %s: every read finished and counted; the feedback is in the reports", readRefPrefix+result.Ref)
 	default:
 		out.Outcome, out.code = intentPartial, 1
-		out.Summary = fmt.Sprintf("review %s: attempt %d ended %s without complete feedback", result.Ref, result.Attempt.Number, cmp.Or(result.Attempt.Outcome, result.Attempt.State))
+		out.Summary = fmt.Sprintf("read %s: attempt %d ended %s without complete feedback", readRefPrefix+result.Ref, result.Attempt.Number, cmp.Or(result.Attempt.Outcome, result.Attempt.State))
 		if again != nil {
 			out.next, out.nextReason = append(again, "--retry", strconv.Itoa(result.Attempt.Number)), "one new attempt of the same frozen request"
 		}
@@ -176,18 +176,18 @@ func (inv *intentInvocation) diagnosticRepeat(result launch.ReadResult, subject 
 	if subject == "" {
 		// Known only by its ref: the frozen request's own brief and patch
 		// have the same identity, so they reach the same request.
-		words := []string{"review", "changes", "--brief", result.Request.Brief}
+		words := []string{"work", "review", "--changes", "--brief", result.Request.Brief}
 		if result.Request.Kind == "patch" {
-			words = []string{"review", "diff", result.Request.Diff, "--brief", result.Request.Brief}
+			words = []string{"work", "review", "--patch", result.Request.Diff, "--brief", result.Request.Brief}
 		}
 		if result.Request.Goal != "" {
 			words = append(words, "--goal", result.Request.Goal)
 		}
 		return inv.publicArgv(words...)
 	}
-	words := []string{"review", "changes"}
-	if subject == "diff" {
-		words = []string{"review", "diff", inv.input.args[1]}
+	words := []string{"work", "review", "--changes"}
+	if subject != "" && subject != "changes" {
+		words = []string{"work", "review", "--patch", subject}
 	}
 	words = append(words, "--brief", inv.input.text("brief"))
 	if result.Request.Goal != "" {

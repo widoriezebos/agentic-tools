@@ -34,7 +34,7 @@ func TestCreationVerbsRefuseClosedFenceWithoutPublishing(t *testing.T) {
 			s := testStore(t)
 			s.FenceRead = func(string) (stopfence.Record, error) { return closedFence(), nil }
 			err := test.call(s)
-			if err == nil || !strings.Contains(err.Error(), "since 2026-09-07T00:00:00Z, by stop pid 74") || !strings.Contains(err.Error(), "metasystem arm") {
+			if err == nil || !strings.Contains(err.Error(), "since 2026-09-07T00:00:00Z, by stop pid 74") || !strings.Contains(err.Error(), "metasystem system start") {
 				t.Fatalf("closed-fence refusal = %v", err)
 			}
 			if records, unreadable := s.List(); len(records) != 0 || len(unreadable) != 0 {
@@ -97,7 +97,7 @@ func TestCreatorRaceAfterWrapperSpawnEndsGroupAndFailsLaunch(t *testing.T) {
 		t.Fatalf("second-read result = %v", err)
 	}
 	record, _ = s.Read("race-launch")
-	if record.Status != StatusEndedUnknown || record.Error == nil || *record.Error != "stopped by metasystem stop" {
+	if record.Status != StatusEndedUnknown || record.Error == nil || *record.Error != "stopped by metasystem system stop" {
 		t.Fatalf("raced launch record = %+v", record)
 	}
 	if len(signals) != 1 || signals[0] != syscall.SIGTERM || !s.groupEmpty(pid) {
@@ -177,7 +177,7 @@ func TestRegisterRaceFailsRecordAndNeverSignalsForeignProcess(t *testing.T) {
 		t.Fatalf("register race = %v", err)
 	}
 	record, _ := s.Read("race-register")
-	if record.Status != StatusEndedUnknown || record.FenceGeneration != 9 || record.Error == nil || *record.Error != "stopped by metasystem stop" {
+	if record.Status != StatusEndedUnknown || record.FenceGeneration != 9 || record.Error == nil || *record.Error != "stopped by metasystem system stop" {
 		t.Fatalf("raced register record = %+v", record)
 	}
 	if signals != 0 {
@@ -241,7 +241,7 @@ func TestAdoptRaceFailsRecordAndNeverSignalsForeignProcess(t *testing.T) {
 		t.Fatalf("adopt race = %v", err)
 	}
 	record, _ := s.Read("race-adopt")
-	if record.Status != StatusEndedUnknown || record.FenceGeneration != 11 || record.Error == nil || *record.Error != "stopped by metasystem stop" {
+	if record.Status != StatusEndedUnknown || record.FenceGeneration != 11 || record.Error == nil || *record.Error != "stopped by metasystem system stop" {
 		t.Fatalf("raced adopt record = %+v", record)
 	}
 	if signals != 0 {
@@ -305,7 +305,7 @@ func TestStopWrappedRunReprovesAndConcludes(t *testing.T) {
 		t.Fatalf("signals = %v", signals)
 	}
 	record, _ := s.Read("stop-wrapped")
-	if record.Status != StatusEndedUnknown || record.Error == nil || *record.Error != "stopped by metasystem stop" {
+	if record.Status != StatusEndedUnknown || record.Error == nil || *record.Error != "stopped by metasystem system stop" {
 		t.Fatalf("stopped record = %+v", record)
 	}
 }

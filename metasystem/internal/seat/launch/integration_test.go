@@ -100,10 +100,11 @@ func TestAClonedMachineIsAFleetSeatBeforeItIsEnrolled(t *testing.T) {
 		}
 	}
 	run(StepClone, StepTracking, StepConfiguration, StepNickname)
-	// The engine step is the one thing this test stands in for: go-build.sh
-	// runs the gate fence, which has no business running inside a test. What
-	// the build produces is an engine at this path, so the test produces one
-	// and the ledger step below runs against the real thing.
+	// The engine step is the one thing this test stands in for: the
+	// bootstrap build (go run ./cmd/devgate build) runs the gate fence,
+	// which has no business running inside a test. What the build produces
+	// is an engine at this path, so the test produces one and the ledger
+	// step below runs against the real thing.
 	buildEngine(t, filepath.Join(target, install, "bin", "metasystem"))
 	run(StepLedger)
 

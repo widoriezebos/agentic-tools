@@ -102,7 +102,7 @@ func TestHandoffStagesTheIntentWithThePredecessor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{nonce, "fix-it", fixture.binding.StateDigest, "metasystem context verify --root", "bounded views", "goal ledger and the job records"} {
+	for _, required := range []string{nonce, "fix-it", fixture.binding.StateDigest, "metasystem session verify --root", "bounded views", "goal ledger and the job records"} {
 		if !strings.Contains(string(brief), required) {
 			t.Fatalf("handoff brief omits %q:\n%s", required, brief)
 		}

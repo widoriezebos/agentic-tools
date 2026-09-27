@@ -26,8 +26,9 @@ const TickNamespace = "refs/metasystem/presence-copy"
 // has one, and a presence failure must never read as a ledger failure.
 const UINamespace = "refs/metasystem/presence-ui"
 
-// FetchNamespacePrefix is where `seat fleet --fetch` puts its own throwaway
-// copy, one namespace per read, deleted before the verb exits. A stale one
+// FetchNamespacePrefix is where a refreshing fleet read (`status --machines
+// --refresh`) puts its own throwaway copy, one namespace per read, deleted
+// before the read returns. A stale one
 // left by an interrupted read is harmless and collected by the next run.
 const FetchNamespacePrefix = "refs/metasystem/presence-fetch"
 
@@ -223,7 +224,7 @@ func (g Git) Publish(write Write) (string, error) {
 }
 
 // DeleteNamespace removes every ref under one namespace, which is how
-// `seat fleet --fetch` cleans up the copy it made.
+// a refreshing fleet read cleans up the copy it made.
 func (g Git) DeleteNamespace(namespace string) error {
 	out, _, err := g.run("presence ref list", nil, "for-each-ref", "--format=%(refname)", namespace)
 	if err != nil {

@@ -210,7 +210,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(resultPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	wantArgs := []string{"test", "run", "--root", root, "--goal", "goal-k", "--tree", "base-tree", "--mode", "canary",
+	wantArgs := []string{"internal", "test", "run", "--root", root, "--goal", "goal-k", "--tree", "base-tree", "--mode", "canary",
 		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
 		"--expected-goal-revision", "7", "--expected-accounting-revision", "5"}
 	var recorded []string
@@ -253,7 +253,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 			t.Fatalf("diagnostic argv %q does not contain %q", joined, want)
 		}
 	}
-	wantArgs = []string{"test", "run", "--root", root, "--goal", "goal-k", "--tree", "new-base", "--mode", "canary",
+	wantArgs = []string{"internal", "test", "run", "--root", root, "--goal", "goal-k", "--tree", "new-base", "--mode", "canary",
 		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
 		"--expected-goal-revision", "11", "--expected-accounting-revision", "13"}
 	var forwarded batch.DiagnosticRequest
@@ -574,24 +574,23 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 			if err := store.Create(record); err != nil {
 				t.Fatal(err)
 			}
-			originalChild := batchChildRunner
 			originalPush := batchMovedEndpointPush
 			originalVerify := batchVerifyRebasedSeries
 			originalAuthorize := batchAuthorizeRebasedSeries
 			t.Cleanup(func() {
-				batchChildRunner, batchMovedEndpointPush, batchVerifyRebasedSeries, batchAuthorizeRebasedSeries = originalChild, originalPush, originalVerify, originalAuthorize
+				batchMovedEndpointPush, batchVerifyRebasedSeries, batchAuthorizeRebasedSeries = originalPush, originalVerify, originalAuthorize
 			})
 			batchAuthorizeRebasedSeries = func(string, batch.Store, batch.Record, string, time.Time) error { return nil } // Transport-only fixture has no accepted goal ledger.
 			var children [][]string
 			verifications := 0
 			pushes, refusedPushes := 0, 0
-			batchChildRunner = func(_ string, _ string, args ...string) error {
+			stubBatchOwnerCalls(t, func(_ ownerInvocation, args ...string) error {
 				children = append(children, append([]string(nil), args...))
 				if test.childFailure == "held" && len(args) > 1 && args[0] == "landing" && args[1] == "held" {
 					return errors.New("held refusal")
 				}
 				return nil
-			}
+			})
 			batchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {
 				verifications++
 				if len(trees) != 1 {

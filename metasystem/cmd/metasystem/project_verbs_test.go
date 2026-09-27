@@ -94,112 +94,6 @@ func TestProjectIDVerbMintsOne(t *testing.T) {
 	}
 }
 
-func TestProjectListVerbNarrows(t *testing.T) {
-	t.Parallel()
-
-	root := projectFixture(t)
-	code, out, problem := runProjectVerb(projectList, []string{"--root", root, "design"})
-	if code != 0 || problem != "" {
-		t.Fatalf("project list design = code %d, stderr %q", code, problem)
-	}
-	want := "design\tdesign-ledger\tdone\tbilling-run\tThe ledger\tmetasystem/plans/designs/ledger.md\n" +
-		"design\tdesign-interface\tdraft\tbilling-run\tThe interface\tplans/designs/interface.md\n"
-	if out != want {
-		t.Fatalf("project list design printed\n%q\nwant\n%q", out, want)
-	}
-
-	_, out, _ = runProjectVerb(projectList, []string{"--root", root, "design", "--status", "draft"})
-	if out != "design\tdesign-interface\tdraft\tbilling-run\tThe interface\tplans/designs/interface.md\n" {
-		t.Fatalf("--status did not narrow: %q", out)
-	}
-	_, out, _ = runProjectVerb(projectList, []string{"--root", root, "decision", "--goal", "billing-run"})
-	if out != "" {
-		t.Fatalf("--goal did not narrow: %q", out)
-	}
-	// The register's rows list under the fifth kind, as the pages do under
-	// their four.
-	_, out, _ = runProjectVerb(projectList, []string{"--root", root, "question"})
-	if out != "question\tQ-1\topen\t\tWhere does intent live?\tmetasystem/memory/questions.md\n" {
-		t.Fatalf("project list question printed %q", out)
-	}
-	if code, _, _ := runProjectVerb(projectList, []string{"--root", root, "policy"}); code != 2 {
-		t.Fatalf("an unknown kind must be usage: code %d", code)
-	}
-	if code, _, _ := runProjectVerb(projectList, []string{"--root", root, "design", "--status", "pending"}); code != 2 {
-		t.Fatalf("an unknown status must be usage: code %d", code)
-	}
-	if code, _, _ := runProjectVerb(projectList, []string{"--root", root}); code != 2 {
-		t.Fatalf("a missing kind must be usage: code %d", code)
-	}
-}
-
-func TestProjectShowVerbNamesBothHalvesOfAReference(t *testing.T) {
-	t.Parallel()
-
-	root := projectFixture(t)
-	code, out, problem := runProjectVerb(projectShow, []string{"--root", root, "decision-one-binary"})
-	if code != 0 || problem != "" {
-		t.Fatalf("project show = code %d, stderr %q", code, problem)
-	}
-	want := "One binary\nkind: decision\nid: decision-one-binary\nstatus: accepted\ngoals: \n" +
-		"path: metasystem/docs/decisions/0001-one-binary.md\nhome: metasystem/docs/decisions\n" +
-		"referenced by: design-ledger affects metasystem/plans/designs/ledger.md\n"
-	if out != want {
-		t.Fatalf("project show printed\n%q\nwant\n%q", out, want)
-	}
-
-	_, out, _ = runProjectVerb(projectShow, []string{"--root", root, "design-ledger"})
-	if !strings.Contains(out, "affects: decision-one-binary\n") ||
-		!strings.Contains(out, "referenced by: design-interface cites plans/designs/interface.md\n") {
-		t.Fatalf("project show omitted a record's own references or what references it: %q", out)
-	}
-	code, _, problem = runProjectVerb(projectShow, []string{"--root", root, "nobody"})
-	if code != 1 || !strings.Contains(problem, "no record declares the id nobody") {
-		t.Fatalf("an unknown id must refuse: code %d, stderr %q", code, problem)
-	}
-}
-
-func TestProjectTreeVerbCountsEveryBucket(t *testing.T) {
-	t.Parallel()
-
-	root := projectFixture(t)
-	code, out, problem := runProjectVerb(projectTree, []string{"--root", root})
-	if code != 0 || problem != "" {
-		t.Fatalf("project tree = code %d, stderr %q", code, problem)
-	}
-	want := "billing-run — queued — Billing runs nightly, and says what it did\n" +
-		"  kinds: intent 0, doctrine 0, decision 0, design 2, question 0\n" +
-		"  status: draft 1, accepted 0, superseded 0, done 1, open 0, answered 0, withdrawn 0\n" +
-		"shipped — done — The first release shipped\n" +
-		"  kinds: intent 0, doctrine 0, decision 0, design 0, question 0\n" +
-		"  status: draft 0, accepted 0, superseded 0, done 0, open 0, answered 0, withdrawn 0\n" +
-		"project\n" +
-		"  kinds: intent 1, doctrine 0, decision 1, design 0, question 1\n" +
-		"  status: draft 0, accepted 2, superseded 0, done 0, open 1, answered 0, withdrawn 0\n"
-	if out != want {
-		t.Fatalf("project tree printed\n%q\nwant\n%q", out, want)
-	}
-}
-
-// A goal's intent is a paragraph in this ledger, and the tree is a shape: the
-// line carries at most a hundred characters of it, the ellipsis included.
-func TestProjectTreeVerbTruncatesALongIntent(t *testing.T) {
-	t.Parallel()
-
-	root := projectFixture(t)
-	long := strings.Repeat("the reason this goal is open, at length, ", 6)
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "billing-run.md"),
-		[]byte("# billing-run\n\n- State: queued\n- Intent: "+long+"\n"), 0o644); err != nil {
-		t.Fatalf("write the long intent: %v", err)
-	}
-	_, out, _ := runProjectVerb(projectTree, []string{"--root", root})
-	first := strings.SplitN(out, "\n", 2)[0]
-	intent := strings.TrimPrefix(first, "billing-run — queued — ")
-	if len([]rune(intent)) != 100 || !strings.HasSuffix(intent, "…") {
-		t.Fatalf("the truncated intent was %q, of %d characters", intent, len([]rune(intent)))
-	}
-}
-
 func TestProjectCheckVerbPassesAndRefuses(t *testing.T) {
 	t.Parallel()
 
@@ -239,9 +133,6 @@ func TestProjectVerbsRefuseARootThatIsNoInstallation(t *testing.T) {
 		args []string
 	}{
 		{"check", projectCheck, []string{"--root", nowhere}},
-		{"tree", projectTree, []string{"--root", nowhere}},
-		{"list", projectList, []string{"--root", nowhere, "design"}},
-		{"show", projectShow, []string{"--root", nowhere, "anything"}},
 	} {
 		code, out, problem := runProjectVerb(run.verb, run.args)
 		if code != 1 || out != "" || problem == "" {

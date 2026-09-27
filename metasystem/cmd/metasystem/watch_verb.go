@@ -25,7 +25,7 @@ func runWatch(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem watch [--root DIR] [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal watch [--root DIR] [--json]")
 		return 2
 	}
 

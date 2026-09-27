@@ -12,43 +12,73 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// TestIntentPublicCoverage is structural: it checks the public command table,
+// publicPairs is the object-action table of the design page's section 3.1,
+// with the top-level status: the complete public surface.
+var publicPairs = []string{
+	"goal list", "goal show", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "goal open", "goal edit",
+	"goal claim", "goal release", "goal accept-risk", "goal pin", "goal prioritize", "goal reopen", "goal abandon", "goal block",
+	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal repair", "goal check",
+	"grant add", "grant revoke", "grant list",
+	"decision list", "decision show",
+	"design write", "design show", "design list", "design review", "design stop", "design find", "design check-moves",
+	"work brief", "work build", "work wait", "work review", "work revise", "work land", "work close", "work status", "work stop",
+	"work watch", "work report", "work check",
+	"test run", "test wait", "test plan", "test list", "test check", "test verify", "test report",
+	"question ask", "question retry", "question withdraw", "question answer", "question show", "question list", "question wait",
+	"incident list", "incident claim", "incident close",
+	"status",
+	"session start", "session stop", "session report", "session handoff", "session context", "session verify",
+	"mission start", "mission status", "mission resume", "mission repair",
+	"system start", "system stop", "system restart", "system status", "system check", "system repair",
+	"machine list", "machine start",
+	"ui start", "ui stop", "ui restart", "ui status",
+	"settings show", "settings keys", "settings check", "settings coordinator",
+	"terminal enroll",
+	"receipt add", "receipt check", "receipt stats", "receipt correct", "receipt retro",
+	"experiment record", "experiment challenge", "experiment status", "experiment check",
+	"critique rebind-budget", "critique close-register",
+	"covenant check",
+}
+
+// hiddenPairs are the process entrypoints whose first word is an object.
+var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "ui serve", "ui tools"}
+
+// TestIntentPublicCoverage is structural: it checks the object-action table,
 // its grammar, its help and its catalogue against the engine families, and
 // never runs a substantive owner.
 func TestIntentPublicCoverage(t *testing.T) {
 	t.Parallel()
-	publicNames := []string{
-		"abandon", "accept-risk", "answer", "approve", "ask", "block", "brief", "budget", "build", "check", "claim", "design",
-		"done", "edit", "enroll", "goals", "grant", "group",
-		"incidents", "land", "notes", "open", "pause", "pin", "prioritize", "release", "repair",
-		"reopen", "restart", "resume", "review", "revise", "revoke", "settings", "show", "split", "start",
-		"status", "stop", "test", "unapprove", "unblock", "ungroup", "wait",
-	}
-	commands := intentCommands()
+	commands := publicIntentCommands()
 	registered := families()
-	if len(publicNames) != 44 || len(commands) != 44 {
-		t.Fatalf("%d public names and %d descriptors, want exactly 44 of each", len(publicNames), len(commands))
-	}
 
 	t.Run("public table", func(t *testing.T) {
 		var got []string
 		seen := map[string]bool{}
 		for _, command := range commands {
 			if seen[command.name] {
-				t.Errorf("command %s is registered twice", command.name)
+				t.Errorf("%s is registered twice", command.name)
 			}
 			seen[command.name] = true
 			got = append(got, command.name)
-			if command.run == nil {
-				t.Errorf("%s has no run handler", command.name)
+			if command.name != "status" && (command.object == "" || command.action == "" || !isIntentObject(command.object)) {
+				t.Errorf("%s is not an object and an action", command.name)
+			}
+			if command.group == "" || intentObjectGroup(command.object) != command.group {
+				t.Errorf("%s is in group %q, not its object's", command.name, command.group)
+			}
+			if (command.run == nil) == (command.passthrough == nil) {
+				t.Errorf("%s needs exactly one of a parsed handler and a passthrough handler", command.name)
 			}
 			if command.summary == "" || len(command.allUsage()) == 0 || len(command.examples) == 0 {
 				t.Errorf("%s: summary %q, %d usage lines, %d examples; all are required", command.name, command.summary, len(command.allUsage()), len(command.examples))
 			}
 			for _, line := range append(append([]string(nil), command.allUsage()...), command.examples...) {
-				if strings.TrimSpace(line) == "" {
-					t.Errorf("%s has an empty usage or example line", command.name)
+				if !strings.HasPrefix(line, "metasystem "+command.name) || strings.TrimSpace(line) != line {
+					t.Errorf("%s: %q does not start with metasystem %s", command.name, line, command.name)
 				}
+			}
+			if command.passthrough != nil {
+				continue
 			}
 			spellings := map[string]string{}
 			for _, definition := range command.allFlags() {
@@ -66,74 +96,94 @@ func TestIntentPublicCoverage(t *testing.T) {
 			}
 		}
 		sort.Strings(got)
-		want := slices.Clone(publicNames)
+		want := slices.Clone(publicPairs)
 		sort.Strings(want)
 		if !slices.Equal(got, want) {
-			t.Errorf("public commands differ:\n got  %v\n want %v", got, want)
+			t.Errorf("public pairs differ:\n got  %v\n want %v", got, want)
+		}
+		var hidden []string
+		for _, command := range intentCommands() {
+			if command.hidden {
+				hidden = append(hidden, command.name)
+				if command.launcher == "" || !familyHasVerb(registered, command.object, command.action) {
+					t.Errorf("hidden entry %s has no launcher or no family verb that serves it", command.name)
+				}
+				if seen[command.name] {
+					t.Errorf("%s is both public and an entry", command.name)
+				}
+			}
+		}
+		if !slices.Equal(hidden, hiddenPairs) {
+			t.Errorf("hidden entries = %v, want %v", hidden, hiddenPairs)
+		}
+		for _, object := range intentObjects() {
+			if len(objectActions(object)) == 0 {
+				t.Errorf("object %s has no public action", object)
+			}
+			if intentObjectSummaries[object] == "" {
+				t.Errorf("object %s has no summary", object)
+			}
 		}
 	})
 
 	t.Run("goal acts", func(t *testing.T) {
 		// Every goal-family verb has a public home or a stated reason to stay
 		// internal. kind is a word the target's usage must carry.
-		type disposition struct{ verb, flag, kind, internal string }
+		type disposition struct{ action, flag, kind, internal string }
 		acts := map[string]disposition{
-			"branch":                      {verb: "build", internal: "diagnostics stay internal; build, review and land own the branch"},
+			"branch":                      {action: "work build", internal: "diagnostics stay internal; build, review and land own the branch"},
 			"handover":                    {internal: "delivery workflow step"},
-			"open":                        {verb: "open"},
-			"abandon":                     {verb: "abandon"},
-			"carry":                       {verb: "abandon", flag: "successor"},
-			"set-next":                    {verb: "edit", flag: "next"},
-			"read-items":                  {verb: "notes"},
+			"open":                        {action: "goal open"},
+			"abandon":                     {action: "goal abandon"},
+			"carry":                       {action: "goal abandon", flag: "successor"},
+			"set-next":                    {action: "goal edit", flag: "next"},
+			"read-items":                  {action: "goal notes"},
 			"promote":                     {internal: "legacy-ledger maintenance"},
-			"park":                        {verb: "pause"},
-			"unpark":                      {verb: "resume"},
-			"block":                       {verb: "block"},
-			"unblock":                     {verb: "unblock"},
-			"done":                        {verb: "done"},
-			"reopen":                      {verb: "reopen"},
+			"park":                        {action: "goal pause"},
+			"unpark":                      {action: "goal resume"},
+			"block":                       {action: "goal block"},
+			"unblock":                     {action: "goal unblock"},
+			"done":                        {action: "goal done"},
+			"reopen":                      {action: "goal reopen"},
 			"declare-free":                {internal: "legacy"},
 			"prune":                       {internal: "legacy"},
-			"claim":                       {verb: "claim"},
+			"claim":                       {action: "goal claim"},
 			"restamp":                     {internal: "startup step"},
-			"approve":                     {verb: "approve"},
-			"budget":                      {verb: "budget"},
+			"approve":                     {action: "goal approve"},
+			"budget":                      {action: "goal budget"},
 			"classify-sweep":              {internal: "installation maintenance"},
-			"tier-probe":                  {verb: "goals", flag: "tiers"},
-			"unapprove":                   {verb: "unapprove"},
-			"set-budget":                  {verb: "budget", kind: "budget G BOX"},
+			"tier-probe":                  {action: "goal list", flag: "tiers"},
+			"unapprove":                   {action: "goal unapprove"},
+			"set-budget":                  {action: "goal budget", kind: "goal budget G BOX"},
 			"extend-budget":               {internal: "dispatch admission"},
-			"grant":                       {verb: "grant"},
-			"revoke":                      {verb: "revoke"},
+			"grant":                       {action: "grant add"},
+			"revoke":                      {action: "grant revoke"},
 			"carrying":                    {internal: "exceptional landing"},
 			"carried":                     {internal: "exceptional landing"},
-			"accept-risk":                 {verb: "accept-risk"},
-			"discharge-review-obligation": {verb: "review", flag: "finding", kind: "review G --finding F --test NAME"},
-			"split":                       {verb: "split"},
-			"set-obligation":              {verb: "edit", flag: "obligation"},
-			"enroll-terminal":             {verb: "enroll"},
-			"resume":                      {verb: "resume"},
-			"release":                     {verb: "release"},
-			"steal":                       {verb: "claim", flag: "take-over"},
-			"trunk-red":                   {verb: "incidents", kind: "incidents claim"},
-			"land-ready":                  {verb: "land", flag: "queue-only", kind: "land G --queue-only"},
-			"edit":                        {verb: "edit"},
-			"set-arc":                     {verb: "group"},
-			"set-pin":                     {verb: "pin"},
-			"set-priority":                {verb: "prioritize", flag: "sequence"},
-			"detach":                      {verb: "ungroup"},
-			"list":                        {verb: "goals"},
-			"show":                        {verb: "show"},
-			"next":                        {verb: "goals", flag: "ready"},
+			"accept-risk":                 {action: "goal accept-risk"},
+			"discharge-review-obligation": {action: "work review", flag: "finding", kind: "work review G --finding F --test NAME"},
+			"split":                       {action: "goal split"},
+			"set-obligation":              {action: "goal edit", flag: "obligation"},
+			"enroll-terminal":             {action: "terminal enroll"},
+			"resume":                      {action: "goal resume"},
+			"release":                     {action: "goal release"},
+			"steal":                       {action: "goal claim", flag: "take-over"},
+			"trunk-red":                   {action: "incident claim"},
+			"land-ready":                  {action: "work land", flag: "queue-only", kind: "work land G --queue-only"},
+			"edit":                        {action: "goal edit"},
+			"set-arc":                     {action: "goal group"},
+			"set-pin":                     {action: "goal pin"},
+			"set-priority":                {action: "goal prioritize", flag: "sequence"},
+			"detach":                      {action: "goal ungroup"},
+			"list":                        {action: "goal list"},
+			"show":                        {action: "goal show"},
+			"next":                        {action: "goal list", flag: "ready", internal: "seat launch entry"},
 			"reconcile":                   {internal: "reviewed recovery"},
 			"migrate":                     {internal: "installation cutover"},
-			"fetch":                       {verb: "goals", flag: "fetch", internal: "diagnostic read-side advance"},
-			"repair":                      {internal: "authority recovery"},
+			"fetch":                       {action: "goal list", flag: "fetch", internal: "seat launch entry"},
+			"repair":                      {internal: "authority recovery (goal repair --accept-remote-history is its public form)"},
 			"source-digest":               {internal: "migration support"},
-			"recover":                     {verb: "repair", kind: "repair goals"},
-		}
-		if len(acts) != 53 {
-			t.Fatalf("the disposition table has %d rows, want 53", len(acts))
+			"recover":                     {action: "goal repair"},
 		}
 		var goalFamily *family
 		for index := range registered {
@@ -155,47 +205,49 @@ func TestIntentPublicCoverage(t *testing.T) {
 			if !live[act] {
 				t.Errorf("disposition for goal %s, which the goal family no longer registers", act)
 			}
-			if row.verb == "" {
+			if row.action == "" {
 				if row.internal == "" {
 					t.Errorf("goal %s is internal without a reason", act)
 				}
 				continue
 			}
-			target, ok := findIntentCommand(row.verb)
-			if !ok {
-				t.Errorf("goal %s maps to %s, which is not a public command", act, row.verb)
+			target, ok := findIntentCommand(row.action)
+			if !ok || target.hidden {
+				t.Errorf("goal %s maps to %s, which is not a public action", act, row.action)
 				continue
 			}
 			if row.flag != "" {
 				if _, ok := target.lookupFlag(row.flag); !ok {
-					t.Errorf("goal %s maps to %s --%s, which %s does not accept", act, row.verb, row.flag, row.verb)
+					t.Errorf("goal %s maps to %s --%s, which %s does not accept", act, row.action, row.flag, row.action)
 				}
 			}
 			if row.kind != "" && !strings.Contains(strings.Join(target.allUsage(), "\n"), row.kind) {
-				t.Errorf("goal %s maps to %q, which %s usage does not show", act, row.kind, row.verb)
+				t.Errorf("goal %s maps to %q, which %s usage does not show", act, row.kind, row.action)
 			}
 		}
 	})
 
 	t.Run("ordinary grammar", func(t *testing.T) {
 		forms := map[string][]string{
-			"restart":     {"restart checkout", "restart ui"},
-			"status":      {"status G", "status job", "status work", "status run", "status ui", "status --machines"},
-			"review":      {"review G", "review design", "review job", "review commit", "review run", "review G --finding F --test NAME"},
-			"revise":      {"revise G", "--after N", "--brief FILE", "revise job R --dispositions FILE --brief FILE", "revise run RUN --brief FILE"},
-			"done":        {"done G --reason TEXT", "done job J [--dispositions FILE] [--evidence R]"},
-			"accept-risk": {"accept-risk G --finding F [--review R] --reason TEXT"},
-			"check":       {"metasystem check"},
-			"start":       {"start session", "start ui"},
-			"stop":        {"stop job", "stop session", "stop ui"},
-			"incidents":   {"incidents claim", "incidents close"},
-			"repair":      {"repair review G"},
-			"land":        {"land job", "land G --queue-only"},
-			"wait":        {"wait G", "wait G --for landing|human-act", "--since TIP", "wait job", "wait run"},
-			"notes":       {"--read", "--add", "--close", "--fixed", "--moved", "--accepted"},
-			"pin":         {"--clear"},
-			"claim":       {"--take-over"},
-			"answer":      {"answer Q [TEXT]", "answer M/Q TEXT"},
+			"status":          {"metasystem status", "metasystem status G [--work NAME]"},
+			"work status":     {"work status [--all]", "work status G", "work status REF"},
+			"work review":     {"work review G", "work review j2:J", "work review --commit SHA --goal G", "work review run:RUN", "work review G --finding F --test NAME", "work review --changes", "work review --patch PATCH"},
+			"work revise":     {"work revise G", "--after N", "--brief FILE", "work revise j2:R --dispositions FILE --brief FILE", "work revise run:RUN --brief FILE"},
+			"work close":      {"work close j2:J [--dispositions FILE] [--evidence R]", "work close G"},
+			"work land":       {"work land j2:J", "work land G --queue-only"},
+			"work wait":       {"work wait G", "work wait G --for landing|human-act", "--since TIP", "work wait REF", "work wait --path PATH --until present|absent"},
+			"work build":      {"work build G [--work NAME] --brief FILE --check COMMAND...", "work build run:RUN"},
+			"goal done":       {"goal done G --reason TEXT"},
+			"goal notes":      {"--read", "--add", "--close", "--fixed", "--moved", "--accepted"},
+			"goal pin":        {"--clear"},
+			"goal claim":      {"--take-over"},
+			"goal repair":     {"goal repair --accept-edits --by NAME", "goal repair --upgrade"},
+			"question answer": {"question answer Q [TEXT]", "question answer M/Q TEXT"},
+			"test wait":       {"test wait proof:ID"},
+			"design review":   {"design review FILE"},
+			"system start":    {"system start --if-down"},
+			"system status":   {"system status --steward"},
+			"incident claim":  {"incident claim I --goal G"},
 		}
 		for name, wants := range forms {
 			command, ok := findIntentCommand(name)
@@ -216,27 +268,20 @@ func TestIntentPublicCoverage(t *testing.T) {
 			needs  []string
 			when   string
 		}{
-			{prefix: "metasystem open ", needs: []string{"--risk", "--basis"}},
-			{prefix: "metasystem review design ", needs: []string{"--tool-calls"}},
-			{prefix: "metasystem review job ", needs: []string{"--tool-calls"}},
-			{prefix: "metasystem review commit ", needs: []string{"--goal"}},
-			{prefix: "metasystem notes ", needs: []string{"--read"}, when: "--add"},
+			{prefix: "metasystem goal open ", needs: []string{"--risk", "--basis"}},
+			{prefix: "metasystem design review ", needs: []string{"--tool-calls"}},
+			{prefix: "metasystem work review j2:", needs: []string{"--tool-calls"}},
+			{prefix: "metasystem work review --commit ", needs: []string{"--goal"}},
+			{prefix: "metasystem goal notes ", needs: []string{"--read"}, when: "--add"},
 		}
 		for _, command := range commands {
 			for _, example := range command.examples {
 				words := shellWords(example)
-				if len(words) < 2 || words[0] != "metasystem" || words[1] != command.name {
-					t.Errorf("%s example %q does not start with metasystem %s", command.name, example, command.name)
-					continue
-				}
-				// The router hands a family verb after a public name (ui start)
-				// to that family; only the rest reaches the intent parser.
-				if intentYieldsToLegacy(words[1:], registered) {
-					if len(words) < 3 || !isFamilyName(registered, command.name) {
-						t.Errorf("%s example %q yields to a legacy form that is not a family verb", command.name, example)
+				rest := words[1+len(command.words()):]
+				if command.passthrough == nil {
+					if _, problem := parseIntentArgs(command, rest); problem != nil {
+						t.Errorf("%s example %q does not parse: %s", command.name, example, problem.summary)
 					}
-				} else if _, problem := parseIntentArgs(command, words[2:]); problem != nil {
-					t.Errorf("%s example %q does not parse: %s", command.name, example, problem.summary)
 				}
 				for _, rule := range mandatory {
 					if !strings.HasPrefix(example, rule.prefix) || (rule.when != "" && !slices.Contains(words, rule.when)) {
@@ -250,13 +295,13 @@ func TestIntentPublicCoverage(t *testing.T) {
 				}
 			}
 		}
-		build, _ := findIntentCommand("build")
+		build, _ := findIntentCommand("work build")
 		input, problem := parseIntentArgs(build, []string{"g", "u", "--brief", "b", "--check", "go", "test", "--json", "-run", "X"})
 		if problem != nil {
-			t.Fatalf("build --check parse: %s", problem.summary)
+			t.Fatalf("work build --check parse: %s", problem.summary)
 		}
 		if got := input.values["check"]; !slices.Equal(got, []string{"go", "test", "--json", "-run", "X"}) || input.has("json") {
-			t.Errorf("build --check = %q json %t; want the rest literally and no --json", got, input.has("json"))
+			t.Errorf("work build --check = %q json %t; want the rest literally and no --json", got, input.has("json"))
 		}
 	})
 
@@ -279,58 +324,45 @@ func TestIntentPublicCoverage(t *testing.T) {
 			checkStale(strings.Join(args, " "), page)
 			pages[strings.Join(args, " ")] = page
 		}
-		// The root page is an orientation; help all lists every public
-		// command.
-		for _, name := range publicNames {
-			command, _ := findIntentCommand(name)
-			listed := strings.Contains(pages["help all"], "\n  metasystem "+name+" ") || strings.Contains(pages["help all"], "\n  metasystem "+name+"\n")
-			if !listed {
-				t.Errorf("help all does not list %s", name)
+		for _, object := range intentObjects() {
+			if !strings.Contains(pages["help"], "\n  "+object+" ") {
+				t.Errorf("root help does not list the object %s", object)
 			}
-			if command.primary && !strings.Contains(pages["help"], "  "+name) {
-				t.Errorf("root help does not mention the common command %s", name)
+		}
+		for _, command := range commands {
+			listed := false
+			for _, usage := range command.allUsage() {
+				listed = listed || strings.Contains(pages["help all"], "\n  "+usage+"\n")
+			}
+			if !listed {
+				t.Errorf("help all does not list %s", command.name)
 			}
 		}
 		missing := filepath.Join(t.TempDir(), "does-not-exist")
 		failing := intentOwners{resolver: stateroot.NewResolver(func(string) (string, error) { return "", errors.New("no repository") }, noExecutable)}
-		commandPages := map[string]string{}
 		for _, command := range commands {
-			var direct, problem bytes.Buffer
-			if code := runIntentIn(command, []string{"--help"}, &direct, &problem, missing, failing); code != 0 || problem.Len() != 0 {
-				t.Errorf("%s --help without a repository = code %d stderr %q", command.name, code, problem.String())
+			var direct bytes.Buffer
+			writeIntentHelp(&direct, command)
+			if command.passthrough == nil {
+				var parsed, problem bytes.Buffer
+				if code := runIntentIn(command, []string{"--help"}, &parsed, &problem, missing, failing); code != 0 || problem.Len() != 0 || parsed.String() != direct.String() {
+					t.Errorf("%s --help without a repository = code %d stderr %q", command.name, code, problem.String())
+				}
 			}
-			for _, args := range [][]string{{"help", command.name}, {command.name, "--help"}} {
+			for _, args := range [][]string{append([]string{"help"}, command.words()...), append(command.words(), "--help")} {
 				code, page, stderr := runCLIHelp(args, registered)
 				label := strings.Join(args, " ")
-				if code != 0 || stderr != "" {
-					t.Errorf("%s = code %d stderr %q", label, code, stderr)
+				if code != 0 || stderr != "" || page != direct.String() {
+					t.Errorf("%s = code %d stderr %q; it is not the action's own help", label, code, stderr)
 				}
 				for _, line := range append(append([]string(nil), command.allUsage()...), command.examples...) {
 					if !strings.Contains(page, line) {
 						t.Errorf("%s lacks %q", label, line)
 					}
 				}
-				if !strings.HasPrefix(page, direct.String()) {
-					t.Errorf("%s does not begin with the command's own help", label)
-				}
 				checkStale(label, page)
-				commandPages[command.name] = page
 			}
 		}
-		t.Run("compatibility help", func(t *testing.T) {
-			compatibility := map[string][]string{
-				"test": {"test plan", "test verify", "test report"},
-				"wait": {"wait --job"},
-			}
-			for name, forms := range compatibility {
-				page := commandPages[name]
-				for _, form := range forms {
-					if !strings.Contains(page, form) && !strings.Contains(page, "internal "+form) {
-						t.Errorf("help %s does not mention the compatibility form %q", name, form)
-					}
-				}
-			}
-		})
 	})
 
 	t.Run("partner union", func(t *testing.T) {
@@ -342,13 +374,18 @@ func TestIntentPublicCoverage(t *testing.T) {
 		for _, one := range catalogue[0].Verbs {
 			counts[one.Name]++
 		}
-		for _, name := range publicNames {
+		for _, name := range publicPairs {
 			if counts[name] != 1 {
 				t.Errorf("Partner catalogue lists %s %d times, want 1", name, counts[name])
 			}
 		}
+		for _, name := range hiddenPairs {
+			if counts[name] != 0 {
+				t.Errorf("Partner catalogue lists the entry %s", name)
+			}
+		}
 		for _, fam := range registered {
-			if _, public := findIntentCommand(fam.name); !public && counts[fam.name] != 0 {
+			if counts[fam.name] != 0 {
 				t.Errorf("Partner catalogue lists the engine family %s", fam.name)
 			}
 		}

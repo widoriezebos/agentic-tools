@@ -610,6 +610,7 @@ JSON
     "$leg_seed/scripts/agents/sync-transport.sh"
 	if is_workspace_receipt_scenario || is_carried_scenario; then
 	  chmod +x "$leg_seed/scripts/agents/go-build.sh"
+	  harness_fixture_plant_devgate "$leg_seed"
 	else
     chmod +x "$leg_seed/bin/metasystem"
   fi
@@ -714,6 +715,9 @@ BACKLOG
     git -C "$leg_seed" config goal.sync-branch refs/heads/main
   fi
   git -C "$leg_seed" add -- scripts payload.txt plans/existing.md .gitignore
+  if is_workspace_receipt_scenario || is_carried_scenario; then
+    git -C "$leg_seed" add -- cmd/devgate/main.go go.mod
+  fi
   if ! is_workspace_receipt_scenario; then
     git -C "$leg_seed" add -- bin
   fi
@@ -757,17 +761,17 @@ BACKLOG
     "$seed_goal_engine" lease announce --root "$leg_seed" --session "land-$fixture_scenario-seed" \
       --pid "$$" --start "$receipt_fixture_start" --tag "land-$fixture_scenario-seed" \
       --runtime fake --owner-lineage land-receipt-fixture >/dev/null
-    METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$seed_goal_engine" goal open --root "$leg_seed" \
+    METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$seed_goal_engine" internal goal open --root "$leg_seed" \
       --id fx --origin human --by Wido --intent "Create an exact fixture-local landing receipt." \
       --next "Run the bounded fixture receipt." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
       --basis "This disposable fixture executes only its bounded local landing receipt." \
       --fixture-human-authority >/dev/null
-    "$seed_goal_engine" goal approve --root "$leg_seed" --id fx --by Wido \
+    "$seed_goal_engine" internal goal approve --root "$leg_seed" --id fx --by Wido \
       --lineage land-receipt-fixture --elapsed-limit 4h --attempt-limit 4 \
       --reserved-job-minutes-limit 12 --active-job-limit 1 --review-round-limit 0 \
       --fixture-human-authority
-    "$seed_goal_engine" goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
+    "$seed_goal_engine" internal goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
     git -C "$leg_seed" reset -q --hard refs/metasystem/goals/accepted
     if [[ "$fixture_scenario" == receipt-cutover ]]; then
       # In the cutover leg H0 is the one complete seed tip, including the fx
@@ -905,18 +909,18 @@ if is_carried_scenario; then
       --session "land-$fixture_scenario-peer" --pid "$$" --start "$peer_fixture_start" \
       --tag "land-$fixture_scenario-peer" --runtime fake --owner-lineage land-receipt-fixture-b >/dev/null
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
-      "$leg_peer/bin/metasystem" goal open --root "$leg_peer" \
+      "$leg_peer/bin/metasystem" internal goal open --root "$leg_peer" \
         --id fx-b --origin human --by Wido --intent "Create the second seat's carried landing." \
         --next "Prove debt is visible between seats." \
         --risk severity=1,novelty=1,exposure=1,accumulation=1 \
         --basis "This disposable fixture serializes two carried landing seats." \
         --fixture-human-authority >/dev/null
-    receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now "$leg_peer/bin/metasystem" goal approve \
+    receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now "$leg_peer/bin/metasystem" internal goal approve \
       --root "$leg_peer" --id fx-b --by Wido --lineage land-receipt-fixture-b \
       --elapsed-limit 4h --attempt-limit 4 --reserved-job-minutes-limit 12 \
       --active-job-limit 1 --review-round-limit 0 --fixture-human-authority >/dev/null
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
-      "$leg_peer/bin/metasystem" goal claim --root "$leg_peer" \
+      "$leg_peer/bin/metasystem" internal goal claim --root "$leg_peer" \
         --id fx-b --lineage land-receipt-fixture-b >/dev/null
     git -C "$leg_local" fetch -q origin
     git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
@@ -970,7 +974,7 @@ if is_carried_scenario; then
       || { echo "land $fixture_scenario fixture: second seat goal carry returned no word" >&2; exit 1; }
   fi
   set +e
-  receipt_env_run "$leg_local/bin/metasystem" test run --root "$leg_local" --goal fx \
+  receipt_env_run "$leg_local/bin/metasystem" internal test run --root "$leg_local" --goal fx \
     --tree "$carried_tree" --mode auto >"$leg_root/carried-test.out" 2>&1
   carried_test_rc=$?
   set -e
@@ -985,7 +989,7 @@ if is_carried_scenario; then
     select_receipt_runner_environment "$leg_peer"
     set +e
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now \
-      "$leg_peer/bin/metasystem" test run --root "$leg_peer" --goal fx-b \
+      "$leg_peer/bin/metasystem" internal test run --root "$leg_peer" --goal fx-b \
       --tree "$peer_tree" --mode auto >"$leg_root/peer-test.out" 2>&1
     peer_test_rc=$?
     set -e
@@ -1062,7 +1066,7 @@ if is_carried_scenario; then
 	  "$leg_root/process-identities.$(basename "$leg_peer").json" \
 	  "$leg_root/registry.$(basename "$leg_peer")" "$leg_peer"
 	receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
-	  "$leg_peer/bin/metasystem" goal edit --root "$leg_peer" --id fx-b \
+	  "$leg_peer/bin/metasystem" internal goal edit --root "$leg_peer" --id fx-b \
 	    --next "Keep the carried recovery word valid across this ledger move." \
 	    --lineage land-receipt-fixture-b >/dev/null
 	moved_origin_tip=$(git -C "$leg_remote" rev-parse refs/heads/main)
@@ -1311,7 +1315,7 @@ if is_carried_scenario; then
 	[[ -n "$first_counselor_line" ]] \
 	  || { echo "land carried-second fixture: first counselor line is absent" >&2; exit 1; }
 	METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-	  "$source_engine" goal accept-risk --root "$leg_local" --id fx \
+	  "$source_engine" internal goal accept-risk --root "$leg_local" --id fx \
 	    --finding "carried:$carried_commit" --chain human-carried --by Wido \
 	    --why "fixture closes the first carried review before the second landing" \
 	    --fixture-human-authority >/dev/null
@@ -1322,7 +1326,7 @@ if is_carried_scenario; then
 	git -C "$leg_local" add -- payload.txt records/counselor/accepted-risk-register.jsonl records/counselor/carried-landings.jsonl
 	second_tree=$(git -C "$leg_local" write-tree)
 	select_receipt_runner_environment "$leg_local"
-	receipt_env_run "$leg_local/bin/metasystem" test run --root "$leg_local" --goal fx \
+	receipt_env_run "$leg_local/bin/metasystem" internal test run --root "$leg_local" --goal fx \
 	  --tree "$second_tree" --mode auto >"$leg_root/second-test.out" 2>&1 \
 	  || { echo "land carried-second fixture: second battery did not pass" >&2; sed -n '1,240p' "$leg_root/second-test.out" >&2; exit 1; }
 	while (( ${#receipt_runner_checkouts[@]} )); do
@@ -1471,7 +1475,7 @@ publish_peer_ledger_move() { # optional peer checkout
     --pid "$$" --start "$peer_start" --tag land-receipt-fixture-peer \
     --runtime fake --owner-lineage land-receipt-fixture-peer >/dev/null
   receipt_env_run env METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-peer \
-    "$engine" goal open --root "$checkout" --id peer-goal --origin human --by Wido \
+    "$engine" internal goal open --root "$checkout" --id peer-goal --origin human --by Wido \
       --intent "Publish one fixture peer goal." \
       --next "Let the landing consume this ledger-only move." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
@@ -1649,11 +1653,11 @@ MANIFEST
   git -C "$leg_local" reset -q --hard origin/main
   git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
   if [[ "$fixture_scenario" == brain-absent-node-proceeds ]]; then
-    done_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal done --root "$leg_local" \
+    done_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" internal goal done --root "$leg_local" \
       --id ship-widget --conclude "Fixture empties the ledger for a Goal-free node landing.") \
       || { printf 'brain leg done refused: %s\n' "$done_out" >&2; exit 1; }
   else
-    release_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal release --root "$leg_local" --id ship-widget) \
+    release_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" internal goal release --root "$leg_local" --id ship-widget) \
       || { printf 'brain leg release refused: %s\n' "$release_out" >&2; exit 1; }
   fi
   git -C "$leg_local" fetch -q origin
@@ -1725,18 +1729,18 @@ prepare_abandonment_landing_leg() { # name
   # recertified, is refused at goal revision admission with
   # RISK_UNANSWERED goal=ship-widget tier=3 (admission.go:271). The other
   # routes never reach that gate, so the answer is inert for them.
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal edit --root "$leg_local" \
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" internal goal edit --root "$leg_local" \
     --id ship-widget --risk severity=1,novelty=1,exposure=1,accumulation=1 \
     --basis "The fixture leg is local and disposable." >/dev/null
   saved_config=$leg_root/metasystem.conf.approve
   cp "$leg_local/metasystem.conf" "$saved_config"
   printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
-  "$source_engine" goal approve --root "$leg_local" --id ship-widget --by Wido \
+  "$source_engine" internal goal approve --root "$leg_local" --id ship-widget --by Wido \
     --lineage fixture-lineage --elapsed-limit 4h --attempt-limit 4 \
     --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
     --fixture-human-authority >/dev/null
   mv "$saved_config" "$leg_local/metasystem.conf"
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal claim \
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" internal goal claim \
     --root "$leg_local" --id ship-widget --lineage fixture-lineage >/dev/null
   git -C "$leg_local" fetch -q origin
   git -C "$leg_local" reset -q --hard origin/main
@@ -1755,7 +1759,7 @@ move_goal_out_of_claimed_state() { # checkout
   local checkout=$1 saved_config=$1/metasystem.conf.abandon-fixture status
   cp "$checkout/metasystem.conf" "$saved_config"
   printf '%s\n' 'metasystem.runtimes=fake' >"$checkout/metasystem.conf"
-  if METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal abandon \
+  if METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" internal goal abandon \
       --root "$checkout" --id ship-widget --by Wido --because fixture \
       --fixture-human-authority >/dev/null; then
     status=0
@@ -2062,16 +2066,16 @@ if [[ "$fixture_scenario" == abandonment-route-stack ]]; then
   saved_stack_config=$leg_root/metasystem.conf.stack-approve
   cp "$leg_local/metasystem.conf" "$saved_stack_config"
   printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal open --root "$leg_local" \
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" internal goal open --root "$leg_local" \
     --id ship-gadget --origin human --by Wido --intent "Ship the second fixture gadget." --next "Land its record." \
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "The fixture is local and disposable." \
     --fixture-human-authority >/dev/null
-  "$source_engine" goal approve --root "$leg_local" --id ship-gadget --by Wido \
+  "$source_engine" internal goal approve --root "$leg_local" --id ship-gadget --by Wido \
     --lineage fixture-lineage --elapsed-limit 4h --attempt-limit 4 \
     --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
     --fixture-human-authority >/dev/null
   mv "$saved_stack_config" "$leg_local/metasystem.conf"
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal claim \
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" internal goal claim \
     --root "$leg_local" --id ship-gadget --lineage fixture-lineage >/dev/null
   git -C "$leg_local" fetch -q origin
   git -C "$leg_local" rebase refs/remotes/origin/main
@@ -2949,7 +2953,7 @@ mv "$leg_local/metasystem.conf.new" "$leg_local/metasystem.conf"
   sed -n '1,160p' "$full_chain_missing_output" >&2
   exit 1
 }
-grep -Fqx "land refused: chain full-chain requires sufficient schema-2 testing evidence; run metasystem landing test-receipt --root . --tree <whole-project-tree> --mode auto and pass it with --test-receipt" \
+grep -Fqx "land refused: chain full-chain requires sufficient schema-2 testing evidence; run metasystem internal landing test-receipt --root . --tree <whole-project-tree> --mode auto and pass it with --test-receipt" \
   "$full_chain_missing_output"
 [[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
 

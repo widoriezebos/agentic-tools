@@ -12,7 +12,7 @@ in scope, hostile inputs are not.">
 Scope: <the files, behaviors, or contracts under review — and
 what is explicitly OUT, including any agreed ceiling on fix work>
 
-An independent read starts through its intent, never as an in-process agent: `metasystem build` runs a unit's preliminary read after its proof, `metasystem review run RUN` requests that unit's committed review, and `metasystem review job J` or `review commit SHA --goal G` reads an existing job or commit. A reader launched by one of these reads its frozen subject and never starts another review. A standalone read of a bare diff with no job or commit behind it remains the expert `metasystem internal launch start --kind read --diff-file` path.
+An independent read starts through its intent, never as an in-process agent: `metasystem work build` runs a unit's preliminary read after its proof, `metasystem work review run:RUN` requests that unit's committed review, and `metasystem work review j2:J` or `review commit SHA --goal G` reads an existing job or commit. A reader launched by one of these reads its frozen subject and never starts another review. A standalone read of a bare diff with no job or commit behind it remains the expert `metasystem internal launch start --kind read --diff-file` path.
 
 ## Prepared copy
 
@@ -27,7 +27,7 @@ document checks, and fixture row names or ranges for fixture checks.
 
 Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn.
 
-No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn is registered with `metasystem wait register`.
+No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn is registered with `metasystem internal wait register`.
 
 1. `<file>:<start>-<end>` — <behavior or contract to check>
 2. `<fixture file>:<row name or start-end>` — <scenario to check>

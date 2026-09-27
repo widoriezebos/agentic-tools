@@ -158,10 +158,10 @@ assert_filled_target_delivery() {
   # Adoption ships the complete SessionStart proof surface. Removing any one
   # member must red the installed target rather than reclassifying it as a
   # script-only fixture; the Go audit's table test covers the other members.
-  local hook_assertion="$tgt/internal/audit/hookstartexits_test.go"
-  local hook_assertion_backup="$tmp/hookstartexits-test.$$.go"
+  local hook_assertion="$tgt/internal/hooks/runtime_hook_start_test.go"
+  local hook_assertion_backup="$tmp/runtime-hook-start-test.$$.go"
   [[ -f "$tgt/wow.md" && -f "$tgt/scripts/agents/supervision-hook.sh" \
-    && -f "$tgt/scripts/agents/supervision-hook-fixtures.sh" && -f "$hook_assertion" ]] \
+    && -f "$tgt/internal/hooks/runtime_hook_start.go" && -f "$hook_assertion" ]] \
     || { echo "adopt: installed target omitted the SessionStart audit surface" >&2; exit 1; }
   mv "$hook_assertion" "$hook_assertion_backup"
   if "$tgt/bin/metasystem" audit hook-start-exits --root "$tgt" >"$tmp/adopt-hook-audit-red.out" 2>&1; then

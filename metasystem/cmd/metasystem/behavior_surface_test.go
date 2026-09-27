@@ -60,10 +60,6 @@ func TestBehaviorSurfaceListFailsOnFlushError(t *testing.T) {
 func TestBehaviorSurfaceDirectWritersFailOnOutputError(t *testing.T) {
 	root := t.TempDir()
 	for name, run := range map[string]func() int{
-		"policy": func() int { return runBehaviorSurfacePolicy(nil) },
-		"classify": func() int {
-			return runBehaviorSurfaceClassify([]string{"--path", "docs/a.md", "--projection", "LANDING"})
-		},
 		"digest": func() int {
 			return runBehaviorSurfaceDigest([]string{"--root", root, "--projection", "LANDING", "--endpoint", "test"})
 		},

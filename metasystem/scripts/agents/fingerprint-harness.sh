@@ -253,7 +253,7 @@ for ((iteration = 1; iteration <= iterations; iteration++)); do
 
   output=$tmp/dispatch-$iteration.out
   set +e
-  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" delegate --role design-critic --brief "$brief" \
+  METASYSTEM_DELEGATE_ROOT="$repo" "$repo/bin/metasystem" internal delegate --role design-critic --brief "$brief" \
     --outputs "$fingerprint_declared_outputs" --design "$fingerprint_design" \
     --goal none-explicit --destructive-reach MECHANICAL \
     --op "fingerprint-$iteration" --wait >"$output" 2>&1

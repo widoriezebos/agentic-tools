@@ -66,6 +66,10 @@ func newDeliveryBed(t *testing.T) *deliveryBed {
 		now:        func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) },
 		batchRoot:  func(string, time.Time) (string, bool, error) { return "", false, nil },
 	}
+	// The bed's fakes answer by argv: owner calls reach them as the argv the
+	// former owner children carried.
+	bed.owners.calls = processBackedOwnerCalls(func() (string, error) { return bed.owners.executable() },
+		func(process intentProcess) intentProcessResult { return bed.owners.process(process) })
 	return bed
 }
 
@@ -169,7 +173,7 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 	}
 	b.handler = func(process intentProcess) intentProcessResult {
 		argv := process.argv
-		if argv[1] != "delegate" || flagValue(argv, "--role") != "design-critic" || flagValue(argv, "--goal") != "standing-validation" ||
+		if argv[2] != "delegate" || flagValue(argv, "--role") != "design-critic" || flagValue(argv, "--goal") != "standing-validation" ||
 			flagValue(argv, "--destructive-reach") != "DESIGN-BEARING" {
 			t.Fatalf("design review dispatch %v", argv)
 		}
@@ -206,16 +210,16 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 		}
 		return intentProcessResult{stdout: []byte(`{"outcome":"REPLAYED-COMPLETED","headline":"already running","jobId":"rev1"}`)}
 	}
-	code, result := b.do("review", "design", design)
+	code, result := b.do("design", "review", design)
 	expectOutcome(t, "no reader budget", code, result, intentRefused)
 	if len(b.calls) != 0 || !strings.Contains(result.Decision, "--tool-calls") {
 		t.Fatalf("a missing reader budget is named, never invented: %+v", result)
 	}
-	code, result = b.do("review", "design", design, "--tool-calls", "30")
+	code, result = b.do("design", "review", design, "--tool-calls", "30")
 	expectOutcome(t, "running design review", code, result, intentInProgress)
 	round("completed")
 	b.writeReturn("rev1", 1, "rev1", map[string]any{"id": "F1", "material": true}, map[string]any{"id": "F2", "material": false})
-	code, result = b.do("review", "design", design, "--tool-calls", "30")
+	code, result = b.do("design", "review", design, "--tool-calls", "30")
 	expectOutcome(t, "collected design review", code, result, intentConfirmed)
 	if !strings.Contains(result.Summary, "2 findings, 1 material") || len(briefs) != 2 || briefs[0] != briefs[1] || operations[0] != operations[1] {
 		t.Fatalf("the repeat must carry the identical task and request identity: %+v", result)
@@ -224,11 +228,11 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 	outside := filepath.Join(b.root(), "notes", "intent.md")
 	b.writeFile(outside, "- Kind: design\n- Id: 01OUT\n- Goals: standing-validation\n")
 	calls := len(b.calls)
-	code, result = b.do("review", "design", outside, "--tool-calls", "30")
+	code, result = b.do("design", "review", outside, "--tool-calls", "30")
 	expectOutcome(t, "outside the design homes", code, result, intentRefused)
 	notDesign := filepath.Join(homes[0], "notes.md")
 	b.writeFile(notDesign, "# Notes\n")
-	code, result = b.do("review", "design", notDesign, "--tool-calls", "30")
+	code, result = b.do("design", "review", notDesign, "--tool-calls", "30")
 	expectOutcome(t, "non-design file", code, result, intentRefused)
 	if len(b.calls) != calls {
 		t.Fatal("refusals dispatch nothing")
@@ -249,12 +253,12 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 		}
 		return intentProcessResult{stdout: []byte(`{"outcome":"RECONCILING","headline":"already running"}`)}
 	}
-	code, result = b.do("review", "job", "impl1", "--tool-calls", "20")
+	code, result = b.do("work", "review", "j2:impl1", "--tool-calls", "20")
 	expectOutcome(t, "unknown dispatch outcome", code, result, intentInProgress)
 	if result.Next == nil || !strings.Contains(result.Next.Reason, "not dispatched again") {
 		t.Fatalf("unknown dispatch must be reported with recovery: %+v", result)
 	}
-	code, result = b.do("review", "job", "impl1", "--tool-calls", "20")
+	code, result = b.do("work", "review", "j2:impl1", "--tool-calls", "20")
 	expectOutcome(t, "reconciling dispatch", code, result, intentInProgress)
 
 	var reads [][]string
@@ -270,7 +274,7 @@ func TestIntentReviewEvidenceKinds(t *testing.T) {
 		return branch.BranchReadResult{State: "closed", RootJob: "crit9", GateRunID: "g1"}, 0, nil
 	}
 	pending, reads = true, nil
-	code, result = b.do("review", "commit", "abc1234", "--goal", "standing-validation")
+	code, result = b.do("work", "review", "--commit", "abc1234", "--goal", "standing-validation")
 	expectOutcome(t, "pending read dispatch", code, result, intentInProgress)
 	if len(reads) != 1 || result.Decision == "" {
 		t.Fatalf("a pending read dispatch is reported, not retried: %v %+v", reads, result)
@@ -289,7 +293,7 @@ func TestIntentFoldComposesTheReviewedDecision(t *testing.T) {
 	b.writeFile(brief, "Working Mode: fix\n\n# Goal\n\nFix F1.\n")
 	var messages []string
 	b.handler = func(process intentProcess) intentProcessResult {
-		if process.argv[2] != "--follow-up" || process.argv[3] != "impl1" {
+		if process.argv[3] != "--follow-up" || process.argv[4] != "impl1" {
 			t.Fatalf("follow-up %v", process.argv)
 		}
 		text, _ := os.ReadFile(flagValue(process.argv, "--brief"))
@@ -297,7 +301,7 @@ func TestIntentFoldComposesTheReviewedDecision(t *testing.T) {
 		return intentProcessResult{stdout: []byte(`{"outcome":"WON","headline":"started","jobId":"impl1-r2"}`)}
 	}
 	for range 2 {
-		code, result := b.do("revise", "job", "crit1", "--dispositions", dispositions, "--brief", brief)
+		code, result := b.do("work", "revise", "j2:crit1", "--dispositions", dispositions, "--brief", brief)
 		expectOutcome(t, "fold", code, result, intentInProgress)
 	}
 	if len(messages) != 2 || messages[0] != messages[1] || !strings.HasPrefix(messages[0], "Working Mode: fix") ||
@@ -353,7 +357,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	b.writeReturn("crit1", 1, "crit1", map[string]any{"id": "F1", "material": true}, map[string]any{"id": "F2", "material": false})
 	partial := filepath.Join(b.root(), "partial.md")
 	b.writeFile(partial, deliveryDispositionsHeader+"| F1 | accepted | fixed in round 2 | none |\n")
-	code, result := b.do("done", "job", "crit1", "--dispositions", partial)
+	code, result := b.do("work", "close", "j2:crit1", "--dispositions", partial)
 	expectOutcome(t, "unjoined dispositions", code, result, intentRefused)
 	if len(b.calls) != 0 || !strings.Contains(fmt.Sprint(result.Data), "F2") {
 		t.Fatalf("an incomplete join refuses before the close owner: %+v", result)
@@ -375,14 +379,14 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 
 	// Without an evidence root the owner cannot mirror, so its close check
 	// refuses and nothing is stamped.
-	code, result = b.do("done", "job", "inv1")
+	code, result = b.do("work", "close", "j2:inv1")
 	expectOutcome(t, "owner refusal", code, result, intentRefused)
 	if closed, _ := b.job("inv1")["chainClosed"].(bool); closed || result.Decision == "" {
 		t.Fatalf("an owner refusal leaves the chain open: %+v", result)
 	}
 	evidence := t.TempDir()
 	b.writeFile(conf, string(existing)+"\nevidence.root="+evidence+"\n")
-	code, result = b.do("done", "job", "inv1")
+	code, result = b.do("work", "close", "j2:inv1")
 	if result.Outcome != intentConfirmed {
 		t.Fatalf("whole close: exit %d %+v", code, result)
 	}
@@ -394,7 +398,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 		t.Fatalf("the chain lock outlived the owner: %v", err)
 	}
 	calls := len(b.calls)
-	code, result = b.do("done", "job", "inv1")
+	code, result = b.do("work", "close", "j2:inv1")
 	expectOutcome(t, "repeat close", code, result, intentUnchanged)
 	if len(b.calls) != calls {
 		t.Fatal("a closed chain is not closed again")
@@ -426,7 +430,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	b.writeReturn("crit2", 1, "crit2", map[string]any{"id": "C1", "material": false})
 	criticDispositions := filepath.Join(b.root(), "crit2.md")
 	b.writeFile(criticDispositions, deliveryDispositionsHeader+"| C1 | noted | wording only | none |\n")
-	code, result = b.do("done", "job", "crit2", "--dispositions", criticDispositions)
+	code, result = b.do("work", "close", "j2:crit2", "--dispositions", criticDispositions)
 	expectOutcome(t, "unfolded critic round", code, result, intentRefused)
 	if !strings.Contains(fmt.Sprint(result.Data), "folded through round 0 while terminal round 1 exists") {
 		t.Fatalf("the real close check refuses an unfolded round: %+v", result)
@@ -437,14 +441,14 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	}
 	// The multi-chain refusal offers the public close of each chain; the
 	// root and file are substituted into exactly the printed command.
-	_, refused := b.do("review", "design", design, "--tool-calls", "30")
-	printed := "metasystem review job ROOT --dispositions FILE"
+	_, refused := b.do("design", "review", design, "--tool-calls", "30")
+	printed := "metasystem work review j2:ROOT --dispositions FILE"
 	if refused.Outcome != intentRefused || !strings.Contains(refused.Decision, printed) || strings.Contains(refused.Decision, "metasystem close") {
 		t.Fatalf("the multi-chain refusal: %+v", refused)
 	}
 	followed := strings.Fields(strings.NewReplacer("ROOT", "crit2", "FILE", criticDispositions).Replace(printed))
 	// The reference a person copies is the one status work prints.
-	_, listed := b.do("status", "work", "--all")
+	_, listed := b.do("work", "status", "--all")
 	reference := ""
 	for _, job := range listed.Data.(map[string]any)["jobs"].([]any) {
 		if view := job.(map[string]any); strings.HasSuffix(fmt.Sprint(view["reference"]), ":crit2") {
@@ -455,7 +459,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 		t.Fatalf("status work lists crit2 as %q: %+v", reference, listed)
 	}
 	code, result = b.do(followed[1:]...)
-	if code, again := b.do("review", "job", reference, "--dispositions", criticDispositions); code != 0 || again.Outcome != intentUnchanged {
+	if code, again := b.do("work", "review", reference, "--dispositions", criticDispositions); code != 0 || again.Outcome != intentUnchanged {
 		t.Fatalf("the qualified reference reaches the same closed chain: code=%d %+v", code, again)
 	}
 	expectOutcome(t, "critic chain close", code, result, intentConfirmed)
@@ -466,7 +470,7 @@ func TestIntentCloseWholeOwner(t *testing.T) {
 	if closed, _ := critic["chainClosed"].(bool); !closed || critic["findingRegisterRound"] != float64(1) || critic["mirror"] == nil || critic["runnerClosed"] != nil {
 		t.Fatalf("the real owner closes the folded critic chain: %v", critic)
 	}
-	_, result = b.do("done", "job", "inv1", "--dispositions", partial)
+	_, result = b.do("work", "close", "j2:inv1", "--dispositions", partial)
 	if result.Outcome != intentUnchanged {
 		t.Fatalf("closed first: %+v", result)
 	}
@@ -589,25 +593,25 @@ func TestIntentLandRouteEvidence(t *testing.T) {
 	owners := &landingOwners{configured: true, status: readBranch(2, "critic-root", "critic-root")}
 	owners.install(b)
 
-	code, result := b.do("land", "standing-validation")
+	code, result := b.do("work", "land", "standing-validation")
 	expectOutcome(t, "critic-root evidence joins the batch", code, result, intentInProgress)
 	if len(owners.joins) != 1 || !owners.joins[0].Last || owners.joins[0].LandingRoot != "/landing" || owners.candidates != 0 {
 		t.Fatalf("configured batch with critic-root evidence routes to the batch only: %+v", owners.joins)
 	}
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "repeat reads the membership", code, result, intentInProgress)
 	if len(owners.joins) != 1 || result.Next == nil || result.Data.(map[string]any)["joinedNow"] != false {
 		t.Fatalf("a repeated land must not join twice: %+v", result)
 	}
 	owners.member.State = batch.UnitLanded
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "batch landed", code, result, intentConfirmed)
 	if !strings.Contains(result.Summary, "stays open") {
 		t.Fatalf("landing never concludes the goal: %+v", result)
 	}
 
 	owners.member, owners.joinErr = nil, errors.New("BATCH_JOIN_UNREAD: goal is not read clean through its branch tip")
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "batch refusal", code, result, intentRefused)
 	if owners.candidates != 0 || len(b.calls) != 0 {
 		t.Fatalf("a batch refusal never falls back to the hand route: %+v", result)
@@ -616,7 +620,7 @@ func TestIntentLandRouteEvidence(t *testing.T) {
 	owners.joinErr = nil
 	owners.status = readBranch(2, "critic-root", "reader-record")
 	joins := len(owners.joins)
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "reader-record evidence lands by hand", code, result, intentConfirmed)
 	if len(owners.joins) != joins || owners.candidates != 1 || !slices.Equal(owners.receiptTrees, []string{"cand-eeee"}) || len(owners.pushes) != 1 {
 		t.Fatalf("hand-reader evidence takes the hand route and proves the composed candidate: %v", owners.receiptTrees)
@@ -627,7 +631,7 @@ func TestIntentLandRouteEvidence(t *testing.T) {
 
 	owners.configured = false
 	b.writeJob(map[string]any{"jobId": "impl1", "role": "implementer", "status": "completed", "goalId": "standing-validation"})
-	code, result = b.do("land", "job", "impl1")
+	code, result = b.do("work", "land", "j2:impl1")
 	expectOutcome(t, "chain without batch root", code, result, intentRefused)
 	if !strings.Contains(result.Decision, "landing.batch-root") {
 		t.Fatalf("a chain without batch policy names the missing input: %+v", result)
@@ -639,31 +643,31 @@ func TestIntentLandRecovery(t *testing.T) {
 	b := newDeliveryBed(t)
 	owners := &landingOwners{status: readBranch(1, "reader-record")}
 	owners.install(b)
-	code, result := b.do("land", "standing-validation")
+	code, result := b.do("work", "land", "standing-validation")
 	expectOutcome(t, "unread unit", code, result, intentRefused)
-	if result.Next == nil || !slices.Equal(result.Next.Argv[1:4], []string{"review", "commit", strings.Repeat("2", 40)}) || owners.candidates != 0 {
+	if result.Next == nil || !slices.Equal(result.Next.Argv[1:5], []string{"work", "review", "--commit", strings.Repeat("2", 40)}) || owners.candidates != 0 {
 		t.Fatalf("an unread unit names its read and proves nothing: %+v", result)
 	}
 
 	owners.status = readBranch(2, "reader-record", "reader-record")
 	owners.pushErr = []error{errors.New("push rejected: endpoint moved")}
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "unpushed", code, result, intentPartial)
-	if result.Next == nil || !slices.Equal(result.Next.Argv[:3], []string{"metasystem", "land", "standing-validation"}) || len(owners.preps) != 1 {
+	if result.Next == nil || !slices.Equal(result.Next.Argv[:4], []string{"metasystem", "work", "land", "standing-validation"}) || len(owners.preps) != 1 {
 		t.Fatalf("a failed push keeps the prepared landing and names the retry: %+v", result)
 	}
 	owners.sweepErr = []error{errors.New("sweep: remote refused the branch deletion")}
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "pushed, unswept", code, result, intentPartial)
 	if len(owners.receiptTrees) != 1 || len(owners.preps) != 1 || len(owners.pushes) != 2 || owners.branchDeleted {
 		t.Fatalf("the retry reuses receipt and preparation and reports the pending sweep: %+v", result)
 	}
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "resumed sweep", code, result, intentConfirmed)
 	if owners.sweeps != 2 || len(owners.pushes) != 2 || !owners.branchDeleted {
 		t.Fatalf("the repeat resumes the sweep, never pushes again: %+v", result)
 	}
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "landed and branch gone", code, result, intentUnchanged)
 	if owners.sweeps != 2 || len(owners.pushes) != 2 {
 		t.Fatalf("a swept landing is read before the missing branch: %+v", result)
@@ -673,7 +677,7 @@ func TestIntentLandRecovery(t *testing.T) {
 	owners.status = readBranch(2, "reader-record", "reader-record")
 	owners.status.EndpointTip = strings.Repeat("f", 40)
 	owners.red = "goal-red"
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "red proof", code, result, intentRefused)
 	if owners.receiptTrees[len(owners.receiptTrees)-1] != "cand-ffff" || len(owners.pushes) != 2 || result.Data.(map[string]any)["classification"] != "goal-red" {
 		t.Fatalf("a moved endpoint takes a new candidate proof, and a red one pushes nothing: %+v", result)
@@ -681,7 +685,7 @@ func TestIntentLandRecovery(t *testing.T) {
 	owners.status.EndpointTip = strings.Repeat("a", 40)
 	owners.receiptExit = 3
 	preps := len(owners.preps)
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "proof refused", code, result, intentRefused)
 	if len(owners.preps) != preps || !strings.Contains(result.Summary, "no schema-3 receipt") {
 		t.Fatalf("no receipt, no preparation: %+v", result)
@@ -721,9 +725,9 @@ func TestIntentLandBatchMemberSelection(t *testing.T) {
 		return intentBranchState{EndpointTip: strings.Repeat("e", 40)}, nil // the goal branch is gone
 	}
 
-	code, result := b.do("land", "standing-validation", "--through", first)
+	code, result := b.do("work", "land", "standing-validation", "--through", first)
 	expectOutcome(t, "landed prefix after branch deletion", code, result, intentConfirmed)
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "full request after a landed prefix", code, result, intentRefused)
 	if !strings.Contains(result.Summary, "origin has no goal/standing-validation") || joins != 0 {
 		t.Fatalf("an earlier landed prefix must not answer a whole-goal request: %+v", result)
@@ -732,13 +736,13 @@ func TestIntentLandBatchMemberSelection(t *testing.T) {
 	if err := store.Create(full); err != nil {
 		t.Fatal(err)
 	}
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "joined whole goal", code, result, intentInProgress)
 	if joins != 0 || result.Data.(map[string]any)["batchId"] != full.BatchID {
 		t.Fatalf("the whole-goal member is read, never joined again: %+v", result)
 	}
 	markBatchLanded(t, landingRoot, full.BatchID)
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "whole goal landed, branch deleted", code, result, intentConfirmed)
 }
 
@@ -763,10 +767,10 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 		}
 		return branch.PublishReadResult{Attestation: "attest1", OpID: branch.PublishOperationID("g1"), State: "pushed", RemoteTip: "attest1"}, nil
 	}
-	code, result := b.do("review", "commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic")
+	code, result := b.do("work", "review", "--commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic")
 	expectOutcome(t, "terminal but unclosed critic", code, result, intentInProgress)
 	if len(reads) != 1 || !slices.Contains(reads[0], "gpt-critic") || publishes != 0 ||
-		!strings.Contains(result.Decision, "review commit abc1234 --goal standing-validation --dispositions FILE") || strings.Contains(result.Decision, "gpt-critic") || strings.Contains(result.Decision, "metasystem close") ||
+		!strings.Contains(result.Decision, "work review --commit abc1234 --goal standing-validation --dispositions FILE") || strings.Contains(result.Decision, "gpt-critic") || strings.Contains(result.Decision, "metasystem close") ||
 		result.Data.(map[string]any)["material"] != float64(1) {
 		t.Fatalf("an unclosed critic names the author's close, then the same review; nothing is collected: %v %+v", reads, result)
 	}
@@ -784,7 +788,7 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	}
 	decisions := filepath.Join(b.root(), "crit9-decisions.md")
 	b.writeFile(decisions, deliveryDispositionsHeader+"| F1 | refuted | the test at x_test.go:12 covers it | none |\n")
-	code, result = b.do("review", "commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic", "--dispositions", decisions)
+	code, result = b.do("work", "review", "--commit", "abc1234", "--goal", "standing-validation", "--model", "gpt-critic", "--dispositions", decisions)
 	if len(b.calls) != 1 || filepath.Base(b.calls[0][0]) != "dispatch.sh" || b.calls[0][1] != "close" {
 		t.Fatalf("the decided review did not run the whole close owner: %v %+v", b.calls, result)
 	}
@@ -798,7 +802,7 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 	}
 	// The printed continuation is the exact subject's review; the decided
 	// call's model and dispositions are not repeated.
-	if want := []string{"metasystem", "review", "commit", "abc1234", "--goal", "standing-validation"}; !slices.Equal(result.Next.Argv, want) {
+	if want := []string{"metasystem", "work", "review", "--commit", "abc1234", "--goal", "standing-validation"}; !slices.Equal(result.Next.Argv, want) {
 		t.Fatalf("the lost publication's continuation is %v, want %v", result.Next.Argv, want)
 	}
 	calls := len(b.calls)
@@ -810,9 +814,9 @@ func TestIntentReviewCommitClosesThenPublishes(t *testing.T) {
 
 	calls = len(b.calls)
 	for _, args := range [][]string{
-		{"review", "commit", "abc1234", "--goal", "standing-validation", "--effort", "high"},
-		{"review", "job", "impl1", "--model", "gpt-critic", "--tool-calls", "20"},
-		{"review", "design", "plans/designs/x.md", "--model", "gpt-critic", "--tool-calls", "20"},
+		{"work", "review", "--commit", "abc1234", "--goal", "standing-validation", "--effort", "high"},
+		{"work", "review", "j2:impl1", "--model", "gpt-critic", "--tool-calls", "20"},
+		{"design", "review", "plans/designs/x.md", "--model", "gpt-critic", "--tool-calls", "20"},
 	} {
 		code, result := b.do(args...)
 		expectOutcome(t, strings.Join(args, " "), code, result, intentRefused)
@@ -871,19 +875,19 @@ func TestIntentLandOldWholeLandingDoesNotAnswerFreshBranch(t *testing.T) {
 		return intentBranchState{EndpointTip: strings.Repeat("e", 40), BranchTip: fresh, Sources: []string{"critic-root"},
 			Status: branch.Status{Tip: fresh, Prefix: 1, Units: []branch.UnitStatus{{Unit: "u9", Commit: fresh}}}}, nil
 	}
-	code, result := b.do("land", "standing-validation")
+	code, result := b.do("work", "land", "standing-validation")
 	expectOutcome(t, "fresh branch after an old whole landing", code, result, intentInProgress)
 	if len(joins) != 1 || !joins[0].Last || result.Data.(map[string]any)["joinedNow"] != true {
 		t.Fatalf("the fresh branch must join as new work: %v %+v", joins, result)
 	}
 	failing := errors.New("goal branch unreadable")
 	b.owners.branchState = func(string, string) (intentBranchState, error) { return intentBranchState{}, failing }
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "unreadable branch", code, result, intentRefused)
 	b.owners.branchState = func(string, string) (intentBranchState, error) {
 		return intentBranchState{EndpointTip: strings.Repeat("e", 40)}, nil
 	}
-	code, result = b.do("land", "standing-validation")
+	code, result = b.do("work", "land", "standing-validation")
 	expectOutcome(t, "retained landing once the branch is gone", code, result, intentConfirmed)
 	if len(joins) != 1 {
 		t.Fatal("a retained landed member is not joined again")

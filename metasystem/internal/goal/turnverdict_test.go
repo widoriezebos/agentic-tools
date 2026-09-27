@@ -49,7 +49,7 @@ func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
 	}
 }
 
-// supervision-hook-fixtures.sh:1096 compares the whole allowance display.
+// The Stop hook relays the whole allowance display unchanged.
 func TestTurnVerdictHandoffAllowanceStaysExact(t *testing.T) {
 	t.Parallel()
 	store := legacyVerdictStore(t, false)

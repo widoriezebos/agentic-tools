@@ -33,11 +33,11 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 		if group.Phase == "" || group.EnvironmentMode != "inherit" {
 			t.Fatalf("group %s lost phase or inherited environment", group.ID)
 		}
-		if group.ID != "refusal-register-standard" && group.ID != "fast-static-build" && group.ID != "policy-canary" && group.ID != "adapter-canary" && group.ID != "command-interface-smoke" && group.Phase != "acceptance" {
+		if group.ID != "refusal-register-standard" && group.ID != "fast-static-build" && group.ID != "policy-canary" && group.ID != "adapter-canary" && group.ID != "command-interface-smoke" && group.ID != "verb-ratchet" && group.Phase != "acceptance" {
 			t.Fatalf("group %s entered admission outside the reviewed static reproof and canary floor", group.ID)
 		}
 	}
-	for _, id := range []string{"refusal-register-standard", "fast-static-build", "policy-canary", "adapter-canary", "command-interface-smoke"} {
+	for _, id := range []string{"refusal-register-standard", "fast-static-build", "policy-canary", "adapter-canary", "command-interface-smoke", "verb-ratchet"} {
 		if ids[id].Phase != "admission" {
 			t.Fatalf("%s must be admission", id)
 		}
@@ -70,6 +70,17 @@ func TestGoalLandingHostContractRetainsPriorGroupsAndGoGate(t *testing.T) {
 
 // The frozen schema-1 fixture is independent of the detached candidate HEAD.
 // It captures every old native group and mandatory selection reference.
+// retiredWithDeletedVerb names legacy mandatory tests (group/test) whose only
+// subject was an internal verb deleted for having no caller
+// (plans/designs/verbs-object-action.md 6.1). Each maps to that verb; nothing
+// else may leave the legacy floor this way.
+var retiredWithDeletedVerb = map[string]string{
+	"context-standard/TestRuntimeContextSampleVerb":  "runtime context-sample",
+	"launch-standard/TestPackCheckVerbPrintsOneLine": "launch pack-check",
+	"launch-standard/TestUnitRunPrintsOneLine":       "unit run",
+	"launch-standard/TestUnitFamilyIsRegistered":     "unit run",
+}
+
 func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract) {
 	t.Helper()
 	installation, err := filepath.Abs(filepath.Join("..", ".."))
@@ -125,7 +136,24 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			t.Errorf("legacy host group %s disappeared", old.ID)
 			continue
 		}
-		containsAll(old.ID+" inputs", now.Inputs, old.Inputs)
+		requiredInputs := old.Inputs
+		if old.ID == "hook-start-audit-standard" {
+			// U4 retired the shell hook bed and the sourced degraded-form
+			// renderer; both moved into internal/hooks, which the group names.
+			// Only these exact retired inputs may be replaced, and only by it.
+			retired := map[string]bool{
+				"metasystem/scripts/agents/supervision-hook-fixtures.sh": true,
+				"metasystem/scripts/agents/stop-degraded-forms.sh":       true,
+			}
+			requiredInputs = nil
+			for _, input := range old.Inputs {
+				if !retired[input] {
+					requiredInputs = append(requiredInputs, input)
+				}
+			}
+			requiredInputs = append(requiredInputs, "metasystem/internal/hooks/**")
+		}
+		containsAll(old.ID+" inputs", now.Inputs, requiredInputs)
 		containsAll(old.ID+" packages", now.Packages, old.Packages)
 		containsAll(old.ID+" obligations", now.Obligations, old.Obligations)
 		var oldTests []string
@@ -143,6 +171,10 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 		}
 		var automaticallyCovered []string
 		for _, name := range oldTests {
+			if verb, retired := retiredWithDeletedVerb[old.ID+"/"+name]; retired {
+				t.Logf("%s %s retired with the deleted verb %s", old.ID, name, verb)
+				continue
+			}
 			requiredNames := []string{name}
 			if old.ID == "authority-standard" && name == "TestTemporaryGoalProofUsesTheRealWallClock" {
 				// Temporary goal authority keeps both guarantees from the retired

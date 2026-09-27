@@ -306,7 +306,7 @@ while true; do
     METASYSTEM_DELEGATE_ROOT="$harness" METASYSTEM_BIN="$enrolled_engine" \
         METASYSTEM_CAP_MIN_IMPLEMENTER_FAKE_FAKE_MODEL=500 \
         METASYSTEM_DISPATCH_PERMISSIONS_IMPLEMENTER=none \
-        "$enrolled_engine" delegate --role implementer --brief "$brief" \
+        "$enrolled_engine" internal delegate --role implementer --brief "$brief" \
           --goal none-explicit --destructive-reach MECHANICAL --op attested-ceiling \
           >"$tmp/attested.out" 2>&1
   }; then

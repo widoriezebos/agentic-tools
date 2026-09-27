@@ -61,7 +61,7 @@ if [[ ${BASH_SOURCE[0]} == "$0" && -z "${METASYSTEM_DELEGATE_INTERNAL:-}" ]]; th
   esac
   case "${1:-dispatch}" in
     dispatch|follow-up|cancel|--*)
-      printf '%s\n' '{"outcome":"REFUSED-REQUEST","headline":"refused","detail":"the legacy dispatch authority grammar was removed; use metasystem delegate"}'
+      printf '%s\n' '{"outcome":"REFUSED-REQUEST","headline":"refused","detail":"the legacy dispatch authority grammar was removed; use metasystem internal delegate"}'
       exit 2 ;;
   esac
 fi
@@ -1128,7 +1128,7 @@ wait_for_job() { # job
   local job=$1 output wait_rc
   touch "$heartbeats/$job.waiting"
   set +e
-  output=$("$ms" wait --root "$root" --job "$job" 2>&1)
+  output=$("$ms" internal wait --root "$root" --job "$job" 2>&1)
   wait_rc=$?
   set -e
   if (( wait_rc == 2 )) && grep -Fq 'unknown family "wait"' <<<"$output"; then

@@ -146,7 +146,7 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	if fixture.projection().Tip != before || fixture.reports != 0 {
 		t.Fatalf("refused done changed accepted tip or ran metrics: reports=%d", fixture.reports)
 	}
-	template := "metasystem goal read-items close --id standing-validation --item critic-1 --fixed <commit>"
+	template := "metasystem internal goal read-items close --id standing-validation --item critic-1 --fixed <commit>"
 	if !strings.Contains(refusal.Detail, template) {
 		t.Fatalf("done refusal lacks executable fixed remedy %q: %s", template, refusal.Detail)
 	}
@@ -154,7 +154,7 @@ func TestDoneReadItemRefusalRemedyExecutes(t *testing.T) {
 	printed = strings.SplitN(printed, " | ", 2)[0]
 	command := strings.Replace(printed, "<commit>", fixture.codeCommit, 1)
 	fields := strings.Fields(command)
-	closeArgs := append(append([]string{}, fields[3:]...), "--root", fixture.repository.root, "--lineage", "m1")
+	closeArgs := append(append([]string{}, fields[4:]...), "--root", fixture.repository.root, "--lineage", "m1")
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
 		return runGoalReadItemsWithInputs(closeArgs, fixture.repository.commandNow(fixture.now), fixture.dependencies, fixture.resolveCodeCommit)
 	})

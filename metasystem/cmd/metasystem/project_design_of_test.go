@@ -132,7 +132,7 @@ func TestProjectDesignOfVerbRefusesAGoalTheLedgerDoesNotHave(t *testing.T) {
 	root := projectFixture(t)
 	code, out, problem := runProjectVerb(projectDesignOf, []string{"--root", root, "--goal", "invoicing"})
 	if code != 2 || out != "" ||
-		problem != "metasystem project design-of: the goal invoicing is not in the ledger\n" {
+		problem != "metasystem design find: the goal invoicing is not in the ledger\n" {
 		t.Fatalf("an unknown goal = code %d, stdout %q, stderr %q", code, out, problem)
 	}
 	if code, _, _ := runProjectVerb(projectDesignOf, []string{"--root", root}); code != 2 {

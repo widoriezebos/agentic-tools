@@ -15,10 +15,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -27,10 +29,10 @@ import (
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -114,6 +116,9 @@ func runStewardHealth(args []string) int {
 		fmt.Fprintln(os.Stderr, "health: --repo is required")
 		return 2
 	}
+	if *hookPreview {
+		return writeHookHealthPreview(*repo, *metasystemRoot, *format == "json", os.Stdout, os.Stderr)
+	}
 	clockRoot := stewardClockRoot(*metasystemRoot, *repo)
 	if *metasystemRoot == "" {
 		*metasystemRoot = *repo
@@ -124,18 +129,6 @@ func runStewardHealth(args []string) int {
 		return 2
 	} else if ok {
 		now = fixtureNow
-	}
-	if *hookPreview {
-		verdict := stewardPreviewHealthAt(*repo, *metasystemRoot, now, nil)
-		if *format == "json" {
-			if err := json.NewEncoder(os.Stdout).Encode(steward.NewHookHealthPreview(verdict)); err != nil {
-				fmt.Fprintln(os.Stderr, "health: encode hook preview:", err)
-				return 2
-			}
-		} else {
-			fmt.Println(verdict.Line())
-		}
-		return verdict.ExitCode()
 	}
 	verdict, err := stewardObserveHealth(*repo, now, nil)
 	if err != nil {
@@ -167,6 +160,32 @@ func runStewardHealth(args []string) int {
 		return 1
 	}
 	return code
+}
+
+// writeHookHealthPreview renders the hook's health preview without
+// advancing the tick-owned alert breaker: the Stop hook's health facts.
+func writeHookHealthPreview(repo, metasystemRoot string, asJSON bool, stdout, stderr io.Writer) int {
+	clockRoot := stewardClockRoot(metasystemRoot, repo)
+	if metasystemRoot == "" {
+		metasystemRoot = repo
+	}
+	now := stewardHealthNow().UTC()
+	if fixtureNow, ok, err := stewardFixtureNow(clockRoot); err != nil {
+		fmt.Fprintln(stderr, "health: fixture clock:", err)
+		return 2
+	} else if ok {
+		now = fixtureNow
+	}
+	verdict := stewardPreviewHealthAt(repo, metasystemRoot, now, nil)
+	if asJSON {
+		if err := json.NewEncoder(stdout).Encode(steward.NewHookHealthPreview(verdict)); err != nil {
+			fmt.Fprintln(stderr, "health: encode hook preview:", err)
+			return 2
+		}
+	} else {
+		fmt.Fprintln(stdout, verdict.Line())
+	}
+	return verdict.ExitCode()
 }
 
 func runHealthAcknowledgeAlert(args []string) int {
@@ -218,137 +237,94 @@ func runStewardHookAttempt(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward hook-attempt: --repo, --pid, and --turn-key are required")
 		return 2
 	}
-	exact, state, err := (identity.KernelProber{}).Probe(*pid)
-	if err != nil || state != identity.Alive {
-		fmt.Fprintln(os.Stderr, "steward hook-attempt: the hook process identity is unavailable")
+	line, err := beginHookAttempt(*repo, *pid, *turnKey)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "steward hook-attempt:", err)
 		return 1
 	}
-	record, err := steward.BeginHookAttempt(*repo, exact.Ref(), *turnKey, time.Now())
+	fmt.Println(line)
+	return 0
+}
+
+// beginHookAttempt records a Stop attempt for the exact hook process and
+// returns its generation and attempt sequence as one JSON line.
+func beginHookAttempt(repo string, pid int64, turnKey string) (string, error) {
+	exact, state, err := (identity.KernelProber{}).Probe(pid)
+	if err != nil || state != identity.Alive {
+		return "", fmt.Errorf("the hook process identity is unavailable")
+	}
+	record, err := steward.BeginHookAttempt(repo, exact.Ref(), turnKey, time.Now())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward hook-attempt: %v\n", err)
-		return 1
+		return "", err
 	}
 	data, _ := json.Marshal(map[string]any{"generation": record.Generation, "attemptSeq": record.AttemptSeq})
-	fmt.Println(string(data))
-	return 0
+	return string(data), nil
 }
 
 func runStewardHookComplete(args []string) int {
 	flags := flag.NewFlagSet("steward hook-complete", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
+	var request hooks.HookCompletion
+	pathFlagVar(flags, &request.Repo, "repo", "", "checkout root")
 	generation := flags.Int("generation", 0, "hook turn generation")
 	attempt := flags.Int64("attempt", 0, "hook attempt sequence")
-	result := flags.String("result", "", "OK | ERROR | INDETERMINATE")
-	outcome := flags.String("outcome", "", "completion outcome")
-	healthLine := flags.String("health-line", "", "health verdict carried by the payload")
-	payloadFile := flags.String("payload-file", "", "file containing the emitted payload")
-	reportPath := flags.String("report-path", "", "exact immutable Stop report path")
-	reportID := flags.String("report-id", "", "exact immutable Stop report id")
-	reportAlias := flags.String("report-alias", "", "exact short Stop report alias used by the payload")
-	reportSHA := flags.String("report-sha256", "", "sha256 of the immutable Stop report")
-	installation := flags.String("installation", "", "installation bound to the report lookup")
-	elapsedSec := flags.Int64("elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
+	flags.StringVar(&request.Result, "result", "", "OK | ERROR | INDETERMINATE")
+	flags.StringVar(&request.Outcome, "outcome", "", "completion outcome")
+	flags.StringVar(&request.HealthLine, "health-line", "", "health verdict carried by the payload")
+	flags.StringVar(&request.PayloadFile, "payload-file", "", "file containing the emitted payload")
+	flags.StringVar(&request.ReportPath, "report-path", "", "exact immutable Stop report path")
+	flags.StringVar(&request.ReportID, "report-id", "", "exact immutable Stop report id")
+	flags.StringVar(&request.ReportAlias, "report-alias", "", "exact short Stop report alias used by the payload")
+	flags.StringVar(&request.ReportSHA256, "report-sha256", "", "sha256 of the immutable Stop report")
+	flags.StringVar(&request.Installation, "installation", "", "installation bound to the report lookup")
+	flags.Int64Var(&request.ElapsedSec, "elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	var stopElapsedSec *int64
 	flags.Visit(func(parsed *flag.Flag) {
 		if parsed.Name == "elapsed-sec" {
-			stopElapsedSec = elapsedSec
+			request.HasElapsed = true
 		}
 	})
-	if stopElapsedSec != nil && *stopElapsedSec < 0 {
-		fmt.Fprintln(os.Stderr, "steward hook-complete: --elapsed-sec must be non-negative")
+	request.Generation = strconv.Itoa(*generation)
+	request.Attempt = strconv.FormatInt(*attempt, 10)
+	return completeHookAttempt(request, os.Stderr)
+}
+
+// completeHookAttempt records one Stop attempt's completion: the payload it
+// emitted, the health line it carried and the report it delivered.
+func completeHookAttempt(request hooks.HookCompletion, stderr io.Writer) int {
+	if request.HasElapsed && request.ElapsedSec < 0 {
+		fmt.Fprintln(stderr, "steward hook-complete: --elapsed-sec must be non-negative")
 		return 2
 	}
-	if *repo == "" || *generation < 1 || *attempt < 1 || *result == "" || *outcome == "" {
-		fmt.Fprintln(os.Stderr, "steward hook-complete: repo and exact completion flags are required")
+	generation, generationErr := strconv.Atoi(request.Generation)
+	attempt, attemptErr := strconv.ParseInt(request.Attempt, 10, 64)
+	if request.Repo == "" || generationErr != nil || generation < 1 || attemptErr != nil || attempt < 1 || request.Result == "" || request.Outcome == "" {
+		fmt.Fprintln(stderr, "steward hook-complete: repo and exact completion flags are required")
 		return 2
 	}
 	payload := []byte{}
-	if *payloadFile != "" {
+	if request.PayloadFile != "" {
 		var err error
-		payload, err = os.ReadFile(*payloadFile)
+		payload, err = os.ReadFile(request.PayloadFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "steward hook-complete: %v\n", err)
+			fmt.Fprintf(stderr, "steward hook-complete: %v\n", err)
 			return 1
 		}
 	}
-	if *result == string(steward.ComponentOK) && (*healthLine == "" || *payloadFile == "") {
-		fmt.Fprintln(os.Stderr, "steward hook-complete: OK requires health and payload flags")
+	if request.Result == string(steward.ComponentOK) && (request.HealthLine == "" || request.PayloadFile == "") {
+		fmt.Fprintln(stderr, "steward hook-complete: OK requires health and payload flags")
 		return 2
 	}
-	_, err := steward.CompleteHookAttemptWithDelivery(*repo, *generation, *attempt, steward.ComponentResult(*result),
-		*outcome, *healthLine, string(payload), steward.HookDeliveryReference{Installation: *installation, ID: *reportID, Alias: *reportAlias, Path: *reportPath, SHA256: *reportSHA}, stopElapsedSec, time.Now())
+	var stopElapsedSec *int64
+	if request.HasElapsed {
+		elapsed := request.ElapsedSec
+		stopElapsedSec = &elapsed
+	}
+	_, err := steward.CompleteHookAttemptWithDelivery(request.Repo, generation, attempt, steward.ComponentResult(request.Result),
+		request.Outcome, request.HealthLine, string(payload), steward.HookDeliveryReference{Installation: request.Installation, ID: request.ReportID, Alias: request.ReportAlias, Path: request.ReportPath, SHA256: request.ReportSHA256}, stopElapsedSec, time.Now())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward hook-complete: %v\n", err)
-		return 1
-	}
-	return 0
-}
-
-func runStewardHookExpire(args []string) int {
-	flags := flag.NewFlagSet("steward hook-expire", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	elapsedSec := flags.Int64("elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	elapsedSet := false
-	flags.Visit(func(parsed *flag.Flag) {
-		if parsed.Name == "elapsed-sec" {
-			elapsedSet = true
-		}
-	})
-	if *repo == "" || !elapsedSet {
-		fmt.Fprintln(os.Stderr, "steward hook-expire: --repo and --elapsed-sec are required")
-		return 2
-	}
-	if *elapsedSec < 0 {
-		fmt.Fprintln(os.Stderr, "steward hook-expire: --elapsed-sec must be non-negative")
-		return 2
-	}
-	if _, err := steward.ExpireHookAttempt(*repo, *elapsedSec, time.Now()); err != nil {
-		fmt.Fprintf(os.Stderr, "steward hook-expire: %v\n", err)
-		return 1
-	}
-	return 0
-}
-
-func runStewardDigestPending(args []string) int {
-	flags := flag.NewFlagSet("steward digest-pending", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward digest-pending: --repo is required")
-		return 2
-	}
-	pending, err := narratordigest.Pending(*repo)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward digest-pending: %v\n", err)
-		return 1
-	}
-	data, _ := json.Marshal(pending)
-	fmt.Println(string(data))
-	return 0
-}
-
-func runStewardDigestAdvance(args []string) int {
-	flags := flag.NewFlagSet("steward digest-advance", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	cursor := flags.Int64("cursor", -1, "emitted digest byte cursor")
-	prefix := flags.String("prefix-sha256", "", "emitted digest prefix digest")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" || *cursor < 0 || *prefix == "" {
-		fmt.Fprintln(os.Stderr, "steward digest-advance: --repo, --cursor, and --prefix-sha256 are required")
-		return 2
-	}
-	if err := narratordigest.Advance(*repo, *cursor, *prefix); err != nil {
-		fmt.Fprintf(os.Stderr, "steward digest-advance: %v\n", err)
+		fmt.Fprintf(stderr, "steward hook-complete: %v\n", err)
 		return 1
 	}
 	return 0
@@ -396,8 +372,7 @@ func runStewardTick(args []string) int {
 		}
 	}
 	if resume {
-		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := stewardReviveOwner(*repo); err != nil {
 			fmt.Fprintf(os.Stderr, "steward tick: revive: %v (%s)\n", err, strings.TrimSpace(string(out)))
 			// Durable, not just printed: a failed revival must reach
 			// the operator even when nobody reads this output.
@@ -515,64 +490,83 @@ func runStewardRevive(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward revive: --repo is required")
 		return 2
 	}
+	return stewardRevive(*repo, os.Stdout, os.Stderr)
+}
+
+// stewardReviveOwner is one revival called in the caller's process (the
+// steward runner or tick), with its output returned as the former child's
+// combined output was.
+func stewardReviveOwner(repo string) (string, error) {
+	var output strings.Builder
+	if status := stewardRevive(cleanOwnerRoot(repo), &output, &output); status != 0 {
+		return output.String(), fmt.Errorf("steward revive exited %d", status)
+	}
+	return output.String(), nil
+}
+
+// stewardRevive is the revival owner on the caller's streams. The revival's
+// dispatch stays its own process in its own session (delegate --revive), so
+// the delegate chain classifies STEWARD from the steward process that calls
+// this, as it did from the revive child.
+func stewardRevive(repo string, stdout, stderr io.Writer) int {
 
 	// Resume an already-minted intent before minting another: the
 	// one-active-continuation guard would otherwise refuse forever.
-	live, err := steward.LiveIntents(*repo)
+	live, err := steward.LiveIntents(repo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+		fmt.Fprintf(stderr, "steward revive: %v\n", err)
 		return 1
 	}
 	var nonce string
 	if len(live) > 0 {
 		nonce = live[0].Nonce
 	} else {
-		work, reason, err := steward.LegacyOpenWork(*repo)
+		work, reason, err := steward.LegacyOpenWork(repo)
 		if err != nil || work != steward.WorkOwned {
-			fmt.Fprintf(os.Stderr, "steward revive: no owned open work (%s)\n", reason)
+			fmt.Fprintf(stderr, "steward revive: no owned open work (%s)\n", reason)
 			return 1
 		}
 		goalName := strings.TrimPrefix(reason, "current goal: ")
 		roster, err := dispatchpkg.ResolveRoster(dispatchpkg.RosterParams{
-			ConfPath: filepath.Join(*repo, "metasystem.conf"),
+			ConfPath: filepath.Join(repo, "metasystem.conf"),
 			Role:     "steward-continuation", Mode: "build",
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: roster: %v\n", err)
+			fmt.Fprintf(stderr, "steward revive: roster: %v\n", err)
 			return 1
 		}
 		raw := make([]byte, 8)
 		if _, err := rand.Read(raw); err != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+			fmt.Fprintf(stderr, "steward revive: %v\n", err)
 			return 1
 		}
 		nonce = hex.EncodeToString(raw)
-		it, err := steward.StageIntent(*repo, nonce, goalName, "steward-"+nonce,
+		it, err := steward.StageIntent(repo, nonce, goalName, "steward-"+nonce,
 			roster.Runtime, roster.Model, "worker provably dead with open work")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+			fmt.Fprintf(stderr, "steward revive: %v\n", err)
 			return 1
 		}
 		receiptRoot, rootErr := stateroot.StateRoot(stateroot.Receipts)
 		if rootErr != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: %v\n", rootErr)
+			fmt.Fprintf(stderr, "steward revive: %v\n", rootErr)
 			return 1
 		}
-		if err := steward.PrepareIntent(*repo, filepath.Join(receiptRoot, "receipts.log"), it); err != nil {
-			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+		if err := steward.PrepareIntent(repo, filepath.Join(receiptRoot, "receipts.log"), it); err != nil {
+			fmt.Fprintf(stderr, "steward revive: %v\n", err)
 			return 1
 		}
 	}
 
-	outcome, err := steward.CompleteRevival(*repo, steward.TickConfig{}, stewardCensusFor(*repo), nonce,
+	outcome, err := steward.CompleteRevival(repo, steward.TickConfig{}, stewardCensusFor(repo), nonce,
 		func(it steward.Intent) error {
 			binary, binaryErr := os.Executable()
 			if binaryErr != nil {
 				return binaryErr
 			}
-			cmd := exec.Command(binary, "delegate", "--revive", it.Nonce)
-			cmd.Dir = *repo
-			cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+*repo)
+			cmd := exec.Command(binary, "internal", "delegate", "--revive", it.Nonce)
+			cmd.Dir = repo
+			cmd.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+repo)
 			// Its own session, no controlling terminal: the chain
 			// classifies STEWARD identically whether the tick came
 			// from the runner, a cron, or an operator's shell.
@@ -584,7 +578,7 @@ func runStewardRevive(args []string) int {
 			return nil
 		})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+		fmt.Fprintf(stderr, "steward revive: %v\n", err)
 		return 1
 	}
 	// A concurrent runner may consume, launch, and stamp this exact intent
@@ -592,12 +586,12 @@ func runStewardRevive(args []string) int {
 	// handoff as the successful launch it was; an unstamped consumption still
 	// remains an unknown outcome and is not promoted.
 	if !outcome.Launched && strings.Contains(outcome.Reason, "intent is not live") {
-		if consumed, consumedErr := steward.ConsumedIntent(*repo, nonce); consumedErr == nil && consumed.LaunchStamped {
+		if consumed, consumedErr := steward.ConsumedIntent(repo, nonce); consumedErr == nil && consumed.LaunchStamped {
 			outcome.Launched = true
 			outcome.Reason = "intent was launched by a concurrent reviver"
 		}
 	}
-	fmt.Printf("launched=%v reason=%s\n", outcome.Launched, outcome.Reason)
+	fmt.Fprintf(stdout, "launched=%v reason=%s\n", outcome.Launched, outcome.Reason)
 	if !outcome.Launched {
 		if outcome.Escalate {
 			return 3
@@ -637,8 +631,7 @@ func runStewardRun(args []string) int {
 	tickConfig.ArmedLineage = *lineage
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
-		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
-		out, err := cmd.CombinedOutput()
+		out, err := stewardReviveOwner(*repo)
 		if err != nil {
 			return fmt.Errorf("%v (%s)", err, strings.TrimSpace(string(out)))
 		}
@@ -877,28 +870,6 @@ func runStewardDisarm(args []string) int {
 
 // runStewardPending prints one line naming undelivered incidents —
 // empty output means none, so shell callers can gate on it.
-func runStewardPending(args []string) int {
-	flags := flag.NewFlagSet("steward pending", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "steward pending: --repo is required")
-		return 2
-	}
-	pending, err := steward.PendingNotifications(*repo)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "steward pending: %v\n", err)
-		return 1
-	}
-	if len(pending) == 0 {
-		return 0
-	}
-	fmt.Printf("%d undelivered; newest: %s\n", len(pending), pending[len(pending)-1].Message)
-	return 0
-}
-
 // runStewardStatus is the operator's view: the last evidence state,
 // live intents, and pending notifications — the second visibility
 // channel the design pins.

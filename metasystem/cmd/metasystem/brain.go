@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -11,11 +12,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
-func brainHumanAct(root, verb string, fixture bool) error {
+func brainHumanAct(caller processIdentity, root, verb string, fixture bool) error {
 	if fixture {
 		authorization, err := fixtureauth.New(root)
 		if err != nil {
@@ -25,7 +27,11 @@ func brainHumanAct(root, verb string, fixture bool) error {
 			return nil
 		}
 	}
-	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
+	callerPid, err := caller.classifiablePid(identity.KernelProber{})
+	if err != nil {
+		return fmt.Errorf("brain %s could not classify its caller: %w", verb, err)
+	}
+	classification, err := classifyVerbCaller(root, callerPid)
 	if err != nil {
 		return fmt.Errorf("brain %s could not classify its caller: %w", verb, err)
 	}
@@ -43,58 +49,65 @@ func runBrainDeclare(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *by == "" {
-		fmt.Fprintln(os.Stderr, "brain declare needs --by")
+	return brainDeclare(entryCallerIdentity(), os.Stdout, os.Stderr, *root, *by, *fixture)
+}
+
+// brainDeclare is the declaration owner: the human gate classifies the
+// supplied caller identity (owner_invocation.go), and the outcome goes to the
+// caller's streams.
+func brainDeclare(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool) int {
+	if by == "" {
+		fmt.Fprintln(stderr, "brain declare needs --by")
 		return 2
 	}
-	if err := brainHumanAct(*root, "declare", *fixture); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if err := brainHumanAct(caller, root, "declare", fixture); err != nil {
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	ledgerIdentity := goal.ExistingLedgerIdentity(*root)
+	ledgerIdentity := goal.ExistingLedgerIdentity(root)
 	if ledgerIdentity == "" {
-		fmt.Fprintln(os.Stderr, "brain declare needs a migrated ledger identity; run metasystem goal migrate first")
+		fmt.Fprintln(stderr, "brain declare needs a migrated ledger identity; run metasystem internal goal migrate first")
 		return 2
 	}
-	machine, err := goal.ResolveMachine(*root)
+	machine, err := goal.ResolveMachine(root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	stamp := time.Now().UTC().Format(time.RFC3339)
-	if err := brain.ValidateDeclaration(ledgerIdentity, machine, *by, stamp); err != nil {
-		fmt.Fprintln(os.Stderr, "brain declare refused:", err)
+	if err := brain.ValidateDeclaration(ledgerIdentity, machine, by, stamp); err != nil {
+		fmt.Fprintln(stderr, "brain declare refused:", err)
 		return 2
 	}
-	state := brain.Read(*root, ledgerIdentity)
+	state := brain.Read(root, ledgerIdentity)
 	if state.State == brain.Declared {
-		fmt.Fprintf(os.Stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem brain withdraw --root %s --by <name>\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, *root)
+		fmt.Fprintf(stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem internal brain withdraw --root %s --by <name>\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, root)
 		return 2
 	}
 	if state.State == brain.Corrupt {
-		fmt.Fprintln(os.Stderr, brain.RemedialRefusal(state.Reason, *root))
+		fmt.Fprintln(stderr, brain.RemedialRefusal(state.Reason, root))
 		return 2
 	}
-	if obstacles, err := brainDeclarationObstacles(*root, machine); err != nil {
-		fmt.Fprintln(os.Stderr, "brain declare could not prove quiescence:", err)
+	if obstacles, err := brainDeclarationObstacles(root, machine); err != nil {
+		fmt.Fprintln(stderr, "brain declare could not prove quiescence:", err)
 		return 2
 	} else if len(obstacles) > 0 {
 		for _, obstacle := range obstacles {
-			fmt.Fprintln(os.Stderr, obstacle)
+			fmt.Fprintln(stderr, obstacle)
 		}
 		return 2
 	}
 	registryHome, err := brain.RegistryHome()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "brain declare:", err)
+		fmt.Fprintln(stderr, "brain declare:", err)
 		return 2
 	}
-	record, err := brain.Declare(brain.DeclareOptions{StateRoot: *root, RegistryHome: registryHome, LedgerIdentity: ledgerIdentity, Machine: machine, DeclaredBy: *by, Now: time.Now().UTC()})
+	record, err := brain.Declare(brain.DeclareOptions{StateRoot: root, RegistryHome: registryHome, LedgerIdentity: ledgerIdentity, Machine: machine, DeclaredBy: by, Now: time.Now().UTC()})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	printJSON(map[string]any{"state": brain.Declared, "record": record})
+	writeJSONLine(stdout, stderr, map[string]any{"state": brain.Declared, "record": record})
 	return 0
 }
 
@@ -126,9 +139,9 @@ func brainDeclarationObstacles(root, machine string) ([]string, error) {
 	for _, item := range scan.Busy {
 		switch item.Kind {
 		case "job":
-			obstacles = append(obstacles, fmt.Sprintf("job %s is in flight; stop it first: metasystem delegate --cancel %s", item.Id, item.Id))
+			obstacles = append(obstacles, fmt.Sprintf("job %s is in flight; stop it first: metasystem work stop j2:%s", item.Id, item.Id))
 		case "run":
-			obstacles = append(obstacles, fmt.Sprintf("run %s is live; wait for it or conclude it: metasystem run watch --root %s --id %s", item.Id, root, item.Id))
+			obstacles = append(obstacles, fmt.Sprintf("run %s is live; wait for it or conclude it: metasystem internal run watch --root %s --id %s", item.Id, root, item.Id))
 		case "mission":
 			obstacles = append(obstacles, fmt.Sprintf("mission %s is active; wait for mission %s to finish or park; metasystem mission status --root %s --mission %s", item.Id, item.Id, root, item.Id))
 		}
@@ -180,28 +193,33 @@ func runBrainWithdraw(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *by == "" {
-		fmt.Fprintln(os.Stderr, "brain withdraw needs --by")
+	return brainWithdraw(entryCallerIdentity(), os.Stdout, os.Stderr, *root, *by, *fixture)
+}
+
+// brainWithdraw is the withdrawal owner under a supplied caller identity.
+func brainWithdraw(caller processIdentity, stdout, stderr io.Writer, root, by string, fixture bool) int {
+	if by == "" {
+		fmt.Fprintln(stderr, "brain withdraw needs --by")
 		return 2
 	}
-	if err := brainHumanAct(*root, "withdraw", *fixture); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if err := brainHumanAct(caller, root, "withdraw", fixture); err != nil {
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	registryHome, err := brain.RegistryHome()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "brain withdraw:", err)
+		fmt.Fprintln(stderr, "brain withdraw:", err)
 		return 2
 	}
-	removed, err := brain.Withdraw(*root, registryHome, goal.ExistingLedgerIdentity(*root))
+	removed, err := brain.Withdraw(root, registryHome, goal.ExistingLedgerIdentity(root))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "brain withdraw:", err)
+		fmt.Fprintln(stderr, "brain withdraw:", err)
 		return 2
 	}
 	if !removed {
 		return 3
 	}
-	printJSON(map[string]any{"state": brain.Undeclared})
+	writeJSONLine(stdout, stderr, map[string]any{"state": brain.Undeclared})
 	return 0
 }
 

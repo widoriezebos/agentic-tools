@@ -32,7 +32,7 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 		"git -C " + destRoot + " config goal.human.wido Wido <wido@example.invalid>",
 		"git -C " + destRoot + " rev-parse HEAD",
 		"git -C " + destRoot + " fetch --no-tags origin",
-		"go-build.sh",
+		"go run ./cmd/devgate build",
 		"metasystem config get --key evidence.root --conf " + filepath.Join(fromRoot, install, "metasystem.conf"),
 		"metasystem validate session-isolation --source-root " + fromRoot + " --destination-root " + destRoot +
 			" --manifest " + filepath.Join(destInstall(), "artifacts", "agents", "ui", "local-config-paths") +
@@ -64,6 +64,10 @@ func TestEveryStepRunsItsOwnersCommandInOrder(t *testing.T) {
 	}
 }
 
+// devgateBuild is the designated build owner's command: the clone's own
+// fenced, stamped bootstrap build.
+const devgateBuild = "go run ./cmd/devgate build"
+
 func TestTheBuildRunsTheKitsOwnBuildScriptUnderItsOwnBudget(t *testing.T) {
 	t.Parallel()
 	built := newWorld(request())
@@ -71,11 +75,11 @@ func TestTheBuildRunsTheKitsOwnBuildScriptUnderItsOwnBudget(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	for _, command := range built.runner.ran {
-		if filepath.Base(command.Name) != "go-build.sh" {
+		if commandKey(command) != devgateBuild {
 			continue
 		}
-		if command.Name != filepath.Join(destInstall(), "scripts", "agents", "go-build.sh") {
-			t.Fatalf("build script = %q", command.Name)
+		if command.Name != "go" {
+			t.Fatalf("build program = %q, want the go toolchain running the clone's own bootstrap", command.Name)
 		}
 		if command.Dir != destInstall() {
 			t.Fatalf("build ran in %q, want %q", command.Dir, destInstall())
@@ -85,7 +89,7 @@ func TestTheBuildRunsTheKitsOwnBuildScriptUnderItsOwnBudget(t *testing.T) {
 		}
 		return
 	}
-	t.Fatal("the build step ran no build script")
+	t.Fatal("the build step ran no bootstrap build")
 }
 
 func TestEveryStepRunsUnderABoundAndNoOtherShell(t *testing.T) {
@@ -99,7 +103,7 @@ func TestEveryStepRunsUnderABoundAndNoOtherShell(t *testing.T) {
 			t.Fatalf("%s runs under no bound", commandKey(command))
 		}
 		name := filepath.Base(command.Name)
-		if name != "git" && name != "metasystem" && name != "go-build.sh" {
+		if name != "git" && name != "metasystem" && commandKey(command) != devgateBuild {
 			t.Fatalf("the verb ran %q, which is neither git, the engine, nor the designated build owner", command.Name)
 		}
 	}
@@ -123,7 +127,7 @@ func TestAStepStopsAtTheFirstRefusalWithTheOwnersWords(t *testing.T) {
 	t.Parallel()
 	const fence = "go-build: refused: the gate fence holds this checkout"
 	built := newWorld(request())
-	built.runner.refused["go-build.sh"] = fence
+	built.runner.refused[devgateBuild] = fence
 	record, err := built.sequencer.Run(fresh())
 	if err == nil || err.Error() != fence {
 		t.Fatalf("error = %v, want the fence's own words", err)
@@ -203,7 +207,7 @@ func TestAResumeSkipsEveryStepWhosePostconditionHolds(t *testing.T) {
 	if built.runner.ranCommand("git clone --quiet " + fromRoot + " " + destRoot) {
 		t.Fatal("a resume cloned over the clone it made")
 	}
-	if built.runner.ranCommand("go-build.sh") {
+	if built.runner.ranCommand(devgateBuild) {
 		t.Fatal("a resume rebuilt an engine already stamped at this clone's HEAD")
 	}
 }
@@ -227,7 +231,7 @@ func TestAResumeRedoesTheStepWhosePostconditionDoesNotHold(t *testing.T) {
 	if step, _ := record.StepOf(StepEngine); step.Outcome != StepDone {
 		t.Fatalf("engine = %+v, want it rebuilt", step)
 	}
-	if !built.runner.ranCommand("go-build.sh") {
+	if !built.runner.ranCommand(devgateBuild) {
 		t.Fatal("a stamp that is not this clone's HEAD did not rebuild the engine")
 	}
 }
@@ -598,7 +602,7 @@ func TestTheRecordCarriesWhatTheMachineIsAndWhatToDoWithIt(t *testing.T) {
 	if record.Next.Session != "cd "+destRoot+" && claude" {
 		t.Fatalf("session command = %q", record.Next.Session)
 	}
-	if record.Next.Stop != "metasystem stop --repo "+destInstall() {
+	if record.Next.Stop != "metasystem system stop --repo "+destInstall() {
 		t.Fatalf("stop command = %q", record.Next.Stop)
 	}
 	if !record.Created.Destination || !record.Created.Nickname || !record.Created.EvidenceRoot {

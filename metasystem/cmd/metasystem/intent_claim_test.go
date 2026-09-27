@@ -26,7 +26,7 @@ func TestIntentBuildClaimsLawfully(t *testing.T) {
 	}
 	brief := filepath.Join(free.root(), "brief.md")
 	os.WriteFile(brief, []byte("Build it.\n"), 0o644)
-	_, result := buildJSON(t, free, "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
+	_, result := buildJSON(t, free, "work", "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
 	// The claim owner itself decides: in this bed no lease holder exists,
 	// so it refuses with its own rule and the goal is left approved.
 	file := free.goalFile(bedGoal)
@@ -48,7 +48,7 @@ func TestIntentBuildClaimsLawfully(t *testing.T) {
 	}
 	brief = filepath.Join(foreign.root(), "brief.md")
 	os.WriteFile(brief, []byte("Build it.\n"), 0o644)
-	_, result = buildJSON(t, foreign, "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
+	_, result = buildJSON(t, foreign, "work", "build", bedGoal, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check", "true")
 	after := foreign.goalFile(bedGoal)
 	if result.Outcome == intentConfirmed || after.Claimed == nil || after.Claimed.Machine != "mac-other" || after.Claimed.Lineage != "o1" {
 		t.Fatalf("build took another machine's goal: %+v, result %+v", after.Claimed, result)
@@ -76,18 +76,18 @@ func TestIntentBuildRetainedRequestSelection(t *testing.T) {
 	briefA := bed.brief("a.md", "Build part a.\n\nMaximum reader tool calls: 5\n")
 	briefB := bed.brief("b.md", "Build part b.\n\nMaximum reader tool calls: 5\n")
 	check := append([]string{"--check"}, workArgv...)
-	_, first, _ := bed.work(append([]string{"build", bed.id, "--work", "a", "--brief", briefA, "--lines", "5"}, check...)...)
-	_, second, _ := bed.work(append([]string{"build", bed.id, "--work", "b", "--brief", briefB, "--lines", "5"}, check...)...)
+	_, first, _ := bed.work(append([]string{"work", "build", bed.id, "--work", "a", "--brief", briefA, "--lines", "5"}, check...)...)
+	_, second, _ := bed.work(append([]string{"work", "build", bed.id, "--work", "b", "--brief", briefB, "--lines", "5"}, check...)...)
 	if first.Outcome != intentConfirmed || second.Outcome != intentConfirmed {
 		t.Fatalf("builds: %+v %+v", first, second)
 	}
 	launched := len(bed.starter.launched())
-	code, again, _ := bed.work(append([]string{"build", bed.id, "--brief", briefB, "--lines", "5"}, check...)...)
+	code, again, _ := bed.work(append([]string{"work", "build", bed.id, "--brief", briefB, "--lines", "5"}, check...)...)
 	if code != 0 || resultData(t, again)["run"] != resultData(t, second)["run"] || len(bed.starter.launched()) != launched {
 		t.Fatalf("an unnamed repeat of b: code=%d %+v launches=%d->%d", code, again, launched, len(bed.starter.launched()))
 	}
 	briefC := bed.brief("c.md", "Build part c.\n\nMaximum reader tool calls: 5\n")
-	code, other, _ := bed.work(append([]string{"build", bed.id, "--brief", briefC, "--lines", "5"}, check...)...)
+	code, other, _ := bed.work(append([]string{"work", "build", bed.id, "--brief", briefC, "--lines", "5"}, check...)...)
 	if code != 2 || other.Outcome != intentRefused || !strings.Contains(other.Summary, "a, b") || len(bed.starter.launched()) != launched {
 		t.Fatalf("an unnamed new request: code=%d %+v", code, other)
 	}

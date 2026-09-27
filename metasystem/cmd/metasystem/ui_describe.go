@@ -85,12 +85,12 @@ func admittedRuntimes(configured string) []manifest.Runtime {
 // answers and a command the Partner can describe are the same command. The
 // private process protocols are not part of it.
 func commandCatalogue() []uitools.CommandFamily {
-	public := uitools.CommandFamily{Summary: "the public commands: say what you want done; metasystem help lists them by area"}
+	public := uitools.CommandFamily{Summary: "the public commands, object then action: metasystem lists the objects, metasystem OBJECT its actions"}
 	for _, command := range publicIntentCommands() {
 		public.Verbs = append(public.Verbs, uitools.Command{Name: command.name, Summary: command.summary, Scope: command.helpScope(),
 			Usage: command.usage, AdministrationUsage: command.administrationUsage})
 	}
 	public.Verbs = append(public.Verbs,
-		uitools.Command{Name: "help", Summary: "help goals, help work, help questions, help operations, help administration, help human, help agent, help all, help COMMAND; add --json for structured help"})
+		uitools.Command{Name: "help", Summary: "help, help OBJECT, help OBJECT ACTION [FORM], help human, help agent, help all; add --json for structured help"})
 	return []uitools.CommandFamily{public}
 }

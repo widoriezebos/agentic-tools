@@ -95,8 +95,22 @@ func processTransition(scope processScope, scale int) *stoptransition.Transition
 	}
 }
 
+// publicProcessVerb is the public object-action form of a process verb, the
+// spelling every label and retry line names.
+func publicProcessVerb(verb string) string {
+	switch verb {
+	case "stop":
+		return "system stop"
+	case "arm":
+		return "system start"
+	case "status":
+		return "system status"
+	}
+	return verb
+}
+
 func processVerbRetryCommand(scope processScope, verb string) string {
-	command := "metasystem " + verb + " --repo " + scope.Checkout
+	command := "metasystem " + publicProcessVerb(verb) + " --repo " + scope.Checkout
 	if scope.InstallationExplicit {
 		command += " --installation " + scope.Installation
 	}
@@ -169,7 +183,7 @@ func (o processOwners) stop(scope processScope, scale int) (stoptransition.Repor
 	if err != nil {
 		return stoptransition.Report{}, &processRefusal{verb: "stop", checkout: scope.Checkout, sentence: err.Error(), second: "run: " + processVerbRetryCommand(scope, "stop"), code: 1}
 	}
-	if _, refusal := o.humanTerminal(scope, "metasystem stop", processVerbRetryCommand(scope, "stop")); refusal != nil {
+	if _, refusal := o.humanTerminal(scope, "metasystem system stop", processVerbRetryCommand(scope, "stop")); refusal != nil {
 		return stoptransition.Report{}, refusal
 	}
 	transition := o.transition(scope, scale)
@@ -263,12 +277,12 @@ func runProcessArmWith(args []string, repositoryTop func(string) (string, error)
 // arm is the human-terminal arm: the transition opens the stop fence and runs
 // the steward arm and recovery-only up as its arm sequence.
 func (o processOwners) arm(scope processScope, scale int, temporaryWord, reviewBy string) (stoptransition.Report, *processRefusal) {
-	fixtureGranted, refusal := o.humanTerminal(scope, "metasystem arm", processVerbRetryCommand(scope, "arm"))
+	fixtureGranted, refusal := o.humanTerminal(scope, "metasystem system start", processVerbRetryCommand(scope, "arm"))
 	if refusal != nil {
 		return stoptransition.Report{}, refusal
 	}
 	if err := humanauthority.ValidateTemporaryWordPair(temporaryWord, reviewBy); err != nil {
-		return stoptransition.Report{}, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), plain: "metasystem arm: " + err.Error(), code: 2}
+		return stoptransition.Report{}, &processRefusal{verb: "arm", checkout: scope.Checkout, sentence: err.Error(), plain: "metasystem system start: " + err.Error(), code: 2}
 	}
 	transition := o.transition(scope, scale)
 	authority := processArmAuthority{fixtureGranted: fixtureGranted, temporaryWord: temporaryWord, reviewBy: reviewBy}
@@ -416,7 +430,7 @@ func processScopeRefusal(verb, repo, installation string, err error) int {
 
 func refuseProcessVerb(verb, checkout, sentence, second string) int {
 	sentence = strings.TrimSuffix(strings.TrimSpace(sentence), ".")
-	fmt.Fprintf(os.Stderr, "metasystem %s: %s.\n", verb, sentence)
+	fmt.Fprintf(os.Stderr, "metasystem %s: %s.\n", publicProcessVerb(verb), sentence)
 	fmt.Fprintln(os.Stderr, second)
 	return 1
 }

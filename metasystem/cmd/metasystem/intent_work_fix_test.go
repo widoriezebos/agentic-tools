@@ -40,7 +40,7 @@ func TestIntentBuildRetainedRequest(t *testing.T) {
 	first := bed.brief("first.md", "Build the first way.\n")
 	second := bed.brief("second.md", "Build the second way.\n")
 	argsFor := func(brief string) []string {
-		return append([]string{"build", bed.id, "shared", "--brief", brief, "--lines", "10"}, workCheck...)
+		return append([]string{"work", "build", bed.id, "shared", "--brief", brief, "--lines", "10"}, workCheck...)
 	}
 	var wait sync.WaitGroup
 	results := make([]intentResult, 2)
@@ -136,9 +136,9 @@ func (exitedChild) Wait() (int, error) { return 0, nil }
 // readProcesses runs the read's child to exit 0 and proves its group gone.
 type readProcesses struct{}
 
-func (readProcesses) SelfRef() (identity.Ref, error) { return workRef(10), nil }
+func (readProcesses) SelfRef() (identity.Ref, error) { return workProcessRef(10), nil }
 func (readProcesses) StartChild(launch.Command) (launch.Child, identity.Ref, error) {
-	return exitedChild{}, workRef(30), nil
+	return exitedChild{}, workProcessRef(30), nil
 }
 func (readProcesses) SignalGroup(int64, syscall.Signal) error { return nil }
 func (readProcesses) GroupAlive(int64) (bool, error)          { return false, nil }
@@ -158,7 +158,7 @@ func (s superviseReads) StartSupervisor(id, stateDir string) (identity.Ref, erro
 	if _, err := s.m.Supervise(id); err != nil {
 		return identity.Ref{}, err
 	}
-	return workRef(10), nil
+	return workProcessRef(10), nil
 }
 
 // TestIntentReadVerdictFromRetainedFindings: the read's findings are a
@@ -176,7 +176,7 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 	bed.manager.Processes = readProcesses{}
 	bed.manager.Supervisor = superviseReads{bed.starter}
 	brief := bed.brief("brief.md", "Build the unit.\n")
-	code, result, _ := bed.work(append([]string{"build", bed.id, "read", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "read", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data := resultData(t, result)
 	if code != 0 || data["outcome"] != "green" || data["readClean"] != false || !strings.Contains(result.Summary, "read verdict: fix first (1 material findings)") {
 		t.Fatalf("fix-first read: code=%d %+v", code, result)
@@ -195,7 +195,7 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 	}
 	findings = "No material findings.\nVERDICT: land\n"
 	run := data["run"].(string)
-	code, result, _ = bed.work("revise", "run", run, "--brief", bed.brief("follow-up.md", "Fix the witness.\n"))
+	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", bed.brief("follow-up.md", "Fix the witness.\n"))
 	data = resultData(t, result)
 	if code != 0 || data["round"].(float64) != 2 || data["readClean"] != true || !strings.Contains(result.Summary, "read verdict: land") {
 		t.Fatalf("clean read after the fold: code=%d %+v", code, result)
@@ -204,7 +204,7 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 		t.Fatalf("round one's findings copy was replaced: %q", retained)
 	}
 	findings = ""
-	code, result, _ = bed.work(append([]string{"build", bed.id, "silent", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "silent", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data = resultData(t, result)
 	if code != 0 || data["outcome"] != "read-failed" || data["readClean"] != false {
 		t.Fatalf("reader without findings: code=%d %+v", code, result)
@@ -221,7 +221,7 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	plain := bed.brief("plain.md", "Build the unit.\n")
 	check := append([]string{"--check"}, workArgv...)
 	// A brief that names no read budget uses the configured allowance.
-	code, result, _ := bed.work(append([]string{"build", bed.id, "plain", "--brief", plain, "--lines", "5"}, check...)...)
+	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "plain", "--brief", plain, "--lines", "5"}, check...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("configured read budget: code=%d %+v", code, result)
 	}
@@ -231,11 +231,11 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 		t.Fatalf("the configured allowance is not the read's budget:\n%s", readBrief)
 	}
 	budgeted := bed.brief("budgeted.md", "Build the unit.\n\nMaximum reader tool calls: 25\n")
-	code, result, _ = bed.work(append([]string{"build", bed.id, "budget", "--brief", budgeted, "--lines", "5", "--read-tool-calls", "30"}, check...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "budget", "--brief", budgeted, "--lines", "5", "--read-tool-calls", "30"}, check...)...)
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "25") {
 		t.Fatalf("conflicting read budget: code=%d %+v", code, result)
 	}
-	code, result, _ = bed.work(append([]string{"build", bed.id, "budget", "--brief", budgeted, "--lines", "5"}, check...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "budget", "--brief", budgeted, "--lines", "5"}, check...)...)
 	data := resultData(t, result)
 	if code != 0 || data["maxRounds"].(float64) != 2 {
 		t.Fatalf("budgeted build: code=%d %+v", code, result)
@@ -247,19 +247,19 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	}
 	run := data["run"].(string)
 	followUp := bed.brief("follow-up.md", "Again.\n")
-	if code, result, _ = bed.work("revise", "run", run, "--brief", followUp); code != 0 || resultData(t, result)["round"].(float64) != 2 {
+	if code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 0 || resultData(t, result)["round"].(float64) != 2 {
 		t.Fatalf("second round: code=%d %+v", code, result)
 	}
 	launched := len(bed.starter.launched())
-	code, result, _ = bed.work("revise", "run", run, "--brief", followUp)
+	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp)
 	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "UNIT_ROUND_LIMIT") || len(bed.starter.launched()) != launched {
 		t.Fatalf("third round: code=%d %+v", code, result)
 	}
 
 	unapproved := newWorkBed(t)
 	unapproved.intentBed = newIntentBed(t, false, func(file *goal.GoalFile) { file.Budget, file.Approved = nil, nil })
-	code, result, _ = unapproved.work(append([]string{"build", unapproved.id, "u", "--brief", unapproved.brief("b.md", "B.\n"), "--lines", "5"}, workCheck...)...)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "no approved box") || !strings.Contains(result.Decision, "metasystem approve") {
+	code, result, _ = unapproved.work(append([]string{"work", "build", unapproved.id, "u", "--brief", unapproved.brief("b.md", "B.\n"), "--lines", "5"}, workCheck...)...)
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "no approved box") || !strings.Contains(result.Decision, "metasystem goal approve") {
 		t.Fatalf("unapproved goal: code=%d %+v", code, result)
 	}
 }
@@ -272,7 +272,7 @@ func TestIntentBuildModelOverride(t *testing.T) {
 	bed := newWorkBed(t)
 	brief := bed.brief("brief.md", "Build the unit.\n")
 	args := func(model string) []string {
-		return append([]string{"build", bed.id, "modelled", "--brief", brief, "--lines", "5", "--model", model, "--effort", "high"}, workCheck...)
+		return append([]string{"work", "build", bed.id, "modelled", "--brief", brief, "--lines", "5", "--model", model, "--effort", "high"}, workCheck...)
 	}
 	code, result, _ := bed.work(args("claude-sonnet-5")...)
 	data := resultData(t, result)
@@ -285,13 +285,13 @@ func TestIntentBuildModelOverride(t *testing.T) {
 		t.Fatalf("build launch model=%s effort=%s err=%v", record.AdapterData["model"], record.AdapterData["effort"], err)
 	}
 	run := data["run"].(string)
-	if code, result, _ = bed.work("build", "--resume", run); code != 0 || resultData(t, result)["buildModel"] != "claude-sonnet-5" {
+	if code, result, _ = bed.work("work", "build", "run:"+run); code != 0 || resultData(t, result)["buildModel"] != "claude-sonnet-5" {
 		t.Fatalf("resume: code=%d %+v", code, result)
 	}
 	if code, result, _ = bed.work(args("claude-opus-5-5")...); code != 1 || !strings.Contains(result.Summary, "UNIT_NAMED_INPUT_CHANGED") {
 		t.Fatalf("another model for the same unit: code=%d %+v", code, result)
 	}
-	if code, result, _ = bed.work(append([]string{"build", bed.id, "bad", "--brief", brief, "--lines", "5", "--effort", "extreme"}, workCheck...)...); code != 2 || result.Outcome != intentRefused {
+	if code, result, _ = bed.work(append([]string{"work", "build", bed.id, "bad", "--brief", brief, "--lines", "5", "--effort", "extreme"}, workCheck...)...); code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("unknown effort: code=%d %+v", code, result)
 	}
 }
@@ -324,7 +324,7 @@ func TestIntentBriefCarriesAcceptedDesign(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(designs, "standing-validation.md"), []byte(design), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, result, _ := bed.work("brief", bed.id, "--out", "brief.md")
+	code, result, _ := bed.work("work", "brief", bed.id, "--out", "brief.md")
 	written, _ := os.ReadFile(filepath.Join(bed.root(), "brief.md"))
 	if code != 0 {
 		t.Fatalf("brief: code=%d %+v", code, result)
@@ -340,7 +340,7 @@ func TestIntentBriefCarriesAcceptedDesign(t *testing.T) {
 	}
 	filled := strings.Replace(string(written), "Maximum reader tool calls: 48", "Maximum reader tool calls: 20", 1)
 	os.WriteFile(filepath.Join(bed.root(), "filled.md"), []byte(filled), 0o600)
-	code, result, _ = bed.work(append([]string{"build", bed.id, "u1", "--brief", "filled.md", "--check"}, workArgv...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "u1", "--brief", "filled.md", "--check"}, workArgv...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build from the filled scaffold: code=%d %+v", code, result)
 	}
@@ -354,8 +354,8 @@ func TestIntentBriefCarriesAcceptedDesign(t *testing.T) {
 	os.MkdirAll(filepath.Dir(blocked), 0o700)
 	os.WriteFile(blocked, []byte("not a directory\n"), 0o600)
 	for _, args := range [][]string{
-		{"brief", broken.id, "--out", "b.md"},
-		append([]string{"build", broken.id, "u", "--brief", broken.brief("x.md", "X.\n"), "--lines", "5"}, workCheck...),
+		{"work", "brief", broken.id, "--out", "b.md"},
+		append([]string{"work", "build", broken.id, "u", "--brief", broken.brief("x.md", "X.\n"), "--lines", "5"}, workCheck...),
 	} {
 		code, result, _ := broken.work(args...)
 		if code != 1 || result.Outcome != intentFailed || !strings.Contains(result.Summary, "cannot read the project's design records") {
@@ -388,7 +388,7 @@ func TestIntentSettingsSelectedInstallation(t *testing.T) {
 	owners := intentOwners{resolver: stateroot.NewResolver(top, noExecutable)}
 	run := func(args ...string) (int, intentResult) {
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, "settings"), append(args, "--json"), &stdout, &stderr, roots[0], owners)
+		code := runIntentIn(mustIntentCommand(t, "settings show"), append(args, "--json"), &stdout, &stderr, roots[0], owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())

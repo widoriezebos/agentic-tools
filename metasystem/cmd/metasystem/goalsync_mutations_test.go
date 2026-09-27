@@ -98,7 +98,7 @@ func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthori
 func TestSyncReqLineage(t *testing.T) {
 	const (
 		agentRefusal        = "mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage"
-		noEnrollmentRefusal = "a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem goal enroll-terminal here once, or pass --lineage"
+		noEnrollmentRefusal = "a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem internal goal enroll-terminal here once, or pass --lineage"
 		wrongShellRefusal   = "a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (TERMINAL_NOT_REACHED); run the act at the terminal, or pass --lineage"
 	)
 
@@ -225,6 +225,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	reads := repository.reads()
 	dependencies := syncRequestDependencies{
 		authorityFacts: goalAuthorityReadFacts{
+			caller:        entryCallerIdentity(),
 			repositoryTop: repository.receiptTop,
 			ledgerIdentity: func(root string) string {
 				if root != repository.root {
@@ -287,7 +288,7 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 		}, humanauthority.ProveOrTemporaryGoalAuthority, commandNow, dependencies, bindingWithReads)
 	})
 	if code != 0 || !strings.Contains(stderr, "hint: metasystem goal budget ") ||
-		!strings.Contains(stderr, "--id standing-validation ") ||
+		!strings.Contains(stderr, "goal budget standing-validation ") ||
 		!strings.Contains(stderr, "1d/2/1200m/1/3") ||
 		!strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("holder set-budget: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -566,7 +567,7 @@ func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) 
 		}, fixedFixtureGoalAuthority)
 	})
 	lines := strings.Split(strings.TrimSpace(stderr), "\n")
-	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
+	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem internal goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
 		strings.Contains(lines[1], "--sweep") || strings.Contains(lines[1], "--confirm") {
 		t.Fatalf("the direct-ID approval remedy retained sweep-only flags: code=%d stderr=%q", code, stderr)
 	}
@@ -690,7 +691,9 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 					t.Fatalf("the refusal did not print an executable goal budget command: stderr=%q", stderr)
 				}
 				runCode, stdout, runStderr := captureCommandOutput(t, true, true, func() int {
-					return fixture.runBudget(fields[3:], fixedFixtureGoalAuthority)
+					// The public form names the goal first; the goal family
+					// owner it reaches takes it as --id.
+					return fixture.runBudget(append([]string{"--id", fields[3]}, fields[4:]...), fixedFixtureGoalAuthority)
 				})
 				if runCode != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 					t.Fatalf("the printed completion did not represent a successful proven re-approval: code=%d stdout=%q stderr=%q", runCode, stdout, runStderr)

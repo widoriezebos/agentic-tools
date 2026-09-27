@@ -77,9 +77,9 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | Failure | Addressed by | Enforced by |
 | --- | --- | --- |
 | Context bloat | A small always-loaded contract (`AGENTS.md`) with a single routing index (`wow.md`). Everything else loads at the phase where it helps, and new rules must pass the change gate | `scripts/audit-metasystem.sh` fails when the always-loaded word count exceeds its cap; the retro removes rules that cannot show their value |
-| Rabbit holes | The take-a-step-back skill: every attempt gets a written contract with a budget, every result gets classified, and the stop-loss triggers end an investigation that stopped producing facts | `metasystem validate stop-loss` blocks new cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
+| Rabbit holes | The take-a-step-back skill: every attempt gets a written contract with a budget, every result gets classified, and the stop-loss triggers end an investigation that stopped producing facts | `metasystem experiment check` blocks new cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
 | Silent behavior drift | The refactor skill: a trusted baseline, tests before restructuring, replayable batches, and the project's acceptance gate as the only proof that behavior was preserved | `scripts/refactor-baseline.sh` blocks new batches on a dirty worktree, diverged history, or an overdue gate run |
-| False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `metasystem validate design-obligations` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
+| False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `metasystem internal validate design-obligations` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
 | Forgotten lessons | Correction capture (a correction updates the instructions in their one owning document) and handoff notes that carry unfinished work across sessions | Receipts record every correction, the retro reviews the pattern, and the instruction ledger holds every rule change with a testable expected effect |
 | Unreviewable output | The collaboration rules: one intent per commit, mechanical churn separated from behavior change, and reports that start with the riskiest part | The human sends unreviewable diffs back; splitting them is the agent's job, and repeated offenses become retro findings |
 | Unsupervised runs | The supervision rules in `docs/orchestration.md`: detached launches, a verified liveness signal, one watcher armed per session over every job the session can create, budgets that wind down instead of interrupting | `scripts/watch-background-jobs.sh` reports terminal, stale, capped and vanished jobs from a runner's job directory; `scripts/validate-metasystem.sh` exercises all four; remaining incidents land in receipts and `memory/known-issues.md` |
@@ -166,7 +166,7 @@ collaboration loop the roles play out — design, critique to agreement,
 build, critique to agreement, merge — is specified in
 [`docs/orchestration.md`](docs/orchestration.md).
 
-Runtime portability is handled by separating intent from mechanism: skills and docs are runtime-neutral, and each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (for the currently registered runtimes — e.g. `claude-profile.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location; the currently ADOPTABLE set comes from `bin/metasystem runtime list --adoptable` (the full registry includes the fixture-only fake runtime, which ships no profiles).
+Runtime portability is handled by separating intent from mechanism: skills and docs are runtime-neutral, and each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (for the currently registered runtimes — e.g. `claude-profile.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location; the currently ADOPTABLE set comes from `bin/metasystem internal runtime list --adoptable` (the full registry includes the fixture-only fake runtime, which ships no profiles).
 
 ### Layout
 
@@ -206,11 +206,11 @@ to adopting projects.
 | `scripts/validate-metasystem.sh` | Full self-check: audit, skill validation, routed assets, positive and negative fixture tests for the gate scripts. Works in both the template and adopted repositories |
 | `scripts/audit-metasystem.sh` | Required files, no outside references in metasystem files, placeholder leakage, always-loaded word cap |
 | `scripts/validate-skill.sh` | Skill frontmatter and naming rules |
-| `metasystem validate design-obligations` | Structure and declared state of an obligation matrix |
+| `metasystem internal validate design-obligations` | Structure and declared state of an obligation matrix |
 | `scripts/refactor-baseline.sh` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
-| `metasystem report frontier` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions, `challenge` enforces the noise floor, and both refuse comparisons against a frontier older than its declared measurement window |
+| `metasystem experiment` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions, `challenge` enforces the noise floor, and both refuse comparisons against a frontier older than its declared measurement window |
 | `scripts/receipt.sh` | Task receipts, retro cadence check, comparable period stats, retro marker |
-| `metasystem validate stop-loss` | Blocks new investigation cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
+| `metasystem experiment check` | Blocks new investigation cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
 | `scripts/enforcement/` | Shipped CI workflow and Claude Code hooks so the checks run without anyone remembering them |
 
 Scripts check structure and declared state. They cannot prove that a named test or receipt is truthful. That gap is covered by the human veto at retro time and by git history as a cross-check.
@@ -219,7 +219,7 @@ Scripts check structure and declared state. They cannot prove that a named test 
 
 The canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.md). The short version is three steps:
 
-1. From the template checkout, run `scripts/adopt.sh <target> [--runtimes <names from: bin/metasystem runtime list --adoptable>] [--enable debug-java]`. It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and Claude Code hook, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
+1. From the template checkout, run `scripts/adopt.sh <target> [--runtimes <names from: bin/metasystem internal runtime list --adoptable>] [--enable debug-java]`. It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and Claude Code hook, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
 2. Fill `docs/project-rules.md` with verified facts: commands, invariants, reserved decisions, budgets, the refactor acceptance gate, delegation facts.
 3. Run `scripts/validate-metasystem.sh` in the target; it must pass with zero placeholders. Then work normally: each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence. Early routing errors are the cheapest to fix.
 

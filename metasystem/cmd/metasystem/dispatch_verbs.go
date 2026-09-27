@@ -290,7 +290,7 @@ func runDispatchClaimLaunchWithGoalReads(args []string, reads *dispatchcore.Proo
 			Outcome: dispatchcore.ClaimRefusedInternalSurface,
 			Evidence: map[string]any{
 				"resolution": "delegate-verb-required",
-				"remedy":     "use metasystem delegate",
+				"remedy":     "use metasystem internal delegate",
 			},
 		})
 		return 1
@@ -802,31 +802,6 @@ func runDispatchRepairClaim(args []string) int {
 		fmt.Println(observed)
 	}
 	return recordExit(err)
-}
-
-func runDispatchBuildSetup(args []string) int {
-	flags := flag.NewFlagSet("job build-setup", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root used to prove an approval")
-	output := flags.String("output", "", "pending-setup record output file")
-	job := flags.String("job", "", "job id")
-	role := flags.String("role", "", "job role")
-	parent := flags.String("parent", "", "parent job id for a follow-up reservation")
-	mainID := flags.String("main-id", "", "dispatching main id")
-	claimEpoch := flags.String("claim-epoch", "", "worktree-lease claim epoch")
-	goalID := flags.String("goal", "", "goal id this job serves")
-	goalRevision := flags.Uint64("goal-revision", 0, "accepted goal revision this reservation serves")
-	goalTier := flags.Uint("goal-tier", 0, "claimed-revision goal tier")
-	machineID := flags.String("machine-id", "", "claim machine for a goal-bound reservation")
-	approvedRef := flags.String("approved-ref", "", "recorded human approval for an oversized slice")
-	capResolution := flags.String("cap-resolution", "", "final cap-resolution file")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *output == "" || *job == "" || *role == "" || *capResolution == "" || *goalTier > 3 {
-		fmt.Fprintln(os.Stderr, "job build-setup: --output, --job, --role, and --cap-resolution are required")
-		return 2
-	}
-	return recordExit(dispatchcore.BuildSetup(*root, *output, *job, *role, *parent, *mainID, *claimEpoch, *goalID, *goalRevision, uint8(*goalTier), *capResolution, *machineID, *approvedRef))
 }
 
 func runDispatchSliceAdmission(args []string) int {

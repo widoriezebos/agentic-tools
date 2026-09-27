@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -77,29 +78,24 @@ type contextCostStop struct {
 }
 
 type contextCostBed struct {
-	t             *testing.T
-	runtime       string
-	session       string
-	outer         string
-	installation  string
-	home          string
-	engine        string
-	wrapper       string
-	hook          string
-	transcript    string
-	healthRecord  string
-	testBinary    string
-	readerHelper  string
-	argvRecord    string
-	deadlineRoot  string
-	deadlineEvent string
-	stopSequence  int
-	fixture       *testutil.ProcessFixture
-	startedAt     int64
-	lastHookGen   int
-	maxLabel      string
-	maxElapsed    time.Duration
-	sourceStats   contextCostSourceStats
+	t            *testing.T
+	runtime      string
+	session      string
+	outer        string
+	installation string
+	home         string
+	engine       string
+	hook         string
+	transcript   string
+	healthRecord string
+	testBinary   string
+	readerHelper string
+	fixture      *testutil.ProcessFixture
+	startedAt    int64
+	lastHookGen  int
+	maxLabel     string
+	maxElapsed   time.Duration
+	sourceStats  contextCostSourceStats
 }
 
 func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
@@ -190,33 +186,6 @@ func contextTurnVerdictRoot(t *testing.T, contextConfig string) string {
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-16T12:00:00Z")
 	return root
-}
-
-func TestStopHookPassesTranscriptAndRuntime(t *testing.T) {
-	candidate := contextCostCandidateEngine(t, declaredContextCostCandidateEngine)
-	bed := newContextCostBed(t, "claude", candidate, "")
-	process := bed.startStop("argument-witness")
-	<-process.done
-	process.cancel()
-	if process.err != nil {
-		t.Fatalf("shipped Stop command failed: %v\n%s", process.err, process.output.String())
-	}
-	data, err := os.ReadFile(bed.argvRecord)
-	if err != nil {
-		t.Fatalf("read recorded turn-verdict argv: %v", err)
-	}
-	args := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
-	for flag, want := range map[string]string{"--transcript": bed.transcript, "--runtime": "claude"} {
-		found := false
-		for index := 0; index+1 < len(args); index++ {
-			if args[index] == flag && args[index+1] == want {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("recorded report turn-verdict argv omitted %s %q: %q", flag, want, args)
-		}
-	}
 }
 
 func TestContextStopFitsDurationBudget(t *testing.T) {
@@ -312,6 +281,67 @@ func TestContextStopFitsDurationBudget(t *testing.T) {
 			t.Logf("%s final evidence: cursor-bytes=%d samples-bytes=%d committed-calls=%d dominant-stop=%s elapsed=%s", runtimeName, cursorInfo.Size(), samplesInfo.Size(), finalSnapshot.calls, bed.maxLabel, bed.maxElapsed)
 		})
 	}
+}
+
+// TestContextCostHookHelper is the fixture-owned Stop: this test binary runs
+// the runtime hook's Stop worker with the production owners, except that the
+// fixture's process is the runtime ancestor, arming reports healthy without
+// arming, and the health preview reads the fixture home and records the
+// context-budget role it computed.
+func TestContextCostHookHelper(t *testing.T) {
+	if os.Getenv("METASYSTEM_CONTEXT_COST_HOOK_HELPER") != "1" {
+		return
+	}
+	owners := contextCostHookOwners{hookOwners: hookOwners{diagnostics: io.Discard}}
+	parent := fmt.Sprint(os.Getppid())
+	status := hooks.RunRuntimeHook(hooks.Invocation{
+		Runtime: os.Getenv("METASYSTEM_CONTEXT_COST_RUNTIME"), Event: "stop",
+		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
+		Lookup: func(name string) (string, bool) {
+			if name == "METASYSTEM_STOP_DEADLINE_PARENT" {
+				return parent, true
+			}
+			return os.LookupEnv(name)
+		},
+		Pid: os.Getpid(), Ppid: os.Getppid(), Script: os.Getenv("METASYSTEM_CONTEXT_COST_HOOK_SCRIPT"),
+		Now: time.Now, Environ: os.Environ, TempDir: os.TempDir(),
+	}, owners)
+	os.Exit(status)
+}
+
+type contextCostHookOwners struct{ hookOwners }
+
+func (contextCostHookOwners) FindAncestor(string, int, string, bool) (string, int) {
+	return fmt.Sprintf(`{"runtime":%q,"pid":%s,"pidStartedAt":%s}`+"\n", os.Getenv("METASYSTEM_CONTEXT_COST_RUNTIME"),
+		os.Getenv("METASYSTEM_CONTEXT_COST_PID"), os.Getenv("METASYSTEM_CONTEXT_COST_STARTED")), 0
+}
+
+func (contextCostHookOwners) Up(_ hooks.UpRequest, stdout, _ io.Writer) int {
+	fmt.Fprintln(stdout, "up outcome=already-healthy")
+	return 0
+}
+
+// HealthPreview evaluates at the fixture's own coordinates, as the former
+// wrapper did, so the expected role line names the unresolved temp path.
+func (contextCostHookOwners) HealthPreview(string, string) (string, int) {
+	installation := os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_INSTALLATION")
+	verdict, err := contextCostHealthAt(installation, installation, os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_HOME"), time.Now().UTC())
+	if err != nil {
+		return "", 3
+	}
+	for _, role := range verdict.Roles {
+		if role.Role == steward.RoleContext {
+			data, _ := json.Marshal(role)
+			if os.WriteFile(os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_RECORD"), append(data, '\n'), 0o600) != nil {
+				return "", 3
+			}
+		}
+	}
+	encoded, err := json.Marshal(steward.NewHookHealthPreview(verdict))
+	if err != nil {
+		return "", 3
+	}
+	return string(encoded) + "\n", verdict.ExitCode()
 }
 
 // TestContextCostHealthHelper is the fixture-owned subprocess transport for
@@ -525,11 +555,9 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 	outer := t.TempDir()
 	installation := filepath.Join(outer, "metasystem")
 	home := filepath.Join(outer, "fixture-home")
-	stubDirectory := filepath.Join(outer, "stub-bin")
-	deadlineRoot := filepath.Join(outer, "deadline-authorization")
 	for _, directory := range []string{
 		filepath.Join(outer, "development"), filepath.Join(installation, "bin"),
-		filepath.Join(installation, "plans"), home, stubDirectory, deadlineRoot,
+		filepath.Join(installation, "plans"), home,
 	} {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			t.Fatal(err)
@@ -550,9 +578,6 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(deadlineRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	goals := "# Goals\n\n## Goal-free: declared 2026-09-07T00:00:00Z by human over context cost fixture\n"
 	if err := os.WriteFile(filepath.Join(installation, "plans", "goals.md"), []byte(goals), 0o644); err != nil {
 		t.Fatal(err)
@@ -568,48 +593,6 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 	if err != nil || state != identity.Alive {
 		t.Fatalf("cannot establish fixture process identity: state=%s err=%v", state, err)
 	}
-	wrapper := filepath.Join(stubDirectory, "metasystem")
-	argvRecord := filepath.Join(outer, "turn-verdict.argv")
-	wrapperSource := `#!/usr/bin/env bash
-set -euo pipefail
-if [[ ${1:-} == report && ${2:-} == turn-verdict ]]; then
-  printf '%s\0' "$@" >"${METASYSTEM_CONTEXT_COST_ARGV_RECORD:?}"
-fi
-if [[ ${1:-} == health && ${2:-} == --hook-preview ]]; then
-  METASYSTEM_CONTEXT_COST_HEALTH_HELPER=1 \
-    "${METASYSTEM_CONTEXT_COST_TEST_BINARY:?}" -test.run '^TestContextCostHealthHelper$'
-  exit $?
-fi
-if [[ ${1:-} == up ]]; then
-  printf '%s\n' 'up outcome=already-healthy'
-  exit 0
-fi
-if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
-  printf '{"runtime":"%s","pid":%s,"pidStartedAt":%s}\n' \
-    "${METASYSTEM_CONTEXT_COST_RUNTIME:?}" "${METASYSTEM_CONTEXT_COST_PID:?}" "${METASYSTEM_CONTEXT_COST_STARTED:?}"
-  exit 0
-fi
-if [[ ${1:-} == hooks && ${2:-} == stop-deadline-wait ]]; then
-  rewritten=("$@")
-  rewritten_root=false
-  for ((index=0; index+1<${#rewritten[@]}; index++)); do
-    if [[ ${rewritten[$index]} == --root ]]; then
-      rewritten[$((index+1))]="${METASYSTEM_CONTEXT_COST_DEADLINE_ROOT:?}"
-      rewritten_root=true
-      break
-    fi
-  done
-  if [[ $rewritten_root != true ]]; then
-    printf '%s\n' 'context cost deadline wrapper received no --root' >&2
-    exit 2
-  fi
-  exec "${METASYSTEM_CONTEXT_COST_REAL_ENGINE:?}" "${rewritten[@]}"
-fi
-exec "${METASYSTEM_CONTEXT_COST_REAL_ENGINE:?}" "$@"
-`
-	if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	testBinary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -618,12 +601,12 @@ exec "${METASYSTEM_CONTEXT_COST_REAL_ENGINE:?}" "$@"
 	bed := &contextCostBed{
 		t: t, runtime: runtimeName, session: "context-cost-" + runtimeName,
 		outer: outer, installation: installation, home: home,
-		engine: filepath.Join(installation, "bin", "metasystem"), wrapper: wrapper,
+		engine:       filepath.Join(installation, "bin", "metasystem"),
 		hook:         filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"),
 		healthRecord: filepath.Join(outer, "hook-context-role.json"), testBinary: testBinary,
-		readerHelper: readerHelper, argvRecord: argvRecord,
-		deadlineRoot: deadlineRoot, fixture: testutil.Fixture(t),
-		startedAt: exact.StartedAt.Unix(),
+		readerHelper: readerHelper,
+		fixture:      testutil.Fixture(t),
+		startedAt:    exact.StartedAt.Unix(),
 	}
 	if runtimeName == "claude" {
 		bed.transcript = filepath.Join(home, ".claude", "projects", contextCostClaudeSlug(outer), bed.session+".jsonl")
@@ -646,6 +629,7 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 		"METASYSTEM_CONTEXT_COST_READER_RUNTIME=", "METASYSTEM_CONTEXT_COST_READER_SESSION=",
 		"METASYSTEM_CONTEXT_COST_READER_TRANSCRIPT=", "METASYSTEM_CONTEXT_COST_READER_HOME=",
 		"METASYSTEM_CONTEXT_COST_READER_TOPLEVEL=", "METASYSTEM_CONTEXT_COST_READER_PAUSE=",
+		"METASYSTEM_CONTEXT_COST_HOOK_HELPER=", "METASYSTEM_CONTEXT_COST_HOOK_SCRIPT=",
 		"HOME=",
 	}
 	environment := make([]string, 0, len(os.Environ())+7)
@@ -663,24 +647,15 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 	}
 	environment = append(environment, "HOME="+bed.home)
 	if wrapper {
-		if bed.deadlineEvent == "" {
-			bed.t.Fatal("context cost Stop has no fresh deadline event path")
-		}
 		environment = append(environment,
-			"METASYSTEM_BIN="+bed.wrapper,
-			"METASYSTEM_CONTEXT_COST_REAL_ENGINE="+bed.engine,
+			"METASYSTEM_CONTEXT_COST_HOOK_HELPER=1",
+			"METASYSTEM_CONTEXT_COST_HOOK_SCRIPT="+bed.hook,
 			"METASYSTEM_CONTEXT_COST_RUNTIME="+bed.runtime,
 			fmt.Sprintf("METASYSTEM_CONTEXT_COST_PID=%d", os.Getpid()),
 			fmt.Sprintf("METASYSTEM_CONTEXT_COST_STARTED=%d", bed.startedAt),
-			"METASYSTEM_CONTEXT_COST_TEST_BINARY="+bed.testBinary,
-			"METASYSTEM_CONTEXT_COST_ARGV_RECORD="+bed.argvRecord,
-			"PATH="+filepath.Dir(bed.wrapper)+string(os.PathListSeparator)+os.Getenv("PATH"),
-			"METASYSTEM_CONTEXT_COST_HEALTH_ROOT="+bed.installation,
 			"METASYSTEM_CONTEXT_COST_HEALTH_INSTALLATION="+bed.installation,
 			"METASYSTEM_CONTEXT_COST_HEALTH_RECORD="+bed.healthRecord,
 			"METASYSTEM_CONTEXT_COST_HEALTH_HOME="+bed.home,
-			"METASYSTEM_CONTEXT_COST_DEADLINE_ROOT="+bed.deadlineRoot,
-			"METASYSTEM_STOP_DEADLINE_EVENT="+bed.deadlineEvent,
 		)
 		environment = bed.fixture.Env(environment)
 	}
@@ -705,14 +680,15 @@ func (bed *contextCostBed) announceHolder() {
 func (bed *contextCostBed) startStop(label string) *contextCostProcess {
 	bed.prepareStopObservation()
 	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop","transcript_path":%q,"fixture_leg":%q}`+"\n", bed.session, bed.outer, bed.transcript, label)
-	process := startContextCostProcess(bed.t, bed.outer, bed.environment(true), strings.NewReader(payload), "bash", bed.hook, bed.runtime, "stop")
-	return process
+	return startContextCostProcess(bed.t, bed.outer, bed.environment(true), strings.NewReader(payload), bed.testBinary,
+		"-test.run", "^TestContextCostHookHelper$", "-test.count=1")
 }
 
 func (bed *contextCostBed) startStopBehindBarrier(label string) *contextCostBarrierProcess {
 	bed.prepareStopObservation()
 	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop","transcript_path":%q,"fixture_leg":%q}`+"\n", bed.session, bed.outer, bed.transcript, label)
-	return startContextCostBarrierProcess(bed.t, bed.outer, bed.environment(true), strings.NewReader(payload), "bash", bed.hook, bed.runtime, "stop")
+	return startContextCostBarrierProcess(bed.t, bed.outer, bed.environment(true), strings.NewReader(payload), bed.testBinary,
+		"-test.run", "^TestContextCostHookHelper$", "-test.count=1")
 }
 
 func (bed *contextCostBed) startColdReader() *contextCostBarrierProcess {
@@ -779,11 +755,6 @@ func (bed *contextCostBed) prepareStopObservation() {
 	bed.t.Helper()
 	if err := os.Remove(bed.healthRecord); err != nil && !os.IsNotExist(err) {
 		bed.t.Fatal(err)
-	}
-	bed.stopSequence++
-	bed.deadlineEvent = filepath.Join(bed.deadlineRoot, fmt.Sprintf("stop-%03d.deadline", bed.stopSequence))
-	if _, err := os.Stat(bed.deadlineEvent); !os.IsNotExist(err) {
-		bed.t.Fatalf("%s Stop deadline event must start absent: %s: %v", bed.runtime, bed.deadlineEvent, err)
 	}
 }
 
@@ -858,7 +829,7 @@ func (bed *contextCostBed) stopReport(output string) string {
 func (bed *contextCostBed) requireLiveRole(stop contextCostStop) {
 	bed.t.Helper()
 	bed.requireExpectedLiveRole(stop.label, stop.role)
-	want := "context-budget=alive (120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger: run metasystem context handoff --root " + bed.installation + " --note <configured-note-path> --no-delegates)"
+	want := "context-budget=alive (120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger: run metasystem session handoff --root " + bed.installation + " --note <configured-note-path> --no-delegates)"
 	if stop.reportRole != want {
 		bed.t.Fatalf("%s %s Stop report role=%q, want %q", bed.runtime, stop.label, stop.reportRole, want)
 	}

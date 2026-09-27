@@ -29,7 +29,7 @@ import (
 // the way each runtime's --version output is turned into a config identity.
 func runAdapterVersionParse(args []string) int {
 	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter version-parse < cli-version-output")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter version-parse < cli-version-output")
 		return 2
 	}
 	version, err := adapter.ParseCLIVersion(os.Stdin)
@@ -51,7 +51,7 @@ func runAdapterCodexEvent(args []string) int {
 		return 2
 	}
 	if *events == "" || (*field != "session" && *field != "turn") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-event --events FILE --field session|turn")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter codex-event --events FILE --field session|turn")
 		return 2
 	}
 	value, ok := adapter.CodexEventField(*events, *field)
@@ -72,7 +72,7 @@ func runAdapterCodexUsage(args []string) int {
 		return 2
 	}
 	if *events == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-usage --events FILE --output FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter codex-usage --events FILE --output FILE")
 		return 2
 	}
 	ports, ok := delegatePorts("adapter codex-usage", "codex")
@@ -123,7 +123,7 @@ func runAdapterCodexCommand(args []string) int {
 		extraDirs = roots
 	}
 	if *verb == "" || *model == "" || *schema == "" || *output == "" || *sandbox == "" || *network == "" || *instanceTag == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-command --verb V --model M --schema F --output F --instance-tag TAG (--record F | --permissions F | --sandbox M --network B) [--workspace DIR] [--session SID]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter codex-command --verb V --model M --schema F --output F --instance-tag TAG (--record F | --permissions F | --sandbox M --network B) [--workspace DIR] [--session SID]")
 		return 2
 	}
 	command, err := adapter.BuildCodexCommand(*verb, *model, *workspace, *schema, *output, *sandbox, *network, *session, *instanceTag, *reasoningEffort, extraDirs)
@@ -156,7 +156,7 @@ func runAdapterClaudeCommand(args []string) int {
 		return 2
 	}
 	if *model == "" || *schema == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-command --model M --schema F [--record F] [--settings F] [--session SID] [--output-mode json|stream-json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-command --model M --schema F [--record F] [--settings F] [--session SID] [--output-mode json|stream-json]")
 		return 2
 	}
 	budget, turns, err := adapter.ClaudeBudget(os.LookupEnv)
@@ -198,7 +198,7 @@ func runAdapterClaudeDeriveResult(args []string) int {
 	stream := flags.String("stream", "", "the round's claude-stream.jsonl")
 	result := flags.String("result", "", "claude-result.json destination")
 	if flags.Parse(args) != nil || *stream == "" || *result == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-derive-result --stream F --result F")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-derive-result --stream F --result F")
 		return 2
 	}
 	if err := adapter.ClaudeDeriveResult(*stream, *result); err != nil {
@@ -220,7 +220,7 @@ func runAdapterClaudeSettings(args []string) int {
 		return 2
 	}
 	if *record == "" || *output == "" || *bin == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-settings --record FILE --output FILE --metasystem-bin PATH [--scratch DIR]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-settings --record FILE --output FILE --metasystem-bin PATH [--scratch DIR]")
 		return 2
 	}
 	if err := adapter.BuildClaudeSettings(*record, *output, *bin, *scratch); err != nil {
@@ -240,7 +240,7 @@ func runAdapterClaudeUsage(args []string) int {
 		return 2
 	}
 	if *result == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-usage --result FILE --output FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-usage --result FILE --output FILE")
 		return 2
 	}
 	ports, ok := delegatePorts("adapter claude-usage", "claude")
@@ -269,17 +269,17 @@ func runAdapterClaudeToolGate(args []string) int {
 		return 2
 	}
 	if root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-tool-gate --root ROOT")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-tool-gate --root ROOT")
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem adapter claude-tool-gate:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal adapter claude-tool-gate:", err)
 		return 0
 	}
 	mode, err := config.ToolGateMode(stateRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem adapter claude-tool-gate:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal adapter claude-tool-gate:", err)
 		return 0
 	}
 	memoryDir, _ := usagepkg.MemoryDirectory(usagepkg.ReadOptions{Installation: stateRoot})
@@ -290,7 +290,7 @@ func runAdapterClaudeToolGate(args []string) int {
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem adapter claude-tool-gate:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal adapter claude-tool-gate:", err)
 	}
 	return 0
 }
@@ -305,7 +305,7 @@ func runAdapterClaudeResultField(args []string) int {
 		return 2
 	}
 	if *result == "" || *field == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-result-field --result FILE --field NAME")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-result-field --result FILE --field NAME")
 		return 2
 	}
 	ports, ok := delegatePorts("adapter claude-result-field", "claude")
@@ -325,29 +325,6 @@ func runAdapterClaudeResultField(args []string) int {
 	return 0
 }
 
-// runAdapterClaudeReadRoots prints the requested read roots other than the
-// workspace root, one per line.
-func runAdapterClaudeReadRoots(args []string) int {
-	flags := flag.NewFlagSet("adapter claude-read-roots", flag.ContinueOnError)
-	record := flags.String("record", "", "job record file")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *record == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-read-roots --record FILE")
-		return 2
-	}
-	roots, err := adapter.ClaudeReadRoots(*record)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	for _, root := range roots {
-		fmt.Println(root)
-	}
-	return 0
-}
-
 // runAdapterClaudeAppendResult appends a Claude result document to the flight
 // recorder as one compact event line.
 func runAdapterClaudeAppendResult(args []string) int {
@@ -358,7 +335,7 @@ func runAdapterClaudeAppendResult(args []string) int {
 		return 2
 	}
 	if *result == "" || *events == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-append-result --result FILE --events FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-append-result --result FILE --events FILE")
 		return 2
 	}
 	if err := adapter.ClaudeAppendResult(*result, *events); err != nil {
@@ -373,7 +350,7 @@ func runAdapterClaudeAppendResult(args []string) int {
 // from the env-named paths, and echoes the session id as runtime context.
 func runAdapterClaudeSessionSignal(args []string) int {
 	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-session-signal < session-start-payload")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter claude-session-signal < session-start-payload")
 		return 2
 	}
 	signalPath := os.Getenv("METASYSTEM_CLAUDE_SESSION_SIGNAL")
@@ -402,7 +379,7 @@ func runAdapterDevinConfig(args []string) int {
 		return 2
 	}
 	if *record == "" || *output == "" || *provenance == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-config --record FILE --output FILE --provenance FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter devin-config --record FILE --output FILE --provenance FILE")
 		return 2
 	}
 	if err := adapter.BuildDevinConfig(*record, *output, *provenance); err != nil {
@@ -480,7 +457,7 @@ func runAdapterDevinSettle(args []string) int {
 		return 2
 	}
 	if *transcript == "" || *roundDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-settle --transcript F --round-dir D [--snapshot F] [--session SID] [--require-transcript]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter devin-settle --transcript F --round-dir D [--snapshot F] [--session SID] [--require-transcript]")
 		return 2
 	}
 	ports, ok := delegatePorts("adapter devin-settle", "devin")
@@ -523,7 +500,7 @@ func runAdapterDevinCollect(args []string) int {
 		return 2
 	}
 	if params.Root == "" || params.Job == "" || params.RoundDir == "" || params.RecordPath == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-collect --root D --job ID --round-dir D --record F [--workspace D --stdout F --named F --transcript F --attempt A --session SID | --presence-only]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter devin-collect --root D --job ID --round-dir D --record F [--workspace D --stdout F --named F --transcript F --attempt A --session SID | --presence-only]")
 		return 2
 	}
 	ports, ok := delegatePorts("adapter devin-collect", "devin")
@@ -556,7 +533,7 @@ func runAdapterACPUsage(args []string) int {
 		return 2
 	}
 	if *usagePath == "" || *outcomePath == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter acp-usage --usage F --outcome F")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter acp-usage --usage F --outcome F")
 		return 2
 	}
 	if err := usagepkg.ACPUsage(*usagePath, *outcomePath); err != nil {
@@ -581,7 +558,7 @@ func runAdapterDevinSession(args []string) int {
 		return 2
 	}
 	if *before == "" || *current == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-session --before FILE --current FILE [--signal FILE] [--workspace DIR]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter devin-session --before FILE --current FILE [--signal FILE] [--workspace DIR]")
 		return 2
 	}
 	id, candidates := adapter.DevinSessionCorrelate(*before, *current, *signal, *workspace)
@@ -610,7 +587,7 @@ func runAdapterDevinUsage(args []string) int {
 		return 2
 	}
 	if *usage == "" || *transcript == "" || *cumulative == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-usage --usage FILE --transcript FILE --cumulative FILE [--snapshot FILE] [--previous FILE] [--expect-previous]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter devin-usage --usage FILE --transcript FILE --cumulative FILE [--snapshot FILE] [--previous FILE] [--expect-previous]")
 		return 2
 	}
 	ports, ok := delegatePorts("adapter devin-usage", "devin")
@@ -635,7 +612,7 @@ func runAdapterFakeReturn(args []string) int {
 		return 2
 	}
 	if *record == "" || *prompt == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-return --record FILE --prompt FILE --output FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter fake-return --record FILE --prompt FILE --output FILE")
 		return 2
 	}
 	ports, ok := delegatePorts("adapter fake-return", "fake")
@@ -658,7 +635,7 @@ func runAdapterFakeUsage(args []string) int {
 		return 2
 	}
 	if *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-usage --output FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter fake-usage --output FILE")
 		return 2
 	}
 	ports, ok := delegatePorts("adapter fake-usage", "fake")
@@ -683,7 +660,7 @@ func runAdapterFakeEffectiveNetwork(args []string) int {
 		return 2
 	}
 	if *effective == "" || *network == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-effective-network --effective FILE --network VALUE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter fake-effective-network --effective FILE --network VALUE")
 		return 2
 	}
 	if err := adapter.SetEffectiveNetwork(*effective, *network); err != nil {
@@ -704,7 +681,7 @@ func runAdapterFakeGuardedWrite(args []string) int {
 		return 2
 	}
 	if *permissions == "" || *target == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-guarded-write --permissions FILE --target FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter fake-guarded-write --permissions FILE --target FILE")
 		return 2
 	}
 	allowed, err := adapter.FakeGuardedWrite(*permissions, *target)
@@ -730,7 +707,7 @@ func runAdapterFakeGuardedNetwork(args []string) int {
 		return 2
 	}
 	if *permissions == "" || *host == "" || *port == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-guarded-network --permissions FILE --host HOST --port PORT")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter fake-guarded-network --permissions FILE --host HOST --port PORT")
 		return 2
 	}
 	allowed, err := adapter.FakeGuardedNetwork(*permissions, *host, *port)
@@ -756,7 +733,7 @@ func runAdapterFakeCapabilitySnapshot(args []string) int {
 		return 2
 	}
 	if *dir == "" || *profile == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-capability-snapshot --dir DIR --profile P [--age-days N] --handshake-sec S")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter fake-capability-snapshot --dir DIR --profile P [--age-days N] --handshake-sec S")
 		return 2
 	}
 	path, err := adapter.WriteFakeCapabilitySnapshot(*dir, *profile, *ageDays, *handshake)
@@ -778,7 +755,7 @@ func runAdapterFakeSelftestRecord(args []string) int {
 		return 2
 	}
 	if *output == "" || *job == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-selftest-record --output FILE --job ID")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter fake-selftest-record --output FILE --job ID")
 		return 2
 	}
 	if err := adapter.WriteFakeSelftestRecord(*output, *job); err != nil {
@@ -797,7 +774,7 @@ func runAdapterUsageUnavailable(args []string) int {
 		return 2
 	}
 	if *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter usage-unavailable --output FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter usage-unavailable --output FILE")
 		return 2
 	}
 	if err := adapter.WriteUnavailableUsage(*output); err != nil {

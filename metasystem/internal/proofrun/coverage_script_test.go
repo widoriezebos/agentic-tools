@@ -303,6 +303,18 @@ exit 97
 `
 	goHelper := `#!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == -C ]]; then
+  # The go-build.sh stub's bootstrap build: count it and produce its --out.
+  [[ "${3:-} ${4:-} ${5:-}" == "run ./cmd/devgate build" ]] || exit 97
+  cd "$2"
+  shift 5
+  out=bin/metasystem
+  while (($#)); do
+    [[ "$1" != --out ]] || { out=$2; break; }
+    shift
+  done
+  set -- build -o "$out"
+fi
 case "${1:-}" in
   version) echo 'go version fixture' ;;
   env) echo local ;;
@@ -556,7 +568,7 @@ func TestFastGoGatePropagatesInheritedWorkersToEveryGoPhase(t *testing.T) {
 				"run -p=" + test.workers + " ./cmd/metasystem audit parallel-ratchet",
 				"vet -p=" + test.workers + " ./...",
 				"run -p=" + test.workers + " honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./...",
-				"run -p=" + test.workers + " ./cmd/metasystem behavior-surface select",
+				"run ./cmd/devgate build",
 				"test -p=" + test.workers + " -count=1 ./internal/refusal",
 			} {
 				requireRecordedGoPhase(t, records, phase)
@@ -596,7 +608,7 @@ func TestFullGoGatePropagatesInheritedWorkersToEveryGoPhase(t *testing.T) {
 				"build -p=" + test.workers + " -o ",
 				"vet -p=" + test.workers + " ./...",
 				"run -p=" + test.workers + " honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./...",
-				"run -p=" + test.workers + " ./cmd/metasystem behavior-surface select",
+				"run ./cmd/devgate build",
 				"run -p=" + test.workers + " golang.org/x/vuln/cmd/govulncheck@v1.2.0 ./...",
 				"list -p=" + test.workers + " ./internal/...",
 			} {
@@ -657,7 +669,7 @@ func TestFullGoGatePropagatesInheritedWorkersToEveryGoPhase(t *testing.T) {
 			for _, phase := range []string{
 				"vet -p=3 ./...",
 				"run -p=3 honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./...",
-				"run -p=3 ./cmd/metasystem behavior-surface select",
+				"run ./cmd/devgate build",
 				"run -p=3 golang.org/x/vuln/cmd/govulncheck@v1.2.0 ./...",
 				"list -p=3 ./internal/...",
 			} {
@@ -681,35 +693,45 @@ func TestFullGoGatePropagatesInheritedWorkersToEveryGoPhase(t *testing.T) {
 	}
 }
 
-func TestGoBuildPropagatesInheritedWorkersToClassificationAndBuild(t *testing.T) {
+func TestGoBuildStubRunsTheBootstrapBuildOfItsOwnInstallation(t *testing.T) {
 	t.Parallel()
 
+	// Worker validation, the fence, the stamp and the -p/GOMAXPROCS allowance
+	// are cmd/devgate's, proved in its package; the stub's whole contract is
+	// to run that build for its own installation from any directory.
 	fixture := newRecordingGoFixture(t)
-	for _, args := range [][]string{{"--out", filepath.Join(fixture.root, "proof-engine")}, nil} {
-		diagnostic, err := fixture.run(t, "scripts/agents/go-build.sh", "3", true, args...)
-		if err != nil {
-			t.Fatalf("go-build %v failed: %v\n%s", args, err, diagnostic)
+	root, err := filepath.EvalSymlinks(fixture.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"--trimpath", "--out", filepath.Join(root, "proof-engine")}, nil} {
+		command := exec.Command("bash", append([]string{filepath.Join(fixture.root, "scripts", "agents", "go-build.sh")}, args...)...)
+		command.Dir = t.TempDir()
+		command.Env = append(recordingGoEnvironment(),
+			"PATH="+filepath.Join(fixture.root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"RECORDING_GO_LOG="+fixture.goLog, "RECORDING_NATIVE_LOG="+fixture.nativeLog,
+			"RECORDING_ENGINE_STUB="+filepath.Join(fixture.root, "helpers", "engine-stub"))
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("go-build %v from an unrelated directory failed: %v\n%s", args, err, output)
 		}
 	}
 	records := readRecordedGoInvocations(t, fixture.goLog)
-	assertRecordedGoAllowance(t, records, "3")
-	if countRecordedGoPhase(records, "run -p=3 ./cmd/metasystem behavior-surface select") != 2 || countRecordedGoPhase(records, "build -p=3") != 2 {
-		t.Fatalf("go-build did not classify and build both branches: %+v", records)
+	want := [][]string{
+		{"-C", root, "run", "./cmd/devgate", "build", "--trimpath", "--out", filepath.Join(root, "proof-engine")},
+		{"-C", root, "run", "./cmd/devgate", "build"},
 	}
-
-	defaultFixture := newRecordingGoFixture(t)
-	if diagnostic, err := defaultFixture.run(t, "scripts/agents/go-build.sh", "1", false, "--out", filepath.Join(defaultFixture.root, "proof-engine")); err != nil {
-		t.Fatalf("default go-build failed: %v\n%s", err, diagnostic)
+	if len(records) != len(want) {
+		t.Fatalf("go invocations = %+v, want %q", records, want)
 	}
-	assertRecordedGoAllowance(t, readRecordedGoInvocations(t, defaultFixture.goLog), "1")
-
-	invalidFixture := newRecordingGoFixture(t)
-	diagnostic, err := invalidFixture.run(t, "scripts/agents/go-build.sh", "nope", true, "--out", filepath.Join(invalidFixture.root, "proof-engine"))
-	if err == nil || !strings.Contains(string(diagnostic), "METASYSTEM_TEST_WORKERS must be a positive integer") {
-		t.Fatalf("invalid allowance err=%v output:\n%s", err, diagnostic)
+	for index, record := range records {
+		if !reflect.DeepEqual(record.argv, want[index]) {
+			t.Fatalf("go invocation %d = %q, want %q", index, record.argv, want[index])
+		}
 	}
-	if records := readRecordedGoInvocations(t, invalidFixture.goLog); len(records) != 0 {
-		t.Fatalf("invalid allowance reached Go: %+v", records)
+	for _, produced := range []string{filepath.Join(root, "proof-engine"), filepath.Join(root, "bin", "metasystem")} {
+		if _, err := os.Stat(produced); err != nil {
+			t.Fatalf("stub build did not produce %s: %v", produced, err)
+		}
 	}
 }
 
@@ -789,6 +811,28 @@ exec /bin/cat "$@"
 set -euo pipefail
 printf '%s\0%s\0' "${GOMAXPROCS:-}" "$#" >>"$RECORDING_GO_LOG"
 printf '%s\0' "$@" >>"$RECORDING_GO_LOG"
+if [[ "${1:-}" == -C ]]; then
+  # The go-build.sh stub's bootstrap build (cmd/devgate, unit-tested in its
+  # own package): produce the engine where it would.
+  [[ "${3:-} ${4:-} ${5:-}" == "run ./cmd/devgate build" ]] || exit 97
+  cd "$2"
+  shift 5
+  out=
+  while (($#)); do
+    [[ "$1" != --out ]] || { out=$2; break; }
+    shift
+  done
+  if [[ -z "$out" ]]; then
+    if [[ "${RECORDING_POST_NATIVE_BUILD_FAIL:-0}" == 1 && -s "$RECORDING_NATIVE_LOG" ]]; then
+      exit 1
+    fi
+    mkdir -p bin
+    out=bin/metasystem
+  fi
+  cp "$RECORDING_ENGINE_STUB" "$out"
+  chmod 700 "$out"
+  exit 0
+fi
 case "${1:-}" in
   version) echo 'go version recording-fixture' ;;
   env) echo local ;;

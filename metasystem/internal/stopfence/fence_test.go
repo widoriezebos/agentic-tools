@@ -98,24 +98,24 @@ func TestClosedDescriptionsNameCompletedIncompleteAndUnfinishedRemedies(t *testi
 	if got, err := ClosedDescription(completed, "/fallback"); err != nil || got != "the metasystem is stopped for /checkout since 2026-09-08T02:00:00Z, by stop pid 72" {
 		t.Fatalf("completed description = %q, %v", got, err)
 	}
-	assertClosedRendering(t, completed, "metasystem arm --repo /checkout", "HEALTH STOPPED ")
+	assertClosedRendering(t, completed, "metasystem system start --repo /checkout", "HEALTH STOPPED ")
 	incomplete := base
 	incomplete.Phase = PhaseStopIncomplete
 	incomplete.NotStopped = []Survivor{{Component: "run", ID: "one", Reason: "survived"}}
 	if got, err := ClosedDescription(incomplete, "/fallback"); err != nil || got != "stop incomplete for /checkout since 2026-09-08T02:00:00Z by stop pid 72; 1 unresolved entries from the last stop" {
 		t.Fatalf("incomplete description = %q, %v", got, err)
 	}
-	assertClosedRendering(t, incomplete, "metasystem stop --repo /checkout", "HEALTH STOP INCOMPLETE ")
+	assertClosedRendering(t, incomplete, "metasystem system stop --repo /checkout", "HEALTH STOP INCOMPLETE ")
 	unfinished := base
 	unfinished.Phase = PhaseStopping
 	if got, err := ClosedDescription(unfinished, "/fallback"); err != nil || got != "stop unfinished for /checkout since 2026-09-08T02:00:00Z by stop pid 72" {
 		t.Fatalf("unfinished description = %q, %v", got, err)
 	}
-	assertClosedRendering(t, unfinished, "metasystem stop --repo /checkout", "HEALTH STOP UNFINISHED ")
+	assertClosedRendering(t, unfinished, "metasystem system stop --repo /checkout", "HEALTH STOP UNFINISHED ")
 
 	inconsistent := completed
 	inconsistent.NotStopped = []Survivor{{Component: "run", ID: "one", Reason: "survived"}}
-	assertClosedRendering(t, inconsistent, "metasystem stop --repo /checkout", "HEALTH STOP INCOMPLETE ")
+	assertClosedRendering(t, inconsistent, "metasystem system stop --repo /checkout", "HEALTH STOP INCOMPLETE ")
 }
 
 func assertClosedRendering(t *testing.T, record Record, wantCommand, wantHealth string) {

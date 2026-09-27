@@ -31,23 +31,23 @@ func TestToolGateAllowlist(t *testing.T) {
 		})
 	}
 	cases = append(cases,
-		allowCase{name: "basename", call: bashToolGateCall("metasystem wait --restore job"), wantPattern: "metasystem wait", wantKind: NeverDenied, allow: true},
-		allowCase{name: "absolute-path-prefix", call: bashToolGateCall("/usr/local/bin/metasystem context handoff --root /repo"), wantPattern: "metasystem context handoff", wantKind: AllowedAtTrigger, allow: true},
-		allowCase{name: "relative-path-prefix", call: bashToolGateCall("bin/metasystem context resume"), wantPattern: "metasystem context resume", wantKind: AllowedAtTrigger, allow: true},
-		allowCase{name: "dot-path-prefix", call: bashToolGateCall("./bin/metasystem context verify"), wantPattern: "metasystem context verify", wantKind: AllowedAtTrigger, allow: true},
-		allowCase{name: "cd-prefix", call: bashToolGateCall("cd /tmp && metasystem context status --root /repo"), wantPattern: "metasystem context status", wantKind: AllowedAtTrigger, allow: true},
-		allowCase{name: "assignment-prefix", call: bashToolGateCall("A=one B='two words' metasystem delegate --root /repo"), wantPattern: "metasystem delegate", wantKind: AllowedAtTrigger, allow: true},
+		allowCase{name: "basename", call: bashToolGateCall("metasystem work wait --restore job"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
+		allowCase{name: "absolute-path-prefix", call: bashToolGateCall("/usr/local/bin/metasystem session handoff --root /repo"), wantPattern: "metasystem session handoff", wantKind: AllowedAtTrigger, allow: true},
+		allowCase{name: "relative-path-prefix", call: bashToolGateCall("bin/metasystem internal context resume"), wantPattern: "metasystem internal context resume", wantKind: AllowedAtTrigger, allow: true},
+		allowCase{name: "dot-path-prefix", call: bashToolGateCall("./bin/metasystem session verify"), wantPattern: "metasystem session verify", wantKind: AllowedAtTrigger, allow: true},
+		allowCase{name: "cd-prefix", call: bashToolGateCall("cd /tmp && metasystem session context --root /repo"), wantPattern: "metasystem session context", wantKind: AllowedAtTrigger, allow: true},
+		allowCase{name: "assignment-prefix", call: bashToolGateCall("A=one B='two words' metasystem internal delegate --root /repo"), wantPattern: "metasystem internal delegate", wantKind: AllowedAtTrigger, allow: true},
 		allowCase{name: "bash-script-wrapper", call: bashToolGateCall("bash /repo/scripts/agents/land.sh goal"), wantPattern: "scripts/agents/land.sh", wantKind: NeverDenied, allow: true},
 		allowCase{name: "sh-script-wrapper", call: bashToolGateCall("sh ./scripts/agents/land.sh goal"), wantPattern: "scripts/agents/land.sh", wantKind: NeverDenied, allow: true},
-		allowCase{name: "bash-c-wrapper", call: bashToolGateCall("bash -c 'metasystem wait --restore goal'"), wantPattern: "metasystem wait", wantKind: NeverDenied, allow: true},
-		allowCase{name: "bash-lc-wrapper", call: bashToolGateCall("bash -lc 'metasystem steward status --root /repo'"), wantPattern: "metasystem steward status", wantKind: AllowedAtTrigger, allow: true},
-		allowCase{name: "pipe-filter", call: bashToolGateCall("metasystem wait | head -1"), wantPattern: "metasystem wait", wantKind: NeverDenied, allow: true},
-		allowCase{name: "or-filter", call: bashToolGateCall("metasystem wait || tail -1"), wantPattern: "metasystem wait", wantKind: NeverDenied, allow: true},
-		allowCase{name: "semicolon-filter", call: bashToolGateCall("metasystem wait; grep ready status.txt"), wantPattern: "metasystem wait", wantKind: NeverDenied, allow: true},
-		allowCase{name: "newline-filter", call: bashToolGateCall("metasystem wait\nwc -l"), wantPattern: "metasystem wait", wantKind: NeverDenied, allow: true},
-		allowCase{name: "multiple-trailing-filters", call: bashToolGateCall("metasystem wait | grep ready | tail -1 | tee /tmp/status"), wantPattern: "metasystem wait", wantKind: NeverDenied, allow: true},
-		allowCase{name: "compound-with-another-command", call: bashToolGateCall("metasystem wait && echo done"), wantKind: Other, allow: false},
-		allowCase{name: "quoted-separators", call: bashToolGateCall("metasystem wait --label 'a && b || c; d | e\nf'"), wantPattern: "metasystem wait", wantKind: NeverDenied, allow: true},
+		allowCase{name: "bash-c-wrapper", call: bashToolGateCall("bash -c 'metasystem work wait --restore goal'"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
+		allowCase{name: "bash-lc-wrapper", call: bashToolGateCall("bash -lc 'metasystem system status --steward --root /repo'"), wantPattern: "metasystem system status", wantKind: AllowedAtTrigger, allow: true},
+		allowCase{name: "pipe-filter", call: bashToolGateCall("metasystem work wait | head -1"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
+		allowCase{name: "or-filter", call: bashToolGateCall("metasystem work wait || tail -1"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
+		allowCase{name: "semicolon-filter", call: bashToolGateCall("metasystem work wait; grep ready status.txt"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
+		allowCase{name: "newline-filter", call: bashToolGateCall("metasystem work wait\nwc -l"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
+		allowCase{name: "multiple-trailing-filters", call: bashToolGateCall("metasystem work wait | grep ready | tail -1 | tee /tmp/status"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
+		allowCase{name: "compound-with-another-command", call: bashToolGateCall("metasystem work wait && echo done"), wantKind: Other, allow: false},
+		allowCase{name: "quoted-separators", call: bashToolGateCall("metasystem work wait --label 'a && b || c; d | e\nf'"), wantPattern: "metasystem work wait", wantKind: NeverDenied, allow: true},
 		allowCase{name: "unparseable-input", call: Call{Tool: "Bash", Input: json.RawMessage(`{"command":`)}, wantKind: Other, allow: false},
 	)
 
@@ -130,7 +130,7 @@ func TestToolGateAllowEmitsNothing(t *testing.T) {
 	}
 
 	deny := Decide(Classify(bashToolGateCall("rm scratch"), memoryDir), 123456, budget, "/repo")
-	wantReason := "CONTEXT AT 123K (trigger 105K): this call is denied; run metasystem context handoff --root /repo alone, or launch a delegate"
+	wantReason := "CONTEXT AT 123K (trigger 105K): this call is denied; run metasystem session handoff --root /repo alone, or launch a delegate"
 	wantOutput := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + wantReason + `"}}`
 	if !deny.Deny || deny.Reason != wantReason || string(deny.Output()) != wantOutput {
 		t.Fatalf("deny = %#v output=%s", deny, deny.Output())

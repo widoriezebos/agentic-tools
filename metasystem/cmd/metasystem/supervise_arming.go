@@ -5,43 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 // The arming-side supervision verbs that remain shared outside `up`: the
 // reserved-cap ceiling check and generic detached launch.
-
-// runSuperviseBlockingReservedCap relays `supervise blocking-reserved-cap`:
-// the scan/rank decision lives in supervise.BlockingReservedCap, and
-// this verb prints the highest blocker as job|cap or the refusal by
-// name.
-func runSuperviseBlockingReservedCap(args []string) int {
-	flags := flag.NewFlagSet("supervise blocking-reserved-cap", flag.ContinueOnError)
-	agents := flags.String("agents", "", "artifacts/agents directory")
-	ceiling := flags.Int64("ceiling", 0, "proposed watcher ceiling in minutes")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *agents == "" || *ceiling < 1 {
-		fmt.Fprintln(os.Stderr, "supervise blocking-reserved-cap: --agents and --ceiling are required")
-		return 2
-	}
-	blocker, blocked, err := supervise.BlockingReservedCap(*agents, *ceiling)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "supervise blocking-reserved-cap: refusing to arm: %v\n", err)
-		return 1
-	}
-	if blocked {
-		fmt.Printf("%s|%d\n", blocker.Job, blocker.Cap)
-	}
-	return 0
-}
 
 // runSuperviseLaunchDetached starts a command fully detached — stdin from
 // /dev/null, stdout/stderr appended to the log, its own session — and prints
@@ -109,56 +79,5 @@ func runSuperviseLaunchDetached(args []string) int {
 	fmt.Println(cmd.Process.Pid)
 	// The child is its own session; it is not waited on here.
 	_ = cmd.Process.Release()
-	return 0
-}
-
-// runSuperviseWatchdogReport relays `supervise watchdog-report`: the health
-// judgment lives in supervise.WatchdogReport, and this verb prints its
-// lines — nothing when everything is healthy.
-func runSuperviseWatchdogReport(args []string) int {
-	flags := flag.NewFlagSet("supervise watchdog-report", flag.ContinueOnError)
-	repo := pathFlag(flags, "repo", "", "checkout root")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "supervise watchdog-report: --repo is required")
-		return 2
-	}
-	if lines := supervise.WatchdogReport(*repo, time.Now()); len(lines) > 0 {
-		fmt.Println(strings.Join(lines, "\n"))
-	}
-	return 0
-}
-
-// runSuperviseHeartbeat writes a component heartbeat: the process identity
-// (pid + kernel start second), its function and tag, and the observation time,
-// atomically.
-func runSuperviseHeartbeat(args []string) int {
-	flags := flag.NewFlagSet("supervise heartbeat", flag.ContinueOnError)
-	path := flags.String("path", "", "heartbeat file path")
-	function := flags.String("function", "", "component function name")
-	pid := flags.Int64("pid", 0, "component pid")
-	tag := flags.String("tag", "", "instance tag")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *path == "" || *function == "" || *pid < 1 || *tag == "" {
-		fmt.Fprintln(os.Stderr, "supervise heartbeat: --path, --function, --pid, and --tag are required")
-		return 2
-	}
-	exact, state, err := identity.KernelProber{}.Probe(*pid)
-	if err != nil || state != identity.Alive {
-		fmt.Fprintln(os.Stderr, "supervise heartbeat: pid identity unreadable")
-		return 1
-	}
-	value := map[string]any{
-		"function": *function, "pid": *pid, "pidStartedAt": exact.StartedAt.Unix(),
-		"instanceTag": *tag, "observedAtEpoch": time.Now().Unix(),
-	}
-	if err := writeIdentityJSON(*path, value); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
 	return 0
 }
