@@ -50,10 +50,13 @@ func DefaultShapes() []Shape {
 	for _, supervisor := range runtimes.SupervisorShapes() {
 		shapes = append(shapes, Shape{Name: supervisor.Name, Includes: supervisor.Includes, TagFlag: supervisor.TagFlag})
 	}
+	for _, runtime := range []string{"codex", "claude", "devin"} {
+		for _, cli := range runtimes.CLIInvocations(runtime) {
+			shapes = append(shapes, Shape{Name: "adapter-cli-" + runtime, Includes: cli.Includes, TagFlag: cli.TagFlag,
+				TagPrefix: cli.TagPrefix, TagPathBase: cli.TagPathBase})
+		}
+	}
 	return append(shapes,
-		Shape{Name: "adapter-cli-codex", Includes: []string{"codex", "exec"}, TagFlag: "-c", TagPrefix: "metasystem_instance_tag="},
-		Shape{Name: "adapter-cli-claude", Includes: []string{"claude", "-p"}, TagFlag: "--name"},
-		Shape{Name: "adapter-cli-devin", Includes: []string{"devin", "-p"}, TagFlag: "--config", TagPathBase: true},
 		Shape{Name: "tagged-hold", Includes: []string{"metasystem", "util", "hold"}, TagFlag: "--tag"},
 		Shape{Name: "mission-run-loop", Includes: []string{"metasystem", "mission", "run-loop"}, TagFlag: "--instance-tag"},
 	)

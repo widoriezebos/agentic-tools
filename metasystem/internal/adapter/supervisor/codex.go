@@ -20,8 +20,7 @@ func init() {
 		},
 		selftest: codexSelftest,
 		ops: codexOps{builtinOps{name: "codex", cli: "codex", usage: "native", host: true,
-			configIdentity: codexConfigIdentity, probe: codexProbe, contract: commonContract("codex"), selftest: codexSelftest,
-			invocations: []InvocationShape{{Includes: []string{"codex", "exec"}, TagFlag: "-c", TagPrefix: "metasystem_instance_tag="}}}},
+			configIdentity: codexConfigIdentity, probe: codexProbe, contract: commonContract("codex"), selftest: codexSelftest}},
 	})
 }
 

@@ -160,3 +160,25 @@ func EnforcementMapJSON(runtime string) (string, bool) {
 	}
 	return "{" + strings.Join(parts, ",") + "}", true
 }
+
+// CLIInvocation is a runtime CLI's claim-bound invocation shape: the argv
+// words it carries and where the claim tag sits. The janitor keeps its kill
+// proof in Go and takes these shapes from here (VOA-29); each runtime's
+// describe reports the same shape.
+type CLIInvocation struct {
+	Includes    []string
+	TagFlag     string
+	TagPrefix   string
+	TagPathBase bool
+}
+
+var cliInvocations = map[string][]CLIInvocation{
+	"codex":  {{Includes: []string{"codex", "exec"}, TagFlag: "-c", TagPrefix: "metasystem_instance_tag="}},
+	"claude": {{Includes: []string{"claude", "-p"}, TagFlag: "--name"}},
+	"devin":  {{Includes: []string{"devin", "-p"}, TagFlag: "--config", TagPathBase: true}},
+}
+
+// CLIInvocations returns a runtime's declared CLI invocation shapes.
+func CLIInvocations(runtime string) []CLIInvocation {
+	return append([]CLIInvocation(nil), cliInvocations[runtime]...)
+}

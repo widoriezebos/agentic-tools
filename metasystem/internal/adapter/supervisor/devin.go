@@ -40,8 +40,9 @@ func init() {
 		// the turn when a tool is denied, so the permission leg runs its
 		// attempts as their own turns.
 		selftest: selftestWith("devin", "metered", "symlinked-skill-discovery", nil, 900, true),
-		// The per-turn --config file is named with the instance tag.
-		invocations: []InvocationShape{{Includes: []string{"devin", "-p"}, TagFlag: "--config", TagPathBase: true}}}}
+		// The per-turn --config file is named with the instance tag (the
+		// claim-bound invocation shape, runtimes.CLIInvocations).
+	}}
 	register(runtimeAdapter{
 		name:           "devin",
 		configIdentity: ops.configIdentity,
