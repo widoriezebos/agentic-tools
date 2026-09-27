@@ -283,33 +283,58 @@ launch inside the VM", never part of the standard metasystem.
 user of the metasystem is expected to change or extend. Metasystem behavior
 lives in Go. **Rule S2.** Nothing under `metasystem/` names, starts or depends on
 `environment/vms`; a VM run is a test or benchmark script that chooses to
-launch inside a VM. Witness (R11): a static test over `git ls-files` fails on any
-`*.sh`/`*.bash` under `metasystem/` outside the declared extension points below,
-and on any reference to `environment/vms` from `metasystem/`.
+launch inside a VM. Witness (R11, VOA-24): a static test over `git ls-files`
+fails on any `*.sh`/`*.bash` under `metasystem/` not matched by the exact
+allowlist `metasystem/optional-skills/*/scripts/**` (skill helper tools) and the
+two historical instruments `metasystem/plans/first-headless-run/gate.sh` and
+`metasystem/plans/first-headless-run/guard.sh`; and on any `environment/vms`
+reference in executable or configuration files under `metasystem/`
+(`*.go`, `*.sh`, `*.bash`, `*.json`, `*.toml`, `*.yaml`, `*.yml`,
+`metasystem.conf*`), excluding `_test.go` files that hold the witness itself.
+Prose (`*.md`) may name the VM. Positive and negative fixtures pin both.
+`benchmark/` lies outside `metasystem/` and is governed by S1 only as an
+extension point: its scripts may call the engine through public actions only.
 
 The end state for what earlier revisions kept as plumbing:
 
 - **Runtime hook wiring.** The runtime settings command is generated data, not
-  a script: `internal/hooks/setup.go` writes `bin/metasystem internal hook
-  RUNTIME EVENT` followed by the inline degraded fallback the settings already
-  carry (`|| printf '{...}'`), and `runtime setup` regenerates it in every
-  checkout. During the cutover the U4 stub `supervision-hook.sh` bridges an
-  engine older than the `hook` entry (it rebuilds detached); U9 regenerates the
-  settings to the direct command, confirms every checkout's engine accepts the
-  entry, and deletes the stub.
-- **Git pre-commit wiring.** The install verb writes `.git/hooks/pre-commit`
-  (generated, never committed) that execs `bin/metasystem internal pre-commit`
-  and refuses with a fixed message when the binary is missing;
-  `internal/ledgerfence/fence.go` checks that shape. The committed
-  `pre-commit-guard.sh` is deleted in U5.
+  a script: `internal/hooks/setup.go` writes one command line that selects the
+  engine as the stub does today (the primary checkout's `bin/metasystem`,
+  resolved through `git rev-parse --path-format=absolute --git-common-dir`, so a
+  linked worktree without its own binary uses the primary's engine,
+  `supervision-hook.sh:19`), runs `internal hook RUNTIME EVENT` on it, and ends in
+  the inline degraded fallback the settings already carry (`|| printf
+  '{...}'`); `runtime setup` regenerates it in every checkout (VOA-19). The Go
+  Stop worker, which today launches the stub by path (`hook_entry.go:104`),
+  launches the engine's `internal hook` entry directly, keeping the
+  deadline-parent identity, payload, installation context and cleanup (VOA-18).
+  During the cutover the U4 stub bridges an engine older than the `hook` entry
+  (it rebuilds detached). U9's activation, per checkout (m1e, m1b, m1c and any
+  linked worktree): build and validate the selected engine (`internal hook
+  --accepts`), then regenerate the settings to the direct command, then delete
+  the stub. After U9 a missing engine yields the fallback JSON and the notice to
+  run `go run ./cmd/devgate build`; an engine behind its sources is rebuilt by
+  the Go hook itself. Witnesses: an allowed and a blocked Stop end to end with
+  the stub absent; a linked worktree without a local binary; a checkout whose
+  source is ahead of its engine.
+- **Git pre-commit wiring.** The existing enrollment and composition contract
+  stays (`internal/ledgerfence/fence.go`): the effective hooks directory
+  including `core.hooksPath` (`:66`), preservation of foreign hooks (`:162`),
+  `pre-commit.local` after the guard (`:210`), and the nonce/exit-status
+  execution probe (`:118`). Only the guard invocation changes: the generated
+  hook calls `bin/metasystem internal pre-commit` instead of the committed
+  `pre-commit-guard.sh`, which U5 deletes (VOA-20). Witnesses: a rejecting
+  `pre-commit.local` still rejects; a repository-local `core.hooksPath` gets the
+  fence.
 - **Engine build.** `go run ./cmd/devgate build` is the bootstrap; every caller
   (Go, docs, remedies, adopt) names it, and the `go-build.sh` stub is deleted in
   U9 once no caller names the path.
 
 Declared extension points, where scripts are fine because users change them:
-benchmark cases, their gates and graders (`benchmark/cases/**`, `benchmark/*.sh`
-graders and comparers), skill helper tools (`optional-skills/*/scripts/**`),
-and a project's own testing-contract commands. Extension-point scripts may call
+benchmark cases, their gates and graders (under `benchmark/`, outside
+`metasystem/`), skill helper tools (`metasystem/optional-skills/*/scripts/**`),
+and commands an adopting project writes in its own repository and testing
+contract (never committed under `metasystem/`). Extension-point scripts may call
 the engine only through public actions (R4 still applies). The benchmark kit's
 engine-driving scripts (`provision.sh`, `validate-kit.sh`, `run-cohort.sh`) call
 public actions only (U8). `environment/vms/*` stays outside `metasystem/` and
@@ -343,11 +368,11 @@ these actions; owners are unchanged):
 | `critique rebind-budget`, `critique close-register` | critic-register plumbing | no public action: the review flows (`work review`, `design review`) perform them; the `critique` object goes |
 | `work check` | conformance and disposition plumbing | `work review SUBJECT --check-only` checks a subject's boundary and a round's dispositions without launching a critic |
 | `work watch` | duplicates `work wait` with a pinned exit code | `work wait ... --exit-code` |
-| `work close` | "complete a job's records" | performed by `work review` (closing a finished review) and `work land`; an interrupted close is finished by rerunning `work review G` |
+| `work close` | "complete a job's records" | `work finish REF`: record a finished job with nothing to review or land (an investigation, a read) as complete, through the existing close owner with its authority and durability checks (VOA-23); finished reviews complete inside `work review`, landed work inside `work land` |
 | `work report` | "launch outcomes and refusals" | `work status --history [--since T]` |
 | `design find` | duplicates `design list` | `design list --goal G` |
 | `design check-moves` | critic tooling | performed by `design review`; a critic reading outside the command uses `design review FILE --check-only` |
-| `goal check`, `goal repair` | ledger internals | `goal sync` (preview by default; `--publish --by NAME` publishes reviewed goal edits; `--refresh` completes an interrupted refresh). It refuses to publish when more goal files differ than the named `--goal` set, naming them (the 175-file stale-base case of 2026-09-27) |
+| `goal check`, `goal repair` | ledger internals | `goal sync` with four modes: preview (default, changes nothing); `--recover` completes an interrupted goal change (binds `recoverGoalJournal`, the old default, `intent_operations.go:177`; VOA-22); `--refresh` completes an interrupted refresh; `--publish --goal G... --by NAME` publishes reviewed edits of exactly the named goals. The scope is enforced inside the reconciliation owner (`reconcilepub.go:38`): its request carries the allowed goal ids and it refuses, before recording any pending publication, when the captured deltas it would publish include another goal, naming them (VOA-21; the 175-file stale-base case of 2026-09-27). This is the one owner change U1d makes |
 | `system repair` | lists wait continuations | `work wait --list` |
 | `session context`, `session verify` | context-budget internals | inside `session handoff` (`--status`, `--verify`) |
 | `session report` | named after the Stop mechanism | `session status [--id ID]`: why this session may or may not stop |
@@ -437,7 +462,8 @@ replacements under 6.2; U1c the hook-side bootstrap and the retained-plan scan,
 migration and resume refusal of section 7.
 
 U1d (revision 7) applies 3.4's table after U1a: public table, routing, removed
-spellings with suggestions, and every text naming them; owners unchanged.
+spellings with suggestions, and every text naming them; owners unchanged except the
+reconciliation owner's scoped publication (3.4, VOA-21).
 
 **Wave 1 (parallel)**
 
@@ -752,7 +778,20 @@ verified; one failed fold, accepted; no new findings.
 
 | Finding | Disposition | Where folded |
 |---|---|---|
-| VOA-16-R5 materialized proof argv | accepted | 7: migration covers unlaunched proof files |
+| VOA-16-R5 materialized proof argv | accepted | 7: migration covers unlaunched proof files (withdrawn in revision 7 by rule C1) |
 
 Round 6, Codex `gpt-6-astra`, confirmation read of revision 6: VOA-16-R5
 verified; zero material findings. The loop is closed.
+
+Revision 7 read, Codex `gpt-6-astra`, against b5354fcc5: seven material
+findings, all accepted.
+
+| Finding | Disposition | Where folded |
+|---|---|---|
+| VOA-18 Stop worker launches the stub | accepted | 3.3 hook wiring; U9 |
+| VOA-19 engine discovery and bootstrap in the generated launcher | accepted | 3.3 hook wiring; U9 activation |
+| VOA-20 pre-commit composition | accepted | 3.3 pre-commit wiring |
+| VOA-21 scoped publication in the owner | accepted | 3.4 goal sync |
+| VOA-22 journal recovery mode | accepted | 3.4 goal sync --recover |
+| VOA-23 completion of non-review jobs | accepted | 3.4 work finish |
+| VOA-24 exact R11 predicates | accepted | 3.3 S2 |

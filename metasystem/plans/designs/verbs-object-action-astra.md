@@ -388,3 +388,98 @@ Material findings: 0
 
 Codex session ID: 01a0dfcc-9101-7780-9d76-f2bb4a552bb5
 Resume in Codex: codex resume 01a0dfcc-9101-7780-9d76-f2bb4a552bb5
+
+---
+
+Revision 7 read: Codex gpt-6-astra, read-only, against b5354fcc5.
+
+Reviewed revision 7 at `b5354fcc5` in `/Users/wido/LocalStorage/GitHub/verbs-b3`. Findings below are source-traced; no files, commits, or Git state were written. Later design commits arriving during the review are excluded.
+
+**VOA-18 — Deleting the hook stub breaks the Go Stop worker**
+
+**Evidence:** [Design:292](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:292) replaces runtime settings with the direct hook entry and deletes the stub after checking entry acceptance. However, [hook_entry.go:104](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/cmd/metasystem/hook_entry.go:104) still launches the Stop worker with `exec.Command("bash", script, runtime, "stop")`. Ordinary Stop calls enter that supervisor at [runtime_hook_stop.go:76](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/hooks/runtime_hook_stop.go:76). A failed worker produces a degraded allowance at [runtime_hook_deadline.go:203](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/hooks/runtime_hook_deadline.go:203).
+
+**Scenario:** U9 verifies that `internal hook --accepts` succeeds, updates settings, and removes the stub. The next Stop enters Go successfully, but its child tries to execute the deleted script. The actual Stop decision never runs.
+
+**Change:** Include the worker launch in U9: launch the engine’s hook entry directly, preserving the deadline-parent identity, payload, installation context, and cleanup behavior. Require an end-to-end Stop witness with the stub absent, covering both an allowed and a blocked decision.
+
+**Test 1:** Yes — changes the Go worker launcher and U9’s acceptance test.
+
+**Test 2:** **WORK and SAFE** — normal Stop evaluation becomes a degraded allowance despite an available engine.
+
+**VOA-19 — The generated launcher loses engine discovery and bootstrap**
+
+**Evidence:** [Design:293](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:293) specifies `bin/metasystem internal hook …`. The stub currently selects the primary checkout’s engine for linked worktrees at [supervision-hook.sh:19](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/supervision-hook.sh:19), and bootstraps a missing or older engine at [supervision-hook.sh:79](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/supervision-hook.sh:79). Runtime settings are committed—for example [.claude/settings.json:29](/Users/wido/LocalStorage/GitHub/verbs-b3/.claude/settings.json:29)—while [metasystem/.gitignore:2](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/.gitignore:2) excludes the binary.
+
+**Scenario:** A linked worktree receives the committed direct settings but has no local binary; its valid engine exists only in the primary checkout. The launcher fails before Go can resolve that relationship. Likewise, advancing source and settings in a checkout with an older engine removes the only pre-engine bootstrap; printing fallback JSON does not repair it.
+
+**Change:** Specify engine selection in the generated launcher and the ordering of the managed cutover. Build and validate the selected engine before activating direct settings and deleting their fallback dependency in each affected checkout. Exercise a linked worktree without a local binary and a source-advanced checkout with a preceding engine. This needs no committed script.
+
+**Test 1:** Yes — changes generated commands and the U9 activation protocol.
+
+**Test 2:** **WORK** — an ordinary supported checkout cannot execute lifecycle hooks after cutover.
+
+**VOA-20 — A direct pre-commit hook discards existing hook composition**
+
+**Evidence:** [Design:300](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:300) prescribes `.git/hooks/pre-commit` executing the engine. Existing enrollment resolves Git’s effective hooks directory, including `core.hooksPath`, at [fence.go:66](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/ledgerfence/fence.go:66). It preserves foreign hooks at [fence.go:162](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/ledgerfence/fence.go:162), then runs `pre-commit.local` after the guard at [fence.go:210](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/ledgerfence/fence.go:210). Enrollment also proves execution and rejection propagation, rather than merely recognizing text, at [fence.go:118](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/ledgerfence/fence.go:118).
+
+**Scenario:** A checkout already has a project check preserved as `pre-commit.local`. Replacing its composed hook with the specified direct `exec` silently stops running that check. With a configured hooks directory, writing literally under `.git/hooks` can instead install a fence Git never invokes.
+
+**Change:** Retain the existing enrollment and composition contract, replacing only the guard invocation with the Go entry. Preserve effective-hook-path resolution, foreign-hook ownership, local-hook execution, and the nonce/exit-status probe. Test a rejecting local hook and a repository-local `core.hooksPath`.
+
+**Test 1:** Yes — changes the generated hook contract and its installation checks.
+
+**Test 2:** **SAFE** — commits can bypass existing project checks or the ledger fence.
+
+**VOA-21 — Scoped publication cannot be enforced by a routing-only wrapper**
+
+**Evidence:** [Design:350](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:350) promises refusal for edits outside the named goal set, while [design:337](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:337) limits U1d to routing and text with unchanged owners. The current preview independently captures files at [intent_operations.go:375](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/cmd/metasystem/intent_operations.go:375). `Reconcile` subsequently acquires its own lock, resolves its base, captures again, and maps every delta at [reconcilepub.go:38](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/goal/reconcilepub.go:38). Its [request:211](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/goal/verbs.go:211) carries no allowed-goal set or validated snapshot.
+
+**Scenario:** `goal sync --publish --goal A --by NAME` checks that only A differs. Another writer changes B before `Reconcile` captures the tree. The unchanged owner publishes both edits under the named human. The advertised scope refusal has checked different bytes from those published.
+
+**Change:** Extend the existing reconciliation owner’s request with the allowed goal identities. Enforce set membership against the same captured deltas used for publication, before creating the pending publication record. Do not implement this as a separate preview followed by unscoped reconciliation. Add a fixture introducing B between the wrapper’s inspection and owner capture.
+
+**Test 1:** Yes — changes the owner request and publication admission, beyond public routing.
+
+**Test 2:** **SAFE** — edits outside the caller’s explicitly named scope can be published.
+
+**VOA-22 — Preview-by-default removes journal recovery**
+
+**Evidence:** [Design:350](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:350) gives `goal sync` preview, publish, and interrupted-refresh behavior. The old default instead calls `recoverGoalJournal` at [intent_operations.go:177](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/cmd/metasystem/intent_operations.go:177). This is distinct from `RefreshOnly`, which refuses when no reconciliation refresh is pending at [reconcile.go:484](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/goal/reconcile.go:484). An unresolved pushed journal entry blocks every subsequent publication at [txn.go:609](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/internal/goal/txn.go:609).
+
+**Scenario:** A normal goal mutation dies after recording its push but before confirming the outcome. There is no hand-edit reconciliation refresh. The replacement preview changes nothing; `--refresh` refuses; publication remains blocked. The former recovery action has no replacement.
+
+**Change:** Give journal recovery an explicit mode under the new intent, separate from preview and refresh, and bind it to `recoverGoalJournal`. Update its remedies. Test recovery of a pushed-but-unconfirmed ordinary mutation with no refresh record.
+
+**Test 1:** Yes — adds a missing public mode and owner binding.
+
+**Test 2:** **WORK** — the checkout cannot recover through the replacement surface and resume goal mutations.
+
+**VOA-23 — Removing `work close` loses completion of non-review jobs**
+
+**Evidence:** [Design:346](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:346) assigns closure to finished reviews and landing. Existing `closeChain` handles non-critic terminal chains at [intent_delivery.go:1268](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/cmd/metasystem/intent_delivery.go:1268). `reviewJob` rejects an investigator because it accepts implementers only at [intent_delivery.go:886](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/cmd/metasystem/intent_delivery.go:886). Landing requires a goal and joins a delivery batch at [intent_delivery.go:1390](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/cmd/metasystem/intent_delivery.go:1390). Closure itself mirrors every terminal member, validates durability, marks the chain closed, and removes its build cache at [dispatch.sh:3019](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/scripts/agents/dispatch.sh:3019).
+
+**Scenario:** An investigator finishes with useful findings but no code to land. Its chain still needs durable completion. Neither replacement performs that operation: review rejects its role, and landing is an unrelated action.
+
+**Change:** Specify a completion intent or automatic completion point for terminal non-review chains, retaining the existing close owner and its authority and durability checks. Verify that an investigator can complete without launching a critic, joining a landing batch, or concluding its goal.
+
+**Test 1:** Yes — changes the replacement routing and lifecycle coverage.
+
+**Test 2:** **WORK** — an existing job lifecycle loses its supported completion path.
+
+**VOA-24 — R11’s literal scan rejects the declared end state**
+
+**Evidence:** [Design:282](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:282) requires scanning tracked files under `metasystem/` for every non-allowlisted shell file and every `environment/vms` reference. Yet [design:316](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/designs/verbs-object-action.md:316) explicitly retains historical mission scripts. `git ls-files` confirms both [gate.sh:1](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/first-headless-run/gate.sh:1) and [guard.sh:1](/Users/wido/LocalStorage/GitHub/verbs-b3/metasystem/plans/first-headless-run/guard.sh:1). The design itself contains the forbidden VM reference at line 285. “A project’s own testing-contract commands” supplies no concrete directory predicate.
+
+**Scenario:** U9 completes the mandated deletions and preserves the mandated history. A literal R11 implementation still fails on those retained scripts and the document defining the rule. Broad directory exemptions would instead admit unspecified scripts without establishing that they are extension points.
+
+**Change:** Define exact repository-relative predicates for executable extension points and retained historical instruments. Scope VM dependency detection to executable/configuration dependencies, explicitly handling narrative evidence and the witness itself. Pin positive and negative examples so the approved end state passes while a new core script or core VM dependency fails.
+
+**Test 1:** Yes — changes the required static test’s scope and assertions.
+
+**Test 2:** **WORK** — the prescribed end state cannot pass its mandatory closing witness as specified.
+
+Material findings: 7
+
+Codex session ID: 01a0e177-9a64-76b2-a19c-b70ba584bc5e
+Resume in Codex: codex resume 01a0e177-9a64-76b2-a19c-b70ba584bc5e
