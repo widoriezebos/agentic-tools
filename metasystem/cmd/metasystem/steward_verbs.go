@@ -441,37 +441,14 @@ func runStewardAuthorizeDispatch(args []string) int {
 		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: caller is %s, not the steward; the continuation mode admits exactly one caller\n", classification.Class)
 		return 1
 	}
-	it, err := steward.ConsumedIntent(*repo, *nonce)
+	authorization, err := steward.AuthorizeDispatch(*repo, *nonce)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", err)
 		return 1
 	}
-	if it.LaunchStamped {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: intent %s already launched; a replay authorizes nothing\n", *nonce)
-		return 1
-	}
-	if err := steward.VerifyStagedDigests(*repo, it); err != nil {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", err)
-		return 1
-	}
-	top, absErr := filepath.Abs(*repo)
-	if absErr != nil {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", absErr)
-		return 1
-	}
-	installed, idErr := steward.VerifyIdentity(steward.RepoIdentityPath(top), top)
-	if idErr != nil {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", idErr)
-		return 1
-	}
-	if it.RepoIdentity != installed.RepoIdentity || it.InstallGen != installed.Generation {
-		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: the authorization was minted under installation generation %d of %q; the current installation is generation %d of %q — a superseded authorization launches nothing\n",
-			it.InstallGen, it.RepoIdentity, installed.Generation, installed.RepoIdentity)
-		return 1
-	}
 	out, _ := json.MarshalIndent(map[string]any{
-		"goal": it.Goal, "jobId": it.JobId, "runtime": it.Runtime, "model": it.Model,
-		"role": it.Role, "permissions": it.Permissions, "brief": steward.BriefPath(*repo, it.Nonce),
+		"goal": authorization.Goal, "jobId": authorization.JobId, "runtime": authorization.Runtime, "model": authorization.Model,
+		"role": authorization.Role, "permissions": authorization.Permissions, "brief": authorization.Brief,
 	}, "", "  ")
 	fmt.Println(string(out))
 	return 0
