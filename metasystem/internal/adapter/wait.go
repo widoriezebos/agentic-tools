@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 )
 
 // WaitDeliveryRequest is the complete adapter contract for holding one
@@ -37,9 +38,10 @@ func DeliverWait(ctx context.Context, runtime string, request WaitDeliveryReques
 	return DeliverWaitAt(ctx, "", runtime, request)
 }
 
-// DeliverWaitAt is DeliverWait for an installation root (the root an
-// external adapter's answer will come from, U6c).
-func DeliverWaitAt(_ context.Context, _, runtime string, request WaitDeliveryRequest) (string, error) {
+// DeliverWaitAt is DeliverWait for an installation root: the runtime is
+// looked up in the installation's runtime registry, so an external runtime
+// whose describe declares wait delivery answers too.
+func DeliverWaitAt(_ context.Context, root, runtime string, request WaitDeliveryRequest) (string, error) {
 	if runtime == "" || request.WaitID == "" || request.Nonce == "" || request.Deadline.IsZero() || request.Session == "" {
 		return "", fmt.Errorf("wait delivery requires an adapter, wait identifier, nonce, deadline, and session")
 	}
@@ -47,8 +49,27 @@ func DeliverWaitAt(_ context.Context, _, runtime string, request WaitDeliveryReq
 	if !WaitDeliveryAccepted(request.WaitID, request.Nonce, deadline, request.Session) {
 		return "", ErrWaitDeliveryDeclined
 	}
-	if declaration, ok := runtimes.Lookup(runtime); !ok || !declaration.HasAdapter {
+	if !WaitDeliveryRuntime(root, runtime) {
 		return "", fmt.Errorf("wait delivery adapter %s is unavailable", runtime)
 	}
 	return "blocking", nil
+}
+
+// WaitDeliveryRuntime reports whether a runtime answers wait delivery in an
+// installation: a built-in with an adapter, or an accepted external runtime
+// or override whose describe declares it.
+func WaitDeliveryRuntime(root, runtime string) bool {
+	if root == "" {
+		declaration, ok := runtimes.Lookup(runtime)
+		return ok && declaration.HasAdapter
+	}
+	reg, err := external.Load(root)
+	if err != nil {
+		return false
+	}
+	entry, ok := reg.Lookup(runtime)
+	if !ok || entry.Refused != nil {
+		return false
+	}
+	return entry.Description.Capabilities.WaitDelivery || (entry.Builtin && entry.Description.Capabilities == (external.Capabilities{}))
 }

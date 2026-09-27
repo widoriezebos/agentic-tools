@@ -51,22 +51,31 @@ type SupervisorShape struct {
 func SupervisorShapes() []SupervisorShape {
 	var shapes []SupervisorShape
 	for _, d := range declarations {
-		if d.HasAdapter {
-			for _, verb := range []string{SupervisorDispatch, SupervisorFollowUp} {
-				shapes = append(shapes, SupervisorShape{
-					Name:     "adapter-supervisor-" + d.Name + "-" + verb,
-					Includes: []string{SupervisorEntry, d.Name, verb},
-					TagFlag:  SupervisorTagFlag,
-				})
-			}
-		}
-		if d.HasHostLauncher {
+		shapes = append(shapes, RuntimeSupervisorShapes(d.Name, d.HasAdapter, d.HasHostLauncher)...)
+	}
+	return shapes
+}
+
+// RuntimeSupervisorShapes are one runtime's supervisor shapes: dispatch and
+// follow-up for a delegate runtime, start-turn for a host runtime. An
+// external runtime's supervisors are the same engine entry under its name.
+func RuntimeSupervisorShapes(name string, delegate, host bool) []SupervisorShape {
+	var shapes []SupervisorShape
+	if delegate {
+		for _, verb := range []string{SupervisorDispatch, SupervisorFollowUp} {
 			shapes = append(shapes, SupervisorShape{
-				Name:     "host-" + d.Name + "-" + SupervisorHostTurn,
-				Includes: []string{SupervisorEntry, d.Name, SupervisorHostTurn},
+				Name:     "adapter-supervisor-" + name + "-" + verb,
+				Includes: []string{SupervisorEntry, name, verb},
 				TagFlag:  SupervisorTagFlag,
 			})
 		}
+	}
+	if host {
+		shapes = append(shapes, SupervisorShape{
+			Name:     "host-" + name + "-" + SupervisorHostTurn,
+			Includes: []string{SupervisorEntry, name, SupervisorHostTurn},
+			TagFlag:  SupervisorTagFlag,
+		})
 	}
 	return shapes
 }
@@ -74,6 +83,13 @@ func SupervisorShapes() []SupervisorShape {
 // supervisorExclude keeps the supervisor process itself out of every
 // runtime's delegate signature: it launches the CLI, it is not the CLI.
 const supervisorExclude = `exclude (^|[[:space:]/])metasystem[[:space:]]+(internal[[:space:]]+)?delegate-supervisor([[:space:]]|$)`
+
+// SharedExcludes are the exclusions every runtime's signature carries: the
+// supervision hook and the supervisor process are never the CLI. The
+// registry adds them to an external runtime's declaration.
+func SharedExcludes() []string {
+	return []string{`supervision-hook\.sh`, strings.TrimPrefix(supervisorExclude, "exclude ")}
+}
 
 // signatureLines are the census signature declarations, formerly printed
 // by each adapter script's `signature` verb.

@@ -171,6 +171,15 @@ type GroupOwnershipGrant struct{ a *Authorization }
 
 func (a *Authorization) GroupOwnership() GroupOwnershipGrant { return GroupOwnershipGrant{a} }
 
+// Root is the checkout root the grant was issued for ("" for none): the
+// installation whose runtime registry names its processes' shapes.
+func (g GroupOwnershipGrant) Root() string {
+	if g.a == nil {
+		return ""
+	}
+	return g.a.root
+}
+
 // AllowsRecordedGroupProof lets a fake checkout use the exact launch proof in
 // a job record when the kernel cannot enumerate the group's current argv.
 func (g GroupOwnershipGrant) AllowsRecordedGroupProof() bool {

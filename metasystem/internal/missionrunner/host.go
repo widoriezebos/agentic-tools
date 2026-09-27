@@ -6,6 +6,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"math"
 	"os"
 	"os/exec"
@@ -357,14 +358,48 @@ func hostFixtureCarriers() []string {
 	return carriers
 }
 
+// hostRuntimeUnavailable is why a runtime cannot serve a host turn in this
+// installation, through the runtime registry (design 3.5): a built-in with
+// a host launcher, or an external runtime or override whose describe
+// declares the host role. Empty is available.
+func hostRuntimeUnavailable(root, runtime string) string {
+	reg, err := external.Load(root)
+	if err != nil {
+		return err.Error()
+	}
+	entry, found := reg.Lookup(runtime)
+	if !found {
+		if refusal, refused := reg.Refusal(runtime); refused {
+			return refusal.Error()
+		}
+		return "no such runtime"
+	}
+	if entry.Refused != nil {
+		return entry.Refused.Error()
+	}
+	if entry.Builtin && entry.Adapter == nil {
+		if declaration, _ := runtimes.Lookup(runtime); declaration.HasHostLauncher {
+			return ""
+		}
+		return "the runtime serves no host turns"
+	}
+	if !entry.Description.Capabilities.Host {
+		if declaration, builtin := runtimes.Lookup(runtime); builtin && declaration.HasHostLauncher && entry.Description.Capabilities == (external.Capabilities{}) {
+			return ""
+		}
+		return "its describe does not declare the host capability"
+	}
+	return ""
+}
+
 // assembleHostCommand resolves the host entry, builds its argument list and
 // environment, and opens the host log; nothing has started yet.
 func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 	l.runtime = TurnRecordOf(l.turn).Runtime()
 	// The host turn is the engine's delegate-supervisor entry: one process
 	// of its own, leading its group and carrying the turn's tag.
-	if declaration, declared := runtimes.Lookup(l.runtime); !declared || !declaration.HasHostLauncher {
-		return failf(3, "host adapter is not installed for runtime %q", l.runtime)
+	if reason := hostRuntimeUnavailable(e.Root, l.runtime); reason != "" {
+		return failf(3, "host adapter is not installed for runtime %q: %s", l.runtime, reason)
 	}
 	engine := hostEngine(e.Root)
 	if info, err := os.Stat(engine); err != nil || !info.Mode().IsRegular() || unix.Access(engine, unix.X_OK) != nil {

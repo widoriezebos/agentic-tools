@@ -46,47 +46,62 @@ func TestInstalledAdapterSignaturesNarrowOnlyInFixtureMode(t *testing.T) {
 	}
 }
 
-// TestExternalAdaptersNeverClassifyBeforeU6c: until the registry
-// cross-check of U6c exists, the recognizers are built-ins only. A named
-// external runtime is discovered and reported but its describe is never
-// executed and it classifies nothing; an override leaves the built-in's
-// signature (with devin acp excluded) in force.
-func TestExternalAdaptersNeverClassifyBeforeU6c(t *testing.T) {
+// TestRecognizersClassifyANamedExternalRuntime: the census and lease
+// classification recognize an external runtime's processes through its
+// describe, cross-checked by the registry (design 3.5, R13); an override
+// is one effective declaration that keeps the built-in's reserved
+// exclusions, so `devin acp` stays unclaimed (VOA-31).
+func TestRecognizersClassifyANamedExternalRuntime(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	marker := filepath.Join(root, "describe-ran")
-	script := "#!/bin/sh\n: >'" + marker + "'\nprintf '{\"schemaVersion\":1,\"match\":[\".*\"]}\\n'\n"
-	for _, name := range []string{"newagent", "devin"} {
+	scripts := map[string]string{
+		"newagent": `{"schemaVersion":1,"name":"newagent","match":["^([^[:space:]]*/)?newagent([[:space:]]|$)"],"positive":"newagent -p task","lookalike":"newagent-helper serve"}`,
+		"devin":    `{"schemaVersion":1,"name":"devin","match":["^([^[:space:]]*/)?devin([[:space:]]|$)"],"exclude":["^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)"]}`,
+	}
+	for name, describe := range scripts {
 		path := filepath.Join(root, "adapters", name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
+		body := "#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '%s\\n' '" + describe + "'\n"
+		if err := testexec.WriteFile(path, []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("adapters.newagent.use=external\nadapters.devin.use=external\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,newagent\nadapters.newagent.use=external\nadapters.devin.use=external\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	adapters, _, err := ExternalAdapters(root)
-	if err != nil || len(adapters) != 2 {
-		t.Fatalf("discovery = %v, %v", adapters, err)
-	}
 	sigs, names, _, err := InstalledAdapterSignatures(root)
-	if err != nil || len(names) != 4 {
+	if err != nil || len(names) != 5 {
 		t.Fatalf("names = %v, %v", names, err)
 	}
-	if got := Runtime("/usr/local/bin/newagent --task x", sigs); got != "" {
-		t.Fatalf("an external runtime classified a process as %q", got)
+	for argv, want := range map[string]string{
+		"/opt/newagent/bin/newagent -p task --tag t": "newagent",
+		"newagent-helper serve":                      "",
+		"/usr/local/bin/devin -p task":               "devin",
+		"/usr/local/bin/devin acp":                   "",
+		"/usr/local/bin/metasystem delegate-supervisor newagent dispatch --root /r": "",
+	} {
+		if got := Runtime(argv, sigs); got != want {
+			t.Errorf("Runtime(%q) = %q, want %q", argv, got, want)
+		}
 	}
-	if got := Runtime("/usr/local/bin/devin acp", sigs); got != "" {
-		t.Fatalf("the devin override replaced the built-in's signature (classified %q)", got)
+	configured, err := configuredSignatures(root)
+	if err != nil || len(configured) != 2 || Runtime("newagent -p x", configured) != "newagent" {
+		t.Fatalf("configured = %d signatures, %v", len(configured), err)
 	}
-	if Runtime("/usr/local/bin/devin -p task", sigs) != "devin" {
-		t.Fatal("the built-in devin signature is not in force")
+	// The fingerprint hashes what the recognizers use: the external's
+	// executable and its effective signature (U6a read N-2).
+	stageFingerprintInputs(t, root)
+	before, err := Fingerprint(root, root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(marker); err == nil {
-		t.Fatal("a recognizer executed an external adapter's describe")
+	if err := testexec.WriteFile(filepath.Join(root, "adapters", "newagent"), []byte("#!/bin/sh\n[ \"$1\" = describe ] || exit 64\nprintf '%s\\n' '"+scripts["newagent"]+"'\n\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if after, err := Fingerprint(root, root); err != nil || after == before {
+		t.Fatalf("a changed external adapter left the fingerprint %s (%v)", after, err)
 	}
 }
 
@@ -121,5 +136,24 @@ func TestRefusedExternalIsAbsentToRecognizers(t *testing.T) {
 	sigs, err := configuredSignatures(root)
 	if err != nil || len(sigs) != 1 {
 		t.Fatalf("configured = %d signatures, %v", len(sigs), err)
+	}
+	// The fingerprint skips the refused name as the recognizers do (U6a
+	// read N-2), instead of failing on it.
+	stageFingerprintInputs(t, root)
+	if _, err := Fingerprint(root, root); err != nil {
+		t.Fatalf("fingerprint with a refused external runtime selected: %v", err)
+	}
+}
+
+func stageFingerprintInputs(t *testing.T, root string) {
+	t.Helper()
+	for _, rel := range FingerprintFiles() {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(rel+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

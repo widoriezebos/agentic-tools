@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -63,12 +64,26 @@ func (b builtinOps) Cancel(d Deps, job string) int {
 }
 
 // OperationsFor is the operation interface of a runtime for an installation
-// (the built-ins that run on the shared rounds). ok is false for a runtime
-// that does not.
+// through the registry: a built-in, an external runtime, or an overridden
+// built-in. ok is false for a runtime the installation does not have.
 func OperationsFor(d Deps, name string) (Operations, bool) {
-	a, found := registry[name]
-	if !found || a.ops == nil {
-		return nil, false
+	ops, err := OperationsAt(d, name)
+	return ops, err == nil
+}
+
+// OperationsAt is OperationsFor with the reason a runtime is unavailable
+// (a refused adapter names its fix).
+func OperationsAt(d Deps, name string) (Operations, error) {
+	entry, err := registryEntry(d, name)
+	if err != nil {
+		return nil, err
 	}
-	return a.ops, true
+	if entry.Adapter != nil {
+		return newExternalOps(entry), nil
+	}
+	a := registry[name]
+	if a.ops == nil {
+		return nil, fmt.Errorf("%w: %s", ErrNotInstalled, name)
+	}
+	return a.ops, nil
 }

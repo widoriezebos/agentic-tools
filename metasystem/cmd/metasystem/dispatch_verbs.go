@@ -348,7 +348,7 @@ func runDispatchClaimLaunchWithGoalReads(args []string, reads *dispatchcore.Proo
 	}
 	claimParams.OccupancyPreparation = occupancyPreparation
 	dependencies := dispatchcore.ClaimLaunchDependencies{
-		CreatorPID: *creatorPID, IdentityReader: startReader, ProcessVerifier: commandClaimProcessVerifier{},
+		CreatorPID: *creatorPID, IdentityReader: startReader, ProcessVerifier: commandClaimProcessVerifier{root: *root},
 		Reconcile: func(root, job string) (dispatchcore.ReconciliationResult, error) {
 			return dispatchcore.ReconcileReservation(root, job, dispatchcore.ReconciliationDependencies{
 				Scanner: commandTaggedProcessScanner{root: root}, Creator: startReader,
@@ -502,11 +502,12 @@ func runDispatchClaimOccupancyPrepare(args []string) int {
 	return recordExit(dispatchcore.WriteClaimOccupancyPreparation(*root, *session, *output))
 }
 
-type commandClaimProcessVerifier struct{}
+type commandClaimProcessVerifier struct{ root string }
 
-func (commandClaimProcessVerifier) Verify(pid int64, instanceTag string) identity.Verification {
+func (v commandClaimProcessVerifier) Verify(pid int64, instanceTag string) identity.Verification {
+	shapes := janitor.ShapesAt(v.root)
 	return identity.VerifyProcess(identity.KernelProber{}, pid, func(argv []string) bool {
-		_, matches := janitor.MatchShape(janitor.DefaultShapes(), argv, instanceTag)
+		_, matches := janitor.MatchShape(shapes, argv, instanceTag)
 		return matches
 	})
 }
@@ -516,8 +517,12 @@ type commandTaggedProcessScanner struct {
 }
 
 func (s commandTaggedProcessScanner) ScanTag(tag string, reservationCreatedAt time.Time) census.TaggedProcessCensus {
+	shapes := janitor.ShapesAt(s.root)
 	dependencies := census.TaggedScanDependencies{
-		MatchesTag: positionedJobTag, ReservationCreatedAt: reservationCreatedAt,
+		MatchesTag: func(argv []string, tag string) bool {
+			_, matches := janitor.MatchShape(shapes, argv, tag)
+			return matches
+		}, ReservationCreatedAt: reservationCreatedAt,
 	}
 	processes, configured, err := census.ConfiguredProcessFixture(s.root)
 	if err != nil {

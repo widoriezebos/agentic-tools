@@ -71,38 +71,45 @@ func compileText(runtime, text string) (Signature, string, error) {
 }
 
 // RuntimeSignatureAt is a runtime's recognizer signature for an
-// installation root. Until the registry cross-check of unit U6c exists, the
-// recognizers are built-ins only: an external adapter is discovered and
-// reported (ExternalAdapters), never executed for its describe, and never
-// classifies a process; an override leaves its built-in's signature in
-// force. The root parameter keeps the U6c shape.
+// installation root, from the runtime registry (design 3.5): a built-in's,
+// an overridden built-in's one effective declaration (the override's
+// signature plus the built-in's reserved exclusions, VOA-31), or an external
+// runtime's cross-checked declaration.
 func RuntimeSignatureAt(root, runtime string) (Signature, string, error) {
+	if root != "" {
+		reg, err := external.Load(root)
+		if err != nil {
+			return Signature{}, "", err
+		}
+		if entry, found := reg.Lookup(runtime); found {
+			return compileText(runtime, entry.Signature)
+		}
+		if refusal, refused := reg.Refusal(runtime); refused {
+			return Signature{}, "", refusal
+		}
+	}
 	return RuntimeSignature(runtime)
 }
 
-// externalName reports whether a runtime name is an external adapter the
-// root declares or refused: absent to the recognizers until U6c.
-func externalName(root, runtime string) bool {
-	adapters, refusals, err := external.Discover(root)
+// absentExternal reports whether a runtime name is an external adapter the
+// registry refused: absent to the recognizers, never an error for them.
+func absentExternal(root, runtime string) bool {
+	if _, builtin := runtimes.Lookup(runtime); builtin {
+		return false
+	}
+	reg, err := external.Load(root)
 	if err != nil {
 		return false
 	}
-	for _, adapter := range adapters {
-		if adapter.Name == runtime {
-			return true
-		}
+	if _, found := reg.Lookup(runtime); found {
+		return false
 	}
-	for _, refusal := range refusals {
-		if refusal.Name == runtime {
-			return true
-		}
-	}
-	return false
+	_, refused := reg.Refusal(runtime)
+	return refused
 }
 
 // ExternalAdapters reports the external adapters an installation declares
-// and the executables it refused, without executing any of them. A refused
-// executable is absent to the recognizers, never an error for them.
+// and the executables it refused, without executing any of them.
 func ExternalAdapters(root string) ([]external.Adapter, []external.Refusal, error) {
 	return external.Discover(root)
 }
@@ -126,17 +133,21 @@ func AllAdapterSignatures() ([]Signature, error) {
 }
 
 // InstalledAdapterSignatures is AllAdapterSignatures for an installation
-// root: the built-ins (external adapters join at U6c), narrowed in a
-// fixture-mode root to its configured runtimes and FixtureSignatureRuntimesEnv. It also returns the
-// runtime names and each signature text in the same order.
+// root: every runtime of its registry (built-ins, overrides as one
+// effective declaration, and the external runtimes it names), narrowed in a
+// fixture-mode root to its configured runtimes and
+// FixtureSignatureRuntimesEnv. It also returns the runtime names and each
+// signature text in the same order.
 func InstalledAdapterSignatures(root string) ([]Signature, []string, []string, error) {
 	return installedAdapterSignatures(root, os.Getenv)
 }
 
 func installedAdapterSignatures(root string, getenv func(string) string) ([]Signature, []string, []string, error) {
-	// Built-ins only until U6c (see RuntimeSignatureAt): discovered external
-	// adapters are not part of the recognizer universe.
-	names := runtimes.WithAdapter()
+	reg, err := external.Load(root)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	names := reg.Names()
 	if fixtureauth.FixtureModeRoot(root) {
 		// A fixture-mode root (metasystem.runtimes=fake) classifies against
 		// its configured runtimes only: a test or bed runs under whatever
@@ -147,13 +158,14 @@ func installedAdapterSignatures(root string, getenv func(string) string) ([]Sign
 		if narrowed := getenv(FixtureSignatureRuntimesEnv); narrowed != "" {
 			names = strings.Fields(strings.ReplaceAll(narrowed, ",", " "))
 		}
-		names = builtinsOnly(names)
+		names = registered(reg, names)
 	}
 	sort.Strings(names)
 	var sigs []Signature
 	var texts []string
 	for _, runtime := range names {
-		sig, text, err := RuntimeSignatureAt(root, runtime)
+		entry, _ := reg.Lookup(runtime)
+		sig, text, err := compileText(runtime, entry.Signature)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -163,11 +175,12 @@ func installedAdapterSignatures(root string, getenv func(string) string) ([]Sign
 	return sigs, names, texts, nil
 }
 
-// builtinsOnly keeps the names of built-in runtimes with an adapter.
-func builtinsOnly(names []string) []string {
+// registered keeps the names the registry has (a refused external is
+// absent, never an error).
+func registered(reg external.Registry, names []string) []string {
 	var kept []string
 	for _, name := range names {
-		if declaration, ok := runtimes.Lookup(name); ok && declaration.HasAdapter {
+		if _, ok := reg.Lookup(name); ok {
 			kept = append(kept, name)
 		}
 	}
@@ -199,10 +212,24 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 	}
 	confPath := filepath.Join(metasystemRoot, "metasystem.conf")
 
-	selected := splitRuntimes(config.ConfValue(confPath, "metasystem.runtimes", ""))
+	reg, err := external.Load(metasystemRoot)
+	if err != nil {
+		return "", err
+	}
+	// The selected runtimes as the recognizers see them: a refused external
+	// is absent (never an error), an accepted external or override hashes
+	// its executable and its effective signature.
+	var selected []string
 	files := append([]string(nil), fingerprintFiles...)
-	for _, runtime := range selected {
-		if _, found, _ := external.Lookup(metasystemRoot, runtime); found {
+	for _, runtime := range splitRuntimes(config.ConfValue(confPath, "metasystem.runtimes", "")) {
+		entry, found := reg.Lookup(runtime)
+		if !found {
+			if _, refused := reg.Refusal(runtime); refused {
+				continue
+			}
+		}
+		selected = append(selected, runtime)
+		if found && entry.Adapter != nil {
 			files = append(files, filepath.Join(external.Dir, runtime))
 		}
 	}

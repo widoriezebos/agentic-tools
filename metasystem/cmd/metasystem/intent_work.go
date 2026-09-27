@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -1494,7 +1495,15 @@ func runIntentSettings(inv *intentInvocation) int {
 	for _, value := range values {
 		text = append(text, fmt.Sprintf("%s=%s (%s)", value.Key, value.Value, value.Source))
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Data: map[string]any{"conf": confPath, "settings": values}, text: text,
+	data := map[string]any{"conf": confPath, "settings": values}
+	if len(inv.input.args) == 0 {
+		// Every external adapter and override, and every refused one
+		// (design verbs-object-action 3.5).
+		adapters, _ := adapterReport(inv.layout.InstallationRoot)
+		text = append(text, adapters...)
+		data["adapters"] = adapters
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Data: data, text: text,
 		Summary: fmt.Sprintf("%d setting(s) of %s", len(values), inv.layout.InstallationRoot)})
 }
 
@@ -1750,4 +1759,22 @@ func (inv *intentInvocation) waitLaunch(job intentJob, timeout time.Duration) in
 	}
 	return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: []string{launchReport(record)},
 		Summary: fmt.Sprintf("launch %s ended: %s", job.id, record.State)}
+}
+
+// adapterReport is one line per external adapter, override and refused
+// adapter executable of an installation, and the number refused.
+func adapterReport(root string) ([]string, int) {
+	reg, err := external.Load(root)
+	if err != nil {
+		return []string{"adapter registry unreadable: " + err.Error()}, 1
+	}
+	var out strings.Builder
+	reg.Report(&out)
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines, len(reg.Refusals)
 }

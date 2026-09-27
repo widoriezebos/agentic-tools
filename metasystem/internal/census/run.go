@@ -16,7 +16,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // VerdictWriter is the writer identity every census verdict (last-census.json)
@@ -737,8 +736,8 @@ func configuredSignatures(metasystemRoot string) ([]Signature, error) {
 	}
 	var out []Signature
 	for _, runtime := range selected {
-		if _, builtin := runtimes.Lookup(runtime); !builtin && externalName(metasystemRoot, runtime) {
-			// An external runtime is absent to the recognizers until U6c.
+		if absentExternal(metasystemRoot, runtime) {
+			// A refused external runtime is absent to the recognizers.
 			continue
 		}
 		sig, _, err := RuntimeSignatureAt(metasystemRoot, runtime)

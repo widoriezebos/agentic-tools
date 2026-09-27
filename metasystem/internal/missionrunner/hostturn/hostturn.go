@@ -69,9 +69,9 @@ func Main(args []string, newDeps func(root string) supervisor.Deps) int {
 		root, rest = rest[1], rest[2:]
 	}
 	d := newDeps(root)
-	ops, ok := supervisor.OperationsFor(d, name)
-	if !ok {
-		fmt.Fprintf(d.Stderr, "host adapter is not installed: %s\n", name)
+	ops, err := supervisor.OperationsAt(d, name)
+	if err != nil {
+		fmt.Fprintf(d.Stderr, "host adapter is not installed: %s: %v\n", name, err)
 		return 2
 	}
 	if verb == "-h" || verb == "--help" {

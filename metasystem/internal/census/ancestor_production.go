@@ -130,8 +130,8 @@ func signaturesFor(metasystemRoot, only string, allHosts ...bool) ([]Signature, 
 	}
 	var out []Signature
 	for _, runtime := range selected {
-		if _, builtin := runtimes.Lookup(runtime); !builtin && externalName(metasystemRoot, runtime) {
-			// An external runtime is absent to the recognizers until U6c.
+		if absentExternal(metasystemRoot, runtime) {
+			// A refused external runtime is absent to the recognizers.
 			continue
 		}
 		sig, _, err := RuntimeSignatureAt(metasystemRoot, runtime)

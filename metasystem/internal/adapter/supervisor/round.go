@@ -339,10 +339,14 @@ const (
 // status: stdin from the prompt, stdout into the launch's path, stderr into
 // the host log (truncated first when the launch asks).
 func runHostCLI(d Deps, t *Turn, launch Launch, hostLog string) int {
-	program, err := d.LookPath(launch.Argv[0])
-	if err != nil {
-		fmt.Fprintln(d.Stderr, err)
-		return 127
+	program := launch.Argv[0]
+	if !strings.Contains(program, "/") {
+		resolved, err := d.LookPath(program)
+		if err != nil {
+			fmt.Fprintln(d.Stderr, err)
+			return 127
+		}
+		program = resolved
 	}
 	command := exec.Command(program, launch.Argv[1:]...)
 	command.Args[0] = launch.Argv[0]

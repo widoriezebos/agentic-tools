@@ -8,6 +8,11 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// The external adapter fixture (external_test.go): this binary run as
+	// an adapter executable answers one operation and exits.
+	if mode := os.Getenv("EXTERNAL_FIXTURE_MODE"); mode != "" {
+		os.Exit(runExternalAdapterFixture(mode))
+	}
 	// Git is stubbed for the whole package, before any test runs and never
 	// changed after: every fixture root is a temporary directory outside
 	// any repository, and no test reads a real work tree. The stub is

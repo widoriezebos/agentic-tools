@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -116,23 +117,47 @@ func (b builtin) WaitDelivery(_ Deps, waitID, nonce, deadline, session string) (
 // ErrNotInstalled is a runtime name neither built in nor discovered.
 var ErrNotInstalled = errors.New("runtime adapter is not installed")
 
-// resolveRuntime is the registry: the built-in of a name. An external
-// adapter discovered in the installation's adapters directory (design 3.5)
-// is recognized by the census and lease classification already; running it
-// is the external-executable implementation of this interface (U6c), which
-// plugs in here.
+// resolveRuntime is the registry (design 3.5): the built-in of a name, an
+// external adapter executable the installation names, or a built-in
+// overridden by one. A refused executable or declaration is the error, with
+// the reason and its fix.
 func resolveRuntime(d Deps, name string) (Runtime, error) {
-	if b, isBuiltin := registry[name]; isBuiltin {
-		return builtin{b}, nil
+	entry, err := registryEntry(d, name)
+	if err != nil {
+		return nil, err
 	}
-	if d.Root != "" {
-		if _, found, err := external.Lookup(d.Root, name); err != nil {
-			return nil, err
-		} else if found {
-			return nil, fmt.Errorf("external runtime %s is discovered but not runnable yet: the external adapter implementation of the runtime operations is unit U6c", name)
+	if entry.Adapter == nil {
+		return builtin{registry[name]}, nil
+	}
+	return externalRuntime{ops: newExternalOps(entry)}, nil
+}
+
+// registryEntry is a runtime's effective declaration for the installation.
+func registryEntry(d Deps, name string) (external.Entry, error) {
+	root := d.Root
+	if root != "" && !filepath.IsAbs(root) {
+		root = ""
+	}
+	reg, err := external.Load(root)
+	if err != nil {
+		return external.Entry{}, err
+	}
+	entry, found := reg.Lookup(name)
+	if !found {
+		if refusal, refused := reg.Refusal(name); refused {
+			return external.Entry{}, refusal
+		}
+		return external.Entry{}, fmt.Errorf("%w: %s", ErrNotInstalled, name)
+	}
+	if entry.Refused != nil {
+		return external.Entry{}, *entry.Refused
+	}
+	if entry.Adapter == nil {
+		if _, ok := registry[name]; !ok {
+			return external.Entry{}, fmt.Errorf("%w: %s", ErrNotInstalled, name)
 		}
 	}
-	return nil, fmt.Errorf("%w: %s", ErrNotInstalled, name)
+	return entry, nil
 }
 
 // usageLines is the entry's usage for a runtime.

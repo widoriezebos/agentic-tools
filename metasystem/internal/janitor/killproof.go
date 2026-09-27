@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"golang.org/x/sys/unix"
 )
 
@@ -59,6 +60,40 @@ func DefaultShapes() []Shape {
 		Shape{Name: "tagged-hold", Includes: []string{"metasystem", "util", "hold"}, TagFlag: "--tag"},
 		Shape{Name: "mission-run-loop", Includes: []string{"metasystem", "mission", "run-loop"}, TagFlag: "--instance-tag"},
 	)
+}
+
+// ShapesAt is DefaultShapes for an installation root: the committed shapes
+// plus each external runtime's and override's supervisor shapes and the
+// claim-bound CLI invocation shapes its describe declares (VOA-29). The
+// kill proof stays here in Go; a runtime's declaration only says where its
+// claim tag sits, never that a process is its own.
+func ShapesAt(root string) []Shape {
+	shapes := DefaultShapes()
+	if root == "" {
+		return shapes
+	}
+	reg, err := external.Load(root)
+	if err != nil {
+		return shapes
+	}
+	for _, entry := range reg.Externals() {
+		if entry.Refused != nil {
+			continue
+		}
+		if !entry.Builtin {
+			for _, supervisor := range runtimes.RuntimeSupervisorShapes(entry.Name, true, entry.Description.Capabilities.Host) {
+				shapes = append(shapes, Shape{Name: supervisor.Name, Includes: supervisor.Includes, TagFlag: supervisor.TagFlag})
+			}
+		}
+		for _, cli := range entry.Description.Invocations {
+			if len(cli.Includes) == 0 || cli.TagFlag == "" {
+				continue
+			}
+			shapes = append(shapes, Shape{Name: "adapter-cli-" + entry.Name, Includes: cli.Includes, TagFlag: cli.TagFlag,
+				TagPrefix: cli.TagPrefix, TagPathBase: cli.TagPathBase})
+		}
+	}
+	return shapes
 }
 
 // MatchShape reports whether argv matches a known invocation shape
@@ -125,8 +160,15 @@ const (
 // the shipped positional shapes. A process that merely mentions the tag is a
 // known non-match, including when it is the group leader.
 func GroupOwnership(pgid int64, tag string) GroupOwnershipOutcome {
+	return GroupOwnershipAt("", pgid, tag)
+}
+
+// GroupOwnershipAt is GroupOwnership against an installation's shapes
+// (ShapesAt), so an external runtime's supervisors and CLIs are provable.
+func GroupOwnershipAt(root string, pgid int64, tag string) GroupOwnershipOutcome {
 	return groupOwnership(pgid, tag, groupOwnershipDependencies{
-		PIDs: identity.AllPids,
+		Shapes: ShapesAt(root),
+		PIDs:   identity.AllPids,
 		PGID: func(pid int64) (int64, error) {
 			group, err := unix.Getpgid(int(pid))
 			return int64(group), err
@@ -136,6 +178,9 @@ func GroupOwnership(pgid int64, tag string) GroupOwnershipOutcome {
 }
 
 type groupOwnershipDependencies struct {
+	// Shapes are the positional shapes a member must match; nil is
+	// DefaultShapes.
+	Shapes []Shape
 	PIDs   func() ([]int64, error)
 	PGID   func(pid int64) (int64, error)
 	Reader identity.VerificationReader
@@ -148,6 +193,10 @@ func groupOwnership(pgid int64, tag string, dependencies groupOwnershipDependenc
 	pids, err := dependencies.PIDs()
 	if err != nil {
 		return GroupIndeterminate
+	}
+	shapes := dependencies.Shapes
+	if shapes == nil {
+		shapes = DefaultShapes()
 	}
 	uncertainMembership := false
 	var verifications []identity.Verification
@@ -163,7 +212,7 @@ func groupOwnership(pgid int64, tag string, dependencies groupOwnershipDependenc
 			continue
 		}
 		verifications = append(verifications, identity.VerifyProcess(dependencies.Reader, pid, func(argv []string) bool {
-			_, ok := MatchShape(DefaultShapes(), argv, tag)
+			_, ok := MatchShape(shapes, argv, tag)
 			return ok
 		}))
 	}

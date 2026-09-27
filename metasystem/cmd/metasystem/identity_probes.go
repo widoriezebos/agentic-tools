@@ -68,7 +68,7 @@ func runIdentityGroupOwned(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem internal proc group-owned --pgid P --tag TAG [--root R --record FILE]")
 		return 2
 	}
-	switch janitor.GroupOwnership(*pgid, *tag) {
+	switch janitor.GroupOwnershipAt(*root, *pgid, *tag) {
 	case janitor.GroupOwned:
 		return 0
 	case janitor.GroupNotOwned:
