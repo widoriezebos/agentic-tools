@@ -31,9 +31,45 @@ type delegateOutcome struct {
 func runDelegate(args []string) int { return runDelegateIn(args, "", os.Stdout, os.Stderr) }
 
 // runDelegateIn is runDelegate with the dispatch script started in dir (empty
-// is the current directory) and its typed outcome written to stdout.
+// is the current directory) and its typed outcome written to stdout. It is
+// the process entry: the installation comes from METASYSTEM_DELEGATE_ROOT or
+// this engine, and the script inherits this process's stdin.
 func runDelegateIn(args []string, dir string, stdout, stderr io.Writer) int {
-	root, err := upMetasystemRoot(os.Getenv("METASYSTEM_DELEGATE_ROOT"))
+	return runDelegateWith(delegateRequest{rootOverride: os.Getenv("METASYSTEM_DELEGATE_ROOT"), args: args, dir: dir, stdin: os.Stdin}, stdout, stderr)
+}
+
+// delegateRequest is one call of the delegate boundary made in the caller's
+// process (design 6.2): everything the former `internal delegate` child took
+// from its argv, inherited environment and stdin is a field here.
+type delegateRequest struct {
+	// rootOverride names the installation, as METASYSTEM_DELEGATE_ROOT did;
+	// empty derives it from engine.
+	rootOverride string
+	// engine is the installation's engine executable the installation is
+	// derived from; empty is this process's own.
+	engine string
+	args   []string
+	// dir is the dispatch script's working directory.
+	dir string
+	// environment is added to the dispatch script's environment (the
+	// variables the child used to receive beside its inherited ones).
+	environment []string
+	// stdin is the dispatch script's input; nil is none.
+	stdin io.Reader
+}
+
+// delegateRoot is the installation a delegate request dispatches from.
+func (request delegateRequest) delegateRoot() (string, error) {
+	if request.rootOverride != "" || request.engine == "" {
+		return upMetasystemRoot(request.rootOverride)
+	}
+	return upMetasystemRootOf(request.engine)
+}
+
+// runDelegateWith is the delegate boundary on the caller's streams.
+func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
+	args, dir := request.args, request.dir
+	root, err := request.delegateRoot()
 	if err != nil {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "REFUSED-INTERNAL", Headline: "refused", Detail: err.Error()})
 		return 1
@@ -77,8 +113,8 @@ func runDelegateIn(args []string, dir string, stdout, stderr io.Writer) int {
 	}
 
 	command := exec.Command(filepath.Join(root, "scripts", "agents", "dispatch.sh"), internalArgs...)
-	command.Env = delegateCommandEnvironment(os.Environ(), outcomePath, claimCapability)
-	command.Stdin = os.Stdin
+	command.Env = delegateCommandEnvironment(append(os.Environ(), request.environment...), outcomePath, claimCapability)
+	command.Stdin = request.stdin
 	command.Dir = dir
 	var scriptOut bytes.Buffer
 	var scriptErr bytes.Buffer

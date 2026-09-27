@@ -1374,14 +1374,8 @@ func runIntentSettingsKeys(inv *intentInvocation) int {
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	args := []string{"config", "keys", "--conf", filepath.Join(inv.layout.InstallationRoot, "metasystem.conf")}
-	if inv.input.has("matching") {
-		args = append(args, "--matching", inv.input.text("matching"))
-	}
-	ran, problem := inv.engineVerb(args...)
-	if problem != nil {
-		return inv.render(*problem)
-	}
+	conf, matching := filepath.Join(inv.layout.InstallationRoot, "metasystem.conf"), inv.input.text("matching")
+	ran := ownerCall(func(stdout, _ io.Writer) int { return inv.ownerCalls().configKeys(stdout, conf, matching) })
 	return inv.render(ownerVerbResult(ran, nil, "the configured keys of "+inv.layout.InstallationRoot, map[string]any{"installation": inv.layout.InstallationRoot}))
 }
 
@@ -1391,10 +1385,9 @@ func runIntentSettingsCheck(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	root := inv.layout.InstallationRoot
-	ran, problem := inv.engineVerb("config", "validate", "--conf", filepath.Join(root, "metasystem.conf"), "--repo", root)
-	if problem != nil {
-		return inv.render(*problem)
-	}
+	ran := ownerCall(func(stdout, stderr io.Writer) int {
+		return inv.ownerCalls().configValidate(stdout, stderr, filepath.Join(root, "metasystem.conf"), root)
+	})
 	return inv.render(ownerVerbResult(ran, nil, "the settings of "+root+" are valid", map[string]any{"installation": root}))
 }
 

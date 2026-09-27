@@ -34,7 +34,7 @@ const (
 	verbRatchetScriptLinesCeiling = 44626
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
-	verbRatchetSelfSubprocessCeiling = 115
+	verbRatchetSelfSubprocessCeiling = 87
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
 	verbRatchetInstructionCeiling = 47
@@ -443,7 +443,7 @@ func sortedKeys[V any](m map[string]V) []string {
 // initialisers (var self = os.Args[0], var launch = os.Executable); package
 // functions every return of which is the engine; and launcher helpers, found
 // by a package-level fixpoint (ratchetLaunchers), so a launch through
-// engineVerb, a subprocess field, batchChildRunner, batchDiagnosticExecute,
+// engineVerb, a subprocess field, batchDiagnosticExecute,
 // newBrainBootInputsCommand or a local run closure counts at every call
 // whatever the shape of its argv. It also counts a call of a function-typed
 // parameter handed the engine (execute(binary, args, ...)).
@@ -572,8 +572,8 @@ type ratchetUnit struct {
 }
 
 // ratchetLaunchers holds one package's launchers: package-scope names,
-// closures per declaration, and aliases (var batchChildRunner =
-// runBatchChildAs) resolved to their targets.
+// closures per declaration, and aliases (var batchDiagnosticRunner =
+// runBatchDiagnostic) resolved to their targets.
 type ratchetLaunchers struct {
 	pkg     map[string]ratchetLauncher
 	local   map[ast.Decl]map[string]ratchetLauncher

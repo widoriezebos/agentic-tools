@@ -41,7 +41,8 @@ func intentTestEngine(t *testing.T) string {
 }
 
 // TestIntentRepairAuthority: every administrative choice reaches its real
-// owner verb (this package's engine, as its own process) with its exact
+// owner (in this process, or this package's engine as its own process for
+// the mission runner) with its exact
 // inputs, and the owner's own authority check refuses a caller that is not a
 // person at an agent-free terminal: this test process is such a caller. The
 // public adapter never turns a named person into proof. Malformed and
@@ -53,6 +54,9 @@ func TestIntentRepairAuthority(t *testing.T) {
 	engine := intentTestEngine(t)
 	b.owners.executable = func() (string, error) { return engine, nil }
 	b.handler = runIntentOwnerProcess
+	// The coordinator and goal repair owners run in this process (design
+	// 6.2); each call is recorded as the argv its former child carried.
+	b.owners.calls = recordingOwnerCalls([]string{engine, "internal"}, func(argv []string) { b.calls = append(b.calls, argv) })
 	owner := func(args ...string) (int, intentResult, []string) {
 		t.Helper()
 		before := len(b.calls)
