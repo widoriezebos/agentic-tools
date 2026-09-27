@@ -33,13 +33,14 @@ import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/op
  * sent for it. And a press the act layer refused stops the run where it stands,
  * because the act it could not make may be landing behind it.
  *
- * **The result wins.** The tab that received an act's answer is the only thing
- * that knows what the ledger did. An outcome write refused because another tab
- * moved the entry while the act was out is written once more at their version
- * where they left it `unresolved`, which is an entry nobody is executing; where
- * they left it `applying` that attempt owns the line and will settle it, so this
- * tab holds its own answer on the line instead; and where it is settled, they
- * established what happened and this tab shows that.
+ * **The page never rebases.** The tab that received an act's answer is the only
+ * thing that knows what the ledger did, and it keeps that answer rather than
+ * writing it somewhere it no longer belongs. An outcome write refused because
+ * another press moved the entry while the act was out — on the version, or on the
+ * attempt, which is that press owning the line now — is never written again at the
+ * version that came back. This tab holds its own answer on the line as an
+ * unrecorded mark, shows the entry the refusal carried, and stops the run there,
+ * leaving the lines behind it for Continue.
  *
  * **What was read is what is approved.** An approve and an edit carry the goal as
  * the Partner read it. Before the first line the page reads the canonical branch
@@ -1276,6 +1277,10 @@ export function newAttempt(): string {
  *     run goes past it only where what they left is settled;
  *   - the act is sent once, and its answer is written onto the line — two writes
  *     per line and no more, so a reload during a run finds the line in flight;
+ *   - an outcome write the server refuses is never written again at the version it
+ *     comes back with: the answer is held on the line, the entry is shown, and the
+ *     run stops there, because the press that owns the line now may be applying an
+ *     act a line behind this one is about;
  *   - a refusal is passed; anything that does not say what happened stops the run
  *     and the lines after it say "not run";
  *   - a refusal a sign-in would remedy ends the run at that line and NEVER waits:
@@ -1406,39 +1411,32 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     }
     const answered = await ports.send(sending);
     const written = recorded(answered);
-    // The version the outcome was last written AT, which is the version the
-    // entry still stands at where that write failed.
-    let wroteAt = sending.version;
-    let finished = await ports.record(sending, written.state, written.words, attempt);
-    // The result WINS, over an entry NOBODY is executing. A conflict here means
-    // another tab moved the entry while this act was out. Where they left it
-    // `unresolved` no act of theirs is running and they hold no result for the
-    // line, so this tab's answer — the only one there is — is written once more
-    // at their version. Where they left it `applying`, another attempt OWNS the
-    // line and will settle it with its own answer: writing this older one over
-    // it settled the line refused while that attempt's act applied, and that tab
-    // then reconciled to the refusal and threw its own answer away (Astra E-02).
-    // And where it is settled they established what happened, and the run shows
-    // that instead.
-    if (finished.kind === "conflict" && finished.proposal.state === "unresolved") {
-      wroteAt = finished.proposal.version;
-      finished = await ports.record({ ...sending, version: wroteAt }, written.state, written.words, attempt);
-    }
+    // The version the outcome was written AT, which is the version the entry
+    // still stands at where that write did not land.
+    const wroteAt = sending.version;
+    const finished = await ports.record(sending, written.state, written.words, attempt);
     if (finished.kind !== "failed") {
       standing.set(line.id, finished.proposal);
     }
+    // The page NEVER REBASES. A conflict here is the line not being this press's
+    // to settle any more: another press moved the entry while this act was out —
+    // refused on the version, or on the attempt where the entry belongs to that
+    // press now. Writing the answer again at the version that came back is what
+    // this page used to do over an entry left `unresolved`, on the reading that
+    // nobody was executing; but `unresolved` says nothing of the kind. A third
+    // press wrote it while the second press's act was landing, and the rebased
+    // refusal settled the line refused over a park that had applied, taking that
+    // press's own answer with it (Astra F-03).
+    //
+    // So the answer is held here, where every answer the record does not carry is
+    // held, the view is reconciled to the entry the refusal came with, and the run
+    // STOPS below — exactly as it does at an `in-flight` answer, and for the same
+    // reason: the act that press owns may be changing the very goal a line behind
+    // this one is about (Astra F-01). Continue is a fresh press, with its own
+    // attempt and its own read.
     if (finished.kind === "conflict") {
       ports.reconcile(finished.proposal, sending);
-      stale = stale || appliedEntry(finished.proposal);
-      if (settledState(finished.proposal.state)) {
-        ports.mark(line, { unrecorded: null });
-      } else {
-        // Another attempt owns the line and this tab still knows what its own
-        // act answered, so that answer is held here — where every answer the
-        // record does not carry is held — until the record says what happened
-        // (Astra E-02).
-        ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
-      }
+      ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act
       // answered is kept on the line, because that is the only thing here that
@@ -1458,7 +1456,7 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       stale = true;
       ports.reread();
     }
-    if (!goesOn(answered)) {
+    if (finished.kind === "conflict" || !goesOn(answered)) {
       stoppedAt = at;
       if (answered.kind === "sign-in") {
         // The lines from here, as the route now holds them, so signing in

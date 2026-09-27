@@ -1037,8 +1037,8 @@ describe("the run, in order", () => {
       answers: Record<string, Answered | readonly Answered[]>;
       /**
        * What each write answers, by `line:state`. A list answers a write made
-       * more than once at that state — the outcome write retried at the version
-       * another tab left (Astra A-01, the result wins).
+       * more than once at that state — the same line written by a second press,
+       * after a run that stopped on the first one's refusal.
        */
       writes: Record<string, Written | readonly Written[]>;
     }> = {},
@@ -1692,6 +1692,69 @@ describe("the run, in order", () => {
   });
 
   /**
+   * Astra's F-01 sequence, whole: the page never rebases, and it never goes on.
+   *
+   * This tab's edit of G is refused, and its outcome write is delayed. Another
+   * press takes the line over meanwhile and edits G itself, so this tab's write
+   * meets that press's `applying` entry — refused on the version, or on the
+   * attempt where the entry it holds belongs to that press. Nothing of THIS press
+   * was published, but the edit that press owns may be landing as the refusal is
+   * read, and the line behind this one is an approve of the very goal it changes.
+   *
+   * So the run stops there. The refusal is held on the line, because nothing
+   * wrote it down; the approve says "not run"; and Continue — a fresh press, with
+   * its own attempt and its own read — refuses it unsent against the goal as it
+   * now is. The run that went on approved work nobody had read.
+   */
+  it("stops where its outcome write met another press, and leaves the rest for Continue", async () => {
+    const read = { intent: READ.intent, nextStep: READ.nextStep, tier: 2, labels: ["fleet"] };
+    const one = card(
+      [
+        proposal({ index: 0, verb: "edit-goal", fields: { intent: "Something else entirely." }, read }),
+        proposal({ index: 1, verb: "approve-goal", fields: {}, read }),
+      ],
+      {},
+      { [lineID("t1", 1)]: { budget: BOX, source: "goal" } },
+    );
+    const before: Looked = { rows: [row({ budget: BOX })], defaults: {}, outcome: "current", message: "" };
+    // The goal as the other press's edit leaves it.
+    const after: Looked = {
+      rows: [row({ intent: "Something else entirely.", budget: BOX })],
+      defaults: {}, outcome: "current", message: "",
+    };
+    // The entry as that press left it: its own attempt, applying, at a version
+    // this tab's write cannot be against.
+    const owned: Proposal = { ...one.lines[0], state: "applying", words: "", version: 4 };
+    const driven = driving(one.lines, {
+      looks: [before, after],
+      answers: { [one.lines[0].id]: { kind: "refused", words: "goal is claimed" } },
+      writes: { [`${one.lines[0].id}:refused`]: { kind: "conflict", proposal: owned } },
+    });
+
+    await runProposals(one.lines, driven.ports);
+
+    // One read, one act attempted, and no approval sent behind it.
+    expect(driven.looks.length).toBe(1);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.reconciled).toEqual([owned]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { notRun: true } });
+    // And the refusal is this tab's own, held on the line at the version it was
+    // sent under: nothing wrote it down.
+    const held = markAfter(
+      { ticked: true, notRun: false, refusedUnsent: "", unrecorded: null },
+      driven.marked, one.lines[0].id,
+    );
+    expect(held.unrecorded).toEqual({ state: "refused", words: "goal is claimed", version: 2 });
+
+    // Continue: the line the stopped run never reached, through the same runner.
+    await runProposals([one.lines[1]], driven.ports);
+
+    expect(driven.looks.length).toBe(2);
+    expect(driven.sent).toEqual([one.lines[0].id]);
+    expect(driven.marked).toContainEqual({ line: one.lines[1].id, change: { refusedUnsent: GOAL_CHANGED } });
+  });
+
+  /**
    * And that press reconciles by read first, as a press on a line found at
    * `applying` does: the act it was told another press owns may have landed
    * since, and sending a second one is the harm A-01 is about.
@@ -1715,33 +1778,40 @@ describe("the run, in order", () => {
   });
 
   /**
-   * The result wins (Astra A-01).
+   * The page never rebases (Astra F-03).
    *
    * The tab that received an act's answer is the only thing that knows what the
-   * ledger did. An outcome write refused because another tab moved the entry
-   * while the act was out is not a reason to drop that answer: where what they
-   * left is UNSETTLED they hold no result either, so the outcome is written once
-   * more at their version.
+   * ledger did, and it KEEPS that answer rather than writing it at a version it
+   * was never sent under. An entry another press left `unresolved` is not an entry
+   * nobody is executing: a third press writes exactly that while the press before
+   * it is applying, and the older answer rebased onto it settled the line over an
+   * act that had landed.
+   *
+   * So the answer is held on the line, the view is reconciled to the entry the
+   * refusal carried, and the run stops there — the lines behind it say "not run"
+   * and Continue is a fresh press with its own attempt and its own read.
    */
-  it("writes the act's answer again at the version another tab left, once", async () => {
-    const lines = card([proposal()]).lines;
+  it("never writes the act's answer again at the version another tab left", async () => {
+    const lines = card([proposal({ index: 0 }), proposal({ index: 1, goal: "refunds" })]).lines;
     const held: Proposal = { ...lines[0], state: "unresolved", words: IN_FLIGHT_SAID, version: 4 };
-    const settled: Proposal = { ...lines[0], state: "applied", words: "", version: 5 };
     const driven = driving(lines, {
-      writes: {
-        [`${lines[0].id}:applied`]: [{ kind: "conflict", proposal: held }, { kind: "written", proposal: settled }],
-      },
+      writes: { [`${lines[0].id}:applied`]: { kind: "conflict", proposal: held } },
     });
     await runProposals(lines, driven.ports);
 
     expect(driven.sent).toEqual([lines[0].id]);
+    // Two writes and no third: `applying` before the act, the outcome after it.
     expect(driven.written).toEqual([
       { line: lines[0].id, state: "applying", words: "", version: 1 },
       { line: lines[0].id, state: "applied", words: "", version: 2 },
-      { line: lines[0].id, state: "applied", words: "", version: 4 },
     ]);
-    // The answer is written down, so nothing is held for want of a record.
-    expect(driven.marked).toContainEqual({ line: lines[0].id, change: { unrecorded: null } });
+    expect(driven.reconciled).toEqual([held]);
+    // The answer is this tab's own until the record carries an account of it.
+    expect(driven.marked).toContainEqual({
+      line: lines[0].id, change: { unrecorded: { state: "applied", words: "", version: 2 } },
+    });
+    // And the run stopped there.
+    expect(driven.marked).toContainEqual({ line: lines[1].id, change: { notRun: true } });
   });
 
   /**
@@ -1905,7 +1975,7 @@ describe("the run, in order", () => {
  * its act answered on its own line (Astra E-02). One approval is published, and
  * the account of it is not lost.
  */
-describe("two tabs pressing one line", () => {
+describe("tabs pressing one line", () => {
   /** A promise this test opens by hand, so the two runs interleave with no timer. */
   function gate() {
     let open: () => void = () => undefined;
@@ -2023,6 +2093,140 @@ describe("two tabs pressing one line", () => {
     // And the entry B left offers the press that reconciles by read, which finds
     // the approval on the goal and settles the line with no second act.
     expect(offersTryAgain(lineOf(card([entry], {}, displayed)))).toBe(true);
+  });
+
+  /**
+   * Astra's F-03 sequence, whole: three legitimate presses on one line.
+   *
+   * A's park is refused and its outcome write is delayed. B, rendering the entry
+   * A left, presses the Try again it is offered, and B's act SUCCEEDS: the goal is
+   * parked. C, rendering the entry B left, presses Try again while B's act is
+   * still out, is refused `in-flight`, and writes the `unresolved` that is the
+   * truth about its own press. Two older writes then arrive at an entry neither of
+   * them owns.
+   *
+   * Neither is rebased onto it. `unresolved` does not say that nobody is
+   * executing — C wrote it while B's act was landing — so A's refusal stays A's
+   * own, on A's line, and B's applied answer stays B's own, on B's. The entry is
+   * what C left, and the press it offers reconciles by READ: it finds the goal
+   * parked and settles the line applied with no second act.
+   *
+   * The run that rebased A's refusal onto C's version settled the line `refused`
+   * over a park that had landed, and B's own answer was thrown away with it.
+   *
+   * The route is modelled with its attempt as well as its version: a write that
+   * moves the line to `applying` takes ownership, and a settle write carrying any
+   * other attempt is refused with the entry.
+   */
+  it("never rebases an older answer onto a line another press took over", async () => {
+    let entry: Proposal = proposal();
+    let parked = false;
+    const executed: string[] = [];
+    const refusedInFlight: string[] = [];
+    const inFlight = new Set<string>();
+    const wrote: string[] = [];
+    const reconciled: Record<string, Proposal> = {};
+    const marked: Record<string, Partial<Mark>[]> = { A: [], B: [], C: [], D: [] };
+    const aSent = gate();
+    const aWrites = gate();
+    const bExecuting = gate();
+    const bActEnds = gate();
+
+    const portsOf = (tab: string): RunPorts => ({
+      look: () => Promise.resolve({
+        rows: [parked ? row({ state: "parked" }) : row()],
+        defaults: {}, outcome: "current", message: "",
+      }),
+      record: async (line, state, words, attempt) => {
+        // A's outcome write is delayed: it arrives after two other presses have
+        // moved the line, which is the whole of what the rule is about.
+        if (tab === "A" && state !== "applying") {
+          await aWrites.waited;
+        }
+        wrote.push(`${tab}:${state}@${String(line.version)}`);
+        if (line.version !== entry.version || !(MAY[state] ?? []).includes(entry.state)) {
+          return { kind: "conflict", proposal: entry };
+        }
+        // A write that moves the line to `applying` takes ownership of it; a
+        // settle write must carry the attempt the entry holds.
+        if (state === "applying") {
+          entry = { ...entry, state, words, version: entry.version + 1, attempt };
+          return { kind: "written", proposal: entry };
+        }
+        if (attempt !== entry.attempt) {
+          return { kind: "conflict", proposal: entry };
+        }
+        entry = { ...entry, state, words, version: entry.version + 1 };
+        return { kind: "written", proposal: entry };
+      },
+      send: async (line) => {
+        const key = `${line.goal}:${line.verb}`;
+        if (inFlight.has(key)) {
+          refusedInFlight.push(tab);
+          return answeredOf(new BacklogError("/act", 409, IN_FLIGHT_SAID, IN_FLIGHT));
+        }
+        // A's own act: the engine refused it, and that refusal is A's to record.
+        if (tab === "A") {
+          aSent.open();
+          return { kind: "refused", words: "goal is claimed" };
+        }
+        inFlight.add(key);
+        executed.push(tab);
+        bExecuting.open();
+        await bActEnds.waited;
+        parked = true;
+        inFlight.delete(key);
+        return { kind: "applied", words: "" };
+      },
+      mark: (line, change) => {
+        marked[tab].push(change);
+      },
+      reconcile: (proposal) => {
+        reconciled[tab] = proposal;
+      },
+      reread: () => undefined,
+      signIn: () => undefined,
+    });
+
+    const first = runProposals(card([entry]).lines, portsOf("A"));
+    await aSent.waited;
+    // The entry A left, pressed again by a tab that renders it.
+    const second = runProposals(card([entry]).lines, portsOf("B"));
+    await bExecuting.waited;
+    // And once more, by a third, while B's act is out: this press is refused at
+    // once and writes the unresolved that says so.
+    await runProposals(card([entry]).lines, portsOf("C"));
+    bActEnds.open();
+    await second;
+    aWrites.open();
+    await first;
+
+    // One act published, and the goal is parked by it.
+    expect(executed).toEqual(["B"]);
+    expect(refusedInFlight).toEqual(["C"]);
+    expect(parked).toBe(true);
+    // Six writes attempted; the last two are refused, and neither is written
+    // again at the version that came back.
+    expect(wrote).toEqual([
+      "A:applying@1", "B:applying@2", "C:applying@3", "C:unresolved@4", "B:applied@3", "A:refused@2",
+    ]);
+    // The entry is what C left, and A never settled it refused.
+    expect({ state: entry.state, version: entry.version }).toEqual({ state: "unresolved", version: 5 });
+    // Each press holds its own answer, where every answer the record does not
+    // carry is held.
+    expect(marked.A).toContainEqual({ unrecorded: { state: "refused", words: "goal is claimed", version: 2 } });
+    expect(marked.B).toContainEqual({ unrecorded: { state: "applied", words: "", version: 3 } });
+    expect(reconciled.A?.state).toBe("unresolved");
+    expect(reconciled.B?.state).toBe("unresolved");
+
+    // And the press the entry C left offers converges it: a fresh attempt, a
+    // fresh read, the park found on the goal, and no second act.
+    expect(offersTryAgain(lineOf(card([entry])))).toBe(true);
+    await runProposals(card([entry]).lines, portsOf("D"));
+
+    expect(executed).toEqual(["B"]);
+    expect(wrote.slice(6)).toEqual(["D:applying@5", "D:applied@6"]);
+    expect({ state: entry.state, words: entry.words }).toEqual({ state: "applied", words: ALREADY_CARRIED });
   });
 });
 
