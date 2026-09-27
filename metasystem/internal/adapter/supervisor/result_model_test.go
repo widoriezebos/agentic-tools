@@ -66,6 +66,7 @@ func readJSONInto(t *testing.T, path string, into any) {
 }
 
 func TestObservedResultModelIsRecordedAndNormalized(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	record := filepath.Join(dir, "fixture-one-key.json")
 	if err := os.WriteFile(record, []byte(`{"jobId":"fixture-one-key","round":1,"runtime":"claude","sessionId":"fixture-session","requestedModel":"requested-model","effectiveModel":"provisional-handshake-model","status":"running"}`+"\n"), 0o644); err != nil {

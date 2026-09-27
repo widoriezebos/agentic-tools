@@ -50,6 +50,7 @@ func stubReturn(t *testing.T, f *fakeInstall) string {
 }
 
 func TestClaudeDelegateRoundCompletes(t *testing.T) {
+	t.Parallel()
 	f, d := stubRound(t, "claude", "claude", "")
 	ret := stubReturn(t, f)
 	// The stub signals the session through the hook's channel, then streams
@@ -84,6 +85,7 @@ printf '%s\n' "$STUB_RESULT"
 }
 
 func TestCodexDelegateRoundCompletes(t *testing.T) {
+	t.Parallel()
 	f, d := stubRound(t, "codex", "codex", "")
 	ret := stubReturn(t, f)
 	script := `out=
@@ -110,6 +112,7 @@ printf '%s' "$STUB_RETURN" >"$out"
 }
 
 func TestClaudeRoundRefusesAnInvalidBudgetAfterTheEnvelope(t *testing.T) {
+	t.Parallel()
 	f, d := stubRound(t, "claude", "claude", "exit 0\n")
 	d.Environ = append(d.Environ, "METASYSTEM_CLAUDE_MAX_BUDGET_USD=not-a-number")
 	args := append([]string{"claude"}, f.superviseArgs()[1:]...)

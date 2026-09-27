@@ -79,6 +79,7 @@ func TestSignatureCheckContract(t *testing.T) {
 // iterates the declared population with no runtime branch: a future runtime
 // joins by declaration.
 func TestSignatureCheckEveryDeclaredRuntime(t *testing.T) {
+	t.Parallel()
 	names := runtimes.WithAdapter()
 	if len(names) < 4 {
 		t.Fatalf("only %d adapter runtimes exercised — the declared population went missing", len(names))
@@ -101,6 +102,7 @@ func TestSignatureCheckEveryDeclaredRuntime(t *testing.T) {
 // S4-7's bad-adapter refusals, on the declaration side that replaced the
 // adapter scripts: every bad declaration fails closed.
 func TestBadSignatureDeclarationsFailClosed(t *testing.T) {
+	t.Parallel()
 	// invalid-ere: a declaration that does not compile.
 	if _, err := CompileSignature("bad", []string{"["}, nil); err == nil {
 		t.Fatal("invalid-ere signature did not fail closed")
