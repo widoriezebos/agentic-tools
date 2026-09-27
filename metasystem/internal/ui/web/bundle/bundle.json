@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:f260a238db296a797ce83c2bb0ced8382911fe9fd53bc4bb965b262ebe83c147",
+  "sourceDigest": "sha256:5b16d15dab8141d9eaea5dc7f892f15a593251e0291585759312164b161a1210",
   "source": [
     {
       "path": ".npmrc",
@@ -712,11 +712,11 @@
     },
     {
       "path": "src/partner/proposing.test.ts",
-      "sha256": "128b7a92f2046156567d47cccaced0add0a8c11b58b3d1360630777089fff48a"
+      "sha256": "b5f1a81807ff534fa03362470d34d792401b9b131936bf2ae5b2ebe095724721"
     },
     {
       "path": "src/partner/proposing.ts",
-      "sha256": "a5140d48ae1b3ac253a9d61b70d6a6300b51e654ba6ab540074c3ef905e39a1f"
+      "sha256": "7e0259ddf718bf93dfafeb8b29cc5d2dbe51266e885f11cc05aff267c4b1de96"
     },
     {
       "path": "src/partner/recording.test.ts",
@@ -1102,7 +1102,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "2b30b4e28990197a009a8ffff21ea7ea728747535ccb4663bb514f083e59c214"
+      "sha256": "f3c529b9ff7a64f3da0b7197d8558d4f25779a1395e88a6cd72722e403e0419a"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

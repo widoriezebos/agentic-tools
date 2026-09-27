@@ -30,13 +30,16 @@ import { derivedTier, type Answer, type NewGoal, type Risk } from "../backlog/op
  * somebody else began — left at `applying`, or left `unresolved` by a press the
  * act layer refused because another one owns that act — is reconciled before it
  * is sent: a goal that already carries the act is recorded applied with nothing
- * sent for it.
+ * sent for it. And a press the act layer refused stops the run where it stands,
+ * because the act it could not make may be landing behind it.
  *
  * **The result wins.** The tab that received an act's answer is the only thing
  * that knows what the ledger did. An outcome write refused because another tab
  * moved the entry while the act was out is written once more at their version
- * where what they left is unsettled; where it is settled, they established what
- * happened and this tab shows that.
+ * where they left it `unresolved`, which is an entry nobody is executing; where
+ * they left it `applying` that attempt owns the line and will settle it, so this
+ * tab holds its own answer on the line instead; and where it is settled, they
+ * established what happened and this tab shows that.
  *
  * **What was read is what is approved.** An approve and an edit carry the goal as
  * the Partner read it. Before the first line the page reads the canonical branch
@@ -97,12 +100,12 @@ export type Mark = {
    * So the answer is held here, the line reads as that answer, and what the line
    * offers is decided by it.
    *
-   * `version` is the entry it was held at, and it is what makes the answer
-   * expire. This mark stands ABOVE the record, and it may only do that while it
-   * is the newest thing said about the line: a mark older than the entry, or one
-   * over an entry somebody has settled, is an account the record has moved past,
-   * and a surface reading it showed a refusal over a goal that was applied and
-   * offered a second act (Astra C-04).
+   * `version` is the entry it was held at. What retires the answer is the
+   * record carrying an account of its own — an entry somebody has SETTLED — and
+   * not that number: a surface reading the mark raw showed a refusal over a goal
+   * that was applied and offered a second act (Astra C-04), while one that
+   * expired it on any newer version hid an approval that had landed behind
+   * another tab's bookkeeping (Astra E-03).
    */
   unrecorded: { state: ProposalState; words: string; version: number } | null;
 };
@@ -515,17 +518,23 @@ export function lineState(line: Line, inFlight = false): string {
  * null where the record has moved past it.
  *
  * The held answer stands above the record because it is the only thing that
- * knows what the ledger did — and only while it is the newest thing said about
- * the line. Two things end that, and both mean the record now carries an
- * account of its own: an entry newer than the version the answer was held at,
- * and an entry somebody has settled. Every surface asks this rather than the
- * mark, because the mark is ONE mark shared by the drawer and the inbox, and a
- * surface reading it raw showed the drawer's obsolete refusal over an entry the
- * record had applied (Astra C-04).
+ * knows what the ledger did — and it stands until the RECORD carries an account
+ * of its own, which is an entry somebody has settled: `applied`, `refused` or
+ * `dismissed`. A newer version is not such an account. Another tab's bookkeeping
+ * about a request that published nothing moves the version and says nothing about
+ * what became of this act, and retiring the answer on it hid the only
+ * explanation there was — an approval that landed and could not be written down —
+ * and offered the press that approves the goal twice (Astra E-03).
+ *
+ * The version the answer was held at is kept beside it as the account of where it
+ * was held; what retires the answer is the settlement and not the number. Every
+ * surface asks this rather than the mark, because the mark is ONE mark shared by
+ * the drawer and the inbox, and a surface reading it raw showed the drawer's
+ * obsolete refusal over an entry the record had applied (Astra C-04).
  */
 export function unrecordedOn(line: Line): Mark["unrecorded"] {
   const held = line.mark.unrecorded;
-  if (held === null || held.version < line.version || settledState(line.state)) {
+  if (held === null || settledState(line.state)) {
     return null;
   }
   return held;
@@ -698,7 +707,9 @@ export const NOT_APPLIED_SIGN_IN = "not applied: sign in to apply";
  * any publish, and the act that IS executing may land — so the tab that meets it
  * holds no result about that line at all. It writes `unresolved` in the
  * refusal's own sentence, never `refused`, which would say the act did not
- * happen; and it never sends again on its own (Astra A-01).
+ * happen; it stops the run there, because the act it could not make may be
+ * changing the goal a line behind it is about (Astra E-01); and it never sends
+ * again on its own (Astra A-01).
  */
 export const IN_FLIGHT = "in-flight";
 
@@ -711,11 +722,16 @@ export const IN_FLIGHT = "in-flight";
  * run never waits on a sheet, so the line says what it needs and the rest say
  * "not run" until the human signs in or presses Continue (g1-s58 D7).
  *
- * And an act another press owns is passed, for the refusal's own reason: this
- * press published nothing, so the next line does not depend on anything it did.
+ * And an act another press owns stops it, for the reason the unresolved answer
+ * does. Nothing of THIS press was published, but the act that press owns may be
+ * landing as the answer is read, and a line behind it can be about the very goal
+ * it changes: going on would compare that line against the reading taken before
+ * the act and send it against a goal nobody read (Astra E-01). The lines behind
+ * it say "not run", and Continue is a fresh press, which reads fetch-first before
+ * it compares anything.
  */
 export function goesOn(answered: Answered): boolean {
-  return answered.kind === "applied" || answered.kind === "refused" || answered.kind === "in-flight";
+  return answered.kind === "applied" || answered.kind === "refused";
 }
 
 /**
@@ -1357,13 +1373,17 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
     // entry still stands at where that write failed.
     let wroteAt = sending.version;
     let finished = await ports.record(sending, written.state, written.words);
-    // The result WINS. A conflict here means another tab moved the entry while
-    // this act was out; where what they left is unsettled — `applying`, or
-    // `unresolved` from a press the act layer refused — they hold no result for
-    // this line and this tab does, so the answer is written once more at their
-    // version. Where it is settled they established what happened, and the run
-    // shows that instead.
-    if (finished.kind === "conflict" && !settledState(finished.proposal.state)) {
+    // The result WINS, over an entry NOBODY is executing. A conflict here means
+    // another tab moved the entry while this act was out. Where they left it
+    // `unresolved` no act of theirs is running and they hold no result for the
+    // line, so this tab's answer — the only one there is — is written once more
+    // at their version. Where they left it `applying`, another attempt OWNS the
+    // line and will settle it with its own answer: writing this older one over
+    // it settled the line refused while that attempt's act applied, and that tab
+    // then reconciled to the refusal and threw its own answer away (Astra E-02).
+    // And where it is settled they established what happened, and the run shows
+    // that instead.
+    if (finished.kind === "conflict" && finished.proposal.state === "unresolved") {
       wroteAt = finished.proposal.version;
       finished = await ports.record({ ...sending, version: wroteAt }, written.state, written.words);
     }
@@ -1375,6 +1395,12 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
       stale = stale || appliedEntry(finished.proposal);
       if (settledState(finished.proposal.state)) {
         ports.mark(line, { unrecorded: null });
+      } else {
+        // Another attempt owns the line and this tab still knows what its own
+        // act answered, so that answer is held here — where every answer the
+        // record does not carry is held — until the record says what happened
+        // (Astra E-02).
+        ports.mark(line, { unrecorded: { ...written, version: wroteAt } });
       }
     } else if (finished.kind === "failed") {
       // The act happened and the conversation could not say so. What the act
