@@ -231,43 +231,56 @@ func drainCustodyFixtures(options ResourceCustodyOptions, prober identity.Prober
 	})
 }
 
+// fixtureDrainCensuses bounds a declared-fixture drain by complete censuses,
+// never by elapsed time. One host census costs about a second when the host
+// is loaded, so a wall-clock budget was spent by the census itself and failed
+// custody with nothing left to stop. A survivor that stays live and owned
+// through this many censuses, each followed by an exact SIGKILL, will not
+// die: custody refuses and the marker stays dirty.
+const fixtureDrainCensuses = 40
+
 func drainCustodyFixtureScans(options ResourceCustodyOptions, prober identity.Prober, scan func() ([]identity.FixtureSurvivor, error)) (bool, error) {
-	deadline := time.Now().Add(2 * time.Second)
+	return drainCustodyFixtureScansWith(options, prober, scan, syscall.Kill, time.Now, func() { time.Sleep(50 * time.Millisecond) })
+}
+
+// drainCustodyFixtureScansWith ends when two consecutive complete censuses
+// find no live owned fixture. A killed survivor is judged by the next census
+// and its exact probe (dead, zombie or a reused pid all count as stopped),
+// not by how long it took to die. The clock only reports how long a refused
+// drain took; it never decides.
+func drainCustodyFixtureScansWith(options ResourceCustodyOptions, prober identity.Prober, scan func() ([]identity.FixtureSurvivor, error),
+	signal identity.SignalFunc, now func() time.Time, pause func(),
+) (bool, error) {
+	started := now()
 	observed := false
 	empty := 0
-	for time.Now().Before(deadline) {
+	for census := 0; census < fixtureDrainCensuses; census++ {
 		survivors, err := scan()
 		if err != nil {
 			return observed, err
 		}
-		owned := 0
+		live := 0
 		for _, survivor := range survivors {
 			if !fixtureSurvivorOwnedByAttempt(prober, survivor, fixtureAttemptOwnership{owner: options.Launcher, attemptID: options.Watchdog.AttemptID}) {
 				continue
 			}
-			owned++
 			if survivor.Class != identity.FixtureSurvivorCertain {
 				return observed, fmt.Errorf("owned fixture survivor %d has uncertain identity", survivor.Ref.Pid)
 			}
 			observed = true
-			if err := identity.SignalExact(prober, survivor.Ref, syscall.SIGKILL, syscall.Kill); err != nil && !errors.Is(err, identity.ErrGone) {
+			exact, state, err := prober.Probe(survivor.Ref.Pid)
+			if err != nil || state == identity.Unknown {
+				return observed, fmt.Errorf("fixture survivor %d cleanup is uninspectable: %v", survivor.Ref.Pid, err)
+			}
+			if state == identity.Dead || !identity.SameIdentity(exact, survivor.Ref) || exact.Zombie {
+				continue
+			}
+			live++
+			if err := identity.SignalExact(prober, survivor.Ref, syscall.SIGKILL, signal); err != nil && !errors.Is(err, identity.ErrGone) {
 				return observed, fmt.Errorf("stop owned fixture survivor %d: %w", survivor.Ref.Pid, err)
 			}
-			for {
-				exact, state, err := prober.Probe(survivor.Ref.Pid)
-				if err != nil || state == identity.Unknown {
-					return observed, fmt.Errorf("fixture survivor %d cleanup is uninspectable: %v", survivor.Ref.Pid, err)
-				}
-				if state == identity.Dead || !identity.SameIdentity(exact, survivor.Ref) || exact.Zombie {
-					break
-				}
-				if time.Now().After(deadline) {
-					return observed, fmt.Errorf("fixture survivor %d did not stop", survivor.Ref.Pid)
-				}
-				time.Sleep(50 * time.Millisecond)
-			}
 		}
-		if owned == 0 {
+		if live == 0 {
 			empty++
 			if empty >= 2 {
 				return observed, nil
@@ -275,9 +288,10 @@ func drainCustodyFixtureScans(options ResourceCustodyOptions, prober identity.Pr
 		} else {
 			empty = 0
 		}
-		time.Sleep(50 * time.Millisecond)
+		pause()
 	}
-	return observed, fmt.Errorf("declared fixture custody did not drain within 2s")
+	return observed, fmt.Errorf("declared fixture custody did not drain: owned fixtures stayed live through %d censuses after SIGKILL (%s)",
+		fixtureDrainCensuses, now().Sub(started).Round(time.Millisecond))
 }
 
 // drainResourceGroup signals only identities actually observed in the live
