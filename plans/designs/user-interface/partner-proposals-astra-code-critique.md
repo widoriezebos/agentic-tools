@@ -391,3 +391,141 @@ The builders’ left items are adjudicated individually:
 
 VERDICT: 1 not closed: A-03; 2 new material: E-01, E-02; 3 new non-material: E-03, E-04, E-05
 
+
+---
+
+# The third confirmation read (the third pass: the rulings and the E findings)
+
+Produced 2026-09-28 by Codex on `gpt-6-astra`, read-only, against ui-development at `7215366c1`. Verbatim.
+
+| Item | Confirmation | Holding test and evidence |
+|---|---|---|
+| R-129-ui — idempotent acts | **Not closed** | **Read:** `TestEveryActOfTheRulingAnswersItsRepeatApplied` and `TestASecondIdenticalAbandonFromASessionAnswersApplied` cover eight verbs. Open and Withdraw remain excluded, despite Wido’s “all verbs” wording. The three `…FromATerminalIsUnchanged` tests preserve the terminal behavior requested by this pass’s brief. Abandon also accepts effects that do not match the request: F-04 and F-05. |
+| R-130-ui — fifty proposals and batching | **Not closed** | **Read:** `TestAnAnswerCarriesAtMostFiftyProposals` explicitly expects **52 persisted proposals**, with fifty offered. `TestTheProposalCountIsBoundedAtFifty` tests a helper, not tool enforcement. The skill sentence and `TestAnAnswerWhoseLinesAreSettledIsToldToOfferTheNextBatch` cover instructions and next-turn context, but call 51 still returns preparation success to the Partner: F-06. |
+| R-131-ui — archive and truncate | **Not closed** | **Read:** `TestAnUnreadableTranscriptOpensWithEveryOtherMessage`, `TestTheUnreadableTranscriptIsArchivedByteForByte`, `TestASecondOpenOfARewrittenTranscriptArchivesNothingMore`, and `TestATranscriptThatReadsIsNotArchived` cover sequential recovery. Concurrent first opens can duplicate recovery and overwrite an accepted message: F-02. |
+| A-03 — startup sign-in window | **Closed** | **Read:** `TestASignInWhileTheRuntimeIsStartingLandsTheWholeTurn` gates startup and checks question, answer, and proposal transfer. `TestAStartupThatRefusesReleasesTheReservedTurn` covers startup refusal. Inspection also confirms release on question-append failure. |
+| E-01 — stop on in-flight | **Closed** | **Read and probed:** `leaves a later line about that goal for Continue, which compares it afresh`. The production-runner probe sent only the edit, marked the approval not run, then reread on Continue and refused the obsolete approval. Inbox bulk and Continue invoke the same runner. A different continuation defect is F-01. |
+| E-02 — older result versus newer attempt | **Not closed** | **Read:** `holds its own answer rather than writing it over another attempt` holds the direct conflict with `applying`. **Probed:** an intervening `unresolved` entry still lets the older refusal defeat the successful attempt: F-03. |
+| E-03 — retain held results until settlement | **Closed** | **Read and probed:** `keeps a held result over another tab's unresolved bookkeeping`. A held applied result survives `unresolved@4`, preserves its explanation, offers no retry, and disappears over a settled entry. |
+| E-04 — panic releases holds | **Closed** | **Read:** `TestAnAssemblyThatUnwindsLeavesNoHoldAndNoLock`. The deferred release covers assembly errors and panics until ownership transfers to the caller. |
+| E-05 — normalize registration IDs | **Closed** | **Read:** `TestTheHoldIsKeyedByTheGoalTheLedgerMeans` and `TestASecondBlockSpelledWithSpaceIsTheActAlreadyRunning`. Registration trims the ID before both lookup and insertion; release uses that same key. |
+
+Reviewed clean HEAD `7215366c17bc4e8e586b66c3626815ab20b96237`, the specified diffs excluding the generated bundle, all four briefs/reports, the earlier critique, and the ruling rows. No files were edited; the protected local configuration was not read. Go and Vitest stopped before executing tests because the sandbox denied temporary-file writes. In-memory probes ran the production TypeScript runner with controlled I/O and a fixed budget prefill; the racing-writer probe used the transition table extracted from Go. No HTTP or mounted-browser execution was performed.
+
+1. **F-01 — High — An outcome conflict with another applying edit still permits an obsolete approval.**
+
+   **File:** [proposing.ts:1393](metasystem/internal/ui/web/_app/src/partner/proposing.ts:1393).
+
+   **Evidence, ran:** A’s edit answers refused, but its outcome write is delayed. B retries and edits the goal. A’s delayed write conflicts with B’s `applying` entry. A holds its refusal locally, then `goesOn(answered)` permits the following approval without invalidating the read.
+
+   The probe observed **one read**, followed by an approval carrying `"old intent"` while the goal carried `"new intent"`.
+
+   **Smallest fix:** Stop the batch when outcome reconciliation finds another unsettled attempt; leave subsequent lines for Continue and its fresh comparison.
+
+   **Material: yes — SAFE fails.**
+
+2. **F-02 — High — Concurrent first opens can overwrite a message accepted after recovery.**
+
+   **Files:** [conversation.go:679](metasystem/internal/ui/partner/conversation.go:679), [service.go:247](metasystem/internal/ui/partner/service.go:247).
+
+   **Evidence, read:** `Service.conversation` opens outside its mutex and resolves duplicate opens only after loading finishes. Loading now archives and rewrites the transcript. The losing opener’s writes have already happened before it is discarded.
+
+   **Concrete failure:** Two first readers load an oversized transcript. Reader A captures the messages to keep, then pauses. Reader B finishes recovery, installs the cached conversation, and accepts a new message. A resumes and replaces the transcript with its older snapshot. The newly accepted message is absent from the rewritten file and both earlier archives. Another ordering archives an already-repaired file and appends a second notice.
+
+   **Smallest fix:** Serialize initial opening/recovery through the service’s conversation ownership before any loader may rewrite the file. Hold the interleaving with a gated concurrent-open test.
+
+   **Material: yes — SAFE fails through loss of accepted conversation data.**
+
+3. **F-03 — High — `unresolved` does not establish that nobody is executing.**
+
+   **File:** [proposing.ts:1386](metasystem/internal/ui/web/_app/src/partner/proposing.ts:1386).
+
+   **Evidence, ran:** Three legitimate tab attempts produced:
+
+   `A:applying@2 → B:applying@3 → C:applying@4 → C:unresolved@5 → A:refused@6`
+
+   A’s refusal was delayed. B was executing successfully. C received `in-flight` and wrote `unresolved` while B remained active. A then rebased its old refusal onto version 5. B’s eventual applied write conflicted with the settled refusal and discarded its successful answer.
+
+   The probe ended with **the goal parked, the proposal `refused@6`, and no held applied result**.
+
+   **Smallest fix:** Do not rebase an older refusal onto a newer attempt merely because its entry says unresolved. Preserve it locally unless ownership of the same attempt is established.
+
+   **Material: yes — WORK fails.**
+
+4. **F-04 — Medium — Abandon’s no-op hides a different successor and accepts completed goals.**
+
+   **File:** [abandon.go:203](metasystem/internal/goal/abandon.go:203).
+
+   **Evidence, read:** The session shortcut accepts anything returned by `TreeGoals.Archived`, which includes both done and abandoned goals. It never compares the requested successor with `archived.Abandoned.Carried`.
+
+   **Concrete failure:** Abandon G without a successor, then request abandon G with successor S. The browser answers applied although S is never recorded. Abandoning an already-done goal likewise answers applied while its state remains done.
+
+   **Smallest fix:** Recognize a no-op only for an abandoned goal whose recorded successor matches the requested effect. Preserve the existing refusal for incompatible archived states or dispositions.
+
+   **Material: yes — WORK fails through false success.**
+
+5. **F-05 — Medium — Open and Withdraw still refuse genuine repeats.**
+
+   **Files:** [act.go:588](metasystem/internal/ui/act/act.go:588), [approval.go:697](metasystem/internal/goal/approval.go:697), [verbs.go:895](metasystem/internal/goal/verbs.go:895).
+
+   **Evidence, read:** The implementation treats the ruling’s examples as exhaustive. Withdraw rejects a live goal whose approval is already absent; Open reports a competitor for an existing ID, including an identical repeat under a fresh browser operation ID. Neither is reconciled by `carriesAlready`.
+
+   **Concrete failure:** After an Open or Withdraw succeeds but its response is lost, retrying records a refusal although the requested effect holds.
+
+   **Smallest fix:** Extend the existing engine no-op and act-settlement handling to genuine repeats of these verbs, comparing Open’s requested effect rather than treating every existing ID as equivalent. Add both verbs to the repeat tests.
+
+   **Material: yes — WORK fails against the explicitly ruled retry behavior.**
+
+6. **F-06 — Medium — Admission limits offered actions, while the tool and saved answer remain unbounded.**
+
+   **Files:** [propose.go:586](metasystem/internal/ui/uitools/propose.go:586), [proposals.go:258](metasystem/internal/ui/partner/proposals.go:258).
+
+   **Evidence, read:** Every valid tool call returns preparation success. Admission appends every overflow refusal, and the service records each tool look before admission. The Partner receives the batching refusal only in its **next prompt**, after the answer has ended. The holding test explicitly retains 52 entries.
+
+   **Concrete failure:** During a long-list answer, the Partner can continue receiving successful preparation results beyond fifty while the human receives rejected lines. The persisted message still has no count ceiling, defeating the limit’s stated storage purpose.
+
+   **Smallest fix:** Supply the answer boundary to the tool’s count owner so call 51 returns the batching refusal immediately. Retain admission enforcement and bounded overflow accounting.
+
+   **Material: yes — WORK fails against the required enforcement and feedback behavior.**
+
+7. **F-07 — Low — Recovery drops a fitting final line at an exact buffer boundary.**
+
+   **File:** [conversation.go:798](metasystem/internal/ui/partner/conversation.go:798).
+
+   **Evidence, read against Go’s `bufio.Reader.ReadLine`:** A final line without a newline, exactly 65,536 bytes long, first returns a full prefix and then EOF. `readLineWithin` discards its accumulated bytes on that EOF; `messagesThatFit` exits without retaining or counting the message.
+
+   **Concrete failure:** Recover an oversized transcript whose final complete JSON message has that length and no trailing newline. That fitting message disappears from the recovered conversation, although it remains in the archive.
+
+   **Smallest fix:** Return an accumulated final line once before reporting EOF.
+
+   **Material: no — record under R-124.** This requires the particular unterminated-file boundary; ordinary writer output ends with a newline.
+
+The builders’ departures and left items are adjudicated individually:
+
+- **Go departure 1, admission-only counting — fix now:** F-06; delayed prompt feedback does not replace the ruled tool refusal.
+- **Go departure 2, counting refused lines — record:** appropriate for stored-message accounting; it does not itself bound overflow storage.
+- **Go departure 3, notice at the end — record:** appropriate for the page’s last-N message window.
+- **Go departure 4, archive basename — record:** sufficient with “kept whole beside it.”
+- **Go departure 5, `>= maxLineBytes` — record:** correct for newline-terminated input; F-07 is a separate EOF case.
+- **Go departure 6, 100 archive-name attempts — record:** no ordinary exhaustion demonstrated.
+- **Go departure 7, rereading the adopted conversation — record:** necessary for startup transfer.
+- **Go departure 8, shared session predicate — record:** reasonable placement; F-04 concerns the effect comparison.
+- **Go departure 9, refusal-register anchor — record:** mechanical adjustment.
+- **Go departure 10, replacement repeat table — fix now:** F-05; eight verbs do not establish “all verbs.”
+- **Go departure 11, separate E-04/E-05 commits — record:** appropriate separation.
+- **Frontend departure, two-tab expected state becomes unresolved — record:** it accurately reflects this implementation; it does not establish convergence under F-03.
+- **Frontend departure, retaining the E-03 held answer — record:** matches the accepted correction.
+- **A-03 identity remainder — record:** `Adopt` does update `running.human`; the report overstates that remainder. The local prompt identity and `spokeLast` can retain the seat, causing a fresh next session without demonstrated message loss.
+- **R-130 missing overflow Fields/Why — record:** avoiding retention of rejected payloads is appropriate.
+- **R-130 next-batch sentence below fifty — record:** a settled shorter batch can still have a remainder.
+- **Aggregate encoded size — record:** fifty alone is not a byte guarantee. A serialization probe modeled fifty individually bounded Open proposals at 2,414,440 bytes against the 2,097,152-byte reader ceiling; this is the previously recorded aggregate-size residual.
+- **R-131 foreign-line re-encoding growth — record:** the reported extra archive remains possible; no ordinary writer-produced case was established.
+- **E-04 unpruned owners — record:** one production root; no demonstrated operational growth.
+- **Whole command-package testing incomplete — record:** the builder disclosed this limitation; this review’s focused runners were sandbox-blocked.
+- **Unused held-result version — record:** removal is optional cleanup.
+- **Held result while another attempt applies — record:** differing temporary displays remain; continuation and settlement failures are F-01/F-03.
+- **Held applied result over a line that never settles — record:** it can remain indefinitely and suppress retry on that page; reload permits reconciliation and dismissal remains available. No additional unsafe publication was demonstrated.
+- **Go items left to the other builder — record:** assessed directly in the table.
+
+VERDICT: 4 not closed: R-129-ui, R-130-ui, R-131-ui, E-02; 6 new material: F-01, F-02, F-03, F-04, F-05, F-06; 1 new non-material: F-07
+
