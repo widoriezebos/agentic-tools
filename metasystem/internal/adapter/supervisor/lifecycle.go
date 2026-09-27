@@ -46,6 +46,8 @@ type Supervision struct {
 	d       Deps
 	runtime string
 	verb    string
+	// usage writes the runtime's usage text (a failed preparation).
+	usage func(Deps)
 
 	job, gate, tag, capability string
 

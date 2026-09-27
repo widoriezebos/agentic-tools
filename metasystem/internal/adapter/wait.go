@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 )
 
 // WaitDeliveryRequest is the complete adapter contract for holding one
@@ -33,15 +34,49 @@ func WaitDeliveryAccepted(waitID, nonce, deadline, session string) bool {
 // DeliverWait asks a runtime's adapter whether its session can hold the
 // foreground command. The answer is deliberately a one-word protocol so
 // provider output can never become wait evidence.
-func DeliverWait(_ context.Context, runtime string, request WaitDeliveryRequest) (string, error) {
+func DeliverWait(ctx context.Context, runtime string, request WaitDeliveryRequest) (string, error) {
+	return DeliverWaitAt(ctx, "", runtime, request)
+}
+
+// DeliverWaitAt is DeliverWait for an installation root, whose external
+// adapters (design 3.5) answer for their runtimes; an overriding executable
+// answers for its built-in unless it delegates (exit 64).
+func DeliverWaitAt(_ context.Context, root, runtime string, request WaitDeliveryRequest) (string, error) {
 	if runtime == "" || request.WaitID == "" || request.Nonce == "" || request.Deadline.IsZero() || request.Session == "" {
 		return "", fmt.Errorf("wait delivery requires an adapter, wait identifier, nonce, deadline, and session")
 	}
+	deadline := request.Deadline.UTC().Format(time.RFC3339Nano)
+	if !WaitDeliveryAccepted(request.WaitID, request.Nonce, deadline, request.Session) {
+		return "", ErrWaitDeliveryDeclined
+	}
+	if root != "" {
+		adapter, found, err := external.Lookup(root, runtime)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			response, err := adapter.Call("wait-delivery", map[string]any{
+				"waitId": request.WaitID, "nonce": request.Nonce, "deadline": deadline, "session": request.Session,
+			}, nil)
+			if err == nil {
+				var answer struct {
+					Answer string `json:"answer"`
+				}
+				if err := external.Decode(response, &answer); err != nil {
+					return "", err
+				}
+				if answer.Answer != "blocking" {
+					return "", ErrWaitDeliveryDeclined
+				}
+				return "blocking", nil
+			}
+			if !errors.Is(err, external.ErrDelegated) || !adapter.Overrides {
+				return "", err
+			}
+		}
+	}
 	if declaration, ok := runtimes.Lookup(runtime); !ok || !declaration.HasAdapter {
 		return "", fmt.Errorf("wait delivery adapter %s is unavailable", runtime)
-	}
-	if !WaitDeliveryAccepted(request.WaitID, request.Nonce, request.Deadline.UTC().Format(time.RFC3339Nano), request.Session) {
-		return "", ErrWaitDeliveryDeclined
 	}
 	return "blocking", nil
 }

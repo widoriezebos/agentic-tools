@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -78,10 +79,22 @@ var waitCurrentHolder = func(ctx context.Context, root string) (lease.CurrentHol
 // waitDeliveryRuntime names the runtime whose adapter answers wait delivery
 // for a caller; tests replace it.
 var waitDeliveryRuntime = func(root, runtimeName string) (string, error) {
-	if declaration, ok := runtimes.Lookup(runtimeName); !ok || !declaration.HasAdapter {
-		return "", fmt.Errorf("wait delivery adapter %s is unavailable", runtimeName)
+	if declaration, ok := runtimes.Lookup(runtimeName); ok && declaration.HasAdapter {
+		return runtimeName, nil
 	}
-	return runtimeName, nil
+	if _, found, err := external.Lookup(waitInstallation(root), runtimeName); err == nil && found {
+		return runtimeName, nil
+	}
+	return "", fmt.Errorf("wait delivery adapter %s is unavailable", runtimeName)
+}
+
+// waitInstallation is the installation whose adapters answer wait delivery:
+// the engine's own, else the state root.
+func waitInstallation(root string) string {
+	if installation, err := upMetasystemRoot(""); err == nil {
+		return installation
+	}
+	return root
 }
 
 func runWait(args []string) int {
@@ -436,7 +449,7 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 		},
 		EmitEvent: emitWaitCommandEvent,
 		Deliver: func(ctx context.Context, waitID, nonce string, deadline time.Time, session string) (string, bool, error) {
-			answer, err := adapter.DeliverWait(ctx, deliveryRuntime, adapter.WaitDeliveryRequest{WaitID: waitID, Nonce: nonce, Deadline: deadline, Session: session})
+			answer, err := adapter.DeliverWaitAt(ctx, waitInstallation(root), deliveryRuntime, adapter.WaitDeliveryRequest{WaitID: waitID, Nonce: nonce, Deadline: deadline, Session: session})
 			if errors.Is(err, adapter.ErrWaitDeliveryDeclined) {
 				return "", true, nil
 			}

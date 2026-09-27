@@ -130,7 +130,7 @@ func signaturesFor(metasystemRoot, only string, allHosts ...bool) ([]Signature, 
 	}
 	var out []Signature
 	for _, runtime := range selected {
-		sig, _, err := RuntimeSignature(runtime)
+		sig, _, err := RuntimeSignatureAt(metasystemRoot, runtime)
 		if err != nil {
 			return nil, fmt.Errorf("runtime %q: %w", runtime, err)
 		}

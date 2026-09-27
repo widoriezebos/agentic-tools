@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -303,14 +302,13 @@ func (inv *intentInvocation) goalWorktreeEntry(id string) (string, *intentResult
 // its local configuration (its local-config-paths manifest) in a new goal
 // worktree, through the same session-isolation owner second sessions use.
 func (inv *intentInvocation) isolateAdapterConfiguration(source, destination string) error {
-	names := runtimes.WithAdapter()
-	sort.Strings(names)
+	paths, err := supervisor.LocalConfigManifest(supervisor.Deps{Root: inv.layout.InstallationRoot})
+	if err != nil {
+		return err
+	}
 	var manifest strings.Builder
-	for _, name := range names {
-		paths, _ := runtimes.LocalConfigPaths(name)
-		for _, path := range paths {
-			manifest.WriteString(path + "\n")
-		}
+	for _, path := range paths {
+		manifest.WriteString(path + "\n")
 	}
 	if manifest.Len() == 0 {
 		return nil

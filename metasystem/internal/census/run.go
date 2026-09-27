@@ -729,7 +729,7 @@ func configuredSignatures(metasystemRoot string) ([]Signature, error) {
 	}
 	var out []Signature
 	for _, runtime := range selected {
-		sig, _, err := RuntimeSignature(runtime)
+		sig, _, err := RuntimeSignatureAt(metasystemRoot, runtime)
 		if err != nil {
 			return nil, fmt.Errorf("metasystem.runtimes names %q: %w", runtime, err)
 		}

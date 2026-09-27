@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 )
 
 // The fingerprint is the supervision code staleness detector. It hashes the
@@ -49,18 +51,45 @@ func SignatureText(runtime string) (string, error) {
 	return runtimes.SignatureText(runtime)
 }
 
-// RuntimeSignature compiles one runtime's registry signature.
+// RuntimeSignature compiles one built-in runtime's registry signature.
 func RuntimeSignature(runtime string) (Signature, string, error) {
 	text, err := SignatureText(runtime)
 	if err != nil {
 		return Signature{}, "", err
 	}
+	return compileText(runtime, text)
+}
+
+func compileText(runtime, text string) (Signature, string, error) {
 	matches, excludes := ParseSignatureText(text)
 	sig, err := CompileSignature(runtime, matches, excludes)
 	if err != nil {
 		return Signature{}, "", err
 	}
 	return sig, text, nil
+}
+
+// RuntimeSignatureAt compiles one runtime's signature for an installation:
+// an external adapter's (design 3.5) from its signature operation, an
+// overriding executable's unless it delegates the operation (exit 64), and
+// otherwise the built-in's.
+func RuntimeSignatureAt(root, runtime string) (Signature, string, error) {
+	if root != "" {
+		adapter, found, err := external.Lookup(root, runtime)
+		if err != nil {
+			return Signature{}, "", err
+		}
+		if found {
+			text, err := adapter.SignatureText()
+			switch {
+			case err == nil:
+				return compileText(runtime, text)
+			case !errors.Is(err, external.ErrDelegated) || !adapter.Overrides:
+				return Signature{}, "", err
+			}
+		}
+	}
+	return RuntimeSignature(runtime)
 }
 
 // FixtureSignatureRuntimesEnv narrows the adapter signature universe in a
@@ -82,16 +111,36 @@ func AllAdapterSignatures() ([]Signature, error) {
 }
 
 // InstalledAdapterSignatures is AllAdapterSignatures for an installation
-// root, honoring FixtureSignatureRuntimesEnv in a fixture-mode root. It also
-// returns each runtime's signature text in the same order.
+// root: the built-ins (an override's signature where one answers) plus every
+// external adapter discovered in the root's adapters directory, honoring
+// FixtureSignatureRuntimesEnv in a fixture-mode root. It also returns the
+// runtime names and each signature text in the same order.
 func InstalledAdapterSignatures(root string) ([]Signature, []string, []string, error) {
 	names := runtimes.WithAdapter()
+	adapters, _, err := external.Discover(root)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for _, adapter := range adapters {
+		if !adapter.Overrides {
+			names = append(names, adapter.Name)
+		}
+	}
 	if narrowed := os.Getenv(FixtureSignatureRuntimesEnv); narrowed != "" && fixtureauth.FixtureModeRoot(root) {
 		names = strings.Fields(strings.ReplaceAll(narrowed, ",", " "))
 	}
 	sort.Strings(names)
-	sigs, texts, err := adapterSignatures(names)
-	return sigs, names, texts, err
+	var sigs []Signature
+	var texts []string
+	for _, runtime := range names {
+		sig, text, err := RuntimeSignatureAt(root, runtime)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		sigs = append(sigs, sig)
+		texts = append(texts, text)
+	}
+	return sigs, names, texts, nil
 }
 
 func adapterSignatures(names []string) ([]Signature, []string, error) {
@@ -121,6 +170,11 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 
 	selected := splitRuntimes(config.ConfValue(confPath, "metasystem.runtimes", ""))
 	files := append([]string(nil), fingerprintFiles...)
+	for _, runtime := range selected {
+		if _, found, _ := external.Lookup(metasystemRoot, runtime); found {
+			files = append(files, filepath.Join(external.Dir, runtime))
+		}
+	}
 
 	fileHashes := map[string]string{}
 	for _, rel := range files {
@@ -134,7 +188,7 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 
 	signatures := map[string]string{}
 	for _, runtime := range selected {
-		text, err := SignatureText(runtime)
+		_, text, err := RuntimeSignatureAt(metasystemRoot, runtime)
 		if err != nil {
 			return "", err
 		}
