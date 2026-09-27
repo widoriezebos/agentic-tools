@@ -742,7 +742,7 @@ func TestMetaSystemContractSelectsStaticProofForGoalRecords(t *testing.T) {
 	if !contains(plan.AffectedSurfaces, "goal-records") {
 		t.Fatalf("goal record did not select its owning surface: %+v", plan)
 	}
-	for _, id := range []string{"section/static-contract-audits", "section/return-schema-fixtures"} {
+	for _, id := range []string{"section/static-contract-audits", "return-schema-bed-standard"} {
 		if !contains(plan.SelectedGroups, id) || !contains(plan.RequiredGroups, id) {
 			t.Fatalf("goal record delivery omitted static group %s: %+v", id, plan)
 		}
