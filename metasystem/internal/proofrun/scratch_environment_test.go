@@ -220,7 +220,7 @@ func TestScratchEnvironmentGoEnvModes(t *testing.T) {
 }
 
 func TestScratchEnvironmentIdentity(t *testing.T) {
-	// Not parallel: see the writer-lock note above crashedScratch.
+	t.Parallel()
 	fixture := newScratchEnvFixture(t)
 	declaredHome := filepath.Join(fixture.host, "declared-home")
 	declaredGoEnv := filepath.Join(fixture.host, "declared-goenv")
@@ -238,63 +238,67 @@ func TestScratchEnvironmentIdentity(t *testing.T) {
 	}
 	groups := append(scratchEnvGroups(), testpolicy.Group{ID: "declared", Adapter: "command", EnvironmentMode: "explicit",
 		Env: map[string]string{"HOME": declaredHome, "GOENV": declaredGoEnv}})
-	first, firstRun := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, groups))
-	second, secondRun := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, groups))
-	if firstRun.Root() == secondRun.Root() {
-		t.Fatal("runs share a root")
-	}
-	firstDigests, secondDigests := scratchEnvDigests(first), scratchEnvDigests(second)
-	for id, digest := range firstDigests {
-		if secondDigests[id] != digest {
-			t.Errorf("%s identity changed with the run root", id)
+	// secondRun's writer is open from its preparation to its Cleanup, which
+	// proves it free: forks stay excluded over that window (writer-lock note).
+	lockedScratch(t, func() {
+		first, firstRun := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, groups))
+		second, secondRun := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, groups))
+		if firstRun.Root() == secondRun.Root() {
+			t.Fatal("runs share a root")
 		}
-	}
-	declared := groups[len(groups)-1]
-	environment := groupTestEnvironment(first, declared)
-	if lookupEnvironment(environment, "HOME") != declaredHome || lookupEnvironment(environment, "GOENV") != declaredGoEnv {
-		t.Fatal("declared HOME or GOENV was replaced")
-	}
-	// A declared path digests literally: moving it changes identity.
-	moved := declared
-	moved.Env = map[string]string{"HOME": declaredHome + "-2", "GOENV": declaredGoEnv}
-	if digestScratchGroupEnvironment(first, moved, groupTestEnvironment(first, moved)) == firstDigests["declared"] {
-		t.Fatal("declared HOME digested as a managed token")
-	}
-	// A variable claiming a generated-looking value is not normalized unless
-	// it equals this descriptor's path for this group.
-	forged := append(groupTestEnvironment(first, groups[1]), "HOME="+filepath.Join(secondRun.Root(), "groups", groups[1].ID, scratchEnvironmentDir, "home"))
-	if digestScratchGroupEnvironment(first, groups[1], forged) == firstDigests[groups[1].ID] {
-		t.Fatal("foreign root path normalized")
-	}
-	// Changed inherited config, or a changed declared config, invalidates.
-	if err := os.WriteFile(fixture.goEnv, []byte("GOFLAGS=-mod=vendor\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(declaredGoEnv, []byte("GOFLAGS=-x\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	third, _ := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, groups))
-	for id, digest := range scratchEnvDigests(third) {
-		if digest == firstDigests[id] {
-			t.Errorf("%s identity survived a Go env change", id)
+		firstDigests, secondDigests := scratchEnvDigests(first), scratchEnvDigests(second)
+		for id, digest := range firstDigests {
+			if secondDigests[id] != digest {
+				t.Errorf("%s identity changed with the run root", id)
+			}
 		}
-	}
-	// The worker rejects a declared config that changed after preparation.
-	if err := ValidateScratchEnvironment(first, firstRun); err == nil {
-		t.Fatal("changed declared GOENV accepted")
-	}
-	// Legacy callers keep the legacy digest.
-	legacy := scratchEnvRequest(fixture.base, groups)
-	if digestScratchGroupEnvironment(legacy, groups[0], groupTestEnvironment(legacy, groups[0])) != digestGroupEnvironment(groups[0], groupTestEnvironment(legacy, groups[0])) {
-		t.Fatal("legacy digest changed")
-	}
-	// Root cleanup removes owned bytes; the declared home is untouched.
-	if err := secondRun.Cleanup(nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(secondRun.Root()); !os.IsNotExist(err) {
-		t.Fatalf("run root survived cleanup: %v", err)
-	}
+		declared := groups[len(groups)-1]
+		environment := groupTestEnvironment(first, declared)
+		if lookupEnvironment(environment, "HOME") != declaredHome || lookupEnvironment(environment, "GOENV") != declaredGoEnv {
+			t.Fatal("declared HOME or GOENV was replaced")
+		}
+		// A declared path digests literally: moving it changes identity.
+		moved := declared
+		moved.Env = map[string]string{"HOME": declaredHome + "-2", "GOENV": declaredGoEnv}
+		if digestScratchGroupEnvironment(first, moved, groupTestEnvironment(first, moved)) == firstDigests["declared"] {
+			t.Fatal("declared HOME digested as a managed token")
+		}
+		// A variable claiming a generated-looking value is not normalized unless
+		// it equals this descriptor's path for this group.
+		forged := append(groupTestEnvironment(first, groups[1]), "HOME="+filepath.Join(secondRun.Root(), "groups", groups[1].ID, scratchEnvironmentDir, "home"))
+		if digestScratchGroupEnvironment(first, groups[1], forged) == firstDigests[groups[1].ID] {
+			t.Fatal("foreign root path normalized")
+		}
+		// Changed inherited config, or a changed declared config, invalidates.
+		if err := os.WriteFile(fixture.goEnv, []byte("GOFLAGS=-mod=vendor\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(declaredGoEnv, []byte("GOFLAGS=-x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		third, _ := prepareScratchEnv(t, fixture.control, scratchEnvRequest(fixture.base, groups))
+		for id, digest := range scratchEnvDigests(third) {
+			if digest == firstDigests[id] {
+				t.Errorf("%s identity survived a Go env change", id)
+			}
+		}
+		// The worker rejects a declared config that changed after preparation.
+		if err := ValidateScratchEnvironment(first, firstRun); err == nil {
+			t.Fatal("changed declared GOENV accepted")
+		}
+		// Legacy callers keep the legacy digest.
+		legacy := scratchEnvRequest(fixture.base, groups)
+		if digestScratchGroupEnvironment(legacy, groups[0], groupTestEnvironment(legacy, groups[0])) != digestGroupEnvironment(groups[0], groupTestEnvironment(legacy, groups[0])) {
+			t.Fatal("legacy digest changed")
+		}
+		// Root cleanup removes owned bytes; the declared home is untouched.
+		if err := secondRun.Cleanup(nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(secondRun.Root()); !os.IsNotExist(err) {
+			t.Fatalf("run root survived cleanup: %v", err)
+		}
+	})
 	if contents, err := os.ReadFile(sentinel); err != nil || string(contents) != "user" {
 		t.Fatalf("declared HOME sentinel: %q %v", contents, err)
 	}
