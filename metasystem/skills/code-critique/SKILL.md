@@ -89,7 +89,8 @@ must name the artifact it would change; a finding that fails the artifact
 test is demoted at registration. If material findings remain, do not certify
 the change. Only an approved token raising the goal's five-member tuple can
 raise its stored review-round member, never above the three-round ceiling;
-the next `metasystem work review` of an open chain carries the raised member onto its root. When
+the chain's next follow-up (`metasystem work revise j2:<review>`) or close (`metasystem work review j2:<job> --dispositions`,
+`metasystem work finish`) first carries the raised member onto every critic root reviewing the implementation. When
 the rounds are spent, closing the review (inside `metasystem work review`) sends exhausted bounded
 findings to review obligations on the goal (discharged later by `metasystem work review <goal> --review R --finding F --test NAME`) and closes after a human records `metasystem goal accept-risk <goal> --finding F --review R --reason <text>` for the rest; while a severe or unproven finding stands, stop
 with the work waiting on the human. Never dispatch a silent fourth round.

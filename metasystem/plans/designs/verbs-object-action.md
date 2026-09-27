@@ -405,9 +405,13 @@ review|recertify|merge [--test-command C] [--recertification R]`, or
 `receipt add --corrects EPOCH:SHA1` names the corrected line by the epoch and
 SHA-1 the receipt owner already keys it by. `test status` takes `--tree T` for
 retained proof and `--result FILE --expensive-ms N` for a recorded result's
-cost (the old `test report`). The review flows' follow-up of a critic chain
-rebinds its round budget first (`CritiqueBudgetRebind`, idempotent); register
-close already ran inside the close owner. `settings check` validates the
+cost (the old `test report`). Every follow-up and every close
+of a chain first rebinds the round budget of each open critic root it
+continues (`CritiqueChainBudgetRebind`: the root itself when it is a critic's,
+else every code-critic or warden root reviewing the implementation chain, the
+selection `CritiqueExhaustionAdvance` inspects); a root whose goal is no longer
+claimed keeps its stored limit, and any other rebind failure refuses the
+follow-up or close. Register close already ran inside the close owner. `settings check` validates the
 testing contract and its declared tools in process; it does not run native
 discovery, which waits for the host's heavy proof lease (a test run resolves
 native tests when it runs). `system check` reports the
