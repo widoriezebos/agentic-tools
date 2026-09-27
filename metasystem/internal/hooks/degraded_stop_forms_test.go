@@ -28,6 +28,7 @@ type degradedFormRow struct {
 // the golden contract: every admitted form, in order, each one JSON object of
 // the right shape, and every inadmissible request refused.
 func TestDegradedStopFormsMatchTheGoldenContract(t *testing.T) {
+	t.Parallel()
 	root := degradedModuleRoot(t)
 	golden, err := os.ReadFile(filepath.Join(root, degradedGolden))
 	if err != nil {
@@ -83,6 +84,7 @@ func TestDegradedStopFormsMatchTheGoldenContract(t *testing.T) {
 // TestStubCarriesTheGeneratedDegradedForms proves the plumbing stub's copy of
 // the forms it prints when no engine can run: each is the renderer's.
 func TestStubCarriesTheGeneratedDegradedForms(t *testing.T) {
+	t.Parallel()
 	root := degradedModuleRoot(t)
 	stub := degradedRead(t, filepath.Join(root, degradedHook))
 	block, before, after := degradedMarkedBlock(t, stub, "# BEGIN GENERATED degraded forms (internal/hooks renders them; do not edit)", "# END GENERATED degraded forms")
@@ -116,6 +118,7 @@ func TestStubCarriesTheGeneratedDegradedForms(t *testing.T) {
 // golden contract, the stub's generated block and the shipped launcher
 // fallback carry the text.
 func TestDegradedFormsHaveOneSource(t *testing.T) {
+	t.Parallel()
 	root := degradedModuleRoot(t)
 	allowed := map[string]bool{
 		"internal/hooks/degraded_forms.go":                   true,
@@ -159,6 +162,7 @@ func TestDegradedFormsHaveOneSource(t *testing.T) {
 // TestBootstrapFallbackIsGeneratedFromTheDeclarations proves the shipped
 // Claude Stop launcher's fallback is the renderer's bootstrap form.
 func TestBootstrapFallbackIsGeneratedFromTheDeclarations(t *testing.T) {
+	t.Parallel()
 	root := degradedModuleRoot(t)
 	want := "printf '%s\\n' '" + mustForm(t, "allowed", "bootstrap-failed") + "'"
 	command := degradedClaudeStopCommand(t, filepath.Join(root, degradedTemplate))

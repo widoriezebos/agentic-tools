@@ -52,6 +52,7 @@ func finishDirect(t *testing.T, setup func(*startRun), family, key string, stdou
 
 // hook-start-case: every catalog key is published with its own status.
 func TestHookStartDeclaredOutcomeMatrix(t *testing.T) {
+	t.Parallel()
 	statuses := map[string]int{"invocation-invalid": 2, "runtime-unregistered": 2, "custody-unreadable": 1, "interrupted": 143}
 	for key := range StartOutcomeNotices {
 		t.Run(key, func(t *testing.T) {
@@ -100,6 +101,7 @@ func channelContext(payload string) func(*startRun) {
 }
 
 func TestHookStartContextOutcomeShapes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, outcome string
 		setup         func(*startRun)
@@ -129,6 +131,7 @@ func TestHookStartContextOutcomeShapes(t *testing.T) {
 }
 
 func TestHookStartJSONEncoder(t *testing.T) {
+	t.Parallel()
 	message := "quote\" slash\\ newline\n tab\t carriage\r back\b form\f utf8 héllo \x01"
 	run := finishDirect(t, func(s *startRun) { s.notices = message }, "intentional", "notices-ready", nil)
 	encoded, err := json.Marshal(map[string]string{"systemMessage": message})
@@ -261,6 +264,7 @@ func fullPathOps(t *testing.T, installation hookInstallation, mode string) *fake
 
 // hook-start-case: the full start path publishes each intentional shape.
 func TestHookStartIntentionalFullPathFixtures(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		mode, stdout, stderr  string
 		context, acknowledged bool
@@ -351,6 +355,7 @@ func appendSystemMessage(object, line string) string {
 
 // hook-start-case: each reachable failure branch publishes its notice.
 func TestHookStartFailureBranchFixtures(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		key, mode, runtime string
 		payload            string
@@ -441,6 +446,7 @@ func (failingReader) Read([]byte) (int, error) { return 0, errors.New("input clo
 
 // hook-start-case: a brain failure still arms and publishes wait rows.
 func TestHookStartBrainFailureKeepsWaitLine(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"brain-boot", "brain-timeout"} {
 		t.Run(mode, func(t *testing.T) {
 			installation := newHookInstallation(t)
@@ -480,6 +486,7 @@ func TestHookStartBrainFailureKeepsWaitLine(t *testing.T) {
 }
 
 func TestHookStartForgedDelegateHintRefuses(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := fullPathOps(t, installation, "healthy")
 	run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: "{}\n", env: map[string]string{
@@ -498,6 +505,7 @@ func TestHookStartForgedDelegateHintRefuses(t *testing.T) {
 // hook-start-case: the engine-skew notice for an engine whose state-root
 // answer is refused or malformed.
 func TestEngineSkewStartFixture(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		answer string
@@ -525,6 +533,7 @@ func TestEngineSkewStartFixture(t *testing.T) {
 // hook-start-case: after publication, failed bookkeeping or a signal is
 // reported on stderr with status 1; a signal before publication interrupts.
 func TestHookStartPostPreparationFixtures(t *testing.T) {
+	t.Parallel()
 	bookkeeping := startBookkeepingNotice + "\n"
 	context := `{"hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n"
 	t.Run("acknowledgment-failure", func(t *testing.T) {
@@ -566,6 +575,7 @@ func TestHookStartPostPreparationFixtures(t *testing.T) {
 // hook-start-case: an unexpected failure inside the start still publishes
 // the last-resort notice.
 func TestHookStartUnexpectedTerminationPublishesTheLastResort(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	ops.stewardPending = func(string) (string, int) { panic("unexpected owner failure") }
@@ -578,6 +588,7 @@ func TestHookStartUnexpectedTerminationPublishesTheLastResort(t *testing.T) {
 // hook-start-case: HUP, INT and TERM interrupt with their own statuses, also
 // while the outcome is being finalized.
 func TestHookStartSignalsUseOwnedStatuses(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		signal os.Signal
 		status int
@@ -617,6 +628,7 @@ func (closedWriter) Write([]byte) (int, error) { return 0, syscall.EBADF }
 
 // hook-start-case: with stdout closed the last resort goes to stderr, 74.
 func TestHookStartLastResortUsesStderrWhenStdoutIsClosed(t *testing.T) {
+	t.Parallel()
 	run := finishDirect(t, nil, "notice", "response-rendering", closedWriter{})
 	if run.status != 74 || run.stderr != startFallback+"\n" {
 		t.Fatalf("closed stdout = status %d stderr %q", run.status, run.stderr)
@@ -624,6 +636,7 @@ func TestHookStartLastResortUsesStderrWhenStdoutIsClosed(t *testing.T) {
 }
 
 func TestHookStartPublishesThroughOpenStdoutWithUnwritableModeBits(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, key, expected string }{
 		{"declared-notice", "installation-validation", noticeOf("installation-validation")},
 		{"emergency-fallback", "undeclared", startFallback + "\n"},

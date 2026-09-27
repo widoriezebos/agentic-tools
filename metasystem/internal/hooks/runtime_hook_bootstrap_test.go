@@ -12,6 +12,7 @@ import (
 // one leaves it stale for the next claimant, and a fence of any other shape
 // is refused rather than guessed at.
 func TestBootstrapFenceClaim(t *testing.T) {
+	t.Parallel()
 	alive := func(pid int) bool { return pid == os.Getpid() }
 	holder := func(t *testing.T, installation string) string {
 		t.Helper()

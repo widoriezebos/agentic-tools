@@ -116,6 +116,7 @@ func (b stubBed) recorded(t *testing.T) string {
 }
 
 func TestStubExecsTheEngineEntry(t *testing.T) {
+	t.Parallel()
 	bed := newStubBed(t, stubFakeEngine)
 	status, stdout, stderr := bed.run(t, bed.script, "claude", "stop", "payload one\npayload two\n", "STUB_ENGINE_STATUS=23")
 	if status != 23 || stdout != "engine stdout\n" || stderr != "" {
@@ -141,6 +142,7 @@ func TestStubExecsTheEngineEntry(t *testing.T) {
 // The override engine runs the turn only while the installation carries its
 // own engine: a missing canonical engine is never waived.
 func TestStubOverrideNeedsTheInstallationEngine(t *testing.T) {
+	t.Parallel()
 	bed := newStubBed(t, stubFakeEngine)
 	override := filepath.Join(t.TempDir(), "override")
 	if err := testexec.WriteFile(override, []byte(stubFakeEngine), 0o755); err != nil {
@@ -162,6 +164,7 @@ func TestStubOverrideNeedsTheInstallationEngine(t *testing.T) {
 // With no engine and no way to build one, every event answers with its
 // fixed degraded response and nothing is written.
 func TestStubDegradedFallbacks(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		event, stdout string
 	}{
@@ -184,6 +187,7 @@ func TestStubDegradedFallbacks(t *testing.T) {
 
 // Without an engine the stub still refuses what the hook never serves.
 func TestStubDegradedRefusesInvalidInvocations(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ runtime, event string }{
 		{"codex", "tool"}, {"devin", "tool"}, {"Bad", "stop"}, {"claude", "bogus"}, {"claude", ""},
 	} {
@@ -200,6 +204,7 @@ func TestStubDegradedRefusesInvalidInvocations(t *testing.T) {
 // after the build uses the rebuilt engine. Builds hand off through FIFOs, so
 // nothing here waits on elapsed time.
 func TestStubRebuildsDetachedForAnEngineOlderThanTheEntry(t *testing.T) {
+	t.Parallel()
 	old := strings.Replace(stubFakeEngine, `exit "${STUB_ACCEPTS_STATUS:-0}"`, `echo 'metasystem: unknown command "hook"' >&2; exit 2`, 1)
 	build := `#!/usr/bin/env bash
 printf 'build %s pid=%s\n' "$PWD" "$$" >>"${STUB_BUILD_RECORD:?}"
@@ -357,6 +362,7 @@ read -r _ <"$STUB_LN_HOLD" || true
 // A linked worktree's hook runs its primary checkout's engine; a hook copied
 // or linked outside an installation is governed by nothing.
 func TestStubResolvesTheInstallationEngine(t *testing.T) {
+	t.Parallel()
 	primary := newStubBed(t, stubFakeEngine)
 	worktreeTop, _ := filepath.EvalSymlinks(t.TempDir())
 	source, _ := os.ReadFile(primary.script)
@@ -400,6 +406,7 @@ func TestStubResolvesTheInstallationEngine(t *testing.T) {
 // The shipped Claude Stop launcher, run where the hook cannot start at all,
 // allows the Stop with the bootstrap form and never blocks.
 func TestShippedStopLauncherAllowsWhenTheHookCannotStart(t *testing.T) {
+	t.Parallel()
 	command := degradedClaudeStopCommand(t, filepath.Join(degradedModuleRoot(t), degradedTemplate))
 	run := exec.Command("bash", "-c", command)
 	run.Dir = t.TempDir()

@@ -19,6 +19,7 @@ import (
 // Every runtime's lifecycle passes the session it was given, or says it had
 // none; the start carries its source and SessionEnd retires.
 func TestHookSessionArgs(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		event, payload string
 		present        bool
@@ -70,6 +71,7 @@ func TestHookSessionArgs(t *testing.T) {
 // A Claude hook imported by a host whose process another runtime owns stays
 // silent on every event and touches no coordinator or brain state.
 func TestImportedClaudeHookSkipsAnotherRuntimesProcess(t *testing.T) {
+	t.Parallel()
 	for _, event := range []string{"start", "receipt", "stop", "end"} {
 		t.Run(event, func(t *testing.T) {
 			installation := newHookInstallation(t)
@@ -102,6 +104,7 @@ func assertNoBrainEffects(t *testing.T, ops *fakeOps) {
 
 // A local delegate proven by exact custody skips before runtime discovery.
 func TestUnhintedLocalDelegateSkipsBeforeBrainEffects(t *testing.T) {
+	t.Parallel()
 	for _, event := range []string{"start", "receipt", "stop", "end"} {
 		t.Run(event, func(t *testing.T) {
 			installation := newHookInstallation(t)
@@ -128,6 +131,7 @@ func TestUnhintedLocalDelegateSkipsBeforeBrainEffects(t *testing.T) {
 // the launcher's custody authenticates them, even concurrently; a forged or
 // incomplete hint refuses instead of skipping.
 func TestHintedDelegateChildrenAndForgedHints(t *testing.T) {
+	t.Parallel()
 	for _, runtime := range []string{"claude", "codex", "devin"} {
 		for _, event := range []string{"start", "receipt", "stop", "end"} {
 			t.Run(runtime+"-"+event, func(t *testing.T) {
@@ -175,6 +179,7 @@ func TestHintedDelegateChildrenAndForgedHints(t *testing.T) {
 
 // Cold and mission hosts that no delegate custody names reach enrollment.
 func TestColdHostsAreNotSuppressedByDelegateClassification(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", payload: `{"session_id":"equal-session"}`})
@@ -185,6 +190,7 @@ func TestColdHostsAreNotSuppressedByDelegateClassification(t *testing.T) {
 
 // Unreadable local custody evidence refuses rather than guessing.
 func TestLocalCustodyEvidenceUnreadableRefuses(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	ops.hookDelegate = func(string, string, string, int) (string, int) { return "", 1 }
@@ -195,6 +201,7 @@ func TestLocalCustodyEvidenceUnreadableRefuses(t *testing.T) {
 }
 
 func TestReceiptEventSurfacesTheRetroCadence(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		status int
 		want   string
@@ -216,6 +223,7 @@ func TestReceiptEventSurfacesTheRetroCadence(t *testing.T) {
 // SessionEnd retires the unused Stop authorization before the announcement,
 // names every failure, and never arms an unidentified process.
 func TestSessionEndRetiresAuthorizationThenAnnouncement(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	ops.stewardPending = func(string) (string, int) { return "2 undelivered; newest: incident\n", 0 }
@@ -245,6 +253,7 @@ func TestSessionEndRetiresAuthorizationThenAnnouncement(t *testing.T) {
 // owner; an unregistered runtime or a failed registry refuses; a missing,
 // unvalidated or skewed engine answers Stop with its fixed allowance.
 func TestLifecycleEarlyBoundary(t *testing.T) {
+	t.Parallel()
 	stopForm := func(cause string) string { return mustForm(t, "allowed", cause) + "\n" }
 	tests := []struct {
 		name, runtime, event, payload string
@@ -306,6 +315,7 @@ func TestLifecycleEarlyBoundary(t *testing.T) {
 // Session hygiene happens once at the boundary: an unsafe session string is
 // replaced by its sha256 everywhere downstream.
 func TestLifecycleHashesUnsafeSessions(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"../../evil"}`})
@@ -318,6 +328,7 @@ func TestLifecycleHashesUnsafeSessions(t *testing.T) {
 // The payload's cwd never redirects evidence: the state world is the
 // engine-validated installation.
 func TestStopEvidenceStaysInTheResolvedWorld(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	elsewhere := t.TempDir()
 	ops := newFakeOps(t, installation)
@@ -334,6 +345,7 @@ func TestStopEvidenceStaysInTheResolvedWorld(t *testing.T) {
 // A Stop from a nested installation or a linked worktree runs the same turn
 // against the resolved world.
 func TestStopFromALinkedWorktreeCompletesInThePrimary(t *testing.T) {
+	t.Parallel()
 	primary := newHookInstallation(t)
 	worktreeTop, _ := filepath.EvalSymlinks(t.TempDir())
 	harness := filepath.Join(worktreeTop, "metasystem")

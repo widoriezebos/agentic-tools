@@ -50,6 +50,7 @@ func presentedFailures(t *testing.T, ops *fakeOps) string {
 // The healthy turn end: one presented payload, the elapsed response trail,
 // the digest cursor advanced and the completion recorded with its report.
 func TestStopEmitsThePresentedVerdict(t *testing.T) {
+	t.Parallel()
 	started := time.Now().Add(-3 * time.Second).Unix()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
@@ -92,6 +93,7 @@ func TestStopEmitsThePresentedVerdict(t *testing.T) {
 // A retained block reaches the runtime through the runtime's own mapper,
 // once per outcome, and the verdict's watchdog and repeat state ride along.
 func TestStopBlockReachesTheRuntimeMapper(t *testing.T) {
+	t.Parallel()
 	_, ops, run := stopOnce(t, func(ops *fakeOps) {
 		ops.verdict = strings.Replace(ops.verdict, `"shouldBlock":false`, `"shouldBlock":true`, 1)
 		ops.verdict = strings.Replace(ops.verdict, `"surfaceWatchdog":false`, `"surfaceWatchdog":true`, 1)
@@ -115,6 +117,7 @@ func TestStopBlockReachesTheRuntimeMapper(t *testing.T) {
 // with their degraded diagnostic; an early failure ends the worker for the
 // deadline parent to convert.
 func TestStopPreVerdictFailuresAllow(t *testing.T) {
+	t.Parallel()
 	bare := mustForm(t, "allowed", "bare") + "\n"
 	t.Run("runtime registry", func(t *testing.T) {
 		_, _, run := stopOnce(t, func(ops *fakeOps) { ops.runtimeNames = func() (string, int) { return "", 41 } }, "")
@@ -180,6 +183,7 @@ func TestStopPreVerdictFailuresAllow(t *testing.T) {
 // A re-arm notice is keyed from up's aggregate line; a later failure cannot
 // erase the re-arm, and absence invents none.
 func TestStopRearmNotices(t *testing.T) {
+	t.Parallel()
 	notices := func(t *testing.T, ops *fakeOps) string {
 		t.Helper()
 		return ops.captured[0].notices
@@ -229,6 +233,7 @@ func TestStopRearmNotices(t *testing.T) {
 // Infrastructure failures allow on every occurrence and keep their stable
 // cause, count, component detail, remedy and hook-log line.
 func TestStopRepeatedInfrastructureAllows(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	armingFailure := func(ops *fakeOps) {
 		ops.up = func(_ UpRequest, stdout, stderr io.Writer) int {
@@ -275,6 +280,7 @@ func TestStopRepeatedInfrastructureAllows(t *testing.T) {
 // A dynamic diagnostic rides the notices while the occurrence identity stays
 // the stable cause.
 func TestStopMissingFactsKeepsTheStableOccurrence(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	for occurrence := 1; occurrence <= 2; occurrence++ {
 		ops := newFakeOps(t, installation)
@@ -296,6 +302,7 @@ func TestStopMissingFactsKeepsTheStableOccurrence(t *testing.T) {
 
 // Each captured fact's failure is a named condition with its own line.
 func TestStopCapturedFactFailures(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		configure func(*fakeOps)
@@ -353,6 +360,7 @@ func TestStopCapturedFactFailures(t *testing.T) {
 
 // An unreadable refusal record never recreates a blocking loop.
 func TestStopUnreadableRefusalRecordAllows(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	record := filepath.Join(installation.root, "artifacts", "agents", "supervision", "stop-refusals", "broken-refusal-record.json")
 	if err := os.MkdirAll(filepath.Dir(record), 0o755); err != nil {
@@ -384,6 +392,7 @@ func TestStopUnreadableRefusalRecordAllows(t *testing.T) {
 // A verdict whose own state is unreadable is published as the degraded
 // infrastructure display, never an all-clear.
 func TestStopInfrastructureVerdictClass(t *testing.T) {
+	t.Parallel()
 	installation, ops, run := stopOnce(t, func(ops *fakeOps) {
 		ops.verdict = `{"schemaVersion":1,"class":"infrastructure","causeCode":"turn-verdict-state","component":"verdict-state","shouldBlock":false,"display":"turn verdict state unreadable","surfaceWatchdog":false,"idleRefusal":false,"brainStatusDue":false}`
 	}, "")
@@ -408,6 +417,7 @@ func TestStopInfrastructureVerdictClass(t *testing.T) {
 // A read-only advisor skips the seat judgment but still publishes its
 // pointer and report before the delivery cursors advance.
 func TestStopAdvisorDelivery(t *testing.T) {
+	t.Parallel()
 	_, ops, run := stopOnce(t, func(ops *fakeOps) {
 		ops.classify = func(string, string, int) (string, int) {
 			return `{"class":"MAIN","holder":false,"mainId":"advisor-main","announcement":{"ownerLineage":"advisor-lineage"}}`, 0
@@ -438,6 +448,7 @@ func TestStopAdvisorDelivery(t *testing.T) {
 // An older completion owner that refuses the elapsed measurement is retried
 // once without it.
 func TestStopCompletionRetriesWithoutElapsedOnce(t *testing.T) {
+	t.Parallel()
 	_, ops, _ := stopOnce(t, func(ops *fakeOps) {
 		ops.hookComplete = func(request HookCompletion) int {
 			if request.HasElapsed {
@@ -453,6 +464,7 @@ func TestStopCompletionRetriesWithoutElapsedOnce(t *testing.T) {
 
 // A payload that cannot be emitted is recorded as such.
 func TestStopEmissionFailureIsRecorded(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	runHook(t, installation, ops, hookCall{runtime: "claude", event: "stop", payload: `{"session_id":"s"}`, stdout: closedWriter{}})
@@ -467,6 +479,7 @@ func TestStopEmissionFailureIsRecorded(t *testing.T) {
 // A Stop with no identified runtime runs only the restricted recovery and
 // never classifies a holder.
 func TestStopWithoutIdentityRecoversOnly(t *testing.T) {
+	t.Parallel()
 	_, ops, run := stopOnce(t, func(ops *fakeOps) {
 		ops.findAncestor = func(string, int, string, bool) (string, int) { return "", 1 }
 		ops.classify = func(string, string, int) (string, int) { return "", 1 }
@@ -482,6 +495,7 @@ func TestStopWithoutIdentityRecoversOnly(t *testing.T) {
 
 // A holder view without its optional presentation projection is healthy.
 func TestStopHolderWithoutOptionalProjection(t *testing.T) {
+	t.Parallel()
 	installation, ops, _ := stopOnce(t, func(ops *fakeOps) {
 		ops.classify = func(string, string, int) (string, int) {
 			return `{"class":"HOLDER","holder":true,"mainId":"main-fixture"}`, 0

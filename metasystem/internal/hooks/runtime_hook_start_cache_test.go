@@ -31,6 +31,7 @@ func readEngineCache(t *testing.T, installation hookInstallation) (string, os.Fi
 // engine cache first, replaced by rename; an unwritable cache directory
 // fails open and changes nothing about the response.
 func TestHookStartToolEngineCache(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	ops.runtimeNames = func() (string, int) { return "fake\n", 0 }
@@ -71,6 +72,7 @@ func TestHookStartToolEngineCache(t *testing.T) {
 
 // A session owned by another runtime leaves no cache anywhere.
 func TestHookStartForeignRuntimeWritesNoCache(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	ops.identityRuntime = "devin"
@@ -86,6 +88,7 @@ func TestHookStartForeignRuntimeWritesNoCache(t *testing.T) {
 // A linked worktree's hook maps to the same installation under its primary
 // checkout; a failed identification never passes as an ordinary checkout.
 func TestHookWorldInstallationMapsLinkedWorktrees(t *testing.T) {
+	t.Parallel()
 	primary := newHookInstallation(t)
 	worktree := t.TempDir()
 	worktree, _ = filepath.EvalSymlinks(worktree)
@@ -128,6 +131,7 @@ func TestHookWorldInstallationMapsLinkedWorktrees(t *testing.T) {
 // A template layout: the hook's installation is nested under the Git top,
 // and an ordinary checkout maps to itself.
 func TestHookStartNestedInstallationReachesArming(t *testing.T) {
+	t.Parallel()
 	outer := t.TempDir()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
@@ -150,6 +154,7 @@ func TestHookStartNestedInstallationReachesArming(t *testing.T) {
 // The start boundary checks engine provenance before any owner call: a
 // missing installation engine, or a missing override, is the one notice.
 func TestHookStartMissingEngine(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name     string
 		override string
@@ -182,6 +187,7 @@ func TestHookStartMissingEngine(t *testing.T) {
 // plan holds the rebuild; a rebuild that cannot start is a notice and the
 // start continues on the enrolled engine.
 func TestHookStartBootstrapsAnEngineBehindTheLandedSources(t *testing.T) {
+	t.Parallel()
 	t.Run("detached rebuild ends the start", func(t *testing.T) {
 		installation := newHookInstallation(t)
 		ops := newFakeOps(t, installation)

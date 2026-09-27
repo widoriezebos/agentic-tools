@@ -38,7 +38,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision": 4,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/governance": 6,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/hooks": 32,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/hooks": 24,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/host": 34,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/hostload": 4,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup": 14,

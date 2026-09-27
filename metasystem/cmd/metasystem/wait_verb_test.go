@@ -1329,6 +1329,10 @@ type pendingWaitHookOwners struct {
 	upRequests []hooks.UpRequest
 }
 
+// EngineBehind keeps the generation cutover out of these runs: the fixture
+// installation's engine is the one under test, never behind its sources.
+func (pendingWaitHookOwners) EngineBehind(string, string) (bool, error) { return false, nil }
+
 func (o *pendingWaitHookOwners) Up(request hooks.UpRequest, stdout, stderr io.Writer) int {
 	o.upRequests = append(o.upRequests, request)
 	if o.fakeUp {

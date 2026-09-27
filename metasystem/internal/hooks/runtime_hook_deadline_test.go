@@ -102,6 +102,7 @@ func runDeadline(t *testing.T, installation hookInstallation, ops *fakeOps, test
 }
 
 func TestDeadlineParentPublishesAValidWorkerResponse(t *testing.T) {
+	t.Parallel()
 	for _, output := range []string{
 		`{"systemMessage":"Just completed: fixture"}`,
 		`{"decision":"block","reason":"fixture block"}`,
@@ -127,6 +128,7 @@ func TestDeadlineParentPublishesAValidWorkerResponse(t *testing.T) {
 // The worker's intentional skip (a delegate, another runtime's session) is a
 // silent Stop, even after a delay.
 func TestDeadlineParentPassesTheSkipQuietly(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	release := makeFIFO(t, "release")
 	go releaseFIFO(release)
@@ -141,6 +143,7 @@ func TestDeadlineParentPassesTheSkipQuietly(t *testing.T) {
 // shapes are answered with the fixed unreadable-output allowance and one
 // condition line under the resolved installation.
 func TestDeadlineParentRejectsUnreadableOutput(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		worker map[string]string
@@ -174,6 +177,7 @@ func TestDeadlineParentRejectsUnreadableOutput(t *testing.T) {
 // notice, the occurrence is recorded and counted, and the launch-to-cleanup
 // measurement is retained.
 func TestDeadlineExpiryAllowsAndRecords(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	var clock atomic.Int64
@@ -211,6 +215,7 @@ func TestDeadlineExpiryAllowsAndRecords(t *testing.T) {
 // A worker that published its verdict before the deadline keeps it: a
 // complete response is already a safe decision.
 func TestDeadlinePublicationRaceKeepsTheVerdict(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	output := `{"decision":"block","reason":"published before the deadline"}`
@@ -227,6 +232,7 @@ func TestDeadlinePublicationRaceKeepsTheVerdict(t *testing.T) {
 // Failure to record the refusal, or to log the condition, is a qualifier on
 // the one fixed allowance, never a block.
 func TestDeadlineRecordAndLogFailures(t *testing.T) {
+	t.Parallel()
 	t.Run("record", func(t *testing.T) {
 		installation := newHookInstallation(t)
 		ops := newFakeOps(t, installation)
@@ -259,6 +265,7 @@ func TestDeadlineRecordAndLogFailures(t *testing.T) {
 // With the installation's engine gone the parent accepts exactly the
 // worker's fixed missing-engine allowance and logs nothing.
 func TestDeadlineMissingEngineAcceptsTheWorkersAllowance(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	if err := os.Remove(filepath.Join(installation.root, "bin", "metasystem")); err != nil {
 		t.Fatal(err)
@@ -273,6 +280,7 @@ func TestDeadlineMissingEngineAcceptsTheWorkersAllowance(t *testing.T) {
 // An installation outside Git never guesses a governed world: the worker's
 // silence is answered with the unresolved allowance and nothing is written.
 func TestDeadlineWithoutAWorldWritesNothing(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	ops.git = func(...string) (string, error) { return "", fmt.Errorf("not a git repository") }
@@ -287,6 +295,7 @@ func TestDeadlineWithoutAWorldWritesNothing(t *testing.T) {
 
 // The budget accepts four to sixty seconds; anything else is sixty.
 func TestDeadlineBudgetValidation(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		input string
 		want  int64
@@ -307,6 +316,7 @@ func TestDeadlineBudgetValidation(t *testing.T) {
 // Installation lookup is inside the worker budget: setup that consumed the
 // worker window leaves no fresh window, so a hung worker expires at once.
 func TestDeadlineSetupConsumesTheWorkerWindow(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	var consumed atomic.Bool
@@ -333,6 +343,7 @@ func TestDeadlineSetupConsumesTheWorkerWindow(t *testing.T) {
 // A decoded session may carry a newline: the payload's text never becomes
 // the state root for the log or the record.
 func TestDeadlineSessionTextNeverBecomesTheStateRoot(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	injected := t.TempDir()
 	payload := fmt.Sprintf(`{"session_id":"deadline-coordinate\u000a%s","hook_event_name":"Stop"}`, injected)
@@ -351,6 +362,7 @@ func TestDeadlineSessionTextNeverBecomesTheStateRoot(t *testing.T) {
 // the answer instead of treating it as no checkout; a resolver that never
 // answers within the budget leaves the coordinates unresolved.
 func TestDeadlineSlowResolution(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	ops := newFakeOps(t, installation)
 	release := make(chan struct{})
@@ -384,6 +396,7 @@ func TestDeadlineSlowResolution(t *testing.T) {
 // A worker that survives TERM is killed; without a terminal acknowledgement
 // the parent keeps custody evidence, says so, and still answers at once.
 func TestDeadlineKillWithoutTerminalAcknowledgement(t *testing.T) {
+	t.Parallel()
 	installation := newHookInstallation(t)
 	temp := t.TempDir()
 	run, _ := runDeadline(t, installation, newFakeOps(t, installation), deadlineCase{deadline: true, tempDir: temp,

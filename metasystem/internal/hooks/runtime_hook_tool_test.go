@@ -23,6 +23,7 @@ func writeToolCache(t *testing.T, root, body string) {
 }
 
 func TestHookToolGate(t *testing.T) {
+	t.Parallel()
 	type execCall struct {
 		path string
 		argv []string

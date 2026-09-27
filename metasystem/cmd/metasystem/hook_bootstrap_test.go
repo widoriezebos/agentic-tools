@@ -21,6 +21,7 @@ import (
 // waits. The build is a fixture script that hands off through FIFOs, so the
 // test never waits on elapsed time.
 func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
+	t.Parallel()
 	installation := t.TempDir()
 	fifo := func(name string) string {
 		path := filepath.Join(t.TempDir(), name)
@@ -35,18 +36,14 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 			_ = file.Close()
 		}
 	})
-	t.Setenv("HOOK_BOOTSTRAP_TEST_RELEASE", release)
-	t.Setenv("HOOK_BOOTSTRAP_TEST_DONE", done)
-	t.Setenv("HOOK_BOOTSTRAP_TEST_RECORD", record)
 	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := testexec.WriteFile(filepath.Join(installation, "scripts", "agents", "go-build.sh"), []byte(`#!/usr/bin/env bash
-printf '%s\n' "$$" >>"$HOOK_BOOTSTRAP_TEST_RECORD"
-read -r _ <"$HOOK_BOOTSTRAP_TEST_RELEASE" || true
-echo "go-build: bin/metasystem @ fixture"
-printf 'done\n' >"$HOOK_BOOTSTRAP_TEST_DONE"
-`), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(installation, "scripts", "agents", "go-build.sh"), []byte("#!/usr/bin/env bash\n"+
+		"printf '%s\\n' \"$$\" >>"+shellQuote(record)+"\n"+
+		"read -r _ <"+shellQuote(release)+" || true\n"+
+		"echo 'go-build: bin/metasystem @ fixture'\n"+
+		"printf 'done\\n' >"+shellQuote(done)+"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
