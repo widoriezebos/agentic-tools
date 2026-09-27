@@ -242,4 +242,8 @@ type DeadlineDeps struct {
 	// fixture event for this installation (nil channel: no fixture). An
 	// error refuses the typed wait, as an unauthorized fixture event did.
 	FixtureDeadline func(ctx context.Context, installation string) (<-chan time.Time, error)
+	// ResolverAnswered, when set, is called once the record-coordinate
+	// resolver has answered and its answer is adoptable, so a fixture can
+	// order its deadline after the answer instead of racing the scheduler.
+	ResolverAnswered func()
 }

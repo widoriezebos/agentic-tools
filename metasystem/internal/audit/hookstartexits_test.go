@@ -81,6 +81,7 @@ func TestAuditHookStartExitsRejectsBypasses(t *testing.T) {
 		{"undeclared notice", inject(`s.finish("notice", "undeclared")`), `notice outcome "undeclared" is not declared`},
 		{"undeclared intentional", inject(`s.finish("intentional", "undeclared")`), `intentional outcome "undeclared" is not declared`},
 		{"runtime outcome", inject(`s.finish("notice", s.session)`), "names its outcome at run time"},
+		{"wrong arity", inject(`s.finish("notice")`), "names its outcome at run time"},
 		{"unknown family", inject(`s.finish("other", "arming")`), `family "other"`},
 		{"direct publication", inject(`_ = writeLine(s.inv.Stdout, "{}")`), "reaches stdout outside the outcome owner"},
 		{"no recovery", strings.Replace(source, `s.finish("notice", "unexpected-termination")`+"\n\t\t}", "_ = 0\n\t\t}", 1), "start unexpected termination"},
@@ -109,4 +110,14 @@ func TestAuditHookStartExitsRejectsMissingCoverage(t *testing.T) {
 	}
 	requireHookStartFinding(t, source, strings.Replace(assertions, "range StartOutcomeNotices", "range []string{}", 1), "declared outcome matrix")
 	requireHookStartFinding(t, source, strings.Replace(assertions, `{"foreign-runtime",`, `{"renamed-runtime",`, 1), `intentional outcome "foreign-runtime" has no executed case`)
+}
+
+// The command prints each finding as one line: invariant, then the position,
+// then the detail.
+func TestHookStartExitFindingPrintsOneLine(t *testing.T) {
+	t.Parallel()
+	finding := HookStartExitFinding{Path: hookStartSourcePath, Line: 12, Invariant: "start exit", Detail: "main ends the start outside the outcome owner"}
+	if got, want := finding.String(), "start exit: "+hookStartSourcePath+":12: main ends the start outside the outcome owner"; got != want {
+		t.Fatalf("finding line = %q, want %q", got, want)
+	}
 }

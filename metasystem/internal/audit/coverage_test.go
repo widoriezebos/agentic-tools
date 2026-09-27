@@ -41,6 +41,7 @@ func TestParseCoverageRejectsMalformedAndMismatchedJSONL(t *testing.T) {
 		"malformed":      `{"Action":"output"`,
 		"mismatch":       `{"Action":"output","Package":"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter","Test":"","Output":"ok  \tgithub.com/widoriezebos/agentic-tools/metasystem/internal/dispatch\t0.000s\tcoverage: 99.0% of statements\n"}`,
 		"test spoof":     `{"Action":"output","Package":"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter","Test":"TestSpoof","Output":"ok  \tgithub.com/widoriezebos/agentic-tools/metasystem/internal/adapter\t0.000s\tcoverage: 99.0% of statements\n"}`,
+		"foreign key":    `{"Action":"output","Package":"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter","Time":"2026-09-22T00:00:00Z","Output":"ok  \tgithub.com/widoriezebos/agentic-tools/metasystem/internal/adapter\t0.000s\tcoverage: 99.0% of statements\n"}`,
 		"ordinary event": `{"Time":"2026-09-22T00:00:00Z","Action":"output","Package":"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter","Test":"","Output":"ok  \tgithub.com/widoriezebos/agentic-tools/metasystem/internal/adapter\t0.000s\tcoverage: 99.0% of statements\n"}`,
 		"diagnostic":     `witness-wait: nested coverage: 99.0% of statements`,
 	} {

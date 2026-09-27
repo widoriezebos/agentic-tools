@@ -834,3 +834,24 @@ func TestFixtureLauncherArgvNeedsAnAbsoluteFakeRoot(t *testing.T) {
 		}
 	}
 }
+
+// A relative --root names a directory only relative to the launcher's own
+// working directory, which the census cannot see. Resolved against the
+// census's working directory it would read the wrong checkout, so it is
+// never discounted: from inside a fake-runtime checkout, "--root ." still
+// counts.
+func TestFixtureLauncherArgvRefusesARelativeRootInsideAFakeCheckout(t *testing.T) {
+	fakeRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fakeRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(fakeRoot)
+	for _, argv := range [][]string{
+		{"metasystem", "internal", "test", "run", "--root", "."},
+		{"metasystem", "internal", "test", "run", "--root=."},
+	} {
+		if fixtureLauncherArgv(argv) {
+			t.Fatalf("fixtureLauncherArgv(%q) under a fake-runtime working directory = true, want false", argv)
+		}
+	}
+}
