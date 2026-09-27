@@ -24,12 +24,16 @@ type fixtureLifetimeDependencies struct {
 	after     func(time.Duration) <-chan time.Time
 	openLeash func(string) (io.ReadCloser, error)
 	ready     func()
+	// stderr receives every diagnostic. Commands pass the process's standard
+	// error; in-process tests pass their own writer so a refusal never lands
+	// in another parallel test's captured os.Stderr.
+	stderr io.Writer
 }
 
 func defaultFixtureLifetimeDependencies() fixtureLifetimeDependencies {
 	return fixtureLifetimeDependencies{
 		getenv: os.Getenv, prober: identity.KernelProber{}, after: time.After,
-		openLeash: openFixtureLeash, ready: func() {},
+		openLeash: openFixtureLeash, ready: func() {}, stderr: os.Stderr,
 	}
 }
 
@@ -137,6 +141,7 @@ func runUtilHold(args []string) int {
 
 func runUtilHoldWithDependencies(args []string, deps fixtureLifetimeDependencies) int {
 	flags := flag.NewFlagSet("util hold", flag.ContinueOnError)
+	flags.SetOutput(deps.stderr)
 	tag := flags.String("tag", "", "instance tag carried in this process's command line")
 	stoppedFile := flags.String("stopped-file", "", "file that receives \"stopped\" on an orderly stop")
 	readyFile := flags.String("ready-file", "", "file written after signal handling and lifetime custody are armed")
@@ -147,16 +152,16 @@ func runUtilHoldWithDependencies(args []string, deps fixtureLifetimeDependencies
 		return 2
 	}
 	if *tag == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem internal util hold --tag TAG [--stopped-file FILE] [--ready-file FILE] [--max-seconds N] [--ignore-term]")
+		fmt.Fprintln(deps.stderr, "usage: metasystem internal util hold --tag TAG [--stopped-file FILE] [--ready-file FILE] [--max-seconds N] [--ignore-term]")
 		return 2
 	}
 	maxSeconds, err := strconv.ParseInt(*maxSecondsText, 10, 64)
 	if err != nil || maxSeconds < 0 {
-		fmt.Fprintln(os.Stderr, "util hold: --max-seconds must be a non-negative integer of seconds")
+		fmt.Fprintln(deps.stderr, "util hold: --max-seconds must be a non-negative integer of seconds")
 		return 2
 	}
 	if *termObservedFile != "" && !*ignoreTerm {
-		fmt.Fprintln(os.Stderr, "util hold: --term-observed-file requires --ignore-term")
+		fmt.Fprintln(deps.stderr, "util hold: --term-observed-file requires --ignore-term")
 		return 2
 	}
 
@@ -189,28 +194,28 @@ func runUtilHoldWithDependencies(args []string, deps fixtureLifetimeDependencies
 	}()
 	ctx, stopLifetime, err := fixtureLifetimeContext(signalContext, maxSeconds, deps)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "util hold:", err)
+		fmt.Fprintln(deps.stderr, "util hold:", err)
 		return 2
 	}
 	defer stopLifetime()
 	deps.ready()
 	if *readyFile != "" {
 		if err := os.WriteFile(*readyFile, []byte("ready\n"), 0o600); err != nil {
-			fmt.Fprintln(os.Stderr, "util hold: publish readiness:", err)
+			fmt.Fprintln(deps.stderr, "util hold: publish readiness:", err)
 			return 1
 		}
 	}
 	<-ctx.Done()
 	select {
 	case err := <-signalFailure:
-		fmt.Fprintln(os.Stderr, "util hold: acknowledge resisted SIGTERM:", err)
+		fmt.Fprintln(deps.stderr, "util hold: acknowledge resisted SIGTERM:", err)
 		return 1
 	default:
 	}
 
 	if *stoppedFile != "" {
 		if err := os.WriteFile(*stoppedFile, []byte("stopped\n"), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(deps.stderr, err)
 			return 1
 		}
 	}
