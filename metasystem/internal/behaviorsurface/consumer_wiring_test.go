@@ -67,6 +67,9 @@ case "$1 $2" in
   "proc started-at") echo 1 ;;
   "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
   "lease commit-token"|"gate weight-add") : ;;
+  "proof-run coverage-delta")
+    mkdir -p "$(dirname "$0")/../artifacts"
+    printf '%s\n' "$*" >>"$(dirname "$0")/../artifacts/coverage-delta-calls" ;;
   *) : ;;
 esac
 `, true)
@@ -123,8 +126,12 @@ esac
 	if err != nil {
 		t.Fatalf("stale live binary blocked prospective policy: %v\n%s", err, output)
 	}
-	if !strings.Contains(output, "coverage delta: no ratchet registry at this root; skipped") {
-		t.Fatalf("registry-free root did not state the coverage skip:\n%s", output)
+	// The landing runs the live engine's staged coverage delta for its root
+	// (whose registry-free skip is proofrun.CoverageDelta's own test).
+	calls, err := os.ReadFile(filepath.Join(root, "artifacts", "coverage-delta-calls"))
+	canonicalRoot, _ := filepath.EvalSymlinks(root)
+	if err != nil || !strings.Contains(string(calls), "proof-run coverage-delta --root "+canonicalRoot+" --staged") {
+		t.Fatalf("the landing did not run the staged coverage delta for its root: %q %v\n%s", calls, err, output)
 	}
 
 	// Intent-to-add makes both sides of this unstaged cross-class rename
