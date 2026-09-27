@@ -11,8 +11,8 @@ import (
 // The F17 fold, Go half: TRUE concurrency, not sequenced turns. Two
 // clones publish at the same wall-clock moment; the CAS decides, the
 // loser retries on the winner's tip or names the winner, and nothing
-// is ever lost or doubled. (The shell half drives the CLI verbs
-// end-to-end in scripts/agents/goal-cli-fixtures.sh.)
+// is ever lost or doubled. (The CLI half drives the goal commands
+// end to end in the TestGoalCLI tests of cmd/metasystem.)
 
 // The two Open races wait until both clients reach their first publication.
 // Each client still uses the fake store's real compare-and-swap result.
