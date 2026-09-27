@@ -2626,6 +2626,17 @@ func lastOpid(f *GoalFile) string {
 	return f.History[len(f.History)-1].Opid
 }
 
+// fromSignedInSession says whether an act's authority is a browser session's.
+//
+// It is the one hand that can press one card twice — two tabs read one goal,
+// and the second press arrives while the first act is in flight or after its
+// outcome write failed — so it is the one hand whose repeat of an act is read
+// as the act HAVING its effect rather than as a competitor losing to it
+// (R-129-ui). A terminal's second word is still its own word.
+func fromSignedInSession(proof *humanauthority.Proof) bool {
+	return proof != nil && proof.Outcome == humanauthority.OutcomeSession
+}
+
 // Park pauses a goal with its reason. Parking another machine's
 // claim is a human act, and the displaced claimant is recorded —
 // displacement is a stop signal the serving machine hears (the
@@ -2677,6 +2688,14 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 				return nil, AlreadyApplied{}
 			}
 			if f.State == StateParked {
+				// The pause this act asks for already stands. From a browser
+				// session that is the act having its effect (R-129-ui), and the
+				// reason it carries does not change that: the reason is why the
+				// pause was made, and the pause is the effect, so a second press
+				// with other words is still a repeat and writes nothing.
+				if fromSignedInSession(r.Authority) {
+					return nil, NothingToDo{Reason: "goal " + id + " is already parked: the same pause from this signed-in session"}
+				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
 			if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
@@ -2786,6 +2805,13 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 				return nil, AlreadyApplied{}
 			}
 			if f.State != StateParked {
+				// An unpark's effect is that the goal is not parked, and it is
+				// not: from a browser session, resuming a running goal is the
+				// act having its effect (R-129-ui) rather than a refusal the
+				// human has to read as one.
+				if fromSignedInSession(r.Authority) {
+					return nil, NothingToDo{Reason: "goal " + id + " is not parked: the same resume from this signed-in session"}
+				}
 				return nil, fmt.Errorf("goal %s is %s, not parked", id, f.State)
 			}
 			var entry PowerOfAttorneyEntry

@@ -560,7 +560,8 @@ func (a Authority) Unblock(dependent, blocker string) error {
 // explicit no-op — the one outcome that is abandoned with no error, which is
 // NothingToDo (internal/goal/txn.go terminalFromMutate).
 //
-// Every one of them was read in the engine before it was named here:
+// It is R-129-ui's list, and every one of them was read in the engine before it
+// was named here:
 //
 //   - approve: the goal already carries this exact budget under this exact
 //     authority, unexpired (approval.go);
@@ -569,19 +570,33 @@ func (a Authority) Unblock(dependent, blocker string) error {
 //   - set-priority: the requested priority and sequence already hold
 //     (order.go);
 //   - block and unblock: the edge is already there, or already gone
-//     (verbs.go).
+//     (verbs.go);
+//   - park: the goal is already parked, whatever reason the repeat carries,
+//     because the pause is the effect and the reason is not (verbs.go);
+//   - unpark: the goal is not parked, which is the state a resume asks for
+//     (verbs.go);
+//   - abandon: the goal is already in the archive (abandon.go).
 //
-// The other browser acts are NOT here, because their repeat is not this
-// outcome: park and abandon answer LostToCompetitor, naming the operation
-// that got there first, and unpark refuses a goal that is not parked in its
-// own words. Those reach the page as the engine's refusals, exactly as they
-// did.
+// The last three used to be excluded: park and abandon answered
+// LostToCompetitor, naming the operation that got there first, and unpark
+// refused a goal that is not parked in its own words, so all three reached the
+// page as refusals of an act the human had already made. R-129-ui closed that —
+// an act whose effect already holds is success — and the engine now answers
+// each of them NothingToDo under a browser session, which is the one hand that
+// can press one card twice.
+//
+// Withdraw and open are not here, and neither is in the ruling's list: an
+// unapprove of an unapproved goal and an open of an id the ledger carries are
+// both refused by the engine in its own words, and the page shows them.
 var alreadyCarried = map[string]bool{
 	"goal approve":      true,
 	"goal edit":         true,
 	"goal set-priority": true,
 	"goal block":        true,
 	"goal unblock":      true,
+	"goal park":         true,
+	"goal unpark":       true,
+	"goal abandon":      true,
 }
 
 // settle turns one publication into the answer a route gives, and records the
