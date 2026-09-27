@@ -2541,7 +2541,7 @@ if [[ "$event" == stop ]]; then
   # with OWNED-ELSEWHERE replaces the entire turn-end report, including the
   # refusal to walk away from open work, with a sentence about ownership.
   if [[ "$main_class" == MAIN && "$main_holder" != true ]]; then
-    advisor_message="OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run scripts/agents/second-session.sh."
+    advisor_message="OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run metasystem internal session isolate."
     [[ -z "$up_failure" ]] || advisor_message="$advisor_message
 $up_failure"
     [[ -z "$hook_evidence_failure" ]] || advisor_message="$advisor_message

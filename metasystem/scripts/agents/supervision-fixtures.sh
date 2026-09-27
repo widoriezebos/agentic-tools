@@ -3398,7 +3398,7 @@ holder_after=$(json_field "$repo/artifacts/agents/mains/worktree-lease.json" hol
   || { echo "advisor up displaced the live checkout holder" >&2; exit 1; }
 grep -Fq 'component=checkout-lease outcome=advisor' <<<"$advisor_output" \
   && grep -Fq 'up outcome=advisor authority=read-only' <<<"$advisor_output" \
-  && grep -Fq 'scripts/agents/second-session.sh' <<<"$advisor_output" \
+  && grep -Fq 'metasystem internal session isolate' <<<"$advisor_output" \
   || { echo "second-session up did not return the typed advisor outcome" >&2; echo "$advisor_output" >&2; exit 1; }
 touch "$advisor_release"
 wait_for_child_exit "advisor descendant release" "$advisor_pid"

@@ -762,7 +762,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 		components = append(components, ComponentOutcome{
 			Component: "checkout-lease", Outcome: "advisor",
 			Detail: "holder=" + holderName + "; this session has reading authority only",
-			Remedy: "run scripts/agents/second-session.sh to create an isolated writer worktree",
+			Remedy: "run metasystem internal session isolate to create an isolated writer worktree",
 		})
 	} else {
 		components = append(components, ComponentOutcome{
@@ -794,7 +794,7 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	if authority == "read-only" {
 		return finish(Result{
 			Components: components, Outcome: "advisor", Authority: authority, Holder: holderName,
-			Worktree: "scripts/agents/second-session.sh",
+			Worktree: "metasystem internal session isolate",
 		})
 	}
 	return finish(Result{Components: components, Outcome: "armed", Authority: authority})

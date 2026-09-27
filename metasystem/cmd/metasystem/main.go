@@ -633,6 +633,7 @@ func families() []family {
 				{"start", "print durable wait recovery commands for this holder session", runSessionStart},
 				{"stop", "human-only: authorize one quiet stop for the current announced main session", runSessionStop},
 				{"end", "retire any unused quiet-stop authorization for one ended session (internal)", runSessionEnd},
+				{"isolate", "create an isolated writer worktree for a second session in this checkout", runSessionIsolate},
 			},
 		},
 		{

@@ -505,11 +505,11 @@ func TestAdvisorRenderingNamesHolderAndWorktree(t *testing.T) {
 	result := Result{
 		Components: []ComponentOutcome{{Component: "checkout-lease", Outcome: "advisor", Detail: "holder=session-a"}},
 		Outcome:    "advisor", Authority: "read-only", Holder: "session-a (main-1)",
-		Worktree: "scripts/agents/second-session.sh",
+		Worktree: "metasystem internal session isolate",
 	}
 	lines := result.Lines()
 	if result.ExitCode() != 0 || len(lines) != 2 ||
-		lines[1] != `up outcome=advisor authority=read-only holder="session-a (main-1)" worktree="scripts/agents/second-session.sh"` {
+		lines[1] != `up outcome=advisor authority=read-only holder="session-a (main-1)" worktree="metasystem internal session isolate"` {
 		t.Fatalf("wrong advisor outcome: %#v", lines)
 	}
 }

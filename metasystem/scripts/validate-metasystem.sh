@@ -1038,7 +1038,6 @@ for link in \
   scripts/agents/checkout-execution-guard.sh \
   scripts/agents/commit.sh \
   scripts/agents/land.sh \
-  scripts/agents/second-session.sh \
   scripts/agents/fixture-budget.sh \
   scripts/agents/landing-lane-worker.sh \
   scripts/agents/templates/design-common.md \
@@ -1064,7 +1063,6 @@ for link in \
   scripts/agents/checkout-execution-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
-  scripts/agents/second-session-fixtures.sh \
   scripts/agents/lease-succession-fixtures.sh \
   scripts/agents/flight-recorder-fixtures.sh \
   scripts/agents/acp-fixtures.sh \
@@ -1141,7 +1139,6 @@ bash -n scripts/agents/return-schema-fixtures.sh
 bash -n scripts/agents/config-identity-fixtures.sh
 bash -n scripts/agents/record-protocol-fixtures.sh
 bash -n scripts/agents/evidence-segment-fixtures.sh
-bash -n scripts/agents/second-session-fixtures.sh
 bash -n scripts/agents/lease-succession-fixtures.sh
 bash -n scripts/agents/flight-recorder-fixtures.sh
 bash -n scripts/agents/acp-fixtures.sh
@@ -1250,9 +1247,6 @@ fi
 if section_selected evidence-segment-fixtures; then
   delivery_contract_skip evidence-segment-fixtures \
     || run_section evidence-segment-fixtures needs-engine bash scripts/agents/evidence-segment-fixtures.sh
-fi
-if section_selected second-session-fixtures; then
-  run_section second-session-fixtures needs-engine bash scripts/agents/second-session-fixtures.sh
 fi
 if section_selected lease-succession-fixtures; then
   delivery_contract_skip lease-succession-fixtures \

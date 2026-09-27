@@ -483,7 +483,7 @@ func RequireHolderAt(root, metasystemRoot string, callerPid int64, expectedEpoch
 
 func ownedElsewhere(lease *Lease, identity Classification) error {
 	return fmt.Errorf("OWNED-ELSEWHERE: this checkout is held by %s (caller is %s %s); "+
-		"use scripts/agents/second-session.sh for an isolated writer",
+		"use metasystem internal session isolate for an isolated writer",
 		lease.HolderMainId, identity.Class, identity.MainId)
 }
 
@@ -585,7 +585,7 @@ func gateHolder(root string, identity Classification, expectedEpoch *int64) erro
 		return err
 	}
 	if identity.Class != ClassMain || identity.MainId != lease.HolderMainId {
-		return fmt.Errorf("OWNED-ELSEWHERE: this checkout is held by %s; use scripts/agents/second-session.sh for an isolated writer", lease.HolderMainId)
+		return fmt.Errorf("OWNED-ELSEWHERE: this checkout is held by %s; use metasystem internal session isolate for an isolated writer", lease.HolderMainId)
 	}
 	if expectedEpoch != nil && lease.ClaimEpoch != *expectedEpoch {
 		return fmt.Errorf("checkout lease claim epoch changed before the final mutation")
