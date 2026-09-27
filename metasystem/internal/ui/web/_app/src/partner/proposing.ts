@@ -1251,6 +1251,27 @@ export async function runProposals(lines: readonly Line[], ports: RunPorts): Pro
         looked = await ports.look();
         stale = false;
       }
+      // Only a read that SUCCEEDED can say what the act did. The read answers
+      // 200 from the accepted ledger whether or not its own fetch of the
+      // canonical branch landed, so a failed one can hand this run rows older
+      // than the act: the cache says parked, the goal has resumed since, and the
+      // line would be settled applied for good over a goal that is running
+      // (Astra D-02). So a failed read settles nothing and sends nothing. The
+      // record is moved off `applying`, because nothing else will settle it, and
+      // moved to `unresolved` in the read's own words; a line that already says
+      // unresolved is left saying it. The three verbs that compare are refused
+      // unsent above by this same rule.
+      if (!canCompare(looked.outcome)) {
+        const unread = fetchFailedLine(looked.message);
+        if (line.state === "applying") {
+          const said = await ports.record(line, "unresolved", unread);
+          if (said.kind === "conflict") {
+            ports.reconcile(said.proposal, line);
+          }
+        }
+        ports.mark(line, { refusedUnsent: unread });
+        continue;
+      }
       carried = carriesAlready(line, looked.rows);
     }
     if (carried && line.state === "applying") {

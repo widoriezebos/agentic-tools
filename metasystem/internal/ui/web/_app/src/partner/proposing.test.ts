@@ -1398,6 +1398,56 @@ describe("the run, in order", () => {
   });
 
   /**
+   * And the effect is inferred only from a canonical read that SUCCEEDED
+   * (Astra D-02).
+   *
+   * The read answers 200 from the accepted ledger whether or not its own fetch
+   * of the canonical branch landed, so a failed one can hand the run rows older
+   * than the act: the cache says parked, the goal has resumed since, and the
+   * park proposal would be settled `applied` for good over a goal that is
+   * running. The three verbs that compare are already refused unsent by the same
+   * rule; these are the other seven.
+   */
+  it("settles nothing from a read that failed, and sends nothing", async () => {
+    const lines = card([proposal({ state: "applying" })]).lines;
+    const driven = driving(lines, {
+      look: {
+        rows: [row({ state: "parked" })], defaults: {},
+        outcome: "failed", message: "the remote refused the fetch",
+      },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    // The record is moved off `applying`, because nothing else will settle it,
+    // and it is moved to unresolved in the read's own words — never applied.
+    expect(driven.written).toEqual([
+      {
+        line: lines[0].id, state: "unresolved",
+        words: fetchFailedLine("the remote refused the fetch"), version: 1,
+      },
+    ]);
+    expect(driven.marked).toContainEqual({
+      line: lines[0].id, change: { refusedUnsent: fetchFailedLine("the remote refused the fetch") },
+    });
+  });
+
+  /** A line that already says unresolved is left saying it, with the read's words. */
+  it("writes nothing for a line another press owns where the read failed", async () => {
+    const lines = card([proposal({ state: "unresolved", words: IN_FLIGHT_SAID, version: 3 })]).lines;
+    const driven = driving(lines, {
+      look: { rows: [row({ state: "parked" })], defaults: {}, outcome: "failed", message: "no route to host" },
+    });
+    await runProposals(lines, driven.ports);
+
+    expect(driven.sent).toEqual([]);
+    expect(driven.written).toEqual([]);
+    expect(driven.marked).toContainEqual({
+      line: lines[0].id, change: { refusedUnsent: fetchFailedLine("no route to host") },
+    });
+  });
+
+  /**
    * An act another press owns is written `unresolved`, in the refusal's own
    * sentence, and the run goes on (Astra A-01).
    *
