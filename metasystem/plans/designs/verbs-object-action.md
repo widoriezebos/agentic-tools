@@ -262,9 +262,13 @@ result strictly, as `test.go:932` does. No other pair may be both.
 | `delegate-supervisor` (new, U6a) | the dispatch driver (U6b) | persistent owner of one delegate launch through completion and result publication, replacing the detached adapter supervisor (`dispatch.sh:1001`, `adapters/claude.sh:165`) (VOA-04) |
 
 Entries that become function calls, because nothing outside the engine needs a
-process for them: `steward revive`, `delegate --revive`, `up --recover-only`
-called from landing (`landing_batch_owner.go:137`), `util hold` (becomes a test
-helper binary built by the test). `proc setsid` goes when `launch/process.go`
+process for them: `steward revive`, `util hold` (becomes a test helper binary
+built by the test). Two stay processes (U1b, confirmed by its read):
+`up --recover-only` from landing (`landing_batch_owner.go:122-137`) is a
+fire-and-forget detached launch whose recovery must not hold the ensure lock or
+the joining seat; `delegate --revive` keeps its own session so dispatch never
+inherits an operator's controlling terminal (`lease/classify.go:463` would read
+HUMAN). `proc setsid` goes when `launch/process.go`
 sets `Setsid` directly and its argv recognizers (6.6) move with it. The list may
 shrink during the build; adding an entry needs a revision of this page.
 

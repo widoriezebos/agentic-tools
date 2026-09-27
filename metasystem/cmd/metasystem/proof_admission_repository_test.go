@@ -351,6 +351,7 @@ func (r *proofAdmissionRepository) extendBudgetInputs(t *testing.T) syncRequestD
 	reads := r.reads()
 	dependencies := defaultSyncRequestDependencies()
 	dependencies.authorityFacts = goalAuthorityReadFacts{
+		caller:        entryCallerIdentity(),
 		repositoryTop: r.receiptTop,
 		ledgerIdentity: func(root string) string {
 			if root != r.root {

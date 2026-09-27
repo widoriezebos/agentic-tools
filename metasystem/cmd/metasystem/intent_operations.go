@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -205,10 +206,10 @@ func runIntentRepairGoals(inv *intentInvocation) int {
 		}
 		return inv.render(ownerVerbResult(ran, targets, "the published view's interrupted refresh was completed; no edit was read as new authority", scope))
 	case "accept-remote-history":
-		ran, problem := inv.engineVerb("goal", "repair", "--accept-remote", "--by", inv.input.text("by"), "--root", inv.stateRoot)
-		if problem != nil {
-			return inv.render(*problem)
-		}
+		caller, by := currentProcessIdentity(), inv.input.text("by")
+		ran := ownerCall(func(stdout, stderr io.Writer) int {
+			return inv.ownerCalls().goalRepair(caller, stdout, stderr, inv.stateRoot, by)
+		})
 		return inv.render(ownerVerbResult(ran, targets, "the fetched remote history of the same ledger was accepted locally; nothing was pushed", scope))
 	}
 	return runIntentRepairUpgrade(inv, targets, scope)
@@ -339,10 +340,12 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 	}
 	targets := []intentTarget{{Kind: "coordinator", ID: inv.stateRoot}}
 	if choice != "" {
-		ran, problem := inv.engineVerb("brain", choice, "--root", inv.stateRoot, "--by", inv.input.text("by"))
-		if problem != nil {
-			return inv.render(*problem)
-		}
+		// The human gate classifies this process, the parent the owner's
+		// child used to classify (design 6.2, VOA-02-R2).
+		caller, by := currentProcessIdentity(), inv.input.text("by")
+		ran := ownerCall(func(stdout, stderr io.Writer) int {
+			return inv.ownerCalls().brain(choice, caller, stdout, stderr, inv.stateRoot, by)
+		})
 		return inv.render(ownerVerbResult(ran, targets, map[string]string{"declare": "this checkout is declared its ledger's coordinator", "withdraw": "this checkout's coordinator declaration is withdrawn"}[choice], nil))
 	}
 	state := brain.Read(inv.stateRoot, goal.ExistingLedgerIdentity(inv.stateRoot))
