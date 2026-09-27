@@ -175,8 +175,13 @@ func (h *handler) partnerHuman(r *http.Request) string {
 	if named := strings.TrimSpace(h.knownHuman()); named != "" {
 		return named
 	}
-	return "seat"
+	return partnerSeat
 }
+
+// partnerSeat is the human a seat that knows nobody is: the transcript what is
+// said before anybody signs in goes into. The sign-in hands it to the name it
+// binds, so the conversation is not left behind by being named.
+const partnerSeat = "seat"
 
 // partner answers what the Partner is and what it has said.
 //

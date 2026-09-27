@@ -126,6 +126,10 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
+	// Whose conversation this request was about, read before the sign-in
+	// changes the answer: a seat that knows nobody is its own human, and the
+	// name this binds is what every later request resolves to.
+	was := h.partnerHuman(r)
 	signed, bearer, err := h.info.Sessions.SignIn(clientOf(r), body.Code, body.Human)
 	if err != nil {
 		var refusal *session.Refusal
@@ -136,6 +140,17 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
 		}
 		writeFailure(w, err.Error())
 		return
+	}
+	// The conversation the unnamed seat was having becomes this human's, before
+	// the page is told the sign-in worked: the sheet's success resumes the card
+	// it was showing and presses Apply, and that write must find the answer it
+	// belongs to (Astra A-03).
+	//
+	// A transfer that fails does not fail the sign-in. The code is spent and the
+	// session is real; refusing here would lock out a human who just proved who
+	// they are, and the messages are still in the seat's own transcript.
+	if was == partnerSeat && h.info.Partner != nil && signed.Human != partnerSeat {
+		_ = h.info.Partner.Adopt(partnerSeat, signed.Human)
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     session.Cookie,
