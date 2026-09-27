@@ -58,7 +58,7 @@ var firstTransitionGroups = []string{
 	"policy-protection",
 	"fast-static-build",
 	"section/dispatcher-adapter-and-mission-runner-fixtures",
-	"section/goal-cli-fixtures",
+	"goal-cli-standard",
 	"section/land-fixtures",
 	"section/adoption-fixtures",
 }
