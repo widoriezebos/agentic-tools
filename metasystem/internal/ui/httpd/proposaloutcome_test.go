@@ -121,12 +121,15 @@ func TestEveryAllowedPairIsAdmittedAndMovesTheVersion(t *testing.T) {
 	// The pairs, in the order one line can actually walk them: waiting to
 	// applying to unresolved, back to applying, to refused, to applying again, to
 	// applied. The walk is the table read as a path, so no pair is asserted in
-	// isolation from the line it belongs to.
+	// isolation from the line it belongs to. The last two are the tab that HAS
+	// the act's answer writing it onto a line another tab left unresolved.
 	for _, walk := range [][]string{
 		{partner.ProposalApplying, partner.ProposalApplied},
 		{partner.ProposalApplying, partner.ProposalRefused, partner.ProposalApplying, partner.ProposalApplied},
 		{partner.ProposalApplying, partner.ProposalUnresolved, partner.ProposalApplying,
 			partner.ProposalApplying, partner.ProposalApplied},
+		{partner.ProposalApplying, partner.ProposalUnresolved, partner.ProposalApplied},
+		{partner.ProposalApplying, partner.ProposalUnresolved, partner.ProposalRefused},
 		{partner.ProposalDismissed},
 		{partner.ProposalApplying, partner.ProposalDismissed},
 		{partner.ProposalApplying, partner.ProposalRefused, partner.ProposalDismissed},
@@ -161,6 +164,9 @@ func TestAPairTheLineMayNotPassThroughIsRefusedWithTheEntry(t *testing.T) {
 		"applying after it was applied":    {partner.ProposalApplying, partner.ProposalApplied, partner.ProposalApplying},
 		"anything after it was dismissed":  {partner.ProposalDismissed, partner.ProposalApplying},
 		"unresolved from a refused line":   {partner.ProposalApplying, partner.ProposalRefused, partner.ProposalUnresolved},
+		// Two tabs that both know nothing settle nothing, and the pair would
+		// leave the state where it was.
+		"unresolved twice": {partner.ProposalApplying, partner.ProposalUnresolved, partner.ProposalUnresolved},
 	} {
 		t.Run(what, func(t *testing.T) {
 			t.Parallel()
@@ -278,10 +284,10 @@ type proposalPair struct{ from, to string }
 // allowedProposalPairs is the table read as pairs: every state against every
 // state, kept where the table admits the move.
 //
-// It asks the table rather than listing its eleven answers, because a test that
-// listed them would go on passing while saying nothing about a twelfth. The
-// order is the states' own, which is the order a line passes through them, so a
-// failure names a pair in the terms the table is written in.
+// It asks the table rather than listing its thirteen answers, because a test
+// that listed them would go on passing while saying nothing about a
+// fourteenth. The order is the states' own, which is the order a line passes
+// through them, so a failure names a pair in the terms the table is written in.
 func allowedProposalPairs() []proposalPair {
 	pairs := []proposalPair{}
 	for _, from := range partner.ProposalStates {
