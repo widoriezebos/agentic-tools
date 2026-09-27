@@ -556,6 +556,16 @@ func (a Authority) settle(request goal.VerbRequest, result goal.PublishResult, p
 		return a.unsettled(operation, publishErr)
 	}
 	if result.Outcome != goal.OutcomeConfirmed {
+		// An approve the engine found nothing to do for is an approve whose
+		// effect already stands: the one no-op it has is the goal already
+		// carrying this exact budget under this exact authority, unexpired
+		// (internal/goal/approval.go). That is the act having its effect, so the
+		// page is told applied rather than refused — the second press of one
+		// proposal's Apply asked for a state the ledger is already in. Nothing
+		// new landed, so no second proof is recorded beside it.
+		if action == "goal approve" && result.Outcome == goal.OutcomeAbandoned {
+			return nil
+		}
 		detail := result.Detail
 		if detail == "" {
 			detail = "the ledger did not confirm " + action
