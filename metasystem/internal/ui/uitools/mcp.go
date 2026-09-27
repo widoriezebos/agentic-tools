@@ -91,19 +91,35 @@ func (a Args) Given(name string) bool {
 // kept, exactly as the act routes' own list field does it: a body that named a
 // goal twice is one name, and the first named is the one an open's park takes
 // its marker from.
-func (a Args) List(name string) []string {
+//
+// A member that is not a name, and a value that is neither a name nor a list of
+// them, are REFUSED by this argument's own name rather than dropped, and the
+// refusal is the second answer. A schema is a description and not a contract the
+// model has to have read: a client that sent `[{"id": "bank-sandbox"}]` was told
+// its action had been prepared and the human was handed a card with the
+// dependency silently gone from it (Astra B-02). An argument that was not sent
+// says nothing about the list and is no refusal.
+func (a Args) List(name string) ([]string, string) {
+	if !a.Given(name) {
+		return nil, ""
+	}
 	named := []string{}
 	switch value := a[name].(type) {
 	case []any:
-		for _, one := range value {
-			if said, ok := one.(string); ok {
-				named = append(named, said)
+		for at, one := range value {
+			said, isName := one.(string)
+			if !isName {
+				return nil, name + " is a list of names, and its entry " +
+					strconv.Itoa(at+1) + " is not one"
 			}
+			named = append(named, said)
 		}
 	case []string:
 		named = append(named, value...)
 	case string:
 		named = strings.FieldsFunc(value, func(letter rune) bool { return letter == ',' })
+	default:
+		return nil, name + " is a name, or a list of names; this call sent neither"
 	}
 	cleaned := []string{}
 	seen := map[string]bool{}
@@ -115,7 +131,7 @@ func (a Args) List(name string) []string {
 		seen[one] = true
 		cleaned = append(cleaned, one)
 	}
-	return cleaned
+	return cleaned, ""
 }
 
 // Tool is one published operation: what it is called, what it is for, and what

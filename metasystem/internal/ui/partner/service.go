@@ -250,6 +250,54 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 	return opened, nil
 }
 
+// Adopt gives a human the conversation an unnamed seat was having.
+//
+// Until somebody signs in, a seat that knows nobody is its own human and what
+// is said goes into the seat's transcript. The first sign-in names it, and
+// every read and every write after that is about the NAME's conversation — so
+// an action proposed a moment earlier, which the human is pressing Apply on
+// through the sign-in sheet, would be looked for in a transcript that never
+// held it, and the reload would take the card away (Astra A-03).
+//
+// So the seat's messages move to the human, and the seat is left with none: it
+// is one conversation that gained a name, not two. A human who already has a
+// transcript keeps it and takes the seat's messages after it, because those
+// are the ones just spoken. Both transcripts are written under the mutex their
+// own appends take, the seat's first, so no turn writes into either halfway
+// through the move.
+func (s *Service) Adopt(seat, human string) error {
+	if fileName(seat) == fileName(human) {
+		return nil
+	}
+	was, err := s.conversation(seat)
+	if err != nil {
+		return err
+	}
+	mine, err := s.conversation(human)
+	if err != nil {
+		return err
+	}
+	was.mu.Lock()
+	defer was.mu.Unlock()
+	if len(was.messages) == 0 {
+		return nil
+	}
+	mine.mu.Lock()
+	defer mine.mu.Unlock()
+	moved := append(append([]Message{}, mine.messages...), was.messages...)
+	if err := writeTranscript(mine.transcript, moved); err != nil {
+		return err
+	}
+	mine.messages = moved
+	// The seat's file is emptied only once the human's holds the messages, so a
+	// failure between the two leaves them where they were rather than nowhere.
+	if err := writeTranscript(was.transcript, nil); err != nil {
+		return err
+	}
+	was.messages = nil
+	return nil
+}
+
 // Trim keeps this seat's transcripts within the bounds, and reports how many
 // messages went.
 //
@@ -508,7 +556,14 @@ func (s *Service) submit(ctx context.Context, human, key, text string, page Page
 	// What happened to the actions the last two answers proposed, from the
 	// states the messages record: the Partner builds on what the human actually
 	// did rather than on what it prepared.
-	prompt := ComposeOpening(seen, page, human, opening, proposalsBlock(conversation.Messages(recoveryMessages))) + "\n\n"
+	//
+	// The whole kept transcript is read for it, not a window of recent messages:
+	// the block picks the last two answers that proposed anything, and ten
+	// ordinary exchanges are twenty messages, so a window that size dropped a
+	// proposal the human was still applying from the Decisions inbox (Astra
+	// B-03). What the prompt carries is bounded by that selection of two, here
+	// as before.
+	prompt := ComposeOpening(seen, page, human, opening, proposalsBlock(conversation.Messages(0))) + "\n\n"
 	if given > 0 {
 		prompt += history + "\n\n"
 		s.record(running, Event{Kind: EventActivity, Text: freshLine(given)})

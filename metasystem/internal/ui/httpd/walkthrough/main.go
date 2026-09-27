@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1561,9 +1562,10 @@ func (l *ledger) unpark(id string) error {
 
 // abandon is the fixture's own goal abandon, holding the rules the card is
 // written around: a reason on one line, a goal that is live, a successor that is
-// live, and the live dependents either repointed to that successor or refused in
-// the engine's own sentence — which is the sentence that names the terminal
-// forms, and the one a human most needs to read on a card they cannot undo.
+// live and does not itself wait for the goal, and the live dependents either
+// repointed to that successor or refused in the engine's own sentence — which is
+// the sentence that names the terminal forms, and the one a human most needs to
+// read on a card they cannot undo.
 //
 // The refusal's words are the engine's own (internal/goal/abandon.go), copied
 // here rather than paraphrased, because what a walkthrough is for is standing in
@@ -1572,6 +1574,13 @@ func (l *ledger) abandon(id, because, successor string) error {
 	if strings.TrimSpace(because) == "" {
 		return &act.Refusal{Kind: act.KindRequest, Code: "no-reason",
 			Message: "abandon needs its reason — a goal that will never be worked owes the reader why"}
+	}
+	// The act layer only asks that a reason is there, so the one-line rule is the
+	// engine's own (internal/goal/abandon.go) and reaches a human in the engine's
+	// sentence rather than the route's.
+	if strings.ContainsAny(because, "\r\n") {
+		return refused("abandon needs its reason on one line; " +
+			"a goal that will never be worked owes the reader why")
 	}
 	file := l.tree.Live[id]
 	if file == nil {
@@ -1601,6 +1610,17 @@ func (l *ledger) abandon(id, because, successor string) error {
 				dependent, id, dependent, dependent))
 		}
 		return refused("%s", strings.Join(lines, "\n"))
+	}
+	// A successor that is itself one of the goal's live dependents cannot carry
+	// its work: repointing would leave that dependent waiting for itself, and the
+	// engine refuses the commit that tree would make rather than writing it
+	// (internal/goal/validate.go, the blockedBy acyclicity check). So the refusal
+	// is the tree's own sentence, and it comes before anything here is repointed,
+	// because a fixture the engine would never have committed teaches the wrong
+	// ledger.
+	if successor != "" && slices.Contains(waiting, successor) {
+		return refused("the ledger tree this abandon would make does not validate:\n"+
+			"blockedBy cycle: %s -> %s", successor, successor)
 	}
 	// With a successor the engine repoints every live dependent in the same act
 	// rather than refusing, which is what the card said it would do.

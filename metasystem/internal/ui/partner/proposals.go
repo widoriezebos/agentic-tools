@@ -224,6 +224,26 @@ func (s *Service) admitProposal(running *turn, prepared Action) {
 	}
 	s.mu.Unlock()
 
+	// The frame's own bounds, asked before anything of the frame is kept.
+	//
+	// The tool refuses a CALL past them and this refuses a FRAME past them,
+	// which is not the same check: a frame arrives as text a runtime reported,
+	// so a runtime that composed one itself could write a field of any length
+	// into the human's own transcript. It could, and the cost was the whole
+	// conversation: a propose naming a goal of three hundred thousand characters
+	// was refused for a goal nothing carries, the refusal kept the id, and the
+	// next open of that transcript failed on the line — taking the Decisions
+	// page, which reads the same transcript, down with it (Astra B-01). So this
+	// is the one refusal that does not carry what it refused.
+	if refusal := uitools.BeyondTheProposalBounds(prepared.Goal, prepared.Why, prepared.Fields); refusal != "" {
+		s.refuseProposal(running, Proposal{
+			Index: index, Verb: prepared.Verb, Goal: boundedGoal(prepared.Goal),
+			State: ProposalWaiting, Version: 1,
+			At: s.now().UTC().Format(time.RFC3339),
+		}, refusal)
+		return
+	}
+
 	admitted := Proposal{
 		Index: index, Verb: prepared.Verb, Goal: prepared.Goal, Fields: copiedFields(prepared.Fields),
 		Why: prepared.Why, State: ProposalWaiting, Version: 1,
@@ -363,6 +383,17 @@ func copiedFields(fields map[string]string) map[string]string {
 		held[key] = value
 	}
 	return held
+}
+
+// boundedGoal is an id as a refusal past the bounds may carry it: the ledger's
+// own bound worth of it and no more. A card still has to name something a human
+// can place, and the whole of an id that long is the one thing that must not
+// reach the transcript.
+func boundedGoal(id string) string {
+	if len(id) <= goal.MaxIdBytes {
+		return id
+	}
+	return strings.ToValidUTF8(id[:goal.MaxIdBytes], "") + "\u2026"
 }
 
 // refuseProposal records one action the human is not offered, with its reason.

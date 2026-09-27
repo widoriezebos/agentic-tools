@@ -233,6 +233,48 @@ func TestTwoHumansKeepTwoConversations(t *testing.T) {
 	testutil.Expect(t, "the second human's question", ada.Messages[0].Text, "and mine")
 }
 
+// A human who already has a transcript takes the unnamed seat's messages after
+// their own, and the seat is left with none.
+//
+// The route test in internal/ui/httpd proves the first sign-in on a seat that
+// has never been named; this is the other half of the same move, and it is
+// proved on the files rather than in memory, because what a later run reads is
+// the file (Astra A-03).
+func TestTheSeatsMessagesMoveToTheHumanAndLeaveTheSeatEmpty(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	host := partner.NewHostOn(
+		partner.Runtime{Name: "fake", ReadOnly: "a fake server reads nothing"},
+		root, fakeacp.Open(fakeacp.Script{Chunks: []string{"noted"}}))
+	t.Cleanup(host.Close)
+	service := partner.NewService(host.Runtime(), host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{}, func() time.Time { return time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC) })
+	ask := func(human, key, question string) {
+		t.Helper()
+		events, stop := service.Subscribe()
+		defer stop()
+		_, err := service.Submit(context.Background(), human, key, question,
+			partner.Page{Section: "Backlog", Path: "/backlog"})
+		testutil.Require(t, "the turn on "+key+" is admitted", err, nil)
+		collect(t, events, partner.EventDone)
+	}
+	ask("Wido", "key-1", "which goals are ready?")
+	ask("seat", "key-2", "and what about this one?")
+
+	testutil.Require(t, "the seat's conversation is handed over", service.Adopt("seat", "Wido"), nil)
+
+	mine, err := partner.OpenConversation(root, "Wido")
+	testutil.Require(t, "Wido's transcript reads back from the file", err, nil)
+	kept := mine.Messages(0)
+	testutil.Require(t, "four messages", len(kept), 4)
+	testutil.Expect(t, "their own question first", kept[0].Text, "which goals are ready?")
+	testutil.Expect(t, "and the seat's after it", kept[2].Text, "and what about this one?")
+	seat, err := partner.OpenConversation(root, "seat")
+	testutil.Require(t, "the seat's transcript reads back too", err, nil)
+	testutil.Expect(t, "with nothing left in it", len(seat.Messages(0)), 0)
+}
+
 func serviceOn(t *testing.T, script fakeacp.Script) (*partner.Service, *partner.Host) {
 	t.Helper()
 	root := t.TempDir()

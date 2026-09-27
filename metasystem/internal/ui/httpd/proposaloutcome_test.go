@@ -49,15 +49,7 @@ func proposedPark(goalID string) fakeacp.Read {
 // so this one is built here rather than that one widened.
 func servedProposing(t *testing.T, script fakeacp.Script) (http.Handler, *partner.Service) {
 	t.Helper()
-	root := t.TempDir()
-	runtime := partner.Runtime{Name: "fake", Model: "fake-1", ReadOnly: "a fake server reads nothing"}
-	script.Models = []string{"fake-1"}
-	host := partner.NewHostOn(runtime, root, fakeacp.Open(script))
-	t.Cleanup(host.Close)
-	service := partner.NewService(runtime, host,
-		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
-		partner.Facts{Observe: readObservation},
-		func() time.Time { return time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC) })
+	service := proposingService(t, script)
 	info := Info{
 		Observe:           readObservation,
 		Authority:         proven(),
@@ -65,6 +57,21 @@ func servedProposing(t *testing.T, script fakeacp.Script) (http.Handler, *partne
 		PartnerConfigured: true,
 	}
 	return New(info, loopback(), testBundle()), service
+}
+
+// proposingService is that Partner without the server around it, so a seat that
+// knows nobody can be served with the same conversations.
+func proposingService(t *testing.T, script fakeacp.Script) *partner.Service {
+	t.Helper()
+	root := t.TempDir()
+	runtime := partner.Runtime{Name: "fake", Model: "fake-1", ReadOnly: "a fake server reads nothing"}
+	script.Models = []string{"fake-1"}
+	host := partner.NewHostOn(runtime, root, fakeacp.Open(script))
+	t.Cleanup(host.Close)
+	return partner.NewService(runtime, host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{Observe: readObservation},
+		func() time.Time { return time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC) })
 }
 
 // proposing is a served Partner that has answered one turn with one proposed
@@ -537,4 +544,56 @@ func TestARefusedWritePublishesNothing(t *testing.T) {
 
 	_, published := nextProposalBeat(t, events)
 	testutil.Expect(t, "nothing was published for it", published, false)
+}
+
+// The first sign-in on a seat that knew nobody keeps the conversation the
+// proposal is in.
+//
+// Before anybody is named the Partner's human is the seat itself, and the
+// sign-in gives it a name. The page does not start over for that: the sheet's
+// success resumes the card it was already showing, and presses Apply. So the
+// outcome write has to find the answer it belongs to, and the reload after it
+// has to read the same conversation rather than an empty one (Astra A-03).
+func TestTheFirstSignInKeepsTheSeatsConversation(t *testing.T) {
+	t.Parallel()
+	held := newSigning(t, "", workingSecret)
+	service := proposingService(t, fakeacp.Script{
+		Reads:  []fakeacp.Read{proposedPark("waiting")},
+		Chunks: []string{"I have proposed it."},
+	})
+	served := New(Info{
+		Observe:           readObservation,
+		Authority:         agentStarted(),
+		Sessions:          held.store,
+		Partner:           service,
+		PartnerConfigured: true,
+	}, loopback(), testBundle())
+	events, stop := service.Subscribe()
+	defer stop()
+
+	accepted := post(t, served, partnerTurnsPath,
+		`{"key":"k1","text":"put it away","about":{"section":"Decisions"}}`, nil)
+	testutil.Require(t, "the turn is admitted before anybody is named", accepted.Code, http.StatusAccepted)
+	drain(t, events)
+	asked := partnerSnapshot(t, get(t, served, partnerPath, nil))
+	answered := asked.Messages[len(asked.Messages)-1]
+	testutil.Require(t, "the answer carries one action", len(answered.Proposals), 1)
+
+	signedIn := post(t, served, signInPath, `{"code":"`+routeCode(t, routeNow)+`","human":"Wido"}`, nil)
+	testutil.Require(t, "the sign-in is accepted", signedIn.Code, http.StatusOK)
+	testutil.Require(t, "and names the human it bound", sessionAnswer(t, signedIn).Human, "Wido")
+	mine := carrying(mintedCookie(t, signedIn).Value)
+
+	// The press the sheet's success started, now under Wido's own session.
+	pressed := post(t, served, proposalPath(answered.Turn, 0),
+		`{"version":1,"state":"`+partner.ProposalApplying+`","words":""}`, mine)
+	testutil.Require(t, "the write finds the answer it belongs to", pressed.Code, http.StatusOK)
+
+	// And the reload reads that conversation, not an empty one.
+	reloaded := partnerSnapshot(t, get(t, served, partnerPath, mine))
+	last := reloaded.Messages[len(reloaded.Messages)-1]
+	testutil.Require(t, "the answer is still there", last.Turn, answered.Turn)
+	testutil.Require(t, "with its action", len(last.Proposals), 1)
+	testutil.Expect(t, "in the state the press wrote", last.Proposals[0].State, partner.ProposalApplying)
+	testutil.Expect(t, "and the question that asked for it", reloaded.Messages[0].Text, "put it away")
 }

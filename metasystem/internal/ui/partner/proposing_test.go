@@ -2,6 +2,7 @@ package partner_test
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -264,6 +265,44 @@ func TestAnActionTheTipCannotCarryIsRecordedWithItsReason(t *testing.T) {
 	testutil.Expect(t, "and is offered", kept[3].Offered, true)
 }
 
+// A frame whose fields are past the ledger's own bounds is refused here, and the
+// refusal keeps none of the oversized value.
+//
+// The tool bounds every field it frames, and this bounds the FRAME, which is not
+// the same check: a frame arrives as text a runtime reported, so a runtime that
+// composed one itself could write a field of any length into the human's own
+// transcript. It could, and the cost was the conversation: a propose naming a
+// goal of three hundred thousand characters was refused for a goal nothing
+// carries, the refusal persisted the whole id, and the next open of that
+// transcript failed on the line — taking the Decisions page, which reads the same
+// transcript, down with it (Astra B-01). So this is the one refusal that does not
+// carry what it refused.
+func TestAFramePastTheLedgersBoundsIsRefusedWithoutKeepingIt(t *testing.T) {
+	t.Parallel()
+	service := serviceProposing(t,
+		proposed(uitools.ProposeUnpark, strings.Repeat("a", 300000), nil, "resume it"),
+		proposed(uitools.ProposeEdit, "refunds",
+			[]string{uitools.ProposalIntent + strings.Repeat("i", 300000)}, "reword it"),
+		proposed(uitools.ProposeUnpark, "refunds", nil, "back to the queue"),
+	)
+	_, kept := askProposing(t, service, "do these three")
+	testutil.Require(t, "all three are recorded", len(kept), 3)
+
+	testutil.Expect(t, "an oversized goal is not offered", kept[0].Offered, false)
+	testutil.Expect(t, "with the ledger's own bound as the reason",
+		strings.Contains(kept[0].Reason, "a goal id is at most 64 bytes in the ledger"), true)
+	testutil.Expect(t, "and the transcript keeps none of it", len(kept[0].Goal) < 100, true)
+
+	testutil.Expect(t, "an oversized intent is not offered either", kept[1].Offered, false)
+	testutil.Expect(t, "bounded by the sheets' own line",
+		strings.Contains(kept[1].Reason, "carries at most 2000 characters"), true)
+	testutil.Expect(t, "and none of it is kept", len(kept[1].Fields), 0)
+
+	// A refusal holds its place, exactly as every other refusal does.
+	testutil.Expect(t, "the third keeps its index", kept[2].Index, 2)
+	testutil.Expect(t, "and is offered", kept[2].Offered, true)
+}
+
 // openingLines is one open's framing: the seven fields its route body cannot do
 // without, its own id, and whatever edges the case is about.
 func openingLines(id string, edges ...string) []string {
@@ -424,6 +463,66 @@ func TestTheNextQuestionIsToldWhatHappenedToTheProposals(t *testing.T) {
 		strings.Contains(second, "every one of them was the human's own press"), true)
 }
 
+// What happened to a proposed action is still carried after a long stretch of
+// ordinary exchanges.
+//
+// The block is chosen from the answers this conversation keeps rather than from
+// a window of the last twenty messages: ten question-and-answer pairs are twenty
+// messages on their own, so an action applied from the Decisions inbox — which
+// is where an older proposal is applied from — fell out of the prompt while it
+// was still one of the last two answers that proposed anything (Astra B-03).
+func TestWhatHappenedToAProposalOutlastsTenExchangesWithoutOne(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// Only the first question proposes; the ten after it are ordinary.
+	park := proposed(uitools.ProposePark, "fleet-presence",
+		[]string{uitools.ProposalBecause + "away"}, "put it away")
+	park.When = "put it away"
+	opener, handed := fakeacp.OpenWatched(fakeacp.Script{
+		Reads:  []fakeacp.Read{park},
+		Chunks: []string{"proposed."},
+	})
+	host := partner.NewHostOn(
+		partner.Runtime{Name: "fake", ReadOnly: "a fake server reads nothing"}, root, opener)
+	t.Cleanup(host.Close)
+	service := partner.NewService(host.Runtime(), host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{Observe: proposingLedger},
+		func() time.Time { return time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC) })
+	ask := func(key, question string) string {
+		t.Helper()
+		events, stop := service.Subscribe()
+		defer stop()
+		id, err := service.Submit(context.Background(), "Wido", key, question, onDecisions())
+		testutil.Require(t, "the turn on "+key+" is admitted", err, nil)
+		drain(t, events)
+		return id
+	}
+
+	turn := ask("key-1", "this one is superseded; put it away")
+
+	// The human applies it, in the two writes the runner makes.
+	applying, err := service.Proposed("Wido", turn, 0, 1, partner.ProposalApplying, "")
+	testutil.Require(t, "the line is taken", err, nil)
+	_, err = service.Proposed("Wido", turn, 0, applying.Version, partner.ProposalApplied, "")
+	testutil.Require(t, "and settled", err, nil)
+
+	// Ten exchanges that propose nothing: twenty messages, the whole of the
+	// window the block used to be chosen from.
+	for at := 2; at <= 11; at++ {
+		ask("key-"+strconv.Itoa(at), "and what is the census format goal for?")
+	}
+	ask("key-12", "so where does that leave the fleet?")
+
+	prompts := handed.Prompts()
+	testutil.Require(t, "one prompt per turn", len(prompts), 12)
+	last := prompts[len(prompts)-1]
+	testutil.Expect(t, "the block is still there",
+		strings.Contains(last, "What happened to the actions you proposed"), true)
+	testutil.Expect(t, "carrying what the human did with it",
+		strings.Contains(last, "Of the 1 actions you proposed, 1 applied."), true)
+}
+
 // The instructions say it: an act is proposed, not made, and words alone propose
 // nothing.
 func TestTheSkillTellsThePartnerToPropose(t *testing.T) {
@@ -438,7 +537,9 @@ func TestTheSkillTellsThePartnerToPropose(t *testing.T) {
 		"the interface has ten of those actions today and the tool names them",
 		"Words alone propose nothing.",
 		"do not do it and do not say it is done",
-		"the card under your answer is the only place one is applied",
+		// Where an action is applied, both of them: the card under the answer,
+		// and the inbox that lists every action still waiting (Astra B-04).
+		"on the card under your answer, or in the Decisions inbox",
 		"a goal you propose to open may be named by a later action of the same answer",
 	} {
 		testutil.Expect(t, "the skill says "+said, strings.Contains(skill, said), true)
