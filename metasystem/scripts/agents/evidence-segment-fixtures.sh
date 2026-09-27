@@ -86,7 +86,6 @@ legacy_root="$tmp/legacy-checkout/metasystem"
 mkdir -p "$legacy_root/scripts/agents" "$legacy_root/scripts" \
   "$legacy_root/artifacts/agents/jobs" "$legacy_root/artifacts/agents/legacy-chain" \
   "$evidence/agents/legacy-chain"
-cp "$source_root/scripts/agents/evidence-gc.sh" "$legacy_root/scripts/agents/evidence-gc.sh"
 mkdir -p "$legacy_root/bin"
 cp "$source_root/bin/metasystem" "$legacy_root/bin/metasystem"
 cp "$source_root/scripts/metasystem-config.sh" "$legacy_root/scripts/metasystem-config.sh"
@@ -116,7 +115,7 @@ legacy_staged=$(mktemp "$(dirname "$legacy_manifest")/.manifest.XXXXXX")
 printf '{"rootJob":"legacy-chain","files":{"brief.md":{"sha256":"%s","bytes":%s}},"updatedAt":"%s"}\n' \
   "$legacy_digest" "$legacy_bytes" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$legacy_staged"
 mv "$legacy_staged" "$legacy_manifest"
-"$legacy_root/scripts/agents/evidence-gc.sh" __lease-held human >"$tmp/legacy-gc.out"
+"$legacy_root/bin/metasystem" evidence gc --root "$legacy_root" >"$tmp/legacy-gc.out"
 grep -Fq 'collected legacy-chain' "$tmp/legacy-gc.out"
 [[ ! -e "$legacy_root/artifacts/agents/legacy-chain" ]] || {
   echo "evidence segment fixture: legacy manifest payload was not collected" >&2

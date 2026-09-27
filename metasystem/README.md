@@ -76,9 +76,9 @@ Each failure class has a named answer, and where the rule is binary, a script th
 
 | Failure | Addressed by | Enforced by |
 | --- | --- | --- |
-| Context bloat | A small always-loaded contract (`AGENTS.md`) with a single routing index (`wow.md`). Everything else loads at the phase where it helps, and new rules must pass the change gate | `scripts/audit-metasystem.sh` fails when the always-loaded word count exceeds its cap; the retro removes rules that cannot show their value |
+| Context bloat | A small always-loaded contract (`AGENTS.md`) with a single routing index (`wow.md`). Everything else loads at the phase where it helps, and new rules must pass the change gate | The engine's structural audit (`metasystem internal audit metasystem`) fails when the always-loaded word count exceeds its cap; the retro removes rules that cannot show their value |
 | Rabbit holes | The take-a-step-back skill: every attempt gets a written contract with a budget, every result gets classified, and the stop-loss triggers end an investigation that stopped producing facts | `metasystem validate stop-loss` blocks new cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
-| Silent behavior drift | The refactor skill: a trusted baseline, tests before restructuring, replayable batches, and the project's acceptance gate as the only proof that behavior was preserved | `scripts/refactor-baseline.sh` blocks new batches on a dirty worktree, diverged history, or an overdue gate run |
+| Silent behavior drift | The refactor skill: a trusted baseline, tests before restructuring, replayable batches, and the project's acceptance gate as the only proof that behavior was preserved | `metasystem internal validate refactor-baseline` blocks new batches on a dirty worktree, diverged history, or an overdue gate run |
 | False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `metasystem validate design-obligations` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
 | Forgotten lessons | Correction capture (a correction updates the instructions in their one owning document) and handoff notes that carry unfinished work across sessions | Receipts record every correction, the retro reviews the pattern, and the instruction ledger holds every rule change with a testable expected effect |
 | Unreviewable output | The collaboration rules: one intent per commit, mechanical churn separated from behavior change, and reports that start with the riskiest part | The human sends unreviewable diffs back; splitting them is the agent's job, and repeated offenses become retro findings |
@@ -104,7 +104,7 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | Human collaboration: reviewable increments, reports that lead with the review guide, correction capture, escalation shape | [`docs/collaboration.md`](docs/collaboration.md) |
 | The human's guide: handing over work, reviewing, making corrections stick, running multiple agents, recurring duties | [`docs/working-with-agents.md`](docs/working-with-agents.md) |
 | Session continuity: owned handoff notes for multi-session streams | [`plans/README.md`](plans/README.md) |
-| Measurement and self-improvement: per-task receipts, cadence-triggered retro, instruction changes with testable expected effects that get reviewed and reverted like experiments | [`skills/retro/`](skills/retro/SKILL.md) and `scripts/receipt.sh` |
+| Measurement and self-improvement: per-task receipts, cadence-triggered retro, instruction changes with testable expected effects that get reviewed and reverted like experiments | [`skills/retro/`](skills/retro/SKILL.md) and `metasystem receipt` |
 | Specialist opt-ins (for example live Java/JDWP debugging) | [`optional-skills/`](optional-skills/) |
 
 ## How it works
@@ -113,7 +113,7 @@ The day-to-day system is a set of **working modes**: implement, design, refactor
 
 Underneath the modes sit five design rules, each backed by a script or an explicit convention:
 
-1. **Progressive disclosure.** Only `AGENTS.md` and `wow.md` load on every task; everything else loads at the phase where it helps. `scripts/audit-metasystem.sh` fails when the always-loaded word count exceeds its cap. Phase-loaded files such as `docs/project-rules.md` sit outside the cap and are bounded by review discipline instead. The honest per-task cost is larger than the audited pair: project rules, collaboration, and the completion gate load on nearly every repo-changing task, and design principles on most, so the audit also prints that effective common-path bundle as an uncapped report-only number, keeping the two metrics from being conflated.
+1. **Progressive disclosure.** Only `AGENTS.md` and `wow.md` load on every task; everything else loads at the phase where it helps. The engine's structural audit fails when the always-loaded word count exceeds its cap. Phase-loaded files such as `docs/project-rules.md` sit outside the cap and are bounded by review discipline instead. The honest per-task cost is larger than the audited pair: project rules, collaboration, and the completion gate load on nearly every repo-changing task, and design principles on most, so the audit also prints that effective common-path bundle as an uncapped report-only number, keeping the two metrics from being conflated.
 2. **One rule, one home.** Every control has exactly one canonical document. Other files link to it and may state the trigger, but must not restate the rule. Routing lives only in `wow.md`. There are two declared exceptions: `docs/working-modes.md` restates rules in plain English for teaching, constants included, and this README restates rules and routing to pitch the metasystem to a first-time reader. Neither sets rules of its own, and both lose on any conflict.
 3. **Hard checks for hard requirements.** Binary properties are scripts. A binary rule that exists only as prose is a defect.
 4. **Evidence before rules.** New instructions must pass a change gate: name the observed failure, show the model cannot infer the rule on its own, find the owner, and prefer executable enforcement. Task-local plans, ledgers, and incident notes never become global policy without deliberate promotion.
@@ -204,12 +204,11 @@ to adopting projects.
 | Script | Job |
 | --- | --- |
 | `scripts/validate-metasystem.sh` | Full self-check: audit, skill validation, routed assets, positive and negative fixture tests for the gate scripts. Works in both the template and adopted repositories |
-| `scripts/audit-metasystem.sh` | Required files, no outside references in metasystem files, placeholder leakage, always-loaded word cap |
-| `scripts/validate-skill.sh` | Skill frontmatter and naming rules |
+| `metasystem internal audit metasystem` | Required files, no outside references in metasystem files, placeholder leakage, always-loaded word cap |
+| `metasystem internal validate skills` | Skill frontmatter and naming rules |
 | `metasystem validate design-obligations` | Structure and declared state of an obligation matrix |
-| `scripts/refactor-baseline.sh` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
+| `metasystem internal validate refactor-baseline` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
 | `metasystem report frontier` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions, `challenge` enforces the noise floor, and both refuse comparisons against a frontier older than its declared measurement window |
-| `scripts/receipt.sh` | Task receipts, retro cadence check, comparable period stats, retro marker |
 | `metasystem validate stop-loss` | Blocks new investigation cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
 | `scripts/enforcement/` | Shipped CI workflow and Claude Code hooks so the checks run without anyone remembering them |
 

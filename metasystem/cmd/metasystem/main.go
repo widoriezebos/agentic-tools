@@ -100,6 +100,7 @@ func families() []family {
 				{"coverage-eligible", "decide whether an authenticated worker owns full coverage production", runProofRunCoverageEligible},
 				{"coverage-complete", "commit measured coverage from the authenticated producer", runProofRunCoverageComplete},
 				{"coverage-reuse", "project matching successful full coverage for selected packages", runProofRunCoverageReuse},
+				{"coverage-delta", "check coverage for the packages a landing names or touches against their ratchet floors", runProofRunCoverageDelta},
 				{"go-gate-tests", "run the full gate's bounded native Go selection", runProofRunGoGateTests},
 				{"fixture-selection", "select the owned fixture scenario set (internal)", runProofRunFixtureSelection},
 			},
@@ -152,6 +153,7 @@ func families() []family {
 				{"wrapper-token", "prove the caller's ancestry contains the live commit wrapper", runValidateWrapperToken},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
+				{"skills", "validate every present skill's SKILL.md frontmatter, or the named skill directories", runValidateSkills},
 				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
 				{"moved-effects", "check a design page's moved-effect inventory and code paths", runValidateMovedEffects},
@@ -174,6 +176,7 @@ func families() []family {
 				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
 				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
 				{"receipt-line", "decide whether a staged landing appends the RECEIPT line for its goal", runLandingReceiptLine},
+				{"sync-transport", "mirror origin's branch head to the transport remote", runLandingSyncTransport},
 			},
 		},
 		{
@@ -332,6 +335,7 @@ func families() []family {
 				{"hook-start-exits", "refuse SessionStart paths around the outcome owner", runAuditHookStartExits},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 				{"stop-decision-surface", "report additions and refuse undeclared moves of Stop assertions", runAuditStopDecisionSurface},
+				{"production-commands", "name each production command this host lacks, with its package", runAuditProductionCommands},
 			},
 		},
 		{

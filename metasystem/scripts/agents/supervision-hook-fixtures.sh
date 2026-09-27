@@ -243,10 +243,8 @@ wait_for_chat_line_evidence() { # hook process
 line_root=$tmp/line-root
 mkdir -p "$line_root/scripts/agents" "$line_root/bin" "$line_root/plans"
 cp "$hook" "$line_root/scripts/agents/supervision-hook.sh"
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$line_root/scripts/agents/evidence-gc.sh"
-chmod +x "$line_root/scripts/agents/evidence-gc.sh"
 cp_engine "$ms" "$line_root/bin/metasystem"
-printf '%s\n' 'metasystem.runtimes=none' >"$line_root/metasystem.conf"
+printf '%s\n' 'metasystem.runtimes=none' "evidence.root=$tmp/line-evidence" >"$line_root/metasystem.conf"
 printf '# Goals\n\n## Goal-free: declared 2026-08-28T00:00:00Z by human over fixture\n' >"$line_root/plans/goals.md"
 git -C "$line_root" init -q -b main
 git -C "$line_root" config user.name fixture
@@ -328,7 +326,6 @@ git -C "$brain_repo" remote add origin "$brain_origin"
 mkdir -p "$brain_repo/bin" "$brain_repo/plans" "$brain_repo/scripts/agents" "$brain_repo/records/misc"
 cp_engine "$ms" "$brain_repo/bin/metasystem"
 cp "$hook" "$brain_repo/scripts/agents/supervision-hook.sh"
-cp "$root/scripts/agents/evidence-gc.sh" "$brain_repo/scripts/agents/evidence-gc.sh"
 cp "$root/scripts/agents/pre-commit-guard.sh" "$brain_repo/scripts/agents/"
 cp -R "$root/scripts/agents/adapters" "$brain_repo/scripts/agents/"
 cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$brain_repo/records/misc/"
@@ -1217,9 +1214,7 @@ run_handoff_stop_leg() { # leg, runtime, foreign session
   cp "$root/scripts/agents/roles/steward-continuation.requirements.json" "$installation/scripts/agents/roles/"
   cp "$root/scripts/agents/schemas/steward-continuation.schema.json" "$installation/scripts/agents/schemas/"
   cp "$root/scripts/agents/permissions/workspace.json" "$installation/scripts/agents/permissions/"
-  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$installation/scripts/agents/evidence-gc.sh"
-  chmod +x "$installation/scripts/agents/evidence-gc.sh"
-  printf '%s\n' "metasystem.runtimes=$runtime" \
+  printf '%s\n' "metasystem.runtimes=$runtime" "evidence.root=$tmp/$1-evidence" \
     "role.steward-continuation.runtime=$runtime" \
     "role.steward-continuation.model.$runtime=fixture" >"$installation/metasystem.conf"
   printf '%s\n' 'artifacts/' 'memory/receipts.log' >"$installation/.gitignore"
@@ -1547,9 +1542,8 @@ mkdir -p "$rearm_root/bin" "$rearm_root/plans" "$rearm_root/scripts/agents/adapt
 cp_engine "$ms" "$rearm_root/bin/metasystem"
 cp "$hook" "$rearm_root/scripts/agents/supervision-hook.sh"
 cp "$root/scripts/agents/adapters/fake.sh" "$rearm_root/scripts/agents/adapters/fake.sh"
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$rearm_root/scripts/agents/evidence-gc.sh"
-chmod +x "$rearm_root/scripts/agents/evidence-gc.sh" "$rearm_root/scripts/agents/adapters/fake.sh"
-printf '%s\n' 'metasystem.runtimes=fake' >"$rearm_root/metasystem.conf"
+chmod +x "$rearm_root/scripts/agents/adapters/fake.sh"
+printf '%s\n' 'metasystem.runtimes=fake' "evidence.root=$tmp/rearm-evidence" >"$rearm_root/metasystem.conf"
 printf '# Goals\n\n## Goal-free: declared 2026-08-28T00:00:00Z by human over fixture\n' >"$rearm_root/plans/goals.md"
 git -C "$rearm_root" init -q -b main
 git -C "$rearm_root" config user.name fixture
@@ -2917,6 +2911,7 @@ mkdir -p "$template_outer/development" "$template_root/bin" "$template_root/plan
 printf '%s\n' 'template marker' >"$template_outer/development/metasystem-design.md"
 printf '%s\n' \
   'metasystem.runtimes=claude' \
+  "evidence.root=$tmp/template-evidence" \
   'role.steward-continuation.runtime=claude' \
   'role.steward-continuation.model.claude=fixture' >"$template_root/metasystem.conf"
 printf '%s\n' '# Goals' '' \
@@ -2925,8 +2920,6 @@ printf '%s\n' '# Goals' '' \
   '- Next step: Claim and dispatch the template backlog.' >"$template_root/plans/goals.md"
 cp_engine "$ms" "$template_root/bin/metasystem"
 cp "$hook" "$template_root/scripts/agents/supervision-hook.sh"
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$template_root/scripts/agents/evidence-gc.sh"
-chmod +x "$template_root/scripts/agents/evidence-gc.sh"
 cp "$root/scripts/agents/adapters/claude.sh" "$template_root/scripts/agents/adapters/claude.sh"
 cp "$root/scripts/agents/roles/steward-continuation.md" "$template_root/scripts/agents/roles/steward-continuation.md"
 cp "$root/scripts/agents/roles/steward-continuation.requirements.json" \

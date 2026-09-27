@@ -544,3 +544,32 @@ func runLandingReceiptLineWithRawSource(args []string, raw func(gittree.RawReque
 	}
 	return 0
 }
+
+// runLandingSyncTransport mirrors origin's branch head to the transport
+// remote (landing.SyncTransport): `landing sync-transport [--root R] [BRANCH]`.
+// BRANCH defaults to main when absent; an explicitly empty BRANCH refuses.
+func runLandingSyncTransport(args []string) int {
+	flags := flag.NewFlagSet("landing sync-transport", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "checkout whose origin and transport remotes are synchronized")
+	if flags.Parse(args) != nil || flags.NArg() > 1 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing sync-transport [--root CHECKOUT] [BRANCH]")
+		return 2
+	}
+	branch := "main"
+	if flags.NArg() == 1 {
+		branch = flags.Arg(0)
+	}
+	last, err := landing.SyncTransport(*root, branch, nil)
+	if last != "" {
+		fmt.Println(last)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		var refusal *landing.TransportError
+		if errors.As(err, &refusal) {
+			return refusal.Code
+		}
+		return 1
+	}
+	return 0
+}

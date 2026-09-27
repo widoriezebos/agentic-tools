@@ -71,7 +71,6 @@ func newBatchProvenanceBed(t *testing.T, verdict string, branchMember bool) batc
 	sourceTree := batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD^{tree}")
 	batchProvenanceGit(t, "-C", root, "switch", "-q", "main")
 
-	batchProvenanceWrite(t, filepath.Join(root, "scripts", "receipt.sh"), "#!/usr/bin/env bash\nexit 0\n", 0o755)
 	wrapper := `#!/usr/bin/env bash
 set -euo pipefail
 chain=

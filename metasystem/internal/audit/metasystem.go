@@ -38,9 +38,8 @@ func auditScanRoots() []string {
 		"docs/working-with-agents.md", "docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
 		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md", "docs/examples",
 		"skills", "optional-skills", "meta",
-		"scripts/validate-metasystem.sh", "scripts/validate-skill.sh",
-		"scripts/refactor-baseline.sh",
-		"scripts/receipt.sh", "scripts/enforcement",
+		"scripts/validate-metasystem.sh",
+		"scripts/enforcement",
 		"plans/README.md", "memory/README.md", "memory/instruction-ledger.md", "memory/known-issues.md",
 	}...)
 }

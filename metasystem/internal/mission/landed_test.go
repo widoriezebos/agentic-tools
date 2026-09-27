@@ -192,6 +192,7 @@ func TestLandedReturnsIsAPureFunctionAcrossParks(t *testing.T) {
 // The production checker is the shipped job-mode return checker, called in
 // process: a round whose record names no dispatchable role lists as invalid.
 func TestLandedReturnsJudgesRoundsWithTheShippedChecker(t *testing.T) {
+	t.Parallel()
 	repo := landedRepo(t)
 	landedWriteJob(t, repo, "bare", map[string]any{"mission": "m1", "status": "completed", "round": 1})
 	landedWriteReturn(t, repo, "bare", 1)

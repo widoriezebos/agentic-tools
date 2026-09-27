@@ -550,6 +550,29 @@ func RunHeld(root string, callerPid int64, expectedEpoch *int64, argv []string) 
 	return runProcess(argv)
 }
 
+// WithHeld runs fn while holding the lease lock, gated exactly as RunHeld
+// gates a command: a HUMAN caller runs it ungated; any other caller must pass
+// the holder gate at the expected epoch while the lock is held.
+func WithHeld(root string, callerPid int64, expectedEpoch *int64, fn func() error) error {
+	root = resolveRoot(root)
+	identity, err := Classify(root, callerPid)
+	if err != nil {
+		return err
+	}
+	if identity.Class == ClassHuman {
+		return fn()
+	}
+	lock, err := acquireBounded(leasePaths(root).Lock, "run-held")
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+	if err := gateHolder(root, identity, expectedEpoch); err != nil {
+		return err
+	}
+	return fn()
+}
+
 // gateHolder is the run-held authority check: HUMAN and internal helpers pass,
 // a MAIN must be the holder at the expected epoch, anyone else is refused.
 func gateHolder(root string, identity Classification, expectedEpoch *int64) error {

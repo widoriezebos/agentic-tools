@@ -173,7 +173,7 @@ func observeReceiptLineWithDependencies(
 	}
 	decision.Outcome = ReceiptLineOutcomeRefused
 	decision.Reason = "receipt-line-missing"
-	decision.Command = fmt.Sprintf(`scripts/receipt.sh add --type implement --outcome shipped --goal %s --built-by coordinator --note "<what landed and how it was verified>"`, goalWord)
+	decision.Command = fmt.Sprintf(`metasystem receipt add --type implement --outcome shipped --goal %s --built-by coordinator --note "<what landed and how it was verified>"`, goalWord)
 	detail := fmt.Sprintf("the landing changes code (%s) but its staged %s appends no %s", listed, location.fromInstallation, target)
 	if len(otherGoals) > 0 {
 		detail += fmt.Sprintf("; the RECEIPT lines it appends name goal %s", strings.Join(otherGoals, ", "))

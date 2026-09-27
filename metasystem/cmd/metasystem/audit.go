@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	goalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/parallelratchet"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
 // The audit family holds mechanical fences: pure
@@ -271,4 +273,27 @@ func runAuditStopDecisionSurfaceWith(args []string, dependencies stopDecisionSur
 		return 1
 	}
 	return 0
+}
+
+// runAuditProductionCommands checks this host for the production command
+// inventory (up.ProductionCommands) and names each missing command with its
+// Debian-family package: `audit production-commands`.
+func runAuditProductionCommands(args []string) int {
+	return auditProductionCommands(args, exec.LookPath, os.Stderr)
+}
+
+func auditProductionCommands(args []string, lookPath func(string) (string, error), errOut io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(errOut, "usage: metasystem internal audit production-commands")
+		return 2
+	}
+	missing := up.MissingProductionCommands(lookPath)
+	if len(missing) == 0 {
+		return 0
+	}
+	fmt.Fprintln(errOut, "command preflight: this host is missing production commands:")
+	for _, command := range missing {
+		fmt.Fprintf(errOut, "  %s (package: %s)\n", command.Name, command.Package)
+	}
+	return 1
 }

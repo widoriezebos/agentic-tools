@@ -1177,9 +1177,7 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 		t.Fatal(err)
 	}
 	for _, relative := range []string{
-		"scripts/receipt.sh",
 		"scripts/agents/supervision-hook.sh",
-		"scripts/agents/evidence-gc.sh",
 		"scripts/agents/arm-supervision.sh",
 		"scripts/agents/dispatch.sh",
 		"scripts/agents/adapters/fake.sh",
@@ -1599,16 +1597,14 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	hook := filepath.Join(hookRoot, "scripts", "agents", "supervision-hook.sh")
-	evidenceGC := filepath.Join(hookRoot, "scripts", "agents", "evidence-gc.sh")
 	canonical := filepath.Join(hookRoot, "bin", "metasystem")
-	for _, target := range []string{hook, evidenceGC, canonical} {
+	for _, target := range []string{hook, canonical} {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for source, target := range map[string]string{
 		filepath.Join(sourceRoot, "scripts", "agents", "supervision-hook.sh"): hook,
-		filepath.Join(sourceRoot, "scripts", "receipt.sh"):                    filepath.Join(hookRoot, "scripts", "receipt.sh"),
 		binary: canonical,
 	} {
 		data, readErr := os.ReadFile(source)
@@ -1619,12 +1615,10 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 			t.Fatal(writeErr)
 		}
 	}
-	if err := testexec.WriteFile(evidenceGC, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	wrapper := filepath.Join(t.TempDir(), "metasystem-hook-engine")
 	wrapperSource := `#!/bin/sh
 if [ "${1:-}" = up ]; then printf '%s\n' 'up outcome=already-healthy'; exit 0; fi
+if [ "${1:-}" = evidence ] && [ "${2:-}" = gc ]; then exit 0; fi
 if [ "${1:-}" = health ]; then
   printf '%s\n' '{"schemaVersion":1,"exitCode":0,"line":"HEALTH healthy — ","interventions":[],"verdict":{"schema":1,"observedAt":"2026-09-17T10:00:00Z","observation":1,"aggregate":"healthy","roles":[],"shouldAlert":false,"findingDigest":""}}'
   exit 0
@@ -1688,6 +1682,7 @@ func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
 	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
 	wrapperSource := `#!/bin/sh
 if [ "${1:-}" = up ]; then printf '%s\n' 'up outcome=already-healthy'; exit 0; fi
+if [ "${1:-}" = evidence ] && [ "${2:-}" = gc ]; then exit 0; fi
 if [ "${1:-}" = health ]; then
   printf '%s\n' '{"schemaVersion":1,"exitCode":0,"line":"HEALTH healthy — ","interventions":[],"verdict":{"schema":1,"observedAt":"2026-09-18T10:00:00Z","observation":1,"aggregate":"healthy","roles":[],"shouldAlert":false,"findingDigest":""}}'
   exit 0

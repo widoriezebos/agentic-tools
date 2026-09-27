@@ -102,7 +102,7 @@ guard_run_pass() { # output directory, label
   done
   guard_step "$dir" ratchet "$ms" audit parallel-ratchet
   guard_step "$dir" stop-surface "$ms" audit stop-decision-surface
-  guard_step "$dir" metasystem-audit bash scripts/audit-metasystem.sh
+  guard_step "$dir" metasystem-audit "$ms" audit metasystem --root .
   guard_step "$dir" go-gate bash scripts/agents/go-gate.sh
   guard_step "$dir" validation bash scripts/validate-metasystem.sh
   if (( delivery_probe )); then

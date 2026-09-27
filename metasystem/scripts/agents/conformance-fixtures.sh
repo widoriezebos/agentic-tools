@@ -91,7 +91,6 @@ new_case() { # name
   mkdir -p "$controller/scripts/agents" "$controller/docs" "$controller/memory"
   cp "$source_root/scripts/agents/path-classes.txt" "$controller/scripts/agents/"
   cp "$source_root/scripts/metasystem-config.sh" "$controller/scripts/"
-  cp "$source_root/scripts/receipt.sh" "$controller/scripts/"
   # The copied config reader resolves its engine as <controller>/bin/metasystem.
   mkdir -p "$controller/bin"
   cp "$source_root/bin/metasystem" "$controller/bin/metasystem"
@@ -331,8 +330,8 @@ expect_failure delegate-receipt \
 [[ ! -e "$controller/artifacts/agents/impl/rounds/1/diff.patch" \
    && ! -e "$controller/artifacts/agents/impl/rounds/1/review.json" ]] \
   || { echo "delegate receipt refusal published review artifacts" >&2; exit 1; }
-"$controller/scripts/receipt.sh" add --type implement --outcome shipped --verify clean \
-  --goal seat-owned --built-by coordinator --note 'fixture seat landing' \
+"$controller/bin/metasystem" receipt add --type implement --outcome shipped --verify clean \
+  --goal seat-owned --built-by coordinator --note 'fixture seat landing' --root "$controller" \
   >"$fixture_root/seat-receipt.out"
 grep -Fq '|goal=seat-owned|built_by=coordinator|' "$controller/memory/receipts.log" \
   || { echo "seat receipt entrypoint did not append its own landing receipt" >&2; exit 1; }

@@ -2236,7 +2236,7 @@ func runProofRunCoverageReuse(args []string) int {
 		fmt.Fprintln(os.Stderr, "proof-run coverage-reuse:", err)
 		return 1
 	}
-	evidence, found, err := proofrun.ReusableCoverage(canonicalControl, canonicalExecution, *baseline, packages)
+	lines, found, err := coverageReuseLines(canonicalControl, canonicalExecution, *baseline, packages, os.Environ())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run coverage-reuse:", err)
 		return 1
@@ -2244,10 +2244,24 @@ func runProofRunCoverageReuse(args []string) int {
 	if !found {
 		return 3
 	}
-	for _, pkg := range packages {
-		fmt.Printf("coverage reuse: ./%s: %.1f%%\n", pkg, evidence.Measurements[pkg])
+	for _, line := range lines {
+		fmt.Println(line)
 	}
 	return 0
+}
+
+// coverageReuseLines projects matching retained full coverage for packages,
+// one "coverage reuse" line per package.
+func coverageReuseLines(controlRoot, executionRoot, baseline string, packages, environment []string) ([]string, bool, error) {
+	evidence, found, err := proofrun.ReusableCoverageInEnvironment(controlRoot, executionRoot, baseline, packages, environment)
+	if err != nil || !found {
+		return nil, found, err
+	}
+	lines := make([]string, 0, len(packages))
+	for _, pkg := range packages {
+		lines = append(lines, fmt.Sprintf("coverage reuse: ./%s: %.1f%%", pkg, evidence.Measurements[pkg]))
+	}
+	return lines, true, nil
 }
 
 func runProofRunBanner(args []string) int {
@@ -2263,14 +2277,19 @@ func runProofRunBanner(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem proof-run banner --suite S --root R --progress P --log L")
 		return 2
 	}
-	state := proofRunWitnessState(*root)
+	fmt.Println(proofRunBannerText(*suite, *root, *progress, *logPath))
+	return 0
+}
+
+// proofRunBannerText is the one-line suite cost banner a proof launch carries.
+func proofRunBannerText(suite, root, progress, logPath string) string {
+	state := proofRunWitnessState(root)
 	duration := "minutes"
 	if state == "unarmed" {
 		duration = "full-gate"
 	}
-	fmt.Printf("suite-cost suite=%s witness=%s duration=%s heartbeat=%s logs=%s\n",
-		*suite, state, duration, proofRunDisplayPath(*root, *progress), proofRunDisplayPath(*root, *logPath))
-	return 0
+	return fmt.Sprintf("suite-cost suite=%s witness=%s duration=%s heartbeat=%s logs=%s",
+		suite, state, duration, proofRunDisplayPath(root, progress), proofRunDisplayPath(root, logPath))
 }
 
 func runProofRunHeartbeat(args []string) int {

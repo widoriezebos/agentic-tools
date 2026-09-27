@@ -488,7 +488,6 @@ else
 fi
 chmod +x "$out"
 `, strconv.Quote(engine), strconv.Quote(engine)), 0o755)
-	write("scripts/receipt.sh", "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p memory\nprintf '%s\\n' \"$*\" >> memory/receipts.log\ngit add memory/receipts.log\n", 0o755)
 	write("scripts/agents/commit.sh", batchE2ECommitScript, 0o755)
 	write("metasystem.conf", "metasystem.runtimes=fake\ntesting.contract=testing.json\ngoal.human.wido=Wido Example <wido@example.invalid>\nproof.admission.top-level-max=0\n", 0o644)
 	write(".gitignore", "artifacts/\nbin/\nmetasystem.conf.local\n", 0o644)
@@ -788,7 +787,7 @@ func (fixture *batchE2EFixture) assertLandedUnits(want ...string) {
 	}
 	receipts := batchE2EGit(fixture.t, fixture.origin, "show", "refs/heads/main:memory/receipts.log")
 	for _, goalID := range want {
-		if !strings.Contains(receipts, "--goal "+goalID+" ") {
+		if !strings.Contains(receipts, "|goal="+goalID+"|") {
 			fixture.t.Fatalf("receipt log lacks %s: %s", goalID, receipts)
 		}
 	}
@@ -890,6 +889,8 @@ revision=${claim##* }
   printf 'Landing-Provenance: attested=%s snapshot=%s base=%s receipt=%s\n' "$attested" "$snapshot" "$base" "$receipt"
   printf 'Landing-Provenance-Verdict: pass\nLanded-By: %s\n' "$METASYSTEM_LANDED_BY"
 } > .batch-message
+# The landing's receipt line rides in the unit's commit.
+if [[ -f memory/receipts.log ]]; then git add memory/receipts.log; fi
 git commit --no-verify -F .batch-message
 rm -f .batch-message
 `

@@ -49,7 +49,7 @@ Decide the fate of every rule with the table below. A file is not the unit of de
 | Authorization boundaries, protected areas, "never touch X" | `docs/project-rules.md`, in the reserved decisions and external state sections |
 | Judgment rules duplicating metasystem guidance | Drop in favor of the metasystem owner; note the mapping in the ledger |
 | Judgment rules the metasystem lacks, backed by evidence | Keep as a project delta in the correct owner; propose upstream to the template in the final report |
-| Repeated specialist workflows | Keep as a project skill validated by `scripts/validate-skill.sh`, or map to `verify`, `refactor`, or `take-a-step-back` and deprecate |
+| Repeated specialist workflows | Keep as a project skill validated by `metasystem internal validate skills`, or map to `verify`, `refactor`, or `take-a-step-back` and deprecate |
 | Machine-verifiable rules stated as prose | Convert to a script or CI check, or map to an existing metasystem script. Delete the prose |
 | Incident history, one-off lessons, session logs | Delete. Git history is the archive. Promote only lessons with repeated evidence, through the change gate |
 | Provider- or model-specific prompt recipes | Delete unless repeated product-specific evidence justifies a per-runtime adapter |
@@ -116,7 +116,7 @@ Clean cutover, per the design principles: the same change that installs a metasy
 1. `bin/metasystem runtime setup --repo <target> --runtimes <selected> --check` and `scripts/validate-metasystem.sh` pass in the repository. The first result is configuration readiness, not provider trust, restart completion, supervision arming, or observed lifecycle execution. Outside the template checkout (which the audit detects by its folder name plus the development docs beside it) the audit also fails on unreplaced `docs/project-rules.md` placeholders, along with the always-loaded cap.
 2. The commands recorded in `docs/project-rules.md` each actually ran, at minimum the focused test and the build.
 3. A final sweep finds no orphaned instruction files and no dangling references to deleted ones.
-4. Report with the ledger first: dispositions by bucket, deletions with reasons, conflicts escalated, deltas kept, and upstream proposals for the template. Append a receipt (`scripts/receipt.sh add`) and recommend the first retro after a handful of tasks rather than at the default cadence.
+4. Report with the ledger first: dispositions by bucket, deletions with reasons, conflicts escalated, deltas kept, and upstream proposals for the template. Append a receipt (`metasystem receipt add`) and recommend the first retro after a handful of tasks rather than at the default cadence.
 
 Reconciliation is complete when the human has accepted or vetoed every ledger row. Moving the files is not what finishes the job.
 

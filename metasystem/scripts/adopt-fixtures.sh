@@ -223,7 +223,7 @@ if adopt_leg skills; then
   conf_edit "$adopted/metasystem.conf" delete-lines '^validate[.]extra-suites=.*$'
   fill_harness_conf "$adopted/metasystem.conf" "$tmp/adopted-evidence"
   echo "adopt fixture leg started: a canonical skill pruned before runtime registration must validate" >&2
-  bash "$adopted/scripts/agents/validate-skill-inventory.sh" "$adopted" >"$tmp/nested-pruned.log" 2>&1 || {
+  "$adopted/bin/metasystem" validate skills --root "$adopted" >"$tmp/nested-pruned.log" 2>&1 || {
     nested_pruned_rc=$?
     echo "adopt fixture leg failed: pruned canonical skill; expected adopted inventory validation rc=0, observed rc=$nested_pruned_rc" >&2
     tail -80 "$tmp/nested-pruned.log" >&2
@@ -236,7 +236,7 @@ if adopt_leg skills; then
   echo "adopt fixture leg started: an empty canonical skill directory must be rejected" >&2
   mkdir "$adopted/skills/hollow"
   hollow_rc=0
-  bash "$adopted/scripts/agents/validate-skill-inventory.sh" "$adopted" >"$tmp/nested-hollow.log" 2>&1 \
+  "$adopted/bin/metasystem" validate skills --root "$adopted" >"$tmp/nested-hollow.log" 2>&1 \
     || hollow_rc=$?
   if [[ $hollow_rc -eq 0 ]]; then
     echo "adopt fixture leg failed: empty canonical skill directory; expected rejection, observed rc=0" >&2
@@ -251,7 +251,7 @@ if adopt_leg skills; then
   grep -v '^name:' "$adopted/skills/verify/SKILL.md" >"$adopted/skills/verify/SKILL.md.new"
   mv "$adopted/skills/verify/SKILL.md.new" "$adopted/skills/verify/SKILL.md"
   broken_skill_rc=0
-  bash "$adopted/scripts/agents/validate-skill-inventory.sh" "$adopted" >"$tmp/nested-broken-skill.log" 2>&1 \
+  "$adopted/bin/metasystem" validate skills --root "$adopted" >"$tmp/nested-broken-skill.log" 2>&1 \
     || broken_skill_rc=$?
   if [[ $broken_skill_rc -eq 0 ]]; then
     echo "adopt fixture leg failed: broken canonical skill frontmatter; expected rejection, observed rc=0" >&2
@@ -321,9 +321,8 @@ if adopt_leg nested; then
   # entrypoints and installation configuration: application state must not be
   # recreated beside them.
   vendored_prefix="$nested_tgt/metasystem"
-  mkdir -p "$vendored_prefix/bin" "$vendored_prefix/scripts"
+  mkdir -p "$vendored_prefix/bin"
   cp "$nested_tgt/bin/metasystem" "$vendored_prefix/bin/metasystem"
-  cp "$nested_tgt/scripts/receipt.sh" "$vendored_prefix/scripts/receipt.sh"
   cp "$nested_tgt/metasystem.conf" "$vendored_prefix/metasystem.conf"
   [[ ! -e "$vendored_prefix/memory" ]] \
     || { echo "vendored fixture began with application memory" >&2; exit 1; }
@@ -333,9 +332,9 @@ if adopt_leg nested; then
   # the fixture gives its target one before asserting healthy-tick writes.
   git -C "$nested_tgt" add -A
   git -C "$nested_tgt" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm adopted-base
-  METASYSTEM_BIN="$vendored_prefix/bin/metasystem" \
-    "$vendored_prefix/scripts/receipt.sh" add --type implement --outcome shipped \
-    --skills none --verify clean --corrections 0 --stop-loss no --note "adopted state-root fixture" >/dev/null
+  "$vendored_prefix/bin/metasystem" receipt add --type implement --outcome shipped \
+    --skills none --verify clean --corrections 0 --stop-loss no --note "adopted state-root fixture" \
+    --root "$vendored_prefix" >/dev/null
   tick_out=$("$vendored_prefix/bin/metasystem" steward tick --repo "$nested_tgt") \
     || { echo "adopted steward tick failed" >&2; exit 1; }
   grep -vq '"verdict": "degraded"' <<<"$tick_out" \
@@ -667,8 +666,8 @@ if adopt_leg default; then
     fi
   done <"$tmp/adopt-idem-snap"
   # The direct audit proves the rule itself; validation proves its cheap refusal precedes the engine gate.
-  if (cd "$tgt" && METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS= \
-      bash scripts/audit-metasystem.sh .) >"$tmp/project-rules-placeholder-audit.out" 2>&1; then
+  if "$tgt/bin/metasystem" audit metasystem --root "$tgt" \
+      >"$tmp/project-rules-placeholder-audit.out" 2>&1; then
     echo "adopt: direct audit accepted unreplaced project-rules placeholders" >&2
     exit 1
   fi
@@ -687,8 +686,8 @@ if adopt_leg default; then
   sed 's/<[^>]*>/filled/g' "$tgt/docs/project-rules.md" >"$tgt/docs/project-rules.md.new"
   mv "$tgt/docs/project-rules.md.new" "$tgt/docs/project-rules.md"
   # The configuration leg applies the same direct-rule and cheap-entrypoint proofs.
-  if (cd "$tgt" && METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS= \
-      bash scripts/audit-metasystem.sh .) >"$tmp/conf-placeholder-audit.out" 2>&1; then
+  if "$tgt/bin/metasystem" audit metasystem --root "$tgt" \
+      >"$tmp/conf-placeholder-audit.out" 2>&1; then
     echo "adopt: direct audit accepted unreplaced configuration placeholders" >&2
     exit 1
   fi

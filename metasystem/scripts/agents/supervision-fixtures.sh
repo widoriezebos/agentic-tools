@@ -1695,7 +1695,6 @@ if [[ "$fixture_scenario" == nested-candidate-hooks ]]; then
 copied_dir=$nested_scope/development/sub/scripts/agents
 mkdir -p "$copied_dir"
 cp "$nested_hook" "$copied_dir/supervision-hook.sh"
-cp "$nested_installation/scripts/agents/evidence-gc.sh" "$copied_dir/evidence-gc.sh"
 ln -s "$nested_hook" "$copied_dir/hook-link.sh"
 copied_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
   missing_engine_allowance=$(degraded_stop_form allowed engine-missing)
@@ -1728,7 +1727,6 @@ if [[ "$fixture_scenario" == nested-no-world ]]; then
 no_world=$tmp/no-world
 mkdir -p "$no_world/scripts/agents" "$no_world/bin"
 cp "$nested_hook" "$no_world/scripts/agents/supervision-hook.sh"
-cp "$nested_installation/scripts/agents/evidence-gc.sh" "$no_world/scripts/agents/evidence-gc.sh"
 cp -R "$nested_installation/scripts/agents/adapters" "$no_world/scripts/agents/adapters"
   cp_engine "$ms" "$no_world/bin/metasystem"
   printf '%s\n' 'metasystem.runtimes=fake' >"$no_world/metasystem.conf"
@@ -1746,7 +1744,6 @@ if [[ "$fixture_scenario" == nested-engine-skew || "$fixture_scenario" == nested
 skew_root=$tmp/skew-root
 mkdir -p "$skew_root/scripts/agents" "$skew_root/bin" "$skew_root/plans"
 cp "$nested_hook" "$skew_root/scripts/agents/supervision-hook.sh"
-cp "$nested_installation/scripts/agents/evidence-gc.sh" "$skew_root/scripts/agents/evidence-gc.sh"
 cp -R "$nested_installation/scripts/agents/adapters" "$skew_root/scripts/agents/adapters"
 cp_engine "$ms" "$skew_root/bin/metasystem"
 printf '%s\n' 'metasystem.runtimes=fake' >"$skew_root/metasystem.conf"
@@ -3872,7 +3869,6 @@ mkdir -p "$foreign/repo"
 (cd "$foreign/repo" && git init -q -b main .)
 mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
 cp "$source_root/scripts/agents/arm-supervision.sh" \
-  "$source_root/scripts/agents/preflight-commands.sh" \
   "$foreign/repo/metasystem/scripts/agents/"
 # Shutting supervision down is a control-plane write, so the sandbox needs the
 # engine (census identity, lease classification); without it this sandbox

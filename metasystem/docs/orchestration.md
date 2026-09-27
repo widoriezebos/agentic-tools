@@ -331,7 +331,7 @@ Trusted state is written only by the orchestrator that certifies. Mode rules do 
 | --- | --- | --- |
 | Implement | Implementation from an accepted design; exploration; a verifier run | Design decisions, adjudication, decisive verification, certification, receipts |
 | Design | Critique rounds (`design-critic`) | The design itself, dispositions, the obligation matrix |
-| Refactor | Batch execution in the job worktree against the brief's batch plan | The acceptance gate run, `scripts/refactor-baseline.sh` record and check, test-change escalations |
+| Refactor | Batch execution in the job worktree against the brief's batch plan | The acceptance gate run, `metasystem internal validate refactor-baseline` record and check, test-change escalations |
 | Improve | Implementing one experiment per brief | Running the evaluation, `metasystem report frontier` challenge and record, honest classification |
 | Take a step back | Evidence gathering; analysis-only diagnosis | The ledger, classifications, `metasystem validate stop-loss` state |
 | Verify | Driving the surface and capturing output | Certification against the completion gate |

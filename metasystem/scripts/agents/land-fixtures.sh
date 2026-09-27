@@ -397,9 +397,7 @@ make_leg() { # name
   fi
   mkdir -p "$leg_seed/scripts/agents" "$leg_seed/plans" "$leg_seed/bin"
   cp "$root/scripts/agents/land.sh" "$leg_seed/scripts/agents/land.sh"
-  cp "$root/scripts/agents/coverage-delta.sh" "$leg_seed/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/pre-commit-guard.sh" "$leg_seed/scripts/agents/pre-commit-guard.sh"
-  cp "$root/scripts/agents/sync-transport.sh" "$leg_seed/scripts/agents/sync-transport.sh"
   if ! is_workspace_receipt_scenario; then
     cp "$source_engine" "$leg_seed/bin/metasystem"
   fi
@@ -604,10 +602,8 @@ JSON
     done
   fi
   chmod +x "$leg_seed/scripts/agents/land.sh" \
-    "$leg_seed/scripts/agents/coverage-delta.sh" \
     "$leg_seed/scripts/agents/pre-commit-guard.sh" \
-    "$leg_seed/scripts/agents/commit.sh" \
-    "$leg_seed/scripts/agents/sync-transport.sh"
+    "$leg_seed/scripts/agents/commit.sh"
 	if is_workspace_receipt_scenario || is_carried_scenario; then
 	  chmod +x "$leg_seed/scripts/agents/go-build.sh"
 	else
@@ -2708,7 +2704,7 @@ set -e
   || { echo "land receipt-line fixture: a code landing without its receipt line was accepted" >&2; exit 1; }
 grep -Fq 'land refused: the landing changes code (payload.txt) but its staged memory/receipts.log appends no RECEIPT line for goal fx' "$receipt_line_refusal" \
   || { echo "land receipt-line fixture: the refusal does not name the missing line" >&2; sed -n '1,120p' "$receipt_line_refusal" >&2; exit 1; }
-grep -Fq 'write the line with scripts/receipt.sh add --type implement --outcome shipped --goal fx --built-by coordinator --note "<what landed and how it was verified>" and include memory/receipts.log in the landing' "$receipt_line_refusal" \
+grep -Fq 'write the line with metasystem receipt add --type implement --outcome shipped --goal fx --built-by coordinator --note "<what landed and how it was verified>" and include memory/receipts.log in the landing' "$receipt_line_refusal" \
   || { echo "land receipt-line fixture: the refusal does not name the command that writes the line" >&2; sed -n '1,120p' "$receipt_line_refusal" >&2; exit 1; }
 [[ $(git -C "$leg_local" rev-parse HEAD) == "$receipt_line_seed_head" ]] \
   || { echo "land receipt-line fixture: the refused landing committed" >&2; exit 1; }

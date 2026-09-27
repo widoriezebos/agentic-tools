@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Run the metasystem retro, turning accumulated task receipts into instruction changes and reviewing the previous retro's changes against evidence to keep, amend, or revert them. Use when scripts/receipt.sh check reports a retro due or the human asks for one. Do not use for code changes (normal work) or for mid-task rule additions (forbidden by the contract).
+description: Run the metasystem retro, turning accumulated task receipts into instruction changes and reviewing the previous retro's changes against evidence to keep, amend, or revert them. Use when metasystem receipt check reports a retro due or the human asks for one. Do not use for code changes (normal work) or for mid-task rule additions (forbidden by the contract).
 ---
 
 # Retro
@@ -9,8 +9,8 @@ The metasystem improves itself the same way improve mode improves code: changes 
 
 ## Inputs
 
-- Receipts since the last retro: `scripts/receipt.sh stats` for the period numbers, including the critique-waiver count, and the raw `critique_waived` plus `waiver_stream` fields for per-stream waiver patterns.
-- Launch usage for the same period: in the receipt ledger used by `scripts/receipt.sh stats`, read the final `RETRO` row and use its second pipe-separated field as the previous retro's RFC3339 time. Run `metasystem launch report --since <the previous retro's time> --json` and record these four numbers in the retro record: builds over the cap, compactions per build job, compacted reads, and calls above 200K context.
+- Receipts since the last retro: `metasystem receipt stats` for the period numbers, including the critique-waiver count, and the raw `critique_waived` plus `waiver_stream` fields for per-stream waiver patterns.
+- Launch usage for the same period: in the receipt ledger used by `metasystem receipt stats`, read the final `RETRO` row and use its second pipe-separated field as the previous retro's RFC3339 time. Run `metasystem launch report --since <the previous retro's time> --json` and record these four numbers in the retro record: builds over the cap, compactions per build job, compacted reads, and calls above 200K context.
 - Git history for the same period, cross-checked against receipts. A "shipped" receipt followed by fix commits is hidden rework, and it counts as rework.
 - The instruction ledger at `memory/instruction-ledger.md`: every change previous retros adopted, each with its expected effect.
 
@@ -44,10 +44,10 @@ The expected effect must be testable: "fewer rework receipts on refactor tasks",
 
 ## Step 4: Apply and Close
 
-Present verdicts and proposals as a list the human can accept or veto item by item. Apply the accepted rows, update the ledger, then record the marker: `scripts/receipt.sh retro` with a one-line summary. A retro that forgets its marker breaks the cadence for the next one.
+Present verdicts and proposals as a list the human can accept or veto item by item. Apply the accepted rows, update the ledger, then record the marker: `metasystem receipt retro` with a one-line summary. A retro that forgets its marker breaks the cadence for the next one.
 
 With peer agents active, run retros at a quiet point on the integration branch. Accepted changes land through the normal review flow, agents mid-task finish under the rules they started with, and new rules apply from their next session.
 
 ## Automation
 
-Due-detection and period stats are automatic: `receipt.sh add` warns when a retro is due, and wiring `scripts/receipt.sh check` into CI or the runtime's scheduler removes the last manual nudge. Evidence collection is not automatic. It is a contract duty of the agent being measured, kept honest by the git cross-check and the human spot-check, and a gap in receipts is itself a retro finding. The apply step is deliberately manual: changing the instructions is a reserved decision the metasystem applies to itself.
+Due-detection and period stats are automatic: `metasystem receipt add` warns when a retro is due, and wiring `metasystem receipt check` into CI or the runtime's scheduler removes the last manual nudge. Evidence collection is not automatic. It is a contract duty of the agent being measured, kept honest by the git cross-check and the human spot-check, and a gap in receipts is itself a retro finding. The apply step is deliberately manual: changing the instructions is a reserved decision the metasystem applies to itself.

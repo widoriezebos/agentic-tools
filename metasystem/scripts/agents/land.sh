@@ -313,6 +313,9 @@ fail_step() { # exit code
   exit "$rc"
 }
 
+# Transport mirrors origin's branch head (metasystem landing sync-transport).
+sync_transport() { "$ms" landing sync-transport --root "$root" "$@"; }
+
 run_required_step() { # name, command...
   run_step "$@"
   local rc=$?
@@ -999,7 +1002,7 @@ finish_carried_publication() {
   run_required_step "complete carried goal record" "$ms" goal carried --root "$root" --entry "$carried_entry"
   fixture_pause after-record
   if (( ! skip_transport )); then
-    run_required_step "sync transport" bash "$root/scripts/agents/sync-transport.sh" "$branch"
+    run_required_step "sync transport" sync_transport "$branch"
   fi
 }
 
@@ -1021,7 +1024,7 @@ run_carried_landing() {
         run_required_step "repair carried counselor record" "$ms" goal carried --root "$root" --repair-counselor --ref "$landing_carried"
       fi
       if (( ! skip_transport )); then
-        run_required_step "sync transport" bash "$root/scripts/agents/sync-transport.sh" "$branch"
+        run_required_step "sync transport" sync_transport "$branch"
       fi
       printf 'already recorded in the goal ledger as %s\n' "${carried_consumption#ledger:}"
       return 0
@@ -1037,7 +1040,7 @@ run_carried_landing() {
           --id "$landing_goal" --ref "$landing_carried" --rebuild-from-commit "$commit"
       fi
       if (( ! skip_transport )); then
-        run_required_step "sync transport" bash "$root/scripts/agents/sync-transport.sh" "$branch"
+        run_required_step "sync transport" sync_transport "$branch"
       fi
       return 0
       ;;
@@ -1219,5 +1222,5 @@ else
 fi
 
 if (( ! skip_transport )); then
-  run_required_step "sync transport" bash "$root/scripts/agents/sync-transport.sh" "$branch"
+  run_required_step "sync transport" sync_transport "$branch"
 fi

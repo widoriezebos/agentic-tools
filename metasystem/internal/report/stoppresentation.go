@@ -315,9 +315,9 @@ func ComposeStopPresentationInput(collection StopPresentationCollection, now tim
 	if input.Receipt == nil {
 		input.Unavailable = append(input.Unavailable, StopUnavailable{Section: "receipt", Cause: "the receipt check was unavailable", Remedy: "The steward must restore supervision", Owner: "steward", SupervisionRepair: true})
 	} else if input.Receipt.ExitCode == 1 {
-		input.Notices = append(input.Notices, StopNotice{Source: "receipt", Class: "retro-debt", Detail: "Metasystem retro due", Remedy: "run scripts/receipt.sh check for details, then skills/retro; after completing the retro, record its receipt", Owner: "seat"})
+		input.Notices = append(input.Notices, StopNotice{Source: "receipt", Class: "retro-debt", Detail: "Metasystem retro due", Remedy: "run metasystem receipt check for details, then skills/retro; after completing the retro, record its receipt", Owner: "seat"})
 	} else if input.Receipt.ExitCode != 0 {
-		input.Notices = append(input.Notices, StopNotice{Source: "receipt", Class: "infrastructure", CauseCode: "receipt-check-error", Component: "receipt", Detail: "Metasystem receipt check errored", Remedy: "run scripts/receipt.sh check to see why", Owner: "steward", SupervisionRepair: true})
+		input.Notices = append(input.Notices, StopNotice{Source: "receipt", Class: "infrastructure", CauseCode: "receipt-check-error", Component: "receipt", Detail: "Metasystem receipt check errored", Remedy: "run metasystem receipt check to see why", Owner: "steward", SupervisionRepair: true})
 	}
 	if data, readErr := readOptional(collection.ArmingFile); collection.ArmingFile != "" && readErr == nil {
 		stderr, stderrErr := readOptional(collection.ArmingStderrFile)

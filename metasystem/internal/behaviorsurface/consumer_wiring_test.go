@@ -47,13 +47,7 @@ func TestLandingConsumerUsesProspectivePolicyForStaleBinaryAndRename(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverageDeltaBody, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "coverage-delta.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "commit.sh"), string(commitBody), true)
-	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "coverage-delta.sh"), string(coverageDeltaBody), true)
-	writeConsumerFixture(t, filepath.Join(root, "scripts", "audit-metasystem.sh"), "#!/usr/bin/env bash\nexit 0\n", true)
 	writeConsumerFixture(t, filepath.Join(root, "scripts", "agents", "go-gate.sh"), `#!/usr/bin/env bash
 set -euo pipefail
 proof=
