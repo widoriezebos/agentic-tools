@@ -341,6 +341,56 @@ describe("what a press did to one proposed action, on the stream", () => {
     expect((twice.messages[0].proposals ?? [])[1]).toEqual({ ...waiting, state: "applied", version: 3 });
   });
 
+  it("keeps the newer entry when an older beat arrives after it", () => {
+    // Outcome beats carry no sequence of their own — the answer they belong to
+    // has ended — so the entry's version is the only order there is. A beat that
+    // overtook a newer one would move the card back to a state the record has
+    // left (Sol S60-C-03).
+    const applied = moved(answered(), { ...waiting, state: "applied", version: 3 });
+    const late = moved(applied, { ...waiting, state: "applying", version: 2 });
+
+    expect((late.messages[0].proposals ?? [])[1]).toEqual({ ...waiting, state: "applied", version: 3 });
+  });
+
+  it("keeps the newer entry when a snapshot read before the write arrives after it", () => {
+    // A snapshot is a reading of an instant, and the read can have been taken
+    // before the write whose beat this page has already folded.
+    const applied = moved(answered(), { ...waiting, state: "applied", version: 3 });
+
+    const stale = loaded(applied, {
+      ...snapshot,
+      messages: [
+        {
+          id: "t1-partner",
+          turn: "t1",
+          role: "partner",
+          text: "I have proposed them.",
+          at: "2026-09-26T09:00:00Z",
+          outcome: "complete",
+          proposals: [{ ...waiting, index: 0, goal: "g1-s43" }, waiting],
+        },
+      ],
+    });
+
+    expect((stale.messages[0].proposals ?? [])[1]).toEqual({ ...waiting, state: "applied", version: 3 });
+    // And the line nobody has moved is the server's own, untouched.
+    expect((stale.messages[0].proposals ?? [])[0].state).toBe("waiting");
+  });
+
+  it("takes the server's answer whole on a first load, with nothing held to keep", () => {
+    const first = loaded(emptyStore, {
+      ...snapshot,
+      messages: [
+        {
+          id: "t1-partner", turn: "t1", role: "partner", text: "I have proposed them.",
+          at: "2026-09-26T09:00:00Z", outcome: "complete", proposals: [waiting],
+        },
+      ],
+    });
+
+    expect((first.messages[0].proposals ?? [])[0]).toEqual(waiting);
+  });
+
   it("leaves a beat of a running turn to the running turn", () => {
     const store = received(running(), {
       turn: "t1", seq: 1, kind: "proposal", text: "", at: "2026-09-23T12:00:01Z", proposal: waiting,

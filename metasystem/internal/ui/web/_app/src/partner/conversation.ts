@@ -139,9 +139,16 @@ export function nameOf(human: string): string {
  * The conversation as the server reads it. It replaces the transcript whole:
  * the server owns it, and a page that merged its own idea of it into the
  * server's would be a second account of the same conversation.
+ *
+ * One exception, and it is not a second account: a proposed action already
+ * folded at a HIGHER version stays. A snapshot is a reading of an instant, and
+ * a reading taken before a write can arrive after the beat that carried it —
+ * then a card that says applied would go back to saying waiting and stay there
+ * until somebody read again (Sol S60-C-03). The version is the record's own
+ * order, so the newer of the two is the one the record holds.
  */
 export function loaded(store: Store, snapshot: Snapshot): Store {
-  const messages = snapshot.messages ?? [];
+  const messages = keptProposals(store, snapshot.messages ?? []);
   // A turn whose answer is already written down has ended, whatever the
   // snapshot says about it: the server writes the answer before it stops
   // calling the turn current, so this is the one instant in which the two
@@ -173,6 +180,41 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
         }
       : nothingRunning,
   };
+}
+
+/**
+ * The arriving transcript, with every proposed action this page already holds at
+ * a higher version kept as it holds it.
+ *
+ * It compares versions and nothing else, because the version is what the record
+ * itself orders writes by: every admitted write moves it, and the entry with the
+ * higher one is the later of the two whichever arrived first. A first load has
+ * nothing to keep and is handed the server's own answer untouched.
+ */
+function keptProposals(store: Store, arriving: Message[]): Message[] {
+  if (store.messages.length === 0) {
+    return arriving;
+  }
+  return arriving.map((message) => {
+    const carried = message.proposals ?? [];
+    if (carried.length === 0) {
+      return message;
+    }
+    const held = store.messages.find((one) => one.turn === message.turn && one.role === message.role)?.proposals ?? [];
+    if (held.length === 0) {
+      return message;
+    }
+    let older = false;
+    const proposals = carried.map((proposal) => {
+      const mine = held.find((one) => one.index === proposal.index);
+      if (mine === undefined || mine.version <= proposal.version) {
+        return proposal;
+      }
+      older = true;
+      return mine;
+    });
+    return older ? { ...message, proposals } : message;
+  });
 }
 
 /** A Partner this seat does not have, or one that could not be admitted. */
@@ -326,6 +368,13 @@ export function proposalMoved(store: Store, turn: string, held: Proposal): Store
     }
     const proposals = (message.proposals ?? []).map((proposal) => {
       if (proposal.index !== held.index) {
+        return proposal;
+      }
+      // An older beat leaves the newer entry where it is. Outcome beats carry no
+      // sequence — the answer they belong to has ended — so the entry's own
+      // version is the only order there is, and a beat that arrives after a
+      // newer one would otherwise move the card back (Sol S60-C-03).
+      if (held.version < proposal.version) {
         return proposal;
       }
       changed = true;
