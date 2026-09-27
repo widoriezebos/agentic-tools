@@ -135,38 +135,38 @@ var intentBriefFlag = intentFlag{name: "brief", value: "FILE", usage: "the brief
 
 func intentWorkCommands() []intentCommand {
 	return []intentCommand{
-		designCommand(),
 		{
-			name: "brief", group: "work", audience: "agent", summary: "write a brief scaffold from a goal and its accepted design",
-			usage: []string{"metasystem brief G --out FILE"},
+			object: "work", action: "brief", audience: "agent", summary: "write a brief scaffold from a goal and its accepted design",
+			usage: []string{"metasystem work brief G --out FILE"},
 			details: []string{
 				"Carries the goal's intent and done criteria, its approval and box, its branch worktree, and the accepted design's",
 				"units, constraints, return and acceptance sections. A decision neither record holds is written as a MISSING DECISION",
-				"line, and build refuses the brief until each is filled. An existing different FILE is never overwritten.",
+				"line, and work build refuses the brief until each is filled. An existing different FILE is never overwritten.",
 			},
 			flags:    []intentFlag{intentTargetFlag, {name: "out", value: "FILE", usage: "where to write the brief"}},
 			maxArgs:  1,
-			examples: []string{"metasystem brief verbs-match-intent --out /tmp/work-brief.md"},
+			examples: []string{"metasystem work brief verbs-match-intent --out /tmp/work-brief.md"},
 			run:      runIntentBrief,
 		},
 		{
-			name: "build", group: "work", primary: true, audience: "agent", summary: "build and test a goal's work, ready for independent review",
+			object: "work", action: "build", primary: true, audience: "agent", summary: "build and test a goal's work, ready for independent review",
 			usage: []string{
-				"metasystem build G [--work NAME] --brief FILE --check COMMAND...",
-				"metasystem build --resume RUN",
+				"metasystem work build G [--work NAME] --brief FILE --check COMMAND...",
+				"metasystem work build run:RUN",
 			},
 			details: []string{
 				"Needs an approved goal. A ready goal nobody holds is claimed for this session first, under the claim's own rules; a goal",
 				"another session holds is never taken. The goal's own worktree is prepared or reused; this checkout is left as it is.",
 				"A work name is the caller's name for one part of the goal; without --work the first build is main, and a goal with one",
 				"work item continues it. The same goal, work and request reach the same attempt again; a different request is refused",
-				"and is sent as a correction with revise.",
+				"and is sent as a correction with work revise.",
 				"--check ends the options: every later word is the proof command's argument vector, run without a shell.",
 				"The size is the work's row in the brief's or the accepted design's units table; without a row give --lines N.",
 				"The first read may use the tool calls the brief names (Maximum reader tool calls: N), --read-tool-calls N, or else",
 				"the configured intent.review.tool-calls allowance (48 unless metasystem.conf says otherwise).",
 				"The build ends awaiting review, green or red, with the first read's verdict as preliminary feedback. Nothing is approved,",
-				"certified or landed: review G examines the result independently.",
+				"certified or landed: work review G examines the result independently.",
+				"work build run:RUN continues that unit run; a bare id that names a unit run and no goal does the same.",
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work (default: main, or the goal's only work)"},
@@ -174,31 +174,35 @@ func intentWorkCommands() []intentCommand {
 				intentBriefFlag,
 				{name: "lines", value: "N", usage: "the unit's changed-line estimate, when no units table has its row"},
 				{name: "read-tool-calls", value: "N", usage: "the independent read's tool-call budget, when the brief does not name it"},
-				{name: "resume", value: "RUN", usage: "continue this unit run"},
 				{name: "model", value: "MODEL", advanced: true, usage: "the build model for this unit instead of launch.build.model"},
 				{name: "effort", value: "EFFORT", advanced: true, usage: "the build effort for this unit instead of launch.build.effort"},
 				{name: "plan", value: "FILE", advanced: true, hidden: true, usage: "an existing unit plan (the unit run plan format)"},
 				{name: "check", value: "COMMAND...", rest: true, usage: "the proof command; it ends the options"},
 			},
 			maxArgs: 2,
+			accepts: []string{refGoal, refRun},
 			examples: []string{
-				"metasystem build verbs-match-intent --brief work-brief.md --check go test -count=1 -run 'TestIntent' ./cmd/metasystem/",
-				"metasystem build verbs-match-intent --work discovery --brief discovery.md --check go test ./cmd/metasystem/",
-				"metasystem build --resume 20260925T101500Z-abc123",
+				"metasystem work build verbs-match-intent --brief work-brief.md --check go test -count=1 -run 'TestIntent' ./cmd/metasystem/",
+				"metasystem work build verbs-match-intent --work discovery --brief discovery.md --check go test ./cmd/metasystem/",
+				"metasystem work build run:20260925T101500Z-abc123",
 			},
 			run: runIntentBuild,
 		},
 		{
-			name: "wait", group: "work", audience: "agent", summary: "wait for a goal's work, its landing or a person's act",
-			usage: []string{"metasystem wait G [--work NAME] [--timeout DURATION]", "metasystem wait G --for landing|human-act [--verb V] [--since TIP] [--timeout DURATION]", "metasystem wait question Q [--timeout DURATION]", "metasystem wait job J [--timeout DURATION]", "metasystem wait run RUN [--timeout DURATION]", "metasystem wait resume ID [--timeout DURATION]", "metasystem wait goal G [--work NAME] (any goal name, including target words)",
-				"metasystem wait proof REF [--timeout DURATION]", "metasystem wait file PATH --until present|absent [--timeout DURATION]", "metasystem wait review REF [--timeout DURATION]"},
+			object: "work", action: "wait", audience: "agent", summary: "wait for a goal's work, its landing, a person's act, a job or a read",
+			usage: []string{"metasystem work wait G [--work NAME] [--timeout DURATION]",
+				"metasystem work wait G --for landing|human-act [--verb V] [--since TIP] [--timeout DURATION]",
+				"metasystem work wait REF [--timeout DURATION]",
+				"metasystem work wait --path PATH --until present|absent [--timeout DURATION]"},
 			details: []string{
-				"wait G continues the goal's running work: the one named with --work, or the only work item that is running.",
-				"With nothing running it says so; when the goal is queued to land it offers wait G --for landing.",
+				"work wait G continues the goal's running work: the one named with --work, or the only work item that is running.",
+				"With nothing running it says so; when the goal is queued to land it offers work wait G --for landing.",
 				"--for landing waits until the goal lands; --for human-act waits for a person's act on it, only the act --verb names when given.",
 				"--since TIP waits for events after that goal-ledger revision (default: the ledger as it is now).",
+				"REF is a reference as a result printed it: j1:ID or j2:ID (a job), run:ID (a unit run), read:REF (a diagnostic read)",
+				"or wait:ID, which resumes that recorded wait instead of starting a new one. A bare id works when it names exactly one record.",
 				"A wait that reaches its timeout reports the work as still in progress and prints the exact command that continues the wait.",
-				"wait job REF waits for the job reference printed by status work; copy the whole reference. A bare ID works when it names exactly one job. The older flag form wait --job J keeps its behavior for existing scripts.",
+				"--path waits for a file to be present or absent; a relative PATH is from the current directory.",
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work to wait for"},
@@ -206,22 +210,22 @@ func intentWorkCommands() []intentCommand {
 				{name: "for", aliases: []string{"event"}, value: "EVENT", usage: "landing or human-act: wait for that goal event instead of work"},
 				{name: "since", aliases: []string{"after"}, value: "TIP", usage: "with --for: the goal-ledger revision to wait after (default: the current one)"},
 				{name: "verb", value: "VERB", usage: "with --for human-act: the person's act to wait for"},
-				{name: "until", value: "STATE", usage: "wait file: present or absent (a relative PATH is from the current directory)"},
+				{name: "path", value: "PATH", usage: "a file to wait for, with --until"},
+				{name: "until", value: "STATE", usage: "with --path: present or absent"},
 				{name: "question", value: "ID", advanced: true, usage: "answer waits: the question"},
 				{name: "chain", value: "ROOT", advanced: true, usage: "landing waits: the delegate chain root"},
 			},
-			maxArgs:  2,
-			examples: []string{"metasystem wait verbs-match-intent", "metasystem wait verbs-match-intent --for landing", "metasystem wait verbs-match-intent --for human-act --verb approve", "metasystem wait job 20260925-job-1 --timeout 10m"},
-			run:      runIntentWait,
+			maxArgs:  1,
+			accepts:  []string{refGoal, refJ1, refJ2, refRun, refRead, refWait},
+			examples: []string{"metasystem work wait verbs-match-intent", "metasystem work wait verbs-match-intent --for landing", "metasystem work wait verbs-match-intent --for human-act --verb approve", "metasystem work wait j2:20260925-job-1 --timeout 10m"},
+			run:      runIntentWorkWait,
 		},
 		{
-			name: "test", group: "work", audience: "both", summary: "run the risk-selected tests for this checkout",
-			usage: []string{"metasystem test [--goal G] [--authority H] [--mode auto|standard|deep]"},
+			object: "test", action: "run", audience: "both", summary: "run the risk-selected tests for this checkout",
+			usage: []string{"metasystem test run [--goal G] [--authority H] [--mode auto|standard|deep]"},
 			details: []string{
-				"Runs the risk-selected tests for this checkout and reports the result, naming its proof attempt; wait proof ID reads that attempt's recorded end.",
-				"test plan --root INSTALLATION [--goal G] --json previews the selected tests and their reasons without running them.",
-				"test verify --root INSTALLATION --tree TREE [--goal G] --json checks whether retained proof covers that exact tree, without rerunning tests.",
-				"test report --result FILE --expensive-ms N summarizes a recorded test result as JSON; N is the positive threshold for expensive tests.",
+				"Runs the risk-selected tests for this checkout and reports the result, naming its proof attempt; test wait proof:ID reads that attempt's recorded end.",
+				"test plan previews the selected tests and their reasons without running them; test verify checks retained proof for an exact tree.",
 			},
 			flags: []intentFlag{
 				{name: "goal", value: "G", usage: "the accepted goal owning the delivery"},
@@ -229,64 +233,67 @@ func intentWorkCommands() []intentCommand {
 				{name: "mode", value: "MODE", usage: "auto (default), standard or deep"},
 			},
 			maxArgs:  0,
-			examples: []string{"metasystem test", "metasystem test --goal verbs-match-intent --mode standard"},
+			examples: []string{"metasystem test run", "metasystem test run --goal verbs-match-intent --mode standard"},
 			run:      runIntentTest,
 		},
 		{
-			name: "settings", group: "administration", audience: "both", summary: "inspect MetaSystem settings and configure its coordination",
-			usage: []string{"metasystem settings [KEY]", "metasystem settings --keys [--matching PREFIX]", "metasystem settings coordinator [--declare|--withdraw --by NAME]"},
+			object: "test", action: "wait", audience: "agent", summary: "wait for a proof attempt's recorded end",
+			usage:    []string{"metasystem test wait proof:ID [--timeout DURATION]"},
+			flags:    []intentFlag{{name: "timeout", value: "DURATION", usage: "how long this invocation waits (for example 20s or 10m)"}},
+			maxArgs:  1,
+			accepts:  []string{refProof},
+			examples: []string{"metasystem test wait proof:20260925T101500Z-1a2b --timeout 10m"},
+			run: func(inv *intentInvocation) int {
+				if len(inv.input.args) != 1 {
+					return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "test wait needs the proof attempt: metasystem test wait proof:ID; nothing was done"})
+				}
+				ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
+				if problem != nil {
+					return inv.render(*problem)
+				}
+				return runIntentWaitObserved(inv, "proof", ref.id)
+			},
+		},
+		{
+			object: "settings", action: "show", audience: "both", summary: "the launch settings, or one setting with its source",
+			usage: []string{"metasystem settings show [KEY]"},
 			details: []string{"Without KEY: the launch settings. With KEY: that launch setting or any metasystem.conf key.",
-				"Read only. Settings are changed in metasystem.conf or the environment, not by this command; check settings validates them all.",
-				"coordinator shows whether this checkout is its ledger's coordinator; --declare and --withdraw are a person's act at",
-				"an agent-free terminal, and declaring needs this machine quiet (no claimed goal, job, run or mission here)."},
+				"Read only. Settings are changed in metasystem.conf or the environment, not by this command; settings check validates them all."},
+			maxArgs:  1,
+			examples: []string{"metasystem settings show", "metasystem settings show launch.read.model"},
+			run:      runIntentSettings,
+		},
+		{
+			object: "settings", action: "keys", audience: "both", summary: "every configured key of the selected installation, with its source",
+			usage:    []string{"metasystem settings keys [--matching PREFIX]"},
+			flags:    []intentFlag{{name: "matching", value: "PREFIX", usage: "only keys starting with PREFIX"}},
+			maxArgs:  0,
+			examples: []string{"metasystem settings keys", "metasystem settings keys --matching launch."},
+			run:      runIntentSettingsKeys,
+		},
+		{
+			object: "settings", action: "check", audience: "both", summary: "validate every setting of the selected installation, changing nothing",
+			usage:    []string{"metasystem settings check"},
+			maxArgs:  0,
+			examples: []string{"metasystem settings check"},
+			run:      runIntentSettingsCheck,
+		},
+		{
+			object: "settings", action: "coordinator", audience: "both", summary: "whether this checkout is its ledger's coordinator; declare or withdraw it",
+			usage: []string{"metasystem settings coordinator [--declare|--withdraw --by NAME]"},
+			details: []string{"--declare and --withdraw are a person's act at an agent-free terminal, and declaring needs this machine quiet",
+				"(no claimed goal, job, run or mission here)."},
 			flags: []intentFlag{
-				{name: "keys", usage: "every configured key of the selected installation, with its source"},
-				{name: "matching", value: "PREFIX", usage: "with --keys: only keys starting with PREFIX"},
-				{name: "declare", usage: "coordinator: declare this checkout"},
-				{name: "withdraw", usage: "coordinator: withdraw the declaration"},
+				{name: "declare", usage: "declare this checkout"},
+				{name: "withdraw", usage: "withdraw the declaration"},
 				{name: "by", value: "NAME", usage: "the person deciding"},
 			},
-			maxArgs:  1,
-			examples: []string{"metasystem settings", "metasystem settings launch.read.model", "metasystem settings coordinator"},
-			run:      runIntentSettings,
+			maxArgs:  0,
+			examples: []string{"metasystem settings coordinator", "metasystem settings coordinator --declare --by Wido"},
+			run:      runIntentSettingsCoordinator,
 		},
 	}
 }
-
-// intentYieldsToLegacy keeps an existing call on its own handler where a
-// public name is also a family or a top-level call: a registered family verb
-// after the name, or the flag-only and subcommand forms of wait.
-func intentYieldsToLegacy(args []string, registered []family) bool {
-	if len(args) < 2 {
-		return false
-	}
-	for _, fam := range registered {
-		if fam.name != args[0] {
-			continue
-		}
-		for _, v := range fam.verbs {
-			if v.name == args[1] {
-				return true
-			}
-		}
-	}
-	if args[0] == "wait" {
-		if args[1] == "register" || args[1] == "end" {
-			return true
-		}
-		// The flag-only forms name their subject with a flag the public
-		// grammar does not take.
-		for _, arg := range args[1:] {
-			name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-			if strings.HasPrefix(arg, "-") && slices.Contains(legacyWaitSelectors, name) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-var legacyWaitSelectors = []string{"job", "run", "attempt", "goal", "path", "until", "resume", "wait-id", "pid", "label", "human", "root"}
 
 // resolveLayout selects the installation from --repo or the current
 // directory, without requiring a goal ledger.
@@ -334,24 +341,35 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, _ 
 // build
 
 func runIntentBuild(inv *intentInvocation) int {
-	switch {
-	case inv.input.has("resume"):
-		for _, conflicting := range []string{"brief", "check", "lines", "plan", "model", "effort", "read-tool-calls"} {
-			if inv.input.has(conflicting) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2,
-					Summary: fmt.Sprintf("--resume continues a recorded run and takes no --%s; nothing was done", conflicting), Decision: "give --resume RUN alone"})
-			}
-		}
-		if len(inv.input.args) > 0 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: "--resume takes the run, not a goal and unit; nothing was done", Decision: "give --resume RUN alone"})
-		}
-		run := inv.input.text("resume")
-		runner := inv.unitRunner()
-		result, err := runner.Continue(launch.UnitRequest{Resume: run})
-		return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "unit", ID: run}}, inv.publicArgv("build", "--resume", run)))
-	case inv.input.has("plan"):
+	if inv.input.has("plan") {
 		return runIntentBuildPlan(inv)
+	}
+	if len(inv.input.args) == 1 && !inv.input.has("brief") && !inv.input.has("check") {
+		// One word without a request continues a unit run it names.
+		ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		if ref.kind == refRun {
+			for _, conflicting := range []string{"lines", "model", "effort", "read-tool-calls", "work"} {
+				if inv.input.has(conflicting) {
+					return inv.render(intentResult{Outcome: intentRefused, code: 2,
+						Summary: fmt.Sprintf("work build %s continues a recorded run and takes no --%s; nothing was done", ref.qualified(), conflicting), Decision: "give the run alone"})
+				}
+			}
+			runner := inv.unitRunner()
+			result, err := runner.Continue(launch.UnitRequest{Resume: ref.id})
+			return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "run", ID: ref.qualified()}}, inv.publicArgv("work", "build", ref.qualified())))
+		}
+	}
+	if len(inv.input.args) > 0 {
+		if kind, _ := splitReference(inv.input.args[0]); kind != "" {
+			if kind != refRun {
+				return inv.render(*inv.refusedKind(inv.input.args[0], kind))
+			}
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: fmt.Sprintf("work build %s continues a recorded run and takes no brief, proof or unit; nothing was done", inv.input.args[0]), Decision: "give the run alone"})
+		}
 	}
 	return runIntentBuildUnit(inv)
 }
@@ -376,7 +394,7 @@ func runIntentBuildPlan(inv *intentInvocation) int {
 	runner := inv.unitRunner()
 	result, err := runner.AdvanceNamed(path)
 	targets := []intentTarget{{Kind: "goal", ID: plan.Goal}, {Kind: "unit", ID: plan.Unit}}
-	return inv.render(inv.unitOutcome(runner, result, err, targets, append([]string{"metasystem", "build"}, inv.raw...)))
+	return inv.render(inv.unitOutcome(runner, result, err, targets, inv.sameCommand()))
 }
 
 var (
@@ -387,8 +405,8 @@ var (
 func runIntentBuildUnit(inv *intentInvocation) int {
 	if len(inv.input.args) < 1 || len(inv.input.args) > 2 || !inv.input.has("brief") || !inv.input.has("check") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "build needs the goal, --brief FILE and --check COMMAND...; nothing was done",
-			Decision: "metasystem build G [--work NAME] --brief FILE --check COMMAND... (see metasystem help build)"})
+			Summary:  "work build needs the goal, --brief FILE and --check COMMAND...; nothing was done",
+			Decision: "metasystem work build G [--work NAME] --brief FILE --check COMMAND... (see metasystem work build --help)"})
 	}
 	if len(inv.input.args) == 2 && inv.input.has("work") && inv.input.args[1] != inv.input.text("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
@@ -446,7 +464,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	if file.Budget == nil || file.Budget.ReviewRoundLimit <= 0 {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1,
 			Summary:  fmt.Sprintf("goal %s has no approved box, so its review-round limit is unknown; nothing was built", id),
-			Decision: "a person approves the goal with its box: metasystem approve " + id})
+			Decision: "a person approves the goal with its box: metasystem goal approve " + id})
 	}
 	if file.State != goal.StateClaimed {
 		// An approved goal nobody holds is claimed through the claim owner,
@@ -464,7 +482,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the goal branch endpoint is unavailable: " + err.Error() + "; nothing was built"})
 	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot, id, endpoint)); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
-			Decision: "the session holding the goal builds it, or a person takes the goal over: metasystem claim " + id + " --take-over --reason TEXT"})
+			Decision: "the session holding the goal builds it, or a person takes the goal over: metasystem goal claim " + id + " --take-over --reason TEXT"})
 	}
 	designs, problem := inv.acceptedDesignPaths(id)
 	if problem != nil {
@@ -498,7 +516,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		}
 	}
 	result, err := runner.AdvancePrepared(request.worktree, id, unit, request.bytes, request.options, request.prepare)
-	outcome := inv.unitOutcome(runner, result, err, targets, append([]string{"metasystem", "build"}, inv.raw...))
+	outcome := inv.unitOutcome(runner, result, err, targets, inv.sameCommand())
 	if data, ok := outcome.Data.(map[string]any); ok {
 		data["inputs"] = request.directory
 	}
@@ -922,7 +940,7 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 				next: again, nextReason: "another call is advancing this run; the same command continues it"}
 		case strings.HasPrefix(message, "UNIT_NAMED_INPUT_CHANGED"):
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: message + "; nothing was launched",
-				Decision: "send the change as a correction (metasystem revise G --work NAME --brief FILE), or build it under another work name"}
+				Decision: "send the change as a correction (metasystem work revise G --work NAME --brief FILE), or build it under another work name"}
 		case record.ID != "":
 			return intentResult{Outcome: intentFailed, Targets: append(targets, intentTarget{Kind: "unit", ID: record.ID}), code: 1, Summary: message,
 				Data: unitData(record, runner.Manager), next: inv.workArgv(record, "wait"), nextReason: "the work is recorded; continue it once the cause is fixed"}
@@ -970,16 +988,9 @@ func (inv *intentInvocation) workArgv(record launch.UnitRunRecord, verb string, 
 			// revise run continues the run's newest round; it names no attempt.
 			extra = []string{"--brief", "FILE"}
 		}
-		return inv.publicArgv(append([]string{verb, "run", record.ID}, extra...)...)
+		return inv.publicArgv(append(append(workVerbWords(verb), unitRunPrefix+record.ID), extra...)...)
 	}
-	words := []string{verb, record.Goal, "--work", record.Unit}
-	switch verb {
-	case "wait", "status":
-		// The goal form keeps a goal named like a target word unambiguous.
-		words = []string{verb, "goal", record.Goal, "--work", record.Unit}
-	case "review":
-		words = append(reviewGoalWords(record.Goal), "--work", record.Unit)
-	}
+	words := append(workVerbWords(verb), record.Goal, "--work", record.Unit)
 	return inv.publicArgv(append(words, extra...)...)
 }
 
@@ -1026,130 +1037,105 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 // runner's follow-up, which reuses the run's plan, proof and read and
 // refuses a round past the run's approved limit.
 func runIntentReviseRun(inv *intentInvocation, run string) int {
-	if len(inv.input.args) != 2 || !inv.input.has("brief") {
+	if len(inv.input.args) != 1 || !inv.input.has("brief") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "revise run needs the run and --brief FILE; nothing was done", Decision: "metasystem revise run RUN --brief FILE"})
+			Summary: "work revise run:RUN needs --brief FILE; nothing was done", Decision: "metasystem work revise run:RUN --brief FILE"})
 	}
 	brief := inv.callerPath(inv.input.text("brief"))
 	runner := inv.unitRunner()
 	result, err := runner.Continue(launch.UnitRequest{Resume: run, FollowUp: brief})
-	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "unit", ID: run}}, inv.publicArgv("wait", "run", run)))
+	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
 }
 
 // wait
 
-func runIntentWait(inv *intentInvocation) int {
+// runIntentWorkWait waits for the one thing its target names: a goal's
+// running work or goal event, a job, a unit run, a diagnostic read, a
+// durable wait to resume, or a path to appear or disappear.
+func runIntentWorkWait(inv *intentInvocation) int {
 	args := inv.input.args
-	switch {
-	case inv.input.has("until") && (len(args) != 2 || args[0] != "file"):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--until belongs to wait file PATH; nothing was done"})
-	case len(args) == 1 && slices.Contains([]string{"question", "resume", "proof", "file", "job", "run", "review"}, args[0]):
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("wait %s names what to wait for (see metasystem help wait); nothing was done", args[0])})
-	case len(args) == 1:
-		if inv.input.has("for") {
-			if inv.input.has("work") {
+	eventSelectors := []string{"since", "verb", "question", "chain"}
+	if inv.input.has("path") {
+		if len(args) > 0 {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --path PATH names no other target; nothing was done"})
+		}
+		for _, other := range append([]string{"work", "for"}, eventSelectors...) {
+			if inv.input.has(other) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("work wait --path takes --until and --timeout, not --%s; nothing was done", other)})
+			}
+		}
+		return runIntentWaitObserved(inv, "file", inv.input.text("path"))
+	}
+	if inv.input.has("until") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--until belongs to work wait --path PATH; nothing was done"})
+	}
+	if len(args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2,
+			Summary:  "work wait takes a goal (work wait G), a goal event (work wait G --for landing), a reference such as j2:ID, or --path PATH; nothing was done",
+			Decision: "name what to wait for (see metasystem work wait --help)"})
+	}
+	ref, problem := inv.resolveWorkRef(args[0], inv.command.accepts)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	if ref.kind != refGoal {
+		for _, other := range append([]string{"work", "for"}, eventSelectors...) {
+			if inv.input.has(other) {
 				return inv.render(intentResult{Outcome: intentRefused, code: 2,
-					Summary: "--work selects running work and --for a goal event; give one of them; nothing was done"})
-			}
-			args = []string{"goal", args[0]}
-		} else {
-			for _, selector := range []string{"since", "verb", "question", "chain"} {
-				if inv.input.has(selector) {
-					return inv.render(intentResult{Outcome: intentRefused, code: 2,
-						Summary:  fmt.Sprintf("--%s selects a goal event, which --for names; nothing was done", selector),
-						Decision: "metasystem wait G --for landing|human-act [--verb V] [--since TIP]"})
-				}
-			}
-			return runIntentWaitWork(inv, args[0])
-		}
-	case len(args) == 2 && (args[0] == "file" || args[0] == "proof"):
-		for _, other := range []string{"work", "for", "since", "verb", "question", "chain"} {
-			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("wait %s takes --timeout%s, not --%s; nothing was done", args[0], map[bool]string{true: " and --until"}[args[0] == "file"], other)})
+					Summary: fmt.Sprintf("--%s belongs to a goal's wait; work wait %s takes only --timeout; nothing was done", other, ref.qualified())})
 			}
 		}
-		return runIntentWaitObserved(inv, args[0], args[1])
-	case len(args) == 2 && args[0] == "review":
-		for _, other := range []string{"work", "for", "since", "verb", "question", "chain"} {
-			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("wait review REF takes only --timeout, not --%s; nothing was done", other)})
-			}
+	}
+	switch ref.kind {
+	case refWait:
+		return runIntentWaitResume(inv, ref.id)
+	case refRead:
+		return runIntentReviewRef(inv, "wait", ref.id)
+	case refRun:
+		timeout, problem := inv.waitTimeout()
+		if problem != nil {
+			return inv.render(*problem)
 		}
-		return runIntentReviewRef(inv, "wait", args[1])
-	case len(args) == 2 && args[0] == "resume":
-		for _, other := range []string{"work", "for", "since", "verb", "question", "chain"} {
-			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("wait resume ID continues a recorded wait and takes only --timeout, not --%s; nothing was done", other)})
-			}
-		}
-		return runIntentWaitResume(inv, args[1])
-	case len(args) == 2 && args[0] == "question":
-		for _, other := range []string{"work", "for", "since", "verb", "question", "chain"} {
-			if inv.input.has(other) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("wait question Q takes only --timeout, not --%s; nothing was done", other)})
-			}
-		}
-		return inv.render(inv.waitQuestion(args[1]))
-	case len(args) == 2 && args[0] == "goal" && !inv.input.has("for"):
-		// wait goal G is the goal's running work; with --for it is a goal
-		// event. The goal form serves any goal name, including target words.
-		for _, selector := range []string{"since", "verb", "question", "chain"} {
+		return inv.render(inv.waitUnit(ref.id, timeout, []intentTarget{{Kind: "run", ID: ref.qualified()}}, inv.publicArgv("work", "wait", ref.qualified())))
+	case refJ1, refJ2:
+		return runIntentWaitTarget(inv, "job", ref.id, &ref.job)
+	}
+	if !inv.input.has("for") {
+		for _, selector := range eventSelectors {
 			if inv.input.has(selector) {
 				return inv.render(intentResult{Outcome: intentRefused, code: 2,
 					Summary:  fmt.Sprintf("--%s selects a goal event, which --for names; nothing was done", selector),
-					Decision: "metasystem wait goal G --for landing|human-act [--verb V] [--since TIP]"})
+					Decision: "metasystem work wait G --for landing|human-act [--verb V] [--since TIP]"})
 			}
 		}
-		return runIntentWaitWork(inv, args[1])
-	case len(args) == 2 && slices.Contains([]string{"job", "goal", "run"}, args[0]):
-		if inv.input.has("work") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: "--work names a goal's work: wait G --work NAME; nothing was done"})
-		}
-	default:
+		return runIntentWaitWork(inv, ref.id)
+	}
+	if inv.input.has("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary:  "wait takes a goal (wait G), a goal event (wait G --for landing) or a job (wait job J); nothing was done",
-			Decision: "name what to wait for (see metasystem help wait)"})
+			Summary: "--work selects running work and --for a goal event; give one of them; nothing was done"})
 	}
-	kind, id := args[0], args[1]
-	if kind != "goal" {
-		for _, selector := range []string{"for", "since", "verb", "question", "chain"} {
-			if inv.input.has(selector) {
-				return inv.render(intentResult{Outcome: intentRefused, code: 2,
-					Summary: fmt.Sprintf("--%s selects a goal event; wait %s takes only --timeout; nothing was done", selector, kind)})
-			}
-		}
-	}
+	return runIntentWaitTarget(inv, "goal", ref.id, nil)
+}
+
+// runIntentWaitTarget waits for a goal event or one resolved job through
+// the durable wait owner; a launch is awaited through its own owner.
+func runIntentWaitTarget(inv *intentInvocation, kind, id string, job *intentJob) int {
 	timeout, problem := inv.waitTimeout()
 	if problem != nil {
 		return inv.render(*problem)
 	}
 	targets := []intentTarget{{Kind: kind, ID: id}}
-	if kind == "run" {
-		return inv.render(inv.waitUnit(id, timeout, []intentTarget{{Kind: "unit", ID: id}}, inv.publicArgv("wait", "run", id)))
-	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
-	if kind == "job" {
-		// A job reference is decoded here; the wait owner gets the raw id.
-		job, problem := inv.resolveJob(id, "wait")
-		qualified := strings.HasPrefix(id, launchJobPrefix) || strings.HasPrefix(id, dispatchJobPrefix)
-		if problem != nil {
-			data, _ := problem.Data.(map[string]any)
-			if _, ambiguous := data["candidates"]; qualified || ambiguous {
-				return inv.render(*problem)
-			}
-		} else if job.kind == "launch" {
-			// A launch is awaited through its own owner; the durable wait
-			// owner observes dispatch jobs only.
-			return inv.render(inv.waitLaunch(job, timeout))
-		} else {
-			id = job.id
-			targets = []intentTarget{{Kind: "job", ID: jobReference(job)}}
+	if job != nil {
+		if job.kind == "launch" {
+			// The durable wait owner observes dispatch jobs only.
+			return inv.render(inv.waitLaunch(*job, timeout))
 		}
+		targets = []intentTarget{{Kind: "job", ID: jobReference(*job)}}
 	}
-	args = []string{"--root", inv.layout.InstallationRoot, "--" + kind, id}
+	args := []string{"--root", inv.layout.InstallationRoot, "--" + kind, id}
 	if kind == "goal" {
 		selector := metarun.WaitSelector{Kind: "goal", TargetID: id, GoalID: id, Event: inv.input.text("for"), After: inv.input.text("since"),
 			Verb: inv.input.text("verb"), Question: inv.input.text("question"), Chain: inv.input.text("chain")}
@@ -1188,8 +1174,8 @@ func runIntentWait(inv *intentInvocation) int {
 			Summary: "the wait owner stopped before a result; its message is on standard error"})
 	}
 	outcome := intentResult{Targets: targets, code: waited.ExitCode, Data: waited,
-		Summary: fmt.Sprintf("%s %s: %s", kind, id, strings.TrimSpace(strings.Join([]string{waited.SourceOutcome, waited.Reason}, " ")))}
-	resume := inv.publicArgv("wait", "resume", waited.WaitID)
+		Summary: fmt.Sprintf("%s %s: %s", kind, targets[0].ID, strings.TrimSpace(strings.Join([]string{waited.SourceOutcome, waited.Reason}, " ")))}
+	resume := inv.publicArgv("work", "wait", waitRefPrefix+waited.WaitID)
 	switch waited.ExitCode {
 	case metarun.ExitGreen, metarun.ExitRed, metarun.ExitEndedUnknown, metarun.ExitLaunchFailed:
 		outcome.Outcome = intentConfirmed
@@ -1219,15 +1205,13 @@ func runIntentWaitObserved(inv *intentInvocation, kind, ref string) int {
 	case "file":
 		until := inv.input.text("until")
 		if until != "present" && until != "absent" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "wait file PATH needs --until present or --until absent; nothing was done"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "work wait --path PATH needs --until present or --until absent; nothing was done"})
 		}
 		path := inv.callerPath(ref)
 		targets[0].ID = path
 		args = append(args, "--path", path, "--until", until)
 	case "proof":
-		if inv.input.has("until") {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--until belongs to wait file PATH; nothing was done"})
-		}
+		targets[0].ID = proofRefPrefix + ref
 		args = append(args, "--attempt", ref)
 	}
 	if problem := inv.selectRoot(); problem != nil {
@@ -1250,7 +1234,7 @@ func runIntentWaitObserved(inv *intentInvocation, kind, ref string) int {
 	case metarun.ExitWaitDeadline, metarun.ExitInterrupted:
 		outcome.Outcome = intentInProgress
 		if waited.WaitID != "" {
-			outcome.next, outcome.nextReason = inv.publicArgv("wait", "resume", waited.WaitID), "this continues the same wait"
+			outcome.next, outcome.nextReason = inv.publicArgv("work", "wait", waitRefPrefix+waited.WaitID), "this continues the same wait"
 		}
 	case metarun.ExitNoRecord, metarun.ExitInvalidWait, metarun.ExitWaiterBusy:
 		outcome.Outcome = intentRefused
@@ -1286,7 +1270,7 @@ func runIntentWaitResume(inv *intentInvocation, id string) int {
 	case metarun.ExitGreen, metarun.ExitRed, metarun.ExitEndedUnknown, metarun.ExitLaunchFailed:
 		outcome.Outcome = intentConfirmed
 	case metarun.ExitWaitDeadline, metarun.ExitInterrupted:
-		outcome.Outcome, outcome.next, outcome.nextReason = intentInProgress, inv.publicArgv("wait", "resume", id), "the work continues; this continues the same wait"
+		outcome.Outcome, outcome.next, outcome.nextReason = intentInProgress, inv.publicArgv("work", "wait", waitRefPrefix+id), "the work continues; this continues the same wait"
 	case metarun.ExitNoRecord, metarun.ExitInvalidWait, metarun.ExitWaiterBusy:
 		outcome.Outcome = intentRefused
 	default:
@@ -1333,7 +1317,7 @@ func runIntentTest(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
-	argv := []string{"test", "run", "--json", "--root", inv.layout.InstallationRoot}
+	argv := []string{"internal", "test", "run", "--json", "--root", inv.layout.InstallationRoot}
 	targets := []intentTarget{}
 	for _, name := range []string{"goal", "authority", "mode"} {
 		if inv.input.has(name) {
@@ -1357,14 +1341,14 @@ func runIntentTest(inv *intentInvocation) int {
 		if json.Unmarshal(trimmed, &reported) == nil && validIntentJobID(reported.AttemptID) {
 			attempt = reported.AttemptID
 			result.Targets = append(result.Targets, intentTarget{Kind: "proof", ID: attempt})
-			result.text = append(result.text, "proof attempt "+attempt+": "+shellCommand(inv.publicArgv("wait", "proof", attempt))+" reads its recorded end")
+			result.text = append(result.text, "proof attempt "+attempt+": "+shellCommand(inv.publicArgv("test", "wait", proofRefPrefix+attempt))+" reads its recorded end")
 		}
 	} else if len(trimmed) > 0 {
 		result.text = []string{string(trimmed)}
 	}
 	if attempt != "" && (code == metarun.ExitWaitDeadline || code == metarun.ExitInterrupted) {
 		result.Outcome, result.Summary = intentInProgress, fmt.Sprintf("proof attempt %s has not ended", attempt)
-		result.next, result.nextReason = inv.publicArgv("wait", "proof", attempt), "waits for the proof attempt's recorded end"
+		result.next, result.nextReason = inv.publicArgv("test", "wait", proofRefPrefix+attempt), "waits for the proof attempt's recorded end"
 		return inv.render(result)
 	}
 	switch code {
@@ -1385,34 +1369,36 @@ func runIntentTest(inv *intentInvocation) int {
 // runIntentSettings reads the selected installation's metasystem.conf
 // through the launch settings reader and, for any other key, the
 // configuration reader, each with the source of its value.
+// runIntentSettingsKeys lists every configured key with its source.
+func runIntentSettingsKeys(inv *intentInvocation) int {
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	args := []string{"config", "keys", "--conf", filepath.Join(inv.layout.InstallationRoot, "metasystem.conf")}
+	if inv.input.has("matching") {
+		args = append(args, "--matching", inv.input.text("matching"))
+	}
+	ran, problem := inv.engineVerb(args...)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	return inv.render(ownerVerbResult(ran, nil, "the configured keys of "+inv.layout.InstallationRoot, map[string]any{"installation": inv.layout.InstallationRoot}))
+}
+
+// runIntentSettingsCheck validates the selected installation's settings.
+func runIntentSettingsCheck(inv *intentInvocation) int {
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	root := inv.layout.InstallationRoot
+	ran, problem := inv.engineVerb("config", "validate", "--conf", filepath.Join(root, "metasystem.conf"), "--repo", root)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	return inv.render(ownerVerbResult(ran, nil, "the settings of "+root+" are valid", map[string]any{"installation": root}))
+}
+
 func runIntentSettings(inv *intentInvocation) int {
-	if inv.input.switched("keys") {
-		if len(inv.input.args) != 0 {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "settings --keys takes no KEY; use --matching PREFIX; nothing was done"})
-		}
-		if problem := inv.selectRoot(); problem != nil {
-			return inv.render(*problem)
-		}
-		args := []string{"config", "keys", "--conf", filepath.Join(inv.layout.InstallationRoot, "metasystem.conf")}
-		if inv.input.has("matching") {
-			args = append(args, "--matching", inv.input.text("matching"))
-		}
-		ran, problem := inv.engineVerb(args...)
-		if problem != nil {
-			return inv.render(*problem)
-		}
-		return inv.render(ownerVerbResult(ran, nil, "the configured keys of "+inv.layout.InstallationRoot, map[string]any{"installation": inv.layout.InstallationRoot}))
-	} else if inv.input.has("matching") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--matching belongs to settings --keys; nothing was done"})
-	}
-	if args := inv.input.args; len(args) == 1 && args[0] == "coordinator" {
-		return runIntentSettingsCoordinator(inv)
-	}
-	for _, name := range []string{"declare", "withdraw", "by"} {
-		if inv.input.has(name) {
-			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("--%s belongs to settings coordinator; nothing was done", name)})
-		}
-	}
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
@@ -1435,7 +1421,7 @@ func runIntentSettings(inv *intentInvocation) int {
 					reason += ": " + err.Error()
 				}
 				return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: reason,
-					next: inv.publicArgv("settings"), nextReason: "list the launch settings"})
+					next: inv.publicArgv("settings", "show"), nextReason: "list the launch settings"})
 			}
 			values = []launch.Setting{{Key: key, Value: value, Source: source}}
 		}
@@ -1456,7 +1442,7 @@ func runIntentBrief(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if id == "" || !inv.input.has("out") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "brief needs the goal and --out FILE; nothing was written", Decision: "metasystem brief G --out FILE"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "brief needs the goal and --out FILE; nothing was written", Decision: "metasystem work brief G --out FILE"})
 	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
@@ -1583,7 +1569,7 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		fmt.Fprintf(&text, "Goal state: %s, tier %d, approved box %s; the read has at most %d rounds.\n", file.State, file.Tier, goalbudget.FormatBox(*file.Budget), file.Budget.ReviewRoundLimit)
 	default:
 		fmt.Fprintf(&text, "Goal state: %s, tier %d.\n%s\n", file.State, file.Tier,
-			mark(fmt.Sprintf("the goal is %s without an approved box; a person approves it with metasystem approve %s", file.State, file.Id)))
+			mark(fmt.Sprintf("the goal is %s without an approved box; a person approves it with metasystem goal approve %s", file.State, file.Id)))
 	}
 	fmt.Fprintf(&text, "\n# Goal\n\n%s\n\nNext step on the ledger: %s\n", file.Intent, file.NextStep)
 	text.WriteString("\n# Workspace\n\n")
@@ -1593,7 +1579,7 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		fmt.Fprintf(&text, "Branch goal/%s, checked out in %s. Leave the change there, uncommitted.\n", file.Id, worktree)
 	case problem.Outcome == intentRefused:
 		// Ordinary before the first build: build prepares the workspace.
-		fmt.Fprintf(&text, "Branch goal/%s. Its workspace does not exist yet; metasystem build prepares it. Leave the change there, uncommitted.\n", file.Id)
+		fmt.Fprintf(&text, "Branch goal/%s. Its workspace does not exist yet; metasystem work build prepares it. Leave the change there, uncommitted.\n", file.Id)
 	default:
 		fmt.Fprintf(&text, "Branch goal/%s. %s\n", file.Id, mark("the goal worktree could not be found: "+problem.Summary))
 	}
@@ -1661,7 +1647,7 @@ func (inv *intentInvocation) waitLaunch(job intentJob, timeout time.Duration) in
 	}
 	data := map[string]any{"kind": "launch", "record": record}
 	if !ended {
-		again := inv.publicArgv("wait", "job", ref)
+		again := inv.publicArgv("work", "wait", ref)
 		if timeout > 0 {
 			again = append(again, "--timeout", timeout.String())
 		}

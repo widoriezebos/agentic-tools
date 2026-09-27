@@ -344,7 +344,7 @@ func TestWaitPlainResumeRefusesChannelRegistration(t *testing.T) {
 	waitCallerPID = func() int64 { return self }
 	t.Cleanup(func() { waitCallerPID = originalPID })
 	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--resume", waitID}) })
-	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem channel wait --resume "+waitID) {
+	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "metasystem internal channel wait --resume "+waitID) {
 		t.Fatalf("plain channel resume code=%d stderr=%q", code, problem)
 	}
 }
@@ -395,7 +395,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 	code, output, problem := 0, "", ""
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		binary = testutil.InstalledWaitBinary(t, binary)
-		cmd := exec.Command(binary, "wait", "--root", root, "--run", "run-command", "--timeout", "1m", "--json")
+		cmd := exec.Command(binary, "internal", "wait", "--root", root, "--run", "run-command", "--timeout", "1m", "--json")
 		data, commandErr := cmd.CombinedOutput()
 		output = string(data)
 		if commandErr != nil {
@@ -431,7 +431,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		binary = testutil.InstalledWaitBinary(t, binary)
-		cmd := exec.Command(binary, "wait", "--root", root, "--job", "job-command", "--timeout", "1m", "--json")
+		cmd := exec.Command(binary, "internal", "wait", "--root", root, "--job", "job-command", "--timeout", "1m", "--json")
 		data, commandErr := cmd.CombinedOutput()
 		if commandErr != nil || !strings.Contains(string(data), `"exitCode":0`) {
 			t.Fatalf("installed job wait output=%s err=%v", data, commandErr)
@@ -468,7 +468,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		if _, err := proofrun.FinalizeAttempt(root, proofAttempt.AttemptID, proofrun.TerminalSuccess, 0, "installed proof terminal", nil, time.Now().UTC()); err != nil {
 			t.Fatal(err)
 		}
-		cmd = exec.Command(binary, "wait", "--root", root, "--attempt", proofAttempt.AttemptID, "--timeout", "1m", "--json")
+		cmd = exec.Command(binary, "internal", "wait", "--root", root, "--attempt", proofAttempt.AttemptID, "--timeout", "1m", "--json")
 		data, commandErr = cmd.CombinedOutput()
 		if commandErr != nil || !strings.Contains(string(data), `"exitCode":0`) {
 			t.Fatalf("installed proof wait output=%s err=%v", data, commandErr)
@@ -546,7 +546,7 @@ func TestWaitMeasureVerb(t *testing.T) {
 		t.Fatalf("refuted code=%d/%d output=%s", code, again, first)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
-		command := exec.Command(binary, "wait", "measure", "--root", refuted, "--json")
+		command := exec.Command(binary, "internal", "wait", "measure", "--root", refuted, "--json")
 		data, err := command.CombinedOutput()
 		if err == nil || command.ProcessState.ExitCode() != 1 || string(data) != first {
 			t.Fatalf("installed exit=%v output=%s", err, data)
@@ -671,7 +671,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 	code, output, problem := captureChannelOutput(t, func() int {
 		return runSessionStart([]string{"--root", root, "--session", "session-new"})
 	})
-	want := "WAITING attempt attempt-a until 2026-09-14T12:00:00Z: metasystem wait --resume " + strings.Repeat("a", 32)
+	want := "WAITING attempt attempt-a until 2026-09-14T12:00:00Z: metasystem work wait wait:" + strings.Repeat("a", 32)
 	if code != 0 || strings.TrimSpace(output) != want || problem != "" {
 		t.Fatalf("session start code=%d output=%q stderr=%q", code, output, problem)
 	}
@@ -1222,7 +1222,7 @@ if [ "${1:-}" = up ]; then
   printf ' %s' "$@" >> "${METASYSTEM_WAIT_UP_COMMAND_FILE:?}"
   printf '\n' >> "${METASYSTEM_WAIT_UP_COMMAND_FILE:?}"
 fi
-if [ "${1:-}" = health ]; then
+if [ "${1:-}" = internal ] && [ "${2:-}" = health ]; then
   printf '%s\n' '{"schemaVersion":1,"exitCode":0,"line":"HEALTH healthy — ","interventions":[],"verdict":{"schema":1,"observedAt":"2026-09-18T10:00:00Z","observation":1,"aggregate":"healthy","roles":[],"shouldAlert":false,"findingDigest":""}}'
   exit 0
 fi
@@ -1625,7 +1625,7 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 	wrapper := filepath.Join(t.TempDir(), "metasystem-hook-engine")
 	wrapperSource := `#!/bin/sh
 if [ "${1:-}" = up ]; then printf '%s\n' 'up outcome=already-healthy'; exit 0; fi
-if [ "${1:-}" = health ]; then
+if [ "${1:-}" = internal ] && [ "${2:-}" = health ]; then
   printf '%s\n' '{"schemaVersion":1,"exitCode":0,"line":"HEALTH healthy — ","interventions":[],"verdict":{"schema":1,"observedAt":"2026-09-17T10:00:00Z","observation":1,"aggregate":"healthy","roles":[],"shouldAlert":false,"findingDigest":""}}'
   exit 0
 fi
@@ -1659,8 +1659,8 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 			if message == "" {
 				message = payload["systemMessage"]
 			}
-			if at := strings.LastIndex(message, "stop-status --id "); at >= 0 {
-				alias := strings.TrimSpace(message[at+len("stop-status --id "):])
+			if at := strings.LastIndex(message, "session report --id "); at >= 0 {
+				alias := strings.TrimSpace(message[at+len("session report --id "):])
 				if data, _, readErr := report.ReadStopStatus(hookRoot, alias); readErr == nil {
 					reportText = string(data)
 				}
@@ -1688,7 +1688,7 @@ func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
 	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
 	wrapperSource := `#!/bin/sh
 if [ "${1:-}" = up ]; then printf '%s\n' 'up outcome=already-healthy'; exit 0; fi
-if [ "${1:-}" = health ]; then
+if [ "${1:-}" = internal ] && [ "${2:-}" = health ]; then
   printf '%s\n' '{"schemaVersion":1,"exitCode":0,"line":"HEALTH healthy — ","interventions":[],"verdict":{"schema":1,"observedAt":"2026-09-18T10:00:00Z","observation":1,"aggregate":"healthy","roles":[],"shouldAlert":false,"findingDigest":""}}'
   exit 0
 fi
@@ -1722,7 +1722,7 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	}
 	t.Cleanup(stopChild)
 
-	register := exec.Command(canonical, "wait", "register", "--root", root, "--pid", fmt.Sprint(child.Process.Pid), "--label", "installed local build", "--job", "wait-stop-job", "--timeout", "1h", "--json")
+	register := exec.Command(canonical, "internal", "wait", "register", "--root", root, "--pid", fmt.Sprint(child.Process.Pid), "--label", "installed local build", "--job", "wait-stop-job", "--timeout", "1h", "--json")
 	register.Env = fixture.Env(os.Environ())
 	registerOutput, err := register.CombinedOutput()
 	var local metarun.Waiter
@@ -1743,7 +1743,7 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 		t.Fatalf("dead registered local wait allowed Stop: stdout=%s stderr=%s artifactErr=%v artifact=%s", deadHook.stdout, deadHook.stderr, artifactErr, deadArtifact)
 	}
 
-	humanCommand := exec.Command(canonical, "wait", "register", "--root", root, "--human", "--question", "May the installed run stop?", "--timeout", "1h", "--json")
+	humanCommand := exec.Command(canonical, "internal", "wait", "register", "--root", root, "--human", "--question", "May the installed run stop?", "--timeout", "1h", "--json")
 	humanCommand.Env = fixture.Env(os.Environ())
 	humanOutput, err := humanCommand.CombinedOutput()
 	var human metarun.Waiter
@@ -1874,7 +1874,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 			_ = notifyStdout.Close()
 			return err
 		}
-		notify := exec.Command(binary, "wait", "notify", "--root", root, "--job", "wait-stop-job")
+		notify := exec.Command(binary, "internal", "wait", "notify", "--root", root, "--job", "wait-stop-job")
 		notify.Env = fixture.Env(os.Environ())
 		notify.Stdout, notify.Stderr = notifyStdout, notifyStderr
 		notifyErr := notify.Run()

@@ -70,7 +70,7 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	delivery.executable = func() (string, error) { return b.engine, nil }
 	delivery.process = func(process intentProcess) intentProcessResult {
 		b.calls = append(b.calls, append([]string(nil), process.argv...))
-		if len(process.argv) > 2 && process.argv[1] == "goal" && process.argv[2] == "carry" && !b.unproven {
+		if len(process.argv) > 3 && process.argv[2] == "goal" && process.argv[3] == "carry" && !b.unproven {
 			process.argv = append(process.argv, "--fixture-human-authority", "--lineage", "m1")
 		}
 		ran := runIntentOwnerProcess(process)
@@ -93,7 +93,7 @@ func (b *carriedDeliveryBed) land(args ...string) (int, intentResult) {
 // landFrom runs the public land command from an installation.
 func (b *carriedDeliveryBed) landFrom(root string, args ...string) (int, intentResult) {
 	b.t.Helper()
-	command, _ := findIntentCommand("land")
+	command, _ := findIntentCommand("work land")
 	var stdout, stderr bytes.Buffer
 	if !slices.Contains(args, "--repo") {
 		args = append(args, "--repo", root)
@@ -194,15 +194,18 @@ func carriedResultData(result intentResult) map[string]any {
 // shown runs the continuation a result showed, exactly as printed.
 func (b *carriedDeliveryBed) shown(result intentResult) (int, intentResult) {
 	b.t.Helper()
-	if result.Next == nil || len(result.Next.Argv) < 3 || result.Next.Argv[1] != "land" {
+	if result.Next == nil || len(result.Next.Argv) < 3 || result.Next.Argv[2] != "land" {
 		b.t.Fatalf("no land continuation was shown: %+v", result)
 	}
-	return b.land(result.Next.Argv[2:]...)
+	return b.land(result.Next.Argv[3:]...)
 }
 
 func (b *carriedDeliveryBed) owner(verb ...string) int {
 	count := 0
 	for _, argv := range b.calls {
+		if len(argv) > 1 && argv[1] == "internal" {
+			argv = argv[1:]
+		}
 		if len(argv) > len(verb) && slices.Equal(argv[1:1+len(verb)], verb) {
 			count++
 		}
@@ -217,9 +220,9 @@ func (b *carriedDeliveryBed) owner(verb ...string) int {
 func (b *carriedDeliveryBed) provePublicly(stopped intentResult) intentResult {
 	b.t.Helper()
 	opid, _ := carriedResultData(stopped)["exception"].(string)
-	want := []string{"metasystem", "test", "--goal", "standing-validation", "--repo", b.f.mainRoot}
+	want := []string{"metasystem", "test", "run", "--goal", "standing-validation", "--repo", b.f.mainRoot}
 	if stopped.Outcome != intentPartial || stopped.Next == nil || !slices.Equal(stopped.Next.Argv, want) ||
-		!strings.Contains(stopped.Next.Reason, "metasystem land standing-validation --using-exception "+opid) {
+		!strings.Contains(stopped.Next.Reason, "metasystem work land standing-validation --using-exception "+opid) {
 		b.t.Fatalf("the missing-proof stop did not show the public test and the same-word continuation: %+v", stopped)
 	}
 	var after []string
@@ -228,7 +231,7 @@ func (b *carriedDeliveryBed) provePublicly(stopped intentResult) intentResult {
 		text, _ := word.(string)
 		after = append(after, text)
 	}
-	if len(after) < 5 || !slices.Equal(after[:5], []string{"metasystem", "land", "standing-validation", "--using-exception", opid}) {
+	if len(after) < 6 || !slices.Equal(after[:6], []string{"metasystem", "work", "land", "standing-validation", "--using-exception", opid}) {
 		b.t.Fatalf("the after-proof continuation is not the same word: %v", after)
 	}
 	index := goalSyncMutationGit(b.t, b.f.mainRoot, "write-tree")
@@ -499,7 +502,7 @@ func TestIntentCarriedReplacement(t *testing.T) {
 	}
 	last := b.calls[len(b.calls)-1]
 	for _, argv := range b.calls {
-		if len(argv) > 2 && argv[1] == "goal" && argv[2] == "carry" {
+		if len(argv) > 3 && argv[2] == "goal" && argv[3] == "carry" {
 			last = argv
 		}
 	}
@@ -579,8 +582,8 @@ func TestIntentCarriedCarryOwnerDecidesThePerson(t *testing.T) {
 	if code == 0 || result.Outcome == intentConfirmed || carriedResultData(result)["exception"] != nil || len(b.lands) != 0 {
 		t.Fatalf("an unproven caller's exception was accepted: %d %+v", code, result)
 	}
-	if len(b.calls) != 2 || !slices.Equal(b.calls[0][1:], []string{"goal", "fetch", "--root", b.f.mainRoot}) ||
-		!slicesHasPrefix(b.calls[1][1:], []string{"goal", "carry", "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido"}) {
+	if len(b.calls) != 2 || !slices.Equal(b.calls[0][1:], []string{"internal", "goal", "fetch", "--root", b.f.mainRoot}) ||
+		!slicesHasPrefix(b.calls[1][1:], []string{"internal", "goal", "carry", "--root", b.f.mainRoot, "--id", "standing-validation", "--by", "Wido"}) {
 		t.Fatalf("owner routing = %v", b.calls)
 	}
 	if index := goalSyncMutationGit(t, b.f.mainRoot, "write-tree"); index != goalSyncMutationGit(t, b.f.mainRoot, "rev-parse", "HEAD^{tree}") ||
@@ -705,7 +708,7 @@ func TestIntentCarriedAmbiguousRetainedBaseNeedsReplacement(t *testing.T) {
 	if err := os.Remove(filepath.Join(subjects, "exception-"+first+".json")); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"metasystem", "land", "standing-validation", "--exception", "missing-declaration", "--replace-exception", first}
+	want := []string{"metasystem", "work", "land", "standing-validation", "--exception", "missing-declaration", "--replace-exception", first}
 	for _, args := range [][]string{request, {"standing-validation", "--using-exception", first}} {
 		index := goalSyncMutationGit(t, f.mainRoot, "write-tree")
 		head := goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD")
@@ -730,7 +733,7 @@ func TestIntentCarriedAmbiguousRetainedBaseNeedsReplacement(t *testing.T) {
 		t.Fatalf("the replacement did not record a new word: %+v", replaced)
 	}
 	for _, argv := range b.calls {
-		if len(argv) > 2 && argv[1] == "goal" && argv[2] == "carry" && slices.Contains(argv, "--supersede") && !slices.Contains(argv, first) {
+		if len(argv) > 3 && argv[2] == "goal" && argv[3] == "carry" && slices.Contains(argv, "--supersede") && !slices.Contains(argv, first) {
 			t.Fatalf("the replacement superseded another word: %v", argv)
 		}
 	}

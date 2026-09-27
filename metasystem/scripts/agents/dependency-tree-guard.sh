@@ -107,7 +107,7 @@ guard_run_pass() { # output directory, label
   guard_step "$dir" validation bash scripts/validate-metasystem.sh
   if (( delivery_probe )); then
     guard_step "$dir" test-plan "$ms" test plan --root "$root" --json
-    guard_step "$dir" test-run "$ms" test run --root "$root" \
+    guard_step "$dir" test-run "$ms" internal test run --root "$root" \
       --purpose diagnostic --groups section/brain-fixtures --result "$dir/test-run-result.json"
   fi
 }

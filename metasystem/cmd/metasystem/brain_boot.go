@@ -172,7 +172,7 @@ func composeBrainBootModeWithIdentity(root, repo string, bound, deadlineMS int, 
 
 	deadlineLine := ""
 	if len(missing) > 0 {
-		deadlineLine = fmt.Sprintf("BOOT DEADLINE: %s not read within %d ms; run metasystem brain boot --root %s --repo %s by hand", strings.Join(missing, ", "), deadlineMS, root, repo)
+		deadlineLine = fmt.Sprintf("BOOT DEADLINE: %s not read within %d ms; run metasystem internal brain boot --root %s --repo %s by hand", strings.Join(missing, ", "), deadlineMS, root, repo)
 	}
 	payload := phaseOne
 	available := bound - len(payload)
@@ -298,7 +298,7 @@ func fitBrainSection(name string, section brainBootSection, existing string, sha
 				if len(section.Lines) > len(lines) && section.Lines[len(lines)].ID != "" {
 					id = section.Lines[len(lines)].ID
 				}
-				texts = append(texts, fmt.Sprintf("%d more; run metasystem channel show --root <checkout> --id %s", removed, id))
+				texts = append(texts, fmt.Sprintf("%d more; run metasystem internal channel show --root <checkout> --id %s", removed, id))
 			case "digest":
 				texts = append([]string{header, fmt.Sprintf("%d older lines cut; read records/narrator-digest.log", removed)}, texts[1:]...)
 			default:
@@ -387,7 +387,7 @@ func readBrainAsks(root string) brainBootSection {
 	}
 	if len(unreadable) > 0 {
 		section.Status = "error"
-		section.Lines = append(section.Lines, brainBootLine{Text: fmt.Sprintf("%d unreadable question files; run metasystem channel show --root %s", len(unreadable), root)})
+		section.Lines = append(section.Lines, brainBootLine{Text: fmt.Sprintf("%d unreadable question files; run metasystem internal channel show --root %s", len(unreadable), root)})
 	}
 	return section
 }
@@ -484,7 +484,7 @@ func readBrainFleet(root string) (brainBootSection, brainBootSection) {
 			censusErr = fmt.Errorf("malformed census verdict")
 		}
 		fleet.Status = "error"
-		fleet.Lines = append(fleet.Lines, brainBootLine{Text: fmt.Sprintf("CENSUS absent or unreadable (%v); run metasystem supervise status --repo %s", censusErr, root)})
+		fleet.Lines = append(fleet.Lines, brainBootLine{Text: fmt.Sprintf("CENSUS absent or unreadable (%v); run metasystem internal supervise status --repo %s", censusErr, root)})
 	} else {
 		age := "age unknown"
 		if census.CompletedAtEpoch > 0 {

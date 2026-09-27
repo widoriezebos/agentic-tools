@@ -208,6 +208,6 @@ func writeToolGateRow(opts ToolGateOptions, row toolGateDecisionRow, base, at ti
 		}
 	}
 	if err != nil && opts.Stderr != nil {
-		fmt.Fprintf(opts.Stderr, "metasystem adapter claude-tool-gate: write decision row: %v\n", err)
+		fmt.Fprintf(opts.Stderr, "metasystem internal adapter claude-tool-gate: write decision row: %v\n", err)
 	}
 }

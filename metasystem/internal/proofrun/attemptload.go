@@ -304,6 +304,9 @@ func topLevelLaunchers(rows []processRow, self int64) int {
 // The verb pair immediately after the binary keeps shells that merely mention
 // the words out of the census.
 func isProofLauncherArgv(argv []string) bool {
+	if len(argv) >= 4 && filepath.Base(argv[0]) == "metasystem" && argv[1] == "internal" {
+		argv = append(argv[:1:1], argv[2:]...)
+	}
 	return len(argv) >= 3 && filepath.Base(argv[0]) == "metasystem" &&
 		(argv[1] == "proof-run" && argv[2] == "launch" || argv[1] == "test" && argv[2] == "run")
 }

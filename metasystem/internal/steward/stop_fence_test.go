@@ -177,7 +177,7 @@ func TestStoppedHealthDoesNotAdvanceFailureCounters(t *testing.T) {
 		if role.ConsecutiveFailures != 0 || role.ConsecutiveUnknown != 0 || role.FailureEscalation != "" {
 			t.Fatalf("stopped health advanced %s counters: %+v", role.Role, role)
 		}
-		if strings.Contains(role.Remedy, "metasystem up") {
+		if strings.Contains(role.Remedy, "metasystem session start") {
 			t.Fatalf("stopped health retained an up remedy: %+v", role)
 		}
 	}
@@ -189,12 +189,12 @@ func TestStoppedHealthRemedyPrintsPathWithoutQuotes(t *testing.T) {
 		t.Fatal(err)
 	}
 	closeProcessFence(t, root, 1)
-	roles := []RoleVerdict{{Role: RoleSupervisionOwner, Status: HealthDead, Remedy: "metasystem up --repo obsolete"}}
+	roles := []RoleVerdict{{Role: RoleSupervisionOwner, Status: HealthDead, Remedy: "metasystem session start --repo obsolete"}}
 	verdict, err := healthStopped(root, time.Now(), roles, SpendObservation{}, HealthObservationState{})
 	if err != nil || verdict == nil || len(verdict.Roles) != 1 {
 		t.Fatalf("stopped health = %#v err=%v", verdict, err)
 	}
-	want := "metasystem arm --repo " + root
+	want := "metasystem system start --repo " + root
 	if got := verdict.Roles[0].Remedy; got != want || strings.Contains(got, `"`) {
 		t.Fatalf("stopped remedy = %q, want %q", got, want)
 	}

@@ -29,7 +29,7 @@ func runBehaviorSurfaceSelect(args []string) int {
 	prefix := flags.String("prefix", "", "metasystem prefix relative to the Git toplevel")
 	nul := flags.Bool("nul", false, "read and write NUL-terminated paths")
 	if flags.Parse(args) != nil || *projectionName == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem behavior-surface select --projection ENGINE|LANDING|PAYLOAD [--prefix PREFIX] [--nul]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal behavior-surface select --projection ENGINE|LANDING|PAYLOAD [--prefix PREFIX] [--nul]")
 		return 2
 	}
 	policy, err := behaviorsurface.Load()
@@ -93,7 +93,7 @@ func runBehaviorSurfaceDigest(args []string) int {
 	prefix := flags.String("prefix", "", "optional metasystem prefix below --root")
 	pathsFrom := flags.String("paths-from", "", "optional NUL-delimited source projection manifest")
 	if flags.Parse(args) != nil || *root == "" || *projectionName == "" || *endpoint == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem behavior-surface digest --root DIR --projection ENGINE|LANDING|PAYLOAD --endpoint NAME [--prefix PREFIX] [--paths-from NUL-MANIFEST]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal behavior-surface digest --root DIR --projection ENGINE|LANDING|PAYLOAD --endpoint NAME [--prefix PREFIX] [--paths-from NUL-MANIFEST]")
 		return 2
 	}
 	policy, err := behaviorsurface.Load()
@@ -146,7 +146,7 @@ func runBehaviorSurfaceList(args []string) int {
 	projectionName := flags.String("projection", "", "ENGINE, LANDING, or PAYLOAD")
 	nul := flags.Bool("nul", false, "write NUL-terminated paths")
 	if flags.Parse(args) != nil || *root == "" || *projectionName == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem behavior-surface list --root DIR --projection ENGINE|LANDING|PAYLOAD [--nul]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal behavior-surface list --root DIR --projection ENGINE|LANDING|PAYLOAD [--nul]")
 		return 2
 	}
 	policy, err := behaviorsurface.Load()
@@ -191,7 +191,7 @@ func runBehaviorSurfaceSkipAllowed(args []string) int {
 	family := flags.String("family", "", "validation family name")
 	scopeName := flags.String("scope", "", "WITNESS or DELIVERY proof scope")
 	if flags.Parse(args) != nil || *family == "" || *scopeName == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem behavior-surface skip-allowed --scope WITNESS|DELIVERY --family NAME")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal behavior-surface skip-allowed --scope WITNESS|DELIVERY --family NAME")
 		return 2
 	}
 	scope, err := behaviorsurface.ParseSkipScope(*scopeName)

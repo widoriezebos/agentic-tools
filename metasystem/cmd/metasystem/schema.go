@@ -40,7 +40,7 @@ func runSchemaMaterialize(args []string) int {
 		return 2
 	}
 	if *root == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem schema materialize --root R --role ROLE --version V --output O")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal schema materialize --root R --role ROLE --version V --output O")
 		return 2
 	}
 	if err := returnschema.Materialize(*root, *role, *version, *output); err != nil {

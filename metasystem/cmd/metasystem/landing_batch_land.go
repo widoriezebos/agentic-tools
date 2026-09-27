@@ -550,7 +550,7 @@ func batchPrefixReceiptArgs(root, controlRoot, goalID, tree, resultPath string, 
 }
 
 func batchPrefixReceiptArgsWithFresh(root, controlRoot, goalID, tree, resultPath string, groups []string, claim batch.Claim, episode, expiresAt string) []string {
-	args := []string{"test", "run", "--root", root, "--control-root", controlRoot, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--batch-requirements", batchRequirementsArgument(groups), "--result", resultPath,
+	args := []string{"internal", "test", "run", "--root", root, "--control-root", controlRoot, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--batch-requirements", batchRequirementsArgument(groups), "--result", resultPath,
 		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision), "--batch-prefix"}
 	if episode != "" {
 		args = append(args, "--fresh-episode", episode)
@@ -616,7 +616,7 @@ func batchRecoverySeamsWithGit(root string, store batch.Store, id string, at tim
 			if current == next {
 				return nil
 			}
-			return batchChildRunner(controlRoot, landingOwnerLineage, "goal", "edit", "--root", controlRoot, "--id", unit.GoalID, "--next", next, "--lineage", landingOwnerLineage)
+			return batchChildRunner(controlRoot, landingOwnerLineage, "internal", "goal", "edit", "--root", controlRoot, "--id", unit.GoalID, "--next", next, "--lineage", landingOwnerLineage)
 		},
 		Rearm: func(tip string) error {
 			return batchRecoveryRearm(root, tip)

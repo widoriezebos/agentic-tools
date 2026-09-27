@@ -30,7 +30,7 @@ func runCovenantEvidence(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem covenant evidence [--root DIR] [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal covenant evidence [--root DIR] [--json]")
 		return 2
 	}
 	cov, err := covenant.Load(filepath.Join(*root, covenant.Filename))

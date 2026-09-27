@@ -89,15 +89,16 @@ type intentHelpDocument struct {
 func publicHelpProtocol() intentHelpProtocol {
 	return intentHelpProtocol{
 		Instructions: []string{
-			"Work on the assigned goal. Use goals --ready and claim only when choosing unassigned work is authorized.",
+			"Commands are OBJECT ACTION, for example metasystem work land G. metasystem lists the objects; metasystem OBJECT lists its actions.",
+			"Work on the assigned goal. Use goal list --ready and goal claim only when choosing unassigned work is authorized.",
 			"Use --json for public command results; put it before --check, which consumes every remaining argument.",
 			"Read outcome, summary, data and decision even on nonzero exit. Success confirms this invocation, not delivery or goal conclusion.",
 			"decision describes a prerequisite: supply known missing input within your authority; ask the person for human-only acts. Never invent approval.",
 			"next.argv is a suggested argument vector, not permission: preserve its words and references; do not shell-evaluate it or execute it beyond your authority.",
-			"Use wait with the returned reference for running work. Inspect partial, failed or refused results before repeating a mutation; retries are command-specific.",
-			"Use show for records, status for live work, check for diagnosis. Audience labels guide discovery; they do not grant authority over a target.",
-			"Use help administration for MetaSystem setup and maintenance. Mixed command pages separate those forms from application work; their own authority rules still apply.",
-			"Use help COMMAND for full inputs; help review FORM for goal, submit, design, job, run, commit, changes, diff or finding. Add --json to help for structured discovery.",
+			"References are printed qualified (j1:ID, j2:ID, run:ID, read:REF, wait:ID, proof:ID); copy them whole. A bare word is a goal name first.",
+			"Use work wait with the returned reference for running work. Inspect partial, failed or refused results before repeating a mutation; retries are command-specific.",
+			"Use goal show for records, status and work status for live work, system check for diagnosis. Audience labels guide discovery; they do not grant authority over a target.",
+			"Use help OBJECT ACTION for full inputs; help work review FORM for goal, submit, job, run, commit, changes, diff or finding. Add --json to help for structured discovery.",
 		},
 		Outcomes: []intentHelpOutcome{
 			{intentConfirmed, "the requested invocation succeeded; inspect what it confirmed"},
@@ -111,7 +112,7 @@ func publicHelpProtocol() intentHelpProtocol {
 }
 
 func writeIntentAgentHelp(w io.Writer) {
-	fmt.Fprintln(w, "For agents: choose the task, read its inputs, follow the result within your authority.")
+	fmt.Fprintln(w, "For agents: choose the object and action, read its inputs, follow the result within your authority.")
 	protocol := publicHelpProtocol()
 	for _, instruction := range protocol.Instructions {
 		fmt.Fprintln(w, instruction)
@@ -122,9 +123,11 @@ func writeIntentAgentHelp(w io.Writer) {
 	}
 	for _, group := range intentGroups {
 		fmt.Fprintf(w, "\n%s:\n", group.heading)
-		for _, command := range publicIntentCommands() {
-			if command.group == group.name {
-				fmt.Fprintf(w, "  %-12s [%s] %s\n", command.name, command.audience, command.summary)
+		for _, object := range group.objects {
+			for _, command := range publicIntentCommands() {
+				if command.object == object {
+					fmt.Fprintf(w, "  %-26s [%s] %s\n", command.name, command.audience, command.summary)
+				}
 			}
 		}
 	}
@@ -133,7 +136,7 @@ func writeIntentAgentHelp(w io.Writer) {
 
 func (command intentCommand) helpScope() string {
 	scope := "workflow"
-	if command.group == "administration" {
+	if slices.Contains(intentAdministrationObjects, command.object) {
 		scope = "administration"
 	} else if len(command.administrationUsage) > 0 {
 		scope = "mixed"
@@ -143,12 +146,12 @@ func (command intentCommand) helpScope() string {
 
 func helpEntry(command intentCommand) intentHelpEntry {
 	return intentHelpEntry{command.name, command.group, command.summary, command.audience, command.helpScope(),
-		[]string{"metasystem", "help", command.name, "--json"}}
+		append(append([]string{"metasystem", "help"}, command.words()...), "--json")}
 }
 
 func helpOptions(command intentCommand, selected []string) []intentHelpOption {
 	options := []intentHelpOption{}
-	for _, flag := range command.allFlags() {
+	for _, flag := range command.helpFlags() {
 		if flag.hidden || (selected != nil && flag.name != "repo" && flag.name != "json" && !slices.Contains(selected, flag.name)) {
 			continue
 		}
@@ -158,27 +161,42 @@ func helpOptions(command intentCommand, selected []string) []intentHelpOption {
 }
 
 func helpFormEntry(command intentCommand, form intentHelpForm) intentHelpFormEntry {
-	return intentHelpFormEntry{form.name, form.purpose, []string{"metasystem", "help", command.name, form.name, "--json"}}
+	return intentHelpFormEntry{form.name, form.purpose, append(append(append([]string{"metasystem", "help"}, command.words()...), form.name), "--json")}
+}
+
+// helpCommandSelector reads the command a help selector names: status, or
+// OBJECT ACTION; rest is what follows it.
+func helpCommandSelector(selectors []string) (intentCommand, []string, bool) {
+	if len(selectors) >= 1 && selectors[0] == "status" {
+		command, ok := findIntentCommand("status")
+		return command, selectors[1:], ok
+	}
+	if len(selectors) >= 2 {
+		if command, ok := findIntentAction(selectors[0], selectors[1]); ok && !command.hidden {
+			return command, selectors[2:], true
+		}
+	}
+	return intentCommand{}, nil, false
 }
 
 func describeHelp(selectors []string) (intentHelpDocument, error) {
 	doc := intentHelpDocument{Topic: strings.Join(selectors, " ")}
-	if len(selectors) > 2 {
-		return doc, fmt.Errorf("help takes one topic or command, optionally followed by its form")
+	if len(selectors) > 3 {
+		return doc, fmt.Errorf("help takes an object, its action and optionally one form")
 	}
-	if len(selectors) > 0 {
-		if command, ok := findIntentCommand(selectors[0]); ok {
-			if len(selectors) == 1 {
-				description := intentHelpCommand{intentHelpEntry: helpEntry(command), Usage: command.usage,
-					AdministrationUsage: command.administrationUsage, Options: helpOptions(command, nil), Details: command.details, Examples: command.examples}
-				for _, form := range command.helpForms {
-					description.Forms = append(description.Forms, helpFormEntry(command, form))
-				}
-				doc.Command = &description
-				return doc, nil
-			}
+	if command, rest, ok := helpCommandSelector(selectors); ok {
+		if len(rest) == 0 {
+			description := intentHelpCommand{intentHelpEntry: helpEntry(command), Usage: command.usage,
+				AdministrationUsage: command.administrationUsage, Options: helpOptions(command, nil), Details: command.details, Examples: command.examples}
 			for _, form := range command.helpForms {
-				if form.name == selectors[1] {
+				description.Forms = append(description.Forms, helpFormEntry(command, form))
+			}
+			doc.Command = &description
+			return doc, nil
+		}
+		if len(rest) == 1 {
+			for _, form := range command.helpForms {
+				if form.name == rest[0] {
 					options := helpOptions(command, form.flags)
 					for i := range options {
 						if note, ok := form.optionNotes[options[i].Name]; ok {
@@ -193,19 +211,27 @@ func describeHelp(selectors []string) (intentHelpDocument, error) {
 					return doc, nil
 				}
 			}
-			return doc, fmt.Errorf("%s has no help form %q; use metasystem help %s --json to discover its forms", command.name, selectors[1], command.name)
 		}
+		return doc, fmt.Errorf("%s has no help form %q; use metasystem help %s --json to discover its forms", command.name, strings.Join(rest, " "), command.name)
 	}
 	topic := "all"
 	if len(selectors) == 1 {
 		topic = selectors[0]
 	}
-	if len(selectors) == 2 || topic == "internal" || !intentTopic(topic) {
-		return doc, fmt.Errorf("structured and focused help describe public tasks only; use metasystem help all to choose a command")
+	switch {
+	case len(selectors) == 1 && isIntentObject(topic):
+		for _, command := range objectActions(topic) {
+			doc.Commands = append(doc.Commands, helpEntry(command))
+		}
+		protocol := publicHelpProtocol()
+		doc.Protocol = &protocol
+		return doc, nil
+	case len(selectors) > 1 || !intentTopic(topic) && len(selectors) == 1:
+		return doc, fmt.Errorf("structured help describes public objects and actions only; use metasystem help all to choose one")
 	}
 	doc.Topic = topic
 	for _, command := range publicIntentCommands() {
-		if topic == "all" || topic == "agent" || (topic == "human" && command.audience != "agent") || command.group == topic || topic == "administration" && len(command.administrationUsage) > 0 {
+		if topic == "all" || topic == "agent" || (topic == "human" && command.audience != "agent") {
 			doc.Commands = append(doc.Commands, helpEntry(command))
 		}
 	}
@@ -223,10 +249,10 @@ func runIntentHelp(args []string, stdout, stderr io.Writer) int {
 	refuse := func(message string) int {
 		if wantJSON {
 			return inv.render(intentResult{Outcome: intentRefused, Summary: message, code: 2,
-				next: []string{"metasystem", "help", "agent"}, nextReason: "choose a public task or its focused help"})
+				next: []string{"metasystem", "help", "agent"}, nextReason: "choose a public object and action, or its focused help"})
 		}
 		fmt.Fprintln(stderr, message)
-		fmt.Fprintln(stderr, "usage: metasystem help [TOPIC|COMMAND] [FORM] [--json]")
+		fmt.Fprintln(stderr, "usage: metasystem help [OBJECT [ACTION [FORM]]] [--json]")
 		return 2
 	}
 	for _, arg := range args {
@@ -238,36 +264,47 @@ func runIntentHelp(args []string, stdout, stderr io.Writer) int {
 			selectors = append(selectors, arg)
 		}
 	}
-	if wantJSON || len(selectors) > 1 {
+	if wantJSON {
 		doc, err := describeHelp(selectors)
 		if err != nil {
 			return refuse(err.Error())
 		}
-		if wantJSON {
-			return inv.render(intentResult{Outcome: intentConfirmed, Summary: "public task help", Data: doc})
-		}
-		writeIntentHelpForm(stdout, *doc.Form)
-		return 0
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: "public task help", Data: doc})
 	}
 	if len(selectors) == 0 {
 		writeIntentRootHelp(stdout)
 		return 0
 	}
-	name := selectors[0]
-	if command, ok := findIntentCommand(name); ok {
-		writeIntentHelp(stdout, command)
+	if command, rest, ok := helpCommandSelector(selectors); ok {
+		if len(rest) == 0 {
+			writeIntentHelp(stdout, command)
+			return 0
+		}
+		doc, err := describeHelp(selectors)
+		if err != nil {
+			return refuse(err.Error())
+		}
+		writeIntentHelpForm(stdout, command, *doc.Form)
 		return 0
 	}
-	if intentTopic(name) {
-		writeIntentTopicHelp(stdout, name)
+	if len(selectors) == 1 && isIntentObject(selectors[0]) {
+		writeIntentObjectHelp(stdout, selectors[0])
 		return 0
 	}
-	writeUnknownIntentCommand(stderr, name)
+	if len(selectors) == 1 && intentTopic(selectors[0]) {
+		writeIntentTopicHelp(stdout, selectors[0])
+		return 0
+	}
+	if len(selectors) >= 2 && isIntentObject(selectors[0]) {
+		writeUnknownIntentAction(stderr, selectors[0], selectors[1])
+		return 2
+	}
+	writeUnknownIntentCommand(stderr, selectors[0])
 	return 2
 }
 
-func writeIntentHelpForm(w io.Writer, form intentHelpFormDocument) {
-	fmt.Fprintf(w, "review %s - %s\n", form.Name, form.Purpose)
+func writeIntentHelpForm(w io.Writer, command intentCommand, form intentHelpFormDocument) {
+	fmt.Fprintf(w, "%s %s - %s\n", command.name, form.Name, form.Purpose)
 	fmt.Fprintln(w, "usage:")
 	for _, usage := range form.Usage {
 		fmt.Fprintf(w, "  %s\n", usage)

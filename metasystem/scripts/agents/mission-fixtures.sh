@@ -465,7 +465,7 @@ wait_end_state() { # mission, expected status exit
   deadline=$((SECONDS + maximum))
   while (( SECONDS < deadline )); do
     set +e
-    "$repo/bin/metasystem" mission status --root "$repo" --mission "$mission" >/dev/null 2>&1
+    "$repo/bin/metasystem" internal mission status --root "$repo" --mission "$mission" >/dev/null 2>&1
     result=$?
     set -e
     [[ $result -eq $expected ]] && return 0
@@ -553,10 +553,10 @@ if [[ "$fixture_scenario" == mission-stop ]]; then
   run_complete_stop() { # case name, output file
     local name=$1 output=$2 status closing
     set +e
-    "$repo/bin/metasystem" stop --repo "$repo" >"$output" 2>&1
+    "$repo/bin/metasystem" internal stop --repo "$repo" >"$output" 2>&1
     status=$?
     set -e
-    closing="stopped $resolved_repo; start again: metasystem arm --repo $resolved_repo"
+    closing="stopped $resolved_repo; start again: metasystem system start --repo $resolved_repo"
     if [[ $status -ne 0 ]] || grep -q '^NOT STOPPED ' "$output" \
       || [[ "$(tail -n 1 "$output")" != "$closing" ]]; then
       echo "$name did not stop every component with the complete-stop grammar (exit $status)" >&2
@@ -595,7 +595,7 @@ if [[ "$fixture_scenario" == mission-stop ]]; then
   [[ "$("$repo/bin/metasystem" json get --file "$cooperating_runner" --field status)" == stopped \
     && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field status)" == failed \
     && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field error)" == turn-lost \
-    && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field detail)" == 'stopped by metasystem stop' \
+    && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field detail)" == 'stopped by metasystem system stop' \
     && "$("$repo/bin/metasystem" json get --file "$cooperating_turn_record" --field hostTermination)" == term ]] \
     || { echo "cooperating host did not conclude as a stopped mission turn" >&2; cat "$fixture_root/cooperating-host.stop" >&2; cat "$cooperating_runner" >&2; cat "$cooperating_turn_record" >&2; exit 1; }
   [[ ! -e "$repo/artifacts/agents/missions/cooperating-host/lease.d" \
@@ -610,7 +610,7 @@ if [[ "$fixture_scenario" == mission-stop ]]; then
   cmp -s "$fixture_root/cooperating-state.before-stop" "$cooperating_state" \
     || { echo "mission stop changed runner-owned mission state" >&2; cat "$fixture_root/cooperating-host.stop" >&2; exit 1; }
   set +e
-  "$repo/bin/metasystem" mission status --root "$repo" --mission cooperating-host \
+  "$repo/bin/metasystem" internal mission status --root "$repo" --mission cooperating-host \
     >"$fixture_root/cooperating-host.status" 2>&1
   cooperating_status_rc=$?
   set -e
@@ -673,7 +673,7 @@ cat >"$repo/artifacts/agents/jobs/landed-orphan.json" <<'EOF'
 EOF
 printf '{"jobId":"landed-orphan"}\n' >"$repo/artifacts/agents/landed-orphan/rounds/1/return.json"
 close_bed_baseline "$repo"
-METASYSTEM_AGENT_RUNTIME=fake "$repo/bin/metasystem" mission start --root "$repo" \
+METASYSTEM_AGENT_RUNTIME=fake "$repo/bin/metasystem" internal mission start --root "$repo" \
   --mission gate-and-close --foreground >/dev/null
 wait_end_state gate-and-close 10
 # The end-state details this leg used to re-assert — completed state,
@@ -685,7 +685,7 @@ wait_end_state gate-and-close 10
 
 make_end_state_contract runner-closes-chain dispatch-terminal
 close_bed_baseline "$repo"
-METASYSTEM_AGENT_RUNTIME=fake "$repo/bin/metasystem" mission start --root "$repo" \
+METASYSTEM_AGENT_RUNTIME=fake "$repo/bin/metasystem" internal mission start --root "$repo" \
   --mission runner-closes-chain --foreground >/dev/null
 wait_end_state runner-closes-chain 10
 # The runner-closed chain, mirror manifest, and turn-log acceptance are

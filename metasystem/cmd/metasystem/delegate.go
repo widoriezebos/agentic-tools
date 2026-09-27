@@ -230,7 +230,7 @@ func commandExitCode(err error) int {
 
 func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	if len(args) == 0 {
-		return nil, "", fmt.Errorf("usage: metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>] [--outputs <file> --design <file>]")
+		return nil, "", fmt.Errorf("usage: metasystem internal delegate --role <role> --brief <file> --goal <id|none-explicit> [--op <id>] [--reviews <job-id>] [--outputs <file> --design <file>]")
 	}
 	if args[0] == "--cancel" {
 		if len(args) != 2 {

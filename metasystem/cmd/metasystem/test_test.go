@@ -2566,7 +2566,7 @@ func runFrozenPublicVersionOneCorpusWorker(t *testing.T, input frozenCorpusWorke
 	// Public admission owns the attempt, authenticated worker, input parity,
 	// and atomic terminal receipt. A manually reserved parent would bind a
 	// different source/configuration context from the actual testing command.
-	public := proofFixture.command(fixtureEnvironment, engine, "test", "run", "--root", root, "--tree", candidate,
+	public := proofFixture.command(fixtureEnvironment, engine, "internal", "test", "run", "--root", root, "--tree", candidate,
 		"--mode", "auto", "--purpose", "delivery", "--goal", "policy-corpus", "--cap-min", "5")
 	public.Dir = projectRoot
 	executions.workerRuns++

@@ -41,7 +41,7 @@ func runRuntimeList(args []string) int {
 	case len(args) == 1 && args[0] == "--with-common-lifecycle":
 		names = runtimes.WithCommonLifecycle()
 	default:
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime list [--adoptable|--with-adapter|--with-host|--with-common-lifecycle]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime list [--adoptable|--with-adapter|--with-host|--with-common-lifecycle]")
 		return 2
 	}
 	for _, name := range names {
@@ -69,7 +69,7 @@ func runRuntimeSignatureVectors(args []string) int {
 
 func runRuntimeCollisionRoots(args []string) int {
 	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime collision-roots")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime collision-roots")
 		return 2
 	}
 	for _, root := range runtimes.CollisionRootsAll() {
@@ -114,7 +114,7 @@ func runRuntimeACPExpectation(args []string) int {
 
 func runRuntimeAdoptionDefault(args []string) int {
 	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime adoption-default")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime adoption-default")
 		return 2
 	}
 	fmt.Println(runtimes.AdoptionDefault())

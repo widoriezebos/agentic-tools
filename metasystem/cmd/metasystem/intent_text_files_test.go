@@ -41,15 +41,15 @@ func TestIntentTextFilesReachOwners(t *testing.T) {
 		file := writeInputFile(t, bed.root(), "inputs/reason.txt", reason+"\n")
 		before := bed.publications()
 		different := writeInputFile(t, bed.root(), "inputs/other.txt", "another reason\n")
-		code, result := bed.runJSON(bed.owners(), "release", "--reason", reason, "--reason-file", different)
-		bed.expectNoEffect(before, []string{"release", "--reason", "--reason-file"}, code, result)
+		code, result := bed.runJSON(bed.owners(), "goal", "release", "--reason", reason, "--reason-file", different)
+		bed.expectNoEffect(before, []string{"goal", "release", "--reason", "--reason-file"}, code, result)
 		if code != 2 || !strings.Contains(result.Summary, "--reason and --reason-file") {
 			t.Fatalf("conflicting reasons = %d %+v", code, result)
 		}
-		code, result = bed.runJSON(bed.owners(), "release", "--reason-file", "inputs/missing.txt")
-		bed.expectNoEffect(before, []string{"release", "--reason-file", "missing"}, code, result)
+		code, result = bed.runJSON(bed.owners(), "goal", "release", "--reason-file", "inputs/missing.txt")
+		bed.expectNoEffect(before, []string{"goal", "release", "--reason-file", "missing"}, code, result)
 
-		code, result = bed.runJSON(bed.owners(), "release", "--reason", reason, "--reason-file", file)
+		code, result = bed.runJSON(bed.owners(), "goal", "release", "--reason", reason, "--reason-file", file)
 		if code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("the same reason given both ways = %d %+v", code, result)
 		}
@@ -59,20 +59,20 @@ func TestIntentTextFilesReachOwners(t *testing.T) {
 		}
 
 		// show --history reads the same record back, in text and JSON.
-		code, stdout, _ := bed.run(bed.owners(), "show", bedGoal, "--history")
+		code, stdout, _ := bed.run(bed.owners(), "goal", "show", bedGoal, "--history")
 		if code != 0 || !strings.Contains(stdout, "history: ") || !strings.Contains(stdout, " release by ") || !strings.Contains(stdout, reason) {
 			t.Fatalf("show --history text = %d %q", code, stdout)
 		}
-		_, shown := bed.runJSON(bed.owners(), "show", bedGoal, "--history")
+		_, shown := bed.runJSON(bed.owners(), "goal", "show", bedGoal, "--history")
 		encoded, _ := json.Marshal(shown.Data)
 		if !strings.Contains(string(encoded), `"Verb":"release"`) {
 			t.Fatalf("show --history JSON has no history: %s", encoded)
 		}
-		_, plain := bed.runJSON(bed.owners(), "show", bedGoal)
+		_, plain := bed.runJSON(bed.owners(), "goal", "show", bedGoal)
 		if encoded, _ := json.Marshal(plain.Data); strings.Contains(string(encoded), `"Verb":"release"`) {
 			t.Fatalf("show without --history carries history: %s", encoded)
 		}
-		code, stdout, _ = bed.run(bed.owners(), "goals", "--all", "--history")
+		code, stdout, _ = bed.run(bed.owners(), "goal", "list", "--all", "--history")
 		if code != 0 || !strings.Contains(stdout, "history: ") {
 			t.Fatalf("goals --history = %d %q", code, stdout)
 		}
@@ -85,12 +85,11 @@ func TestIntentTextFilesReachOwners(t *testing.T) {
 		first := writeInputFile(t, b.root(), "q/yes.md", "yes: land it\n")
 		last := writeInputFile(t, b.root(), "q/no.md", "no: wait for review\n")
 		fact := writeInputFile(t, b.root(), "q/fact.md", "the read is clean\n")
-		code, result := b.runJSON(b.owners(), "ask", "goal-a", "--question", "Other?", "--question-file", question, "--option", "a: b")
+		code, result := b.runJSON(b.owners(), "question", "ask", "goal-a", "--question", "Other?", "--question-file", question, "--option", "a: b")
 		if code != 2 || result.Outcome != intentRefused || len(b.asked) != 0 {
 			t.Fatalf("conflicting question = %d %+v, %d asked", code, result, len(b.asked))
 		}
-		code, result = b.runJSON(b.owners(), "ask", "goal-a", "--question-file", question,
-			"--option-file", first, "--option", "later: ask again tomorrow", "--option-file", last, "--fact-file", fact, "--fact", "inline fact")
+		code, result = b.runJSON(b.owners(), "question", "ask", "goal-a", "--question-file", question, "--option-file", first, "--option", "later: ask again tomorrow", "--option-file", last, "--fact-file", fact, "--fact", "inline fact")
 		if code != 0 || len(b.asked) != 1 {
 			t.Fatalf("ask from files = %d %+v", code, result)
 		}
@@ -115,11 +114,11 @@ func TestIntentTextFilesReachOwners(t *testing.T) {
 			return engine, nil
 		}
 		file := writeInputFile(t, b.root(), "answer.md", "retry: the host is back\n")
-		code, result := b.runJSON(owners, "answer", "mission", "demo", "host-down", "abort: give up", "--answer-file", file)
+		code, result := b.runJSON(owners, "question", "answer", "demo/host-down", "abort: give up", "--answer-file", file)
 		if code != 2 || result.Outcome != intentRefused || missionAskAnswered(askPath) {
 			t.Fatalf("conflicting answer = %d %+v", code, result)
 		}
-		code, result = b.runJSON(owners, "answer", "mission", "demo", "host-down", "--answer-file", file)
+		code, result = b.runJSON(owners, "question", "answer", "demo/host-down", "--answer-file", file)
 		if code != 0 || result.Outcome != intentConfirmed || !missionAskAnswered(askPath) {
 			t.Fatalf("answer from a file = %d %+v", code, result)
 		}
@@ -137,14 +136,14 @@ func TestIntentGoalsArchivedHistory(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
 	const concluded = "completed proof for archived history"
-	if code, result := bed.runJSON(bed.owners(), "done", bedGoal, "--reason", concluded, "--lineage", "m1"); code != 0 {
+	if code, result := bed.runJSON(bed.owners(), "goal", "done", bedGoal, "--reason", concluded, "--lineage", "m1"); code != 0 {
 		t.Fatalf("fixture completion: %d %+v", code, result)
 	}
-	code, stdout, stderr := bed.run(bed.owners(), "goals", "--all", "--history")
+	code, stdout, stderr := bed.run(bed.owners(), "goal", "list", "--all", "--history")
 	if code != 0 || !strings.Contains(stdout, bedGoal+" history: ") || !strings.Contains(stdout, concluded) {
 		t.Fatalf("goals --all --history = %d %q %q; want the done goal's history", code, stdout, stderr)
 	}
-	for _, args := range [][]string{{"goals", "--all"}, {"goals", "--history"}, {"goals", "--all", "--history", "--label", "absent-label"}} {
+	for _, args := range [][]string{{"goal", "list", "--all"}, {"goal", "list", "--history"}, {"goal", "list", "--all", "--history", "--label", "absent-label"}} {
 		code, stdout, _ := bed.run(bed.owners(), args...)
 		if code != 0 || strings.Contains(stdout, concluded) {
 			t.Fatalf("%v = %d %q; archived history must not be printed", args, code, stdout)
@@ -158,24 +157,24 @@ func TestIntentGoalsReadFlags(t *testing.T) {
 	t.Parallel()
 	bed := newIntentBed(t, false, nil)
 	for _, args := range [][]string{
-		{"goals", "--tiers", "--label", "ui"},
-		{"goals", "--tiers", "--machine", "m1e"},
-		{"goals", "--tiers", "--history"},
-		{"goals", "--ready", "--history"},
+		{"goal", "list", "--tiers", "--label", "ui"},
+		{"goal", "list", "--tiers", "--machine", "m1e"},
+		{"goal", "list", "--tiers", "--history"},
+		{"goal", "list", "--ready", "--history"},
 	} {
 		code, result := bed.runJSON(bed.owners(), args...)
 		if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not apply") {
 			t.Fatalf("%v = %d %+v; want a refusal", args, code, result)
 		}
 	}
-	code, stdout, stderr := bed.run(bed.owners(), "goals", "--pretty")
+	code, stdout, stderr := bed.run(bed.owners(), "goal", "list", "--pretty")
 	if code != 2 || !strings.Contains(stdout+stderr, "--pretty formats JSON") {
 		t.Fatalf("goals --pretty without --json = %d %q %q", code, stdout, stderr)
 	}
-	if code, result := bed.runJSON(bed.owners(), "goals", "--pretty"); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := bed.runJSON(bed.owners(), "goal", "list", "--pretty"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("goals --json --pretty = %d %+v", code, result)
 	}
-	if code, result := bed.runJSON(bed.owners(), "goals", "--fetch"); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := bed.runJSON(bed.owners(), "goal", "list", "--fetch"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("goals --fetch = %d %+v", code, result)
 	}
 }

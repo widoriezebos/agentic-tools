@@ -92,7 +92,7 @@ func rearm(facts []Fact) []string {
 	remote := fact(facts, "remote", "origin")
 	tip := fact(facts, "tip", remote+"/main")
 	checkout := fact(facts, "checkout", ".")
-	return []string{"git fetch " + quoted(remote), "git merge --ff-only " + quoted(tip), "scripts/agents/go-build.sh", "bin/metasystem up --repo " + quoted(checkout)}
+	return []string{"git fetch " + quoted(remote), "git merge --ff-only " + quoted(tip), "scripts/agents/go-build.sh", "bin/metasystem session start --repo " + quoted(checkout)}
 }
 
 func one(command string) func([]Fact) []string {
@@ -150,10 +150,10 @@ func fastForwardBlocked(facts []Fact) []string {
 var Table = []Cause{
 	{Token: "not-enrolled", Commands: 2, sample: []Fact{Path("linked-worktree", "/repo")}, remedy: func(f []Fact) []string {
 		checkout := fact(f, "linked-worktree", fact(f, "checkout", "."))
-		return []string{"cd " + quoted(checkout), "rerun the same metasystem test command with the candidate staged in this checkout"}
+		return []string{"cd " + quoted(checkout), "rerun the same metasystem test run command with the candidate staged in this checkout"}
 	}},
 	{Token: "enrollment-drift", Commands: 1, remedy: func(f []Fact) []string {
-		return []string{"bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
+		return []string{"bin/metasystem session start --repo " + quoted(fact(f, "checkout", "."))}
 	}},
 	{Token: "engine-behind-tip", Commands: 4, remedy: rearm},
 	{Token: "engine-behind-tip", Kind: "fetch-failed", Commands: 4, sample: []Fact{Value("fact", "fetch-failed")}, remedy: rearm},
@@ -176,28 +176,28 @@ var Table = []Cause{
 	}},
 	{Token: "engine-behind-tip", Kind: "named-delivery-tree", Commands: 4, sample: []Fact{Value("fact", "named-delivery-tree")}, remedy: rearm},
 	{Token: "engine-behind-tip", Kind: "live-attempt", Commands: 5, sample: []Fact{Value("fact", "live-attempt"), Value("attempt", "proof-1")}, remedy: func(f []Fact) []string {
-		commands := []string{"bin/metasystem wait --root " + quoted(fact(f, "checkout", ".")) + " --attempt " + quoted(fact(f, "attempt", "<attempt>"))}
+		commands := []string{"bin/metasystem internal wait --root " + quoted(fact(f, "checkout", ".")) + " --attempt " + quoted(fact(f, "attempt", "<attempt>"))}
 		return append(commands, rearm(f)...)
 	}},
 	{Token: "fast-forward-blocked", Commands: 9, sample: []Fact{
 		Path("tracked-path", "docs/local.txt"), Path("untracked-path", "generated/local.txt"), Path("ledger-path", "memory/receipts.log"),
 	}, remedy: fastForwardBlocked},
 	{Token: "rebuild-failed", Commands: 2, remedy: func(f []Fact) []string {
-		return []string{"scripts/agents/go-build.sh", "bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
+		return []string{"scripts/agents/go-build.sh", "bin/metasystem session start --repo " + quoted(fact(f, "checkout", "."))}
 	}},
 	{Token: "rearm-failed", Commands: 1, remedy: func(f []Fact) []string {
-		return []string{"bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
+		return []string{"bin/metasystem session start --repo " + quoted(fact(f, "checkout", "."))}
 	}},
-	{Token: "mutation-lock", Commands: 1, remedy: one("rerun the same metasystem test command after the active proof mutation ends")},
-	{Token: "judgment-stalled", Commands: 1, remedy: one("rerun the same metasystem test command after the named external step can make progress")},
-	{Token: "judgment-failed", Commands: 1, remedy: one("repair the named policy judgment failure, then rerun the same metasystem test command")},
-	{Token: "base-moved", Commands: 1, remedy: one("rerun the same metasystem test command from the current landing ref")},
-	{Token: "decision-mismatch", Commands: 1, remedy: one("re-arm the enrolled policy engine, then rerun the same metasystem test command")},
+	{Token: "mutation-lock", Commands: 1, remedy: one("rerun the same metasystem test run command after the active proof mutation ends")},
+	{Token: "judgment-stalled", Commands: 1, remedy: one("rerun the same metasystem test run command after the named external step can make progress")},
+	{Token: "judgment-failed", Commands: 1, remedy: one("repair the named policy judgment failure, then rerun the same metasystem test run command")},
+	{Token: "base-moved", Commands: 1, remedy: one("rerun the same metasystem test run command from the current landing ref")},
+	{Token: "decision-mismatch", Commands: 1, remedy: one("re-arm the enrolled policy engine, then rerun the same metasystem test run command")},
 	{Token: TokenEngineUnavailable, Commands: 2, remedy: func(f []Fact) []string {
-		return []string{"scripts/agents/go-build.sh", "bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
+		return []string{"scripts/agents/go-build.sh", "bin/metasystem session start --repo " + quoted(fact(f, "checkout", "."))}
 	}},
 	{Token: "child-failed", Commands: 1, remedy: one("run the named enrolled policy engine directly and repair its reported failure")},
-	{Token: "child-output", Commands: 1, remedy: one("repair the named enrolled policy engine's policy output, then rerun the same metasystem test command")},
+	{Token: "child-output", Commands: 1, remedy: one("repair the named enrolled policy engine's policy output, then rerun the same metasystem test run command")},
 }
 
 func outcome(token string, facts []Fact) (Cause, bool) {

@@ -48,7 +48,7 @@ the standing validator's custodian runs the deep cadence selection through the
 governed run boundary and joins its testing worker to that one reservation:
 
 ```sh
-bin/metasystem run launch --root "$PWD" --id "direct-validation-<id>" \
+bin/metasystem internal run launch --root "$PWD" --id "direct-validation-<id>" \
   --kind suite --display "weight-triggered direct validation" \
   --log "artifacts/agents/runs/direct-validation-<id>.log" \
   --goal "<standing-validator-goal>" --obligation-revision "<revision>" \
@@ -131,4 +131,4 @@ coordinator sessions with the limit raised:
 
 Put it in the shell profile of any machine that runs a coordinator.
 The variable is read at session start; a capped session cannot raise
-it from inside — there, start Codex work through its intent (`metasystem build` or `metasystem review`), or `metasystem internal launch start` for a launch with no public intent.
+it from inside — there, start Codex work through its intent (`metasystem work build` or `metasystem work review`), or `metasystem internal launch start` for a launch with no public intent.

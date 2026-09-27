@@ -88,15 +88,16 @@ func (values *humanVerbValues) budgetCommandWithoutApprovedRef(box string) strin
 }
 
 func (values *humanVerbValues) renderBudgetCommand(box string, includeApprovedRef bool) string {
+	// The public goal budget G [options] BOX; --root is its alias of --repo.
 	args := []string{"metasystem", "goal", "budget"}
+	if values.id != "" {
+		args = append(args, values.id)
+	}
 	if values.root != "" && values.root != "." {
 		args = append(args, "--root", values.root)
 	}
 	if values.lineage != "" {
 		args = append(args, "--lineage", values.lineage)
-	}
-	if values.id != "" {
-		args = append(args, "--id", values.id)
 	}
 	if values.fixtureHumanAuthority {
 		args = append(args, "--fixture-human-authority")
@@ -137,7 +138,9 @@ func (values *humanVerbValues) sameCommandWithout(drop ...string) string {
 	for _, name := range drop {
 		dropped[strings.TrimPrefix(name, "--")] = true
 	}
-	args := []string{"metasystem", "goal", values.verb}
+	// The caller used the goal family's own form, which is reached through
+	// the explicit internal entry.
+	args := []string{"metasystem", "internal", "goal", values.verb}
 	for index := 0; index < len(values.rawArgs); index++ {
 		token := values.rawArgs[index]
 		if !strings.HasPrefix(token, "--") {

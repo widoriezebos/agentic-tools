@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-const ChangedWording = "Just completed: unknown for this turn.\nTask: x; halting is fine here; see metasystem report stop-status --id %s"
+const ChangedWording = "Just completed: unknown for this turn.\nTask: x; halting is fine here; see metasystem session report --id %s"
 
 type Options struct {
 	Root, Runtime, Session, Attempt string
@@ -93,7 +93,7 @@ func Publish(t testing.TB, options Options) Published {
 }
 func defaultHumanLine(alias string, blocked bool) string {
 	if blocked {
-		return "Just completed: unknown for this turn.\nTask: test; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id " + alias
+		return "Just completed: unknown for this turn.\nTask: test; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem session report --id " + alias
 	}
-	return "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id " + alias
+	return "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem session report --id " + alias
 }

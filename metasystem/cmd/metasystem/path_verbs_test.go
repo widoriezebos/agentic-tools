@@ -35,11 +35,11 @@ func TestPathStateRootVerbPrintsTheValidatedInstallation(t *testing.T) {
 
 func TestPathStateRootVerbRefusesUsageAndInvalidCandidates(t *testing.T) {
 	stderr, code := captureStderr(t, func() int { return runPathStateRoot(nil) })
-	if code != 2 || !strings.Contains(stderr, "usage: metasystem path state-root") {
+	if code != 2 || !strings.Contains(stderr, "usage: metasystem internal path state-root") {
 		t.Fatalf("missing installation: code=%d stderr=%q", code, stderr)
 	}
 	stderr, code = captureStderr(t, func() int { return runPathStateRoot([]string{"one", "two"}) })
-	if code != 2 || !strings.Contains(stderr, "usage: metasystem path state-root") {
+	if code != 2 || !strings.Contains(stderr, "usage: metasystem internal path state-root") {
 		t.Fatalf("extra installation: code=%d stderr=%q", code, stderr)
 	}
 	stderr, code = captureStderr(t, func() int { return runPathStateRoot([]string{t.TempDir()}) })
@@ -108,7 +108,7 @@ func TestPathClassVerbUsageAndResolverFailure(t *testing.T) {
 	t.Cleanup(func() { resolvePathClass = original })
 
 	stderr, code := captureStderr(t, func() int { return runPathClass(nil) })
-	if code != 2 || !strings.Contains(stderr, "usage: metasystem path class") {
+	if code != 2 || !strings.Contains(stderr, "usage: metasystem internal path class") {
 		t.Fatalf("missing path: code=%d stderr=%q", code, stderr)
 	}
 	resolvePathClass = func(string) (pathclass.Resolution, error) {

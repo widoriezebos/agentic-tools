@@ -117,7 +117,7 @@ Save this as `testing.json` (the generated `reports/` directories are outputs):
 
 Run `bin/metasystem test check --root .` to validate the contract and native
 tool readiness. `test plan --root . --goal <id> --mode auto` shows the selected
-groups; `metasystem test --goal <id> --mode auto` executes them (the `test run`
+groups; `metasystem test run --goal <id> --mode auto` executes them (the `test run`
 owner), and `test verify --root . --goal <id> --tree
 <tree>` checks sufficient retained evidence without launching tests or builds.
 Use the exact candidate tree and the same goal when running and verifying.
@@ -180,7 +180,7 @@ maximum separately; an admission maximum of zero is reported as unlimited.
 
 Before trusted policy-plan execution, package expansion, candidate-engine
 construction, native preparation, proof reservation, or admission, `test run`
-asks the trusted destination worker for `metasystem test worker-capabilities`.
+asks the trusted destination worker for `metasystem internal test worker-capabilities`.
 The response binds the capability schema, protocol
 version, result schema, execution-identity version, and worker-policy version.
 An unknown verb, malformed response, or mismatch is unsupported and refuses

@@ -80,7 +80,7 @@ func runProofRunLaunchWithInputs(args []string,
 	}
 	command := flags.Args()
 	if len(command) == 0 || *root == "" || *conf == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proof-run launch --suite S --root R --conf F --progress P --log L --banner B [--selector F] -- COMMAND...")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run launch --suite S --root R --conf F --progress P --log L --banner B [--selector F] -- COMMAND...")
 		return 2
 	}
 	executionRoot, err := canonicalProofRoot(*root)
@@ -324,7 +324,7 @@ func runProofRunGoGateTests(args []string) int {
 	logRoot := pathFlag(flags, "log-root", "", "private native partition log directory")
 	workers := flags.Int("workers", 0, "inherited positive test-worker allowance")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *logRoot == "" || *workers < 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proof-run go-gate-tests --root DIR --log-root DIR --workers N")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run go-gate-tests --root DIR --log-root DIR --workers N")
 		return 2
 	}
 	if code, err := authorizeProofWorker(*root); err != nil {
@@ -1208,7 +1208,7 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 				holder, holderErr := lease.CurrentHolder(request.ControlRoot)
 				if holderErr == nil && holder.OwnerLineage == binding.File.Claimed.Lineage {
 					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf(
-						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem goal restamp --id %s",
+						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem internal goal restamp --id %s",
 						*classifiedCaller.ClaimEpoch, binding.Capability.ClaimEpoch, authorityGoalID)
 				}
 			}
@@ -2260,7 +2260,7 @@ func runProofRunBanner(args []string) int {
 		return 2
 	}
 	if *suite == "" || *root == "" || *progress == "" || *logPath == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proof-run banner --suite S --root R --progress P --log L")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run banner --suite S --root R --progress P --log L")
 		return 2
 	}
 	state := proofRunWitnessState(*root)
@@ -2277,7 +2277,7 @@ func runProofRunHeartbeat(args []string) int {
 	flags := flag.NewFlagSet("proof-run heartbeat", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "watched root")
 	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proof-run heartbeat --root R")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal proof-run heartbeat --root R")
 		return 2
 	}
 	heartbeat, ok := deepestSuiteHeartbeat(*root, time.Now())

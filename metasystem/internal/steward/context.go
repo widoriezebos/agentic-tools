@@ -62,11 +62,11 @@ func ContextBudgetLine(stateRoot, installationRoot string, now time.Time, opts C
 }
 
 func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Time, opts ContextOptions, prober identity.Prober) (RoleVerdict, usage.Reading, error) {
-	remedy := "metasystem context status --root " + installationRoot
+	remedy := "metasystem session context --root " + installationRoot
 	diagnostic := opts.Transcript != ""
 	budget, err := config.ContextBudget(installationRoot)
 	if err != nil {
-		return roleUnknown(RoleContext, err.Error(), "metasystem config validate --conf "+filepath.Join(installationRoot, "metasystem.conf")), usage.Reading{}, err
+		return roleUnknown(RoleContext, err.Error(), "metasystem internal config validate --conf "+filepath.Join(installationRoot, "metasystem.conf")), usage.Reading{}, err
 	}
 	holder, noHolderReason, unobservableReason, err := resolveContextIdentity(stateRoot, opts, prober)
 	if err != nil {
@@ -292,7 +292,7 @@ func contextGitToplevel(installationRoot string) (string, error) {
 }
 
 func contextVerdict(reading usage.Reading, budget config.Budget, installationRoot string, diagnostic bool) RoleVerdict {
-	statusRemedy := "metasystem context status --root " + installationRoot
+	statusRemedy := "metasystem session context --root " + installationRoot
 	if reading.Latest == nil {
 		if contextBenignUnknown(reading.Capability, reading.Reason) {
 			return labelContextDiagnostic(roleAlive(RoleContext, reading.Reason), diagnostic)
@@ -330,7 +330,7 @@ func contextVerdict(reading usage.Reading, budget config.Budget, installationRoo
 }
 
 func contextHandoffRemedy(installationRoot string) string {
-	return "metasystem context handoff --root " + installationRoot + " --note <configured-note-path> --no-delegates"
+	return "metasystem session handoff --root " + installationRoot + " --note <configured-note-path> --no-delegates"
 }
 
 func labelContextDiagnostic(verdict RoleVerdict, diagnostic bool) RoleVerdict {

@@ -501,7 +501,7 @@ func runPublicApplicationPhase(t *testing.T, fixture *portableProofFixture, labe
 		t.Fatalf("%s public plan status=%d output=%s", label, planStatus, planOutput)
 	}
 	resultPath := filepath.Join(t.TempDir(), label+".json")
-	runArgs := append(append([]string{"test", "run"}, baseArgs...), "--force-groups", "--result", resultPath)
+	runArgs := append(append([]string{"internal", "test", "run"}, baseArgs...), "--force-groups", "--result", resultPath)
 	if mutateLive {
 		controlRoot, err := canonicalProofRoot(fixture.root)
 		if err != nil {

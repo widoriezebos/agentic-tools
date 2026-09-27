@@ -13,12 +13,12 @@ var landingBatchVerbs = map[string]func([]string) int{
 
 func runLandingBatch(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch <join|status|withdraw|owner|tick|wait>")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch <join|status|withdraw|owner|tick|wait>")
 		return 2
 	}
 	run, ok := landingBatchVerbs[args[0]]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "metasystem landing batch: unknown verb %q\n", args[0])
+		fmt.Fprintf(os.Stderr, "metasystem internal landing batch: unknown verb %q\n", args[0])
 		return 2
 	}
 	return run(args[1:])

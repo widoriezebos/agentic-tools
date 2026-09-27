@@ -12,7 +12,7 @@ import (
 // the sole positional argument.
 func runConfigCanonicalModel(args []string) int {
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem config canonical-model <name>")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal config canonical-model <name>")
 		return 2
 	}
 	fmt.Println(config.CanonicalModel(args[0]))
@@ -29,7 +29,7 @@ func runConfigIdentity(args []string) int {
 		return 2
 	}
 	if *runtime == "" || *version == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem config identity --runtime R --version V [sources...]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal config identity --runtime R --version V [sources...]")
 		return 2
 	}
 	identity, err := config.BuildConfigIdentity(*runtime, *version, flags.Args())

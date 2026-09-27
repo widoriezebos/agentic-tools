@@ -210,7 +210,7 @@ func runGoalCarryLanding(args []string) int {
 	temporary := flags.String("temporary-human-word", "", "not accepted by carry")
 	reviewBy := flags.String("review-by", "", "not accepted by carry")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *by == "" || *tree == "" || *past == "" || strings.TrimSpace(*why) == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
 		return 2
 	}
 	if *temporary != "" || *reviewBy != "" {
@@ -667,7 +667,7 @@ func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag 
 	if lineage == "" {
 		enrollment, err := humanauthority.ReadEnrollment(root)
 		if err != nil {
-			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem goal enroll-terminal here once, or pass --lineage: %w", err)
+			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem internal goal enroll-terminal here once, or pass --lineage: %w", err)
 		}
 		now, nowErr := commandNow(root)
 		if nowErr != nil {
@@ -796,7 +796,7 @@ func runGoalReadItems(args []string) int {
 
 func runGoalReadItemsWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items add|close|list [flags]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal goal read-items add|close|list [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -861,7 +861,7 @@ func runGoalReadItemsAddWithProof(args []string, observed *humanauthority.Proof,
 	var items repeatedStrings
 	flags.Var(&items, "item", "read item (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *read == "" || (len(items) == 0) == (*itemsFile == "") {
-		dependencies.complain("usage: metasystem goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
+		dependencies.complain("usage: metasystem internal goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
 		return 2
 	}
 	texts := []string(items)
@@ -917,7 +917,7 @@ func runGoalReadItemsCloseWithProof(args []string, observed *humanauthority.Proo
 	moved := flags.String("moved", "", "open goal receiving the item")
 	accepted := flags.String("accepted", "", "reason this is not a defect")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *item == "" {
-		dependencies.complain("usage: metasystem goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
+		dependencies.complain("usage: metasystem internal goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
 		return 2
 	}
 	closure := goal.ReadItemClosure{}
@@ -1992,7 +1992,7 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			if code == 0 {
 				if metricsErr := concludedGoalMetrics(f.root, f.id, completion.reporter); metricsErr != nil {
 					dependencies.report.secondary = append(dependencies.report.secondary, metricsErr)
-					dependencies.report.repair = []string{"metasystem", "metrics", "report", "--goal", f.id}
+					dependencies.report.repair = []string{"metasystem", "internal", "metrics", "report", "--goal", f.id}
 					dependencies.report.repairReason = "write the goal's metrics report; run it from " + f.root
 				}
 			}
@@ -2593,7 +2593,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 		return refuseHumanVerb(values, 2, "needs --draft", humanVerbRemedy{words: "provide the classification draft path before choosing --preview or --confirm"})
 	}
 	if *preview == (*confirm != "") {
-		return refuseHumanVerb(values, 2, "needs a synced backlog, --draft, and exactly one of --preview or --confirm", humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		return refuseHumanVerb(values, 2, "needs a synced backlog, --draft, and exactly one of --preview or --confirm", humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	draft, err := os.ReadFile(*draftPath)
 	if err != nil {
@@ -2609,7 +2609,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 	}
 	listing, err := goal.PreviewClassificationSweep(endpoint, draft, now)
 	if err != nil {
-		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	if *preview {
 		for _, line := range listing.Lines {
@@ -2619,7 +2619,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 		return 0
 	}
 	if listing.Digest != *confirm {
-		return refuseHumanVerb(values, 1, fmt.Sprintf("SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s", *confirm, listing.Digest), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		return refuseHumanVerb(values, 1, fmt.Sprintf("SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s", *confirm, listing.Digest), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	authorityFlags := &syncFlags{root: *root, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureHumanAuthority}
 	if _, err := classifyGoalAuthorityFirstWithFacts("classify-sweep", authorityFlags, dependencies.authorityFacts); err != nil {
@@ -2649,7 +2649,7 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 			if installErr != nil {
 				detail = installErr.Error()
 			}
-			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+proofErr.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
@@ -2664,11 +2664,11 @@ func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, co
 		}
 		res, classifyErr := goal.ClassifyTier(req, proposal, index == len(listing.Proposals)-1)
 		if classifyErr != nil {
-			return refuseHumanVerb(values, 1, classifyErr.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+			return refuseHumanVerb(values, 1, classifyErr.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if res.Outcome != goal.OutcomeConfirmed {
 			printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
-			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "internal", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
 			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+proofErr.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
@@ -3431,7 +3431,7 @@ func mainSplitRatification(id, digest string, classification lease.ClassifyResul
 		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s is main-origin; its split draft is ratified by the coordinator — re-run goal split from the MAIN checkout-lease holder session (a human may also run it with --by)", id)
 	}
 	if classification.ClaimEpoch == nil {
-		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s has a MAIN holder classification but no checkout lease epoch; run metasystem up to establish the authenticated lease, then retry", id)
+		return goal.SplitRatification{}, fmt.Errorf("SPLIT_RATIFY_REFUSED: goal %s has a MAIN holder classification but no checkout lease epoch; run metasystem session start to establish the authenticated lease, then retry", id)
 	}
 	return goal.SplitRatification{Tier: goal.RatifierMain, MainID: classification.MainId, ClaimEpoch: *classification.ClaimEpoch, DraftSHA256: digest}, nil
 }

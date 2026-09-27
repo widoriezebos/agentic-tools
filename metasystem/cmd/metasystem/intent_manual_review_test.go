@@ -40,14 +40,14 @@ func TestIntentManualDiffReview(t *testing.T) {
 	run := func(cwd string, args ...string) (int, intentResult) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, cwd, owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, cwd, owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result
 	}
-	code, first := run(nested, "review", "changes", "--brief", brief)
+	code, first := run(nested, "work", "review", "--changes", "--brief", brief)
 	data, _ := first.Data.(map[string]any)
 	ref, _ := data["ref"].(string)
 	files := strings.Fields(strings.Trim(strings.ReplaceAll(strings.ReplaceAll(jsonText(data["files"]), `"`, " "), ",", " "), "[] "))
@@ -59,12 +59,12 @@ func TestIntentManualDiffReview(t *testing.T) {
 		t.Fatalf("diagnostic feedback offered delivery: %+v", first)
 	}
 	launched := c.starterLaunches()
-	code, again := run(root, "review", "changes", "--brief", brief)
+	code, again := run(root, "work", "review", "--changes", "--brief", brief)
 	if againData, _ := again.Data.(map[string]any); code != 0 || againData["ref"] != ref || c.starterLaunches() != launched {
 		t.Fatalf("an identical request did not rejoin: %d %+v (launches %d then %d)", code, again, launched, c.starterLaunches())
 	}
-	for _, verb := range []string{"show", "wait"} {
-		if code, shown := run(root, verb, "review", ref); code != 0 || shown.Outcome != intentConfirmed {
+	for _, verb := range []string{"status", "wait"} {
+		if code, shown := run(root, "work", verb, "read:"+ref); code != 0 || shown.Outcome != intentConfirmed {
 			t.Fatalf("%s review %s: %d %+v", verb, ref, code, shown)
 		}
 	}
@@ -80,16 +80,16 @@ func TestIntentManualDiffReview(t *testing.T) {
 
 	patch := filepath.Join(t.TempDir(), "change.patch")
 	os.WriteFile(patch, []byte("diff --git a/top.txt b/top.txt\n--- a/top.txt\n+++ b/top.txt\n@@ -1 +1 @@\n-top-level change\n+patched\n"), 0o600)
-	code, supplied := run(root, "review", "diff", patch, "--brief", brief)
+	code, supplied := run(root, "work", "review", "--patch", patch, "--brief", brief)
 	suppliedData, _ := supplied.Data.(map[string]any)
 	if code != 0 || supplied.Outcome != intentConfirmed || suppliedData["kind"] != "patch" || suppliedData["ref"] == ref {
 		t.Fatalf("review diff: %d %+v", code, supplied)
 	}
-	code, empty := run(root, "review", "changes")
+	code, empty := run(root, "work", "review", "--changes")
 	if code != 2 || empty.Outcome != intentRefused || !strings.Contains(empty.Summary, "--brief") {
 		t.Fatalf("review changes without a brief: %d %+v", code, empty)
 	}
-	code, unknown := run(root, "show", "review", "read-000000000000000000000000")
+	code, unknown := run(root, "work", "status", "read:read-000000000000000000000000")
 	if code == 0 || unknown.Outcome == intentConfirmed {
 		t.Fatalf("an unknown ref was shown: %d %+v", code, unknown)
 	}
@@ -122,11 +122,11 @@ func (s *holdingReadStarter) StartSupervisor(id, state string) (identity.Ref, er
 		return s.c.StartSupervisor(id, state)
 	}
 	s.c.manager.Store.Update(id, func(current *launch.Record) error {
-		supervisor, child := workRef(10), workRef(20)
+		supervisor, child := workProcessRef(10), workProcessRef(20)
 		current.Supervisor, current.Child, current.State = &supervisor, &child, launch.Running
 		return nil
 	})
-	return workRef(10), nil
+	return workProcessRef(10), nil
 }
 
 // flipProber reports the held processes alive until they are declared dead.
@@ -157,34 +157,34 @@ func TestIntentManualDiffReviewStopAndRetry(t *testing.T) {
 	run := func(args ...string) (int, intentResult) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, root, owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, root, owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result
 	}
-	code, started := run("review", "changes", "--brief", brief)
+	code, started := run("work", "review", "--changes", "--brief", brief)
 	ref, _ := resultData(t, started)["ref"].(string)
-	if started.Outcome != intentInProgress || ref == "" || started.Next == nil || !slices.Equal(started.Next.Argv[1:4], []string{"wait", "review", ref}) {
+	if started.Outcome != intentInProgress || ref == "" || started.Next == nil || !slices.Equal(started.Next.Argv[1:4], []string{"work", "wait", "read:" + ref}) {
 		t.Fatalf("a held read is in progress: code=%d %+v", code, started)
 	}
 	launches := c.starterLaunches()
-	code, stopped := run("stop", "review", ref)
-	if stopped.Outcome != intentPartial || resultData(t, stopped)["uncertain"] == nil || stopped.Next == nil || !slices.Equal(stopped.Next.Argv[1:], []string{"stop", "review", ref}) {
+	code, stopped := run("work", "stop", "read:"+ref)
+	if stopped.Outcome != intentPartial || resultData(t, stopped)["uncertain"] == nil || stopped.Next == nil || !slices.Equal(stopped.Next.Argv[1:], []string{"work", "stop", "read:" + ref}) {
 		t.Fatalf("an unprovable stop is uncertain: code=%d %+v", code, stopped)
 	}
-	code, early := run("review", "changes", "--brief", brief, "--retry", "1")
-	if early.Outcome != intentRefused || early.Next == nil || !slices.Equal(early.Next.Argv[1:], []string{"stop", "review", ref}) || c.starterLaunches() != launches {
+	code, early := run("work", "review", "--changes", "--brief", brief, "--retry", "1")
+	if early.Outcome != intentRefused || early.Next == nil || !slices.Equal(early.Next.Argv[1:], []string{"work", "stop", "read:" + ref}) || c.starterLaunches() != launches {
 		t.Fatalf("a retry before the attempt ends is refused toward stop: code=%d %+v", code, early)
 	}
 	prober.dead = true
-	code, proved := run("stop", "review", ref)
+	code, proved := run("work", "stop", "read:"+ref)
 	if proved.Outcome != intentInProgress || resultData(t, proved)["uncertain"] != nil || !strings.Contains(proved.Summary, "stopping") ||
-		proved.Next == nil || !slices.Equal(proved.Next.Argv[1:4], []string{"wait", "review", ref}) {
+		proved.Next == nil || !slices.Equal(proved.Next.Argv[1:4], []string{"work", "wait", "read:" + ref}) {
 		t.Fatalf("a proved stop: code=%d %+v", code, proved)
 	}
-	code, ended := run("wait", "review", ref, "--timeout", "1s")
+	code, ended := run("work", "wait", "read:"+ref, "--timeout", "1s")
 	data := resultData(t, ended)
 	if ended.Outcome != intentPartial || data["state"] != "stopped" || ended.Next == nil || !slices.Contains(ended.Next.Argv, "--retry") || c.starterLaunches() != launches {
 		t.Fatalf("the stopped attempt offers its retry and starts nothing: code=%d %+v", code, ended)

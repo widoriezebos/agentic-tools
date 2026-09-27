@@ -43,7 +43,7 @@ function launch(over: Partial<Launch> = {}): Launch {
     orientation: "",
     next: {
       session: "cd /w/agentic-tools-m1f && claude",
-      stop: "metasystem stop --repo /w/agentic-tools-m1f/metasystem",
+      stop: "metasystem system stop --repo /w/agentic-tools-m1f/metasystem",
     },
     ...over,
   };
@@ -82,7 +82,7 @@ describe("a launch in flight", () => {
     const markup = rendered(launch());
     expect(markup).toContain("raises an idle alert");
     expect(markup).toContain("cd /w/agentic-tools-m1f &amp;&amp; claude");
-    expect(markup).toContain("metasystem stop --repo /w/agentic-tools-m1f/metasystem");
+    expect(markup).toContain("metasystem system stop --repo /w/agentic-tools-m1f/metasystem");
   });
 });
 
@@ -135,7 +135,7 @@ describe("a launch that armed", () => {
       }),
     );
     expect(markup).toContain("m1f armed; presence not yet seen");
-    expect(markup).toContain("metasystem steward health --repo /w/agentic-tools-m1f/metasystem");
+    expect(markup).toContain("metasystem system check --repo /w/agentic-tools-m1f/metasystem");
     expect(markup).not.toContain("Retry");
   });
 });

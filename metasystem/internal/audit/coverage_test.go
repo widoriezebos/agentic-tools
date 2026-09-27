@@ -146,11 +146,11 @@ func registryPointerDocs(t *testing.T, root string) {
 	t.Helper()
 	os.MkdirAll(filepath.Join(root, "docs"), 0o755)
 	os.WriteFile(filepath.Join(root, "docs", "orchestration.md"),
-		[]byte("the registry: bin/metasystem runtime list\n"), 0o644)
+		[]byte("the registry: bin/metasystem internal runtime list\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "docs", "glossary.md"),
-		[]byte("the registry: bin/metasystem runtime list\n"), 0o644)
+		[]byte("the registry: bin/metasystem internal runtime list\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "README.md"),
-		[]byte("the registry: bin/metasystem runtime list\n"), 0o644)
+		[]byte("the registry: bin/metasystem internal runtime list\n"), 0o644)
 }
 
 func TestAuditMetasystemRefusals(t *testing.T) {
@@ -172,9 +172,9 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 		// The goal-system doctrine and delivery contract (GOAL-18/19):
 		// content the audit now requires, not just files.
 		os.WriteFile(filepath.Join(root, "AGENTS.md"),
-			[]byte("clean instruction text\nprograms start with `metasystem open`; at turn end read `metasystem goals --ready`\n"), 0o644)
+			[]byte("clean instruction text\nprograms start with `metasystem goal open`; at turn end read `metasystem goal list --ready`\n"), 0o644)
 		os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
-			[]byte("programs start with `metasystem open`; repair via `runtime registration`\n"), 0o644)
+			[]byte("programs start with `metasystem goal open`; repair via `runtime registration`\n"), 0o644)
 		registryPointerDocs(t, root)
 		os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 			[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
@@ -252,7 +252,7 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 	})
 	t.Run("default word budget", func(t *testing.T) {
 		root := build(t)
-		doctrine := "programs start with `metasystem open`; at turn end read `metasystem goals --ready`\n"
+		doctrine := "programs start with `metasystem goal open`; at turn end read `metasystem goal list --ready`\n"
 		doctrineWords := len(strings.Fields(doctrine))
 		if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(doctrine), 0o644); err != nil {
 			t.Fatal(err)
@@ -310,8 +310,8 @@ func TestAuditMetasystemReport(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "docs/project-rules.md"), []byte("budget: <amount and period>\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "skills/demo/SKILL.md"), []byte("a skill\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "optional-skills/x/SKILL.md"), []byte("optional\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("programs start with `metasystem open`; read `metasystem goals --ready`\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "docs/project-adaptation.md"), []byte("the `metasystem open` convention; repair via `runtime registration`\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("programs start with `metasystem goal open`; read `metasystem goal list --ready`\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs/project-adaptation.md"), []byte("the `metasystem goal open` convention; repair via `runtime registration`\n"), 0o644)
 	registryPointerDocs(t, root)
 	os.WriteFile(filepath.Join(root, "docs/design/turn-verdict-delivery-contract.md"), []byte("| claude |\n| codex |\n| devin |\n"), 0o644)
 	for _, config := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
@@ -420,18 +420,18 @@ func TestAuditMetasystemErrorPropagation(t *testing.T) {
 }
 
 // GOAL-19: the program-start rule is audited by CONTENT — the public
-// `metasystem open` start plus the `metasystem goals --ready` frontier
+// `metasystem goal open` start plus the `metasystem goal list --ready` frontier
 // passes; a doctrine file silent on either refuses.
 func TestDoctrineProgramStartRule(t *testing.T) {
-	const doctrine = "programs start with `metasystem open`; at turn end read `metasystem goals --ready`\n"
-	const adaptation = "programs start with `metasystem open`; repair via `runtime registration`\n"
+	const doctrine = "programs start with `metasystem goal open`; at turn end read `metasystem goal list --ready`\n"
+	const adaptation = "programs start with `metasystem goal open`; repair via `runtime registration`\n"
 	cases := []struct {
 		name, agents, adaptation, refusal string
 	}{
 		{"public grammar passes", doctrine, adaptation, ""},
 		{"silent doctrine", "no doctrine here\n", "nothing about goals; repair via `runtime registration`\n", "AGENTS.md must carry"},
-		{"missing program start", "at turn end read `metasystem goals --ready`\n", adaptation, "AGENTS.md must carry"},
-		{"missing ready frontier", "programs start with `metasystem open`\n", adaptation, "AGENTS.md must carry"},
+		{"missing program start", "at turn end read `metasystem goal list --ready`\n", adaptation, "AGENTS.md must carry"},
+		{"missing ready frontier", "programs start with `metasystem goal open`\n", adaptation, "AGENTS.md must carry"},
 		{"adaptation without public start", doctrine, "nothing about goals; repair via `runtime registration`\n", "docs/project-adaptation.md must carry"},
 	}
 	for _, tc := range cases {
@@ -472,9 +472,9 @@ func TestConformanceTableAudit(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
 	os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
 	os.WriteFile(filepath.Join(root, "AGENTS.md"),
-		[]byte("programs start with `metasystem open`; read `metasystem goals --ready`\n"), 0o644)
+		[]byte("programs start with `metasystem goal open`; read `metasystem goal list --ready`\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
-		[]byte("`metasystem open` starts programs; repair via `runtime registration`\n"), 0o644)
+		[]byte("`metasystem goal open` starts programs; repair via `runtime registration`\n"), 0o644)
 	registryPointerDocs(t, root)
 	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 		[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
@@ -498,9 +498,9 @@ func TestConformanceTableMissingRow(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
 	os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
 	os.WriteFile(filepath.Join(root, "AGENTS.md"),
-		[]byte("programs start with `metasystem open`; read `metasystem goals --ready`\n"), 0o644)
+		[]byte("programs start with `metasystem goal open`; read `metasystem goal list --ready`\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
-		[]byte("`metasystem open` starts programs; repair via `runtime registration`\n"), 0o644)
+		[]byte("`metasystem goal open` starts programs; repair via `runtime registration`\n"), 0o644)
 	registryPointerDocs(t, root)
 	// The contract exists but names only claude.
 	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),

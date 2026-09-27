@@ -75,7 +75,7 @@ func (s *workStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
 	}
 	s.m.Store.Update(id, func(current *launch.Record) error {
 		if hold {
-			supervisor, child := workRef(10), workRef(20)
+			supervisor, child := workProcessRef(10), workProcessRef(20)
 			current.Supervisor, current.Child, current.State = &supervisor, &child, launch.Running
 			return nil
 		}
@@ -91,7 +91,7 @@ func (s *workStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
 		}
 		return nil
 	})
-	return workRef(10), nil
+	return workProcessRef(10), nil
 }
 
 func (s *workStarter) launched() []string {
@@ -100,7 +100,7 @@ func (s *workStarter) launched() []string {
 	return append([]string(nil), s.kinds...)
 }
 
-func workRef(pid int64) identity.Ref { return identity.Ref{Pid: pid, StartedAtSec: pid} }
+func workProcessRef(pid int64) identity.Ref { return identity.Ref{Pid: pid, StartedAtSec: pid} }
 
 type workAdapter struct{}
 
@@ -123,7 +123,7 @@ func (workProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
 
 type workProcesses struct{}
 
-func (workProcesses) SelfRef() (identity.Ref, error) { return workRef(10), nil }
+func (workProcesses) SelfRef() (identity.Ref, error) { return workProcessRef(10), nil }
 func (workProcesses) StartChild(launch.Command) (launch.Child, identity.Ref, error) {
 	return nil, identity.Ref{}, errors.New("the fixture starts no child")
 }
@@ -262,17 +262,17 @@ func (b *workBed) workOwners() intentOwners {
 // the check's argument vector stays the caller's own.
 func (b *workBed) work(args ...string) (int, intentResult, string) {
 	b.t.Helper()
-	command, ok := findIntentCommand(args[0])
+	command, rest, ok := resolveIntentArgv(args)
 	if !ok {
-		b.t.Fatalf("no public command %q", args[0])
+		b.t.Fatalf("no public command %q", args)
 	}
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, append([]string{"--json"}, args[1:]...), &stdout, &stderr, b.root(), b.workOwners())
+	code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, b.root(), b.workOwners())
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		b.t.Fatalf("%v printed no JSON result: %v; stdout=%q stderr=%q", args, err, stdout.String(), stderr.String())
 	}
-	if result.SchemaVersion != 1 || result.Verb != args[0] || result.Outcome == "" || result.Summary == "" {
+	if result.SchemaVersion != 1 || result.Verb != command.name || result.Outcome == "" || result.Summary == "" {
 		b.t.Fatalf("%v envelope incomplete: %+v", args, result)
 	}
 	b.recordReadDirs(result)
@@ -358,7 +358,7 @@ func TestIntentBuildConcurrentRepeat(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	brief := bed.brief("brief.md", "Build the unit.\n\n| Unit | Lines |\n| --- | --- |\n| u1 | 40 |\n")
-	args := append([]string{"build", bed.id, "u1", "--brief", brief}, workCheck...)
+	args := append([]string{"work", "build", bed.id, "u1", "--brief", brief}, workCheck...)
 	var wait sync.WaitGroup
 	results := make([]intentResult, 4)
 	codes := make([]int, 4)
@@ -376,7 +376,7 @@ func TestIntentBuildConcurrentRepeat(t *testing.T) {
 		case intentConfirmed:
 			runs[resultData(t, result)["run"].(string)] = true
 		case intentInProgress:
-			if codes[index] != 3 || !strings.HasPrefix(result.Summary, "UNIT_RUN_BUSY") || result.Next == nil || !slices.Equal(result.Next.Argv, append([]string{"metasystem", "build", "--json"}, args[1:]...)) {
+			if codes[index] != 3 || !strings.HasPrefix(result.Summary, "UNIT_RUN_BUSY") || result.Next == nil || !slices.Equal(result.Next.Argv, append([]string{"metasystem", "work", "build", "--json"}, args[2:]...)) {
 				t.Fatalf("busy caller: code=%d %+v", codes[index], result)
 			}
 		default:
@@ -400,14 +400,14 @@ func TestIntentBuildSizeInput(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	plain := bed.brief("plain.md", "Build the unit.\n")
-	code, result, _ := bed.work(append([]string{"build", bed.id, "unsized", "--brief", plain}, workCheck...)...)
+	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "unsized", "--brief", plain}, workCheck...)...)
 	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "LAUNCH_BUILD_UNSIZED unit=unsized") || !strings.Contains(result.Decision, "--lines N") {
 		t.Fatalf("absent estimate: code=%d %+v", code, result)
 	}
 	if len(bed.starter.launched()) != 0 || len(bed.runDirectories()) != 0 {
 		t.Fatal("an unsized build launched or recorded a run")
 	}
-	code, result, _ = bed.work(append([]string{"build", bed.id, "estimated", "--brief", plain, "--lines", "120"}, workCheck...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "estimated", "--brief", plain, "--lines", "120"}, workCheck...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("--lines: code=%d %+v", code, result)
 	}
@@ -420,7 +420,7 @@ func TestIntentBuildSizeInput(t *testing.T) {
 		t.Fatalf("build admission size: %+v %v", record.DeclaredLines, err)
 	}
 	rowed := bed.brief("rowed.md", "Build it.\n\n| Unit | Lines |\n| --- | --- |\n| rowed | 75 |\n")
-	code, result, _ = bed.work(append([]string{"build", bed.id, "rowed", "--brief", rowed}, workCheck...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "rowed", "--brief", rowed}, workCheck...)...)
 	if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(string(must(os.ReadFile(filepath.Join(resultData(t, result)["inputs"].(string), "build-brief.md")))), "| rowed | 75 |") {
 		t.Fatalf("units row: code=%d %+v", code, result)
 	}
@@ -429,7 +429,7 @@ func TestIntentBuildSizeInput(t *testing.T) {
 		t.Fatalf("row size: %+v %v", record.DeclaredLines, err)
 	}
 	launches := len(bed.starter.launched())
-	code, result, _ = bed.work(append([]string{"build", bed.id, "rowed", "--brief", rowed, "--lines", "80"}, workCheck...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "rowed", "--brief", rowed, "--lines", "80"}, workCheck...)...)
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "75") || !strings.Contains(result.Summary, "80") || len(bed.starter.launched()) != launches {
 		t.Fatalf("conflicting estimate: code=%d %+v", code, result)
 	}
@@ -439,7 +439,7 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	brief := bed.brief("brief.md", "Build the unit.\n")
-	args := append([]string{"build", bed.id, "planned", "--brief", brief, "--lines", "30"}, workCheck...)
+	args := append([]string{"work", "build", bed.id, "planned", "--brief", brief, "--lines", "30"}, workCheck...)
 	code, result, _ := bed.work(args...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("code=%d %+v", code, result)
@@ -492,7 +492,7 @@ func TestIntentBuildResume(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	brief := bed.brief("brief.md", "Build the unit.\n")
-	args := append([]string{"build", bed.id, "journey", "--brief", brief, "--lines", "20"}, workCheck...)
+	args := append([]string{"work", "build", bed.id, "journey", "--brief", brief, "--lines", "20"}, workCheck...)
 	bed.starter.fail["proof"] = true
 	code, result, _ := bed.work(args...)
 	data := resultData(t, result)
@@ -503,7 +503,7 @@ func TestIntentBuildResume(t *testing.T) {
 	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof"}) {
 		t.Fatalf("a red proof still read: %v", launched)
 	}
-	for _, again := range [][]string{args, {"build", "--resume", run}, {"wait", "run", run}} {
+	for _, again := range [][]string{args, {"work", "build", "run:" + run}, {"work", "wait", "run:" + run}} {
 		code, repeat, _ := bed.work(again...)
 		if code != 0 || resultData(t, repeat)["run"] != run || resultData(t, repeat)["outcome"] != "proof-red" || len(bed.starter.launched()) != 2 {
 			t.Fatalf("%v: code=%d %+v launches=%v", again, code, repeat, bed.starter.launched())
@@ -516,7 +516,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	delete(bed.starter.fail, "proof")
 	followUp := bed.brief("follow-up.md", "Fix the red proof.\n")
-	code, result, _ = bed.work("revise", "run", run, "--brief", followUp)
+	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp)
 	data = resultData(t, result)
 	if code != 0 || result.Outcome != intentConfirmed || data["run"] != run || data["round"].(float64) != 2 || data["outcome"] != "green" || data["state"] != "awaiting-judgement" {
 		t.Fatalf("follow-up: code=%d %+v", code, result)
@@ -526,10 +526,10 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 
 	bed.starter.hold = "build"
-	held := append([]string{"build", bed.id, "held", "--brief", brief, "--lines", "20"}, workCheck...)
+	held := append([]string{"work", "build", bed.id, "held", "--brief", brief, "--lines", "20"}, workCheck...)
 	code, result, _ = bed.work(held...)
 	heldRun := resultData(t, result)["run"].(string)
-	if code != 3 || result.Outcome != intentInProgress || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "goal", bed.id, "--work", "held"}) || heldRun == "" {
+	if code != 3 || result.Outcome != intentInProgress || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", bed.id, "--work", "held"}) || heldRun == "" {
 		t.Fatalf("capped build: code=%d %+v", code, result)
 	}
 	bed.starter.hold = ""
@@ -539,7 +539,7 @@ func TestIntentBuildResume(t *testing.T) {
 		record.State, record.ExitCode = launch.Completed, &exit
 		return nil
 	})
-	code, result, _ = bed.work("wait", "run", heldRun)
+	code, result, _ = bed.work("work", "wait", "run:"+heldRun)
 	if code != 0 || result.Outcome != intentConfirmed || resultData(t, result)["outcome"] != "green" {
 		t.Fatalf("continued wait: code=%d %+v", code, result)
 	}
@@ -553,7 +553,7 @@ func TestIntentBuildRefusals(t *testing.T) {
 	bed := newWorkBed(t)
 	brief := bed.brief("brief.md", "Build the unit.\n")
 	bed.branchListed = false
-	code, result, _ := bed.work(append([]string{"build", bed.id, "u", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "u", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	layout, _ := bed.owners().resolver.ResolveLayout(bed.root())
 	target := filepath.Join(filepath.Dir(layout.GitRoot), filepath.Base(layout.GitRoot)+"-"+bed.id)
 	// Without a goal worktree, build prepares one only under a verified
@@ -565,22 +565,22 @@ func TestIntentBuildRefusals(t *testing.T) {
 	}
 	bed.branchListed = true
 	missing := bed.brief("missing.md", "Build.\n\nMISSING DECISION: the acceptance criteria\n")
-	code, result, _ = bed.work(append([]string{"build", bed.id, "u", "--brief", missing, "--lines", "5"}, workCheck...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "u", "--brief", missing, "--lines", "5"}, workCheck...)...)
 	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "1 missing decision") {
 		t.Fatalf("missing decision: code=%d %+v", code, result)
 	}
-	code, result, _ = bed.work("build", bed.id, "u", "--brief", brief, "--lines", "5", "--check")
+	code, result, _ = bed.work("work", "build", bed.id, "u", "--brief", brief, "--lines", "5", "--check")
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "--check needs a command") {
 		t.Fatalf("empty check: code=%d %+v", code, result)
 	}
-	code, result, _ = bed.work("build", "--resume", "run-1", "--brief", brief)
+	code, result, _ = bed.work("work", "build", "run:run-1", "--brief", brief)
 	if code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("resume with brief: code=%d %+v", code, result)
 	}
 	if len(bed.starter.launched()) != 0 || len(bed.runDirectories()) != 0 {
 		t.Fatal("a refused build launched")
 	}
-	input, problem := parseIntentArgs(mustIntentCommand(t, "build"), []string{"g", "u", "--brief", "b", "--check", "sh", "-c", "--brief x", "--", "--json"})
+	input, problem := parseIntentArgs(mustIntentCommand(t, "work build"), []string{"g", "u", "--brief", "b", "--check", "sh", "-c", "--brief x", "--", "--json"})
 	if problem != nil || !slices.Equal(input.values["check"], []string{"sh", "-c", "--brief x", "--", "--json"}) || input.text("brief") != "b" || input.switched("json") {
 		t.Fatalf("--check did not end the options: %+v %+v", input, problem)
 	}
@@ -598,24 +598,24 @@ func mustIntentCommand(t *testing.T, name string) intentCommand {
 func TestIntentBriefScaffold(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	code, result, _ := bed.work("brief", bed.id, "--out", "brief.md")
+	code, result, _ := bed.work("work", "brief", bed.id, "--out", "brief.md")
 	out := filepath.Join(bed.root(), "brief.md")
 	written, _ := os.ReadFile(out)
 	if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(string(written), bed.worktree) || !strings.Contains(string(written), "MISSING DECISION: observable") {
 		t.Fatalf("code=%d %+v\n%s", code, result, written)
 	}
-	if code, again, _ := bed.work("brief", bed.id, "--out", "brief.md"); code != 0 || again.Outcome != intentUnchanged {
+	if code, again, _ := bed.work("work", "brief", bed.id, "--out", "brief.md"); code != 0 || again.Outcome != intentUnchanged {
 		t.Fatalf("repeat: code=%d %+v", code, again)
 	}
 	os.WriteFile(out, []byte("edited\n"), 0o600)
-	if code, again, _ := bed.work("brief", bed.id, "--out", "brief.md"); code != 1 || again.Outcome != intentRefused {
+	if code, again, _ := bed.work("work", "brief", bed.id, "--out", "brief.md"); code != 1 || again.Outcome != intentRefused {
 		t.Fatalf("overwrite: code=%d %+v", code, again)
 	}
 	if kept, _ := os.ReadFile(out); string(kept) != "edited\n" {
 		t.Fatal("brief overwrote an edited file")
 	}
 	os.WriteFile(out, written, 0o600)
-	code, result, _ = bed.work(append([]string{"build", bed.id, "u", "--brief", "brief.md", "--lines", "5"}, workCheck...)...)
+	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "u", "--brief", "brief.md", "--lines", "5"}, workCheck...)...)
 	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "missing decision") {
 		t.Fatalf("build from an unfilled scaffold: code=%d %+v", code, result)
 	}
@@ -634,8 +634,12 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 	}
 	var parsed testingSelectionRequest
 	owners.work.subprocess = func(dir string, argv []string, stderr io.Writer) ([]byte, int, error) {
-		// The real test-run parser reads what the public command passes.
-		request, _, code := parseTestingSelection(argv[0]+" "+argv[1], argv[2:], true)
+		// The real test-run parser reads what the public command passes to
+		// the engine's internal test run.
+		if len(argv) < 3 || argv[0] != "internal" || argv[1] != "test" || argv[2] != "run" {
+			t.Fatalf("the public test run did not call the internal test run: %v", argv)
+		}
+		request, _, code := parseTestingSelection(argv[1]+" "+argv[2], argv[3:], true)
 		parsed = request
 		if code != 0 {
 			return nil, code, nil
@@ -644,31 +648,38 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 	}
 	run := func(args ...string) (int, intentResult) {
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, args[0]), append(args[1:], "--json"), &stdout, &stderr, bed.root(), owners)
+		code := runIntentIn(mustIntentArgvCommand(t, args), append(intentArgvRest(args), "--json"), &stdout, &stderr, bed.root(), owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%v: %v %q %q", args, err, stdout.String(), stderr.String())
 		}
 		return code, result
 	}
-	code, result := run("wait", "job", "job-1", "--timeout", "5m")
+	jobs := filepath.Join(bed.root(), "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobs, "job-1.json"), []byte(`{"jobId":"job-1","status":"running"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, result := run("work", "wait", "j2:job-1", "--timeout", "5m")
 	layout, _ := owners.resolver.ResolveLayout(bed.root())
 	if code != metarun.ExitWaitDeadline || result.Outcome != intentInProgress || result.Next == nil ||
-		!slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "resume", "wait-1"}) || layout.InstallationRoot == "" ||
+		!slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", "wait:wait-1"}) || layout.InstallationRoot == "" ||
 		!slices.Equal(waitArgs, []string{"--root", layout.InstallationRoot, "--job", "job-1", "--timeout", "5m0s"}) {
 		t.Fatalf("wait deadline: code=%d %+v args=%v", code, result, waitArgs)
 	}
 	// The printed continuation is itself a public command that resumes the
 	// same recorded wait through the wait owner.
-	code, result = run("wait", "resume", "wait-1")
+	code, result = run("work", "wait", "wait:wait-1")
 	if code != metarun.ExitWaitDeadline || result.Outcome != intentInProgress || !slices.Equal(waitArgs, []string{"--root", layout.InstallationRoot, "--resume", "wait-1"}) ||
-		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "wait", "resume", "wait-1"}) {
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "wait", "wait:wait-1"}) {
 		t.Fatalf("wait resume: code=%d %+v args=%v", code, result, waitArgs)
 	}
 	waitResult = metarun.WaitResult{SchemaVersion: 2, WaitID: "wait-2", ExitCode: metarun.ExitGreen, SourceOutcome: "green"}
 	// The goal event needs --for (or its --event alias); bare wait goal G is
 	// the goal's running work.
-	if code, result := run("wait", "goal", bed.id, "--for", "landing"); code != 0 || result.Outcome != intentConfirmed || len(waitArgs) != 8 || waitArgs[2] != "--goal" ||
+	if code, result := run("work", "wait", bed.id, "--for", "landing"); code != 0 || result.Outcome != intentConfirmed || len(waitArgs) != 8 || waitArgs[2] != "--goal" ||
 		waitArgs[4] != "--event" || waitArgs[5] != "landing" || waitArgs[6] != "--after" || waitArgs[7] == "" {
 		t.Fatalf("wait goal: code=%d %+v args=%v", code, result, waitArgs)
 	}
@@ -677,40 +688,32 @@ func TestIntentWaitTestAndSettingsAdapters(t *testing.T) {
 		t.Fatalf("the default goal wait fails the wait owner's validation: %v", err)
 	}
 	waitArgs = nil
-	if code, result := run("wait", "goal", bed.id, "--event", "landing", "--question", "q1"); code != metarun.ExitInvalidWait || result.Outcome != intentRefused || waitArgs != nil ||
+	if code, result := run("work", "wait", bed.id, "--event", "landing", "--question", "q1"); code != metarun.ExitInvalidWait || result.Outcome != intentRefused || waitArgs != nil ||
 		!strings.Contains(result.Summary, "a question selector applies only to an answer wait") {
 		t.Fatalf("invalid goal selector: code=%d %+v args=%v", code, result, waitArgs)
 	}
-	if code, result := run("wait", "goal", bed.id, "--event", "human-act", "--verb", "answer", "--question", "q1", "--after", "abc"); code != 0 || result.Outcome != intentConfirmed ||
+	if code, result := run("work", "wait", bed.id, "--event", "human-act", "--verb", "answer", "--question", "q1", "--after", "abc"); code != 0 || result.Outcome != intentConfirmed ||
 		!slices.Equal(waitArgs[4:], []string{"--event", "human-act", "--after", "abc", "--verb", "answer", "--question", "q1"}) {
 		t.Fatalf("advanced goal selectors: code=%d %+v args=%v", code, result, waitArgs)
 	}
-	if code, result := run("wait", "job", "job-1", "--event", "landing"); code != 2 || result.Outcome != intentRefused {
+	if code, result := run("work", "wait", "job-1", "--event", "landing"); code != 2 || result.Outcome != intentRefused {
 		t.Fatalf("goal selector on a job wait: code=%d %+v", code, result)
 	}
 	owners.work.wait = func([]string, func(metarun.WaitResult, bool)) int { return metarun.ExitInvalidWait }
-	if code, result := run("wait", "job", "job-1"); code != metarun.ExitInvalidWait || result.Outcome != intentFailed {
+	if code, result := run("work", "wait", "job-1"); code != metarun.ExitInvalidWait || result.Outcome != intentFailed {
 		t.Fatalf("wait without a result: code=%d %+v", code, result)
 	}
-	code, result = run("test", "--goal", bed.id, "--authority", "claimed-goal", "--mode", "standard")
+	code, result = run("test", "run", "--goal", bed.id, "--authority", "claimed-goal", "--mode", "standard")
 	if code != 1 || result.Outcome != intentFailed || parsed.Root != layout.InstallationRoot || parsed.GoalID != bed.id || parsed.AuthorityGoalID != "claimed-goal" {
 		t.Fatalf("test: code=%d %+v parsed=%+v", code, result, parsed)
 	}
 	if encoded, _ := json.Marshal(result.Data); string(encoded) != `{"outcome":"red"}` {
 		t.Fatalf("test data=%s", encoded)
 	}
-	families := families()
-	for _, row := range []struct {
-		args   []string
-		legacy bool
-	}{
-		{[]string{"wait", "--job", "j"}, true}, {[]string{"wait", "register", "--pid", "1"}, true}, {[]string{"wait"}, false},
-		{[]string{"wait", "job", "j"}, false}, {[]string{"wait", "--help"}, false},
-		{[]string{"test", "plan"}, true}, {[]string{"test", "verify"}, true}, {[]string{"test", "--goal", "g"}, false},
-		{[]string{"build", "g", "u"}, false}, {[]string{"settings"}, false},
-	} {
-		if got := intentYieldsToLegacy(row.args, families); got != row.legacy {
-			t.Fatalf("%v legacy=%t, want %t", row.args, got, row.legacy)
+	// The old flag forms of wait are the internal machinery's, never public.
+	for _, args := range [][]string{{"wait", "--job", "j"}, {"wait", "register", "--pid", "1"}} {
+		if code, _, stderr := routeWith(families(), args...); code != 2 || !strings.Contains(stderr, "nothing was done") {
+			t.Fatalf("%v = %d %q", args, code, stderr)
 		}
 	}
 }
@@ -720,4 +723,33 @@ func must[T any](value T, err error) T {
 		panic(err)
 	}
 	return value
+}
+
+// resolveIntentArgv resolves a public argument vector the way the router
+// does: the top-level status, or OBJECT ACTION followed by its words.
+func resolveIntentArgv(args []string) (intentCommand, []string, bool) {
+	if len(args) >= 1 && args[0] == "status" {
+		command, ok := findIntentCommand("status")
+		return command, args[1:], ok
+	}
+	if len(args) >= 2 {
+		if command, ok := findIntentAction(args[0], args[1]); ok && !command.hidden {
+			return command, args[2:], true
+		}
+	}
+	return intentCommand{}, nil, false
+}
+
+func mustIntentArgvCommand(t testing.TB, args []string) intentCommand {
+	t.Helper()
+	command, _, ok := resolveIntentArgv(args)
+	if !ok {
+		t.Fatalf("no public command for %q", args)
+	}
+	return command
+}
+
+func intentArgvRest(args []string) []string {
+	_, rest, _ := resolveIntentArgv(args)
+	return rest
 }

@@ -93,7 +93,7 @@ func Abandon(r VerbRequest, id string, spec AbandonSpec, proof *humanauthority.P
 	if len(jobs) != 0 {
 		stops := make([]string, 0, len(jobs))
 		for _, job := range jobs {
-			stops = append(stops, "metasystem stop job j2:"+job)
+			stops = append(stops, "metasystem work stop j2:"+job)
 		}
 		return PublishResult{}, fmt.Errorf("goal abandon refuses while non-terminal jobs name the abandoned set: %s; stop each dispatch job (%s), then repeat the abandon", strings.Join(jobs, ", "), strings.Join(stops, "; "))
 	}

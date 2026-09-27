@@ -290,7 +290,7 @@ func runDispatchClaimLaunchWithGoalReads(args []string, reads *dispatchcore.Proo
 			Outcome: dispatchcore.ClaimRefusedInternalSurface,
 			Evidence: map[string]any{
 				"resolution": "delegate-verb-required",
-				"remedy":     "use metasystem delegate",
+				"remedy":     "use metasystem internal delegate",
 			},
 		})
 		return 1

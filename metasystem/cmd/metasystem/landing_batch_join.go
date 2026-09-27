@@ -447,7 +447,7 @@ func runBatchJoin(args []string) int {
 	last := flags.Bool("last", false, "join the whole land-ready goal")
 	through := flags.String("through", "", "join through one land-ready goal commit")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || ((*chainID != "") == (*last || *through != "")) || (*last && *through != "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch join --root ROOT --goal GOAL (--chain CHAIN | --last | --through COMMIT)")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch join --root ROOT --goal GOAL (--chain CHAIN | --last | --through COMMIT)")
 		return 2
 	}
 	now, err := batchJoinClock(*root)

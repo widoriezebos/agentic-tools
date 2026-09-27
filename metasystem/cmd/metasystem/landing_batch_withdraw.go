@@ -60,7 +60,7 @@ func runBatchWithdraw(args []string) int {
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	goalID := flags.String("goal", "", "joined goal id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch withdraw --root ROOT --goal GOAL")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch withdraw --root ROOT --goal GOAL")
 		return 2
 	}
 	now, err := batchWithdrawClock(*root)

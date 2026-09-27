@@ -48,7 +48,7 @@ function launch(over: Partial<Launch> = {}): Launch {
     created: { destination: true, nickname: false, evidenceRoot: true },
     steps: [{ step: "clone", outcome: "done", at: "2026-09-25T10:57:10Z", words: "" }],
     orientation: "",
-    next: { session: "cd /w/agentic-tools-m1f && claude", stop: "metasystem stop --repo /w/agentic-tools-m1f/metasystem" },
+    next: { session: "cd /w/agentic-tools-m1f && claude", stop: "metasystem system stop --repo /w/agentic-tools-m1f/metasystem" },
     ...over,
   };
 }

@@ -83,11 +83,11 @@ func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
 	// These lines assert rendered wording or construct fixture bytes. None
 	// derives a report reference from the visible text.
 	allowed := map[string]string{
-		`scripts/agents/supervision-hook-fixtures.sh` + "\x00" + `&& [[ "$name_block_task" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id '* ]] \`: "wording assertion",
-		`scripts/agents/supervision-hook-fixtures.sh` + "\x00" + `&& [[ "$name_allow_task" == 'Task: stop refusal fits on one screen; Stop allowed; needs supervision repair; Report: metasystem report stop-status --id '* ]] \`:                                                                      "wording assertion",
-		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id %s' "$hook_report_alias")`:                                                                          "fixture report text",
-		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_payload=$(printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id %s"}' "$hook_report_alias")`:                                                     "fixture payload text",
-		`scripts/agents/supervision-fixtures.sh` + "\x00" + `&& grep -Fq '; Stop allowed; needs supervision repair; Report: metasystem report stop-status --id ' <<<"$degraded" \`:                                                                                                                     "wording assertion",
+		`scripts/agents/supervision-hook-fixtures.sh` + "\x00" + `&& [[ "$name_block_task" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem session report --id '* ]] \`: "wording assertion",
+		`scripts/agents/supervision-hook-fixtures.sh` + "\x00" + `&& [[ "$name_allow_task" == 'Task: stop refusal fits on one screen; Stop allowed; needs supervision repair; Report: metasystem session report --id '* ]] \`:                                                                      "wording assertion",
+		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem session report --id %s' "$hook_report_alias")`:                                                                          "fixture report text",
+		`scripts/agents/health-fixtures.sh` + "\x00" + `hook_payload=$(printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem session report --id %s"}' "$hook_report_alias")`:                                                     "fixture payload text",
+		`scripts/agents/supervision-fixtures.sh` + "\x00" + `&& grep -Fq '; Stop allowed; needs supervision repair; Report: metasystem session report --id ' <<<"$degraded" \`:                                                                                                                     "wording assertion",
 	}
 	paths, err := filepath.Glob(filepath.Join("..", "..", "scripts", "agents", "*.sh"))
 	if err != nil {
@@ -101,7 +101,7 @@ func TestBedsResolveStopReportsThroughTheEngine(t *testing.T) {
 		}
 		for _, sourceLine := range strings.Split(string(data), "\n") {
 			line := strings.TrimSpace(sourceLine)
-			if !strings.Contains(line, "stop-status --id") {
+			if !strings.Contains(line, "session report --id") && !strings.Contains(line, "stop-status --id") {
 				continue
 			}
 			key := filepath.ToSlash(filepath.Join("scripts", "agents", filepath.Base(path))) + "\x00" + line

@@ -160,13 +160,13 @@ start_notice_json() { # catalog key; result in start_notice and start_notice_sta
     process-identity)
       start_notice='{"systemMessage":"Metasystem SessionStart could not identify the owning runtime process: this session received no role context; if this checkout is a declared brain it is uninstructed. Restart through the installed runtime launcher. Then start a new session."}' ;;
     brain-boot)
-      start_notice='{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
+      start_notice='{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
     brain-timeout)
-      start_notice='{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
+      start_notice='{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
     arming)
-      start_notice='{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem up there. Then start a new session."}' ;;
+      start_notice='{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem session start there. Then start a new session."}' ;;
     wait-recovery)
-      start_notice='{"systemMessage":"Metasystem SessionStart could not read durable wait recovery rows: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem up there. Then start a new session."}' ;;
+      start_notice='{"systemMessage":"Metasystem SessionStart could not read durable wait recovery rows: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem session start there. Then start a new session."}' ;;
     temporary-cleanup)
       start_notice='{"systemMessage":"Metasystem SessionStart could not remove its temporary files: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore temporary-directory access and remove leftover metasystem hook temporary files. Then start a new session."}' ;;
     interrupted)
@@ -1098,7 +1098,7 @@ start_main() {
   # A revived session may already hold the checkout when process discovery or
   # arming is unavailable. The session-start verb matches this session identifier
   # against the holder's announced session before returning durable wait rows.
-  start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"
+  start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"
   if (( start_wait_recovery_status == 0 )); then
     [[ -z "$waiting_lines" ]] || collect_start_notice "$waiting_lines"
   elif (( start_wait_recovery_status != 64 )); then
@@ -2094,7 +2094,7 @@ $brain_payload"
       brain_boot_result="exit $brain_boot_rc"
     fi
     brain_boot_tail=$(tail -c 500 "$brain_boot_err" 2>/dev/null | tr '\r\n' '  ' || true)
-    failure="Metasystem brain boot failed ($brain_boot_result; stderr tail: $brain_boot_tail): this session received no role context; if this checkout is a declared brain it is uninstructed: run metasystem brain boot --root $repo --repo $repo by hand and rebuild if it fails"
+    failure="Metasystem brain boot failed ($brain_boot_result; stderr tail: $brain_boot_tail): this session received no role context; if this checkout is a declared brain it is uninstructed: run metasystem internal brain boot --root $repo --repo $repo by hand and rebuild if it fails"
     collect_start_notice "$failure"
   fi
   rm -f "$brain_boot_out" "$brain_boot_err" || true
@@ -2217,7 +2217,7 @@ $up_failure_result"
   printf '%s' "$up_output" >"$arming_capture" || record_stop_failure "the supervision arming result could not be captured" supervision-arming
   health_rc=0
   health_capture=$stop_work_dir/health.json
-  "$ms" health --hook-preview --format=json --repo "$repo" --metasystem-root "$world_installation" >"$health_capture" 2>/dev/null || health_rc=$?
+  "$ms" internal health --hook-preview --format=json --repo "$repo" --metasystem-root "$world_installation" >"$health_capture" 2>/dev/null || health_rc=$?
   health_line=$("$ms" json get --file "$health_capture" --field line 2>/dev/null || true)
   if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
     health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
@@ -2780,7 +2780,7 @@ if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$wor
     surface_json "Metasystem re-armed the rebuilt engine: $up_aggregate"
   fi
   waiting_lines_rc=0
-  waiting_lines=$("$ms" session start --root "$repo" --session "$session" 2>&1) || waiting_lines_rc=$?
+  waiting_lines=$("$ms" internal session start --root "$repo" --session "$session" 2>&1) || waiting_lines_rc=$?
   if (( waiting_lines_rc == 0 )) && [[ -n "$waiting_lines" ]]; then
     collect_start_notice "$waiting_lines"
   elif (( waiting_lines_rc == 64 )); then

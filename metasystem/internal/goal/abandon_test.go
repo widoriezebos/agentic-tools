@@ -660,7 +660,7 @@ func TestAbandonNeedsNoEngineHistoryInAnUnrelatedProject(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err = Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof)
-			if err == nil || !strings.Contains(err.Error(), "metasystem stop job j2:job-live") {
+			if err == nil || !strings.Contains(err.Error(), "metasystem work stop j2:job-live") {
 				t.Fatalf("a live job naming the goal did not refuse the abandon: %v", err)
 			}
 			noFloor("the job refusal", err, "")

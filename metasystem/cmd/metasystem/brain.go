@@ -53,7 +53,7 @@ func runBrainDeclare(args []string) int {
 	}
 	ledgerIdentity := goal.ExistingLedgerIdentity(*root)
 	if ledgerIdentity == "" {
-		fmt.Fprintln(os.Stderr, "brain declare needs a migrated ledger identity; run metasystem goal migrate first")
+		fmt.Fprintln(os.Stderr, "brain declare needs a migrated ledger identity; run metasystem internal goal migrate first")
 		return 2
 	}
 	machine, err := goal.ResolveMachine(*root)
@@ -68,7 +68,7 @@ func runBrainDeclare(args []string) int {
 	}
 	state := brain.Read(*root, ledgerIdentity)
 	if state.State == brain.Declared {
-		fmt.Fprintf(os.Stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem brain withdraw --root %s --by <name>\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, *root)
+		fmt.Fprintf(os.Stderr, "this checkout is already the brain of ledger %s, declared by %s at %s; withdraw it first: metasystem internal brain withdraw --root %s --by <name>\n", state.Record.Ledger, state.Record.DeclaredBy, state.Record.DeclaredAt, *root)
 		return 2
 	}
 	if state.State == brain.Corrupt {
@@ -126,9 +126,9 @@ func brainDeclarationObstacles(root, machine string) ([]string, error) {
 	for _, item := range scan.Busy {
 		switch item.Kind {
 		case "job":
-			obstacles = append(obstacles, fmt.Sprintf("job %s is in flight; stop it first: metasystem delegate --cancel %s", item.Id, item.Id))
+			obstacles = append(obstacles, fmt.Sprintf("job %s is in flight; stop it first: metasystem work stop j2:%s", item.Id, item.Id))
 		case "run":
-			obstacles = append(obstacles, fmt.Sprintf("run %s is live; wait for it or conclude it: metasystem run watch --root %s --id %s", item.Id, root, item.Id))
+			obstacles = append(obstacles, fmt.Sprintf("run %s is live; wait for it or conclude it: metasystem internal run watch --root %s --id %s", item.Id, root, item.Id))
 		case "mission":
 			obstacles = append(obstacles, fmt.Sprintf("mission %s is active; wait for mission %s to finish or park; metasystem mission status --root %s --mission %s", item.Id, item.Id, root, item.Id))
 		}

@@ -41,7 +41,7 @@ func runConfigTailor(args []string) int {
 		return 2
 	}
 	if *conf == "" || *runtimes == "" {
-		fmt.Fprintf(os.Stderr, "usage: metasystem config tailor --conf F --runtimes %s|none [--set key=value ...]\n",
+		fmt.Fprintf(os.Stderr, "usage: metasystem internal config tailor --conf F --runtimes %s|none [--set key=value ...]\n",
 			strings.Join(runtimereg.Names(), ","))
 		return 2
 	}
@@ -199,7 +199,7 @@ func runConfigConfValue(args []string) int {
 		return 2
 	}
 	if *file == "" || *key == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem config conf-value --file F --key K")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal config conf-value --file F --key K")
 		return 2
 	}
 	value, found, err := config.ConfLookup(*file, *key)

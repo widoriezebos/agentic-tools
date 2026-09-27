@@ -354,7 +354,7 @@ MANIFEST
   git -C "$brain_repo" fetch -q origin
   git -C "$brain_repo" reset -q --hard origin/main
   git -C "$brain_repo" update-ref refs/metasystem/goals/accepted origin/main
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$engine" goal release --root "$brain_repo" --id ship-widget >/dev/null
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$engine" internal goal release --root "$brain_repo" --id ship-widget >/dev/null
   git -C "$brain_repo" fetch -q origin
   git -C "$brain_repo" reset -q --hard origin/main
   git -C "$brain_repo" update-ref refs/metasystem/goals/accepted origin/main
@@ -412,16 +412,16 @@ fi
 if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == brain-cancel-close-reap-refuse || "$fixture_scenario" == brain-breach-stop-exempt || "$fixture_scenario" == brain-absent-node-proceeds ]]; then
   setup_brain_dispatch_bed
 	if [[ "$fixture_scenario" == brain-delegate-refuses ]]; then
-	    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" delegate --role implementer --brief "$tmp/missing" --goal none-explicit --destructive-reach MECHANICAL)
-	    [[ "$out" == *"the brain never dispatches"* && "$out" == *"metasystem delegate --role"* ]] || { echo "delegate refusal omitted the node remedy" >&2; exit 1; }
-	    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" delegate --follow-up missing-job --brief "$tmp/missing")
+	    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" internal delegate --role implementer --brief "$tmp/missing" --goal none-explicit --destructive-reach MECHANICAL)
+	    [[ "$out" == *"the brain never dispatches"* && "$out" == *"metasystem internal delegate --role"* ]] || { echo "delegate refusal omitted the node remedy" >&2; exit 1; }
+	    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" internal delegate --follow-up missing-job --brief "$tmp/missing")
 	    [[ "$out" == *"the brain never dispatches"* ]] || { echo "follow-up refusal omitted the brain detail" >&2; exit 1; }
 		out=$(assert_brain_dispatch_refusal env -u METASYSTEM_DELEGATE_INTERNAL "$brain_repo/scripts/agents/dispatch.sh" dispatch)
 		[[ "$out" == *"the brain never dispatches"* ]] || { echo "direct dispatch omitted the brain detail" >&2; exit 1; }
 		assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_INTERNAL=1 "$brain_repo/scripts/agents/dispatch.sh" dispatch >/dev/null
     [[ ! -d "$brain_repo/artifacts/agents/jobs" ]] || [[ -z "$(find "$brain_repo/artifacts/agents/jobs" -name '*.json' -print -quit)" ]] || { echo "brain refusal wrote a job record" >&2; exit 1; }
     printf '%s\n' '{broken' >"$brain_repo/artifacts/agents/brain.json"
-    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" delegate --role implementer --brief "$tmp/missing" --goal none-explicit --destructive-reach MECHANICAL)
+    out=$(assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" internal delegate --role implementer --brief "$tmp/missing" --goal none-explicit --destructive-reach MECHANICAL)
     [[ "$out" == *"until a human repairs it"* ]] || { echo "corrupt delegate refusal omitted the remedy" >&2; exit 1; }
   elif [[ "$fixture_scenario" == brain-cancel-close-reap-refuse ]]; then
     mkdir -p "$brain_repo/artifacts/agents/jobs"
@@ -429,7 +429,7 @@ if [[ "$fixture_scenario" == brain-delegate-refuses || "$fixture_scenario" == br
     printf '%s\n' '{"jobId":"closed-root","status":"completed","chainClosed":true}' >"$brain_repo/artifacts/agents/jobs/closed-root.json"
     before_pending=$(shasum -a 256 "$brain_repo/artifacts/agents/jobs/pending-job.json")
     before_root=$(shasum -a 256 "$brain_repo/artifacts/agents/jobs/closed-root.json")
-    assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" delegate --cancel pending-job >/dev/null
+    assert_brain_dispatch_refusal env METASYSTEM_DELEGATE_ROOT="$brain_repo" "$brain_repo/bin/metasystem" internal delegate --cancel pending-job >/dev/null
 		for form in "cancel --job pending-job" "close --job closed-root" "reap"; do
 			read -r -a form_args <<<"$form"
 			assert_brain_dispatch_refusal env -u METASYSTEM_DELEGATE_INTERNAL "$brain_repo/scripts/agents/dispatch.sh" "${form_args[@]}" >/dev/null
@@ -496,7 +496,7 @@ NODE_BRIEF
 		node_dispatch=$(cd "$node_repo" && \
 			METASYSTEM_BIN="$enrolled_engine" METASYSTEM_DELEGATE_ROOT="$node_repo" \
 			METASYSTEM_OWNER_LINEAGE=fixture-lineage \
-				"$node_repo/bin/metasystem" delegate --role implementer --brief "$tmp/node-brief.md" \
+				"$node_repo/bin/metasystem" internal delegate --role implementer --brief "$tmp/node-brief.md" \
 				--goal none-explicit --destructive-reach MECHANICAL --op brain-absent-node-delegate --wait)
 		[[ "$node_dispatch" != *BRAIN_REFUSED* ]] || { echo "absent node dispatch was brain-refused" >&2; exit 1; }
 		grep -Fq 'fake supervisor started' "$node_repo/artifacts/agents/jobs/brain-absent-node-delegate.log" \
@@ -1193,8 +1193,8 @@ set -e
 [[ $seat_stop_rc -eq 1 ]] \
   || { echo "a fake delegate's stop returned $seat_stop_rc instead of refusing" >&2; cat "$agent_fixture/seat-stop.out" >&2; exit 1; }
 seat_stop_expected=$(printf '%s\n%s' \
-  'metasystem stop: stop is a human act at a terminal; this caller is DELEGATE.' \
-  "at an agent-free terminal, run: metasystem stop --repo $agent_repo")
+  'metasystem system stop: stop is a human act at a terminal; this caller is DELEGATE.' \
+  "at an agent-free terminal, run: metasystem system stop --repo $agent_repo")
 seat_stop_actual=$(cat "$agent_fixture/seat-stop.out")
 [[ "$seat_stop_actual" == "$seat_stop_expected" ]] \
   || { echo "a fake delegate's stop did not print the exact terminal refusal" >&2; cat "$agent_fixture/seat-stop.out" >&2; exit 1; }
@@ -1384,7 +1384,7 @@ METASYSTEM_OWNER_LINEAGE=budgetless-fixture \
     --source-digest "$budgetless_source_digest" --sync-mode local --by wido >/dev/null
 git -C "$budgetless_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
 METASYSTEM_OWNER_LINEAGE=budgetless-fixture \
-  "$budgetless_dispatch_repo/bin/metasystem" goal release --root "$budgetless_dispatch_repo" --id fixture-serving >/dev/null
+  "$budgetless_dispatch_repo/bin/metasystem" internal goal release --root "$budgetless_dispatch_repo" --id fixture-serving >/dev/null
 git -C "$budgetless_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
 
 budgetless_record="$budgetless_dispatch_repo/plans/goals/budgetless-survivor.md"
@@ -1493,7 +1493,7 @@ METASYSTEM_OWNER_LINEAGE=budget-fixture \
 git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
 METASYSTEM_OWNER_LINEAGE=budget-fixture \
   METASYSTEM_GOAL_NOW=2000-01-01T00:02:00Z \
-  "$budget_dispatch_repo/bin/metasystem" goal edit --root "$budget_dispatch_repo" \
+  "$budget_dispatch_repo/bin/metasystem" internal goal edit --root "$budget_dispatch_repo" \
     --id structured-budget --tier 3 --why "exercise tier-3 dispatch admission" \
     --risk severity=3,novelty=1,exposure=1,accumulation=1 \
     --basis "The isolated fixture holds severity at tier 3 while novelty, exposure, and accumulation are low." >/dev/null
@@ -1506,13 +1506,13 @@ run_fixture_arm "structured-budget initial arm" "$agent_fixture/budget-arming.ou
     --start-time "$budget_main_start" --tag metasystem-main-fake-budget-validator
 METASYSTEM_OWNER_LINEAGE=budget-fixture \
   METASYSTEM_GOAL_NOW=2000-01-01T00:04:00Z \
-  "$budget_dispatch_repo/bin/metasystem" goal approve --root "$budget_dispatch_repo" \
+  "$budget_dispatch_repo/bin/metasystem" internal goal approve --root "$budget_dispatch_repo" \
     --id structured-budget --by Wido \
 	--elapsed-limit 1d --attempt-limit 1 --reserved-job-minutes-limit 1200 --active-job-limit 1 \
 	--review-round-limit 3 --fixture-human-authority >/dev/null
 budget_claim=$(METASYSTEM_OWNER_LINEAGE=budget-fixture \
   METASYSTEM_GOAL_NOW=2000-01-01T00:05:00Z \
-  "$budget_dispatch_repo/bin/metasystem" goal claim --root "$budget_dispatch_repo" --id structured-budget)
+  "$budget_dispatch_repo/bin/metasystem" internal goal claim --root "$budget_dispatch_repo" --id structured-budget)
 grep -Fq '"outcome":"confirmed"' <<<"$budget_claim" \
   || { echo "the complete-tuple structured claim was refused: $budget_claim" >&2; exit 1; }
 budget_goal_revision=$("$budget_dispatch_repo/bin/metasystem" job goal-revision \
@@ -1529,7 +1529,7 @@ sed 's/^Working Mode:.*/Working Mode: verify/' \
   wait_for_agent_census_fresh structured-budget-within
   run_agent_fixture_captured structured-budget-within structured-budget-within \
     "$agent_fixture/structured-budget-within.out" \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role verifier --brief "$budget_brief" \
+    "$budget_dispatch_repo/bin/metasystem" internal delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-within --goal structured-budget --destructive-reach MECHANICAL --wait
 )
 grep -Fq '"outcome":"WON"' "$agent_fixture/structured-budget-within.out" \
@@ -1553,7 +1553,7 @@ printf '\nThis changes the retry fingerprint.\n' >>"$budget_mismatch_brief"
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
   agent_fails structured-budget-opid-mismatch '"outcome":"REFUSED-OPID-MISMATCH"' \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role verifier --brief "$budget_mismatch_brief" \
+    "$budget_dispatch_repo/bin/metasystem" internal delegate --role verifier --brief "$budget_mismatch_brief" \
       --op structured-budget-within --goal structured-budget --destructive-reach MECHANICAL
 )
 set +e
@@ -1592,7 +1592,7 @@ git -C "$budget_dispatch_repo" update-ref refs/metasystem/goals/accepted "$budge
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
   run_agent_fixture_captured structured-budget-extended structured-budget-extended \
     "$agent_fixture/structured-budget-extended.out" \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role verifier --brief "$budget_brief" \
+    "$budget_dispatch_repo/bin/metasystem" internal delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-extended --goal structured-budget --destructive-reach MECHANICAL --wait
 )
 grep -Fq '"outcome":"WON"' "$agent_fixture/structured-budget-extended.out" \
@@ -1613,7 +1613,7 @@ grep -Fq -- '- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=24
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:08:00Z
   agent_fails structured-budget-refused '"outcome":"REFUSED-BUDGET"' \
-    "$budget_dispatch_repo/bin/metasystem" delegate --role verifier --brief "$budget_brief" \
+    "$budget_dispatch_repo/bin/metasystem" internal delegate --role verifier --brief "$budget_brief" \
       --op structured-budget-refused --goal structured-budget --destructive-reach MECHANICAL
 )
 grep -Fq "extended once at 2000-01-01T00:07:00Z; a further raise is a person's set-budget" \
@@ -1630,7 +1630,7 @@ cp "$budget_dispatch_repo/scripts/agents/templates/follow-up.md" "$budget_follow
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
   agent_fails structured-budget-follow-up-refused '"outcome":"REFUSED-BUDGET"' \
-    "$budget_dispatch_repo/bin/metasystem" delegate --follow-up structured-budget-within --brief "$budget_follow_message"
+    "$budget_dispatch_repo/bin/metasystem" internal delegate --follow-up structured-budget-within --brief "$budget_follow_message"
 )
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-within-r2.json" ]] \
   || { echo "the structured follow-up refusal created a child reservation" >&2; exit 1; }
@@ -2263,15 +2263,15 @@ set -e
   || { echo "--serving-goal without a usable goal did not refuse exit 3 (rc=$sg_refused_rc)" >&2; cat "$agent_fixture/sg-refused.out" >&2; exit 1; }
 [[ ! -f "$agent_repo/artifacts/agents/jobs/sg-refused.json" ]] \
   || { echo "a refused --serving-goal dispatch left a job record" >&2; exit 1; }
-METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" \
+METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" internal goal open --root "$agent_repo" \
 	--id fixture-serving --origin human --by Wido --fixture-human-authority \
 	--intent "Serve the fixture goal" --next "Dispatch with the projection." \
 	--risk severity=3,novelty=1,exposure=1,accumulation=1 \
 	--basis "This established, isolated fixture has low novelty, exposure, and accumulation, but a misbound goal could give a delegated critic the wrong authority context." >/dev/null
-"$engine" goal approve --root "$agent_repo" --id fixture-serving --by Wido --lineage agent-fixture \
+"$engine" internal goal approve --root "$agent_repo" --id fixture-serving --by Wido --lineage agent-fixture \
 	--elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 \
 	--review-round-limit 3 --fixture-human-authority >/dev/null
-"$engine" goal claim --root "$agent_repo" --id fixture-serving --lineage agent-fixture >/dev/null
+"$engine" internal goal claim --root "$agent_repo" --id fixture-serving --lineage agent-fixture >/dev/null
 run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
 sg_brief="$agent_repo/artifacts/agents/serving-goal/brief.md"
 sg_prompt="$agent_repo/artifacts/agents/serving-goal/rounds/1/prompt.md"
@@ -2306,7 +2306,7 @@ generated=$(run_agent_fixture generated-dispatch - "$agent_dispatch" dispatch --
   || { echo "generated job id does not match the lowercase grammar: $generated" >&2; exit 1; }
 wait_for_agent_census_fresh delegate-forbidden-source
 agent_fails delegate-forbidden-source '"outcome":"REFUSED-CONTEXT-SOURCE"' \
-  "$agent_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" \
+  "$agent_repo/bin/metasystem" internal delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" \
     --goal none-explicit --destructive-reach MECHANICAL --op delegate-forbidden-source --source docs/project-rules.md
 [[ ! -e "$agent_repo/artifacts/agents/jobs/delegate-forbidden-source.json" ]] \
   || { echo "a forbidden packet source created a reservation" >&2; exit 1; }
@@ -2342,7 +2342,7 @@ make_code_brief
 wait_for_agent_census_fresh delegate-derived-worktree
 run_agent_fixture_captured delegate-derived-worktree delegate-derived-worktree \
   "$agent_fixture/delegate-derived-worktree.out" \
-  "$agent_repo/bin/metasystem" delegate --role implementer --brief "$code_brief" \
+  "$agent_repo/bin/metasystem" internal delegate --role implementer --brief "$code_brief" \
     --goal none-explicit --destructive-reach DESIGN-BEARING --op delegate-derived-worktree --wait
 delegate_implementer_record="$agent_repo/artifacts/agents/jobs/delegate-derived-worktree.json"
 grep -Fq '"outcome":"WON"' "$agent_fixture/delegate-derived-worktree.out" \
@@ -2692,7 +2692,7 @@ conf_edit "$agent_repo/metasystem.conf" replace-line-first \
   '^dispatch[.]permissions[.]implementer=.*$' \
   "dispatch.permissions.implementer=$invalid_permissions"
 agent_fails delegate-internal-refusal '"outcome":"REFUSED-INTERNAL"' \
-  "$agent_repo/bin/metasystem" delegate --role implementer --brief "$code_brief" \
+  "$agent_repo/bin/metasystem" internal delegate --role implementer --brief "$code_brief" \
     --goal none-explicit --destructive-reach DESIGN-BEARING --op delegate-internal-refusal
 grep -Fq '"detail":"permission roots must be arrays"' "$agent_fixture/delegate-internal-refusal.out" \
   || { echo "the public delegate refusal did not carry the internal permission detail" >&2; cat "$agent_fixture/delegate-internal-refusal.out" >&2; exit 1; }
@@ -3807,17 +3807,17 @@ design_round_two_fixture_obligations() {
   printf '# Design round two fixture\n' >"$agent_repo/$page"
   git -C "$agent_repo" add -- "$page"
   git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'add design round two fixture'
-  METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" --id "$goal" --origin human --by Wido --fixture-human-authority \
+  METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" internal goal open --root "$agent_repo" --id "$goal" --origin human --by Wido --fixture-human-authority \
     --intent "Prove the design round-two close table" --next "Run the two-round critic chain." \
     --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "The fixture exercises the enforced design-critique limit and obligation projection." >/dev/null
-  "$engine" goal approve --root "$agent_repo" --id "$goal" --by Wido --lineage agent-fixture \
+  "$engine" internal goal approve --root "$agent_repo" --id "$goal" --by Wido --lineage agent-fixture \
     --elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 \
     --review-round-limit 3 --fixture-human-authority >/dev/null
   # The close defers as the root's (machineId, mainId) pair and defer-findings admits only the goal's
   # owning pair, so the chain is goal-bound and the claim's lineage is this bed's holder main.
   lineage=$("$engine" json get --value "$("$engine" lease require-holder --root "$agent_repo" --caller-pid "$$")" --field mainId --default "")
   [[ -n "$lineage" ]] || { echo "design round-two fixture found no lease holder main" >&2; exit 1; }
-  "$engine" goal claim --root "$agent_repo" --id "$goal" --lineage "$lineage" >/dev/null
+  "$engine" internal goal claim --root "$agent_repo" --id "$goal" --lineage "$lineage" >/dev/null
   make_agent_brief "$brief" design
   run_agent_fixture design-round-two-root "$root" "$agent_dispatch" dispatch --role design-critic \
     --outputs "$fixture_declared_outputs" --design "$page" --brief "$brief" --runtime fake --job-id "$root" --goal "$goal" --wait
@@ -4644,7 +4644,7 @@ mission_lease_staged=$(mktemp "$agent_repo/artifacts/agents/missions/mission-alp
 printf '{"missionId":"mission-alpha","pid":%s,"pgid":%s,"instanceTag":"mission-lease-tag","startedAt":"%s","renewedAt":"%s"}\n' \
   "$mission_pid" "$mission_pgid" "$mission_lease_now" "$mission_lease_now" >"$mission_lease_staged"
 mv "$mission_lease_staged" "$agent_repo/artifacts/agents/missions/mission-alpha/lease.json"
-printf '{"%s":{"pgid":%s,"command":"metasystem util hold --tag mission-lease-tag"}}\n' \
+printf '{"%s":{"pgid":%s,"command":"metasystem internal util hold --tag mission-lease-tag"}}\n' \
   "$mission_pid" "$mission_pgid" >"$mission_identity"
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
 run_agent_fixture envelope-model-override envelope-model-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
@@ -5110,7 +5110,7 @@ wait_runner_status() { # mission, expected exit
   local mission=$1 expected=$2 result=7 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec ))
   while (( SECONDS < deadline )); do
     set +e
-    "$runner_engine" mission status --root "$runner_repo" --mission "$mission" \
+    "$runner_engine" internal mission status --root "$runner_repo" --mission "$mission" \
       >"$agent_fixture/status-$mission.out" 2>&1
     result=$?
     set -e
@@ -5177,7 +5177,7 @@ runner_git commit --allow-empty -qm 'improve mission runner candidate'
 runner_git push -qu origin "$runner_branch"
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-cycle-start 0 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-  "$runner_engine" mission start --root "$runner_repo" --mission runner-cycle
+  "$runner_engine" internal mission start --root "$runner_repo" --mission runner-cycle
 wait_runner_status runner-cycle 10
 cycle_turn=$(find "$runner_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
 "$runner_repo/bin/metasystem" validate turn-prompt --root "$runner_repo" \
@@ -5287,7 +5287,7 @@ cat >"$runner_repo/artifacts/agents/jobs/pat-lost.json" <<EOF
 EOF
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-patience-start 0 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-  "$runner_engine" mission start --root "$runner_repo" --mission runner-patience
+  "$runner_engine" internal mission start --root "$runner_repo" --mission runner-patience
 wait_runner_status runner-patience 11
 patience_ledger="$runner_repo/artifacts/agents/missions/runner-patience/ledger.md"
 grep -Fq -- '- Patience: orphan=pat-lost rounds=1' "$patience_ledger" \
@@ -5401,7 +5401,7 @@ run_runner_expect runner-codex-start 0 "${runner_mission_env[@]}" \
   PATH="$codex_host_bin:$PATH" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_CODEX_FIXTURE_DIR="$codex_host_fixture" \
   METASYSTEM_CODEX_FIXTURE_TIMEOUT_SEC="$agent_fixture_cap_sec" \
-  "$runner_engine" mission start --root "$runner_repo" --mission runner-codex
+  "$runner_engine" internal mission start --root "$runner_repo" --mission runner-codex
 wait_runner_file "$codex_host_fixture/ready-1" "codex host first turn"
 codex_turn_one=$(find "$runner_repo/artifacts/agents/missions/runner-codex/turns" \
   -mindepth 1 -maxdepth 1 -type d | head -1)
@@ -5539,7 +5539,7 @@ grep -Fq 'oversized block' "$agent_fixture/prompt-oversized.out" \
 make_runner_contract runner-bad-prompt return-ok 5 '## Streams'
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-bad-prompt-start 3 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-  "$runner_engine" mission start --root "$runner_repo" --mission runner-bad-prompt
+  "$runner_engine" internal mission start --root "$runner_repo" --mission runner-bad-prompt
 wait_runner_status runner-bad-prompt 11
 bad_turn=$(find "$runner_repo/artifacts/agents/missions/runner-bad-prompt/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
 [[ ! -e "$bad_turn/raw.out" ]] || { echo "prompt-checker refusal launched the fake host" >&2; exit 1; }
@@ -5549,7 +5549,7 @@ grep -Fq 'prompt-refused' "$bad_turn/turn.json" \
 make_runner_contract runner-ghost dispatch-ghost 5
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-ghost-start 0 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-  "$runner_engine" mission start --root "$runner_repo" --mission runner-ghost
+  "$runner_engine" internal mission start --root "$runner_repo" --mission runner-ghost
 wait_runner_status runner-ghost 10
 ghost_mission="$runner_repo/artifacts/agents/missions/runner-ghost"
 # The newest HOST-TURN entry: post-verification entries conclude turns
@@ -5589,7 +5589,7 @@ printf '{"schemaVersion":1,"missionId":"runner-fence","startedAt":"%s","cycles":
   >"$runner_repo/artifacts/agents/missions/runner-fence/fences.json"
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-fence-start 3 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-  "$runner_engine" mission start --root "$runner_repo" --mission runner-fence
+  "$runner_engine" internal mission start --root "$runner_repo" --mission runner-fence
 wait_runner_status runner-fence 11
 fence_mission="$runner_repo/artifacts/agents/missions/runner-fence"
 [[ "$("$engine" json get --file "$fence_mission/state.json" --field status)" == parked \
@@ -5614,7 +5614,7 @@ make_runner_contract runner-unverified return-ok 5
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-unverified-start 3 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_FAKE_HOST_START_UNVERIFIED=1 \
-    "$runner_engine" mission start --root "$runner_repo" --mission runner-unverified
+    "$runner_engine" internal mission start --root "$runner_repo" --mission runner-unverified
 wait_runner_status runner-unverified 11
 unverified_mission="$runner_repo/artifacts/agents/missions/runner-unverified"
 [[ "$("$engine" json get --file "$unverified_mission/state.json" --field parkReason)" == host-failure ]] \
@@ -5655,7 +5655,7 @@ agent_supervision_repo=
 agent_supervision_repo=$runner_repo
 track_armed_supervision "$runner_repo"
 run_runner_expect runner-unverified-resume 0 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
-  "$runner_engine" mission resume --root "$runner_repo" --mission runner-unverified
+  "$runner_engine" internal mission resume --root "$runner_repo" --mission runner-unverified
 wait_runner_status runner-unverified 10
 [[ -f "$runner_repo/artifacts/agents/supervision/state.json" ]] \
   || { echo "resume did not re-arm supervision" >&2; exit 1; }
@@ -5778,7 +5778,7 @@ run_fixture_arm "steward end-to-end initial arm" - \
 steward_placeholder_out=$(cd "$steward_repo" && METASYSTEM_BIN="$steward_enrolled_engine" \
   "$steward_enrolled_engine" steward revive --repo "$steward_repo" 2>&1) \
   && { echo "steward placeholder: a launch with the template model was not refused: $steward_placeholder_out" >&2; exit 1; }
-grep -Fq "role steward-continuation resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem config tailor --conf" <<<"$steward_placeholder_out" \
+grep -Fq "role steward-continuation resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem internal config tailor --conf" <<<"$steward_placeholder_out" \
   || { echo "steward placeholder: the refusal did not name the key and the command: $steward_placeholder_out" >&2; exit 1; }
 grep -Fq -e "--set role.default.model.fake=" <<<"$steward_placeholder_out" \
   || { echo "steward placeholder: the refusal did not name the key to set: $steward_placeholder_out" >&2; exit 1; }

@@ -215,8 +215,8 @@ esac
 		filepath.Join(root, "bin", "metasystem"): `#!/usr/bin/env bash
 set -euo pipefail
 dispatch=$(cd "$(dirname "$0")/../scripts/agents" && pwd -P)/dispatch.sh
-[[ $1 == delegate ]] || exit 2
-shift
+[[ $1 == internal && $2 == delegate ]] || exit 2
+shift 2
 case "$1" in
   --adapter-selftest)
     runtime=$2; brief=$4; workspace=$6; job=$8

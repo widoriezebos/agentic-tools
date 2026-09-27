@@ -30,7 +30,7 @@ func TestClaimLaunchRefusesClosedProcessCreationFence(t *testing.T) {
 	if result.Outcome != ClaimRefusedStopped || result.Evidence["refusalClass"] != "stopped" || !looseEqual(result.Evidence["fenceGeneration"], 7) {
 		t.Fatalf("closed-fence result = %+v", result)
 	}
-	wantDetail := "the metasystem is stopped for /fixture/checkout since " + changedAt + ", by stop pid 71\nat an agent-free terminal, run: metasystem arm --repo /fixture/checkout"
+	wantDetail := "the metasystem is stopped for /fixture/checkout since " + changedAt + ", by stop pid 71\nat an agent-free terminal, run: metasystem system start --repo /fixture/checkout"
 	if result.Detail != wantDetail {
 		t.Fatalf("detail = %q, want %q", result.Detail, wantDetail)
 	}
@@ -53,7 +53,7 @@ func TestFenceBeforeLaunchReportsStoppedBeforeSupervisionAdmission(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantDetail := "the metasystem is stopped for /fixture/checkout since " + changedAt + ", by stop pid 71\nat an agent-free terminal, run: metasystem arm --repo /fixture/checkout"
+	wantDetail := "the metasystem is stopped for /fixture/checkout since " + changedAt + ", by stop pid 71\nat an agent-free terminal, run: metasystem system start --repo /fixture/checkout"
 	if result.Outcome != LaunchFenceRefusedStopped || result.ObservedGeneration != 7 || result.Detail != wantDetail {
 		t.Fatalf("fence-before-launch result = %+v, want stopped generation seven and detail %q", result, wantDetail)
 	}
@@ -148,7 +148,7 @@ func TestFenceAfterLaunchDetectsStopRace(t *testing.T) {
 	if result.Outcome != LaunchFenceRefusedStopped || result.FenceGeneration != 3 || result.ObservedGeneration != 4 {
 		t.Fatalf("post-launch result = %+v", result)
 	}
-	if !strings.Contains(result.Detail, "stop unfinished for /fixture/checkout") || !strings.Contains(result.Detail, "while job raced-job started, it has been ended") || !strings.Contains(result.Detail, "metasystem stop --repo /fixture/checkout") {
+	if !strings.Contains(result.Detail, "stop unfinished for /fixture/checkout") || !strings.Contains(result.Detail, "while job raced-job started, it has been ended") || !strings.Contains(result.Detail, "metasystem system stop --repo /fixture/checkout") {
 		t.Fatalf("post-launch detail = %q", result.Detail)
 	}
 }

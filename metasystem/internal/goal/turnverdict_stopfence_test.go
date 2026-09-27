@@ -17,20 +17,20 @@ func TestTurnVerdictDoesNotBlockAndDescribesTheDurableStopPhase(t *testing.T) {
 		{
 			name: "completed", phase: stopfence.PhaseStopped,
 			want: func(root string) string {
-				return "the metasystem is stopped for " + root + " since 2026-09-07T00:00:00Z, by stop pid 71; run: metasystem arm --repo " + root
+				return "the metasystem is stopped for " + root + " since 2026-09-07T00:00:00Z, by stop pid 71; run: metasystem system start --repo " + root
 			},
 		},
 		{
 			name: "unfinished", phase: stopfence.PhaseStopping,
 			want: func(root string) string {
-				return "stop unfinished for " + root + " since 2026-09-07T00:00:00Z by stop pid 71; run: metasystem stop --repo " + root
+				return "stop unfinished for " + root + " since 2026-09-07T00:00:00Z by stop pid 71; run: metasystem system stop --repo " + root
 			},
 		},
 		{
 			name: "incomplete", phase: stopfence.PhaseStopIncomplete,
 			survivors: []stopfence.Survivor{{Component: "run", ID: "one", Reason: "survived"}},
 			want: func(root string) string {
-				return "stop incomplete for " + root + " since 2026-09-07T00:00:00Z by stop pid 71; 1 unresolved entries from the last stop; run: metasystem stop --repo " + root
+				return "stop incomplete for " + root + " since 2026-09-07T00:00:00Z by stop pid 71; 1 unresolved entries from the last stop; run: metasystem system stop --repo " + root
 			},
 		},
 	} {

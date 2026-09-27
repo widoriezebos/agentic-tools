@@ -34,10 +34,10 @@ const (
 	verbRatchetScriptLinesCeiling = 52181
 	// R5: non-test Go sites that run or build an argv for the engine itself,
 	// and every call of a launcher helper (see section 4 for what is followed).
-	verbRatchetSelfSubprocessCeiling = 95
+	verbRatchetSelfSubprocessCeiling = 115
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed.
-	verbRatchetInstructionCeiling = 392
+	verbRatchetInstructionCeiling = 103
 )
 
 type ratchetSite struct {
@@ -1297,9 +1297,10 @@ func ratchetGoStringLiterals(t *testing.T, path string) []ratchetSite {
 func TestVerbRatchetInstructionsNameNonPublicForms(t *testing.T) {
 	t.Parallel()
 	repository, module := verbRatchetRoots(t)
-	allowed := map[string]bool{"help": true, "internal": true}
+	allowed := map[string]bool{"help": true, "internal": true, "status": true}
+	publicPairs := map[string]bool{}
 	for _, command := range publicIntentCommands() {
-		allowed[command.name] = true
+		publicPairs[command.name] = true
 	}
 	// Only a word the engine routes, or routed when the witness landed, makes
 	// a form; "the metasystem is ..." and other prose never reach the router.
@@ -1310,7 +1311,7 @@ func TestVerbRatchetInstructionsNameNonPublicForms(t *testing.T) {
 	var sites []ratchetSite
 	record := func(rel string, line int, text string) {
 		for _, match := range ratchetInstructionRE.FindAllStringSubmatch(text, -1) {
-			if routed[match[1]] && !allowed[match[1]] {
+			if routed[match[1]] && !allowed[match[1]] && !publicPairs[match[1]+" "+match[2]] {
 				sites = append(sites, ratchetSite{path: rel, line: line, text: strings.TrimLeft(match[0], " `'\"(")})
 			}
 		}

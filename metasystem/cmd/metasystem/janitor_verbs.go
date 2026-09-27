@@ -25,7 +25,7 @@ func runJanitorHeadroom(args []string) int {
 		return 2
 	}
 	if len(paths) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem janitor headroom --path P [--path P ...] [--floor-gb N]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal janitor headroom --path P [--path P ...] [--floor-gb N]")
 		return 2
 	}
 	for _, p := range paths {

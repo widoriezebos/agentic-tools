@@ -1333,7 +1333,7 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 		}
 	})
 	cmd := exec.Command(filepath.Join(engine.Root, "bin", "metasystem"),
-		"mission", "start", "--root", engine.Root, "--mission", engine.Mission, "--foreground")
+		"internal", "mission", "start", "--root", engine.Root, "--mission", engine.Mission, "--foreground")
 	cmd.Dir = engine.Root
 	out, err := cmd.CombinedOutput()
 	if err != nil {

@@ -203,7 +203,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		"Read README.md, then return a valid empty-findings design critique proving the read in evidence."); err != nil {
 		return err
 	}
-	if err := runSelftestDelegateQuiet(p.delegate(), "delegate", "--adapter-selftest", p.Runtime,
+	if err := runSelftestDelegateQuiet(p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 		"--brief", filepath.Join(dir, "brief.md"), "--workspace", scratch, "--op", mainJob); err != nil {
 		return err
 	}
@@ -228,7 +228,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := os.WriteFile(filepath.Join(dir, "follow.md"), []byte(selftestFollowUp), 0o644); err != nil {
 		return err
 	}
-	if err := runQuiet(p.delegate(), "delegate", "--follow-up", mainJob,
+	if err := runQuiet(p.delegate(), "internal", "delegate", "--follow-up", mainJob,
 		"--brief", filepath.Join(dir, "follow.md")); err != nil {
 		return err
 	}
@@ -249,11 +249,11 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 		"Inspect repository files one at a time and continue until the orchestrator cancels this scratch turn."); err != nil {
 		return err
 	}
-	if err := runSelftestDelegateQuiet(p.delegate(), "delegate", "--adapter-selftest", p.Runtime,
+	if err := runSelftestDelegateQuiet(p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 		"--brief", filepath.Join(dir, "cancel.md"), "--workspace", scratch, "--op", cancelJob); err != nil {
 		return err
 	}
-	if err := runLoud(p.delegate(), "delegate", "--cancel", cancelJob); err != nil {
+	if err := runLoud(p.delegate(), "internal", "delegate", "--cancel", cancelJob); err != nil {
 		return err
 	}
 	if p.dispatchStatus(cancelJob) != "cancelled" {
@@ -293,7 +293,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 			if err := writeBrief(briefPath, attempt.goal); err != nil {
 				return err
 			}
-			_ = runSelftestDelegateSilent(p.delegate(), "delegate", "--adapter-selftest", p.Runtime,
+			_ = runSelftestDelegateSilent(p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 				"--brief", briefPath, "--workspace", scratch, "--op", attemptJob)
 			p.waitForJob(attemptJob)
 			outcome := AttemptOutcome{
@@ -316,7 +316,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := writeBrief(filepath.Join(dir, "permissions.md"), permittedGoal+skillInstruction); err != nil {
 		return err
 	}
-	if err := runSelftestDelegateQuiet(p.delegate(), "delegate", "--adapter-selftest", p.Runtime,
+	if err := runSelftestDelegateQuiet(p.delegate(), "internal", "delegate", "--adapter-selftest", p.Runtime,
 		"--brief", filepath.Join(dir, "permissions.md"), "--workspace", scratch, "--op", permissionJob); err != nil {
 		return err
 	}

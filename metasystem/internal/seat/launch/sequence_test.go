@@ -598,7 +598,7 @@ func TestTheRecordCarriesWhatTheMachineIsAndWhatToDoWithIt(t *testing.T) {
 	if record.Next.Session != "cd "+destRoot+" && claude" {
 		t.Fatalf("session command = %q", record.Next.Session)
 	}
-	if record.Next.Stop != "metasystem stop --repo "+destInstall() {
+	if record.Next.Stop != "metasystem system stop --repo "+destInstall() {
 		t.Fatalf("stop command = %q", record.Next.Stop)
 	}
 	if !record.Created.Destination || !record.Created.Nickname || !record.Created.EvidenceRoot {

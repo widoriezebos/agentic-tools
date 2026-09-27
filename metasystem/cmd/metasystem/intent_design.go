@@ -25,17 +25,17 @@ import (
 
 func designCommand() intentCommand {
 	return intentCommand{
-		name: "design", group: "work", audience: "agent", summary: "have a design author write a goal's design as a draft",
-		usage: []string{"metasystem design G --brief FILE [--out FILE] [--after N]"},
+		object: "design", action: "write", audience: "agent", summary: "have a design author write a goal's design as a draft",
+		usage: []string{"metasystem design write G --brief FILE [--out FILE] [--after N]"},
 		details: []string{
 			"The design author works in this checkout and writes a staged draft; the goal's design document is updated only",
 			"when it still holds the bytes the request was made against. A document someone edited meanwhile is left as it is",
-			"and the proposal is kept: show design --goal G --attempt N shows it.",
+			"and the proposal is kept: design show --goal G --attempt N shows it.",
 			"Without --out: the goal's one draft design, or a new <goal>.md in the project's design home. --out names a file",
 			"inside a design home. An accepted design is never rewritten; ask for a new draft file instead.",
 			"The same request again reports the same attempt; --after N asks for one new attempt after attempt N.",
 			"Needs an approved goal with a review allowance. It does not claim the goal for building and does not touch your checkout's work.",
-			"The finished draft is reviewed with: metasystem review design FILE",
+			"The finished draft is reviewed with: metasystem design review FILE",
 		},
 		flags: []intentFlag{
 			intentBriefFlag,
@@ -43,7 +43,7 @@ func designCommand() intentCommand {
 			{name: "after", value: "N", usage: "ask for one new attempt after attempt N"},
 		},
 		maxArgs:  1,
-		examples: []string{"metasystem design verbs-match-intent --brief design-request.md", "metasystem design verbs-match-intent --brief more.md --after 1"},
+		examples: []string{"metasystem design write verbs-match-intent --brief design-request.md", "metasystem design write verbs-match-intent --brief more.md --after 1"},
 		run:      runIntentDesign,
 	}
 }
@@ -154,7 +154,7 @@ func (inv *intentInvocation) designDestinationPath(id string, creating bool) (st
 			}
 		}
 		return "", "", &intentResult{Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("goal %s has no design; nothing was done", id),
-			next: inv.publicArgv("design", id, "--brief", "FILE"), nextReason: "ask a design author for one"}
+			next: inv.publicArgv("design", "write", id, "--brief", "FILE"), nextReason: "ask a design author for one"}
 	}
 	path := filepath.Join(home, id+".md")
 	if _, err := os.Stat(path); err == nil {
@@ -181,7 +181,7 @@ func slicesContains(values []string, value string) bool {
 
 func runIntentDesign(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 || !inv.input.has("brief") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design needs the goal and --brief FILE; nothing was done", Decision: "metasystem design G --brief FILE"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design needs the goal and --brief FILE; nothing was done", Decision: "metasystem design write G --brief FILE"})
 	}
 	id := inv.input.args[0]
 	after := 0
@@ -213,7 +213,7 @@ func runIntentDesign(inv *intentInvocation) int {
 	case file.State == goal.StateQueued || file.State == goal.StateParked || file.Budget == nil || file.Budget.ReviewRoundLimit <= 0:
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary:  fmt.Sprintf("goal %s is not approved with a review allowance; nothing was done", id),
-			Decision: "a person approves the goal with its box: metasystem approve " + id})
+			Decision: "a person approves the goal with its box: metasystem goal approve " + id})
 	}
 	destination, recordID, problem := inv.designDestination(id, true)
 	if problem != nil {
@@ -275,10 +275,10 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 	switch {
 	case errors.Is(err, launch.ErrDesignStale):
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
-			next: inv.publicArgv("design", id, "--brief", "FILE", "--after", strconv.Itoa(result.Current)), nextReason: "a new attempt follows the newest one"}
+			next: inv.publicArgv("design", "write", id, "--brief", "FILE", "--after", strconv.Itoa(result.Current)), nextReason: "a new attempt follows the newest one"}
 	case errors.Is(err, launch.ErrDesignWriterRunning):
 		return intentResult{Outcome: intentInProgress, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched",
-			next: inv.publicArgv("wait", "goal", id), nextReason: "the current author is still writing"}
+			next: inv.publicArgv("work", "wait", id), nextReason: "the current author is still writing"}
 	case err != nil && result.Attempt.Attempt == 0:
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: err.Error() + "; nothing was launched"}
 	}
@@ -322,22 +322,22 @@ func (inv *intentInvocation) designOutcome(id, destination string, result launch
 		data["reason"] = record.Reason
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data,
 			Summary: fmt.Sprintf("design attempt %d for goal %s ended %s (%s); the document is unchanged", attempt.Attempt, id, record.State, record.Reason),
-			next:    inv.publicArgv("design", id, "--brief", "FILE", "--after", strconv.Itoa(attempt.Attempt)), nextReason: "ask for one new attempt after the failed one"}
+			next:    inv.publicArgv("design", "write", id, "--brief", "FILE", "--after", strconv.Itoa(attempt.Attempt)), nextReason: "ask for one new attempt after the failed one"}
 	default:
 		return intentResult{Outcome: intentInProgress, Targets: targets, Data: data,
 			Summary: fmt.Sprintf("design attempt %d for goal %s is %s", attempt.Attempt, id, record.State),
-			next:    inv.publicArgv("show", "design", "--goal", id, "--attempt", strconv.Itoa(attempt.Attempt)), nextReason: "the attempt and its draft"}
+			next:    inv.publicArgv("design", "show", "--goal", id, "--attempt", strconv.Itoa(attempt.Attempt)), nextReason: "the attempt and its draft"}
 	}
 	data["outcome"], data["detail"] = attempt.Outcome, attempt.Detail
 	switch attempt.Outcome {
 	case "published":
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: data,
 			Summary: fmt.Sprintf("design attempt %d for goal %s is written to %s as a draft", attempt.Attempt, id, rel),
-			next:    inv.publicArgv("review", "design", rel, "--goal", id), nextReason: "an independent critique examines the draft"}
+			next:    inv.publicArgv("design", "review", rel, "--goal", id), nextReason: "an independent critique examines the draft"}
 	case "conflict", "invalid", "superseded":
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data,
 			Summary:  fmt.Sprintf("design attempt %d was not written to %s (%s): %s; the document is unchanged and the proposal is kept", attempt.Attempt, rel, attempt.Outcome, attempt.Detail),
-			Decision: fmt.Sprintf("merge the proposal (%s) into the document yourself, or ask for a new attempt against the current version: metasystem design %s --brief FILE --after %d", attempt.Draft, id, attempt.Attempt)}
+			Decision: fmt.Sprintf("merge the proposal (%s) into the document yourself, or ask for a new attempt against the current version: metasystem design write %s --brief FILE --after %d", attempt.Draft, id, attempt.Attempt)}
 	}
 	return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: data, Summary: "the attempt has no recorded outcome"}
 }

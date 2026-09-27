@@ -40,8 +40,8 @@ func TestTopLevelUpPrintsButDoesNotInstallSchedulerEntry(t *testing.T) {
 }
 
 func TestArmingDetailSurvivesStop(t *testing.T) {
-	component := `component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run metasystem steward restart from an agent-free terminal"`
-	aggregate := `up outcome=failed component=steward-runner remedy="ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal"`
+	component := `component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run metasystem internal steward restart from an agent-free terminal"`
+	aggregate := `up outcome=failed component=steward-runner remedy="ENROLLMENT_DRIFT: run 'metasystem internal steward restart' from an agent-free terminal"`
 	armingResult := component + "\n" + aggregate
 	remedy := "restore supervision from an agent-free terminal"
 	stdout, stderr, code := captureRelay(t, func() int {

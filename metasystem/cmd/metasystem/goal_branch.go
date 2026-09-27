@@ -177,7 +177,7 @@ func readDelegate(binary, root, brief, goalID, commit, runtime, model string, en
 	if binary == "" {
 		return "", fmt.Errorf("delegate binary is unavailable")
 	}
-	args := []string{"delegate", "--role", "code-critic", "--reviews", "commit:" + commit,
+	args := []string{"internal", "delegate", "--role", "code-critic", "--reviews", "commit:" + commit,
 		"--goal", goalID, "--brief", brief, "--destructive-reach", "DESIGN-BEARING"}
 	if runtime != "" {
 		args = append(args, "--runtime", runtime)
@@ -213,7 +213,7 @@ func readFollowUp(binary, root, rootJob, brief string, environment ...string) (s
 	if binary == "" {
 		return "", fmt.Errorf("delegate binary is unavailable")
 	}
-	command := exec.Command(binary, "delegate", "--follow-up", rootJob, "--brief", brief)
+	command := exec.Command(binary, "internal", "delegate", "--follow-up", rootJob, "--brief", brief)
 	command.Env = append(append(os.Environ(), environment...), "METASYSTEM_DELEGATE_ROOT="+root)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr

@@ -34,7 +34,7 @@ func runGateUnitWith(args []string, dependencies gateUnitDependencies, stdout, s
 		return 2
 	}
 	if *root == "" || *base == "" || *tree == "" || flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: metasystem gate unit --root ROOT --base SHA [--tree SHA]")
+		fmt.Fprintln(stderr, "usage: metasystem internal gate unit --root ROOT --base SHA [--tree SHA]")
 		return 2
 	}
 

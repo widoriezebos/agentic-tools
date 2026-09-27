@@ -143,7 +143,7 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 	}
 	owners := defaultIntentOwners()
 	owners.resolver, owners.delivery = stateroot.NewResolver(fakeTop(root), noExecutable), delivery
-	settings, _ := findIntentCommand("settings")
+	settings, _ := findIntentCommand("settings coordinator")
 	run := func(args ...string) (int, intentResult) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
@@ -162,7 +162,7 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 		return calls[len(calls)-1]
 	}
 
-	if code, result := run("coordinator"); code != 0 || !strings.Contains(result.Summary, "no coordinator is declared") || len(calls) != 0 {
+	if code, result := run(); code != 0 || !strings.Contains(result.Summary, "no coordinator is declared") || len(calls) != 0 {
 		t.Fatalf("undeclared read: %d %+v %v", code, result, calls)
 	}
 
@@ -174,7 +174,7 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", agentTable)
-	code, result := run("coordinator", "--declare", "--by", "Wido")
+	code, result := run("--declare", "--by", "Wido")
 	lastOwner(0)
 	if result.Outcome != intentRefused || code == 0 || result.Summary != "brain declare is a human act; run it from an agent-free terminal" ||
 		brain.Read(root, ledger).State != brain.Undeclared {
@@ -183,9 +183,9 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", humanTable)
 	calls = nil
 
-	code, result = run("coordinator", "--declare", "--by", "Wido")
+	code, result = run("--declare", "--by", "Wido")
 	argv := lastOwner(0)
-	if want := []string{engine, "brain", "declare", "--root", root, "--by", "Wido"}; !slicesEqual(argv, want) {
+	if want := []string{engine, "internal", "brain", "declare", "--root", root, "--by", "Wido"}; !slicesEqual(argv, want) {
 		t.Fatalf("declare owner argv = %v, want %v", argv, want)
 	}
 	expectOutcome(t, "declare", code, result, intentConfirmed)
@@ -201,28 +201,28 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 		t.Fatal("the owner registered no declaration in the isolated registry home")
 	}
 
-	if code, result := run("coordinator"); code != 0 || result.Outcome != intentConfirmed ||
+	if code, result := run(); code != 0 || result.Outcome != intentConfirmed ||
 		!strings.Contains(result.Summary, "this checkout is the coordinator of ledger "+ledger+", declared by Wido") || len(calls) != 1 {
 		t.Fatalf("declared read: %d %+v", code, result)
 	}
 
 	// A second declaration is the owner's own refusal, not the adapter's.
-	code, result = run("coordinator", "--declare", "--by", "Wido")
+	code, result = run("--declare", "--by", "Wido")
 	lastOwner(1)
 	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "already the brain of ledger "+ledger) {
 		t.Fatalf("repeat declare: %d %+v", code, result)
 	}
 
-	code, result = run("coordinator", "--withdraw", "--by", "Wido")
+	code, result = run("--withdraw", "--by", "Wido")
 	argv = lastOwner(2)
-	if want := []string{engine, "brain", "withdraw", "--root", root, "--by", "Wido"}; !slicesEqual(argv, want) {
+	if want := []string{engine, "internal", "brain", "withdraw", "--root", root, "--by", "Wido"}; !slicesEqual(argv, want) {
 		t.Fatalf("withdraw owner argv = %v, want %v", argv, want)
 	}
 	expectOutcome(t, "withdraw", code, result, intentConfirmed)
 	if state := brain.Read(root, ledger); state.State != brain.Undeclared {
 		t.Fatalf("the owner's actual withdrawal left %+v", state)
 	}
-	if code, result := run("coordinator"); code != 0 || !strings.Contains(result.Summary, "no coordinator is declared") {
+	if code, result := run(); code != 0 || !strings.Contains(result.Summary, "no coordinator is declared") {
 		t.Fatalf("read after withdrawal: %d %+v", code, result)
 	}
 }
@@ -260,9 +260,9 @@ func runIntentRealOwner(t *testing.T, root string, calls *[][]string, args ...st
 		},
 		executable: func() (string, error) { return engine, nil },
 	}
-	command, _ := findIntentCommand(args[0])
+	command, rest, _ := resolveIntentArgv(args)
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, append(args[1:], "--json"), &stdout, &stderr, root, owners)
+	code := runIntentIn(command, append(rest, "--json"), &stdout, &stderr, root, owners)
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("%v printed no JSON result: %v; stdout=%q stderr=%q", args, err, stdout.String(), stderr.String())
@@ -288,8 +288,8 @@ func TestIntentRepairGoalsGitAdapterAcceptsRewoundRemoteHistory(t *testing.T) {
 	goalSyncMutationGit(t, upstream, "update-ref", "refs/heads/main", base)
 
 	var calls [][]string
-	code, result := runIntentRealOwner(t, root, &calls, "repair", "goals", "--accept-remote-history", "--by", "Wido")
-	if len(calls) != 1 || !slicesEqual(calls[0][1:], []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root", root}) {
+	code, result := runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-remote-history", "--by", "Wido")
+	if len(calls) != 1 || !slicesEqual(calls[0][2:], []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root", root}) {
 		t.Fatalf("owner argv = %v", calls)
 	}
 	expectOutcome(t, "accept remote history", code, result, intentConfirmed)
@@ -330,8 +330,8 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 	writeTestingFixtureFile(t, page, goal.RenderFile(file), 0o644)
 
 	var calls [][]string
-	code, result := runIntentRealOwner(t, root, &calls, "repair", "goals", "--accept-edits", "--by", "Wido")
-	if len(calls) != 1 || !slicesEqual(calls[0][1:], []string{"goal", "reconcile", "--root", root, "--by", "Wido"}) {
+	code, result := runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-edits", "--by", "Wido")
+	if len(calls) != 1 || !slicesEqual(calls[0][2:], []string{"goal", "reconcile", "--root", root, "--by", "Wido"}) {
 		t.Fatalf("owner argv = %v", calls)
 	}
 	expectOutcome(t, "accept edits", code, result, intentConfirmed)
@@ -353,7 +353,7 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 		t.Fatalf("the republished edit: history %+v, owner %+v, tip %s", last, owner, projection.Tip)
 	}
 	// Nothing new is reconciled twice.
-	code, result = runIntentRealOwner(t, root, &calls, "repair", "goals", "--accept-edits", "--by", "Wido")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-edits", "--by", "Wido")
 	if owner := result.Data.(map[string]any)["owner"].(map[string]any); code != 0 || owner["rows"] != float64(0) {
 		t.Fatalf("repeat accept-edits: %d %+v", code, result)
 	}
@@ -375,8 +375,8 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 		t.Fatal(err)
 	}
 	before := len(calls)
-	code, result = runIntentRealOwner(t, root, &calls, "repair", "goals", "--refresh")
-	if len(calls) != before+1 || !slicesEqual(calls[before][1:], []string{"goal", "reconcile", "--root", root, "--refresh-only"}) {
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--refresh")
+	if len(calls) != before+1 || !slicesEqual(calls[before][2:], []string{"goal", "reconcile", "--root", root, "--refresh-only"}) {
 		t.Fatalf("refresh owner argv = %v", calls[before:])
 	}
 	expectOutcome(t, "refresh", code, result, intentConfirmed)
@@ -391,7 +391,7 @@ func TestIntentRepairGoalsGitAdapterAcceptsHandEditsThroughReconcile(t *testing.
 	if record, exists, err := goal.ReadBase(root); err != nil || !exists || record.RefreshDue || record.Commit != projection.Tip {
 		t.Fatalf("base after refresh: %+v %v %v", record, exists, err)
 	}
-	code, result = runIntentRealOwner(t, root, &calls, "repair", "goals", "--refresh")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--refresh")
 	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "no refresh is pending") {
 		t.Fatalf("second refresh: %d %+v", code, result)
 	}
@@ -409,14 +409,13 @@ func TestIntentRepairGoalsGitAdapterUpgradesOnlyTheReviewedDigest(t *testing.T) 
 	root, digest := legacyHumanTerminalRoot(t, "upgrade-machine")
 	mainBefore := runReceiptGit(t, root, "rev-parse", "refs/heads/main")
 	var calls [][]string
-	code, result := runIntentRealOwner(t, root, &calls, "repair", "goals", "--upgrade", "--by", "Wido")
+	code, result := runIntentRealOwner(t, root, &calls, "goal", "repair", "--upgrade", "--by", "Wido")
 	if result.Outcome != intentRefused || code == 0 || len(calls) != 0 || result.Data.(map[string]any)["sourceDigest"] != digest {
 		t.Fatalf("unreviewed upgrade: %d %+v %v", code, result, calls)
 	}
-	code, result = runIntentRealOwner(t, root, &calls, "repair", "goals", "--upgrade", "--by", "Wido",
-		"--source-digest", digest, "--sync-mode", "local", "--identity", "01J5XA00000000000000000000")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--upgrade", "--by", "Wido", "--source-digest", digest, "--sync-mode", "local", "--identity", "01J5XA00000000000000000000")
 	want := []string{"goal", "migrate", "--root", root, "--source-digest", digest, "--by", "Wido", "--identity", "01J5XA00000000000000000000", "--sync-mode", "local"}
-	if len(calls) != 1 || !slicesEqual(calls[0][1:], want) {
+	if len(calls) != 1 || !slicesEqual(calls[0][1:], append([]string{"internal"}, want...)) {
 		t.Fatalf("owner argv = %v, want %v", calls, want)
 	}
 	expectOutcome(t, "upgrade", code, result, intentConfirmed)
@@ -477,16 +476,16 @@ func TestIntentRepairGoalsGitAdapterAcceptsRemoteHistoryInADeclaredCoordinator(t
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", emptyTable)
 	var calls [][]string
-	code, result := runIntentRealOwner(t, root, &calls, "repair", "goals", "--accept-remote-history", "--by", "Wido")
+	code, result := runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-remote-history", "--by", "Wido")
 	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "the brain never carries a human's word into goal repair") ||
 		goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef) != later {
 		t.Fatalf("declared coordinator, no terminal fact: %d %+v", code, result)
 	}
 
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", humanTable)
-	code, result = runIntentRealOwner(t, root, &calls, "repair", "goals", "--accept-remote-history", "--by", "Wido")
+	code, result = runIntentRealOwner(t, root, &calls, "goal", "repair", "--accept-remote-history", "--by", "Wido")
 	want := []string{"goal", "repair", "--accept-remote", "--by", "Wido", "--root", root}
-	if len(calls) != 2 || !slicesEqual(calls[0][1:], want) || !slicesEqual(calls[1][1:], want) {
+	if len(calls) != 2 || !slicesEqual(calls[0][2:], want) || !slicesEqual(calls[1][2:], want) {
 		t.Fatalf("owner argv = %v", calls)
 	}
 	expectOutcome(t, "declared accept remote history", code, result, intentConfirmed)
@@ -522,11 +521,11 @@ func TestIntentCarriedGoalDeliveryGitAdapter(t *testing.T) {
 	code, result := b.land("standing-validation", "--exception", "missing-declaration", "--reason", "flaky host", "--by", "Wido", "--upgrade-goals")
 	carry := -1
 	for index, argv := range b.calls {
-		if len(argv) > 2 && argv[1] == "goal" && argv[2] == "carry" {
+		if len(argv) > 3 && argv[1] == "internal" && argv[2] == "goal" && argv[3] == "carry" {
 			carry = index
 		}
 	}
-	if carry < 0 || !slicesHasPrefix(b.calls[carry][1:], []string{"goal", "carry", "--root", f.mainRoot, "--id", "standing-validation", "--by", "Wido", "--tree"}) ||
+	if carry < 0 || !slicesHasPrefix(b.calls[carry][1:], []string{"internal", "goal", "carry", "--root", f.mainRoot, "--id", "standing-validation", "--by", "Wido", "--tree"}) ||
 		slices.Contains(b.calls[carry], "--fixture-human-authority") {
 		t.Fatalf("the carry owner did not run with the adapter's own argv: %v; result %+v", b.calls, result)
 	}

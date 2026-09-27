@@ -25,7 +25,7 @@ func runValidateTurnPrompt(args []string) int {
 		return 2
 	}
 	if *file == "" || *turn == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem validate turn-prompt --root R --file F --turn D")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate turn-prompt --root R --file F --turn D")
 		return 2
 	}
 	if violation := validate.TurnPrompt(*root, *file, *turn); violation != nil {
@@ -45,7 +45,7 @@ func runValidatePlanConsistency(args []string) int {
 		return 2
 	}
 	if *plansDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem validate plan-consistency --plans-dir D")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate plan-consistency --plans-dir D")
 		return 2
 	}
 	retired, violations, err := validate.PlanConsistency(*plansDir)
@@ -81,7 +81,7 @@ func runValidateCritiqueClosed(args []string) int {
 		return 2
 	}
 	if *findings == "" || *dispositions == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem validate critique-closed --findings F --dispositions F")
+		fmt.Fprintln(os.Stderr, "usage: metasystem work check --findings F --dispositions F")
 		return 2
 	}
 	if (*repo == "") != (*rootJob == "") {
@@ -114,7 +114,7 @@ func runValidatePreambleQuotes(args []string) int {
 		return 2
 	}
 	if *rolesDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem validate preamble-quotes --root R --roles-dir D")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate preamble-quotes --root R --roles-dir D")
 		return 2
 	}
 	violations := validate.PreambleQuotes(*root, *rolesDir)
@@ -139,7 +139,7 @@ func runValidateWrapperToken(args []string) int {
 		return 2
 	}
 	if *token == "" || *callerPid <= 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem validate wrapper-token --token F --caller-pid N")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate wrapper-token --token F --caller-pid N")
 		return 2
 	}
 	if validate.WrapperToken(*token, *callerPid, validate.KernelProcessTree{}) {
@@ -162,7 +162,7 @@ func runValidateSessionIsolation(args []string) int {
 		return 2
 	}
 	if *sourceRoot == "" || *destinationRoot == "" || *manifest == "" || *harnessRoot == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem validate session-isolation --source-root A --destination-root B --manifest F --harness-root H")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate session-isolation --source-root A --destination-root B --manifest F --harness-root H")
 		return 2
 	}
 	newHarness, err := validate.SessionIsolation(*sourceRoot, *destinationRoot, *manifest, *harnessRoot)
@@ -210,15 +210,15 @@ func runValidateReturnComplete(args []string) int {
 }
 
 // runValidateDesignObligations checks design-obligation matrices with the
-// calling convention of metasystem validate design-obligations: repeated
+// calling convention of metasystem internal validate design-obligations: repeated
 // --file arguments, an optional --runtime-required, and --root for
 // resolving a relative path unreadable from the working directory. Exit 0
 // passed; 1 failed; 2 usage.
 func runValidateDesignObligations(args []string) int {
 	usage := func() {
 		fmt.Fprint(os.Stderr, `Usage:
-  metasystem validate design-obligations --file <plan.md> [--file <plan.md>...]
-  metasystem validate design-obligations --runtime-required --file <plan.md>...
+  metasystem internal validate design-obligations --file <plan.md> [--file <plan.md>...]
+  metasystem internal validate design-obligations --runtime-required --file <plan.md>...
 
 Checks the structure and declared state of design-obligation matrices.
 
@@ -281,7 +281,7 @@ pipe characters; the column parser cannot see an escaped pipe as content.
 // usage.
 func runValidateConformance(args []string) int {
 	usage := func() {
-		fmt.Fprint(os.Stderr, `Usage: metasystem validate conformance --stage review|recertify|merge --job <job-id> [--test-command <command>] [--recertification <record>]
+		fmt.Fprint(os.Stderr, `Usage: metasystem work check --stage review|recertify|merge --job <job-id> [--test-command <command>] [--recertification <record>]
 
 The review stage computes the implementer worktree's exact review object. A
 temporary index contains every tracked file plus every untracked, unignored
@@ -360,7 +360,7 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 func runValidateStopLoss(args []string) int {
 	usage := func() {
 		fmt.Fprint(os.Stderr, `Usage:
-  metasystem validate stop-loss --file <investigation-ledger.md>
+  metasystem experiment check --file <investigation-ledger.md>
 
 Reads the cycle classifications from an investigation ledger and blocks
 further cycles when a machine-checkable stop-loss trigger has fired:
@@ -413,7 +413,7 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 func runValidateMovedEffects(args []string) int {
 	usage := func() {
 		fmt.Fprint(os.Stderr, `Usage:
-  metasystem validate moved-effects --file <page.md> [--root <repository-root>]
+  metasystem design check-moves --file <page.md> [--root <repository-root>]
 
 Checks a Moved effects inventory with this table header:
 | Effect | From | To | Code |
@@ -494,7 +494,7 @@ func runValidateRefactorBaseline(args []string) int {
 		return 2
 	}
 	if p.Command != "record" && p.Command != "check" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem validate refactor-baseline --command record|check [--file F] [--gate CMD] [--max-age-minutes N] [--max-commits N]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal validate refactor-baseline --command record|check [--file F] [--gate CMD] [--max-age-minutes N] [--max-commits N]")
 		return 2
 	}
 	cwd, err := os.Getwd()

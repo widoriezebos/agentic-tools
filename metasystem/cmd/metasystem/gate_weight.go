@@ -37,7 +37,7 @@ func runGateWeightAdd(args []string) int {
 	prefix := flags.String("prefix", "", "metasystem path relative to Git toplevel")
 	goalID := flags.String("goal", "", "goal owning the landing; its highest risk answer scales the weight")
 	if flags.Parse(args) != nil || *root == "" || *commit == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate weight-add --root R --commit SHA [--prefix PREFIX] [--goal ID]  (numstat -z on stdin)")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate weight-add --root R --commit SHA [--prefix PREFIX] [--goal ID]  (numstat -z on stdin)")
 		return 2
 	}
 	numstat, err := io.ReadAll(os.Stdin)
@@ -65,7 +65,7 @@ func runGateWeightDischarge(args []string) int {
 	revision := flags.Uint64("obligation-revision", 0, "exact obligation revision")
 	runID := flags.String("run-id", "", "green governed run")
 	if flags.Parse(args) != nil || *root == "" || *goalID == "" || *revision == 0 || *runID == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate weight-discharge --root R --goal ID --obligation-revision N --run-id ID")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate weight-discharge --root R --goal ID --obligation-revision N --run-id ID")
 		return 2
 	}
 	binding, err := dispatchcore.ResolveGoalBinding(*root, *goalID, time.Now().UTC())

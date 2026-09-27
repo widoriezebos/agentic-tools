@@ -160,13 +160,13 @@ predecessor in the same slice.
 | | wait | `wait G`, `wait goal G`, `wait job/run/proof/resume/review ID`, `wait G --for`, and `wait file PATH --until present\|absent` as `work wait --path PATH --until present\|absent` (caller-relative path, same observation and durable resumption, `intent_work.go:193,1219`) |
 | | stop | `stop job J`, `stop review REF` |
 | | status | `status job J`, `status run RUN`, `status work`, `show review REF` |
-| | close | `done job J` |
-| | watch | `internal job watch`, `internal run watch` (turn facts) |
+| | close | `done job J` (as `work close j2:J`), `repair review G` (as `work close G`) |
+| | watch | `internal job watch`, `internal run watch` (turn facts; `work watch --job J` or `--run RUN`) |
 | | report | `internal launch report` (retro skill) |
-| | check | `internal validate conformance`, `internal validate critique-closed` (critique skills) |
+| | check | `internal validate conformance` (`work check --stage ...`), `internal validate critique-closed` (`work check --findings ... --dispositions ...`) (critique skills) |
 | **test** | run | `test` |
 | | plan, list, check, verify, report | `internal test plan/list/check/verify/report` |
-| | wait | `wait proof REF` |
+| | wait | `wait proof REF` (as `test wait proof:ID`; U1a adds no `test status`, so `proof:` is accepted by `test wait` only) |
 | **question** | ask, retry, withdraw | `ask`, `ask --retry`, `ask --withdraw` |
 | | answer, show, list, wait | `answer`, `show question`, (new list over the same owner), `wait question` |
 | **mission** | start, status, resume, repair | `start/status/resume/repair mission M` |
@@ -175,7 +175,7 @@ predecessor in the same slice.
 | **decision** | list, show | `show decisions`, `show record ID` |
 | **session** | start, stop, report | `start session`, `stop session`, `internal report stop-status` (the Stop hook's instruction) |
 | | handoff, context, verify | `internal context handoff/status/verify` (steward continuation role) |
-| **system** | start, stop, restart, status, check, repair | `start/stop/restart/status [checkout]`, `check`, `repair waits`, `internal up --recover-only --if-down` (as `system start --if-down`, the cron line), `internal steward status` |
+| **system** | start, stop, restart, status, check, repair | `start/stop/restart/status [checkout]`, `check`, `repair waits`, `internal up --recover-only --if-down` (as `system start --if-down`, the cron line), `internal steward status` (as `system status --steward`) |
 | **machine** | list, start | `status --machines`, `start machine NAME` |
 | **ui** | start, stop, restart, status | `start/stop/restart/status ui` |
 | **settings** | show, keys, check, coordinator | `settings`, `settings --keys`, `check settings`, `settings coordinator` |

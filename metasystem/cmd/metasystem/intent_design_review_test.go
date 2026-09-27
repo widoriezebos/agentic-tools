@@ -82,7 +82,7 @@ func TestDesignCritiqueReplayAndCap(t *testing.T) {
 	b := newDesignReviewBed(t)
 	review := func(extra ...string) intentResult {
 		t.Helper()
-		_, result := b.do(append([]string{"review", "design", b.design, "--tool-calls", "30"}, extra...)...)
+		_, result := b.do(append([]string{"design", "review", b.design, "--tool-calls", "30"}, extra...)...)
 		return result
 	}
 	if result := review(); result.Outcome != intentInProgress || b.fresh != 1 {
@@ -157,7 +157,7 @@ func TestIntentDesignCritiqueAdmission(t *testing.T) {
 	workApprovedBox(file)
 	file.State, file.Claimed, file.StopCapability, file.StopFence = goal.StateApproved, nil, nil, nil
 	b.addGoal(file)
-	_, result := b.do("review", "design", b.design, "--tool-calls", "30")
+	_, result := b.do("design", "review", b.design, "--tool-calls", "30")
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "claims goal standing-validation first") || b.fresh != 0 {
 		t.Fatalf("an unclaimed goal without a lease holder: %+v fresh=%d", result, b.fresh)
 	}
@@ -198,7 +198,7 @@ func TestDesignCritiqueClosesOnUnchangedDesign(t *testing.T) {
 	}
 	review := func(extra ...string) intentResult {
 		t.Helper()
-		_, result := b.do(append([]string{"review", "design", b.design, "--tool-calls", "30"}, extra...)...)
+		_, result := b.do(append([]string{"design", "review", b.design, "--tool-calls", "30"}, extra...)...)
 		return result
 	}
 	review()

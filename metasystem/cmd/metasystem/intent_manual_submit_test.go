@@ -39,7 +39,7 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "manual.txt"), []byte("manual work\n"), 0o644)
 	indexBefore, _ := os.ReadFile(filepath.Join(root, ".git", "index"))
 	statusBefore := connectionGit(t, root, "status", "--porcelain")
-	submit := []string{"review", c.id, "--changes", "--brief", "notes/brief.md"}
+	submit := []string{"work", "review", c.id, "--changes", "--brief", "notes/brief.md"}
 
 	delegates := len(c.delegates)
 	code, result := do(submit...)
@@ -77,7 +77,7 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	publications := c.publications
 	code, result = do(append(slices.Clone(submit), "--dispositions", j.dispositions)...)
 	if code != 0 || result.Outcome != intentConfirmed || c.publications != publications+1 || j.job(c.worktree, critic)["chainClosed"] != true ||
-		result.Next == nil || !slices.Equal(result.Next.Argv[1:], []string{"land", c.id}) {
+		result.Next == nil || !slices.Equal(result.Next.Argv[1:], []string{"work", "land", c.id}) {
 		t.Fatalf("the decisions close, collect and publish the read: code=%d %+v", code, result)
 	}
 	code, result = do(submit...)
@@ -87,18 +87,18 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 	if status := c.landAdmission(); status.Prefix != 1 || len(status.Units) != 1 || status.Units[0].Commit != commit {
 		t.Fatalf("landing admission must admit the manual unit by its published read: %+v", status)
 	}
-	code, result = do("review", c.id)
+	code, result = do("work", "review", c.id)
 	if code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) || len(c.delegates) != delegates+1 {
 		t.Fatalf("review G reaches the manual work's committed review without a new critic: code=%d %+v", code, result)
 	}
-	code, result = do("status", "goal", c.id, "--work", "main")
+	code, result = do("status", c.id, "--work", "main")
 	if !strings.Contains(result.Summary, "collected and published") {
 		t.Fatalf("status sees the manual work: code=%d %+v", code, result)
 	}
 	// Public land joins the manual unit into the actual batch.
 	landOwners, counts := journeyLandOwners(t, j)
 	var stdout, stderr bytes.Buffer
-	runIntentIn(mustIntentCommand(t, "land"), []string{c.id, "--repo", root, "--json"}, &stdout, &stderr, root, landOwners)
+	runIntentIn(mustIntentCommand(t, "work land"), []string{c.id, "--repo", root, "--json"}, &stdout, &stderr, root, landOwners)
 	var landed intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &landed); err != nil {
 		t.Fatalf("land printed no result: %v; %q %q", err, stdout.String(), stderr.String())
@@ -119,12 +119,12 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 // manualDo runs one public command from cwd with the journey bed's owners.
 func manualDo(t *testing.T, j *journeyBed, cwd string, args ...string) (int, intentResult) {
 	t.Helper()
-	command, ok := findIntentCommand(args[0])
+	command, rest, ok := resolveIntentArgv(args)
 	if !ok {
-		t.Fatalf("no public command %q", args[0])
+		t.Fatalf("no public command %q", args)
 	}
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, append([]string{"--json"}, args[1:]...), &stdout, &stderr, cwd, j.owners)
+	code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, cwd, j.owners)
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("%v printed no JSON result: %v; stdout=%q stderr=%q", args, err, stdout.String(), stderr.String())
@@ -147,7 +147,7 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha v1\n"), 0o644)
-	code, result := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
+	code, result := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
 	alpha1, _ := resultData(t, result)["commit"].(string)
 	if result.Outcome != intentInProgress || alpha1 == "" || c.commits != 1 {
 		t.Fatalf("first work: code=%d %+v commits=%d", code, result, c.commits)
@@ -157,13 +157,13 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 	patch := filepath.Join(t.TempDir(), "beta.patch")
 	os.WriteFile(patch, []byte("diff --git a/beta.txt b/beta.txt\nnew file mode 100644\n--- /dev/null\n+++ b/beta.txt\n@@ -0,0 +1 @@\n+beta\n"), 0o600)
 	c.loseCommit, c.failPushes = true, 1
-	code, result = manualDo(t, j, root, "review", c.id, "--patch", patch, "--brief", brief, "--work", "beta")
+	code, result = manualDo(t, j, root, "work", "review", c.id, "--patch", patch, "--brief", brief, "--work", "beta")
 	data := resultData(t, result)
 	beta, _ := data["commit"].(string)
 	if result.Outcome != intentPartial || data["action"] != "adopted" || beta == "" || c.commits != 2 {
 		t.Fatalf("a lost commit response is adopted from the range, then the lost push is reported: code=%d %+v commits=%d", code, result, c.commits)
 	}
-	code, result = manualDo(t, j, root, "review", c.id, "--patch", patch, "--brief", brief, "--work", "beta")
+	code, result = manualDo(t, j, root, "work", "review", c.id, "--patch", patch, "--brief", brief, "--work", "beta")
 	if result.Outcome != intentInProgress || resultData(t, result)["action"] != "rejoined" || resultData(t, result)["commit"] != beta || c.commits != 2 {
 		t.Fatalf("the repeat rejoins the version and publishes it: code=%d %+v commits=%d", code, result, c.commits)
 	}
@@ -177,7 +177,7 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 	os.WriteFile(filepath.Join(worktree, "partial.txt"), []byte("staged version\n"), 0o644)
 	connectionGit(t, worktree, "add", "partial.txt")
 	os.WriteFile(filepath.Join(worktree, "partial.txt"), []byte("working version\n"), 0o644)
-	amend := []string{"review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", alpha1[:12], "--repo", root}
+	amend := []string{"work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", alpha1[:12], "--repo", root}
 	code, result = manualDo(t, j, worktree, amend...)
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "partial.txt") || c.commits != 2 ||
 		connectionGit(t, worktree, "show", ":partial.txt") != "staged version" {
@@ -213,7 +213,7 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "no longer current") || c.commits != 3 {
 		t.Fatalf("a different correction of a replaced version is refused: code=%d %+v", code, result)
 	}
-	code, result = manualDo(t, j, worktree, "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--repo", root)
+	code, result = manualDo(t, j, worktree, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--repo", root)
 	if result.Outcome != intentRefused || !strings.Contains(result.Decision, "--after "+alpha2) || c.commits != 3 {
 		t.Fatalf("an unnamed correction names the current version: code=%d %+v", code, result)
 	}
@@ -224,13 +224,13 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 		t.Fatal(err)
 	}
 	indexBefore := connectionGit(t, worktree, "diff", "--cached", "--name-only")
-	code, result = manualDo(t, j, worktree, "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", alpha2, "--repo", root)
+	code, result = manualDo(t, j, worktree, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", alpha2, "--repo", root)
 	release()
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "busy") || c.commits != 3 ||
 		connectionGit(t, worktree, "diff", "--cached", "--name-only") != indexBefore {
 		t.Fatalf("a submission while another writer holds the checkout lock is refused untouched: code=%d %+v", code, result)
 	}
-	code, result = manualDo(t, j, worktree, "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", alpha2, "--repo", root)
+	code, result = manualDo(t, j, worktree, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", alpha2, "--repo", root)
 	if result.Outcome != intentInProgress || c.commits != 4 {
 		t.Fatalf("once the lock is free the correction commits: code=%d %+v", code, result)
 	}
@@ -303,7 +303,7 @@ func TestManualStageRefusalPreservesCheckout(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha v1\n"), 0o644)
-	if _, result := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "alpha"); result.Outcome != intentInProgress || c.commits != 1 {
+	if _, result := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha"); result.Outcome != intentInProgress || c.commits != 1 {
 		t.Fatalf("first work: %+v", result)
 	}
 	os.Remove(filepath.Join(root, "alpha.txt"))
@@ -321,7 +321,7 @@ func TestManualStageRefusalPreservesCheckout(t *testing.T) {
 	before := snapshot()
 	conflicting := filepath.Join(t.TempDir(), "conflict.patch")
 	os.WriteFile(conflicting, []byte("diff --git a/alpha.txt b/alpha.txt\n--- a/alpha.txt\n+++ b/alpha.txt\n@@ -1 +1 @@\n-alpha from another history\n+alpha rewritten\n"), 0o600)
-	code, result := manualDo(t, j, root, "review", c.id, "--patch", conflicting, "--brief", brief, "--work", "gamma")
+	code, result := manualDo(t, j, root, "work", "review", c.id, "--patch", conflicting, "--brief", brief, "--work", "gamma")
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not apply") || c.commits != 1 || snapshot() != before {
 		t.Fatalf("a patch needing a three-way merge is refused untouched: code=%d %+v", code, result)
 	}
@@ -329,7 +329,7 @@ func TestManualStageRefusalPreservesCheckout(t *testing.T) {
 	dirty := snapshot()
 	good := filepath.Join(t.TempDir(), "good.patch")
 	os.WriteFile(good, []byte("diff --git a/gamma.txt b/gamma.txt\nnew file mode 100644\n--- /dev/null\n+++ b/gamma.txt\n@@ -0,0 +1 @@\n+gamma\n"), 0o600)
-	code, result = manualDo(t, j, root, "review", c.id, "--patch", good, "--brief", brief, "--work", "gamma")
+	code, result = manualDo(t, j, root, "work", "review", c.id, "--patch", good, "--brief", brief, "--work", "gamma")
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "uncommitted changes to alpha.txt") || c.commits != 1 || snapshot() != dirty {
 		t.Fatalf("a goal worktree with its own change refuses to receive work untouched: code=%d %+v", code, result)
 	}
@@ -348,7 +348,7 @@ func TestManualCommitRefusalRestoresStaging(t *testing.T) {
 	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "code.go"), []byte("package code\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "helper.go"), []byte("package code // helper\n"), 0o644)
-	if _, result := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "alpha"); result.Outcome != intentInProgress || c.commits != 1 {
+	if _, result := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha"); result.Outcome != intentInProgress || c.commits != 1 {
 		t.Fatalf("first work: %+v", result)
 	}
 	worktree := c.worktree
@@ -367,7 +367,7 @@ func TestManualCommitRefusalRestoresStaging(t *testing.T) {
 			connectionGit(t, worktree, "status", "--porcelain", "--untracked-files=all") + "|" + connectionGit(t, worktree, "rev-parse", "HEAD")
 	}
 	before := state()
-	code, result := manualDo(t, j, worktree, "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", resultCommit(t, c), "--repo", root)
+	code, result := manualDo(t, j, worktree, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha", "--after", resultCommit(t, c), "--repo", root)
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "as it was before this submission") || c.commits != 1 {
 		t.Fatalf("the commit owner's refusal: code=%d %+v", code, result)
 	}
@@ -405,7 +405,7 @@ func TestManualUnknownGoalWritesNothing(t *testing.T) {
 	os.WriteFile(filepath.Join(bed.root(), "change.txt"), []byte("a change\n"), 0o644)
 	for _, id := range []string{"no-such-goal", "../../escape", "goal/../../escape"} {
 		var stdout, stderr bytes.Buffer
-		code := runIntentIn(mustIntentCommand(t, "review"), []string{"goal", id, "--changes", "--brief", brief, "--json"}, &stdout, &stderr, bed.root(), owners)
+		code := runIntentIn(mustIntentCommand(t, "work review"), []string{id, "--changes", "--brief", brief, "--json"}, &stdout, &stderr, bed.root(), owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 			t.Fatalf("%s: %v %q %q", id, err, stdout.String(), stderr.String())
@@ -435,7 +435,7 @@ func TestManualPatchInGoalWorktreeAndChangedBrief(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha\n"), 0o644)
-	_, first := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
+	_, first := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
 	alpha, _ := resultData(t, first)["commit"].(string)
 	if first.Outcome != intentInProgress || c.commits != 1 {
 		t.Fatalf("first work: %+v", first)
@@ -443,7 +443,7 @@ func TestManualPatchInGoalWorktreeAndChangedBrief(t *testing.T) {
 	worktree := c.worktree
 	patch := filepath.Join(t.TempDir(), "beta.patch")
 	os.WriteFile(patch, []byte("diff --git a/beta.txt b/beta.txt\nnew file mode 100644\n--- /dev/null\n+++ b/beta.txt\n@@ -0,0 +1 @@\n+beta\n"), 0o600)
-	submitBeta := []string{"review", c.id, "--patch", patch, "--brief", brief, "--work", "beta", "--repo", root}
+	submitBeta := []string{"work", "review", c.id, "--patch", patch, "--brief", brief, "--work", "beta", "--repo", root}
 	code, result := manualDo(t, j, worktree, submitBeta...)
 	data := resultData(t, result)
 	if result.Outcome != intentInProgress || data["sameCheckout"] != true || data["action"] != "committed" || c.commits != 2 {
@@ -455,7 +455,7 @@ func TestManualPatchInGoalWorktreeAndChangedBrief(t *testing.T) {
 	before := connectionGit(t, worktree, "status", "--porcelain", "--untracked-files=all") + connectionGit(t, worktree, "ls-files", "-s")
 	conflict := filepath.Join(t.TempDir(), "conflict.patch")
 	os.WriteFile(conflict, []byte("diff --git a/alpha.txt b/alpha.txt\n--- a/alpha.txt\n+++ b/alpha.txt\n@@ -1 +1 @@\n-another history\n+rewritten\n"), 0o600)
-	code, result = manualDo(t, j, worktree, "review", c.id, "--patch", conflict, "--brief", brief, "--work", "gamma", "--repo", root)
+	code, result = manualDo(t, j, worktree, "work", "review", c.id, "--patch", conflict, "--brief", brief, "--work", "gamma", "--repo", root)
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "does not apply") || c.commits != 2 ||
 		connectionGit(t, worktree, "status", "--porcelain", "--untracked-files=all")+connectionGit(t, worktree, "ls-files", "-s") != before {
 		t.Fatalf("a patch that does not apply leaves the goal worktree as it was: code=%d %+v", code, result)
@@ -464,7 +464,7 @@ func TestManualPatchInGoalWorktreeAndChangedBrief(t *testing.T) {
 	changed := filepath.Join(t.TempDir(), "changed-brief.md")
 	os.WriteFile(changed, []byte("A different brief for the same change.\n"), 0o600)
 	delegates := len(c.delegates)
-	code, result = manualDo(t, j, root, "review", c.id, "--changes", "--brief", changed, "--work", "alpha")
+	code, result = manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", changed, "--work", "alpha")
 	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "GOAL_READ_INVALID") || resultData(t, result)["commit"] != alpha ||
 		len(c.delegates) != delegates || !strings.Contains(result.Decision, "--after "+alpha) {
 		t.Fatalf("a changed brief for an already-read version is the read owner's refusal, with no new read: code=%d %+v", code, result)
@@ -485,7 +485,7 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Add the delivered file.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "delivered.txt"), []byte("hand-written and delivered\n"), 0o644)
-	submit := []string{"review", c.id, "--changes", "--brief", brief}
+	submit := []string{"work", "review", c.id, "--changes", "--brief", brief}
 	_, result := do(submit...)
 	commit, _ := resultData(t, result)["commit"].(string)
 	if result.Outcome != intentInProgress || commit == "" {
@@ -517,7 +517,7 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 	// fixture writes it; the landing itself is the owners' own.
 	markJourneyLandReady(t, c)
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(mustIntentCommand(t, "land"), []string{c.id, "--repo", root, "--json"}, &stdout, &stderr, root, owners)
+	code := runIntentIn(mustIntentCommand(t, "work land"), []string{c.id, "--repo", root, "--json"}, &stdout, &stderr, root, owners)
 	var landed intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &landed); err != nil {
 		t.Fatalf("land printed no result: %v; %q %q", err, stdout.String(), stderr.String())
@@ -582,15 +582,15 @@ func TestIntentBriefBeforeFirstWorkspaceBuilds(t *testing.T) {
 	if _, err := os.Stat(c.worktree); !os.IsNotExist(err) {
 		t.Fatalf("the goal must have no workspace yet: %v", err)
 	}
-	code, result := c.do("brief", c.id, "--out", "brief.md")
+	code, result := c.do("work", "brief", c.id, "--out", "brief.md")
 	written, _ := os.ReadFile(filepath.Join(c.root(), "brief.md"))
 	missing, _ := resultData(t, result)["missingDecisions"].([]any)
-	if code != 0 || len(missing) != 0 || strings.Contains(string(written), "MISSING DECISION") || !strings.Contains(string(written), "metasystem build prepares it") ||
+	if code != 0 || len(missing) != 0 || strings.Contains(string(written), "MISSING DECISION") || !strings.Contains(string(written), "metasystem work build prepares it") ||
 		strings.Contains(string(written), "worktree add") {
 		t.Fatalf("brief before the first workspace: code=%d %+v\n%s", code, result, written)
 	}
 	c.edits = map[string]string{"built.txt": "built\n"}
-	code, result = c.do(append([]string{"build", c.id, "u1", "--brief", "brief.md", "--check"}, workArgv...)...)
+	code, result = c.do(append([]string{"work", "build", c.id, "u1", "--brief", "brief.md", "--check"}, workArgv...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build with the generated brief: code=%d %+v", code, result)
 	}
@@ -610,27 +610,27 @@ func TestIntentReviewSelectionAcrossProducers(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha\n"), 0o644)
-	_, alpha := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
+	_, alpha := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
 	alphaCommit, _ := resultData(t, alpha)["commit"].(string)
 	os.Remove(filepath.Join(root, "alpha.txt"))
 	patch := filepath.Join(t.TempDir(), "beta.patch")
 	os.WriteFile(patch, []byte("diff --git a/beta.txt b/beta.txt\nnew file mode 100644\n--- /dev/null\n+++ b/beta.txt\n@@ -0,0 +1 @@\n+beta\n"), 0o600)
-	if _, beta := manualDo(t, j, root, "review", c.id, "--patch", patch, "--brief", brief, "--work", "beta"); beta.Outcome != intentInProgress {
+	if _, beta := manualDo(t, j, root, "work", "review", c.id, "--patch", patch, "--brief", brief, "--work", "beta"); beta.Outcome != intentInProgress {
 		t.Fatalf("second item: %+v", beta)
 	}
 	delegates := len(c.delegates)
-	code, ambiguous := manualDo(t, j, root, "review", c.id)
+	code, ambiguous := manualDo(t, j, root, "work", "review", c.id)
 	if code != 2 || ambiguous.Outcome != intentRefused || !strings.Contains(ambiguous.Summary, "2 work items awaiting review") ||
 		strings.Contains(ambiguous.Summary, "no built result") || len(c.delegates) != delegates ||
 		fmt.Sprint(resultData(t, ambiguous)["candidates"]) != "[alpha beta]" {
 		t.Fatalf("bare review with two awaiting items: code=%d %+v", code, ambiguous)
 	}
-	_, status := manualDo(t, j, root, "status", "goal", c.id)
+	_, status := manualDo(t, j, root, "status", c.id)
 	if !strings.Contains(status.Summary, "has 2 work items") {
 		t.Fatalf("status counts both items: %+v", status)
 	}
 	// The printed command for beta selects beta.
-	code, selected := manualDo(t, j, root, "review", c.id, "--work", "beta")
+	code, selected := manualDo(t, j, root, "work", "review", c.id, "--work", "beta")
 	if selected.Outcome == intentRefused || !slices.ContainsFunc(selected.Targets, func(target intentTarget) bool { return target.Kind == "work" && target.ID == "beta" }) {
 		t.Fatalf("review --work beta: code=%d %+v", code, selected)
 	}
@@ -642,10 +642,10 @@ func TestIntentReviewSelectionAcrossProducers(t *testing.T) {
 		}
 	}
 	j.finish(c.worktree, critic, alphaCommit)
-	if code, done := manualDo(t, j, root, "review", c.id, "--work", "alpha", "--dispositions", j.dispositions); code != 0 || done.Outcome != intentConfirmed {
+	if code, done := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha", "--dispositions", j.dispositions); code != 0 || done.Outcome != intentConfirmed {
 		t.Fatalf("alpha's decisions: code=%d %+v", code, done)
 	}
-	code, inferred := manualDo(t, j, root, "review", c.id)
+	code, inferred := manualDo(t, j, root, "work", "review", c.id)
 	if inferred.Outcome == intentRefused || !slices.ContainsFunc(inferred.Targets, func(target intentTarget) bool { return target.Kind == "work" && target.ID == "beta" }) {
 		t.Fatalf("a reviewed item beside one awaiting review: code=%d %+v", code, inferred)
 	}
@@ -662,7 +662,7 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha\n"), 0o644)
-	_, submitted := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
+	_, submitted := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
 	if submitted.Outcome != intentInProgress {
 		t.Fatalf("submission: %+v", submitted)
 	}
@@ -679,7 +679,7 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 	if outcome, err := dispatchcore.CritiqueRegisterAdvance(c.worktree, critic, critic); err != nil || outcome != "advanced" {
 		t.Fatalf("register advance of the failed round = %q, %v", outcome, err)
 	}
-	code, failed := manualDo(t, j, root, "review", c.id, "--work", "alpha")
+	code, failed := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha")
 	if failed.Outcome != intentFailed || strings.Contains(failed.Decision, "--dispositions") || !strings.Contains(failed.Decision, "--retry 1") ||
 		!strings.Contains(failed.Decision, "review "+c.id+" --work alpha") {
 		t.Fatalf("a failed examination offers its retry, not a decisions file: code=%d %+v", code, failed)
@@ -694,8 +694,8 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 		}
 		return strings.Fields(result.Decision[at:])[1:]
 	}
-	want := []string{"review", c.id, "--work", "alpha", "--retry", "1"}
-	for _, args := range [][]string{{"repair", "review", c.id}, {"review", c.id, "--work", "alpha", "--dispositions", j.dispositions}} {
+	want := []string{"work", "review", c.id, "--work", "alpha", "--retry", "1"}
+	for _, args := range [][]string{{"work", "close", c.id}, {"work", "review", c.id, "--work", "alpha", "--dispositions", j.dispositions}} {
 		if _, again := manualDo(t, j, root, args...); !slices.Equal(printed(again), want) {
 			t.Fatalf("%v printed %q, want %v", args, again.Decision, want)
 		}
@@ -717,7 +717,7 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 	}
 	// The retried request's printed continuation drops --retry: repeating
 	// the retry would only rejoin the round, never collect it.
-	wantNext := []string{"metasystem", "review", c.id, "--work", "alpha"}
+	wantNext := []string{"metasystem", "work", "review", c.id, "--work", "alpha"}
 	if retried.Next == nil || !slices.Equal(retried.Next.Argv, wantNext) {
 		t.Fatalf("the retried request's continuation: %+v", retried.Next)
 	}
@@ -751,10 +751,10 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 	// A second work item whose examination is still running refuses a retry.
 	os.WriteFile(filepath.Join(root, "beta.txt"), []byte("beta\n"), 0o644)
 	os.Remove(filepath.Join(root, "alpha.txt"))
-	if _, beta := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "beta"); beta.Outcome != intentInProgress {
+	if _, beta := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "beta"); beta.Outcome != intentInProgress {
 		t.Fatalf("second item: %+v", beta)
 	}
-	code, live := manualDo(t, j, root, "review", c.id, "--work", "beta", "--retry", "1")
+	code, live := manualDo(t, j, root, "work", "review", c.id, "--work", "beta", "--retry", "1")
 	if live.Outcome != intentRefused && live.Outcome != intentFailed || len(c.followUps) != 1 {
 		t.Fatalf("a retry of a running examination: code=%d %+v followUps=%v", code, live, c.followUps)
 	}
@@ -774,7 +774,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha\n"), 0o644)
-	_, submitted := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
+	_, submitted := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
 	alphaCommit, _ := resultData(t, submitted)["commit"].(string)
 	if submitted.Outcome != intentInProgress || alphaCommit == "" {
 		t.Fatalf("submission: %+v", submitted)
@@ -808,23 +808,23 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 		}
 		return strings.Fields(command)[1:]
 	}
-	_, failed := manualDo(t, j, root, "review", c.id, "--work", "alpha")
-	if _, retried := manualDo(t, j, root, printed(failed.Decision, "metasystem review")...); len(c.followUps) != 1 || retried.Next == nil {
+	_, failed := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha")
+	if _, retried := manualDo(t, j, root, printed(failed.Decision, "metasystem work review")...); len(c.followUps) != 1 || retried.Next == nil {
 		t.Fatalf("the retry: %+v followUps=%v", retried, c.followUps)
 	}
 	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{map[string]any{"id": "F1", "material": false}})
-	_, decide := manualDo(t, j, root, "review", c.id, "--work", "alpha")
-	decided := slices.DeleteFunc(printed(decide.Decision, "metasystem review"), func(word string) bool { return word == "FILE" })
+	_, decide := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha")
+	decided := slices.DeleteFunc(printed(decide.Decision, "metasystem work review"), func(word string) bool { return word == "FILE" })
 	decided = append(decided, j.dispositions)
 	publications, reads := c.publications, c.commitReads
 	code, refused := manualDo(t, j, root, decided...)
 	risks, _ := resultData(t, refused)["riskFindings"].([]any)
-	accept := "metasystem accept-risk " + c.id + " --finding " + open[0] + " --review " + critic + " --repo " + c.worktree + " --reason TEXT"
+	accept := "metasystem goal accept-risk " + c.id + " --finding " + open[0] + " --review " + critic + " --repo " + c.worktree + " --reason TEXT"
 	if code == 0 || refused.Outcome != intentRefused || len(risks) != 1 || risks[0] != open[0] ||
-		!strings.Contains(refused.Decision, accept) || !strings.Contains(refused.Decision, "then run metasystem review "+c.id+" --work alpha --dispositions "+j.dispositions) {
+		!strings.Contains(refused.Decision, accept) || !strings.Contains(refused.Decision, "then run metasystem work review "+c.id+" --work alpha --dispositions "+j.dispositions) {
 		t.Fatalf("an unproven finding after the retry: code=%d %+v", code, refused)
 	}
-	for _, internal := range []string{"goal accept-risk", "--chain", "critique-budget-rebind", "metasystem close", "dispatch.sh"} {
+	for _, internal := range []string{"internal goal accept-risk", "--chain", "critique-budget-rebind", "metasystem close", "dispatch.sh"} {
 		if strings.Contains(refused.Decision, internal) || strings.Contains(refused.Summary, internal) || slices.ContainsFunc(refused.text, func(line string) bool { return strings.Contains(line, internal) }) {
 			t.Fatalf("the remedy prescribes internal %q: %+v", internal, refused)
 		}
@@ -834,7 +834,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	}
 	// The printed accept-risk command, followed through the public parser
 	// by this agent, accepts nothing and leaves the register unchanged.
-	acceptArgs := printed(refused.Decision, "metasystem accept-risk")
+	acceptArgs := printed(refused.Decision, "metasystem goal accept-risk")
 	acceptArgs[len(acceptArgs)-1] = "the failed round examined nothing"
 	// Goal worktrees share the goal ledger, but this request's authority
 	// facts must describe the selected checkout where the review is kept.
@@ -875,25 +875,25 @@ func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 	c, do, root := j.c, j.do, j.c.root()
 	brief := c.brief("brief.md", "Build the unit.\n")
 	os.WriteFile(filepath.Join(root, "hand.txt"), []byte("hand\n"), 0o644)
-	_, hand := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "hand")
+	_, hand := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "hand")
 	handCommit, _ := resultData(t, hand)["commit"].(string)
 	if hand.Outcome != intentInProgress || handCommit == "" {
 		t.Fatalf("manual submission: %+v", hand)
 	}
 	os.Remove(filepath.Join(root, "hand.txt"))
 	c.edits = map[string]string{"built.txt": "built\n"}
-	if code, built := do(append([]string{"build", c.id, "built-unit", "--brief", brief, "--lines", "5"}, workCheck...)...); code != 0 || built.Outcome != intentConfirmed {
+	if code, built := do(append([]string{"work", "build", c.id, "built-unit", "--brief", brief, "--lines", "5"}, workCheck...)...); code != 0 || built.Outcome != intentConfirmed {
 		t.Fatalf("build: code=%d %+v", code, built)
 	}
 	// While the build's result is uncommitted, the goal worktree receives no
 	// other hand-written work.
 	os.WriteFile(filepath.Join(root, "late.txt"), []byte("late\n"), 0o644)
-	if _, late := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "late"); late.Outcome != intentRefused || !strings.Contains(late.Summary, "built.txt") {
+	if _, late := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "late"); late.Outcome != intentRefused || !strings.Contains(late.Summary, "built.txt") {
 		t.Fatalf("a submission onto an uncommitted build result: %+v", late)
 	}
 	os.Remove(filepath.Join(root, "late.txt"))
 	delegates := len(c.delegates)
-	code, ambiguous := manualDo(t, j, root, "review", c.id)
+	code, ambiguous := manualDo(t, j, root, "work", "review", c.id)
 	if code != 2 || ambiguous.Outcome != intentRefused || len(c.delegates) != delegates ||
 		fmt.Sprint(resultData(t, ambiguous)["candidates"]) != "[built-unit hand]" {
 		t.Fatalf("bare review with a built and a manual item: code=%d %+v", code, ambiguous)
@@ -907,10 +907,10 @@ func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 		}
 		return names
 	}
-	if _, selected := manualDo(t, j, root, "review", c.id, "--work", "built-unit"); !slices.Contains(works(selected), "built-unit") || len(c.delegates) != delegates+1 {
+	if _, selected := manualDo(t, j, root, "work", "review", c.id, "--work", "built-unit"); !slices.Contains(works(selected), "built-unit") || len(c.delegates) != delegates+1 {
 		t.Fatalf("review --work built-unit: %+v", selected)
 	}
-	if _, selected := manualDo(t, j, root, "review", c.id, "--work", "hand"); !slices.Contains(works(selected), "hand") {
+	if _, selected := manualDo(t, j, root, "work", "review", c.id, "--work", "hand"); !slices.Contains(works(selected), "hand") {
 		t.Fatalf("review --work hand: %+v", selected)
 	}
 	critic := ""
@@ -920,10 +920,10 @@ func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 		}
 	}
 	j.finish(c.worktree, critic, handCommit)
-	if code, done := manualDo(t, j, root, "review", c.id, "--work", "hand", "--dispositions", j.dispositions); code != 0 || done.Outcome != intentConfirmed {
+	if code, done := manualDo(t, j, root, "work", "review", c.id, "--work", "hand", "--dispositions", j.dispositions); code != 0 || done.Outcome != intentConfirmed {
 		t.Fatalf("the hand-written item's decisions: code=%d %+v", code, done)
 	}
-	if _, inferred := manualDo(t, j, root, "review", c.id); inferred.Outcome == intentRefused || !slices.Contains(works(inferred), "built-unit") {
+	if _, inferred := manualDo(t, j, root, "work", "review", c.id); inferred.Outcome == intentRefused || !slices.Contains(works(inferred), "built-unit") {
 		t.Fatalf("bare review once the manual item is published: %+v", inferred)
 	}
 }
@@ -939,7 +939,7 @@ func TestManualCleanReviewCompletesItself(t *testing.T) {
 	brief := filepath.Join(t.TempDir(), "brief.md")
 	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "clean.txt"), []byte("clean\n"), 0o644)
-	_, submitted := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief)
+	_, submitted := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief)
 	commit, _ := resultData(t, submitted)["commit"].(string)
 	if submitted.Outcome != intentInProgress || commit == "" {
 		t.Fatalf("submission: %+v", submitted)
@@ -948,16 +948,16 @@ func TestManualCleanReviewCompletesItself(t *testing.T) {
 	critic := "crit" + strconv.Itoa(len(c.delegates))
 	j.finishWith(c.worktree, critic, commit, []any{})
 	commits, publications, delegates := c.commits, c.publications, len(c.delegates)
-	code, done := manualDo(t, j, root, "review", c.id, "--work", "main")
+	code, done := manualDo(t, j, root, "work", "review", c.id, "--work", "main")
 	if code != 0 || done.Outcome != intentConfirmed || strings.Contains(done.Decision, "--dispositions") || j.job(c.worktree, critic)["chainClosed"] != true ||
 		c.publications != publications+1 {
 		t.Fatalf("a clean examination completes the review: code=%d %+v", code, done)
 	}
-	if code, again := manualDo(t, j, root, "review", c.id, "--work", "main"); code != 0 || (again.Outcome != intentUnchanged && again.Outcome != intentConfirmed) ||
+	if code, again := manualDo(t, j, root, "work", "review", c.id, "--work", "main"); code != 0 || (again.Outcome != intentUnchanged && again.Outcome != intentConfirmed) ||
 		c.commits != commits || len(c.delegates) != delegates {
 		t.Fatalf("a replay: code=%d %+v commits %d->%d critics %d->%d", code, again, commits, c.commits, delegates, len(c.delegates))
 	}
-	if _, status := manualDo(t, j, root, "status", "goal", c.id, "--work", "main"); !strings.Contains(status.Summary, "collected and published") {
+	if _, status := manualDo(t, j, root, "status", c.id, "--work", "main"); !strings.Contains(status.Summary, "collected and published") {
 		t.Fatalf("status after the clean review: %+v", status)
 	}
 	if connectionGit(t, root, "status", "--porcelain") != source {
@@ -966,7 +966,7 @@ func TestManualCleanReviewCompletesItself(t *testing.T) {
 	// A malformed return is not a clean examination and is not closed.
 	os.Remove(filepath.Join(root, "clean.txt"))
 	os.WriteFile(filepath.Join(root, "broken.txt"), []byte("broken\n"), 0o644)
-	_, second := manualDo(t, j, root, "review", c.id, "--changes", "--brief", brief, "--work", "broken")
+	_, second := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "broken")
 	brokenCommit, _ := resultData(t, second)["commit"].(string)
 	if brokenCommit == "" {
 		t.Fatalf("second submission: %+v", second)
@@ -974,7 +974,7 @@ func TestManualCleanReviewCompletesItself(t *testing.T) {
 	brokenCritic := "crit" + strconv.Itoa(len(c.delegates))
 	j.finishWith(c.worktree, brokenCritic, brokenCommit, []any{})
 	os.WriteFile(filepath.Join(c.worktree, "artifacts", "agents", brokenCritic, "rounds", "1", "return.json"), []byte("{not json"), 0o644)
-	if code, broken := manualDo(t, j, root, "review", c.id, "--work", "broken"); broken.Outcome == intentConfirmed || j.job(c.worktree, brokenCritic)["chainClosed"] == true {
+	if code, broken := manualDo(t, j, root, "work", "review", c.id, "--work", "broken"); broken.Outcome == intentConfirmed || j.job(c.worktree, brokenCritic)["chainClosed"] == true {
 		t.Fatalf("a malformed return was completed: code=%d %+v", code, broken)
 	}
 }

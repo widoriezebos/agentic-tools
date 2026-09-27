@@ -85,18 +85,18 @@ func runContextStatus(args []string) int {
 		}
 	})
 	if *root == "" || flags.NArg() != 0 || (*runtimeName == "") != (*session == "") || (transcriptSupplied && *transcript == "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem context status --root ROOT [--runtime R --session S] [--transcript PATH] [--json]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem session context --root ROOT [--runtime R --session S] [--transcript PATH] [--json]")
 		return 2
 	}
 	if *runtimeName != "" {
 		if _, ok := runtimes.Lookup(*runtimeName); !ok {
-			fmt.Fprintf(os.Stderr, "metasystem context status: unknown runtime: %s\n", *runtimeName)
+			fmt.Fprintf(os.Stderr, "metasystem session context: unknown runtime: %s\n", *runtimeName)
 			return 1
 		}
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem context status:", err)
+		fmt.Fprintln(os.Stderr, "metasystem session context:", err)
 		return 1
 	}
 	role, reading, readErr := steward.ContextBudgetLine(stateRoot, stateRoot, time.Now().UTC(), steward.ContextOptions{
@@ -112,11 +112,11 @@ func runContextStatus(args []string) int {
 		}
 	}
 	if windowErr != nil {
-		fmt.Fprintln(os.Stderr, "metasystem context status:", windowErr)
+		fmt.Fprintln(os.Stderr, "metasystem session context:", windowErr)
 		return 1
 	}
 	if readErr != nil {
-		fmt.Fprintln(os.Stderr, "metasystem context status:", readErr)
+		fmt.Fprintln(os.Stderr, "metasystem session context:", readErr)
 		return 1
 	}
 	return 0
@@ -196,17 +196,17 @@ func runContextReport(args []string) int {
 		return 2
 	}
 	if *root == "" || *week == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem context report --root ROOT --week YYYY-MM-DD")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal context report --root ROOT --week YYYY-MM-DD")
 		return 2
 	}
 	weekStart, err := time.Parse("2006-01-02", *week)
 	if err != nil || weekStart.Format("2006-01-02") != *week {
-		fmt.Fprintln(os.Stderr, "metasystem context report: --week must be YYYY-MM-DD")
+		fmt.Fprintln(os.Stderr, "metasystem internal context report: --week must be YYYY-MM-DD")
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem context report:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal context report:", err)
 		return 1
 	}
 	callsPath, reportPath, report, err := steward.WriteContextReport(stateRoot, weekStart, time.Now().UTC())
@@ -216,7 +216,7 @@ func runContextReport(args []string) int {
 			fmt.Fprintln(os.Stderr, retired.Error())
 			return 9
 		}
-		fmt.Fprintln(os.Stderr, "metasystem context report:", err)
+		fmt.Fprintln(os.Stderr, "metasystem internal context report:", err)
 		return 1
 	}
 	verdict := "fail"
@@ -299,7 +299,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 	}
 	scratch, err := parseContextScratch(scratchValues)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem context handoff:", err)
+		fmt.Fprintln(os.Stderr, "metasystem session handoff:", err)
 		return 2
 	}
 	declarations, err := parseContextDelegates(delegateValues)
@@ -307,7 +307,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 		if err == nil {
 			err = fmt.Errorf("--delegate and --no-delegates cannot be combined")
 		}
-		fmt.Fprintln(os.Stderr, "metasystem context handoff:", err)
+		fmt.Fprintln(os.Stderr, "metasystem session handoff:", err)
 		return 2
 	}
 	if *note == "" {
@@ -364,7 +364,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 	return 0
 }
 
-const contextHandoffUsage = "usage: metasystem context handoff --root ROOT --note PATH (--no-delegates | --delegate id=ID[,asked=TEXT][,output=PATH]...) [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]"
+const contextHandoffUsage = "usage: metasystem session handoff --root ROOT --note PATH (--no-delegates | --delegate id=ID[,asked=TEXT][,output=PATH]...) [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]"
 
 type contextDelegateArg struct {
 	id, asked, output   string
@@ -539,7 +539,7 @@ func runContextVerify(args []string) int {
 		return 2
 	}
 	if *root == "" || *nonce == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem context verify --root ROOT --nonce NONCE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem session verify --root ROOT --nonce NONCE")
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
@@ -563,7 +563,7 @@ func runContextPrune(args []string) int {
 	}
 	olderThan, err := parseContextDuration(*olderThanValue)
 	if *root == "" || flags.NArg() != 0 || err != nil {
-		fmt.Fprintln(os.Stderr, "usage: metasystem context prune --root ROOT [--older-than 14d]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal context prune --root ROOT [--older-than 14d]")
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
@@ -602,8 +602,22 @@ func contextVerbError(verb string, err error) int {
 		fmt.Fprintln(os.Stderr, strings.NewReplacer("\r", " ", "\n", " ").Replace(refusal.Error()))
 		return 9
 	}
-	fmt.Fprintf(os.Stderr, "metasystem context %s: %v\n", verb, err)
+	fmt.Fprintf(os.Stderr, "metasystem %s: %v\n", contextPublicName(verb), err)
 	return 1
+}
+
+// contextPublicName is the spelling a person or agent runs for a context
+// verb: the session actions for the three that have one.
+func contextPublicName(verb string) string {
+	switch verb {
+	case "handoff":
+		return "session handoff"
+	case "status":
+		return "session context"
+	case "verify":
+		return "session verify"
+	}
+	return "internal context " + verb
 }
 
 func projectContextReading(reading usagepkg.Reading) contextReadingView {

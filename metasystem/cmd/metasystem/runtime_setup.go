@@ -27,7 +27,7 @@ func runRuntimeSetupWithResolver(args []string, resolve func(string) (stateroot.
 		return 2
 	}
 	if *repo == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime setup --repo PATH [--runtimes CSV] [--copy-skills] [--check]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal runtime setup --repo PATH [--runtimes CSV] [--copy-skills] [--check]")
 		return 2
 	}
 	var selected []string

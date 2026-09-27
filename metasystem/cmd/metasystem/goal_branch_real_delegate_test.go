@@ -100,7 +100,7 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 			// complete before they are read and before the worktree is removed.
 			// The fake's result is not a critic verdict, so any terminal outcome
 			// is accepted; timeout, interruption or a missing record is not.
-			wait := exec.CommandContext(t.Context(), filepath.Join(worktree, "bin", "metasystem"), "wait", "--root", worktree, "--job", job, "--timeout", "90s", "--json")
+			wait := exec.CommandContext(t.Context(), filepath.Join(worktree, "bin", "metasystem"), "internal", "wait", "--root", worktree, "--job", job, "--timeout", "90s", "--json")
 			var waitStderr strings.Builder
 			wait.Stderr = &waitStderr
 			waitOutput, waitErr := wait.Output()

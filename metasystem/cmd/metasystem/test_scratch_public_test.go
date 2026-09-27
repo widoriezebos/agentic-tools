@@ -199,7 +199,7 @@ func newScratchPublicFixture(t *testing.T, input string, blocking bool) *scratch
 }
 
 func (f *scratchPublicFixture) runArgs(result string) []string {
-	return append(append([]string{"test", "run"}, f.args...), "--result", result)
+	return append(append([]string{"internal", "test", "run"}, f.args...), "--result", result)
 }
 
 // observed returns the per-location paths and tokens the workload reported,

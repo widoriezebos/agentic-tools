@@ -161,7 +161,7 @@ start_main() {
       collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
     fi
   fi
-  start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"
+  start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"
   if (( start_wait_recovery_status == 0 )); then
     :
   elif (( start_wait_recovery_status != 64 )); then
@@ -462,7 +462,7 @@ func TestAuditHookStartExitsRejectsPostContextFailureBypasses(t *testing.T) {
 		}, "post-context arming and wait-recovery failures must become notices"},
 		{"brain failure wait recovery removed", func(s string) string {
 			return strings.Replace(s,
-				`start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"`,
+				`start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"`,
 				`: "$waiting_lines"`, 1)
 		}, "brain boot failure must become a notice and continue to holder-matched wait recovery"},
 		{"brain failure finalized early", func(s string) string {
@@ -594,10 +594,10 @@ func TestHookStartDeclaredOutcomeMatrixOnBash32(t *testing.T) {
 		"context-contract":        template("read the runtime context contract", "Rebuild bin/metasystem with scripts/agents/go-build.sh and restore the installed runtime declarations."),
 		"custody-unreadable":      template("authenticate delegate custody", "Restore the recorded delegate custody and restart through its launcher."),
 		"process-identity":        template("identify the owning runtime process", "Restart through the installed runtime launcher."),
-		"brain-boot":              `{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}`,
-		"brain-timeout":           `{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}`,
-		"arming":                  `{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem up there. Then start a new session."}`,
-		"wait-recovery":           template("read durable wait recovery rows", "Repair supervision from the owning installation and run metasystem up there."),
+		"brain-boot":              `{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}`,
+		"brain-timeout":           `{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem internal brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}`,
+		"arming":                  `{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem session start there. Then start a new session."}`,
+		"wait-recovery":           template("read durable wait recovery rows", "Repair supervision from the owning installation and run metasystem session start there."),
 		"temporary-cleanup":       template("remove its temporary files", "Restore temporary-directory access and remove leftover metasystem hook temporary files."),
 		"interrupted":             hookStartInterrupted,
 		"unexpected-termination":  hookStartFallback,
@@ -752,6 +752,7 @@ func TestEngineSkewStartFixtureOnBash32(t *testing.T) {
 			writeExecutable(t, hook, readProductionHook(t))
 			trace := filepath.Join(t.TempDir(), "trace")
 			engine := `#!/usr/bin/env bash
+if [[ ${1-} == internal ]]; then shift; fi
 printf '%s\n' "$*" >>"${HOOK_START_TRACE:?}"
 if [[ ${1-} == runtime && ${2-} == list ]]; then
   printf '%s\n' claude
@@ -1142,8 +1143,8 @@ func TestHookStartPostPreparationFixturesOnBash32(t *testing.T) {
 				source = strings.Replace(source, `if ! command rm -f "$start_payload" 2>/dev/null; then`, `if ! false; then`, 1)
 			case "signal":
 				source = strings.Replace(source,
-					`  start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"`,
-					"  builtin kill -TERM \"$$\"\n  start_capture wait-recovery waiting_lines wait-recovery \"$ms\" session start --root \"$repo\" --session \"$session\"", 1)
+					`  start_capture wait-recovery waiting_lines wait-recovery "$ms" internal session start --root "$repo" --session "$session"`,
+					"  builtin kill -TERM \"$$\"\n  start_capture wait-recovery waiting_lines wait-recovery \"$ms\" internal session start --root \"$repo\" --session \"$session\"", 1)
 			}
 			hook := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
 			writeExecutable(t, hook, source)
@@ -1184,6 +1185,7 @@ func appendSystemMessage(object, line string) string {
 
 func fullPathFixtureEngine() string {
 	return `#!/usr/bin/env bash
+if [[ ${1-} == internal ]]; then shift; fi
 printf '%s\n' "$*" >>"${HOOK_START_TRACE:?}"
 mode=${HOOK_START_FULL_MODE:?}
 if [[ ${1-} == runtime && ${2-} == list ]]; then

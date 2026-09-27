@@ -24,7 +24,7 @@ func TestRetroSkillCollectsLaunchEvidence(t *testing.T) {
 	}
 	contents := string(data)
 	for _, want := range []string{
-		"launch report --since",
+		"work report --since",
 		"builds over the cap",
 		"compactions per build job",
 		"compacted reads",

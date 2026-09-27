@@ -51,7 +51,7 @@ func runMetricsReport(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem metrics report [--period-end <iso8601>] [--since <iso8601>] [--goal <id>]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal metrics report [--period-end <iso8601>] [--since <iso8601>] [--goal <id>]")
 		return 2
 	}
 	result, err := metrics.Report(metrics.Options{Root: ".", PeriodEnd: *periodEnd, Since: *since, GoalID: *goalID})

@@ -57,7 +57,7 @@ func (e *Engine) Answer(askID, answer string) int {
 		return 3
 	}
 	if reason == "wall-violation" {
-		fmt.Fprintln(e.answerErrors(), "answer refused: a generic answer never clears taint; use metasystem mission resolve-taint (restore or adopt-disputed-tree)")
+		fmt.Fprintln(e.answerErrors(), "answer refused: a generic answer never clears taint; use metasystem internal mission resolve-taint (restore or adopt-disputed-tree)")
 		return 3
 	}
 	if !turnvocab.OrchestratorMayRaise(reason) && reason != "fence" {

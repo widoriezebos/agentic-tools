@@ -19,7 +19,7 @@ func runAdapterStopOutput(args []string) int {
 		return 2
 	}
 	if *runtime == "" || *input == "" || *output == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter stop-output --runtime RUNTIME --input-file FILE --output-file FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter stop-output --runtime RUNTIME --input-file FILE --output-file FILE")
 		return 2
 	}
 	if err := adapter.MapStopOutput(*runtime, *input, *output); err != nil {
@@ -43,7 +43,7 @@ func runAdapterRootJob(args []string) int {
 		return 2
 	}
 	if *jobs == "" || *job == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter root-job --jobs DIR --job ID")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter root-job --jobs DIR --job ID")
 		return 2
 	}
 	root, err := usagepkg.RootJobID(*jobs, *job)
@@ -65,7 +65,7 @@ func runAdapterEffectiveInit(args []string) int {
 		return 2
 	}
 	if *record == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter effective-init --record FILE --output FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter effective-init --record FILE --output FILE")
 		return 2
 	}
 	if err := adapter.MaterializeEffective(*record, *output); err != nil {
@@ -85,7 +85,7 @@ func runAdapterEffectiveWorkspace(args []string) int {
 		return 2
 	}
 	if *effective == "" || *workspace == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter effective-workspace --effective FILE --workspace DIR")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter effective-workspace --effective FILE --workspace DIR")
 		return 2
 	}
 	if err := adapter.RewriteWriteScope(*effective, *workspace); err != nil {
@@ -105,7 +105,7 @@ func runAdapterPermissionCheck(args []string) int {
 		return 2
 	}
 	if *record == "" || *effective == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter permission-check --record FILE --effective FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter permission-check --record FILE --effective FILE")
 		return 2
 	}
 	mismatch, err := adapter.ComparePermissions(*record, *effective)
@@ -126,7 +126,7 @@ func runAdapterModelPatch(args []string) int {
 		return 2
 	}
 	if *output == "" || *model == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter model-patch --output FILE --model MODEL")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter model-patch --output FILE --model MODEL")
 		return 2
 	}
 	if err := adapter.WriteModelPatch(*output, *model); err != nil {
@@ -147,7 +147,7 @@ func runAdapterTransportPatch(args []string) int {
 		return 2
 	}
 	if *output == "" || *transport == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter transport-patch --output FILE --transport acp|legacy")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter transport-patch --output FILE --transport acp|legacy")
 		return 2
 	}
 	if err := adapter.WriteTransportPatch(*output, *transport); err != nil {
@@ -166,7 +166,7 @@ func runAdapterRepairsPatch(args []string) int {
 		return 2
 	}
 	if *output == "" || *count < 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter repairs-patch --output FILE --count N")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter repairs-patch --output FILE --count N")
 		return 2
 	}
 	if err := adapter.WriteRepairsPatch(*output, *count); err != nil {
@@ -187,7 +187,7 @@ func runAdapterResultPatch(args []string) int {
 		return 2
 	}
 	if *output == "" || *phase == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter result-patch --output FILE --error CODE|null --phase PHASE [--usage FILE]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter result-patch --output FILE --error CODE|null --phase PHASE [--usage FILE]")
 		return 2
 	}
 	if err := adapter.WriteResultPatch(*output, *failure, *phase, *usage); err != nil {
@@ -216,7 +216,7 @@ func runAdapterCapabilitySnapshot(args []string) int {
 	if *dir == "" || *runtime == "" || *version == "" || *configHash == "" ||
 		*transports == "" || *capabilities == "" || *permissions == "" ||
 		*envelope == "" || *keyHashes == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter capability-snapshot --dir DIR --runtime RT --version V --config-hash H --transports J --capabilities J --permissions J --envelope-enforcement J --config-key-hashes J")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter capability-snapshot --dir DIR --runtime RT --version V --config-hash H --transports J --capabilities J --permissions J --envelope-enforcement J --config-key-hashes J")
 		return 2
 	}
 	path, err := adapter.WriteCapabilitySnapshot(*dir, *runtime, *version, *configHash,

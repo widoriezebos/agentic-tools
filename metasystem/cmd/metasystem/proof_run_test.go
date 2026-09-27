@@ -2528,7 +2528,7 @@ func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
 	wantStart := "active coordinator does not own the claimed goal reservation"
 	if err == nil || !strings.HasPrefix(err.Error(), wantStart) || !strings.Contains(err.Error(), "lease claim epoch 5") ||
 		!strings.Contains(err.Error(), "stop capability claim epoch 1") ||
-		!strings.Contains(err.Error(), "metasystem goal restamp --id standing-validation") || attempt.AttemptID != "" {
+		!strings.Contains(err.Error(), "metasystem internal goal restamp --id standing-validation") || attempt.AttemptID != "" {
 		t.Fatalf("stale capability refusal: attempt=%+v err=%v", attempt, err)
 	}
 

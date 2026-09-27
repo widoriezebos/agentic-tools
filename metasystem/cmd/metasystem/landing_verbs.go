@@ -90,7 +90,7 @@ func runLandingCarryStatus(args []string) int {
 	ledgerTip := flags.String("ledger-tip", "", "frozen accepted goal-ledger tip")
 	jsonOutput := flags.Bool("json", false, "print the complete machine-readable status")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *carried == "" || *goalID == "" || *ledgerTip == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing carry-status --root ROOT --carried OPID --goal ID --ledger-tip SHA")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing carry-status --root ROOT --carried OPID --goal ID --ledger-tip SHA")
 		return 2
 	}
 	now, err := goalCommandNow(*root)
@@ -120,7 +120,7 @@ func runLandingWorkspace(args []string) int {
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	tree := flags.String("tree", "", "whole-project tree")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing workspace --root INSTALLATION --tree TREE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing workspace --root INSTALLATION --tree TREE")
 		return 2
 	}
 	workspace, err := landing.ProjectWorkspaceTree(*root, *tree)
@@ -523,7 +523,7 @@ func runLandingReceiptLineWithRawSource(args []string, raw func(gittree.RawReque
 	goalID := flags.String("goal", "", "goal the landing serves")
 	directFix := flags.String("direct-fix", "", "direct-fix landing class")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *tree == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing receipt-line --root INSTALLATION --tree TREE [--goal ID] [--direct-fix CLASS]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing receipt-line --root INSTALLATION --tree TREE [--goal ID] [--direct-fix CLASS]")
 		return 2
 	}
 	decision, err := landing.ObserveReceiptLine(landing.ReceiptLineParams{

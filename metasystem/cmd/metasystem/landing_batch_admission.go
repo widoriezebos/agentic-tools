@@ -109,7 +109,7 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	result.ResultPath = projection.Name()
 	_ = projection.Close()
 	_ = os.Remove(result.ResultPath)
-	args := []string{"test", "run", "--root", executionRoot, "--control-root", controlRoot, "--batch-admission",
+	args := []string{"internal", "test", "run", "--root", executionRoot, "--control-root", controlRoot, "--batch-admission",
 		"--goal", unit.GoalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--result", result.ResultPath,
 		"--expected-goal-revision", fmt.Sprint(unit.Claim.Revision), "--expected-accounting-revision", fmt.Sprint(unit.Claim.AccountingRevision)}
 	if result.FreshEpisode != "" {

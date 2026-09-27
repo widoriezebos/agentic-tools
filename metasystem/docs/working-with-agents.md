@@ -57,14 +57,14 @@ Two agents, or two sessions, in one repository are peers. Nothing coordinates th
 Commands say what you want done, not how the system is built. Run them from any directory inside the repository, or pass `--repo PATH` naming the repository top or any directory below it. `metasystem help human` is the one list of your actions, with their arguments; `metasystem help VERB` shows the full grammar and examples for one of them. Each line below is a separate example, not a sequence to run in order:
 
 ```sh
-metasystem goals                              # what is open
-metasystem open faster-proof --intent 'Proof runs in half the time.' --next 'Measure the slowest step.' --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis 'local test tooling only'
-metasystem show faster-landing                # one goal: state, budget, next step, design
-metasystem approve faster-landing             # approve it at its tier's normal budget
-metasystem budget faster-landing              # read the budget; `budget G BOX` changes it
-metasystem pause faster-landing --reason "waiting for the vendor fix"
-metasystem resume faster-landing              # back on its standing approved budget
-metasystem done faster-landing --reason "landed in 3f2a1c0, verified live"   # only once it has actually landed and been verified
+metasystem goal list                              # what is open
+metasystem goal open faster-proof --intent 'Proof runs in half the time.' --next 'Measure the slowest step.' --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis 'local test tooling only'
+metasystem goal show faster-landing                # one goal: state, budget, next step, design
+metasystem goal approve faster-landing             # approve it at its tier's normal budget
+metasystem goal budget faster-landing              # read the budget; `budget G BOX` changes it
+metasystem goal pause faster-landing --reason "waiting for the vendor fix"
+metasystem goal resume faster-landing              # back on its standing approved budget
+metasystem goal done faster-landing --reason "landed in 3f2a1c0, verified live"   # only once it has actually landed and been verified
 ```
 
 The same pattern covers opening and editing goals (`open`, `edit`), starting, stopping and restarting this checkout, the browser interface, a mission or a new machine (`start`, `stop`, `restart`, `start ui`, `start mission M`, `start machine NAME`), enrolling your terminal (`enroll --name NAME`), answering a question (`answer Q [TEXT]`), accepting a finding's risk (`accept-risk`), diagnosing and repairing (`check`, `repair`), and settings (`settings`, `settings coordinator`). Agents use the matching agent actions (`claim`, `brief`, `build`, `review`, `revise`, `wait`, `land`, `ask`), listed by `metasystem help agent`; `metasystem help all` lists every command.

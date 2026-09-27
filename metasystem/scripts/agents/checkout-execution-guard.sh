@@ -120,7 +120,7 @@ checkout_execution_guard_fixture_wait() {
     METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE=$child_control \
       METASYSTEM_BIN="$checkout_execution_guard_engine" \
       METASYSTEM_DELEGATE_ROOT="$root" \
-      "$checkout_execution_guard_engine" delegate --role implementer --brief "$child_brief" \
+      "$checkout_execution_guard_engine" internal delegate --role implementer --brief "$child_brief" \
         --goal none-explicit --destructive-reach DESIGN-BEARING \
         --op "checkout-guard-nested-$$" &
     child_pid=$!

@@ -27,7 +27,7 @@ func runAuditCoverageRatchet(args []string) int {
 		return 2
 	}
 	if *baselinePath == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem audit coverage-ratchet --baseline FILE [--input FILE]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal audit coverage-ratchet --baseline FILE [--input FILE]")
 		return 2
 	}
 	baseline, err := audit.ReadCoverageBaseline(*baselinePath)
@@ -109,7 +109,7 @@ func runAuditDependencyRatchet(args []string) int {
 		return 2
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem audit dependency-ratchet [--root CHECKOUT]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal audit dependency-ratchet [--root CHECKOUT]")
 		return 2
 	}
 	findings, err := audit.AuditDependencies(*root)
@@ -132,7 +132,7 @@ func runAuditParallelRatchet(args []string) int {
 	root := pathFlag(flags, "root", ".", "Go module root to audit")
 	update := flags.Bool("update", false, "lower recorded serial-test counts to their current values")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem audit parallel-ratchet [--root MODULE] [--update]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal audit parallel-ratchet [--root MODULE] [--update]")
 		return 2
 	}
 	baselinePath := filepath.Join(*root, "testing-parallel-ratchet.json")
@@ -182,7 +182,7 @@ func runAuditHookStartExits(args []string) int {
 	flags := flag.NewFlagSet("audit hook-start-exits", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "metasystem installation to audit")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem audit hook-start-exits [--root INSTALLATION]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal audit hook-start-exits [--root INSTALLATION]")
 		return 2
 	}
 	findings, err := audit.AuditHookStartExits(*root)
@@ -221,7 +221,7 @@ func runAuditStopDecisionSurfaceWith(args []string, dependencies stopDecisionSur
 	goal := flags.String("goal", "", "ledger goal that permits a declaration")
 	reason := flags.String("reason", "", "one-line reason for a declaration")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (*declare && *jsonOutput) || (!*declare && (*goal != "" || *reason != "")) {
-		fmt.Fprintln(os.Stderr, "usage: metasystem audit stop-decision-surface [--root INSTALLATION] [--base COMMIT] [--json] [--declare --goal GOAL --reason TEXT]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal audit stop-decision-surface [--root INSTALLATION] [--base COMMIT] [--json] [--declare --goal GOAL --reason TEXT]")
 		return 2
 	}
 	if dependencies.declare == nil || dependencies.audit == nil {
@@ -267,7 +267,7 @@ func runAuditStopDecisionSurfaceWith(args []string, dependencies stopDecisionSur
 	}
 	fmt.Println(result.Summary())
 	if result.Refused() {
-		fmt.Fprintln(os.Stderr, "restore the assertion, or run metasystem audit stop-decision-surface --declare --goal <goal-id> --reason <text> with the goal that permits the move")
+		fmt.Fprintln(os.Stderr, "restore the assertion, or run metasystem internal audit stop-decision-surface --declare --goal <goal-id> --reason <text> with the goal that permits the move")
 		return 1
 	}
 	return 0

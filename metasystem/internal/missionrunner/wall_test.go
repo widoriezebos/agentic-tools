@@ -2190,7 +2190,7 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 	}
 	runWrapper := func(bed *Engine, args ...string) (string, error) {
 		t.Helper()
-		full := append([]string{"mission", args[0], "--root", bed.Root}, args[1:]...)
+		full := append([]string{"internal", "mission", args[0], "--root", bed.Root}, args[1:]...)
 		cmd := exec.Command(filepath.Join(bed.Root, "bin", "metasystem"), full...)
 		cmd.Dir = bed.Root
 		out, err := cmd.CombinedOutput()
@@ -2237,7 +2237,7 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 	if err := os.Remove(filepath.Join(publicBed.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
-	public := exec.Command(filepath.Join(publicBed.Root, "bin", "metasystem"), "repair", "mission", publicBed.Mission,
+	public := exec.Command(filepath.Join(publicBed.Root, "bin", "metasystem"), "mission", "repair", publicBed.Mission,
 		"--problem", "1", "--confirm-restored", publicTree, "--by", "Wido", "--reason", "restored through the public route", "--json")
 	public.Dir = publicBed.Root
 	if out, err := public.CombinedOutput(); err != nil || !strings.Contains(string(out), `"outcome": "confirmed"`) {

@@ -428,7 +428,7 @@ func TestLaunchSuiteRefusesAClosedFenceBeforeStartingAnything(t *testing.T) {
 		},
 	})
 	if result != 1 || !strings.Contains(errors.String(), "the metasystem is stopped for "+root+" since 2026-09-07T12:00:00Z, by stop pid 73") ||
-		!strings.Contains(errors.String(), "at an agent-free terminal, run: metasystem arm --repo "+root) {
+		!strings.Contains(errors.String(), "at an agent-free terminal, run: metasystem system start --repo "+root) {
 		t.Fatalf("result = %d, errors = %q", result, errors.String())
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -479,7 +479,7 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 	if result != 1 || reads != 2 || !claim.isClosed() {
 		t.Fatalf("result = %d, reads = %d, claim closed = %v, errors = %q", result, reads, claim.isClosed(), errors.String())
 	}
-	if !strings.Contains(errors.String(), "stop unfinished for ") || !strings.Contains(errors.String(), "while the proof run started, it has been ended") || !strings.Contains(errors.String(), "metasystem stop --repo ") {
+	if !strings.Contains(errors.String(), "stop unfinished for ") || !strings.Contains(errors.String(), "while the proof run started, it has been ended") || !strings.Contains(errors.String(), "metasystem system stop --repo ") {
 		t.Fatalf("second-read refusal = %q", errors.String())
 	}
 	record, err := ReadRecord(root, "race")

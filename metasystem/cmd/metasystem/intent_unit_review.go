@@ -262,7 +262,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		result.Data = data
 	}
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
-		result.next, result.nextReason = inv.publicArgv("land", goalID), "the unit's read is published on the goal branch; landing admits it by its own rules"
+		result.next, result.nextReason = inv.publicArgv("work", "land", goalID), "the unit's read is published on the goal branch; landing admits it by its own rules"
 	}
 	return result
 }

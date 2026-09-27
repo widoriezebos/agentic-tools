@@ -62,7 +62,7 @@ func runGateCadenceTick(args []string) int {
 	flags := flag.NewFlagSet("gate cadence-tick", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "configured landing-owner checkout")
 	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate cadence-tick --root REPO")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal gate cadence-tick --root REPO")
 		return 2
 	}
 	owner, err := configuredCadenceOwner(*root)
@@ -386,7 +386,7 @@ func executeCadenceRun(root string, held batchOwnerLease, clock func() time.Time
 	if err != nil {
 		return gaterun.CadenceRunResult{}, err
 	}
-	testArgs := []string{"test", "run", "--root", root, "--goal", request.Authority.GoalID, "--tree", request.Trunk.Tree,
+	testArgs := []string{"internal", "test", "run", "--root", root, "--goal", request.Authority.GoalID, "--tree", request.Trunk.Tree,
 		"--mode", "deep", "--purpose", "cadence", "--result", resultPath}
 	if request.ForceGroups {
 		testArgs = append(testArgs, "--force-groups")

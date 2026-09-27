@@ -209,7 +209,7 @@ func runBatchStatusWithOutput(args []string, source *batchOwnerSource, resolveEn
 	id := flags.String("batch", "", "batch id")
 	goalID := flags.String("goal", "", "goal id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id != "" && *goalID != "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch status --root ROOT [--batch ID|--goal GOAL]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch status --root ROOT [--batch ID|--goal GOAL]")
 		return 2
 	}
 	settings, err := resolveBatchOwnerSettingsWithSource(*root, *landingRoot, *maxWait, batchWaitClock.Now, source)
@@ -268,7 +268,7 @@ func runBatchWait(args []string) int {
 	id := flags.String("batch", "", "batch id")
 	goalID := flags.String("goal", "", "goal id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || (*id == "") == (*goalID == "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch wait --root ROOT (--batch ID|--goal GOAL) [--bound DURATION]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal landing batch wait --root ROOT (--batch ID|--goal GOAL) [--bound DURATION]")
 		return 2
 	}
 	settings, err := batchReadSettings(*root, *landingRoot, *maxWait)

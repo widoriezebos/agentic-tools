@@ -23,7 +23,7 @@ func runMissionPromptAssemble(args []string) int {
 	}
 	if *repo == "" || *missionID == "" || *turn == "" || *output == "" {
 		fmt.Fprintln(os.Stderr,
-			"usage: metasystem mission prompt-assemble --repo <dir> --mission <id> --turn <turn-id> --output <file>")
+			"usage: metasystem internal mission prompt-assemble --repo <dir> --mission <id> --turn <turn-id> --output <file>")
 		return 2
 	}
 	if err := mission.AssemblePrompt(*repo, *missionID, *turn, *output); err != nil {

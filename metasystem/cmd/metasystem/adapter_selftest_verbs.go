@@ -31,7 +31,7 @@ func runAdapterNormalizeReturn(args []string) int {
 		return 2
 	}
 	if *candidate == "" || *record == "" || *output == "" || *markdown == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter normalize-return --candidate FILE --record FILE --output FILE --markdown FILE [--transcript FILE] [--session SID]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter normalize-return --candidate FILE --record FILE --output FILE --markdown FILE [--transcript FILE] [--session SID]")
 		return 2
 	}
 	if err := adapter.NormalizeReturn(*candidate, *transcript, *record, *output, *markdown, *session); err != nil {
@@ -62,7 +62,7 @@ func runAdapterSelftestRun(args []string) int {
 	}
 	if p.Root == "" || p.Runtime == "" || p.AdapterPath == "" ||
 		(p.Usage != "native" && p.Usage != "unavailable" && p.Usage != "metered") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-run --root DIR --runtime NAME --adapter SCRIPT --usage native|unavailable|metered [--probe NAME] [--turn-ceiling-sec N] [--denial-ends-turn]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter selftest-run --root DIR --runtime NAME --adapter SCRIPT --usage native|unavailable|metered [--probe NAME] [--turn-ceiling-sec N] [--denial-ends-turn]")
 		return 2
 	}
 	if *probeName != "" {
@@ -103,7 +103,7 @@ func runAdapterDevinPrompt(args []string) int {
 		return 2
 	}
 	if *prompt == "" || *schema == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-prompt --prompt FILE --schema FILE --output FILE [--return-file FILE]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem internal adapter devin-prompt --prompt FILE --schema FILE --output FILE [--return-file FILE]")
 		return 2
 	}
 	if err := adapter.DevinPrompt(*prompt, *schema, *output, *returnFile); err != nil {

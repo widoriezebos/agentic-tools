@@ -230,9 +230,9 @@ func ClosedCommand(record Record, checkout string) (string, error) {
 		checkout = record.Checkout
 	}
 	if Completed(record) {
-		return "metasystem arm --repo " + checkout, nil
+		return "metasystem system start --repo " + checkout, nil
 	}
-	return "metasystem stop --repo " + checkout, nil
+	return "metasystem system stop --repo " + checkout, nil
 }
 
 // HealthPrefix keeps health's closed-fence vocabulary aligned with the

@@ -21,7 +21,7 @@ func TestFenceReadersReturnStoppedForOrdinaryAndRecovery(t *testing.T) {
 		result := Run(options)
 		if result.ExitCode() != 0 || result.Outcome != "stopped" || len(result.Components) != 1 ||
 			result.Components[0].Detail != "since 2026-09-07T00:00:00Z" ||
-			!strings.Contains(result.Remedy, "metasystem arm --repo ") {
+			!strings.Contains(result.Remedy, "metasystem system start --repo ") {
 			t.Fatalf("stopped result = %#v", result)
 		}
 	}
@@ -38,13 +38,13 @@ func TestFenceReaderRemediesFollowTheDurableStopPhase(t *testing.T) {
 			phase: stopfence.PhaseStopIncomplete, survivors: []stopfence.Survivor{{Component: "run", ID: "one", Reason: "survived"}},
 			wantDetail: func(root string) string {
 				return "stop incomplete for " + root + " since now by stop pid 71; 1 unresolved entries from the last stop"
-			}, wantRemedy: "metasystem stop --repo",
+			}, wantRemedy: "metasystem system stop --repo",
 		},
 		{
 			phase: stopfence.PhaseStopping,
 			wantDetail: func(root string) string {
 				return "stop unfinished for " + root + " since now by stop pid 71"
-			}, wantRemedy: "metasystem stop --repo",
+			}, wantRemedy: "metasystem system stop --repo",
 		},
 	} {
 		root := t.TempDir()
@@ -53,7 +53,7 @@ func TestFenceReaderRemediesFollowTheDurableStopPhase(t *testing.T) {
 		}
 		result := Run(Options{Root: root, Scope: root})
 		lines := strings.Join(result.Lines(), "\n")
-		if result.Outcome != "stopped" || len(result.Components) != 1 || result.Components[0].Detail != test.wantDetail(root) || !strings.Contains(result.Remedy, test.wantRemedy) || strings.Contains(result.Remedy, "metasystem arm") || strings.Count(lines, result.Remedy) != 1 {
+		if result.Outcome != "stopped" || len(result.Components) != 1 || result.Components[0].Detail != test.wantDetail(root) || !strings.Contains(result.Remedy, test.wantRemedy) || strings.Contains(result.Remedy, "metasystem system start") || strings.Count(lines, result.Remedy) != 1 {
 			t.Fatalf("phase %s result = %#v", test.phase, result)
 		}
 	}

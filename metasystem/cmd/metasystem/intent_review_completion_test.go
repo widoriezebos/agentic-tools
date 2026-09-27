@@ -23,7 +23,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	c := newConnectionBed(t)
 	c.adapterFixture()
 	c.edits = map[string]string{"connect.txt": "the built result\n"}
-	code, result := c.do(append([]string{"build", c.id, "--work", "connect", "--brief", c.brief("brief.md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
+	code, result := c.do(append([]string{"work", "build", c.id, "--work", "connect", "--brief", c.brief("brief.md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build: code=%d %+v", code, result)
 	}
@@ -31,7 +31,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	install := c.worktree
 
 	// The first review commits, publishes and requests the examination.
-	if _, result = c.do("review", c.id); result.Outcome != intentInProgress || len(c.delegates) != 1 {
+	if _, result = c.do("work", "review", c.id); result.Outcome != intentInProgress || len(c.delegates) != 1 {
 		t.Fatalf("review requests one examination: %+v", result)
 	}
 	first := c.runRecord(run).Subjects[0].Commit
@@ -41,7 +41,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	returnPath := filepath.Join(install, "artifacts", "agents", "crit1", "rounds", "1", "return.json")
 	c.writeJSON(returnPath, map[string]any{"jobId": "crit1", "round": 1, "verdict": "1 finding",
 		"findings": []any{map[string]any{"id": "F1", "material": true, "title": "the proof misses a case"}}})
-	_, result = c.do("review", c.id, "--work", "connect")
+	_, result = c.do("work", "review", c.id, "--work", "connect")
 	template, _ := resultData(t, result)["template"].(string)
 	body, _ := os.ReadFile(template)
 	if result.Outcome != intentInProgress || !strings.Contains(string(body), "Review binding: goal="+c.id+" work=connect attempt=1 subject="+first) ||
@@ -55,13 +55,13 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	// A file bound to another subject is refused before any close.
 	stale := filepath.Join(c.root(), "stale.md")
 	os.WriteFile(stale, []byte(strings.Replace(strings.Replace(string(body), "subject="+first, "subject="+strings.Repeat("0", 40), 1), "DECIDE", "noted", 1)), 0o600)
-	if _, result = c.do("review", c.id, "--dispositions", stale); result.Outcome != intentRefused || !strings.Contains(result.Summary, "not the current examination") || len(c.closes) != 0 {
+	if _, result = c.do("work", "review", c.id, "--dispositions", stale); result.Outcome != intentRefused || !strings.Contains(result.Summary, "not the current examination") || len(c.closes) != 0 {
 		t.Fatalf("a stale decisions file: %+v", result)
 	}
 	// An accepted material finding requires a correction, never a close.
 	decided := filepath.Join(c.root(), "decided.md")
 	os.WriteFile(decided, []byte(strings.Replace(string(body), "| F1 | DECIDE | | |", "| F1 | accepted | the case is real | add it |", 1)), 0o600)
-	_, result = c.do("review", c.id, "--dispositions", decided)
+	_, result = c.do("work", "review", c.id, "--dispositions", decided)
 	if result.Outcome != intentRefused || result.Next == nil || !slices.Contains(result.Next.Argv, "revise") ||
 		!slices.Contains(result.Next.Argv, "--dispositions") || len(c.closes) != 0 || c.commitReads != 0 {
 		t.Fatalf("accepted material finding: %+v", result)
@@ -71,7 +71,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	// it rejoins the same attempt without another launch.
 	c.edits = map[string]string{"connect.txt": "the built result, fixed\n"}
 	fix := c.brief("fix.md", "Fix F1.\n")
-	code, result = c.do("revise", c.id, "--after", "1", "--brief", fix, "--dispositions", decided)
+	code, result = c.do("work", "revise", c.id, "--after", "1", "--brief", fix, "--dispositions", decided)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("revise: code=%d %+v", code, result)
 	}
@@ -84,14 +84,14 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 		t.Fatalf("the frozen document carries the decisions and the findings: %q", frozen)
 	}
 	launched := len(c.starter.launched())
-	if _, result = c.do("revise", c.id, "--after", "1", "--brief", fix, "--dispositions", decided); result.Outcome != intentConfirmed ||
+	if _, result = c.do("work", "revise", c.id, "--after", "1", "--brief", fix, "--dispositions", decided); result.Outcome != intentConfirmed ||
 		len(c.starter.launched()) != launched || resultData(t, result)["revision"].(map[string]any)["rejoined"] != true {
 		t.Fatalf("a repeated correction rejoins: %+v", result)
 	}
 
 	// The corrected attempt is reviewed again; its examination has no
 	// findings, so the review closes, collects and publishes by itself.
-	if _, result = c.do("review", c.id); result.Outcome != intentInProgress || len(c.delegates) != 2 {
+	if _, result = c.do("work", "review", c.id); result.Outcome != intentInProgress || len(c.delegates) != 2 {
 		t.Fatalf("the new attempt needs its own examination: %+v", result)
 	}
 	second := c.runRecord(run).Subjects[1].Commit
@@ -102,14 +102,14 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	// collected, and repair review replays the close with the retained
 	// decisions.
 	c.failCloses = 1
-	_, result = c.do("review", c.id)
-	if result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "repair", "review", c.id, "--work", "connect"}) ||
+	_, result = c.do("work", "review", c.id)
+	if result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "close", c.id, "--work", "connect"}) ||
 		len(c.closes) != 1 || c.commitReads != 0 {
 		t.Fatalf("a failed whole close: %+v", result)
 	}
-	code, result = c.do("repair", "review", c.id)
+	code, result = c.do("work", "close", c.id)
 	if code != 0 || result.Outcome != intentConfirmed || len(c.closes) != 2 || c.commitReads != 1 || c.publications == 0 ||
-		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "land", c.id}) {
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", c.id}) {
 		t.Fatalf("the repaired close completes the review: code=%d %+v closes=%d reads=%d", code, result, len(c.closes), c.commitReads)
 	}
 	if generated, err := os.ReadFile(filepath.Join(install, "artifacts", "agents", "crit2", "rounds", "1", "decisions.md")); err != nil ||
@@ -118,22 +118,22 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	}
 	// Selection reads the read owner: the work is reviewed, its read
 	// collected and published; a later built item is the one review picks.
-	if _, result = c.do("status", c.id); !strings.Contains(result.Summary, "its read is collected and published (attestation ") || result.Next == nil || result.Next.Argv[1] != "land" {
+	if _, result = c.do("status", c.id); !strings.Contains(result.Summary, "its read is collected and published (attestation ") || result.Next == nil || result.Next.Argv[2] != "land" {
 		t.Fatalf("status after collection: %+v", result)
 	}
 	c.edits = map[string]string{"later.txt": "a later unit\n"}
-	if _, result = c.do(append([]string{"build", c.id, "--work", "later", "--brief", c.brief("later.md", "Later.\n"), "--lines", "5"}, workCheck...)...); result.Outcome != intentConfirmed {
+	if _, result = c.do(append([]string{"work", "build", c.id, "--work", "later", "--brief", c.brief("later.md", "Later.\n"), "--lines", "5"}, workCheck...)...); result.Outcome != intentConfirmed {
 		t.Fatalf("later build: %+v", result)
 	}
-	if _, result = c.do("review", c.id); result.Outcome != intentInProgress || len(c.delegates) != 3 {
+	if _, result = c.do("work", "review", c.id); result.Outcome != intentInProgress || len(c.delegates) != 3 {
 		t.Fatalf("review without --work picks the one unreviewed item: %+v delegates=%v", result, c.delegates)
 	}
 	// The earlier decisions are now superseded by attempt 2's examination.
-	if _, result = c.do("revise", c.id, "--work", "connect", "--brief", fix, "--dispositions", decided); result.Outcome != intentRefused || !strings.Contains(result.Summary, "supersedes") {
+	if _, result = c.do("work", "revise", c.id, "--work", "connect", "--brief", fix, "--dispositions", decided); result.Outcome != intentRefused || !strings.Contains(result.Summary, "supersedes") {
 		t.Fatalf("superseded decisions: %+v", result)
 	}
 	// Repeating the completed review changes nothing.
-	if code, result = c.do("review", c.id, "--work", "connect"); code != 0 || len(c.closes) != 2 || c.commitReads != 1 {
+	if code, result = c.do("work", "review", c.id, "--work", "connect"); code != 0 || len(c.closes) != 2 || c.commitReads != 1 {
 		t.Fatalf("repeat: code=%d %+v", code, result)
 	}
 }
@@ -176,7 +176,7 @@ func TestIntentGoalReviewEmptyJoinRealClose(t *testing.T) {
 	if pending := invocation(map[string][]string{"dispositions": {stale}}).closeWorkReview(nil, b.install, subject, "crit9"); pending == nil ||
 		pending.Outcome != intentRefused || len(b.calls) != 0 {
 		t.Fatalf("a stale binding reaches the close owner: %+v calls=%v", pending, b.calls)
-	} else if !strings.Contains(pending.Decision, "metasystem review goal design --work main --dispositions ") {
+	} else if !strings.Contains(pending.Decision, "metasystem work review design --work main --dispositions ") {
 		t.Fatalf("the decisions continuation changed the selected goal into a design subject: %+v", pending)
 	}
 	// Before the whole close mirrors it, the owner's own check calls the

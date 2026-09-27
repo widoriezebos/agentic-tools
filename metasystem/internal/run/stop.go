@@ -140,7 +140,7 @@ func (s *Store) CompleteLaunch(id string, generation int64) error {
 	if verificationErr == nil {
 		return nil
 	}
-	outcome, stopErr := s.stopWithNote(id, "stopped by metasystem stop")
+	outcome, stopErr := s.stopWithNote(id, "stopped by metasystem system stop")
 	if stopErr != nil {
 		return stopErr
 	}
@@ -167,7 +167,7 @@ func (s *Store) failForeignCreation(id string) error {
 		if Terminal(record.Status) {
 			return nil
 		}
-		note := "stopped by metasystem stop"
+		note := "stopped by metasystem system stop"
 		var result AssessResult
 		if record.Status == StatusLaunching {
 			return s.terminalize(record, StatusLaunchFailed, nil, &note, &result)
@@ -208,7 +208,7 @@ type stopMechanism struct {
 
 // Stop ends one monitored run without ever signalling adopted custody.
 func (s *Store) Stop(id string) (StopOutcome, error) {
-	return s.stopWithNote(id, "stopped by metasystem stop")
+	return s.stopWithNote(id, "stopped by metasystem system stop")
 }
 
 func (s *Store) stopWithNote(id, note string) (StopOutcome, error) {
