@@ -835,7 +835,7 @@ func TestFakeProbe(t *testing.T) {
 			t.Fatalf("exit %d, stderr %s", code, f.stderr.String())
 		}
 		value := snapshot(t, f)
-		if value["profile"] != "current" || value["capabilities"].(map[string]any)["sessionEstablishedTimeoutSec"] != float64(2) {
+		if value["profile"] != "current" || value["capabilities"].(map[string]any)["sessionEstablishedTimeoutSec"] != float64(16) {
 			t.Fatalf("snapshot = %v", value)
 		}
 		if got := readText(t, result); got != `{"network":{"exitStatus":77,"observed":"denied"},"writeRoots":{"exitStatus":77,"observed":"denied"}}`+"\n" {
