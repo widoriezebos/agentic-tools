@@ -209,10 +209,11 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 		t.Fatalf("declared read: %d %+v", code, result)
 	}
 
-	// A second declaration is the owner's own refusal, not the adapter's.
+	// A second declaration is the owner's own idempotent repeat (R-129-ui):
+	// success, and the declaration it keeps.
 	code, result = run("--declare", "--by", "Wido")
 	lastOwner(1)
-	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "already the brain of ledger "+ledger) {
+	if result.Outcome != intentUnchanged || code != 0 || !strings.Contains(result.Summary, "already the coordinator of ledger "+ledger) {
 		t.Fatalf("repeat declare: %d %+v", code, result)
 	}
 

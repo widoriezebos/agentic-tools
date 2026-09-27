@@ -499,6 +499,18 @@ func processReportResult(targets []intentTarget, summary string, report stoptran
 		Data: map[string]any{"lines": nonNilLines(report.Lines), "exitCode": report.ExitCode}}
 }
 
+// processUnchangedResult is a repeated start or stop whose effect already
+// held (R-129-ui): success, nothing written, and the owner's last line says
+// what already holds.
+func processUnchangedResult(targets []intentTarget, report stoptransition.Report) intentResult {
+	summary := ""
+	if len(report.Lines) > 0 {
+		summary = report.Lines[len(report.Lines)-1]
+	}
+	return intentResult{Outcome: intentUnchanged, Targets: targets, Summary: summary, text: report.Lines,
+		Data: map[string]any{"lines": nonNilLines(report.Lines), "exitCode": report.ExitCode, "since": report.Since}}
+}
+
 func nonNilLines(lines []string) []string {
 	if lines == nil {
 		return []string{}
@@ -546,6 +558,9 @@ func runIntentSystemStart(inv *intentInvocation) int {
 	if refusal != nil {
 		return inv.render(inv.startRefusal(scope, scale, before, refusal, report))
 	}
+	if report.Unchanged {
+		return inv.render(processUnchangedResult(inv.checkoutTarget(scope), report))
+	}
 	return inv.render(processReportResult(inv.checkoutTarget(scope), "started "+scope.Checkout, report))
 }
 
@@ -587,6 +602,9 @@ func runIntentSystemStop(inv *intentInvocation) int {
 	if refusal != nil {
 		return inv.render(processRefusalResult(inv.checkoutTarget(scope), "stop refused: ", refusal, report))
 	}
+	if report.Unchanged {
+		return inv.render(processUnchangedResult(inv.checkoutTarget(scope), report))
+	}
 	if report.ExitCode != 0 {
 		_, fence := processFence(scope)
 		return inv.render(intentResult{Outcome: intentPartial, code: report.ExitCode, Targets: inv.checkoutTarget(scope), text: report.Lines,
@@ -611,6 +629,11 @@ func (inv *intentInvocation) stopSession() int {
 	if code != 0 {
 		return inv.render(intentResult{Outcome: intentRefused, code: code, Targets: []intentTarget{{Kind: "session", ID: ""}}, Summary: refusal,
 			Decision: "a person authorizes this at the enrolled terminal; the checkout keeps running either way"})
+	}
+	if refusal != "" {
+		// The same person's authorization already holds (R-129-ui).
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: []intentTarget{{Kind: "session", ID: marker.SessionId}},
+			Summary: refusal, Data: map[string]any{"sessionStop": marker}})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "session", ID: marker.SessionId}},
 		Summary: fmt.Sprintf("session stop authorized once for %s at holder %s epoch %d by %s; the checkout keeps running", marker.SessionId, marker.HolderMainId, marker.ClaimEpoch, marker.By),
@@ -952,6 +975,9 @@ func runIntentEnroll(inv *intentInvocation) int {
 		result := ownerResult(report, code, intentResult{})
 		result.Targets = targets
 		return inv.render(result)
+	case code == 0 && report.result != nil && report.result.Unchanged:
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Summary: report.result.Detail,
+			Data: map[string]any{"enrollment": report.value, "fleetPublished": true, "owner": ownerPublication(*report.result)}})
 	case code == 0 && report.result != nil:
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "this terminal is enrolled for " + name + " and the fleet cutoff is published",
 			Data: map[string]any{"enrollment": report.value, "fleetPublished": true, "owner": ownerPublication(*report.result)}})
@@ -1608,6 +1634,13 @@ func (inv *intentInvocation) uiTarget(verb string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was done"})
 	}
 	data := map[string]any{"lines": nonNilLines(ran.Result.Lines), "exitCode": ran.Result.Code}
+	if ran.Unchanged && ran.Result.Code == 0 {
+		summary := map[string]string{"start": "the interface already runs", "stop": "the interface is already stopped"}[verb]
+		if len(ran.Result.Lines) > 0 {
+			summary = ran.Result.Lines[0]
+		}
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: data, text: ran.Result.Lines, Summary: summary})
+	}
 	if ran.Result.Code == 0 {
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, text: ran.Result.Lines,
 			Summary: map[string]string{"start": "the interface is started", "stop": "the interface is stopped"}[verb]})
@@ -1638,7 +1671,11 @@ func runIntentStartMachine(inv *intentInvocation, name string) int {
 		return inv.render(*problem)
 	}
 	result := ownerVerbResult(ran, []intentTarget{{Kind: "machine", ID: name}}, "machine "+name+" is launched and supervised", nil)
-	if result.Outcome != intentConfirmed {
+	if owner, _ := result.Data.(map[string]any)["owner"].(map[string]any); result.Outcome == intentConfirmed && owner["alreadyLaunched"] == true {
+		result.Outcome = intentUnchanged
+		result.Summary = fmt.Sprintf("machine %s is already launched (launch %v, %v at %v)", name, owner["launch"], owner["outcome"], owner["destination"])
+	}
+	if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
 		result.next, result.nextReason = inv.publicArgv("machine", "list"), "every machine's presence"
 	}
 	return inv.render(result)

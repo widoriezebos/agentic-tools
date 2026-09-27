@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,10 @@ const seatLaunchPresenceTicks = 3
 const seatLaunchBuildBudget = 10 * time.Minute
 
 func runSeatLaunch(args []string) int {
+	return runSeatLaunchTo(args, os.Stdout)
+}
+
+func runSeatLaunchTo(args []string, stdout io.Writer) int {
 	flags := flag.NewFlagSet("seat launch", flag.ContinueOnError)
 	machine := flags.String("machine", "", "nickname the new machine carries and publishes presence under")
 	from := pathFlag(flags, "from", ".", "the checkout this machine is cloned from (default: the current directory)")
@@ -53,6 +58,24 @@ func runSeatLaunch(args []string) int {
 	request := launch.Request{
 		Machine: *machine, From: *from, Destination: *destination,
 		Word: *word, ReviewBy: *reviewBy, Resume: *resume,
+	}
+	// A machine already launched and supervised from here is a repeat whose
+	// effect holds (R-129-ui): its launch is the answer, and no record is
+	// minted. The interface, which names the record it wrote, judged this
+	// before it spawned the verb.
+	if *recordPath == "" {
+		if launched, already, err := launch.Launched(request.From, request); err == nil && already {
+			if *asJSON {
+				encoded, err := json.MarshalIndent(additiveData(launched, map[string]any{"alreadyLaunched": true}), "", "  ")
+				if err == nil {
+					stdout.Write(append(encoded, '\n'))
+				}
+			} else {
+				fmt.Fprintf(stdout, "machine %s is already launched (launch %s, %s at %s)\n", launched.Machine, launched.Launch, launched.Outcome, launched.Destination)
+				fmt.Fprint(stdout, seatLaunchReport(launched))
+			}
+			return 0
+		}
 	}
 	record, path, err := seatLaunchRecord(request, *recordPath)
 	if err != nil {
@@ -150,10 +173,10 @@ func runSeatLaunch(args []string) int {
 	if *asJSON {
 		encoded, err := json.MarshalIndent(finished, "", "  ")
 		if err == nil {
-			os.Stdout.Write(append(encoded, '\n'))
+			stdout.Write(append(encoded, '\n'))
 		}
 	} else {
-		fmt.Print(seatLaunchReport(finished))
+		fmt.Fprint(stdout, seatLaunchReport(finished))
 	}
 	if runErr != nil {
 		fmt.Fprintln(os.Stderr, "seat launch:", runErr)

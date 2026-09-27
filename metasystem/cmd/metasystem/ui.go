@@ -1002,15 +1002,30 @@ type uiLifecycleResult struct {
 	Result  lifecycle.Result
 	State   lifecycle.State          // status only
 	Restart *lifecycle.RestartReport // restart only
+	// Unchanged is a start or stop whose effect already held (R-129-ui).
+	Unchanged bool
+}
+
+// uiLifecycleEffects are the process effects of the interface lifecycle:
+// the prober that judges the recorded server, the spawn that launches one,
+// and the executable it runs.
+type uiLifecycleEffects struct {
+	prober     identity.Prober
+	spawn      lifecycle.Spawn
+	executable func() (string, error)
 }
 
 // uiLifecycleRun runs start, status, stop or restart through the lifecycle
 // owner; it prints nothing.
 func uiLifecycleRun(verb string, roots lifecycle.Roots, listen string, waitSeconds int64) uiLifecycleResult {
-	prober := identity.KernelProber{}
+	return uiLifecycleRunWith(verb, roots, listen, waitSeconds, uiLifecycleEffects{prober: identity.KernelProber{}, spawn: lifecycle.ExecSpawn, executable: os.Executable})
+}
+
+func uiLifecycleRunWith(verb string, roots lifecycle.Roots, listen string, waitSeconds int64, effects uiLifecycleEffects) uiLifecycleResult {
+	prober := effects.prober
 	stop := lifecycle.StopOptions{Prober: prober, Wait: time.Duration(waitSeconds) * time.Second}
 	start := func() lifecycle.Result {
-		executable, err := os.Executable()
+		executable, err := effects.executable()
 		if err != nil {
 			return lifecycle.Result{Lines: []string{"cannot launch the interface server: " + err.Error()}, Code: 1}
 		}
@@ -1019,16 +1034,18 @@ func uiLifecycleRun(verb string, roots lifecycle.Roots, listen string, waitSecon
 			Args:       lifecycle.ServeArgs(roots.Checkout, roots.Installation, listen),
 			Dir:        roots.Checkout,
 			LogPath:    filepath.Join(lifecycle.Dir(roots.StateRoot), "server.log"),
-		}, lifecycle.ExecSpawn, 0)
+		}, effects.spawn, 0)
 	}
 	switch verb {
 	case "start":
-		return uiLifecycleResult{Result: start()}
+		result, unchanged := lifecycle.StartOnce(roots.StateRoot, prober, listen, start)
+		return uiLifecycleResult{Result: result, Unchanged: unchanged}
 	case "status":
 		result, state := lifecycle.StatusReport(roots.StateRoot, prober, nil)
 		return uiLifecycleResult{Result: result, State: state}
 	case "stop":
-		return uiLifecycleResult{Result: lifecycle.StopResult(roots.StateRoot, stop)}
+		result, unchanged := lifecycle.StopReport(roots.StateRoot, stop)
+		return uiLifecycleResult{Result: result, Unchanged: unchanged}
 	}
 	report := lifecycle.RestartReportFor(roots.StateRoot, stop, start)
 	return uiLifecycleResult{Result: report.Result, Restart: &report}

@@ -291,7 +291,14 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs) int
 				act.HolderMainId, act.HolderSession, act.ClaimEpoch = holder.MainId, holder.SessionId, holder.ClaimEpoch
 			}
 		}
-		if err := steward.CancelHandoff(stateRoot, *cancel, canceller); err != nil {
+		err = steward.CancelHandoff(stateRoot, *cancel, canceller)
+		var already *steward.HandoffAlreadyCancelled
+		if errors.As(err, &already) {
+			// The cancellation already held (R-129-ui).
+			fmt.Printf("handoff already cancelled: %s\n", *cancel)
+			return 0
+		}
+		if err != nil {
 			return contextVerbError("handoff", err)
 		}
 		fmt.Printf("handoff cancelled: %s\n", *cancel)

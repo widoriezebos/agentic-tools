@@ -349,7 +349,14 @@ func runIntentSettingsCoordinator(inv *intentInvocation) int {
 		ran := ownerCall(func(stdout, stderr io.Writer) int {
 			return inv.ownerCalls().brain(choice, caller, stdout, stderr, inv.stateRoot, by)
 		})
-		return inv.render(ownerVerbResult(ran, targets, map[string]string{"declare": "this checkout is declared its ledger's coordinator", "withdraw": "this checkout's coordinator declaration is withdrawn"}[choice], nil))
+		result := ownerVerbResult(ran, targets, map[string]string{"declare": "this checkout is declared its ledger's coordinator", "withdraw": "this checkout's coordinator declaration is withdrawn"}[choice], nil)
+		if owner, _ := result.Data.(map[string]any)["owner"].(map[string]any); result.Outcome == intentConfirmed && owner["unchanged"] == true {
+			result.Outcome = intentUnchanged
+			if summary, _ := owner["summary"].(string); summary != "" {
+				result.Summary = summary
+			}
+		}
+		return inv.render(result)
 	}
 	state := brain.Read(inv.stateRoot, goal.ExistingLedgerIdentity(inv.stateRoot))
 	data := map[string]any{"state": state.State}
