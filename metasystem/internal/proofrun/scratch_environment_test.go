@@ -220,7 +220,7 @@ func TestScratchEnvironmentGoEnvModes(t *testing.T) {
 }
 
 func TestScratchEnvironmentIdentity(t *testing.T) {
-	t.Parallel()
+	// Not parallel: see the writer-lock note above crashedScratch.
 	fixture := newScratchEnvFixture(t)
 	declaredHome := filepath.Join(fixture.host, "declared-home")
 	declaredGoEnv := filepath.Join(fixture.host, "declared-goenv")
