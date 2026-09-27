@@ -1186,7 +1186,7 @@ fi
 # groups are retired in the follow-up landing (design 6.4, step B).
 if section_selected telemetry-census-fixtures; then
   delivery_contract_skip telemetry-census-fixtures \
-    || run_section telemetry-census-fixtures needs-engine printf '%s\\n' \
+    || run_section telemetry-census-fixtures needs-engine printf '%s\n' \
       "telemetry-census-fixtures: retired to Go tests; its scenarios run in internal/census and internal/adapter/supervisor"
 fi
 if section_selected return-schema-fixtures; then
@@ -1259,7 +1259,7 @@ if section_selected flight-recorder-fixtures; then
 fi
 if section_selected acp-fixtures; then
   delivery_contract_skip acp-fixtures \
-    || run_section acp-fixtures needs-engine printf '%s\\n' \
+    || run_section acp-fixtures needs-engine printf '%s\n' \
       "acp-fixtures: retired to Go tests; its scenarios run in internal/adapter/supervisor, internal/missionrunner/hostturn and internal/acp"
 fi
 if section_selected delegate-caps-fixtures; then
@@ -1268,7 +1268,7 @@ if section_selected delegate-caps-fixtures; then
 fi
 if section_selected adapter-deadline-fixtures; then
   delivery_contract_skip adapter-deadline-fixtures \
-    || run_section adapter-deadline-fixtures needs-engine printf '%s\\n' \
+    || run_section adapter-deadline-fixtures needs-engine printf '%s\n' \
       "adapter-deadline-fixtures: retired to Go tests; its scenarios run in internal/adapter/supervisor"
 fi
 enumeration_mode_fixtures_section() {
@@ -1306,10 +1306,14 @@ for enforcement_source in scripts/enforcement/claude-code-hooks.json \
   [[ "$enforcement_hooks" == *supervision-hook.sh* ]] \
     || { echo "$enforcement_source hooks never invoke supervision-hook.sh" >&2; exit 1; }
 done
-# The runtime adapter and host contracts (each declared adapter's contract
-# snapshot shape, its envelope-enforcement map against the registry, and a
-# host turn for each declared host) are Go tests with the adapters' port:
-# internal/adapter/supervisor's TestRuntimeAdapterContracts.
+# The runtime adapter and host contracts are Go tests with the adapters'
+# port. Adapters (each declared adapter's contract snapshot shape and its
+# envelope-enforcement map against the registry): internal/adapter/supervisor's
+# TestRuntimeAdapterContracts. Hosts (a host turn for each declared host
+# runtime): internal/missionrunner/hostturn's TestClaudeHost*,
+# TestCodexHostCompletesWithItsThread, TestDevinHost* and TestFakeHost*, with
+# TestHostRefusesAbsentCLIAndBadArguments and
+# TestHostUnreleasedStartGateFailsTheLaunch for the shared host turn.
 # The capability snapshot naming contract is pinned BEHAVIORALLY:
 # TestSnapshotNameGrammar (internal/adapter) under the go gate, plus the
 # fake-probe sequence fixture below — never by grepping Go source text
