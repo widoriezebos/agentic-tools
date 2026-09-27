@@ -7,6 +7,7 @@ import { loadBacklog, type Backlog } from "../backlog/api";
 import {
   APPLY,
   displayedFor,
+  excludedFor,
   lineID,
   lineState,
   markOf,
@@ -264,9 +265,27 @@ export type ProposalActs = {
   running: boolean;
 };
 
+/**
+ * Why one ticked line is not part of a bulk press, or "".
+ *
+ * Two reasons, and the second is a boundary rather than a rule about budgets. A
+ * line that has been answered once — refused, unresolved, or left in flight by a
+ * page that went away — is a RETRY, and a retry is one line at a time: the human
+ * reads what happened, checks the goal, and presses Try again on that row. Bulk
+ * Try again is a later slice, and a bar that quietly did it would be that slice
+ * without the reading it needs (g1-s60, "Not here, later").
+ */
+export function excludedInBulk(line: Line): string {
+  return line.state === "waiting" ? excludedFor(line) : ANSWERED_ONCE;
+}
+
+/** What a line that has already been answered says in the sheet. */
+export const ANSWERED_ONCE = "answered once already: Try again on the row itself";
+
 /** What the sheet says where nothing it lists can be sent at all. */
 export const NOTHING_SENDABLE =
-  "Nothing here can be sent: every action selected needs its budget first, and an approve with no tuple is approved alone.";
+  "Nothing here can be sent: an action that has been answered once is tried again on its own row, " +
+  "and an approve with no tuple is approved alone.";
 
 /** What the pane holds about the proposals on it, and how it applies one. */
 export type Applying = {

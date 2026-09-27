@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 
 import type { Need } from "./api";
 import { InboxRow, type Acts } from "./InboxRow";
-import { budgetsFrom, NOTHING_SENDABLE, type Applying } from "./proposals";
+import { budgetsFrom, excludedInBulk, NOTHING_SENDABLE, type Applying } from "./proposals";
 import type { Backlog } from "../backlog/api";
 import { Panel } from "../backlog/Panel";
 import { ProposalSubstance } from "../partner/Proposal";
-import { APPLY, DISMISS, excludedFor, type Line } from "../partner/proposing";
+import { APPLY, DISMISS, type Line } from "../partner/proposing";
 import { Help } from "../help/Help";
 import { Button } from "../shell/controls";
 
@@ -159,7 +159,8 @@ function SelectionBar({
  * sheet's own state and sent as displayed: a tuple computed again at the press
  * could differ from the tuple a human confirmed (Astra S58-08). A line whose
  * budget could not be prefilled at all is listed, named and left unsent, exactly
- * as the queue's own bulk sheet lists one.
+ * as the queue's own bulk sheet lists one — and so is a line somebody has
+ * already answered, because trying one again is a press of its own row.
  */
 export function ProposalSheet({
   needs,
@@ -184,7 +185,7 @@ export function ProposalSheet({
     () => held.map((line) => ({ ...line, displayed: budgets[line.id] ?? null })),
     [held, budgets],
   );
-  const sending = lines.filter((line) => excludedFor(line) === "");
+  const sending = lines.filter((line) => excludedInBulk(line) === "");
   const blocked = sending.length === 0 ? NOTHING_SENDABLE : "";
 
   return (
@@ -211,7 +212,7 @@ export function ProposalSheet({
     >
       <ul className="ms-decisions-plan">
         {lines.map((line) => {
-          const excluded = excludedFor(line);
+          const excluded = excludedInBulk(line);
           return (
             <li
               key={line.id}

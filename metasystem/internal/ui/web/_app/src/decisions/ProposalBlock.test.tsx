@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { Need, Proposed } from "./api";
 import { ProposalBlock, ProposalSheet } from "./ProposalBlock";
 import type { Acts } from "./InboxRow";
-import { lineOf, linesOf, NOTHING_SENDABLE, type Applying } from "./proposals";
+import { ANSWERED_ONCE, lineOf, linesOf, NOTHING_SENDABLE, type Applying } from "./proposals";
 import type { Backlog, Budget, Row } from "../backlog/api";
 import { NEEDS_ITS_BUDGET } from "../partner/proposing";
 
@@ -296,5 +296,36 @@ describe("the sheet the bar's Apply opens", () => {
     expect(markup).toContain("One act per line, in this order, over 2 actions.");
     expect(markup).toContain("A refusal is passed and the run goes on");
     expect(markup).toContain("an answer that does not say what happened stops it");
+  });
+});
+
+/**
+ * A line somebody has already answered is not part of a bulk press.
+ *
+ * Trying one again is a retry, and a retry is one line at a time: the human
+ * reads what happened, checks the goal, and presses Try again on that row. Bulk
+ * Try again is a later slice, and a bar that quietly did it would be that slice
+ * without the reading it needs.
+ */
+describe("what the sheet leaves out", () => {
+  const refused = need(
+    "t7/2",
+    { title: "The fleet page reads a seat's whole chain", where: { kind: "goal", id: "g1-s46" } },
+    { index: 2, state: "refused", words: "goal g1-s46 is claimed by m2a", version: 3 },
+  );
+
+  it("lists a line already answered, names it, and leaves it out of the press", () => {
+    const markup = sheet([parking, refused]);
+
+    expect(markup).toContain(ANSWERED_ONCE);
+    expect(markup).toContain("ms-decisions-planned--out");
+    expect(markup).toContain("Apply 1 action");
+  });
+
+  it("refuses the press where every ticked line has been answered", () => {
+    const markup = sheet([refused]);
+
+    expect(markup).toContain(NOTHING_SENDABLE);
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>Apply<\/button>/);
   });
 });
