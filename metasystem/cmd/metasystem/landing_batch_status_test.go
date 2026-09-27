@@ -605,7 +605,7 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 				pushes++
 				return originalPush(root, id, base, tip)
 			}
-			seams := batchLandSeams(root, record.BatchID, record, baseCommit, "owner")
+			seams := batchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", gitOutput, plantedBatchCommit)
 			seams.Prepare = func(string) error { return nil }
 			seams.Apply = func(batch.Unit) error { return nil }
 			seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
@@ -726,7 +726,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 		recoveries++
 		return batch.PushRecovery{Origin: origin}, errors.New("recovery transport unavailable")
 	}
-	seams := batchLandSeams(root, record.BatchID, record, baseCommit, "owner")
+	seams := batchLandSeamsWithRead(root, record.BatchID, record, baseCommit, "owner", gitOutput, plantedBatchCommit)
 	seams.Prepare = func(string) error { return nil }
 	seams.Apply = func(batch.Unit) error { return nil }
 	seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }

@@ -571,7 +571,9 @@ func (fixture *batchE2EFixture) buildPolicyEngine(commit, engine string) {
 	}
 	sourceRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
 	linker := "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=" + commit
-	command := exec.Command("go", "build", "-buildvcs=false", "-ldflags", linker, "-o", engine, "./cmd/metasystem")
+	// The beds plant their own commit script; a plantedcommit engine commits
+	// through it, as the shell commit boundary did.
+	command := exec.Command("go", "build", "-buildvcs=false", "-tags", "plantedcommit", "-ldflags", linker, "-o", engine, "./cmd/metasystem")
 	command.Dir = sourceRoot
 	command.Env = os.Environ()
 	if output, buildErr := command.CombinedOutput(); buildErr != nil {

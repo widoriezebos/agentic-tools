@@ -3,17 +3,18 @@ package batch
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 )
 
 func landingBed(t *testing.T) (assemblyBed, Store) {
@@ -887,57 +888,61 @@ func TestApplyCertifiedPatchStagesTheTransportedBytes(t *testing.T) {
 	}
 }
 
-func TestCommitWithWrapperUsesTempRepoTokenAndExplicitIdentity(t *testing.T) {
+func TestCommitWithWrapperPassesDeclarationAndExplicitIdentity(t *testing.T) {
 	root := t.TempDir()
-	must(t, os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755))
-	must(t, os.MkdirAll(filepath.Join(root, "artifacts", "agents", "mains"), 0o755))
-	must(t, os.WriteFile(filepath.Join(root, "artifacts", "agents", "mains", "worktree-commit-token.json"), []byte("{}\n"), 0o644))
-	wrapper := filepath.Join(root, "scripts", "agents", "commit.sh")
-	script := `#!/usr/bin/env bash
-set -euo pipefail
-test -f artifacts/agents/mains/worktree-commit-token.json
-printf '%s\n' "$*" >wrapper.args
-printf '%s <%s>|%s <%s>|%s\n' "$GIT_AUTHOR_NAME" "$GIT_AUTHOR_EMAIL" "$GIT_COMMITTER_NAME" "$GIT_COMMITTER_EMAIL" "$METASYSTEM_LANDED_BY" >wrapper.env
-git commit -q "$@"
-`
-	must(t, testexec.WriteFile(wrapper, []byte(script), 0o755))
 	commitWrapperGitAdapterRepo(t, root, "Fixture", "fixture@example.invalid")
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("one\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
 	must(t, exec.Command("git", "-C", root, "commit", "-qm", "base").Run())
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("two\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
-	// The fixture wrapper consumes the boundary flags before delegating.
-	script = strings.ReplaceAll(script, "git commit -q \"$@\"", `while (( $# )); do case "$1" in --chain|--goal|--test-receipt) shift 2;; *) break;; esac; done
-git commit -q "$@"`)
-	must(t, testexec.WriteFile(wrapper, []byte(script), 0o755))
-	t.Setenv("GIT_AUTHOR_NAME", "Ambient Other")
-	t.Setenv("GIT_AUTHOR_EMAIL", "ambient@example.com")
-	t.Setenv("GIT_COMMITTER_NAME", "Ambient Other")
-	t.Setenv("GIT_COMMITTER_EMAIL", "ambient@example.com")
-	must(t, CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "m1l+landing-m1l"))
-	if env := string(contents(t, filepath.Join(root, "wrapper.env"))); !strings.Contains(env, "Wido <wido@example.com>|Wido <wido@example.com>|m1l+landing-m1l") {
-		t.Fatalf("wrapper env=%q", env)
+	var seen landpath.CommitRequest
+	var message []byte
+	boundary := func(request landpath.CommitRequest) (string, int) {
+		seen = request
+		message, _ = os.ReadFile(request.MessageFile)
+		command := exec.Command("git", "-C", root, "commit", "-q", "-F", request.MessageFile)
+		command.Env = append(os.Environ(), request.Env...)
+		if output, err := command.CombinedOutput(); err != nil {
+			return string(output), 1
+		}
+		return "", 0
 	}
-	if args := string(contents(t, filepath.Join(root, "wrapper.args"))); !strings.Contains(args, "--chain chain-a --goal goal-a --test-receipt receipt.json -F") {
-		t.Fatalf("wrapper args=%q", args)
+	must(t, CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "m1l+landing-m1l", "landing-m1l", boundary))
+	if seen.Chain != "chain-a" || seen.Goal != "goal-a" || !seen.GoalSet || seen.TestReceipt != "receipt.json" ||
+		seen.LandedBy != "m1l+landing-m1l" || seen.OwnerLineage != "landing-m1l" || string(message) != "land goal a\n" {
+		t.Fatalf("boundary request=%+v message=%q", seen, message)
+	}
+	identityLine := strings.TrimSpace(runGitOutput(t, root, "show", "-s", "--format=%an|%ae|%cn|%ce", "HEAD"))
+	if identityLine != "Wido|wido@example.com|Wido|wido@example.com" {
+		t.Fatalf("commit identity=%q", identityLine)
+	}
+	attested := AttestedDeclaration("c1", "s1", "b1")
+	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("three\n"), 0o644))
+	must(t, exec.Command("git", "-C", root, "add", "file").Run())
+	must(t, CommitWithWrapper(root, attested, "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "seat", "lineage", boundary))
+	if seen.Attested != "c1" || seen.AttestedSnapshot != "s1" || seen.AttestedBase != "b1" || seen.Chain != "" {
+		t.Fatalf("attested request=%+v", seen)
 	}
 }
 
 func TestCommitWithWrapperRequiresExactlyOneNewCommitAndStrictPassVerdict(t *testing.T) {
 	root := t.TempDir()
-	must(t, os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755))
 	commitWrapperGitAdapterRepo(t, root, "Fixture", "fixture@example.invalid")
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("base\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
 	must(t, exec.Command("git", "-C", root, "commit", "-qm", "base").Run())
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("candidate\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
-	wrapper := filepath.Join(root, "scripts", "agents", "commit.sh")
-	must(t, testexec.WriteFile(wrapper, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755))
-	err := CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat")
+	noop := func(landpath.CommitRequest) (string, int) { return "", 0 }
+	err := CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat", "lineage", noop)
 	if err == nil || !strings.Contains(err.Error(), "exactly one commit") {
-		t.Fatalf("no-op wrapper err=%v", err)
+		t.Fatalf("no-op boundary err=%v", err)
+	}
+	refused := func(landpath.CommitRequest) (string, int) { return "agent commit refused: x\n", 1 }
+	err = CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat", "lineage", refused)
+	if err == nil || !strings.Contains(err.Error(), "exited 1: agent commit refused: x") {
+		t.Fatalf("refused boundary err=%v", err)
 	}
 	for _, verdict := range []string{"pass", "pass bar=e", "passive"} {
 		must(t, exec.Command("git", "-C", root, "commit", "--allow-empty", "-qm", "candidate\n\nLanding-Provenance-Verdict: "+verdict).Run())
@@ -952,72 +957,14 @@ func TestCommitWithWrapperRequiresExactlyOneNewCommitAndStrictPassVerdict(t *tes
 	}
 }
 
+// TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity drives the
+// real commit boundary (landpath.Commit) against a real repository: its
+// owners are stubbed, its Git is the adapter this test exists to prove (the
+// stamped trailers and identity are what git records).
 func TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity(t *testing.T) {
 	root := t.TempDir()
-	for _, dir := range []string{"scripts/agents", "bin", "artifacts/agents/mains"} {
-		must(t, os.MkdirAll(filepath.Join(root, dir), 0o755))
-	}
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate real commit wrapper fixture")
-	}
-	realWrapper, err := os.ReadFile(filepath.Join(filepath.Dir(source), "..", "..", "..", "scripts", "agents", "commit.sh"))
-	must(t, err)
-	must(t, testexec.WriteFile(filepath.Join(root, "scripts", "agents", "commit.sh"), realWrapper, 0o755))
-	engine := `#!/usr/bin/env bash
-set -euo pipefail
-verb=${1:-}; noun=${2:-}
-if [[ "$verb $noun" == "brain fence" ]]; then printf '{}\n'; exit 0; fi
-if [[ "$verb $noun" == "lease require-holder" ]]; then printf '{"claimEpoch":1}\n'; exit 0; fi
-if [[ "$verb $noun" == "lease run-held" ]]; then
-  while (($#)) && [[ "$1" != -- ]]; do shift; done
-  shift
-  exec "$@"
-fi
-if [[ "$verb $noun" == "json get" ]]; then
-  field=
-  while (($#)); do if [[ "$1" == --field ]]; then field=$2; break; fi; shift; done
-  case "$field" in
-    claimEpoch) echo 1 ;;
-    provenance) echo 'chain=chain-a change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
-    verdictTrailer) echo 'pass bar=area' ;;
-    code) echo reviewed-chain ;;
-    mode) echo observe ;;
-    goalRevision) echo 7 ;;
-    refusal|detail) echo '' ;;
-    *) echo '' ;;
-  esac
-  exit 0
-fi
-if [[ "$verb $noun" == "proc started-at" ]]; then echo 1; exit 0; fi
-if [[ "$verb $noun" == "util token-hex" ]]; then echo 0123456789abcdef0123456789abcdef; exit 0; fi
-if [[ "$verb $noun" == "lease commit-token" ]]; then
-  token=
-  while (($#)); do if [[ "$1" == --path ]]; then token=$2; break; fi; shift; done
-  mkdir -p "$(dirname "$token")"; printf '{}\n' >"$token"; exit 0
-fi
-if [[ "$verb $noun" == "config conf-value" ]]; then echo testing.json; exit 0; fi
-if [[ "$verb $noun" == "test verify" ]]; then exit 0; fi
-if [[ "$verb $noun" == "behavior-surface select" ]]; then cat >/dev/null; exit 0; fi
-if [[ "$verb $noun" == "landing observe" ]]; then
-  printf '{"provenance":"chain=chain-a change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","verdictTrailer":"pass bar=area","code":"reviewed-chain","mode":"observe","goalRevision":7}\n'
-  exit 0
-fi
-if [[ "$verb $noun" == "gate weight-add" ]]; then cat >/dev/null; exit 0; fi
-printf 'unexpected fake engine command: %s\n' "$*" >&2
-exit 40
-`
-	must(t, testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(engine), 0o755))
-	build := `#!/usr/bin/env bash
-set -euo pipefail
-out=
-while (($#)); do if [[ "$1" == --out ]]; then out=$2; shift 2; else shift; fi; done
-cp "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)/bin/metasystem" "$out"
-chmod +x "$out"
-`
-	must(t, testexec.WriteFile(filepath.Join(root, "scripts", "agents", "go-build.sh"), []byte(build), 0o755))
+	must(t, os.MkdirAll(filepath.Join(root, "artifacts", "agents", "mains"), 0o755))
 	must(t, os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0o644))
-	must(t, os.WriteFile(filepath.Join(root, "testing.json"), []byte("{}\n"), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/agents/\n"), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, "source.txt"), []byte("base\n"), 0o644))
 	commitWrapperGitAdapterRepo(t, root, "Ambient Other", "ambient@example.com")
@@ -1030,8 +977,61 @@ chmod +x "$out"
 	t.Setenv("GIT_AUTHOR_EMAIL", "other@example.net")
 	t.Setenv("GIT_COMMITTER_NAME", "Ambient Other")
 	t.Setenv("GIT_COMMITTER_EMAIL", "other@example.net")
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "landing-m1l")
-	must(t, CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido Explicit", "wido@example.com", "m1l+landing-m1l"))
+	epoch := int64(1)
+	tokenSeen := false
+	owners := landpath.Owners{
+		Git: func(call landpath.GitCall) landpath.GitResult {
+			command := exec.Command("git", append([]string{"-C", call.Dir}, call.Args...)...)
+			command.Env = call.Env
+			var stdout, stderr strings.Builder
+			command.Stdout, command.Stderr = &stdout, &stderr
+			code := 0
+			if err := command.Run(); err != nil {
+				code = 1
+				if exit, ok := err.(*exec.ExitError); ok {
+					code = exit.ExitCode()
+				}
+			}
+			if len(call.Args) > 0 && call.Args[0] == "commit" {
+				_, statErr := os.Stat(landpath.TokenPath(root))
+				tokenSeen = statErr == nil
+			}
+			return landpath.GitResult{Stdout: []byte(stdout.String()), Stderr: []byte(stderr.String()), Code: code}
+		},
+		CallerPID: 1, Getpid: func() int64 { return 1 },
+		LiveEngine:    func() (string, error) { return "", nil },
+		Now:           func() time.Time { return time.Unix(1, 0) },
+		RequireHolder: func(string, int64, *int64) (*int64, error) { return &epoch, nil },
+		WithHeld:      func(_ string, _ int64, _ *int64, fn func() error) error { return fn() },
+		BrainFence:    func(string, string) (string, error) { return "", nil },
+		ConfValue:     func(string, string) string { return "testing.json" },
+		StartedAt:     func(int64) (int64, error) { return 1, nil },
+		TokenNonce:    func() (string, error) { return "0123456789abcdef0123456789abcdef", nil },
+		WriteToken: func(path string, _ landpath.WrapperToken) error {
+			return os.WriteFile(path, []byte("{}\n"), 0o644)
+		},
+		RemoveFile:    os.Remove,
+		ReadFile:      os.ReadFile,
+		FileReadable:  func(string) bool { return true },
+		Verify:        func(landpath.VerifyRequest, io.Writer, io.Writer) int { return 0 },
+		SelectLanding: func([]string, string) ([]string, error) { return nil, nil },
+		Live: func() landpath.Judge {
+			return landpath.Judge{Observe: func(landpath.ObserveRequest) (landing.Observation, int) {
+				return landing.Observation{Provenance: "chain=chain-a change=" + strings.Repeat("a", 64), VerdictTrailer: "pass bar=area",
+					Code: "reviewed-chain", Mode: "observe", GoalRevision: 7}, 0
+			}}
+		},
+		WeightAdd: func(string, string, string, string, []byte, io.Writer, io.Writer) int { return 0 },
+	}
+	boundary := func(request landpath.CommitRequest) (string, int) {
+		var output strings.Builder
+		status := landpath.Commit(owners, request, &output, &output)
+		return output.String(), status
+	}
+	must(t, CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido Explicit", "wido@example.com", "m1l+landing-m1l", "landing-m1l", boundary))
+	if !tokenSeen {
+		t.Fatal("the boundary committed without its wrapper token in place")
+	}
 	message := runGitOutput(t, root, "show", "-s", "--format=%B", "HEAD")
 	for _, trailer := range []string{
 		"Machine: m1l+landing-m1l", "Goal-Item: goal-a", "Goal-Revision: 7",
@@ -1045,6 +1045,9 @@ chmod +x "$out"
 	identityLine := strings.TrimSpace(runGitOutput(t, root, "show", "-s", "--format=%an|%ae|%cn|%ce", "HEAD"))
 	if identityLine != "Wido Explicit|wido@example.com|Wido Explicit|wido@example.com" {
 		t.Fatalf("real commit used ambient identity: %q", identityLine)
+	}
+	if _, err := os.Stat(landpath.TokenPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("the wrapper token outlived the commit: %v", err)
 	}
 }
 

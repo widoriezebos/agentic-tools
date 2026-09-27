@@ -2434,20 +2434,26 @@ func runTestVerify(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem test status --tree TREE [--goal ID] [--root INSTALLATION] [--json]")
 		return 2
 	}
+	return testVerifyTo(os.Stdout, os.Stderr, request, jsonOutput)
+}
+
+// testVerifyTo verifies retained delivery proof for request.Tree and prints
+// the verdict on the caller's streams; it launches nothing.
+func testVerifyTo(stdout, stderr io.Writer, request testingSelectionRequest, jsonOutput bool) int {
 	result, err := verifyRetainedTesting(request)
 	if err != nil {
-		printMovedProofInputsWithoutCandidateEngine(request)
-		fmt.Fprintln(os.Stderr, "metasystem test status:", err)
+		printMovedProofInputsWithoutCandidateEngine(stderr, request)
+		fmt.Fprintln(stderr, "metasystem test status:", err)
 		return 1
 	}
 	if jsonOutput {
-		printJSON(result)
+		writeJSONLine(stdout, stderr, result)
 	} else {
-		printTestingSummary(result)
+		printTestingSummaryTo(stdout, result)
 	}
 	if !result.Delivery.Sufficient {
-		printMovedProofInputs(request, result)
-		fmt.Fprintf(os.Stderr, "missing required proof; run metasystem test run --root %s --goal %s --tree %s --mode auto; missing groups: %s\n",
+		printMovedProofInputs(stderr, request, result)
+		fmt.Fprintf(stderr, "missing required proof; run metasystem test run --root %s --goal %s --tree %s --mode auto; missing groups: %s\n",
 			request.Root, request.GoalID, result.CandidateTree, strings.Join(result.Delivery.MissingGroups, ","))
 		return 1
 	}
@@ -2564,7 +2570,7 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 		prepared.EffectiveContract), nil
 }
 
-func printMovedProofInputs(request testingSelectionRequest, current proofrun.TestResult) {
+func printMovedProofInputs(stderr io.Writer, request testingSelectionRequest, current proofrun.TestResult) {
 	installation, err := canonicalProofRoot(request.Root)
 	if err != nil {
 		return
@@ -2622,14 +2628,14 @@ func printMovedProofInputs(request testingSelectionRequest, current proofrun.Tes
 			}
 		}
 		if len(moved) == 0 {
-			fmt.Fprintf(os.Stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; no declared path moved; the environment or a tool identity changed\n", id, sourceTree)
+			fmt.Fprintf(stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; no declared path moved; the environment or a tool identity changed\n", id, sourceTree)
 			continue
 		}
-		fmt.Fprintf(os.Stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; moved declared paths: %s\n", id, sourceTree, strings.Join(moved, ","))
+		fmt.Fprintf(stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; moved declared paths: %s\n", id, sourceTree, strings.Join(moved, ","))
 	}
 }
 
-func printMovedProofInputsWithoutCandidateEngine(request testingSelectionRequest) {
+func printMovedProofInputsWithoutCandidateEngine(stderr io.Writer, request testingSelectionRequest) {
 	prepared, err := prepareTesting(request)
 	if err != nil {
 		return
@@ -2674,7 +2680,7 @@ func printMovedProofInputsWithoutCandidateEngine(request testingSelectionRequest
 			}
 		}
 		if len(moved) > 0 {
-			fmt.Fprintf(os.Stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; moved declared paths: %s\n", id, sourceTree, strings.Join(moved, ","))
+			fmt.Fprintf(stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; moved declared paths: %s\n", id, sourceTree, strings.Join(moved, ","))
 		}
 	}
 }
@@ -2971,16 +2977,18 @@ func publishTestingResult(root, path string, result proofrun.TestResult) error {
 	return nil
 }
 
-func printTestingSummary(result proofrun.TestResult) {
+func printTestingSummary(result proofrun.TestResult) { printTestingSummaryTo(os.Stdout, result) }
+
+func printTestingSummaryTo(stdout io.Writer, result proofrun.TestResult) {
 	admission := "unlimited"
 	if result.AdmissionMaximum != nil && *result.AdmissionMaximum > 0 {
 		admission = strconv.Itoa(*result.AdmissionMaximum)
 	}
-	fmt.Printf("TEST-RESULT sufficient=%t tree=%s selected=%s workers=%d admissionMaximum=%s\n",
+	fmt.Fprintf(stdout, "TEST-RESULT sufficient=%t tree=%s selected=%s workers=%d admissionMaximum=%s\n",
 		result.Delivery.Sufficient, result.CandidateTree, strings.Join(result.SelectedGroups, ","), result.Workers, admission)
 	for _, group := range result.Groups {
 		if group.Status != "passed" && group.Status != "reused" {
-			fmt.Printf("TEST-GROUP %s status=%s reason=%s log=%s\n", group.ID, group.Status, group.NotRunReason, group.LogPath)
+			fmt.Fprintf(stdout, "TEST-GROUP %s status=%s reason=%s log=%s\n", group.ID, group.Status, group.NotRunReason, group.LogPath)
 		}
 	}
 }

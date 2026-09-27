@@ -143,7 +143,7 @@ func landBatchProvenanceBed(t *testing.T, bed batchProvenanceBed) error {
 	if err != nil {
 		return err
 	}
-	seams := batchLandSeams(bed.root, batchProvenanceTestID, record, bed.baseCommit, landingOwnerLineage)
+	seams := batchLandSeamsWithRead(bed.root, batchProvenanceTestID, record, bed.baseCommit, landingOwnerLineage, gitOutput, plantedBatchCommit)
 	seams.VerifySeries = func(units []batch.Unit, _ map[string]string) error {
 		if len(units) == 0 || record.Proof == nil || record.Proof.Status != "green" {
 			return errors.New("provenance fixture has no declared green series")
@@ -360,7 +360,7 @@ func TestBatchLandingVerdictPolicyWithoutGit(t *testing.T) {
 				readCount++
 				return value, nil
 			}
-			seams := batchLandSeamsWithRead(root, batchProvenanceTestID, record, "base", landingOwnerLineage, readGit)
+			seams := batchLandSeamsWithRead(root, batchProvenanceTestID, record, "base", landingOwnerLineage, readGit, plantedBatchCommit)
 			calls := map[string]int{}
 			call := func(name string) { calls[name]++ }
 			seams.Origin = func() (string, error) { call("origin"); return "base", nil }

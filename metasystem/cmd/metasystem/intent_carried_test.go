@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -35,6 +36,8 @@ type carriedDeliveryBed struct {
 	transport   string
 	// unproven withholds the fixture person proof from the carry owner.
 	unproven bool
+	// crashAt stops the next carried landing at this seam, as a crash would.
+	crashAt string
 }
 
 func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
@@ -45,11 +48,11 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 	b := &carriedDeliveryBed{t: t, f: f}
 	b.engine, b.proof = publishCarriedLandScripts(t, f)
 	t.Setenv("METASYSTEM_BIN", b.engine)
-	// The carry readback and land.sh read the canonical branch as origin, as
+	// The carry readback and the landing read the canonical branch as origin, as
 	// the batch admission bed provides it.
 	goalSyncMutationGit(t, f.mainRoot, "remote", "add", "origin", f.upstream)
 	goalSyncMutationGit(t, f.mainRoot, "config", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
-	// land.sh publishes to origin, so the ledger is synced there too, as
+	// The landing publishes to origin, so the ledger is synced there too, as
 	// land-fixtures.sh configures its carried beds.
 	goalSyncMutationGit(t, f.mainRoot, "config", "goal.sync-remote", "origin")
 	// landing sync-transport mirrors origin's main to the checkout's transport.
@@ -74,11 +77,31 @@ func newCarriedDeliveryBed(t *testing.T) *carriedDeliveryBed {
 		if len(process.argv) > 3 && process.argv[2] == "goal" && process.argv[3] == "carry" && !b.unproven {
 			process.argv = append(process.argv, "--fixture-human-authority", "--lineage", "m1")
 		}
-		ran := runIntentOwnerProcess(process)
-		if strings.HasSuffix(process.argv[0], "land.sh") {
-			b.lands = append(b.lands, ran)
-			t.Logf("land.sh exited %d:\n%s\n%s", ran.code, ran.stdout, ran.stderr)
+		return runIntentOwnerProcess(process)
+	}
+	// The carried transaction runs in this process (landpath.Land); the
+	// bed records each run as it recorded land.sh's.
+	delivery.landCarried = func(request landpath.LandRequest) intentProcessResult {
+		b.calls = append(b.calls, []string{"landpath", request.Root, "--carried", request.Carried})
+		owners := landingPathOwners()
+		crashed := ""
+		if crash := b.crashAt; crash != "" {
+			// The crash seam stops the transaction at the named point as a
+			// killed landing would, once.
+			b.crashAt = ""
+			owners.Seam = func(point string) {
+				if point == crash {
+					crashed = point
+					landpath.StopAtSeam(143)
+				}
+			}
 		}
+		ran := landCarriedWithOwners(owners, request)
+		if crashed != "" {
+			ran.stdout = append(ran.stdout, []byte("FIXTURE-CRASH "+crashed+"\n")...)
+		}
+		b.lands = append(b.lands, ran)
+		t.Logf("the carried landing exited %d:\n%s\n%s", ran.code, ran.stdout, ran.stderr)
 		return ran
 	}
 	b.owners.delivery = delivery
@@ -430,9 +453,8 @@ func TestIntentCarriedReplay(t *testing.T) {
 	}
 	proved := b.provePublicly(result)
 	b.addGoalFold("plans/later.md", "later goal work\n", "later")
-	t.Setenv("METASYSTEM_LAND_FIXTURE_CRASH", "before-push")
+	b.crashAt = "before-push"
 	code, crashed := b.shown(proved)
-	os.Unsetenv("METASYSTEM_LAND_FIXTURE_CRASH")
 	if code == 0 || crashed.Outcome != intentPartial || !strings.Contains(string(b.lands[len(b.lands)-1].stdout), "FIXTURE-CRASH before-push") {
 		t.Fatalf("the crash seam did not stop the landing before its push: %d %+v", code, crashed)
 	}
@@ -528,7 +550,7 @@ func TestIntentCarriedReplacement(t *testing.T) {
 	if consumption, _ := data["consumption"].(string); code == 0 || old.Outcome == intentConfirmed || consumption != "superseded:"+second || data["staged"] != nil ||
 		goalSyncMutationGit(t, f.mainRoot, "write-tree") != goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD^{tree}") ||
 		goalSyncMutationGit(t, f.mainRoot, "rev-parse", "HEAD") != head || b.owner("goal", "carry") != 2 {
-		t.Fatalf("the replaced word was reused: %d %+v (land.sh runs %d -> %d)", code, old, lands, len(b.lands))
+		t.Fatalf("the replaced word was reused: %d %+v (carried landings %d -> %d)", code, old, lands, len(b.lands))
 	}
 }
 
@@ -553,7 +575,7 @@ func TestIntentCarriedFromTheLinkedGoalCheckout(t *testing.T) {
 	goalBefore := goalSyncMutationGit(t, f.goalRoot, "rev-parse", "HEAD") + goalSyncMutationGit(t, f.goalRoot, "status", "--porcelain=v1")
 	_, result := b.landFrom(f.goalRoot, "standing-validation", "--exception", "missing-declaration", "--reason", "flaky host", "--by", "Wido", "--upgrade-goals")
 	opid, _ := carriedResultData(result)["exception"].(string)
-	if opid == "" || len(b.lands) != 1 || !strings.Contains(b.calls[len(b.calls)-1][0], filepath.Join(f.mainRoot, "scripts", "agents", "land.sh")) {
+	if opid == "" || len(b.lands) != 1 || b.calls[len(b.calls)-1][0] != "landpath" || b.calls[len(b.calls)-1][1] != f.mainRoot {
 		t.Fatalf("the linked request did not deliver through the main checkout: %+v %v", result, b.calls)
 	}
 	code, landed := b.shown(b.provePublicly(result))

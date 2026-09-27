@@ -156,7 +156,7 @@ predecessor in the same slice.
 | | build | `build` (and `build --resume RUN` as `work build ID`) |
 | | review | `review G`, `review goal G`, `review G --changes/--patch`, `review commit SHA --goal G`, `review changes`, `review diff`, `review job J`, `review run RUN`, `review G --finding F --test` |
 | | revise | `revise G`, `revise job R`, `revise run RUN` |
-| | land | `land G ...`, `land job J` |
+| | land | `land G ...`, `land job J`, and `land [G] --message FILE (--staged \| --path P...)` for a hand-made change (`scripts/agents/land.sh`, U5) |
 | | wait | `wait G`, `wait goal G`, `wait job/run/proof/resume/review ID`, `wait G --for`, and `wait file PATH --until present\|absent` as `work wait --path PATH --until present\|absent` (caller-relative path, same observation and durable resumption, `intent_work.go:193,1219`) |
 | | stop | `stop job J`, `stop review REF` |
 | | status | `status job J`, `status run RUN`, `status work`, `show review REF` |
@@ -624,6 +624,28 @@ reconciliation owner's scoped publication (3.4, VOA-21).
   the Go path, switches the guard stub to `internal pre-commit`, and deletes the
   scripts. `landing/batch/transport.go:301` and `intent_exception.go:227` call Go.
   Fixtures port.
+
+  U5 build notes (step A, as built): the composition package is
+  `internal/landing/landpath` (`Commit` is the commit boundary, `Land` the
+  driver with its carried transaction, `Guard` the pre-commit guard body); every
+  owner and Git are reached through injected `Owners`, which
+  `cmd/metasystem/landing_path.go` wires to the owner functions in the
+  landing's own process (6.2: the current process is the supplied identity,
+  the lineage is named on the request). The public form for a hand-made change
+  is `work land [G] --message FILE (--staged | --path P...)` with land.sh's
+  declarations as options (`--chain`, `--recertification`, `--test-receipt`,
+  `--direct-fix`, `--revert-of`, `--root-job`, `--tests`, `--allow-new-plan`,
+  `--skip-transport`). The wrapper token keeps the shell format
+  (`wrapperPid`, `wrapperPidStartedAt`, a 32-hex nonce, `createdAt`), minted by
+  the landing process. By rule C1 the contract-off branch of commit.sh is not
+  ported: the boundary refuses without a testing contract (coverage delta,
+  `go-gate.sh --fast --proof-out` static re-proof, `internal audit metasystem`
+  and `--ratchet` are gone). The in-process engine always has `landing drift`,
+  `advance` and `receipt-line`, so the older-engine fallbacks are not ported.
+  Carried asks name the public forms (`work land G --using-exception X`,
+  `work land G --exception PAST --replace-exception X`). Step B adds the
+  `pre-commit` entry, switches the enrolled hook composer to it, and deletes
+  the scripts.
 - U6c External runtimes (revision 8). The external-executable implementation of the runtime interface, the registry and its trust rules, every consumer on the registry, `docs/agent-adapters.md`, R13. After U6a.
 - U6a Runtimes. `adapters/runtime-common.sh`, the four adapters,
   `host-common.sh` and the four hosts into Go; the `delegate-supervisor` entry;

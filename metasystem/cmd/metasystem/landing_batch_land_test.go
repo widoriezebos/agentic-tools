@@ -47,7 +47,7 @@ func TestBatchLandReceiptsRunFromNestedModuleRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	seams := batchLandSeams(repository, "batch", batch.Record{}, "base", "actor")
+	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", gitOutput, plantedBatchCommit)
 	if err := seams.AppendReceipt(batch.Unit{GoalID: "goal-a"}, batch.PrefixReceipt{Tree: "tree"}); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
 		readCount++
 		return result, nil
 	}
-	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", readGit)
+	seams := batchLandSeamsWithRead(repository, "batch", batch.Record{}, "base", "actor", readGit, plantedBatchCommit)
 	head, err := seams.Commit(batch.Unit{GoalID: "goal-a", Chain: "chain-a", AuthorName: "Owner", AuthorEmail: "owner@example.invalid"}, batch.PrefixReceipt{Tree: "tree"})
 	if err != nil {
 		t.Fatal(err)
